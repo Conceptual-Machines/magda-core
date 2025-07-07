@@ -1,8 +1,5 @@
 # DAW Domain - Digital Audio Workstation Core + UI
-# This includes the audio engine, interfaces, UI, and main application
-
-# Add Tracktion Engine modules
-juce_add_modules(${tracktion_engine_SOURCE_DIR}/modules/tracktion_engine)
+# Simple version focusing on Tracktion Engine integration
 
 # DAW Core sources
 set(DAW_CORE_SOURCES
@@ -44,11 +41,10 @@ target_sources(magica_daw_app PRIVATE ${DAW_UI_SOURCES})
 # Link required libraries for DAW core
 target_link_libraries(magica_daw
     PUBLIC
-    nlohmann_json::nlohmann_json
     juce::juce_core
     juce::juce_data_structures
     juce::juce_audio_basics
-    tracktion_engine
+    tracktion::tracktion_engine
 )
 
 # Link required libraries for DAW application
@@ -60,11 +56,7 @@ target_link_libraries(magica_daw_app
     juce::juce_audio_formats
     juce::juce_audio_processors
     juce::juce_audio_utils
-    tracktion_engine
-    # NOTE: When aideas-core is integrated, add it here:
-    # aideas_core::audio
-    # aideas_core::midi  
-    # aideas_core::music_theory
+    tracktion::tracktion_engine
 )
 
 # Include directories for DAW library

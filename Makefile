@@ -1,82 +1,67 @@
-# Magica Makefile - Wrapper around CMake
+# Magica DAW - Simple Build System
+# This Makefile provides a simple interface to build the Magica DAW project
 
-BUILD_DIR = build
-CMAKE_FLAGS = -DCMAKE_BUILD_TYPE=Release
+# Build directories
+BUILD_DIR = cmake-build-debug
+BUILD_DIR_RELEASE = cmake-build-release
 
-.PHONY: all build clean debug release test examples install help
-
-all: build
-
-# Build in release mode
-build:
-	@mkdir -p $(BUILD_DIR)
-	@cd $(BUILD_DIR) && cmake $(CMAKE_FLAGS) ..
-	@cd $(BUILD_DIR) && make -j$(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+# Default target
+.PHONY: all
+all: debug
 
 # Debug build
+.PHONY: debug
 debug:
+	@echo "🔨 Building Magica DAW (Debug)..."
 	@mkdir -p $(BUILD_DIR)
-	@cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=Debug ..
-	@cd $(BUILD_DIR) && make -j$(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+	cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=Debug ..
+	cd $(BUILD_DIR) && make -j$(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
 # Release build
+.PHONY: release
 release:
-	@mkdir -p $(BUILD_DIR)
-	@cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=Release ..
-	@cd $(BUILD_DIR) && make -j$(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+	@echo "🚀 Building Magica DAW (Release)..."
+	@mkdir -p $(BUILD_DIR_RELEASE)
+	cd $(BUILD_DIR_RELEASE) && cmake -DCMAKE_BUILD_TYPE=Release ..
+	cd $(BUILD_DIR_RELEASE) && make -j$(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-# Build with JUCE adapter
-juce:
-	@mkdir -p $(BUILD_DIR)
-	@cd $(BUILD_DIR) && cmake -DMAGICA_BUILD_JUCE_ADAPTER=ON $(CMAKE_FLAGS) ..
-	@cd $(BUILD_DIR) && make -j$(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+# Run the application
+.PHONY: run
+run: debug
+	@echo "🎵 Running Magica DAW..."
+	./$(BUILD_DIR)/daw/magica_daw_app
 
-# Build and run tests
-test:
-	@mkdir -p $(BUILD_DIR)
-	@cd $(BUILD_DIR) && cmake -DMAGICA_BUILD_TESTS=ON $(CMAKE_FLAGS) ..
-	@cd $(BUILD_DIR) && make -j$(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
-	@cd $(BUILD_DIR) && ctest --output-on-failure
+# Run tests
+.PHONY: test
+test: debug
+	@echo "🧪 Running tests..."
+	cd $(BUILD_DIR) && make test
 
-# Run tests (assumes already built)
-test-only:
-	@cd $(BUILD_DIR) && ctest --output-on-failure
-
-# Build examples
-examples:
-	@mkdir -p $(BUILD_DIR)
-	@cd $(BUILD_DIR) && cmake -DMAGICA_BUILD_EXAMPLES=ON $(CMAKE_FLAGS) ..
-	@cd $(BUILD_DIR) && make -j$(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
-
-# Install
-install: build
-	@cd $(BUILD_DIR) && make install
-
-# Clean build directory
+# Clean build artifacts
+.PHONY: clean
 clean:
-	@rm -rf $(BUILD_DIR)
-	@echo "Build directory cleaned"
+	@echo "🧹 Cleaning build artifacts..."
+	rm -rf $(BUILD_DIR) $(BUILD_DIR_RELEASE)
+	rm -rf build/
 
-# Configure only
-configure:
-	@mkdir -p $(BUILD_DIR)
-	@cd $(BUILD_DIR) && cmake $(CMAKE_FLAGS) ..
+# Clean and rebuild
+.PHONY: rebuild
+rebuild: clean debug
 
-# Help
+# Show help
+.PHONY: help
 help:
-	@echo "Magica Build System (gRPC-based)"
-	@echo "================================"
-	@echo "Available targets:"
-	@echo "  build     - Build in release mode (default)"
-	@echo "  debug     - Build in debug mode"
-	@echo "  release   - Build in release mode"
-	@echo "  juce      - Build with JUCE adapter enabled"
-	@echo "  test      - Build and run tests"
-	@echo "  test-only - Run tests (assumes already built)"
-	@echo "  examples  - Build examples"
-	@echo "  install   - Install the library"
-	@echo "  clean     - Clean build directory"
-	@echo "  configure - Configure CMake only"
-	@echo "  help      - Show this help"
+	@echo "🎵 Magica DAW - Build System"
 	@echo ""
-	@echo "Note: This version uses gRPC for agent communication (port 50051 by default)" 
+	@echo "Available targets:"
+	@echo "  all, debug     - Build debug version (default)"
+	@echo "  release        - Build release version"
+	@echo "  run            - Build and run the application"
+	@echo "  test           - Build and run tests"
+	@echo "  clean          - Remove build artifacts"
+	@echo "  rebuild        - Clean and rebuild"
+	@echo "  help           - Show this help message"
+	@echo ""
+	@echo "Build directories:"
+	@echo "  Debug:   $(BUILD_DIR)"
+	@echo "  Release: $(BUILD_DIR_RELEASE)" 

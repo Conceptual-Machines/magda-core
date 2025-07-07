@@ -4,7 +4,7 @@
 #include <map>
 #include <variant>
 #include <vector>
-#include <nlohmann/json.hpp>
+#include <juce_core/juce_core.h>
 
 /**
  * @brief Represents a command that can be sent through the MCP protocol
@@ -25,7 +25,7 @@ class Command {
         /**
          * @brief Construct a command from JSON
          */
-        explicit Command(const nlohmann::json& json);
+        explicit Command(const juce::var& json);
         
         /**
          * @brief Get the command type
@@ -60,7 +60,7 @@ class Command {
         /**
          * @brief Convert to JSON
          */
-        nlohmann::json toJson() const;
+        juce::var toJson() const;
         
         /**
          * @brief Create from JSON string
@@ -93,13 +93,13 @@ public:
     Status getStatus() const { return status_; }
     const std::string& getMessage() const { return message_; }
     
-    void setData(const nlohmann::json& data) { data_ = data; }
-    const nlohmann::json& getData() const { return data_; }
+    void setData(const juce::var& data) { data_ = data; }
+    const juce::var& getData() const { return data_; }
     
-    nlohmann::json toJson() const;
+    juce::var toJson() const;
     
 private:
     Status status_;
     std::string message_;
-    nlohmann::json data_;
+    juce::var data_;
 }; 
