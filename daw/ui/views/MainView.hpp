@@ -31,11 +31,18 @@ public:
     void setTimelineLength(double lengthInSeconds);
     void setPlayheadPosition(double position);
     
+    // Arrangement controls
+    void toggleArrangementLock();
+    bool isArrangementLocked() const;
+
     // Zoom accessors
     double getHorizontalZoom() const { return horizontalZoom; }
 
     // ScrollBar::Listener implementation
     void scrollBarMoved(juce::ScrollBar* scrollBarThatHasMoved, double newRangeStart) override;
+
+    // Keyboard handling
+    bool keyPressed(const juce::KeyPress& key) override;
 
 private:
     // Timeline viewport (horizontal scroll only)
@@ -58,6 +65,9 @@ private:
     double verticalZoom = 1.0;    // Track height multiplier
     double timelineLength = 120.0; // Total timeline length in seconds
     double playheadPosition = 0.0;
+    
+    // Synchronization guard to prevent infinite recursion
+    bool isUpdatingTrackSelection = false;
 
     // Layout constants
     static constexpr int TIMELINE_HEIGHT = 80;

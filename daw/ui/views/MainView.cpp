@@ -4,6 +4,9 @@
 namespace magica {
 
 MainView::MainView() {
+    // Enable keyboard focus for shortcut handling
+    setWantsKeyboardFocus(true);
+    
     // Create timeline viewport
     timelineViewport = std::make_unique<juce::Viewport>();
     timeline = std::make_unique<TimelineComponent>();
@@ -69,11 +72,16 @@ void MainView::resized() {
     playheadArea.removeFromLeft(TRACK_HEADER_WIDTH); // Exclude track headers
     playheadComponent->setBounds(playheadArea);
     
-    // Set initial horizontal zoom to show about 60 seconds in the viewport width
-    if (horizontalZoom == 1.0) { // Only set initial zoom once
-        auto viewportWidth = timelineViewport->getWidth();
-        if (viewportWidth > 0) {
-            horizontalZoom = viewportWidth / 60.0; // Show 60 seconds initially
+    // Always recalculate zoom to ensure proper timeline distribution
+    auto viewportWidth = timelineViewport->getWidth();
+    if (viewportWidth > 0) {
+        // Show about 60 seconds initially, but ensure minimum zoom for visibility
+        double newZoom = juce::jmax(1.0, viewportWidth / 60.0);
+        if (std::abs(horizontalZoom - newZoom) > 0.1) { // Only update if significantly different
+            horizontalZoom = newZoom;
+            // Update zoom on timeline and track content
+            timeline->setZoom(horizontalZoom);
+            trackContentPanel->setZoom(horizontalZoom);
         }
     }
     
@@ -139,6 +147,25 @@ void MainView::setPlayheadPosition(double position) {
     playheadComponent->repaint();
 }
 
+void MainView::toggleArrangementLock() {
+    timeline->setArrangementLocked(!timeline->isArrangementLocked());
+    timeline->repaint();
+}
+
+bool MainView::isArrangementLocked() const {
+    return timeline->isArrangementLocked();
+}
+
+bool MainView::keyPressed(const juce::KeyPress& key) {
+    // Toggle arrangement lock with Ctrl+L (or Cmd+L on Mac)
+    if (key.isKeyCode(juce::KeyPress::F4Key)) {
+        toggleArrangementLock();
+        return true;
+    }
+    
+    return false;
+}
+
 void MainView::updateContentSizes() {
     auto contentWidth = static_cast<int>(timelineLength * horizontalZoom);
     auto trackContentHeight = trackHeadersPanel->getTotalTracksHeight();
@@ -186,11 +213,19 @@ void MainView::setupTrackSynchronization() {
     };
     
     trackHeadersPanel->onTrackSelected = [this](int trackIndex) {
-        trackContentPanel->selectTrack(trackIndex);
+        if (!isUpdatingTrackSelection) {
+            isUpdatingTrackSelection = true;
+            trackContentPanel->selectTrack(trackIndex);
+            isUpdatingTrackSelection = false;
+        }
     };
     
     trackContentPanel->onTrackSelected = [this](int trackIndex) {
-        trackHeadersPanel->selectTrack(trackIndex);
+        if (!isUpdatingTrackSelection) {
+            isUpdatingTrackSelection = true;
+            trackHeadersPanel->selectTrack(trackIndex);
+            isUpdatingTrackSelection = false;
+        }
     };
 }
 

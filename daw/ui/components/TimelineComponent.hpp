@@ -39,6 +39,10 @@ public:
     void removeSection(int index);
     void clearSections();
     
+    // Arrangement locking
+    void setArrangementLocked(bool locked) { arrangementLocked = locked; }
+    bool isArrangementLocked() const { return arrangementLocked; }
+    
     // Callback for playhead position changes
     std::function<void(double)> onPlayheadPositionChanged;
     std::function<void(int, const ArrangementSection&)> onSectionChanged;
@@ -55,6 +59,7 @@ private:
     bool isDraggingSection = false;
     bool isDraggingEdge = false;
     bool isDraggingStart = false; // true for start edge, false for end edge
+    bool arrangementLocked = false; // Lock arrangement sections to prevent accidental movement
     
     // Helper methods
     double pixelToTime(int pixel) const;

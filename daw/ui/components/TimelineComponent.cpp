@@ -7,13 +7,16 @@ namespace magica {
 TimelineComponent::TimelineComponent() {
     setSize(800, 40);
     
-    // Add some default arrangement sections for demonstration
-    addSection("Intro", 0.0, 8.0, juce::Colours::green);
-    addSection("Verse 1", 8.0, 24.0, juce::Colours::blue);
-    addSection("Chorus", 24.0, 40.0, juce::Colours::orange);
-    addSection("Verse 2", 40.0, 56.0, juce::Colours::blue);
-    addSection("Bridge", 56.0, 72.0, juce::Colours::purple);
-    addSection("Outro", 72.0, 88.0, juce::Colours::red);
+    // Create some sample arrangement sections
+    addSection("Intro", 0, 8, juce::Colours::green);
+    addSection("Verse 1", 8, 24, juce::Colours::blue);
+    addSection("Chorus", 24, 40, juce::Colours::orange);
+    addSection("Verse 2", 40, 56, juce::Colours::blue);
+    addSection("Bridge", 56, 72, juce::Colours::purple);
+    addSection("Outro", 72, 88, juce::Colours::red);
+    
+    // Lock arrangement sections by default to prevent accidental movement
+    arrangementLocked = true;
 }
 
 TimelineComponent::~TimelineComponent() = default;
@@ -28,7 +31,7 @@ void TimelineComponent::paint(juce::Graphics& g) {
     // Draw arrangement sections first (behind time markers)
     drawArrangementSections(g);
     drawTimeMarkers(g);
-    drawPlayhead(g);
+    // Note: Playhead is now drawn by MainView's unified playhead component
 }
 
 void TimelineComponent::resized() {
@@ -53,24 +56,28 @@ void TimelineComponent::setZoom(double pixelsPerSecond) {
 }
 
 void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
-    // Check if clicking on arrangement section
-    int sectionIndex = findSectionAtPosition(event.x, event.y);
-    if (sectionIndex >= 0) {
-        selectedSectionIndex = sectionIndex;
-        
-        // Check if clicking on section edge for resizing
-        bool isStartEdge;
-        if (isOnSectionEdge(event.x, sectionIndex, isStartEdge)) {
-            isDraggingEdge = true;
-            isDraggingStart = isStartEdge;
-        } else {
-            isDraggingSection = true;
+    // Always prioritize playhead positioning unless specifically targeting arrangement sections
+    // and arrangement sections are unlocked
+    if (!arrangementLocked && event.y <= getHeight() / 2) {
+        // Check if clicking on arrangement section (only in upper half)
+        int sectionIndex = findSectionAtPosition(event.x, event.y);
+        if (sectionIndex >= 0) {
+            selectedSectionIndex = sectionIndex;
+            
+            // Check if clicking on section edge for resizing
+            bool isStartEdge;
+            if (isOnSectionEdge(event.x, sectionIndex, isStartEdge)) {
+                isDraggingEdge = true;
+                isDraggingStart = isStartEdge;
+            } else {
+                isDraggingSection = true;
+            }
+            repaint();
+            return;
         }
-        repaint();
-        return;
     }
     
-    // Otherwise, handle playhead positioning
+    // Default behavior: handle playhead positioning
     double clickTime = pixelToTime(event.x);
     setPlayheadPosition(clickTime);
     
@@ -81,7 +88,7 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
 }
 
 void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
-    if (isDraggingSection && selectedSectionIndex >= 0) {
+    if (!arrangementLocked && isDraggingSection && selectedSectionIndex >= 0) {
         // Move entire section
         auto& section = *sections[selectedSectionIndex];
         double sectionDuration = section.endTime - section.startTime;
@@ -95,7 +102,7 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
             onSectionChanged(selectedSectionIndex, section);
         }
         repaint();
-    } else if (isDraggingEdge && selectedSectionIndex >= 0) {
+    } else if (!arrangementLocked && isDraggingEdge && selectedSectionIndex >= 0) {
         // Resize section
         auto& section = *sections[selectedSectionIndex];
         double newTime = juce::jmax(0.0, juce::jmin(timelineLength, pixelToTime(event.x)));
@@ -111,7 +118,7 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
         }
         repaint();
     } else {
-        // Handle playhead dragging
+        // Handle playhead dragging (default behavior)
         double dragTime = pixelToTime(event.x);
         setPlayheadPosition(dragTime);
         
@@ -123,17 +130,19 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
 }
 
 void TimelineComponent::mouseDoubleClick(const juce::MouseEvent& event) {
-    int sectionIndex = findSectionAtPosition(event.x, event.y);
-    if (sectionIndex >= 0) {
-        // Edit section name (simplified - in real app would show text editor)
-        auto& section = *sections[sectionIndex];
-        juce::String newName = "Section " + juce::String(sectionIndex + 1);
-        section.name = newName;
-        
-        if (onSectionChanged) {
-            onSectionChanged(sectionIndex, section);
+    if (!arrangementLocked) {
+        int sectionIndex = findSectionAtPosition(event.x, event.y);
+        if (sectionIndex >= 0) {
+            // Edit section name (simplified - in real app would show text editor)
+            auto& section = *sections[sectionIndex];
+            juce::String newName = "Section " + juce::String(sectionIndex + 1);
+            section.name = newName;
+            
+            if (onSectionChanged) {
+                onSectionChanged(sectionIndex, section);
+            }
+            repaint();
         }
-        repaint();
     }
 }
 
@@ -189,14 +198,14 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
     for (int i = 0; i <= timelineLength; i += markerInterval) {
         int x = timeToPixel(i);
         if (x >= 0 && x < getWidth()) {
-            // Draw tick mark
+            // Draw tick mark at bottom
             g.drawLine(x, getHeight() - 10, x, getHeight() - 2);
             
-            // Draw time label
+            // Draw time label at bottom to avoid overlap with arrangement sections
             int minutes = i / 60;
             int seconds = i % 60;
             juce::String timeStr = juce::String::formatted("%d:%02d", minutes, seconds);
-            g.drawText(timeStr, x - 20, 5, 40, 20, juce::Justification::centred);
+            g.drawText(timeStr, x - 20, getHeight() - 25, 40, 20, juce::Justification::centred);
         }
     }
 }
@@ -236,19 +245,39 @@ void TimelineComponent::drawSection(juce::Graphics& g, const ArrangementSection&
     // Draw section background (upper half of timeline)
     auto sectionArea = juce::Rectangle<int>(startX, 0, width, getHeight() / 2);
     
-    // Section background
-    g.setColour(section.colour.withAlpha(0.3f));
+    // Section background - dimmed if locked
+    float alpha = arrangementLocked ? 0.2f : 0.3f;
+    g.setColour(section.colour.withAlpha(alpha));
     g.fillRect(sectionArea);
     
-    // Section border
-    g.setColour(isSelected ? section.colour.brighter(0.5f) : section.colour);
-    g.drawRect(sectionArea, isSelected ? 2 : 1);
+    // Section border - different style if locked
+    if (arrangementLocked) {
+        g.setColour(section.colour.withAlpha(0.5f));
+        // Draw dotted border to indicate locked state
+        const float dashLengths[] = {2.0f, 2.0f};
+        g.drawDashedLine(juce::Line<float>(startX, 0, startX, getHeight() / 2), 
+                        dashLengths, 2, 1.0f);
+        g.drawDashedLine(juce::Line<float>(endX, 0, endX, getHeight() / 2), 
+                        dashLengths, 2, 1.0f);
+        g.drawDashedLine(juce::Line<float>(startX, 0, endX, 0), 
+                        dashLengths, 2, 1.0f);
+        g.drawDashedLine(juce::Line<float>(startX, getHeight() / 2, endX, getHeight() / 2), 
+                        dashLengths, 2, 1.0f);
+    } else {
+        g.setColour(isSelected ? section.colour.brighter(0.5f) : section.colour);
+        g.drawRect(sectionArea, isSelected ? 2 : 1);
+    }
     
     // Section name
     if (width > 40) { // Only draw text if there's enough space
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        g.setColour(arrangementLocked ? 
+                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY) : 
+                   DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        g.drawText(section.name, sectionArea.reduced(2), juce::Justification::centred, true);
+        
+        // Add lock indicator to name if locked
+        juce::String displayName = arrangementLocked ? "🔒 " + section.name : section.name;
+        g.drawText(displayName, sectionArea.reduced(2), juce::Justification::centred, true);
     }
 }
 

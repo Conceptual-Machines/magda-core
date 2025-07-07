@@ -148,7 +148,8 @@ void TrackContentPanel::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) 
 }
 
 void TrackContentPanel::drawTimeGrid(juce::Graphics& g, juce::Rectangle<int> area) {
-    g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE));
+    // Make grid lines more visible
+    g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.2f));
     
     // Calculate appropriate grid spacing based on zoom
     const int minPixelSpacing = 30;
@@ -170,7 +171,8 @@ void TrackContentPanel::drawTimeGrid(juce::Graphics& g, juce::Rectangle<int> are
 
 void TrackContentPanel::drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     // Draw beat subdivisions (quarter notes at 120 BPM = 0.5 seconds)
-    g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).withAlpha(0.3f));
+    // Make beat grid more visible too
+    g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).withAlpha(0.5f));
     
     const double beatInterval = 0.5; // 0.5 seconds per beat at 120 BPM
     const int beatPixelSpacing = static_cast<int>(beatInterval * currentZoom);
