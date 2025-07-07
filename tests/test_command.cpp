@@ -1,23 +1,23 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include "../daw/command.hpp"
-#include <nlohmann/json.hpp>
+#include <juce_core/juce_core.h>
 #include <vector>
 
 TEST_CASE("Command Creation and Basic Operations", "[command]") {
     SECTION("Create command with type") {
-        Command cmd("play");
+        Command cmd(std::string("play"));
         REQUIRE(cmd.getType() == "play");
     }
     
     SECTION("Set and get string parameter") {
-        Command cmd("createTrack");
+        Command cmd(std::string("createTrack"));
         cmd.setParameter("name", std::string("Bass Track"));
         REQUIRE(cmd.getParameter<std::string>("name") == "Bass Track");
     }
     
     SECTION("Set and get numeric parameters") {
-        Command cmd("setVolume");
+        Command cmd(std::string("setVolume"));
         cmd.setParameter("volume", 0.75);
         cmd.setParameter("trackId", 42);
         
@@ -26,13 +26,13 @@ TEST_CASE("Command Creation and Basic Operations", "[command]") {
     }
     
     SECTION("Set and get boolean parameter") {
-        Command cmd("setMute");
+        Command cmd(std::string("setMute"));
         cmd.setParameter("muted", true);
         REQUIRE(cmd.getParameter<bool>("muted") == true);
     }
     
     SECTION("Set and get vector parameter") {
-        Command cmd("addMidiClip");
+        Command cmd(std::string("addMidiClip"));
         std::vector<double> notes = {60.0, 64.0, 67.0};
         cmd.setParameter("notes", notes);
         
@@ -44,7 +44,7 @@ TEST_CASE("Command Creation and Basic Operations", "[command]") {
     }
     
     SECTION("Check parameter existence") {
-        Command cmd("test");
+        Command cmd(std::string("test"));
         cmd.setParameter("exists", 123);
         
         REQUIRE(cmd.hasParameter("exists") == true);
@@ -54,25 +54,25 @@ TEST_CASE("Command Creation and Basic Operations", "[command]") {
 
 TEST_CASE("Command JSON Serialization", "[command]") {
     SECTION("Convert command to JSON") {
-        Command cmd("addMidiClip");
+        Command cmd(std::string("addMidiClip"));
         cmd.setParameter("trackId", std::string("track_1"));
         cmd.setParameter("start", 4.0);
         cmd.setParameter("length", 2.0);
         
-        nlohmann::json json = cmd.toJson();
+        juce::var json = cmd.toJson();
         
-        REQUIRE(json["command"] == "addMidiClip");
-        REQUIRE(json["trackId"] == "track_1");
-        REQUIRE(json["start"] == Catch::Approx(4.0));
-        REQUIRE(json["length"] == Catch::Approx(2.0));
+        REQUIRE(json["command"].toString().toStdString() == "addMidiClip");
+        REQUIRE(json["trackId"].toString().toStdString() == "track_1");
+        REQUIRE((double)json["start"] == Catch::Approx(4.0));
+        REQUIRE((double)json["length"] == Catch::Approx(2.0));
     }
     
     SECTION("Create command from JSON") {
-        nlohmann::json json = {
-            {"command", "play"},
-            {"position", 10.5},
-            {"loop", true}
-        };
+        juce::DynamicObject::Ptr obj = new juce::DynamicObject();
+        obj->setProperty("command", "play");
+        obj->setProperty("position", 10.5);
+        obj->setProperty("loop", true);
+        juce::var json(obj.get());
         
         Command cmd(json);
         
@@ -82,7 +82,7 @@ TEST_CASE("Command JSON Serialization", "[command]") {
     }
     
     SECTION("JSON string conversion") {
-        Command cmd("stop");
+        Command cmd(std::string("stop"));
         cmd.setParameter("fadeOut", 1.0);
         
         std::string json_str = cmd.toJsonString();
@@ -110,22 +110,27 @@ TEST_CASE("CommandResponse", "[command]") {
     
     SECTION("Response with data") {
         CommandResponse response(CommandResponse::Status::Success);
-        nlohmann::json data = {{"trackId", "track_123"}, {"name", "New Track"}};
+        juce::DynamicObject::Ptr obj = new juce::DynamicObject();
+        obj->setProperty("trackId", "track_123");
+        obj->setProperty("name", "New Track");
+        juce::var data(obj.get());
         response.setData(data);
         
-        REQUIRE(response.getData()["trackId"] == "track_123");
-        REQUIRE(response.getData()["name"] == "New Track");
+        REQUIRE(response.getData()["trackId"].toString().toStdString() == "track_123");
+        REQUIRE(response.getData()["name"].toString().toStdString() == "New Track");
     }
     
     SECTION("Convert response to JSON") {
         CommandResponse response(CommandResponse::Status::Pending, "Processing...");
-        nlohmann::json data = {{"progress", 0.5}};
+        juce::DynamicObject::Ptr obj = new juce::DynamicObject();
+        obj->setProperty("progress", 0.5);
+        juce::var data(obj.get());
         response.setData(data);
         
-        nlohmann::json json = response.toJson();
+        juce::var json = response.toJson();
         
-        REQUIRE(json["status"] == "pending");
-        REQUIRE(json["message"] == "Processing...");
-        REQUIRE(json["data"]["progress"] == Catch::Approx(0.5));
+        REQUIRE(json["status"].toString().toStdString() == "pending");
+        REQUIRE(json["message"].toString().toStdString() == "Processing...");
+        REQUIRE((double)json["data"]["progress"] == Catch::Approx(0.5));
     }
 } 

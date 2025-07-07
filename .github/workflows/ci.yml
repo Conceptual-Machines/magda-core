@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop, fix-build ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+        
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Install dependencies (macOS)
+      run: |
+        # macOS has most dependencies built-in
+        # Just ensure we have the latest CMake
+        brew install cmake
+    
+    - name: Configure CMake
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=Debug
+    
+    - name: Build
+      run: |
+        cmake --build build --config Debug -j4
+    
+    - name: Test
+      run: |
+        cd build
+        ctest --output-on-failure -C Debug
+    
+    - name: Run unit tests directly
+      run: |
+        cd build
+        ./tests/magica_tests 

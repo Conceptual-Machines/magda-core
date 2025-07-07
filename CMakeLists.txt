@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(Magica VERSION 0.1.0 LANGUAGES CXX)
+project(Magica VERSION 0.1.0 LANGUAGES C CXX)
 
 # Set C++ standard (required for Tracktion Engine)
 set(CMAKE_CXX_STANDARD 20)
@@ -45,26 +45,17 @@ endif()
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
-# nlohmann/json for JSON handling
-FetchContent_Declare(
-    nlohmann_json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG v3.11.3
-)
+# JSON handling - using JUCE's built-in JSON support instead of nlohmann/json
+# FetchContent_Declare(
+#     nlohmann_json
+#     GIT_REPOSITORY https://github.com/nlohmann/json.git
+#     GIT_TAG v3.11.3
+# )
 
-# gRPC for server communication (using stable version)
-FetchContent_Declare(
-    gRPC
-    GIT_REPOSITORY https://github.com/grpc/grpc
-    GIT_TAG v1.54.0
-)
+# gRPC removed - using simple in-process agent system instead
 
-# Tracktion Engine for DAW functionality (includes JUCE)
-FetchContent_Declare(
-    tracktion_engine
-    GIT_REPOSITORY https://github.com/Tracktion/tracktion_engine.git
-    GIT_TAG develop
-)
+# Tracktion Engine for DAW functionality (using local submodule)
+add_subdirectory(third_party/tracktion_engine)
 
 # Catch2 for testing
 if(MAGICA_BUILD_TESTS)
@@ -75,20 +66,17 @@ if(MAGICA_BUILD_TESTS)
     )
 endif()
 
-# Make dependencies available
-FetchContent_MakeAvailable(nlohmann_json gRPC tracktion_engine)
+# No external dependencies needed for simple agent system
 
 if(MAGICA_BUILD_TESTS)
     FetchContent_MakeAvailable(Catch2)
 endif()
 
-# Find required protobuf components
-find_package(Protobuf CONFIG REQUIRED)
-find_package(gRPC CONFIG REQUIRED)
+# Simple agent system - no external dependencies needed
 
 # Product-based subdirectories
 add_subdirectory(daw)
-add_subdirectory(mcp)
+add_subdirectory(agents)
 
 # Examples
 if(MAGICA_BUILD_EXAMPLES)
@@ -107,8 +95,7 @@ if(MAGICA_BUILD_JUCE_ADAPTER)
 endif()
 
 # Install rules
-install(TARGETS magica_daw magica_mcp
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
+install(TARGETS magica_daw_app
+    BUNDLE DESTINATION .
     RUNTIME DESTINATION bin
 ) 

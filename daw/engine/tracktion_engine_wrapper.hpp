@@ -67,24 +67,54 @@ public:
     std::vector<std::string> getAllTrackIds() const override;
     bool trackExists(const std::string& track_id) const override;
     
-    // ClipInterface implementation
-    std::string createAudioClip(const std::string& track_id, const std::string& file_path,
-                               double start_time, double length) override;
-    std::string createMidiClip(const std::string& track_id, double start_time, double length) override;
+    // ClipInterface implementation - fixed method signatures
+    std::string addMidiClip(const std::string& track_id, 
+                           double start_time, 
+                           double length, 
+                           const std::vector<MidiNote>& notes) override;
+    std::string addAudioClip(const std::string& track_id,
+                            double start_time,
+                            const std::string& audio_file_path) override;
     void deleteClip(const std::string& clip_id) override;
-    void setClipPosition(const std::string& clip_id, double start_time) override;
-    double getClipPosition(const std::string& clip_id) const override;
-    void setClipLength(const std::string& clip_id, double length) override;
+    void moveClip(const std::string& clip_id, double new_start_time) override;
+    void resizeClip(const std::string& clip_id, double new_length) override;
+    double getClipStartTime(const std::string& clip_id) const override;
     double getClipLength(const std::string& clip_id) const override;
-    std::vector<std::string> getClipsInTrack(const std::string& track_id) const override;
+    void addNoteToMidiClip(const std::string& clip_id, const MidiNote& note) override;
+    void removeNotesFromMidiClip(const std::string& clip_id, 
+                                double start_time, 
+                                double end_time) override;
+    std::vector<MidiNote> getMidiClipNotes(const std::string& clip_id) const override;
+    std::vector<std::string> getTrackClips(const std::string& track_id) const override;
+    bool clipExists(const std::string& clip_id) const override;
     
-    // MixerInterface implementation
-    void setTrackVolume(const std::string& track_id, float volume) override;
-    float getTrackVolume(const std::string& track_id) const override;
-    void setTrackPan(const std::string& track_id, float pan) override;
-    float getTrackPan(const std::string& track_id) const override;
-    void setMasterVolume(float volume) override;
-    float getMasterVolume() const override;
+    // MixerInterface implementation - fixed to use double instead of float
+    void setTrackVolume(const std::string& track_id, double volume) override;
+    double getTrackVolume(const std::string& track_id) const override;
+    void setTrackPan(const std::string& track_id, double pan) override;
+    double getTrackPan(const std::string& track_id) const override;
+    void setMasterVolume(double volume) override;
+    double getMasterVolume() const override;
+    std::string addEffect(const std::string& track_id, const std::string& effect_name) override;
+    void removeEffect(const std::string& effect_id) override;
+    void setEffectParameter(const std::string& effect_id, 
+                           const std::string& parameter_name, 
+                           double value) override;
+    double getEffectParameter(const std::string& effect_id, 
+                             const std::string& parameter_name) const override;
+    void setEffectEnabled(const std::string& effect_id, bool enabled) override;
+    bool isEffectEnabled(const std::string& effect_id) const override;
+    std::vector<std::string> getAvailableEffects() const override;
+    std::vector<std::string> getTrackEffects(const std::string& track_id) const override;
+    
+    // Legacy methods for backward compatibility (deprecated)
+    std::string createAudioClip(const std::string& track_id, const std::string& file_path,
+                               double start_time, double length);
+    std::string createMidiClip(const std::string& track_id, double start_time, double length);
+    void setClipPosition(const std::string& clip_id, double start_time);
+    double getClipPosition(const std::string& clip_id) const;
+    void setClipLength(const std::string& clip_id, double length);
+    std::vector<std::string> getClipsInTrack(const std::string& track_id) const;
     
 private:
     // Tracktion Engine components
@@ -96,12 +126,15 @@ private:
     tracktion::Clip* findClipById(const std::string& clip_id) const;
     std::string generateTrackId();
     std::string generateClipId();
+    std::string generateEffectId();
     
     // State tracking
     std::map<std::string, tracktion::Track::Ptr> trackMap_;
     std::map<std::string, tracktion::Clip::Ptr> clipMap_;
+    std::map<std::string, void*> effectMap_;  // For tracking effects
     int nextTrackId_ = 1;
     int nextClipId_ = 1;
+    int nextEffectId_ = 1;
 };
 
 } // namespace magica 
