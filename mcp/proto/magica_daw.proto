@@ -54,6 +54,19 @@ service MagdaDAWService {
     rpc LoadSession(LoadSessionRequest) returns (LoadSessionResponse);
     rpc SaveSession(SaveSessionRequest) returns (SaveSessionResponse);
     rpc GetSessionInfo(GetSessionInfoRequest) returns (GetSessionInfoResponse);
+
+    // === Mode Management ===
+    rpc SetViewMode(SetViewModeRequest) returns (SetViewModeResponse);
+    rpc GetViewMode(GetViewModeRequest) returns (GetViewModeResponse);
+    rpc SetAudioMode(SetAudioModeRequest) returns (SetAudioModeResponse);
+    rpc GetAudioMode(GetAudioModeRequest) returns (GetAudioModeResponse);
+    rpc GetAudioStats(GetAudioStatsRequest) returns (GetAudioStatsResponse);
+    
+    // === Performance Mode ===
+    rpc LaunchClip(LaunchClipRequest) returns (LaunchClipResponse);
+    rpc StopClip(StopClipRequest) returns (StopClipResponse);
+    rpc GetPerformanceClips(GetPerformanceClipsRequest) returns (GetPerformanceClipsResponse);
+    rpc GetPlayingClips(GetPlayingClipsRequest) returns (GetPlayingClipsResponse);
 }
 
 // === Data Types ===
@@ -354,4 +367,89 @@ message GetSessionInfoResponse {
     int32 buffer_size = 3;
     int32 track_count = 4;
     double length_seconds = 5;
+}
+
+// === Mode Management Messages ===
+
+enum ViewMode {
+    ARRANGEMENT = 0;
+    PERFORMANCE = 1;
+}
+
+enum AudioMode {
+    LIVE = 0;
+    STUDIO = 1;
+}
+
+message SetViewModeRequest {
+    ViewMode mode = 1;
+}
+
+message SetViewModeResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message GetViewModeRequest {}
+
+message GetViewModeResponse {
+    ViewMode mode = 1;
+}
+
+message SetAudioModeRequest {
+    AudioMode mode = 1;
+}
+
+message SetAudioModeResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message GetAudioModeRequest {}
+
+message GetAudioModeResponse {
+    AudioMode mode = 1;
+}
+
+message GetAudioStatsRequest {}
+
+message GetAudioStatsResponse {
+    int32 buffer_size = 1;
+    int32 sample_rate = 2;
+    double latency_ms = 3;
+    double cpu_usage = 4;
+}
+
+// === Performance Mode Messages ===
+
+message LaunchClipRequest {
+    string clip_id = 1;
+    double quantize_beats = 2;  // 0 = immediate, 1 = next beat, etc.
+}
+
+message LaunchClipResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message StopClipRequest {
+    string clip_id = 1;
+    double quantize_beats = 2;
+}
+
+message StopClipResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message GetPerformanceClipsRequest {}
+
+message GetPerformanceClipsResponse {
+    repeated string clip_ids = 1;
+}
+
+message GetPlayingClipsRequest {}
+
+message GetPlayingClipsResponse {
+    repeated string clip_ids = 1;
 } 

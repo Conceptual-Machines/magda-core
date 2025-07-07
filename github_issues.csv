@@ -1,0 +1,377 @@
+Title,Description,Labels,Priority,Assignee,Milestone
+"Fix Build System - gRPC Dependencies","The build system has conflicts with gRPC and protobuf dependencies. Need to:
+
+1. Fix gRPC target naming (use `grpc++` instead of `gRPC::grpc++`)
+2. Configure gRPC CMake options properly before FetchContent_MakeAvailable
+3. Remove vcpkg conflicts by setting `CMAKE_TOOLCHAIN_FILE = ""`
+4. Fix protobuf plugin target references
+
+**Current Error:**
+```
+No target "gRPC::grpc_cpp_plugin"
+Target "magica_mcp" links to gRPC::grpc++ but the target was not found
+```
+
+**Solution:**
+- Set gRPC CMake variables before `FetchContent_MakeAvailable(gRPC)`
+- Use `grpc++` and `gpr` targets instead of `gRPC::grpc++`
+- Use `$<TARGET_FILE:grpc_cpp_plugin>` for protobuf generation","build-system,grpc,cmake","High","","Build System"
+"Create Basic UI - Main Window","Create the main application window that's referenced in `magica_daw_main.cpp` but doesn't exist.
+
+**Files to create:**
+- `daw/ui/main_window.hpp`
+- `daw/ui/main_window.cpp`
+
+**Requirements:**
+- JUCE DocumentWindow subclass
+- Basic layout with transport controls, track list, timeline
+- Connect to DAW engine for play/stop operations
+- Integrate with gRPC server for agent communication
+
+**Basic structure:**
+```cpp
+class MainWindow : public juce::DocumentWindow {
+    TransportPanel transport_panel_;
+    TrackListPanel track_list_;
+    TimelinePanel timeline_;
+    MixerPanel mixer_;
+    
+    void onPlayClicked() { daw_engine_->play(); }
+    void onStopClicked() { daw_engine_->stop(); }
+};
+```","ui,core","High","","Basic UI"
+"Create Transport Panel UI","Create transport controls panel for play, stop, record, and transport state.
+
+**Files to create:**
+- `daw/ui/transport_panel.hpp`
+- `daw/ui/transport_panel.cpp`
+
+**Features:**
+- Play/Stop/Record buttons
+- Tempo display and control
+- Time signature display
+- Current position display (bars/beats and time)
+- Loop controls
+- Transport state indicators
+
+**Integration:**
+- Connect to TransportInterface
+- Update UI based on transport state changes
+- Send commands to DAW engine","ui,transport","High","","Basic UI"
+"Create Track List Panel","Create track management panel showing all tracks in the session.
+
+**Files to create:**
+- `daw/ui/track_list.hpp`
+- `daw/ui/track_list.cpp`
+
+**Features:**
+- List of all tracks (MIDI, Audio, Instrument, Bus)
+- Track name editing
+- Mute/Solo/Arm buttons per track
+- Track type indicators
+- Volume faders
+- Track selection
+- Add/Delete track buttons
+
+**Integration:**
+- Connect to TrackInterface
+- Update when tracks are added/removed
+- Reflect track state changes","ui,tracks","High","","Basic UI"
+"Create Timeline Panel","Create timeline view showing the session timeline and playhead.
+
+**Files to create:**
+- `daw/ui/timeline.hpp`
+- `daw/ui/timeline.cpp`
+
+**Features:**
+- Timeline ruler with time and bar/beat markers
+- Playhead position indicator
+- Zoom controls
+- Grid display (bars, beats, ticks)
+- Loop region visualization
+- Click-to-seek functionality
+
+**Integration:**
+- Connect to TransportInterface for playhead position
+- Update playhead position in real-time
+- Handle timeline clicks for seeking","ui,timeline","High","","Basic UI"
+"Create Mixer Panel","Create mixer panel for track volume, pan, and effects.
+
+**Files to create:**
+- `daw/ui/mixer_panel.hpp`
+- `daw/ui/mixer_panel.cpp`
+
+**Features:**
+- Volume faders for each track
+- Pan controls
+- Level meters (VU meters)
+- Effect slots per track
+- Master fader
+- Stereo field visualization
+
+**Integration:**
+- Connect to MixerInterface
+- Real-time level metering
+- Volume/pan parameter updates","ui,mixer","Medium","","Basic UI"
+"Implement Transport Interface","Implement the TransportInterface to connect UI controls to actual DAW operations.
+
+**Files to create:**
+- `daw/engine/transport_interface_impl.hpp`
+- `daw/engine/transport_interface_impl.cpp`
+
+**Implementation:**
+- Connect to TracktionEngine for actual transport operations
+- Implement all virtual methods from TransportInterface
+- Handle play, stop, record, locate, tempo, time signature
+- Provide real-time state updates
+- Thread-safe operations
+
+**Methods to implement:**
+- `play()`, `stop()`, `pause()`, `record()`
+- `locate()`, `locateMusical()`
+- `setTempo()`, `setTimeSignature()`
+- `setLooping()`, `setLoopRegion()`","daw-engine,transport","High","","DAW Integration"
+"Implement Track Interface","Implement the TrackInterface to handle track management operations.
+
+**Files to create:**
+- `daw/engine/track_interface_impl.hpp`
+- `daw/engine/track_interface_impl.cpp`
+
+**Implementation:**
+- Connect to TracktionEngine for track operations
+- Implement track creation, deletion, naming
+- Handle mute, solo, arm operations
+- Manage track types (MIDI, Audio, Instrument, Bus)
+- Provide track state updates
+
+**Methods to implement:**
+- `createTrack()`, `deleteTrack()`
+- `setTrackName()`, `getTrackName()`
+- `muteTrack()`, `soloTrack()`, `armTrack()`
+- `getTracks()`, `getTrackCount()`","daw-engine,tracks","High","","DAW Integration"
+"Implement Clip Interface","Implement the ClipInterface to handle MIDI and audio clip operations.
+
+**Files to create:**
+- `daw/engine/clip_interface_impl.hpp`
+- `daw/engine/clip_interface_impl.cpp`
+
+**Implementation:**
+- Connect to TracktionEngine for clip operations
+- Handle MIDI clip creation and editing
+- Manage audio clip operations
+- Implement note operations (add, remove, edit)
+- Handle clip quantization
+
+**Methods to implement:**
+- `createMidiClip()`, `createAudioClip()`
+- `addNotesToClip()`, `removeNotesFromClip()`
+- `getClipNotes()`, `updateClipNotes()`
+- `quantizeClip()`, `getClipInfo()`","daw-engine,clips","High","","DAW Integration"
+"Implement Mixer Interface","Implement the MixerInterface to handle mixing operations.
+
+**Files to create:**
+- `daw/engine/mixer_interface_impl.hpp`
+- `daw/engine/mixer_interface_impl.cpp`
+
+**Implementation:**
+- Connect to TracktionEngine for mixing operations
+- Handle volume and pan controls
+- Manage effects and plugins
+- Provide real-time metering
+- Handle master bus operations
+
+**Methods to implement:**
+- `setTrackVolume()`, `getTrackVolume()`
+- `setTrackPan()`, `getTrackPan()`
+- `addEffect()`, `removeEffect()`
+- `getLevelMeters()`, `getMasterVolume()`","daw-engine,mixer","Medium","","DAW Integration"
+"Create Command Dispatcher","Create a command dispatcher to route gRPC commands to DAW operations.
+
+**Files to create:**
+- `daw/command_dispatcher.hpp`
+- `daw/command_dispatcher.cpp`
+
+**Implementation:**
+- Register handlers for all DAW operations
+- Connect Command objects to actual DAW interface calls
+- Provide error handling and validation
+- Support async operations where needed
+- Return proper CommandResponse objects
+
+**Handler registration:**
+```cpp
+dispatcher.registerHandler("play", [this](const Command& cmd) {
+    transport_interface_->play();
+    return CommandResponse(CommandResponse::Status::Success, "Playing");
+});
+```
+
+**Commands to handle:**
+- Transport: play, stop, record, set_tempo, set_time_signature
+- Tracks: create_track, delete_track, mute_track, solo_track
+- Clips: create_midi_clip, add_notes, quantize_clip
+- Mixer: set_volume, set_pan, add_effect","grpc,daw-engine","High","","gRPC Integration"
+"Connect gRPC Server to DAW","Connect the gRPC server to the DAW engine by registering command handlers.
+
+**Files to modify:**
+- `daw/magica_daw_main.cpp`
+- `daw/magica.cpp`
+
+**Implementation:**
+- Create CommandDispatcher instance
+- Register all command handlers with GrpcMCPServer
+- Connect DAW interfaces to command handlers
+- Handle gRPC request routing to DAW operations
+- Provide proper error responses
+
+**Integration points:**
+- Register handlers in main application initialization
+- Connect TransportInterface to transport commands
+- Connect TrackInterface to track commands
+- Connect ClipInterface to clip commands
+- Connect MixerInterface to mixer commands","grpc,daw-engine","High","","gRPC Integration"
+"Implement gRPC DAW Server","Create the actual gRPC server implementation that's referenced in main.cpp.
+
+**Files to create:**
+- `daw/server/magica_daw_server.hpp`
+- `daw/server/magica_daw_server.cpp`
+
+**Implementation:**
+- Implement the MagdaDAWService gRPC interface
+- Connect to CommandDispatcher for operation execution
+- Handle all protobuf message types
+- Provide proper gRPC status responses
+- Support streaming operations for real-time updates
+
+**Service methods to implement:**
+- Transport: Play, Stop, Record, SetTempo, SetTimeSignature
+- Tracks: CreateTrack, DeleteTrack, MuteTrack, SoloTrack
+- MIDI: CreateMidiClip, AddNotesToClip, QuantizeClip
+- Audio: CreateAudioClip, GetAudioClipInfo
+- Mixing: SetTrackVolume, SetTrackPan, AddEffect
+- Session: CreateSession, LoadSession, SaveSession
+- Agents: RegisterAgent, SendMessage, BroadcastMessage","grpc,server","High","","gRPC Integration"
+"Add Error Handling and Validation","Add comprehensive error handling and validation throughout the system.
+
+**Areas to improve:**
+- Command parameter validation
+- DAW operation error handling
+- gRPC error responses
+- UI error feedback
+- Logging and debugging
+
+**Implementation:**
+- Validate command parameters before execution
+- Handle DAW operation failures gracefully
+- Provide meaningful error messages
+- Add logging for debugging
+- Implement retry mechanisms where appropriate
+- Add input validation for UI controls","error-handling,validation","Medium","","Quality"
+"Add Unit Tests","Create comprehensive unit tests for all components.
+
+**Test files to create:**
+- `tests/test_transport_interface.cpp`
+- `tests/test_track_interface.cpp`
+- `tests/test_clip_interface.cpp`
+- `tests/test_mixer_interface.cpp`
+- `tests/test_command_dispatcher.cpp`
+- `tests/test_grpc_server.cpp`
+- `tests/test_ui_components.cpp`
+
+**Test coverage:**
+- Interface implementations
+- Command routing
+- gRPC message handling
+- UI component behavior
+- Error scenarios
+- Integration tests","testing,unit-tests","Medium","","Quality"
+"Add Integration Tests","Create integration tests for the complete system.
+
+**Test files to create:**
+- `tests/integration/test_agent_daw_communication.cpp`
+- `tests/integration/test_ui_daw_integration.cpp`
+- `tests/integration/test_grpc_daw_integration.cpp`
+
+**Test scenarios:**
+- Agent connects and sends commands
+- UI updates reflect DAW state changes
+- gRPC calls execute DAW operations
+- Real-time updates work correctly
+- Error handling across system boundaries","testing,integration-tests","Medium","","Quality"
+"Add Documentation","Create comprehensive documentation for the system.
+
+**Documentation to create:**
+- `docs/architecture.md` - System architecture overview
+- `docs/api_reference.md` - gRPC API documentation
+- `docs/ui_guide.md` - User interface guide
+- `docs/agent_development.md` - Guide for developing agents
+- `docs/development_setup.md` - Development environment setup
+- `docs/deployment.md` - Deployment instructions
+
+**Content:**
+- Architecture diagrams
+- API examples
+- Code examples
+- Troubleshooting guides
+- Best practices","documentation","Low","","Documentation"
+"Add CI/CD Pipeline","Set up continuous integration and deployment pipeline.
+
+**Components:**
+- GitHub Actions workflow
+- Automated testing
+- Build verification
+- Code quality checks
+- Automated deployment
+
+**Workflow steps:**
+- Build on multiple platforms
+- Run unit and integration tests
+- Check code formatting
+- Run static analysis
+- Generate documentation
+- Create release artifacts","ci-cd,automation","Low","","DevOps"
+"Add Performance Monitoring","Add performance monitoring and profiling capabilities.
+
+**Components:**
+- Performance metrics collection
+- Real-time monitoring
+- Profiling tools integration
+- Memory usage tracking
+- Audio performance monitoring
+
+**Metrics to track:**
+- gRPC request latency
+- DAW operation performance
+- UI responsiveness
+- Memory usage
+- Audio buffer underruns","performance,monitoring","Low","","Quality"
+"Add Plugin System","Design and implement a plugin system for extending DAW functionality.
+
+**Components:**
+- Plugin interface definition
+- Plugin loading mechanism
+- Plugin communication protocol
+- Plugin management UI
+- Plugin marketplace integration
+
+**Plugin types:**
+- Audio effects plugins
+- MIDI processing plugins
+- Analysis plugins
+- Export plugins
+- Custom UI plugins","plugins,extensibility","Low","","Advanced Features"
+"Add Cloud Integration","Add cloud integration for collaboration and backup.
+
+**Components:**
+- Cloud storage integration
+- Real-time collaboration
+- Session sharing
+- Backup and restore
+- Cloud-based agent hosting
+
+**Features:**
+- Session cloud storage
+- Real-time multi-user editing
+- Agent deployment in cloud
+- Session versioning
+- Cross-device synchronization","cloud,collaboration","Low","","Advanced Features" 
