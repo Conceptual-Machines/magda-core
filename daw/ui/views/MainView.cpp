@@ -20,10 +20,8 @@ MainView::MainView() {
         setPlayheadPosition(position);
     };
     
-    timeline->onZoomChanged = [this](double newZoom) {
-        // Call setHorizontalZoom to get proper playhead centering
-        setHorizontalZoom(newZoom);
-    };
+    // Create zoom manager
+    zoomManager = std::make_unique<ZoomManager>();
     
     // Create track headers panel
     trackHeadersPanel = std::make_unique<TrackHeadersPanel>();
@@ -54,6 +52,9 @@ MainView::MainView() {
     
     // Set up track synchronization between headers and content
     setupTrackSynchronization();
+    
+    // Configure zoom manager callbacks
+    setupZoomManagerCallbacks();
     
     // Set initial timeline length and zoom
     setTimelineLength(120.0);
@@ -107,6 +108,9 @@ void MainView::resized() {
     // Always recalculate zoom to ensure proper timeline distribution
     auto viewportWidth = timelineViewport->getWidth();
     if (viewportWidth > 0) {
+        // Update zoom manager with viewport width
+        zoomManager->setViewportWidth(viewportWidth);
+        
         // Show about 60 seconds initially, but ensure minimum zoom for visibility
         double newZoom = juce::jmax(1.0, viewportWidth / 60.0);
         if (std::abs(horizontalZoom - newZoom) > 0.1) { // Only update if significantly different
@@ -121,44 +125,10 @@ void MainView::resized() {
 }
 
 void MainView::setHorizontalZoom(double zoomFactor) {
-    // Update zoom
     horizontalZoom = juce::jmax(0.1, zoomFactor);
-    
-    // Update zoom on timeline and track content
-    timeline->setZoom(horizontalZoom);
-    trackContentPanel->setZoom(horizontalZoom);
-    
-    updateContentSizes();
-    
-    // Center playhead in viewport after zoom
-    int viewportWidth = trackContentViewport->getWidth();
-    int contentWidth = static_cast<int>(timelineLength * horizontalZoom);
-    
-    if (contentWidth > viewportWidth) {
-        // Calculate playhead position in pixels with new zoom
-        int playheadPixelPos = static_cast<int>(playheadPosition * horizontalZoom);
-        
-        // Center playhead in viewport
-        int newScrollX = playheadPixelPos - (viewportWidth / 2);
-        
-        // Clamp scroll position to valid range
-        int maxScrollX = juce::jmax(0, contentWidth - viewportWidth);
-        newScrollX = juce::jlimit(0, maxScrollX, newScrollX);
-        
-        // Apply the new scroll position to both viewports
-        isUpdatingFromZoom = true;
-        timelineViewport->setViewPosition(newScrollX, 0);
-        trackContentViewport->setViewPosition(newScrollX, trackContentViewport->getViewPositionY());
-        isUpdatingFromZoom = false;
-    } else {
-        // If content fits in viewport, scroll to beginning
-        isUpdatingFromZoom = true;
-        timelineViewport->setViewPosition(0, 0);
-        trackContentViewport->setViewPosition(0, trackContentViewport->getViewPositionY());
-        isUpdatingFromZoom = false;
-    }
-    
-    repaint(); // Repaint for unified playhead
+    zoomManager->setZoom(horizontalZoom);
+    // Ensure horizontalZoom stays in sync with ZoomManager
+    horizontalZoom = zoomManager->getCurrentZoom();
 }
 
 void MainView::setVerticalZoom(double zoomFactor) {
@@ -200,7 +170,7 @@ void MainView::setTimelineLength(double lengthInSeconds) {
     timelineLength = lengthInSeconds;
     timeline->setTimelineLength(lengthInSeconds);
     trackContentPanel->setTimelineLength(lengthInSeconds);
-    updateContentSizes();
+    zoomManager->setTimelineLength(lengthInSeconds);
 }
 
 void MainView::setPlayheadPosition(double position) {
@@ -263,6 +233,8 @@ void MainView::scrollBarMoved(juce::ScrollBar* scrollBarThatHasMoved, double new
     // Sync timeline viewport when track content viewport scrolls horizontally
     if (scrollBarThatHasMoved == &trackContentViewport->getHorizontalScrollBar()) {
         timelineViewport->setViewPosition(static_cast<int>(newRangeStart), 0);
+        // Notify zoom manager of scroll position change
+        zoomManager->setCurrentScrollPosition(static_cast<int>(newRangeStart));
         // Force playhead repaint when scrolling
         playheadComponent->repaint();
     }
@@ -306,6 +278,39 @@ void MainView::setupTrackSynchronization() {
     };
 }
 
+void MainView::setupZoomManagerCallbacks() {
+    // Set up callback to handle zoom changes
+    zoomManager->onZoomChanged = [this](double newZoom) {
+        isUpdatingFromZoom = true;
+        horizontalZoom = newZoom;
+        timeline->setZoom(newZoom);
+        trackContentPanel->setZoom(newZoom);
+        updateContentSizes();
+        playheadComponent->repaint();
+        repaint();
+        isUpdatingFromZoom = false;
+    };
+    
+    // Set up callback to handle scroll changes
+    zoomManager->onScrollChanged = [this](int scrollX) {
+        isUpdatingFromZoom = true;
+        timelineViewport->setViewPosition(scrollX, 0);
+        trackContentViewport->setViewPosition(scrollX, trackContentViewport->getViewPositionY());
+        playheadComponent->repaint();
+        isUpdatingFromZoom = false;
+    };
+    
+    // Set up callback to handle content size changes
+    zoomManager->onContentSizeChanged = [this]([[maybe_unused]] int contentWidth) {
+        updateContentSizes();
+    };
+    
+    // Set up timeline zoom callback to use ZoomManager
+    timeline->onZoomChanged = [this](double newZoom) {
+        zoomManager->setZoom(newZoom);
+    };
+}
+
 // PlayheadComponent implementation
 MainView::PlayheadComponent::PlayheadComponent(MainView& owner) : owner(owner) {
     setInterceptsMouseClicks(false, true); // Only intercept clicks when hitTest returns true
@@ -325,6 +330,10 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
     // Adjust for horizontal scroll offset from track content viewport (not timeline viewport)
     int scrollOffset = owner.trackContentViewport->getViewPositionX();
     playheadX -= scrollOffset;
+    
+    // Debug output to diagnose sync issues
+    std::cout << "🎯 PLAYHEAD: pos=" << playheadPosition << ", zoom=" << owner.horizontalZoom 
+              << ", scrollOffset=" << scrollOffset << ", finalX=" << playheadX << std::endl;
     
     // Only draw if playhead is visible
     if (playheadX >= 0 && playheadX < getWidth()) {
@@ -349,7 +358,7 @@ void MainView::PlayheadComponent::setPlayheadPosition(double position) {
     repaint();
 }
 
-bool MainView::PlayheadComponent::hitTest(int x, int y) {
+bool MainView::PlayheadComponent::hitTest(int x, [[maybe_unused]] int y) {
     // Only intercept mouse events when near the actual playhead
     if (playheadPosition < 0 || playheadPosition > owner.timelineLength) {
         return false;

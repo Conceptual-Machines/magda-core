@@ -6,6 +6,7 @@
 #include "../components/TrackContentPanel.hpp"
 #include "../components/TimelineComponent.hpp"
 #include "../components/SvgButton.hpp"
+#include "../components/ZoomManager.hpp"
 
 namespace magica {
 
@@ -70,6 +71,9 @@ private:
     // Playhead component (always on top)
     class PlayheadComponent;
     std::unique_ptr<PlayheadComponent> playheadComponent;
+    
+    // Zoom management
+    std::unique_ptr<ZoomManager> zoomManager;
 
     // Zoom and scroll state
     double horizontalZoom = 1.0;  // Pixels per second
@@ -101,6 +105,7 @@ private:
     void syncHorizontalScrolling();
     void syncTrackHeights();
     void setupTrackSynchronization();
+    void setupZoomManagerCallbacks();
     
     // Resize handle helper methods
     juce::Rectangle<int> getResizeHandleArea() const;

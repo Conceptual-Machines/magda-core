@@ -45,6 +45,7 @@ set(DAW_UI_SOURCES
     ui/components/TrackContentPanel.cpp
     ui/components/SvgButton.cpp
     ui/components/TimelineFiller.cpp
+    ui/components/ZoomManager.cpp
 )
 
 # All DAW headers
@@ -71,6 +72,7 @@ set(DAW_HEADERS
     ui/components/TrackHeadersPanel.hpp
     ui/components/TrackContentPanel.hpp
     ui/components/SvgButton.hpp
+    ui/components/ZoomManager.hpp
 )
 
 # Create DAW library (core functionality)

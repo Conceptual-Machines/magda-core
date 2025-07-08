@@ -2,6 +2,7 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include <iostream>
+#include <cmath>
 
 namespace magica {
 
@@ -251,9 +252,9 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
                 repaint();
             }
             
-            // Simple zoom calculation - drag up = zoom in, drag down = zoom out
+            // Zoom calculation - drag up = zoom in, drag down = zoom out
             int actualDeltaY = zoomStartY - event.y;
-            double sensitivity = 60.0; // 60 pixels = 2x zoom
+            double sensitivity = 120.0; // 120 pixels = 2x zoom (more controlled)
             double zoomFactor = 1.0 + (actualDeltaY / sensitivity);
             double newZoom = juce::jlimit(0.1, 100000.0, zoomStartValue * zoomFactor);
             
@@ -324,13 +325,13 @@ void TimelineComponent::clearSections() {
 
 double TimelineComponent::pixelToTime(int pixel) const {
     if (zoom > 0) {
-        return viewStartTime + (pixel - LEFT_PADDING) / zoom;
+        return (pixel - LEFT_PADDING) / zoom;
     }
-    return viewStartTime;
+    return 0.0;
 }
 
 int TimelineComponent::timeToPixel(double time) const {
-    return static_cast<int>((time - viewStartTime) * zoom) + LEFT_PADDING;
+    return static_cast<int>(time * zoom);
 }
 
 int TimelineComponent::timeDurationToPixels(double duration) const {
@@ -392,7 +393,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
     
     // Draw time markers
     for (double time = startTime; time <= timelineLength; time += markerInterval) {
-        int x = timeToPixel(time);
+        int x = timeToPixel(time) + LEFT_PADDING;
         if (x >= 0 && x < getWidth()) {
             // Draw short tick mark at bottom (back to original style)
             g.drawLine(x, getHeight() - 15, x, getHeight() - 2);
@@ -426,7 +427,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
 }
 
 void TimelineComponent::drawPlayhead(juce::Graphics& g) {
-    int playheadX = timeToPixel(playheadPosition);
+    int playheadX = timeToPixel(playheadPosition) + LEFT_PADDING;
     if (playheadX >= 0 && playheadX < getWidth()) {
         // Draw shadow for better visibility
         g.setColour(juce::Colours::black.withAlpha(0.6f));
@@ -444,8 +445,8 @@ void TimelineComponent::drawArrangementSections(juce::Graphics& g) {
 }
 
 void TimelineComponent::drawSection(juce::Graphics& g, const ArrangementSection& section, bool isSelected) const {
-    int startX = timeToPixel(section.startTime);
-    int endX = timeToPixel(section.endTime);
+    int startX = timeToPixel(section.startTime) + LEFT_PADDING;
+    int endX = timeToPixel(section.endTime) + LEFT_PADDING;
     int width = endX - startX;
     
     if (width <= 0 || startX >= getWidth() || endX <= 0) {
@@ -517,8 +518,8 @@ bool TimelineComponent::isOnSectionEdge(int x, int sectionIndex, bool& isStartEd
     }
     
     const auto& section = *sections[sectionIndex];
-    int startX = timeToPixel(section.startTime);
-    int endX = timeToPixel(section.endTime);
+    int startX = timeToPixel(section.startTime) + LEFT_PADDING;
+    int endX = timeToPixel(section.endTime) + LEFT_PADDING;
     
     const int edgeThreshold = 5; // 5 pixels from edge
     

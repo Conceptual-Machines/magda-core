@@ -58,7 +58,6 @@ private:
     double timelineLength = 300.0;
     double playheadPosition = 0.0;
     double zoom = 1.0; // pixels per second
-    double viewStartTime = 0.0; // What time is shown at the left edge of the view
     
     // Arrangement sections
     std::vector<std::unique_ptr<ArrangementSection>> sections;
@@ -71,6 +70,7 @@ private:
     // Zoom interaction state
     bool isZooming = false;
     int zoomStartY = 0;
+    int zoomStartX = 0; // Mouse X position when zoom started
     double zoomStartValue = 1.0;
     
     // Helper methods
