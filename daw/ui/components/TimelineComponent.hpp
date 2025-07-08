@@ -58,6 +58,7 @@ private:
     double timelineLength = 300.0;
     double playheadPosition = 0.0;
     double zoom = 1.0; // pixels per second
+    double viewStartTime = 0.0; // What time is shown at the left edge of the view
     
     // Arrangement sections
     std::vector<std::unique_ptr<ArrangementSection>> sections;
@@ -75,6 +76,7 @@ private:
     // Helper methods
     double pixelToTime(int pixel) const;
     int timeToPixel(double time) const;
+    int timeDurationToPixels(double duration) const; // For calculating spacing/widths
     void drawTimeMarkers(juce::Graphics& g);
     void drawPlayhead(juce::Graphics& g);
     void drawArrangementSections(juce::Graphics& g);

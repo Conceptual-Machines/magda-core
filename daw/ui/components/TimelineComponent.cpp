@@ -324,13 +324,17 @@ void TimelineComponent::clearSections() {
 
 double TimelineComponent::pixelToTime(int pixel) const {
     if (zoom > 0) {
-        return (pixel - LEFT_PADDING) / zoom;
+        return viewStartTime + (pixel - LEFT_PADDING) / zoom;
     }
-    return 0.0;
+    return viewStartTime;
 }
 
 int TimelineComponent::timeToPixel(double time) const {
-    return static_cast<int>(time * zoom);
+    return static_cast<int>((time - viewStartTime) * zoom) + LEFT_PADDING;
+}
+
+int TimelineComponent::timeDurationToPixels(double duration) const {
+    return static_cast<int>(duration * zoom);
 }
 
 void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
@@ -361,18 +365,18 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
     // Find the appropriate interval
     double markerInterval = 1.0; // Default to 1 second
     for (double interval : intervals) {
-        if (timeToPixel(interval) >= minPixelSpacing) {
+        if (timeDurationToPixels(interval) >= minPixelSpacing) {
             markerInterval = interval;
             break;
         }
     }
     
     // If even the finest interval is too wide, use sample-level precision
-    if (markerInterval == 0.001 && timeToPixel(0.001) > minPixelSpacing * 2) {
+    if (markerInterval == 0.001 && timeDurationToPixels(0.001) > minPixelSpacing * 2) {
         // At very high zoom, show sample markers (assuming 44.1kHz)
         double sampleInterval = 1.0 / 44100.0; // ~0.0000227 seconds per sample
         int sampleStep = 1;
-        while (timeToPixel(sampleStep * sampleInterval) < minPixelSpacing) {
+        while (timeDurationToPixels(sampleStep * sampleInterval) < minPixelSpacing) {
             sampleStep *= 10; // 1, 10, 100, 1000 samples
         }
         markerInterval = sampleStep * sampleInterval;
@@ -388,7 +392,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
     
     // Draw time markers
     for (double time = startTime; time <= timelineLength; time += markerInterval) {
-        int x = timeToPixel(time) + LEFT_PADDING;
+        int x = timeToPixel(time);
         if (x >= 0 && x < getWidth()) {
             // Draw short tick mark at bottom (back to original style)
             g.drawLine(x, getHeight() - 15, x, getHeight() - 2);
@@ -422,7 +426,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
 }
 
 void TimelineComponent::drawPlayhead(juce::Graphics& g) {
-    int playheadX = timeToPixel(playheadPosition) + LEFT_PADDING;
+    int playheadX = timeToPixel(playheadPosition);
     if (playheadX >= 0 && playheadX < getWidth()) {
         // Draw shadow for better visibility
         g.setColour(juce::Colours::black.withAlpha(0.6f));
@@ -440,8 +444,8 @@ void TimelineComponent::drawArrangementSections(juce::Graphics& g) {
 }
 
 void TimelineComponent::drawSection(juce::Graphics& g, const ArrangementSection& section, bool isSelected) const {
-    int startX = timeToPixel(section.startTime) + LEFT_PADDING;
-    int endX = timeToPixel(section.endTime) + LEFT_PADDING;
+    int startX = timeToPixel(section.startTime);
+    int endX = timeToPixel(section.endTime);
     int width = endX - startX;
     
     if (width <= 0 || startX >= getWidth() || endX <= 0) {
@@ -513,8 +517,8 @@ bool TimelineComponent::isOnSectionEdge(int x, int sectionIndex, bool& isStartEd
     }
     
     const auto& section = *sections[sectionIndex];
-    int startX = timeToPixel(section.startTime) + LEFT_PADDING;
-    int endX = timeToPixel(section.endTime) + LEFT_PADDING;
+    int startX = timeToPixel(section.startTime);
+    int endX = timeToPixel(section.endTime);
     
     const int edgeThreshold = 5; // 5 pixels from edge
     
