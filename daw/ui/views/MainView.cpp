@@ -79,6 +79,9 @@ void MainView::resized() {
     lockButtonArea = lockButtonArea.removeFromTop(30).reduced(5); // 30px height, 5px margin
     arrangementLockButton->setBounds(lockButtonArea);
     
+    // Add padding space for the resize handle
+    timelineArea.removeFromLeft(HEADER_CONTENT_PADDING); // Remove padding from timeline area too
+    
     // Timeline takes the remaining width
     timelineViewport->setBounds(timelineArea);
     
@@ -86,11 +89,16 @@ void MainView::resized() {
     auto trackHeadersArea = bounds.removeFromLeft(trackHeaderWidth);
     trackHeadersPanel->setBounds(trackHeadersArea);
     
+    // Remove padding space between headers and content
+    bounds.removeFromLeft(HEADER_CONTENT_PADDING);
+    
     // Track content viewport gets the remaining space
     trackContentViewport->setBounds(bounds);
     
-    // Playhead component covers only the content area (not scrollbars)
+    // Playhead component extends from above timeline down to track content 
+    // This allows the triangle to be drawn in the timeline area
     auto playheadArea = bounds;
+    playheadArea = playheadArea.withTop(TIMELINE_HEIGHT - 20); // Start 20px above timeline border
     // Reduce the area to avoid covering scrollbars
     int scrollBarThickness = trackContentViewport->getScrollBarThickness();
     playheadArea = playheadArea.withTrimmedRight(scrollBarThickness).withTrimmedBottom(scrollBarThickness);
@@ -300,7 +308,7 @@ void MainView::setupTrackSynchronization() {
 
 // PlayheadComponent implementation
 MainView::PlayheadComponent::PlayheadComponent(MainView& owner) : owner(owner) {
-    setInterceptsMouseClicks(true, true); // Enable mouse interaction for dragging
+    setInterceptsMouseClicks(false, true); // Only intercept clicks when hitTest returns true
 }
 
 MainView::PlayheadComponent::~PlayheadComponent() = default;
@@ -311,7 +319,8 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
     }
     
     // Calculate playhead position in pixels
-    int playheadX = static_cast<int>(playheadPosition * owner.horizontalZoom);
+    // Add LEFT_PADDING to align with timeline markers and track grid lines (18 pixels)
+    int playheadX = static_cast<int>(playheadPosition * owner.horizontalZoom) + 18;
     
     // Adjust for horizontal scroll offset from track content viewport (not timeline viewport)
     int scrollOffset = owner.trackContentViewport->getViewPositionX();
@@ -319,19 +328,19 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
     
     // Only draw if playhead is visible
     if (playheadX >= 0 && playheadX < getWidth()) {
-        // Draw shadow for better visibility
-        g.setColour(juce::Colours::black.withAlpha(0.6f));
-        g.drawLine(playheadX + 1, 0, playheadX + 1, getHeight(), 5.0f);
-        
-        // Draw main playhead line
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        g.drawLine(playheadX, 0, playheadX, getHeight(), 4.0f);
-        
-        // Draw playhead handle at the top
+        // Draw playhead handle triangle sitting entirely in timeline area
+        // Triangle top at y=8 (timeline area), point at y=20 (exactly on timeline border)
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         juce::Path triangle;
-        triangle.addTriangle(playheadX - 6, 0, playheadX + 6, 0, playheadX, 12);
+        triangle.addTriangle(playheadX - 6, 8, playheadX + 6, 8, playheadX, 20);
         g.fillPath(triangle);
+        
+        // Draw playhead line from timeline border down through tracks
+        g.setColour(juce::Colours::black.withAlpha(0.6f));
+        g.drawLine(playheadX + 1, 20, playheadX + 1, getHeight(), 5.0f);
+        
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        g.drawLine(playheadX, 20, playheadX, getHeight(), 4.0f);
     }
 }
 
@@ -340,74 +349,82 @@ void MainView::PlayheadComponent::setPlayheadPosition(double position) {
     repaint();
 }
 
-void MainView::PlayheadComponent::mouseDown(const juce::MouseEvent& event) {
-    // Convert event position to MainView coordinates
-    auto mainViewEvent = event.getEventRelativeTo(&owner);
-    
-    // Check if mouse is over resize handle - if so, forward to MainView
-    if (owner.getResizeHandleArea().contains(mainViewEvent.getPosition())) {
-        owner.mouseDown(mainViewEvent);
-        return;
+bool MainView::PlayheadComponent::hitTest(int x, int y) {
+    // Only intercept mouse events when near the actual playhead
+    if (playheadPosition < 0 || playheadPosition > owner.timelineLength) {
+        return false;
     }
     
-    // Check if clicking near the playhead line
-    int playheadX = static_cast<int>(playheadPosition * owner.horizontalZoom);
+    // Calculate playhead position in pixels
+    int playheadX = static_cast<int>(playheadPosition * owner.horizontalZoom) + 18;
+    
+    // Adjust for horizontal scroll offset
     int scrollOffset = owner.trackContentViewport->getViewPositionX();
     playheadX -= scrollOffset;
     
-    // Allow clicking within 10 pixels of the playhead line
-    if (std::abs(event.x - playheadX) <= 10) {
+    // Only intercept if within 10 pixels of the playhead
+    return std::abs(x - playheadX) <= 10;
+}
+
+void MainView::PlayheadComponent::mouseDown(const juce::MouseEvent& e) {
+    // Component now starts 20px above timeline border
+    // Add LEFT_PADDING to align with timeline markers and track grid lines (18 pixels)
+    int playheadX = static_cast<int>(playheadPosition * owner.horizontalZoom) + 18;
+    
+    // Adjust for horizontal scroll offset
+    int scrollOffset = owner.trackContentViewport->getViewPositionX();
+    playheadX -= scrollOffset;
+    
+    // Check if click is near the playhead (within 10 pixels)
+    if (std::abs(e.x - playheadX) <= 10) {
         isDragging = true;
-        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+        dragStartX = e.x;
+        dragStartPosition = playheadPosition;
     }
 }
 
-void MainView::PlayheadComponent::mouseDrag(const juce::MouseEvent& event) {
-    // If owner is resizing headers, pass through to parent
-    if (owner.isResizingHeaders) {
-        auto mainViewEvent = event.getEventRelativeTo(&owner);
-        owner.mouseDrag(mainViewEvent);
-        return;
-    }
-    
+void MainView::PlayheadComponent::mouseDrag(const juce::MouseEvent& e) {
     if (isDragging) {
-        // Calculate new playhead position based on mouse X position
-        int scrollOffset = owner.trackContentViewport->getViewPositionX();
-        int adjustedX = event.x + scrollOffset;
-        double newPosition = static_cast<double>(adjustedX) / owner.horizontalZoom;
+        // Calculate the change in position
+        int deltaX = e.x - dragStartX;
         
-        // Clamp to timeline bounds
+        // Convert pixel change to time change
+        double deltaTime = deltaX / owner.horizontalZoom;
+        
+        // Calculate new playhead position
+        double newPosition = dragStartPosition + deltaTime;
+        
+        // Clamp to valid range
         newPosition = juce::jlimit(0.0, owner.timelineLength, newPosition);
         
         // Update playhead position
         owner.setPlayheadPosition(newPosition);
+        
+        // Notify timeline of position change
+        owner.timeline->setPlayheadPosition(newPosition);
     }
 }
 
-void MainView::PlayheadComponent::mouseUp(const juce::MouseEvent& event) {
-    // If owner is resizing headers, pass through to parent
-    if (owner.isResizingHeaders) {
-        auto mainViewEvent = event.getEventRelativeTo(&owner);
-        owner.mouseUp(mainViewEvent);
-        return;
-    }
-    
+void MainView::PlayheadComponent::mouseUp([[maybe_unused]] const juce::MouseEvent& event) {
     isDragging = false;
     setMouseCursor(juce::MouseCursor::NormalCursor);
 }
 
 void MainView::PlayheadComponent::mouseMove(const juce::MouseEvent& event) {
-    // Convert event position to MainView coordinates
-    auto mainViewEvent = event.getEventRelativeTo(&owner);
+    // Component now starts 20px above timeline border
+    // Add LEFT_PADDING to align with timeline markers and track grid lines (18 pixels)
+    int playheadX = static_cast<int>(playheadPosition * owner.horizontalZoom) + 18;
     
-    // Check if over resize handle - pass through to parent for cursor handling
-    if (owner.getResizeHandleArea().contains(mainViewEvent.getPosition())) {
-        owner.mouseMove(mainViewEvent);
-        return;
+    // Adjust for horizontal scroll offset
+    int scrollOffset = owner.trackContentViewport->getViewPositionX();
+    playheadX -= scrollOffset;
+    
+    // Change cursor when over playhead
+    if (std::abs(event.x - playheadX) <= 10) {
+        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+    } else {
+        setMouseCursor(juce::MouseCursor::NormalCursor);
     }
-    
-    // Default cursor
-    setMouseCursor(juce::MouseCursor::NormalCursor);
 }
 
 void MainView::mouseDown(const juce::MouseEvent& event) {
@@ -436,7 +453,7 @@ void MainView::mouseDrag(const juce::MouseEvent& event) {
     }
 }
 
-void MainView::mouseUp(const juce::MouseEvent& event) {
+void MainView::mouseUp([[maybe_unused]] const juce::MouseEvent& event) {
     if (isResizingHeaders) {
         isResizingHeaders = false;
         setMouseCursor(juce::MouseCursor::NormalCursor);
@@ -458,18 +475,17 @@ void MainView::mouseMove(const juce::MouseEvent& event) {
     }
 }
 
-void MainView::mouseExit(const juce::MouseEvent& event) {
+void MainView::mouseExit([[maybe_unused]] const juce::MouseEvent& event) {
     setMouseCursor(juce::MouseCursor::NormalCursor);
     repaint(getResizeHandleArea()); // Remove hover effect
 }
 
 // Resize handle helper methods
 juce::Rectangle<int> MainView::getResizeHandleArea() const {
-    // Make the resize handle area wider for easier grabbing
-    int handleWidth = 8; // Increased from 4 to 8 pixels
-    return juce::Rectangle<int>(trackHeaderWidth - handleWidth / 2, 
+    // Position the resize handle in the padding space between headers and content
+    return juce::Rectangle<int>(trackHeaderWidth, 
                                TIMELINE_HEIGHT, 
-                               handleWidth, 
+                               HEADER_CONTENT_PADDING, 
                                getHeight() - TIMELINE_HEIGHT);
 }
 

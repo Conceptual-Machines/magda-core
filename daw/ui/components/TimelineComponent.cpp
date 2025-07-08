@@ -1,6 +1,7 @@
 #include "TimelineComponent.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
+#include <iostream>
 
 namespace magica {
 
@@ -28,16 +29,12 @@ void TimelineComponent::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
     
-    // Draw subtle zoom area indicator in lower half with shadow effect
-    auto lowerHalf = getLocalBounds().removeFromBottom(getHeight() / 2);
+    // Show visual feedback when actively zooming
     if (isZooming) {
-        // Slightly more prominent when actively zooming
+        // Slightly brighten the background when zooming
         g.setColour(DarkTheme::getColour(DarkTheme::TIMELINE_BACKGROUND).brighter(0.1f));
-    } else {
-        // Subtle indication when not zooming
-        g.setColour(DarkTheme::getColour(DarkTheme::TIMELINE_BACKGROUND).brighter(0.03f));
+        g.fillRect(getLocalBounds().reduced(1));
     }
-    g.fillRect(lowerHalf);
     
     // Draw arrangement sections first (behind time markers)
     drawArrangementSections(g);
@@ -68,27 +65,82 @@ void TimelineComponent::setZoom(double pixelsPerSecond) {
 }
 
 void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
-    // Check if this is a zoom gesture (click in lower half of timeline for zoom)
-    if (event.y > getHeight() / 2) {
-        isZooming = true;
-        zoomStartY = event.y;
-        zoomStartValue = zoom;
-        
-        // Change cursor to magnifying glass
-        setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
-        
-        // Repaint to show zoom mode UI
-        repaint();
-        
-        return;
+    // Store initial mouse position for drag detection
+    zoomStartY = event.y;
+    zoomStartValue = zoom;
+    
+    // FIRST: Check if mouseDown is even reaching us
+    std::cout << "🎯 MOUSE DOWN REACHED TIMELINE COMPONENT! Y=" << event.y << " X=" << event.x << std::endl;
+    std::cout << "🎯 Timeline bounds: width=" << getWidth() << " height=" << getHeight() << std::endl;
+    std::cout << "🎯 Timeline position: x=" << getX() << " y=" << getY() << std::endl;
+    
+    // Check if we're in the critical tick area
+    if (event.y >= 65) {
+        std::cout << "🎯 *** CLICK IN TICK AREA! Y=" << event.y << " ***" << std::endl;
     }
     
-    // Always prioritize playhead positioning unless specifically targeting arrangement sections
-    // and arrangement sections are unlocked
-    if (!arrangementLocked && event.y <= getHeight() / 2) {
-        // Check if clicking on arrangement section (only in upper half)
+    // Define zones based on actual drawing layout with expanded zoom zone
+    int sectionsHeight = static_cast<int>(getHeight() * 0.4);  // Top 40% - sections area
+    int playheadZoneStart = getHeight() - 25;  // Bottom 25 pixels for numbers + ticks (reduced from 40)
+    
+    bool inPlayheadZone = event.y >= playheadZoneStart;
+    bool inSectionsArea = event.y <= sectionsHeight;
+    bool inZoomZone = event.y > sectionsHeight && event.y < playheadZoneStart;
+    
+    // DEBUG: Use multiple output methods
+    DBG("=== TIMELINE MOUSE DOWN DEBUG ===");
+    DBG("Mouse Y: " << event.y);
+    DBG("Timeline Height: " << getHeight());
+    DBG("Sections Height: " << sectionsHeight);
+    DBG("Playhead Zone Start: " << playheadZoneStart);
+    DBG("In Sections Area: " << (inSectionsArea ? "YES" : "NO"));
+    DBG("In Zoom Zone: " << (inZoomZone ? "YES" : "NO"));
+    DBG("In Playhead Zone: " << (inPlayheadZone ? "YES" : "NO"));
+    DBG("Arrangement Locked: " << (arrangementLocked ? "YES" : "NO"));
+    
+    // Also output to console
+    std::cout << "=== TIMELINE MOUSE DOWN DEBUG ===" << std::endl;
+    std::cout << "Mouse Y: " << event.y << std::endl;
+    std::cout << "Timeline Height: " << getHeight() << std::endl;
+    std::cout << "Sections (0-" << sectionsHeight << "), Zoom (" << sectionsHeight << "-" << playheadZoneStart << "), Playhead (" << playheadZoneStart << "-" << getHeight() << ")" << std::endl;
+    std::cout << "In Sections: " << (inSectionsArea ? "YES" : "NO") << ", In Zoom: " << (inZoomZone ? "YES" : "NO") << ", In Playhead: " << (inPlayheadZone ? "YES" : "NO") << std::endl;
+    std::cout << "Numbers area: " << (getHeight() - 35) << "-" << (getHeight() - 15) << ", Ticks area: " << (getHeight() - 15) << "-" << (getHeight() - 2) << std::endl;
+    
+    // Zone 1: Playhead zone (bottom area with ticks and numbers)
+    if (inPlayheadZone) {
+        DBG("ENTERING PLAYHEAD ZONE LOGIC");
+        std::cout << "🎯 *** PLAYHEAD ZONE TRIGGERED *** Y=" << event.y << " playheadStart=" << playheadZoneStart << std::endl;
+        
+        double clickTime = pixelToTime(event.x);
+        clickTime = juce::jlimit(0.0, timelineLength, clickTime);
+        
+        DBG("Setting playhead to time: " << clickTime);
+        std::cout << "Setting playhead to time: " << clickTime << std::endl;
+        setPlayheadPosition(clickTime);
+        
+        if (onPlayheadPositionChanged) {
+            DBG("Calling onPlayheadPositionChanged callback");
+            std::cout << "Calling onPlayheadPositionChanged callback" << std::endl;
+            onPlayheadPositionChanged(clickTime);
+        }
+        
+        DBG("RETURNING FROM PLAYHEAD ZONE");
+        std::cout << "RETURNING FROM PLAYHEAD ZONE" << std::endl;
+        return; // No dragging from playhead zone
+    }
+    
+    // Zone 2: Sections area handling (when unlocked)
+    if (!arrangementLocked && inSectionsArea) {
+        DBG("CHECKING SECTIONS AREA");
+        std::cout << "CHECKING SECTIONS AREA" << std::endl;
+        
         int sectionIndex = findSectionAtPosition(event.x, event.y);
+        DBG("Section index found: " << sectionIndex);
+        std::cout << "Section index found: " << sectionIndex << std::endl;
+        
         if (sectionIndex >= 0) {
+            DBG("ENTERING SECTION EDITING LOGIC");
+            std::cout << "ENTERING SECTION EDITING LOGIC" << std::endl;
             selectedSectionIndex = sectionIndex;
             
             // Check if clicking on section edge for resizing
@@ -96,49 +148,49 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
             if (isOnSectionEdge(event.x, sectionIndex, isStartEdge)) {
                 isDraggingEdge = true;
                 isDraggingStart = isStartEdge;
+                DBG("Starting edge drag");
+                std::cout << "Starting edge drag" << std::endl;
             } else {
                 isDraggingSection = true;
+                DBG("Starting section drag");
+                std::cout << "Starting section drag" << std::endl;
             }
             repaint();
             return;
         }
     }
     
-    // Default behavior: handle playhead positioning
-    double clickTime = pixelToTime(event.x);
-    clickTime = juce::jlimit(0.0, timelineLength, clickTime); // Clamp to valid range
-    setPlayheadPosition(clickTime);
+    // Zone 3: Zoom zone (middle area between sections and playhead zone)
+    if (inZoomZone) {
+        DBG("ENTERING ZOOM ZONE LOGIC");
+        std::cout << "🎯 *** ZOOM ZONE TRIGGERED *** Y=" << event.y << " (zone: " << sectionsHeight << "-" << playheadZoneStart << ")" << std::endl;
+        std::cout << "Prepared for zoom dragging" << std::endl;
+        return; // Ready for zoom dragging in mouseDrag
+    }
     
-    // Notify parent of position change
-    if (onPlayheadPositionChanged) {
-        onPlayheadPositionChanged(clickTime);
+    // Fallback: if not in any specific zone, still allow zoom
+    DBG("NOT IN ANY SPECIFIC ZONE - ALLOWING ZOOM");
+    std::cout << "🎯 *** FALLBACK ZONE *** Y=" << event.y << " - zones: sections=" << inSectionsArea << " zoom=" << inZoomZone << " playhead=" << inPlayheadZone << std::endl;
+}
+
+void TimelineComponent::mouseMove(const juce::MouseEvent& event) {
+    // Check if we're getting mouse events in the tick area
+    if (event.y >= getHeight() - 20) {  // Bottom 20 pixels (tick area)
+        std::cout << "🎯 MOUSE MOVE IN TICK AREA: Y=" << event.y << " X=" << event.x << std::endl;
+    }
+    
+    // Debug all mouse moves to see the range we're getting
+    static int lastY = -1;
+    if (std::abs(event.y - lastY) > 2) {  // Only log when Y changes significantly
+        std::cout << "🎯 MOUSE MOVE: Y=" << event.y << " (max should be " << (getHeight() - 1) << ")" << std::endl;
+        lastY = event.y;
     }
 }
 
 void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
-    if (isZooming) {
-        // Calculate zoom based on vertical drag distance
-        int deltaY = zoomStartY - event.y; // Drag up = zoom in
-        
-        // Use a balanced sensitivity - not too fast, not too slow
-        double sensitivity = 60.0; // 60 pixels = 2x zoom (balanced control)
-        double zoomFactor = 1.0 + (deltaY / sensitivity);
-        
-        // Apply zoom with much higher limits for sample-level zoom
-        // At 44.1kHz, 1 sample = 1/44100 seconds
-        // For 1 pixel per sample, we need 44100 pixels per second
-        double newZoom = juce::jlimit(0.1, 100000.0, zoomStartValue * zoomFactor);
-        
-        // Update our own zoom value first
-        setZoom(newZoom);
-        
-        // Notify parent of zoom change (parent will sync track content)
-        if (onZoomChanged) {
-            onZoomChanged(newZoom);
-        }
-        return;
-    }
+    std::cout << "🎯 MOUSE DRAG: Y=" << event.y << " startY=" << zoomStartY << std::endl;
     
+    // Handle section dragging first
     if (!arrangementLocked && isDraggingSection && selectedSectionIndex >= 0) {
         // Move entire section
         auto& section = *sections[selectedSectionIndex];
@@ -153,31 +205,67 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
             onSectionChanged(selectedSectionIndex, section);
         }
         repaint();
-    } else if (!arrangementLocked && isDraggingEdge && selectedSectionIndex >= 0) {
+        return;
+    }
+    
+    if (!arrangementLocked && isDraggingEdge && selectedSectionIndex >= 0) {
         // Resize section
         auto& section = *sections[selectedSectionIndex];
         double newTime = juce::jmax(0.0, juce::jmin(timelineLength, pixelToTime(event.x)));
         
         if (isDraggingStart) {
-            section.startTime = juce::jmin(newTime, section.endTime - 1.0); // Minimum 1 second
+            section.startTime = juce::jmin(newTime, section.endTime - 1.0);
         } else {
-            section.endTime = juce::jmax(newTime, section.startTime + 1.0); // Minimum 1 second
+            section.endTime = juce::jmax(newTime, section.startTime + 1.0);
         }
         
         if (onSectionChanged) {
             onSectionChanged(selectedSectionIndex, section);
         }
         repaint();
-    } else {
-        // Handle playhead dragging (default behavior)
-        double dragTime = pixelToTime(event.x);
-        dragTime = juce::jlimit(0.0, timelineLength, dragTime); // Clamp to valid range
-        setPlayheadPosition(dragTime);
+        return;
+    }
+    
+    // Only allow zoom dragging if we didn't start in the playhead zone
+    int playheadZoneStart = getHeight() - 25;
+    bool startedInPlayheadZone = zoomStartY >= playheadZoneStart;
+    
+    int sectionsHeight = static_cast<int>(getHeight() * 0.4);
+    bool startedInSections = zoomStartY <= sectionsHeight;
+    bool startedInZoomZone = zoomStartY > sectionsHeight && zoomStartY < playheadZoneStart;
+    
+    std::cout << "🎯 ZOOM ANALYSIS: startY=" << zoomStartY << " playheadStart=" << playheadZoneStart << " sectionsEnd=" << sectionsHeight << std::endl;
+    std::cout << "🎯 ZONES: inPlayhead=" << (startedInPlayheadZone ? "YES" : "NO") << " inSections=" << (startedInSections ? "YES" : "NO") << " inZoom=" << (startedInZoomZone ? "YES" : "NO") << std::endl;
+    
+    if (!startedInPlayheadZone) {
+        std::cout << "🎯 ZOOM DRAG: startedInPlayheadZone=false, deltaY=" << std::abs(event.y - zoomStartY) << std::endl;
         
-        // Notify parent of position change
-        if (onPlayheadPositionChanged) {
-            onPlayheadPositionChanged(dragTime);
+        // Check for vertical movement to start zoom mode
+        int deltaY = std::abs(event.y - zoomStartY);
+        if (deltaY > 3) {
+            if (!isZooming) {
+                // Start zoom mode
+                std::cout << "🎯 STARTING ZOOM MODE" << std::endl;
+                isZooming = true;
+                setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+                repaint();
+            }
+            
+            // Simple zoom calculation - drag up = zoom in, drag down = zoom out
+            int actualDeltaY = zoomStartY - event.y;
+            double sensitivity = 60.0; // 60 pixels = 2x zoom
+            double zoomFactor = 1.0 + (actualDeltaY / sensitivity);
+            double newZoom = juce::jlimit(0.1, 100000.0, zoomStartValue * zoomFactor);
+            
+            std::cout << "🎯 ZOOM: factor=" << zoomFactor << ", newZoom=" << newZoom << std::endl;
+            
+            setZoom(newZoom);
+            if (onZoomChanged) {
+                onZoomChanged(newZoom);
+            }
         }
+    } else {
+        std::cout << "🎯 ZOOM DRAG BLOCKED: startedInPlayheadZone=true" << std::endl;
     }
 }
 
@@ -198,16 +286,16 @@ void TimelineComponent::mouseDoubleClick(const juce::MouseEvent& event) {
     }
 }
 
-void TimelineComponent::mouseUp(const juce::MouseEvent& event) {
-    // Reset all interaction states
-    isZooming = false;
+void TimelineComponent::mouseUp(const juce::MouseEvent& /*event*/) {
+    // Reset all dragging states
     isDraggingSection = false;
     isDraggingEdge = false;
+    isDraggingStart = false;
+    isZooming = false;
     
     // Reset cursor
     setMouseCursor(juce::MouseCursor::NormalCursor);
     
-    // Repaint to hide zoom mode UI
     repaint();
 }
 
@@ -217,7 +305,7 @@ void TimelineComponent::addSection(const juce::String& name, double startTime, d
 }
 
 void TimelineComponent::removeSection(int index) {
-    if (index >= 0 && index < sections.size()) {
+    if (index >= 0 && index < static_cast<int>(sections.size())) {
         sections.erase(sections.begin() + index);
         if (selectedSectionIndex == index) {
             selectedSectionIndex = -1;
@@ -236,7 +324,7 @@ void TimelineComponent::clearSections() {
 
 double TimelineComponent::pixelToTime(int pixel) const {
     if (zoom > 0) {
-        return pixel / zoom;
+        return (pixel - LEFT_PADDING) / zoom;
     }
     return 0.0;
 }
@@ -300,10 +388,10 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
     
     // Draw time markers
     for (double time = startTime; time <= timelineLength; time += markerInterval) {
-        int x = timeToPixel(time);
+        int x = timeToPixel(time) + LEFT_PADDING;
         if (x >= 0 && x < getWidth()) {
-            // Draw tick mark at bottom
-            g.drawLine(x, getHeight() - 10, x, getHeight() - 2);
+            // Draw short tick mark at bottom (back to original style)
+            g.drawLine(x, getHeight() - 15, x, getHeight() - 2);
             
             // Format time label based on interval precision
             juce::String timeStr;
@@ -327,14 +415,14 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                 timeStr = juce::String::formatted("%d:%02d", minutes, seconds);
             }
             
-            // Draw time label at bottom to avoid overlap with arrangement sections
-            g.drawText(timeStr, x - 30, getHeight() - 25, 60, 20, juce::Justification::centred);
+            // Draw time label with more padding from triangle (back to original style)
+            g.drawText(timeStr, x - 30, getHeight() - 35, 60, 20, juce::Justification::centred);
         }
     }
 }
 
 void TimelineComponent::drawPlayhead(juce::Graphics& g) {
-    int playheadX = timeToPixel(playheadPosition);
+    int playheadX = timeToPixel(playheadPosition) + LEFT_PADDING;
     if (playheadX >= 0 && playheadX < getWidth()) {
         // Draw shadow for better visibility
         g.setColour(juce::Colours::black.withAlpha(0.6f));
@@ -352,8 +440,8 @@ void TimelineComponent::drawArrangementSections(juce::Graphics& g) {
 }
 
 void TimelineComponent::drawSection(juce::Graphics& g, const ArrangementSection& section, bool isSelected) const {
-    int startX = timeToPixel(section.startTime);
-    int endX = timeToPixel(section.endTime);
+    int startX = timeToPixel(section.startTime) + LEFT_PADDING;
+    int endX = timeToPixel(section.endTime) + LEFT_PADDING;
     int width = endX - startX;
     
     if (width <= 0 || startX >= getWidth() || endX <= 0) {
@@ -365,8 +453,8 @@ void TimelineComponent::drawSection(juce::Graphics& g, const ArrangementSection&
     endX = juce::jmin(getWidth(), endX);
     width = endX - startX;
     
-    // Draw section background (upper half of timeline)
-    auto sectionArea = juce::Rectangle<int>(startX, 0, width, getHeight() / 2);
+    // Draw section background - smaller size (40% of timeline height)
+    auto sectionArea = juce::Rectangle<int>(startX, 0, width, static_cast<int>(getHeight() * 0.4));
     
     // Section background - dimmed if locked
     float alpha = arrangementLocked ? 0.2f : 0.3f;
@@ -378,13 +466,13 @@ void TimelineComponent::drawSection(juce::Graphics& g, const ArrangementSection&
         g.setColour(section.colour.withAlpha(0.5f));
         // Draw dotted border to indicate locked state
         const float dashLengths[] = {2.0f, 2.0f};
-        g.drawDashedLine(juce::Line<float>(startX, 0, startX, getHeight() / 2), 
+        g.drawDashedLine(juce::Line<float>(startX, 0, startX, sectionArea.getBottom()), 
                         dashLengths, 2, 1.0f);
-        g.drawDashedLine(juce::Line<float>(endX, 0, endX, getHeight() / 2), 
+        g.drawDashedLine(juce::Line<float>(endX, 0, endX, sectionArea.getBottom()), 
                         dashLengths, 2, 1.0f);
         g.drawDashedLine(juce::Line<float>(startX, 0, endX, 0), 
                         dashLengths, 2, 1.0f);
-        g.drawDashedLine(juce::Line<float>(startX, getHeight() / 2, endX, getHeight() / 2), 
+        g.drawDashedLine(juce::Line<float>(startX, sectionArea.getBottom(), endX, sectionArea.getBottom()), 
                         dashLengths, 2, 1.0f);
     } else {
         g.setColour(isSelected ? section.colour.brighter(0.5f) : section.colour);
@@ -404,8 +492,8 @@ void TimelineComponent::drawSection(juce::Graphics& g, const ArrangementSection&
 }
 
 int TimelineComponent::findSectionAtPosition(int x, int y) const {
-    // Only check upper half of timeline where sections are drawn
-    if (y > getHeight() / 2) {
+    // Check the arrangement section area (now 40% of timeline height)
+    if (y > static_cast<int>(getHeight() * 0.4)) {
         return -1;
     }
     
@@ -420,13 +508,13 @@ int TimelineComponent::findSectionAtPosition(int x, int y) const {
 }
 
 bool TimelineComponent::isOnSectionEdge(int x, int sectionIndex, bool& isStartEdge) const {
-    if (sectionIndex < 0 || sectionIndex >= sections.size()) {
+    if (sectionIndex < 0 || sectionIndex >= static_cast<int>(sections.size())) {
         return false;
     }
     
     const auto& section = *sections[sectionIndex];
-    int startX = timeToPixel(section.startTime);
-    int endX = timeToPixel(section.endTime);
+    int startX = timeToPixel(section.startTime) + LEFT_PADDING;
+    int endX = timeToPixel(section.endTime) + LEFT_PADDING;
     
     const int edgeThreshold = 5; // 5 pixels from edge
     

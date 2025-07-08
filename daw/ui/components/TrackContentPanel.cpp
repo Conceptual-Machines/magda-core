@@ -191,7 +191,7 @@ void TrackContentPanel::drawTimeGrid(juce::Graphics& g, juce::Rectangle<int> are
     // Draw vertical grid lines aligned to interval boundaries
     double startTime = std::floor(0.0 / gridInterval) * gridInterval;
     for (double time = startTime; time <= timelineLength; time += gridInterval) {
-        int x = static_cast<int>(time * currentZoom);
+        int x = static_cast<int>(time * currentZoom) + LEFT_PADDING;
         if (x >= area.getX() && x <= area.getRight()) {
             g.drawLine(x, area.getY(), x, area.getBottom(), 1.0f);
         }
@@ -209,7 +209,7 @@ void TrackContentPanel::drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> are
     // Only draw beat grid if it's not too dense
     if (beatPixelSpacing >= 10) {
         for (double beat = 0; beat <= timelineLength; beat += beatInterval) {
-            int x = static_cast<int>(beat * currentZoom);
+            int x = static_cast<int>(beat * currentZoom) + LEFT_PADDING;
             if (x >= area.getX() && x <= area.getRight()) {
                 g.drawLine(x, area.getY(), x, area.getBottom(), 0.5f);
             }

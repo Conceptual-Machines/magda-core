@@ -316,6 +316,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 }
 
 void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
+    // Handle vertical track height resizing and track selection
     int trackIndex;
     if (isResizeHandleArea(event.getPosition(), trackIndex)) {
         // Start resizing
@@ -336,6 +337,7 @@ void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
 }
 
 void TrackHeadersPanel::mouseDrag(const juce::MouseEvent& event) {
+    // Handle vertical track height resizing
     if (isResizing && resizingTrackIndex >= 0) {
         int deltaY = event.y - resizeStartY;
         int newHeight = juce::jlimit(MIN_TRACK_HEIGHT, MAX_TRACK_HEIGHT, resizeStartHeight + deltaY);
@@ -343,7 +345,17 @@ void TrackHeadersPanel::mouseDrag(const juce::MouseEvent& event) {
     }
 }
 
+void TrackHeadersPanel::mouseUp(const juce::MouseEvent& event) {
+    // Handle vertical track height resizing cleanup
+    if (isResizing) {
+        isResizing = false;
+        resizingTrackIndex = -1;
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+    }
+}
+
 void TrackHeadersPanel::mouseMove(const juce::MouseEvent& event) {
+    // Handle vertical track height resizing
     int trackIndex;
     if (isResizeHandleArea(event.getPosition(), trackIndex)) {
         setMouseCursor(juce::MouseCursor::UpDownResizeCursor);

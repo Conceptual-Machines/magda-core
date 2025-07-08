@@ -86,6 +86,7 @@ private:
     static constexpr int DEFAULT_TRACK_HEADER_WIDTH = 200;
     static constexpr int MIN_TRACK_HEADER_WIDTH = 150;
     static constexpr int MAX_TRACK_HEADER_WIDTH = 350;
+    static constexpr int HEADER_CONTENT_PADDING = 8;  // Padding between headers and content
     int trackHeaderWidth = DEFAULT_TRACK_HEADER_WIDTH;
     
     // Resize handle state
@@ -117,6 +118,9 @@ public:
     void paint(juce::Graphics& g) override;
     void setPlayheadPosition(double position);
     
+    // Hit testing to only intercept clicks near the playhead
+    bool hitTest(int x, int y) override;
+    
     // Mouse handling for dragging playhead
     void mouseDown(const juce::MouseEvent& event) override;
     void mouseDrag(const juce::MouseEvent& event) override;
@@ -127,6 +131,8 @@ private:
     MainView& owner;
     double playheadPosition = 0.0;
     bool isDragging = false;
+    int dragStartX = 0;
+    double dragStartPosition = 0.0;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PlayheadComponent)
 };

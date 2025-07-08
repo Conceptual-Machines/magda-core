@@ -45,6 +45,9 @@ public:
     std::function<void(int, int)> onTrackHeightChanged;
 
 private:
+    // Layout constants
+    static constexpr int LEFT_PADDING = 18; // Left padding to align with timeline
+    
     struct TrackLane {
         bool selected = false;
         int height = DEFAULT_TRACK_HEIGHT;

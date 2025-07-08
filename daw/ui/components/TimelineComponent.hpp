@@ -31,6 +31,7 @@ public:
 
     // Mouse interaction
     void mouseDown(const juce::MouseEvent& event) override;
+    void mouseMove(const juce::MouseEvent& event) override;
     void mouseDrag(const juce::MouseEvent& event) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
@@ -51,6 +52,9 @@ public:
     std::function<void(double)> onZoomChanged; // Callback for zoom changes
 
 private:
+    // Layout constants
+    static constexpr int LEFT_PADDING = 18; // Left padding to ensure first time label is visible
+    
     double timelineLength = 300.0;
     double playheadPosition = 0.0;
     double zoom = 1.0; // pixels per second
