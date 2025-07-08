@@ -49,7 +49,7 @@ public:
     std::function<void(double)> onPlayheadPositionChanged;
     std::function<void(int, const ArrangementSection&)> onSectionChanged;
     std::function<void(const juce::String&, double, double)> onSectionAdded;
-    std::function<void(double)> onZoomChanged; // Callback for zoom changes
+    std::function<void(double, int)> onZoomChanged; // Callback for zoom changes (newZoom, mouseX)
 
 private:
     // Layout constants

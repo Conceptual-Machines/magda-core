@@ -15,17 +15,21 @@ void ZoomManager::setZoom(double newZoom) {
 }
 
 void ZoomManager::setZoomCentered(double newZoom, double timePosition) {
-    double oldZoom = currentZoom;
     currentZoom = juce::jlimit(minZoom, maxZoom, newZoom);
     
-    // Calculate where this time position should be after zoom
-    int desiredPixelPos = timeToPixel(timePosition);
-    int newScrollX = desiredPixelPos - (viewportWidth / 2);
+    // Ensure content is large enough to allow centering
+    int contentWidth = calculateContentWidth();
+    int viewportCenter = viewportWidth / 2;
+    
+    // Calculate where this time position appears in content coordinates (with LEFT_PADDING)
+    int timeContentX = static_cast<int>(timePosition * currentZoom) + 18;
+    
+    // Calculate scroll position needed to center this position in viewport
+    int idealScrollX = timeContentX - viewportCenter;
     
     // Clamp scroll position to valid range
-    int contentWidth = calculateContentWidth();
     int maxScrollX = juce::jmax(0, contentWidth - viewportWidth);
-    newScrollX = juce::jlimit(0, maxScrollX, newScrollX);
+    int newScrollX = juce::jlimit(0, maxScrollX, idealScrollX);
     
     // Update internal state
     currentScrollX = newScrollX;
@@ -34,9 +38,6 @@ void ZoomManager::setZoomCentered(double newZoom, double timePosition) {
     notifyZoomChanged();
     notifyContentSizeChanged();
     notifyScrollChanged(newScrollX);
-    
-    std::cout << "🎯 ZOOM CENTERED: oldZoom=" << oldZoom << ", newZoom=" << currentZoom 
-              << ", timePos=" << timePosition << ", newScrollX=" << newScrollX << std::endl;
 }
 
 void ZoomManager::setZoomFromMouseDrag(double newZoom, int mouseX, int viewportWidth) {
@@ -116,17 +117,25 @@ void ZoomManager::notifyContentSizeChanged() {
 }
 
 int ZoomManager::calculateContentWidth() const {
-    return static_cast<int>(timelineLength * currentZoom);
+    // Base content width from timeline
+    int baseWidth = static_cast<int>(timelineLength * currentZoom);
+    
+    // Ensure content is at least viewport width + extra padding for centering
+    int minWidth = viewportWidth + (viewportWidth / 2); // 1.5x viewport width
+    
+    return juce::jmax(baseWidth, minWidth);
 }
 
 double ZoomManager::pixelToTime(int pixel) const {
     if (currentZoom > 0) {
-        return pixel / currentZoom;
+        // Account for LEFT_PADDING (18 pixels) used by TimelineComponent
+        return (pixel - 18) / currentZoom;
     }
     return 0.0;
 }
 
 int ZoomManager::timeToPixel(double time) const {
+    // TimelineComponent adds LEFT_PADDING when drawing, not in conversion
     return static_cast<int>(time * currentZoom);
 }
 

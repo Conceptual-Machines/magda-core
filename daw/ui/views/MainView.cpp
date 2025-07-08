@@ -208,13 +208,18 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
 }
 
 void MainView::updateContentSizes() {
-    auto contentWidth = static_cast<int>(timelineLength * horizontalZoom);
+    // Use the same content width calculation as ZoomManager for consistency
+    auto baseWidth = static_cast<int>(timelineLength * horizontalZoom);
+    auto viewportWidth = timelineViewport->getWidth();
+    auto minWidth = viewportWidth + (viewportWidth / 2); // 1.5x viewport width for centering
+    auto contentWidth = juce::jmax(baseWidth, minWidth);
+    
     auto trackContentHeight = trackHeadersPanel->getTotalTracksHeight();
     
-    // Update timeline size
-    timeline->setSize(juce::jmax(contentWidth, timelineViewport->getWidth()), TIMELINE_HEIGHT);
+    // Update timeline size with enhanced content width
+    timeline->setSize(contentWidth, TIMELINE_HEIGHT);
     
-    // Update track content size - let viewport handle scrollbar ranges automatically
+    // Update track content size with enhanced content width
     trackContentPanel->setSize(contentWidth, trackContentHeight);
     
     // Update track headers panel height to match content
@@ -225,13 +230,11 @@ void MainView::updateContentSizes() {
 }
 
 void MainView::scrollBarMoved(juce::ScrollBar* scrollBarThatHasMoved, double newRangeStart) {
-    // Don't interfere if this is triggered by zoom logic
-    if (isUpdatingFromZoom) {
-        return;
-    }
-    
     // Sync timeline viewport when track content viewport scrolls horizontally
     if (scrollBarThatHasMoved == &trackContentViewport->getHorizontalScrollBar()) {
+        std::cout << "📊 SCROLLBAR MOVED: newRangeStart=" << newRangeStart 
+                  << ", viewportPosX=" << trackContentViewport->getViewPositionX() << std::endl;
+        
         timelineViewport->setViewPosition(static_cast<int>(newRangeStart), 0);
         // Notify zoom manager of scroll position change
         zoomManager->setCurrentScrollPosition(static_cast<int>(newRangeStart));
@@ -281,23 +284,59 @@ void MainView::setupTrackSynchronization() {
 void MainView::setupZoomManagerCallbacks() {
     // Set up callback to handle zoom changes
     zoomManager->onZoomChanged = [this](double newZoom) {
-        isUpdatingFromZoom = true;
+        // Hide mouse cursor during zoom operations to prevent jarring jumps
+        setMouseCursor(juce::MouseCursor::NoCursor);
+        
+        // Temporarily remove scroll bar listener to prevent race condition
+        trackContentViewport->getHorizontalScrollBar().removeListener(this);
+        
         horizontalZoom = newZoom;
         timeline->setZoom(newZoom);
         trackContentPanel->setZoom(newZoom);
         updateContentSizes();
         playheadComponent->repaint();
         repaint();
-        isUpdatingFromZoom = false;
+        
+        // Re-add scroll bar listener after zoom operations are complete
+        trackContentViewport->getHorizontalScrollBar().addListener(this);
+        
+        // Restore mouse cursor after a short delay
+        juce::Timer::callAfterDelay(100, [this]() {
+            setMouseCursor(juce::MouseCursor::NormalCursor);
+        });
     };
     
     // Set up callback to handle scroll changes
     zoomManager->onScrollChanged = [this](int scrollX) {
-        isUpdatingFromZoom = true;
+        // Temporarily remove scroll bar listener to prevent race condition
+        trackContentViewport->getHorizontalScrollBar().removeListener(this);
+        
+        // Debug: Check current scroll bar state
+        auto& scrollBar = trackContentViewport->getHorizontalScrollBar();
+        std::cout << "🔄 SCROLL: targetScrollX=" << scrollX 
+                  << ", currentScrollStart=" << scrollBar.getCurrentRangeStart()
+                  << ", currentScrollSize=" << scrollBar.getCurrentRangeSize()
+                  << ", isVisible=" << scrollBar.isVisible()
+                  << ", contentWidth=" << trackContentPanel->getWidth()
+                  << ", viewportWidth=" << trackContentViewport->getWidth() << std::endl;
+        
+        // Set timeline viewport position (no scroll bar)
         timelineViewport->setViewPosition(scrollX, 0);
+        
+        // Set track content viewport position first
         trackContentViewport->setViewPosition(scrollX, trackContentViewport->getViewPositionY());
+        
+        // Force scroll bar to update its thumb position
+        // Just set the current position and let JUCE handle the range automatically
+        scrollBar.setCurrentRangeStart(scrollX, juce::dontSendNotification);
+        
+        std::cout << "🔄 AFTER: newScrollStart=" << scrollBar.getCurrentRangeStart() 
+                  << ", currentRangeSize=" << scrollBar.getCurrentRangeSize() << std::endl;
+        
         playheadComponent->repaint();
-        isUpdatingFromZoom = false;
+        
+        // Re-add scroll bar listener after positions are set
+        trackContentViewport->getHorizontalScrollBar().addListener(this);
     };
     
     // Set up callback to handle content size changes
@@ -305,9 +344,11 @@ void MainView::setupZoomManagerCallbacks() {
         updateContentSizes();
     };
     
-    // Set up timeline zoom callback to use ZoomManager
-    timeline->onZoomChanged = [this](double newZoom) {
-        zoomManager->setZoom(newZoom);
+    // Set up timeline zoom callback to use ZoomManager with playhead centering
+    timeline->onZoomChanged = [this](double newZoom, int mouseX) {
+        // Since playhead gets set on mouseDown, it's already at the desired position
+        // Center zoom around the playhead position for consistent behavior
+        zoomManager->setZoomCentered(newZoom, playheadPosition);
     };
 }
 

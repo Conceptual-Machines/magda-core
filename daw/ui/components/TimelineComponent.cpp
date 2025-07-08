@@ -68,6 +68,7 @@ void TimelineComponent::setZoom(double pixelsPerSecond) {
 void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
     // Store initial mouse position for drag detection
     zoomStartY = event.y;
+    zoomStartX = event.x;  // Store X position for zoom centering
     zoomStartValue = zoom;
     
     // FIRST: Check if mouseDown is even reaching us
@@ -262,7 +263,9 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
             
             setZoom(newZoom);
             if (onZoomChanged) {
-                onZoomChanged(newZoom);
+                // Use the original mouseDown X position for zoom centering
+                // This ensures zoom centers around where the playhead was set
+                onZoomChanged(newZoom, zoomStartX);
             }
         }
     } else {
