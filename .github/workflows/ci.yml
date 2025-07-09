@@ -25,6 +25,15 @@ jobs:
       run: |
         cmake -B build -DCMAKE_BUILD_TYPE=Debug
     
+    - name: Install code quality tools
+      run: |
+        brew install clang-format llvm
+        echo "/opt/homebrew/opt/llvm/bin" >> $GITHUB_PATH
+    
+    - name: Check code formatting
+      run: |
+        make check-format
+    
     - name: Build
       run: |
         cmake --build build --config Debug -j4
