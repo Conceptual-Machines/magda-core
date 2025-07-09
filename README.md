@@ -1,11 +1,11 @@
 # 🔮 Magica — Multi-Agent Generative Interface for Creative Audio
 
-**Magica** (**M**ulti-**A**gent **G**enerative **I**nterface for **C**reative **A**udio) is an experimental AI-driven Digital Audio Workstation built from the ground up for multi-agent collaboration. It combines a modern DAW engine with a comprehensive gRPC API, enabling intelligent agents to compose, arrange, and manipulate music in real-time.
+**Magica** (**M**ulti-**A**gent **G**enerative **I**nterface for **C**reative **A**udio) is an experimental AI-driven Digital Audio Workstation built from the ground up for multi-agent collaboration. It combines a modern DAW engine with a comprehensive API, enabling intelligent agents to compose, arrange, and manipulate music in real-time.
 
 ## 🎵 What Makes Magica Special
 
 - **AI-First Design**: Built specifically for AI agent collaboration
-- **Universal gRPC API**: Agents can be written in any language (Python, Go, JavaScript, etc.)
+- **Universal API**: Agents can be written in any language (Python, Go, JavaScript, etc.)
 - **Natural Language Interface**: Talk to your DAW in plain English
 - **Real-time Collaboration**: Multiple agents working together simultaneously
 - **Modern Architecture**: Clean separation between DAW engine, API, and UI
@@ -14,14 +14,14 @@
 
 ```
 🤖 AI Agents (Python/Go/JS) 
-       ↓ gRPC/MCP
+       ↓ MCP
 🔮 Magica System
    ├── 🎵 DAW Domain (C++)
    │   ├── Audio Engine (+ aideas-core)
    │   ├── UI Components  
    │   └── DAW Core Logic
    └── 🤖 MCP Domain (C++)
-       ├── gRPC Server (Port 50051)
+       ├── Communication Server
        ├── Protocol Buffers
        └── Agent Management
 ```
@@ -36,7 +36,7 @@ make build
 
 # Output:
 # ✓ Audio engine initialized
-# 🚀 Magica DAW gRPC server listening on 0.0.0.0:50051
+# 🚀 Magica DAW communication server ready
 # 🤖 Ready for AI agents to connect!
 # 🔮 Magica DAW is ready!
 ```
@@ -93,7 +93,7 @@ python mcp/agents/orchestrator.py --daw localhost:50051
 # 🎉 Recording cleanup complete for clip: clip_piano_take_1
 ```
 
-## 🎛️ Complete gRPC API
+## 🎛️ Agent Communication
 
 Magica exposes a comprehensive API covering all DAW functionality:
 
@@ -247,7 +247,6 @@ Workflow:
 ### **Prerequisites**
 - C++20 compiler (GCC 10+, Clang 12+)
 - CMake 3.20+
-- gRPC v1.60.0+
 - JUCE framework
 - Protocol Buffers
 
@@ -303,7 +302,6 @@ make debug          # Build project
 ### **Dependencies**
 ```cmake
 # Automatically fetched via CMake FetchContent:
-# - gRPC v1.60.0
 # - nlohmann/json v3.11.3
 # - Catch2 v3.4.0 (testing)
 # - Tracktion Engine (audio)
@@ -564,7 +562,7 @@ The complete digital audio workstation:
 
 ### 🤖 MCP Domain (`mcp/`)  
 The multi-agent communication system:
-- **gRPC Server**: High-performance agent communication (Port 50051)
+- **Communication Server**: High-performance agent communication
 - **Protocol Buffers**: Strongly-typed API definitions
 - **Agent Management**: Registration, routing, and coordination
 - **Example Agents**: Orchestrator (Python), Utility (Go)
