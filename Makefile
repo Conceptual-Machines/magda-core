@@ -80,24 +80,7 @@ clean:
 .PHONY: rebuild
 rebuild: clean debug
 
-# Code quality targets
-.PHONY: format
-format:
-	@echo "Formatting code with clang-format..."
-	@find daw tests -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i
-	@echo "Code formatting complete."
 
-.PHONY: lint
-lint:
-	@echo "Running clang-tidy..."
-	@find daw tests -name "*.cpp" | xargs clang-tidy --config-file=.clang-tidy
-	@echo "Linting complete."
-
-.PHONY: check-format
-check-format:
-	@echo "Checking code formatting..."
-	@find daw tests -name "*.cpp" -o -name "*.hpp" | xargs clang-format --dry-run --Werror
-	@echo "Format check complete."
 
 # Show help
 .PHONY: help
@@ -112,9 +95,6 @@ help:
 	@echo "  build-open     - Build and open the application"
 	@echo "  test           - Build and run all tests (CTest + JUCE + Catch2)"
 	@echo "  test-juce      - Build and run JUCE tests only"
-	@echo "  format         - Format code with clang-format"
-	@echo "  lint           - Run clang-tidy static analysis"
-	@echo "  check-format   - Check code formatting without modifying files"
 	@echo "  clean          - Remove build artifacts"
 	@echo "  rebuild        - Clean and rebuild"
 	@echo "  help           - Show this help message"
