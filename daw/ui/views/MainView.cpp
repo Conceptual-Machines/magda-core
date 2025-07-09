@@ -4,7 +4,7 @@
 
 namespace magica {
 
-MainView::MainView() : timelineLength(120.0), playheadPosition(0.0), horizontalZoom(20.0) {
+MainView::MainView() : timelineLength(120.0), playheadPosition(0.0), horizontalZoom(20.0), initialZoomSet(false) {
     // Make this component focusable to receive keyboard events
     setWantsKeyboardFocus(true);
     
@@ -120,10 +120,33 @@ void MainView::resized() {
     playheadArea = playheadArea.withTrimmedRight(scrollBarThickness).withTrimmedBottom(scrollBarThickness);
     playheadComponent->setBounds(playheadArea);
     
-    // Update zoom manager with viewport width (but don't auto-adjust zoom)
+    // Update zoom manager with viewport width (but preserve user's zoom)
     auto viewportWidth = timelineViewport->getWidth();
     if (viewportWidth > 0) {
         zoomManager->setViewportWidth(viewportWidth);
+        
+        // Set initial zoom to show 1 minute (60 seconds) ONLY on first resize
+        if (!initialZoomSet) {
+            int availableWidth = viewportWidth - 18; // Account for LEFT_PADDING
+            
+            if (availableWidth > 0) {
+                double zoomFor1Minute = static_cast<double>(availableWidth) / 60.0; // 60 seconds = 1 minute
+                
+                // Ensure minimum zoom level for usability
+                zoomFor1Minute = juce::jmax(zoomFor1Minute, 0.5);
+                
+                // Set zoom centered at the beginning of timeline
+                zoomManager->setZoomCentered(zoomFor1Minute, 0.0);
+                
+                std::cout << "🎯 INITIAL ZOOM: showing 1 minute, viewportWidth=" << viewportWidth 
+                          << ", availableWidth=" << availableWidth 
+                          << ", zoomFor1Minute=" << zoomFor1Minute << std::endl;
+                
+                initialZoomSet = true;
+            }
+        } else {
+            std::cout << "🎯 VIEWPORT UPDATE: width=" << viewportWidth << " (zoom preserved)" << std::endl;
+        }
     }
     
     updateContentSizes();

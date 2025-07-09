@@ -84,6 +84,9 @@ private:
     // Synchronization guard to prevent infinite recursion
     bool isUpdatingTrackSelection = false;
     // Note: Zoom/scroll race conditions are prevented by temporarily removing scroll bar listeners
+    
+    // Initial zoom setup flag
+    bool initialZoomSet = false;
 
     // Layout constants and variables
     static constexpr int TIMELINE_HEIGHT = 80;

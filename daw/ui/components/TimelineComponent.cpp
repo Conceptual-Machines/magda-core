@@ -133,7 +133,7 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
         return; // No dragging from playhead zone
     }
     
-    // Zone 2: Sections area handling (when unlocked)
+    // Zone 2: Sections area handling (when unlocked) - but allow zoom fallback
     if (!arrangementLocked && inSectionsArea) {
         DBG("CHECKING SECTIONS AREA");
         std::cout << "CHECKING SECTIONS AREA" << std::endl;
@@ -154,27 +154,23 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
                 isDraggingStart = isStartEdge;
                 DBG("Starting edge drag");
                 std::cout << "Starting edge drag" << std::endl;
+                repaint();
+                return;
             } else {
                 isDraggingSection = true;
                 DBG("Starting section drag");
                 std::cout << "Starting section drag" << std::endl;
+                repaint();
+                return;
             }
-            repaint();
-            return;
         }
+        // If no section found, fall through to allow zoom
     }
     
-    // Zone 3: Zoom zone (middle area between sections and playhead zone)
-    if (inZoomZone) {
-        DBG("ENTERING ZOOM ZONE LOGIC");
-        std::cout << "🎯 *** ZOOM ZONE TRIGGERED *** Y=" << event.y << " (zone: " << sectionsHeight << "-" << playheadZoneStart << ")" << std::endl;
-        std::cout << "Prepared for zoom dragging" << std::endl;
-        return; // Ready for zoom dragging in mouseDrag
-    }
-    
-    // Fallback: if not in any specific zone, still allow zoom
-    DBG("NOT IN ANY SPECIFIC ZONE - ALLOWING ZOOM");
-    std::cout << "🎯 *** FALLBACK ZONE *** Y=" << event.y << " - zones: sections=" << inSectionsArea << " zoom=" << inZoomZone << " playhead=" << inPlayheadZone << std::endl;
+    // Default: Always prepare for zoom operations (from any zone except playhead)
+    DBG("PREPARING FOR ZOOM OPERATIONS");
+    std::cout << "🎯 *** ZOOM READY *** Y=" << event.y << " - can zoom from anywhere!" << std::endl;
+    // Ready for zoom dragging in mouseDrag
 }
 
 void TimelineComponent::mouseMove(const juce::MouseEvent& event) {
@@ -230,16 +226,9 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
         return;
     }
     
-    // Only allow zoom dragging if we didn't start in the playhead zone
+    // Allow zoom from anywhere except playhead zone
     int playheadZoneStart = getHeight() - 25;
     bool startedInPlayheadZone = zoomStartY >= playheadZoneStart;
-    
-    int sectionsHeight = static_cast<int>(getHeight() * 0.4);
-    bool startedInSections = zoomStartY <= sectionsHeight;
-    bool startedInZoomZone = zoomStartY > sectionsHeight && zoomStartY < playheadZoneStart;
-    
-    std::cout << "🎯 ZOOM ANALYSIS: startY=" << zoomStartY << " playheadStart=" << playheadZoneStart << " sectionsEnd=" << sectionsHeight << std::endl;
-    std::cout << "🎯 ZONES: inPlayhead=" << (startedInPlayheadZone ? "YES" : "NO") << " inSections=" << (startedInSections ? "YES" : "NO") << " inZoom=" << (startedInZoomZone ? "YES" : "NO") << std::endl;
     
     if (!startedInPlayheadZone) {
         std::cout << "🎯 ZOOM DRAG: startedInPlayheadZone=false, deltaY=" << std::abs(event.y - zoomStartY) << std::endl;
@@ -257,32 +246,62 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
             // Zoom calculation - drag up = zoom in, drag down = zoom out
             int actualDeltaY = zoomStartY - event.y;
             
-            // Safe zoom sensitivity with limits to prevent hanging
+            // Clamp deltaY to prevent extreme mouse movements from causing zoom resets
+            const int maxDeltaY = 800; // Increased limit to allow more movement within component bounds
+            actualDeltaY = juce::jlimit(-maxDeltaY, maxDeltaY, actualDeltaY);
+            
+            // Check for modifier keys for accelerated zoom
+            bool isShiftHeld = event.mods.isShiftDown();
+            bool isAltHeld = event.mods.isAltDown();
+            
+            // More sensitive zoom (lower values = more sensitive)
             double sensitivity;
-            std::cout << "🎯 ADAPTIVE CHECK: actualDeltaY=" << actualDeltaY << ", zoomStartValue=" << zoomStartValue << std::endl;
+            std::cout << "🎯 ZOOM CHECK: actualDeltaY=" << actualDeltaY << " (clamped), zoomStartValue=" << zoomStartValue << std::endl;
             
             if (actualDeltaY > 0) {
-                // Zooming in - but with safety limits to prevent hanging
-                sensitivity = 150.0; // Fixed faster speed, no adaptive for now
-                std::cout << "🎯 ZOOM IN: sensitivity=" << sensitivity << " (SAFE MODE)" << std::endl;
+                // Zooming in - more sensitive for easier sample-level access
+                if (isShiftHeld) {
+                    sensitivity = 8.0; // Super sensitive zoom-in with Shift
+                    std::cout << "🎯 ZOOM IN: sensitivity=" << sensitivity << " (SHIFT TURBO)" << std::endl;
+                } else if (isAltHeld) {
+                    sensitivity = 15.0; // Very sensitive zoom-in with Alt
+                    std::cout << "🎯 ZOOM IN: sensitivity=" << sensitivity << " (ALT FAST)" << std::endl;
+                } else {
+                    sensitivity = 25.0; // More sensitive standard zoom-in
+                    std::cout << "🎯 ZOOM IN: sensitivity=" << sensitivity << " (SENSITIVE)" << std::endl;
+                }
             } else {
-                // Zooming out - controlled and safe
-                sensitivity = 800.0; // Balanced speed
-                std::cout << "🎯 ZOOM OUT: sensitivity=" << sensitivity << " (SAFE MODE)" << std::endl;
+                // Zooming out - more controlled (higher values = less sensitive)
+                if (isShiftHeld) {
+                    sensitivity = 400.0; // More controlled zoom-out with Shift
+                    std::cout << "🎯 ZOOM OUT: sensitivity=" << sensitivity << " (SHIFT CONTROLLED)" << std::endl;
+                } else if (isAltHeld) {
+                    sensitivity = 300.0; // Moderately controlled zoom-out with Alt
+                    std::cout << "🎯 ZOOM OUT: sensitivity=" << sensitivity << " (ALT CONTROLLED)" << std::endl;
+                } else {
+                    sensitivity = 200.0; // Standard zoom-out (more sensitive than before)
+                    std::cout << "🎯 ZOOM OUT: sensitivity=" << sensitivity << " (STANDARD)" << std::endl;
+                }
             }
             
             double linearZoomFactor = 1.0 + (actualDeltaY / sensitivity);
             
-            // Safety check for extreme values
-            if (linearZoomFactor <= 0.0001 || linearZoomFactor >= 1000.0) {
-                std::cout << "🎯 ZOOM FACTOR TOO EXTREME: " << linearZoomFactor << " - clamping" << std::endl;
-                linearZoomFactor = (actualDeltaY > 0) ? 2.0 : 0.5; // Safe fallback
+            // Gradual safety clamping instead of harsh reset
+            const double minZoomFactor = 0.1;   // 10x zoom out max per operation
+            const double maxZoomFactor = 5.0;   // 5x zoom in max per operation
+            
+            if (linearZoomFactor < minZoomFactor) {
+                std::cout << "🎯 ZOOM FACTOR CLAMPED TO MIN: " << linearZoomFactor << " -> " << minZoomFactor << std::endl;
+                linearZoomFactor = minZoomFactor;
+            } else if (linearZoomFactor > maxZoomFactor) {
+                std::cout << "🎯 ZOOM FACTOR CLAMPED TO MAX: " << linearZoomFactor << " -> " << maxZoomFactor << std::endl;
+                linearZoomFactor = maxZoomFactor;
             }
             
-            // Simple scaling without extreme logarithms
+            // Simple but more aggressive scaling for zoom-in
             double scaledZoomFactor;
             if (actualDeltaY > 0) {
-                // Zooming in - moderate scaling
+                // Zooming in - linear but faster scaling
                 scaledZoomFactor = linearZoomFactor;
             } else {
                 // Zooming out - gentle scaling
@@ -292,9 +311,9 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
             
             double newZoom = zoomStartValue * scaledZoomFactor;
             
-            // Strict safety limits to prevent hanging
+            // Higher limits for sample-level viewing but safer than 100k
             const double minZoom = 1.0;  
-            const double maxZoom = 1000.0; // Much lower max to prevent hanging
+            const double maxZoom = 10000.0; // High enough for detailed viewing but safe
             
             // Apply limits and prevent NaN/extreme values
             if (std::isnan(newZoom) || newZoom < minZoom) {
@@ -302,7 +321,7 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
                 std::cout << "🎯 ZOOM CLAMPED TO MIN: " << newZoom << std::endl;
             } else if (newZoom > maxZoom) {
                 newZoom = maxZoom;
-                std::cout << "🎯 ZOOM CLAMPED TO MAX: " << newZoom << std::endl;
+                std::cout << "🎯 ZOOM CLAMPED TO MAX: " << newZoom << " (HIGH DETAIL)" << std::endl;
             }
             
             std::cout << "🎯 ZOOM: factor=" << scaledZoomFactor << ", newZoom=" << newZoom << std::endl;
