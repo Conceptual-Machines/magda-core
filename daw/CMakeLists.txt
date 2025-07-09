@@ -101,6 +101,7 @@ target_link_libraries(magica_daw
     juce::juce_audio_basics
     juce::juce_gui_basics
     tracktion::tracktion_engine
+    MagicaAssets
 )
 
 # Link required libraries for DAW application
