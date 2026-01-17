@@ -242,7 +242,153 @@ Not just different views, but different **CPU optimization strategies**:
 - **Conversational Tone**: Agents respond like helpful collaborators, not robots
 - **Technical Flexibility**: Can handle both "make it sound warmer" and "add 3dB at 2kHz"
 - **Learning Adaptation**: Interface learns user's preferred communication style
-- **Voice Input Support**: Optional voice-to-text for hands-free operation
+- **Voice Input Support**: Full voice command system for hands-free operation (see below)
+
+#### Voice Command System
+
+**Concept**: Hands-free DAW control through natural speech - essential for musicians whose hands are on instruments
+
+**Core Voice Features**:
+
+**1. Always-On Listening Mode**
+- **Wake Word**: Configurable activation phrase ("Hey Magica", "OK Magica", custom)
+- **Push-to-Talk**: Hardware button or foot pedal activation
+- **Continuous Mode**: Always listening during recording sessions
+- **Privacy Controls**: Local processing option, no cloud required
+
+**2. Command Categories**
+
+**Transport Control**:
+```
+"Play" / "Stop" / "Record"
+"Go to bar 32"
+"Loop the chorus"
+"Set tempo to 128"
+"Punch in at the bridge"
+```
+
+**Track Operations**:
+```
+"Mute the drums"
+"Solo guitar track"
+"Add a new audio track"
+"Duplicate this track"
+"Arm track 3 for recording"
+```
+
+**Mixing Commands**:
+```
+"Turn up the bass by 3 dB"
+"Pan the vocals left"
+"Add reverb to the snare"
+"Bypass the compressor on track 2"
+"Set the master volume to -6"
+```
+
+**Agent Interaction**:
+```
+"Hey Magica, make this warmer"
+"Suggest some drum patterns"
+"Clean up this vocal take"
+"Find me a similar bassline"
+"What's clashing in this mix?"
+```
+
+**Navigation**:
+```
+"Zoom in on the verse"
+"Show me the mixer"
+"Open the piano roll"
+"Go to marker 'chorus'"
+```
+
+**3. Context-Aware Processing**
+- **Track Context**: "Add compression" applies to selected track
+- **Time Context**: "Delete this" removes content at playhead
+- **Selection Context**: "Move it up an octave" affects selected notes
+- **Workflow Context**: Different command interpretation during mixing vs recording
+
+**4. Voice Feedback Options**
+- **Audio Confirmation**: Brief spoken confirmations ("Done", "Track muted")
+- **Visual Only**: Silent operation with on-screen feedback
+- **Detailed Mode**: Full spoken status updates
+- **Configurable Verbosity**: User controls feedback level
+
+**Technical Implementation**:
+
+**Speech Recognition Pipeline**:
+```
+Audio Input → VAD (Voice Activity Detection)
+                    ↓
+            Wake Word Detection
+                    ↓
+            Speech-to-Text (Local/Cloud)
+                    ↓
+            Intent Classification
+                    ↓
+            Command Execution / Agent Routing
+                    ↓
+            Feedback Generation
+```
+
+**Processing Options**:
+- **Local Processing** (Privacy-focused):
+  - Whisper.cpp for speech-to-text
+  - Local intent classification model
+  - Zero latency for simple commands
+
+- **Cloud Processing** (Accuracy-focused):
+  - OpenAI Whisper API
+  - Higher accuracy for complex phrases
+  - Fallback when local fails
+
+- **Hybrid Mode** (Recommended):
+  - Local for transport/simple commands
+  - Cloud for complex agent interactions
+  - Automatic routing based on command complexity
+
+**Latency Targets**:
+- **Transport Commands**: <100ms (critical for performance)
+- **Track Operations**: <200ms
+- **Agent Queries**: <500ms initial response
+- **Complex Processing**: Background with progress feedback
+
+**Hardware Integration**:
+- **Foot Pedals**: Map pedals to push-to-talk or common commands
+- **MIDI Controllers**: Trigger voice mode via MIDI
+- **Stream Deck**: Voice command buttons with visual feedback
+- **Headset Mics**: Optimized for close-mic voice capture
+
+**Voice Training & Customization**:
+- **User Voice Profile**: Adapts to individual speech patterns
+- **Custom Commands**: Define personal command aliases
+- **Accent Support**: Multiple language/accent models
+- **Noise Adaptation**: Learns to filter studio environment noise
+
+**Recording Session Integration**:
+- **Non-Interfering**: Voice commands filtered from recordings
+- **Talkback Integration**: Seamless switch between commands and talkback
+- **Cue System**: Voice-triggered cue points and markers
+- **Take Management**: "That's a keeper" / "Delete that take"
+
+**Safety & Control**:
+- **Confirmation Required**: Destructive operations need verbal confirmation
+- **Undo by Voice**: "Undo that" / "Bring it back"
+- **Emergency Stop**: "Stop everything" halts all operations
+- **Command History**: Review and repeat recent voice commands
+
+**Accessibility Benefits**:
+- **Hands-Free Production**: Essential for musicians with mobility limitations
+- **Eyes-Free Operation**: Work without looking at screen
+- **Reduced RSI**: Less mouse/keyboard repetitive strain
+- **Workflow Speed**: Faster than navigating menus
+
+**Use Cases**:
+- **Live Recording**: Control transport while playing instrument
+- **Mixing Sessions**: Adjust levels while listening critically
+- **Arrangement**: Navigate and edit while away from computer
+- **Collaboration**: Voice commands during studio sessions
+- **Accessibility**: Full DAW control for users with limited mobility
 
 **Visual Integration**:
 - **Color Coding**: Different agents have subtle color themes
@@ -279,17 +425,17 @@ Not just different views, but different **CPU optimization strategies**:
 class AudioEngineInterface {
 public:
     virtual ~AudioEngineInterface() = default;
-    
+
     // Core engine operations
     virtual bool initialize(const AudioConfig& config) = 0;
     virtual void processAudio(AudioBuffer& buffer) = 0;
     virtual void shutdown() = 0;
-    
+
     // Project management
     virtual std::unique_ptr<ProjectInterface> createProject() = 0;
     virtual bool loadProject(const std::string& path) = 0;
     virtual bool saveProject(const std::string& path) = 0;
-    
+
     // Real-time operations
     virtual void play() = 0;
     virtual void stop() = 0;
@@ -300,7 +446,7 @@ public:
 
 **Engine Implementations**:
 - `TracktionAudioEngine` (Phase 1)
-- `MagicaAudioEngine` (Phase 2) 
+- `MagicaAudioEngine` (Phase 2)
 - `BareMetalAudioEngine` (Phase 3)
 
 **UI Framework Interface**
@@ -309,15 +455,15 @@ public:
 class UIFrameworkInterface {
 public:
     virtual ~UIFrameworkInterface() = default;
-    
+
     // Window management
     virtual std::unique_ptr<WindowInterface> createMainWindow() = 0;
     virtual std::unique_ptr<ComponentInterface> createComponent(ComponentType type) = 0;
-    
+
     // Event handling
     virtual void processEvents() = 0;
     virtual void registerCallback(EventType type, std::function<void()> callback) = 0;
-    
+
     // Rendering
     virtual void render() = 0;
     virtual void invalidateRegion(const Rectangle& region) = 0;
@@ -358,7 +504,7 @@ Magica Application Layer
 │   ├── TracktionAudioEngine
 │   ├── MagicaAudioEngine (future)
 │   └── BareMetalAudioEngine (future)
-├── UI Framework Interface  
+├── UI Framework Interface
 │   ├── JUCEUIFramework
 │   ├── NativeUIFramework (future)
 │   └── ImGuiUIFramework (alternative)
@@ -570,7 +716,7 @@ MyProject.magica/
 
 **Performance Benchmarks Target**:
 - **Small Project** (<10 tracks): <500ms load time
-- **Medium Project** (50 tracks): <2s load time  
+- **Medium Project** (50 tracks): <2s load time
 - **Large Project** (200+ tracks): <5s load time
 - **Version Switch**: <2s for any project size
 
@@ -625,15 +771,15 @@ class DAWprojectImporter {
 public:
     // Full project import
     MagicaProject importProject(const std::string& dawprojectPath);
-    
+
     // Selective track import
-    std::vector<Track> importTracks(const std::string& dawprojectPath, 
+    std::vector<Track> importTracks(const std::string& dawprojectPath,
                                    const std::vector<std::string>& trackIds);
-    
+
     // Preview capabilities
     ProjectMetadata getProjectInfo(const std::string& dawprojectPath);
     std::vector<TrackInfo> getTrackList(const std::string& dawprojectPath);
-    
+
 private:
     XMLParser parser_;
     AudioFormatManager audioManager_;
@@ -647,7 +793,7 @@ private:
 ```
 DAWproject Track → Magica Hybrid Track
 ├── Audio clips → Audio clips (direct)
-├── MIDI clips → MIDI clips (direct)  
+├── MIDI clips → MIDI clips (direct)
 ├── Plugin chain → Converted plugin chain
 ├── Automation → Magica automation format
 └── Routing → Magica routing system
@@ -678,13 +824,13 @@ DAWproject Timeline → Magica Timeline
 class DAWprojectExporter {
 public:
     // Export full project
-    bool exportProject(const MagicaProject& project, 
+    bool exportProject(const MagicaProject& project,
                       const std::string& outputPath);
-    
+
     // Export selected tracks
     bool exportTracks(const std::vector<Track>& tracks,
                      const std::string& outputPath);
-    
+
     // Export options
     struct ExportOptions {
         bool includePluginStates = true;
@@ -755,14 +901,14 @@ class JUCEPluginManager {
 private:
     juce::AudioPluginFormatManager formatManager_;
     std::unique_ptr<juce::CLAPPluginFormat> clapFormat_;
-    
+
 public:
     bool initializeCLAPSupport() {
         clapFormat_ = std::make_unique<juce::CLAPPluginFormat>();
         formatManager_.addFormat(clapFormat_.get());
         return true;
     }
-    
+
     std::vector<juce::PluginDescription> scanCLAPPlugins() {
         return clapFormat_->findAllTypes();
     }
@@ -776,7 +922,7 @@ class CLAPHost {
 private:
     clap_host_t host_;
     std::vector<std::unique_ptr<CLAPPlugin>> plugins_;
-    
+
 public:
     // CLAP host callbacks
     static const clap_host_t* getCLAPHost() {
@@ -794,7 +940,7 @@ public:
         };
         return &host;
     }
-    
+
     // Plugin management
     bool loadCLAPPlugin(const std::string& path);
     void unloadCLAPPlugin(const std::string& pluginId);
@@ -808,21 +954,21 @@ public:
 class PluginInterface {
 public:
     virtual ~PluginInterface() = default;
-    
+
     // Common plugin operations
     virtual bool initialize(const AudioConfig& config) = 0;
     virtual void processAudio(AudioBuffer& buffer) = 0;
     virtual void shutdown() = 0;
-    
+
     // Parameter management
     virtual std::vector<Parameter> getParameters() const = 0;
     virtual void setParameter(const std::string& id, double value) = 0;
     virtual double getParameter(const std::string& id) const = 0;
-    
+
     // State management
     virtual void saveState(std::vector<uint8_t>& data) = 0;
     virtual void loadState(const std::vector<uint8_t>& data) = 0;
-    
+
     // Plugin info
     virtual std::string getName() const = 0;
     virtual std::string getVendor() const = 0;
@@ -835,7 +981,7 @@ private:
     const clap_plugin_t* plugin_;
     clap_plugin_params_t* params_;
     clap_plugin_state_t* state_;
-    
+
 public:
     // CLAP-specific implementation
     bool initialize(const AudioConfig& config) override;
@@ -868,27 +1014,27 @@ public:
         bool is64bit;
         bool isValid;
     };
-    
+
     std::vector<PluginInfo> scanAllFormats() {
         std::vector<PluginInfo> allPlugins;
-        
+
         // Scan CLAP plugins
         auto clapPlugins = scanCLAPPlugins();
         allPlugins.insert(allPlugins.end(), clapPlugins.begin(), clapPlugins.end());
-        
+
         // Scan VST3 plugins
         auto vst3Plugins = scanVST3Plugins();
         allPlugins.insert(allPlugins.end(), vst3Plugins.begin(), vst3Plugins.end());
-        
+
         // Scan AU plugins (macOS only)
         #ifdef JUCE_MAC
         auto auPlugins = scanAUPlugins();
         allPlugins.insert(allPlugins.end(), auPlugins.begin(), auPlugins.end());
         #endif
-        
+
         return allPlugins;
     }
-    
+
 private:
     std::vector<PluginInfo> scanCLAPPlugins();
     std::vector<PluginInfo> scanVST3Plugins();
@@ -906,12 +1052,12 @@ struct PluginCompatibility {
     bool hasVST3;
     bool hasAU;
     bool hasLV2;
-    
+
     // Performance metrics
     double clapLatency;
     double vst3Latency;
     double auLatency;
-    
+
     // Feature support
     bool supportsNoteExpression;
     bool supportsPolyphonicModulation;
@@ -935,7 +1081,7 @@ public:
         Brightness,
         Pressure
     };
-    
+
     struct NoteExpression {
         int32_t noteId;
         int16_t portIndex;
@@ -944,7 +1090,7 @@ public:
         ExpressionType type;
         double value;
     };
-    
+
     void processNoteExpressions(const std::vector<NoteExpression>& expressions);
 };
 ```
@@ -962,7 +1108,7 @@ public:
         int32_t paramId;
         double value;
     };
-    
+
     void processPolyphonicModulation(const std::vector<ModulationTarget>& targets);
 };
 ```
@@ -983,7 +1129,7 @@ public:
         bool isRecording;
         bool isLoopActive;
     };
-    
+
     void updateTransport(const TransportInfo& info);
 };
 ```
@@ -1428,14 +1574,14 @@ Source Code → Parser → AST → Optimizer → Code Generator → Native Code
 ```
 Engine Modes:
 - ARRANGEMENT: {
-    buffer_size: 1024, 
-    latency_compensation: true, 
+    buffer_size: 1024,
+    latency_compensation: true,
     bg_processing: true,
     dsp_optimization: "throughput"
   }
 - LIVE: {
-    buffer_size: 64, 
-    latency_compensation: false, 
+    buffer_size: 64,
+    latency_compensation: false,
     bg_processing: false,
     dsp_optimization: "latency"
   }
@@ -1486,7 +1632,8 @@ MagicaAPI
 4. **Composition Agent**: Assists with creative composition tasks
 5. **Sample Organization Agent**: Continuously analyzes and organizes sample libraries
 6. **Version Control Agent**: Manages project versioning and creative branching
-7. **Utility Agent**: Handles file operations, project management
+7. **Voice Agent**: Processes voice commands and routes to appropriate agents
+8. **Utility Agent**: Handles file operations, project management
 
 ### Agent Capabilities
 - **Cross-Domain Knowledge**: Each agent can work with tracks, DSP, and API
@@ -1550,6 +1697,15 @@ This document should generate issues like:
 - `[INTEGRATION] Sample browser integration with composition workflow`
 - `[INTEGRATION] Context-aware prompt routing and agent coordination`
 
+**Voice Commands**:
+- `[VOICE] Implement voice command recognition pipeline`
+- `[VOICE] Wake word detection system`
+- `[VOICE] Local speech-to-text integration (Whisper.cpp)`
+- `[VOICE] Intent classification for DAW commands`
+- `[VOICE] Voice feedback and confirmation system`
+- `[AGENT] Voice agent for command routing`
+- `[HARDWARE] Foot pedal and MIDI controller integration for voice activation`
+
 ## Success Metrics
 
 ### Technical Performance
@@ -1573,6 +1729,9 @@ This document should generate issues like:
 - **Context Accuracy**: Agents correctly understand user intent 90% of the time without clarification
 - **Version Control Adoption**: 70% of users regularly use branching for creative experimentation
 - **Collaboration Efficiency**: Multi-user projects 3x more efficient than traditional file sharing
+- **Voice Command Accuracy**: 95%+ recognition rate for common transport/track commands
+- **Voice Latency**: Transport commands execute in <100ms from end of utterance
+- **Hands-Free Sessions**: Users complete entire recording sessions without touching mouse/keyboard
 
 ### Ecosystem Growth
 - **Third-party Development**: Active plugin/script marketplace
@@ -1586,9 +1745,9 @@ This document should generate issues like:
 **A DAW that thinks like a musician** - Magica combines the flexibility of open-source audio tools with the intelligence of AI assistance. The goal is not to replace human creativity but to amplify it through:
 
 - **Intelligent Assistance**: AI agents that understand musical context
-- **Unlimited Extensibility**: Every aspect programmable and customizable  
+- **Unlimited Extensibility**: Every aspect programmable and customizable
 - **Non-destructive Workflow**: Complete creative freedom with full undo history
 - **Performance Flexibility**: Optimized for both studio work and live performance
 - **Community-Driven**: Open platform for sharing tools and workflows
 
-This vision represents the next evolution of digital audio workstations - where artificial intelligence serves human creativity, and every limitation can be overcome through intelligent automation and extensible programming. 
+This vision represents the next evolution of digital audio workstations - where artificial intelligence serves human creativity, and every limitation can be overcome through intelligent automation and extensible programming.
