@@ -1,4 +1,4 @@
 [submodule "third_party/tracktion_engine"]
 	path = third_party/tracktion_engine
-	url = https://github.com/lucaromagnoli/tracktion_engine.git
-	branch = magica-minimal 
+	url = https://github.com/Conceptual-Machines/tracktion_engine.git
+	branch = magica-minimal
