@@ -181,7 +181,7 @@ void MainWindow::MainComponent::resized() {
 
     // Position timeline fillers in side panels to cover both arrangement and main timeline
     int timelineY = TRANSPORT_HEIGHT;  // Timeline starts right after transport
-    int totalTimelineHeight = ARRANGEMENT_HEIGHT + TIMELINE_HEIGHT;
+    int totalTimelineHeight = LayoutConfig::getInstance().getTimelineHeight();
     if (leftPanelVisible) {
         // Left filler should cover the track header area
         leftPanel->setTimelineFillerPosition(timelineY, totalTimelineHeight);

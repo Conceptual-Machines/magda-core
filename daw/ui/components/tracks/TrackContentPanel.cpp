@@ -2,8 +2,8 @@
 
 #include <iostream>
 
-#include "../themes/DarkTheme.hpp"
-#include "../themes/FontManager.hpp"
+#include "../../themes/DarkTheme.hpp"
+#include "../../themes/FontManager.hpp"
 #include "Config.hpp"
 
 namespace magica {
@@ -110,16 +110,38 @@ void TrackContentPanel::setZoom(double zoom) {
     repaint();
 }
 
+void TrackContentPanel::setVerticalZoom(double zoom) {
+    verticalZoom = juce::jlimit(0.5, 3.0, zoom);
+    resized();
+    repaint();
+}
+
 void TrackContentPanel::setTimelineLength(double lengthInSeconds) {
     timelineLength = lengthInSeconds;
     resized();
     repaint();
 }
 
+void TrackContentPanel::setTimeDisplayMode(TimeDisplayMode mode) {
+    displayMode = mode;
+    repaint();
+}
+
+void TrackContentPanel::setTempo(double bpm) {
+    tempoBPM = juce::jlimit(20.0, 999.0, bpm);
+    repaint();
+}
+
+void TrackContentPanel::setTimeSignature(int numerator, int denominator) {
+    timeSignatureNumerator = juce::jlimit(1, 16, numerator);
+    timeSignatureDenominator = juce::jlimit(1, 16, denominator);
+    repaint();
+}
+
 int TrackContentPanel::getTotalTracksHeight() const {
     int totalHeight = 0;
     for (const auto& lane : trackLanes) {
-        totalHeight += lane->height;
+        totalHeight += static_cast<int>(lane->height * verticalZoom);
     }
     return totalHeight;
 }
@@ -127,7 +149,7 @@ int TrackContentPanel::getTotalTracksHeight() const {
 int TrackContentPanel::getTrackYPosition(int trackIndex) const {
     int yPosition = 0;
     for (int i = 0; i < trackIndex && i < trackLanes.size(); ++i) {
-        yPosition += trackLanes[i]->height;
+        yPosition += static_cast<int>(trackLanes[i]->height * verticalZoom);
     }
     return yPosition;
 }
@@ -158,70 +180,99 @@ void TrackContentPanel::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) 
 }
 
 void TrackContentPanel::drawTimeGrid(juce::Graphics& g, juce::Rectangle<int> area) {
-    // Make grid lines more visible
-    g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.2f));
-
-    // Use the same grid calculation as timeline for perfect sync
     const int minPixelSpacing = 30;
 
-    // Define marker intervals in seconds (same as timeline)
-    const double intervals[] = {
-        0.001,  // 1ms (sample level at 44.1kHz ≈ 0.023ms)
-        0.005,  // 5ms
-        0.01,   // 10ms
-        0.05,   // 50ms
-        0.1,    // 100ms
-        0.25,   // 250ms
-        0.5,    // 500ms
-        1.0,    // 1 second
-        2.0,    // 2 seconds
-        5.0,    // 5 seconds
-        10.0,   // 10 seconds
-        30.0,   // 30 seconds
-        60.0    // 1 minute
-    };
+    if (displayMode == TimeDisplayMode::Seconds) {
+        // ===== SECONDS MODE =====
+        g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.2f));
 
-    // Find the appropriate interval (same logic as timeline)
-    double gridInterval = 1.0;  // Default to 1 second
-    for (double interval : intervals) {
-        if (static_cast<int>(interval * currentZoom) >= minPixelSpacing) {
-            gridInterval = interval;
-            break;
+        const double intervals[] = {0.001, 0.005, 0.01, 0.05, 0.1,  0.25, 0.5,
+                                    1.0,   2.0,   5.0,  10.0, 30.0, 60.0};
+
+        double gridInterval = 1.0;
+        for (double interval : intervals) {
+            if (static_cast<int>(interval * currentZoom) >= minPixelSpacing) {
+                gridInterval = interval;
+                break;
+            }
         }
-    }
 
-    // If even the finest interval is too wide, use sample-level precision
-    if (gridInterval == 0.001 && static_cast<int>(0.001 * currentZoom) > minPixelSpacing * 2) {
-        // At very high zoom, show sample markers (assuming 44.1kHz)
-        double sampleInterval = 1.0 / 44100.0;  // ~0.0000227 seconds per sample
-        int sampleStep = 1;
-        while (static_cast<int>(sampleStep * sampleInterval * currentZoom) < minPixelSpacing) {
-            sampleStep *= 10;  // 1, 10, 100, 1000 samples
+        for (double time = 0.0; time <= timelineLength; time += gridInterval) {
+            int x = static_cast<int>(time * currentZoom) + LEFT_PADDING;
+            if (x >= area.getX() && x <= area.getRight()) {
+                g.drawLine(x, area.getY(), x, area.getBottom(), 1.0f);
+            }
         }
-        gridInterval = sampleStep * sampleInterval;
-    }
+    } else {
+        // ===== BARS/BEATS MODE =====
+        double secondsPerBeat = 60.0 / tempoBPM;
+        double secondsPerBar = secondsPerBeat * timeSignatureNumerator;
 
-    // Draw vertical grid lines aligned to interval boundaries
-    double startTime = std::floor(0.0 / gridInterval) * gridInterval;
-    for (double time = startTime; time <= timelineLength; time += gridInterval) {
-        int x = static_cast<int>(time * currentZoom) + LEFT_PADDING;
-        if (x >= area.getX() && x <= area.getRight()) {
-            g.drawLine(x, area.getY(), x, area.getBottom(), 1.0f);
+        // Find appropriate interval
+        const double beatFractions[] = {0.25, 0.5, 1.0, 2.0};
+        const int barMultiples[] = {1, 2, 4, 8, 16, 32};
+
+        double markerIntervalBeats = 1.0;
+        bool useBarMultiples = false;
+
+        for (double fraction : beatFractions) {
+            double intervalSeconds = secondsPerBeat * fraction;
+            if (static_cast<int>(intervalSeconds * currentZoom) >= minPixelSpacing) {
+                markerIntervalBeats = fraction;
+                break;
+            }
+            if (fraction == 2.0) {
+                useBarMultiples = true;
+            }
+        }
+
+        if (useBarMultiples || static_cast<int>(secondsPerBar * currentZoom) < minPixelSpacing) {
+            for (int mult : barMultiples) {
+                double intervalSeconds = secondsPerBar * mult;
+                if (static_cast<int>(intervalSeconds * currentZoom) >= minPixelSpacing) {
+                    markerIntervalBeats = timeSignatureNumerator * mult;
+                    break;
+                }
+            }
+        }
+
+        double markerIntervalSeconds = secondsPerBeat * markerIntervalBeats;
+
+        // Draw grid lines
+        for (double time = 0.0; time <= timelineLength; time += markerIntervalSeconds) {
+            int x = static_cast<int>(time * currentZoom) + LEFT_PADDING;
+            if (x >= area.getX() && x <= area.getRight()) {
+                // Brighter line on bar boundaries
+                double totalBeats = time / secondsPerBeat;
+                bool isBarLine = std::fmod(totalBeats, timeSignatureNumerator) < 0.001;
+
+                if (isBarLine) {
+                    g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.4f));
+                    g.drawLine(x, area.getY(), x, area.getBottom(), 1.5f);
+                } else {
+                    g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.1f));
+                    g.drawLine(x, area.getY(), x, area.getBottom(), 1.0f);
+                }
+            }
         }
     }
 }
 
 void TrackContentPanel::drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> area) {
-    // Draw beat subdivisions (quarter notes at 120 BPM = 0.5 seconds)
-    // Make beat grid more visible too
+    // Only draw beat overlay in seconds mode (bars/beats mode handles this in drawTimeGrid)
+    if (displayMode == TimeDisplayMode::BarsBeats) {
+        return;
+    }
+
+    // Draw beat subdivisions using actual tempo
     g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).withAlpha(0.5f));
 
-    const double beatInterval = 0.5;  // 0.5 seconds per beat at 120 BPM
+    const double beatInterval = 60.0 / tempoBPM;
     const int beatPixelSpacing = static_cast<int>(beatInterval * currentZoom);
 
     // Only draw beat grid if it's not too dense
     if (beatPixelSpacing >= 10) {
-        for (double beat = 0; beat <= timelineLength; beat += beatInterval) {
+        for (double beat = 0.0; beat <= timelineLength; beat += beatInterval) {
             int x = static_cast<int>(beat * currentZoom) + LEFT_PADDING;
             if (x >= area.getX() && x <= area.getRight()) {
                 g.drawLine(x, area.getY(), x, area.getBottom(), 0.5f);
@@ -236,7 +287,7 @@ juce::Rectangle<int> TrackContentPanel::getTrackLaneArea(int trackIndex) const {
     }
 
     int yPosition = getTrackYPosition(trackIndex);
-    int height = trackLanes[trackIndex]->height;
+    int height = static_cast<int>(trackLanes[trackIndex]->height * verticalZoom);
 
     return juce::Rectangle<int>(0, yPosition, getWidth(), height);
 }

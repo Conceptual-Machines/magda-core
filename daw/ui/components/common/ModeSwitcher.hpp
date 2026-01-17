@@ -2,7 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "../interfaces/daw_mode_interface.hpp"
+#include "../../../interfaces/daw_mode_interface.hpp"
 
 /**
  * @brief UI component for switching between DAW modes

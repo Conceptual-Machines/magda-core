@@ -5,6 +5,8 @@
 #include <memory>
 #include <vector>
 
+#include "../timeline/TimelineComponent.hpp"  // For TimeDisplayMode
+
 namespace magica {
 
 class TrackContentPanel : public juce::Component {
@@ -32,12 +34,21 @@ class TrackContentPanel : public juce::Component {
     double getZoom() const {
         return currentZoom;
     }
+    void setVerticalZoom(double zoom);
+    double getVerticalZoom() const {
+        return verticalZoom;
+    }
 
     // Timeline properties
     void setTimelineLength(double lengthInSeconds);
     double getTimelineLength() const {
         return timelineLength;
     }
+
+    // Time display mode and tempo (for grid drawing)
+    void setTimeDisplayMode(TimeDisplayMode mode);
+    void setTempo(double bpm);
+    void setTimeSignature(int numerator, int denominator);
 
     // Get total height of all tracks
     int getTotalTracksHeight() const;
@@ -63,8 +74,15 @@ class TrackContentPanel : public juce::Component {
 
     std::vector<std::unique_ptr<TrackLane>> trackLanes;
     int selectedTrackIndex = -1;
-    double currentZoom = 1.0;     // pixels per second
+    double currentZoom = 1.0;     // pixels per second (horizontal zoom)
+    double verticalZoom = 1.0;    // track height multiplier
     double timelineLength = 0.0;  // Will be loaded from config
+
+    // Time display mode and tempo (for grid drawing)
+    TimeDisplayMode displayMode = TimeDisplayMode::Seconds;
+    double tempoBPM = 120.0;
+    int timeSignatureNumerator = 4;
+    int timeSignatureDenominator = 4;
 
     // Helper methods
     void paintTrackLane(juce::Graphics& g, const TrackLane& lane, juce::Rectangle<int> area,

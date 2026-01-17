@@ -59,6 +59,27 @@ void MainView::setupComponents() {
     arrangementLockButton->onClick = [this]() { toggleArrangementLock(); };
     addAndMakeVisible(arrangementLockButton.get());
 
+    // Create time display mode toggle button
+    timeDisplayToggleButton = std::make_unique<juce::TextButton>("TIME");
+    timeDisplayToggleButton->setTooltip("Toggle time display (Seconds/Bars)");
+    timeDisplayToggleButton->setColour(juce::TextButton::buttonColourId,
+                                       DarkTheme::getColour(DarkTheme::SURFACE));
+    timeDisplayToggleButton->setColour(juce::TextButton::textColourOffId,
+                                       DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    timeDisplayToggleButton->onClick = [this]() {
+        auto currentMode = timeline->getTimeDisplayMode();
+        if (currentMode == TimeDisplayMode::Seconds) {
+            timeline->setTimeDisplayMode(TimeDisplayMode::BarsBeats);
+            trackContentPanel->setTimeDisplayMode(TimeDisplayMode::BarsBeats);
+            timeDisplayToggleButton->setButtonText("BARS");
+        } else {
+            timeline->setTimeDisplayMode(TimeDisplayMode::Seconds);
+            trackContentPanel->setTimeDisplayMode(TimeDisplayMode::Seconds);
+            timeDisplayToggleButton->setButtonText("TIME");
+        }
+    };
+    addAndMakeVisible(timeDisplayToggleButton.get());
+
     // Create track content viewport
     trackContentViewport = std::make_unique<juce::Viewport>();
     trackContentPanel = std::make_unique<TrackContentPanel>();
@@ -71,8 +92,69 @@ void MainView::setupComponents() {
     addAndMakeVisible(*playheadComponent);
     playheadComponent->toFront(false);
 
+    // Create horizontal zoom scroll bar (at bottom)
+    horizontalZoomScrollBar =
+        std::make_unique<ZoomScrollBar>(ZoomScrollBar::Orientation::Horizontal);
+    horizontalZoomScrollBar->onRangeChanged = [this](double start, double end) {
+        // Convert range to zoom and scroll
+        double rangeWidth = end - start;
+        if (rangeWidth > 0 && timelineLength > 0) {
+            // Calculate zoom: smaller range = higher zoom
+            int viewportWidth = trackContentViewport->getWidth();
+            double newZoom = static_cast<double>(viewportWidth) / (rangeWidth * timelineLength);
+
+            // Calculate scroll position
+            double scrollTime = start * timelineLength;
+            int scrollX = static_cast<int>(scrollTime * newZoom);
+
+            // Update via zoom manager
+            zoomManager->setZoom(newZoom);
+            zoomManager->setCurrentScrollPosition(scrollX);
+        }
+    };
+    addAndMakeVisible(*horizontalZoomScrollBar);
+
+    // Create vertical zoom scroll bar (on left)
+    verticalZoomScrollBar = std::make_unique<ZoomScrollBar>(ZoomScrollBar::Orientation::Vertical);
+    verticalZoomScrollBar->onRangeChanged = [this](double start, double end) {
+        // Convert range to vertical zoom and scroll
+        double rangeHeight = end - start;
+        if (rangeHeight > 0) {
+            // Calculate vertical zoom: smaller range = higher zoom (taller tracks)
+            // rangeHeight of 1.0 = seeing all tracks = zoom 1.0
+            // rangeHeight of 0.5 = seeing half tracks = zoom 2.0
+            double newVerticalZoom = 1.0 / rangeHeight;
+            newVerticalZoom = juce::jlimit(0.5, 3.0, newVerticalZoom);
+
+            // Apply vertical zoom
+            verticalZoom = newVerticalZoom;
+
+            // Calculate scroll position based on start position
+            int totalContentHeight = trackHeadersPanel->getTotalTracksHeight();
+            int scaledHeight = static_cast<int>(totalContentHeight * verticalZoom);
+            int scrollY = static_cast<int>(start * scaledHeight);
+
+            // Update track heights and viewport
+            updateContentSizes();
+            trackContentViewport->setViewPosition(trackContentViewport->getViewPositionX(),
+                                                  scrollY);
+        }
+    };
+    addAndMakeVisible(*verticalZoomScrollBar);
+
+    // Create layout debug panel (F11 to toggle)
+    layoutDebugPanel = std::make_unique<LayoutDebugPanel>();
+    layoutDebugPanel->setVisible(false);
+    layoutDebugPanel->onLayoutChanged = [this]() {
+        resized();
+        repaint();
+    };
+    addAndMakeVisible(*layoutDebugPanel);
+    layoutDebugPanel->toFront(false);
+
     // Set up scroll synchronization
     trackContentViewport->getHorizontalScrollBar().addListener(this);
+    trackContentViewport->getVerticalScrollBar().addListener(this);
 
     // Set up track synchronization between headers and content
     setupTrackSynchronization();
@@ -105,16 +187,39 @@ void MainView::paint(juce::Graphics& g) {
 void MainView::resized() {
     auto bounds = getLocalBounds();
 
-    // Timeline viewport at the top - offset by track header width
-    auto timelineArea = bounds.removeFromTop(TIMELINE_HEIGHT);
+    // Layout constants
+    static constexpr int ZOOM_SCROLLBAR_SIZE = 20;
+    auto& layout = LayoutConfig::getInstance();
 
-    // Position lock button in the top-left corner above track headers
-    auto lockButtonArea = timelineArea.removeFromLeft(trackHeaderWidth);
-    lockButtonArea = lockButtonArea.removeFromTop(30).reduced(5);  // 30px height, 5px margin
-    arrangementLockButton->setBounds(lockButtonArea);
+    // Vertical zoom scroll bar on the right
+    auto verticalScrollBarArea = bounds.removeFromRight(ZOOM_SCROLLBAR_SIZE);
+
+    // Horizontal zoom scroll bar at the bottom
+    auto horizontalScrollBarArea = bounds.removeFromBottom(ZOOM_SCROLLBAR_SIZE);
+    // Leave space in bottom-left corner for track headers
+    horizontalScrollBarArea.removeFromLeft(trackHeaderWidth + layout.componentSpacing);
+    horizontalZoomScrollBar->setBounds(horizontalScrollBarArea);
+
+    // Now position vertical scroll bar (after horizontal removed its bottom portion)
+    verticalScrollBarArea.removeFromBottom(ZOOM_SCROLLBAR_SIZE);  // Don't overlap corner
+    verticalScrollBarArea.removeFromTop(getTimelineHeight());     // Start below timeline
+    verticalZoomScrollBar->setBounds(verticalScrollBarArea);
+
+    // Timeline viewport at the top - offset by track header width
+    auto timelineArea = bounds.removeFromTop(getTimelineHeight());
+
+    // Position buttons in the top-left corner above track headers
+    auto buttonArea = timelineArea.removeFromLeft(trackHeaderWidth);
+    auto topRow = buttonArea.removeFromTop(35);
+
+    // Lock button on the left
+    arrangementLockButton->setBounds(topRow.removeFromLeft(35).reduced(3));
+
+    // Time display toggle button on the right
+    timeDisplayToggleButton->setBounds(topRow.removeFromRight(50).reduced(3));
 
     // Add padding space for the resize handle
-    timelineArea.removeFromLeft(HEADER_CONTENT_PADDING);  // Remove padding from timeline area too
+    timelineArea.removeFromLeft(layout.componentSpacing);  // Remove padding from timeline area too
 
     // Timeline takes the remaining width
     timelineViewport->setBounds(timelineArea);
@@ -124,7 +229,7 @@ void MainView::resized() {
     trackHeadersPanel->setBounds(trackHeadersArea);
 
     // Remove padding space between headers and content
-    bounds.removeFromLeft(HEADER_CONTENT_PADDING);
+    bounds.removeFromLeft(layout.componentSpacing);
 
     // Track content viewport gets the remaining space
     trackContentViewport->setBounds(bounds);
@@ -132,12 +237,20 @@ void MainView::resized() {
     // Playhead component extends from above timeline down to track content
     // This allows the triangle to be drawn in the timeline area
     auto playheadArea = bounds;
-    playheadArea = playheadArea.withTop(TIMELINE_HEIGHT - 20);  // Start 20px above timeline border
+    playheadArea =
+        playheadArea.withTop(getTimelineHeight() - 20);  // Start 20px above timeline border
     // Reduce the area to avoid covering scrollbars
     int scrollBarThickness = trackContentViewport->getScrollBarThickness();
     playheadArea =
         playheadArea.withTrimmedRight(scrollBarThickness).withTrimmedBottom(scrollBarThickness);
     playheadComponent->setBounds(playheadArea);
+
+    // Position layout debug panel in top-right corner
+    if (layoutDebugPanel != nullptr) {
+        int panelWidth = layoutDebugPanel->getWidth();
+        int panelHeight = layoutDebugPanel->getHeight();
+        layoutDebugPanel->setBounds(getWidth() - panelWidth - 10, 10, panelWidth, panelHeight);
+    }
 
     // Update zoom manager with viewport width (but preserve user's zoom)
     auto viewportWidth = timelineViewport->getWidth();
@@ -264,6 +377,15 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
+    // Check for F11 to toggle layout debug panel
+    if (key == juce::KeyPress::F11Key) {
+        layoutDebugPanel->setVisible(!layoutDebugPanel->isVisible());
+        if (layoutDebugPanel->isVisible()) {
+            layoutDebugPanel->toFront(false);
+        }
+        return true;
+    }
+
     return false;
 }
 
@@ -274,33 +396,44 @@ void MainView::updateContentSizes() {
     auto minWidth = viewportWidth + (viewportWidth / 2);  // 1.5x viewport width for centering
     auto contentWidth = juce::jmax(baseWidth, minWidth);
 
-    auto trackContentHeight = trackHeadersPanel->getTotalTracksHeight();
+    // Calculate track content height with vertical zoom
+    auto baseTrackHeight = trackHeadersPanel->getTotalTracksHeight();
+    auto scaledTrackHeight = static_cast<int>(baseTrackHeight * verticalZoom);
 
     // Update timeline size with enhanced content width
-    timeline->setSize(contentWidth, TIMELINE_HEIGHT);
+    timeline->setSize(contentWidth, getTimelineHeight());
 
-    // Update track content size with enhanced content width
-    trackContentPanel->setSize(contentWidth, trackContentHeight);
+    // Update track content size with enhanced content width and vertical zoom
+    trackContentPanel->setSize(contentWidth, scaledTrackHeight);
+    trackContentPanel->setVerticalZoom(verticalZoom);
 
-    // Update track headers panel height to match content
+    // Update track headers panel height to match content (with vertical zoom)
     trackHeadersPanel->setSize(trackHeaderWidth,
-                               juce::jmax(trackContentHeight, trackContentViewport->getHeight()));
+                               juce::jmax(scaledTrackHeight, trackContentViewport->getHeight()));
+    trackHeadersPanel->setVerticalZoom(verticalZoom);
 
     // Repaint playhead after content size changes
     playheadComponent->repaint();
+
+    // Update both zoom scroll bars
+    updateVerticalZoomScrollBar();
 }
 
 void MainView::scrollBarMoved(juce::ScrollBar* scrollBarThatHasMoved, double newRangeStart) {
     // Sync timeline viewport when track content viewport scrolls horizontally
     if (scrollBarThatHasMoved == &trackContentViewport->getHorizontalScrollBar()) {
-        std::cout << "📊 SCROLLBAR MOVED: newRangeStart=" << newRangeStart
-                  << ", viewportPosX=" << trackContentViewport->getViewPositionX() << std::endl;
-
         timelineViewport->setViewPosition(static_cast<int>(newRangeStart), 0);
         // Notify zoom manager of scroll position change
         zoomManager->setCurrentScrollPosition(static_cast<int>(newRangeStart));
+        // Update zoom scroll bar
+        updateHorizontalZoomScrollBar();
         // Force playhead repaint when scrolling
         playheadComponent->repaint();
+    }
+
+    // Update vertical zoom scroll bar when track content viewport scrolls vertically
+    if (scrollBarThatHasMoved == &trackContentViewport->getVerticalScrollBar()) {
+        updateVerticalZoomScrollBar();
     }
 }
 
@@ -342,6 +475,51 @@ void MainView::setupTrackSynchronization() {
     };
 }
 
+void MainView::updateHorizontalZoomScrollBar() {
+    if (timelineLength <= 0 || horizontalZoom <= 0)
+        return;
+
+    int viewportWidth = trackContentViewport->getWidth();
+    int scrollX = trackContentViewport->getViewPositionX();
+
+    // Calculate visible range as fraction of total timeline
+    double visibleDuration = static_cast<double>(viewportWidth) / horizontalZoom;
+    double scrollTime = static_cast<double>(scrollX) / horizontalZoom;
+
+    double visibleStart = scrollTime / timelineLength;
+    double visibleEnd = (scrollTime + visibleDuration) / timelineLength;
+
+    // Clamp to valid range
+    visibleStart = juce::jlimit(0.0, 1.0, visibleStart);
+    visibleEnd = juce::jlimit(0.0, 1.0, visibleEnd);
+
+    horizontalZoomScrollBar->setVisibleRange(visibleStart, visibleEnd);
+}
+
+void MainView::updateVerticalZoomScrollBar() {
+    int totalContentHeight = trackHeadersPanel->getTotalTracksHeight();
+    if (totalContentHeight <= 0)
+        return;
+
+    int viewportHeight = trackContentViewport->getHeight();
+    int scrollY = trackContentViewport->getViewPositionY();
+
+    // Apply vertical zoom to get scaled content height
+    int scaledContentHeight = static_cast<int>(totalContentHeight * verticalZoom);
+    if (scaledContentHeight <= 0)
+        return;
+
+    // Calculate visible range as fraction of total (scaled) content
+    double visibleStart = static_cast<double>(scrollY) / scaledContentHeight;
+    double visibleEnd = static_cast<double>(scrollY + viewportHeight) / scaledContentHeight;
+
+    // Clamp to valid range
+    visibleStart = juce::jlimit(0.0, 1.0, visibleStart);
+    visibleEnd = juce::jlimit(0.0, 1.0, visibleEnd);
+
+    verticalZoomScrollBar->setVisibleRange(visibleStart, visibleEnd);
+}
+
 void MainView::setupZoomManagerCallbacks() {
     // Set up callback to handle zoom changes
     zoomManager->onZoomChanged = [this](double newZoom) {
@@ -352,6 +530,7 @@ void MainView::setupZoomManagerCallbacks() {
         timeline->setZoom(newZoom);
         trackContentPanel->setZoom(newZoom);
         updateContentSizes();
+        updateHorizontalZoomScrollBar();
         playheadComponent->repaint();
         repaint();
 
@@ -381,13 +560,8 @@ void MainView::setupZoomManagerCallbacks() {
         // Force viewport to update its scrollbars
         trackContentViewport->resized();
 
-        // Debug output
-        std::cout << "🔄 SCROLL: targetScrollX=" << scrollX
-                  << ", actualScrollX=" << trackContentViewport->getViewPositionX()
-                  << ", scrollBarStart="
-                  << trackContentViewport->getHorizontalScrollBar().getCurrentRangeStart()
-                  << ", contentWidth=" << trackContentPanel->getWidth()
-                  << ", viewportWidth=" << trackContentViewport->getWidth() << std::endl;
+        // Update zoom scroll bar to reflect new position
+        updateHorizontalZoomScrollBar();
 
         // Re-add scroll bar listener
         trackContentViewport->getHorizontalScrollBar().addListener(this);
@@ -398,18 +572,44 @@ void MainView::setupZoomManagerCallbacks() {
         updateContentSizes();
     };
 
-    // Set up timeline zoom callback to use ZoomManager with playhead centering
-    timeline->onZoomChanged = [this](double newZoom, int mouseX) {
+    // Set up timeline zoom callback to use ZoomManager with mouse-centered zoom
+    timeline->onZoomChanged = [this](double newZoom, double anchorTime, int anchorContentX) {
         // Set crosshair cursor during zoom operations
         setMouseCursor(juce::MouseCursor::CrosshairCursor);
 
-        // Since playhead gets set on mouseDown, it's already at the desired position
-        // Center zoom around the playhead position for consistent behavior
-        zoomManager->setZoomCentered(newZoom, playheadPosition);
+        // On first zoom callback, capture the viewport-relative position
+        // anchorContentX is in content coordinates, we need viewport-relative
+        if (!isZoomActive) {
+            isZoomActive = true;
+            int currentScrollX = trackContentViewport->getViewPositionX();
+            zoomAnchorViewportX = anchorContentX - currentScrollX;
+        }
+
+        // Calculate scroll position to keep anchorTime at the same viewport position
+        int anchorPixelPos = static_cast<int>(anchorTime * newZoom) + 18;
+        int newScrollX = anchorPixelPos - zoomAnchorViewportX;
+
+        // Clamp scroll to valid range
+        int contentWidth = static_cast<int>(timelineLength * newZoom);
+        int viewportWidth = trackContentViewport->getWidth();
+        int maxScrollX = juce::jmax(0, contentWidth - viewportWidth);
+        newScrollX = juce::jlimit(0, maxScrollX, newScrollX);
+
+        // Update zoom and scroll directly
+        zoomManager->setZoom(newZoom);
+        zoomManager->setCurrentScrollPosition(newScrollX);
+
+        // Trigger scroll update
+        if (zoomManager->onScrollChanged) {
+            zoomManager->onScrollChanged(newScrollX);
+        }
     };
 
     // Set up timeline zoom end callback
     timeline->onZoomEnd = [this]() {
+        // Reset zoom anchor tracking for next zoom operation
+        isZoomActive = false;
+
         // Reset cursor to normal when zoom ends
         setMouseCursor(juce::MouseCursor::NormalCursor);
 
@@ -560,8 +760,9 @@ void MainView::mouseDown(const juce::MouseEvent& event) {
 void MainView::mouseDrag(const juce::MouseEvent& event) {
     if (isResizingHeaders) {
         int deltaX = event.x - lastMouseX;
-        int newWidth =
-            juce::jlimit(MIN_TRACK_HEADER_WIDTH, MAX_TRACK_HEADER_WIDTH, trackHeaderWidth + deltaX);
+        auto& layout = LayoutConfig::getInstance();
+        int newWidth = juce::jlimit(layout.minTrackHeaderWidth, layout.maxTrackHeaderWidth,
+                                    trackHeaderWidth + deltaX);
 
         if (newWidth != trackHeaderWidth) {
             trackHeaderWidth = newWidth;
@@ -602,8 +803,9 @@ void MainView::mouseExit([[maybe_unused]] const juce::MouseEvent& event) {
 // Resize handle helper methods
 juce::Rectangle<int> MainView::getResizeHandleArea() const {
     // Position the resize handle in the padding space between headers and content
-    return juce::Rectangle<int>(trackHeaderWidth, TIMELINE_HEIGHT, HEADER_CONTENT_PADDING,
-                                getHeight() - TIMELINE_HEIGHT);
+    auto& layout = LayoutConfig::getInstance();
+    return juce::Rectangle<int>(trackHeaderWidth, getTimelineHeight(), layout.componentSpacing,
+                                getHeight() - getTimelineHeight());
 }
 
 void MainView::paintResizeHandle(juce::Graphics& g) {

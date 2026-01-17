@@ -4,54 +4,90 @@
 
 namespace magica {
 
+/**
+ * SideFX-inspired dark theme for Magica DAW
+ * Color palette derived from professional audio production interfaces
+ */
 class DarkTheme {
   public:
-    // Main colors
-    static constexpr auto BACKGROUND = 0xFF1E1E1E;        // Very dark grey
-    static constexpr auto PANEL_BACKGROUND = 0xFF2D2D2D;  // Slightly lighter panel background
-    static constexpr auto SURFACE = 0xFF3C3C3C;           // Surface elements
-    static constexpr auto SURFACE_HOVER = 0xFF4A4A4A;     // Hovered surface elements
+    // ==========================================================================
+    // Background colors (dark with subtle purple/blue tints)
+    // ==========================================================================
+    static constexpr auto BACKGROUND = 0xFF1A1A1A;        // Main background
+    static constexpr auto BACKGROUND_ALT = 0xFF1E1E22;    // Charcoal (slight blue tint)
+    static constexpr auto PANEL_BACKGROUND = 0xFF252530;  // Panel background (purple tint)
+    static constexpr auto SURFACE = 0xFF2A2A35;           // Elevated surface
+    static constexpr auto SURFACE_HOVER = 0xFF333333;     // Hovered surface
 
+    // ==========================================================================
     // Transport and controls
-    static constexpr auto TRANSPORT_BACKGROUND = 0xFF252525;  // Transport bar background
-    static constexpr auto BUTTON_NORMAL = 0xFF404040;         // Normal button
-    static constexpr auto BUTTON_HOVER = 0xFF505050;          // Hovered button
-    static constexpr auto BUTTON_PRESSED = 0xFF606060;        // Pressed button
-    static constexpr auto BUTTON_ACTIVE = 0xFF0078D4;         // Active/selected button (blue)
+    // ==========================================================================
+    static constexpr auto TRANSPORT_BACKGROUND = 0xFF1E1E22;  // Transport bar background
+    static constexpr auto BUTTON_NORMAL = 0xFF1A1A1A;         // Normal button (off state)
+    static constexpr auto BUTTON_HOVER = 0xFF2A2A35;          // Hovered button
+    static constexpr auto BUTTON_PRESSED = 0xFF333333;        // Pressed button
+    static constexpr auto BUTTON_ACTIVE = 0xFF5588AA;  // Active/selected button (SideFX blue)
+    static constexpr auto BUTTON_STROKE = 0xFF444444;  // Button border
 
+    // ==========================================================================
     // Text colors
-    static constexpr auto TEXT_PRIMARY = 0xFFFFFFFF;    // Primary text (white)
-    static constexpr auto TEXT_SECONDARY = 0xFFB3B3B3;  // Secondary text (light grey)
+    // ==========================================================================
+    static constexpr auto TEXT_PRIMARY = 0xFFDDDDDD;    // Primary text (soft white)
+    static constexpr auto TEXT_SECONDARY = 0xFFAABBCC;  // Secondary text (blue-tinted)
+    static constexpr auto TEXT_DIM = 0xFF888888;        // Dimmed text
     static constexpr auto TEXT_DISABLED = 0xFF666666;   // Disabled text
 
-    // Accent colors
-    static constexpr auto ACCENT_BLUE = 0xFF0078D4;    // Primary accent (Microsoft blue)
-    static constexpr auto ACCENT_GREEN = 0xFF107C10;   // Success/record (green)
-    static constexpr auto ACCENT_RED = 0xFFD13438;     // Error/stop (red)
-    static constexpr auto ACCENT_ORANGE = 0xFFFF8C00;  // Warning/pause (orange)
+    // ==========================================================================
+    // Accent colors (SideFX palette)
+    // ==========================================================================
+    static constexpr auto ACCENT_BLUE = 0xFF5588AA;        // Primary accent (muted blue)
+    static constexpr auto ACCENT_BLUE_LIGHT = 0xFF88AACC;  // Light blue
+    static constexpr auto ACCENT_CYAN = 0xFF66AAFF;        // Cyan (selection, highlight)
+    static constexpr auto ACCENT_GREEN = 0xFF33E680;       // Bright green (curve, enabled)
+    static constexpr auto ACCENT_ORANGE = 0xFFFF8822;      // Orange (nodes, playhead)
+    static constexpr auto ACCENT_PURPLE = 0xFF7777DD;      // Purple accent
 
+    // ==========================================================================
+    // Status colors
+    // ==========================================================================
+    static constexpr auto STATUS_SUCCESS = 0xFF44AA44;  // Success/enabled (green)
+    static constexpr auto STATUS_WARNING = 0xFFFFAA44;  // Warning (orange)
+    static constexpr auto STATUS_ERROR = 0xFFAA4444;    // Error (muted red)
+    static constexpr auto STATUS_DANGER = 0xFFFF6644;   // Danger/record (bright red-orange)
+
+    // Backwards compatibility aliases
+    static constexpr auto ACCENT_RED = STATUS_DANGER;  // Alias for STATUS_DANGER
+
+    // ==========================================================================
     // Track colors
-    static constexpr auto TRACK_BACKGROUND = 0xFF333333;  // Track background
-    static constexpr auto TRACK_SELECTED = 0xFF404040;    // Selected track
+    // ==========================================================================
+    static constexpr auto TRACK_BACKGROUND = 0xFF1E1E22;  // Track background
+    static constexpr auto TRACK_SELECTED = 0xFF2A2A35;    // Selected track
     static constexpr auto TRACK_SEPARATOR = 0xFF1A1A1A;   // Track separator lines
 
+    // ==========================================================================
     // Timeline and grid
-    static constexpr auto TIMELINE_BACKGROUND = 0xFF2A2A2A;  // Timeline background
-    static constexpr auto GRID_LINE = 0xFF404040;            // Grid lines
-    static constexpr auto BEAT_LINE = 0xFF505050;            // Beat lines (stronger)
-    static constexpr auto BAR_LINE = 0xFF606060;             // Bar lines (strongest)
+    // ==========================================================================
+    static constexpr auto TIMELINE_BACKGROUND = 0xFF1E1E22;  // Timeline background
+    static constexpr auto GRID_LINE = 0xFF383840;            // Grid lines
+    static constexpr auto BEAT_LINE = 0xFF484850;            // Beat lines (stronger)
+    static constexpr auto BAR_LINE = 0xFF555555;             // Bar lines (strongest)
 
+    // ==========================================================================
     // Borders and separators
-    static constexpr auto BORDER = 0xFF404040;         // General borders
-    static constexpr auto SEPARATOR = 0xFF2A2A2A;      // Panel separators
-    static constexpr auto RESIZE_HANDLE = 0xFF505050;  // Resize handles
+    // ==========================================================================
+    static constexpr auto BORDER = 0xFF444444;         // General borders
+    static constexpr auto SEPARATOR = 0xFF333333;      // Panel separators
+    static constexpr auto RESIZE_HANDLE = 0xFF555555;  // Resize handles
 
+    // ==========================================================================
     // Audio visualization
-    static constexpr auto WAVEFORM_NORMAL = 0xFF00D4AA;     // Waveform color
-    static constexpr auto WAVEFORM_SELECTED = 0xFF00F5C4;   // Selected waveform
-    static constexpr auto LEVEL_METER_GREEN = 0xFF107C10;   // Level meter (low)
-    static constexpr auto LEVEL_METER_YELLOW = 0xFFFFB900;  // Level meter (mid)
-    static constexpr auto LEVEL_METER_RED = 0xFFD13438;     // Level meter (high)
+    // ==========================================================================
+    static constexpr auto WAVEFORM_NORMAL = 0xFF33E680;     // Waveform color (green)
+    static constexpr auto WAVEFORM_SELECTED = 0xFF66AAFF;   // Selected waveform (cyan)
+    static constexpr auto LEVEL_METER_GREEN = 0xFF44AA44;   // Level meter (low)
+    static constexpr auto LEVEL_METER_YELLOW = 0xFFFFAA44;  // Level meter (mid)
+    static constexpr auto LEVEL_METER_RED = 0xFFAA4444;     // Level meter (high)
 
     // Apply the theme to JUCE's LookAndFeel
     static void applyToLookAndFeel(juce::LookAndFeel& laf);

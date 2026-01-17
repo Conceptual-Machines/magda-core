@@ -4,6 +4,7 @@
 
 #include <memory>
 
+#include "../layout/LayoutConfig.hpp"
 #include "MenuManager.hpp"
 
 namespace magica {

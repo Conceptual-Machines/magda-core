@@ -27,29 +27,40 @@ set(DAW_CORE_SOURCES
     core/Config.cpp
     engine/tracktion_engine_wrapper.cpp
     # UI components needed by tests
-    ui/components/TimelineComponent.cpp
-    ui/components/ZoomManager.cpp
+    ui/components/timeline/TimelineComponent.cpp
+    ui/components/timeline/ZoomManager.cpp
 )
 
 # DAW UI sources
 set(DAW_UI_SOURCES
     magica_daw_main.cpp
+    # Themes
     ui/themes/DarkTheme.cpp
     ui/themes/FontManager.cpp
+    # Windows
     ui/windows/MainWindow.cpp
     ui/windows/MenuManager.cpp
+    # Panels
     ui/panels/TransportPanel.cpp
     ui/panels/TimelineHeaderPanel.cpp
     ui/panels/LeftPanel.cpp
     ui/panels/RightPanel.cpp
     ui/panels/BottomPanel.cpp
+    # Views
     ui/views/MainView.cpp
-    ui/components/TimelineComponent.cpp
-    ui/components/TrackHeadersPanel.cpp
-    ui/components/TrackContentPanel.cpp
-    ui/components/SvgButton.cpp
-    ui/components/TimelineFiller.cpp
-    ui/components/ZoomManager.cpp
+    # Components - Common
+    ui/components/common/SvgButton.cpp
+    ui/components/common/ZoomControls.cpp
+    ui/components/common/LayoutDebugPanel.cpp
+    # Components - Timeline
+    ui/components/timeline/TimelineComponent.cpp
+    ui/components/timeline/TimelineFiller.cpp
+    ui/components/timeline/TimeRuler.cpp
+    ui/components/timeline/ZoomManager.cpp
+    ui/components/timeline/ZoomScrollBar.cpp
+    # Components - Tracks
+    ui/components/tracks/TrackHeadersPanel.cpp
+    ui/components/tracks/TrackContentPanel.cpp
 )
 
 # All DAW headers
@@ -58,33 +69,51 @@ set(DAW_HEADERS
     magica.hpp
     core/Config.hpp
     engine/tracktion_engine_wrapper.hpp
+    # Interfaces
     interfaces/clip_interface.hpp
     interfaces/mixer_interface.hpp
     interfaces/prompt_interface.hpp
     interfaces/track_interface.hpp
     interfaces/transport_interface.hpp
+    # Themes
     ui/themes/DarkTheme.hpp
     ui/themes/FontManager.hpp
+    # Windows
     ui/windows/MainWindow.hpp
     ui/windows/MenuManager.hpp
+    # Panels
     ui/panels/TransportPanel.hpp
     ui/panels/TimelineHeaderPanel.hpp
     ui/panels/LeftPanel.hpp
     ui/panels/RightPanel.hpp
     ui/panels/BottomPanel.hpp
+    # Views
     ui/views/MainView.hpp
-    ui/components/TimelineComponent.hpp
-    ui/components/TrackHeadersPanel.hpp
-    ui/components/TrackContentPanel.hpp
-    ui/components/SvgButton.hpp
-    ui/components/ZoomManager.hpp
+    ui/views/ArrangementView.hpp
+    ui/views/PerformanceView.hpp
+    # Layout
+    ui/layout/LayoutConfig.hpp
+    # Components - Common
+    ui/components/common/SvgButton.hpp
+    ui/components/common/ZoomControls.hpp
+    ui/components/common/ModeSwitcher.hpp
+    ui/components/common/LayoutDebugPanel.hpp
+    # Components - Timeline
+    ui/components/timeline/TimelineComponent.hpp
+    ui/components/timeline/TimelineFiller.hpp
+    ui/components/timeline/TimeRuler.hpp
+    ui/components/timeline/ZoomManager.hpp
+    ui/components/timeline/ZoomScrollBar.hpp
+    # Components - Tracks
+    ui/components/tracks/TrackHeadersPanel.hpp
+    ui/components/tracks/TrackContentPanel.hpp
 )
 
 # Create DAW library (core functionality)
 add_library(magica_daw STATIC ${DAW_CORE_SOURCES})
 
 # Create DAW executable as JUCE application
-juce_add_gui_app(magica_daw_app 
+juce_add_gui_app(magica_daw_app
     VERSION "0.1.0"
     COMPANY_NAME "Magica"
     PRODUCT_NAME "Magica DAW"
@@ -137,10 +166,14 @@ target_include_directories(magica_daw_app
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/windows
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/panels
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/views
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/layout
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/components
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/components/common
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/components/timeline
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/components/tracks
     ${CMAKE_SOURCE_DIR}
 )
 
 # Install targets
 install(TARGETS magica_daw_app DESTINATION bin)
-install(FILES ${DAW_HEADERS} DESTINATION include/magica/daw) 
+install(FILES ${DAW_HEADERS} DESTINATION include/magica/daw)

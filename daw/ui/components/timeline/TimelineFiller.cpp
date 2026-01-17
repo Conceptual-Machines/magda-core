@@ -1,6 +1,6 @@
 #include "TimelineFiller.hpp"
 
-#include "../themes/DarkTheme.hpp"
+#include "../../themes/DarkTheme.hpp"
 
 namespace magica {
 

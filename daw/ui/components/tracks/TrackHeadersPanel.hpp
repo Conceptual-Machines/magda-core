@@ -41,6 +41,12 @@ class TrackHeadersPanel : public juce::Component {
     // Get track Y position
     int getTrackYPosition(int trackIndex) const;
 
+    // Vertical zoom (track height scaling)
+    void setVerticalZoom(double zoom);
+    double getVerticalZoom() const {
+        return verticalZoom;
+    }
+
     // Callbacks
     std::function<void(int, int)> onTrackHeightChanged;
     std::function<void(int)> onTrackSelected;
@@ -73,6 +79,7 @@ class TrackHeadersPanel : public juce::Component {
 
     std::vector<std::unique_ptr<TrackHeader>> trackHeaders;
     int selectedTrackIndex = -1;
+    double verticalZoom = 1.0;  // Track height multiplier
 
     // Resize functionality
     bool isResizing = false;

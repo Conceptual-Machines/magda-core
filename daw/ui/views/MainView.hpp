@@ -4,11 +4,14 @@
 
 #include <memory>
 
-#include "../components/SvgButton.hpp"
-#include "../components/TimelineComponent.hpp"
-#include "../components/TrackContentPanel.hpp"
-#include "../components/TrackHeadersPanel.hpp"
-#include "../components/ZoomManager.hpp"
+#include "../components/common/LayoutDebugPanel.hpp"
+#include "../components/common/SvgButton.hpp"
+#include "../components/timeline/TimelineComponent.hpp"
+#include "../components/timeline/ZoomManager.hpp"
+#include "../components/timeline/ZoomScrollBar.hpp"
+#include "../components/tracks/TrackContentPanel.hpp"
+#include "../components/tracks/TrackHeadersPanel.hpp"
+#include "../layout/LayoutConfig.hpp"
 
 namespace magica {
 
@@ -68,6 +71,9 @@ class MainView : public juce::Component, public juce::ScrollBar::Listener {
     // Arrangement lock button
     std::unique_ptr<SvgButton> arrangementLockButton;
 
+    // Time display mode toggle button
+    std::unique_ptr<juce::TextButton> timeDisplayToggleButton;
+
     // Track content viewport (both horizontal and vertical scroll)
     std::unique_ptr<juce::Viewport> trackContentViewport;
     std::unique_ptr<TrackContentPanel> trackContentPanel;
@@ -78,6 +84,11 @@ class MainView : public juce::Component, public juce::ScrollBar::Listener {
 
     // Zoom management
     std::unique_ptr<ZoomManager> zoomManager;
+    std::unique_ptr<ZoomScrollBar> horizontalZoomScrollBar;
+    std::unique_ptr<ZoomScrollBar> verticalZoomScrollBar;
+
+    // Layout debug panel (F11 to toggle)
+    std::unique_ptr<LayoutDebugPanel> layoutDebugPanel;
 
     // Zoom and scroll state
     double horizontalZoom = 1.0;  // Pixels per second
@@ -92,13 +103,15 @@ class MainView : public juce::Component, public juce::ScrollBar::Listener {
     // Initial zoom setup flag
     bool initialZoomSet = false;
 
-    // Layout constants and variables
-    static constexpr int TIMELINE_HEIGHT = 120;
-    static constexpr int DEFAULT_TRACK_HEADER_WIDTH = 200;
-    static constexpr int MIN_TRACK_HEADER_WIDTH = 150;
-    static constexpr int MAX_TRACK_HEADER_WIDTH = 350;
-    static constexpr int HEADER_CONTENT_PADDING = 8;  // Padding between headers and content
-    int trackHeaderWidth = DEFAULT_TRACK_HEADER_WIDTH;
+    // Zoom anchor tracking (for smooth zoom centering)
+    bool isZoomActive = false;
+    int zoomAnchorViewportX = 0;  // Viewport-relative position to keep stable
+
+    // Layout - uses LayoutConfig for centralized configuration
+    int getTimelineHeight() const {
+        return LayoutConfig::getInstance().getTimelineHeight();
+    }
+    int trackHeaderWidth = LayoutConfig::getInstance().defaultTrackHeaderWidth;
 
     // Resize handle state
     bool isResizingHeaders = false;
@@ -121,6 +134,10 @@ class MainView : public juce::Component, public juce::ScrollBar::Listener {
     // Resize handle helper methods
     juce::Rectangle<int> getResizeHandleArea() const;
     void paintResizeHandle(juce::Graphics& g);
+
+    // Zoom scroll bar synchronization
+    void updateHorizontalZoomScrollBar();
+    void updateVerticalZoomScrollBar();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainView)
 };

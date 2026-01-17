@@ -1,7 +1,7 @@
 #include "TrackHeadersPanel.hpp"
 
-#include "../themes/DarkTheme.hpp"
-#include "../themes/FontManager.hpp"
+#include "../../themes/DarkTheme.hpp"
+#include "../../themes/FontManager.hpp"
 
 namespace magica {
 
@@ -149,7 +149,7 @@ int TrackHeadersPanel::getTrackHeight(int trackIndex) const {
 int TrackHeadersPanel::getTotalTracksHeight() const {
     int totalHeight = 0;
     for (const auto& header : trackHeaders) {
-        totalHeight += header->height;
+        totalHeight += static_cast<int>(header->height * verticalZoom);
     }
     return totalHeight;
 }
@@ -157,9 +157,15 @@ int TrackHeadersPanel::getTotalTracksHeight() const {
 int TrackHeadersPanel::getTrackYPosition(int trackIndex) const {
     int yPosition = 0;
     for (int i = 0; i < trackIndex && i < trackHeaders.size(); ++i) {
-        yPosition += trackHeaders[i]->height;
+        yPosition += static_cast<int>(trackHeaders[i]->height * verticalZoom);
     }
     return yPosition;
+}
+
+void TrackHeadersPanel::setVerticalZoom(double zoom) {
+    verticalZoom = juce::jlimit(0.5, 3.0, zoom);
+    updateTrackHeaderLayout();
+    repaint();
 }
 
 void TrackHeadersPanel::setupTrackHeader(TrackHeader& header, int trackIndex) {
@@ -257,7 +263,7 @@ juce::Rectangle<int> TrackHeadersPanel::getTrackHeaderArea(int trackIndex) const
     }
 
     int yPosition = getTrackYPosition(trackIndex);
-    int height = trackHeaders[trackIndex]->height;
+    int height = static_cast<int>(trackHeaders[trackIndex]->height * verticalZoom);
 
     return juce::Rectangle<int>(0, yPosition, getWidth(), height - RESIZE_HANDLE_HEIGHT);
 }
@@ -268,7 +274,7 @@ juce::Rectangle<int> TrackHeadersPanel::getResizeHandleArea(int trackIndex) cons
     }
 
     int yPosition = getTrackYPosition(trackIndex);
-    int height = trackHeaders[trackIndex]->height;
+    int height = static_cast<int>(trackHeaders[trackIndex]->height * verticalZoom);
 
     return juce::Rectangle<int>(0, yPosition + height - RESIZE_HANDLE_HEIGHT, getWidth(),
                                 RESIZE_HANDLE_HEIGHT);

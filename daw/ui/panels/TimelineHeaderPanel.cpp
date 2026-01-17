@@ -1,6 +1,6 @@
 #include "TimelineHeaderPanel.hpp"
 
-#include "../components/TimelineComponent.hpp"
+#include "../components/timeline/TimelineComponent.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 

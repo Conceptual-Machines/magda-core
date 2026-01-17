@@ -4,7 +4,7 @@
 
 #include <memory>
 
-#include "../components/SvgButton.hpp"
+#include "../components/common/SvgButton.hpp"
 
 namespace magica {
 

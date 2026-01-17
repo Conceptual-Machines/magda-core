@@ -2,7 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "../themes/DarkTheme.hpp"
+#include "../../themes/DarkTheme.hpp"
 
 namespace magica {
 

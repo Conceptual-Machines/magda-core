@@ -1,6 +1,6 @@
 #include "LeftPanel.hpp"
 
-#include "../components/TimelineFiller.hpp"
+#include "../components/timeline/TimelineFiller.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 
