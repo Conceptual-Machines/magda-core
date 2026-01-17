@@ -13,12 +13,12 @@
 ## 🏗️ Architecture
 
 ```
-🤖 AI Agents (Python/Go/JS) 
+🤖 AI Agents (Python/Go/JS)
        ↓ MCP
 🔮 Magica System
    ├── 🎵 DAW Domain (C++)
    │   ├── Audio Engine (+ aideas-core)
-   │   ├── UI Components  
+   │   ├── UI Components
    │   └── DAW Core Logic
    └── 🤖 MCP Domain (C++)
        ├── Communication Server
@@ -62,8 +62,8 @@ python mcp/agents/orchestrator.py --daw localhost:50051
 # 🔗 Connecting to Magica DAW at localhost:50051
 # ✅ Registered as orchestrator: orch_001
 # 🎹 Interactive mode started. Type 'quit' to exit.
-# 
-# 🔮 Magica> 
+#
+# 🔮 Magica>
 ```
 
 ### 3. Use Natural Language Commands
@@ -158,7 +158,7 @@ await client.SendMessageToAgent(SendMessageRequest(
 ### **Utility Agent (Go)**
 High-performance MIDI processing for:
 - Note deduplication
-- Short note removal  
+- Short note removal
 - Quantization
 - Velocity normalization
 - Recording cleanup
@@ -184,7 +184,7 @@ Natural language interface with LLM integration:
 cd mcp/agents
 python orchestrator.py --daw localhost:50051 --openai-key sk-...
 
-# Single command  
+# Single command
 python orchestrator.py --daw localhost:50051 --request "Add a jazz melody"
 ```
 
@@ -253,7 +253,7 @@ Workflow:
 ### **Quick Setup**
 ```bash
 # Clone repository with submodules
-git clone --recursive https://github.com/yourusername/magica.git
+git clone --recursive https://github.com/Conceptual-Machines/MAGICA.git
 cd magica
 
 # Run automated setup (handles submodules, dependencies, pre-commit)
@@ -301,10 +301,13 @@ make debug          # Build project
 
 ### **Dependencies**
 ```cmake
+# Core Dependencies (as Git submodules):
+# - Tracktion Engine (audio engine) - magica-minimal branch
+# - JUCE 8.0.10 (GUI framework)
+
 # Automatically fetched via CMake FetchContent:
 # - nlohmann/json v3.11.3
 # - Catch2 v3.4.0 (testing)
-# - Tracktion Engine (audio)
 ```
 
 ## 🔧 Development & Code Quality
@@ -406,7 +409,7 @@ Magica is an experimental project exploring the future of AI-driven music produc
 
 1. **Fork and clone** the repository:
    ```bash
-   git clone --recursive https://github.com/yourusername/magica.git
+   git clone --recursive https://github.com/Conceptual-Machines/MAGICA.git
    cd magica
    ```
 
@@ -441,7 +444,7 @@ Magica is an experimental project exploring the future of AI-driven music produc
   - Real-time audio engine enhancements
 - **MCP Domain (`mcp/`)**:
   - New agent types (mastering, sound design, music theory)
-  - Language bindings for more programming languages  
+  - Language bindings for more programming languages
   - Agent coordination and workflow improvements
 - **Cross-Domain**:
   - Documentation and tutorials
@@ -535,7 +538,7 @@ magica/
 ├── 🎵 daw/                    # DAW Product Domain
 │   ├── Audio engine + aideas-core integration
 │   ├── User interface components
-│   ├── DAW core logic and interfaces  
+│   ├── DAW core logic and interfaces
 │   └── Main application (magica_daw_app)
 │
 └── 🤖 mcp/                    # Multi-Agent Communication Domain
@@ -547,7 +550,7 @@ magica/
 
 **Key Benefits:**
 - **Clear Boundaries**: Each domain has specific responsibilities
-- **Independent Development**: DAW and MCP can evolve separately  
+- **Independent Development**: DAW and MCP can evolve separately
 - **Easy Integration**: aideas-core scope is clearly defined
 - **Scalable**: Easy to add new domains (plugins, cloud, etc.)
 
@@ -560,7 +563,7 @@ The complete digital audio workstation:
 - **Core Interfaces**: Track, clip, mixer, transport operations
 - **Command System**: Unified command pattern for all DAW operations
 
-### 🤖 MCP Domain (`mcp/`)  
+### 🤖 MCP Domain (`mcp/`)
 The multi-agent communication system:
 - **Communication Server**: High-performance agent communication
 - **Protocol Buffers**: Strongly-typed API definitions
@@ -572,6 +575,8 @@ The multi-agent communication system:
 ## 🧪 Status
 
 Magica is in early research and prototyping. It is **not yet ready for production use**, but contributors and feedback are welcome as we design the core protocols and data model.
+
+See [VISION.md](VISION.md) for the detailed architecture specification and roadmap.
 
 ---
 
