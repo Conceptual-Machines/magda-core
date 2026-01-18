@@ -93,6 +93,7 @@ set(DAW_UI_SOURCES
     # Views
     ui/views/MainView.cpp
     ui/views/SessionView.cpp
+    ui/views/MixerView.cpp
     # Components - Common
     ui/components/common/SvgButton.cpp
     ui/components/common/ZoomControls.cpp
@@ -144,6 +145,7 @@ set(DAW_HEADERS
     # Views
     ui/views/MainView.hpp
     ui/views/SessionView.hpp
+    ui/views/MixerView.hpp
     ui/views/ArrangementView.hpp
     ui/views/PerformanceView.hpp
     # Layout

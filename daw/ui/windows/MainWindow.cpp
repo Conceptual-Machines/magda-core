@@ -8,6 +8,7 @@
 #include "../panels/TransportPanel.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../views/MainView.hpp"
+#include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
 #include "core/Config.hpp"
 
@@ -111,6 +112,9 @@ MainWindow::MainComponent::MainComponent() {
 
     sessionView = std::make_unique<SessionView>();
     addChildComponent(*sessionView);  // Hidden by default
+
+    mixerView = std::make_unique<MixerView>();
+    addChildComponent(*mixerView);  // Hidden by default
 
     // Wire up loop region updates to transport panel
     mainView->onLoopRegionChanged = [this](double start, double end, bool enabled) {
@@ -277,9 +281,10 @@ void MainWindow::MainComponent::resized() {
         rightResizer->setVisible(false);
     }
 
-    // Center view area - both views get the same bounds, visibility controls which is shown
+    // Center view area - all views get the same bounds, visibility controls which is shown
     mainView->setBounds(contentArea);
     sessionView->setBounds(contentArea);
+    mixerView->setBounds(contentArea);
 
     // Update panel visibility
     leftPanel->setVisible(leftPanelVisible);
@@ -300,16 +305,19 @@ void MainWindow::MainComponent::switchToView(ViewMode mode) {
     // Hide all views first
     mainView->setVisible(false);
     sessionView->setVisible(false);
+    mixerView->setVisible(false);
 
     // Show the appropriate view
     switch (mode) {
         case ViewMode::Live:
             sessionView->setVisible(true);
             break;
-        case ViewMode::Arrange:
         case ViewMode::Mix:
+            mixerView->setVisible(true);
+            break;
+        case ViewMode::Arrange:
         case ViewMode::Master:
-            // For now, Arrange/Mix/Master all use MainView
+            // Arrange and Master use MainView (timeline)
             mainView->setVisible(true);
             break;
     }

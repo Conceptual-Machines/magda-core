@@ -17,6 +17,7 @@ class LeftPanel;
 class RightPanel;
 class MainView;
 class SessionView;
+class MixerView;
 class BottomPanel;
 class FooterBar;
 
@@ -63,6 +64,7 @@ class MainWindow::MainComponent : public juce::Component, public ViewModeListene
     std::unique_ptr<TransportPanel> transportPanel;
     std::unique_ptr<MainView> mainView;
     std::unique_ptr<SessionView> sessionView;
+    std::unique_ptr<MixerView> mixerView;
     std::unique_ptr<FooterBar> footerBar;
 
   private:

@@ -7,34 +7,67 @@ namespace magica {
 // Custom grid content that draws track separators
 class SessionView::GridContent : public juce::Component {
   public:
-    GridContent(int numTracks, int trackWidth, int separatorWidth)
-        : numTracks_(numTracks), trackWidth_(trackWidth), separatorWidth_(separatorWidth) {}
+    GridContent(int numTracks, int clipSize, int separatorWidth)
+        : numTracks_(numTracks), clipSize_(clipSize), separatorWidth_(separatorWidth) {}
 
     void paint(juce::Graphics& g) override {
         g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
 
-        // Draw vertical separators between tracks
+        // Draw vertical separators between tracks (after each clip slot)
         g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
-        for (int i = 1; i < numTracks_; ++i) {
-            int x = i * trackWidth_ - separatorWidth_ / 2 - 1;
+        int trackColumnWidth = clipSize_ + separatorWidth_;
+        for (int i = 0; i < numTracks_; ++i) {
+            int x = i * trackColumnWidth + clipSize_;
             g.fillRect(x, 0, separatorWidth_, getHeight());
         }
     }
 
   private:
     int numTracks_;
-    int trackWidth_;
+    int clipSize_;
     int separatorWidth_;
 };
 
+// Container for track headers with clipping
+class SessionView::HeaderContainer : public juce::Component {
+  public:
+    HeaderContainer() {
+        setInterceptsMouseClicks(false, true);
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    }
+};
+
+// Container for scene buttons with clipping
+class SessionView::SceneContainer : public juce::Component {
+  public:
+    SceneContainer() {
+        setInterceptsMouseClicks(false, true);
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    }
+};
+
 SessionView::SessionView() {
+    // Create header container for clipping
+    headerContainer = std::make_unique<HeaderContainer>();
+    addAndMakeVisible(*headerContainer);
+
+    // Create scene container for clipping
+    sceneContainer = std::make_unique<SceneContainer>();
+    addAndMakeVisible(*sceneContainer);
+
     // Create viewport for scrollable grid with custom grid content
-    int trackWidth = CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN;
-    gridContent = std::make_unique<GridContent>(NUM_TRACKS, trackWidth, TRACK_SEPARATOR_WIDTH);
+    gridContent = std::make_unique<GridContent>(NUM_TRACKS, CLIP_SLOT_SIZE, TRACK_SEPARATOR_WIDTH);
     gridViewport = std::make_unique<juce::Viewport>();
     gridViewport->setViewedComponent(gridContent.get(), false);
     gridViewport->setScrollBarsShown(true, true);
     gridViewport->getHorizontalScrollBar().addListener(this);
+    gridViewport->getVerticalScrollBar().addListener(this);
     addAndMakeVisible(*gridViewport);
 
     setupTrackHeaders();
@@ -44,59 +77,60 @@ SessionView::SessionView() {
 
 SessionView::~SessionView() {
     gridViewport->getHorizontalScrollBar().removeListener(this);
+    gridViewport->getVerticalScrollBar().removeListener(this);
 }
 
 void SessionView::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
-
-    // Draw vertical separators between track headers (synced with scroll)
-    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
-    int trackWidth = CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN;
-    for (int i = 0; i < NUM_TRACKS - 1; ++i) {
-        int x = (i + 1) * trackWidth - TRACK_SEPARATOR_WIDTH - trackHeaderScrollOffset;
-        g.fillRect(x, 0, TRACK_SEPARATOR_WIDTH, TRACK_HEADER_HEIGHT);
-    }
 }
 
 void SessionView::resized() {
     auto bounds = getLocalBounds();
 
-    // Track headers at the top (outside viewport)
-    auto headerArea = bounds.removeFromTop(TRACK_HEADER_HEIGHT);
-    headerArea.removeFromRight(SCENE_BUTTON_WIDTH);  // Leave space for scene buttons
+    // Calculate track column width (clip + separator)
+    int trackColumnWidth = CLIP_SLOT_SIZE + TRACK_SEPARATOR_WIDTH;
+    int sceneRowHeight = CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN;
 
-    int trackWidth = CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN;
-    for (size_t i = 0; i < NUM_TRACKS; ++i) {
-        int x = static_cast<int>(i) * trackWidth - trackHeaderScrollOffset;
-        int width = trackWidth - TRACK_SEPARATOR_WIDTH;
-        trackHeaders[i]->setBounds(x, 0, width, TRACK_HEADER_HEIGHT);
-    }
-
-    // Scene buttons on the right (outside viewport)
+    // Scene container on the right (below header area)
     auto sceneArea = bounds.removeFromRight(SCENE_BUTTON_WIDTH);
-    int sceneHeight = CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN;
-    for (size_t i = 0; i < NUM_SCENES; ++i) {
-        sceneButtons[i]->setBounds(sceneArea.getX(), static_cast<int>(i) * sceneHeight,
-                                   SCENE_BUTTON_WIDTH - 4, CLIP_SLOT_SIZE);
+    auto sceneHeaderCorner = sceneArea.removeFromTop(TRACK_HEADER_HEIGHT);  // Corner area
+
+    // Header container at the top (excluding scene column)
+    auto headerArea = bounds.removeFromTop(TRACK_HEADER_HEIGHT);
+    headerContainer->setBounds(headerArea);
+
+    // Position track headers within header container (synced with grid scroll)
+    for (size_t i = 0; i < NUM_TRACKS; ++i) {
+        int x = static_cast<int>(i) * trackColumnWidth - trackHeaderScrollOffset;
+        trackHeaders[i]->setBounds(x, 0, CLIP_SLOT_SIZE, TRACK_HEADER_HEIGHT);
     }
 
-    // Stop all button at the bottom of scene buttons
-    stopAllButton->setBounds(sceneArea.getX(), static_cast<int>(NUM_SCENES) * sceneHeight,
-                             SCENE_BUTTON_WIDTH - 4, 30);
+    // Scene container for scene buttons (below the corner)
+    sceneContainer->setBounds(sceneArea);
 
-    // Grid viewport takes remaining space
+    // Position scene buttons within scene container (synced with grid scroll)
+    for (size_t i = 0; i < NUM_SCENES; ++i) {
+        int y = static_cast<int>(i) * sceneRowHeight - sceneButtonScrollOffset;
+        sceneButtons[i]->setBounds(2, y, SCENE_BUTTON_WIDTH - 4, CLIP_SLOT_SIZE);
+    }
+
+    // Stop all button at fixed position below visible scene area
+    int stopY = NUM_SCENES * sceneRowHeight - sceneButtonScrollOffset;
+    stopAllButton->setBounds(2, stopY, SCENE_BUTTON_WIDTH - 4, 30);
+
+    // Grid viewport takes remaining space (below headers, left of scene buttons)
     gridViewport->setBounds(bounds);
 
     // Size the grid content
-    int gridWidth = NUM_TRACKS * (CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN);
-    int gridHeight = NUM_SCENES * (CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN);
+    int gridWidth = NUM_TRACKS * trackColumnWidth;
+    int gridHeight = NUM_SCENES * sceneRowHeight;
     gridContent->setSize(gridWidth, gridHeight);
 
     // Position clip slots within grid content
     for (size_t track = 0; track < NUM_TRACKS; ++track) {
         for (size_t scene = 0; scene < NUM_SCENES; ++scene) {
-            int x = static_cast<int>(track) * (CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN);
-            int y = static_cast<int>(scene) * (CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN);
+            int x = static_cast<int>(track) * trackColumnWidth;
+            int y = static_cast<int>(scene) * sceneRowHeight;
             clipSlots[track][scene]->setBounds(x, y, CLIP_SLOT_SIZE, CLIP_SLOT_SIZE);
         }
     }
@@ -105,13 +139,31 @@ void SessionView::resized() {
 void SessionView::scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStart) {
     if (scrollBar == &gridViewport->getHorizontalScrollBar()) {
         trackHeaderScrollOffset = static_cast<int>(newRangeStart);
-        // Reposition headers and repaint separators
-        resized();
-        repaint();
+        // Reposition headers
+        int trackColumnWidth = CLIP_SLOT_SIZE + TRACK_SEPARATOR_WIDTH;
+        for (size_t i = 0; i < NUM_TRACKS; ++i) {
+            int x = static_cast<int>(i) * trackColumnWidth - trackHeaderScrollOffset;
+            trackHeaders[i]->setBounds(x, 0, CLIP_SLOT_SIZE, TRACK_HEADER_HEIGHT);
+        }
+        headerContainer->repaint();
+    } else if (scrollBar == &gridViewport->getVerticalScrollBar()) {
+        sceneButtonScrollOffset = static_cast<int>(newRangeStart);
+        // Reposition scene buttons
+        int sceneRowHeight = CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN;
+        for (size_t i = 0; i < NUM_SCENES; ++i) {
+            int y = static_cast<int>(i) * sceneRowHeight - sceneButtonScrollOffset;
+            sceneButtons[i]->setBounds(2, y, SCENE_BUTTON_WIDTH - 4, CLIP_SLOT_SIZE);
+        }
+        int stopY = NUM_SCENES * sceneRowHeight - sceneButtonScrollOffset;
+        stopAllButton->setBounds(2, stopY, SCENE_BUTTON_WIDTH - 4, 30);
+        sceneContainer->repaint();
     }
 }
 
 void SessionView::setupTrackHeaders() {
+    // Draw separators in header area
+    int trackColumnWidth = CLIP_SLOT_SIZE + TRACK_SEPARATOR_WIDTH;
+
     for (size_t i = 0; i < NUM_TRACKS; ++i) {
         trackHeaders[i] = std::make_unique<juce::Label>();
         trackHeaders[i]->setText(juce::String(static_cast<int>(i + 1)) + " Track",
@@ -121,7 +173,7 @@ void SessionView::setupTrackHeaders() {
                                    DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         trackHeaders[i]->setColour(juce::Label::backgroundColourId,
                                    DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
-        addAndMakeVisible(*trackHeaders[i]);
+        headerContainer->addAndMakeVisible(*trackHeaders[i]);
     }
 }
 
@@ -180,7 +232,7 @@ void SessionView::setupSceneButtons() {
 
         sceneButtons[i]->onClick = [this, i]() { onSceneLaunched(static_cast<int>(i)); };
 
-        addAndMakeVisible(*sceneButtons[i]);
+        sceneContainer->addAndMakeVisible(*sceneButtons[i]);
     }
 
     // Stop all button
@@ -191,7 +243,7 @@ void SessionView::setupSceneButtons() {
     stopAllButton->setColour(juce::TextButton::textColourOffId,
                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     stopAllButton->onClick = [this]() { onStopAllClicked(); };
-    addAndMakeVisible(*stopAllButton);
+    sceneContainer->addAndMakeVisible(*stopAllButton);
 }
 
 void SessionView::onClipSlotClicked(int trackIndex, int sceneIndex) {

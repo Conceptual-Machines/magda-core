@@ -29,8 +29,9 @@ class SessionView : public juce::Component, private juce::ScrollBar::Listener {
     // ScrollBar::Listener
     void scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStart) override;
 
-    // Track header horizontal offset (synced with grid scroll)
+    // Scroll offsets (synced with grid scroll)
     int trackHeaderScrollOffset = 0;
+    int sceneButtonScrollOffset = 0;
 
     // Grid configuration
     static constexpr int NUM_TRACKS = 8;
@@ -57,6 +58,12 @@ class SessionView : public juce::Component, private juce::ScrollBar::Listener {
     class GridContent;
     std::unique_ptr<juce::Viewport> gridViewport;
     std::unique_ptr<GridContent> gridContent;
+
+    // Clipping containers for headers and scene buttons
+    class HeaderContainer;
+    class SceneContainer;
+    std::unique_ptr<HeaderContainer> headerContainer;
+    std::unique_ptr<SceneContainer> sceneContainer;
 
     void setupTrackHeaders();
     void setupClipGrid();
