@@ -5,6 +5,7 @@
 #include <array>
 #include <memory>
 
+#include "../components/common/SvgButton.hpp"
 #include "core/ViewModeController.hpp"
 #include "core/ViewModeState.hpp"
 
@@ -13,7 +14,7 @@ namespace magica {
 /**
  * @brief Footer bar with view mode buttons
  *
- * Displays four buttons (Live/Arrange/Mix/Master) to switch between
+ * Displays four icon buttons (Live/Arrange/Mix/Master) to switch between
  * different view modes. The active mode is highlighted.
  */
 class FooterBar : public juce::Component, public ViewModeListener {
@@ -29,11 +30,10 @@ class FooterBar : public juce::Component, public ViewModeListener {
 
   private:
     static constexpr int NUM_MODES = 4;
-    static constexpr int BUTTON_WIDTH = 80;
-    static constexpr int BUTTON_HEIGHT = 28;
-    static constexpr int BUTTON_SPACING = 8;
+    static constexpr int BUTTON_SIZE = 28;
+    static constexpr int BUTTON_SPACING = 16;
 
-    std::array<std::unique_ptr<juce::TextButton>, NUM_MODES> modeButtons;
+    std::array<std::unique_ptr<SvgButton>, NUM_MODES> modeButtons;
 
     void setupButtons();
     void updateButtonStates();

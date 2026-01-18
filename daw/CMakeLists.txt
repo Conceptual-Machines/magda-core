@@ -48,6 +48,11 @@ juce_add_binary_data(MagicaAssets
     ../assets/icons/mouse_zoom/search.svg
     ../assets/icons/mouse_zoom/zoom_in.svg
     ../assets/icons/mouse_zoom/zoom_out.svg
+    # Footer view mode icons
+    ../assets/icons/footer/Session.svg
+    ../assets/icons/footer/Arrangement.svg
+    ../assets/icons/footer/Mix.svg
+    ../assets/icons/footer/Master.svg
 )
 
 # DAW Core sources
