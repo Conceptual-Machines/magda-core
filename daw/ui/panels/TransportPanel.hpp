@@ -24,9 +24,10 @@ class TransportPanel : public juce::Component {
     std::function<void(bool)> onLoop;
     std::function<void(double)> onTempoChange;
 
-    // Update displays
-    void setPlayheadPosition(double positionInSeconds, int bars, int beats, int ticks);
-    void setLoopLength(double lengthInSeconds, bool loopEnabled, bool useBarsBeats = false);
+    // Update displays - simplified API
+    void setPlayheadPosition(double positionInSeconds);
+    void setTimeSelection(double startTime, double endTime, bool hasSelection);
+    void setLoopRegion(double startTime, double endTime, bool loopEnabled);
     void setTempo(double bpm);
     void setTimeSignature(int numerator, int denominator);
 
@@ -38,15 +39,23 @@ class TransportPanel : public juce::Component {
     std::unique_ptr<SvgButton> pauseButton;
     std::unique_ptr<SvgButton> loopButton;
 
-    // Time display (center section)
-    std::unique_ptr<juce::Label> timeDisplay;
-    std::unique_ptr<juce::Label> positionDisplay;
-    std::unique_ptr<juce::Label> loopLengthDisplay;
+    // Time display boxes (center section) - each has primary and optional secondary row
+    // Playhead box
+    std::unique_ptr<juce::Label> playheadPrimaryLabel;
+    std::unique_ptr<juce::Label> playheadSecondaryLabel;
+
+    // Selection box
+    std::unique_ptr<juce::Label> selectionPrimaryLabel;
+    std::unique_ptr<juce::Label> selectionSecondaryLabel;
+
+    // Loop box
+    std::unique_ptr<juce::Label> loopPrimaryLabel;
+    std::unique_ptr<juce::Label> loopSecondaryLabel;
 
     // Tempo and quantize (right section)
-    std::unique_ptr<juce::Label> tempoDisplay;       // Main BPM display
-    std::unique_ptr<SvgButton> tempoDecreaseButton;  // Minus button
-    std::unique_ptr<SvgButton> tempoIncreaseButton;  // Plus button
+    std::unique_ptr<juce::Label> tempoDisplay;
+    std::unique_ptr<SvgButton> tempoDecreaseButton;
+    std::unique_ptr<SvgButton> tempoIncreaseButton;
     std::unique_ptr<juce::ComboBox> quantizeCombo;
     std::unique_ptr<SvgButton> metronomeButton;
 
@@ -62,8 +71,17 @@ class TransportPanel : public juce::Component {
     // Button styling
     void styleTransportButton(SvgButton& button, juce::Colour accentColor);
     void setupTransportButtons();
-    void setupTimeDisplay();
+    void setupTimeDisplayBoxes();
     void setupTempoAndQuantize();
+
+    // Formatting helpers
+    juce::String formatPositionBarsBeats(double seconds) const;
+    juce::String formatPositionSeconds(double seconds) const;
+    juce::String formatRangeBarsBeats(double startTime, double endTime) const;
+    juce::String formatRangeSeconds(double startTime, double endTime) const;
+    void updateDisplayBox(juce::Label* primary, juce::Label* secondary,
+                          const juce::String& barsText, const juce::String& secsText,
+                          bool showBothRows);
 
     // State
     bool isPlaying = false;
@@ -73,6 +91,15 @@ class TransportPanel : public juce::Component {
     double currentTempo = 120.0;
     int timeSignatureNumerator = 4;
     int timeSignatureDenominator = 4;
+
+    // Cached state for display updates
+    double cachedPlayheadPosition = 0.0;
+    double cachedSelectionStart = -1.0;
+    double cachedSelectionEnd = -1.0;
+    bool cachedSelectionActive = false;
+    double cachedLoopStart = -1.0;
+    double cachedLoopEnd = -1.0;
+    bool cachedLoopEnabled = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TransportPanel)
 };

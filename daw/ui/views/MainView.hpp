@@ -53,8 +53,11 @@ class MainView : public juce::Component,
     }
 
     // Callbacks for external components
-    std::function<void(double, bool, bool)>
-        onLoopLengthChanged;  // (lengthInSeconds, loopEnabled, useBarsBeats)
+    std::function<void(double, double, bool)>
+        onLoopRegionChanged;                                // (startTime, endTime, loopEnabled)
+    std::function<void(double)> onPlayheadPositionChanged;  // (positionInSeconds)
+    std::function<void(double, double, bool)>
+        onTimeSelectionChanged;  // (startTime, endTime, hasSelection)
 
     // ScrollBar::Listener implementation
     void scrollBarMoved(juce::ScrollBar* scrollBarThatHasMoved, double newRangeStart) override;

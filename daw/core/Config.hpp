@@ -71,6 +71,21 @@ class Config {
         zoomOutSensitivityShift = sensitivity;
     }
 
+    // Transport Display Configuration
+    bool getTransportShowBothFormats() const {
+        return transportShowBothFormats;
+    }
+    void setTransportShowBothFormats(bool show) {
+        transportShowBothFormats = show;
+    }
+
+    bool getTransportDefaultBarsBeats() const {
+        return transportDefaultBarsBeats;
+    }
+    void setTransportDefaultBarsBeats(bool useBarsBeats) {
+        transportDefaultBarsBeats = useBarsBeats;
+    }
+
     // Save/Load Configuration (for future use)
     void saveToFile(const std::string& filename);
     void loadFromFile(const std::string& filename);
@@ -91,6 +106,10 @@ class Config {
     double zoomOutSensitivity = 40.0;      // Normal zoom-out sensitivity
     double zoomInSensitivityShift = 8.0;   // Shift+zoom-in sensitivity (more aggressive)
     double zoomOutSensitivityShift = 8.0;  // Shift+zoom-out sensitivity (more aggressive)
+
+    // Transport display settings
+    bool transportShowBothFormats = false;  // Show both bars/beats and seconds
+    bool transportDefaultBarsBeats = true;  // Default to bars/beats (false = seconds)
 };
 
 }  // namespace magica

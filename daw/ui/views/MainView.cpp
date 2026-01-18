@@ -115,10 +115,10 @@ void MainView::setupComponents() {
         timeline->setTimeDisplayMode(newMode);
         trackContentPanel->setTimeDisplayMode(newMode);
 
-        // Update loop length display with new mode
+        // Update loop region display with new mode
         const auto& loop = timelineController->getState().loop;
-        if (onLoopLengthChanged && loop.isValid()) {
-            onLoopLengthChanged(loop.getDuration(), loop.enabled, useBarsBeats);
+        if (onLoopRegionChanged && loop.isValid()) {
+            onLoopRegionChanged(loop.startTime, loop.endTime, loop.enabled);
         }
     };
     addAndMakeVisible(timeDisplayToggleButton.get());
@@ -288,6 +288,11 @@ void MainView::playheadStateChanged(const TimelineState& state) {
     playheadPosition = state.playhead.position;
     playheadComponent->setPlayheadPosition(playheadPosition);
     playheadComponent->repaint();
+
+    // Notify external listeners about playhead position change
+    if (onPlayheadPositionChanged) {
+        onPlayheadPositionChanged(playheadPosition);
+    }
 }
 
 void MainView::selectionStateChanged(const TimelineState& state) {
@@ -303,6 +308,12 @@ void MainView::selectionStateChanged(const TimelineState& state) {
     // Update selection overlay
     if (selectionOverlay) {
         selectionOverlay->repaint();
+    }
+
+    // Notify external listeners about time selection change
+    if (onTimeSelectionChanged) {
+        onTimeSelectionChanged(timeSelection.startTime, timeSelection.endTime,
+                               timeSelection.isActive());
     }
 }
 
@@ -327,12 +338,13 @@ void MainView::loopStateChanged(const TimelineState& state) {
         selectionOverlay->repaint();
     }
 
-    // Notify external listeners about loop length change
-    if (onLoopLengthChanged) {
-        double length = loopRegion.isValid() ? loopRegion.getDuration() : 0.0;
-        bool useBarsBeats =
-            timelineController->getState().display.timeDisplayMode == TimeDisplayMode::BarsBeats;
-        onLoopLengthChanged(length, loopRegion.enabled, useBarsBeats);
+    // Notify external listeners about loop region change
+    if (onLoopRegionChanged) {
+        if (loopRegion.isValid()) {
+            onLoopRegionChanged(loopRegion.startTime, loopRegion.endTime, loopRegion.enabled);
+        } else {
+            onLoopRegionChanged(-1.0, -1.0, false);
+        }
     }
 }
 

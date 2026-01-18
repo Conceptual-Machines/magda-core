@@ -3,12 +3,13 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "BinaryData.h"
+#include "Config.hpp"
 
 namespace magica {
 
 TransportPanel::TransportPanel() {
     setupTransportButtons();
-    setupTimeDisplay();
+    setupTimeDisplayBoxes();
     setupTempoAndQuantize();
 }
 
@@ -34,8 +35,8 @@ void TransportPanel::resized() {
     auto timeArea = getTimeDisplayArea();
     auto tempoArea = getTempoQuantizeArea();
 
-    // Transport controls layout (56x56 button icons)
-    auto buttonSize = 44;  // Slightly smaller than 56 to fit nicely
+    // Transport controls layout
+    auto buttonSize = 44;
     auto buttonY = transportArea.getCentreY() - buttonSize / 2;
     auto buttonSpacing = 4;
 
@@ -55,21 +56,55 @@ void TransportPanel::resized() {
 
     loopButton->setBounds(x, buttonY, buttonSize, buttonSize);
 
-    // Time display layout
-    auto timeY = timeArea.getCentreY() - 15;
-    timeDisplay->setBounds(timeArea.getX() + 10, timeY, 120, 30);
-    positionDisplay->setBounds(timeArea.getX() + 140, timeY, 100, 30);
-    loopLengthDisplay->setBounds(timeArea.getX() + 250, timeY, 100, 30);
+    // Time display boxes layout - 3 equal boxes
+    auto& config = Config::getInstance();
+    bool showBothRows = config.getTransportShowBothFormats();
+
+    int boxWidth = 130;
+    int boxSpacing = 8;
+    int primaryHeight = showBothRows ? 18 : 30;
+    int secondaryHeight = showBothRows ? 16 : 0;
+    int totalBoxHeight = primaryHeight + secondaryHeight;
+
+    int startX = timeArea.getX() + 10;
+    int centerY = timeArea.getCentreY();
+    int boxY = centerY - totalBoxHeight / 2;
+
+    // Playhead box
+    playheadPrimaryLabel->setBounds(startX, boxY, boxWidth, primaryHeight);
+    if (showBothRows) {
+        playheadSecondaryLabel->setBounds(startX, boxY + primaryHeight, boxWidth, secondaryHeight);
+        playheadSecondaryLabel->setVisible(true);
+    } else {
+        playheadSecondaryLabel->setVisible(false);
+    }
+
+    // Selection box
+    int selX = startX + boxWidth + boxSpacing;
+    selectionPrimaryLabel->setBounds(selX, boxY, boxWidth, primaryHeight);
+    if (showBothRows) {
+        selectionSecondaryLabel->setBounds(selX, boxY + primaryHeight, boxWidth, secondaryHeight);
+        selectionSecondaryLabel->setVisible(true);
+    } else {
+        selectionSecondaryLabel->setVisible(false);
+    }
+
+    // Loop box
+    int loopX = selX + boxWidth + boxSpacing;
+    loopPrimaryLabel->setBounds(loopX, boxY, boxWidth, primaryHeight);
+    if (showBothRows) {
+        loopSecondaryLabel->setBounds(loopX, boxY + primaryHeight, boxWidth, secondaryHeight);
+        loopSecondaryLabel->setVisible(true);
+    } else {
+        loopSecondaryLabel->setVisible(false);
+    }
 
     // Tempo and quantize layout
     auto tempoY = tempoArea.getCentreY() - 15;
     auto tempoX = tempoArea.getX() + 10;
 
-    // Tempo section: [120.0] [+]  (stacked vertically)
-    //                       [-]
     tempoDisplay->setBounds(tempoX, tempoY, 70, 30);
 
-    // Stack +/- buttons vertically next to tempo display
     int stackX = tempoX + 75;
     int stackButtonSize = 14;
     int stackTop = tempoY + 1;
@@ -77,29 +112,28 @@ void TransportPanel::resized() {
     tempoDecreaseButton->setBounds(stackX, stackTop + stackButtonSize, stackButtonSize,
                                    stackButtonSize);
 
-    // Quantize and metronome
     quantizeCombo->setBounds(tempoX + 100, tempoY, 70, 30);
     metronomeButton->setBounds(tempoX + 180, tempoY, 35, 30);
 }
 
 juce::Rectangle<int> TransportPanel::getTransportControlsArea() const {
-    return getLocalBounds().removeFromLeft(270);  // Wider for 56x56 button icons
+    return getLocalBounds().removeFromLeft(270);
 }
 
 juce::Rectangle<int> TransportPanel::getTimeDisplayArea() const {
     auto bounds = getLocalBounds();
-    bounds.removeFromLeft(270);         // Skip transport controls
-    return bounds.removeFromLeft(360);  // Increased to fit loop length display
+    bounds.removeFromLeft(270);
+    return bounds.removeFromLeft(430);  // 3 boxes @ 130 + spacing
 }
 
 juce::Rectangle<int> TransportPanel::getTempoQuantizeArea() const {
     auto bounds = getLocalBounds();
-    bounds.removeFromLeft(630);  // Skip transport and time (270 + 360)
+    bounds.removeFromLeft(700);
     return bounds;
 }
 
 void TransportPanel::setupTransportButtons() {
-    // Play button (dual-icon mode with off/on states)
+    // Play button
     playButton =
         std::make_unique<SvgButton>("Play", BinaryData::play_off_svg, BinaryData::play_off_svgSize,
                                     BinaryData::play_on_svg, BinaryData::play_on_svgSize);
@@ -176,48 +210,45 @@ void TransportPanel::setupTransportButtons() {
     addAndMakeVisible(*loopButton);
 }
 
-void TransportPanel::setupTimeDisplay() {
-    // Time display (bars:beats:ticks)
-    timeDisplay = std::make_unique<juce::Label>();
-    timeDisplay->setText("001:01:000", juce::dontSendNotification);
-    timeDisplay->setFont(FontManager::getInstance().getTimeFont(16.0f));
-    timeDisplay->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-    timeDisplay->setColour(juce::Label::backgroundColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-    timeDisplay->setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(*timeDisplay);
+void TransportPanel::setupTimeDisplayBoxes() {
+    auto setupLabel = [this](std::unique_ptr<juce::Label>& label, juce::Colour textColor,
+                             float fontSize, bool isPrimary) {
+        label = std::make_unique<juce::Label>();
+        label->setText("", juce::dontSendNotification);
+        label->setFont(FontManager::getInstance().getUIFont(fontSize));
+        label->setColour(juce::Label::textColourId, textColor);
+        label->setColour(juce::Label::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+        label->setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(*label);
+    };
 
-    // Position display (time)
-    positionDisplay = std::make_unique<juce::Label>();
-    positionDisplay->setText("00:00.000", juce::dontSendNotification);
-    positionDisplay->setFont(FontManager::getInstance().getUIFont(14.0f));
-    positionDisplay->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    positionDisplay->setColour(juce::Label::backgroundColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
-    positionDisplay->setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(*positionDisplay);
+    // Playhead - white/primary color
+    setupLabel(playheadPrimaryLabel, DarkTheme::getTextColour(), 14.0f, true);
+    setupLabel(playheadSecondaryLabel, DarkTheme::getSecondaryTextColour(), 11.0f, false);
 
-    // Loop length display
-    loopLengthDisplay = std::make_unique<juce::Label>();
-    loopLengthDisplay->setText("", juce::dontSendNotification);
-    loopLengthDisplay->setFont(FontManager::getInstance().getUIFont(12.0f));
-    loopLengthDisplay->setColour(juce::Label::textColourId,
-                                 DarkTheme::getColour(DarkTheme::LOOP_MARKER));
-    loopLengthDisplay->setColour(juce::Label::backgroundColourId,
-                                 DarkTheme::getColour(DarkTheme::SURFACE));
-    loopLengthDisplay->setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(*loopLengthDisplay);
+    // Selection - blue accent
+    setupLabel(selectionPrimaryLabel, DarkTheme::getColour(DarkTheme::ACCENT_BLUE), 14.0f, true);
+    setupLabel(selectionSecondaryLabel, DarkTheme::getColour(DarkTheme::ACCENT_BLUE).darker(0.3f),
+               11.0f, false);
+
+    // Loop - green/loop marker color
+    setupLabel(loopPrimaryLabel, DarkTheme::getColour(DarkTheme::LOOP_MARKER), 14.0f, true);
+    setupLabel(loopSecondaryLabel, DarkTheme::getColour(DarkTheme::LOOP_MARKER).darker(0.3f), 11.0f,
+               false);
+
+    // Initialize displays
+    setPlayheadPosition(0.0);
 }
 
 void TransportPanel::setupTempoAndQuantize() {
-    // Tempo decrease button (-)
+    // Tempo decrease button
     tempoDecreaseButton =
         std::make_unique<SvgButton>("Decrease", BinaryData::remove_svg, BinaryData::remove_svgSize);
     styleTransportButton(*tempoDecreaseButton, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     tempoDecreaseButton->onClick = [this]() { adjustTempo(-1.0); };
     addAndMakeVisible(*tempoDecreaseButton);
 
-    // Tempo display (editable label)
+    // Tempo display
     tempoDisplay = std::make_unique<juce::Label>();
     tempoDisplay->setFont(FontManager::getInstance().getTimeFont(18.0f));
     tempoDisplay->setColour(juce::Label::textColourId,
@@ -234,12 +265,12 @@ void TransportPanel::setupTempoAndQuantize() {
             if (onTempoChange)
                 onTempoChange(currentTempo);
         }
-        updateTempoDisplay();  // Ensure display shows valid value
+        updateTempoDisplay();
     };
     addAndMakeVisible(*tempoDisplay);
     updateTempoDisplay();
 
-    // Tempo increase button (+)
+    // Tempo increase button
     tempoIncreaseButton =
         std::make_unique<SvgButton>("Increase", BinaryData::add_svg, BinaryData::add_svgSize);
     styleTransportButton(*tempoIncreaseButton, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
@@ -253,7 +284,7 @@ void TransportPanel::setupTempoAndQuantize() {
     quantizeCombo->addItem("1/8", 3);
     quantizeCombo->addItem("1/16", 4);
     quantizeCombo->addItem("1/32", 5);
-    quantizeCombo->setSelectedId(2);  // Default to 1/4 note
+    quantizeCombo->setSelectedId(2);
     addAndMakeVisible(*quantizeCombo);
 
     // Metronome button
@@ -285,78 +316,191 @@ void TransportPanel::styleTransportButton(SvgButton& button, juce::Colour accent
     button.setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
 }
 
-void TransportPanel::setPlayheadPosition(double positionInSeconds, int bars, int beats, int ticks) {
-    // Update bars:beats:ticks display
-    juce::String bbtText = juce::String::formatted("%03d:%02d:%03d", bars, beats, ticks);
-    timeDisplay->setText(bbtText, juce::dontSendNotification);
+// Formatting helpers
+juce::String TransportPanel::formatPositionBarsBeats(double seconds) const {
+    if (seconds < 0)
+        return "-";
 
-    // Update time display (minutes:seconds.milliseconds)
-    int minutes = static_cast<int>(positionInSeconds) / 60;
-    double seconds = std::fmod(positionInSeconds, 60.0);
-    juce::String timeText = juce::String::formatted("%02d:%06.3f", minutes, seconds);
-    positionDisplay->setText(timeText, juce::dontSendNotification);
+    double secondsPerBeat = 60.0 / currentTempo;
+    double totalBeats = seconds / secondsPerBeat;
+    int bars = static_cast<int>(totalBeats / timeSignatureNumerator) + 1;
+    int beat =
+        static_cast<int>(std::fmod(totalBeats, static_cast<double>(timeSignatureNumerator))) + 1;
+
+    return juce::String::formatted("%d.%d", bars, beat);
 }
 
-void TransportPanel::setLoopLength(double lengthInSeconds, bool loopEnabled, bool useBarsBeats) {
-    // Sync loop button state with the actual loop enabled state
+juce::String TransportPanel::formatPositionSeconds(double seconds) const {
+    if (seconds < 0)
+        return "-";
+
+    int minutes = static_cast<int>(seconds) / 60;
+    double secs = std::fmod(seconds, 60.0);
+    return juce::String::formatted("%d:%05.2f", minutes, secs);
+}
+
+juce::String TransportPanel::formatRangeBarsBeats(double startTime, double endTime) const {
+    if (startTime < 0 || endTime <= startTime)
+        return "-";
+
+    double secondsPerBeat = 60.0 / currentTempo;
+
+    // Start position
+    double startBeats = startTime / secondsPerBeat;
+    int startBars = static_cast<int>(startBeats / timeSignatureNumerator) + 1;
+    int startBeat =
+        static_cast<int>(std::fmod(startBeats, static_cast<double>(timeSignatureNumerator))) + 1;
+
+    // End position
+    double endBeats = endTime / secondsPerBeat;
+    int endBars = static_cast<int>(endBeats / timeSignatureNumerator) + 1;
+    int endBeat =
+        static_cast<int>(std::fmod(endBeats, static_cast<double>(timeSignatureNumerator))) + 1;
+
+    // Length in beats
+    double lengthBeats = (endTime - startTime) / secondsPerBeat;
+    int lenBars = static_cast<int>(lengthBeats / timeSignatureNumerator);
+    int lenBeat =
+        static_cast<int>(std::fmod(lengthBeats, static_cast<double>(timeSignatureNumerator)));
+
+    juce::String lenStr;
+    if (lenBars > 0) {
+        lenStr = juce::String::formatted("%d.%d", lenBars, lenBeat);
+    } else {
+        lenStr = juce::String::formatted("%d", lenBeat);
+    }
+
+    return juce::String::formatted("%d.%d-%d.%d-%s", startBars, startBeat, endBars, endBeat,
+                                   lenStr.toRawUTF8());
+}
+
+juce::String TransportPanel::formatRangeSeconds(double startTime, double endTime) const {
+    if (startTime < 0 || endTime <= startTime)
+        return "-";
+
+    double length = endTime - startTime;
+
+    // Format start
+    int startMin = static_cast<int>(startTime) / 60;
+    double startSec = std::fmod(startTime, 60.0);
+
+    // Format end
+    int endMin = static_cast<int>(endTime) / 60;
+    double endSec = std::fmod(endTime, 60.0);
+
+    // Format length
+    juce::String lenStr;
+    if (length >= 60.0) {
+        int lenMin = static_cast<int>(length) / 60;
+        double lenSec = std::fmod(length, 60.0);
+        lenStr = juce::String::formatted("%d:%04.1f", lenMin, lenSec);
+    } else {
+        lenStr = juce::String::formatted("%.1fs", length);
+    }
+
+    return juce::String::formatted("%d:%04.1f-%d:%04.1f-%s", startMin, startSec, endMin, endSec,
+                                   lenStr.toRawUTF8());
+}
+
+void TransportPanel::updateDisplayBox(juce::Label* primary, juce::Label* secondary,
+                                      const juce::String& barsText, const juce::String& secsText,
+                                      bool showBothRows) {
+    auto& config = Config::getInstance();
+    bool defaultBarsBeats = config.getTransportDefaultBarsBeats();
+
+    if (showBothRows) {
+        // Primary = default format, Secondary = alternate
+        if (defaultBarsBeats) {
+            primary->setText(barsText, juce::dontSendNotification);
+            secondary->setText(secsText, juce::dontSendNotification);
+        } else {
+            primary->setText(secsText, juce::dontSendNotification);
+            secondary->setText(barsText, juce::dontSendNotification);
+        }
+    } else {
+        // Single row - use default format
+        if (defaultBarsBeats) {
+            primary->setText(barsText, juce::dontSendNotification);
+        } else {
+            primary->setText(secsText, juce::dontSendNotification);
+        }
+    }
+}
+
+void TransportPanel::setPlayheadPosition(double positionInSeconds) {
+    cachedPlayheadPosition = positionInSeconds;
+
+    auto& config = Config::getInstance();
+    bool showBothRows = config.getTransportShowBothFormats();
+
+    juce::String barsText = formatPositionBarsBeats(positionInSeconds);
+    juce::String secsText = formatPositionSeconds(positionInSeconds);
+
+    updateDisplayBox(playheadPrimaryLabel.get(), playheadSecondaryLabel.get(), barsText, secsText,
+                     showBothRows);
+}
+
+void TransportPanel::setTimeSelection(double startTime, double endTime, bool hasSelection) {
+    cachedSelectionStart = startTime;
+    cachedSelectionEnd = endTime;
+    cachedSelectionActive = hasSelection;
+
+    auto& config = Config::getInstance();
+    bool showBothRows = config.getTransportShowBothFormats();
+
+    juce::String barsText = hasSelection ? formatRangeBarsBeats(startTime, endTime) : "-";
+    juce::String secsText = hasSelection ? formatRangeSeconds(startTime, endTime) : "-";
+
+    updateDisplayBox(selectionPrimaryLabel.get(), selectionSecondaryLabel.get(), barsText, secsText,
+                     showBothRows);
+}
+
+void TransportPanel::setLoopRegion(double startTime, double endTime, bool loopEnabled) {
+    cachedLoopStart = startTime;
+    cachedLoopEnd = endTime;
+    cachedLoopEnabled = loopEnabled;
+
+    // Sync loop button state
     if (isLooping != loopEnabled) {
         isLooping = loopEnabled;
         loopButton->setActive(isLooping);
     }
 
-    // If no valid loop length, clear the display
-    if (lengthInSeconds <= 0) {
-        loopLengthDisplay->setText("", juce::dontSendNotification);
-        return;
-    }
+    auto& config = Config::getInstance();
+    bool showBothRows = config.getTransportShowBothFormats();
 
-    juce::String lengthText;
+    bool hasLoop = startTime >= 0 && endTime > startTime;
+    juce::String barsText = hasLoop ? formatRangeBarsBeats(startTime, endTime) : "-";
+    juce::String secsText = hasLoop ? formatRangeSeconds(startTime, endTime) : "-";
 
-    if (useBarsBeats) {
-        // Convert seconds to bars and beats
-        double secondsPerBeat = 60.0 / currentTempo;
-        double secondsPerBar = secondsPerBeat * timeSignatureNumerator;
+    updateDisplayBox(loopPrimaryLabel.get(), loopSecondaryLabel.get(), barsText, secsText,
+                     showBothRows);
 
-        double totalBeats = lengthInSeconds / secondsPerBeat;
-        int bars = static_cast<int>(totalBeats / timeSignatureNumerator);
-        double remainingBeats = std::fmod(totalBeats, static_cast<double>(timeSignatureNumerator));
-        int beats = static_cast<int>(remainingBeats);
-        int ticks = static_cast<int>((remainingBeats - beats) * 960);  // 960 ticks per beat
-
-        if (bars > 0) {
-            lengthText = juce::String::formatted("L: %d.%d.%03d", bars, beats + 1, ticks);
-        } else {
-            lengthText = juce::String::formatted("L: %d.%03d", beats + 1, ticks);
-        }
-    } else {
-        // Display in seconds format
-        if (lengthInSeconds >= 60.0) {
-            int minutes = static_cast<int>(lengthInSeconds) / 60;
-            double seconds = std::fmod(lengthInSeconds, 60.0);
-            lengthText = juce::String::formatted("L: %d:%04.1fs", minutes, seconds);
-        } else if (lengthInSeconds >= 1.0) {
-            lengthText = juce::String::formatted("L: %.2fs", lengthInSeconds);
-        } else {
-            lengthText =
-                juce::String::formatted("L: %dms", static_cast<int>(lengthInSeconds * 1000));
-        }
-    }
-
-    // Set text color based on enabled state (green when enabled, grey when disabled)
-    loopLengthDisplay->setColour(juce::Label::textColourId,
-                                 loopEnabled ? DarkTheme::getColour(DarkTheme::LOOP_MARKER)
-                                             : DarkTheme::getColour(DarkTheme::TEXT_DIM));
-    loopLengthDisplay->setText(lengthText, juce::dontSendNotification);
+    // Update color based on enabled state
+    juce::Colour loopColor = loopEnabled ? DarkTheme::getColour(DarkTheme::LOOP_MARKER)
+                                         : DarkTheme::getColour(DarkTheme::TEXT_DIM);
+    loopPrimaryLabel->setColour(juce::Label::textColourId, loopColor);
+    loopSecondaryLabel->setColour(juce::Label::textColourId, loopColor.darker(0.3f));
 }
 
 void TransportPanel::setTimeSignature(int numerator, int denominator) {
     timeSignatureNumerator = numerator;
     timeSignatureDenominator = denominator;
+
+    // Refresh all displays with new time signature
+    setPlayheadPosition(cachedPlayheadPosition);
+    setTimeSelection(cachedSelectionStart, cachedSelectionEnd, cachedSelectionActive);
+    setLoopRegion(cachedLoopStart, cachedLoopEnd, cachedLoopEnabled);
 }
 
 void TransportPanel::setTempo(double bpm) {
     currentTempo = juce::jlimit(20.0, 999.0, bpm);
     updateTempoDisplay();
+
+    // Refresh all displays with new tempo
+    setPlayheadPosition(cachedPlayheadPosition);
+    setTimeSelection(cachedSelectionStart, cachedSelectionEnd, cachedSelectionActive);
+    setLoopRegion(cachedLoopStart, cachedLoopEnd, cachedLoopEnabled);
 }
 
 }  // namespace magica

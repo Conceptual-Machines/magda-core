@@ -90,9 +90,19 @@ MainWindow::MainComponent::MainComponent() {
     mainView = std::make_unique<MainView>();
     addAndMakeVisible(*mainView);
 
-    // Wire up loop length updates to transport panel
-    mainView->onLoopLengthChanged = [this](double length, bool enabled, bool useBarsBeats) {
-        transportPanel->setLoopLength(length, enabled, useBarsBeats);
+    // Wire up loop region updates to transport panel
+    mainView->onLoopRegionChanged = [this](double start, double end, bool enabled) {
+        transportPanel->setLoopRegion(start, end, enabled);
+    };
+
+    // Wire up playhead position updates to transport panel
+    mainView->onPlayheadPositionChanged = [this](double position) {
+        transportPanel->setPlayheadPosition(position);
+    };
+
+    // Wire up time selection updates to transport panel
+    mainView->onTimeSelectionChanged = [this](double start, double end, bool hasSelection) {
+        transportPanel->setTimeSelection(start, end, hasSelection);
     };
 
     // Wire up transport loop button to main view
