@@ -83,8 +83,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addItem(GoToStart, "Go to Start", true, false);
         menu.addItem(GoToEnd, "Go to End", true, false);
     } else if (menuName == "Track") {
-        menu.addItem(AddAudioTrack, "Add Audio Track", true, false);
-        menu.addItem(AddMidiTrack, "Add MIDI Track", true, false);
+        menu.addItem(AddTrack, "Add Track", true, false);
         menu.addSeparator();
         menu.addItem(DeleteTrack, "Delete Track", hasSelection_, false);
         menu.addItem(DuplicateTrack, "Duplicate Track", hasSelection_, false);
@@ -228,13 +227,9 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
             break;
 
         // Track menu
-        case AddAudioTrack:
-            if (callbacks_.onAddAudioTrack)
-                callbacks_.onAddAudioTrack();
-            break;
-        case AddMidiTrack:
-            if (callbacks_.onAddMidiTrack)
-                callbacks_.onAddMidiTrack();
+        case AddTrack:
+            if (callbacks_.onAddTrack)
+                callbacks_.onAddTrack();
             break;
         case DeleteTrack:
             if (callbacks_.onDeleteTrack)

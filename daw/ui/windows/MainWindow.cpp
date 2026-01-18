@@ -11,6 +11,7 @@
 #include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
 #include "core/Config.hpp"
+#include "core/TrackManager.hpp"
 
 namespace magica {
 
@@ -529,42 +530,60 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     // Track menu callbacks
-    callbacks.onAddAudioTrack = [this]() {
-        // TODO: Implement add audio track
-        juce::AlertWindow::showMessageBoxAsync(
-            juce::AlertWindow::InfoIcon, "Add Audio Track",
-            "Add audio track functionality not yet implemented.");
-    };
-
-    callbacks.onAddMidiTrack = [this]() {
-        // TODO: Implement add MIDI track
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Add MIDI Track",
-                                               "Add MIDI track functionality not yet implemented.");
-    };
+    callbacks.onAddTrack = []() { TrackManager::getInstance().createTrack(); };
 
     callbacks.onDeleteTrack = [this]() {
-        // TODO: Implement delete track
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Delete Track",
-                                               "Delete track functionality not yet implemented.");
+        // Delete the selected track from MixerView
+        if (mainComponent && mainComponent->mixerView) {
+            int selectedIndex = mainComponent->mixerView->getSelectedChannel();
+            if (!mainComponent->mixerView->isSelectedMaster() && selectedIndex >= 0) {
+                const auto& tracks = TrackManager::getInstance().getTracks();
+                if (selectedIndex < static_cast<int>(tracks.size())) {
+                    TrackManager::getInstance().deleteTrack(tracks[selectedIndex].id);
+                }
+            }
+        }
     };
 
     callbacks.onDuplicateTrack = [this]() {
-        // TODO: Implement duplicate track
-        juce::AlertWindow::showMessageBoxAsync(
-            juce::AlertWindow::InfoIcon, "Duplicate Track",
-            "Duplicate track functionality not yet implemented.");
+        // Duplicate the selected track from MixerView
+        if (mainComponent && mainComponent->mixerView) {
+            int selectedIndex = mainComponent->mixerView->getSelectedChannel();
+            if (!mainComponent->mixerView->isSelectedMaster() && selectedIndex >= 0) {
+                const auto& tracks = TrackManager::getInstance().getTracks();
+                if (selectedIndex < static_cast<int>(tracks.size())) {
+                    TrackManager::getInstance().duplicateTrack(tracks[selectedIndex].id);
+                }
+            }
+        }
     };
 
     callbacks.onMuteTrack = [this]() {
-        // TODO: Implement mute track
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Mute Track",
-                                               "Mute track functionality not yet implemented.");
+        // Toggle mute on the selected track
+        if (mainComponent && mainComponent->mixerView) {
+            int selectedIndex = mainComponent->mixerView->getSelectedChannel();
+            if (!mainComponent->mixerView->isSelectedMaster() && selectedIndex >= 0) {
+                const auto& tracks = TrackManager::getInstance().getTracks();
+                if (selectedIndex < static_cast<int>(tracks.size())) {
+                    const auto& track = tracks[selectedIndex];
+                    TrackManager::getInstance().setTrackMuted(track.id, !track.muted);
+                }
+            }
+        }
     };
 
     callbacks.onSoloTrack = [this]() {
-        // TODO: Implement solo track
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Solo Track",
-                                               "Solo track functionality not yet implemented.");
+        // Toggle solo on the selected track
+        if (mainComponent && mainComponent->mixerView) {
+            int selectedIndex = mainComponent->mixerView->getSelectedChannel();
+            if (!mainComponent->mixerView->isSelectedMaster() && selectedIndex >= 0) {
+                const auto& tracks = TrackManager::getInstance().getTracks();
+                if (selectedIndex < static_cast<int>(tracks.size())) {
+                    const auto& track = tracks[selectedIndex];
+                    TrackManager::getInstance().setTrackSoloed(track.id, !track.soloed);
+                }
+            }
+        }
     };
 
     // Window menu callbacks

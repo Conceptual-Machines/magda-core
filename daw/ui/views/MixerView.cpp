@@ -54,19 +54,42 @@ class MixerView::ChannelStrip::LevelMeter : public juce::Component {
 };
 
 // Channel strip implementation
-MixerView::ChannelStrip::ChannelStrip(int index, bool isMaster)
-    : channelIndex(index), isMaster_(isMaster) {
+MixerView::ChannelStrip::ChannelStrip(const TrackInfo& track, bool isMaster)
+    : trackId_(track.id), isMaster_(isMaster), trackColour_(track.colour), trackName_(track.name) {
     setupControls();
+    updateFromTrack(track);
+}
+
+void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track) {
+    trackColour_ = track.colour;
+    trackName_ = track.name;
+
+    if (trackLabel) {
+        trackLabel->setText(isMaster_ ? "Master" : track.name, juce::dontSendNotification);
+    }
+    if (volumeFader) {
+        volumeFader->setValue(track.volume, juce::dontSendNotification);
+    }
+    if (panKnob) {
+        panKnob->setValue(track.pan, juce::dontSendNotification);
+    }
+    if (muteButton) {
+        muteButton->setToggleState(track.muted, juce::dontSendNotification);
+    }
+    if (soloButton) {
+        soloButton->setToggleState(track.soloed, juce::dontSendNotification);
+    }
+    if (recordButton) {
+        recordButton->setToggleState(track.recordArmed, juce::dontSendNotification);
+    }
+
+    repaint();
 }
 
 void MixerView::ChannelStrip::setupControls() {
     // Track label
     trackLabel = std::make_unique<juce::Label>();
-    if (isMaster_) {
-        trackLabel->setText("Master", juce::dontSendNotification);
-    } else {
-        trackLabel->setText(juce::String(channelIndex + 1) + " Track", juce::dontSendNotification);
-    }
+    trackLabel->setText(isMaster_ ? "Master" : trackName_, juce::dontSendNotification);
     trackLabel->setJustificationType(juce::Justification::centred);
     trackLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     trackLabel->setColour(juce::Label::backgroundColourId,
@@ -83,6 +106,9 @@ void MixerView::ChannelStrip::setupControls() {
     panKnob->setColour(juce::Slider::rotarySliderOutlineColourId,
                        DarkTheme::getColour(DarkTheme::SURFACE));
     panKnob->setColour(juce::Slider::thumbColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    panKnob->onValueChange = [this]() {
+        TrackManager::getInstance().setTrackPan(trackId_, static_cast<float>(panKnob->getValue()));
+    };
     addAndMakeVisible(*panKnob);
 
     // Level meter
@@ -99,6 +125,10 @@ void MixerView::ChannelStrip::setupControls() {
                            DarkTheme::getColour(DarkTheme::SURFACE));
     volumeFader->setColour(juce::Slider::thumbColourId,
                            DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    volumeFader->onValueChange = [this]() {
+        TrackManager::getInstance().setTrackVolume(trackId_,
+                                                   static_cast<float>(volumeFader->getValue()));
+    };
     addAndMakeVisible(*volumeFader);
 
     // Mute button
@@ -112,7 +142,9 @@ void MixerView::ChannelStrip::setupControls() {
     muteButton->setColour(juce::TextButton::textColourOnId,
                           DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     muteButton->setClickingTogglesState(true);
-    muteButton->onClick = [this]() { DBG("Mute toggled on channel " << channelIndex); };
+    muteButton->onClick = [this]() {
+        TrackManager::getInstance().setTrackMuted(trackId_, muteButton->getToggleState());
+    };
     addAndMakeVisible(*muteButton);
 
     // Solo button
@@ -126,7 +158,9 @@ void MixerView::ChannelStrip::setupControls() {
     soloButton->setColour(juce::TextButton::textColourOnId,
                           DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     soloButton->setClickingTogglesState(true);
-    soloButton->onClick = [this]() { DBG("Solo toggled on channel " << channelIndex); };
+    soloButton->onClick = [this]() {
+        TrackManager::getInstance().setTrackSoloed(trackId_, soloButton->getToggleState());
+    };
     addAndMakeVisible(*soloButton);
 
     // Record arm button (not on master)
@@ -141,7 +175,10 @@ void MixerView::ChannelStrip::setupControls() {
         recordButton->setColour(juce::TextButton::textColourOnId,
                                 DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         recordButton->setClickingTogglesState(true);
-        recordButton->onClick = [this]() { DBG("Record arm toggled on channel " << channelIndex); };
+        recordButton->onClick = [this]() {
+            TrackManager::getInstance().setTrackRecordArmed(trackId_,
+                                                            recordButton->getToggleState());
+        };
         addAndMakeVisible(*recordButton);
     }
 }
@@ -149,25 +186,33 @@ void MixerView::ChannelStrip::setupControls() {
 void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
-    // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    // Background - slightly brighter if selected
+    if (selected) {
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+    } else {
+        g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    }
     g.fillRect(bounds);
 
-    // Border on right side (separator)
-    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
-    g.fillRect(bounds.getRight() - 1, 0, 1, bounds.getHeight());
+    // Selection border
+    if (selected) {
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        g.drawRect(bounds, 2);
+    }
+
+    // Border on right side (separator) - only if not selected
+    if (!selected) {
+        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.fillRect(bounds.getRight() - 1, 0, 1, bounds.getHeight());
+    }
 
     // Channel color indicator at top
     if (!isMaster_) {
-        const std::array<juce::uint32, 8> trackColors = {
-            0xFF5588AA, 0xFF55AA88, 0xFF88AA55, 0xFFAAAA55,
-            0xFFAA8855, 0xFFAA5555, 0xFFAA55AA, 0xFF5555AA,
-        };
-        g.setColour(juce::Colour(trackColors[channelIndex % trackColors.size()]));
-        g.fillRect(0, 0, getWidth() - 1, 4);
+        g.setColour(trackColour_);
+        g.fillRect(selected ? 2 : 0, selected ? 2 : 0, getWidth() - (selected ? 3 : 1), 4);
     } else {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        g.fillRect(0, 0, getWidth() - 1, 4);
+        g.fillRect(selected ? 2 : 0, selected ? 2 : 0, getWidth() - (selected ? 3 : 1), 4);
     }
 }
 
@@ -226,6 +271,19 @@ void MixerView::ChannelStrip::setMeterLevel(float level) {
     }
 }
 
+void MixerView::ChannelStrip::setSelected(bool shouldBeSelected) {
+    if (selected != shouldBeSelected) {
+        selected = shouldBeSelected;
+        repaint();
+    }
+}
+
+void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& /*event*/) {
+    if (onClicked) {
+        onClicked(trackId_, isMaster_);
+    }
+}
+
 // MixerView implementation
 MixerView::MixerView() {
     // Create channel container
@@ -237,11 +295,20 @@ MixerView::MixerView() {
     channelViewport->setScrollBarsShown(false, true);  // Horizontal scroll only
     addAndMakeVisible(*channelViewport);
 
-    // Create master strip (not in viewport)
-    masterStrip = std::make_unique<ChannelStrip>(0, true);
+    // Create master strip (using a dummy track info for master)
+    TrackInfo masterTrack;
+    masterTrack.id = -1;
+    masterTrack.name = "Master";
+    masterTrack.colour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    masterStrip = std::make_unique<ChannelStrip>(masterTrack, true);
+    masterStrip->onClicked = [this](int /*id*/, bool isMaster) { selectChannel(-1, isMaster); };
     addAndMakeVisible(*masterStrip);
 
-    setupChannels();
+    // Register as TrackManager listener
+    TrackManager::getInstance().addListener(this);
+
+    // Build channel strips from TrackManager
+    rebuildChannelStrips();
 
     // Start meter animation timer
     startTimerHz(30);
@@ -249,12 +316,52 @@ MixerView::MixerView() {
 
 MixerView::~MixerView() {
     stopTimer();
+    TrackManager::getInstance().removeListener(this);
 }
 
-void MixerView::setupChannels() {
-    for (int i = 0; i < NUM_CHANNELS; ++i) {
-        channelStrips[i] = std::make_unique<ChannelStrip>(i);
-        channelContainer->addAndMakeVisible(*channelStrips[i]);
+void MixerView::rebuildChannelStrips() {
+    // Clear existing strips
+    channelStrips.clear();
+
+    const auto& tracks = TrackManager::getInstance().getTracks();
+
+    for (const auto& track : tracks) {
+        auto strip = std::make_unique<ChannelStrip>(track, false);
+        strip->onClicked = [this](int trackId, bool isMaster) {
+            // Find the index of this track
+            int index = TrackManager::getInstance().getTrackIndex(trackId);
+            selectChannel(index, isMaster);
+        };
+        channelContainer->addAndMakeVisible(*strip);
+        channelStrips.push_back(std::move(strip));
+    }
+
+    // Restore selection if valid
+    if (selectedChannelIndex >= 0 &&
+        selectedChannelIndex < static_cast<int>(channelStrips.size())) {
+        channelStrips[selectedChannelIndex]->setSelected(true);
+    } else if (!channelStrips.empty()) {
+        selectedChannelIndex = 0;
+        channelStrips[0]->setSelected(true);
+    }
+
+    resized();
+}
+
+void MixerView::tracksChanged() {
+    // Rebuild all channel strips when tracks are added/removed/reordered
+    rebuildChannelStrips();
+}
+
+void MixerView::trackPropertyChanged(int trackId) {
+    // Update the specific channel strip
+    const auto* track = TrackManager::getInstance().getTrack(trackId);
+    if (!track)
+        return;
+
+    int index = TrackManager::getInstance().getTrackIndex(trackId);
+    if (index >= 0 && index < static_cast<int>(channelStrips.size())) {
+        channelStrips[index]->updateFromTrack(*track);
     }
 }
 
@@ -275,12 +382,13 @@ void MixerView::resized() {
     channelViewport->setBounds(bounds);
 
     // Size the channel container
-    int containerWidth = NUM_CHANNELS * CHANNEL_WIDTH;
+    int numChannels = static_cast<int>(channelStrips.size());
+    int containerWidth = numChannels * CHANNEL_WIDTH;
     int containerHeight = bounds.getHeight();
     channelContainer->setSize(containerWidth, containerHeight);
 
     // Position channel strips
-    for (int i = 0; i < NUM_CHANNELS; ++i) {
+    for (int i = 0; i < numChannels; ++i) {
         channelStrips[i]->setBounds(i * CHANNEL_WIDTH, 0, CHANNEL_WIDTH, containerHeight);
     }
 }
@@ -289,12 +397,40 @@ void MixerView::timerCallback() {
     simulateMeterLevels();
 }
 
+void MixerView::selectChannel(int index, bool isMaster) {
+    // Deselect all channels
+    for (auto& strip : channelStrips) {
+        strip->setSelected(false);
+    }
+    masterStrip->setSelected(false);
+
+    // Select the clicked channel
+    if (isMaster) {
+        masterStrip->setSelected(true);
+        selectedChannelIndex = -1;
+        selectedIsMaster = true;
+    } else {
+        if (index >= 0 && index < static_cast<int>(channelStrips.size())) {
+            channelStrips[index]->setSelected(true);
+        }
+        selectedChannelIndex = index;
+        selectedIsMaster = false;
+    }
+
+    // Notify listener
+    if (onChannelSelected) {
+        onChannelSelected(selectedChannelIndex, selectedIsMaster);
+    }
+
+    DBG("Selected channel: " << (isMaster ? "Master" : juce::String(index + 1)));
+}
+
 void MixerView::simulateMeterLevels() {
     // Simulate meter activity with random levels (for demo)
     auto& random = juce::Random::getSystemRandom();
 
-    for (int i = 0; i < NUM_CHANNELS; ++i) {
-        float currentLevel = channelStrips[i]->getMeterLevel();
+    for (auto& strip : channelStrips) {
+        float currentLevel = strip->getMeterLevel();
         float targetLevel = random.nextFloat() * 0.7f + 0.1f;
 
         // Smooth attack, fast decay
@@ -305,7 +441,7 @@ void MixerView::simulateMeterLevels() {
             newLevel = currentLevel * 0.85f;  // Smooth decay
         }
 
-        channelStrips[i]->setMeterLevel(newLevel);
+        strip->setMeterLevel(newLevel);
     }
 
     // Master level (slightly higher)

@@ -47,8 +47,7 @@ class MenuManager : public juce::MenuBarModel {
         std::function<void()> onGoToEnd;
 
         // Track menu
-        std::function<void()> onAddAudioTrack;
-        std::function<void()> onAddMidiTrack;
+        std::function<void()> onAddTrack;
         std::function<void()> onDeleteTrack;
         std::function<void()> onDuplicateTrack;
         std::function<void()> onMuteTrack;
@@ -131,8 +130,7 @@ class MenuManager : public juce::MenuBarModel {
         GoToEnd,
 
         // Track menu (500-599)
-        AddAudioTrack = 500,
-        AddMidiTrack,
+        AddTrack = 500,
         DeleteTrack = 510,
         DuplicateTrack,
         MuteTrack = 520,

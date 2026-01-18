@@ -6,6 +6,8 @@
 #include <memory>
 #include <vector>
 
+#include "core/TrackManager.hpp"
+
 namespace magica {
 
 /**
@@ -17,13 +19,18 @@ namespace magica {
  * - Scene launch buttons on the right
  * - Real-time clip status indicators
  */
-class SessionView : public juce::Component, private juce::ScrollBar::Listener {
+class SessionView : public juce::Component,
+                    private juce::ScrollBar::Listener,
+                    public TrackManagerListener {
   public:
     SessionView();
     ~SessionView() override;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+
+    // TrackManagerListener
+    void tracksChanged() override;
 
   private:
     // ScrollBar::Listener
@@ -34,7 +41,6 @@ class SessionView : public juce::Component, private juce::ScrollBar::Listener {
     int sceneButtonScrollOffset = 0;
 
     // Grid configuration
-    static constexpr int NUM_TRACKS = 8;
     static constexpr int NUM_SCENES = 8;
     static constexpr int TRACK_HEADER_HEIGHT = 60;
     static constexpr int SCENE_BUTTON_WIDTH = 80;
@@ -42,11 +48,11 @@ class SessionView : public juce::Component, private juce::ScrollBar::Listener {
     static constexpr int CLIP_SLOT_MARGIN = 2;
     static constexpr int TRACK_SEPARATOR_WIDTH = 3;
 
-    // Track headers
-    std::array<std::unique_ptr<juce::Label>, NUM_TRACKS> trackHeaders;
+    // Track headers (dynamic based on TrackManager)
+    std::vector<std::unique_ptr<juce::Label>> trackHeaders;
 
-    // Clip slots grid [track][scene]
-    std::array<std::array<std::unique_ptr<juce::TextButton>, NUM_SCENES>, NUM_TRACKS> clipSlots;
+    // Clip slots grid [track][scene] - dynamic number of tracks
+    std::vector<std::array<std::unique_ptr<juce::TextButton>, NUM_SCENES>> clipSlots;
 
     // Scene launch buttons
     std::array<std::unique_ptr<juce::TextButton>, NUM_SCENES> sceneButtons;
@@ -65,8 +71,7 @@ class SessionView : public juce::Component, private juce::ScrollBar::Listener {
     std::unique_ptr<HeaderContainer> headerContainer;
     std::unique_ptr<SceneContainer> sceneContainer;
 
-    void setupTrackHeaders();
-    void setupClipGrid();
+    void rebuildTracks();
     void setupSceneButtons();
 
     void onClipSlotClicked(int trackIndex, int sceneIndex);

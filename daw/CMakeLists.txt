@@ -61,6 +61,7 @@ set(DAW_CORE_SOURCES
     magica.cpp
     core/Config.cpp
     core/ViewModeController.cpp
+    core/TrackManager.cpp
     engine/tracktion_engine_wrapper.cpp
     # UI components needed by tests
     ui/components/timeline/TimelineComponent.cpp
@@ -117,6 +118,8 @@ set(DAW_HEADERS
     core/ViewModeState.hpp
     core/ViewModeEvents.hpp
     core/ViewModeController.hpp
+    core/TrackInfo.hpp
+    core/TrackManager.hpp
     engine/tracktion_engine_wrapper.hpp
     # Interfaces
     interfaces/clip_interface.hpp

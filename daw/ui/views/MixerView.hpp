@@ -2,8 +2,11 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include <array>
+#include <functional>
 #include <memory>
+#include <vector>
+
+#include "core/TrackManager.hpp"
 
 namespace magica {
 
@@ -15,7 +18,7 @@ namespace magica {
  * - Mute/Solo/Record arm buttons per channel
  * - Master channel on the right
  */
-class MixerView : public juce::Component, public juce::Timer {
+class MixerView : public juce::Component, public juce::Timer, public TrackManagerListener {
   public:
     MixerView();
     ~MixerView() override;
@@ -26,8 +29,23 @@ class MixerView : public juce::Component, public juce::Timer {
     // Timer callback for meter animation
     void timerCallback() override;
 
+    // TrackManagerListener
+    void tracksChanged() override;
+    void trackPropertyChanged(int trackId) override;
+
+    // Selection
+    void selectChannel(int index, bool isMaster = false);
+    int getSelectedChannel() const {
+        return selectedChannelIndex;
+    }
+    bool isSelectedMaster() const {
+        return selectedIsMaster;
+    }
+
+    // Callback when channel selection changes (index, isMaster)
+    std::function<void(int, bool)> onChannelSelected;
+
   private:
-    static constexpr int NUM_CHANNELS = 8;
     static constexpr int CHANNEL_WIDTH = 80;
     static constexpr int MASTER_WIDTH = 100;
     static constexpr int FADER_HEIGHT = 200;
@@ -39,28 +57,42 @@ class MixerView : public juce::Component, public juce::Timer {
     // Channel strip component
     class ChannelStrip : public juce::Component {
       public:
-        ChannelStrip(int index, bool isMaster = false);
+        ChannelStrip(const TrackInfo& track, bool isMaster = false);
 
         void paint(juce::Graphics& g) override;
         void resized() override;
+        void mouseDown(const juce::MouseEvent& event) override;
 
         void setMeterLevel(float level);
         float getMeterLevel() const {
             return meterLevel;
         }
 
-        int getChannelIndex() const {
-            return channelIndex;
+        void setSelected(bool shouldBeSelected);
+        bool isSelected() const {
+            return selected;
+        }
+
+        int getTrackId() const {
+            return trackId_;
         }
         bool isMasterChannel() const {
             return isMaster_;
         }
 
+        // Update from track info
+        void updateFromTrack(const TrackInfo& track);
+
+        // Callback when channel is clicked
+        std::function<void(int trackId, bool isMaster)> onClicked;
+
       private:
-        int channelIndex;
+        int trackId_;
         bool isMaster_;
+        bool selected = false;
         float meterLevel = 0.0f;
-        float meterDecay = 0.0f;
+        juce::Colour trackColour_;
+        juce::String trackName_;
 
         std::unique_ptr<juce::Label> trackLabel;
         std::unique_ptr<juce::Slider> panKnob;
@@ -78,16 +110,20 @@ class MixerView : public juce::Component, public juce::Timer {
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChannelStrip)
     };
 
-    // Channel strips
-    std::array<std::unique_ptr<ChannelStrip>, NUM_CHANNELS> channelStrips;
+    // Channel strips (dynamic based on TrackManager)
+    std::vector<std::unique_ptr<ChannelStrip>> channelStrips;
     std::unique_ptr<ChannelStrip> masterStrip;
 
     // Scrollable area for channels
     std::unique_ptr<juce::Viewport> channelViewport;
     std::unique_ptr<juce::Component> channelContainer;
 
-    void setupChannels();
+    void rebuildChannelStrips();
     void simulateMeterLevels();
+
+    // Selection state
+    int selectedChannelIndex = 0;  // Track index, -1 for no selection
+    bool selectedIsMaster = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixerView)
 };
