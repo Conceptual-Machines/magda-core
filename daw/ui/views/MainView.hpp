@@ -4,6 +4,7 @@
 
 #include <memory>
 
+#include "../components/common/GridOverlayComponent.hpp"
 #include "../components/common/SvgButton.hpp"
 #include "../components/timeline/TimelineComponent.hpp"
 #include "../components/timeline/ZoomManager.hpp"
@@ -108,6 +109,9 @@ class MainView : public juce::Component,
     // Playhead component (always on top)
     class PlayheadComponent;
     std::unique_ptr<PlayheadComponent> playheadComponent;
+
+    // Grid overlay component (vertical time grid lines)
+    std::unique_ptr<GridOverlayComponent> gridOverlay;
 
     // Selection overlay component (for time selection and loop region in track area)
     class SelectionOverlayComponent;

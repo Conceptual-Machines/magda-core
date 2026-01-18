@@ -116,12 +116,7 @@ class TrackContentPanel : public juce::Component,
     // Helper methods
     void paintTrackLane(juce::Graphics& g, const TrackLane& lane, juce::Rectangle<int> area,
                         bool isSelected, int trackIndex);
-    void paintGrid(juce::Graphics& g, juce::Rectangle<int> area);
     juce::Rectangle<int> getTrackLaneArea(int trackIndex) const;
-
-    // Grid drawing
-    void drawTimeGrid(juce::Graphics& g, juce::Rectangle<int> area);
-    void drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> area);
 
     // Mouse handling
     void mouseDown(const juce::MouseEvent& event) override;

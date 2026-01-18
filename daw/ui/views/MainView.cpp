@@ -133,6 +133,11 @@ void MainView::setupComponents() {
     trackContentViewport->setScrollBarsShown(true, true);
     addAndMakeVisible(*trackContentViewport);
 
+    // Create grid overlay component (vertical time grid lines - below selection and playhead)
+    gridOverlay = std::make_unique<GridOverlayComponent>();
+    gridOverlay->setController(timelineController.get());
+    addAndMakeVisible(*gridOverlay);
+
     // Create selection overlay component (below playhead)
     selectionOverlay = std::make_unique<SelectionOverlayComponent>(*this);
     addAndMakeVisible(*selectionOverlay);
@@ -428,12 +433,18 @@ void MainView::resized() {
     // Track content viewport gets the remaining space
     trackContentViewport->setBounds(bounds);
 
-    // Selection overlay covers the track content area (same as playhead area but below it)
+    // Grid and selection overlays cover the track content area
     auto overlayArea = bounds;
     // Reduce the area to avoid covering scrollbars
     int scrollBarThickness = trackContentViewport->getScrollBarThickness();
     overlayArea =
         overlayArea.withTrimmedRight(scrollBarThickness).withTrimmedBottom(scrollBarThickness);
+
+    // Grid overlay (bottom layer - draws vertical time grid lines)
+    gridOverlay->setBounds(overlayArea);
+    gridOverlay->setScrollOffset(trackContentViewport->getViewPositionX());
+
+    // Selection overlay (above grid)
     selectionOverlay->setBounds(overlayArea);
 
     // Playhead component extends from above timeline down to track content
@@ -689,7 +700,8 @@ void MainView::scrollBarMoved(juce::ScrollBar* scrollBarThatHasMoved, double new
         // Update zoom scroll bar
         updateHorizontalZoomScrollBar();
 
-        // Force playhead and selection overlay repaint when scrolling
+        // Update grid overlay scroll offset and repaint overlays
+        gridOverlay->setScrollOffset(scrollX);
         playheadComponent->repaint();
         selectionOverlay->repaint();
     }

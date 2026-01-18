@@ -96,11 +96,8 @@ void TrackContentPanel::zoomStateChanged(const TimelineState& state) {
 void TrackContentPanel::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
 
-    // Draw vertical grid lines using full component height (always visible even with no tracks)
-    auto gridArea = getLocalBounds();
-    paintGrid(g, gridArea);
-
-    // Draw track lanes with horizontal separators
+    // Grid is now drawn by GridOverlayComponent in MainView
+    // This component only draws track lanes with horizontal separators
     for (size_t i = 0; i < trackLanes.size(); ++i) {
         auto laneArea = getTrackLaneArea(static_cast<int>(i));
         if (laneArea.intersects(getLocalBounds())) {
@@ -236,148 +233,9 @@ void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& lane,
     g.setColour(bgColour.withAlpha(0.7f));
     g.fillRect(area);
 
-    // Border
+    // Border (horizontal separators between tracks)
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawRect(area, 1);
-
-    // Grid is drawn as background in paint(), not per-track
-}
-
-void TrackContentPanel::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
-    // Draw time grid (vertical lines)
-    drawTimeGrid(g, area);
-
-    // Draw beat grid (more subtle)
-    drawBeatGrid(g, area);
-}
-
-void TrackContentPanel::drawTimeGrid(juce::Graphics& g, juce::Rectangle<int> area) {
-    auto& layout = LayoutConfig::getInstance();
-    const int minPixelSpacing = layout.minGridPixelSpacing;
-
-    if (displayMode == TimeDisplayMode::Seconds) {
-        // ===== SECONDS MODE =====
-        // Extended intervals for deep zoom (matching TimelineComponent)
-        const double intervals[] = {0.0001, 0.0002, 0.0005,       // Sub-millisecond
-                                    0.001,  0.002,  0.005,        // Milliseconds
-                                    0.01,   0.02,   0.05,         // Centiseconds
-                                    0.1,    0.2,    0.25,   0.5,  // Deciseconds
-                                    1.0,    2.0,    5.0,    10.0, 15.0, 30.0, 60.0};  // Seconds
-
-        double gridInterval = 1.0;
-        for (double interval : intervals) {
-            if (static_cast<int>(interval * currentZoom) >= minPixelSpacing) {
-                gridInterval = interval;
-                break;
-            }
-        }
-
-        for (double time = 0.0; time <= timelineLength; time += gridInterval) {
-            int x = static_cast<int>(time * currentZoom) + LEFT_PADDING;
-            if (x >= area.getX() && x <= area.getRight()) {
-                // Determine line brightness based on time hierarchy
-                bool isMajor = false;
-                if (gridInterval >= 1.0) {
-                    isMajor = true;
-                } else if (gridInterval >= 0.1) {
-                    isMajor = std::fmod(time, 1.0) < 0.0001;
-                } else if (gridInterval >= 0.01) {
-                    isMajor = std::fmod(time, 0.1) < 0.0001;
-                } else if (gridInterval >= 0.001) {
-                    isMajor = std::fmod(time, 0.01) < 0.0001;
-                } else {
-                    isMajor = std::fmod(time, 0.001) < 0.00001;
-                }
-
-                if (isMajor) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.3f));
-                    g.drawLine(x, area.getY(), x, area.getBottom(), 1.0f);
-                } else {
-                    g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.1f));
-                    g.drawLine(x, area.getY(), x, area.getBottom(), 0.5f);
-                }
-            }
-        }
-    } else {
-        // ===== BARS/BEATS MODE =====
-        double secondsPerBeat = 60.0 / tempoBPM;
-        double secondsPerBar = secondsPerBeat * timeSignatureNumerator;
-
-        // Find appropriate interval (including 32nd and 64th notes for deep zoom)
-        const double beatFractions[] = {0.0625, 0.125, 0.25, 0.5, 1.0, 2.0};
-        const int barMultiples[] = {1, 2, 4, 8, 16, 32};
-
-        double markerIntervalBeats = 1.0;
-        bool useBarMultiples = false;
-
-        for (double fraction : beatFractions) {
-            double intervalSeconds = secondsPerBeat * fraction;
-            if (static_cast<int>(intervalSeconds * currentZoom) >= minPixelSpacing) {
-                markerIntervalBeats = fraction;
-                break;
-            }
-            if (fraction == 2.0) {
-                useBarMultiples = true;
-            }
-        }
-
-        if (useBarMultiples || static_cast<int>(secondsPerBar * currentZoom) < minPixelSpacing) {
-            for (int mult : barMultiples) {
-                double intervalSeconds = secondsPerBar * mult;
-                if (static_cast<int>(intervalSeconds * currentZoom) >= minPixelSpacing) {
-                    markerIntervalBeats = timeSignatureNumerator * mult;
-                    break;
-                }
-            }
-        }
-
-        double markerIntervalSeconds = secondsPerBeat * markerIntervalBeats;
-
-        // Draw grid lines
-        for (double time = 0.0; time <= timelineLength; time += markerIntervalSeconds) {
-            int x = static_cast<int>(time * currentZoom) + LEFT_PADDING;
-            if (x >= area.getX() && x <= area.getRight()) {
-                // Determine line style based on musical position
-                double totalBeats = time / secondsPerBeat;
-                bool isBarLine = std::fmod(totalBeats, timeSignatureNumerator) < 0.001;
-                bool isBeatLine = std::fmod(totalBeats, 1.0) < 0.001;
-
-                if (isBarLine) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.4f));
-                    g.drawLine(x, area.getY(), x, area.getBottom(), 1.5f);
-                } else if (isBeatLine) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.2f));
-                    g.drawLine(x, area.getY(), x, area.getBottom(), 1.0f);
-                } else {
-                    g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.05f));
-                    g.drawLine(x, area.getY(), x, area.getBottom(), 0.5f);
-                }
-            }
-        }
-    }
-}
-
-void TrackContentPanel::drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> area) {
-    // Only draw beat overlay in seconds mode (bars/beats mode handles this in drawTimeGrid)
-    if (displayMode == TimeDisplayMode::BarsBeats) {
-        return;
-    }
-
-    // Draw beat subdivisions using actual tempo
-    g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).withAlpha(0.5f));
-
-    const double beatInterval = 60.0 / tempoBPM;
-    const int beatPixelSpacing = static_cast<int>(beatInterval * currentZoom);
-
-    // Only draw beat grid if it's not too dense
-    if (beatPixelSpacing >= 10) {
-        for (double beat = 0.0; beat <= timelineLength; beat += beatInterval) {
-            int x = static_cast<int>(beat * currentZoom) + LEFT_PADDING;
-            if (x >= area.getX() && x <= area.getRight()) {
-                g.drawLine(x, area.getY(), x, area.getBottom(), 0.5f);
-            }
-        }
-    }
 }
 
 juce::Rectangle<int> TrackContentPanel::getTrackLaneArea(int trackIndex) const {
