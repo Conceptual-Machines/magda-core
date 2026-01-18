@@ -870,29 +870,27 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
         double secondsPerBeat = 60.0 / tempoBPM;
         double secondsPerBar = secondsPerBeat * timeSignatureNumerator;
 
-        // Define musical intervals: 64th, 32nd, 16th, 8th, quarter, half, bar, multi-bars
+        // Define musical intervals: 64th, 32nd, 16th, 8th, quarter, bar, multi-bars
         // Beat fractions: 0.0625 = 64th, 0.125 = 32nd, 0.25 = 16th, 0.5 = 8th, 1.0 = quarter
-        const double beatFractions[] = {0.0625, 0.125, 0.25, 0.5, 1.0, 2.0};
+        const double beatFractions[] = {0.0625, 0.125, 0.25, 0.5, 1.0};
         const int barMultiples[] = {1, 2, 4, 8, 16, 32};
 
-        // Find appropriate interval
+        // Find appropriate tick interval based on zoom level
         double markerIntervalBeats = 1.0;  // Default to quarter note
-        bool useBarMultiples = false;
+        bool foundInterval = false;
 
         // First try beat subdivisions
         for (double fraction : beatFractions) {
             double intervalSeconds = secondsPerBeat * fraction;
             if (timeDurationToPixels(intervalSeconds) >= minPixelSpacing) {
                 markerIntervalBeats = fraction;
+                foundInterval = true;
                 break;
-            }
-            if (fraction == 2.0) {
-                useBarMultiples = true;
             }
         }
 
-        // If beats are too dense, use bar multiples
-        if (useBarMultiples || timeDurationToPixels(secondsPerBar) < minPixelSpacing) {
+        // If no beat subdivision fits, use bar multiples (for zoomed out views)
+        if (!foundInterval) {
             for (int mult : barMultiples) {
                 double intervalSeconds = secondsPerBar * mult;
                 if (timeDurationToPixels(intervalSeconds) >= minPixelSpacing) {
@@ -945,13 +943,32 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                 bool showLabel = false;
                 juce::String labelStr;
 
+                // Calculate pixel spacings for label decisions
+                double pixelsPerBeat = timeDurationToPixels(secondsPerBeat);
+                double pixelsPerBar = timeDurationToPixels(secondsPerBar);
+
+                // Determine bar label interval (show every Nth bar when zoomed out)
+                int barLabelInterval = 1;
+                if (pixelsPerBar < 40) {
+                    barLabelInterval = 8;  // Very zoomed out: every 8 bars
+                } else if (pixelsPerBar < 60) {
+                    barLabelInterval = 4;  // Zoomed out: every 4 bars
+                } else if (pixelsPerBar < 90) {
+                    barLabelInterval = 2;  // Moderately zoomed out: every 2 bars
+                }
+
                 if (isBarStart) {
-                    showLabel = true;
-                    labelStr = juce::String(bar);
-                } else if (isBeatStart && markerIntervalBeats <= 0.5) {
+                    // Only show bar label at the appropriate interval
+                    if ((bar - 1) % barLabelInterval == 0) {
+                        showLabel = true;
+                        labelStr = juce::String(bar);
+                    }
+                } else if (isBeatStart && pixelsPerBeat >= 50) {
+                    // Show beat labels when beats have enough pixel spacing
                     showLabel = true;
                     labelStr = juce::String(bar) + "." + juce::String(beatInBar);
-                } else if (markerIntervalBeats <= 0.125) {
+                } else if (markerIntervalBeats <= 0.25 && pixelsPerBeat >= 180) {
+                    // Show subdivision labels when 16th notes visible and enough space
                     double subdivision = std::fmod(beatInBarFractional, 1.0);
                     if (std::fmod(subdivision, 0.25) < 0.001) {
                         showLabel = true;
