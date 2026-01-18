@@ -49,8 +49,8 @@ void SessionView::paint(juce::Graphics& g) {
     // Draw vertical separators between track headers
     g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
     int trackWidth = CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN;
-    for (int i = 1; i < NUM_TRACKS; ++i) {
-        int x = i * trackWidth - 1;
+    for (int i = 0; i < NUM_TRACKS - 1; ++i) {
+        int x = (i + 1) * trackWidth - TRACK_SEPARATOR_WIDTH;
         g.fillRect(x, 0, TRACK_SEPARATOR_WIDTH, TRACK_HEADER_HEIGHT);
     }
 }
@@ -64,8 +64,9 @@ void SessionView::resized() {
 
     int trackWidth = CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN;
     for (size_t i = 0; i < NUM_TRACKS; ++i) {
-        trackHeaders[i]->setBounds(static_cast<int>(i) * trackWidth, 0, trackWidth,
-                                   TRACK_HEADER_HEIGHT);
+        int x = static_cast<int>(i) * trackWidth;
+        int width = trackWidth - TRACK_SEPARATOR_WIDTH;
+        trackHeaders[i]->setBounds(x, 0, width, TRACK_HEADER_HEIGHT);
     }
 
     // Scene buttons on the right (outside viewport)
