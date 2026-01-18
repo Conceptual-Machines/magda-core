@@ -242,7 +242,6 @@ void TimelineComponent::mouseMove(const juce::MouseEvent& event) {
     // Update cursor based on zone
     auto& layout = LayoutConfig::getInstance();
     int arrangementHeight = layout.arrangementBarHeight;
-    int timeRulerHeight = layout.timeRulerHeight;
 
     // Check for loop markers first - they span both arrangement and ruler areas
     bool isStartMarker;
@@ -267,8 +266,7 @@ void TimelineComponent::mouseMove(const juce::MouseEvent& event) {
     } else {
         // In time ruler area - split into two zones
         // Upper half: zoom (crosshair), Lower half: time selection (I-beam)
-        // Split ruler: upper 2/3 for zoom, lower 1/3 for time selection
-        int rulerMidpoint = arrangementHeight + (timeRulerHeight * 2 / 3);
+        int rulerMidpoint = layout.getRulerZoneSplitY();
 
         if (event.y < rulerMidpoint) {
             // Upper ruler area - zoom cursor
