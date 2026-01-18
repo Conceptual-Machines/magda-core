@@ -27,6 +27,12 @@ PreferencesDialog::PreferencesDialog() {
     setupToggle(showBothFormatsToggle, "Show both time formats");
     setupToggle(defaultBarsBeatsToggle, "Default to Bars/Beats (vs Seconds)");
 
+    // Setup panel section
+    setupSectionHeader(panelsHeader, "Panels (Default Visibility)");
+    setupToggle(showLeftPanelToggle, "Show Left Panel (Browser)");
+    setupToggle(showRightPanelToggle, "Show Right Panel (Inspector)");
+    setupToggle(showBottomPanelToggle, "Show Bottom Panel (Mixer)");
+
     // Setup buttons
     okButton.setButtonText("OK");
     okButton.onClick = [this]() {
@@ -52,8 +58,8 @@ PreferencesDialog::PreferencesDialog() {
     // Load current settings
     loadCurrentSettings();
 
-    // Set preferred size
-    setSize(450, 480);
+    // Set preferred size (increased height for panels section)
+    setSize(450, 580);
 }
 
 PreferencesDialog::~PreferencesDialog() = default;
@@ -130,6 +136,27 @@ void PreferencesDialog::resized() {
     row = bounds.removeFromTop(toggleHeight + 8);
     defaultBarsBeatsToggle.setBounds(row.reduced(0, 4));
 
+    bounds.removeFromTop(sectionSpacing);
+
+    // Panels section
+    auto panelsHeaderBounds = bounds.removeFromTop(headerHeight);
+    panelsHeader.setBounds(panelsHeaderBounds);
+    bounds.removeFromTop(4);
+
+    // Show left panel toggle
+    row = bounds.removeFromTop(toggleHeight + 8);
+    showLeftPanelToggle.setBounds(row.reduced(0, 4));
+    bounds.removeFromTop(4);
+
+    // Show right panel toggle
+    row = bounds.removeFromTop(toggleHeight + 8);
+    showRightPanelToggle.setBounds(row.reduced(0, 4));
+    bounds.removeFromTop(4);
+
+    // Show bottom panel toggle
+    row = bounds.removeFromTop(toggleHeight + 8);
+    showBottomPanelToggle.setBounds(row.reduced(0, 4));
+
     // Button row at bottom
     auto buttonArea = getLocalBounds().reduced(20).removeFromBottom(buttonHeight);
 
@@ -162,6 +189,11 @@ void PreferencesDialog::loadCurrentSettings() {
                                          juce::dontSendNotification);
     defaultBarsBeatsToggle.setToggleState(config.getTransportDefaultBarsBeats(),
                                           juce::dontSendNotification);
+
+    // Load panel visibility settings
+    showLeftPanelToggle.setToggleState(config.getShowLeftPanel(), juce::dontSendNotification);
+    showRightPanelToggle.setToggleState(config.getShowRightPanel(), juce::dontSendNotification);
+    showBottomPanelToggle.setToggleState(config.getShowBottomPanel(), juce::dontSendNotification);
 }
 
 void PreferencesDialog::applySettings() {
@@ -181,6 +213,11 @@ void PreferencesDialog::applySettings() {
     // Apply transport settings
     config.setTransportShowBothFormats(showBothFormatsToggle.getToggleState());
     config.setTransportDefaultBarsBeats(defaultBarsBeatsToggle.getToggleState());
+
+    // Apply panel visibility settings
+    config.setShowLeftPanel(showLeftPanelToggle.getToggleState());
+    config.setShowRightPanel(showRightPanelToggle.getToggleState());
+    config.setShowBottomPanel(showBottomPanelToggle.getToggleState());
 }
 
 void PreferencesDialog::showDialog(juce::Component* parent) {

@@ -7,6 +7,7 @@
 #include "../panels/TransportPanel.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../views/MainView.hpp"
+#include "core/Config.hpp"
 
 namespace magica {
 
@@ -77,15 +78,29 @@ void MainWindow::closeButtonPressed() {
 
 // MainComponent implementation
 MainWindow::MainComponent::MainComponent() {
+    // Initialize panel visibility from Config
+    auto& config = Config::getInstance();
+    leftPanelVisible = config.getShowLeftPanel();
+    rightPanelVisible = config.getShowRightPanel();
+    bottomPanelVisible = config.getShowBottomPanel();
+
     // Create all panels
     transportPanel = std::make_unique<TransportPanel>();
     addAndMakeVisible(*transportPanel);
 
-    // Create all panels
+    // Create side panels
     leftPanel = std::make_unique<LeftPanel>();
+    leftPanel->onCollapse = [this]() {
+        leftPanelVisible = false;
+        resized();
+    };
     addAndMakeVisible(*leftPanel);
 
     rightPanel = std::make_unique<RightPanel>();
+    rightPanel->onCollapse = [this]() {
+        rightPanelVisible = false;
+        resized();
+    };
     addAndMakeVisible(*rightPanel);
 
     mainView = std::make_unique<MainView>();
@@ -197,17 +212,6 @@ void MainWindow::MainComponent::resized() {
 
     // Main view gets the remaining space
     mainView->setBounds(contentArea);
-
-    // Position timeline fillers in side panels to cover both arrangement and main timeline
-    int timelineY = TRANSPORT_HEIGHT;  // Timeline starts right after transport
-    int totalTimelineHeight = LayoutConfig::getInstance().getTimelineHeight();
-    if (leftPanelVisible) {
-        // Left filler should cover the track header area
-        leftPanel->setTimelineFillerPosition(timelineY, totalTimelineHeight);
-    }
-    if (rightPanelVisible) {
-        rightPanel->setTimelineFillerPosition(timelineY, totalTimelineHeight);
-    }
 
     // Update panel visibility
     leftPanel->setVisible(leftPanelVisible);

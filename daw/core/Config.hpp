@@ -86,6 +86,28 @@ class Config {
         transportDefaultBarsBeats = useBarsBeats;
     }
 
+    // Panel Visibility Configuration
+    bool getShowLeftPanel() const {
+        return showLeftPanel;
+    }
+    void setShowLeftPanel(bool show) {
+        showLeftPanel = show;
+    }
+
+    bool getShowRightPanel() const {
+        return showRightPanel;
+    }
+    void setShowRightPanel(bool show) {
+        showRightPanel = show;
+    }
+
+    bool getShowBottomPanel() const {
+        return showBottomPanel;
+    }
+    void setShowBottomPanel(bool show) {
+        showBottomPanel = show;
+    }
+
     // Save/Load Configuration (for future use)
     void saveToFile(const std::string& filename);
     void loadFromFile(const std::string& filename);
@@ -110,6 +132,11 @@ class Config {
     // Transport display settings
     bool transportShowBothFormats = false;  // Show both bars/beats and seconds
     bool transportDefaultBarsBeats = true;  // Default to bars/beats (false = seconds)
+
+    // Panel visibility settings
+    bool showLeftPanel = true;    // Show left panel by default
+    bool showRightPanel = true;   // Show right panel by default
+    bool showBottomPanel = true;  // Show bottom panel by default
 };
 
 }  // namespace magica

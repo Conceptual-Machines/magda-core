@@ -2,11 +2,9 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include <memory>
+#include <functional>
 
 namespace magica {
-
-class TimelineFiller;
 
 class RightPanel : public juce::Component {
   public:
@@ -16,11 +14,11 @@ class RightPanel : public juce::Component {
     void paint(juce::Graphics& g) override;
     void resized() override;
 
-    // Timeline filler positioning
-    void setTimelineFillerPosition(int y, int height);
+    // Collapse callback - called when user clicks collapse button
+    std::function<void()> onCollapse;
 
   private:
-    std::unique_ptr<TimelineFiller> timelineFiller;
+    juce::TextButton collapseButton;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RightPanel)
 };

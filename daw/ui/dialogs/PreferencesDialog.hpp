@@ -36,6 +36,11 @@ class PreferencesDialog : public juce::Component {
     juce::ToggleButton showBothFormatsToggle;
     juce::ToggleButton defaultBarsBeatsToggle;
 
+    // Panel section
+    juce::ToggleButton showLeftPanelToggle;
+    juce::ToggleButton showRightPanelToggle;
+    juce::ToggleButton showBottomPanelToggle;
+
     // Labels for each control
     juce::Label zoomInLabel;
     juce::Label zoomOutLabel;
@@ -47,6 +52,7 @@ class PreferencesDialog : public juce::Component {
     juce::Label zoomHeader;
     juce::Label timelineHeader;
     juce::Label transportHeader;
+    juce::Label panelsHeader;
 
     // Buttons
     juce::TextButton okButton;
