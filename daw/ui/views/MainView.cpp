@@ -1006,9 +1006,15 @@ void MainView::setupSelectionCallbacks() {
         if (start < 0 || end < 0) {
             loopRegion.clear();
         } else {
+            // Only enable if this is a new loop region (wasn't valid before)
+            bool wasValid = loopRegion.isValid();
             loopRegion.startTime = start;
             loopRegion.endTime = end;
-            loopRegion.enabled = true;
+            if (!wasValid) {
+                loopRegion.enabled = true;
+            }
+            // Sync enabled state with timeline
+            timeline->setLoopEnabled(loopRegion.enabled);
         }
         if (selectionOverlay) {
             selectionOverlay->repaint();

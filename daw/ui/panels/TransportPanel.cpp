@@ -304,7 +304,8 @@ void TransportPanel::setLoopLength(double lengthInSeconds, bool loopEnabled, boo
         loopButton->setActive(isLooping);
     }
 
-    if (!loopEnabled || lengthInSeconds <= 0) {
+    // If no valid loop length, clear the display
+    if (lengthInSeconds <= 0) {
         loopLengthDisplay->setText("", juce::dontSendNotification);
         return;
     }
@@ -341,6 +342,10 @@ void TransportPanel::setLoopLength(double lengthInSeconds, bool loopEnabled, boo
         }
     }
 
+    // Set text color based on enabled state (green when enabled, grey when disabled)
+    loopLengthDisplay->setColour(juce::Label::textColourId,
+                                 loopEnabled ? DarkTheme::getColour(DarkTheme::LOOP_MARKER)
+                                             : DarkTheme::getColour(DarkTheme::TEXT_DIM));
     loopLengthDisplay->setText(lengthText, juce::dontSendNotification);
 }
 
