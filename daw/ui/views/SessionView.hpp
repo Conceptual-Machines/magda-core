@@ -33,6 +33,7 @@ class SessionView : public juce::Component {
     static constexpr int SCENE_BUTTON_WIDTH = 80;
     static constexpr int CLIP_SLOT_SIZE = 80;
     static constexpr int CLIP_SLOT_MARGIN = 2;
+    static constexpr int TRACK_SEPARATOR_WIDTH = 3;
 
     // Track headers
     std::array<std::unique_ptr<juce::Label>, NUM_TRACKS> trackHeaders;
@@ -46,9 +47,10 @@ class SessionView : public juce::Component {
     // Master scene button
     std::unique_ptr<juce::TextButton> stopAllButton;
 
-    // Scrollable viewport for the grid
+    // Custom grid content component that draws track separators
+    class GridContent;
     std::unique_ptr<juce::Viewport> gridViewport;
-    std::unique_ptr<juce::Component> gridContent;
+    std::unique_ptr<GridContent> gridContent;
 
     void setupTrackHeaders();
     void setupClipGrid();

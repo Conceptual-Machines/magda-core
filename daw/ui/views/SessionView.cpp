@@ -4,9 +4,33 @@
 
 namespace magica {
 
+// Custom grid content that draws track separators
+class SessionView::GridContent : public juce::Component {
+  public:
+    GridContent(int numTracks, int trackWidth, int separatorWidth)
+        : numTracks_(numTracks), trackWidth_(trackWidth), separatorWidth_(separatorWidth) {}
+
+    void paint(juce::Graphics& g) override {
+        g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+
+        // Draw vertical separators between tracks
+        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        for (int i = 1; i < numTracks_; ++i) {
+            int x = i * trackWidth_ - separatorWidth_ / 2 - 1;
+            g.fillRect(x, 0, separatorWidth_, getHeight());
+        }
+    }
+
+  private:
+    int numTracks_;
+    int trackWidth_;
+    int separatorWidth_;
+};
+
 SessionView::SessionView() {
-    // Create viewport for scrollable grid
-    gridContent = std::make_unique<juce::Component>();
+    // Create viewport for scrollable grid with custom grid content
+    int trackWidth = CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN;
+    gridContent = std::make_unique<GridContent>(NUM_TRACKS, trackWidth, TRACK_SEPARATOR_WIDTH);
     gridViewport = std::make_unique<juce::Viewport>();
     gridViewport->setViewedComponent(gridContent.get(), false);
     gridViewport->setScrollBarsShown(true, true);
