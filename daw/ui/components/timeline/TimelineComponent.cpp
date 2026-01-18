@@ -63,10 +63,13 @@ void TimelineComponent::setController(TimelineController* controller) {
             loopEnabled = state.loop.enabled;
         }
 
-        // Sync time selection
-        if (state.selection.isActive()) {
+        // Sync time selection (only if visually active)
+        if (state.selection.isVisuallyActive()) {
             timeSelectionStart = state.selection.startTime;
             timeSelectionEnd = state.selection.endTime;
+        } else {
+            timeSelectionStart = -1.0;
+            timeSelectionEnd = -1.0;
         }
 
         repaint();
@@ -106,7 +109,8 @@ void TimelineComponent::loopStateChanged(const TimelineState& state) {
 }
 
 void TimelineComponent::selectionStateChanged(const TimelineState& state) {
-    if (state.selection.isActive()) {
+    // Only show selection visually if not hidden (e.g., when loop is created from it)
+    if (state.selection.isVisuallyActive()) {
         timeSelectionStart = state.selection.startTime;
         timeSelectionEnd = state.selection.endTime;
     } else {

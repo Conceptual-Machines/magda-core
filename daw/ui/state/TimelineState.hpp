@@ -43,10 +43,14 @@ struct PlayheadState {
 struct TimeSelection {
     double startTime = -1.0;
     double endTime = -1.0;
-    std::set<int> trackIndices;  // Empty = all tracks
+    std::set<int> trackIndices;   // Empty = all tracks
+    bool visuallyHidden = false;  // When true, selection is hidden visually but data remains
 
     bool isActive() const {
         return startTime >= 0 && endTime > startTime;
+    }
+    bool isVisuallyActive() const {
+        return isActive() && !visuallyHidden;
     }
     bool isAllTracks() const {
         return trackIndices.empty();
@@ -58,6 +62,13 @@ struct TimeSelection {
         startTime = -1.0;
         endTime = -1.0;
         trackIndices.clear();
+        visuallyHidden = false;
+    }
+    void hideVisually() {
+        visuallyHidden = true;
+    }
+    void showVisually() {
+        visuallyHidden = false;
     }
     double getDuration() const {
         return isActive() ? (endTime - startTime) : 0.0;

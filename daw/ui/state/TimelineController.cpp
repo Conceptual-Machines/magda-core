@@ -299,6 +299,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimeSel
     state.selection.startTime = start;
     state.selection.endTime = end;
     state.selection.trackIndices = e.trackIndices;
+    state.selection.visuallyHidden = false;  // New selection is always visible
 
     return ChangeFlags::Selection;
 }
@@ -323,8 +324,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
     state.loop.endTime = state.selection.endTime;
     state.loop.enabled = true;
 
-    // Clear selection after creating loop
-    state.selection.clear();
+    // Hide selection visually but keep data for transport display
+    state.selection.hideVisually();
 
     return ChangeFlags::Selection | ChangeFlags::Loop;
 }

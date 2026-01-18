@@ -298,8 +298,8 @@ void MainView::playheadStateChanged(const TimelineState& state) {
 void MainView::selectionStateChanged(const TimelineState& state) {
     timeSelection = state.selection;
 
-    // Update timeline component
-    if (timeSelection.isActive()) {
+    // Update timeline component (only if visually active)
+    if (timeSelection.isVisuallyActive()) {
         timeline->setTimeSelection(timeSelection.startTime, timeSelection.endTime);
     } else {
         timeline->clearTimeSelection();
@@ -311,6 +311,7 @@ void MainView::selectionStateChanged(const TimelineState& state) {
     }
 
     // Notify external listeners about time selection change
+    // Use isActive() here so transport info still shows selection data even when hidden visually
     if (onTimeSelectionChanged) {
         onTimeSelectionChanged(timeSelection.startTime, timeSelection.endTime,
                                timeSelection.isActive());
@@ -1149,7 +1150,7 @@ void MainView::SelectionOverlayComponent::paint(juce::Graphics& g) {
 
 void MainView::SelectionOverlayComponent::drawTimeSelection(juce::Graphics& g) {
     const auto& state = owner.timelineController->getState();
-    if (!state.selection.isActive()) {
+    if (!state.selection.isVisuallyActive()) {
         return;
     }
 
