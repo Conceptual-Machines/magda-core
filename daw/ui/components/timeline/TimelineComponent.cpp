@@ -590,57 +590,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
             }
         }
 
-        // Lambda to draw ticks - can be called for normal and loop-clipped passes
-        auto drawSecondsTicks = [&](bool forLoopRegion) {
-            for (double time = 0.0; time <= timelineLength; time += markerInterval) {
-                int x = timeToPixel(time) + LEFT_PADDING;
-                if (x >= 0 && x < getWidth()) {
-                    bool isMajor = false;
-                    if (markerInterval >= 1.0) {
-                        isMajor = true;
-                    } else if (markerInterval >= 0.1) {
-                        isMajor = std::fmod(time, 1.0) < 0.0001;
-                    } else if (markerInterval >= 0.01) {
-                        isMajor = std::fmod(time, 0.1) < 0.0001;
-                    } else if (markerInterval >= 0.001) {
-                        isMajor = std::fmod(time, 0.01) < 0.0001;
-                    } else {
-                        isMajor = std::fmod(time, 0.001) < 0.00001;
-                    }
-
-                    int tickHeight = isMajor ? majorTickHeight : minorTickHeight;
-
-                    if (forLoopRegion) {
-                        g.setColour(DarkTheme::getColour(DarkTheme::LOOP_MARKER)
-                                        .withAlpha(isMajor ? 0.9f : 0.5f));
-                        g.drawLine(static_cast<float>(x),
-                                   static_cast<float>(rulerBottom - tickHeight),
-                                   static_cast<float>(x), static_cast<float>(rulerBottom), 2.0f);
-                    } else {
-                        g.setColour(DarkTheme::getColour(isMajor ? DarkTheme::TEXT_SECONDARY
-                                                                 : DarkTheme::TEXT_DIM));
-                        g.drawVerticalLine(x, static_cast<float>(rulerBottom - tickHeight),
-                                           static_cast<float>(rulerBottom));
-                    }
-                }
-            }
-        };
-
-        // First pass: draw all ticks normally
-        drawSecondsTicks(false);
-
-        // Second pass: redraw ticks in loop region with clipping mask
-        if (loopStartTime >= 0 && loopEndTime > loopStartTime) {
-            int loopStartX = timeToPixel(loopStartTime) + LEFT_PADDING;
-            int loopEndX = timeToPixel(loopEndTime) + LEFT_PADDING;
-
-            g.saveState();
-            g.reduceClipRegion(loopStartX, rulerTop, loopEndX - loopStartX, rulerBottom - rulerTop);
-            drawSecondsTicks(true);
-            g.restoreState();
-        }
-
-        // Draw labels (separate pass to keep them on top)
+        // Draw ticks and labels
         for (double time = 0.0; time <= timelineLength; time += markerInterval) {
             int x = timeToPixel(time) + LEFT_PADDING;
             if (x >= 0 && x < getWidth()) {
@@ -656,6 +606,14 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                 } else {
                     isMajor = std::fmod(time, 0.001) < 0.00001;
                 }
+
+                int tickHeight = isMajor ? majorTickHeight : minorTickHeight;
+
+                // Draw tick
+                g.setColour(DarkTheme::getColour(isMajor ? DarkTheme::TEXT_SECONDARY
+                                                         : DarkTheme::TEXT_DIM));
+                g.drawVerticalLine(x, static_cast<float>(rulerBottom - tickHeight),
+                                   static_cast<float>(rulerBottom));
 
                 if (isMajor) {
                     juce::String timeStr;
@@ -732,60 +690,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
 
         double markerIntervalSeconds = secondsPerBeat * markerIntervalBeats;
 
-        // Lambda to draw ticks - can be called for normal and loop-clipped passes
-        auto drawBeatsTicks = [&](bool forLoopRegion) {
-            for (double time = 0.0; time <= timelineLength; time += markerIntervalSeconds) {
-                int x = timeToPixel(time) + LEFT_PADDING;
-                if (x >= 0 && x < getWidth()) {
-                    double totalBeats = time / secondsPerBeat;
-                    double beatInBarFractional = std::fmod(totalBeats, timeSignatureNumerator);
-
-                    bool isBarStart = beatInBarFractional < 0.001;
-                    bool isBeatStart = std::fmod(beatInBarFractional, 1.0) < 0.001;
-
-                    bool isMajor = isBarStart;
-                    bool isMedium = !isBarStart && isBeatStart;
-                    int tickHeight = isMajor
-                                         ? majorTickHeight
-                                         : (isMedium ? (majorTickHeight * 2 / 3) : minorTickHeight);
-
-                    if (forLoopRegion) {
-                        float alpha = isMajor ? 0.9f : (isMedium ? 0.7f : 0.5f);
-                        g.setColour(DarkTheme::getColour(DarkTheme::LOOP_MARKER).withAlpha(alpha));
-                        g.drawLine(static_cast<float>(x),
-                                   static_cast<float>(rulerBottom - tickHeight),
-                                   static_cast<float>(x), static_cast<float>(rulerBottom), 2.0f);
-                    } else {
-                        if (isMajor) {
-                            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-                        } else if (isMedium) {
-                            g.setColour(
-                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
-                        } else {
-                            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
-                        }
-                        g.drawVerticalLine(x, static_cast<float>(rulerBottom - tickHeight),
-                                           static_cast<float>(rulerBottom));
-                    }
-                }
-            }
-        };
-
-        // First pass: draw all ticks normally
-        drawBeatsTicks(false);
-
-        // Second pass: redraw ticks in loop region with clipping mask
-        if (loopStartTime >= 0 && loopEndTime > loopStartTime) {
-            int loopStartX = timeToPixel(loopStartTime) + LEFT_PADDING;
-            int loopEndX = timeToPixel(loopEndTime) + LEFT_PADDING;
-
-            g.saveState();
-            g.reduceClipRegion(loopStartX, rulerTop, loopEndX - loopStartX, rulerBottom - rulerTop);
-            drawBeatsTicks(true);
-            g.restoreState();
-        }
-
-        // Draw labels (separate pass to keep them on top)
+        // Draw ticks and labels
         for (double time = 0.0; time <= timelineLength; time += markerIntervalSeconds) {
             int x = timeToPixel(time) + LEFT_PADDING;
             if (x >= 0 && x < getWidth()) {
@@ -797,6 +702,23 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                 bool isBarStart = beatInBarFractional < 0.001;
                 bool isBeatStart = std::fmod(beatInBarFractional, 1.0) < 0.001;
 
+                bool isMajor = isBarStart;
+                bool isMedium = !isBarStart && isBeatStart;
+                int tickHeight = isMajor ? majorTickHeight
+                                         : (isMedium ? (majorTickHeight * 2 / 3) : minorTickHeight);
+
+                // Draw tick
+                if (isMajor) {
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                } else if (isMedium) {
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
+                } else {
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                }
+                g.drawVerticalLine(x, static_cast<float>(rulerBottom - tickHeight),
+                                   static_cast<float>(rulerBottom));
+
+                // Draw label
                 bool showLabel = false;
                 juce::String labelStr;
 
