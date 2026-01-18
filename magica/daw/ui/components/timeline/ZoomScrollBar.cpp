@@ -1,6 +1,7 @@
 #include "ZoomScrollBar.hpp"
 
 #include "../../themes/DarkTheme.hpp"
+#include "../../themes/FontManager.hpp"
 
 namespace magica {
 
@@ -62,6 +63,29 @@ void ZoomScrollBar::paint(juce::Graphics& g) {
             g.drawHorizontalLine(bottomHandleY + 2, thumbBounds.getX() + 3,
                                  thumbBounds.getRight() - 3);
         }
+    }
+
+    // Draw label if set (fixed position on right/bottom)
+    if (label.isNotEmpty()) {
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        g.setFont(FontManager::getInstance().getUIFont(10.0f));
+
+        if (orientation == Orientation::Horizontal) {
+            // Draw label fixed on the right side
+            auto labelBounds = trackBounds.removeFromRight(50);
+            g.drawText(label, labelBounds, juce::Justification::centred);
+        } else {
+            // For vertical, draw fixed at bottom
+            auto labelBounds = trackBounds.removeFromBottom(20);
+            g.drawText(label, labelBounds, juce::Justification::centred);
+        }
+    }
+}
+
+void ZoomScrollBar::setLabel(const juce::String& text) {
+    if (label != text) {
+        label = text;
+        repaint();
     }
 }
 

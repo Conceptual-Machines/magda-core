@@ -202,6 +202,10 @@ class MainView : public juce::Component,
     void updateHorizontalZoomScrollBar();
     void updateVerticalZoomScrollBar();
 
+    // Grid division display (shown on horizontal zoom scroll bar)
+    void updateGridDivisionDisplay();
+    juce::String calculateGridDivisionString() const;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainView)
 };
 

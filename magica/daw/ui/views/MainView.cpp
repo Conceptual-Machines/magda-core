@@ -281,6 +281,9 @@ void MainView::zoomStateChanged(const TimelineState& state) {
     updateHorizontalZoomScrollBar();
     updateVerticalZoomScrollBar();
 
+    // Update grid division display
+    updateGridDivisionDisplay();
+
     // Repaint
     playheadComponent->repaint();
     selectionOverlay->repaint();
@@ -1430,6 +1433,60 @@ void MainView::MasterContentPanel::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.3f));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
     g.drawText("Master Output", getLocalBounds(), juce::Justification::centred);
+}
+
+// ===== Grid Division Display =====
+
+juce::String MainView::calculateGridDivisionString() const {
+    const auto& state = timelineController->getState();
+    double zoom = state.zoom.horizontalZoom;
+    double bpm = state.tempo.bpm;
+    int timeSigNumerator = state.tempo.timeSignatureNumerator;
+
+    // Calculate timing values
+    double secondsPerBeat = 60.0 / bpm;
+    double secondsPerBar = secondsPerBeat * timeSigNumerator;
+
+    // Use same logic as TimelineComponent to determine grid interval
+    auto& layout = LayoutConfig::getInstance();
+    int minPixelSpacing = layout.minGridPixelSpacing;
+
+    auto timeDurationToPixels = [zoom](double duration) {
+        return static_cast<int>(duration * zoom);
+    };
+
+    // Beat fractions from 1/512 to 1/4
+    const double beatFractions[] = {0.0078125, 0.015625, 0.03125, 0.0625, 0.125, 0.25, 0.5, 1.0};
+    const char* beatNames[] = {"1/512", "1/256", "1/128", "1/64", "1/32", "1/16", "1/8", "1/4"};
+
+    // First try beat subdivisions
+    for (int i = 0; i < 8; i++) {
+        double intervalSeconds = secondsPerBeat * beatFractions[i];
+        if (timeDurationToPixels(intervalSeconds) >= minPixelSpacing) {
+            return beatNames[i];
+        }
+    }
+
+    // If no beat subdivision fits, use bar multiples
+    const int barMultiples[] = {1, 2, 4, 8, 16, 32};
+    for (int mult : barMultiples) {
+        double intervalSeconds = secondsPerBar * mult;
+        if (timeDurationToPixels(intervalSeconds) >= minPixelSpacing) {
+            if (mult == 1) {
+                return "1 bar";
+            } else {
+                return juce::String(mult) + " bars";
+            }
+        }
+    }
+
+    return "32 bars";  // Fallback for very zoomed out views
+}
+
+void MainView::updateGridDivisionDisplay() {
+    if (horizontalZoomScrollBar) {
+        horizontalZoomScrollBar->setLabel(calculateGridDivisionString());
+    }
 }
 
 }  // namespace magica

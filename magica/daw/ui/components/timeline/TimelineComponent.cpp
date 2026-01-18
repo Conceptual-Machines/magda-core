@@ -870,9 +870,10 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
         double secondsPerBeat = 60.0 / tempoBPM;
         double secondsPerBar = secondsPerBeat * timeSignatureNumerator;
 
-        // Define musical intervals: 64th, 32nd, 16th, 8th, quarter, bar, multi-bars
-        // Beat fractions: 0.0625 = 64th, 0.125 = 32nd, 0.25 = 16th, 0.5 = 8th, 1.0 = quarter
-        const double beatFractions[] = {0.0625, 0.125, 0.25, 0.5, 1.0};
+        // Define musical intervals from 1/512 to 1/4 note
+        // Beat fractions: 1/512, 1/256, 1/128, 1/64, 1/32, 1/16, 1/8, 1/4
+        const double beatFractions[] = {0.0078125, 0.015625, 0.03125, 0.0625,
+                                        0.125,     0.25,     0.5,     1.0};
         const int barMultiples[] = {1, 2, 4, 8, 16, 32};
 
         // Find appropriate tick interval based on zoom level
@@ -939,48 +940,53 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                                static_cast<float>(x), static_cast<float>(rulerBottom), 1.0f);
                 }
 
-                // Draw label
-                bool showLabel = false;
-                juce::String labelStr;
-
+                // Draw labels with three distinct styles: bars, beats, subdivisions
                 // Calculate pixel spacings for label decisions
                 double pixelsPerBeat = timeDurationToPixels(secondsPerBeat);
                 double pixelsPerBar = timeDurationToPixels(secondsPerBar);
+                double pixelsPerSubdiv = timeDurationToPixels(markerIntervalSeconds);
 
                 // Determine bar label interval (show every Nth bar when zoomed out)
                 int barLabelInterval = 1;
                 if (pixelsPerBar < 40) {
-                    barLabelInterval = 8;  // Very zoomed out: every 8 bars
+                    barLabelInterval = 8;
                 } else if (pixelsPerBar < 60) {
-                    barLabelInterval = 4;  // Zoomed out: every 4 bars
+                    barLabelInterval = 4;
                 } else if (pixelsPerBar < 90) {
-                    barLabelInterval = 2;  // Moderately zoomed out: every 2 bars
+                    barLabelInterval = 2;
                 }
 
-                if (isBarStart) {
-                    // Only show bar label at the appropriate interval
-                    if ((bar - 1) % barLabelInterval == 0) {
-                        showLabel = true;
-                        labelStr = juce::String(bar);
-                    }
-                } else if (isBeatStart && pixelsPerBeat >= 50) {
-                    // Show beat labels when beats have enough pixel spacing
-                    showLabel = true;
-                    labelStr = juce::String(bar) + "." + juce::String(beatInBar);
-                } else if (markerIntervalBeats <= 0.25 && pixelsPerBeat >= 180) {
-                    // Show subdivision labels when 16th notes visible and enough space
-                    double subdivision = std::fmod(beatInBarFractional, 1.0);
-                    if (std::fmod(subdivision, 0.25) < 0.001) {
-                        showLabel = true;
-                        int sixteenth = static_cast<int>(subdivision * 4) + 1;
-                        labelStr = juce::String(bar) + "." + juce::String(beatInBar) + "." +
-                                   juce::String(sixteenth);
-                    }
-                }
+                // Calculate subdivision within beat (1-indexed position)
+                double subdivInBeat = std::fmod(beatInBarFractional, 1.0);
+                int subdivsPerBeat = static_cast<int>(std::round(1.0 / markerIntervalBeats));
+                int subdivIndex = static_cast<int>(std::round(subdivInBeat * subdivsPerBeat)) + 1;
 
-                if (showLabel) {
+                // Subdivision 1 is the beat itself, so only show subdiv labels for 2+
+                bool isSubdivisionNotBeat = !isBeatStart && subdivIndex > 1;
+
+                if (isBarStart && (bar - 1) % barLabelInterval == 0) {
+                    // === BAR LABEL: Large, bright ===
+                    // Format: "1", "2", "3"
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                    g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
+                    g.drawText(juce::String(bar), x - 35, labelY, 70, labelHeight,
+                               juce::Justification::centred);
+                } else if (isBeatStart && !isBarStart && pixelsPerBeat >= 50) {
+                    // === BEAT LABEL: Medium, secondary color ===
+                    // Format: "1.2", "1.3", "1.4"
                     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-                    g.drawText(labelStr, x - 35, labelY, 70, labelHeight,
+                    g.setFont(FontManager::getInstance().getUIFont(10.0f));
+                    juce::String labelStr = juce::String(bar) + "." + juce::String(beatInBar);
+                    g.drawText(labelStr, x - 25, labelY, 50, labelHeight,
+                               juce::Justification::centred);
+                } else if (isSubdivisionNotBeat && pixelsPerSubdiv >= 30) {
+                    // === SUBDIVISION LABEL: Small, dim ===
+                    // Format: "1.1.2", "1.1.3", "1.2.2"
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                    g.setFont(FontManager::getInstance().getUIFont(8.0f));
+                    juce::String labelStr = juce::String(bar) + "." + juce::String(beatInBar) +
+                                            "." + juce::String(subdivIndex);
+                    g.drawText(labelStr, x - 30, labelY + 2, 60, labelHeight,
                                juce::Justification::centred);
                 }
             }

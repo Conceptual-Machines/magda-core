@@ -44,11 +44,20 @@ class ZoomScrollBar : public juce::Component {
         return orientation;
     }
 
+    // Optional label displayed on the scroll bar (e.g., grid division "1/4")
+    void setLabel(const juce::String& text);
+    juce::String getLabel() const {
+        return label;
+    }
+
     // Callbacks
     std::function<void(double start, double end)> onRangeChanged;
 
   private:
     Orientation orientation;
+
+    // Optional label text
+    juce::String label;
 
     // Visible range as fraction of total content (0.0 to 1.0)
     double visibleStart = 0.0;
