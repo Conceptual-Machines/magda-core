@@ -301,6 +301,7 @@ void MainWindow::MainComponent::layoutTransportArea(juce::Rectangle<int>& bounds
 
     transportPanel->setBounds(bounds.removeFromTop(transportHeight));
     transportResizer->setBounds(bounds.removeFromTop(layout.resizeHandleSize));
+    bounds.removeFromTop(layout.panelPadding);  // Spacing below transport
 }
 
 void MainWindow::MainComponent::layoutFooterArea(juce::Rectangle<int>& bounds) {

@@ -355,6 +355,10 @@ void MainView::loopStateChanged(const TimelineState& state) {
 void MainView::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
 
+    // Draw top border for visual separation from transport above
+    g.setColour(DarkTheme::getBorderColour());
+    g.fillRect(0, 0, getWidth(), 1);
+
     // Draw resize handles
     paintResizeHandle(g);
     paintMasterResizeHandle(g);
