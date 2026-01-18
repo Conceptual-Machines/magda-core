@@ -49,6 +49,10 @@ class MainWindow::MainComponent : public juce::Component {
     bool rightPanelVisible = true;
     bool bottomPanelVisible = true;
 
+    // Collapsed state (panel shows thin bar with expand button)
+    bool leftPanelCollapsed = false;
+    bool rightPanelCollapsed = false;
+
     std::unique_ptr<TransportPanel> transportPanel;
     std::unique_ptr<MainView> mainView;
 
@@ -63,6 +67,7 @@ class MainWindow::MainComponent : public juce::Component {
     static constexpr int ARRANGEMENT_HEIGHT = 30;
     static constexpr int TIMELINE_HEIGHT = 80;
     static constexpr int MIN_PANEL_WIDTH = 200;
+    static constexpr int COLLAPSED_PANEL_WIDTH = 24;
     static constexpr int DEFAULT_LEFT_WIDTH = 250;
     static constexpr int DEFAULT_RIGHT_WIDTH = 300;
     static constexpr int DEFAULT_BOTTOM_HEIGHT = 200;

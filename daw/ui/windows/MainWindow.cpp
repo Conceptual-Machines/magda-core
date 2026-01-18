@@ -90,15 +90,15 @@ MainWindow::MainComponent::MainComponent() {
 
     // Create side panels
     leftPanel = std::make_unique<LeftPanel>();
-    leftPanel->onCollapse = [this]() {
-        leftPanelVisible = false;
+    leftPanel->onCollapseChanged = [this](bool collapsed) {
+        leftPanelCollapsed = collapsed;
         resized();
     };
     addAndMakeVisible(*leftPanel);
 
     rightPanel = std::make_unique<RightPanel>();
-    rightPanel->onCollapse = [this]() {
-        rightPanelVisible = false;
+    rightPanel->onCollapseChanged = [this](bool collapsed) {
+        rightPanelCollapsed = collapsed;
         resized();
     };
     addAndMakeVisible(*rightPanel);
@@ -128,16 +128,42 @@ MainWindow::MainComponent::MainComponent() {
     addAndMakeVisible(*bottomPanel);
 
     // Create resize handles
+    static constexpr int COLLAPSE_THRESHOLD = 60;  // Collapse when dragged below this width
+
     leftResizer = std::make_unique<ResizeHandle>(ResizeHandle::Horizontal);
     leftResizer->onResize = [this](int delta) {
-        leftPanelWidth = juce::jmax(MIN_PANEL_WIDTH, leftPanelWidth + delta);
+        int newWidth = leftPanelWidth + delta;
+        if (newWidth < COLLAPSE_THRESHOLD) {
+            // Collapse the panel
+            leftPanelCollapsed = true;
+            leftPanel->setCollapsed(true);
+        } else {
+            // Expand if was collapsed, and set new width
+            if (leftPanelCollapsed) {
+                leftPanelCollapsed = false;
+                leftPanel->setCollapsed(false);
+            }
+            leftPanelWidth = juce::jmax(MIN_PANEL_WIDTH, newWidth);
+        }
         resized();
     };
     addAndMakeVisible(*leftResizer);
 
     rightResizer = std::make_unique<ResizeHandle>(ResizeHandle::Horizontal);
     rightResizer->onResize = [this](int delta) {
-        rightPanelWidth = juce::jmax(MIN_PANEL_WIDTH, rightPanelWidth - delta);
+        int newWidth = rightPanelWidth - delta;
+        if (newWidth < COLLAPSE_THRESHOLD) {
+            // Collapse the panel
+            rightPanelCollapsed = true;
+            rightPanel->setCollapsed(true);
+        } else {
+            // Expand if was collapsed, and set new width
+            if (rightPanelCollapsed) {
+                rightPanelCollapsed = false;
+                rightPanel->setCollapsed(false);
+            }
+            rightPanelWidth = juce::jmax(MIN_PANEL_WIDTH, newWidth);
+        }
         resized();
     };
     addAndMakeVisible(*rightResizer);
@@ -185,12 +211,20 @@ void MainWindow::MainComponent::resized() {
     // Left panel (if visible)
     juce::Rectangle<int> leftArea;
     if (leftPanelVisible) {
-        leftArea = contentArea.removeFromLeft(leftPanelWidth);
+        // Use collapsed width if collapsed, otherwise full width
+        int effectiveLeftWidth = leftPanelCollapsed ? COLLAPSED_PANEL_WIDTH : leftPanelWidth;
+        leftArea = contentArea.removeFromLeft(effectiveLeftWidth);
         leftPanel->setBounds(leftArea);
+        leftPanel->setCollapsed(leftPanelCollapsed);
 
-        // Left resizer
-        auto leftResizerArea = contentArea.removeFromLeft(3);
-        leftResizer->setBounds(leftResizerArea);
+        // Only show resizer when not collapsed
+        if (!leftPanelCollapsed) {
+            auto leftResizerArea = contentArea.removeFromLeft(3);
+            leftResizer->setBounds(leftResizerArea);
+            leftResizer->setVisible(true);
+        } else {
+            leftResizer->setVisible(false);
+        }
     } else {
         leftPanel->setVisible(false);
         leftResizer->setVisible(false);
@@ -199,12 +233,20 @@ void MainWindow::MainComponent::resized() {
     // Right panel (if visible)
     juce::Rectangle<int> rightArea;
     if (rightPanelVisible) {
-        rightArea = contentArea.removeFromRight(rightPanelWidth);
+        // Use collapsed width if collapsed, otherwise full width
+        int effectiveRightWidth = rightPanelCollapsed ? COLLAPSED_PANEL_WIDTH : rightPanelWidth;
+        rightArea = contentArea.removeFromRight(effectiveRightWidth);
         rightPanel->setBounds(rightArea);
+        rightPanel->setCollapsed(rightPanelCollapsed);
 
-        // Right resizer
-        auto rightResizerArea = contentArea.removeFromRight(3);
-        rightResizer->setBounds(rightResizerArea);
+        // Only show resizer when not collapsed
+        if (!rightPanelCollapsed) {
+            auto rightResizerArea = contentArea.removeFromRight(3);
+            rightResizer->setBounds(rightResizerArea);
+            rightResizer->setVisible(true);
+        } else {
+            rightResizer->setVisible(false);
+        }
     } else {
         rightPanel->setVisible(false);
         rightResizer->setVisible(false);
@@ -217,8 +259,6 @@ void MainWindow::MainComponent::resized() {
     leftPanel->setVisible(leftPanelVisible);
     rightPanel->setVisible(rightPanelVisible);
     bottomPanel->setVisible(bottomPanelVisible);
-    leftResizer->setVisible(leftPanelVisible);
-    rightResizer->setVisible(rightPanelVisible);
     bottomResizer->setVisible(bottomPanelVisible);
 }
 
@@ -329,6 +369,11 @@ void MainWindow::setupMenuCallbacks() {
         if (mainComponent) {
             mainComponent->leftPanelVisible = show;
             mainComponent->resized();
+            // Update menu state
+            MenuManager::getInstance().updateMenuStates(
+                false, false, false, mainComponent->leftPanelVisible,
+                mainComponent->rightPanelVisible, mainComponent->bottomPanelVisible, false, false,
+                false);
         }
     };
 
@@ -336,6 +381,11 @@ void MainWindow::setupMenuCallbacks() {
         if (mainComponent) {
             mainComponent->rightPanelVisible = show;
             mainComponent->resized();
+            // Update menu state
+            MenuManager::getInstance().updateMenuStates(
+                false, false, false, mainComponent->leftPanelVisible,
+                mainComponent->rightPanelVisible, mainComponent->bottomPanelVisible, false, false,
+                false);
         }
     };
 
@@ -343,6 +393,11 @@ void MainWindow::setupMenuCallbacks() {
         if (mainComponent) {
             mainComponent->bottomPanelVisible = show;
             mainComponent->resized();
+            // Update menu state
+            MenuManager::getInstance().updateMenuStates(
+                false, false, false, mainComponent->leftPanelVisible,
+                mainComponent->rightPanelVisible, mainComponent->bottomPanelVisible, false, false,
+                false);
         }
     };
 
