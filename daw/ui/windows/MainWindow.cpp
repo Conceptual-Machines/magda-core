@@ -128,7 +128,7 @@ MainWindow::MainComponent::MainComponent() {
     addAndMakeVisible(*bottomPanel);
 
     // Create resize handles
-    static constexpr int COLLAPSE_THRESHOLD = 60;  // Collapse when dragged below this width
+    static constexpr int COLLAPSE_THRESHOLD = 50;  // Collapse when dragged below this width
 
     leftResizer = std::make_unique<ResizeHandle>(ResizeHandle::Horizontal);
     leftResizer->onResize = [this](int delta) {
@@ -138,12 +138,13 @@ MainWindow::MainComponent::MainComponent() {
             leftPanelCollapsed = true;
             leftPanel->setCollapsed(true);
         } else {
-            // Expand if was collapsed, and set new width
+            // Expand if was collapsed
             if (leftPanelCollapsed) {
                 leftPanelCollapsed = false;
                 leftPanel->setCollapsed(false);
             }
-            leftPanelWidth = juce::jmax(MIN_PANEL_WIDTH, newWidth);
+            // Allow continuous resize (minimum just prevents negative)
+            leftPanelWidth = juce::jmax(COLLAPSE_THRESHOLD, newWidth);
         }
         resized();
     };
@@ -157,12 +158,13 @@ MainWindow::MainComponent::MainComponent() {
             rightPanelCollapsed = true;
             rightPanel->setCollapsed(true);
         } else {
-            // Expand if was collapsed, and set new width
+            // Expand if was collapsed
             if (rightPanelCollapsed) {
                 rightPanelCollapsed = false;
                 rightPanel->setCollapsed(false);
             }
-            rightPanelWidth = juce::jmax(MIN_PANEL_WIDTH, newWidth);
+            // Allow continuous resize (minimum just prevents negative)
+            rightPanelWidth = juce::jmax(COLLAPSE_THRESHOLD, newWidth);
         }
         resized();
     };
