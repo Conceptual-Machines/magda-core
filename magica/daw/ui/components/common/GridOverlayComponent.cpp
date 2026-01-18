@@ -162,8 +162,9 @@ void GridOverlayComponent::drawBarsBeatsGrid(juce::Graphics& g, juce::Rectangle<
     double secondsPerBeat = 60.0 / tempoBPM;
     double secondsPerBar = secondsPerBeat * timeSignatureNumerator;
 
-    // Find appropriate interval (including 32nd and 64th notes for deep zoom)
-    const double beatFractions[] = {0.0625, 0.125, 0.25, 0.5, 1.0, 2.0};
+    // Find appropriate interval (supporting subdivisions down to 1/128 for deep zoom)
+    // Must match TimelineComponent::drawTimeMarkers() for grid/ruler sync
+    const double beatFractions[] = {0.0078125, 0.015625, 0.03125, 0.0625, 0.125, 0.25, 0.5, 1.0};
     const int barMultiples[] = {1, 2, 4, 8, 16, 32};
 
     double markerIntervalBeats = 1.0;
@@ -175,7 +176,8 @@ void GridOverlayComponent::drawBarsBeatsGrid(juce::Graphics& g, juce::Rectangle<
             markerIntervalBeats = fraction;
             break;
         }
-        if (fraction == 2.0) {
+        // If we've gone through all beat fractions (last is 1.0), switch to bar multiples
+        if (fraction == 1.0) {
             useBarMultiples = true;
         }
     }
