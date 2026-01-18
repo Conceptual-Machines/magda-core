@@ -15,6 +15,7 @@ class TrackHeadersPanel : public juce::Component, public TrackManagerListener {
     static constexpr int DEFAULT_TRACK_HEIGHT = 80;
     static constexpr int MIN_TRACK_HEIGHT = 75;
     static constexpr int MAX_TRACK_HEIGHT = 200;
+    static constexpr int MASTER_TRACK_HEIGHT = 60;
 
     TrackHeadersPanel();
     ~TrackHeadersPanel() override;
@@ -22,6 +23,7 @@ class TrackHeadersPanel : public juce::Component, public TrackManagerListener {
     // TrackManagerListener
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
+    void masterChannelChanged() override;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -87,6 +89,16 @@ class TrackHeadersPanel : public juce::Component, public TrackManagerListener {
     int selectedTrackIndex = -1;
     double verticalZoom = 1.0;  // Track height multiplier
 
+    // Master track header (fixed at bottom)
+    struct MasterHeader {
+        std::unique_ptr<juce::Label> nameLabel;
+        std::unique_ptr<juce::TextButton> muteButton;
+        std::unique_ptr<juce::TextButton> soloButton;
+        std::unique_ptr<juce::Slider> volumeSlider;
+        std::unique_ptr<juce::Slider> panSlider;
+    };
+    std::unique_ptr<MasterHeader> masterHeader;
+
     // Resize functionality
     bool isResizing = false;
     int resizingTrackIndex = -1;
@@ -97,13 +109,17 @@ class TrackHeadersPanel : public juce::Component, public TrackManagerListener {
     // Helper methods
     void setupTrackHeader(TrackHeader& header, int trackIndex);
     void setupTrackHeaderWithId(TrackHeader& header, int trackId);
+    void setupMasterHeader();
     void paintTrackHeader(juce::Graphics& g, const TrackHeader& header, juce::Rectangle<int> area,
                           bool isSelected);
+    void paintMasterHeader(juce::Graphics& g, juce::Rectangle<int> area);
     void paintResizeHandle(juce::Graphics& g, juce::Rectangle<int> area);
     juce::Rectangle<int> getTrackHeaderArea(int trackIndex) const;
+    juce::Rectangle<int> getMasterHeaderArea() const;
     juce::Rectangle<int> getResizeHandleArea(int trackIndex) const;
     bool isResizeHandleArea(const juce::Point<int>& point, int& trackIndex) const;
     void updateTrackHeaderLayout();
+    void updateMasterHeaderLayout();
 
     // Mouse handling
     void mouseDown(const juce::MouseEvent& event) override;

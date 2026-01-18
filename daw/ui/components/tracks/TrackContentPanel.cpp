@@ -96,7 +96,12 @@ void TrackContentPanel::zoomStateChanged(const TimelineState& state) {
 void TrackContentPanel::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
 
-    // Draw track lanes
+    // Draw grid as background spanning all tracks (including master)
+    auto gridArea = getLocalBounds();
+    gridArea.setHeight(getTotalTracksHeight() + MASTER_TRACK_HEIGHT);
+    paintGrid(g, gridArea);
+
+    // Draw track lanes (without individual grid overlays)
     for (size_t i = 0; i < trackLanes.size(); ++i) {
         auto laneArea = getTrackLaneArea(static_cast<int>(i));
         if (laneArea.intersects(getLocalBounds())) {
@@ -104,12 +109,18 @@ void TrackContentPanel::paint(juce::Graphics& g) {
                            static_cast<int>(i));
         }
     }
+
+    // Draw master lane at bottom
+    auto masterArea = getMasterLaneArea();
+    if (masterArea.intersects(getLocalBounds())) {
+        paintMasterLane(g, masterArea);
+    }
 }
 
 void TrackContentPanel::resized() {
     // Update size based on zoom and timeline length
     int contentWidth = static_cast<int>(timelineLength * currentZoom);
-    int contentHeight = getTotalTracksHeight();
+    int contentHeight = getTotalTracksHeight() + MASTER_TRACK_HEIGHT;
 
     setSize(juce::jmax(contentWidth, getWidth()), juce::jmax(contentHeight, getHeight()));
 }
@@ -226,19 +237,17 @@ int TrackContentPanel::getTrackYPosition(int trackIndex) const {
 
 void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& lane,
                                        juce::Rectangle<int> area, bool isSelected, int trackIndex) {
-    // Background
-    g.setColour(isSelected ? DarkTheme::getColour(DarkTheme::TRACK_SELECTED)
-                           : DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
+    // Background (semi-transparent to let grid show through)
+    auto bgColour = isSelected ? DarkTheme::getColour(DarkTheme::TRACK_SELECTED)
+                               : DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND);
+    g.setColour(bgColour.withAlpha(0.7f));
     g.fillRect(area);
 
     // Border
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawRect(area, 1);
 
-    // Draw grid overlay
-    paintGrid(g, area);
-
-    // Track number removed - track names are shown in the headers panel
+    // Grid is drawn as background in paint(), not per-track
 }
 
 void TrackContentPanel::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
@@ -387,6 +396,27 @@ juce::Rectangle<int> TrackContentPanel::getTrackLaneArea(int trackIndex) const {
     int height = static_cast<int>(trackLanes[trackIndex]->height * verticalZoom);
 
     return juce::Rectangle<int>(0, yPosition, getWidth(), height);
+}
+
+juce::Rectangle<int> TrackContentPanel::getMasterLaneArea() const {
+    int yPosition = getTotalTracksHeight();
+    return juce::Rectangle<int>(0, yPosition, getWidth(), MASTER_TRACK_HEIGHT);
+}
+
+void TrackContentPanel::paintMasterLane(juce::Graphics& g, juce::Rectangle<int> area) {
+    // Background - semi-transparent to let grid show through
+    g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND).brighter(0.1f).withAlpha(0.7f));
+    g.fillRect(area);
+
+    // Border with accent color
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    g.drawRect(area, 1);
+
+    // Top accent line
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    g.fillRect(area.getX(), area.getY(), area.getWidth(), 2);
+
+    // Grid is drawn as background in paint(), not per-lane
 }
 
 bool TrackContentPanel::isInSelectableArea(int x, int y) const {

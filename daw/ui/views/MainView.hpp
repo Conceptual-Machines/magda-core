@@ -5,7 +5,6 @@
 #include <memory>
 
 #include "../components/common/SvgButton.hpp"
-#include "../components/mixer/MasterChannelStrip.hpp"
 #include "../components/timeline/TimelineComponent.hpp"
 #include "../components/timeline/ZoomManager.hpp"
 #include "../components/timeline/ZoomScrollBar.hpp"
@@ -121,9 +120,6 @@ class MainView : public juce::Component,
     std::unique_ptr<ZoomManager> zoomManager;
     std::unique_ptr<ZoomScrollBar> horizontalZoomScrollBar;
     std::unique_ptr<ZoomScrollBar> verticalZoomScrollBar;
-
-    // Master channel strip (horizontal, at bottom of track content)
-    std::unique_ptr<MasterChannelStrip> masterStrip;
 
     // Cached state from controller for quick access
     // These are updated when TimelineStateListener callbacks are called

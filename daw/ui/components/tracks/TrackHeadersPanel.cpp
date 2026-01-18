@@ -54,11 +54,17 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
 TrackHeadersPanel::TrackHeadersPanel() {
     setSize(TRACK_HEADER_WIDTH, 400);
 
+    // Setup master header
+    setupMasterHeader();
+
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
 
     // Build tracks from TrackManager
     tracksChanged();
+
+    // Load initial master state
+    masterChannelChanged();
 }
 
 TrackHeadersPanel::~TrackHeadersPanel() {
@@ -108,6 +114,7 @@ void TrackHeadersPanel::tracksChanged() {
     }
 
     updateTrackHeaderLayout();
+    updateMasterHeaderLayout();
     repaint();
 }
 
@@ -154,10 +161,17 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
             paintResizeHandle(g, resizeArea);
         }
     }
+
+    // Draw master header at bottom
+    auto masterArea = getMasterHeaderArea();
+    if (masterArea.intersects(getLocalBounds())) {
+        paintMasterHeader(g, masterArea);
+    }
 }
 
 void TrackHeadersPanel::resized() {
     updateTrackHeaderLayout();
+    updateMasterHeaderLayout();
 }
 
 void TrackHeadersPanel::addTrack() {
@@ -369,6 +383,90 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
     };
 }
 
+void TrackHeadersPanel::setupMasterHeader() {
+    masterHeader = std::make_unique<MasterHeader>();
+
+    // Name label
+    masterHeader->nameLabel = std::make_unique<juce::Label>("masterName", "Master");
+    masterHeader->nameLabel->setColour(juce::Label::textColourId,
+                                       DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    masterHeader->nameLabel->setColour(juce::Label::backgroundColourId,
+                                       juce::Colours::transparentBlack);
+    masterHeader->nameLabel->setFont(FontManager::getInstance().getUIFont(12.0f));
+    addAndMakeVisible(*masterHeader->nameLabel);
+
+    // Mute button
+    masterHeader->muteButton = std::make_unique<juce::TextButton>("M");
+    masterHeader->muteButton->setColour(juce::TextButton::buttonColourId,
+                                        DarkTheme::getColour(DarkTheme::SURFACE));
+    masterHeader->muteButton->setColour(juce::TextButton::buttonOnColourId,
+                                        DarkTheme::getColour(DarkTheme::STATUS_WARNING));
+    masterHeader->muteButton->setColour(juce::TextButton::textColourOffId,
+                                        DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    masterHeader->muteButton->setColour(juce::TextButton::textColourOnId,
+                                        DarkTheme::getColour(DarkTheme::BACKGROUND));
+    masterHeader->muteButton->setClickingTogglesState(true);
+    masterHeader->muteButton->onClick = [this]() {
+        TrackManager::getInstance().setMasterMuted(masterHeader->muteButton->getToggleState());
+    };
+    addAndMakeVisible(*masterHeader->muteButton);
+
+    // Solo button
+    masterHeader->soloButton = std::make_unique<juce::TextButton>("S");
+    masterHeader->soloButton->setColour(juce::TextButton::buttonColourId,
+                                        DarkTheme::getColour(DarkTheme::SURFACE));
+    masterHeader->soloButton->setColour(juce::TextButton::buttonOnColourId,
+                                        DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    masterHeader->soloButton->setColour(juce::TextButton::textColourOffId,
+                                        DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    masterHeader->soloButton->setColour(juce::TextButton::textColourOnId,
+                                        DarkTheme::getColour(DarkTheme::BACKGROUND));
+    masterHeader->soloButton->setClickingTogglesState(true);
+    masterHeader->soloButton->onClick = [this]() {
+        TrackManager::getInstance().setMasterSoloed(masterHeader->soloButton->getToggleState());
+    };
+    addAndMakeVisible(*masterHeader->soloButton);
+
+    // Volume slider
+    masterHeader->volumeSlider =
+        std::make_unique<juce::Slider>(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox);
+    masterHeader->volumeSlider->setRange(0.0, 1.0);
+    masterHeader->volumeSlider->setColour(juce::Slider::trackColourId,
+                                          DarkTheme::getColour(DarkTheme::SURFACE));
+    masterHeader->volumeSlider->setColour(juce::Slider::thumbColourId,
+                                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    masterHeader->volumeSlider->onValueChange = [this]() {
+        TrackManager::getInstance().setMasterVolume(
+            static_cast<float>(masterHeader->volumeSlider->getValue()));
+    };
+    addAndMakeVisible(*masterHeader->volumeSlider);
+
+    // Pan slider
+    masterHeader->panSlider =
+        std::make_unique<juce::Slider>(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox);
+    masterHeader->panSlider->setRange(-1.0, 1.0);
+    masterHeader->panSlider->setColour(juce::Slider::trackColourId,
+                                       DarkTheme::getColour(DarkTheme::SURFACE));
+    masterHeader->panSlider->setColour(juce::Slider::thumbColourId,
+                                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    masterHeader->panSlider->onValueChange = [this]() {
+        TrackManager::getInstance().setMasterPan(
+            static_cast<float>(masterHeader->panSlider->getValue()));
+    };
+    addAndMakeVisible(*masterHeader->panSlider);
+}
+
+void TrackHeadersPanel::masterChannelChanged() {
+    if (!masterHeader)
+        return;
+
+    const auto& master = TrackManager::getInstance().getMasterChannel();
+    masterHeader->muteButton->setToggleState(master.muted, juce::dontSendNotification);
+    masterHeader->soloButton->setToggleState(master.soloed, juce::dontSendNotification);
+    masterHeader->volumeSlider->setValue(master.volume, juce::dontSendNotification);
+    masterHeader->panSlider->setValue(master.pan, juce::dontSendNotification);
+}
+
 void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& header,
                                          juce::Rectangle<int> area, bool isSelected) {
     // Background
@@ -381,6 +479,51 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
     g.drawRect(area, 1);
 
     // Track number removed - track names are sufficient identification
+}
+
+void TrackHeadersPanel::paintMasterHeader(juce::Graphics& g, juce::Rectangle<int> area) {
+    // Background - use accent color to distinguish master
+    g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND).brighter(0.1f));
+    g.fillRect(area);
+
+    // Border
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    g.drawRect(area, 1);
+
+    // Top accent line
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    g.fillRect(area.getX(), area.getY(), area.getWidth(), 2);
+}
+
+juce::Rectangle<int> TrackHeadersPanel::getMasterHeaderArea() const {
+    int yPosition = getTotalTracksHeight();
+    return juce::Rectangle<int>(0, yPosition, getWidth(), MASTER_TRACK_HEIGHT);
+}
+
+void TrackHeadersPanel::updateMasterHeaderLayout() {
+    if (!masterHeader)
+        return;
+
+    auto area = getMasterHeaderArea();
+    auto contentArea = area.reduced(5);
+
+    // Name label at top
+    masterHeader->nameLabel->setBounds(contentArea.removeFromTop(18));
+    contentArea.removeFromTop(3);
+
+    // Mute and Solo buttons
+    auto buttonArea = contentArea.removeFromTop(18);
+    masterHeader->muteButton->setBounds(buttonArea.removeFromLeft(30));
+    buttonArea.removeFromLeft(5);
+    masterHeader->soloButton->setBounds(buttonArea.removeFromLeft(30));
+    buttonArea.removeFromLeft(10);
+
+    // Volume and pan sliders in remaining space
+    auto sliderArea = buttonArea;
+    int sliderWidth = (sliderArea.getWidth() - 5) / 2;
+    masterHeader->volumeSlider->setBounds(sliderArea.removeFromLeft(sliderWidth));
+    sliderArea.removeFromLeft(5);
+    masterHeader->panSlider->setBounds(sliderArea);
 }
 
 void TrackHeadersPanel::paintResizeHandle(juce::Graphics& g, juce::Rectangle<int> area) {

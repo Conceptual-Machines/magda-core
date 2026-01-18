@@ -140,10 +140,6 @@ void MainView::setupComponents() {
     addAndMakeVisible(*playheadComponent);
     playheadComponent->toFront(false);
 
-    // Create master channel strip (horizontal orientation for Arrange view)
-    masterStrip = std::make_unique<MasterChannelStrip>(MasterChannelStrip::Orientation::Horizontal);
-    addAndMakeVisible(*masterStrip);
-
     // Create horizontal zoom scroll bar (at bottom)
     horizontalZoomScrollBar =
         std::make_unique<ZoomScrollBar>(ZoomScrollBar::Orientation::Horizontal);
@@ -365,7 +361,6 @@ void MainView::resized() {
 
     // Layout constants
     static constexpr int ZOOM_SCROLLBAR_SIZE = 20;
-    static constexpr int MASTER_STRIP_HEIGHT = 50;
     auto& layout = LayoutConfig::getInstance();
 
     // Vertical zoom scroll bar on the right
@@ -377,15 +372,8 @@ void MainView::resized() {
     horizontalScrollBarArea.removeFromLeft(trackHeaderWidth + layout.componentSpacing);
     horizontalZoomScrollBar->setBounds(horizontalScrollBarArea);
 
-    // Master strip at the bottom of track content area (above horizontal scroll bar)
-    auto masterStripArea = bounds.removeFromBottom(MASTER_STRIP_HEIGHT);
-    // Leave space for track headers on the left
-    masterStripArea.removeFromLeft(trackHeaderWidth + layout.componentSpacing);
-    masterStrip->setBounds(masterStripArea);
-
-    // Now position vertical scroll bar (after horizontal and master strip removed their portions)
-    verticalScrollBarArea.removeFromBottom(ZOOM_SCROLLBAR_SIZE +
-                                           MASTER_STRIP_HEIGHT);  // Don't overlap
+    // Now position vertical scroll bar (after horizontal removed its bottom portion)
+    verticalScrollBarArea.removeFromBottom(ZOOM_SCROLLBAR_SIZE);  // Don't overlap corner
     verticalScrollBarArea.removeFromTop(getTimelineHeight());     // Start below timeline
     verticalZoomScrollBar->setBounds(verticalScrollBarArea);
 
