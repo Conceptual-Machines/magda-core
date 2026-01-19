@@ -12,12 +12,16 @@
 #include "../components/tracks/TrackHeadersPanel.hpp"
 #include "../layout/LayoutConfig.hpp"
 #include "../state/TimelineController.hpp"
+#include "core/TrackManager.hpp"
+#include "core/ViewModeController.hpp"
 
 namespace magica {
 
 class MainView : public juce::Component,
                  public juce::ScrollBar::Listener,
-                 public TimelineStateListener {
+                 public TimelineStateListener,
+                 public TrackManagerListener,
+                 public ViewModeListener {
   public:
     MainView();
     ~MainView() override;
@@ -68,6 +72,13 @@ class MainView : public juce::Component,
     void playheadStateChanged(const TimelineState& state) override;
     void selectionStateChanged(const TimelineState& state) override;
     void loopStateChanged(const TimelineState& state) override;
+
+    // TrackManagerListener implementation
+    void tracksChanged() override {}  // Handled by TrackHeadersPanel
+    void masterChannelChanged() override;
+
+    // ViewModeListener implementation
+    void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
 
     // Access to the timeline controller (for child components)
     TimelineController& getTimelineController() {
@@ -129,6 +140,8 @@ class MainView : public juce::Component,
     std::unique_ptr<MasterHeaderPanel> masterHeaderPanel;
     std::unique_ptr<MasterContentPanel> masterContentPanel;
     int masterStripHeight = 60;
+    ViewMode currentViewMode_ = ViewMode::Arrange;
+    bool masterVisible_ = true;
     static constexpr int MIN_MASTER_STRIP_HEIGHT = 40;
     static constexpr int MAX_MASTER_STRIP_HEIGHT = 150;
 

@@ -36,6 +36,15 @@ MainView::MainView() : playheadPosition(0.0), horizontalZoom(20.0), initialZoomS
 
     // Set up timeline zoom/scroll callbacks
     setupTimelineCallbacks();
+
+    // Register as TrackManager and ViewModeController listener
+    TrackManager::getInstance().addListener(this);
+    ViewModeController::getInstance().addListener(this);
+    currentViewMode_ = ViewModeController::getInstance().getViewMode();
+
+    // Initialize master visibility
+    const auto& master = TrackManager::getInstance().getMasterChannel();
+    masterVisible_ = master.isVisibleIn(currentViewMode_);
 }
 
 void MainView::setupTimelineController() {
@@ -247,6 +256,10 @@ MainView::~MainView() {
         timelineController->removeListener(this);
     }
 
+    // Unregister from TrackManager and ViewModeController
+    TrackManager::getInstance().removeListener(this);
+    ViewModeController::getInstance().removeListener(this);
+
     // Save configuration on shutdown
     auto& config = magica::Config::getInstance();
     config.saveToFile("magica_config.txt");
@@ -355,6 +368,37 @@ void MainView::loopStateChanged(const TimelineState& state) {
     }
 }
 
+// ===== TrackManagerListener Implementation =====
+
+void MainView::masterChannelChanged() {
+    const auto& master = TrackManager::getInstance().getMasterChannel();
+    bool newVisible = master.isVisibleIn(currentViewMode_);
+
+    if (newVisible != masterVisible_) {
+        masterVisible_ = newVisible;
+        masterHeaderPanel->setVisible(masterVisible_);
+        masterContentPanel->setVisible(masterVisible_);
+        resized();
+    }
+}
+
+// ===== ViewModeListener Implementation =====
+
+void MainView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profile*/) {
+    currentViewMode_ = mode;
+
+    // Update master visibility for new view mode
+    const auto& master = TrackManager::getInstance().getMasterChannel();
+    bool newVisible = master.isVisibleIn(currentViewMode_);
+
+    if (newVisible != masterVisible_) {
+        masterVisible_ = newVisible;
+        masterHeaderPanel->setVisible(masterVisible_);
+        masterContentPanel->setVisible(masterVisible_);
+        resized();
+    }
+}
+
 void MainView::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
 
@@ -383,21 +427,26 @@ void MainView::resized() {
     horizontalScrollBarArea.removeFromLeft(trackHeaderWidth + layout.componentSpacing);
     horizontalZoomScrollBar->setBounds(horizontalScrollBarArea);
 
-    // Fixed master track row at the bottom (above horizontal scroll bar)
-    auto masterRowArea = bounds.removeFromBottom(masterStripHeight);
-    // Master header on the left (same width as track headers)
-    masterHeaderPanel->setBounds(masterRowArea.removeFromLeft(trackHeaderWidth));
-    // Padding between header and content
-    masterRowArea.removeFromLeft(layout.componentSpacing);
-    // Master content takes the rest
-    masterContentPanel->setBounds(masterRowArea);
+    // Fixed master track row at the bottom (above horizontal scroll bar) - only if visible
+    int effectiveMasterHeight = masterVisible_ ? masterStripHeight : 0;
+    int effectiveResizeHandleHeight = masterVisible_ ? MASTER_RESIZE_HANDLE_HEIGHT : 0;
 
-    // Remove space for the resize handle ABOVE the master row
-    bounds.removeFromBottom(MASTER_RESIZE_HANDLE_HEIGHT);
+    if (masterVisible_) {
+        auto masterRowArea = bounds.removeFromBottom(masterStripHeight);
+        // Master header on the left (same width as track headers)
+        masterHeaderPanel->setBounds(masterRowArea.removeFromLeft(trackHeaderWidth));
+        // Padding between header and content
+        masterRowArea.removeFromLeft(layout.componentSpacing);
+        // Master content takes the rest
+        masterContentPanel->setBounds(masterRowArea);
+
+        // Remove space for the resize handle ABOVE the master row
+        bounds.removeFromBottom(MASTER_RESIZE_HANDLE_HEIGHT);
+    }
 
     // Now position vertical scroll bar (after bottom areas removed)
-    verticalScrollBarArea.removeFromBottom(ZOOM_SCROLLBAR_SIZE + masterStripHeight +
-                                           MASTER_RESIZE_HANDLE_HEIGHT);
+    verticalScrollBarArea.removeFromBottom(ZOOM_SCROLLBAR_SIZE + effectiveMasterHeight +
+                                           effectiveResizeHandleHeight);
     verticalScrollBarArea.removeFromTop(getTimelineHeight());  // Start below timeline
     verticalZoomScrollBar->setBounds(verticalScrollBarArea);
 
@@ -1041,6 +1090,11 @@ void MainView::paintResizeHandle(juce::Graphics& g) {
 }
 
 juce::Rectangle<int> MainView::getMasterResizeHandleArea() const {
+    // Return empty area if master is not visible
+    if (!masterVisible_) {
+        return {};
+    }
+
     // Position the resize handle in the gap between track content and master strip
     static constexpr int ZOOM_SCROLLBAR_SIZE = 20;
     // Master row top is at: getHeight() - ZOOM_SCROLLBAR_SIZE - masterStripHeight
