@@ -370,6 +370,23 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybac
     return changed ? ChangeFlags::Playhead : ChangeFlags::None;
 }
 
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetEditCursorEvent& e) {
+    double newPos = e.position;
+
+    // Allow -1.0 to hide the cursor, otherwise clamp to valid range
+    if (newPos >= 0.0) {
+        newPos = juce::jlimit(0.0, state.timelineLength, newPos);
+    }
+
+    if (newPos == state.editCursorPosition) {
+        return ChangeFlags::None;
+    }
+
+    state.editCursorPosition = newPos;
+    // Use Selection flag since edit cursor is an editing-related visual
+    return ChangeFlags::Selection;
+}
+
 // ===== Selection Event Handlers =====
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimeSelectionEvent& e) {

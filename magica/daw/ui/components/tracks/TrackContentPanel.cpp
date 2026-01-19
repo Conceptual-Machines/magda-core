@@ -306,15 +306,15 @@ void TrackContentPanel::paintEditCursor(juce::Graphics& g) {
     }
 
     const auto& state = timelineController->getState();
-    double editPosition = state.playhead.editPosition;
+    double editCursorPos = state.editCursorPosition;
 
-    // Don't draw if position is invalid
-    if (editPosition < 0 || editPosition > timelineLength) {
+    // Don't draw if position is invalid (< 0 means hidden)
+    if (editCursorPos < 0 || editCursorPos > timelineLength) {
         return;
     }
 
     // Calculate X position
-    int cursorX = timeToPixel(editPosition);
+    int cursorX = timeToPixel(editCursorPos);
 
     // Only draw on selected track(s)
     auto trackArea = getTrackLaneArea(selectedTrackIndex);
@@ -645,9 +645,9 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
                 clickTime = snapTimeToGrid(clickTime);
             }
 
-            // Dispatch edit position change through controller
+            // Dispatch edit cursor change through controller (separate from playhead)
             if (timelineController) {
-                timelineController->dispatch(SetEditPositionEvent{clickTime});
+                timelineController->dispatch(SetEditCursorEvent{clickTime});
             }
         } else {
             // It was a drag - finalize time selection
@@ -1522,7 +1522,12 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
         }
 
         const auto& state = timelineController->getState();
-        double splitTime = state.playhead.editPosition;
+        double splitTime = state.editCursorPosition;
+
+        // Can't split if edit cursor is not set
+        if (splitTime < 0) {
+            return false;
+        }
 
         // Get selected clips
         const auto& selectedClips = selectionManager.getSelectedClips();

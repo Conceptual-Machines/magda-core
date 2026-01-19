@@ -123,6 +123,17 @@ struct MovePlayheadByDeltaEvent {
 };
 
 /**
+ * @brief Set edit cursor position (separate from playhead)
+ *
+ * The edit cursor is used for split/edit operations and is independent
+ * from the playhead position. Set by clicking in the lower track zone.
+ * Use position = -1.0 to hide/clear the edit cursor.
+ */
+struct SetEditCursorEvent {
+    double position;
+};
+
+/**
  * @brief Set playback state
  */
 struct SetPlaybackStateEvent {
@@ -298,7 +309,7 @@ using TimelineEvent = std::variant<
     SetScrollPositionEvent, ScrollByDeltaEvent, ScrollToTimeEvent,
     // Playhead events
     SetEditPositionEvent, SetPlayheadPositionEvent, SetPlaybackPositionEvent, StartPlaybackEvent,
-    StopPlaybackEvent, MovePlayheadByDeltaEvent, SetPlaybackStateEvent,
+    StopPlaybackEvent, MovePlayheadByDeltaEvent, SetPlaybackStateEvent, SetEditCursorEvent,
     // Selection events
     SetTimeSelectionEvent, ClearTimeSelectionEvent, CreateLoopFromSelectionEvent,
     // Loop events

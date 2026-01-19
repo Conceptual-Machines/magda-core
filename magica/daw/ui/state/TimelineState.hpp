@@ -176,6 +176,10 @@ struct TimelineState {
     // Core timeline properties
     double timelineLength = 300.0;  // Total length in seconds
 
+    // Edit cursor - separate from playhead, used for split/edit operations
+    // Set by clicking in lower track zone, independent of playback position
+    double editCursorPosition = -1.0;  // -1 means not set/hidden
+
     // Sub-states
     ZoomState zoom;
     PlayheadState playhead;
