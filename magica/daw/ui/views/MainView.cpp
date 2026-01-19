@@ -64,7 +64,7 @@ void MainView::syncStateFromController() {
     horizontalZoom = state.zoom.horizontalZoom;
     verticalZoom = state.zoom.verticalZoom;
     timelineLength = state.timelineLength;
-    playheadPosition = state.playhead.position;
+    playheadPosition = state.playhead.getPosition();
 
     // Update selection and loop caches
     timeSelection = state.selection;
@@ -269,7 +269,7 @@ void MainView::zoomStateChanged(const TimelineState& state) {
 }
 
 void MainView::playheadStateChanged(const TimelineState& state) {
-    playheadPosition = state.playhead.position;
+    playheadPosition = state.playhead.getPosition();
     playheadComponent->setPlayheadPosition(playheadPosition);
     playheadComponent->repaint();
 
@@ -878,25 +878,37 @@ MainView::PlayheadComponent::PlayheadComponent(MainView& owner) : owner(owner) {
 MainView::PlayheadComponent::~PlayheadComponent() = default;
 
 void MainView::PlayheadComponent::paint(juce::Graphics& g) {
-    if (playheadPosition < 0 || playheadPosition > owner.timelineLength) {
-        return;
-    }
-
-    // Calculate playhead position in pixels
-    // Add LEFT_PADDING to align with timeline markers and track grid lines (18 pixels)
-    int playheadX = static_cast<int>(playheadPosition * owner.horizontalZoom) + 18;
-
-    // Adjust for horizontal scroll offset from track content viewport (not timeline viewport)
+    const auto& state = owner.timelineController->getState();
     int scrollOffset = owner.trackContentViewport->getViewPositionX();
-    playheadX -= scrollOffset;
 
-    // Only draw if playhead is visible
-    if (playheadX >= 0 && playheadX < getWidth()) {
-        // Draw playhead handle triangle in the ruler area only (no vertical line)
+    // Get positions from state
+    double editPos = state.playhead.editPosition;
+    double playbackPos = state.playhead.playbackPosition;
+    bool isPlaying = state.playhead.isPlaying;
+
+    // Calculate edit cursor position in pixels (triangle position)
+    int editX = static_cast<int>(editPos * owner.horizontalZoom) + 18;
+    editX -= scrollOffset;
+
+    // Calculate play cursor position in pixels (vertical line position)
+    int playX = static_cast<int>(playbackPos * owner.horizontalZoom) + 18;
+    playX -= scrollOffset;
+
+    // Draw edit cursor (triangle) - always visible
+    if (editPos >= 0 && editPos <= owner.timelineLength && editX >= 0 && editX < getWidth()) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         juce::Path triangle;
-        triangle.addTriangle(playheadX - 6, 8, playheadX + 6, 8, playheadX, 20);
+        triangle.addTriangle(editX - 6, 8, editX + 6, 8, editX, 20);
         g.fillPath(triangle);
+    }
+
+    // Draw play cursor (vertical line) - only during playback when position differs from edit
+    if (isPlaying && playbackPos >= 0 && playbackPos <= owner.timelineLength && playX >= 0 &&
+        playX < getWidth()) {
+        // Draw thin vertical line extending full height of track area
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        g.drawLine(static_cast<float>(playX), 20.0f, static_cast<float>(playX),
+                   static_cast<float>(getHeight()), 1.5f);
     }
 }
 
@@ -912,19 +924,22 @@ bool MainView::PlayheadComponent::hitTest([[maybe_unused]] int x, [[maybe_unused
 }
 
 void MainView::PlayheadComponent::mouseDown(const juce::MouseEvent& e) {
-    // Component now starts 20px above timeline border
-    // Add LEFT_PADDING to align with timeline markers and track grid lines (18 pixels)
-    int playheadX = static_cast<int>(playheadPosition * owner.horizontalZoom) + 18;
+    // Get edit position from controller state
+    const auto& state = owner.timelineController->getState();
+    double editPos = state.playhead.editPosition;
+
+    // Calculate edit cursor (triangle) position in pixels
+    int editX = static_cast<int>(editPos * owner.horizontalZoom) + 18;
 
     // Adjust for horizontal scroll offset
     int scrollOffset = owner.trackContentViewport->getViewPositionX();
-    playheadX -= scrollOffset;
+    editX -= scrollOffset;
 
-    // Check if click is near the playhead (within 10 pixels)
-    if (std::abs(e.x - playheadX) <= 10) {
+    // Check if click is near the edit cursor triangle (within 10 pixels)
+    if (std::abs(e.x - editX) <= 10) {
         isDragging = true;
         dragStartX = e.x;
-        dragStartPosition = playheadPosition;
+        dragStartPosition = editPos;
     }
 }
 
@@ -956,16 +971,19 @@ void MainView::PlayheadComponent::mouseUp([[maybe_unused]] const juce::MouseEven
 }
 
 void MainView::PlayheadComponent::mouseMove(const juce::MouseEvent& event) {
-    // Component now starts 20px above timeline border
-    // Add LEFT_PADDING to align with timeline markers and track grid lines (18 pixels)
-    int playheadX = static_cast<int>(playheadPosition * owner.horizontalZoom) + 18;
+    // Get edit position from controller state
+    const auto& state = owner.timelineController->getState();
+    double editPos = state.playhead.editPosition;
+
+    // Calculate edit cursor (triangle) position in pixels
+    int editX = static_cast<int>(editPos * owner.horizontalZoom) + 18;
 
     // Adjust for horizontal scroll offset
     int scrollOffset = owner.trackContentViewport->getViewPositionX();
-    playheadX -= scrollOffset;
+    editX -= scrollOffset;
 
-    // Change cursor when over playhead
-    if (std::abs(event.x - playheadX) <= 10) {
+    // Change cursor when over edit cursor triangle
+    if (std::abs(event.x - editX) <= 10) {
         setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
     } else {
         setMouseCursor(juce::MouseCursor::NormalCursor);

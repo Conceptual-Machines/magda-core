@@ -215,7 +215,11 @@ class TimelineController {
     ChangeFlags handleEvent(const ScrollByDeltaEvent& e);
     ChangeFlags handleEvent(const ScrollToTimeEvent& e);
 
+    ChangeFlags handleEvent(const SetEditPositionEvent& e);
     ChangeFlags handleEvent(const SetPlayheadPositionEvent& e);
+    ChangeFlags handleEvent(const SetPlaybackPositionEvent& e);
+    ChangeFlags handleEvent(const StartPlaybackEvent& e);
+    ChangeFlags handleEvent(const StopPlaybackEvent& e);
     ChangeFlags handleEvent(const MovePlayheadByDeltaEvent& e);
     ChangeFlags handleEvent(const SetPlaybackStateEvent& e);
 

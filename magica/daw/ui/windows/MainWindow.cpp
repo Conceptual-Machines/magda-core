@@ -229,22 +229,30 @@ void MainWindow::MainComponent::setupAudioEngine() {
     // Wire transport callbacks to audio engine
     transportPanel->onPlay = [this]() {
         audioEngine_->play();
+        // Dispatch StartPlaybackEvent to sync playbackPosition to editPosition
+        mainView->getTimelineController().dispatch(StartPlaybackEvent{});
         positionTimer_->start();
     };
 
     transportPanel->onStop = [this]() {
         audioEngine_->stop();
         positionTimer_->stop();
-        // Reset playhead to start or keep at current position
+        // Dispatch StopPlaybackEvent to reset playbackPosition to editPosition
+        mainView->getTimelineController().dispatch(StopPlaybackEvent{});
     };
 
     transportPanel->onPause = [this]() {
         audioEngine_->pause();
         positionTimer_->stop();
+        // Note: Pause keeps isPlaying=true conceptually, but we stop the position timer
+        // For now, treat pause like stop for playhead behavior
+        mainView->getTimelineController().dispatch(StopPlaybackEvent{});
     };
 
     transportPanel->onRecord = [this]() {
         audioEngine_->record();
+        // Dispatch StartPlaybackEvent to sync playbackPosition to editPosition
+        mainView->getTimelineController().dispatch(StartPlaybackEvent{});
         positionTimer_->start();
     };
 

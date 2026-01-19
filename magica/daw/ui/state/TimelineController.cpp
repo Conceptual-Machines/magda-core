@@ -248,24 +248,71 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ScrollToTi
 
 // ===== Playhead Event Handlers =====
 
-TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlayheadPositionEvent& e) {
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetEditPositionEvent& e) {
     double newPos = juce::jlimit(0.0, state.timelineLength, e.position);
-    if (newPos == state.playhead.position) {
+    if (newPos == state.playhead.editPosition) {
         return ChangeFlags::None;
     }
 
-    state.playhead.position = newPos;
+    state.playhead.editPosition = newPos;
+    // If not playing, also sync playbackPosition to editPosition
+    if (!state.playhead.isPlaying) {
+        state.playhead.playbackPosition = newPos;
+    }
+    return ChangeFlags::Playhead;
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlayheadPositionEvent& e) {
+    // Backwards compatible: SetPlayheadPositionEvent behaves like SetEditPositionEvent
+    return handleEvent(SetEditPositionEvent{e.position});
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybackPositionEvent& e) {
+    // Only updates the playback position (the moving cursor), not the edit position
+    double newPos = juce::jlimit(0.0, state.timelineLength, e.position);
+    if (newPos == state.playhead.playbackPosition) {
+        return ChangeFlags::None;
+    }
+
+    state.playhead.playbackPosition = newPos;
+    return ChangeFlags::Playhead;
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const StartPlaybackEvent& /*e*/) {
+    if (state.playhead.isPlaying) {
+        return ChangeFlags::None;  // Already playing
+    }
+
+    state.playhead.isPlaying = true;
+    // Sync playbackPosition to editPosition at start of playback
+    state.playhead.playbackPosition = state.playhead.editPosition;
+    return ChangeFlags::Playhead;
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const StopPlaybackEvent& /*e*/) {
+    if (!state.playhead.isPlaying) {
+        return ChangeFlags::None;  // Already stopped
+    }
+
+    state.playhead.isPlaying = false;
+    state.playhead.isRecording = false;
+    // Reset playbackPosition to editPosition (Bitwig behavior)
+    state.playhead.playbackPosition = state.playhead.editPosition;
     return ChangeFlags::Playhead;
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const MovePlayheadByDeltaEvent& e) {
     double newPos =
-        juce::jlimit(0.0, state.timelineLength, state.playhead.position + e.deltaSeconds);
-    if (newPos == state.playhead.position) {
+        juce::jlimit(0.0, state.timelineLength, state.playhead.editPosition + e.deltaSeconds);
+    if (newPos == state.playhead.editPosition) {
         return ChangeFlags::None;
     }
 
-    state.playhead.position = newPos;
+    state.playhead.editPosition = newPos;
+    // If not playing, also sync playbackPosition
+    if (!state.playhead.isPlaying) {
+        state.playhead.playbackPosition = newPos;
+    }
     return ChangeFlags::Playhead;
 }
 
@@ -274,6 +321,13 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybac
 
     if (state.playhead.isPlaying != e.isPlaying) {
         state.playhead.isPlaying = e.isPlaying;
+        // If starting playback, sync playbackPosition to editPosition
+        if (e.isPlaying) {
+            state.playhead.playbackPosition = state.playhead.editPosition;
+        } else {
+            // If stopping, reset playbackPosition to editPosition
+            state.playhead.playbackPosition = state.playhead.editPosition;
+        }
         changed = true;
     }
 
@@ -550,8 +604,10 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimelin
 
     state.timelineLength = e.lengthInSeconds;
 
-    // Clamp playhead and loop to new length
-    state.playhead.position = juce::jmin(state.playhead.position, state.timelineLength);
+    // Clamp playhead positions to new length
+    state.playhead.editPosition = juce::jmin(state.playhead.editPosition, state.timelineLength);
+    state.playhead.playbackPosition =
+        juce::jmin(state.playhead.playbackPosition, state.timelineLength);
 
     if (state.loop.isValid()) {
         state.loop.endTime = juce::jmin(state.loop.endTime, state.timelineLength);

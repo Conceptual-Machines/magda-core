@@ -78,11 +78,42 @@ struct ScrollToTimeEvent {
 // ===== Playhead Events =====
 
 /**
- * @brief Set playhead to a specific position
+ * @brief Set edit position (the triangle/return point)
+ *
+ * This is the primary way to set where playback starts from.
+ * Also syncs playbackPosition to editPosition when not playing.
+ */
+struct SetEditPositionEvent {
+    double position;
+};
+
+/**
+ * @brief Set playhead position (backwards compatible alias)
+ *
+ * For backwards compatibility, this behaves like SetEditPositionEvent.
  */
 struct SetPlayheadPositionEvent {
     double position;
 };
+
+/**
+ * @brief Set playback position only (used by timer during playback)
+ *
+ * Only updates the playbackPosition (the moving cursor), not the editPosition.
+ */
+struct SetPlaybackPositionEvent {
+    double position;
+};
+
+/**
+ * @brief Start playback (syncs playbackPosition to editPosition)
+ */
+struct StartPlaybackEvent {};
+
+/**
+ * @brief Stop playback (resets playbackPosition to editPosition)
+ */
+struct StopPlaybackEvent {};
 
 /**
  * @brief Move playhead by a delta amount (in seconds)
@@ -266,7 +297,8 @@ using TimelineEvent = std::variant<
     // Scroll events
     SetScrollPositionEvent, ScrollByDeltaEvent, ScrollToTimeEvent,
     // Playhead events
-    SetPlayheadPositionEvent, MovePlayheadByDeltaEvent, SetPlaybackStateEvent,
+    SetEditPositionEvent, SetPlayheadPositionEvent, SetPlaybackPositionEvent, StartPlaybackEvent,
+    StopPlaybackEvent, MovePlayheadByDeltaEvent, SetPlaybackStateEvent,
     // Selection events
     SetTimeSelectionEvent, ClearTimeSelectionEvent, CreateLoopFromSelectionEvent,
     // Loop events

@@ -26,12 +26,28 @@ struct ZoomState {
 };
 
 /**
- * @brief Playhead state
+ * @brief Playhead state (Bitwig-style dual playhead)
+ *
+ * - editPosition: Where the triangle sits (stationary during playback)
+ * - playbackPosition: Where playback currently is (moving cursor)
+ *
+ * When playback stops, playbackPosition resets to editPosition.
  */
 struct PlayheadState {
-    double position = 0.0;     // Current position in seconds
-    bool isPlaying = false;    // Is transport playing
-    bool isRecording = false;  // Is transport recording
+    double editPosition = 0.0;      // Triangle position (stationary during playback)
+    double playbackPosition = 0.0;  // Moving cursor position
+    bool isPlaying = false;         // Is transport playing
+    bool isRecording = false;       // Is transport recording
+
+    // Get the "current" position (playback when playing, edit otherwise)
+    double getCurrentPosition() const {
+        return isPlaying ? playbackPosition : editPosition;
+    }
+
+    // For backwards compatibility - returns the effective playhead position
+    double getPosition() const {
+        return getCurrentPosition();
+    }
 };
 
 /**

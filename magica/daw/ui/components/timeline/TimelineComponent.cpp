@@ -48,7 +48,7 @@ void TimelineComponent::setController(TimelineController* controller) {
         const auto& state = timelineController->getState();
         timelineLength = state.timelineLength;
         zoom = state.zoom.horizontalZoom;
-        playheadPosition = state.playhead.position;
+        playheadPosition = state.playhead.getPosition();
         displayMode = state.display.timeDisplayMode;
         tempoBPM = state.tempo.bpm;
         timeSignatureNumerator = state.tempo.timeSignatureNumerator;

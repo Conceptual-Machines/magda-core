@@ -29,7 +29,8 @@ bool PlaybackPositionTimer::isRunning() const {
 void PlaybackPositionTimer::timerCallback() {
     if (engine_.isPlaying()) {
         double position = engine_.getCurrentPosition();
-        timeline_.dispatch(SetPlayheadPositionEvent{position});
+        // Only update playback position (the moving cursor), not edit position
+        timeline_.dispatch(SetPlaybackPositionEvent{position});
     }
 }
 
