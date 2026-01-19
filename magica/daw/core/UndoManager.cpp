@@ -17,8 +17,11 @@ UndoManager::UndoManager() = default;
 
 void UndoManager::executeCommand(std::unique_ptr<UndoableCommand> command) {
     if (!command) {
+        std::cout << "📝 UNDO: executeCommand called with null command!" << std::endl;
         return;
     }
+
+    std::cout << "📝 UNDO: Executing command: " << command->getDescription() << std::endl;
 
     // Execute the command
     command->execute();

@@ -954,7 +954,20 @@ void TrackContentPanel::createClipFromTimeSelection() {
         return;
     }
 
-    // Create a clip for each track in the selection
+    // Count how many clips will be created
+    int clipCount = 0;
+    for (int trackIndex : selection.trackIndices) {
+        if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
+            clipCount++;
+        }
+    }
+
+    // Use compound operation if creating multiple clips
+    if (clipCount > 1) {
+        UndoManager::getInstance().beginCompoundOperation("Create Clips");
+    }
+
+    // Create a clip for each track in the selection through the undo system
     for (int trackIndex : selection.trackIndices) {
         if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
             TrackId trackId = visibleTrackIds_[trackIndex];
@@ -965,13 +978,20 @@ void TrackContentPanel::createClipFromTimeSelection() {
 
                 // Determine clip type based on track type
                 if (canContainMIDI(track->type)) {
-                    ClipManager::getInstance().createMidiClip(trackId, selection.startTime, length);
+                    auto cmd = std::make_unique<CreateClipCommand>(ClipType::MIDI, trackId,
+                                                                   selection.startTime, length);
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
                 } else if (canContainAudio(track->type)) {
-                    ClipManager::getInstance().createAudioClip(trackId, selection.startTime, length,
-                                                               "");
+                    auto cmd = std::make_unique<CreateClipCommand>(ClipType::Audio, trackId,
+                                                                   selection.startTime, length, "");
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
                 }
             }
         }
+    }
+
+    if (clipCount > 1) {
+        UndoManager::getInstance().endCompoundOperation();
     }
 }
 
