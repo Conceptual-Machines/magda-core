@@ -28,6 +28,7 @@ class MenuManager : public juce::MenuBarModel {
         std::function<void()> onDelete;
         std::function<void()> onSelectAll;
         std::function<void()> onPreferences;
+        std::function<void()> onAudioSettings;
 
         // View menu
         std::function<void(bool)> onToggleLeftPanel;
@@ -114,7 +115,8 @@ class MenuManager : public juce::MenuBarModel {
         Paste,
         Delete,
         SelectAll = 220,
-        Preferences = 299,
+        Preferences = 298,
+        AudioSettings = 299,
 
         // View menu (300-399)
         ToggleLeftPanel = 300,

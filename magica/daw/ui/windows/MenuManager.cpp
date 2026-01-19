@@ -62,6 +62,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addSeparator();
         menu.addItem(SelectAll, "Select All", true, false);
         menu.addSeparator();
+        menu.addItem(AudioSettings, "Audio/MIDI Settings...", true, false);
         menu.addItem(Preferences, "Preferences...", true, false);
     } else if (menuName == "View") {
         menu.addItem(ToggleLeftPanel, "Show Left Panel", true, leftPanelVisible_);
@@ -185,6 +186,10 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case Preferences:
             if (callbacks_.onPreferences)
                 callbacks_.onPreferences();
+            break;
+        case AudioSettings:
+            if (callbacks_.onAudioSettings)
+                callbacks_.onAudioSettings();
             break;
 
         // View menu

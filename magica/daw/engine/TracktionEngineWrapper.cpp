@@ -236,6 +236,13 @@ bool TracktionEngineWrapper::isMetronomeEnabled() const {
     return false;
 }
 
+juce::AudioDeviceManager* TracktionEngineWrapper::getDeviceManager() {
+    if (engine_) {
+        return &engine_->getDeviceManager().deviceManager;
+    }
+    return nullptr;
+}
+
 // ===== AudioEngineListener Implementation =====
 // These methods are called by TimelineController when UI state changes
 

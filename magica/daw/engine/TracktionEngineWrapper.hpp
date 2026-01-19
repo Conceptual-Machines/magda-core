@@ -60,6 +60,9 @@ class TracktionEngineWrapper : public AudioEngine,
     void setMetronomeEnabled(bool enabled) override;
     bool isMetronomeEnabled() const override;
 
+    // Device management
+    juce::AudioDeviceManager* getDeviceManager() override;
+
     // AudioEngineListener implementation (receives state changes from UI)
     void onTransportPlay(double position) override;
     void onTransportStop(double returnPosition) override;

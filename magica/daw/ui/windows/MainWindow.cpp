@@ -1,5 +1,6 @@
 #include "MainWindow.hpp"
 
+#include "../dialogs/AudioSettingsDialog.hpp"
 #include "../dialogs/PreferencesDialog.hpp"
 #include "../dialogs/TrackManagerDialog.hpp"
 #include "../panels/BottomPanel.hpp"
@@ -66,8 +67,8 @@ MainWindow::MainWindow()
     // Setup menu bar
     setupMenuBar();
 
-    mainComponent = std::make_unique<MainComponent>();
-    setContentOwned(mainComponent.release(), true);
+    mainComponent = new MainComponent();
+    setContentOwned(mainComponent, true);  // Window takes ownership
 
     setSize(1200, 800);
     centreWithSize(getWidth(), getHeight());
@@ -571,6 +572,15 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onPreferences = [this]() { PreferencesDialog::showDialog(this); };
+
+    callbacks.onAudioSettings = [this]() {
+        if (mainComponent) {
+            auto* engine = mainComponent->getAudioEngine();
+            if (engine) {
+                AudioSettingsDialog::showDialog(this, engine->getDeviceManager());
+            }
+        }
+    };
 
     // View menu callbacks
     callbacks.onToggleLeftPanel = [this](bool show) {

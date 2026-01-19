@@ -2,6 +2,10 @@
 
 #include "../ui/state/TransportStateListener.hpp"
 
+namespace juce {
+class AudioDeviceManager;
+}
+
 namespace magica {
 
 /**
@@ -44,6 +48,9 @@ class AudioEngine : public AudioEngineListener {
     // ===== Metronome =====
     virtual void setMetronomeEnabled(bool enabled) = 0;
     virtual bool isMetronomeEnabled() const = 0;
+
+    // ===== Device Management =====
+    virtual juce::AudioDeviceManager* getDeviceManager() = 0;
 };
 
 }  // namespace magica

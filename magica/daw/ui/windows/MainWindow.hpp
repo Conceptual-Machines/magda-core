@@ -32,7 +32,7 @@ class MainWindow : public juce::DocumentWindow {
 
   private:
     class MainComponent;
-    std::unique_ptr<MainComponent> mainComponent;
+    MainComponent* mainComponent = nullptr;  // Raw pointer - owned by DocumentWindow
 
     // Menu bar
     std::unique_ptr<juce::MenuBarComponent> menuBar;
@@ -71,6 +71,11 @@ class MainWindow::MainComponent : public juce::Component, public ViewModeListene
     std::unique_ptr<SessionView> sessionView;
     std::unique_ptr<MixerView> mixerView;
     std::unique_ptr<FooterBar> footerBar;
+
+    // Access to audio engine for settings dialog
+    AudioEngine* getAudioEngine() {
+        return audioEngine_.get();
+    }
 
   private:
     // Current view mode
