@@ -398,10 +398,12 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
             }
         }
         // If on clip, the ClipComponent handles mouse events
-        // Prepare for potential marquee if they drag
+        // Prepare for potential marquee if they drag (but not playhead move)
+        // Upper zone clicks don't move playhead - only lower zone does
         if (!onClip && isInSelectableArea(event.x, event.y)) {
             isCreatingSelection = true;
             isMovingSelection = false;
+            currentDragType_ = DragType::Marquee;  // Mark as marquee so click doesn't move playhead
         }
     } else {
         // LOWER ZONE: Time selection operations
@@ -602,18 +604,22 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
         int deltaY = std::abs(event.y - mouseDownY);
 
         if (deltaX <= DRAG_THRESHOLD && deltaY <= DRAG_THRESHOLD) {
-            // It was a click - schedule playhead move (delayed to allow double-click detection)
-            double clickTime = pixelToTime(mouseDownX);
-            clickTime = juce::jlimit(0.0, timelineLength, clickTime);
+            // It was a click
+            // Only move playhead for lower zone (time selection) clicks, not upper zone (clip)
+            // clicks
+            if (currentDragType_ != DragType::Marquee) {
+                double clickTime = pixelToTime(mouseDownX);
+                clickTime = juce::jlimit(0.0, timelineLength, clickTime);
 
-            // Apply snap to grid if callback is set
-            if (snapTimeToGrid) {
-                clickTime = snapTimeToGrid(clickTime);
+                // Apply snap to grid if callback is set
+                if (snapTimeToGrid) {
+                    clickTime = snapTimeToGrid(clickTime);
+                }
+
+                // Schedule playhead change (will be cancelled if double-click detected)
+                pendingPlayheadTime = clickTime;
+                startTimer(DOUBLE_CLICK_DELAY_MS);
             }
-
-            // Schedule playhead change (will be cancelled if double-click detected)
-            pendingPlayheadTime = clickTime;
-            startTimer(DOUBLE_CLICK_DELAY_MS);
         } else {
             // It was a drag - finalize time selection
             selectionEndTime = juce::jmax(0.0, juce::jmin(timelineLength, pixelToTime(event.x)));
