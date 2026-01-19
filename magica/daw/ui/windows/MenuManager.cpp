@@ -1,5 +1,8 @@
 #include "MenuManager.hpp"
 
+#include "core/TrackManager.hpp"
+#include "core/ViewModeController.hpp"
+
 namespace magica {
 
 MenuManager& MenuManager::getInstance() {
@@ -105,6 +108,20 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addSeparator();
         menu.addItem(MuteTrack, "Mute Track\tM", true, false);
         menu.addItem(SoloTrack, "Solo Track\tS", true, false);
+
+        // Track visibility submenu
+        menu.addSeparator();
+        juce::PopupMenu visibilityMenu;
+        auto currentMode = ViewModeController::getInstance().getViewMode();
+        const auto& tracks = TrackManager::getInstance().getTracks();
+        for (const auto& track : tracks) {
+            bool isVisible = track.isVisibleIn(currentMode);
+            visibilityMenu.addItem(TrackVisibilityBase + track.id, track.name, true, isVisible);
+        }
+        if (tracks.empty()) {
+            visibilityMenu.addItem(-1, "(No tracks)", false, false);
+        }
+        menu.addSubMenu("Track Visibility", visibilityMenu);
     } else if (menuName == "Window") {
         menu.addItem(Minimize, "Minimize", true, false);
         menu.addItem(Zoom, "Zoom", true, false);
@@ -289,6 +306,15 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case About:
             if (callbacks_.onAbout)
                 callbacks_.onAbout();
+            break;
+
+        default:
+            // Check if it's a track visibility toggle (IDs 550+)
+            if (menuItemID >= TrackVisibilityBase && menuItemID < 600) {
+                int trackId = menuItemID - TrackVisibilityBase;
+                if (callbacks_.onToggleTrackVisibility)
+                    callbacks_.onToggleTrackVisibility(trackId);
+            }
             break;
     }
 }

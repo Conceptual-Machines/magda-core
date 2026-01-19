@@ -610,6 +610,15 @@ void MainWindow::setupMenuCallbacks() {
 
     callbacks.onAddGroupTrack = []() { TrackManager::getInstance().createGroupTrack(); };
 
+    callbacks.onToggleTrackVisibility = [](int trackId) {
+        auto currentMode = ViewModeController::getInstance().getViewMode();
+        auto* track = TrackManager::getInstance().getTrack(trackId);
+        if (track) {
+            bool currentlyVisible = track->isVisibleIn(currentMode);
+            TrackManager::getInstance().setTrackVisible(trackId, currentMode, !currentlyVisible);
+        }
+    };
+
     callbacks.onDeleteTrack = [this]() {
         // Delete the selected track from MixerView
         if (mainComponent && mainComponent->mixerView) {
