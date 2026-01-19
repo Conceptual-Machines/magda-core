@@ -73,6 +73,7 @@ set(DAW_CORE_SOURCES
     core/SelectionManager.cpp
     core/UndoManager.cpp
     core/ClipCommands.cpp
+    core/TrackCommands.cpp
     engine/TracktionEngineWrapper.cpp
     # UI components needed by tests
     ui/components/timeline/TimelineComponent.cpp
@@ -161,6 +162,7 @@ set(DAW_HEADERS
     core/SelectionManager.hpp
     core/UndoManager.hpp
     core/ClipCommands.hpp
+    core/TrackCommands.hpp
     engine/AudioEngine.hpp
     engine/TracktionEngineWrapper.hpp
     engine/PlaybackPositionTimer.hpp

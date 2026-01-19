@@ -5,6 +5,8 @@
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "core/TrackCommands.hpp"
+#include "core/UndoManager.hpp"
 
 namespace magica {
 
@@ -783,8 +785,9 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                                // Remove from group
                                TrackManager::getInstance().removeTrackFromGroup(trackId);
                            } else if (result == 3) {
-                               // Delete track
-                               TrackManager::getInstance().deleteTrack(trackId);
+                               // Delete track (through undo system)
+                               auto cmd = std::make_unique<DeleteTrackCommand>(trackId);
+                               UndoManager::getInstance().executeCommand(std::move(cmd));
                            } else if (result >= 100) {
                                // Move to group
                                TrackId groupId = result - 100;

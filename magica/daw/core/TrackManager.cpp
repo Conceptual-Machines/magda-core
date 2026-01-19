@@ -70,6 +70,37 @@ void TrackManager::deleteTrack(TrackId trackId) {
     }
 }
 
+void TrackManager::restoreTrack(const TrackInfo& trackInfo) {
+    // Check if a track with this ID already exists
+    auto it = std::find_if(tracks_.begin(), tracks_.end(),
+                           [&trackInfo](const TrackInfo& t) { return t.id == trackInfo.id; });
+
+    if (it != tracks_.end()) {
+        DBG("Warning: Track with id=" << trackInfo.id << " already exists, skipping restore");
+        return;
+    }
+
+    tracks_.push_back(trackInfo);
+
+    // Ensure nextTrackId_ is beyond any restored track IDs
+    if (trackInfo.id >= nextTrackId_) {
+        nextTrackId_ = trackInfo.id + 1;
+    }
+
+    // If track has a parent, add it back to parent's children
+    if (trackInfo.hasParent()) {
+        if (auto* parent = getTrack(trackInfo.parentId)) {
+            if (std::find(parent->childIds.begin(), parent->childIds.end(), trackInfo.id) ==
+                parent->childIds.end()) {
+                parent->childIds.push_back(trackInfo.id);
+            }
+        }
+    }
+
+    notifyTracksChanged();
+    DBG("Restored track: " << trackInfo.name << " (id=" << trackInfo.id << ")");
+}
+
 void TrackManager::duplicateTrack(TrackId trackId) {
     auto it = std::find_if(tracks_.begin(), tracks_.end(),
                            [trackId](const TrackInfo& t) { return t.id == trackId; });

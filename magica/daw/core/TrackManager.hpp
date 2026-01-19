@@ -66,6 +66,7 @@ class TrackManager {
     TrackId createGroupTrack(const juce::String& name = "");
     void deleteTrack(TrackId trackId);
     void duplicateTrack(TrackId trackId);
+    void restoreTrack(const TrackInfo& trackInfo);  // Used by undo system
     void moveTrack(TrackId trackId, int newIndex);
 
     // Hierarchy operations

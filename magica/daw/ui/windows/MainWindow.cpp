@@ -15,7 +15,9 @@
 #include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
 #include "core/Config.hpp"
+#include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
+#include "core/UndoManager.hpp"
 #include "engine/PlaybackPositionTimer.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 
@@ -290,34 +292,37 @@ MainWindow::MainComponent::~MainComponent() {
 }
 
 bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
-    // Cmd/Ctrl+T: Add Track
+    // Cmd/Ctrl+T: Add Track (through undo system)
     if (key == juce::KeyPress('t', juce::ModifierKeys::commandModifier, 0)) {
-        TrackManager::getInstance().createTrack();
+        auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Audio);
+        UndoManager::getInstance().executeCommand(std::move(cmd));
         return true;
     }
 
-    // Delete or Backspace: Delete selected track
+    // Delete or Backspace: Delete selected track (through undo system)
     if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {
         if (mixerView && !mixerView->isSelectedMaster()) {
             int selectedIndex = mixerView->getSelectedChannel();
             if (selectedIndex >= 0) {
                 const auto& tracks = TrackManager::getInstance().getTracks();
                 if (selectedIndex < static_cast<int>(tracks.size())) {
-                    TrackManager::getInstance().deleteTrack(tracks[selectedIndex].id);
+                    auto cmd = std::make_unique<DeleteTrackCommand>(tracks[selectedIndex].id);
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
                 }
             }
         }
         return true;
     }
 
-    // Cmd/Ctrl+D: Duplicate selected track
+    // Cmd/Ctrl+D: Duplicate selected track (through undo system)
     if (key == juce::KeyPress('d', juce::ModifierKeys::commandModifier, 0)) {
         if (mixerView && !mixerView->isSelectedMaster()) {
             int selectedIndex = mixerView->getSelectedChannel();
             if (selectedIndex >= 0) {
                 const auto& tracks = TrackManager::getInstance().getTracks();
                 if (selectedIndex < static_cast<int>(tracks.size())) {
-                    TrackManager::getInstance().duplicateTrack(tracks[selectedIndex].id);
+                    auto cmd = std::make_unique<DuplicateTrackCommand>(tracks[selectedIndex].id);
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
                 }
             }
         }
@@ -535,17 +540,9 @@ void MainWindow::setupMenuCallbacks() {
     callbacks.onQuit = [this]() { closeButtonPressed(); };
 
     // Edit menu callbacks
-    callbacks.onUndo = [this]() {
-        // TODO: Implement undo
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Undo",
-                                               "Undo functionality not yet implemented.");
-    };
+    callbacks.onUndo = []() { UndoManager::getInstance().undo(); };
 
-    callbacks.onRedo = [this]() {
-        // TODO: Implement redo
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Redo",
-                                               "Redo functionality not yet implemented.");
-    };
+    callbacks.onRedo = []() { UndoManager::getInstance().redo(); };
 
     callbacks.onCut = [this]() {
         // TODO: Implement cut
@@ -689,10 +686,16 @@ void MainWindow::setupMenuCallbacks() {
                                                "Go to end functionality not yet implemented.");
     };
 
-    // Track menu callbacks
-    callbacks.onAddTrack = []() { TrackManager::getInstance().createTrack(); };
+    // Track menu callbacks - all track operations go through the undo system
+    callbacks.onAddTrack = []() {
+        auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Audio);
+        UndoManager::getInstance().executeCommand(std::move(cmd));
+    };
 
-    callbacks.onAddGroupTrack = []() { TrackManager::getInstance().createGroupTrack(); };
+    callbacks.onAddGroupTrack = []() {
+        auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Group);
+        UndoManager::getInstance().executeCommand(std::move(cmd));
+    };
 
     callbacks.onShowTrackManager = []() { TrackManagerDialog::show(); };
 
@@ -703,7 +706,8 @@ void MainWindow::setupMenuCallbacks() {
             if (!mainComponent->mixerView->isSelectedMaster() && selectedIndex >= 0) {
                 const auto& tracks = TrackManager::getInstance().getTracks();
                 if (selectedIndex < static_cast<int>(tracks.size())) {
-                    TrackManager::getInstance().deleteTrack(tracks[selectedIndex].id);
+                    auto cmd = std::make_unique<DeleteTrackCommand>(tracks[selectedIndex].id);
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
                 }
             }
         }
@@ -716,7 +720,8 @@ void MainWindow::setupMenuCallbacks() {
             if (!mainComponent->mixerView->isSelectedMaster() && selectedIndex >= 0) {
                 const auto& tracks = TrackManager::getInstance().getTracks();
                 if (selectedIndex < static_cast<int>(tracks.size())) {
-                    TrackManager::getInstance().duplicateTrack(tracks[selectedIndex].id);
+                    auto cmd = std::make_unique<DuplicateTrackCommand>(tracks[selectedIndex].id);
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
                 }
             }
         }
