@@ -92,6 +92,10 @@ void ClipManager::restoreClip(const ClipInfo& clipInfo) {
     DBG("Restored clip: " << clipInfo.name << " (id=" << clipInfo.id << ")");
 }
 
+void ClipManager::forceNotifyClipsChanged() {
+    notifyClipsChanged();
+}
+
 ClipId ClipManager::duplicateClip(ClipId clipId) {
     auto it = std::find_if(clips_.begin(), clips_.end(),
                            [clipId](const ClipInfo& c) { return c.id == clipId; });

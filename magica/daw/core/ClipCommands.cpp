@@ -50,8 +50,8 @@ void SplitClipCommand::undo() {
         clip->length = originalLength_;
     }
 
-    // Notify change
-    ClipManager::getInstance().getClip(originalClipId_);  // trigger property change
+    // Force UI refresh after direct property modification
+    clipManager.forceNotifyClipsChanged();
 
     std::cout << "📝 UNDO: Undid split - deleted clip " << createdClipId_ << ", restored clip "
               << originalClipId_ << std::endl;
@@ -179,6 +179,9 @@ void ResizeClipCommand::undo() {
         clip->startTime = oldStartTime_;
         clip->length = oldLength_;
     }
+
+    // Force UI refresh after direct property modification
+    clipManager.forceNotifyClipsChanged();
 }
 
 bool ResizeClipCommand::canMergeWith(const UndoableCommand* other) const {

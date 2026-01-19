@@ -74,6 +74,11 @@ class ClipManager {
     void restoreClip(const ClipInfo& clipInfo);
 
     /**
+     * @brief Force a clips changed notification (used by undo system)
+     */
+    void forceNotifyClipsChanged();
+
+    /**
      * @brief Duplicate a clip (places copy right after original)
      * @return The ID of the new clip
      */
