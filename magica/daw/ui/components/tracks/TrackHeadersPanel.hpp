@@ -107,6 +107,19 @@ class TrackHeadersPanel : public juce::Component,
     int resizeStartHeight = 0;
     static constexpr int RESIZE_HANDLE_HEIGHT = 6;
 
+    // Drag-to-reorder state
+    static constexpr int DRAG_THRESHOLD = 5;
+    bool isDraggingToReorder_ = false;
+    int draggedTrackIndex_ = -1;
+    int dragStartX_ = 0;
+    int dragStartY_ = 0;
+    int currentDragY_ = 0;
+
+    // Drop target state
+    enum class DropTargetType { None, BetweenTracks, OntoGroup };
+    DropTargetType dropTargetType_ = DropTargetType::None;
+    int dropTargetIndex_ = -1;
+
     // Helper methods
     void setupTrackHeader(TrackHeader& header, int trackIndex);
     void setupTrackHeaderWithId(TrackHeader& header, int trackId);
@@ -127,6 +140,17 @@ class TrackHeadersPanel : public juce::Component,
     // Context menu
     void showContextMenu(int trackIndex, juce::Point<int> position);
     void handleCollapseToggle(TrackId trackId);
+
+    // Drag-to-reorder methods
+    void calculateDropTarget(int mouseX, int mouseY);
+    bool canDropIntoGroup(int draggedIndex, int targetGroupIndex) const;
+    void executeDrop();
+    void resetDragState();
+
+    // Visual feedback
+    void paintDragFeedback(juce::Graphics& g);
+    void paintDropIndicatorLine(juce::Graphics& g);
+    void paintDropTargetGroupHighlight(juce::Graphics& g);
 
     // Indentation
     static constexpr int INDENT_WIDTH = 20;

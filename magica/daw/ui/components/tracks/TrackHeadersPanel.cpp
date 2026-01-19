@@ -221,6 +221,9 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
             paintResizeHandle(g, resizeArea);
         }
     }
+
+    // Draw drag-and-drop feedback on top
+    paintDragFeedback(g);
 }
 
 void TrackHeadersPanel::resized() {
@@ -590,6 +593,11 @@ void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
                 // Right-click shows context menu
                 if (event.mods.isPopupMenu()) {
                     showContextMenu(i, event.getPosition());
+                } else {
+                    // Record potential drag start
+                    draggedTrackIndex_ = i;
+                    dragStartX_ = event.x;
+                    dragStartY_ = event.y;
                 }
                 break;
             }
@@ -604,16 +612,50 @@ void TrackHeadersPanel::mouseDrag(const juce::MouseEvent& event) {
         int newHeight =
             juce::jlimit(MIN_TRACK_HEIGHT, MAX_TRACK_HEIGHT, resizeStartHeight + deltaY);
         setTrackHeight(resizingTrackIndex, newHeight);
+        return;
+    }
+
+    // Handle drag-to-reorder
+    if (draggedTrackIndex_ >= 0) {
+        int deltaX = std::abs(event.x - dragStartX_);
+        int deltaY = std::abs(event.y - dragStartY_);
+
+        // Check if we've exceeded the drag threshold
+        if (!isDraggingToReorder_ && (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD)) {
+            isDraggingToReorder_ = true;
+            setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+        }
+
+        if (isDraggingToReorder_) {
+            currentDragY_ = event.y;
+            calculateDropTarget(event.x, event.y);
+
+            // Update cursor based on drop target type
+            if (dropTargetType_ == DropTargetType::OntoGroup) {
+                setMouseCursor(juce::MouseCursor::CopyingCursor);
+            } else {
+                setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+            }
+
+            repaint();
+        }
     }
 }
 
-void TrackHeadersPanel::mouseUp(const juce::MouseEvent& event) {
+void TrackHeadersPanel::mouseUp(const juce::MouseEvent& /*event*/) {
     // Handle vertical track height resizing cleanup
     if (isResizing) {
         isResizing = false;
         resizingTrackIndex = -1;
         setMouseCursor(juce::MouseCursor::NormalCursor);
+        return;
     }
+
+    // Handle drag-to-reorder completion
+    if (isDraggingToReorder_) {
+        executeDrop();
+    }
+    resetDragState();
 }
 
 void TrackHeadersPanel::mouseMove(const juce::MouseEvent& event) {
@@ -745,6 +787,230 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                                TrackManager::getInstance().addTrackToGroup(trackId, groupId);
                            }
                        });
+}
+
+void TrackHeadersPanel::calculateDropTarget(int /*mouseX*/, int mouseY) {
+    dropTargetType_ = DropTargetType::None;
+    dropTargetIndex_ = -1;
+
+    if (draggedTrackIndex_ < 0 || trackHeaders.empty())
+        return;
+
+    // Iterate through track headers to find drop position
+    for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
+        auto headerArea = getTrackHeaderArea(i);
+        if (headerArea.isEmpty())
+            continue;
+
+        int headerTop = headerArea.getY();
+        int headerBottom = headerArea.getBottom();
+        int headerHeight = headerArea.getHeight();
+        int quarterHeight = headerHeight / 4;
+
+        // Skip self
+        if (i == draggedTrackIndex_)
+            continue;
+
+        // Check if mouse is in this track's vertical range
+        if (mouseY >= headerTop && mouseY <= headerBottom) {
+            // Top quarter = insert before this track
+            if (mouseY < headerTop + quarterHeight) {
+                dropTargetType_ = DropTargetType::BetweenTracks;
+                dropTargetIndex_ = i;
+                return;
+            }
+            // Bottom quarter = insert after this track
+            else if (mouseY > headerBottom - quarterHeight) {
+                dropTargetType_ = DropTargetType::BetweenTracks;
+                dropTargetIndex_ = i + 1;
+                return;
+            }
+            // Middle half = drop onto group (if it is a group)
+            else if (trackHeaders[i]->isGroup && canDropIntoGroup(draggedTrackIndex_, i)) {
+                dropTargetType_ = DropTargetType::OntoGroup;
+                dropTargetIndex_ = i;
+                return;
+            }
+        }
+    }
+
+    // Check if mouse is below all tracks
+    int totalHeight = getTotalTracksHeight();
+    if (mouseY > totalHeight && !trackHeaders.empty()) {
+        dropTargetType_ = DropTargetType::BetweenTracks;
+        dropTargetIndex_ = static_cast<int>(trackHeaders.size());
+    }
+}
+
+bool TrackHeadersPanel::canDropIntoGroup(int draggedIndex, int targetGroupIndex) const {
+    if (draggedIndex < 0 || targetGroupIndex < 0)
+        return false;
+    if (draggedIndex >= static_cast<int>(trackHeaders.size()) ||
+        targetGroupIndex >= static_cast<int>(trackHeaders.size()))
+        return false;
+
+    // Can't drop onto self
+    if (draggedIndex == targetGroupIndex)
+        return false;
+
+    // Target must be a group
+    if (!trackHeaders[targetGroupIndex]->isGroup)
+        return false;
+
+    // If dragging a group, can't drop into its own descendants
+    const auto& draggedHeader = *trackHeaders[draggedIndex];
+    if (draggedHeader.isGroup) {
+        auto& trackManager = TrackManager::getInstance();
+        auto descendants = trackManager.getAllDescendants(draggedHeader.trackId);
+        TrackId targetId = trackHeaders[targetGroupIndex]->trackId;
+        if (std::find(descendants.begin(), descendants.end(), targetId) != descendants.end()) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void TrackHeadersPanel::executeDrop() {
+    if (draggedTrackIndex_ < 0 || dropTargetType_ == DropTargetType::None)
+        return;
+
+    auto& trackManager = TrackManager::getInstance();
+    TrackId draggedTrackId = trackHeaders[draggedTrackIndex_]->trackId;
+    const auto* draggedTrack = trackManager.getTrack(draggedTrackId);
+    if (!draggedTrack)
+        return;
+
+    if (dropTargetType_ == DropTargetType::BetweenTracks && dropTargetIndex_ >= 0) {
+        // Determine the target parent based on drop position
+        TrackId targetParentId = INVALID_TRACK_ID;
+
+        if (dropTargetIndex_ < static_cast<int>(visibleTrackIds_.size())) {
+            // Dropping before an existing track - adopt that track's parent
+            TrackId targetTrackId = visibleTrackIds_[dropTargetIndex_];
+            const auto* targetTrack = trackManager.getTrack(targetTrackId);
+            if (targetTrack) {
+                targetParentId = targetTrack->parentId;
+            }
+        } else if (!visibleTrackIds_.empty()) {
+            // Dropping at the end - adopt the last track's parent
+            TrackId lastTrackId = visibleTrackIds_.back();
+            const auto* lastTrack = trackManager.getTrack(lastTrackId);
+            if (lastTrack) {
+                targetParentId = lastTrack->parentId;
+            }
+        }
+
+        // Calculate the target position in TrackManager order
+        int targetIndex;
+        if (dropTargetIndex_ >= static_cast<int>(visibleTrackIds_.size())) {
+            // Drop at the end
+            targetIndex = trackManager.getNumTracks();
+        } else {
+            // Get the track at drop target position
+            TrackId targetTrackId = visibleTrackIds_[dropTargetIndex_];
+            targetIndex = trackManager.getTrackIndex(targetTrackId);
+        }
+
+        // Adjust if dragging from above
+        int currentIndex = trackManager.getTrackIndex(draggedTrackId);
+        if (currentIndex < targetIndex) {
+            targetIndex--;
+        }
+
+        // Only change group membership if moving to a different parent
+        if (draggedTrack->parentId != targetParentId) {
+            // Remove from current group
+            trackManager.removeTrackFromGroup(draggedTrackId);
+
+            // Add to new group if target has a parent
+            if (targetParentId != INVALID_TRACK_ID) {
+                trackManager.addTrackToGroup(draggedTrackId, targetParentId);
+            }
+        }
+
+        // Move to new position
+        trackManager.moveTrack(draggedTrackId, targetIndex);
+    } else if (dropTargetType_ == DropTargetType::OntoGroup && dropTargetIndex_ >= 0) {
+        TrackId groupId = trackHeaders[dropTargetIndex_]->trackId;
+        trackManager.addTrackToGroup(draggedTrackId, groupId);
+    }
+
+    // TrackManager will notify listeners which triggers tracksChanged()
+}
+
+void TrackHeadersPanel::resetDragState() {
+    isDraggingToReorder_ = false;
+    draggedTrackIndex_ = -1;
+    dragStartX_ = 0;
+    dragStartY_ = 0;
+    currentDragY_ = 0;
+    dropTargetType_ = DropTargetType::None;
+    dropTargetIndex_ = -1;
+    setMouseCursor(juce::MouseCursor::NormalCursor);
+    repaint();
+}
+
+void TrackHeadersPanel::paintDragFeedback(juce::Graphics& g) {
+    if (!isDraggingToReorder_ || draggedTrackIndex_ < 0)
+        return;
+
+    // Draw semi-transparent overlay on dragged track
+    auto draggedArea = getTrackHeaderArea(draggedTrackIndex_);
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+    g.fillRect(draggedArea);
+
+    // Draw appropriate drop indicator
+    if (dropTargetType_ == DropTargetType::BetweenTracks) {
+        paintDropIndicatorLine(g);
+    } else if (dropTargetType_ == DropTargetType::OntoGroup) {
+        paintDropTargetGroupHighlight(g);
+    }
+}
+
+void TrackHeadersPanel::paintDropIndicatorLine(juce::Graphics& g) {
+    if (dropTargetIndex_ < 0)
+        return;
+
+    int indicatorY;
+    if (dropTargetIndex_ >= static_cast<int>(trackHeaders.size())) {
+        // At the end
+        indicatorY = getTotalTracksHeight();
+    } else {
+        indicatorY = getTrackYPosition(dropTargetIndex_);
+    }
+
+    // Draw cyan line with arrow indicators
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+
+    // Main line
+    g.fillRect(0, indicatorY - 2, getWidth(), 4);
+
+    // Arrow on left side
+    juce::Path leftArrow;
+    leftArrow.addTriangle(0, indicatorY - 6, 12, indicatorY, 0, indicatorY + 6);
+    g.fillPath(leftArrow);
+
+    // Arrow on right side
+    juce::Path rightArrow;
+    rightArrow.addTriangle(getWidth(), indicatorY - 6, getWidth() - 12, indicatorY, getWidth(),
+                           indicatorY + 6);
+    g.fillPath(rightArrow);
+}
+
+void TrackHeadersPanel::paintDropTargetGroupHighlight(juce::Graphics& g) {
+    if (dropTargetIndex_ < 0 || dropTargetIndex_ >= static_cast<int>(trackHeaders.size()))
+        return;
+
+    auto targetArea = getTrackHeaderArea(dropTargetIndex_);
+
+    // Draw orange border around the group
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    g.drawRect(targetArea, 3);
+
+    // Draw subtle fill
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.15f));
+    g.fillRect(targetArea);
 }
 
 }  // namespace magica
