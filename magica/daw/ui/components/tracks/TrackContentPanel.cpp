@@ -157,13 +157,15 @@ void TrackContentPanel::paint(juce::Graphics& g) {
         }
     }
 
-    // Draw edit cursor line on selected track
+    // Ghost clips are drawn behind clips (part of background)
+    paintClipGhosts(g);
+}
+
+void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
+    // Draw edit cursor line on top of clips
     paintEditCursor(g);
 
-    // Draw ghost clips (during Alt+drag duplication)
-    paintClipGhosts(g);
-
-    // Draw marquee selection rectangle
+    // Draw marquee selection rectangle on top of everything
     paintMarqueeRect(g);
 }
 
