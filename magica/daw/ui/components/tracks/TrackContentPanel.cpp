@@ -703,7 +703,7 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
 }
 
 void TrackContentPanel::mouseDoubleClick(const juce::MouseEvent& event) {
-    // Check if double-clicking on an existing selection -> create clip
+    // Check if double-clicking on an existing time selection -> create clip
     if (isOnExistingSelection(event.x, event.y)) {
         createClipFromTimeSelection();
         // Clear selection after creating clip
@@ -711,22 +711,10 @@ void TrackContentPanel::mouseDoubleClick(const juce::MouseEvent& event) {
             onTimeSelectionChanged(-1.0, -1.0, {});
         }
     } else {
-        // Double-click on empty area - move playhead and clear selection
+        // Double-click on empty area - just clear time selection
+        // (Playhead is only moved by clicking in the timeline ruler)
         if (onTimeSelectionChanged) {
             onTimeSelectionChanged(-1.0, -1.0, {});
-        }
-
-        // Move playhead to double-click position
-        double clickTime = pixelToTime(event.x);
-        clickTime = juce::jlimit(0.0, timelineLength, clickTime);
-
-        // Apply snap to grid if callback is set
-        if (snapTimeToGrid) {
-            clickTime = snapTimeToGrid(clickTime);
-        }
-
-        if (onPlayheadPositionChanged) {
-            onPlayheadPositionChanged(clickTime);
         }
     }
 }
