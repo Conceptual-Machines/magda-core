@@ -604,22 +604,7 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
         int deltaY = std::abs(event.y - mouseDownY);
 
         if (deltaX <= DRAG_THRESHOLD && deltaY <= DRAG_THRESHOLD) {
-            // It was a click
-            // Only move playhead for lower zone (time selection) clicks, not upper zone (clip)
-            // clicks
-            if (currentDragType_ != DragType::Marquee) {
-                double clickTime = pixelToTime(mouseDownX);
-                clickTime = juce::jlimit(0.0, timelineLength, clickTime);
-
-                // Apply snap to grid if callback is set
-                if (snapTimeToGrid) {
-                    clickTime = snapTimeToGrid(clickTime);
-                }
-
-                // Schedule playhead change (will be cancelled if double-click detected)
-                pendingPlayheadTime = clickTime;
-                startTimer(DOUBLE_CLICK_DELAY_MS);
-            }
+            // It was a click - single click does nothing (playhead moved on double-click)
         } else {
             // It was a drag - finalize time selection
             selectionEndTime = juce::jmax(0.0, juce::jmin(timelineLength, pixelToTime(event.x)));
@@ -674,10 +659,6 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
 }
 
 void TrackContentPanel::mouseDoubleClick(const juce::MouseEvent& event) {
-    // Cancel any pending playhead move (double-click should not move playhead)
-    stopTimer();
-    pendingPlayheadTime = -1.0;
-
     // Check if double-clicking on an existing selection -> create clip
     if (isOnExistingSelection(event.x, event.y)) {
         createClipFromTimeSelection();
@@ -686,9 +667,22 @@ void TrackContentPanel::mouseDoubleClick(const juce::MouseEvent& event) {
             onTimeSelectionChanged(-1.0, -1.0, {});
         }
     } else {
-        // Double-click on empty area clears selection
+        // Double-click on empty area - move playhead and clear selection
         if (onTimeSelectionChanged) {
             onTimeSelectionChanged(-1.0, -1.0, {});
+        }
+
+        // Move playhead to double-click position
+        double clickTime = pixelToTime(event.x);
+        clickTime = juce::jlimit(0.0, timelineLength, clickTime);
+
+        // Apply snap to grid if callback is set
+        if (snapTimeToGrid) {
+            clickTime = snapTimeToGrid(clickTime);
+        }
+
+        if (onPlayheadPositionChanged) {
+            onPlayheadPositionChanged(clickTime);
         }
     }
 }
