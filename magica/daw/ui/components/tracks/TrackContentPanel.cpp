@@ -6,6 +6,7 @@
 #include "../../layout/LayoutConfig.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../../utils/TimelineUtils.hpp"
 #include "../clips/ClipComponent.hpp"
 #include "Config.hpp"
 #include "core/SelectionManager.hpp"
@@ -313,14 +314,11 @@ bool TrackContentPanel::isInSelectableArea(int x, int y) const {
 }
 
 double TrackContentPanel::pixelToTime(int pixel) const {
-    if (currentZoom > 0) {
-        return static_cast<double>(pixel - LEFT_PADDING) / currentZoom;
-    }
-    return 0.0;
+    return TimelineUtils::pixelToTime(pixel, currentZoom, LEFT_PADDING);
 }
 
 int TrackContentPanel::timeToPixel(double time) const {
-    return static_cast<int>(time * currentZoom) + LEFT_PADDING;
+    return TimelineUtils::timeToPixel(time, currentZoom, LEFT_PADDING);
 }
 
 int TrackContentPanel::getTrackIndexAtY(int y) const {
