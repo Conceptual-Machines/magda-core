@@ -52,6 +52,11 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     }
     void setSelected(bool selected);
 
+    // Drag state (for parent to check)
+    bool isCurrentlyDragging() const {
+        return isDragging_;
+    }
+
     // Callbacks
     std::function<void(ClipId, double)> onClipMoved;          // clipId, newStartTime
     std::function<void(ClipId, TrackId)> onClipMovedToTrack;  // clipId, newTrackId
@@ -81,8 +86,8 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     double previewLength_ = 0.0;
     bool isDragging_ = false;
 
-    // Magnetic snap threshold in pixels
-    static constexpr int SNAP_THRESHOLD_PIXELS = 10;
+    // Magnetic snap threshold in pixels (higher = snappier)
+    static constexpr int SNAP_THRESHOLD_PIXELS = 15;
 
     // Hover state for resize handles
     bool hoverLeftEdge_ = false;

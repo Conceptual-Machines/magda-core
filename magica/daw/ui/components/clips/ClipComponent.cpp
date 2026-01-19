@@ -198,8 +198,13 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         onClipSelected(clipId_);
     }
 
-    // Store drag start info
-    dragStartPos_ = e.getPosition();
+    // Store drag start info - use parent's coordinate space so position
+    // is stable when we move the component via setBounds()
+    if (parentPanel_) {
+        dragStartPos_ = e.getEventRelativeTo(parentPanel_).getPosition();
+    } else {
+        dragStartPos_ = e.getPosition();
+    }
     dragStartBoundsPos_ = getBounds().getPosition();
     dragStartTime_ = clip->startTime;
     dragStartLength_ = clip->length;
@@ -238,108 +243,87 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
         return;
     }
 
-    int deltaX = e.x - dragStartPos_.x;
+    // Use parent's coordinate space for stable delta calculation
+    // (component position changes during drag, but parent doesn't move)
+    auto parentPos = e.getEventRelativeTo(parentPanel_).getPosition();
+    int deltaX = parentPos.x - dragStartPos_.x;
     double deltaTime = deltaX / pixelsPerSecond;
 
     switch (dragMode_) {
         case DragMode::Move: {
-            // Calculate raw position
+            // Work entirely in time domain, then convert to pixels at the end
             double rawStartTime = juce::jmax(0.0, dragStartTime_ + deltaTime);
-            previewStartTime_ = rawStartTime;
+            double finalTime = rawStartTime;
 
-            // Calculate visual position - use magnetic snapping
-            int newX = dragStartBoundsPos_.x + deltaX;
-
-            // Check for magnetic snap if snap callback is available
+            // Magnetic snap: if close to grid, snap to it
             if (snapTimeToGrid) {
                 double snappedTime = snapTimeToGrid(rawStartTime);
-                int snappedX = static_cast<int>(snappedTime * pixelsPerSecond);
-                int rawX = static_cast<int>(rawStartTime * pixelsPerSecond);
-
-                // If within threshold, snap visually
-                if (std::abs(snappedX - rawX) <= SNAP_THRESHOLD_PIXELS) {
-                    newX = snappedX;
-                    previewStartTime_ = snappedTime;  // Update preview to snapped position
+                double snapDeltaPixels = std::abs((snappedTime - rawStartTime) * pixelsPerSecond);
+                if (snapDeltaPixels <= SNAP_THRESHOLD_PIXELS) {
+                    finalTime = snappedTime;
                 }
             }
 
-            newX = juce::jmax(0, newX);
-            setBounds(newX, getY(), getWidth(), getHeight());
+            previewStartTime_ = finalTime;
 
-            // Check for vertical track change (this still needs immediate feedback)
-            auto screenPos = e.getScreenPosition();
-            auto parentPos = parentPanel_->getScreenBounds().getPosition();
-            int localY = screenPos.y - parentPos.y;
-            int trackIndex = parentPanel_->getTrackIndexAtY(localY);
-
-            if (trackIndex >= 0) {
-                auto visibleTracks = TrackManager::getInstance().getVisibleTracks(
-                    ViewModeController::getInstance().getViewMode());
-
-                if (trackIndex < static_cast<int>(visibleTracks.size())) {
-                    TrackId newTrackId = visibleTracks[trackIndex];
-                    if (newTrackId != dragStartTrackId_ && onClipMovedToTrack) {
-                        onClipMovedToTrack(clipId_, newTrackId);
-                        dragStartTrackId_ = newTrackId;
-                    }
-                }
-            }
+            // Convert time to pixel position (using parent's method to account for padding)
+            int newX = parentPanel_->timeToPixel(finalTime);
+            int newWidth = static_cast<int>(dragStartLength_ * pixelsPerSecond);
+            setBounds(newX, getY(), juce::jmax(10, newWidth), getHeight());
             break;
         }
 
         case DragMode::ResizeLeft: {
-            // Calculate raw values
+            // Work in time domain: resizing from left changes start time and length
             double rawStartTime = juce::jmax(0.0, dragStartTime_ + deltaTime);
-            double rawLength = juce::jmax(0.1, dragStartLength_ - deltaTime);
-
-            previewStartTime_ = rawStartTime;
-            previewLength_ = rawLength;
-
-            int newX = dragStartBoundsPos_.x + deltaX;
+            double endTime = dragStartTime_ + dragStartLength_;  // End stays fixed
+            double finalStartTime = rawStartTime;
 
             // Magnetic snap for left edge
             if (snapTimeToGrid) {
                 double snappedTime = snapTimeToGrid(rawStartTime);
-                int snappedX = static_cast<int>(snappedTime * pixelsPerSecond);
-                int rawX = static_cast<int>(rawStartTime * pixelsPerSecond);
-
-                if (std::abs(snappedX - rawX) <= SNAP_THRESHOLD_PIXELS) {
-                    newX = snappedX;
-                    previewStartTime_ = snappedTime;
-                    previewLength_ = dragStartLength_ - (snappedTime - dragStartTime_);
+                double snapDeltaPixels = std::abs((snappedTime - rawStartTime) * pixelsPerSecond);
+                if (snapDeltaPixels <= SNAP_THRESHOLD_PIXELS) {
+                    finalStartTime = snappedTime;
                 }
             }
 
-            int newWidth = static_cast<int>(previewLength_ * pixelsPerSecond);
-            newX = juce::jmax(0, newX);
-            newWidth = juce::jmax(10, newWidth);
-            setBounds(newX, getY(), newWidth, getHeight());
+            // Ensure minimum length
+            finalStartTime = juce::jmin(finalStartTime, endTime - 0.1);
+            double finalLength = endTime - finalStartTime;
+
+            previewStartTime_ = finalStartTime;
+            previewLength_ = finalLength;
+
+            // Convert to pixels (using parent's method to account for padding)
+            int newX = parentPanel_->timeToPixel(finalStartTime);
+            int newWidth = static_cast<int>(finalLength * pixelsPerSecond);
+            setBounds(newX, getY(), juce::jmax(10, newWidth), getHeight());
             break;
         }
 
         case DragMode::ResizeRight: {
-            // Calculate raw length
-            double rawLength = juce::jmax(0.1, dragStartLength_ + deltaTime);
-            previewLength_ = rawLength;
-
-            double rawEndTime = dragStartTime_ + rawLength;
-            int newWidth = static_cast<int>(rawLength * pixelsPerSecond);
+            // Work in time domain: resizing from right changes length only
+            double rawEndTime = dragStartTime_ + dragStartLength_ + deltaTime;
+            double finalEndTime = rawEndTime;
 
             // Magnetic snap for right edge (end time)
             if (snapTimeToGrid) {
                 double snappedEndTime = snapTimeToGrid(rawEndTime);
-                int snappedWidth =
-                    static_cast<int>((snappedEndTime - dragStartTime_) * pixelsPerSecond);
-                int rawWidth = newWidth;
-
-                if (std::abs(snappedWidth - rawWidth) <= SNAP_THRESHOLD_PIXELS) {
-                    newWidth = snappedWidth;
-                    previewLength_ = snappedEndTime - dragStartTime_;
+                double snapDeltaPixels = std::abs((snappedEndTime - rawEndTime) * pixelsPerSecond);
+                if (snapDeltaPixels <= SNAP_THRESHOLD_PIXELS) {
+                    finalEndTime = snappedEndTime;
                 }
             }
 
-            newWidth = juce::jmax(10, newWidth);
-            setBounds(getX(), getY(), newWidth, getHeight());
+            // Ensure minimum length
+            double finalLength = juce::jmax(0.1, finalEndTime - dragStartTime_);
+            previewLength_ = finalLength;
+
+            // Convert to pixels (using parent's method to account for padding)
+            int newX = parentPanel_->timeToPixel(dragStartTime_);
+            int newWidth = static_cast<int>(finalLength * pixelsPerSecond);
+            setBounds(newX, getY(), juce::jmax(10, newWidth), getHeight());
             break;
         }
 
@@ -348,7 +332,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
     }
 }
 
-void ClipComponent::mouseUp(const juce::MouseEvent& /*e*/) {
+void ClipComponent::mouseUp(const juce::MouseEvent& e) {
     if (isDragging_ && dragMode_ != DragMode::None) {
         // Now apply snapping and commit to ClipManager
         switch (dragMode_) {
@@ -361,6 +345,26 @@ void ClipComponent::mouseUp(const juce::MouseEvent& /*e*/) {
 
                 if (onClipMoved) {
                     onClipMoved(clipId_, finalStartTime);
+                }
+
+                // Check for track change on release
+                if (parentPanel_ && onClipMovedToTrack) {
+                    auto screenPos = e.getScreenPosition();
+                    auto parentPos = parentPanel_->getScreenBounds().getPosition();
+                    int localY = screenPos.y - parentPos.y;
+                    int trackIndex = parentPanel_->getTrackIndexAtY(localY);
+
+                    if (trackIndex >= 0) {
+                        auto visibleTracks = TrackManager::getInstance().getVisibleTracks(
+                            ViewModeController::getInstance().getViewMode());
+
+                        if (trackIndex < static_cast<int>(visibleTracks.size())) {
+                            TrackId newTrackId = visibleTracks[trackIndex];
+                            if (newTrackId != dragStartTrackId_) {
+                                onClipMovedToTrack(clipId_, newTrackId);
+                            }
+                        }
+                    }
                 }
                 break;
             }
@@ -442,6 +446,11 @@ void ClipComponent::mouseDoubleClick(const juce::MouseEvent& /*e*/) {
 // ============================================================================
 
 void ClipComponent::clipsChanged() {
+    // Ignore updates while dragging to prevent flicker
+    if (isDragging_) {
+        return;
+    }
+
     // Clip may have been deleted
     const auto* clip = getClipInfo();
     if (!clip) {
@@ -452,12 +461,22 @@ void ClipComponent::clipsChanged() {
 }
 
 void ClipComponent::clipPropertyChanged(ClipId clipId) {
+    // Ignore updates while dragging to prevent flicker
+    if (isDragging_) {
+        return;
+    }
+
     if (clipId == clipId_) {
         repaint();
     }
 }
 
 void ClipComponent::clipSelectionChanged(ClipId clipId) {
+    // Ignore updates while dragging to prevent flicker
+    if (isDragging_) {
+        return;
+    }
+
     bool wasSelected = isSelected_;
     isSelected_ = (clipId == clipId_);
 

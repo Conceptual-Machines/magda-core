@@ -43,6 +43,12 @@ run: debug
 	@echo "🎵 Running Magica DAW..."
 	open "$(BUILD_DIR)/magica/daw/magica_daw_app_artefacts/Debug/Magica DAW.app"
 
+# Run the application from console (shows debug output)
+.PHONY: run-console
+run-console: debug
+	@echo "🎵 Running Magica DAW (console mode)..."
+	"$(BUILD_DIR)/magica/daw/magica_daw_app_artefacts/Debug/Magica DAW.app/Contents/MacOS/Magica DAW"
+
 # Run tests
 .PHONY: test
 test: debug

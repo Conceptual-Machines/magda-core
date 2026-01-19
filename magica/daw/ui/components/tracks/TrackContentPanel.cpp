@@ -226,12 +226,14 @@ int TrackContentPanel::getTrackHeight(int trackIndex) const {
 
 void TrackContentPanel::setZoom(double zoom) {
     currentZoom = juce::jmax(0.1, zoom);
+    updateClipComponentPositions();
     resized();
     repaint();
 }
 
 void TrackContentPanel::setVerticalZoom(double zoom) {
     verticalZoom = juce::jlimit(0.5, 3.0, zoom);
+    updateClipComponentPositions();
     resized();
     repaint();
 }
@@ -616,9 +618,20 @@ void TrackContentPanel::clipsChanged() {
 
 void TrackContentPanel::clipPropertyChanged(ClipId clipId) {
     // Find the clip component and update its position/size
+    // Skip if any clip is being dragged to prevent flicker
     for (auto& clipComp : clipComponents_) {
         if (clipComp->getClipId() == clipId) {
-            updateClipComponentPositions();
+            // Check if any clip is currently being dragged
+            bool anyDragging = false;
+            for (const auto& cc : clipComponents_) {
+                if (cc->isCurrentlyDragging()) {
+                    anyDragging = true;
+                    break;
+                }
+            }
+            if (!anyDragging) {
+                updateClipComponentPositions();
+            }
             break;
         }
     }
@@ -685,6 +698,11 @@ void TrackContentPanel::updateClipComponentPositions() {
     for (auto& clipComp : clipComponents_) {
         const auto* clip = ClipManager::getInstance().getClip(clipComp->getClipId());
         if (!clip) {
+            continue;
+        }
+
+        // Skip clips that are being dragged - they manage their own position
+        if (clipComp->isCurrentlyDragging()) {
             continue;
         }
 

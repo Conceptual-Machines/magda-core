@@ -93,6 +93,10 @@ class TrackContentPanel : public juce::Component,
     // Get track index at Y position (for drag-drop)
     int getTrackIndexAtY(int y) const;
 
+    // Time/pixel conversion (accounts for left padding)
+    double pixelToTime(int pixel) const;
+    int timeToPixel(double time) const;
+
     // Callbacks
     std::function<void(int)> onTrackSelected;
     std::function<void(int, int)> onTrackHeightChanged;
@@ -174,8 +178,6 @@ class TrackContentPanel : public juce::Component,
 
     // Helper to check if a position is in a selectable area
     bool isInSelectableArea(int x, int y) const;
-    double pixelToTime(int pixel) const;
-    int timeToPixel(double time) const;
     bool isOnExistingSelection(int x, int y) const;
 
     // Clip management
