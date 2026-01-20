@@ -83,6 +83,10 @@ void MixerLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int wid
     g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
     g.fillRoundedRectangle(thumbRect, thumbHeight / 2.0f);
 
+    // Border (matching knob style)
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.drawRoundedRectangle(thumbRect, thumbHeight / 2.0f, 1.0f);
+
     // Center line indicator
     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     float lineY = thumbY + thumbHeight / 2.0f;
