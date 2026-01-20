@@ -403,11 +403,11 @@ void MixerView::ChannelStrip::drawDbLabels(juce::Graphics& g) {
         float rightTickX = static_cast<float>(rightTickArea_.getX());
         g.fillRect(rightTickX, y - tickHeight / 2.0f, metrics.tickWidth(), tickHeight);
 
-        // Draw label text centered - no signs, -inf at bottom
+        // Draw label text centered - no signs, infinity symbol at bottom
         juce::String labelText;
         int dbInt = static_cast<int>(db);
         if (db <= MIN_DB) {
-            labelText = "-inf";
+            labelText = juce::String::charToString(0x221E);  // ∞ infinity symbol
         } else {
             labelText = juce::String(std::abs(dbInt));
         }
