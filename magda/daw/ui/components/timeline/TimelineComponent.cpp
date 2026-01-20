@@ -125,7 +125,9 @@ void TimelineComponent::paint(juce::Graphics& g) {
 
     // Get layout configuration
     auto& layout = LayoutConfig::getInstance();
+    int chordHeight = layout.chordRowHeight;
     int arrangementHeight = layout.arrangementBarHeight;
+    int arrangementTop = chordHeight;  // Arrangement starts below chord row
 
     // Draw border
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
@@ -138,25 +140,35 @@ void TimelineComponent::paint(juce::Graphics& g) {
         g.fillRect(getLocalBounds().reduced(1));
     }
 
-    // Draw time selection first (background layer)
+    // Draw chord row first (topmost)
+    drawChordRow(g);
+
+    // Draw time selection (background layer)
     drawTimeSelection(g);
 
     // Draw loop markers (background - shaded region behind time labels)
     drawLoopMarkers(g);
 
-    // Draw arrangement sections (in top section)
+    // Draw arrangement sections (below chord row)
     drawArrangementSections(g);
 
     // Draw time markers (in time ruler section) - ON TOP of loop region
     drawTimeMarkers(g);
 
+    // Draw separator line between chord row and arrangement
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.drawLine(0, static_cast<float>(chordHeight), static_cast<float>(getWidth()),
+               static_cast<float>(chordHeight), 1.0f);
+
     // Draw separator line between arrangement and time ruler
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER).brighter(0.3f));
-    g.drawLine(0, static_cast<float>(arrangementHeight), static_cast<float>(getWidth()),
-               static_cast<float>(arrangementHeight), 1.0f);
+    g.drawLine(0, static_cast<float>(arrangementTop + arrangementHeight),
+               static_cast<float>(getWidth()),
+               static_cast<float>(arrangementTop + arrangementHeight), 1.0f);
 
     // Draw separator line above ticks (separates time labels from tick area)
-    int tickAreaTop = arrangementHeight + layout.timeRulerHeight - layout.rulerMajorTickHeight;
+    int tickAreaTop =
+        arrangementTop + arrangementHeight + layout.timeRulerHeight - layout.rulerMajorTickHeight;
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawLine(0, static_cast<float>(tickAreaTop), static_cast<float>(getWidth()),
                static_cast<float>(tickAreaTop), 1.0f);
@@ -267,15 +279,17 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
 
     // Get layout configuration for zone calculations
     auto& layout = LayoutConfig::getInstance();
+    int chordHeight = layout.chordRowHeight;
     int arrangementHeight = layout.arrangementBarHeight;
     int timeRulerHeight = layout.timeRulerHeight;
-    int timeRulerEnd = arrangementHeight + timeRulerHeight;
+    int arrangementBottom = chordHeight + arrangementHeight;
+    int timeRulerEnd = arrangementBottom + timeRulerHeight;
     // Split ruler: upper 2/3 for zoom, lower 1/3 for time selection
-    int rulerMidpoint = arrangementHeight + (timeRulerHeight * 2 / 3);
+    int rulerMidpoint = arrangementBottom + (timeRulerHeight * 2 / 3);
 
     // Define zones based on LayoutConfig
-    bool inSectionsArea = event.y <= arrangementHeight;
-    bool inTimeRulerArea = event.y > arrangementHeight && event.y <= timeRulerEnd;
+    bool inSectionsArea = event.y >= chordHeight && event.y <= arrangementBottom;
+    bool inTimeRulerArea = event.y > arrangementBottom && event.y <= timeRulerEnd;
     bool inTimeSelectionZone = event.y >= rulerMidpoint && event.y <= timeRulerEnd;
 
     // Check for loop marker dragging first - works in both arrangement and ruler areas
@@ -348,7 +362,9 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
 void TimelineComponent::mouseMove(const juce::MouseEvent& event) {
     // Update cursor based on zone
     auto& layout = LayoutConfig::getInstance();
+    int chordHeight = layout.chordRowHeight;
     int arrangementHeight = layout.arrangementBarHeight;
+    int arrangementBottom = chordHeight + arrangementHeight;
 
     // Check for loop markers first - they span both arrangement and ruler areas
     bool isStartMarker;
@@ -363,7 +379,7 @@ void TimelineComponent::mouseMove(const juce::MouseEvent& event) {
         return;
     }
 
-    if (event.y <= arrangementHeight) {
+    if (event.y >= chordHeight && event.y <= arrangementBottom) {
         // In arrangement area - check for section edges if not locked
         if (!arrangementLocked) {
             int sectionIndex = findSectionAtPosition(event.x, event.y);
@@ -605,9 +621,9 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
 
 void TimelineComponent::mouseDoubleClick(const juce::MouseEvent& event) {
     auto& layout = LayoutConfig::getInstance();
-    int rulerTop = layout.arrangementBarHeight;
+    int rulerTop = layout.chordRowHeight + layout.arrangementBarHeight;
 
-    // Check if double-click is in the ruler area (below arrangement bar)
+    // Check if double-click is in the ruler area (below chord and arrangement)
     if (event.y >= rulerTop) {
         // Double-click in ruler area - zoom to fit loop if enabled
         if (loopEnabled && loopStartTime >= 0 && loopEndTime > loopStartTime) {
@@ -759,12 +775,13 @@ int TimelineComponent::timeDurationToPixels(double duration) const {
 void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
     // Get layout configuration
     auto& layout = LayoutConfig::getInstance();
+    int chordHeight = layout.chordRowHeight;
     int arrangementHeight = layout.arrangementBarHeight;
     int timeRulerHeight = layout.timeRulerHeight;
 
-    // Time ruler area starts after arrangement bar
-    int rulerTop = arrangementHeight;
-    int rulerBottom = arrangementHeight + timeRulerHeight;
+    // Time ruler area starts after chord row and arrangement bar
+    int rulerTop = chordHeight + arrangementHeight;
+    int rulerBottom = rulerTop + timeRulerHeight;
 
     // Tick and label sizing from config
     int majorTickHeight = layout.rulerMajorTickHeight;
@@ -1028,8 +1045,10 @@ void TimelineComponent::drawSection(juce::Graphics& g, const ArrangementSection&
     width = endX - startX;
 
     // Draw section background using arrangement bar height from LayoutConfig
-    int arrangementHeight = LayoutConfig::getInstance().arrangementBarHeight;
-    auto sectionArea = juce::Rectangle<int>(startX, 0, width, arrangementHeight);
+    auto& layout = LayoutConfig::getInstance();
+    int chordHeight = layout.chordRowHeight;
+    int arrangementHeight = layout.arrangementBarHeight;
+    auto sectionArea = juce::Rectangle<int>(startX, chordHeight, width, arrangementHeight);
 
     // Section background - dimmed if locked
     float alpha = arrangementLocked ? 0.2f : 0.3f;
@@ -1041,11 +1060,13 @@ void TimelineComponent::drawSection(juce::Graphics& g, const ArrangementSection&
         g.setColour(section.colour.withAlpha(0.5f));
         // Draw dotted border to indicate locked state
         const float dashLengths[] = {2.0f, 2.0f};
-        g.drawDashedLine(juce::Line<float>(startX, 0, startX, sectionArea.getBottom()), dashLengths,
-                         2, 1.0f);
-        g.drawDashedLine(juce::Line<float>(endX, 0, endX, sectionArea.getBottom()), dashLengths, 2,
+        float sectionTop = static_cast<float>(chordHeight);
+        g.drawDashedLine(juce::Line<float>(startX, sectionTop, startX, sectionArea.getBottom()),
+                         dashLengths, 2, 1.0f);
+        g.drawDashedLine(juce::Line<float>(endX, sectionTop, endX, sectionArea.getBottom()),
+                         dashLengths, 2, 1.0f);
+        g.drawDashedLine(juce::Line<float>(startX, sectionTop, endX, sectionTop), dashLengths, 2,
                          1.0f);
-        g.drawDashedLine(juce::Line<float>(startX, 0, endX, 0), dashLengths, 2, 1.0f);
         g.drawDashedLine(
             juce::Line<float>(startX, sectionArea.getBottom(), endX, sectionArea.getBottom()),
             dashLengths, 2, 1.0f);
@@ -1067,8 +1088,11 @@ void TimelineComponent::drawSection(juce::Graphics& g, const ArrangementSection&
 
 int TimelineComponent::findSectionAtPosition(int x, int y) const {
     // Check the arrangement section area using LayoutConfig
-    int arrangementHeight = LayoutConfig::getInstance().arrangementBarHeight;
-    if (y > arrangementHeight) {
+    auto& layout = LayoutConfig::getInstance();
+    int chordHeight = layout.chordRowHeight;
+    int arrangementHeight = layout.arrangementBarHeight;
+    // Section area is between chord row and time ruler
+    if (y < chordHeight || y > chordHeight + arrangementHeight) {
         return -1;
     }
 
@@ -1146,9 +1170,9 @@ void TimelineComponent::drawLoopMarkers(juce::Graphics& g) {
         return;
     }
 
-    // Get layout configuration - loop markers only cover the ruler area, not arrangement
+    // Get layout configuration - loop markers only cover the ruler area, not arrangement or chord
     auto& layout = LayoutConfig::getInstance();
-    int rulerTop = layout.arrangementBarHeight;
+    int rulerTop = layout.chordRowHeight + layout.arrangementBarHeight;
     int totalHeight = getHeight();
 
     int startX = timeToPixel(loopStartTime) + LEFT_PADDING;
@@ -1181,13 +1205,14 @@ void TimelineComponent::drawLoopMarkerFlags(juce::Graphics& g) {
 
     // Get layout configuration
     auto& layout = LayoutConfig::getInstance();
+    int chordHeight = layout.chordRowHeight;
     int arrangementHeight = layout.arrangementBarHeight;
     int majorTickHeight = layout.rulerMajorTickHeight;
     int rulerBottom = getHeight();
 
     // Position line on the separator (ruler top border), triangles just below in ruler area
-    int lineY = arrangementHeight;        // Connecting line aligns with ruler top border
-    int flagTop = arrangementHeight + 2;  // Triangles just below the line
+    int lineY = chordHeight + arrangementHeight;  // Connecting line aligns with ruler top border
+    int flagTop = chordHeight + arrangementHeight + 2;  // Triangles just below the line
 
     int startX = timeToPixel(loopStartTime) + LEFT_PADDING;
     int endX = timeToPixel(loopEndTime) + LEFT_PADDING;
@@ -1261,8 +1286,9 @@ bool TimelineComponent::isOnLoopTopBorder(int x, int y) const {
     }
 
     auto& layout = LayoutConfig::getInstance();
-    int lineY = layout.arrangementBarHeight;  // Top border Y position
-    const int verticalThreshold = 6;          // Pixels above/below line to trigger
+    // Top border is at the bottom of arrangement row (below chord row)
+    int lineY = layout.chordRowHeight + layout.arrangementBarHeight;
+    const int verticalThreshold = 6;  // Pixels above/below line to trigger
 
     // Check Y is near the top border line
     if (std::abs(y - lineY) > verticalThreshold) {
@@ -1352,9 +1378,9 @@ void TimelineComponent::drawTimeSelection(juce::Graphics& g) {
         return;
     }
 
-    // Get ruler top (below arrangement bar) to match loop region
+    // Get ruler top (below chord row and arrangement bar) to match loop region
     auto& layout = LayoutConfig::getInstance();
-    int rulerTop = layout.arrangementBarHeight;
+    int rulerTop = layout.chordRowHeight + layout.arrangementBarHeight;
 
     // Draw selection highlight covering ruler area (not arrangement bar)
     g.setColour(DarkTheme::getColour(DarkTheme::TIME_SELECTION));
@@ -1366,6 +1392,49 @@ void TimelineComponent::drawTimeSelection(juce::Graphics& g) {
                static_cast<float>(getHeight()), 1.0f);
     g.drawLine(static_cast<float>(endX), static_cast<float>(rulerTop), static_cast<float>(endX),
                static_cast<float>(getHeight()), 1.0f);
+}
+
+void TimelineComponent::drawChordRow(juce::Graphics& g) {
+    auto& layout = LayoutConfig::getInstance();
+    int chordHeight = layout.chordRowHeight;
+
+    // Draw chord row background (slightly different from main background)
+    auto chordArea = juce::Rectangle<int>(0, 0, getWidth(), chordHeight);
+    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+    g.fillRect(chordArea);
+
+    // Draw some mock chord blocks based on tempo
+    // These are placeholder positions - real chord detection will replace this
+    double beatsPerSecond = tempoBPM / 60.0;
+    double secondsPerBar = timeSignatureNumerator / beatsPerSecond;
+
+    // Mock chords - one chord per 2 bars for demonstration
+    const char* mockChords[] = {"C", "Am", "F", "G", "Dm", "Em", "Bdim", "C"};
+    int numMockChords = 8;
+
+    g.setFont(FontManager::getInstance().getUIFont(11.0f));
+
+    for (int i = 0; i < numMockChords; ++i) {
+        double startTime = i * secondsPerBar * 2;
+        double endTime = (i + 1) * secondsPerBar * 2;
+
+        int startX = timeToPixel(startTime) + LEFT_PADDING;
+        int endX = timeToPixel(endTime) + LEFT_PADDING;
+
+        // Skip if out of view
+        if (endX < 0 || startX > getWidth()) {
+            continue;
+        }
+
+        // Draw chord block
+        auto blockBounds = juce::Rectangle<int>(startX + 1, 2, endX - startX - 2, chordHeight - 4);
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+        g.fillRoundedRectangle(blockBounds.toFloat(), 3.0f);
+
+        // Draw chord name
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        g.drawText(mockChords[i], blockBounds, juce::Justification::centred, true);
+    }
 }
 
 }  // namespace magda

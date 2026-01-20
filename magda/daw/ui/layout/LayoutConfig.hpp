@@ -12,6 +12,7 @@ namespace magda {
  */
 struct LayoutConfig {
     // Timeline area heights
+    int chordRowHeight = 24;        // Chord detection row above arrangement
     int arrangementBarHeight = 18;  // Reduced to give more space for time labels
     int timeRulerHeight = 52;       // Increased to accommodate labels
 
@@ -26,7 +27,8 @@ struct LayoutConfig {
 
     // Helper to get the Y position that splits zoom/selection zones
     int getRulerZoneSplitY() const {
-        return arrangementBarHeight + static_cast<int>(timeRulerHeight * rulerZoomAreaRatio);
+        return chordRowHeight + arrangementBarHeight +
+               static_cast<int>(timeRulerHeight * rulerZoomAreaRatio);
     }
 
     // Grid/tick spacing - shared between timeline ruler and track content grid
@@ -37,7 +39,7 @@ struct LayoutConfig {
 
     // Computed total timeline height
     int getTimelineHeight() const {
-        return arrangementBarHeight + timeRulerHeight;
+        return chordRowHeight + arrangementBarHeight + timeRulerHeight;
     }
 
     // Track layout
@@ -87,6 +89,7 @@ struct LayoutConfig {
         juce::String info;
         info << "=== LayoutConfig ===\n";
         info << "Timeline Total: " << getTimelineHeight() << "px\n";
+        info << "  chordRowHeight: " << chordRowHeight << "\n";
         info << "  arrangementBarHeight: " << arrangementBarHeight << "\n";
         info << "  timeRulerHeight: " << timeRulerHeight << "\n";
         info << "Ruler Ticks:\n";
