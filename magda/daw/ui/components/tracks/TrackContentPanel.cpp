@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include "../../layout/LayoutConfig.hpp"
+#include "../../panels/state/PanelController.hpp"
 #include "../../state/TimelineEvents.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -886,8 +887,25 @@ void TrackContentPanel::rebuildClipComponents() {
             SelectionManager::getInstance().selectClip(id);
         };
 
-        clipComp->onClipDoubleClicked = [](ClipId /*id*/) {
-            // Could open clip in editor, etc.
+        clipComp->onClipDoubleClicked = [](ClipId id) {
+            // Open the appropriate editor in the bottom panel
+            const auto* clip = ClipManager::getInstance().getClip(id);
+            if (!clip)
+                return;
+
+            auto& panelController = daw::ui::PanelController::getInstance();
+
+            // Expand the bottom panel if collapsed
+            panelController.setCollapsed(daw::ui::PanelLocation::Bottom, false);
+
+            // Switch to the appropriate editor based on clip type
+            if (clip->type == ClipType::MIDI) {
+                panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
+                                                   daw::ui::PanelContentType::PianoRoll);
+            } else {
+                panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
+                                                   daw::ui::PanelContentType::WaveformEditor);
+            }
         };
 
         clipComp->onClipSplit = [](ClipId id, double splitTime) {

@@ -8,6 +8,9 @@
 namespace magda {
 
 TimelineController::TimelineController() {
+    // Set as current instance for global access
+    currentInstance_ = this;
+
     // Load configuration values
     auto& config = magda::Config::getInstance();
     state.timelineLength = config.getDefaultTimelineLength();
@@ -22,7 +25,12 @@ TimelineController::TimelineController() {
               << std::endl;
 }
 
-TimelineController::~TimelineController() = default;
+TimelineController::~TimelineController() {
+    // Clear the current instance
+    if (currentInstance_ == this) {
+        currentInstance_ = nullptr;
+    }
+}
 
 void TimelineController::dispatch(const TimelineEvent& event) {
     // Determine if this event should create an undo point

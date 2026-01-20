@@ -81,6 +81,7 @@ set(DAW_CORE_SOURCES
     core/UndoManager.cpp
     core/ClipCommands.cpp
     core/TrackCommands.cpp
+    core/MidiNoteCommands.cpp
     engine/TracktionEngineWrapper.cpp
     # UI components needed by tests
     ui/components/timeline/TimelineComponent.cpp
@@ -150,6 +151,10 @@ set(DAW_UI_SOURCES
     ui/components/tracks/TrackContentPanel.cpp
     # Components - Clips
     ui/components/clips/ClipComponent.cpp
+    # Components - Piano Roll
+    ui/components/pianoroll/NoteComponent.cpp
+    ui/components/pianoroll/PianoRollGridComponent.cpp
+    ui/components/pianoroll/PianoRollKeyboard.cpp
     # Components - Mixer
     ui/components/mixer/MasterChannelStrip.cpp
     ui/components/mixer/RoutingSelector.cpp
@@ -174,6 +179,7 @@ set(DAW_HEADERS
     core/UndoManager.hpp
     core/ClipCommands.hpp
     core/TrackCommands.hpp
+    core/MidiNoteCommands.hpp
     engine/AudioEngine.hpp
     engine/TracktionEngineWrapper.hpp
     engine/PlaybackPositionTimer.hpp
@@ -252,6 +258,10 @@ set(DAW_HEADERS
     ui/components/tracks/TrackContentPanel.hpp
     # Components - Clips
     ui/components/clips/ClipComponent.hpp
+    # Components - Piano Roll
+    ui/components/pianoroll/NoteComponent.hpp
+    ui/components/pianoroll/PianoRollGridComponent.hpp
+    ui/components/pianoroll/PianoRollKeyboard.hpp
     # Components - Mixer
     ui/components/mixer/MasterChannelStrip.hpp
     ui/components/mixer/RoutingSelector.hpp
@@ -326,6 +336,7 @@ target_include_directories(magda_daw_app
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/components/timeline
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/components/tracks
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/components/clips
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/components/pianoroll
     ${CMAKE_SOURCE_DIR}
 )
 

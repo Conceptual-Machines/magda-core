@@ -64,6 +64,21 @@ void TimeRuler::setTimeSignature(int numerator, int denominator) {
     repaint();
 }
 
+void TimeRuler::setTimeOffset(double offsetSeconds) {
+    timeOffset = offsetSeconds;
+    repaint();
+}
+
+void TimeRuler::setRelativeMode(bool relative) {
+    relativeMode = relative;
+    repaint();
+}
+
+void TimeRuler::setLeftPadding(int padding) {
+    leftPadding = padding;
+    repaint();
+}
+
 int TimeRuler::getPreferredHeight() const {
     return LayoutConfig::getInstance().timeRulerHeight;
 }
@@ -135,7 +150,13 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     double pixelsPerBar = secondsPerBar * zoom;
     bool showBeats = pixelsPerBar > 60;  // Only show beats if bars are wide enough
 
-    // Find first visible bar
+    // Calculate the bar offset (which bar does our content start at?)
+    int barOffset = 0;
+    if (!relativeMode && timeOffset > 0) {
+        barOffset = static_cast<int>(std::floor(timeOffset / secondsPerBar));
+    }
+
+    // Find first visible bar (in local/relative time)
     double startTime = pixelToTime(0);
     int startBar = static_cast<int>(std::floor(startTime / secondsPerBar));
     if (startBar < 1)
@@ -159,8 +180,9 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             g.drawVerticalLine(barX, static_cast<float>(height - TICK_HEIGHT_MAJOR),
                                static_cast<float>(height));
 
-            // Draw bar number
-            juce::String label = juce::String(bar);
+            // Draw bar number - apply offset for absolute mode
+            int displayBar = relativeMode ? bar : (bar + barOffset);
+            juce::String label = juce::String(displayBar);
             g.drawText(label, barX - 20, LABEL_MARGIN, 40,
                        height - TICK_HEIGHT_MAJOR - LABEL_MARGIN * 2, juce::Justification::centred,
                        false);
@@ -236,11 +258,11 @@ juce::String TimeRuler::formatBarsBeatsLabel(double time) const {
 }
 
 double TimeRuler::pixelToTime(int pixel) const {
-    return (pixel + scrollOffset - LEFT_PADDING) / zoom;
+    return (pixel + scrollOffset - leftPadding) / zoom;
 }
 
 int TimeRuler::timeToPixel(double time) const {
-    return static_cast<int>(time * zoom) - scrollOffset + LEFT_PADDING;
+    return static_cast<int>(time * zoom) - scrollOffset + leftPadding;
 }
 
 }  // namespace magda

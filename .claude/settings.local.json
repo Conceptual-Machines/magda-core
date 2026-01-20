@@ -18,12 +18,16 @@
       "mcp__TalkToFigma__move_node",
       "Bash(gh issue list:*)",
       "Bash(gh issue view:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "mcp__tracktion-engine__search_te_classes",
+      "mcp__tracktion-engine__get_te_class_docs"
     ]
   },
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "juce-docs",
-    "TalkToFigma"
+    "TalkToFigma",
+    "tracktion-engine"
   ]
 }

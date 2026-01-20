@@ -1,5 +1,5 @@
-# Magica DAW - Simple Build System
-# This Makefile provides a simple interface to build the Magica DAW project
+# MAGDA DAW - Simple Build System
+# This Makefile provides a simple interface to build the MAGDA DAW project
 
 # Build directories
 BUILD_DIR = cmake-build-debug
@@ -12,7 +12,7 @@ all: debug
 # Setup project (initialize submodules)
 .PHONY: setup
 setup:
-	@echo "🔧 Setting up Magica DAW project..."
+	@echo "🔧 Setting up MAGDA DAW project..."
 	@if [ ! -d ".git" ]; then \
 		echo "❌ Error: Not a git repository"; \
 		exit 1; \
@@ -24,7 +24,7 @@ setup:
 # Debug build
 .PHONY: debug
 debug:
-	@echo "🔨 Building Magica DAW (Debug)..."
+	@echo "🔨 Building MAGDA DAW (Debug)..."
 	@mkdir -p $(BUILD_DIR)
 	cd $(BUILD_DIR) && cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
 	cd $(BUILD_DIR) && ninja
@@ -32,7 +32,7 @@ debug:
 # Release build
 .PHONY: release
 release:
-	@echo "🚀 Building Magica DAW (Release)..."
+	@echo "🚀 Building MAGDA DAW (Release)..."
 	@mkdir -p $(BUILD_DIR_RELEASE)
 	cd $(BUILD_DIR_RELEASE) && cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
 	cd $(BUILD_DIR_RELEASE) && ninja
@@ -40,14 +40,14 @@ release:
 # Run the application
 .PHONY: run
 run: debug
-	@echo "🎵 Running Magica DAW..."
-	open "$(BUILD_DIR)/magica/daw/magica_daw_app_artefacts/Debug/Magica DAW.app"
+	@echo "🎵 Running MAGDA DAW..."
+	open "$(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app"
 
 # Run the application from console (shows debug output)
 .PHONY: run-console
 run-console: debug
-	@echo "🎵 Running Magica DAW (console mode)..."
-	"$(BUILD_DIR)/magica/daw/magica_daw_app_artefacts/Debug/Magica DAW.app/Contents/MacOS/Magica DAW"
+	@echo "🎵 Running MAGDA DAW (console mode)..."
+	"$(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app/Contents/MacOS/MAGDA"
 
 # Run tests
 .PHONY: test
@@ -91,7 +91,7 @@ lint:
 # Show help
 .PHONY: help
 help:
-	@echo "🎵 Magica DAW - Build System"
+	@echo "🎵 MAGDA DAW - Build System"
 	@echo ""
 	@echo "Available targets:"
 	@echo "  all, debug     - Build debug version (default)"

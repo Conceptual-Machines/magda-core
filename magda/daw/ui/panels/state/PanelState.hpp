@@ -112,9 +112,10 @@ inline AllPanelStates getDefaultPanelStates() {
     states.rightPanel.activeTabIndex = 0;
     states.rightPanel.collapsed = false;
 
-    // Bottom Panel: Track Chain and Scripting Console
+    // Bottom Panel: Piano Roll, Waveform Editor, Track Chain, Scripting Console
     states.bottomPanel.location = PanelLocation::Bottom;
-    states.bottomPanel.tabs = {PanelContentType::TrackChain, PanelContentType::ScriptingConsole};
+    states.bottomPanel.tabs = {PanelContentType::PianoRoll, PanelContentType::WaveformEditor,
+                               PanelContentType::TrackChain, PanelContentType::ScriptingConsole};
     states.bottomPanel.activeTabIndex = 0;
     states.bottomPanel.collapsed = false;
 

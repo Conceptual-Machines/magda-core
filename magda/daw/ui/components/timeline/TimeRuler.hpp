@@ -33,6 +33,25 @@ class TimeRuler : public juce::Component {
     void setTempo(double bpm);
     void setTimeSignature(int numerator, int denominator);
 
+    // Time offset for piano roll (absolute vs relative mode)
+    // When set, displayed times are offset by this amount (e.g., clip starts at bar 5)
+    void setTimeOffset(double offsetSeconds);
+    double getTimeOffset() const {
+        return timeOffset;
+    }
+
+    // For relative mode display (shows 1, 2, 3... instead of 5, 6, 7...)
+    void setRelativeMode(bool relative);
+    bool isRelativeMode() const {
+        return relativeMode;
+    }
+
+    // Left padding (for alignment - can be set to 0 for piano roll)
+    void setLeftPadding(int padding);
+    int getLeftPadding() const {
+        return leftPadding;
+    }
+
     // Get preferred height (from LayoutConfig)
     int getPreferredHeight() const;
 
@@ -54,8 +73,12 @@ class TimeRuler : public juce::Component {
     int timeSigNumerator = 4;
     int timeSigDenominator = 4;
 
+    // Offset and relative mode (for piano roll)
+    double timeOffset = 0.0;    // seconds - absolute position of content start
+    bool relativeMode = false;  // true = show relative time (1, 2, 3...), false = show absolute
+
     // Layout
-    static constexpr int LEFT_PADDING = 18;
+    int leftPadding = 18;  // Configurable padding (default 18 for main timeline)
     static constexpr int TICK_HEIGHT_MAJOR = 12;
     static constexpr int TICK_HEIGHT_MINOR = 6;
     static constexpr int LABEL_MARGIN = 4;

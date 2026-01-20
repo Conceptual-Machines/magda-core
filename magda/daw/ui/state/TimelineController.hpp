@@ -97,6 +97,16 @@ class TimelineController {
     TimelineController();
     ~TimelineController();
 
+    // ===== Global Access =====
+
+    /**
+     * Get the current TimelineController instance.
+     * Returns nullptr if not yet initialized.
+     */
+    static TimelineController* getCurrent() {
+        return currentInstance_;
+    }
+
     // ===== State Access =====
 
     /**
@@ -272,6 +282,9 @@ class TimelineController {
 
     void clampScrollPosition();
     double clampZoom(double zoom) const;
+
+    // Static instance for global access
+    static inline TimelineController* currentInstance_ = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TimelineController)
 };
