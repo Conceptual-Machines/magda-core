@@ -13,11 +13,18 @@
 
 namespace magda::daw::ui {
 
-// Custom LookAndFeel for buttons that use Inter font
+// Custom LookAndFeel for buttons that use Inter font with minimal styling
 class ButtonLookAndFeel : public juce::LookAndFeel_V4 {
   public:
     juce::Font getTextButtonFont(juce::TextButton&, int /*buttonHeight*/) override {
         return magda::FontManager::getInstance().getButtonFont(11.0f);
+    }
+
+    void drawButtonBackground(juce::Graphics& g, juce::Button& /*button*/, const juce::Colour&,
+                              bool /*isMouseOverButton*/, bool /*isButtonDown*/) override {
+        // Only draw top border
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawLine(0.0f, 0.0f, static_cast<float>(g.getClipBounds().getWidth()), 0.0f, 1.0f);
     }
 };
 
