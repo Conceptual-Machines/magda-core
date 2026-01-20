@@ -2,6 +2,7 @@
 
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
+#include "../../themes/FontManager.hpp"
 #include "BinaryData.h"
 #include "core/MidiNoteCommands.hpp"
 #include "core/UndoManager.hpp"
@@ -11,6 +12,14 @@
 #include "ui/components/timeline/TimeRuler.hpp"
 
 namespace magda::daw::ui {
+
+// Custom LookAndFeel for buttons that use Inter font
+class ButtonLookAndFeel : public juce::LookAndFeel_V4 {
+  public:
+    juce::Font getTextButtonFont(juce::TextButton&, int /*buttonHeight*/) override {
+        return magda::FontManager::getInstance().getButtonFont(11.0f);
+    }
+};
 
 // Custom viewport that notifies on scroll with real-time tracking
 class ScrollNotifyingViewport : public juce::Viewport {
@@ -57,6 +66,9 @@ PianoRollContent::PianoRollContent() {
     timeRuler_->setLeftPadding(GRID_LEFT_PADDING);
     addAndMakeVisible(timeRuler_.get());
 
+    // Create custom LookAndFeel for buttons
+    buttonLookAndFeel_ = std::make_unique<ButtonLookAndFeel>();
+
     // Create time mode toggle button
     timeModeButton_ = std::make_unique<juce::TextButton>("REL");
     timeModeButton_->setTooltip("Toggle between Relative (clip) and Absolute (project) time");
@@ -65,6 +77,7 @@ PianoRollContent::PianoRollContent() {
     timeModeButton_->setConnectedEdges(
         juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
         juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    timeModeButton_->setLookAndFeel(buttonLookAndFeel_.get());
     timeModeButton_->onClick = [this]() { setRelativeTimeMode(timeModeButton_->getToggleState()); };
     addAndMakeVisible(timeModeButton_.get());
 
@@ -188,6 +201,7 @@ PianoRollContent::PianoRollContent() {
 }
 
 PianoRollContent::~PianoRollContent() {
+    timeModeButton_->setLookAndFeel(nullptr);
     magda::ClipManager::getInstance().removeListener(this);
 }
 

@@ -103,6 +103,7 @@ class PianoRollContent : public PanelContent, public magda::ClipManagerListener 
     std::unique_ptr<magda::TimeRuler> timeRuler_;
     std::unique_ptr<juce::TextButton> timeModeButton_;
     std::unique_ptr<magda::SvgButton> chordRowToggle_;
+    std::unique_ptr<juce::LookAndFeel> buttonLookAndFeel_;
 
     // Grid component management
     void setupGridCallbacks();
