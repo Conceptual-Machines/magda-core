@@ -3,6 +3,7 @@
 #include "../themes/DarkTheme.hpp"
 #include "BinaryData.h"
 #include "PanelTabBar.hpp"
+#include "content/PianoRollContent.hpp"
 #include "state/PanelController.hpp"
 #include "ui/components/common/SvgButton.hpp"
 
@@ -15,6 +16,16 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     chordToggle_ = std::make_unique<SvgButton>("ChordToggle", BinaryData::Chords2_svg,
                                                BinaryData::Chords2_svgSize);
     chordToggle_->setTooltip("Toggle chord detection row");
+    chordToggle_->setActive(true);  // Default to visible
+    chordToggle_->onClick = [this]() {
+        // Toggle chord row in piano roll content
+        auto* content = getActiveContent();
+        if (auto* pianoRoll = dynamic_cast<daw::ui::PianoRollContent*>(content)) {
+            bool newState = !pianoRoll->isChordRowVisible();
+            pianoRoll->setChordRowVisible(newState);
+            chordToggle_->setActive(newState);
+        }
+    };
     addAndMakeVisible(chordToggle_.get());
 
     sidebarIcon2_ = std::make_unique<juce::TextButton>("2");

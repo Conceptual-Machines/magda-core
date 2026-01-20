@@ -9,7 +9,6 @@ namespace magda {
 class PianoRollGridComponent;
 class PianoRollKeyboard;
 class TimeRuler;
-class SvgButton;
 }  // namespace magda
 
 namespace magda::daw::ui {
@@ -102,7 +101,6 @@ class PianoRollContent : public PanelContent, public magda::ClipManagerListener 
     std::unique_ptr<magda::PianoRollKeyboard> keyboard_;
     std::unique_ptr<magda::TimeRuler> timeRuler_;
     std::unique_ptr<juce::TextButton> timeModeButton_;
-    std::unique_ptr<magda::SvgButton> chordRowToggle_;
     std::unique_ptr<juce::LookAndFeel> buttonLookAndFeel_;
 
     // Grid component management

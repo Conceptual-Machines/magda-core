@@ -70,6 +70,13 @@ class TabbedPanel : public juce::Component, public PanelStateListener {
     virtual juce::Rectangle<int> getContentBounds();
 
     /**
+     * @brief Get the currently active content
+     */
+    PanelContent* getActiveContent() const {
+        return activeContent_;
+    }
+
+    /**
      * @brief Get the bounds for the tab bar
      */
     virtual juce::Rectangle<int> getTabBarBounds();

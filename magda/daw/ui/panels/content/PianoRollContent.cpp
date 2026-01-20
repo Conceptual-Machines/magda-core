@@ -3,10 +3,8 @@
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
-#include "BinaryData.h"
 #include "core/MidiNoteCommands.hpp"
 #include "core/UndoManager.hpp"
-#include "ui/components/common/SvgButton.hpp"
 #include "ui/components/pianoroll/PianoRollGridComponent.hpp"
 #include "ui/components/pianoroll/PianoRollKeyboard.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
@@ -87,14 +85,6 @@ PianoRollContent::PianoRollContent() {
     timeModeButton_->setLookAndFeel(buttonLookAndFeel_.get());
     timeModeButton_->onClick = [this]() { setRelativeTimeMode(timeModeButton_->getToggleState()); };
     addAndMakeVisible(timeModeButton_.get());
-
-    // Create chord row toggle button
-    chordRowToggle_ = std::make_unique<magda::SvgButton>("ChordToggle", BinaryData::Chords2_svg,
-                                                         BinaryData::Chords2_svgSize);
-    chordRowToggle_->setTooltip("Toggle chord detection row visibility");
-    chordRowToggle_->setActive(showChordRow_);
-    chordRowToggle_->onClick = [this]() { setChordRowVisible(!showChordRow_); };
-    addAndMakeVisible(chordRowToggle_.get());
 
     // Create keyboard component
     keyboard_ = std::make_unique<magda::PianoRollKeyboard>();
@@ -267,29 +257,16 @@ void PianoRollContent::paint(juce::Graphics& g) {
 void PianoRollContent::resized() {
     auto bounds = getLocalBounds();
 
+    // Skip chord row space if visible (drawn in paint)
     if (showChordRow_) {
-        // Chord row at the very top
-        auto chordRowArea = bounds.removeFromTop(CHORD_ROW_HEIGHT);
-        auto chordToggleArea = chordRowArea.removeFromLeft(KEYBOARD_WIDTH);
-        chordRowToggle_->setBounds(chordToggleArea.reduced(2, 1));
-
-        // Ruler row below chord row
-        auto headerArea = bounds.removeFromTop(RULER_HEIGHT);
-        auto timeModeArea = headerArea.removeFromLeft(KEYBOARD_WIDTH);
-        timeModeButton_->setBounds(timeModeArea.reduced(4, 2));
-        timeRuler_->setBounds(headerArea);
-    } else {
-        // No chord row - just ruler with stacked buttons
-        auto headerArea = bounds.removeFromTop(RULER_HEIGHT);
-        auto buttonArea = headerArea.removeFromLeft(KEYBOARD_WIDTH);
-
-        // Stack the two buttons vertically
-        auto topHalf = buttonArea.removeFromTop(buttonArea.getHeight() / 2);
-        chordRowToggle_->setBounds(topHalf.reduced(2, 0));
-        timeModeButton_->setBounds(buttonArea.reduced(4, 1));
-
-        timeRuler_->setBounds(headerArea);
+        bounds.removeFromTop(CHORD_ROW_HEIGHT);
     }
+
+    // Ruler row with time mode button
+    auto headerArea = bounds.removeFromTop(RULER_HEIGHT);
+    auto timeModeArea = headerArea.removeFromLeft(KEYBOARD_WIDTH);
+    timeModeButton_->setBounds(timeModeArea.reduced(4, 2));
+    timeRuler_->setBounds(headerArea);
 
     // Keyboard on the left
     auto keyboardArea = bounds.removeFromLeft(KEYBOARD_WIDTH);
@@ -516,7 +493,6 @@ void PianoRollContent::setRelativeTimeMode(bool relative) {
 void PianoRollContent::setChordRowVisible(bool visible) {
     if (showChordRow_ != visible) {
         showChordRow_ = visible;
-        chordRowToggle_->setActive(visible);
         resized();
         repaint();
     }
