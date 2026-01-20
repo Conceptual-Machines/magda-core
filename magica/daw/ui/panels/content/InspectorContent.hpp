@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../common/DraggableValueLabel.hpp"
 #include "PanelContent.hpp"
 #include "core/ClipManager.hpp"
 #include "core/SelectionManager.hpp"
@@ -72,10 +73,9 @@ class InspectorContent : public PanelContent,
     juce::Label trackNameValue_;
     juce::TextButton muteButton_;
     juce::TextButton soloButton_;
-    juce::Slider gainSlider_;
-    juce::Label gainLabel_;
-    juce::Slider panSlider_;
-    juce::Label panLabel_;
+    juce::TextButton recordButton_;
+    std::unique_ptr<magica::DraggableValueLabel> gainLabel_;
+    std::unique_ptr<magica::DraggableValueLabel> panLabel_;
 
     // Clip properties section
     juce::Label clipNameLabel_;

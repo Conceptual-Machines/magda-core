@@ -46,13 +46,16 @@ InspectorContent::InspectorContent() {
     };
     addChildComponent(trackNameValue_);
 
-    // Mute button
+    // Mute button (TCP style)
     muteButton_.setButtonText("M");
+    muteButton_.setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+                                  juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
     muteButton_.setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE));
     muteButton_.setColour(juce::TextButton::buttonOnColourId,
                           DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    muteButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    muteButton_.setColour(juce::TextButton::textColourOffId,
+                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     muteButton_.setColour(juce::TextButton::textColourOnId,
                           DarkTheme::getColour(DarkTheme::BACKGROUND));
     muteButton_.setClickingTogglesState(true);
@@ -64,13 +67,16 @@ InspectorContent::InspectorContent() {
     };
     addChildComponent(muteButton_);
 
-    // Solo button
+    // Solo button (TCP style)
     soloButton_.setButtonText("S");
+    soloButton_.setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+                                  juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
     soloButton_.setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE));
     soloButton_.setColour(juce::TextButton::buttonOnColourId,
                           DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    soloButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    soloButton_.setColour(juce::TextButton::textColourOffId,
+                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     soloButton_.setColour(juce::TextButton::textColourOnId,
                           DarkTheme::getColour(DarkTheme::BACKGROUND));
     soloButton_.setClickingTogglesState(true);
@@ -82,44 +88,46 @@ InspectorContent::InspectorContent() {
     };
     addChildComponent(soloButton_);
 
-    // Gain slider
-    gainLabel_.setText("Gain", juce::dontSendNotification);
-    gainLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    gainLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    addChildComponent(gainLabel_);
+    // Record button (TCP style)
+    recordButton_.setButtonText("R");
+    recordButton_.setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+                                    juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    recordButton_.setColour(juce::TextButton::buttonColourId,
+                            DarkTheme::getColour(DarkTheme::SURFACE));
+    recordButton_.setColour(juce::TextButton::buttonOnColourId,
+                            DarkTheme::getColour(DarkTheme::STATUS_ERROR));  // Red when armed
+    recordButton_.setColour(juce::TextButton::textColourOffId,
+                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    recordButton_.setColour(juce::TextButton::textColourOnId,
+                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    recordButton_.setClickingTogglesState(true);
+    addChildComponent(recordButton_);
 
-    gainSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
-    gainSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 40, 20);
-    gainSlider_.setRange(0.0, 1.0, 0.01);
-    gainSlider_.setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    gainSlider_.setColour(juce::Slider::thumbColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    gainSlider_.onValueChange = [this]() {
+    // Gain label (TCP style - draggable dB display)
+    gainLabel_ = std::make_unique<magica::DraggableValueLabel>(
+        magica::DraggableValueLabel::Format::Decibels);
+    gainLabel_->setRange(-60.0, 6.0, 0.0);  // -60 to +6 dB, default 0 dB
+    gainLabel_->onValueChange = [this]() {
         if (selectedTrackId_ != magica::INVALID_TRACK_ID) {
-            magica::TrackManager::getInstance().setTrackVolume(
-                selectedTrackId_, static_cast<float>(gainSlider_.getValue()));
+            // Convert dB to linear gain
+            double db = gainLabel_->getValue();
+            float gain = (db <= -60.0f) ? 0.0f : std::pow(10.0f, static_cast<float>(db) / 20.0f);
+            magica::TrackManager::getInstance().setTrackVolume(selectedTrackId_, gain);
         }
     };
-    addChildComponent(gainSlider_);
+    addChildComponent(*gainLabel_);
 
-    // Pan slider
-    panLabel_.setText("Pan", juce::dontSendNotification);
-    panLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    panLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    addChildComponent(panLabel_);
-
-    panSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
-    panSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 40, 20);
-    panSlider_.setRange(-1.0, 1.0, 0.01);
-    panSlider_.setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    panSlider_.setColour(juce::Slider::thumbColourId, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    panSlider_.onValueChange = [this]() {
+    // Pan label (TCP style - draggable L/C/R display)
+    panLabel_ =
+        std::make_unique<magica::DraggableValueLabel>(magica::DraggableValueLabel::Format::Pan);
+    panLabel_->setRange(-1.0, 1.0, 0.0);  // -1 (L) to +1 (R), default center
+    panLabel_->onValueChange = [this]() {
         if (selectedTrackId_ != magica::INVALID_TRACK_ID) {
             magica::TrackManager::getInstance().setTrackPan(
-                selectedTrackId_, static_cast<float>(panSlider_.getValue()));
+                selectedTrackId_, static_cast<float>(panLabel_->getValue()));
         }
     };
-    addChildComponent(panSlider_);
+    addChildComponent(*panLabel_);
 
     // ========================================================================
     // Clip properties section
@@ -248,26 +256,29 @@ void InspectorContent::resized() {
         // Center the no-selection label
         noSelectionLabel_.setBounds(bounds);
     } else if (currentSelectionType_ == magica::SelectionType::Track) {
-        // Track properties layout
+        // Track properties layout (TCP style)
         trackNameLabel_.setBounds(bounds.removeFromTop(16));
         trackNameValue_.setBounds(bounds.removeFromTop(24));
         bounds.removeFromTop(12);
 
-        // Mute/Solo row
-        auto buttonRow = bounds.removeFromTop(28);
-        muteButton_.setBounds(buttonRow.removeFromLeft(40));
-        buttonRow.removeFromLeft(8);
-        soloButton_.setBounds(buttonRow.removeFromLeft(40));
+        // M S R buttons row
+        auto buttonRow = bounds.removeFromTop(24);
+        const int buttonSize = 24;
+        const int buttonGap = 2;
+        muteButton_.setBounds(buttonRow.removeFromLeft(buttonSize));
+        buttonRow.removeFromLeft(buttonGap);
+        soloButton_.setBounds(buttonRow.removeFromLeft(buttonSize));
+        buttonRow.removeFromLeft(buttonGap);
+        recordButton_.setBounds(buttonRow.removeFromLeft(buttonSize));
         bounds.removeFromTop(12);
 
-        // Gain
-        gainLabel_.setBounds(bounds.removeFromTop(16));
-        gainSlider_.setBounds(bounds.removeFromTop(24));
-        bounds.removeFromTop(12);
-
-        // Pan
-        panLabel_.setBounds(bounds.removeFromTop(16));
-        panSlider_.setBounds(bounds.removeFromTop(24));
+        // Gain and Pan on same row (TCP style draggable labels)
+        auto mixRow = bounds.removeFromTop(20);
+        const int labelWidth = 50;
+        const int labelGap = 8;
+        gainLabel_->setBounds(mixRow.removeFromLeft(labelWidth));
+        mixRow.removeFromLeft(labelGap);
+        panLabel_->setBounds(mixRow.removeFromLeft(labelWidth));
     } else if (currentSelectionType_ == magica::SelectionType::Clip) {
         // Clip properties layout
         clipNameLabel_.setBounds(bounds.removeFromTop(16));
@@ -445,8 +456,12 @@ void InspectorContent::updateFromSelectedTrack() {
         trackNameValue_.setText(track->name, juce::dontSendNotification);
         muteButton_.setToggleState(track->muted, juce::dontSendNotification);
         soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
-        gainSlider_.setValue(track->volume, juce::dontSendNotification);
-        panSlider_.setValue(track->pan, juce::dontSendNotification);
+        recordButton_.setToggleState(track->recordArmed, juce::dontSendNotification);
+
+        // Convert linear gain to dB for display
+        float gainDb = (track->volume <= 0.0f) ? -60.0f : 20.0f * std::log10(track->volume);
+        gainLabel_->setValue(gainDb, juce::dontSendNotification);
+        panLabel_->setValue(track->pan, juce::dontSendNotification);
 
         showTrackControls(true);
         noSelectionLabel_.setVisible(false);
@@ -509,10 +524,9 @@ void InspectorContent::showTrackControls(bool show) {
     trackNameValue_.setVisible(show);
     muteButton_.setVisible(show);
     soloButton_.setVisible(show);
-    gainLabel_.setVisible(show);
-    gainSlider_.setVisible(show);
-    panLabel_.setVisible(show);
-    panSlider_.setVisible(show);
+    recordButton_.setVisible(show);
+    gainLabel_->setVisible(show);
+    panLabel_->setVisible(show);
 }
 
 void InspectorContent::showClipControls(bool show) {
