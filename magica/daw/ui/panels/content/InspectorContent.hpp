@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../common/DraggableValueLabel.hpp"
+#include "../mixer/RoutingSelector.hpp"
 #include "PanelContent.hpp"
 #include "core/ClipManager.hpp"
 #include "core/SelectionManager.hpp"
@@ -76,6 +77,22 @@ class InspectorContent : public PanelContent,
     juce::TextButton recordButton_;
     std::unique_ptr<magica::DraggableValueLabel> gainLabel_;
     std::unique_ptr<magica::DraggableValueLabel> panLabel_;
+
+    // Routing section (MIDI/Audio In/Out)
+    juce::Label routingSectionLabel_;
+    std::unique_ptr<magica::RoutingSelector> audioInSelector_;
+    std::unique_ptr<magica::RoutingSelector> audioOutSelector_;
+    std::unique_ptr<magica::RoutingSelector> midiInSelector_;
+    std::unique_ptr<magica::RoutingSelector> midiOutSelector_;
+
+    // Send/Receive section
+    juce::Label sendReceiveSectionLabel_;
+    juce::Label sendsLabel_;
+    juce::Label receivesLabel_;
+
+    // Clips section
+    juce::Label clipsSectionLabel_;
+    juce::Label clipCountLabel_;
 
     // Clip properties section
     juce::Label clipNameLabel_;

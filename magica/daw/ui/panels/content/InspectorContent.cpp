@@ -130,6 +130,103 @@ InspectorContent::InspectorContent() {
     addChildComponent(*panLabel_);
 
     // ========================================================================
+    // Routing section (MIDI/Audio In/Out)
+    // ========================================================================
+
+    routingSectionLabel_.setText("Routing", juce::dontSendNotification);
+    routingSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    routingSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    addChildComponent(routingSectionLabel_);
+
+    // Audio input selector
+    audioInSelector_ =
+        std::make_unique<magica::RoutingSelector>(magica::RoutingSelector::Type::AudioIn);
+    audioInSelector_->setOptions({
+        {1, "Input 1"},
+        {2, "Input 2"},
+        {3, "Input 1+2 (Stereo)"},
+        {0, "", true},
+        {10, "External Sidechain"},
+    });
+    audioInSelector_->setSelectedId(1);
+    addChildComponent(*audioInSelector_);
+
+    // Audio output selector
+    audioOutSelector_ =
+        std::make_unique<magica::RoutingSelector>(magica::RoutingSelector::Type::AudioOut);
+    audioOutSelector_->setOptions({
+        {1, "Master"},
+        {2, "Output 1-2"},
+        {3, "Output 3-4"},
+        {0, "", true},
+        {10, "Bus 1"},
+        {11, "Bus 2"},
+    });
+    audioOutSelector_->setSelectedId(1);
+    addChildComponent(*audioOutSelector_);
+
+    // MIDI input selector
+    midiInSelector_ =
+        std::make_unique<magica::RoutingSelector>(magica::RoutingSelector::Type::MidiIn);
+    midiInSelector_->setOptions({
+        {1, "All Inputs"},
+        {2, "None"},
+        {0, "", true},
+        {10, "Channel 1"},
+        {11, "Channel 2"},
+        {12, "Channel 3"},
+    });
+    midiInSelector_->setSelectedId(1);
+    addChildComponent(*midiInSelector_);
+
+    // MIDI output selector
+    midiOutSelector_ =
+        std::make_unique<magica::RoutingSelector>(magica::RoutingSelector::Type::MidiOut);
+    midiOutSelector_->setOptions({
+        {1, "None"},
+        {2, "All Outputs"},
+        {0, "", true},
+        {10, "Channel 1"},
+        {11, "Channel 2"},
+    });
+    midiOutSelector_->setSelectedId(1);
+    addChildComponent(*midiOutSelector_);
+
+    // ========================================================================
+    // Send/Receive section
+    // ========================================================================
+
+    sendReceiveSectionLabel_.setText("Sends / Receives", juce::dontSendNotification);
+    sendReceiveSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    sendReceiveSectionLabel_.setColour(juce::Label::textColourId,
+                                       DarkTheme::getSecondaryTextColour());
+    addChildComponent(sendReceiveSectionLabel_);
+
+    sendsLabel_.setText("No sends", juce::dontSendNotification);
+    sendsLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
+    sendsLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    addChildComponent(sendsLabel_);
+
+    receivesLabel_.setText("No receives", juce::dontSendNotification);
+    receivesLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
+    receivesLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    addChildComponent(receivesLabel_);
+
+    // ========================================================================
+    // Clips section
+    // ========================================================================
+
+    clipsSectionLabel_.setText("Clips", juce::dontSendNotification);
+    clipsSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    clipsSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    addChildComponent(clipsSectionLabel_);
+
+    clipCountLabel_.setText("0 clips", juce::dontSendNotification);
+    clipCountLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+    clipCountLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    addChildComponent(clipCountLabel_);
+
+    // ========================================================================
     // Clip properties section
     // ========================================================================
 
@@ -279,6 +376,41 @@ void InspectorContent::resized() {
         gainLabel_->setBounds(mixRow.removeFromLeft(labelWidth));
         mixRow.removeFromLeft(labelGap);
         panLabel_->setBounds(mixRow.removeFromLeft(labelWidth));
+        bounds.removeFromTop(16);
+
+        // Routing section
+        routingSectionLabel_.setBounds(bounds.removeFromTop(16));
+        bounds.removeFromTop(4);
+
+        const int selectorWidth = 55;
+        const int selectorHeight = 18;
+        const int selectorGap = 4;
+
+        // Audio In/Out row
+        auto audioRow = bounds.removeFromTop(selectorHeight);
+        audioInSelector_->setBounds(audioRow.removeFromLeft(selectorWidth));
+        audioRow.removeFromLeft(selectorGap);
+        audioOutSelector_->setBounds(audioRow.removeFromLeft(selectorWidth));
+        bounds.removeFromTop(4);
+
+        // MIDI In/Out row
+        auto midiRow = bounds.removeFromTop(selectorHeight);
+        midiInSelector_->setBounds(midiRow.removeFromLeft(selectorWidth));
+        midiRow.removeFromLeft(selectorGap);
+        midiOutSelector_->setBounds(midiRow.removeFromLeft(selectorWidth));
+        bounds.removeFromTop(16);
+
+        // Send/Receive section
+        sendReceiveSectionLabel_.setBounds(bounds.removeFromTop(16));
+        bounds.removeFromTop(4);
+        sendsLabel_.setBounds(bounds.removeFromTop(16));
+        receivesLabel_.setBounds(bounds.removeFromTop(16));
+        bounds.removeFromTop(16);
+
+        // Clips section
+        clipsSectionLabel_.setBounds(bounds.removeFromTop(16));
+        bounds.removeFromTop(4);
+        clipCountLabel_.setBounds(bounds.removeFromTop(20));
     } else if (currentSelectionType_ == magica::SelectionType::Clip) {
         // Clip properties layout
         clipNameLabel_.setBounds(bounds.removeFromTop(16));
@@ -463,6 +595,12 @@ void InspectorContent::updateFromSelectedTrack() {
         gainLabel_->setValue(gainDb, juce::dontSendNotification);
         panLabel_->setValue(track->pan, juce::dontSendNotification);
 
+        // Update clip count
+        auto clips = magica::ClipManager::getInstance().getClipsOnTrack(selectedTrackId_);
+        int clipCount = static_cast<int>(clips.size());
+        juce::String clipText = juce::String(clipCount) + (clipCount == 1 ? " clip" : " clips");
+        clipCountLabel_.setText(clipText, juce::dontSendNotification);
+
         showTrackControls(true);
         noSelectionLabel_.setVisible(false);
     } else {
@@ -527,6 +665,22 @@ void InspectorContent::showTrackControls(bool show) {
     recordButton_.setVisible(show);
     gainLabel_->setVisible(show);
     panLabel_->setVisible(show);
+
+    // Routing section
+    routingSectionLabel_.setVisible(show);
+    audioInSelector_->setVisible(show);
+    audioOutSelector_->setVisible(show);
+    midiInSelector_->setVisible(show);
+    midiOutSelector_->setVisible(show);
+
+    // Send/Receive section
+    sendReceiveSectionLabel_.setVisible(show);
+    sendsLabel_.setVisible(show);
+    receivesLabel_.setVisible(show);
+
+    // Clips section
+    clipsSectionLabel_.setVisible(show);
+    clipCountLabel_.setVisible(show);
 }
 
 void InspectorContent::showClipControls(bool show) {
