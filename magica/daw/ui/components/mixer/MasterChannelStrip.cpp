@@ -236,18 +236,19 @@ void MasterChannelStrip::resized() {
         bounds.removeFromTop(extraSpace / 2);
         bounds.setHeight(faderHeight);
 
-        // Layout: [fader] [gap] [leftTicks] [labels] [rightTicks] [gap] [meter]
+        // Layout: [fader] [faderGap] [leftTicks] [labels] [rightTicks] [meterGap] [meter]
         // Use same widths as channel strip for consistency
         int faderWidth = metrics.faderWidth;
         int meterWidthVal = metrics.meterWidth;
         int tickWidth = static_cast<int>(std::ceil(metrics.tickWidth()));
         int gap = metrics.tickToFaderGap;
+        int meterGapVal = metrics.tickToMeterGap;
         int tickToLabelGap = metrics.tickToLabelGap;
         int labelTextWidth = static_cast<int>(metrics.labelTextWidth);
 
         // Calculate total width needed for the fader layout
         int totalLayoutWidth = faderWidth + gap + tickWidth + tickToLabelGap + labelTextWidth +
-                               tickToLabelGap + tickWidth + gap + meterWidthVal;
+                               tickToLabelGap + tickWidth + meterGapVal + meterWidthVal;
 
         // Center the layout within bounds
         int leftMargin = (bounds.getWidth() - totalLayoutWidth) / 2;
@@ -283,7 +284,7 @@ void MasterChannelStrip::resized() {
         leftTickArea_ = juce::Rectangle<int>(faderArea_.getRight() + gap, layoutArea.getY(),
                                              tickWidth, layoutArea.getHeight());
 
-        rightTickArea_ = juce::Rectangle<int>(meterArea_.getX() - tickWidth - gap,
+        rightTickArea_ = juce::Rectangle<int>(meterArea_.getX() - tickWidth - meterGapVal,
                                               layoutArea.getY(), tickWidth, layoutArea.getHeight());
 
         // Label area between ticks

@@ -499,13 +499,15 @@ void MixerView::ChannelStrip::resized() {
     levelMeter->setBounds(meterArea_);
 
     // Position tick areas with gap from fader/meter
+    int meterGap = metrics.tickToMeterGap;
+
     // Left ticks: positioned after fader + gap
     leftTickArea_ = juce::Rectangle<int>(faderArea_.getRight() + gap, layoutArea.getY(), tickWidth,
                                          layoutArea.getHeight());
 
-    // Right ticks: positioned before meter - gap
-    rightTickArea_ = juce::Rectangle<int>(meterArea_.getX() - tickWidth - gap, layoutArea.getY(),
-                                          tickWidth, layoutArea.getHeight());
+    // Right ticks: positioned before meter - meterGap
+    rightTickArea_ = juce::Rectangle<int>(meterArea_.getX() - tickWidth - meterGap,
+                                          layoutArea.getY(), tickWidth, layoutArea.getHeight());
 
     // Label area between ticks
     int tickToLabelGap = metrics.tickToLabelGap;
