@@ -182,6 +182,19 @@ void MixerView::ChannelStrip::setupControls() {
     panKnob->setColour(juce::Slider::thumbColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     panKnob->onValueChange = [this]() {
         TrackManager::getInstance().setTrackPan(trackId_, static_cast<float>(panKnob->getValue()));
+        // Update pan label
+        if (panValueLabel) {
+            float pan = static_cast<float>(panKnob->getValue());
+            juce::String panText;
+            if (std::abs(pan) < 0.01f) {
+                panText = "C";
+            } else if (pan < 0) {
+                panText = juce::String(static_cast<int>(std::abs(pan) * 100)) + "L";
+            } else {
+                panText = juce::String(static_cast<int>(pan * 100)) + "R";
+            }
+            panValueLabel->setText(panText, juce::dontSendNotification);
+        }
     };
     // Apply custom look and feel for knob styling
     if (faderLookAndFeel_) {
@@ -189,9 +202,27 @@ void MixerView::ChannelStrip::setupControls() {
     }
     addAndMakeVisible(*panKnob);
 
+    // Pan value label
+    panValueLabel = std::make_unique<juce::Label>();
+    panValueLabel->setText("C", juce::dontSendNotification);
+    panValueLabel->setJustificationType(juce::Justification::centred);
+    panValueLabel->setColour(juce::Label::textColourId,
+                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    panValueLabel->setFont(juce::FontOptions(10.0f));
+    addAndMakeVisible(*panValueLabel);
+
     // Level meter
     levelMeter = std::make_unique<LevelMeter>();
     addAndMakeVisible(*levelMeter);
+
+    // Peak label
+    peakLabel = std::make_unique<juce::Label>();
+    peakLabel->setText("-inf", juce::dontSendNotification);
+    peakLabel->setJustificationType(juce::Justification::centred);
+    peakLabel->setColour(juce::Label::textColourId,
+                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    peakLabel->setFont(juce::FontOptions(9.0f));
+    addAndMakeVisible(*peakLabel);
 
     // Volume fader - using dB scale with unity at 0.75 position
     volumeFader =
@@ -210,12 +241,31 @@ void MixerView::ChannelStrip::setupControls() {
         float db = faderPosToDb(faderPos);
         float gain = dbToGain(db);
         TrackManager::getInstance().setTrackVolume(trackId_, gain);
+        // Update fader label
+        if (faderValueLabel) {
+            juce::String dbText;
+            if (db <= MIN_DB) {
+                dbText = "-inf";
+            } else {
+                dbText = juce::String(db, 1) + " dB";
+            }
+            faderValueLabel->setText(dbText, juce::dontSendNotification);
+        }
     };
     // Apply custom look and feel for fader styling
     if (faderLookAndFeel_) {
         volumeFader->setLookAndFeel(faderLookAndFeel_);
     }
     addAndMakeVisible(*volumeFader);
+
+    // Fader value label
+    faderValueLabel = std::make_unique<juce::Label>();
+    faderValueLabel->setText("0.0 dB", juce::dontSendNotification);
+    faderValueLabel->setJustificationType(juce::Justification::centred);
+    faderValueLabel->setColour(juce::Label::textColourId,
+                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    faderValueLabel->setFont(juce::FontOptions(9.0f));
+    addAndMakeVisible(*faderValueLabel);
 
     // Mute button
     muteButton = std::make_unique<juce::TextButton>("M");
@@ -353,11 +403,11 @@ void MixerView::ChannelStrip::drawDbLabels(juce::Graphics& g) {
         float rightTickX = static_cast<float>(rightTickArea_.getX());
         g.fillRect(rightTickX, y - tickHeight / 2.0f, metrics.tickWidth(), tickHeight);
 
-        // Draw label text centered - no signs, infinity at bottom
+        // Draw label text centered - no signs, -inf at bottom
         juce::String labelText;
         int dbInt = static_cast<int>(db);
         if (db <= MIN_DB) {
-            labelText = juce::String::charToString(0x221E);  // ∞ infinity symbol
+            labelText = "-inf";
         } else {
             labelText = juce::String(std::abs(dbInt));
         }
@@ -388,6 +438,10 @@ void MixerView::ChannelStrip::resized() {
     // Pan knob
     auto panArea = bounds.removeFromTop(metrics.knobSize);
     panKnob->setBounds(panArea.withSizeKeepingCentre(metrics.knobSize, metrics.knobSize));
+
+    // Pan value label below knob
+    auto panLabelArea = bounds.removeFromTop(14);
+    panValueLabel->setBounds(panLabelArea);
     bounds.removeFromTop(metrics.controlSpacing);
 
     // Buttons at bottom
@@ -405,9 +459,6 @@ void MixerView::ChannelStrip::resized() {
 
     bounds.removeFromBottom(metrics.controlSpacing);
 
-    // Padding at top for labels
-    bounds.removeFromTop(8);
-
     // Use percentage of remaining height for fader
     int faderHeight = static_cast<int>(bounds.getHeight() * metrics.faderHeightRatio / 100.0f);
     int extraSpace = bounds.getHeight() - faderHeight;
@@ -423,6 +474,14 @@ void MixerView::ChannelStrip::resized() {
 
     // Store the entire fader region for border drawing
     faderRegion_ = bounds;
+
+    // Position value labels right above the fader region top border
+    const int labelHeight = 12;
+    auto valueLabelArea =
+        juce::Rectangle<int>(faderRegion_.getX(), faderRegion_.getY() - labelHeight,
+                             faderRegion_.getWidth(), labelHeight);
+    faderValueLabel->setBounds(valueLabelArea.removeFromLeft(valueLabelArea.getWidth() / 2));
+    peakLabel->setBounds(valueLabelArea);
 
     // Add vertical padding inside the border
     const int borderPadding = 6;
@@ -460,6 +519,21 @@ void MixerView::ChannelStrip::setMeterLevel(float level) {
     meterLevel = level;
     if (levelMeter) {
         levelMeter->setLevel(level);
+    }
+
+    // Update peak value
+    if (level > peakValue_) {
+        peakValue_ = level;
+        if (peakLabel) {
+            float db = gainToDb(peakValue_);
+            juce::String peakText;
+            if (db <= MIN_DB) {
+                peakText = "-inf";
+            } else {
+                peakText = juce::String(db, 1);
+            }
+            peakLabel->setText(peakText, juce::dontSendNotification);
+        }
     }
 }
 

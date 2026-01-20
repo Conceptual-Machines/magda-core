@@ -48,14 +48,14 @@ struct MixerMetrics {
 
     // === Fader dimensions ===
     int faderWidth = 40;
-    int faderHeightRatio = 75;  // percentage of available height
+    int faderHeightRatio = 85;  // percentage of available height
 
     // === Meter dimensions ===
     int meterWidth = 12;
 
     // === Control dimensions ===
     int buttonSize = 24;
-    int knobSize = 40;
+    int knobSize = 32;
     int headerHeight = 30;
 
     // === Spacing ===

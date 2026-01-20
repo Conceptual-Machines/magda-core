@@ -109,7 +109,9 @@ class MixerView : public juce::Component,
 
         std::unique_ptr<juce::Label> trackLabel;
         std::unique_ptr<juce::Slider> panKnob;
+        std::unique_ptr<juce::Label> panValueLabel;
         std::unique_ptr<juce::Slider> volumeFader;
+        std::unique_ptr<juce::Label> faderValueLabel;
         std::unique_ptr<juce::TextButton> muteButton;
         std::unique_ptr<juce::TextButton> soloButton;
         std::unique_ptr<juce::TextButton> recordButton;
@@ -117,6 +119,8 @@ class MixerView : public juce::Component,
         // Meter component
         class LevelMeter;
         std::unique_ptr<LevelMeter> levelMeter;
+        std::unique_ptr<juce::Label> peakLabel;
+        float peakValue_ = 0.0f;
 
         // Stored bounds for layout regions
         // Layout: [fader] [leftTicks] [labels] [rightTicks] [meter]
