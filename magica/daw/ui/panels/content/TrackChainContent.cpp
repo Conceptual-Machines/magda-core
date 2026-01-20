@@ -1,9 +1,57 @@
 #include "TrackChainContent.hpp"
 
+#include <cmath>
+
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../../themes/MixerMetrics.hpp"
 
 namespace magica::daw::ui {
+
+// dB conversion helpers
+namespace {
+constexpr float MIN_DB = -60.0f;
+constexpr float MAX_DB = 6.0f;
+constexpr float UNITY_DB = 0.0f;
+
+float gainToDb(float gain) {
+    if (gain <= 0.0f)
+        return MIN_DB;
+    return 20.0f * std::log10(gain);
+}
+
+float dbToGain(float db) {
+    if (db <= MIN_DB)
+        return 0.0f;
+    return std::pow(10.0f, db / 20.0f);
+}
+
+float dbToFaderPos(float db) {
+    if (db <= MIN_DB)
+        return 0.0f;
+    if (db >= MAX_DB)
+        return 1.0f;
+
+    if (db < UNITY_DB) {
+        return 0.75f * (db - MIN_DB) / (UNITY_DB - MIN_DB);
+    } else {
+        return 0.75f + 0.25f * (db - UNITY_DB) / (MAX_DB - UNITY_DB);
+    }
+}
+
+float faderPosToDb(float pos) {
+    if (pos <= 0.0f)
+        return MIN_DB;
+    if (pos >= 1.0f)
+        return MAX_DB;
+
+    if (pos < 0.75f) {
+        return MIN_DB + (pos / 0.75f) * (UNITY_DB - MIN_DB);
+    } else {
+        return UNITY_DB + ((pos - 0.75f) / 0.25f) * (MAX_DB - UNITY_DB);
+    }
+}
+}  // namespace
 
 TrackChainContent::TrackChainContent() {
     setName("Track Chain");
@@ -58,34 +106,79 @@ TrackChainContent::TrackChainContent() {
     };
     addChildComponent(soloButton_);
 
-    // Gain slider
+    // Gain slider - using dB scale with unity at 0.75 position
     gainSlider_.setSliderStyle(juce::Slider::LinearVertical);
     gainSlider_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    gainSlider_.setRange(0.0, 1.0, 0.01);
+    gainSlider_.setRange(0.0, 1.0, 0.001);
+    gainSlider_.setValue(0.75);  // Unity gain (0 dB)
+    gainSlider_.setSliderSnapsToMousePosition(false);
     gainSlider_.setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+    gainSlider_.setColour(juce::Slider::backgroundColourId,
+                          DarkTheme::getColour(DarkTheme::SURFACE));
     gainSlider_.setColour(juce::Slider::thumbColourId,
                           DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    gainSlider_.setLookAndFeel(&mixerLookAndFeel_);
     gainSlider_.onValueChange = [this]() {
         if (selectedTrackId_ != magica::INVALID_TRACK_ID) {
-            magica::TrackManager::getInstance().setTrackVolume(
-                selectedTrackId_, static_cast<float>(gainSlider_.getValue()));
+            float faderPos = static_cast<float>(gainSlider_.getValue());
+            float db = faderPosToDb(faderPos);
+            float gain = dbToGain(db);
+            magica::TrackManager::getInstance().setTrackVolume(selectedTrackId_, gain);
+            // Update gain label
+            juce::String dbText;
+            if (db <= MIN_DB) {
+                dbText = "-inf";
+            } else {
+                dbText = juce::String(db, 1) + " dB";
+            }
+            gainValueLabel_.setText(dbText, juce::dontSendNotification);
         }
     };
     addChildComponent(gainSlider_);
 
-    // Pan slider
-    panSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
+    // Gain value label
+    gainValueLabel_.setText("0.0 dB", juce::dontSendNotification);
+    gainValueLabel_.setJustificationType(juce::Justification::centred);
+    gainValueLabel_.setColour(juce::Label::textColourId,
+                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    gainValueLabel_.setFont(juce::FontOptions(9.0f));
+    addChildComponent(gainValueLabel_);
+
+    // Pan slider (rotary knob)
+    panSlider_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     panSlider_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     panSlider_.setRange(-1.0, 1.0, 0.01);
-    panSlider_.setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    panSlider_.setColour(juce::Slider::thumbColourId, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    panSlider_.setColour(juce::Slider::rotarySliderFillColourId,
+                         DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    panSlider_.setColour(juce::Slider::rotarySliderOutlineColourId,
+                         DarkTheme::getColour(DarkTheme::SURFACE));
+    panSlider_.setLookAndFeel(&mixerLookAndFeel_);
     panSlider_.onValueChange = [this]() {
         if (selectedTrackId_ != magica::INVALID_TRACK_ID) {
             magica::TrackManager::getInstance().setTrackPan(
                 selectedTrackId_, static_cast<float>(panSlider_.getValue()));
+            // Update pan label
+            float pan = static_cast<float>(panSlider_.getValue());
+            juce::String panText;
+            if (std::abs(pan) < 0.01f) {
+                panText = "C";
+            } else if (pan < 0) {
+                panText = juce::String(static_cast<int>(std::abs(pan) * 100)) + "L";
+            } else {
+                panText = juce::String(static_cast<int>(pan * 100)) + "R";
+            }
+            panValueLabel_.setText(panText, juce::dontSendNotification);
         }
     };
     addChildComponent(panSlider_);
+
+    // Pan value label
+    panValueLabel_.setText("C", juce::dontSendNotification);
+    panValueLabel_.setJustificationType(juce::Justification::centred);
+    panValueLabel_.setColour(juce::Label::textColourId,
+                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    panValueLabel_.setFont(juce::FontOptions(10.0f));
+    addChildComponent(panValueLabel_);
 
     // Register as listener
     magica::TrackManager::getInstance().addListener(this);
@@ -97,6 +190,9 @@ TrackChainContent::TrackChainContent() {
 
 TrackChainContent::~TrackChainContent() {
     magica::TrackManager::getInstance().removeListener(this);
+    // Clear look and feel before destruction
+    gainSlider_.setLookAndFeel(nullptr);
+    panSlider_.setLookAndFeel(nullptr);
 }
 
 void TrackChainContent::paint(juce::Graphics& g) {
@@ -174,31 +270,39 @@ void TrackChainContent::paintChainMockup(juce::Graphics& g, juce::Rectangle<int>
 
 void TrackChainContent::resized() {
     auto bounds = getLocalBounds();
+    const auto& metrics = magica::MixerMetrics::getInstance();
 
     if (selectedTrackId_ == magica::INVALID_TRACK_ID) {
         noSelectionLabel_.setBounds(bounds);
     } else {
         // Track info strip at right border
-        auto stripWidth = 80;
+        auto stripWidth = 100;
         auto strip = bounds.removeFromRight(stripWidth).reduced(4);
 
         // Track name at top
         trackNameLabel_.setBounds(strip.removeFromTop(20));
-        strip.removeFromTop(8);
+        strip.removeFromTop(4);
+
+        // Pan knob
+        auto panArea = strip.removeFromTop(metrics.knobSize);
+        panSlider_.setBounds(panArea.withSizeKeepingCentre(metrics.knobSize, metrics.knobSize));
+
+        // Pan value label
+        panValueLabel_.setBounds(strip.removeFromTop(14));
+        strip.removeFromTop(4);
 
         // M/S buttons
         auto buttonRow = strip.removeFromTop(24);
-        muteButton_.setBounds(buttonRow.removeFromLeft(32));
+        muteButton_.setBounds(buttonRow.removeFromLeft(36));
         buttonRow.removeFromLeft(4);
-        soloButton_.setBounds(buttonRow.removeFromLeft(32));
-        strip.removeFromTop(8);
+        soloButton_.setBounds(buttonRow.removeFromLeft(36));
+        strip.removeFromTop(4);
 
-        // Gain slider (vertical)
-        gainSlider_.setBounds(strip.removeFromTop(80));
-        strip.removeFromTop(8);
+        // Gain value label
+        gainValueLabel_.setBounds(strip.removeFromTop(12));
 
-        // Pan slider (horizontal)
-        panSlider_.setBounds(strip.removeFromTop(20));
+        // Gain slider (vertical) - takes remaining space
+        gainSlider_.setBounds(strip);
     }
 }
 
@@ -242,8 +346,34 @@ void TrackChainContent::updateFromSelectedTrack() {
             trackNameLabel_.setText(track->name, juce::dontSendNotification);
             muteButton_.setToggleState(track->muted, juce::dontSendNotification);
             soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
-            gainSlider_.setValue(track->volume, juce::dontSendNotification);
+
+            // Convert linear gain to fader position
+            float db = gainToDb(track->volume);
+            float faderPos = dbToFaderPos(db);
+            gainSlider_.setValue(faderPos, juce::dontSendNotification);
+
+            // Update gain label
+            juce::String dbText;
+            if (db <= MIN_DB) {
+                dbText = "-inf";
+            } else {
+                dbText = juce::String(db, 1) + " dB";
+            }
+            gainValueLabel_.setText(dbText, juce::dontSendNotification);
+
             panSlider_.setValue(track->pan, juce::dontSendNotification);
+
+            // Update pan label
+            float pan = track->pan;
+            juce::String panText;
+            if (std::abs(pan) < 0.01f) {
+                panText = "C";
+            } else if (pan < 0) {
+                panText = juce::String(static_cast<int>(std::abs(pan) * 100)) + "L";
+            } else {
+                panText = juce::String(static_cast<int>(pan * 100)) + "R";
+            }
+            panValueLabel_.setText(panText, juce::dontSendNotification);
 
             showTrackStrip(true);
             noSelectionLabel_.setVisible(false);
@@ -262,7 +392,9 @@ void TrackChainContent::showTrackStrip(bool show) {
     muteButton_.setVisible(show);
     soloButton_.setVisible(show);
     gainSlider_.setVisible(show);
+    gainValueLabel_.setVisible(show);
     panSlider_.setVisible(show);
+    panValueLabel_.setVisible(show);
 }
 
 }  // namespace magica::daw::ui

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../themes/MixerLookAndFeel.hpp"
 #include "PanelContent.hpp"
 #include "core/TrackManager.hpp"
 
@@ -43,9 +44,14 @@ class TrackChainContent : public PanelContent, public magica::TrackManagerListen
     juce::TextButton muteButton_;
     juce::TextButton soloButton_;
     juce::Slider gainSlider_;
+    juce::Label gainValueLabel_;
     juce::Slider panSlider_;
+    juce::Label panValueLabel_;
 
     magica::TrackId selectedTrackId_ = magica::INVALID_TRACK_ID;
+
+    // Custom look and feel for sliders
+    magica::MixerLookAndFeel mixerLookAndFeel_;
 
     void updateFromSelectedTrack();
     void showTrackStrip(bool show);

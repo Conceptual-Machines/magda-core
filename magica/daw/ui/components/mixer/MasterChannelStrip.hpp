@@ -4,6 +4,7 @@
 
 #include <memory>
 
+#include "../../themes/MixerLookAndFeel.hpp"
 #include "core/TrackManager.hpp"
 
 namespace magica {
@@ -38,13 +39,16 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     // UI Components
     std::unique_ptr<juce::Label> titleLabel;
     std::unique_ptr<juce::Slider> volumeSlider;
-    std::unique_ptr<juce::Slider> panSlider;
-    std::unique_ptr<juce::TextButton> muteButton;
-    std::unique_ptr<juce::TextButton> soloButton;
+    std::unique_ptr<juce::Label> volumeValueLabel;
 
     // Meter component
     class LevelMeter;
     std::unique_ptr<LevelMeter> levelMeter;
+    std::unique_ptr<juce::Label> peakLabel;
+    float peakValue_ = 0.0f;
+
+    // Custom look and feel for faders
+    MixerLookAndFeel mixerLookAndFeel_;
 
     void setupControls();
     void updateFromMasterState();

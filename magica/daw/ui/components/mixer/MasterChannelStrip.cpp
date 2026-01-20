@@ -1,8 +1,55 @@
 #include "MasterChannelStrip.hpp"
 
+#include <cmath>
+
 #include "../../themes/DarkTheme.hpp"
 
 namespace magica {
+
+// dB conversion helpers
+namespace {
+constexpr float MIN_DB = -60.0f;
+constexpr float MAX_DB = 6.0f;
+constexpr float UNITY_DB = 0.0f;
+
+float gainToDb(float gain) {
+    if (gain <= 0.0f)
+        return MIN_DB;
+    return 20.0f * std::log10(gain);
+}
+
+float dbToGain(float db) {
+    if (db <= MIN_DB)
+        return 0.0f;
+    return std::pow(10.0f, db / 20.0f);
+}
+
+float dbToFaderPos(float db) {
+    if (db <= MIN_DB)
+        return 0.0f;
+    if (db >= MAX_DB)
+        return 1.0f;
+
+    if (db < UNITY_DB) {
+        return 0.75f * (db - MIN_DB) / (UNITY_DB - MIN_DB);
+    } else {
+        return 0.75f + 0.25f * (db - UNITY_DB) / (MAX_DB - UNITY_DB);
+    }
+}
+
+float faderPosToDb(float pos) {
+    if (pos <= 0.0f)
+        return MIN_DB;
+    if (pos >= 1.0f)
+        return MAX_DB;
+
+    if (pos < 0.75f) {
+        return MIN_DB + (pos / 0.75f) * (UNITY_DB - MIN_DB);
+    } else {
+        return UNITY_DB + ((pos - 0.75f) / 0.25f) * (MAX_DB - UNITY_DB);
+    }
+}
+}  // namespace
 
 // Level meter component
 class MasterChannelStrip::LevelMeter : public juce::Component {
@@ -51,6 +98,10 @@ MasterChannelStrip::MasterChannelStrip(Orientation orientation) : orientation_(o
 
 MasterChannelStrip::~MasterChannelStrip() {
     TrackManager::getInstance().removeListener(this);
+    // Clear look and feel before destruction
+    if (volumeSlider) {
+        volumeSlider->setLookAndFeel(nullptr);
+    }
 }
 
 void MasterChannelStrip::setupControls() {
@@ -60,68 +111,59 @@ void MasterChannelStrip::setupControls() {
     titleLabel->setJustificationType(juce::Justification::centred);
     addAndMakeVisible(*titleLabel);
 
-    // Volume slider
+    // Level meter
+    levelMeter = std::make_unique<LevelMeter>();
+    addAndMakeVisible(*levelMeter);
+
+    // Peak label
+    peakLabel = std::make_unique<juce::Label>();
+    peakLabel->setText("-inf", juce::dontSendNotification);
+    peakLabel->setJustificationType(juce::Justification::centred);
+    peakLabel->setColour(juce::Label::textColourId,
+                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    peakLabel->setFont(juce::FontOptions(9.0f));
+    addAndMakeVisible(*peakLabel);
+
+    // Volume slider - using dB scale with unity at 0.75 position
     volumeSlider = std::make_unique<juce::Slider>(orientation_ == Orientation::Vertical
                                                       ? juce::Slider::LinearVertical
                                                       : juce::Slider::LinearHorizontal,
                                                   juce::Slider::NoTextBox);
-    volumeSlider->setRange(0.0, 1.0);
+    volumeSlider->setRange(0.0, 1.0, 0.001);
+    volumeSlider->setValue(0.75);  // Unity gain (0 dB)
+    volumeSlider->setSliderSnapsToMousePosition(false);
     volumeSlider->setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+    volumeSlider->setColour(juce::Slider::backgroundColourId,
+                            DarkTheme::getColour(DarkTheme::SURFACE));
     volumeSlider->setColour(juce::Slider::thumbColourId,
                             DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    volumeSlider->setLookAndFeel(&mixerLookAndFeel_);
     volumeSlider->onValueChange = [this]() {
-        TrackManager::getInstance().setMasterVolume(static_cast<float>(volumeSlider->getValue()));
+        float faderPos = static_cast<float>(volumeSlider->getValue());
+        float db = faderPosToDb(faderPos);
+        float gain = dbToGain(db);
+        TrackManager::getInstance().setMasterVolume(gain);
+        // Update volume label
+        if (volumeValueLabel) {
+            juce::String dbText;
+            if (db <= MIN_DB) {
+                dbText = "-inf";
+            } else {
+                dbText = juce::String(db, 1) + " dB";
+            }
+            volumeValueLabel->setText(dbText, juce::dontSendNotification);
+        }
     };
     addAndMakeVisible(*volumeSlider);
 
-    // Pan slider
-    panSlider = std::make_unique<juce::Slider>(juce::Slider::RotaryHorizontalVerticalDrag,
-                                               juce::Slider::NoTextBox);
-    panSlider->setRange(-1.0, 1.0);
-    panSlider->setColour(juce::Slider::rotarySliderFillColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    panSlider->setColour(juce::Slider::rotarySliderOutlineColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-    panSlider->onValueChange = [this]() {
-        TrackManager::getInstance().setMasterPan(static_cast<float>(panSlider->getValue()));
-    };
-    addAndMakeVisible(*panSlider);
-
-    // Mute button
-    muteButton = std::make_unique<juce::TextButton>("M");
-    muteButton->setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-    muteButton->setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    muteButton->setColour(juce::TextButton::textColourOffId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    muteButton->setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::BACKGROUND));
-    muteButton->setClickingTogglesState(true);
-    muteButton->onClick = [this]() {
-        TrackManager::getInstance().setMasterMuted(muteButton->getToggleState());
-    };
-    addAndMakeVisible(*muteButton);
-
-    // Solo button
-    soloButton = std::make_unique<juce::TextButton>("S");
-    soloButton->setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-    soloButton->setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    soloButton->setColour(juce::TextButton::textColourOffId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    soloButton->setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::BACKGROUND));
-    soloButton->setClickingTogglesState(true);
-    soloButton->onClick = [this]() {
-        TrackManager::getInstance().setMasterSoloed(soloButton->getToggleState());
-    };
-    addAndMakeVisible(*soloButton);
-
-    // Level meter
-    levelMeter = std::make_unique<LevelMeter>();
-    addAndMakeVisible(*levelMeter);
+    // Volume value label
+    volumeValueLabel = std::make_unique<juce::Label>();
+    volumeValueLabel->setText("0.0 dB", juce::dontSendNotification);
+    volumeValueLabel->setJustificationType(juce::Justification::centred);
+    volumeValueLabel->setColour(juce::Label::textColourId,
+                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    volumeValueLabel->setFont(juce::FontOptions(9.0f));
+    addAndMakeVisible(*volumeValueLabel);
 }
 
 void MasterChannelStrip::paint(juce::Graphics& g) {
@@ -140,16 +182,10 @@ void MasterChannelStrip::resized() {
         titleLabel->setBounds(bounds.removeFromTop(24));
         bounds.removeFromTop(4);
 
-        auto panArea = bounds.removeFromTop(40);
-        panSlider->setBounds(panArea.reduced(8, 0));
-        bounds.removeFromTop(4);
-
-        auto buttonArea = bounds.removeFromTop(24);
-        int buttonWidth = (buttonArea.getWidth() - 4) / 2;
-        muteButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
-        buttonArea.removeFromLeft(4);
-        soloButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
-        bounds.removeFromTop(4);
+        // Value labels above fader area
+        auto valueLabelArea = bounds.removeFromTop(12);
+        volumeValueLabel->setBounds(valueLabelArea.removeFromLeft(valueLabelArea.getWidth() / 2));
+        peakLabel->setBounds(valueLabelArea);
 
         // Fader and meter take remaining space
         auto faderMeterArea = bounds;
@@ -161,15 +197,10 @@ void MasterChannelStrip::resized() {
         titleLabel->setBounds(bounds.removeFromLeft(60));
         bounds.removeFromLeft(8);
 
-        auto buttonArea = bounds.removeFromLeft(60);
-        int buttonHeight = (buttonArea.getHeight() - 4) / 2;
-        muteButton->setBounds(buttonArea.removeFromTop(buttonHeight).reduced(2, 0));
-        buttonArea.removeFromTop(4);
-        soloButton->setBounds(buttonArea.removeFromTop(buttonHeight).reduced(2, 0));
-        bounds.removeFromLeft(8);
-
-        panSlider->setBounds(bounds.removeFromLeft(50));
-        bounds.removeFromLeft(8);
+        // Value label above meter
+        auto labelArea = bounds.removeFromTop(12);
+        volumeValueLabel->setBounds(labelArea.removeFromRight(40));
+        peakLabel->setBounds(juce::Rectangle<int>());  // Hidden in horizontal
 
         levelMeter->setBounds(bounds.removeFromRight(12));
         bounds.removeFromRight(4);
@@ -184,14 +215,40 @@ void MasterChannelStrip::masterChannelChanged() {
 void MasterChannelStrip::updateFromMasterState() {
     const auto& master = TrackManager::getInstance().getMasterChannel();
 
-    volumeSlider->setValue(master.volume, juce::dontSendNotification);
-    panSlider->setValue(master.pan, juce::dontSendNotification);
-    muteButton->setToggleState(master.muted, juce::dontSendNotification);
-    soloButton->setToggleState(master.soloed, juce::dontSendNotification);
+    // Convert linear gain to fader position
+    float db = gainToDb(master.volume);
+    float faderPos = dbToFaderPos(db);
+    volumeSlider->setValue(faderPos, juce::dontSendNotification);
+
+    // Update volume label
+    if (volumeValueLabel) {
+        juce::String dbText;
+        if (db <= MIN_DB) {
+            dbText = "-inf";
+        } else {
+            dbText = juce::String(db, 1) + " dB";
+        }
+        volumeValueLabel->setText(dbText, juce::dontSendNotification);
+    }
 }
 
 void MasterChannelStrip::setMeterLevel(float level) {
     levelMeter->setLevel(level);
+
+    // Update peak value
+    if (level > peakValue_) {
+        peakValue_ = level;
+        if (peakLabel) {
+            float db = gainToDb(peakValue_);
+            juce::String peakText;
+            if (db <= MIN_DB) {
+                peakText = "-inf";
+            } else {
+                peakText = juce::String(db, 1);
+            }
+            peakLabel->setText(peakText, juce::dontSendNotification);
+        }
+    }
 }
 
 }  // namespace magica
