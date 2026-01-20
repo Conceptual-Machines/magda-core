@@ -4,6 +4,7 @@
 
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
+#include "core/SelectionManager.hpp"
 #include "core/ViewModeController.hpp"
 
 namespace magica {
@@ -925,12 +926,12 @@ void MixerView::selectChannel(int index, bool isMaster) {
         selectedChannelIndex = -1;
         selectedIsMaster = true;
         // Master track doesn't have a TrackId, so we clear selection
-        TrackManager::getInstance().setSelectedTrack(INVALID_TRACK_ID);
+        SelectionManager::getInstance().clearSelection();
     } else {
         if (index >= 0 && index < static_cast<int>(channelStrips.size())) {
             channelStrips[index]->setSelected(true);
-            // Notify TrackManager of selection
-            TrackManager::getInstance().setSelectedTrack(channelStrips[index]->getTrackId());
+            // Notify SelectionManager of selection (which syncs with TrackManager)
+            SelectionManager::getInstance().selectTrack(channelStrips[index]->getTrackId());
         }
         selectedChannelIndex = index;
         selectedIsMaster = false;

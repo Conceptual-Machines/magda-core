@@ -3,6 +3,7 @@
 #include <functional>
 
 #include "../themes/DarkTheme.hpp"
+#include "core/SelectionManager.hpp"
 #include "core/ViewModeController.hpp"
 
 namespace magica {
@@ -430,7 +431,7 @@ void SessionView::trackSelectionChanged(TrackId trackId) {
 }
 
 void SessionView::selectTrack(TrackId trackId) {
-    TrackManager::getInstance().setSelectedTrack(trackId);
+    SelectionManager::getInstance().selectTrack(trackId);
 }
 
 void SessionView::updateHeaderSelectionVisuals() {

@@ -6,6 +6,7 @@
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/UndoManager.hpp"
 
@@ -495,9 +496,9 @@ void TrackHeadersPanel::selectTrack(int index) {
     if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
         selectedTrackIndex = index;
 
-        // Notify TrackManager of selection change
+        // Notify SelectionManager of selection change (which syncs with TrackManager)
         TrackId trackId = trackHeaders[index]->trackId;
-        TrackManager::getInstance().setSelectedTrack(trackId);
+        SelectionManager::getInstance().selectTrack(trackId);
 
         if (onTrackSelected) {
             onTrackSelected(index);
