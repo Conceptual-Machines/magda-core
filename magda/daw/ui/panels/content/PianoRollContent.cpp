@@ -16,6 +16,7 @@ class ScrollNotifyingViewport : public juce::Viewport {
     std::function<void(int, int)> onScrolled;
     juce::Component* timeRulerToRepaint = nullptr;
     juce::Component* keyboardToUpdate = nullptr;
+    juce::Component* parentToRepaint = nullptr;  // For chord row repaint
 
     void visibleAreaChanged(const juce::Rectangle<int>& newVisibleArea) override {
         juce::Viewport::visibleAreaChanged(newVisibleArea);
@@ -27,6 +28,8 @@ class ScrollNotifyingViewport : public juce::Viewport {
             timeRulerToRepaint->repaint();
         if (keyboardToUpdate)
             keyboardToUpdate->repaint();
+        if (parentToRepaint)
+            parentToRepaint->repaint();
     }
 
     // Override scrollBarMoved for real-time updates during scrollbar drag
@@ -37,6 +40,8 @@ class ScrollNotifyingViewport : public juce::Viewport {
             timeRulerToRepaint->repaint();
         if (keyboardToUpdate)
             keyboardToUpdate->repaint();
+        if (parentToRepaint)
+            parentToRepaint->repaint();
     }
 };
 
@@ -98,6 +103,7 @@ PianoRollContent::PianoRollContent() {
     };
     scrollViewport->timeRulerToRepaint = timeRuler_.get();
     scrollViewport->keyboardToUpdate = keyboard_.get();
+    scrollViewport->parentToRepaint = this;  // For chord row repaint
     scrollViewport->setScrollBarsShown(true, true);
     viewport_ = std::move(scrollViewport);
     addAndMakeVisible(viewport_.get());
@@ -215,13 +221,22 @@ void PianoRollContent::setupGridCallbacks() {
 
 void PianoRollContent::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getPanelBackgroundColour());
+
+    // Draw chord row at the top
+    auto chordArea = getLocalBounds().removeFromTop(CHORD_ROW_HEIGHT);
+    chordArea.removeFromLeft(KEYBOARD_WIDTH);  // Skip the button area
+    drawChordRow(g, chordArea);
 }
 
 void PianoRollContent::resized() {
     auto bounds = getLocalBounds();
 
-    // Header row: toggle button + time ruler
-    auto headerArea = bounds.removeFromTop(HEADER_HEIGHT);
+    // Chord row at the very top (drawn in paint, just skip space here)
+    auto chordRowArea = bounds.removeFromTop(CHORD_ROW_HEIGHT);
+    (void)chordRowArea;  // Chord row is drawn in paint()
+
+    // Header row: toggle button + time ruler (below chord row)
+    auto headerArea = bounds.removeFromTop(RULER_HEIGHT);
 
     // Small toggle button in the keyboard area
     auto buttonArea = headerArea.removeFromLeft(KEYBOARD_WIDTH);
@@ -244,8 +259,21 @@ void PianoRollContent::resized() {
 
 void PianoRollContent::mouseWheelMove(const juce::MouseEvent& e,
                                       const juce::MouseWheelDetails& wheel) {
-    // Check if mouse is over the time ruler area (top header)
-    if (e.y < HEADER_HEIGHT && e.x >= KEYBOARD_WIDTH) {
+    // Check if mouse is over the chord row area (very top)
+    if (e.y < CHORD_ROW_HEIGHT && e.x >= KEYBOARD_WIDTH) {
+        // Forward horizontal scrolling in chord row area
+        if (timeRuler_->onScrollRequested) {
+            float delta = (wheel.deltaX != 0.0f) ? wheel.deltaX : wheel.deltaY;
+            int scrollAmount = static_cast<int>(-delta * 100.0f);
+            if (scrollAmount != 0) {
+                timeRuler_->onScrollRequested(scrollAmount);
+            }
+        }
+        return;
+    }
+
+    // Check if mouse is over the time ruler area (below chord row, above grid)
+    if (e.y >= CHORD_ROW_HEIGHT && e.y < HEADER_HEIGHT && e.x >= KEYBOARD_WIDTH) {
         // Forward to time ruler for horizontal scrolling
         if (timeRuler_->onScrollRequested) {
             float delta = (wheel.deltaX != 0.0f) ? wheel.deltaX : wheel.deltaY;
@@ -536,6 +564,68 @@ void PianoRollContent::setClip(magda::ClipId clipId) {
         viewport_->setViewPosition(0, viewport_->getViewPositionY());
 
         repaint();
+    }
+}
+
+void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area) {
+    // Draw chord row background
+    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+    g.fillRect(area);
+
+    // Draw bottom border
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.drawLine(static_cast<float>(area.getX()), static_cast<float>(area.getBottom() - 1),
+               static_cast<float>(area.getRight()), static_cast<float>(area.getBottom() - 1), 1.0f);
+
+    // Get tempo and calculate beat timing
+    double tempo = 120.0;
+    int timeSignatureNumerator = 4;
+    if (auto* controller = magda::TimelineController::getCurrent()) {
+        const auto& state = controller->getState();
+        tempo = state.tempo.bpm;
+        timeSignatureNumerator = state.tempo.timeSignatureNumerator;
+    }
+
+    // Get scroll offset from viewport
+    int scrollX = viewport_ ? viewport_->getViewPositionX() : 0;
+
+    // Mock chords - one chord per 2 bars for demonstration
+    const char* mockChords[] = {"C", "Am", "F", "G", "Dm", "Em", "Bdim", "C"};
+    int numMockChords = 8;
+
+    // Calculate beats per bar and pixels per beat
+    double beatsPerBar = timeSignatureNumerator;
+    double beatsPerChord = beatsPerBar * 2;  // 2 bars per chord
+
+    g.setFont(11.0f);
+
+    for (int i = 0; i < numMockChords; ++i) {
+        double startBeat = i * beatsPerChord;
+        double endBeat = (i + 1) * beatsPerChord;
+
+        int startX = static_cast<int>(startBeat * horizontalZoom_) + GRID_LEFT_PADDING - scrollX;
+        int endX = static_cast<int>(endBeat * horizontalZoom_) + GRID_LEFT_PADDING - scrollX;
+
+        // Skip if out of view
+        if (endX < 0 || startX > area.getWidth()) {
+            continue;
+        }
+
+        // Clip to visible area
+        int drawStartX = juce::jmax(0, startX) + area.getX();
+        int drawEndX = juce::jmin(area.getWidth(), endX) + area.getX();
+
+        // Draw chord block
+        auto blockBounds = juce::Rectangle<int>(drawStartX + 1, area.getY() + 2,
+                                                drawEndX - drawStartX - 2, area.getHeight() - 4);
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+        g.fillRoundedRectangle(blockBounds.toFloat(), 3.0f);
+
+        // Draw chord name (only if block is mostly visible)
+        if (startX >= -20 && endX <= area.getWidth() + 20) {
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            g.drawText(mockChords[i], blockBounds, juce::Justification::centred, true);
+        }
     }
 }
 

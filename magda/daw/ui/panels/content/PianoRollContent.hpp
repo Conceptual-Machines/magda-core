@@ -66,9 +66,11 @@ class PianoRollContent : public PanelContent, public magda::ClipManagerListener 
     // Layout constants
     static constexpr int KEYBOARD_WIDTH = 60;
     static constexpr int DEFAULT_NOTE_HEIGHT = 12;
-    static constexpr int HEADER_HEIGHT = 36;     // Taller for zoom interaction
-    static constexpr int MIN_NOTE = 21;          // A0
-    static constexpr int MAX_NOTE = 108;         // C8
+    static constexpr int CHORD_ROW_HEIGHT = 24;                            // Chord detection row
+    static constexpr int RULER_HEIGHT = 36;                                // Time ruler height
+    static constexpr int HEADER_HEIGHT = CHORD_ROW_HEIGHT + RULER_HEIGHT;  // Total header
+    static constexpr int MIN_NOTE = 21;                                    // A0
+    static constexpr int MAX_NOTE = 108;                                   // C8
     static constexpr int GRID_LEFT_PADDING = 2;  // Small padding for timeline label visibility
 
     // Zoom limits
@@ -95,6 +97,7 @@ class PianoRollContent : public PanelContent, public magda::ClipManagerListener 
     void setupGridCallbacks();
     void updateGridSize();
     void updateTimeRuler();
+    void drawChordRow(juce::Graphics& g, juce::Rectangle<int> area);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PianoRollContent)
 };
