@@ -8,6 +8,7 @@
 
 #include "../components/mixer/MasterChannelStrip.hpp"
 #include "../themes/MixerLookAndFeel.hpp"
+#include "../themes/MixerMetrics.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
 
@@ -57,14 +58,6 @@ class MixerView : public juce::Component,
     std::function<void(int, bool)> onChannelSelected;
 
   private:
-    static constexpr int CHANNEL_WIDTH = 80;
-    static constexpr int MASTER_WIDTH = 100;
-    static constexpr int FADER_HEIGHT = 200;
-    static constexpr int METER_WIDTH = 12;
-    static constexpr int BUTTON_SIZE = 24;
-    static constexpr int KNOB_SIZE = 40;
-    static constexpr int HEADER_HEIGHT = 30;
-
     // Channel strip component
     class ChannelStrip : public juce::Component {
       public:
@@ -119,7 +112,16 @@ class MixerView : public juce::Component,
         class LevelMeter;
         std::unique_ptr<LevelMeter> levelMeter;
 
+        // Stored bounds for layout regions
+        // Layout: [fader] [leftTicks] [labels] [rightTicks] [meter]
+        juce::Rectangle<int> faderArea_;
+        juce::Rectangle<int> leftTickArea_;
+        juce::Rectangle<int> labelArea_;
+        juce::Rectangle<int> rightTickArea_;
+        juce::Rectangle<int> meterArea_;
+
         void setupControls();
+        void drawDbLabels(juce::Graphics& g);
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChannelStrip)
     };

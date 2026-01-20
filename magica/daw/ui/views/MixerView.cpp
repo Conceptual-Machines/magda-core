@@ -77,20 +77,20 @@ class MixerView::ChannelStrip::LevelMeter : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        auto bounds = getLocalBounds();
+        auto bounds = getLocalBounds().toFloat();
+        const auto& metrics = MixerMetrics::getInstance();
 
-        // Reserve space for labels on the right
-        auto labelWidth = 20;
-        auto meterBounds = bounds.removeFromLeft(bounds.getWidth() - labelWidth).toFloat();
-        auto labelBounds = bounds.toFloat();
+        // Meter uses effective range (with thumbRadius padding) to match fader track and labels
+        auto effectiveBounds = bounds.reduced(0.0f, metrics.thumbRadius());
 
-        // Background
+        // Background for meter
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-        g.fillRoundedRectangle(meterBounds, 2.0f);
+        g.fillRoundedRectangle(effectiveBounds, 2.0f);
 
-        // Meter fill (using dB-scaled level)
-        float meterHeight = meterBounds.getHeight() * level;
-        auto fillBounds = meterBounds;
+        // Meter fill (using dB-scaled level for display)
+        float displayLevel = dbToFaderPos(gainToDb(level));
+        float meterHeight = effectiveBounds.getHeight() * displayLevel;
+        auto fillBounds = effectiveBounds;
         fillBounds = fillBounds.removeFromBottom(meterHeight);
 
         // Gradient from green to yellow to red based on dB
@@ -103,31 +103,6 @@ class MixerView::ChannelStrip::LevelMeter : public juce::Component {
             g.setColour(juce::Colour(0xFFAA5555));  // Red
         }
         g.fillRoundedRectangle(fillBounds, 2.0f);
-
-        // Draw dB labels
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
-        g.setFont(9.0f);
-
-        // dB markings: +6, 0, -6, -12, -24, -48
-        const float dbMarks[] = {6.0f, 0.0f, -6.0f, -12.0f, -24.0f, -48.0f};
-        for (float db : dbMarks) {
-            float pos = dbToFaderPos(db);
-            float y = meterBounds.getBottom() - pos * meterBounds.getHeight();
-
-            juce::String label;
-            if (db > 0)
-                label = "+" + juce::String((int)db);
-            else if (db == 0)
-                label = "0";
-            else
-                label = juce::String((int)db);
-
-            g.drawText(label, labelBounds.getX(), y - 5, labelWidth, 10,
-                       juce::Justification::centredLeft, false);
-
-            // Small tick mark
-            g.drawHorizontalLine((int)y, meterBounds.getRight() - 2, meterBounds.getRight());
-        }
     }
 
   private:
@@ -325,25 +300,89 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         g.fillRect(selected ? 2 : 0, selected ? 2 : 0, getWidth() - (selected ? 3 : 1), 4);
     }
+
+    // Draw dB labels with ticks
+    drawDbLabels(g);
+}
+
+void MixerView::ChannelStrip::drawDbLabels(juce::Graphics& g) {
+    if (labelArea_.isEmpty() || !volumeFader)
+        return;
+
+    const auto& metrics = MixerMetrics::getInstance();
+
+    // dB values to display with ticks
+    const std::vector<float> dbValues = {6.0f,   3.0f,   0.0f,   -3.0f,  -6.0f, -12.0f,
+                                         -18.0f, -24.0f, -36.0f, -48.0f, -60.0f};
+
+    // Labels mark where the thumb CENTER is at each dB value.
+    // JUCE reduces slider bounds by thumbRadius, so the thumb center range is:
+    // - Top: faderArea_.getY() + thumbRadius
+    // - Bottom: faderArea_.getBottom() - thumbRadius
+    float thumbRadius = metrics.thumbRadius();
+    float effectiveTop = faderArea_.getY() + thumbRadius;
+    float effectiveHeight = faderArea_.getHeight() - 2.0f * thumbRadius;
+
+    g.setFont(juce::FontOptions(metrics.labelFontSize));
+
+    for (float db : dbValues) {
+        // Convert dB to Y position - MUST match JUCE's formula exactly:
+        // sliderPos = sliderRegionStart + (1 - valueProportional) * sliderRegionSize
+        float faderPos = dbToFaderPos(db);
+        float yNorm = 1.0f - faderPos;
+        float y = effectiveTop + yNorm * effectiveHeight;
+
+        // Draw ticks in their designated areas
+        float tickHeight = metrics.tickHeight();
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+
+        // Left tick: draw within leftTickArea_, right-aligned
+        float leftTickX = static_cast<float>(leftTickArea_.getRight()) - metrics.tickWidth();
+        g.fillRect(leftTickX, y - tickHeight / 2.0f, metrics.tickWidth(), tickHeight);
+
+        // Right tick: draw within rightTickArea_, left-aligned
+        float rightTickX = static_cast<float>(rightTickArea_.getX());
+        g.fillRect(rightTickX, y - tickHeight / 2.0f, metrics.tickWidth(), tickHeight);
+
+        // Draw label text centered - no signs, infinity at bottom
+        juce::String labelText;
+        int dbInt = static_cast<int>(db);
+        if (db <= MIN_DB) {
+            labelText = juce::String::charToString(0x221E);  // ∞ infinity symbol
+        } else {
+            labelText = juce::String(std::abs(dbInt));
+        }
+
+        float textWidth = metrics.labelTextWidth;
+        float textHeight = metrics.labelTextHeight;
+        float textX = labelArea_.getCentreX() - textWidth / 2.0f;
+        float textY = y - textHeight / 2.0f;
+
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        g.drawText(labelText, static_cast<int>(textX), static_cast<int>(textY),
+                   static_cast<int>(textWidth), static_cast<int>(textHeight),
+                   juce::Justification::centred, false);
+    }
 }
 
 void MixerView::ChannelStrip::resized() {
-    auto bounds = getLocalBounds().reduced(4);
+    const auto& metrics = MixerMetrics::getInstance();
+    auto bounds = getLocalBounds().reduced(metrics.channelPadding);
 
     // Color indicator space
     bounds.removeFromTop(6);
 
     // Track label at top
     trackLabel->setBounds(bounds.removeFromTop(24));
-    bounds.removeFromTop(4);
+    bounds.removeFromTop(metrics.controlSpacing);
 
     // Pan knob
-    auto panArea = bounds.removeFromTop(KNOB_SIZE);
-    panKnob->setBounds(panArea.withSizeKeepingCentre(KNOB_SIZE, KNOB_SIZE));
-    bounds.removeFromTop(4);
+    auto panArea = bounds.removeFromTop(metrics.knobSize);
+    panKnob->setBounds(panArea.withSizeKeepingCentre(metrics.knobSize, metrics.knobSize));
+    bounds.removeFromTop(metrics.controlSpacing);
 
     // Buttons at bottom
-    auto buttonArea = bounds.removeFromBottom(BUTTON_SIZE);
+    auto buttonArea = bounds.removeFromBottom(metrics.buttonSize);
     int numButtons = isMaster_ ? 2 : 3;
     int buttonWidth = (buttonArea.getWidth() - (numButtons - 1) * 2) / numButtons;
 
@@ -355,21 +394,51 @@ void MixerView::ChannelStrip::resized() {
         recordButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
     }
 
-    bounds.removeFromBottom(4);
+    bounds.removeFromBottom(metrics.controlSpacing);
 
-    // Fader and meter in remaining space
-    int faderWidth = 24;
-    int meterWidth = METER_WIDTH + 22;  // Extra space for dB labels
-    int totalWidth = faderWidth + 4 + meterWidth;
+    // Padding at top for labels
+    bounds.removeFromTop(8);
 
-    auto faderMeterArea = bounds;
+    // Use percentage of remaining height for fader
+    int faderHeight = static_cast<int>(bounds.getHeight() * metrics.faderHeightRatio / 100.0f);
+    int extraSpace = bounds.getHeight() - faderHeight;
+    bounds.removeFromTop(extraSpace / 2);
+    bounds.setHeight(faderHeight);
 
-    // Meter on left (with labels)
-    levelMeter->setBounds(faderMeterArea.removeFromLeft(meterWidth));
-    faderMeterArea.removeFromLeft(4);
+    // Layout: [fader] [gap] [leftTicks] [labels] [rightTicks] [gap] [meter]
+    // Calculate widths from metrics
+    int faderWidth = metrics.faderWidth;
+    int meterWidthVal = metrics.meterWidth;
+    int tickWidth = static_cast<int>(std::ceil(metrics.tickWidth()));
+    int gap = metrics.tickToFaderGap;
 
-    // Fader takes remaining space
-    volumeFader->setBounds(faderMeterArea.removeFromLeft(faderWidth));
+    auto layoutArea = bounds;
+
+    // Fader on left
+    faderArea_ = layoutArea.removeFromLeft(faderWidth);
+    volumeFader->setBounds(faderArea_);
+    layoutArea.removeFromLeft(gap);
+
+    // Meter on right
+    meterArea_ = layoutArea.removeFromRight(meterWidthVal);
+    levelMeter->setBounds(meterArea_);
+    layoutArea.removeFromRight(gap);
+
+    // Remaining space is: [leftTicks] [gap] [labels] [gap] [rightTicks]
+    // Tick areas on each side with gaps to labels
+    int tickToLabelGap = metrics.tickToLabelGap;
+
+    // Label area with fixed width in the center
+    int labelWidth = static_cast<int>(std::ceil(metrics.labelTextWidth));
+    int centerX = layoutArea.getCentreX();
+    labelArea_ = juce::Rectangle<int>(centerX - labelWidth / 2, layoutArea.getY(), labelWidth,
+                                      layoutArea.getHeight());
+
+    // Tick areas positioned relative to label area
+    leftTickArea_ = juce::Rectangle<int>(labelArea_.getX() - tickToLabelGap - tickWidth,
+                                         layoutArea.getY(), tickWidth, layoutArea.getHeight());
+    rightTickArea_ = juce::Rectangle<int>(labelArea_.getRight() + tickToLabelGap, layoutArea.getY(),
+                                          tickWidth, layoutArea.getHeight());
 }
 
 void MixerView::ChannelStrip::setMeterLevel(float level) {
@@ -499,11 +568,12 @@ void MixerView::paint(juce::Graphics& g) {
 }
 
 void MixerView::resized() {
+    const auto& metrics = MixerMetrics::getInstance();
     auto bounds = getLocalBounds();
 
     // Master strip on the right (only if visible)
     if (masterStrip->isVisible()) {
-        masterStrip->setBounds(bounds.removeFromRight(MASTER_WIDTH));
+        masterStrip->setBounds(bounds.removeFromRight(metrics.masterWidth));
         // Separator between channels and master
         bounds.removeFromRight(2);
     }
@@ -513,13 +583,14 @@ void MixerView::resized() {
 
     // Size the channel container
     int numChannels = static_cast<int>(channelStrips.size());
-    int containerWidth = numChannels * CHANNEL_WIDTH;
+    int containerWidth = numChannels * metrics.channelWidth;
     int containerHeight = bounds.getHeight();
     channelContainer->setSize(containerWidth, containerHeight);
 
     // Position channel strips
     for (int i = 0; i < numChannels; ++i) {
-        channelStrips[i]->setBounds(i * CHANNEL_WIDTH, 0, CHANNEL_WIDTH, containerHeight);
+        channelStrips[i]->setBounds(i * metrics.channelWidth, 0, metrics.channelWidth,
+                                    containerHeight);
     }
 }
 

@@ -22,8 +22,8 @@ struct TrackInfo {
     std::vector<TrackId> childIds;        // Child tracks (for groups)
 
     // Mixer state
-    float volume = 0.75f;  // Volume level (0-1)
-    float pan = 0.0f;      // Pan position (-1 to 1)
+    float volume = 1.0f;  // Volume level (0-1), default is unity gain (0dB)
+    float pan = 0.0f;     // Pan position (-1 to 1)
     bool muted = false;
     bool soloed = false;
     bool recordArmed = false;

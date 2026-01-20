@@ -2,6 +2,7 @@
 
 #include "BinaryData.h"
 #include "DarkTheme.hpp"
+#include "MixerMetrics.hpp"
 
 namespace magica {
 
@@ -45,37 +46,34 @@ void MixerLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int wid
     }
 
     auto bounds = juce::Rectangle<int>(x, y, width, height).toFloat();
+    const auto& metrics = MixerMetrics::getInstance();
 
-    // Get slider colors
-    auto trackColour = slider.findColour(juce::Slider::trackColourId);
-    auto thumbColour = slider.findColour(juce::Slider::thumbColourId);
+    // Get dimensions from metrics
+    const float trackWidth = metrics.trackWidth();
+    const float thumbWidth = metrics.thumbWidth();
+    const float thumbHeight = metrics.thumbHeight;
+    const float thumbRadius = metrics.thumbRadius();
+    const float trackPadding = metrics.trackPadding();
 
-    // Constants for fader sizing
-    const float trackWidth = 2.0f;
-    const float thumbWidth = 24.0f;
-    const float thumbHeight = 12.0f;
-
-    // Draw track (thin vertical line)
+    // JUCE passes bounds reduced by thumbRadius - this is where thumb CENTER can travel.
+    // Extend track slightly beyond bounds, but trim for visual padding.
     float trackX = bounds.getCentreX() - trackWidth / 2.0f;
-    auto trackRect = juce::Rectangle<float>(trackX, bounds.getY(), trackWidth, bounds.getHeight());
+    float extendedTop = bounds.getY() - thumbRadius + trackPadding;
+    float extendedBottom = bounds.getBottom() + thumbRadius - trackPadding;
+    float extendedHeight = extendedBottom - extendedTop;
 
-    if (faderTrack_) {
-        // Scale and draw the SVG track
-        faderTrack_->setTransformToFit(trackRect, juce::RectanglePlacement::stretchToFit);
-        faderTrack_->draw(g, 1.0f);
-    } else {
-        // Fallback: draw simple line
-        g.setColour(trackColour);
-        g.fillRoundedRectangle(trackRect, 1.0f);
-    }
+    // Draw the full track background (gray line from +6dB to -60dB)
+    auto fullTrackRect = juce::Rectangle<float>(trackX, extendedTop, trackWidth, extendedHeight);
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.fillRoundedRectangle(fullTrackRect, trackWidth / 2.0f);
 
-    // Draw filled portion below the thumb (value indicator)
+    // Draw filled portion below the thumb (value indicator - blue)
+    // sliderPos is the Y position of thumb center (already calculated by JUCE)
     float thumbY = sliderPos - thumbHeight / 2.0f;
     auto filledTrackRect =
-        juce::Rectangle<float>(trackX, thumbY + thumbHeight / 2.0f, trackWidth,
-                               bounds.getBottom() - (thumbY + thumbHeight / 2.0f));
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
-    g.fillRoundedRectangle(filledTrackRect, 1.0f);
+        juce::Rectangle<float>(trackX, sliderPos, trackWidth, extendedBottom - sliderPos);
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    g.fillRoundedRectangle(filledTrackRect, trackWidth / 2.0f);
 
     // Draw thumb - simple rounded rectangle matching knob style
     float thumbX = bounds.getCentreX() - thumbWidth / 2.0f;
@@ -88,12 +86,15 @@ void MixerLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int wid
     // Center line indicator
     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     float lineY = thumbY + thumbHeight / 2.0f;
-    g.drawLine(thumbX + 6.0f, lineY, thumbX + thumbWidth - 6.0f, lineY, 2.0f);
+    float lineInset = thumbHeight / 2.0f;
+    g.drawLine(thumbX + lineInset, lineY, thumbX + thumbWidth - lineInset, lineY, 2.0f);
 }
 
 int MixerLookAndFeel::getSliderThumbRadius(juce::Slider& slider) {
     // Return half the thumb height for proper mouse interaction
-    return slider.isVertical() ? 6 : LookAndFeel_V4::getSliderThumbRadius(slider);
+    const auto& metrics = MixerMetrics::getInstance();
+    return slider.isVertical() ? static_cast<int>(metrics.thumbRadius())
+                               : LookAndFeel_V4::getSliderThumbRadius(slider);
 }
 
 void MixerLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,

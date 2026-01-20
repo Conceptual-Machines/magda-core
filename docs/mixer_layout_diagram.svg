@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="700" height="550" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .title { font: bold 16px sans-serif; fill: #333; }
+      .subtitle { font: bold 12px sans-serif; fill: #555; }
+      .label { font: 11px sans-serif; fill: #666; }
+      .small { font: 9px sans-serif; fill: #888; }
+      .code { font: 10px monospace; fill: #0066cc; }
+      .dimension { font: 10px sans-serif; fill: #cc0000; }
+      .db-label { font: 9px sans-serif; fill: #aaa; }
+    </style>
+    <!-- Arrow marker -->
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#666"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="700" height="550" fill="#f5f5f5"/>
+
+  <!-- Title -->
+  <text x="350" y="30" text-anchor="middle" class="title">Mixer Fader Layout - All Elements Use Same Effective Range</text>
+
+  <!-- ========== LEFT SIDE: Visual Representation ========== -->
+
+  <!-- Channel Strip Container (dark background) -->
+  <rect x="30" y="60" width="180" height="420" fill="#1e1e1e" rx="4"/>
+  <text x="120" y="85" text-anchor="middle" class="label" fill="#888">Channel Strip</text>
+
+  <!-- Fader Component Full Bounds -->
+  <rect x="50" y="120" width="40" height="300" fill="none" stroke="#666" stroke-width="1" stroke-dasharray="3"/>
+  <text x="70" y="115" text-anchor="middle" class="small" fill="#666">Slider Component</text>
+
+  <!-- Top Padding (thumbRadius = 6px) -->
+  <rect x="50" y="120" width="40" height="12" fill="#ff000022"/>
+  <line x1="95" y1="120" x2="95" y2="132" stroke="#cc0000" stroke-width="1"/>
+  <text x="100" y="128" class="dimension">6px</text>
+
+  <!-- Bottom Padding (thumbRadius = 6px) -->
+  <rect x="50" y="408" width="40" height="12" fill="#ff000022"/>
+  <line x1="95" y1="408" x2="95" y2="420" stroke="#cc0000" stroke-width="1"/>
+  <text x="100" y="416" class="dimension">6px</text>
+
+  <!-- Effective Range (where thumb CENTER can travel) -->
+  <rect x="50" y="132" width="40" height="276" fill="none" stroke="#5588AA" stroke-width="2"/>
+
+  <!-- Track (thin line in effective range) -->
+  <rect x="68" y="132" width="3" height="276" fill="#444"/>
+
+  <!-- Filled track below thumb -->
+  <rect x="68" y="201" width="3" height="207" fill="#5588AA" opacity="0.6"/>
+
+  <!-- Thumb at 0dB position -->
+  <rect x="52" y="195" width="36" height="12" rx="6" fill="#333" stroke="#5588AA"/>
+  <line x1="58" y1="201" x2="82" y2="201" stroke="#5588AA" stroke-width="2"/>
+
+  <!-- Labels Column -->
+  <g transform="translate(110, 0)">
+    <!-- +6dB at top of effective range -->
+    <line x1="0" y1="132" x2="8" y2="132" stroke="#888"/>
+    <text x="20" y="135" class="db-label">+6</text>
+    <line x1="40" y1="132" x2="48" y2="132" stroke="#888"/>
+
+    <!-- +3dB -->
+    <line x1="0" y1="155" x2="5" y2="155" stroke="#888"/>
+    <text x="20" y="158" class="db-label">+3</text>
+    <line x1="40" y1="155" x2="45" y2="155" stroke="#888"/>
+
+    <!-- 0dB (unity) at 75% up -->
+    <line x1="0" y1="201" x2="8" y2="201" stroke="#5588AA" stroke-width="2"/>
+    <text x="20" y="204" class="db-label" fill="#5588AA">0</text>
+    <line x1="40" y1="201" x2="48" y2="201" stroke="#5588AA" stroke-width="2"/>
+
+    <!-- -6dB -->
+    <line x1="0" y1="235" x2="5" y2="235" stroke="#888"/>
+    <text x="20" y="238" class="db-label">-6</text>
+    <line x1="40" y1="235" x2="45" y2="235" stroke="#888"/>
+
+    <!-- -12dB -->
+    <line x1="0" y1="270" x2="5" y2="270" stroke="#888"/>
+    <text x="20" y="273" class="db-label">-12</text>
+    <line x1="40" y1="270" x2="45" y2="270" stroke="#888"/>
+
+    <!-- -24dB -->
+    <line x1="0" y1="339" x2="5" y2="339" stroke="#888"/>
+    <text x="20" y="342" class="db-label">-24</text>
+    <line x1="40" y1="339" x2="45" y2="339" stroke="#888"/>
+
+    <!-- -60dB at bottom of effective range -->
+    <line x1="0" y1="408" x2="8" y2="408" stroke="#888"/>
+    <text x="20" y="411" class="db-label">-60</text>
+    <line x1="40" y1="408" x2="48" y2="408" stroke="#888"/>
+  </g>
+
+  <!-- Meter Column -->
+  <rect x="170" y="132" width="12" height="276" fill="#333" rx="2"/>
+  <!-- Meter fill would go here based on level -->
+
+  <!-- Legend -->
+  <g transform="translate(30, 450)">
+    <rect x="0" y="0" width="180" height="70" fill="#fff" stroke="#ccc" rx="4"/>
+    <text x="90" y="18" text-anchor="middle" class="subtitle">Legend</text>
+
+    <rect x="10" y="28" width="20" height="10" fill="#ff000022" stroke="#cc0000"/>
+    <text x="35" y="36" class="small">Thumb padding (6px each)</text>
+
+    <rect x="10" y="45" width="20" height="10" fill="none" stroke="#5588AA" stroke-width="2"/>
+    <text x="35" y="53" class="small">Effective range (where thumb center travels)</text>
+  </g>
+
+  <!-- ========== RIGHT SIDE: Calculations ========== -->
+
+  <rect x="240" y="60" width="440" height="420" fill="#fff" stroke="#ddd" rx="4"/>
+
+  <text x="460" y="90" text-anchor="middle" class="title">How It Works</text>
+
+  <!-- Key Insight Box -->
+  <rect x="260" y="105" width="400" height="60" fill="#e8f4e8" stroke="#88aa88" rx="4"/>
+  <text x="460" y="125" text-anchor="middle" class="subtitle" fill="#448844">Key Insight</text>
+  <text x="460" y="145" text-anchor="middle" class="label">JUCE passes REDUCED bounds to drawLinearSlider()</text>
+  <text x="460" y="158" text-anchor="middle" class="small">The bounds already have thumbRadius (6px) removed from top &amp; bottom</text>
+
+  <!-- What JUCE Does -->
+  <text x="270" y="190" class="subtitle">1. What JUCE Does:</text>
+  <text x="280" y="210" class="code">slider.setBounds(x, y, w, h)  // Full component: h = 291</text>
+  <text x="280" y="228" class="code">// JUCE internally calculates:</text>
+  <text x="280" y="246" class="code">effectiveY = y + thumbRadius      // +6</text>
+  <text x="280" y="264" class="code">effectiveH = h - 2*thumbRadius    // 291-12 = 279</text>
+  <text x="280" y="282" class="code">// Passes these to drawLinearSlider as bounds</text>
+
+  <!-- What We Do -->
+  <text x="270" y="315" class="subtitle">2. What We Do (must match JUCE):</text>
+
+  <text x="280" y="340" class="label" fill="#5588AA">Track (in drawLinearSlider):</text>
+  <text x="290" y="358" class="code">trackRect = bounds  // Use bounds directly</text>
+
+  <text x="280" y="385" class="label" fill="#5588AA">Labels (in ChannelStrip::paint):</text>
+  <text x="290" y="403" class="code">effectiveTop = faderArea_.y + thumbRadius</text>
+  <text x="290" y="418" class="code">effectiveHeight = faderArea_.height - 2*thumbRadius</text>
+  <text x="290" y="433" class="code">labelY = effectiveTop + (1-faderPos) * effectiveHeight</text>
+
+  <text x="280" y="458" class="label" fill="#5588AA">Meter:</text>
+  <text x="290" y="473" class="code">effectiveBounds = bounds.reduced(0, thumbRadius)</text>
+
+  <!-- Result -->
+  <rect x="260" y="490" width="400" height="40" fill="#e8e8f4" stroke="#8888aa" rx="4"/>
+  <text x="460" y="515" text-anchor="middle" class="label" fill="#444488">All three elements (track, labels, meter) use the SAME effective range</text>
+</svg>

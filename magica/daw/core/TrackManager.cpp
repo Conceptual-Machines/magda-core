@@ -285,7 +285,8 @@ void TrackManager::setTrackColour(TrackId trackId, juce::Colour colour) {
 
 void TrackManager::setTrackVolume(TrackId trackId, float volume) {
     if (auto* track = getTrack(trackId)) {
-        track->volume = juce::jlimit(0.0f, 1.0f, volume);
+        // Allow up to +6dB gain (10^(6/20) ≈ 2.0)
+        track->volume = juce::jlimit(0.0f, 2.0f, volume);
         notifyTrackPropertyChanged(trackId);
     }
 }
