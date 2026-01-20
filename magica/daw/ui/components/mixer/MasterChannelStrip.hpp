@@ -40,6 +40,7 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     std::unique_ptr<juce::Label> titleLabel;
     std::unique_ptr<juce::Slider> volumeSlider;
     std::unique_ptr<juce::Label> volumeValueLabel;
+    std::unique_ptr<juce::DrawableButton> muteButton;
 
     // Meter component
     class LevelMeter;
@@ -50,8 +51,17 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     // Custom look and feel for faders
     MixerLookAndFeel mixerLookAndFeel_;
 
+    // Layout regions for fader area
+    juce::Rectangle<int> faderRegion_;
+    juce::Rectangle<int> faderArea_;
+    juce::Rectangle<int> leftTickArea_;
+    juce::Rectangle<int> labelArea_;
+    juce::Rectangle<int> rightTickArea_;
+    juce::Rectangle<int> meterArea_;
+
     void setupControls();
     void updateFromMasterState();
+    void drawDbLabels(juce::Graphics& g);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MasterChannelStrip)
 };
