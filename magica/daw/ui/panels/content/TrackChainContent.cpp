@@ -141,7 +141,7 @@ TrackChainContent::TrackChainContent() {
     gainValueLabel_.setJustificationType(juce::Justification::centred);
     gainValueLabel_.setColour(juce::Label::textColourId,
                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    gainValueLabel_.setFont(juce::FontOptions(9.0f));
+    gainValueLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     addChildComponent(gainValueLabel_);
 
     // Pan slider (rotary knob)
@@ -177,7 +177,7 @@ TrackChainContent::TrackChainContent() {
     panValueLabel_.setJustificationType(juce::Justification::centred);
     panValueLabel_.setColour(juce::Label::textColourId,
                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    panValueLabel_.setFont(juce::FontOptions(10.0f));
+    panValueLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
     addChildComponent(panValueLabel_);
 
     // Register as listener

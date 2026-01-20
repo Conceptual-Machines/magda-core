@@ -26,6 +26,15 @@ class MixerLookAndFeel : public juce::LookAndFeel_V4 {
                           float sliderPosProportional, float rotaryStartAngle, float rotaryEndAngle,
                           juce::Slider& slider) override;
 
+    // Override ComboBox drawing for compact dropdown appearance
+    void drawComboBox(juce::Graphics& g, int width, int height, bool isButtonDown, int buttonX,
+                      int buttonY, int buttonW, int buttonH, juce::ComboBox& box) override;
+
+    void positionComboBoxText(juce::ComboBox& box, juce::Label& label) override;
+
+    // Smaller arrow button for ComboBox
+    void drawComboBoxArrow(juce::Graphics& g, juce::Rectangle<int> arrowZone);
+
   private:
     std::unique_ptr<juce::Drawable> faderThumb_;
     std::unique_ptr<juce::Drawable> faderTrack_;

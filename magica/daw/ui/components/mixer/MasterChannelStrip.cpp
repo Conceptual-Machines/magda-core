@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "../../themes/DarkTheme.hpp"
+#include "../../themes/FontManager.hpp"
 #include "../../themes/MixerMetrics.hpp"
 #include "BinaryData.h"
 
@@ -169,7 +170,7 @@ void MasterChannelStrip::setupControls() {
     peakLabel->setJustificationType(juce::Justification::centred);
     peakLabel->setColour(juce::Label::textColourId,
                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    peakLabel->setFont(juce::FontOptions(9.0f));
+    peakLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
     addAndMakeVisible(*peakLabel);
 
     // Volume slider - using dB scale with unity at 0.75 position
@@ -214,7 +215,7 @@ void MasterChannelStrip::setupControls() {
     volumeValueLabel->setJustificationType(juce::Justification::centred);
     volumeValueLabel->setColour(juce::Label::textColourId,
                                 DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    volumeValueLabel->setFont(juce::FontOptions(9.0f));
+    volumeValueLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
     addAndMakeVisible(*volumeValueLabel);
 
     // Mute button with volume icons
@@ -426,7 +427,7 @@ void MasterChannelStrip::drawDbLabels(juce::Graphics& g) {
     float effectiveTop = faderArea_.getY() + thumbRadius;
     float effectiveHeight = faderArea_.getHeight() - 2.0f * thumbRadius;
 
-    g.setFont(juce::FontOptions(metrics.labelFontSize));
+    g.setFont(FontManager::getInstance().getUIFont(metrics.labelFontSize));
 
     for (float db : dbValues) {
         // Convert dB to Y position - MUST match JUCE's formula exactly:

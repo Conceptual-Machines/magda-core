@@ -11,11 +11,10 @@
 
 namespace magica {
 
-// dB conversion helpers for volume fader
+// dB conversion helpers for volume
 namespace {
 constexpr float MIN_DB = -60.0f;
 constexpr float MAX_DB = 6.0f;
-constexpr float UNITY_DB = 0.0f;
 
 float gainToDb(float gain) {
     if (gain <= 0.0f)
@@ -29,43 +28,63 @@ float dbToGain(float db) {
     return std::pow(10.0f, db / 20.0f);
 }
 
-// Convert dB to normalized fader position (0-1) with unity (0dB) at 0.75
-float dbToFaderPos(float db) {
-    if (db <= MIN_DB)
-        return 0.0f;
-    if (db >= MAX_DB)
-        return 1.0f;
+// Simple stereo level meter component for track headers
+class TrackMeter : public juce::Component {
+  public:
+    TrackMeter() = default;
 
-    if (db < UNITY_DB) {
-        return 0.75f * (db - MIN_DB) / (UNITY_DB - MIN_DB);
-    } else {
-        return 0.75f + 0.25f * (db - UNITY_DB) / (MAX_DB - UNITY_DB);
+    void setLevels(float left, float right) {
+        levelL_ = juce::jlimit(0.0f, 1.0f, left);
+        levelR_ = juce::jlimit(0.0f, 1.0f, right);
+        repaint();
     }
-}
 
-// Convert fader position to dB
-float faderPosToDb(float pos) {
-    if (pos <= 0.0f)
-        return MIN_DB;
-    if (pos >= 1.0f)
-        return MAX_DB;
+    void paint(juce::Graphics& g) override {
+        auto bounds = getLocalBounds().toFloat();
+        const float gap = 2.0f;
 
-    if (pos < 0.75f) {
-        return MIN_DB + (pos / 0.75f) * (UNITY_DB - MIN_DB);
-    } else {
-        return UNITY_DB + ((pos - 0.75f) / 0.25f) * (MAX_DB - UNITY_DB);
+        // Split into L/R bars with gap
+        float barWidth = (bounds.getWidth() - gap) / 2.0f;
+        auto leftBar = bounds.withWidth(barWidth);
+        auto rightBar = bounds.withWidth(barWidth).withX(bounds.getX() + barWidth + gap);
+
+        // Background for each bar
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.fillRoundedRectangle(leftBar, 2.0f);
+        g.fillRoundedRectangle(rightBar, 2.0f);
+
+        // Draw level fills
+        drawMeterBar(g, leftBar, levelL_);
+        drawMeterBar(g, rightBar, levelR_);
     }
-}
 
-// Convert linear gain to fader position
-float gainToFaderPos(float gain) {
-    return dbToFaderPos(gainToDb(gain));
-}
+  private:
+    float levelL_ = 0.0f;
+    float levelR_ = 0.0f;
 
-// Convert fader position to linear gain
-float faderPosToGain(float pos) {
-    return dbToGain(faderPosToDb(pos));
-}
+    void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level) {
+        if (level <= 0.0f)
+            return;
+
+        float fillHeight = bounds.getHeight() * level;
+        auto fillBounds = bounds.removeFromBottom(fillHeight);
+
+        // Color gradient: green -> yellow -> red
+        juce::Colour color;
+        if (level < 0.7f) {
+            color = juce::Colour(0xFF55AA55);  // Green
+        } else if (level < 0.9f) {
+            float t = (level - 0.7f) / 0.2f;
+            color = juce::Colour(0xFF55AA55).interpolatedWith(juce::Colour(0xFFAAAA55), t);
+        } else {
+            float t = (level - 0.9f) / 0.1f;
+            color = juce::Colour(0xFFAAAA55).interpolatedWith(juce::Colour(0xFFAA5555), t);
+        }
+
+        g.setColour(color);
+        g.fillRoundedRectangle(fillBounds, 1.0f);
+    }
+};
 }  // namespace
 
 TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : name(trackName) {
@@ -102,15 +121,28 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
                           DarkTheme::getColour(DarkTheme::BACKGROUND));
     soloButton->setClickingTogglesState(true);
 
-    volumeSlider =
-        std::make_unique<juce::Slider>(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox);
-    volumeSlider->setRange(0.0, 1.0);
-    volumeSlider->setValue(gainToFaderPos(volume));  // Convert linear gain to fader position
+    recordButton = std::make_unique<juce::TextButton>("R");
+    recordButton->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+                                    juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    recordButton->setColour(juce::TextButton::buttonColourId,
+                            DarkTheme::getColour(DarkTheme::SURFACE));
+    recordButton->setColour(juce::TextButton::buttonOnColourId,
+                            DarkTheme::getColour(DarkTheme::STATUS_ERROR));  // Red when armed
+    recordButton->setColour(juce::TextButton::textColourOffId,
+                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    recordButton->setColour(juce::TextButton::textColourOnId,
+                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    recordButton->setClickingTogglesState(true);
 
-    panSlider =
-        std::make_unique<juce::Slider>(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox);
-    panSlider->setRange(-1.0, 1.0);
-    panSlider->setValue(pan);
+    // Volume label (shows dB, draggable)
+    volumeLabel = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
+    volumeLabel->setRange(MIN_DB, MAX_DB, 0.0);  // -60 to +6 dB, default 0 dB
+    volumeLabel->setValue(gainToDb(volume), juce::dontSendNotification);
+
+    // Pan label (shows L/C/R, draggable)
+    panLabel = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Pan);
+    panLabel->setRange(-1.0, 1.0, 0.0);  // -1 (L) to +1 (R), default center
+    panLabel->setValue(pan, juce::dontSendNotification);
 
     // Collapse button for groups (triangle indicator)
     collapseButton = std::make_unique<juce::TextButton>();
@@ -118,6 +150,73 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     collapseButton->setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
     collapseButton->setColour(juce::TextButton::textColourOffId,
                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+
+    // Audio input selector
+    audioInSelector = std::make_unique<juce::ComboBox>();
+    audioInSelector->addItem("In: None", 1);
+    audioInSelector->addItem("In: 1", 2);
+    audioInSelector->addItem("In: 2", 3);
+    audioInSelector->addItem("In: 1-2", 4);
+    audioInSelector->setSelectedId(1);
+    audioInSelector->setColour(juce::ComboBox::backgroundColourId,
+                               DarkTheme::getColour(DarkTheme::SURFACE));
+    audioInSelector->setColour(juce::ComboBox::textColourId,
+                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    audioInSelector->setColour(juce::ComboBox::outlineColourId,
+                               DarkTheme::getColour(DarkTheme::BORDER));
+
+    // Audio output selector
+    audioOutSelector = std::make_unique<juce::ComboBox>();
+    audioOutSelector->addItem("Out: Master", 1);
+    audioOutSelector->addItem("Out: 1-2", 2);
+    audioOutSelector->addItem("Out: 3-4", 3);
+    audioOutSelector->setSelectedId(1);
+    audioOutSelector->setColour(juce::ComboBox::backgroundColourId,
+                                DarkTheme::getColour(DarkTheme::SURFACE));
+    audioOutSelector->setColour(juce::ComboBox::textColourId,
+                                DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    audioOutSelector->setColour(juce::ComboBox::outlineColourId,
+                                DarkTheme::getColour(DarkTheme::BORDER));
+
+    // MIDI input selector
+    midiInSelector = std::make_unique<juce::ComboBox>();
+    midiInSelector->addItem("M In: All", 1);
+    midiInSelector->addItem("M In: None", 2);
+    midiInSelector->addItem("M In: Ch1", 3);
+    midiInSelector->setSelectedId(1);
+    midiInSelector->setColour(juce::ComboBox::backgroundColourId,
+                              DarkTheme::getColour(DarkTheme::SURFACE));
+    midiInSelector->setColour(juce::ComboBox::textColourId,
+                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    midiInSelector->setColour(juce::ComboBox::outlineColourId,
+                              DarkTheme::getColour(DarkTheme::BORDER));
+
+    // MIDI output selector
+    midiOutSelector = std::make_unique<juce::ComboBox>();
+    midiOutSelector->addItem("M Out: None", 1);
+    midiOutSelector->addItem("M Out: All", 2);
+    midiOutSelector->addItem("M Out: Ch1", 3);
+    midiOutSelector->setSelectedId(1);
+    midiOutSelector->setColour(juce::ComboBox::backgroundColourId,
+                               DarkTheme::getColour(DarkTheme::SURFACE));
+    midiOutSelector->setColour(juce::ComboBox::textColourId,
+                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    midiOutSelector->setColour(juce::ComboBox::outlineColourId,
+                               DarkTheme::getColour(DarkTheme::BORDER));
+
+    // Send labels (create 2 by default, show dB)
+    for (int i = 0; i < 2; ++i) {
+        auto sendLabel =
+            std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
+        sendLabel->setRange(MIN_DB, MAX_DB, MIN_DB);  // -60 to +6 dB, default -inf
+        sendLabel->setValue(MIN_DB, juce::dontSendNotification);
+        sendLabels.push_back(std::move(sendLabel));
+    }
+
+    // Meter component (stereo level display)
+    meterComponent = std::make_unique<TrackMeter>();
+    // Set demo levels so meters are visible
+    static_cast<TrackMeter*>(meterComponent.get())->setLevels(0.6f, 0.4f);
 }
 
 TrackHeadersPanel::TrackHeadersPanel() {
@@ -135,10 +234,12 @@ TrackHeadersPanel::TrackHeadersPanel() {
 }
 
 TrackHeadersPanel::~TrackHeadersPanel() {
-    // Clear look and feel from sliders before destruction
+    // Clear look and feel from combo boxes before destruction
     for (auto& header : trackHeaders) {
-        header->volumeSlider->setLookAndFeel(nullptr);
-        header->panSlider->setLookAndFeel(nullptr);
+        header->audioInSelector->setLookAndFeel(nullptr);
+        header->audioOutSelector->setLookAndFeel(nullptr);
+        header->midiInSelector->setLookAndFeel(nullptr);
+        header->midiOutSelector->setLookAndFeel(nullptr);
     }
 
     TrackManager::getInstance().removeListener(this);
@@ -153,15 +254,17 @@ void TrackHeadersPanel::viewModeChanged(ViewMode mode, const AudioEngineProfile&
 void TrackHeadersPanel::tracksChanged() {
     // Clear existing track headers
     for (auto& header : trackHeaders) {
-        // Clear look and feel before removing
-        header->volumeSlider->setLookAndFeel(nullptr);
-        header->panSlider->setLookAndFeel(nullptr);
+        // Clear look and feel from combo boxes before removing
+        header->audioInSelector->setLookAndFeel(nullptr);
+        header->audioOutSelector->setLookAndFeel(nullptr);
+        header->midiInSelector->setLookAndFeel(nullptr);
+        header->midiOutSelector->setLookAndFeel(nullptr);
 
         removeChildComponent(header->nameLabel.get());
         removeChildComponent(header->muteButton.get());
         removeChildComponent(header->soloButton.get());
-        removeChildComponent(header->volumeSlider.get());
-        removeChildComponent(header->panSlider.get());
+        removeChildComponent(header->volumeLabel.get());
+        removeChildComponent(header->panLabel.get());
         removeChildComponent(header->collapseButton.get());
     }
     trackHeaders.clear();
@@ -200,12 +303,23 @@ void TrackHeadersPanel::tracksChanged() {
         addAndMakeVisible(*header->nameLabel);
         addAndMakeVisible(*header->muteButton);
         addAndMakeVisible(*header->soloButton);
-        addAndMakeVisible(*header->volumeSlider);
-        addAndMakeVisible(*header->panSlider);
+        addAndMakeVisible(*header->recordButton);
+        addAndMakeVisible(*header->volumeLabel);
+        addAndMakeVisible(*header->panLabel);
+        addAndMakeVisible(*header->audioInSelector);
+        addAndMakeVisible(*header->audioOutSelector);
+        addAndMakeVisible(*header->midiInSelector);
+        addAndMakeVisible(*header->midiOutSelector);
+        for (auto& sendLabel : header->sendLabels) {
+            addAndMakeVisible(*sendLabel);
+        }
+        addAndMakeVisible(*header->meterComponent);
 
-        // Apply custom look and feel to sliders
-        header->volumeSlider->setLookAndFeel(&sliderLookAndFeel_);
-        header->panSlider->setLookAndFeel(&sliderLookAndFeel_);
+        // Apply custom look and feel to combo boxes
+        header->audioInSelector->setLookAndFeel(&sliderLookAndFeel_);
+        header->audioOutSelector->setLookAndFeel(&sliderLookAndFeel_);
+        header->midiInSelector->setLookAndFeel(&sliderLookAndFeel_);
+        header->midiOutSelector->setLookAndFeel(&sliderLookAndFeel_);
 
         // Add collapse button for groups
         if (header->isGroup) {
@@ -217,8 +331,8 @@ void TrackHeadersPanel::tracksChanged() {
         // Update UI state
         header->muteButton->setToggleState(track->muted, juce::dontSendNotification);
         header->soloButton->setToggleState(track->soloed, juce::dontSendNotification);
-        header->volumeSlider->setValue(gainToFaderPos(track->volume), juce::dontSendNotification);
-        header->panSlider->setValue(track->pan, juce::dontSendNotification);
+        header->volumeLabel->setValue(gainToDb(track->volume), juce::dontSendNotification);
+        header->panLabel->setValue(track->pan, juce::dontSendNotification);
 
         trackHeaders.push_back(std::move(header));
 
@@ -269,8 +383,8 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
         header.nameLabel->setText(track->name, juce::dontSendNotification);
         header.muteButton->setToggleState(track->muted, juce::dontSendNotification);
         header.soloButton->setToggleState(track->soloed, juce::dontSendNotification);
-        header.volumeSlider->setValue(gainToFaderPos(track->volume), juce::dontSendNotification);
-        header.panSlider->setValue(track->pan, juce::dontSendNotification);
+        header.volumeLabel->setValue(gainToDb(track->volume), juce::dontSendNotification);
+        header.panLabel->setValue(track->pan, juce::dontSendNotification);
 
         updateTrackHeaderLayout();
         repaint();
@@ -317,12 +431,23 @@ void TrackHeadersPanel::addTrack() {
     addAndMakeVisible(*header->nameLabel);
     addAndMakeVisible(*header->muteButton);
     addAndMakeVisible(*header->soloButton);
-    addAndMakeVisible(*header->volumeSlider);
-    addAndMakeVisible(*header->panSlider);
+    addAndMakeVisible(*header->recordButton);
+    addAndMakeVisible(*header->volumeLabel);
+    addAndMakeVisible(*header->panLabel);
+    addAndMakeVisible(*header->audioInSelector);
+    addAndMakeVisible(*header->audioOutSelector);
+    addAndMakeVisible(*header->midiInSelector);
+    addAndMakeVisible(*header->midiOutSelector);
+    for (auto& sendLabel : header->sendLabels) {
+        addAndMakeVisible(*sendLabel);
+    }
+    addAndMakeVisible(*header->meterComponent);
 
-    // Apply custom look and feel to sliders
-    header->volumeSlider->setLookAndFeel(&sliderLookAndFeel_);
-    header->panSlider->setLookAndFeel(&sliderLookAndFeel_);
+    // Apply custom look and feel to combo boxes
+    header->audioInSelector->setLookAndFeel(&sliderLookAndFeel_);
+    header->audioOutSelector->setLookAndFeel(&sliderLookAndFeel_);
+    header->midiInSelector->setLookAndFeel(&sliderLookAndFeel_);
+    header->midiOutSelector->setLookAndFeel(&sliderLookAndFeel_);
 
     trackHeaders.push_back(std::move(header));
 
@@ -445,12 +570,12 @@ void TrackHeadersPanel::setupTrackHeader(TrackHeader& header, int trackIndex) {
         }
     };
 
-    // Volume slider callback
-    header.volumeSlider->onValueChange = [this, trackIndex]() {
+    // Volume label callback
+    header.volumeLabel->onValueChange = [this, trackIndex]() {
         if (trackIndex < trackHeaders.size()) {
             auto& header = *trackHeaders[trackIndex];
-            // Convert fader position back to linear gain
-            header.volume = faderPosToGain(static_cast<float>(header.volumeSlider->getValue()));
+            // Convert dB to linear gain
+            header.volume = dbToGain(static_cast<float>(header.volumeLabel->getValue()));
 
             if (onTrackVolumeChanged) {
                 onTrackVolumeChanged(trackIndex, header.volume);
@@ -458,11 +583,11 @@ void TrackHeadersPanel::setupTrackHeader(TrackHeader& header, int trackIndex) {
         }
     };
 
-    // Pan slider callback
-    header.panSlider->onValueChange = [this, trackIndex]() {
+    // Pan label callback
+    header.panLabel->onValueChange = [this, trackIndex]() {
         if (trackIndex < trackHeaders.size()) {
             auto& header = *trackHeaders[trackIndex];
-            header.pan = static_cast<float>(header.panSlider->getValue());
+            header.pan = static_cast<float>(header.panLabel->getValue());
 
             if (onTrackPanChanged) {
                 onTrackPanChanged(trackIndex, header.pan);
@@ -502,23 +627,23 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
         }
     };
 
-    // Volume slider callback - updates TrackManager
-    header.volumeSlider->onValueChange = [this, trackId]() {
+    // Volume label callback - updates TrackManager
+    header.volumeLabel->onValueChange = [this, trackId]() {
         int index = TrackManager::getInstance().getTrackIndex(trackId);
         if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
             auto& header = *trackHeaders[index];
-            // Convert fader position back to linear gain
-            header.volume = faderPosToGain(static_cast<float>(header.volumeSlider->getValue()));
+            // Convert dB to linear gain
+            header.volume = dbToGain(static_cast<float>(header.volumeLabel->getValue()));
             TrackManager::getInstance().setTrackVolume(trackId, header.volume);
         }
     };
 
-    // Pan slider callback - updates TrackManager
-    header.panSlider->onValueChange = [this, trackId]() {
+    // Pan label callback - updates TrackManager
+    header.panLabel->onValueChange = [this, trackId]() {
         int index = TrackManager::getInstance().getTrackIndex(trackId);
         if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
             auto& header = *trackHeaders[index];
-            header.pan = static_cast<float>(header.panSlider->getValue());
+            header.pan = static_cast<float>(header.panLabel->getValue());
             TrackManager::getInstance().setTrackPan(trackId, header.pan);
         }
     };
@@ -612,48 +737,174 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
         auto headerArea = getTrackHeaderArea(static_cast<int>(i));
 
         if (!headerArea.isEmpty()) {
-            // Apply indentation based on depth
+            // Dynamic layout based on track height
+            // Large (>80px): name, M R fader pan, S input, meters
+            // Medium (60-80px): name + M R S, fader pan, meters
+            // Small (<60px): name + M S R only, meters
+
+            const int meterWidth = 20;
+            const int meterPadding = 4;
+            const int trackHeight = headerArea.getHeight();
+
+            // Extract meters area on the right (full height)
+            auto workArea = headerArea.reduced(4);
+            auto meterArea = workArea.removeFromRight(meterWidth);
+            workArea.removeFromRight(meterPadding);
+
+            // Meter spans full track height
+            header.meterComponent->setBounds(meterArea);
+            header.meterComponent->setVisible(true);
+
+            // Apply indentation based on depth for TCP area
             int indent = header.depth * INDENT_WIDTH;
-            auto contentArea = headerArea.withTrimmedLeft(indent).reduced(5);
+            auto tcpArea = workArea.withTrimmedLeft(indent);
+
+            // Constants
+            const int nameRowHeight = 18;
+            const int rowHeight = 16;
+            const int smallButtonSize = 16;
+            const int spacing = 2;
 
             // Top row: collapse button (if group) + name label
-            auto topRow = contentArea.removeFromTop(20);
+            auto topRow = tcpArea.removeFromTop(nameRowHeight);
 
             if (header.isGroup) {
-                // Collapse button for groups
                 header.collapseButton->setBounds(topRow.removeFromLeft(COLLAPSE_BUTTON_SIZE));
-                topRow.removeFromLeft(3);  // Spacing
+                topRow.removeFromLeft(2);
                 header.collapseButton->setVisible(true);
             } else {
                 header.collapseButton->setVisible(false);
             }
 
             header.nameLabel->setBounds(topRow);
-            contentArea.removeFromTop(5);  // Spacing
+            tcpArea.removeFromTop(3);
 
-            // Mute and Solo buttons (always visible)
-            auto buttonArea = contentArea.removeFromTop(20);
-            header.muteButton->setBounds(buttonArea.removeFromLeft(30));
-            buttonArea.removeFromLeft(5);  // Spacing
-            header.soloButton->setBounds(buttonArea.removeFromLeft(30));
+            // Helper to hide all routing selectors and sends
+            auto hideAllRouting = [&]() {
+                header.audioInSelector->setVisible(false);
+                header.audioOutSelector->setVisible(false);
+                header.midiInSelector->setVisible(false);
+                header.midiOutSelector->setVisible(false);
+                for (auto& sendLabel : header.sendLabels) {
+                    sendLabel->setVisible(false);
+                }
+            };
 
-            contentArea.removeFromTop(5);  // Spacing
+            // Label widths for draggable values
+            const int volumeLabelWidth = 42;  // "-60.0" or "+6.0"
+            const int panLabelWidth = 28;     // "L100" or "R100" or "C"
+            const int sendLabelWidth = 28;    // "-inf" or "-12"
 
-            // Volume slider - only show if enough space
-            if (contentArea.getHeight() >= 20) {
-                header.volumeSlider->setBounds(contentArea.removeFromTop(15));
-                header.volumeSlider->setVisible(true);
-                contentArea.removeFromTop(5);  // Spacing
+            if (trackHeight >= 100) {
+                // LARGE LAYOUT - evenly distributed:
+                // Row 1: [audio in] [audio out]
+                // Row 2: [midi in] [midi out]
+                // Row 3: M S R
+                // Row 4: [volume] [pan] [sends...]
+                const int dropdownWidth = 55;
+                const int buttonGap = 2;
+                const int numRows = 4;
+                const int contentRowHeight = rowHeight - 2;
+
+                // Calculate even spacing between rows
+                int totalContentHeight = numRows * contentRowHeight;
+                int availableSpace = tcpArea.getHeight() - totalContentHeight;
+                int rowGap = std::max(2, availableSpace / (numRows - 1));
+
+                // Row 1: Audio routing
+                auto row1 = tcpArea.removeFromTop(contentRowHeight);
+                header.audioInSelector->setBounds(row1.removeFromLeft(dropdownWidth));
+                header.audioInSelector->setVisible(true);
+                row1.removeFromLeft(spacing);
+                header.audioOutSelector->setBounds(row1.removeFromLeft(dropdownWidth));
+                header.audioOutSelector->setVisible(true);
+
+                tcpArea.removeFromTop(rowGap);
+
+                // Row 2: MIDI routing
+                auto row2 = tcpArea.removeFromTop(contentRowHeight);
+                header.midiInSelector->setBounds(row2.removeFromLeft(dropdownWidth));
+                header.midiInSelector->setVisible(true);
+                row2.removeFromLeft(spacing);
+                header.midiOutSelector->setBounds(row2.removeFromLeft(dropdownWidth));
+                header.midiOutSelector->setVisible(true);
+
+                tcpArea.removeFromTop(rowGap);
+
+                // Row 3: M S R buttons
+                auto row3 = tcpArea.removeFromTop(contentRowHeight);
+                header.muteButton->setBounds(row3.removeFromLeft(smallButtonSize));
+                row3.removeFromLeft(buttonGap);
+                header.soloButton->setBounds(row3.removeFromLeft(smallButtonSize));
+                row3.removeFromLeft(buttonGap);
+                header.recordButton->setBounds(row3.removeFromLeft(smallButtonSize));
+                header.recordButton->setVisible(true);
+
+                tcpArea.removeFromTop(rowGap);
+
+                // Row 4: Volume, Pan, Sends
+                auto row4 = tcpArea.removeFromTop(contentRowHeight);
+
+                header.volumeLabel->setBounds(row4.removeFromLeft(volumeLabelWidth));
+                header.volumeLabel->setVisible(true);
+                row4.removeFromLeft(spacing);
+
+                header.panLabel->setBounds(row4.removeFromLeft(panLabelWidth));
+                header.panLabel->setVisible(true);
+                row4.removeFromLeft(spacing);
+
+                // Sends on same row
+                for (auto& sendLabel : header.sendLabels) {
+                    if (row4.getWidth() >= sendLabelWidth) {
+                        sendLabel->setBounds(row4.removeFromLeft(sendLabelWidth));
+                        sendLabel->setVisible(true);
+                        row4.removeFromLeft(spacing);
+                    } else {
+                        sendLabel->setVisible(false);
+                    }
+                }
+
+            } else if (trackHeight >= 55) {
+                // MEDIUM LAYOUT: Buttons + volume/pan only
+                // Row 1: M S R [volume] [pan]
+                auto row1 = tcpArea.removeFromTop(rowHeight);
+                header.muteButton->setBounds(row1.removeFromLeft(smallButtonSize));
+                row1.removeFromLeft(spacing);
+                header.soloButton->setBounds(row1.removeFromLeft(smallButtonSize));
+                row1.removeFromLeft(spacing);
+                header.recordButton->setBounds(row1.removeFromLeft(smallButtonSize));
+                header.recordButton->setVisible(true);
+                row1.removeFromLeft(spacing + 2);
+
+                header.volumeLabel->setBounds(row1.removeFromLeft(volumeLabelWidth));
+                header.volumeLabel->setVisible(true);
+                row1.removeFromLeft(spacing);
+
+                header.panLabel->setBounds(row1.removeFromLeft(panLabelWidth));
+                header.panLabel->setVisible(true);
+
+                hideAllRouting();
+
             } else {
-                header.volumeSlider->setVisible(false);
-            }
+                // SMALL LAYOUT: Buttons + volume/pan on same row
+                // Row 1: M S R [volume] [pan]
+                auto row1 = tcpArea.removeFromTop(rowHeight);
+                header.muteButton->setBounds(row1.removeFromLeft(smallButtonSize));
+                row1.removeFromLeft(spacing);
+                header.soloButton->setBounds(row1.removeFromLeft(smallButtonSize));
+                row1.removeFromLeft(spacing);
+                header.recordButton->setBounds(row1.removeFromLeft(smallButtonSize));
+                header.recordButton->setVisible(true);
+                row1.removeFromLeft(spacing + 2);
 
-            // Pan slider - only show if enough space
-            if (contentArea.getHeight() >= 15) {
-                header.panSlider->setBounds(contentArea.removeFromTop(15));
-                header.panSlider->setVisible(true);
-            } else {
-                header.panSlider->setVisible(false);
+                header.volumeLabel->setBounds(row1.removeFromLeft(volumeLabelWidth));
+                header.volumeLabel->setVisible(true);
+                row1.removeFromLeft(spacing);
+
+                header.panLabel->setBounds(row1.removeFromLeft(panLabelWidth));
+                header.panLabel->setVisible(true);
+
+                hideAllRouting();
             }
         }
     }
@@ -778,16 +1029,16 @@ void TrackHeadersPanel::setTrackSolo(int trackIndex, bool solo) {
 void TrackHeadersPanel::setTrackVolume(int trackIndex, float volume) {
     if (trackIndex >= 0 && trackIndex < trackHeaders.size()) {
         trackHeaders[trackIndex]->volume = volume;
-        // Convert linear gain to fader position
-        trackHeaders[trackIndex]->volumeSlider->setValue(gainToFaderPos(volume),
-                                                         juce::dontSendNotification);
+        // Convert linear gain to dB
+        trackHeaders[trackIndex]->volumeLabel->setValue(gainToDb(volume),
+                                                        juce::dontSendNotification);
     }
 }
 
 void TrackHeadersPanel::setTrackPan(int trackIndex, float pan) {
     if (trackIndex >= 0 && trackIndex < trackHeaders.size()) {
         trackHeaders[trackIndex]->pan = pan;
-        trackHeaders[trackIndex]->panSlider->setValue(pan, juce::dontSendNotification);
+        trackHeaders[trackIndex]->panLabel->setValue(pan, juce::dontSendNotification);
     }
 }
 

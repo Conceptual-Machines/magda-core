@@ -139,6 +139,7 @@ set(DAW_UI_SOURCES
     ui/components/common/LayoutDebugPanel.cpp
     ui/components/common/MixerDebugPanel.cpp
     ui/components/common/GridOverlayComponent.cpp
+    ui/components/common/DraggableValueLabel.cpp
     # Components - Timeline
     ui/components/timeline/TimelineComponent.cpp
     ui/components/timeline/TimelineFiller.cpp
@@ -239,6 +240,7 @@ set(DAW_HEADERS
     ui/components/common/LayoutDebugPanel.hpp
     ui/components/common/MixerDebugPanel.hpp
     ui/components/common/GridOverlayComponent.hpp
+    ui/components/common/DraggableValueLabel.hpp
     # Components - Timeline
     ui/components/timeline/TimelineComponent.hpp
     ui/components/timeline/TimelineFiller.hpp

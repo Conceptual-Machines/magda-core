@@ -1,6 +1,7 @@
 #include "MixerDebugPanel.hpp"
 
 #include "../../themes/DarkTheme.hpp"
+#include "../../themes/FontManager.hpp"
 
 namespace magica {
 
@@ -169,7 +170,7 @@ void MixerDebugPanel::addIntSlider(const juce::String& name, int* valuePtr, int 
     row.label->setText(name + ": " + juce::String(*valuePtr), juce::dontSendNotification);
     row.label->setColour(juce::Label::textColourId,
                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    row.label->setFont(juce::FontOptions(11.0f));
+    row.label->setFont(FontManager::getInstance().getUIFont(11.0f));
     contentComponent_->addAndMakeVisible(*row.label);
 
     row.slider =
@@ -209,7 +210,7 @@ void MixerDebugPanel::addFloatSlider(const juce::String& name, float* valuePtr, 
     row.label->setText(name + ": " + juce::String(*valuePtr, 2), juce::dontSendNotification);
     row.label->setColour(juce::Label::textColourId,
                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    row.label->setFont(juce::FontOptions(11.0f));
+    row.label->setFont(FontManager::getInstance().getUIFont(11.0f));
     contentComponent_->addAndMakeVisible(*row.label);
 
     row.slider =

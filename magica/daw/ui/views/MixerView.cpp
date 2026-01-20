@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "../themes/DarkTheme.hpp"
+#include "../themes/FontManager.hpp"
 #include "core/ViewModeController.hpp"
 
 namespace magica {
@@ -244,7 +245,7 @@ void MixerView::ChannelStrip::setupControls() {
     panValueLabel->setJustificationType(juce::Justification::centred);
     panValueLabel->setColour(juce::Label::textColourId,
                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    panValueLabel->setFont(juce::FontOptions(10.0f));
+    panValueLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
     addAndMakeVisible(*panValueLabel);
 
     // Level meter
@@ -257,7 +258,7 @@ void MixerView::ChannelStrip::setupControls() {
     peakLabel->setJustificationType(juce::Justification::centred);
     peakLabel->setColour(juce::Label::textColourId,
                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    peakLabel->setFont(juce::FontOptions(9.0f));
+    peakLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
     addAndMakeVisible(*peakLabel);
 
     // Volume fader - using dB scale with unity at 0.75 position
@@ -304,7 +305,7 @@ void MixerView::ChannelStrip::setupControls() {
     faderValueLabel->setJustificationType(juce::Justification::centred);
     faderValueLabel->setColour(juce::Label::textColourId,
                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    faderValueLabel->setFont(juce::FontOptions(9.0f));
+    faderValueLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
     addAndMakeVisible(*faderValueLabel);
 
     // Mute button (square corners, compact)
@@ -429,7 +430,7 @@ void MixerView::ChannelStrip::drawDbLabels(juce::Graphics& g) {
     float effectiveTop = faderArea_.getY() + thumbRadius;
     float effectiveHeight = faderArea_.getHeight() - 2.0f * thumbRadius;
 
-    g.setFont(juce::FontOptions(metrics.labelFontSize));
+    g.setFont(FontManager::getInstance().getUIFont(metrics.labelFontSize));
 
     for (float db : dbValues) {
         // Convert dB to Y position - MUST match JUCE's formula exactly:

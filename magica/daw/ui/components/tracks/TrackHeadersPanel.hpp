@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "../../themes/MixerLookAndFeel.hpp"
+#include "../common/DraggableValueLabel.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
 
@@ -87,9 +88,20 @@ class TrackHeadersPanel : public juce::Component,
         std::unique_ptr<juce::Label> nameLabel;
         std::unique_ptr<juce::TextButton> muteButton;
         std::unique_ptr<juce::TextButton> soloButton;
-        std::unique_ptr<juce::Slider> volumeSlider;
-        std::unique_ptr<juce::Slider> panSlider;
+        std::unique_ptr<juce::TextButton> recordButton;    // Record arm button
+        std::unique_ptr<DraggableValueLabel> volumeLabel;  // Volume as draggable dB label
+        std::unique_ptr<DraggableValueLabel> panLabel;     // Pan as draggable L/C/R label
         std::unique_ptr<juce::TextButton> collapseButton;  // For groups
+        std::unique_ptr<juce::ComboBox> audioInSelector;   // Audio input routing
+        std::unique_ptr<juce::ComboBox> audioOutSelector;  // Audio output routing
+        std::unique_ptr<juce::ComboBox> midiInSelector;    // MIDI input routing
+        std::unique_ptr<juce::ComboBox> midiOutSelector;   // MIDI output routing
+        std::vector<std::unique_ptr<DraggableValueLabel>> sendLabels;  // Send level labels
+        std::unique_ptr<juce::Component> meterComponent;               // Peak meter display
+
+        // Meter levels
+        float meterLevelL = 0.0f;
+        float meterLevelR = 0.0f;
 
         TrackHeader(const juce::String& trackName);
         ~TrackHeader() = default;

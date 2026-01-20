@@ -2,6 +2,7 @@
 
 #include "BinaryData.h"
 #include "DarkTheme.hpp"
+#include "FontManager.hpp"
 #include "MixerMetrics.hpp"
 
 namespace magica {
@@ -188,6 +189,46 @@ void MixerLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int wid
 
     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     g.fillPath(pointerPath, juce::AffineTransform::rotation(angle).translated(centreX, centreY));
+}
+
+void MixerLookAndFeel::drawComboBox(juce::Graphics& g, int width, int height, bool /*isButtonDown*/,
+                                    int /*buttonX*/, int /*buttonY*/, int /*buttonW*/,
+                                    int /*buttonH*/, juce::ComboBox& box) {
+    auto bounds = juce::Rectangle<int>(0, 0, width, height).toFloat();
+
+    // Background
+    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+    g.fillRoundedRectangle(bounds, 3.0f);
+
+    // Border
+    g.setColour(box.hasKeyboardFocus(false) ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+                                            : DarkTheme::getColour(DarkTheme::BORDER));
+    g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
+
+    // Small arrow on the right (compact triangle)
+    const float arrowSize = 5.0f;
+    const float arrowX = width - arrowSize - 4.0f;
+    const float arrowY = height / 2.0f;
+
+    juce::Path arrow;
+    arrow.addTriangle(arrowX, arrowY - arrowSize / 2.0f, arrowX + arrowSize,
+                      arrowY - arrowSize / 2.0f, arrowX + arrowSize / 2.0f,
+                      arrowY + arrowSize / 2.0f);
+
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    g.fillPath(arrow);
+}
+
+void MixerLookAndFeel::positionComboBoxText(juce::ComboBox& box, juce::Label& label) {
+    // Leave minimal space for arrow on the right
+    const int arrowSpace = 12;
+    label.setBounds(4, 0, box.getWidth() - arrowSpace, box.getHeight());
+    label.setFont(FontManager::getInstance().getUIFont(10.0f));
+}
+
+void MixerLookAndFeel::drawComboBoxArrow(juce::Graphics& g, juce::Rectangle<int> arrowZone) {
+    // This is called for popup button - draw nothing (we draw our own in drawComboBox)
+    juce::ignoreUnused(g, arrowZone);
 }
 
 }  // namespace magica

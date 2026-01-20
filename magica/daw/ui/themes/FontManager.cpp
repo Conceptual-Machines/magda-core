@@ -16,6 +16,38 @@ bool FontManager::initialize() {
 
     bool success = true;
 
+    // Load Inter Regular
+    interRegular = juce::Typeface::createSystemTypefaceFor(BinaryData::InterRegular_ttf,
+                                                           BinaryData::InterRegular_ttfSize);
+    if (!interRegular) {
+        std::cerr << "Failed to load Inter-Regular" << std::endl;
+        success = false;
+    }
+
+    // Load Inter Medium
+    interMedium = juce::Typeface::createSystemTypefaceFor(BinaryData::InterMedium_ttf,
+                                                          BinaryData::InterMedium_ttfSize);
+    if (!interMedium) {
+        std::cerr << "Failed to load Inter-Medium" << std::endl;
+        success = false;
+    }
+
+    // Load Inter SemiBold
+    interSemiBold = juce::Typeface::createSystemTypefaceFor(BinaryData::InterSemiBold_ttf,
+                                                            BinaryData::InterSemiBold_ttfSize);
+    if (!interSemiBold) {
+        std::cerr << "Failed to load Inter-SemiBold" << std::endl;
+        success = false;
+    }
+
+    // Load Inter Bold
+    interBold = juce::Typeface::createSystemTypefaceFor(BinaryData::InterBold_ttf,
+                                                        BinaryData::InterBold_ttfSize);
+    if (!interBold) {
+        std::cerr << "Failed to load Inter-Bold" << std::endl;
+        success = false;
+    }
+
     initialized = success;
 
     if (initialized) {
