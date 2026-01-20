@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 
+#include "../components/common/MixerDebugPanel.hpp"
 #include "../components/mixer/MasterChannelStrip.hpp"
 #include "../themes/MixerLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
@@ -176,6 +177,9 @@ class MixerView : public juce::Component,
 
     // Custom look and feel for faders
     MixerLookAndFeel mixerLookAndFeel_;
+
+    // Debug panel for tweaking metrics (F12 to toggle)
+    std::unique_ptr<MixerDebugPanel> debugPanel_;
 
     // Channel resize state
     static constexpr int resizeZoneWidth_ = 6;

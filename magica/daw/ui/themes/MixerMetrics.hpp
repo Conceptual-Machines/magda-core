@@ -51,7 +51,7 @@ struct MixerMetrics {
     int faderHeightRatio = 85;  // percentage of available height
 
     // === Meter dimensions ===
-    int meterWidth = 12;
+    int meterWidth = 16;  // Stereo L/R bars (7.5px each with 1px gap)
 
     // === Control dimensions ===
     int buttonSize = 24;

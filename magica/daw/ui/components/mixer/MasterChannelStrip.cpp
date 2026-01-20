@@ -53,17 +53,23 @@ float faderPosToDb(float pos) {
 }
 }  // namespace
 
-// Level meter component with dB scaling
+// Stereo level meter component (L/R bars)
 class MasterChannelStrip::LevelMeter : public juce::Component {
   public:
     void setLevel(float newLevel) {
+        // Set both channels to the same level (for mono compatibility)
+        setLevels(newLevel, newLevel);
+    }
+
+    void setLevels(float left, float right) {
         // Allow up to 2.0 gain (+6 dB)
-        level = juce::jlimit(0.0f, 2.0f, newLevel);
+        leftLevel_ = juce::jlimit(0.0f, 2.0f, left);
+        rightLevel_ = juce::jlimit(0.0f, 2.0f, right);
         repaint();
     }
 
     float getLevel() const {
-        return level;
+        return std::max(leftLevel_, rightLevel_);
     }
 
     void paint(juce::Graphics& g) override {
@@ -73,42 +79,59 @@ class MasterChannelStrip::LevelMeter : public juce::Component {
         // Meter uses effective range (with thumbRadius padding) to match fader track and labels
         auto effectiveBounds = bounds.reduced(0.0f, metrics.thumbRadius());
 
-        // Background for meter
+        // Split into L/R with 1px gap
+        const float gap = 1.0f;
+        float barWidth = (effectiveBounds.getWidth() - gap) / 2.0f;
+
+        auto leftBounds = effectiveBounds.withWidth(barWidth);
+        auto rightBounds =
+            effectiveBounds.withWidth(barWidth).withX(effectiveBounds.getX() + barWidth + gap);
+
+        // Draw left channel
+        drawMeterBar(g, leftBounds, leftLevel_);
+
+        // Draw right channel
+        drawMeterBar(g, rightBounds, rightLevel_);
+    }
+
+  private:
+    float leftLevel_ = 0.0f;
+    float rightLevel_ = 0.0f;
+
+    void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level) {
+        // Background
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-        g.fillRoundedRectangle(effectiveBounds, 2.0f);
+        g.fillRoundedRectangle(bounds, 1.0f);
 
         // Meter fill (using dB-scaled level for display)
         float displayLevel = dbToFaderPos(gainToDb(level));
-        float meterHeight = effectiveBounds.getHeight() * displayLevel;
-        auto fillBounds = effectiveBounds;
+        float meterHeight = bounds.getHeight() * displayLevel;
+        auto fillBounds = bounds;
         fillBounds = fillBounds.removeFromBottom(meterHeight);
 
         // Smooth gradient from green to yellow to red based on dB
+        g.setColour(getMeterColour(level));
+        g.fillRoundedRectangle(fillBounds, 1.0f);
+    }
+
+    static juce::Colour getMeterColour(float level) {
         float dbLevel = gainToDb(level);
         juce::Colour green(0xFF55AA55);
         juce::Colour yellow(0xFFAAAA55);
         juce::Colour red(0xFFAA5555);
 
-        juce::Colour meterColour;
         if (dbLevel < -12.0f) {
-            meterColour = green;
+            return green;
         } else if (dbLevel < 0.0f) {
-            // Interpolate green to yellow between -12 dB and 0 dB
             float t = (dbLevel + 12.0f) / 12.0f;
-            meterColour = green.interpolatedWith(yellow, t);
+            return green.interpolatedWith(yellow, t);
         } else if (dbLevel < 3.0f) {
-            // Interpolate yellow to red between 0 dB and 3 dB
             float t = dbLevel / 3.0f;
-            meterColour = yellow.interpolatedWith(red, t);
+            return yellow.interpolatedWith(red, t);
         } else {
-            meterColour = red;
+            return red;
         }
-        g.setColour(meterColour);
-        g.fillRoundedRectangle(fillBounds, 2.0f);
     }
-
-  private:
-    float level = 0.0f;
 };
 
 MasterChannelStrip::MasterChannelStrip(Orientation orientation) : orientation_(orientation) {
