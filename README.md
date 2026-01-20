@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="assets/banner.png" alt="MAGDA" width="200">
+  <img src="assets/banner.png" alt="MAGDA" width="400">
 </p>
-
-<h1 align="center">MAGDA</h1>
 
 <p align="center">
   <a href="https://github.com/Conceptual-Machines/MAGDA/actions"><img src="https://github.com/Conceptual-Machines/MAGDA/workflows/CI/badge.svg" alt="CI"></a>
