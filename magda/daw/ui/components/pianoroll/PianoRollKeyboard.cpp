@@ -95,25 +95,32 @@ int PianoRollKeyboard::yToNoteNumber(int y) const {
 void PianoRollKeyboard::mouseDown(const juce::MouseEvent& event) {
     mouseDownX_ = event.x;
     mouseDownY_ = event.y;
+    lastDragY_ = event.y;
     zoomStartHeight_ = noteHeight_;
-    isZooming_ = false;
+    dragMode_ = DragMode::None;
 
     // Capture anchor note at mouse position
     zoomAnchorNote_ = yToNoteNumber(event.y);
 }
 
 void PianoRollKeyboard::mouseDrag(const juce::MouseEvent& event) {
+    int deltaX = std::abs(event.x - mouseDownX_);
     int deltaY = std::abs(event.y - mouseDownY_);
 
-    // Start zooming after crossing drag threshold
-    if (deltaY > DRAG_THRESHOLD) {
-        isZooming_ = true;
+    // Determine drag mode if not yet set
+    if (dragMode_ == DragMode::None) {
+        if (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD) {
+            // Vertical drag = scroll (along keyboard), horizontal drag = zoom
+            dragMode_ = (deltaY > deltaX) ? DragMode::Scrolling : DragMode::Zooming;
+        }
+    }
 
-        // Drag up = zoom in (larger notes), drag down = zoom out (smaller notes)
-        int yDelta = mouseDownY_ - event.y;
+    if (dragMode_ == DragMode::Zooming) {
+        // Drag left = zoom out (smaller notes), drag right = zoom in (larger notes)
+        int xDelta = event.x - mouseDownX_;
 
         // Linear zoom - each 10 pixels of drag changes height by 1
-        int heightDelta = yDelta / 10;
+        int heightDelta = xDelta / 10;
         int newHeight = zoomStartHeight_ + heightDelta;
 
         // Clamp to reasonable limits
@@ -122,11 +129,31 @@ void PianoRollKeyboard::mouseDrag(const juce::MouseEvent& event) {
         if (onZoomChanged && newHeight != noteHeight_) {
             onZoomChanged(newHeight, zoomAnchorNote_, mouseDownY_);
         }
+    } else if (dragMode_ == DragMode::Scrolling) {
+        // Calculate scroll delta (drag up scrolls up, drag down scrolls down)
+        int scrollDelta = lastDragY_ - event.y;
+        lastDragY_ = event.y;
+
+        if (onScrollRequested && scrollDelta != 0) {
+            onScrollRequested(scrollDelta);
+        }
     }
 }
 
 void PianoRollKeyboard::mouseUp(const juce::MouseEvent& /*event*/) {
-    isZooming_ = false;
+    dragMode_ = DragMode::None;
+}
+
+void PianoRollKeyboard::mouseWheelMove(const juce::MouseEvent& /*event*/,
+                                       const juce::MouseWheelDetails& wheel) {
+    // Scroll vertically when wheel is used over the keyboard
+    if (onScrollRequested) {
+        // Convert wheel delta to pixels
+        int scrollAmount = static_cast<int>(-wheel.deltaY * 100.0f);
+        if (scrollAmount != 0) {
+            onScrollRequested(scrollAmount);
+        }
+    }
 }
 
 }  // namespace magda

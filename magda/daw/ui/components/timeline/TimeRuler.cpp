@@ -112,8 +112,9 @@ int TimeRuler::getPreferredHeight() const {
 void TimeRuler::mouseDown(const juce::MouseEvent& event) {
     mouseDownX = event.x;
     mouseDownY = event.y;
+    lastDragX = event.x;
     zoomStartValue = zoom;
-    isZooming = false;
+    dragMode = DragMode::None;
 
     // Capture anchor time at mouse position
     zoomAnchorTime = pixelToTime(event.x);
@@ -121,12 +122,18 @@ void TimeRuler::mouseDown(const juce::MouseEvent& event) {
 }
 
 void TimeRuler::mouseDrag(const juce::MouseEvent& event) {
+    int deltaX = std::abs(event.x - mouseDownX);
     int deltaY = std::abs(event.y - mouseDownY);
 
-    // Start zooming after crossing drag threshold (vertical movement)
-    if (deltaY > DRAG_THRESHOLD) {
-        isZooming = true;
+    // Determine drag mode if not yet set
+    if (dragMode == DragMode::None) {
+        if (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD) {
+            // Horizontal drag = scroll, vertical drag = zoom
+            dragMode = (deltaX > deltaY) ? DragMode::Scrolling : DragMode::Zooming;
+        }
+    }
 
+    if (dragMode == DragMode::Zooming) {
         // Drag up = zoom in, drag down = zoom out
         int yDelta = mouseDownY - event.y;
 
@@ -136,18 +143,25 @@ void TimeRuler::mouseDrag(const juce::MouseEvent& event) {
         double newZoom = zoomStartValue * std::pow(2.0, exponent);
 
         // Clamp zoom to reasonable limits (pixels per second)
-        // These translate to roughly 10-500 pixels per beat at 120 BPM
         newZoom = juce::jlimit(5.0, 2000.0, newZoom);
 
         if (onZoomChanged) {
             onZoomChanged(newZoom, zoomAnchorTime, mouseDownX);
         }
+    } else if (dragMode == DragMode::Scrolling) {
+        // Calculate scroll delta (inverted - drag right scrolls left)
+        int scrollDelta = lastDragX - event.x;
+        lastDragX = event.x;
+
+        if (onScrollRequested && scrollDelta != 0) {
+            onScrollRequested(scrollDelta);
+        }
     }
 }
 
 void TimeRuler::mouseUp(const juce::MouseEvent& event) {
-    // If it was a click (not a zoom drag), handle playhead positioning
-    if (!isZooming) {
+    // If it was a click (not a drag), handle playhead positioning
+    if (dragMode == DragMode::None) {
         int deltaX = std::abs(event.x - mouseDownX);
         int deltaY = std::abs(event.y - mouseDownY);
 
@@ -161,7 +175,20 @@ void TimeRuler::mouseUp(const juce::MouseEvent& event) {
         }
     }
 
-    isZooming = false;
+    dragMode = DragMode::None;
+}
+
+void TimeRuler::mouseWheelMove(const juce::MouseEvent& /*event*/,
+                               const juce::MouseWheelDetails& wheel) {
+    // Scroll horizontally when wheel is used over the ruler
+    if (onScrollRequested) {
+        // Use deltaX if available (trackpad horizontal swipe), otherwise use deltaY (mouse wheel)
+        float delta = (wheel.deltaX != 0.0f) ? wheel.deltaX : wheel.deltaY;
+        int scrollAmount = static_cast<int>(-delta * 100.0f);
+        if (scrollAmount != 0) {
+            onScrollRequested(scrollAmount);
+        }
+    }
 }
 
 void TimeRuler::drawSecondsMode(juce::Graphics& g) {

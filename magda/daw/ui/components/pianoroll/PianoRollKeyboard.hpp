@@ -18,10 +18,12 @@ class PianoRollKeyboard : public juce::Component {
 
     void paint(juce::Graphics& g) override;
 
-    // Mouse interaction for zoom
+    // Mouse interaction for zoom and scroll
     void mouseDown(const juce::MouseEvent& event) override;
     void mouseDrag(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
+    void mouseWheelMove(const juce::MouseEvent& event,
+                        const juce::MouseWheelDetails& wheel) override;
 
     // Configuration
     void setNoteHeight(int height);
@@ -34,6 +36,7 @@ class PianoRollKeyboard : public juce::Component {
 
     // Callbacks
     std::function<void(int, int, int)> onZoomChanged;  // newNoteHeight, anchorNote, anchorScreenY
+    std::function<void(int)> onScrollRequested;        // deltaY scroll amount
 
   private:
     int noteHeight_ = 12;
@@ -41,10 +44,12 @@ class PianoRollKeyboard : public juce::Component {
     int maxNote_ = 108;  // C8
     int scrollOffsetY_ = 0;
 
-    // Zoom drag state
-    bool isZooming_ = false;
+    // Drag state (zoom or scroll)
+    enum class DragMode { None, Zooming, Scrolling };
+    DragMode dragMode_ = DragMode::None;
     int mouseDownX_ = 0;
     int mouseDownY_ = 0;
+    int lastDragY_ = 0;
     int zoomStartHeight_ = 0;
     int zoomAnchorNote_ = 0;
     static constexpr int DRAG_THRESHOLD = 3;

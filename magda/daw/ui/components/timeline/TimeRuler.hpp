@@ -67,14 +67,17 @@ class TimeRuler : public juce::Component, private juce::Timer {
     // Get preferred height (from LayoutConfig)
     int getPreferredHeight() const;
 
-    // Mouse interaction - click to set playhead, drag to zoom
+    // Mouse interaction - click to set playhead, drag to zoom, wheel to scroll
     void mouseDown(const juce::MouseEvent& event) override;
     void mouseDrag(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
+    void mouseWheelMove(const juce::MouseEvent& event,
+                        const juce::MouseWheelDetails& wheel) override;
 
     // Callbacks
     std::function<void(double)> onPositionClicked;           // Time position clicked
     std::function<void(double, double, int)> onZoomChanged;  // newZoom, anchorTime, anchorScreenX
+    std::function<void(int)> onScrollRequested;              // deltaX scroll amount
 
   private:
     // Display state
@@ -115,10 +118,12 @@ class TimeRuler : public juce::Component, private juce::Timer {
     void timerCallback() override;
     int lastViewportX = 0;  // Track last position to detect changes
 
-    // Zoom drag state
-    bool isZooming = false;
+    // Drag state (zoom or scroll)
+    enum class DragMode { None, Zooming, Scrolling };
+    DragMode dragMode = DragMode::None;
     int mouseDownX = 0;
     int mouseDownY = 0;
+    int lastDragX = 0;
     double zoomStartValue = 0.0;
     double zoomAnchorTime = 0.0;
     static constexpr int DRAG_THRESHOLD = 3;
