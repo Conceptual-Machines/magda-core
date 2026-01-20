@@ -198,7 +198,6 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     void drawLoopMarkers(juce::Graphics& g);      // Draws shaded region (background)
     void drawLoopMarkerFlags(juce::Graphics& g);  // Draws triangular flags (foreground)
     void drawTimeSelection(juce::Graphics& g);
-    void drawChordRow(juce::Graphics& g);
 
     // Arrangement interaction helpers
     int findSectionAtPosition(int x, int y) const;

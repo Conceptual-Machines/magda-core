@@ -140,25 +140,17 @@ void TimelineComponent::paint(juce::Graphics& g) {
         g.fillRect(getLocalBounds().reduced(1));
     }
 
-    // Draw chord row first (topmost)
-    drawChordRow(g);
-
     // Draw time selection (background layer)
     drawTimeSelection(g);
 
     // Draw loop markers (background - shaded region behind time labels)
     drawLoopMarkers(g);
 
-    // Draw arrangement sections (below chord row)
+    // Draw arrangement sections
     drawArrangementSections(g);
 
     // Draw time markers (in time ruler section) - ON TOP of loop region
     drawTimeMarkers(g);
-
-    // Draw separator line between chord row and arrangement
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawLine(0, static_cast<float>(chordHeight), static_cast<float>(getWidth()),
-               static_cast<float>(chordHeight), 1.0f);
 
     // Draw separator line between arrangement and time ruler
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER).brighter(0.3f));
@@ -1392,49 +1384,6 @@ void TimelineComponent::drawTimeSelection(juce::Graphics& g) {
                static_cast<float>(getHeight()), 1.0f);
     g.drawLine(static_cast<float>(endX), static_cast<float>(rulerTop), static_cast<float>(endX),
                static_cast<float>(getHeight()), 1.0f);
-}
-
-void TimelineComponent::drawChordRow(juce::Graphics& g) {
-    auto& layout = LayoutConfig::getInstance();
-    int chordHeight = layout.chordRowHeight;
-
-    // Draw chord row background (slightly different from main background)
-    auto chordArea = juce::Rectangle<int>(0, 0, getWidth(), chordHeight);
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
-    g.fillRect(chordArea);
-
-    // Draw some mock chord blocks based on tempo
-    // These are placeholder positions - real chord detection will replace this
-    double beatsPerSecond = tempoBPM / 60.0;
-    double secondsPerBar = timeSignatureNumerator / beatsPerSecond;
-
-    // Mock chords - one chord per 2 bars for demonstration
-    const char* mockChords[] = {"C", "Am", "F", "G", "Dm", "Em", "Bdim", "C"};
-    int numMockChords = 8;
-
-    g.setFont(FontManager::getInstance().getUIFont(11.0f));
-
-    for (int i = 0; i < numMockChords; ++i) {
-        double startTime = i * secondsPerBar * 2;
-        double endTime = (i + 1) * secondsPerBar * 2;
-
-        int startX = timeToPixel(startTime) + LEFT_PADDING;
-        int endX = timeToPixel(endTime) + LEFT_PADDING;
-
-        // Skip if out of view
-        if (endX < 0 || startX > getWidth()) {
-            continue;
-        }
-
-        // Draw chord block
-        auto blockBounds = juce::Rectangle<int>(startX + 1, 2, endX - startX - 2, chordHeight - 4);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
-        g.fillRoundedRectangle(blockBounds.toFloat(), 3.0f);
-
-        // Draw chord name
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        g.drawText(mockChords[i], blockBounds, juce::Justification::centred, true);
-    }
 }
 
 }  // namespace magda

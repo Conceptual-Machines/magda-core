@@ -12,7 +12,7 @@ namespace magda {
  */
 struct LayoutConfig {
     // Timeline area heights
-    int chordRowHeight = 24;        // Chord detection row above arrangement
+    int chordRowHeight = 0;         // Chord row disabled (now in piano roll only)
     int arrangementBarHeight = 18;  // Reduced to give more space for time labels
     int timeRulerHeight = 52;       // Increased to accommodate labels
 
