@@ -117,17 +117,14 @@ juce::Rectangle<int> BottomPanel::getCollapseButtonBounds() {
 }
 
 juce::Rectangle<int> BottomPanel::getTabBarBounds() {
-    // Tab bar at the top as a header, to the right of sidebar
-    auto bounds = getLocalBounds();
-    bounds.removeFromLeft(SIDEBAR_WIDTH);  // Skip sidebar
-    return bounds.removeFromTop(28);
+    // No tab bar for bottom panel - content is auto-switched based on selection
+    return juce::Rectangle<int>();
 }
 
 juce::Rectangle<int> BottomPanel::getContentBounds() {
     auto bounds = getLocalBounds();
     bounds.removeFromLeft(SIDEBAR_WIDTH);  // Skip sidebar
-    // Content below the tab bar header
-    return bounds.withTrimmedTop(28);
+    return bounds;
 }
 
 }  // namespace magda
