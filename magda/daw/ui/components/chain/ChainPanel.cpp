@@ -13,6 +13,10 @@ namespace magda::daw::ui {
 //==============================================================================
 class ChainPanel::DeviceSlotComponent : public NodeComponent {
   public:
+    static constexpr int BASE_SLOT_WIDTH = 130;  // Base width without panels
+    static constexpr int NUM_PARAMS = 16;
+    static constexpr int PARAMS_PER_ROW = 4;
+
     DeviceSlotComponent(ChainPanel& owner, magda::TrackId trackId, magda::RackId rackId,
                         magda::ChainId chainId, const magda::DeviceInfo& device)
         : owner_(owner), trackId_(trackId), rackId_(rackId), chainId_(chainId), device_(device) {
@@ -41,8 +45,25 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
         // Hide param button - params shown inline instead
         setParamButtonVisible(false);
 
-        // Create param sliders (mock params for now)
+        // Create inline param sliders with labels (mock params)
+        // clang-format off
+        static const char* mockParamNames[NUM_PARAMS] = {
+            "Cutoff", "Resonance", "Drive", "Mix",
+            "Attack", "Decay", "Sustain", "Release",
+            "LFO Rate", "LFO Depth", "Feedback", "Width",
+            "Low", "Mid", "High", "Output"
+        };
+        // clang-format on
+
         for (int i = 0; i < NUM_PARAMS; ++i) {
+            paramLabels_[i] = std::make_unique<juce::Label>();
+            paramLabels_[i]->setText(mockParamNames[i], juce::dontSendNotification);
+            paramLabels_[i]->setFont(FontManager::getInstance().getUIFont(8.0f));
+            paramLabels_[i]->setColour(juce::Label::textColourId,
+                                       DarkTheme::getSecondaryTextColour());
+            paramLabels_[i]->setJustificationType(juce::Justification::centredLeft);
+            addAndMakeVisible(*paramLabels_[i]);
+
             paramSliders_[i] = std::make_unique<TextSlider>(TextSlider::Format::Decimal);
             paramSliders_[i]->setRange(0.0, 1.0, 0.01);
             paramSliders_[i]->setValue(0.5, juce::dontSendNotification);
@@ -65,12 +86,10 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
         repaint();
     }
 
-    static constexpr int BASE_SLOT_WIDTH = 100;  // Base width without panels
-
   protected:
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override {
         // Manufacturer label at top
-        auto labelArea = contentArea.removeFromTop(14);
+        auto labelArea = contentArea.removeFromTop(12);
         auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
                                        : DarkTheme::getSecondaryTextColour();
         g.setColour(textColour);
@@ -80,19 +99,23 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
 
     void resizedContent(juce::Rectangle<int> contentArea) override {
         // Skip manufacturer label area
-        contentArea.removeFromTop(14);
+        contentArea.removeFromTop(12);
         contentArea = contentArea.reduced(2, 0);
 
-        // Layout param sliders in a 2x2 grid
-        int sliderWidth = (contentArea.getWidth() - 2) / 2;
-        int sliderHeight = 16;
+        // Layout params in a 4-column grid
+        int cellWidth = contentArea.getWidth() / PARAMS_PER_ROW;
+        int labelHeight = 10;
+        int sliderHeight = 14;
+        int cellHeight = labelHeight + sliderHeight + 2;
 
         for (int i = 0; i < NUM_PARAMS; ++i) {
-            int row = i / 2;
-            int col = i % 2;
-            int x = contentArea.getX() + col * (sliderWidth + 2);
-            int y = contentArea.getY() + row * (sliderHeight + 2);
-            paramSliders_[i]->setBounds(x, y, sliderWidth, sliderHeight);
+            int row = i / PARAMS_PER_ROW;
+            int col = i % PARAMS_PER_ROW;
+            int x = contentArea.getX() + col * cellWidth;
+            int y = contentArea.getY() + row * cellHeight;
+
+            paramLabels_[i]->setBounds(x, y, cellWidth - 2, labelHeight);
+            paramSliders_[i]->setBounds(x, y + labelHeight, cellWidth - 2, sliderHeight);
         }
     }
 
@@ -103,7 +126,7 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
     magda::ChainId chainId_;
     magda::DeviceInfo device_;
 
-    static constexpr int NUM_PARAMS = 4;
+    std::unique_ptr<juce::Label> paramLabels_[NUM_PARAMS];
     std::unique_ptr<TextSlider> paramSliders_[NUM_PARAMS];
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DeviceSlotComponent)
