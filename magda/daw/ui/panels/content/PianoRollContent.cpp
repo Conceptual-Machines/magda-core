@@ -369,6 +369,12 @@ void PianoRollContent::resized() {
     updateGridSize();
     updateTimeRuler();
     updateVelocityLane();
+
+    // Center on middle C on first layout
+    if (needsInitialCentering_ && viewport_->getHeight() > 0) {
+        centerOnMiddleC();
+        needsInitialCentering_ = false;
+    }
 }
 
 void PianoRollContent::mouseWheelMove(const juce::MouseEvent& e,
@@ -830,6 +836,30 @@ void PianoRollContent::updateVelocityLane() {
     }
 
     velocityLane_->refreshNotes();
+}
+
+void PianoRollContent::centerOnMiddleC() {
+    if (!viewport_) {
+        return;
+    }
+
+    // C4 (middle C) is MIDI note 60
+    constexpr int MIDDLE_C = 60;
+
+    // Calculate Y position of middle C
+    int middleCY = (MAX_NOTE - MIDDLE_C) * noteHeight_;
+
+    // Center it in the viewport
+    int viewportHeight = viewport_->getHeight();
+    int scrollY = middleCY - (viewportHeight / 2) + (noteHeight_ / 2);
+
+    // Clamp to valid range
+    scrollY = juce::jmax(0, scrollY);
+
+    viewport_->setViewPosition(viewport_->getViewPositionX(), scrollY);
+
+    // Update keyboard scroll to match
+    keyboard_->setScrollOffset(scrollY);
 }
 
 }  // namespace magda::daw::ui

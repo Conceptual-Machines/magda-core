@@ -109,6 +109,9 @@ class PianoRollContent : public PanelContent, public magda::ClipManagerListener 
     // Velocity drawer visibility
     bool velocityDrawerOpen_ = false;  // Default to closed
 
+    // Initial centering flag
+    bool needsInitialCentering_ = true;
+
     // Components
     std::unique_ptr<juce::Viewport> viewport_;
     std::unique_ptr<magda::PianoRollGridComponent> gridComponent_;
@@ -138,6 +141,9 @@ class PianoRollContent : public PanelContent, public magda::ClipManagerListener 
     int getDrawerHeight() const {
         return velocityDrawerOpen_ ? (VELOCITY_LANE_HEIGHT + VELOCITY_HEADER_HEIGHT) : 0;
     }
+
+    // Center the view on middle C (C4)
+    void centerOnMiddleC();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PianoRollContent)
 };

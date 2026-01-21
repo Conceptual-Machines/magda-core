@@ -30,23 +30,23 @@ void PianoRollKeyboard::paint(juce::Graphics& g) {
         }
 
         if (isBlackKey(note)) {
-            g.setColour(juce::Colour(0xFF2a2a2a));
+            g.setColour(juce::Colour(0xFF1a1a1a));  // True black keys
         } else {
-            g.setColour(juce::Colour(0xFF4a4a4a));
+            g.setColour(juce::Colour(0xFFE8E8E8));  // True white keys
         }
         g.fillRect(keyArea);
 
         // Draw note name for C notes
         if (note % 12 == 0) {
-            g.setColour(juce::Colours::white);
+            g.setColour(juce::Colour(0xFF2a2a2a));  // Dark text on white keys
             g.setFont(FontManager::getInstance().getUIFont(9.0f));
             g.drawText(getNoteName(note), keyArea.reduced(4, 0), juce::Justification::centredLeft,
                        false);
         }
 
-        // Subtle separator line
+        // Subtle separator line between white keys
         if (!isBlackKey(note)) {
-            g.setColour(juce::Colour(0xFF3a3a3a));
+            g.setColour(juce::Colour(0xFFCCCCCC));
             g.drawHorizontalLine(y + noteHeight_ - 1, static_cast<float>(bounds.getX()),
                                  static_cast<float>(bounds.getRight()));
         }
