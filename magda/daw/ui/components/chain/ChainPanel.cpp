@@ -203,6 +203,11 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
         // Remaining space is for the name label (handled by NodeComponent)
     }
 
+    // No footer for devices
+    int getFooterHeight() const override {
+        return 0;
+    }
+
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override {
         // Manufacturer label at top
         auto labelArea = contentArea.removeFromTop(12);
