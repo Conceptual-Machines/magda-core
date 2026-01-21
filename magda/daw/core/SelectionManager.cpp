@@ -273,7 +273,7 @@ void SelectionManager::selectTimeRange(double startTime, double endTime,
 void SelectionManager::selectNote(ClipId clipId, size_t noteIndex) {
     bool typeChanged = selectionType_ != SelectionType::Note;
 
-    // Clear other selection types
+    // Clear other selection types (but keep clip selection for UI purposes)
     selectedTrackId_ = INVALID_TRACK_ID;
     selectedClipId_ = INVALID_CLIP_ID;
     selectedClipIds_.clear();
@@ -284,9 +284,9 @@ void SelectionManager::selectNote(ClipId clipId, size_t noteIndex) {
     noteSelection_.noteIndices.clear();
     noteSelection_.noteIndices.push_back(noteIndex);
 
-    // Sync with managers (clear their selections)
+    // Clear track selection but DON'T clear clip selection
+    // (the note is still within that clip, and we want the piano roll to stay visible)
     TrackManager::getInstance().setSelectedTrack(INVALID_TRACK_ID);
-    ClipManager::getInstance().clearClipSelection();
 
     if (typeChanged) {
         notifySelectionTypeChanged(SelectionType::Note);
@@ -307,7 +307,7 @@ void SelectionManager::selectNotes(ClipId clipId, const std::vector<size_t>& not
 
     bool typeChanged = selectionType_ != SelectionType::Note;
 
-    // Clear other selection types
+    // Clear other selection types (but keep clip selection for UI purposes)
     selectedTrackId_ = INVALID_TRACK_ID;
     selectedClipId_ = INVALID_CLIP_ID;
     selectedClipIds_.clear();
@@ -317,9 +317,8 @@ void SelectionManager::selectNotes(ClipId clipId, const std::vector<size_t>& not
     noteSelection_.clipId = clipId;
     noteSelection_.noteIndices = noteIndices;
 
-    // Sync with managers
+    // Clear track selection but DON'T clear clip selection
     TrackManager::getInstance().setSelectedTrack(INVALID_TRACK_ID);
-    ClipManager::getInstance().clearClipSelection();
 
     if (typeChanged) {
         notifySelectionTypeChanged(SelectionType::Note);

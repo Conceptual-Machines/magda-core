@@ -131,9 +131,14 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
     // Create a copy of the drawable and replace colors
     auto iconCopy = svgIcon->createCopy();
 
-    // Replace the currentColor with our desired color
-    iconCopy->replaceColour(juce::Colours::black, iconColor);
-    iconCopy->replaceColour(juce::Colour(0xFF000000), iconColor);
+    // Replace the original SVG color with our desired color
+    if (hasOriginalColor) {
+        iconCopy->replaceColour(originalColor, iconColor);
+    } else {
+        // Fallback: try common fill colors
+        iconCopy->replaceColour(juce::Colours::black, iconColor);
+        iconCopy->replaceColour(juce::Colour(0xFF000000), iconColor);
+    }
 
     // Draw the icon
     iconCopy->drawWithin(g, bounds.toFloat(), juce::RectanglePlacement::centred, 1.0f);

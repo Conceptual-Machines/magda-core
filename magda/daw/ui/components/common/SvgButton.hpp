@@ -37,6 +37,10 @@ class SvgButton : public juce::Button {
     void setActiveColor(juce::Colour color) {
         activeColor = color;
     }
+    void setOriginalColor(juce::Colour color) {
+        originalColor = color;
+        hasOriginalColor = true;
+    }
 
     // Set button as toggle/active state
     void setActive(bool isActive) {
@@ -59,6 +63,8 @@ class SvgButton : public juce::Button {
     juce::Colour hoverColor = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
     juce::Colour pressedColor = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
     juce::Colour activeColor = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    juce::Colour originalColor;  // Original SVG fill color to replace
+    bool hasOriginalColor = false;
 
     bool active = false;
 

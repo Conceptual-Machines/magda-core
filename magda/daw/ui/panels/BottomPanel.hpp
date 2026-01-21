@@ -9,8 +9,6 @@
 
 namespace magda {
 
-class SvgButton;
-
 /**
  * @brief Bottom panel with automatic content switching based on selection
  *
@@ -48,11 +46,6 @@ class BottomPanel : public daw::ui::TabbedPanel,
 
   private:
     void updateContentBasedOnSelection();
-
-    // Sidebar icons
-    std::unique_ptr<SvgButton> chordToggle_;
-    std::unique_ptr<juce::TextButton> sidebarIcon2_;
-    static constexpr int SIDEBAR_WIDTH = 32;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BottomPanel)
 };

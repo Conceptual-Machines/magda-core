@@ -1,37 +1,12 @@
 #include "BottomPanel.hpp"
 
-#include "../themes/DarkTheme.hpp"
-#include "BinaryData.h"
 #include "PanelTabBar.hpp"
-#include "content/PianoRollContent.hpp"
 #include "state/PanelController.hpp"
-#include "ui/components/common/SvgButton.hpp"
 
 namespace magda {
 
 BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     setName("Bottom Panel");
-
-    // Create sidebar icons
-    chordToggle_ = std::make_unique<SvgButton>("ChordToggle", BinaryData::Chords2_svg,
-                                               BinaryData::Chords2_svgSize);
-    chordToggle_->setTooltip("Toggle chord detection row");
-    chordToggle_->setActive(true);  // Default to visible
-    chordToggle_->onClick = [this]() {
-        // Toggle chord row in piano roll content
-        auto* content = getActiveContent();
-        if (auto* pianoRoll = dynamic_cast<daw::ui::PianoRollContent*>(content)) {
-            bool newState = !pianoRoll->isChordRowVisible();
-            pianoRoll->setChordRowVisible(newState);
-            chordToggle_->setActive(newState);
-        }
-    };
-    addAndMakeVisible(chordToggle_.get());
-
-    sidebarIcon2_ = std::make_unique<juce::TextButton>("2");
-    sidebarIcon2_->setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    sidebarIcon2_->setColour(juce::TextButton::textColourOffId, juce::Colours::grey);
-    addAndMakeVisible(sidebarIcon2_.get());
 
     // Register as listener for selection changes
     ClipManager::getInstance().addListener(this);
@@ -52,26 +27,10 @@ void BottomPanel::setCollapsed(bool collapsed) {
 
 void BottomPanel::paint(juce::Graphics& g) {
     TabbedPanel::paint(g);
-
-    // Draw sidebar background
-    auto sidebarBounds = getLocalBounds().removeFromLeft(SIDEBAR_WIDTH);
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
-    g.fillRect(sidebarBounds);
-
-    // Draw separator line
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawVerticalLine(SIDEBAR_WIDTH - 1, 0.0f, static_cast<float>(getHeight()));
 }
 
 void BottomPanel::resized() {
     TabbedPanel::resized();
-
-    // Position sidebar icons at the top of the sidebar
-    int iconSize = 24;
-    int padding = (SIDEBAR_WIDTH - iconSize) / 2;
-
-    chordToggle_->setBounds(padding, padding, iconSize, iconSize);
-    sidebarIcon2_->setBounds(padding, padding + iconSize + 4, iconSize, iconSize);
 }
 
 void BottomPanel::clipsChanged() {
@@ -118,13 +77,6 @@ void BottomPanel::updateContentBasedOnSelection() {
     // Switch to the appropriate content via PanelController
     daw::ui::PanelController::getInstance().setActiveTabByType(daw::ui::PanelLocation::Bottom,
                                                                targetContent);
-
-    // Sync chord toggle state with piano roll (after a short delay to let content switch)
-    juce::MessageManager::callAsync([this]() {
-        if (auto* pianoRoll = dynamic_cast<daw::ui::PianoRollContent*>(getActiveContent())) {
-            chordToggle_->setActive(pianoRoll->isChordRowVisible());
-        }
-    });
 }
 
 juce::Rectangle<int> BottomPanel::getCollapseButtonBounds() {
@@ -142,9 +94,7 @@ juce::Rectangle<int> BottomPanel::getTabBarBounds() {
 }
 
 juce::Rectangle<int> BottomPanel::getContentBounds() {
-    auto bounds = getLocalBounds();
-    bounds.removeFromLeft(SIDEBAR_WIDTH);  // Skip sidebar
-    return bounds;
+    return getLocalBounds();
 }
 
 }  // namespace magda
