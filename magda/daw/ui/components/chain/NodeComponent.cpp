@@ -320,6 +320,18 @@ bool NodeComponent::isBypassed() const {
     return bypassButton_.getToggleState();
 }
 
+void NodeComponent::setParamButtonVisible(bool visible) {
+    paramToggleButton_.setVisible(visible);
+}
+
+void NodeComponent::setModButtonVisible(bool visible) {
+    modToggleButton_.setVisible(visible);
+}
+
+void NodeComponent::setGainButtonVisible(bool visible) {
+    gainToggleButton_.setVisible(visible);
+}
+
 void NodeComponent::paintContent(juce::Graphics& /*g*/, juce::Rectangle<int> /*contentArea*/) {
     // Default: nothing - subclasses override
 }

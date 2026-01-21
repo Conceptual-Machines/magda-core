@@ -101,6 +101,11 @@ class NodeComponent : public juce::Component {
         return HEADER_HEIGHT;
     }
 
+    // Control footer button visibility
+    void setParamButtonVisible(bool visible);
+    void setModButtonVisible(bool visible);
+    void setGainButtonVisible(bool visible);
+
     // Panel visibility state (accessible to subclasses)
     bool modPanelVisible_ = false;
     bool paramPanelVisible_ = false;

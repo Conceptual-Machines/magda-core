@@ -36,6 +36,9 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
                 parent->repaint();
             }
         };
+
+        // Hide param button - params shown at chain level instead
+        setParamButtonVisible(false);
     }
 
     magda::DeviceId getDeviceId() const {
