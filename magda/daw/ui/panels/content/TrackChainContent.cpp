@@ -478,6 +478,62 @@ class TrackChainContent::DeviceSlotComponent : public NodeComponent {
     std::unique_ptr<TextSlider> paramSliders_[NUM_PARAMS];
 };
 
+//==============================================================================
+// ChainContainer - Container for track chain that paints arrows between elements
+//==============================================================================
+class TrackChainContent::ChainContainer : public juce::Component {
+  public:
+    ChainContainer() = default;
+
+    void setElements(const std::vector<std::unique_ptr<DeviceSlotComponent>>* devices,
+                     const std::vector<std::unique_ptr<RackComponent>>* racks) {
+        deviceSlots_ = devices;
+        rackComponents_ = racks;
+    }
+
+    void paint(juce::Graphics& g) override {
+        // Draw arrows between elements
+        int arrowY = getHeight() / 2;
+        g.setColour(DarkTheme::getSecondaryTextColour());
+
+        // Draw arrows after each device slot
+        if (deviceSlots_) {
+            for (const auto& slot : *deviceSlots_) {
+                int x = slot->getRight();
+                drawArrow(g, x, arrowY);
+            }
+        }
+
+        // Draw arrows after each rack (except the last one if there's nothing after)
+        if (rackComponents_) {
+            for (size_t i = 0; i < rackComponents_->size(); ++i) {
+                const auto& rack = (*rackComponents_)[i];
+                // Don't draw arrow after the last rack if nothing follows
+                if (i < rackComponents_->size() - 1 || (deviceSlots_ && !deviceSlots_->empty())) {
+                    int x = rack->getRight();
+                    drawArrow(g, x, arrowY);
+                }
+            }
+        }
+    }
+
+  private:
+    void drawArrow(juce::Graphics& g, int x, int y) {
+        int arrowStart = x + 4;
+        int arrowEnd = x + 16;
+        g.drawLine(static_cast<float>(arrowStart), static_cast<float>(y),
+                   static_cast<float>(arrowEnd), static_cast<float>(y), 1.5f);
+        // Arrow head
+        g.drawLine(static_cast<float>(arrowEnd - 4), static_cast<float>(y - 3),
+                   static_cast<float>(arrowEnd), static_cast<float>(y), 1.5f);
+        g.drawLine(static_cast<float>(arrowEnd - 4), static_cast<float>(y + 3),
+                   static_cast<float>(arrowEnd), static_cast<float>(y), 1.5f);
+    }
+
+    const std::vector<std::unique_ptr<DeviceSlotComponent>>* deviceSlots_ = nullptr;
+    const std::vector<std::unique_ptr<RackComponent>>* rackComponents_ = nullptr;
+};
+
 // dB conversion helpers
 namespace {
 constexpr float MIN_DB = -60.0f;
@@ -495,7 +551,7 @@ float dbToGain(float db) {
 }
 }  // namespace
 
-TrackChainContent::TrackChainContent() {
+TrackChainContent::TrackChainContent() : chainContainer_(std::make_unique<ChainContainer>()) {
     setName("Track Chain");
 
     // Listen for debug settings changes
@@ -508,6 +564,11 @@ TrackChainContent::TrackChainContent() {
         resized();
         repaint();
     });
+
+    // Viewport for horizontal scrolling of chain content
+    chainViewport_.setViewedComponent(chainContainer_.get(), false);
+    chainViewport_.setScrollBarsShown(false, true);  // Horizontal only
+    addAndMakeVisible(chainViewport_);
 
     // No selection label
     noSelectionLabel_.setText("Select a track to view its signal chain",
@@ -750,31 +811,69 @@ void TrackChainContent::resized() {
         // Everything flows horizontally: [Device] → [Device] → [Rack] → [Rack] → ...
         // ChainPanel is displayed within the rack when a chain is selected
         auto contentArea = bounds.reduced(8);
-        int chainHeight = contentArea.getHeight();
-        int arrowWidth = 20;
-        int slotSpacing = 8;
 
-        int x = contentArea.getX();
+        // Viewport fills the content area
+        chainViewport_.setBounds(contentArea);
 
-        // Layout device slots horizontally
-        for (auto& slot : deviceSlots_) {
-            int slotWidth = slot->getExpandedWidth();
-            slot->setBounds(x, contentArea.getY(), slotWidth, chainHeight);
-            x += slotWidth + arrowWidth + slotSpacing;
-        }
-
-        // Layout rack components horizontally (continuing the chain)
-        // Calculate available width for each rack based on remaining screen space
-        for (auto& rack : rackComponents_) {
-            // Calculate available width: from current x to content area right edge
-            int availableWidth = contentArea.getRight() - x - arrowWidth - slotSpacing;
-            rack->setAvailableWidth(availableWidth);
-
-            int rackWidth = rack->getPreferredWidth();
-            rack->setBounds(x, contentArea.getY(), rackWidth, chainHeight);
-            x += rackWidth + arrowWidth + slotSpacing;
-        }
+        // Layout chain content inside the container
+        layoutChainContent();
     }
+}
+
+void TrackChainContent::layoutChainContent() {
+    auto viewportBounds = chainViewport_.getLocalBounds();
+    int chainHeight = viewportBounds.getHeight();
+    int availableWidth = viewportBounds.getWidth();
+
+    // Calculate total content width
+    int totalWidth = calculateTotalContentWidth();
+
+    // Account for scrollbar if needed
+    if (totalWidth > availableWidth) {
+        chainHeight -= 8;  // Space for scrollbar
+    }
+
+    // Set container size
+    chainContainer_->setSize(juce::jmax(totalWidth, availableWidth), chainHeight);
+    chainContainer_->setElements(&deviceSlots_, &rackComponents_);
+
+    // Layout elements inside the container
+    int x = 0;
+
+    // Layout device slots horizontally
+    for (auto& slot : deviceSlots_) {
+        int slotWidth = slot->getExpandedWidth();
+        slot->setBounds(x, 0, slotWidth, chainHeight);
+        x += slotWidth + ARROW_WIDTH + SLOT_SPACING;
+    }
+
+    // Layout rack components horizontally (continuing the chain)
+    // Calculate remaining available width for each rack
+    for (auto& rack : rackComponents_) {
+        // Calculate available width: from current x to content area right edge
+        int remainingWidth = juce::jmax(300, availableWidth - x - ARROW_WIDTH - SLOT_SPACING);
+        rack->setAvailableWidth(remainingWidth);
+
+        int rackWidth = rack->getPreferredWidth();
+        rack->setBounds(x, 0, rackWidth, chainHeight);
+        x += rackWidth + ARROW_WIDTH + SLOT_SPACING;
+    }
+}
+
+int TrackChainContent::calculateTotalContentWidth() const {
+    int totalWidth = 0;
+
+    // Add width for all device slots
+    for (const auto& slot : deviceSlots_) {
+        totalWidth += slot->getExpandedWidth() + ARROW_WIDTH + SLOT_SPACING;
+    }
+
+    // Add width for all rack components
+    for (const auto& rack : rackComponents_) {
+        totalWidth += rack->getPreferredWidth() + ARROW_WIDTH + SLOT_SPACING;
+    }
+
+    return totalWidth;
 }
 
 void TrackChainContent::onActivated() {
@@ -873,10 +972,10 @@ void TrackChainContent::rebuildDeviceSlots() {
         return;
     }
 
-    // Create a slot component for each device
+    // Create a slot component for each device (add to container for viewport scrolling)
     for (const auto& device : *devices) {
         auto slot = std::make_unique<DeviceSlotComponent>(*this, selectedTrackId_, device);
-        addAndMakeVisible(*slot);
+        chainContainer_->addAndMakeVisible(*slot);
         deviceSlots_.push_back(std::move(slot));
     }
 
@@ -917,14 +1016,14 @@ void TrackChainContent::rebuildRackComponents() {
         if (existingRack) {
             newRackComponents.push_back(std::move(existingRack));
         } else {
-            // Create new component for new rack
+            // Create new component for new rack (add to container for viewport scrolling)
             auto rackComp = std::make_unique<RackComponent>(selectedTrackId_, rack);
             // Wire up chain selection callback
             rackComp->onChainSelected = [this](magda::TrackId trackId, magda::RackId rackId,
                                                magda::ChainId chainId) {
                 onChainSelected(trackId, rackId, chainId);
             };
-            addAndMakeVisible(*rackComp);
+            chainContainer_->addAndMakeVisible(*rackComp);
             newRackComponents.push_back(std::move(rackComp));
         }
     }

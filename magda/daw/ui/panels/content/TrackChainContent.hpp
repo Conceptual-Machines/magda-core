@@ -85,6 +85,13 @@ class TrackChainContent : public PanelContent, public magda::TrackManagerListene
     void showHeader(bool show);
     void rebuildDeviceSlots();
     void rebuildRackComponents();
+    int calculateTotalContentWidth() const;
+    void layoutChainContent();
+
+    // Viewport for horizontal scrolling of chain content
+    juce::Viewport chainViewport_;
+    class ChainContainer;
+    std::unique_ptr<ChainContainer> chainContainer_;
 
     // Device slot component for interactive device display
     class DeviceSlotComponent;
@@ -92,6 +99,9 @@ class TrackChainContent : public PanelContent, public magda::TrackManagerListene
 
     // Rack components for parallel chain routing
     std::vector<std::unique_ptr<RackComponent>> rackComponents_;
+
+    static constexpr int ARROW_WIDTH = 20;
+    static constexpr int SLOT_SPACING = 8;
 
     // Chain selection handling (internal)
     void onChainSelected(magda::TrackId trackId, magda::RackId rackId, magda::ChainId chainId);
