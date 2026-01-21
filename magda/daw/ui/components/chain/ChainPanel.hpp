@@ -22,7 +22,9 @@ class ChainPanel : public NodeComponent {
     void showChain(magda::TrackId trackId, magda::RackId rackId, magda::ChainId chainId);
     void refresh();  // Rebuild device slots without resetting panel state
     void clear();
-    void onDeviceLayoutChanged();  // Called when a device slot's size changes (panel toggle)
+    void onDeviceLayoutChanged();    // Called when a device slot's size changes (panel toggle)
+    int getContentWidth() const;     // Returns full width needed to show all devices
+    void setMaxWidth(int maxWidth);  // Set maximum width before scrolling kicks in
 
     // Callback when close button is clicked
     std::function<void()> onClose;
@@ -53,6 +55,7 @@ class ChainPanel : public NodeComponent {
     magda::RackId rackId_;
     magda::ChainId chainId_;
     bool hasChain_ = false;
+    int maxWidth_ = 0;  // 0 = no limit, otherwise constrain width and scroll
 
     // Devices with viewport for horizontal scrolling
     juce::Viewport deviceViewport_;

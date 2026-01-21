@@ -109,7 +109,17 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
     // Calculate chain panel positioning
     juce::Rectangle<int> chainPanelArea;
     if (chainPanel_ && chainPanel_->isVisible()) {
-        chainPanelArea = contentArea.removeFromRight(CHAIN_PANEL_WIDTH);
+        int contentWidth = chainPanel_->getContentWidth();
+        int chainPanelWidth = contentWidth;
+
+        // Constrain if we have an available width limit
+        if (availableWidth_ > 0) {
+            int baseWidth = getMinimumWidth();
+            int maxChainPanelWidth = juce::jmax(300, availableWidth_ - baseWidth);
+            chainPanelWidth = juce::jmin(contentWidth, maxChainPanelWidth);
+        }
+
+        chainPanelArea = contentArea.removeFromRight(chainPanelWidth);
     }
 
     // "Chains:" label row with [+] button next to it
@@ -162,14 +172,39 @@ int RackComponent::getPreferredHeight() const {
 }
 
 int RackComponent::getPreferredWidth() const {
-    int width = 300;  // Base width for chains list
-    // Add side panels width (left: mods+params, right: gain)
-    width += getLeftPanelsWidth() + getRightPanelsWidth();
-    // Add chain panel if visible
+    int baseWidth = getMinimumWidth();
+
+    // Add chain panel width if visible
     if (chainPanel_ && chainPanel_->isVisible()) {
-        width += CHAIN_PANEL_WIDTH;
+        int contentWidth = chainPanel_->getContentWidth();
+
+        if (availableWidth_ > 0) {
+            // Constrain to available width
+            int maxChainPanelWidth = availableWidth_ - baseWidth;
+            int chainPanelWidth = juce::jmin(contentWidth, juce::jmax(300, maxChainPanelWidth));
+            return baseWidth + chainPanelWidth;
+        } else {
+            // No limit - expand to fit content
+            return baseWidth + contentWidth;
+        }
     }
-    return width;
+    return baseWidth;
+}
+
+int RackComponent::getMinimumWidth() const {
+    // Base width without chain panel
+    return BASE_CHAINS_LIST_WIDTH + getLeftPanelsWidth() + getRightPanelsWidth();
+}
+
+void RackComponent::setAvailableWidth(int width) {
+    availableWidth_ = width;
+
+    // Pass remaining width to chain panel after accounting for base rack width
+    if (chainPanel_ && chainPanel_->isVisible()) {
+        int baseWidth = getMinimumWidth();
+        int maxChainPanelWidth = juce::jmax(300, width - baseWidth);
+        chainPanel_->setMaxWidth(maxChainPanelWidth);
+    }
 }
 
 void RackComponent::updateFromRack(const magda::RackInfo& rack) {

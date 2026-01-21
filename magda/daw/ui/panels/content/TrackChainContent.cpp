@@ -764,8 +764,12 @@ void TrackChainContent::resized() {
         }
 
         // Layout rack components horizontally (continuing the chain)
-        // Rack width includes chain panel if visible
+        // Calculate available width for each rack based on remaining screen space
         for (auto& rack : rackComponents_) {
+            // Calculate available width: from current x to content area right edge
+            int availableWidth = contentArea.getRight() - x - arrowWidth - slotSpacing;
+            rack->setAvailableWidth(availableWidth);
+
             int rackWidth = rack->getPreferredWidth();
             rack->setBounds(x, contentArea.getY(), rackWidth, chainHeight);
             x += rackWidth + arrowWidth + slotSpacing;

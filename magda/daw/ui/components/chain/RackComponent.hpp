@@ -27,6 +27,8 @@ class RackComponent : public NodeComponent {
 
     int getPreferredHeight() const;
     int getPreferredWidth() const;
+    int getMinimumWidth() const;        // Width without chain panel expansion
+    void setAvailableWidth(int width);  // Set available width for chain panel
     magda::RackId getRackId() const {
         return rackId_;
     }
@@ -79,10 +81,11 @@ class RackComponent : public NodeComponent {
     // Chain panel (shown within rack when chain is selected)
     std::unique_ptr<ChainPanel> chainPanel_;
     magda::ChainId selectedChainId_ = magda::INVALID_CHAIN_ID;
+    int availableWidth_ = 0;  // 0 = no limit
 
     static constexpr int CHAINS_LABEL_HEIGHT = 18;
     static constexpr int MIN_CONTENT_HEIGHT = 30;
-    static constexpr int CHAIN_PANEL_WIDTH = 300;
+    static constexpr int BASE_CHAINS_LIST_WIDTH = 300;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RackComponent)
 };
