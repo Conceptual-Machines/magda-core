@@ -283,7 +283,7 @@ class TrackChainContent::DeviceSlotComponent : public NodeComponent {
         modButton_->setClickingTogglesState(true);
         modButton_->setToggleState(modPanelVisible_, juce::dontSendNotification);
         modButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-        modButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+        modButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
         modButton_->setActive(modPanelVisible_);
         modButton_->onClick = [this]() {
             modButton_->setActive(modButton_->getToggleState());
@@ -303,14 +303,12 @@ class TrackChainContent::DeviceSlotComponent : public NodeComponent {
         };
         addAndMakeVisible(gainSlider_);
 
-        // UI button (open plugin window)
-        uiButton_.setButtonText("UI");
-        uiButton_.setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
-        uiButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-        uiButton_.onClick = [this]() { DBG("Open plugin UI for: " << device_.name); };
-        uiButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-        addAndMakeVisible(uiButton_);
+        // UI button (open plugin window) - open in new icon
+        uiButton_ = std::make_unique<magda::SvgButton>("UI", BinaryData::open_in_new_svg,
+                                                       BinaryData::open_in_new_svgSize);
+        uiButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+        uiButton_->onClick = [this]() { DBG("Open plugin UI for: " << device_.name); };
+        addAndMakeVisible(*uiButton_);
 
         // Bypass/On button (power symbol)
         onButton_.setButtonText(juce::String::fromUTF8("\xe2\x8f\xbb"));  // ⏻ power symbol
@@ -362,7 +360,6 @@ class TrackChainContent::DeviceSlotComponent : public NodeComponent {
     }
 
     ~DeviceSlotComponent() override {
-        uiButton_.setLookAndFeel(nullptr);
         onButton_.setLookAndFeel(nullptr);
     }
 
@@ -436,7 +433,7 @@ class TrackChainContent::DeviceSlotComponent : public NodeComponent {
         headerArea.removeFromRight(4);
 
         // UI button
-        uiButton_.setBounds(headerArea.removeFromRight(BUTTON_SIZE + 4));
+        uiButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
         headerArea.removeFromRight(4);
 
         // Gain slider takes some space on the right
@@ -456,7 +453,7 @@ class TrackChainContent::DeviceSlotComponent : public NodeComponent {
     magda::DeviceInfo device_;
     std::unique_ptr<magda::SvgButton> modButton_;
     TextSlider gainSlider_;
-    juce::TextButton uiButton_;
+    std::unique_ptr<magda::SvgButton> uiButton_;
     juce::TextButton onButton_;
 
     std::unique_ptr<juce::Label> paramLabels_[NUM_PARAMS];

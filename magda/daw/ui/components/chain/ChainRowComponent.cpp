@@ -43,7 +43,7 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
                                                     BinaryData::sinewave_svgSize);
     modButton_->setClickingTogglesState(true);
     modButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    modButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    modButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     modButton_->onClick = [this]() {
         modButton_->setActive(modButton_->getToggleState());
         // TODO: Toggle mod panel visibility for this chain
@@ -55,7 +55,7 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
         std::make_unique<magda::SvgButton>("Macro", BinaryData::link_svg, BinaryData::link_svgSize);
     macroButton_->setClickingTogglesState(true);
     macroButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    macroButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    macroButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
     macroButton_->onClick = [this]() {
         macroButton_->setActive(macroButton_->getToggleState());
         // TODO: Toggle macro panel visibility for this chain

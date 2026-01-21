@@ -1,6 +1,9 @@
 #include "ChainPanel.hpp"
 
+#include <BinaryData.h>
+
 #include "NodeComponent.hpp"
+#include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -20,19 +23,29 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
 
     DeviceSlotComponent(ChainPanel& owner, magda::TrackId trackId, magda::RackId rackId,
                         magda::ChainId chainId, const magda::DeviceInfo& device)
-        : owner_(owner), trackId_(trackId), rackId_(rackId), chainId_(chainId), device_(device) {
+        : owner_(owner),
+          trackId_(trackId),
+          rackId_(rackId),
+          chainId_(chainId),
+          device_(device),
+          gainSlider_(TextSlider::Format::Decibels) {
         setNodeName(device.name);
         setBypassed(device.bypassed);
 
-        // Set up callbacks
-        onBypassChanged = [this](bool bypassed) {
-            magda::TrackManager::getInstance().setDeviceInChainBypassed(trackId_, rackId_, chainId_,
-                                                                        device_.id, bypassed);
-        };
+        // Hide built-in bypass button - we'll add our own in the header
+        setBypassButtonVisible(false);
 
+        // Set up callbacks
         onDeleteClicked = [this]() {
             magda::TrackManager::getInstance().removeDeviceFromChain(trackId_, rackId_, chainId_,
                                                                      device_.id);
+        };
+
+        onModPanelToggled = [this](bool /*visible*/) {
+            if (auto* parent = getParentComponent()) {
+                parent->resized();
+                parent->repaint();
+            }
         };
 
         onLayoutChanged = [this]() {
@@ -45,6 +58,61 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
 
         // Hide param button - params shown inline instead
         setParamButtonVisible(false);
+
+        // Mod button (toggle mod panel) - sine wave icon
+        modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::sinewave_svg,
+                                                        BinaryData::sinewave_svgSize);
+        modButton_->setClickingTogglesState(true);
+        modButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+        modButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        modButton_->onClick = [this]() {
+            modButton_->setActive(modButton_->getToggleState());
+            modPanelVisible_ = modButton_->getToggleState();
+            if (onModPanelToggled)
+                onModPanelToggled(modPanelVisible_);
+        };
+        addAndMakeVisible(*modButton_);
+
+        // Gain text slider in header
+        gainSlider_.setRange(-60.0, 12.0, 0.1);
+        gainSlider_.setValue(device_.gainDb, juce::dontSendNotification);
+        gainSlider_.onValueChanged = [this](double value) {
+            if (auto* dev = magda::TrackManager::getInstance().getDeviceInChain(
+                    trackId_, rackId_, chainId_, device_.id)) {
+                dev->gainDb = static_cast<float>(value);
+            }
+        };
+        addAndMakeVisible(gainSlider_);
+
+        // UI button (open plugin window) - open in new icon
+        uiButton_ = std::make_unique<magda::SvgButton>("UI", BinaryData::open_in_new_svg,
+                                                       BinaryData::open_in_new_svgSize);
+        uiButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+        uiButton_->onClick = [this]() { DBG("Open plugin UI for: " << device_.name); };
+        addAndMakeVisible(*uiButton_);
+
+        // Bypass/On button (power symbol)
+        onButton_.setButtonText(juce::String::fromUTF8("\xe2\x8f\xbb"));  // ⏻ power symbol
+        // OFF state (not bypassed = active) = darker green background
+        onButton_.setColour(juce::TextButton::buttonColourId,
+                            DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
+        // ON state (bypassed) = reddish background
+        onButton_.setColour(juce::TextButton::buttonOnColourId,
+                            DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+        onButton_.setColour(juce::TextButton::textColourOffId,
+                            DarkTheme::getColour(DarkTheme::BACKGROUND));
+        onButton_.setColour(juce::TextButton::textColourOnId,
+                            DarkTheme::getColour(DarkTheme::BACKGROUND));
+        onButton_.setClickingTogglesState(true);
+        onButton_.setToggleState(device.bypassed, juce::dontSendNotification);
+        onButton_.onClick = [this]() {
+            bool bypassed = onButton_.getToggleState();
+            setBypassed(bypassed);
+            magda::TrackManager::getInstance().setDeviceInChainBypassed(trackId_, rackId_, chainId_,
+                                                                        device_.id, bypassed);
+        };
+        onButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+        addAndMakeVisible(onButton_);
 
         // Create inline param sliders with labels (mock params)
         // clang-format off
@@ -72,6 +140,10 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
         }
     }
 
+    ~DeviceSlotComponent() override {
+        onButton_.setLookAndFeel(nullptr);
+    }
+
     magda::DeviceId getDeviceId() const {
         return device_.id;
     }
@@ -84,10 +156,35 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
         device_ = device;
         setNodeName(device.name);
         setBypassed(device.bypassed);
+        onButton_.setToggleState(device.bypassed, juce::dontSendNotification);
+        gainSlider_.setValue(device.gainDb, juce::dontSendNotification);
         repaint();
     }
 
   protected:
+    void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override {
+        // Header layout: [M] [Name...] [gain slider] [UI] [on]
+        // Note: delete (X) is handled by NodeComponent on the right
+
+        // Mod button on the left (before name)
+        modButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
+        headerArea.removeFromLeft(4);
+
+        // Power button on the right (before delete which is handled by parent)
+        onButton_.setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+        headerArea.removeFromRight(4);
+
+        // UI button
+        uiButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+        headerArea.removeFromRight(4);
+
+        // Gain slider takes some space on the right
+        gainSlider_.setBounds(headerArea.removeFromRight(50));
+        headerArea.removeFromRight(4);
+
+        // Remaining space is for the name label (handled by NodeComponent)
+    }
+
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override {
         // Manufacturer label at top
         auto labelArea = contentArea.removeFromTop(12);
@@ -137,6 +234,12 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
     magda::RackId rackId_;
     magda::ChainId chainId_;
     magda::DeviceInfo device_;
+
+    // Header controls
+    std::unique_ptr<magda::SvgButton> modButton_;
+    TextSlider gainSlider_;
+    std::unique_ptr<magda::SvgButton> uiButton_;
+    juce::TextButton onButton_;
 
     std::unique_ptr<juce::Label> paramLabels_[NUM_PARAMS];
     std::unique_ptr<TextSlider> paramSliders_[NUM_PARAMS];
