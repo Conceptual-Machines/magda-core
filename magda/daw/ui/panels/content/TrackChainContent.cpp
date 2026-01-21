@@ -717,50 +717,8 @@ void TrackChainContent::paint(juce::Graphics& g) {
                        juce::Justification::centredLeft);
         }
 
-        // Draw arrows between all chain elements (devices and racks)
-        auto contentArea = bounds.reduced(8);
-        int chainHeight = contentArea.getHeight();
-        int arrowWidth = 20;
-        int slotSpacing = 8;
-        int arrowY = contentArea.getY() + chainHeight / 2;
-
-        int x = contentArea.getX();
-
-        // Draw arrows after each device slot
-        for (size_t i = 0; i < deviceSlots_.size(); ++i) {
-            int slotWidth = deviceSlots_[i]->getExpandedWidth();
-            x += slotWidth;
-
-            // Draw arrow
-            g.setColour(DarkTheme::getSecondaryTextColour());
-            g.drawLine(static_cast<float>(x + 2), static_cast<float>(arrowY),
-                       static_cast<float>(x + arrowWidth - 2), static_cast<float>(arrowY), 1.5f);
-            // Arrow head
-            g.drawLine(static_cast<float>(x + arrowWidth - 5), static_cast<float>(arrowY - 4),
-                       static_cast<float>(x + arrowWidth - 2), static_cast<float>(arrowY), 1.5f);
-            g.drawLine(static_cast<float>(x + arrowWidth - 5), static_cast<float>(arrowY + 4),
-                       static_cast<float>(x + arrowWidth - 2), static_cast<float>(arrowY), 1.5f);
-
-            x += arrowWidth + slotSpacing;
-        }
-
-        // Draw arrows after each rack (rack includes chain panel when visible)
-        for (size_t i = 0; i < rackComponents_.size(); ++i) {
-            int rackWidth = rackComponents_[i]->getPreferredWidth();
-            x += rackWidth + slotSpacing;
-
-            // Draw arrow after rack
-            g.setColour(DarkTheme::getSecondaryTextColour());
-            g.drawLine(static_cast<float>(x + 2), static_cast<float>(arrowY),
-                       static_cast<float>(x + arrowWidth - 2), static_cast<float>(arrowY), 1.5f);
-            // Arrow head
-            g.drawLine(static_cast<float>(x + arrowWidth - 5), static_cast<float>(arrowY - 4),
-                       static_cast<float>(x + arrowWidth - 2), static_cast<float>(arrowY), 1.5f);
-            g.drawLine(static_cast<float>(x + arrowWidth - 5), static_cast<float>(arrowY + 4),
-                       static_cast<float>(x + arrowWidth - 2), static_cast<float>(arrowY), 1.5f);
-
-            x += arrowWidth;
-        }
+        // Arrows between chain elements are drawn by ChainContainer::paint
+        // which scrolls correctly with the viewport
     }
 }
 
@@ -1010,8 +968,12 @@ void TrackChainContent::rebuildRackComponents() {
         if (existingRack) {
             // Set node path for centralized selection
             existingRack->setNodePath(magda::ChainNodePath::rack(selectedTrackId_, rack.id));
-            // Re-wire callbacks for preserved rack (legacy - will be removed)
+            // Re-wire callbacks for preserved rack
             existingRack->onSelected = [this]() { selectedDeviceId_ = magda::INVALID_DEVICE_ID; };
+            existingRack->onLayoutChanged = [this]() {
+                resized();
+                repaint();
+            };
             existingRack->onChainSelected = [this](magda::TrackId trackId, magda::RackId rId,
                                                    magda::ChainId chainId) {
                 onChainSelected(trackId, rId, chainId);
@@ -1034,8 +996,12 @@ void TrackChainContent::rebuildRackComponents() {
             auto rackComp = std::make_unique<RackComponent>(selectedTrackId_, rack);
             // Set node path for centralized selection
             rackComp->setNodePath(magda::ChainNodePath::rack(selectedTrackId_, rack.id));
-            // Wire up selection callback (legacy - will be simplified)
+            // Wire up callbacks
             rackComp->onSelected = [this]() { selectedDeviceId_ = magda::INVALID_DEVICE_ID; };
+            rackComp->onLayoutChanged = [this]() {
+                resized();
+                repaint();
+            };
             // Wire up chain selection callback
             rackComp->onChainSelected = [this](magda::TrackId trackId, magda::RackId rId,
                                                magda::ChainId chainId) {

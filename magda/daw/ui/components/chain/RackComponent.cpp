@@ -300,9 +300,9 @@ void RackComponent::rebuildChainRows() {
 void RackComponent::childLayoutChanged() {
     resized();
     repaint();
-    if (auto* parent = getParentComponent()) {
-        parent->resized();
-        parent->repaint();
+    // Notify parent via callback (for TrackChainContent to relayout)
+    if (onLayoutChanged) {
+        onLayoutChanged();
     }
 }
 
