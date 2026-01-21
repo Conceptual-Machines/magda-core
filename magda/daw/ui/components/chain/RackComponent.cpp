@@ -97,9 +97,17 @@ void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> content
 }
 
 void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
-    // If chain panel is visible, split the content area
+    // Separator column width - matches gain panel width so it can expand into this space
+    constexpr int SEPARATOR_WIDTH = GAIN_PANEL_WIDTH;
+
+    // Calculate chain panel positioning with column-based layout
     juce::Rectangle<int> chainPanelArea;
     if (chainPanel_ && chainPanel_->isVisible()) {
+        // Reserve separator column on the right (unless chain's gain panel uses it)
+        int separatorSpace = chainPanel_->isGainPanelVisible() ? 0 : SEPARATOR_WIDTH;
+        contentArea.removeFromRight(separatorSpace);
+
+        // Chain panel takes its width from the right
         chainPanelArea = contentArea.removeFromRight(CHAIN_PANEL_WIDTH);
     }
 
@@ -145,6 +153,10 @@ int RackComponent::getPreferredWidth() const {
     // Add chain panel if visible
     if (chainPanel_ && chainPanel_->isVisible()) {
         width += CHAIN_PANEL_WIDTH;
+        // Add separator column (unless chain's gain panel fills it)
+        if (!chainPanel_->isGainPanelVisible()) {
+            width += GAIN_PANEL_WIDTH;  // Separator width
+        }
     }
     return width;
 }
