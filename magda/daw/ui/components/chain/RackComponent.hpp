@@ -78,6 +78,7 @@ class RackComponent : public NodeComponent {
     static constexpr int CHAINS_LABEL_HEIGHT = 18;
     static constexpr int MIN_CONTENT_HEIGHT = 30;
     static constexpr int CHAIN_PANEL_WIDTH = 300;
+    static constexpr int CHAINS_INDENT = 8;  // Indent for chains wrapper
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RackComponent)
 };

@@ -89,11 +89,21 @@ RackComponent::RackComponent(magda::TrackId trackId, const magda::RackInfo& rack
 RackComponent::~RackComponent() = default;
 
 void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) {
-    // Chains label separator (below "Chains:" label)
-    int chainsSeparatorY = contentArea.getY() + CHAINS_LABEL_HEIGHT;
+    // Remove chain panel area if visible (don't draw wrapper there)
+    if (chainPanel_ && chainPanel_->isVisible()) {
+        contentArea.removeFromRight(CHAIN_PANEL_WIDTH);
+    }
+
+    // Draw indented wrapper for chains area
+    auto chainsWrapper = contentArea.reduced(CHAINS_INDENT, 2);
+
+    // Wrapper background (slightly darker)
+    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.1f));
+    g.fillRoundedRectangle(chainsWrapper.toFloat(), 2.0f);
+
+    // Wrapper border
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawHorizontalLine(chainsSeparatorY, static_cast<float>(contentArea.getX() + 2),
-                         static_cast<float>(contentArea.getRight() - 2));
+    g.drawRoundedRectangle(chainsWrapper.toFloat(), 2.0f, 1.0f);
 }
 
 void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
@@ -103,19 +113,22 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
         chainPanelArea = contentArea.removeFromRight(CHAIN_PANEL_WIDTH);
     }
 
+    // Indent the chains area to show it's wrapped by the rack
+    auto chainsWrapper = contentArea.reduced(CHAINS_INDENT, 2);
+
     // "Chains:" label row with [+] button
-    auto chainsLabelArea = contentArea.removeFromTop(CHAINS_LABEL_HEIGHT).reduced(2, 1);
+    auto chainsLabelArea = chainsWrapper.removeFromTop(CHAINS_LABEL_HEIGHT).reduced(4, 1);
     addChainButton_.setBounds(chainsLabelArea.removeFromRight(16));
     chainsLabelArea.removeFromRight(4);
     chainsLabel_.setBounds(chainsLabelArea);
 
-    // Chain rows (below separator)
-    contentArea.removeFromTop(2);  // Small gap after separator
-    int y = contentArea.getY();
+    // Chain rows (below label)
+    chainsWrapper.removeFromTop(2);  // Small gap after label
+    int y = chainsWrapper.getY();
 
     for (auto& row : chainRows_) {
         int rowHeight = row->getPreferredHeight();
-        row->setBounds(contentArea.getX(), y, contentArea.getWidth(), rowHeight);
+        row->setBounds(chainsWrapper.getX() + 2, y, chainsWrapper.getWidth() - 4, rowHeight);
         y += rowHeight + 2;
     }
 

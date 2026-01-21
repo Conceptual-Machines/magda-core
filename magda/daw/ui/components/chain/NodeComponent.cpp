@@ -9,13 +9,16 @@ namespace magda::daw::ui {
 NodeComponent::NodeComponent() {
     // === HEADER ===
 
-    // Bypass button
-    bypassButton_.setButtonText("B");
+    // Bypass button (power symbol)
+    bypassButton_.setButtonText(juce::String::fromUTF8("\xe2\x8f\xbb"));  // ⏻ power symbol
+    // OFF state (not bypassed = active) = green background
     bypassButton_.setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
+                            DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
+    // ON state (bypassed) = reddish background
     bypassButton_.setColour(juce::TextButton::buttonOnColourId,
-                            DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    bypassButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                            DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    bypassButton_.setColour(juce::TextButton::textColourOffId,
+                            DarkTheme::getColour(DarkTheme::BACKGROUND));
     bypassButton_.setColour(juce::TextButton::textColourOnId,
                             DarkTheme::getColour(DarkTheme::BACKGROUND));
     bypassButton_.setClickingTogglesState(true);
@@ -33,11 +36,12 @@ NodeComponent::NodeComponent() {
     nameLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(nameLabel_);
 
-    // Delete button
-    deleteButton_.setButtonText(juce::String::fromUTF8("\xc3\x97"));
+    // Delete button (reddish background)
+    deleteButton_.setButtonText(juce::String::fromUTF8("\xc3\x97"));  // × symbol
     deleteButton_.setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
-    deleteButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                            DarkTheme::getColour(DarkTheme::STATUS_ERROR).darker(0.2f));
+    deleteButton_.setColour(juce::TextButton::textColourOffId,
+                            DarkTheme::getColour(DarkTheme::BACKGROUND));
     deleteButton_.onClick = [this]() {
         if (onDeleteClicked) {
             onDeleteClicked();

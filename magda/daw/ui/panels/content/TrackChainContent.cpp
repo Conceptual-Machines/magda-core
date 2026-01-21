@@ -193,7 +193,7 @@ class GainMeterComponent : public juce::Component,
 };
 
 //==============================================================================
-// DeviceButtonLookAndFeel - Small rounded buttons for device slots
+// DeviceButtonLookAndFeel - Small buttons with minimal rounding for device slots
 //==============================================================================
 class DeviceButtonLookAndFeel : public juce::LookAndFeel_V4 {
   public:
@@ -201,7 +201,8 @@ class DeviceButtonLookAndFeel : public juce::LookAndFeel_V4 {
                               bool shouldDrawButtonAsHighlighted,
                               bool shouldDrawButtonAsDown) override {
         auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
-        float cornerRadius = 3.0f;
+        // Minimal corner radius (2% of smaller dimension)
+        float cornerRadius = juce::jmin(bounds.getWidth(), bounds.getHeight()) * 0.02f;
 
         auto baseColour = bgColour;
         if (shouldDrawButtonAsDown)
