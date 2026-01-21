@@ -30,6 +30,8 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
         label_.setJustificationType(juce::Justification::centred);
         label_.setEditable(false, true, false);  // Single-click to edit
         label_.addListener(this);
+        // Don't let label intercept mouse - we handle all mouse events
+        label_.setInterceptsMouseClicks(false, false);
         addAndMakeVisible(label_);
 
         updateLabel();
@@ -80,14 +82,25 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
 
     void mouseDown(const juce::MouseEvent& e) override {
         if (!label_.isBeingEdited() && e.mods.isLeftButtonDown()) {
-            dragging_ = true;
             dragStartValue_ = value_;
             dragStartY_ = e.y;
+            dragStartX_ = e.x;
+            hasDragged_ = false;
         }
     }
 
     void mouseDrag(const juce::MouseEvent& e) override {
-        if (dragging_) {
+        if (label_.isBeingEdited())
+            return;
+
+        // Check if we've moved enough to count as a drag
+        int dx = std::abs(e.x - dragStartX_);
+        int dy = std::abs(e.y - dragStartY_);
+        if (dx > 3 || dy > 3) {
+            hasDragged_ = true;
+        }
+
+        if (hasDragged_) {
             // Vertical drag: up increases, down decreases
             double dragSensitivity = (maxValue_ - minValue_) / 100.0;
             double delta = (dragStartY_ - e.y) * dragSensitivity;
@@ -96,7 +109,11 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
     }
 
     void mouseUp(const juce::MouseEvent&) override {
-        dragging_ = false;
+        if (!label_.isBeingEdited() && !hasDragged_) {
+            // Single click without drag - show editor
+            label_.showEditor();
+        }
+        hasDragged_ = false;
     }
 
     void mouseDoubleClick(const juce::MouseEvent&) override {
@@ -137,9 +154,10 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
     double minValue_ = 0.0;
     double maxValue_ = 1.0;
     double interval_ = 0.01;
-    bool dragging_ = false;
     double dragStartValue_ = 0.0;
+    int dragStartX_ = 0;
     int dragStartY_ = 0;
+    bool hasDragged_ = false;
 
     void updateLabel() {
         juce::String text;
