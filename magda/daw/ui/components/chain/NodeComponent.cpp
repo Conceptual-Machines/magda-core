@@ -122,6 +122,44 @@ NodeComponent::NodeComponent() {
     };
     gainToggleButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addAndMakeVisible(gainToggleButton_);
+
+    // === MOD PANEL CONTROLS ===
+    for (int i = 0; i < 3; ++i) {
+        modSlotButtons_[i] = std::make_unique<juce::TextButton>("+");
+        modSlotButtons_[i]->setColour(juce::TextButton::buttonColourId,
+                                      DarkTheme::getColour(DarkTheme::SURFACE));
+        modSlotButtons_[i]->setColour(juce::TextButton::textColourOffId,
+                                      DarkTheme::getSecondaryTextColour());
+        modSlotButtons_[i]->onClick = [this, i]() {
+            juce::PopupMenu menu;
+            menu.addItem(1, "LFO");
+            menu.addItem(2, "Bezier LFO");
+            menu.addItem(3, "ADSR");
+            menu.addItem(4, "Envelope Follower");
+            menu.showMenuAsync(juce::PopupMenu::Options(), [this, i](int result) {
+                if (result > 0) {
+                    juce::StringArray types = {"", "LFO", "BEZ", "ADSR", "ENV"};
+                    modSlotButtons_[i]->setButtonText(types[result]);
+                }
+            });
+        };
+        addChildComponent(*modSlotButtons_[i]);
+    }
+
+    // === PARAM PANEL CONTROLS ===
+    for (int i = 0; i < 4; ++i) {
+        auto knob = std::make_unique<juce::Slider>();
+        knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        knob->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        knob->setRange(0.0, 1.0, 0.01);
+        knob->setValue(0.5);
+        knob->setColour(juce::Slider::rotarySliderFillColourId,
+                        DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+        knob->setColour(juce::Slider::rotarySliderOutlineColourId,
+                        DarkTheme::getColour(DarkTheme::SURFACE));
+        addChildComponent(*knob);
+        paramKnobs_.push_back(std::move(knob));
+    }
 }
 
 NodeComponent::~NodeComponent() = default;
@@ -197,11 +235,22 @@ void NodeComponent::resized() {
     if (modPanelVisible_) {
         auto modArea = bounds.removeFromLeft(getModPanelWidth());
         resizedModPanel(modArea);
+    } else {
+        // Hide mod slot buttons when panel is not visible
+        for (auto& btn : modSlotButtons_) {
+            if (btn)
+                btn->setVisible(false);
+        }
     }
 
     if (paramPanelVisible_) {
         auto paramArea = bounds.removeFromLeft(getParamPanelWidth());
         resizedParamPanel(paramArea);
+    } else {
+        // Hide param knobs when panel is not visible
+        for (auto& knob : paramKnobs_) {
+            knob->setVisible(false);
+        }
     }
 
     // === RIGHT SIDE PANEL: [Gain] ===
@@ -324,16 +373,38 @@ void NodeComponent::paintGainPanel(juce::Graphics& g, juce::Rectangle<int> panel
     g.drawRoundedRectangle(panelArea.reduced(4, 8).toFloat(), 2.0f, 1.0f);
 }
 
-void NodeComponent::resizedModPanel(juce::Rectangle<int> /*panelArea*/) {
-    // Default: nothing - subclasses override
+void NodeComponent::resizedModPanel(juce::Rectangle<int> panelArea) {
+    panelArea.removeFromTop(16);  // Skip label
+    panelArea = panelArea.reduced(2);
+
+    int slotHeight = (panelArea.getHeight() - 4) / 3;
+    for (int i = 0; i < 3; ++i) {
+        modSlotButtons_[i]->setBounds(panelArea.removeFromTop(slotHeight).reduced(0, 1));
+        modSlotButtons_[i]->setVisible(true);
+    }
 }
 
-void NodeComponent::resizedParamPanel(juce::Rectangle<int> /*panelArea*/) {
-    // Default: nothing - subclasses override
+void NodeComponent::resizedParamPanel(juce::Rectangle<int> panelArea) {
+    panelArea.removeFromTop(16);  // Skip label
+    panelArea = panelArea.reduced(2);
+
+    int knobSize = (panelArea.getWidth() - 2) / 2;
+    int row = 0, col = 0;
+    for (auto& knob : paramKnobs_) {
+        int x = panelArea.getX() + col * (knobSize + 2);
+        int y = panelArea.getY() + row * (knobSize + 2);
+        knob->setBounds(x, y, knobSize, knobSize);
+        knob->setVisible(true);
+        col++;
+        if (col >= 2) {
+            col = 0;
+            row++;
+        }
+    }
 }
 
 void NodeComponent::resizedGainPanel(juce::Rectangle<int> /*panelArea*/) {
-    // Default: nothing - subclasses override
+    // Default: nothing - gain meter drawn in paintGainPanel
 }
 
 }  // namespace magda::daw::ui

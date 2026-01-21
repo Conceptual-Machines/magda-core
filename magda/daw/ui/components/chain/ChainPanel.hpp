@@ -30,6 +30,10 @@ class ChainPanel : public NodeComponent {
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override;
     void resizedContent(juce::Rectangle<int> contentArea) override;
 
+    // Override param panel for macro controls (instead of device params)
+    void paintParamPanel(juce::Graphics& g, juce::Rectangle<int> panelArea) override;
+    void resizedParamPanel(juce::Rectangle<int> panelArea) override;
+
   private:
     class DeviceSlotComponent;
 
@@ -44,6 +48,9 @@ class ChainPanel : public NodeComponent {
     // Devices
     juce::TextButton addDeviceButton_;
     std::vector<std::unique_ptr<DeviceSlotComponent>> deviceSlots_;
+
+    // Macro buttons for param panel (4 macro slots in 2x2 grid)
+    std::unique_ptr<juce::TextButton> macroButtons_[4];
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChainPanel)
 };

@@ -101,6 +101,16 @@ ChainPanel::ChainPanel() {
         }
     };
 
+    // Hide macro buttons when param panel is hidden
+    onParamPanelToggled = [this](bool visible) {
+        if (!visible) {
+            for (auto& btn : macroButtons_) {
+                if (btn)
+                    btn->setVisible(false);
+            }
+        }
+    };
+
     // Add device button
     addDeviceButton_.setButtonText("+");
     addDeviceButton_.setColour(juce::TextButton::buttonColourId,
@@ -110,6 +120,30 @@ ChainPanel::ChainPanel() {
     addDeviceButton_.onClick = [this]() { onAddDeviceClicked(); };
     addDeviceButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addAndMakeVisible(addDeviceButton_);
+
+    // === MACRO BUTTONS (for param panel) ===
+    for (int i = 0; i < 4; ++i) {
+        macroButtons_[i] = std::make_unique<juce::TextButton>("+");
+        macroButtons_[i]->setColour(juce::TextButton::buttonColourId,
+                                    DarkTheme::getColour(DarkTheme::SURFACE));
+        macroButtons_[i]->setColour(juce::TextButton::textColourOffId,
+                                    DarkTheme::getSecondaryTextColour());
+        macroButtons_[i]->onClick = [this, i]() {
+            juce::PopupMenu menu;
+            menu.addSectionHeader("Create Chain Macro " + juce::String(i + 1));
+            menu.addItem(1, "Link to device parameter...");
+            menu.addItem(2, "Create empty macro");
+            menu.showMenuAsync(juce::PopupMenu::Options(), [this, i](int result) {
+                if (result == 1) {
+                    // TODO: Open parameter browser to link to device in this chain
+                    macroButtons_[i]->setButtonText("M" + juce::String(i + 1));
+                } else if (result == 2) {
+                    macroButtons_[i]->setButtonText("M" + juce::String(i + 1));
+                }
+            });
+        };
+        addChildComponent(*macroButtons_[i]);
+    }
 
     setVisible(false);
 }
@@ -293,6 +327,33 @@ void ChainPanel::onAddDeviceClicked() {
             repaint();
         }
     });
+}
+
+void ChainPanel::paintParamPanel(juce::Graphics& g, juce::Rectangle<int> panelArea) {
+    // Override: draw "MACRO" label instead of "PRM"
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    g.setFont(FontManager::getInstance().getUIFont(8.0f));
+    g.drawText("MACRO", panelArea.removeFromTop(16), juce::Justification::centred);
+}
+
+void ChainPanel::resizedParamPanel(juce::Rectangle<int> panelArea) {
+    panelArea.removeFromTop(16);  // Skip label
+    panelArea = panelArea.reduced(2);
+
+    // 2x2 grid of macro buttons
+    int btnSize = (panelArea.getWidth() - 2) / 2;
+    int row = 0, col = 0;
+    for (int i = 0; i < 4; ++i) {
+        int x = panelArea.getX() + col * (btnSize + 2);
+        int y = panelArea.getY() + row * (btnSize + 2);
+        macroButtons_[i]->setBounds(x, y, btnSize, btnSize);
+        macroButtons_[i]->setVisible(true);
+        col++;
+        if (col >= 2) {
+            col = 0;
+            row++;
+        }
+    }
 }
 
 }  // namespace magda::daw::ui

@@ -3,6 +3,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <memory>
+#include <vector>
 
 namespace magda::daw::ui {
 
@@ -116,6 +118,12 @@ class NodeComponent : public juce::Component {
     juce::TextButton modToggleButton_;
     juce::TextButton paramToggleButton_;
     juce::TextButton gainToggleButton_;
+
+    // Mod panel controls (3 modulator slots)
+    std::unique_ptr<juce::TextButton> modSlotButtons_[3];
+
+    // Param panel controls (4 knobs in 2x2 grid)
+    std::vector<std::unique_ptr<juce::Slider>> paramKnobs_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(NodeComponent)
 };

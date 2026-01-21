@@ -299,44 +299,6 @@ class TrackChainContent::DeviceSlotComponent : public NodeComponent {
             }
         };
         addAndMakeVisible(gainMeter_);
-
-        // Mock parameter knobs
-        for (int i = 0; i < 4; ++i) {
-            auto knob = std::make_unique<juce::Slider>();
-            knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-            knob->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-            knob->setRange(0.0, 1.0, 0.01);
-            knob->setValue(0.5);
-            knob->setColour(juce::Slider::rotarySliderFillColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
-            knob->setColour(juce::Slider::rotarySliderOutlineColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
-            addChildComponent(*knob);
-            paramKnobs_.push_back(std::move(knob));
-        }
-
-        // Modulator slot buttons
-        for (int i = 0; i < 3; ++i) {
-            auto& btn = modSlotButtons_[i];
-            btn = std::make_unique<juce::TextButton>("+");
-            btn->setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-            btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-            btn->onClick = [this, i]() {
-                juce::PopupMenu menu;
-                menu.addItem(1, "LFO");
-                menu.addItem(2, "Bezier LFO");
-                menu.addItem(3, "ADSR");
-                menu.addItem(4, "Envelope Follower");
-                menu.showMenuAsync(juce::PopupMenu::Options(), [this, i](int result) {
-                    if (result > 0) {
-                        juce::StringArray types = {"", "LFO", "BEZ", "ADSR", "ENV"};
-                        modSlotButtons_[i]->setButtonText(types[result]);
-                    }
-                });
-            };
-            addChildComponent(*btn);
-        }
     }
 
     ~DeviceSlotComponent() override {
@@ -384,36 +346,6 @@ class TrackChainContent::DeviceSlotComponent : public NodeComponent {
         headerArea.removeFromLeft(4);
     }
 
-    void resizedModPanel(juce::Rectangle<int> panelArea) override {
-        panelArea.removeFromTop(16);  // Skip label
-        panelArea = panelArea.reduced(2);
-
-        int slotHeight = (panelArea.getHeight() - 4) / 3;
-        for (int i = 0; i < 3; ++i) {
-            modSlotButtons_[i]->setBounds(panelArea.removeFromTop(slotHeight).reduced(0, 1));
-            modSlotButtons_[i]->setVisible(true);
-        }
-    }
-
-    void resizedParamPanel(juce::Rectangle<int> panelArea) override {
-        panelArea.removeFromTop(16);  // Skip label
-        panelArea = panelArea.reduced(2);
-
-        int knobSize = (panelArea.getWidth() - 2) / 2;
-        int row = 0, col = 0;
-        for (auto& knob : paramKnobs_) {
-            int x = panelArea.getX() + col * (knobSize + 2);
-            int y = panelArea.getY() + row * (knobSize + 2);
-            knob->setBounds(x, y, knobSize, knobSize);
-            knob->setVisible(true);
-            col++;
-            if (col >= 2) {
-                col = 0;
-                row++;
-            }
-        }
-    }
-
     void resizedGainPanel(juce::Rectangle<int> panelArea) override {
         gainMeter_.setBounds(panelArea.reduced(2, 4));
         gainMeter_.setVisible(true);
@@ -435,8 +367,6 @@ class TrackChainContent::DeviceSlotComponent : public NodeComponent {
     magda::DeviceInfo device_;
     juce::TextButton uiButton_;
     GainMeterComponent gainMeter_;
-    std::unique_ptr<juce::TextButton> modSlotButtons_[3];
-    std::vector<std::unique_ptr<juce::Slider>> paramKnobs_;
 };
 
 // dB conversion helpers
