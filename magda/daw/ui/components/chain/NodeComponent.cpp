@@ -276,15 +276,15 @@ void NodeComponent::resized() {
     if (headerHeight > 0) {
         auto headerArea = bounds.removeFromTop(headerHeight).reduced(3, 2);
 
-        // Bypass button on left (if visible)
-        if (bypassButton_.isVisible()) {
-            bypassButton_.setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
-            headerArea.removeFromLeft(4);
-        }
-
-        // Delete button on right (if visible)
+        // Delete button on far right (if visible)
         if (deleteButton_.isVisible()) {
             deleteButton_.setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+            headerArea.removeFromRight(4);
+        }
+
+        // Bypass/power button next to delete (if visible)
+        if (bypassButton_.isVisible()) {
+            bypassButton_.setBounds(headerArea.removeFromRight(BUTTON_SIZE));
             headerArea.removeFromRight(4);
         }
 

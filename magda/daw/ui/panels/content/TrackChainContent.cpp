@@ -1,5 +1,7 @@
 #include "TrackChainContent.hpp"
 
+#include <BinaryData.h>
+
 #include <cmath>
 
 #include "../../debug/DebugSettings.hpp"
@@ -10,6 +12,7 @@
 #include "core/DeviceInfo.hpp"
 #include "ui/components/chain/NodeComponent.hpp"
 #include "ui/components/chain/RackComponent.hpp"
+#include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::ui {
@@ -274,24 +277,21 @@ class TrackChainContent::DeviceSlotComponent : public NodeComponent {
             owner_.repaint();
         };
 
-        // Mod button (toggle mod panel)
-        modButton_.setButtonText("M");
-        modButton_.setColour(juce::TextButton::buttonColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
-        modButton_.setColour(juce::TextButton::buttonOnColourId,
-                             DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
-        modButton_.setColour(juce::TextButton::textColourOffId,
-                             DarkTheme::getSecondaryTextColour());
-        modButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
-        modButton_.setClickingTogglesState(true);
-        modButton_.setToggleState(modPanelVisible_, juce::dontSendNotification);
-        modButton_.onClick = [this]() {
-            modPanelVisible_ = modButton_.getToggleState();
+        // Mod button (toggle mod panel) - sine wave icon
+        modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::sinewave_svg,
+                                                        BinaryData::sinewave_svgSize);
+        modButton_->setClickingTogglesState(true);
+        modButton_->setToggleState(modPanelVisible_, juce::dontSendNotification);
+        modButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+        modButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+        modButton_->setActive(modPanelVisible_);
+        modButton_->onClick = [this]() {
+            modButton_->setActive(modButton_->getToggleState());
+            modPanelVisible_ = modButton_->getToggleState();
             if (onModPanelToggled)
                 onModPanelToggled(modPanelVisible_);
         };
-        modButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-        addAndMakeVisible(modButton_);
+        addAndMakeVisible(*modButton_);
 
         // Gain text slider in header
         gainSlider_.setRange(-60.0, 12.0, 0.1);
@@ -362,7 +362,6 @@ class TrackChainContent::DeviceSlotComponent : public NodeComponent {
     }
 
     ~DeviceSlotComponent() override {
-        modButton_.setLookAndFeel(nullptr);
         uiButton_.setLookAndFeel(nullptr);
         onButton_.setLookAndFeel(nullptr);
     }
@@ -428,8 +427,8 @@ class TrackChainContent::DeviceSlotComponent : public NodeComponent {
         // Header layout: [M] [Name...] [gain slider] [UI] [on] [X]
         // Note: delete (X) is handled by NodeComponent on the right
 
-        // M button on the left (before name)
-        modButton_.setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
+        // Mod button on the left (before name)
+        modButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
         headerArea.removeFromLeft(4);
 
         // Power button on the right (before delete which is handled by parent)
@@ -455,7 +454,7 @@ class TrackChainContent::DeviceSlotComponent : public NodeComponent {
     TrackChainContent& owner_;
     magda::TrackId trackId_;
     magda::DeviceInfo device_;
-    juce::TextButton modButton_;
+    std::unique_ptr<magda::SvgButton> modButton_;
     TextSlider gainSlider_;
     juce::TextButton uiButton_;
     juce::TextButton onButton_;
