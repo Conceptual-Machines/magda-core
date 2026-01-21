@@ -1,5 +1,7 @@
 #include "RackComponent.hpp"
 
+#include <BinaryData.h>
+
 #include "ChainPanel.hpp"
 #include "ChainRowComponent.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -26,43 +28,37 @@ RackComponent::RackComponent(magda::TrackId trackId, const magda::RackInfo& rack
 
     // === HEADER EXTRA CONTROLS ===
 
-    // MOD button (modulators toggle)
-    modButton_.setButtonText("MOD");
-    modButton_.setColour(juce::TextButton::buttonColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-    modButton_.setColour(juce::TextButton::buttonOnColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
-    modButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-    modButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
-    modButton_.setClickingTogglesState(true);
-    modButton_.onClick = [this]() {
-        modPanelVisible_ = modButton_.getToggleState();
+    // MOD button (modulators toggle) - sine wave icon
+    modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::sinewave_svg,
+                                                    BinaryData::sinewave_svgSize);
+    modButton_->setClickingTogglesState(true);
+    modButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    modButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    modButton_->onClick = [this]() {
+        modButton_->setActive(modButton_->getToggleState());
+        modPanelVisible_ = modButton_->getToggleState();
         if (onModPanelToggled)
             onModPanelToggled(modPanelVisible_);
         if (onLayoutChanged)
             onLayoutChanged();
     };
-    modButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    addAndMakeVisible(modButton_);
+    addAndMakeVisible(*modButton_);
 
-    // MACRO button (macros toggle)
-    macroButton_.setButtonText("MACRO");
-    macroButton_.setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-    macroButton_.setColour(juce::TextButton::buttonOnColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    macroButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-    macroButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
-    macroButton_.setClickingTogglesState(true);
-    macroButton_.onClick = [this]() {
-        paramPanelVisible_ = macroButton_.getToggleState();
+    // MACRO button (macros toggle) - link icon
+    macroButton_ =
+        std::make_unique<magda::SvgButton>("Macro", BinaryData::link_svg, BinaryData::link_svgSize);
+    macroButton_->setClickingTogglesState(true);
+    macroButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    macroButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    macroButton_->onClick = [this]() {
+        macroButton_->setActive(macroButton_->getToggleState());
+        paramPanelVisible_ = macroButton_->getToggleState();
         if (onParamPanelToggled)
             onParamPanelToggled(paramPanelVisible_);
         if (onLayoutChanged)
             onLayoutChanged();
     };
-    macroButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    addAndMakeVisible(macroButton_);
+    addAndMakeVisible(*macroButton_);
 
     // === CONTENT AREA SETUP ===
 
@@ -133,9 +129,9 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
 
 void RackComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     // MOD and MACRO buttons in header (before name)
-    modButton_.setBounds(headerArea.removeFromLeft(30));
+    modButton_->setBounds(headerArea.removeFromLeft(20));
     headerArea.removeFromLeft(4);
-    macroButton_.setBounds(headerArea.removeFromLeft(42));
+    macroButton_->setBounds(headerArea.removeFromLeft(20));
     headerArea.removeFromLeft(4);
 }
 

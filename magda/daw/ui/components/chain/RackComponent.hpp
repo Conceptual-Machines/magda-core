@@ -7,6 +7,7 @@
 #include "NodeComponent.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackManager.hpp"
+#include "ui/components/common/SvgButton.hpp"
 
 namespace magda::daw::ui {
 
@@ -61,8 +62,8 @@ class RackComponent : public NodeComponent {
     magda::RackId rackId_;
 
     // Header extra controls
-    juce::TextButton modButton_;    // Modulators toggle
-    juce::TextButton macroButton_;  // Macros toggle
+    std::unique_ptr<magda::SvgButton> modButton_;    // Modulators toggle
+    std::unique_ptr<magda::SvgButton> macroButton_;  // Macros toggle
     juce::TextButton addChainButton_;
 
     // Content area

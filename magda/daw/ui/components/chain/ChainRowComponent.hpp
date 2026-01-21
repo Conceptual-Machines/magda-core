@@ -6,6 +6,7 @@
 
 #include "core/RackInfo.hpp"
 #include "core/TrackManager.hpp"
+#include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::ui {
@@ -66,8 +67,8 @@ class ChainRowComponent : public juce::Component {
     juce::Label nameLabel_;
     TextSlider gainSlider_{TextSlider::Format::Decibels};
     TextSlider panSlider_{TextSlider::Format::Pan};
-    juce::TextButton modButton_;    // Modulators toggle
-    juce::TextButton macroButton_;  // Macros toggle
+    std::unique_ptr<magda::SvgButton> modButton_;    // Modulators toggle
+    std::unique_ptr<magda::SvgButton> macroButton_;  // Macros toggle
     juce::TextButton muteButton_;
     juce::TextButton soloButton_;
     juce::TextButton onButton_;      // Bypass/enable toggle

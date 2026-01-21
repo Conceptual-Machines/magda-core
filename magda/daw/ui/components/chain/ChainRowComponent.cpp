@@ -1,5 +1,7 @@
 #include "ChainRowComponent.hpp"
 
+#include <BinaryData.h>
+
 #include "RackComponent.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -36,35 +38,29 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     };
     addAndMakeVisible(panSlider_);
 
-    // MOD button (modulators toggle)
-    modButton_.setButtonText("M");
-    modButton_.setColour(juce::TextButton::buttonColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-    modButton_.setColour(juce::TextButton::buttonOnColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
-    modButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-    modButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
-    modButton_.setClickingTogglesState(true);
-    modButton_.onClick = [this]() {
+    // MOD button (modulators toggle) - sine wave icon
+    modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::sinewave_svg,
+                                                    BinaryData::sinewave_svgSize);
+    modButton_->setClickingTogglesState(true);
+    modButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    modButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    modButton_->onClick = [this]() {
+        modButton_->setActive(modButton_->getToggleState());
         // TODO: Toggle mod panel visibility for this chain
     };
-    modButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    addAndMakeVisible(modButton_);
+    addAndMakeVisible(*modButton_);
 
-    // MACRO button (macros toggle)
-    macroButton_.setButtonText("P");
-    macroButton_.setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-    macroButton_.setColour(juce::TextButton::buttonOnColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    macroButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-    macroButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
-    macroButton_.setClickingTogglesState(true);
-    macroButton_.onClick = [this]() {
+    // MACRO button (macros toggle) - link icon
+    macroButton_ =
+        std::make_unique<magda::SvgButton>("Macro", BinaryData::link_svg, BinaryData::link_svgSize);
+    macroButton_->setClickingTogglesState(true);
+    macroButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    macroButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    macroButton_->onClick = [this]() {
+        macroButton_->setActive(macroButton_->getToggleState());
         // TODO: Toggle macro panel visibility for this chain
     };
-    macroButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    addAndMakeVisible(macroButton_);
+    addAndMakeVisible(*macroButton_);
 
     // Mute button
     muteButton_.setButtonText("M");
@@ -173,10 +169,10 @@ void ChainRowComponent::resized() {
     panSlider_.setBounds(bounds.removeFromLeft(35));
     bounds.removeFromLeft(4);
 
-    modButton_.setBounds(bounds.removeFromLeft(16));
+    modButton_->setBounds(bounds.removeFromLeft(16));
     bounds.removeFromLeft(2);
 
-    macroButton_.setBounds(bounds.removeFromLeft(16));
+    macroButton_->setBounds(bounds.removeFromLeft(16));
     bounds.removeFromLeft(2);
 
     muteButton_.setBounds(bounds.removeFromLeft(16));
