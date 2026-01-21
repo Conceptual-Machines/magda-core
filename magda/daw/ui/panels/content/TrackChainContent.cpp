@@ -283,7 +283,7 @@ class TrackChainContent::DeviceSlotComponent : public NodeComponent {
         modButton_->setClickingTogglesState(true);
         modButton_->setToggleState(modPanelVisible_, juce::dontSendNotification);
         modButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-        modButton_->setActiveColor(DarkTheme::getTextColour());
+        modButton_->setActiveColor(juce::Colours::white);
         modButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
         modButton_->setActive(modPanelVisible_);
         modButton_->onClick = [this]() {
