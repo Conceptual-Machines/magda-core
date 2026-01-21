@@ -1,5 +1,7 @@
 #include "NodeComponent.hpp"
 
+#include <BinaryData.h>
+
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -9,26 +11,22 @@ namespace magda::daw::ui {
 NodeComponent::NodeComponent() {
     // === HEADER ===
 
-    // Bypass button (power symbol)
-    bypassButton_.setButtonText(juce::String::fromUTF8("\xe2\x8f\xbb"));  // ⏻ power symbol
-    // OFF state (not bypassed = active) = green background
-    bypassButton_.setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
-    // ON state (bypassed) = reddish background
-    bypassButton_.setColour(juce::TextButton::buttonOnColourId,
-                            DarkTheme::getColour(DarkTheme::STATUS_ERROR));
-    bypassButton_.setColour(juce::TextButton::textColourOffId,
-                            DarkTheme::getColour(DarkTheme::BACKGROUND));
-    bypassButton_.setColour(juce::TextButton::textColourOnId,
-                            DarkTheme::getColour(DarkTheme::BACKGROUND));
-    bypassButton_.setClickingTogglesState(true);
-    bypassButton_.onClick = [this]() {
+    // Bypass button (power icon)
+    bypassButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_on_svg,
+                                                       BinaryData::power_on_svgSize);
+    bypassButton_->setClickingTogglesState(true);
+    bypassButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    bypassButton_->setActiveColor(juce::Colours::white);
+    bypassButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+    bypassButton_->setActive(true);  // Default: not bypassed = active
+    bypassButton_->onClick = [this]() {
+        bool bypassed = !bypassButton_->getToggleState();  // Toggle OFF = bypassed
+        bypassButton_->setActive(!bypassed);
         if (onBypassChanged) {
-            onBypassChanged(bypassButton_.getToggleState());
+            onBypassChanged(bypassed);
         }
     };
-    bypassButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    addAndMakeVisible(bypassButton_);
+    addAndMakeVisible(*bypassButton_);
 
     // Name label
     nameLabel_.setFont(FontManager::getInstance().getUIFontBold(10.0f));
@@ -36,12 +34,14 @@ NodeComponent::NodeComponent() {
     nameLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(nameLabel_);
 
-    // Delete button (reddish background)
+    // Delete button (reddish-purple background)
     deleteButton_.setButtonText(juce::String::fromUTF8("\xc3\x97"));  // × symbol
-    deleteButton_.setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::STATUS_ERROR).darker(0.2f));
-    deleteButton_.setColour(juce::TextButton::textColourOffId,
-                            DarkTheme::getColour(DarkTheme::BACKGROUND));
+    deleteButton_.setColour(
+        juce::TextButton::buttonColourId,
+        DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
+            .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
+            .darker(0.2f));
+    deleteButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     deleteButton_.onClick = [this]() {
         if (onDeleteClicked) {
             onDeleteClicked();
@@ -232,7 +232,7 @@ void NodeComponent::paint(juce::Graphics& g) {
     paintContent(g, contentArea);
 
     // Dim if bypassed (draw over everything)
-    if (bypassButton_.getToggleState()) {
+    if (!bypassButton_->getToggleState()) {  // Toggle OFF = bypassed
         g.setColour(juce::Colours::black.withAlpha(0.3f));
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 4.0f);
     }
@@ -283,8 +283,8 @@ void NodeComponent::resized() {
         }
 
         // Bypass/power button next to delete (if visible)
-        if (bypassButton_.isVisible()) {
-            bypassButton_.setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+        if (bypassButton_->isVisible()) {
+            bypassButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
             headerArea.removeFromRight(4);
         }
 
@@ -295,7 +295,7 @@ void NodeComponent::resized() {
         nameLabel_.setVisible(true);
     } else {
         // Hide header controls
-        bypassButton_.setVisible(false);
+        bypassButton_->setVisible(false);
         deleteButton_.setVisible(false);
         nameLabel_.setVisible(false);
     }
@@ -335,11 +335,12 @@ juce::String NodeComponent::getNodeName() const {
 }
 
 void NodeComponent::setBypassed(bool bypassed) {
-    bypassButton_.setToggleState(bypassed, juce::dontSendNotification);
+    bypassButton_->setToggleState(!bypassed, juce::dontSendNotification);  // Active = not bypassed
+    bypassButton_->setActive(!bypassed);
 }
 
 bool NodeComponent::isBypassed() const {
-    return bypassButton_.getToggleState();
+    return !bypassButton_->getToggleState();  // Toggle OFF = bypassed
 }
 
 void NodeComponent::setParamButtonVisible(bool visible) {
@@ -355,7 +356,7 @@ void NodeComponent::setGainButtonVisible(bool visible) {
 }
 
 void NodeComponent::setBypassButtonVisible(bool visible) {
-    bypassButton_.setVisible(visible);
+    bypassButton_->setVisible(visible);
 }
 
 void NodeComponent::setDeleteButtonVisible(bool visible) {

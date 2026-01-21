@@ -60,8 +60,8 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
         setParamButtonVisible(false);
 
         // Mod button (toggle mod panel) - sine wave icon
-        modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::sinewave_svg,
-                                                        BinaryData::sinewave_svgSize);
+        modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::sinewavebright_svg,
+                                                        BinaryData::sinewavebright_svgSize);
         modButton_->setClickingTogglesState(true);
         modButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
         modButton_->setActiveColor(juce::Colours::white);
@@ -73,6 +73,23 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
                 onModPanelToggled(modPanelVisible_);
         };
         addAndMakeVisible(*modButton_);
+
+        // Macro button (toggle param panel) - link icon
+        macroButton_ = std::make_unique<magda::SvgButton>("Macro", BinaryData::link_bright_svg,
+                                                          BinaryData::link_bright_svgSize);
+        macroButton_->setClickingTogglesState(true);
+        macroButton_->setToggleState(paramPanelVisible_, juce::dontSendNotification);
+        macroButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+        macroButton_->setActiveColor(juce::Colours::white);
+        macroButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+        macroButton_->setActive(paramPanelVisible_);
+        macroButton_->onClick = [this]() {
+            macroButton_->setActive(macroButton_->getToggleState());
+            paramPanelVisible_ = macroButton_->getToggleState();
+            if (onParamPanelToggled)
+                onParamPanelToggled(paramPanelVisible_);
+        };
+        addAndMakeVisible(*macroButton_);
 
         // Gain text slider in header
         gainSlider_.setRange(-60.0, 12.0, 0.1);
@@ -92,28 +109,24 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
         uiButton_->onClick = [this]() { DBG("Open plugin UI for: " << device_.name); };
         addAndMakeVisible(*uiButton_);
 
-        // Bypass/On button (power symbol)
-        onButton_.setButtonText(juce::String::fromUTF8("\xe2\x8f\xbb"));  // ⏻ power symbol
-        // OFF state (not bypassed = active) = darker green background
-        onButton_.setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
-        // ON state (bypassed) = reddish background
-        onButton_.setColour(juce::TextButton::buttonOnColourId,
-                            DarkTheme::getColour(DarkTheme::STATUS_ERROR));
-        onButton_.setColour(juce::TextButton::textColourOffId,
-                            DarkTheme::getColour(DarkTheme::BACKGROUND));
-        onButton_.setColour(juce::TextButton::textColourOnId,
-                            DarkTheme::getColour(DarkTheme::BACKGROUND));
-        onButton_.setClickingTogglesState(true);
-        onButton_.setToggleState(device.bypassed, juce::dontSendNotification);
-        onButton_.onClick = [this]() {
-            bool bypassed = onButton_.getToggleState();
-            setBypassed(bypassed);
+        // Bypass/On button (power icon)
+        onButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_on_svg,
+                                                       BinaryData::power_on_svgSize);
+        onButton_->setClickingTogglesState(true);
+        onButton_->setToggleState(!device.bypassed,
+                                  juce::dontSendNotification);  // On = not bypassed
+        onButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+        onButton_->setActiveColor(juce::Colours::white);
+        onButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+        onButton_->setActive(!device.bypassed);
+        onButton_->onClick = [this]() {
+            bool active = onButton_->getToggleState();
+            onButton_->setActive(active);
+            setBypassed(!active);  // Active = not bypassed
             magda::TrackManager::getInstance().setDeviceInChainBypassed(trackId_, rackId_, chainId_,
-                                                                        device_.id, bypassed);
+                                                                        device_.id, !active);
         };
-        onButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-        addAndMakeVisible(onButton_);
+        addAndMakeVisible(*onButton_);
 
         // Create inline param sliders with labels (mock params)
         // clang-format off
@@ -141,9 +154,7 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
         }
     }
 
-    ~DeviceSlotComponent() override {
-        onButton_.setLookAndFeel(nullptr);
-    }
+    ~DeviceSlotComponent() override = default;
 
     magda::DeviceId getDeviceId() const {
         return device_.id;
@@ -157,22 +168,27 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
         device_ = device;
         setNodeName(device.name);
         setBypassed(device.bypassed);
-        onButton_.setToggleState(device.bypassed, juce::dontSendNotification);
+        onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);
+        onButton_->setActive(!device.bypassed);
         gainSlider_.setValue(device.gainDb, juce::dontSendNotification);
         repaint();
     }
 
   protected:
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override {
-        // Header layout: [M] [Name...] [gain slider] [UI] [on]
+        // Header layout: [M] [P] [Name...] [gain slider] [UI] [on]
         // Note: delete (X) is handled by NodeComponent on the right
 
         // Mod button on the left (before name)
         modButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
         headerArea.removeFromLeft(4);
 
+        // Macro button next to mod
+        macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
+        headerArea.removeFromLeft(4);
+
         // Power button on the right (before delete which is handled by parent)
-        onButton_.setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+        onButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
         headerArea.removeFromRight(4);
 
         // UI button
@@ -238,9 +254,10 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
 
     // Header controls
     std::unique_ptr<magda::SvgButton> modButton_;
+    std::unique_ptr<magda::SvgButton> macroButton_;
     TextSlider gainSlider_;
     std::unique_ptr<magda::SvgButton> uiButton_;
-    juce::TextButton onButton_;
+    std::unique_ptr<magda::SvgButton> onButton_;
 
     std::unique_ptr<juce::Label> paramLabels_[NUM_PARAMS];
     std::unique_ptr<TextSlider> paramSliders_[NUM_PARAMS];

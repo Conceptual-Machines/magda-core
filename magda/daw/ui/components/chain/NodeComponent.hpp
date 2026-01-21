@@ -6,6 +6,8 @@
 #include <memory>
 #include <vector>
 
+#include "ui/components/common/SvgButton.hpp"
+
 namespace magda::daw::ui {
 
 /**
@@ -129,7 +131,7 @@ class NodeComponent : public juce::Component {
 
   private:
     // Header controls
-    juce::TextButton bypassButton_;
+    std::unique_ptr<magda::SvgButton> bypassButton_;
     juce::Label nameLabel_;
     juce::TextButton deleteButton_;
 

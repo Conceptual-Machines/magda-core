@@ -39,8 +39,8 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     addAndMakeVisible(panSlider_);
 
     // MOD button (modulators toggle) - sine wave icon
-    modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::sinewave_svg,
-                                                    BinaryData::sinewave_svgSize);
+    modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::sinewavebright_svg,
+                                                    BinaryData::sinewavebright_svgSize);
     modButton_->setClickingTogglesState(true);
     modButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     modButton_->setActiveColor(juce::Colours::white);
@@ -52,8 +52,8 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     addAndMakeVisible(*modButton_);
 
     // MACRO button (macros toggle) - link icon
-    macroButton_ =
-        std::make_unique<magda::SvgButton>("Macro", BinaryData::link_svg, BinaryData::link_svgSize);
+    macroButton_ = std::make_unique<magda::SvgButton>("Macro", BinaryData::link_bright_svg,
+                                                      BinaryData::link_bright_svgSize);
     macroButton_->setClickingTogglesState(true);
     macroButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     macroButton_->setActiveColor(juce::Colours::white);
@@ -94,30 +94,29 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     soloButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addAndMakeVisible(soloButton_);
 
-    // On/bypass button (power symbol like other bypass buttons)
-    onButton_.setButtonText(juce::String::fromUTF8("\xe2\x8f\xbb"));  // ⏻ power symbol
-    // OFF state (bypassed) = reddish background
-    onButton_.setColour(juce::TextButton::buttonColourId,
-                        DarkTheme::getColour(DarkTheme::STATUS_ERROR));
-    // ON state (active) = green background
-    onButton_.setColour(juce::TextButton::buttonOnColourId,
-                        DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
-    onButton_.setColour(juce::TextButton::textColourOffId,
-                        DarkTheme::getColour(DarkTheme::BACKGROUND));
-    onButton_.setColour(juce::TextButton::textColourOnId,
-                        DarkTheme::getColour(DarkTheme::BACKGROUND));
-    onButton_.setClickingTogglesState(true);
-    onButton_.setToggleState(!chain.muted, juce::dontSendNotification);  // On = not bypassed
-    onButton_.onClick = [this]() { onBypassClicked(); };
-    onButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    addAndMakeVisible(onButton_);
+    // On/bypass button (power icon)
+    onButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_on_svg,
+                                                   BinaryData::power_on_svgSize);
+    onButton_->setClickingTogglesState(true);
+    onButton_->setToggleState(!chain.muted, juce::dontSendNotification);  // On = not bypassed
+    onButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    onButton_->setActiveColor(juce::Colours::white);
+    onButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+    onButton_->setActive(!chain.muted);
+    onButton_->onClick = [this]() {
+        onButton_->setActive(onButton_->getToggleState());
+        onBypassClicked();
+    };
+    addAndMakeVisible(*onButton_);
 
-    // Delete button (reddish background)
+    // Delete button (reddish-purple background)
     deleteButton_.setButtonText(juce::String::fromUTF8("\xc3\x97"));  // × symbol
-    deleteButton_.setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::STATUS_ERROR).darker(0.2f));
-    deleteButton_.setColour(juce::TextButton::textColourOffId,
-                            DarkTheme::getColour(DarkTheme::BACKGROUND));
+    deleteButton_.setColour(
+        juce::TextButton::buttonColourId,
+        DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
+            .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
+            .darker(0.2f));
+    deleteButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     deleteButton_.onClick = [this]() { onDeleteClicked(); };
     deleteButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addAndMakeVisible(deleteButton_);
@@ -168,7 +167,7 @@ void ChainRowComponent::resized() {
     deleteButton_.setBounds(bounds.removeFromRight(16));
     bounds.removeFromRight(2);
 
-    onButton_.setBounds(bounds.removeFromRight(16));
+    onButton_->setBounds(bounds.removeFromRight(16));
     bounds.removeFromRight(2);
 
     soloButton_.setBounds(bounds.removeFromRight(16));
@@ -207,7 +206,8 @@ void ChainRowComponent::updateFromChain(const magda::ChainInfo& chain) {
     soloButton_.setToggleState(chain.solo, juce::dontSendNotification);
     gainSlider_.setValue(chain.volume, juce::dontSendNotification);
     panSlider_.setValue(chain.pan, juce::dontSendNotification);
-    onButton_.setToggleState(!chain.muted, juce::dontSendNotification);
+    onButton_->setToggleState(!chain.muted, juce::dontSendNotification);
+    onButton_->setActive(!chain.muted);
 }
 
 void ChainRowComponent::onMuteClicked() {

@@ -29,8 +29,8 @@ RackComponent::RackComponent(magda::TrackId trackId, const magda::RackInfo& rack
     // === HEADER EXTRA CONTROLS ===
 
     // MOD button (modulators toggle) - sine wave icon
-    modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::sinewave_svg,
-                                                    BinaryData::sinewave_svgSize);
+    modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::sinewavebright_svg,
+                                                    BinaryData::sinewavebright_svgSize);
     modButton_->setClickingTogglesState(true);
     modButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     modButton_->setActiveColor(juce::Colours::white);
@@ -46,8 +46,8 @@ RackComponent::RackComponent(magda::TrackId trackId, const magda::RackInfo& rack
     addAndMakeVisible(*modButton_);
 
     // MACRO button (macros toggle) - link icon
-    macroButton_ =
-        std::make_unique<magda::SvgButton>("Macro", BinaryData::link_svg, BinaryData::link_svgSize);
+    macroButton_ = std::make_unique<magda::SvgButton>("Macro", BinaryData::link_bright_svg,
+                                                      BinaryData::link_bright_svgSize);
     macroButton_->setClickingTogglesState(true);
     macroButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     macroButton_->setActiveColor(juce::Colours::white);

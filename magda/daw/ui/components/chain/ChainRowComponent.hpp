@@ -71,8 +71,8 @@ class ChainRowComponent : public juce::Component {
     std::unique_ptr<magda::SvgButton> macroButton_;  // Macros toggle
     juce::TextButton muteButton_;
     juce::TextButton soloButton_;
-    juce::TextButton onButton_;      // Bypass/enable toggle
-    juce::TextButton deleteButton_;  // Delete chain
+    std::unique_ptr<magda::SvgButton> onButton_;  // Bypass/enable toggle (power icon)
+    juce::TextButton deleteButton_;               // Delete chain
 
     static constexpr int ROW_HEIGHT = 22;
 
