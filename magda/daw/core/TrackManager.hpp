@@ -110,13 +110,45 @@ class TrackManager {
     void setTrackCollapsed(TrackId trackId, ViewMode mode, bool collapsed);
     void setTrackHeight(TrackId trackId, ViewMode mode, int height);
 
-    // Device/FX chain management
+    // Device/FX chain management (flat device list on track)
     DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device);
     void removeDeviceFromTrack(TrackId trackId, DeviceId deviceId);
     void moveDevice(TrackId trackId, DeviceId deviceId, int newIndex);
     void setDeviceBypassed(TrackId trackId, DeviceId deviceId, bool bypassed);
     const std::vector<DeviceInfo>* getDevices(TrackId trackId) const;
     DeviceInfo* getDevice(TrackId trackId, DeviceId deviceId);
+
+    // Rack management
+    RackId addRackToTrack(TrackId trackId, const juce::String& name = "Rack");
+    void removeRackFromTrack(TrackId trackId, RackId rackId);
+    RackInfo* getRack(TrackId trackId, RackId rackId);
+    const RackInfo* getRack(TrackId trackId, RackId rackId) const;
+    const std::vector<RackInfo>* getRacks(TrackId trackId) const;
+    void setRackBypassed(TrackId trackId, RackId rackId, bool bypassed);
+    void setRackExpanded(TrackId trackId, RackId rackId, bool expanded);
+
+    // Chain management (within racks)
+    ChainId addChainToRack(TrackId trackId, RackId rackId, const juce::String& name = "Chain");
+    void removeChainFromRack(TrackId trackId, RackId rackId, ChainId chainId);
+    ChainInfo* getChain(TrackId trackId, RackId rackId, ChainId chainId);
+    const ChainInfo* getChain(TrackId trackId, RackId rackId, ChainId chainId) const;
+    void setChainOutput(TrackId trackId, RackId rackId, ChainId chainId, int outputIndex);
+    void setChainMuted(TrackId trackId, RackId rackId, ChainId chainId, bool muted);
+    void setChainSolo(TrackId trackId, RackId rackId, ChainId chainId, bool solo);
+    void setChainVolume(TrackId trackId, RackId rackId, ChainId chainId, float volume);
+    void setChainPan(TrackId trackId, RackId rackId, ChainId chainId, float pan);
+    void setChainExpanded(TrackId trackId, RackId rackId, ChainId chainId, bool expanded);
+
+    // Device management within chains
+    DeviceId addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,
+                              const DeviceInfo& device);
+    void removeDeviceFromChain(TrackId trackId, RackId rackId, ChainId chainId, DeviceId deviceId);
+    void moveDeviceInChain(TrackId trackId, RackId rackId, ChainId chainId, DeviceId deviceId,
+                           int newIndex);
+    DeviceInfo* getDeviceInChain(TrackId trackId, RackId rackId, ChainId chainId,
+                                 DeviceId deviceId);
+    void setDeviceInChainBypassed(TrackId trackId, RackId rackId, ChainId chainId,
+                                  DeviceId deviceId, bool bypassed);
 
     // Query tracks by view
     std::vector<TrackId> getVisibleTracks(ViewMode mode) const;
@@ -154,6 +186,8 @@ class TrackManager {
     std::vector<TrackManagerListener*> listeners_;
     int nextTrackId_ = 1;
     int nextDeviceId_ = 1;
+    int nextRackId_ = 1;
+    int nextChainId_ = 1;
     MasterChannelState masterChannel_;
     TrackId selectedTrackId_ = INVALID_TRACK_ID;
 

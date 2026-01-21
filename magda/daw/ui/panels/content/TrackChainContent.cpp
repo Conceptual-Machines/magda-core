@@ -6,6 +6,7 @@
 #include "../../themes/FontManager.hpp"
 #include "../../themes/MixerMetrics.hpp"
 #include "core/DeviceInfo.hpp"
+#include "ui/components/chain/RackComponent.hpp"
 
 namespace magda::daw::ui {
 
@@ -732,133 +733,119 @@ TrackChainContent::TrackChainContent() {
     noSelectionLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(noSelectionLabel_);
 
-    // Track name at right strip
-    trackNameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    // === HEADER BAR CONTROLS - LEFT SIDE (action buttons) ===
+
+    // Global mods toggle button
+    globalModsButton_.setButtonText("MOD");
+    globalModsButton_.setColour(juce::TextButton::buttonColourId,
+                                DarkTheme::getColour(DarkTheme::SURFACE));
+    globalModsButton_.setColour(juce::TextButton::buttonOnColourId,
+                                DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    globalModsButton_.setColour(juce::TextButton::textColourOffId,
+                                DarkTheme::getSecondaryTextColour());
+    globalModsButton_.setColour(juce::TextButton::textColourOnId,
+                                DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    globalModsButton_.setClickingTogglesState(true);
+    globalModsButton_.onClick = [this]() {
+        globalModsVisible_ = globalModsButton_.getToggleState();
+        resized();
+        repaint();
+    };
+    addChildComponent(globalModsButton_);
+
+    // Add rack button
+    addRackButton_.setButtonText("RACK+");
+    addRackButton_.setColour(juce::TextButton::buttonColourId,
+                             DarkTheme::getColour(DarkTheme::SURFACE));
+    addRackButton_.setColour(juce::TextButton::textColourOffId,
+                             DarkTheme::getSecondaryTextColour());
+    addRackButton_.onClick = [this]() {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+            magda::TrackManager::getInstance().addRackToTrack(selectedTrackId_);
+        }
+    };
+    addChildComponent(addRackButton_);
+
+    // Add multi-band rack button
+    addMultibandRackButton_.setButtonText("RACK-MB+");
+    addMultibandRackButton_.setColour(juce::TextButton::buttonColourId,
+                                      DarkTheme::getColour(DarkTheme::SURFACE));
+    addMultibandRackButton_.setColour(juce::TextButton::textColourOffId,
+                                      DarkTheme::getSecondaryTextColour());
+    addMultibandRackButton_.onClick = [this]() {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+            // TODO: Add multi-band rack with frequency splits
+            magda::TrackManager::getInstance().addRackToTrack(selectedTrackId_, "MB Rack");
+        }
+    };
+    addChildComponent(addMultibandRackButton_);
+
+    // === HEADER BAR CONTROLS - RIGHT SIDE (track info) ===
+
+    // Track name label
+    trackNameLabel_.setFont(FontManager::getInstance().getUIFontBold(11.0f));
     trackNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-    trackNameLabel_.setJustificationType(juce::Justification::centredLeft);
+    trackNameLabel_.setJustificationType(juce::Justification::centredRight);
     addChildComponent(trackNameLabel_);
 
-    // Mute button
-    muteButton_.setButtonText("M");
-    muteButton_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-    muteButton_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    muteButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-    muteButton_.setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::BACKGROUND));
-    muteButton_.setClickingTogglesState(true);
-    muteButton_.onClick = [this]() {
+    // Volume slider - horizontal, using dB scale with unity at 0.75 position
+    volumeSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
+    volumeSlider_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    volumeSlider_.setRange(0.0, 1.0, 0.001);
+    volumeSlider_.setValue(0.75);  // Unity gain (0 dB)
+    volumeSlider_.setSliderSnapsToMousePosition(false);
+    volumeSlider_.setColour(juce::Slider::trackColourId,
+                            DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    volumeSlider_.setColour(juce::Slider::backgroundColourId,
+                            DarkTheme::getColour(DarkTheme::SURFACE));
+    volumeSlider_.setColour(juce::Slider::thumbColourId,
+                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    volumeSlider_.onValueChange = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            magda::TrackManager::getInstance().setTrackMuted(selectedTrackId_,
-                                                             muteButton_.getToggleState());
-        }
-    };
-    addChildComponent(muteButton_);
-
-    // Solo button
-    soloButton_.setButtonText("S");
-    soloButton_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-    soloButton_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    soloButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-    soloButton_.setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::BACKGROUND));
-    soloButton_.setClickingTogglesState(true);
-    soloButton_.onClick = [this]() {
-        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            magda::TrackManager::getInstance().setTrackSoloed(selectedTrackId_,
-                                                              soloButton_.getToggleState());
-        }
-    };
-    addChildComponent(soloButton_);
-
-    // Gain slider - using dB scale with unity at 0.75 position
-    gainSlider_.setSliderStyle(juce::Slider::LinearVertical);
-    gainSlider_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    gainSlider_.setRange(0.0, 1.0, 0.001);
-    gainSlider_.setValue(0.75);  // Unity gain (0 dB)
-    gainSlider_.setSliderSnapsToMousePosition(false);
-    gainSlider_.setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    gainSlider_.setColour(juce::Slider::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-    gainSlider_.setColour(juce::Slider::thumbColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    gainSlider_.setLookAndFeel(&mixerLookAndFeel_);
-    gainSlider_.onValueChange = [this]() {
-        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            float faderPos = static_cast<float>(gainSlider_.getValue());
+            float faderPos = static_cast<float>(volumeSlider_.getValue());
             float db = faderPosToDb(faderPos);
             float gain = dbToGain(db);
             magda::TrackManager::getInstance().setTrackVolume(selectedTrackId_, gain);
-            // Update gain label
+            // Update volume label
             juce::String dbText;
             if (db <= MIN_DB) {
                 dbText = "-inf";
             } else {
                 dbText = juce::String(db, 1) + " dB";
             }
-            gainValueLabel_.setText(dbText, juce::dontSendNotification);
+            volumeValueLabel_.setText(dbText, juce::dontSendNotification);
         }
     };
-    addChildComponent(gainSlider_);
+    addChildComponent(volumeSlider_);
 
-    // Gain value label
-    gainValueLabel_.setText("0.0 dB", juce::dontSendNotification);
-    gainValueLabel_.setJustificationType(juce::Justification::centred);
-    gainValueLabel_.setColour(juce::Label::textColourId,
-                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    gainValueLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    addChildComponent(gainValueLabel_);
+    // Volume value label
+    volumeValueLabel_.setText("0.0 dB", juce::dontSendNotification);
+    volumeValueLabel_.setJustificationType(juce::Justification::centred);
+    volumeValueLabel_.setColour(juce::Label::textColourId,
+                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    volumeValueLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    addChildComponent(volumeValueLabel_);
 
-    // Pan slider (rotary knob)
-    panSlider_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    panSlider_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    panSlider_.setRange(-1.0, 1.0, 0.01);
-    panSlider_.setColour(juce::Slider::rotarySliderFillColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    panSlider_.setColour(juce::Slider::rotarySliderOutlineColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-    panSlider_.setLookAndFeel(&mixerLookAndFeel_);
-    panSlider_.onValueChange = [this]() {
-        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            magda::TrackManager::getInstance().setTrackPan(
-                selectedTrackId_, static_cast<float>(panSlider_.getValue()));
-            // Update pan label
-            float pan = static_cast<float>(panSlider_.getValue());
-            juce::String panText;
-            if (std::abs(pan) < 0.01f) {
-                panText = "C";
-            } else if (pan < 0) {
-                panText = juce::String(static_cast<int>(std::abs(pan) * 100)) + "L";
-            } else {
-                panText = juce::String(static_cast<int>(pan * 100)) + "R";
-            }
-            panValueLabel_.setText(panText, juce::dontSendNotification);
-        }
+    // Chain bypass button (on/off for entire track chain)
+    chainBypassButton_.setButtonText("ON");
+    chainBypassButton_.setColour(juce::TextButton::buttonColourId,
+                                 DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
+    chainBypassButton_.setColour(juce::TextButton::buttonOnColourId,
+                                 DarkTheme::getColour(DarkTheme::SURFACE));
+    chainBypassButton_.setColour(juce::TextButton::textColourOffId,
+                                 DarkTheme::getColour(DarkTheme::BACKGROUND));
+    chainBypassButton_.setColour(juce::TextButton::textColourOnId,
+                                 DarkTheme::getSecondaryTextColour());
+    chainBypassButton_.setClickingTogglesState(true);
+    chainBypassButton_.onClick = [this]() {
+        // When toggled ON (getToggleState() == true), chain is BYPASSED
+        bool bypassed = chainBypassButton_.getToggleState();
+        chainBypassButton_.setButtonText(bypassed ? "OFF" : "ON");
+        // TODO: Actually bypass all devices in the track chain
+        DBG("Track chain bypass: " << (bypassed ? "BYPASSED" : "ACTIVE"));
+        repaint();
     };
-    addChildComponent(panSlider_);
-
-    // Pan value label
-    panValueLabel_.setText("C", juce::dontSendNotification);
-    panValueLabel_.setJustificationType(juce::Justification::centred);
-    panValueLabel_.setColour(juce::Label::textColourId,
-                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    panValueLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    addChildComponent(panValueLabel_);
-
-    // Add device button
-    addDeviceButton_.setButtonText("+");
-    addDeviceButton_.setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
-    addDeviceButton_.setColour(juce::TextButton::textColourOffId,
-                               DarkTheme::getSecondaryTextColour());
-    addDeviceButton_.onClick = [this]() {
-        // Would open plugin browser or show plugin selector
-        DBG("Add device clicked - would show plugin selector");
-    };
-    addChildComponent(addDeviceButton_);
+    addChildComponent(chainBypassButton_);
 
     // Register as listener
     magda::TrackManager::getInstance().addListener(this);
@@ -870,110 +857,164 @@ TrackChainContent::TrackChainContent() {
 
 TrackChainContent::~TrackChainContent() {
     magda::TrackManager::getInstance().removeListener(this);
-    // Clear look and feel before destruction
-    gainSlider_.setLookAndFeel(nullptr);
-    panSlider_.setLookAndFeel(nullptr);
 }
 
 void TrackChainContent::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getPanelBackgroundColour());
 
     if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-        // Draw the chain area background
         auto bounds = getLocalBounds();
-        auto stripWidth = 100;
-        auto chainArea = bounds.withTrimmedRight(stripWidth);
 
-        // Draw arrows between device slots
-        auto slotArea = chainArea.reduced(8);
-        int slotSpacing = 8;
+        // Draw header background
+        auto headerArea = bounds.removeFromTop(HEADER_HEIGHT);
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.fillRect(headerArea);
+
+        // Header bottom border
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawHorizontalLine(HEADER_HEIGHT - 1, 0.0f, static_cast<float>(getWidth()));
+
+        // Draw global mods panel on left if visible
+        if (globalModsVisible_) {
+            auto modsArea = bounds.removeFromLeft(MODS_PANEL_WIDTH);
+            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).darker(0.1f));
+            g.fillRect(modsArea);
+
+            // Panel border
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.drawVerticalLine(modsArea.getRight() - 1, static_cast<float>(modsArea.getY()),
+                               static_cast<float>(modsArea.getBottom()));
+
+            // Panel header
+            auto modsPanelHeader = modsArea.removeFromTop(24).reduced(8, 4);
+            g.setColour(DarkTheme::getTextColour());
+            g.setFont(FontManager::getInstance().getUIFontBold(10.0f));
+            g.drawText("MODULATORS", modsPanelHeader, juce::Justification::centredLeft);
+
+            // Placeholder content
+            auto modsContent = modsArea.reduced(8);
+            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setFont(FontManager::getInstance().getUIFont(9.0f));
+
+            int y = modsContent.getY();
+            g.drawText("+ Add LFO", modsContent.getX(), y, modsContent.getWidth(), 20,
+                       juce::Justification::centredLeft);
+            y += 24;
+            g.drawText("+ Add Envelope", modsContent.getX(), y, modsContent.getWidth(), 20,
+                       juce::Justification::centredLeft);
+            y += 24;
+            g.drawText("+ Add Random", modsContent.getX(), y, modsContent.getWidth(), 20,
+                       juce::Justification::centredLeft);
+        }
+
+        // Draw arrows between all chain elements (devices and racks)
+        auto contentArea = bounds.reduced(8);
+        int chainHeight = contentArea.getHeight();
         int arrowWidth = 20;
+        int slotSpacing = 8;
+        int arrowY = contentArea.getY() + chainHeight / 2;
 
-        int x = slotArea.getX();
+        int x = contentArea.getX();
+
+        // Draw arrows after each device slot
         for (size_t i = 0; i < deviceSlots_.size(); ++i) {
             int slotWidth = deviceSlots_[i]->getExpandedWidth();
-            x += slotWidth;  // After device slot
+            x += slotWidth;
 
-            // Draw arrow after each device (except the last one before add button)
-            auto arrowArea =
-                juce::Rectangle<int>(x, slotArea.getY(), arrowWidth, slotArea.getHeight());
+            // Draw arrow
             g.setColour(DarkTheme::getSecondaryTextColour());
-
-            int arrowY = arrowArea.getCentreY();
-            int arrowX = arrowArea.getCentreX();
-            g.drawLine(static_cast<float>(arrowX - 6), static_cast<float>(arrowY),
-                       static_cast<float>(arrowX + 6), static_cast<float>(arrowY), 1.5f);
+            g.drawLine(static_cast<float>(x + 2), static_cast<float>(arrowY),
+                       static_cast<float>(x + arrowWidth - 2), static_cast<float>(arrowY), 1.5f);
             // Arrow head
-            g.drawLine(static_cast<float>(arrowX + 2), static_cast<float>(arrowY - 4),
-                       static_cast<float>(arrowX + 6), static_cast<float>(arrowY), 1.5f);
-            g.drawLine(static_cast<float>(arrowX + 2), static_cast<float>(arrowY + 4),
-                       static_cast<float>(arrowX + 6), static_cast<float>(arrowY), 1.5f);
+            g.drawLine(static_cast<float>(x + arrowWidth - 5), static_cast<float>(arrowY - 4),
+                       static_cast<float>(x + arrowWidth - 2), static_cast<float>(arrowY), 1.5f);
+            g.drawLine(static_cast<float>(x + arrowWidth - 5), static_cast<float>(arrowY + 4),
+                       static_cast<float>(x + arrowWidth - 2), static_cast<float>(arrowY), 1.5f);
 
             x += arrowWidth + slotSpacing;
         }
 
-        // Draw separator line before track strip
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.drawLine(static_cast<float>(chainArea.getRight()), 0.0f,
-                   static_cast<float>(chainArea.getRight()), static_cast<float>(getHeight()), 1.0f);
+        // Draw arrows after each rack (rack includes chain panel when visible)
+        for (size_t i = 0; i < rackComponents_.size(); ++i) {
+            int rackWidth = rackComponents_[i]->getPreferredWidth();
+            x += rackWidth + slotSpacing;
+
+            // Draw arrow after rack
+            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.drawLine(static_cast<float>(x + 2), static_cast<float>(arrowY),
+                       static_cast<float>(x + arrowWidth - 2), static_cast<float>(arrowY), 1.5f);
+            // Arrow head
+            g.drawLine(static_cast<float>(x + arrowWidth - 5), static_cast<float>(arrowY - 4),
+                       static_cast<float>(x + arrowWidth - 2), static_cast<float>(arrowY), 1.5f);
+            g.drawLine(static_cast<float>(x + arrowWidth - 5), static_cast<float>(arrowY + 4),
+                       static_cast<float>(x + arrowWidth - 2), static_cast<float>(arrowY), 1.5f);
+
+            x += arrowWidth;
+        }
     }
 }
 
 void TrackChainContent::resized() {
     auto bounds = getLocalBounds();
-    const auto& metrics = magda::MixerMetrics::getInstance();
 
     if (selectedTrackId_ == magda::INVALID_TRACK_ID) {
         noSelectionLabel_.setBounds(bounds);
-        addDeviceButton_.setVisible(false);
+        showHeader(false);
     } else {
-        // Track info strip at right border
-        auto stripWidth = 100;
-        auto strip = bounds.removeFromRight(stripWidth).reduced(4);
+        noSelectionLabel_.setVisible(false);
 
-        // Chain area (left of strip)
-        auto chainArea = bounds.reduced(8);
+        // === HEADER BAR LAYOUT ===
+        // Layout: MOD RACK+ RACK-MB+ ... Name | gain | ON
+        auto headerArea = bounds.removeFromTop(HEADER_HEIGHT).reduced(8, 4);
 
-        // Layout device slots horizontally
-        int slotHeight = chainArea.getHeight();
+        // LEFT SIDE - Action buttons
+        globalModsButton_.setBounds(headerArea.removeFromLeft(40));
+        headerArea.removeFromLeft(4);
+        addRackButton_.setBounds(headerArea.removeFromLeft(55));
+        headerArea.removeFromLeft(4);
+        addMultibandRackButton_.setBounds(headerArea.removeFromLeft(75));
+        headerArea.removeFromLeft(16);
+
+        // RIGHT SIDE - Track info (from right to left)
+        chainBypassButton_.setBounds(headerArea.removeFromRight(36));
+        headerArea.removeFromRight(8);
+        volumeSlider_.setBounds(headerArea.removeFromRight(80));
+        headerArea.removeFromRight(4);
+        volumeValueLabel_.setBounds(headerArea.removeFromRight(50));
+        headerArea.removeFromRight(8);
+        trackNameLabel_.setBounds(headerArea);  // Name takes remaining space
+
+        showHeader(true);
+
+        // === MODS PANEL (left side, if visible) ===
+        if (globalModsVisible_) {
+            bounds.removeFromLeft(MODS_PANEL_WIDTH);
+        }
+
+        // === CONTENT AREA LAYOUT ===
+        // Everything flows horizontally: [Device] → [Device] → [Rack] → [Rack] → ...
+        // ChainPanel is displayed within the rack when a chain is selected
+        auto contentArea = bounds.reduced(8);
+        int chainHeight = contentArea.getHeight();
         int arrowWidth = 20;
         int slotSpacing = 8;
 
-        int x = chainArea.getX();
+        int x = contentArea.getX();
+
+        // Layout device slots horizontally
         for (auto& slot : deviceSlots_) {
             int slotWidth = slot->getExpandedWidth();
-            slot->setBounds(x, chainArea.getY(), slotWidth, slotHeight);
+            slot->setBounds(x, contentArea.getY(), slotWidth, chainHeight);
             x += slotWidth + arrowWidth + slotSpacing;
         }
 
-        // Add device button after all slots
-        addDeviceButton_.setBounds(x, chainArea.getY(), 40, slotHeight);
-        addDeviceButton_.setVisible(true);
-
-        // Track name at top of strip
-        trackNameLabel_.setBounds(strip.removeFromTop(20));
-        strip.removeFromTop(4);
-
-        // Pan knob
-        auto panArea = strip.removeFromTop(metrics.knobSize);
-        panSlider_.setBounds(panArea.withSizeKeepingCentre(metrics.knobSize, metrics.knobSize));
-
-        // Pan value label
-        panValueLabel_.setBounds(strip.removeFromTop(14));
-        strip.removeFromTop(4);
-
-        // M/S buttons
-        auto buttonRow = strip.removeFromTop(24);
-        muteButton_.setBounds(buttonRow.removeFromLeft(36));
-        buttonRow.removeFromLeft(4);
-        soloButton_.setBounds(buttonRow.removeFromLeft(36));
-        strip.removeFromTop(4);
-
-        // Gain value label
-        gainValueLabel_.setBounds(strip.removeFromTop(12));
-
-        // Gain slider (vertical) - takes remaining space
-        gainSlider_.setBounds(strip);
+        // Layout rack components horizontally (continuing the chain)
+        // Rack width includes chain panel if visible
+        for (auto& rack : rackComponents_) {
+            int rackWidth = rack->getPreferredWidth();
+            rack->setBounds(x, contentArea.getY(), rackWidth, chainHeight);
+            x += rackWidth + arrowWidth + slotSpacing;
+        }
     }
 }
 
@@ -1010,56 +1051,48 @@ void TrackChainContent::trackSelectionChanged(magda::TrackId trackId) {
 void TrackChainContent::trackDevicesChanged(magda::TrackId trackId) {
     if (trackId == selectedTrackId_) {
         rebuildDeviceSlots();
+        rebuildRackComponents();
     }
 }
 
 void TrackChainContent::updateFromSelectedTrack() {
     if (selectedTrackId_ == magda::INVALID_TRACK_ID) {
-        showTrackStrip(false);
+        showHeader(false);
         noSelectionLabel_.setVisible(true);
         deviceSlots_.clear();
+        rackComponents_.clear();
     } else {
         const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
         if (track) {
             trackNameLabel_.setText(track->name, juce::dontSendNotification);
-            muteButton_.setToggleState(track->muted, juce::dontSendNotification);
-            soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
 
-            // Convert linear gain to fader position
+            // Convert linear gain to fader position for volume slider
             float db = gainToDb(track->volume);
             float faderPos = dbToFaderPos(db);
-            gainSlider_.setValue(faderPos, juce::dontSendNotification);
+            volumeSlider_.setValue(faderPos, juce::dontSendNotification);
 
-            // Update gain label
+            // Update volume label
             juce::String dbText;
             if (db <= MIN_DB) {
                 dbText = "-inf";
             } else {
                 dbText = juce::String(db, 1) + " dB";
             }
-            gainValueLabel_.setText(dbText, juce::dontSendNotification);
+            volumeValueLabel_.setText(dbText, juce::dontSendNotification);
 
-            panSlider_.setValue(track->pan, juce::dontSendNotification);
+            // Reset chain bypass button state
+            chainBypassButton_.setToggleState(false, juce::dontSendNotification);
+            chainBypassButton_.setButtonText("ON");
 
-            // Update pan label
-            float pan = track->pan;
-            juce::String panText;
-            if (std::abs(pan) < 0.01f) {
-                panText = "C";
-            } else if (pan < 0) {
-                panText = juce::String(static_cast<int>(std::abs(pan) * 100)) + "L";
-            } else {
-                panText = juce::String(static_cast<int>(pan * 100)) + "R";
-            }
-            panValueLabel_.setText(panText, juce::dontSendNotification);
-
-            showTrackStrip(true);
+            showHeader(true);
             noSelectionLabel_.setVisible(false);
             rebuildDeviceSlots();
+            rebuildRackComponents();
         } else {
-            showTrackStrip(false);
+            showHeader(false);
             noSelectionLabel_.setVisible(true);
             deviceSlots_.clear();
+            rackComponents_.clear();
         }
     }
 
@@ -1067,14 +1100,16 @@ void TrackChainContent::updateFromSelectedTrack() {
     repaint();
 }
 
-void TrackChainContent::showTrackStrip(bool show) {
+void TrackChainContent::showHeader(bool show) {
+    // Left side - action buttons
+    globalModsButton_.setVisible(show);
+    addRackButton_.setVisible(show);
+    addMultibandRackButton_.setVisible(show);
+    // Right side - track info
     trackNameLabel_.setVisible(show);
-    muteButton_.setVisible(show);
-    soloButton_.setVisible(show);
-    gainSlider_.setVisible(show);
-    gainValueLabel_.setVisible(show);
-    panSlider_.setVisible(show);
-    panValueLabel_.setVisible(show);
+    volumeSlider_.setVisible(show);
+    volumeValueLabel_.setVisible(show);
+    chainBypassButton_.setVisible(show);
 }
 
 void TrackChainContent::rebuildDeviceSlots() {
@@ -1097,6 +1132,81 @@ void TrackChainContent::rebuildDeviceSlots() {
         deviceSlots_.push_back(std::move(slot));
     }
 
+    resized();
+    repaint();
+}
+
+void TrackChainContent::rebuildRackComponents() {
+    if (selectedTrackId_ == magda::INVALID_TRACK_ID) {
+        unfocusAllComponents();
+        rackComponents_.clear();
+        return;
+    }
+
+    const auto* racks = magda::TrackManager::getInstance().getRacks(selectedTrackId_);
+    if (!racks) {
+        unfocusAllComponents();
+        rackComponents_.clear();
+        return;
+    }
+
+    // Smart rebuild: preserve existing rack components, only add/remove as needed
+    std::vector<std::unique_ptr<RackComponent>> newRackComponents;
+
+    for (const auto& rack : *racks) {
+        // Check if we already have a component for this rack
+        std::unique_ptr<RackComponent> existingRack;
+        for (auto it = rackComponents_.begin(); it != rackComponents_.end(); ++it) {
+            if ((*it)->getRackId() == rack.id) {
+                // Found existing rack - preserve it and update its data
+                existingRack = std::move(*it);
+                rackComponents_.erase(it);
+                existingRack->updateFromRack(rack);
+                break;
+            }
+        }
+
+        if (existingRack) {
+            newRackComponents.push_back(std::move(existingRack));
+        } else {
+            // Create new component for new rack
+            auto rackComp = std::make_unique<RackComponent>(selectedTrackId_, rack);
+            // Wire up chain selection callback
+            rackComp->onChainSelected = [this](magda::TrackId trackId, magda::RackId rackId,
+                                               magda::ChainId chainId) {
+                onChainSelected(trackId, rackId, chainId);
+            };
+            addAndMakeVisible(*rackComp);
+            newRackComponents.push_back(std::move(rackComp));
+        }
+    }
+
+    // Unfocus before destroying remaining old racks (racks that were removed)
+    if (!rackComponents_.empty()) {
+        unfocusAllComponents();
+    }
+
+    // Move new components to member variable (old ones are destroyed here)
+    rackComponents_ = std::move(newRackComponents);
+
+    resized();
+    repaint();
+}
+
+void TrackChainContent::onChainSelected(magda::TrackId trackId, magda::RackId rackId,
+                                        magda::ChainId chainId) {
+    (void)trackId;
+    (void)chainId;
+
+    // Clear selection in other racks (hide their chain panels)
+    for (auto& rack : rackComponents_) {
+        if (rack->getRackId() != rackId) {
+            rack->clearChainSelection();
+            rack->hideChainPanel();
+        }
+    }
+
+    // Relayout since rack widths may have changed
     resized();
     repaint();
 }

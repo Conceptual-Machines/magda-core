@@ -4,6 +4,7 @@
 #include <juce_graphics/juce_graphics.h>
 
 #include "DeviceInfo.hpp"
+#include "RackInfo.hpp"
 #include "TrackTypes.hpp"
 #include "TrackViewSettings.hpp"
 
@@ -31,6 +32,9 @@ struct TrackInfo {
 
     // FX chain - ordered list of devices/plugins on this track
     std::vector<DeviceInfo> devices;
+
+    // Racks - containers for parallel signal chains
+    std::vector<RackInfo> racks;
 
     // View settings per view mode
     TrackViewSettingsMap viewSettings;

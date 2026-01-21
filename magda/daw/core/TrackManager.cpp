@@ -408,6 +408,254 @@ DeviceInfo* TrackManager::getDevice(TrackId trackId, DeviceId deviceId) {
 }
 
 // ============================================================================
+// Rack Management
+// ============================================================================
+
+RackId TrackManager::addRackToTrack(TrackId trackId, const juce::String& name) {
+    if (auto* track = getTrack(trackId)) {
+        RackInfo rack;
+        rack.id = nextRackId_++;
+        rack.name = name.isEmpty() ? ("Rack " + juce::String(rack.id)) : name;
+        track->racks.push_back(rack);
+        notifyTrackDevicesChanged(trackId);
+        DBG("Added rack: " << rack.name << " (id=" << rack.id << ") to track " << trackId);
+        return rack.id;
+    }
+    return INVALID_RACK_ID;
+}
+
+void TrackManager::removeRackFromTrack(TrackId trackId, RackId rackId) {
+    if (auto* track = getTrack(trackId)) {
+        auto& racks = track->racks;
+        auto it = std::find_if(racks.begin(), racks.end(),
+                               [rackId](const RackInfo& r) { return r.id == rackId; });
+        if (it != racks.end()) {
+            DBG("Removed rack: " << it->name << " (id=" << rackId << ") from track " << trackId);
+            racks.erase(it);
+            notifyTrackDevicesChanged(trackId);
+        }
+    }
+}
+
+RackInfo* TrackManager::getRack(TrackId trackId, RackId rackId) {
+    if (auto* track = getTrack(trackId)) {
+        auto& racks = track->racks;
+        auto it = std::find_if(racks.begin(), racks.end(),
+                               [rackId](const RackInfo& r) { return r.id == rackId; });
+        if (it != racks.end()) {
+            return &(*it);
+        }
+    }
+    return nullptr;
+}
+
+const RackInfo* TrackManager::getRack(TrackId trackId, RackId rackId) const {
+    if (const auto* track = getTrack(trackId)) {
+        const auto& racks = track->racks;
+        auto it = std::find_if(racks.begin(), racks.end(),
+                               [rackId](const RackInfo& r) { return r.id == rackId; });
+        if (it != racks.end()) {
+            return &(*it);
+        }
+    }
+    return nullptr;
+}
+
+const std::vector<RackInfo>* TrackManager::getRacks(TrackId trackId) const {
+    if (const auto* track = getTrack(trackId)) {
+        return &track->racks;
+    }
+    return nullptr;
+}
+
+void TrackManager::setRackBypassed(TrackId trackId, RackId rackId, bool bypassed) {
+    if (auto* rack = getRack(trackId, rackId)) {
+        rack->bypassed = bypassed;
+        notifyTrackDevicesChanged(trackId);
+    }
+}
+
+void TrackManager::setRackExpanded(TrackId trackId, RackId rackId, bool expanded) {
+    if (auto* rack = getRack(trackId, rackId)) {
+        rack->expanded = expanded;
+        notifyTrackDevicesChanged(trackId);
+    }
+}
+
+// ============================================================================
+// Chain Management
+// ============================================================================
+
+ChainId TrackManager::addChainToRack(TrackId trackId, RackId rackId, const juce::String& name) {
+    if (auto* rack = getRack(trackId, rackId)) {
+        ChainInfo chain;
+        chain.id = nextChainId_++;
+        chain.name = name.isEmpty()
+                         ? ("Chain " + juce::String(static_cast<int>(rack->chains.size()) + 1))
+                         : name;
+        rack->chains.push_back(chain);
+        notifyTrackDevicesChanged(trackId);
+        DBG("Added chain: " << chain.name << " (id=" << chain.id << ") to rack " << rackId);
+        return chain.id;
+    }
+    return INVALID_CHAIN_ID;
+}
+
+void TrackManager::removeChainFromRack(TrackId trackId, RackId rackId, ChainId chainId) {
+    if (auto* rack = getRack(trackId, rackId)) {
+        auto& chains = rack->chains;
+        auto it = std::find_if(chains.begin(), chains.end(),
+                               [chainId](const ChainInfo& c) { return c.id == chainId; });
+        if (it != chains.end()) {
+            DBG("Removed chain: " << it->name << " (id=" << chainId << ") from rack " << rackId);
+            chains.erase(it);
+            notifyTrackDevicesChanged(trackId);
+        }
+    }
+}
+
+ChainInfo* TrackManager::getChain(TrackId trackId, RackId rackId, ChainId chainId) {
+    if (auto* rack = getRack(trackId, rackId)) {
+        auto& chains = rack->chains;
+        auto it = std::find_if(chains.begin(), chains.end(),
+                               [chainId](const ChainInfo& c) { return c.id == chainId; });
+        if (it != chains.end()) {
+            return &(*it);
+        }
+    }
+    return nullptr;
+}
+
+const ChainInfo* TrackManager::getChain(TrackId trackId, RackId rackId, ChainId chainId) const {
+    if (const auto* rack = getRack(trackId, rackId)) {
+        const auto& chains = rack->chains;
+        auto it = std::find_if(chains.begin(), chains.end(),
+                               [chainId](const ChainInfo& c) { return c.id == chainId; });
+        if (it != chains.end()) {
+            return &(*it);
+        }
+    }
+    return nullptr;
+}
+
+void TrackManager::setChainOutput(TrackId trackId, RackId rackId, ChainId chainId,
+                                  int outputIndex) {
+    if (auto* chain = getChain(trackId, rackId, chainId)) {
+        chain->outputIndex = outputIndex;
+        notifyTrackDevicesChanged(trackId);
+    }
+}
+
+void TrackManager::setChainMuted(TrackId trackId, RackId rackId, ChainId chainId, bool muted) {
+    if (auto* chain = getChain(trackId, rackId, chainId)) {
+        chain->muted = muted;
+        notifyTrackDevicesChanged(trackId);
+    }
+}
+
+void TrackManager::setChainSolo(TrackId trackId, RackId rackId, ChainId chainId, bool solo) {
+    if (auto* chain = getChain(trackId, rackId, chainId)) {
+        chain->solo = solo;
+        notifyTrackDevicesChanged(trackId);
+    }
+}
+
+void TrackManager::setChainVolume(TrackId trackId, RackId rackId, ChainId chainId, float volume) {
+    if (auto* chain = getChain(trackId, rackId, chainId)) {
+        chain->volume = juce::jlimit(0.0f, 2.0f, volume);
+        notifyTrackDevicesChanged(trackId);
+    }
+}
+
+void TrackManager::setChainPan(TrackId trackId, RackId rackId, ChainId chainId, float pan) {
+    if (auto* chain = getChain(trackId, rackId, chainId)) {
+        chain->pan = juce::jlimit(-1.0f, 1.0f, pan);
+        notifyTrackDevicesChanged(trackId);
+    }
+}
+
+void TrackManager::setChainExpanded(TrackId trackId, RackId rackId, ChainId chainId,
+                                    bool expanded) {
+    if (auto* chain = getChain(trackId, rackId, chainId)) {
+        chain->expanded = expanded;
+        notifyTrackDevicesChanged(trackId);
+    }
+}
+
+// ============================================================================
+// Device Management Within Chains
+// ============================================================================
+
+DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,
+                                        const DeviceInfo& device) {
+    if (auto* chain = getChain(trackId, rackId, chainId)) {
+        DeviceInfo newDevice = device;
+        newDevice.id = nextDeviceId_++;
+        chain->devices.push_back(newDevice);
+        notifyTrackDevicesChanged(trackId);
+        DBG("Added device: " << newDevice.name << " (id=" << newDevice.id << ") to chain "
+                             << chainId);
+        return newDevice.id;
+    }
+    return INVALID_DEVICE_ID;
+}
+
+void TrackManager::removeDeviceFromChain(TrackId trackId, RackId rackId, ChainId chainId,
+                                         DeviceId deviceId) {
+    if (auto* chain = getChain(trackId, rackId, chainId)) {
+        auto& devices = chain->devices;
+        auto it = std::find_if(devices.begin(), devices.end(),
+                               [deviceId](const DeviceInfo& d) { return d.id == deviceId; });
+        if (it != devices.end()) {
+            DBG("Removed device: " << it->name << " (id=" << deviceId << ") from chain "
+                                   << chainId);
+            devices.erase(it);
+            notifyTrackDevicesChanged(trackId);
+        }
+    }
+}
+
+void TrackManager::moveDeviceInChain(TrackId trackId, RackId rackId, ChainId chainId,
+                                     DeviceId deviceId, int newIndex) {
+    if (auto* chain = getChain(trackId, rackId, chainId)) {
+        auto& devices = chain->devices;
+        auto it = std::find_if(devices.begin(), devices.end(),
+                               [deviceId](const DeviceInfo& d) { return d.id == deviceId; });
+        if (it != devices.end()) {
+            int currentIndex = static_cast<int>(std::distance(devices.begin(), it));
+            if (currentIndex != newIndex && newIndex >= 0 &&
+                newIndex < static_cast<int>(devices.size())) {
+                DeviceInfo device = *it;
+                devices.erase(it);
+                devices.insert(devices.begin() + newIndex, device);
+                notifyTrackDevicesChanged(trackId);
+            }
+        }
+    }
+}
+
+DeviceInfo* TrackManager::getDeviceInChain(TrackId trackId, RackId rackId, ChainId chainId,
+                                           DeviceId deviceId) {
+    if (auto* chain = getChain(trackId, rackId, chainId)) {
+        auto& devices = chain->devices;
+        auto it = std::find_if(devices.begin(), devices.end(),
+                               [deviceId](const DeviceInfo& d) { return d.id == deviceId; });
+        if (it != devices.end()) {
+            return &(*it);
+        }
+    }
+    return nullptr;
+}
+
+void TrackManager::setDeviceInChainBypassed(TrackId trackId, RackId rackId, ChainId chainId,
+                                            DeviceId deviceId, bool bypassed) {
+    if (auto* device = getDeviceInChain(trackId, rackId, chainId, deviceId)) {
+        device->bypassed = bypassed;
+        notifyTrackDevicesChanged(trackId);
+    }
+}
+
+// ============================================================================
 // View Settings
 // ============================================================================
 

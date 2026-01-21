@@ -162,6 +162,11 @@ set(DAW_UI_SOURCES
     # Components - Mixer
     ui/components/mixer/MasterChannelStrip.cpp
     ui/components/mixer/RoutingSelector.cpp
+    # Components - Chain
+    ui/components/chain/NodeComponent.cpp
+    ui/components/chain/ChainRowComponent.cpp
+    ui/components/chain/RackComponent.cpp
+    ui/components/chain/ChainPanel.cpp
 )
 
 # All DAW headers
@@ -176,6 +181,7 @@ set(DAW_HEADERS
     core/TrackInfo.hpp
     core/TrackManager.hpp
     core/TrackTypes.hpp
+    core/RackInfo.hpp
     core/TrackViewSettings.hpp
     core/ClipTypes.hpp
     core/ClipInfo.hpp
@@ -273,6 +279,11 @@ set(DAW_HEADERS
     # Components - Mixer
     ui/components/mixer/MasterChannelStrip.hpp
     ui/components/mixer/RoutingSelector.hpp
+    # Components - Chain
+    ui/components/chain/NodeComponent.hpp
+    ui/components/chain/ChainRowComponent.hpp
+    ui/components/chain/RackComponent.hpp
+    ui/components/chain/ChainPanel.hpp
 )
 
 # Create DAW library (core functionality)
@@ -345,6 +356,7 @@ target_include_directories(magda_daw_app
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/components/tracks
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/components/clips
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/components/pianoroll
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/components/chain
     ${CMAKE_SOURCE_DIR}
 )
 

@@ -6,6 +6,8 @@
 
 namespace magda::daw::ui {
 
+class RackComponent;
+
 /**
  * @brief Track chain panel content
  *
@@ -40,14 +42,19 @@ class TrackChainContent : public PanelContent, public magda::TrackManagerListene
   private:
     juce::Label noSelectionLabel_;
 
-    // Track info strip at right border
+    // Header bar controls - LEFT side (action buttons)
+    juce::TextButton globalModsButton_;        // Toggle global modulators panel
+    juce::TextButton addRackButton_;           // Add rack button
+    juce::TextButton addMultibandRackButton_;  // Add multi-band rack button
+
+    // Header bar controls - RIGHT side (track info)
     juce::Label trackNameLabel_;
-    juce::TextButton muteButton_;
-    juce::TextButton soloButton_;
-    juce::Slider gainSlider_;
-    juce::Label gainValueLabel_;
-    juce::Slider panSlider_;
-    juce::Label panValueLabel_;
+    juce::Slider volumeSlider_;  // Horizontal volume slider
+    juce::Label volumeValueLabel_;
+    juce::TextButton chainBypassButton_;  // On/off - bypasses entire track chain
+
+    // Global mods panel visibility
+    bool globalModsVisible_ = false;
 
     magda::TrackId selectedTrackId_ = magda::INVALID_TRACK_ID;
 
@@ -55,15 +62,22 @@ class TrackChainContent : public PanelContent, public magda::TrackManagerListene
     magda::MixerLookAndFeel mixerLookAndFeel_;
 
     void updateFromSelectedTrack();
-    void showTrackStrip(bool show);
+    void showHeader(bool show);
     void rebuildDeviceSlots();
+    void rebuildRackComponents();
 
     // Device slot component for interactive device display
     class DeviceSlotComponent;
     std::vector<std::unique_ptr<DeviceSlotComponent>> deviceSlots_;
 
-    // Empty slot for adding new devices
-    juce::TextButton addDeviceButton_;
+    // Rack components for parallel chain routing
+    std::vector<std::unique_ptr<RackComponent>> rackComponents_;
+
+    // Chain selection handling
+    void onChainSelected(magda::TrackId trackId, magda::RackId rackId, magda::ChainId chainId);
+
+    static constexpr int HEADER_HEIGHT = 36;
+    static constexpr int MODS_PANEL_WIDTH = 160;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TrackChainContent)
 };
