@@ -113,7 +113,7 @@ class NodeComponent : public juce::Component {
 
     // Layout constants
     static constexpr int HEADER_HEIGHT = 20;
-    static constexpr int FOOTER_HEIGHT = 20;
+    static constexpr int FOOTER_HEIGHT = 30;
     static constexpr int BUTTON_SIZE = 16;
     static constexpr int DEFAULT_PANEL_WIDTH = 60;  // Width for side panels (mods, params)
     static constexpr int GAIN_PANEL_WIDTH = 32;     // Width for gain panel (right side)
