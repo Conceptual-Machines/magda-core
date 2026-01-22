@@ -107,6 +107,7 @@ class ChainPanel : public NodeComponent {
 
     static constexpr int ARROW_WIDTH = 16;
     static constexpr int MOD_MACRO_PANEL_HEIGHT = 80;
+    static constexpr int DRAG_LEFT_PADDING = 12;  // Padding during drag for drop indicator
 
     // Drag-to-reorder state
     NodeComponent* draggedElement_ = nullptr;

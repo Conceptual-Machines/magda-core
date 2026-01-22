@@ -920,10 +920,11 @@ void TrackChainContent::layoutChainContent() {
     chainContainer_->setSize(juce::jmax(totalWidth, availableWidth), chainHeight);
     chainContainer_->setNodeComponents(&nodeComponents_);
 
+    // Add left padding during drag to show insertion indicator before first node
+    bool isDragging = dragOriginalIndex_ >= 0;
+    int x = isDragging ? DRAG_LEFT_PADDING : 0;
+
     // Layout all node components horizontally
-    // Start with padding to leave room for insertion indicator before first node
-    static constexpr int LEFT_PADDING = 8;
-    int x = LEFT_PADDING;
     for (auto& node : nodeComponents_) {
         // Check if it's a RackComponent to set available width
         if (auto* rack = dynamic_cast<RackComponent*>(node.get())) {
@@ -938,8 +939,9 @@ void TrackChainContent::layoutChainContent() {
 }
 
 int TrackChainContent::calculateTotalContentWidth() const {
-    static constexpr int LEFT_PADDING = 8;
-    int totalWidth = LEFT_PADDING;
+    // Add left padding during drag to show insertion indicator before first node
+    bool isDragging = dragOriginalIndex_ >= 0;
+    int totalWidth = isDragging ? DRAG_LEFT_PADDING : 0;
 
     // Add width for all node components
     for (const auto& node : nodeComponents_) {
@@ -1077,6 +1079,8 @@ void TrackChainContent::rebuildNodeComponents() {
                 // Capture ghost image and make original semi-transparent
                 dragGhostImage_ = node->createComponentSnapshot(node->getLocalBounds());
                 node->setAlpha(0.4f);
+                // Re-layout to add left padding for drop indicator
+                resized();
             };
 
             slot->onDragMove = [this](NodeComponent*, const juce::MouseEvent& e) {
@@ -1108,7 +1112,8 @@ void TrackChainContent::rebuildNodeComponents() {
                 draggedNode_ = nullptr;
                 dragOriginalIndex_ = -1;
                 dragInsertIndex_ = -1;
-                chainContainer_->repaint();
+                // Re-layout to remove left padding
+                resized();
             };
 
             chainContainer_->addAndMakeVisible(*slot);
@@ -1148,6 +1153,8 @@ void TrackChainContent::rebuildNodeComponents() {
                 // Capture ghost image and make original semi-transparent
                 dragGhostImage_ = node->createComponentSnapshot(node->getLocalBounds());
                 node->setAlpha(0.4f);
+                // Re-layout to add left padding for drop indicator
+                resized();
             };
 
             rackComp->onDragMove = [this](NodeComponent*, const juce::MouseEvent& e) {
@@ -1178,7 +1185,8 @@ void TrackChainContent::rebuildNodeComponents() {
                 draggedNode_ = nullptr;
                 dragOriginalIndex_ = -1;
                 dragInsertIndex_ = -1;
-                chainContainer_->repaint();
+                // Re-layout to remove left padding
+                resized();
             };
 
             chainContainer_->addAndMakeVisible(*rackComp);
@@ -1311,9 +1319,9 @@ int TrackChainContent::calculateInsertIndex(int mouseX) const {
 }
 
 int TrackChainContent::calculateIndicatorX(int index) const {
-    // Before first element - place in the left padding area
+    // Before first element - center in the drag padding area
     if (index == 0) {
-        return 4;  // Center of LEFT_PADDING (8)
+        return DRAG_LEFT_PADDING / 2;
     }
 
     // After previous element
@@ -1322,7 +1330,7 @@ int TrackChainContent::calculateIndicatorX(int index) const {
     }
 
     // Fallback
-    return 8;
+    return DRAG_LEFT_PADDING / 2;
 }
 
 void TrackChainContent::saveNodeStates() {

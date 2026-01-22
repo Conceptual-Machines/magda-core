@@ -475,8 +475,11 @@ void ChainPanel::resizedContent(juce::Rectangle<int> contentArea) {
     elementSlotsContainer_->setSize(totalWidth, containerHeight);
     elementSlotsContainer_->setElementSlots(&elementSlots_);
 
+    // Add left padding during drag to show insertion indicator before first element
+    bool isDragging = dragOriginalIndex_ >= 0;
+    int x = isDragging ? DRAG_LEFT_PADDING : 0;
+
     // Layout element slots inside the container
-    int x = 0;
     for (auto& slot : elementSlots_) {
         int slotWidth = slot->getPreferredWidth();
         slot->setBounds(x, 0, slotWidth, containerHeight);
@@ -488,7 +491,10 @@ void ChainPanel::resizedContent(juce::Rectangle<int> contentArea) {
 }
 
 int ChainPanel::calculateTotalContentWidth() const {
-    int totalWidth = 0;
+    // Add left padding during drag to show insertion indicator before first element
+    bool isDragging = dragOriginalIndex_ >= 0;
+    int totalWidth = isDragging ? DRAG_LEFT_PADDING : 0;
+
     for (const auto& slot : elementSlots_) {
         totalWidth += slot->getPreferredWidth() + ARROW_WIDTH;
     }
@@ -702,6 +708,8 @@ void ChainPanel::rebuildElementSlots() {
             // Capture ghost image and make original semi-transparent
             safeThis->dragGhostImage_ = node->createComponentSnapshot(node->getLocalBounds());
             node->setAlpha(0.4f);
+            // Re-layout to add left padding for drop indicator
+            safeThis->resized();
         };
 
         slot->onDragMove = [safeThis](NodeComponent*, const juce::MouseEvent& e) {
@@ -751,7 +759,8 @@ void ChainPanel::rebuildElementSlots() {
             safeThis->draggedElement_ = nullptr;
             safeThis->dragOriginalIndex_ = -1;
             safeThis->dragInsertIndex_ = -1;
-            safeThis->elementSlotsContainer_->repaint();
+            // Re-layout to remove left padding
+            safeThis->resized();
         };
     }
 }
@@ -893,11 +902,9 @@ int ChainPanel::calculateInsertIndex(int mouseX) const {
 }
 
 int ChainPanel::calculateIndicatorX(int index) const {
-    static constexpr int LEFT_PADDING = 4;
-
-    // Before first element
+    // Before first element - center in the drag padding area
     if (index == 0) {
-        return LEFT_PADDING / 2;
+        return DRAG_LEFT_PADDING / 2;
     }
 
     // After previous element
@@ -906,7 +913,7 @@ int ChainPanel::calculateIndicatorX(int index) const {
     }
 
     // Fallback
-    return LEFT_PADDING;
+    return DRAG_LEFT_PADDING / 2;
 }
 
 }  // namespace magda::daw::ui

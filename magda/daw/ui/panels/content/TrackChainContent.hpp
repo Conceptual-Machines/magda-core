@@ -115,6 +115,7 @@ class TrackChainContent : public PanelContent,
 
     static constexpr int ARROW_WIDTH = 20;
     static constexpr int SLOT_SPACING = 8;
+    static constexpr int DRAG_LEFT_PADDING = 12;  // Padding during drag for drop indicator
 
     // Chain selection handling (internal)
     void onChainSelected(magda::TrackId trackId, magda::RackId rackId, magda::ChainId chainId);
