@@ -243,8 +243,8 @@ void NodeComponent::paint(juce::Graphics& g) {
 
         // Selection border (around main strip only)
         if (selected_) {
-            g.setColour(juce::Colour(0xff888888));
-            g.drawRoundedRectangle(bounds.toFloat().reduced(1.0f), 4.0f, 2.0f);
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+            g.drawRoundedRectangle(bounds.toFloat().reduced(1.0f), 4.0f, 2.5f);
         }
         return;
     }
@@ -317,8 +317,8 @@ void NodeComponent::paint(juce::Graphics& g) {
 
     // Selection border (draw on top of everything)
     if (selected_) {
-        g.setColour(juce::Colour(0xff888888));  // Grey
-        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 4.0f, 2.0f);
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 4.0f, 2.5f);
     }
 }
 
