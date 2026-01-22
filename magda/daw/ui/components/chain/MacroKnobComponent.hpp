@@ -30,14 +30,22 @@ class MacroKnobComponent : public juce::Component {
     // Set available devices for linking (name and deviceId pairs)
     void setAvailableTargets(const std::vector<std::pair<magda::DeviceId, juce::String>>& devices);
 
+    // Selection state
+    void setSelected(bool selected);
+    bool isSelected() const {
+        return selected_;
+    }
+
     // Callbacks
     std::function<void(float)> onValueChanged;
     std::function<void(magda::MacroTarget)> onTargetChanged;
     std::function<void(juce::String)> onNameChanged;
+    std::function<void()> onClicked;  // Selection callback
 
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseUp(const juce::MouseEvent& e) override;
+    void mouseDown(const juce::MouseEvent& e) override;
 
   private:
     void showLinkMenu();
@@ -49,6 +57,7 @@ class MacroKnobComponent : public juce::Component {
     TextSlider valueSlider_{TextSlider::Format::Decimal};
     magda::MacroInfo currentMacro_;
     std::vector<std::pair<magda::DeviceId, juce::String>> availableTargets_;
+    bool selected_ = false;
 
     static constexpr int NAME_LABEL_HEIGHT = 11;
     static constexpr int VALUE_SLIDER_HEIGHT = 14;

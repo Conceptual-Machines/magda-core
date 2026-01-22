@@ -58,6 +58,9 @@ class InspectorContent : public PanelContent,
     void selectionTypeChanged(magda::SelectionType newType) override;
     void noteSelectionChanged(const magda::NoteSelection& selection) override;
     void chainNodeSelectionChanged(const magda::ChainNodePath& path) override;
+    void modSelectionChanged(const magda::ModSelection& selection) override;
+    void macroSelectionChanged(const magda::MacroSelection& selection) override;
+    void paramSelectionChanged(const magda::ParamSelection& selection) override;
 
   private:
     juce::Label titleLabel_;

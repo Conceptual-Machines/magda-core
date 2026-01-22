@@ -43,14 +43,30 @@ void MacroKnobComponent::setAvailableTargets(
     availableTargets_ = devices;
 }
 
+void MacroKnobComponent::setSelected(bool selected) {
+    if (selected_ != selected) {
+        selected_ = selected;
+        repaint();
+    }
+}
+
 void MacroKnobComponent::paint(juce::Graphics& g) {
-    // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).brighter(0.02f));
+    // Background - highlight when selected
+    if (selected_) {
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.3f));
+    } else {
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).brighter(0.04f));
+    }
     g.fillRoundedRectangle(getLocalBounds().toFloat(), 3.0f);
 
-    // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 3.0f, 1.0f);
+    // Border - orange when selected
+    if (selected_) {
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 3.0f, 2.0f);
+    } else {
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 3.0f, 1.0f);
+    }
 
     // Link indicator at bottom
     auto linkArea = getLocalBounds().removeFromBottom(LINK_INDICATOR_HEIGHT);
@@ -69,6 +85,19 @@ void MacroKnobComponent::resized() {
 
     // Link indicator area (painted, not a component)
     // bounds.removeFromTop(LINK_INDICATOR_HEIGHT) is handled in paint
+}
+
+void MacroKnobComponent::mouseDown(const juce::MouseEvent& e) {
+    // Left-click triggers onClicked callback for selection
+    if (!e.mods.isPopupMenu()) {
+        // Check if click is not on slider or name label
+        if (!valueSlider_.getBounds().contains(e.getPosition()) &&
+            !nameLabel_.getBounds().contains(e.getPosition())) {
+            if (onClicked) {
+                onClicked();
+            }
+        }
+    }
 }
 
 void MacroKnobComponent::mouseUp(const juce::MouseEvent& e) {

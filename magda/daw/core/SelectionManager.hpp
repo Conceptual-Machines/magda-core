@@ -5,6 +5,8 @@
 
 #include "ClipTypes.hpp"
 #include "DeviceInfo.hpp"
+#include "MacroInfo.hpp"
+#include "ModInfo.hpp"
 #include "RackInfo.hpp"
 #include "TrackTypes.hpp"
 
@@ -21,7 +23,10 @@ enum class SelectionType {
     TimeRange,  // Time range selected (for operations)
     Note,       // MIDI note(s) selected in piano roll
     Device,     // Device selected in track chain
-    ChainNode   // Any node in the chain view (rack, chain, device)
+    ChainNode,  // Any node in the chain view (rack, chain, device)
+    Mod,        // Modulator selected in mods panel
+    Macro,      // Macro selected in macros panel
+    Param       // Parameter selected on a device
 };
 
 /**
@@ -281,6 +286,66 @@ struct TimeRangeSelection {
 };
 
 /**
+ * @brief Mod selection data
+ */
+struct ModSelection {
+    ChainNodePath parentPath;  // Path to the rack/chain containing the mod
+    int modIndex = -1;         // Which mod in the array
+
+    bool isValid() const {
+        return parentPath.isValid() && modIndex >= 0;
+    }
+
+    bool operator==(const ModSelection& other) const {
+        return parentPath == other.parentPath && modIndex == other.modIndex;
+    }
+
+    bool operator!=(const ModSelection& other) const {
+        return !(*this == other);
+    }
+};
+
+/**
+ * @brief Macro selection data
+ */
+struct MacroSelection {
+    ChainNodePath parentPath;  // Path to the rack/chain containing the macro
+    int macroIndex = -1;       // Which macro in the array
+
+    bool isValid() const {
+        return parentPath.isValid() && macroIndex >= 0;
+    }
+
+    bool operator==(const MacroSelection& other) const {
+        return parentPath == other.parentPath && macroIndex == other.macroIndex;
+    }
+
+    bool operator!=(const MacroSelection& other) const {
+        return !(*this == other);
+    }
+};
+
+/**
+ * @brief Parameter selection data
+ */
+struct ParamSelection {
+    ChainNodePath devicePath;  // Path to the device containing the parameter
+    int paramIndex = -1;       // Which parameter on the device
+
+    bool isValid() const {
+        return devicePath.isValid() && paramIndex >= 0;
+    }
+
+    bool operator==(const ParamSelection& other) const {
+        return devicePath == other.devicePath && paramIndex == other.paramIndex;
+    }
+
+    bool operator!=(const ParamSelection& other) const {
+        return !(*this == other);
+    }
+};
+
+/**
  * @brief Listener interface for selection changes
  */
 class SelectionManagerListener {
@@ -298,6 +363,9 @@ class SelectionManagerListener {
     virtual void chainNodeSelectionChanged([[maybe_unused]] const ChainNodePath& path) {}
     // Called when clicking an already-selected node (for collapse toggle)
     virtual void chainNodeReselected([[maybe_unused]] const ChainNodePath& path) {}
+    virtual void modSelectionChanged([[maybe_unused]] const ModSelection& selection) {}
+    virtual void macroSelectionChanged([[maybe_unused]] const MacroSelection& selection) {}
+    virtual void paramSelectionChanged([[maybe_unused]] const ParamSelection& selection) {}
 };
 
 /**
@@ -548,6 +616,96 @@ class SelectionManager {
     }
 
     // ========================================================================
+    // Mod Selection
+    // ========================================================================
+
+    /**
+     * @brief Select a mod in a rack or chain's mods panel
+     * @param parentPath Path to the rack or chain containing the mod
+     * @param modIndex Index of the mod in the mods array
+     */
+    void selectMod(const ChainNodePath& parentPath, int modIndex);
+
+    /**
+     * @brief Clear mod selection
+     */
+    void clearModSelection();
+
+    /**
+     * @brief Get the current mod selection
+     */
+    const ModSelection& getModSelection() const {
+        return modSelection_;
+    }
+
+    /**
+     * @brief Check if there's a valid mod selection
+     */
+    bool hasModSelection() const {
+        return selectionType_ == SelectionType::Mod && modSelection_.isValid();
+    }
+
+    // ========================================================================
+    // Macro Selection
+    // ========================================================================
+
+    /**
+     * @brief Select a macro in a rack or chain's macros panel
+     * @param parentPath Path to the rack or chain containing the macro
+     * @param macroIndex Index of the macro in the macros array
+     */
+    void selectMacro(const ChainNodePath& parentPath, int macroIndex);
+
+    /**
+     * @brief Clear macro selection
+     */
+    void clearMacroSelection();
+
+    /**
+     * @brief Get the current macro selection
+     */
+    const MacroSelection& getMacroSelection() const {
+        return macroSelection_;
+    }
+
+    /**
+     * @brief Check if there's a valid macro selection
+     */
+    bool hasMacroSelection() const {
+        return selectionType_ == SelectionType::Macro && macroSelection_.isValid();
+    }
+
+    // ========================================================================
+    // Param Selection
+    // ========================================================================
+
+    /**
+     * @brief Select a parameter on a device
+     * @param devicePath Path to the device containing the parameter
+     * @param paramIndex Index of the parameter
+     */
+    void selectParam(const ChainNodePath& devicePath, int paramIndex);
+
+    /**
+     * @brief Clear param selection
+     */
+    void clearParamSelection();
+
+    /**
+     * @brief Get the current param selection
+     */
+    const ParamSelection& getParamSelection() const {
+        return paramSelection_;
+    }
+
+    /**
+     * @brief Check if there's a valid param selection
+     */
+    bool hasParamSelection() const {
+        return selectionType_ == SelectionType::Param && paramSelection_.isValid();
+    }
+
+    // ========================================================================
     // Clear
     // ========================================================================
 
@@ -576,6 +734,9 @@ class SelectionManager {
     NoteSelection noteSelection_;
     DeviceSelection deviceSelection_;
     ChainNodePath selectedChainNode_;  // For exclusive chain node selection
+    ModSelection modSelection_;
+    MacroSelection macroSelection_;
+    ParamSelection paramSelection_;
 
     std::vector<SelectionManagerListener*> listeners_;
 
@@ -588,6 +749,9 @@ class SelectionManager {
     void notifyDeviceSelectionChanged(const DeviceSelection& selection);
     void notifyChainNodeSelectionChanged(const ChainNodePath& path);
     void notifyChainNodeReselected(const ChainNodePath& path);
+    void notifyModSelectionChanged(const ModSelection& selection);
+    void notifyMacroSelectionChanged(const MacroSelection& selection);
+    void notifyParamSelectionChanged(const ParamSelection& selection);
 };
 
 }  // namespace magda

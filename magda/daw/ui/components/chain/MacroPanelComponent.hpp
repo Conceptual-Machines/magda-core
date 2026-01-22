@@ -43,6 +43,7 @@ class MacroPanelComponent : public PagedControlPanel {
     std::function<void(int macroIndex, float value)> onMacroValueChanged;
     std::function<void(int macroIndex, magda::MacroTarget target)> onMacroTargetChanged;
     std::function<void(int macroIndex, juce::String name)> onMacroNameChanged;
+    std::function<void(int macroIndex)> onMacroClicked;  // Selection callback
 
   protected:
     // PagedControlPanel overrides

@@ -700,6 +700,32 @@ void InspectorContent::chainNodeSelectionChanged(const magda::ChainNodePath& pat
     }
 }
 
+void InspectorContent::modSelectionChanged(const magda::ModSelection& selection) {
+    DBG("InspectorContent::modSelectionChanged - modIndex=" + juce::String(selection.modIndex));
+    if (selection.isValid()) {
+        currentSelectionType_ = magda::SelectionType::Mod;
+        updateSelectionDisplay();
+    }
+}
+
+void InspectorContent::macroSelectionChanged(const magda::MacroSelection& selection) {
+    DBG("InspectorContent::macroSelectionChanged - macroIndex=" +
+        juce::String(selection.macroIndex));
+    if (selection.isValid()) {
+        currentSelectionType_ = magda::SelectionType::Macro;
+        updateSelectionDisplay();
+    }
+}
+
+void InspectorContent::paramSelectionChanged(const magda::ParamSelection& selection) {
+    DBG("InspectorContent::paramSelectionChanged - paramIndex=" +
+        juce::String(selection.paramIndex));
+    if (selection.isValid()) {
+        currentSelectionType_ = magda::SelectionType::Param;
+        updateSelectionDisplay();
+    }
+}
+
 void InspectorContent::noteSelectionChanged(const magda::NoteSelection& selection) {
     if (currentSelectionType_ == magda::SelectionType::Note) {
         noteSelection_ = selection;
@@ -776,6 +802,45 @@ void InspectorContent::updateSelectionDisplay() {
             noSelectionLabel_.setVisible(false);
             updateFromSelectedChainNode();
             break;
+
+        case magda::SelectionType::Mod: {
+            showTrackControls(false);
+            showClipControls(false);
+            showNoteControls(false);
+            showChainNodeControls(false);
+            auto& modSelection = magda::SelectionManager::getInstance().getModSelection();
+            noSelectionLabel_.setText("Mod " + juce::String(modSelection.modIndex + 1) +
+                                          " selected",
+                                      juce::dontSendNotification);
+            noSelectionLabel_.setVisible(true);
+            break;
+        }
+
+        case magda::SelectionType::Macro: {
+            showTrackControls(false);
+            showClipControls(false);
+            showNoteControls(false);
+            showChainNodeControls(false);
+            auto& macroSelection = magda::SelectionManager::getInstance().getMacroSelection();
+            noSelectionLabel_.setText("Macro " + juce::String(macroSelection.macroIndex + 1) +
+                                          " selected",
+                                      juce::dontSendNotification);
+            noSelectionLabel_.setVisible(true);
+            break;
+        }
+
+        case magda::SelectionType::Param: {
+            showTrackControls(false);
+            showClipControls(false);
+            showNoteControls(false);
+            showChainNodeControls(false);
+            auto& paramSelection = magda::SelectionManager::getInstance().getParamSelection();
+            noSelectionLabel_.setText("Param " + juce::String(paramSelection.paramIndex + 1) +
+                                          " selected",
+                                      juce::dontSendNotification);
+            noSelectionLabel_.setVisible(true);
+            break;
+        }
     }
 
     resized();

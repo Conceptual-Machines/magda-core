@@ -40,6 +40,18 @@ void MacroPanelComponent::ensureKnobCount(int count) {
             }
         };
 
+        knob->onClicked = [this, i]() {
+            // Deselect all other knobs and select this one
+            for (auto& k : knobs_) {
+                k->setSelected(false);
+            }
+            knobs_[i]->setSelected(true);
+
+            if (onMacroClicked) {
+                onMacroClicked(i);
+            }
+        };
+
         knob->setAvailableTargets(availableDevices_);
         addAndMakeVisible(*knob);
         knobs_.push_back(std::move(knob));

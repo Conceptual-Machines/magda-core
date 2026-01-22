@@ -457,6 +457,10 @@ void SelectionManager::clearSelection() {
     timeRangeSelection_ = TimeRangeSelection{};
     noteSelection_ = NoteSelection{};
     deviceSelection_ = DeviceSelection{};
+    selectedChainNode_ = ChainNodePath{};
+    modSelection_ = ModSelection{};
+    macroSelection_ = MacroSelection{};
+    paramSelection_ = ParamSelection{};
 
     // Sync with managers
     TrackManager::getInstance().setSelectedTrack(INVALID_TRACK_ID);
@@ -586,6 +590,189 @@ void SelectionManager::notifyChainNodeSelectionChanged(const ChainNodePath& path
 void SelectionManager::notifyChainNodeReselected(const ChainNodePath& path) {
     for (auto* listener : listeners_) {
         listener->chainNodeReselected(path);
+    }
+}
+
+// ============================================================================
+// Mod Selection
+// ============================================================================
+
+void SelectionManager::selectMod(const ChainNodePath& parentPath, int modIndex) {
+    bool typeChanged = selectionType_ != SelectionType::Mod;
+    bool selectionChanged =
+        modSelection_.parentPath != parentPath || modSelection_.modIndex != modIndex;
+
+    if (!typeChanged && !selectionChanged) {
+        return;  // Already selected
+    }
+
+    // Clear other selection types (but keep track selection for context)
+    selectedClipId_ = INVALID_CLIP_ID;
+    selectedClipIds_.clear();
+    timeRangeSelection_ = TimeRangeSelection{};
+    noteSelection_ = NoteSelection{};
+    deviceSelection_ = DeviceSelection{};
+    selectedChainNode_ = ChainNodePath{};
+    macroSelection_ = MacroSelection{};
+    paramSelection_ = ParamSelection{};
+
+    selectionType_ = SelectionType::Mod;
+    modSelection_.parentPath = parentPath;
+    modSelection_.modIndex = modIndex;
+
+    // Sync with managers
+    ClipManager::getInstance().clearClipSelection();
+
+    if (typeChanged) {
+        notifySelectionTypeChanged(SelectionType::Mod);
+    }
+    notifyModSelectionChanged(modSelection_);
+}
+
+void SelectionManager::clearModSelection() {
+    if (selectionType_ != SelectionType::Mod) {
+        return;
+    }
+
+    modSelection_ = ModSelection{};
+
+    // Return to track selection if we have a track
+    if (selectedTrackId_ != INVALID_TRACK_ID) {
+        selectionType_ = SelectionType::Track;
+        notifySelectionTypeChanged(SelectionType::Track);
+    } else {
+        selectionType_ = SelectionType::None;
+        notifySelectionTypeChanged(SelectionType::None);
+    }
+
+    notifyModSelectionChanged(modSelection_);
+}
+
+void SelectionManager::notifyModSelectionChanged(const ModSelection& selection) {
+    for (auto* listener : listeners_) {
+        listener->modSelectionChanged(selection);
+    }
+}
+
+// ============================================================================
+// Macro Selection
+// ============================================================================
+
+void SelectionManager::selectMacro(const ChainNodePath& parentPath, int macroIndex) {
+    bool typeChanged = selectionType_ != SelectionType::Macro;
+    bool selectionChanged =
+        macroSelection_.parentPath != parentPath || macroSelection_.macroIndex != macroIndex;
+
+    if (!typeChanged && !selectionChanged) {
+        return;  // Already selected
+    }
+
+    // Clear other selection types (but keep track selection for context)
+    selectedClipId_ = INVALID_CLIP_ID;
+    selectedClipIds_.clear();
+    timeRangeSelection_ = TimeRangeSelection{};
+    noteSelection_ = NoteSelection{};
+    deviceSelection_ = DeviceSelection{};
+    selectedChainNode_ = ChainNodePath{};
+    modSelection_ = ModSelection{};
+    paramSelection_ = ParamSelection{};
+
+    selectionType_ = SelectionType::Macro;
+    macroSelection_.parentPath = parentPath;
+    macroSelection_.macroIndex = macroIndex;
+
+    // Sync with managers
+    ClipManager::getInstance().clearClipSelection();
+
+    if (typeChanged) {
+        notifySelectionTypeChanged(SelectionType::Macro);
+    }
+    notifyMacroSelectionChanged(macroSelection_);
+}
+
+void SelectionManager::clearMacroSelection() {
+    if (selectionType_ != SelectionType::Macro) {
+        return;
+    }
+
+    macroSelection_ = MacroSelection{};
+
+    // Return to track selection if we have a track
+    if (selectedTrackId_ != INVALID_TRACK_ID) {
+        selectionType_ = SelectionType::Track;
+        notifySelectionTypeChanged(SelectionType::Track);
+    } else {
+        selectionType_ = SelectionType::None;
+        notifySelectionTypeChanged(SelectionType::None);
+    }
+
+    notifyMacroSelectionChanged(macroSelection_);
+}
+
+void SelectionManager::notifyMacroSelectionChanged(const MacroSelection& selection) {
+    for (auto* listener : listeners_) {
+        listener->macroSelectionChanged(selection);
+    }
+}
+
+// ============================================================================
+// Param Selection
+// ============================================================================
+
+void SelectionManager::selectParam(const ChainNodePath& devicePath, int paramIndex) {
+    bool typeChanged = selectionType_ != SelectionType::Param;
+    bool selectionChanged =
+        paramSelection_.devicePath != devicePath || paramSelection_.paramIndex != paramIndex;
+
+    if (!typeChanged && !selectionChanged) {
+        return;  // Already selected
+    }
+
+    // Clear other selection types (but keep track selection for context)
+    selectedClipId_ = INVALID_CLIP_ID;
+    selectedClipIds_.clear();
+    timeRangeSelection_ = TimeRangeSelection{};
+    noteSelection_ = NoteSelection{};
+    deviceSelection_ = DeviceSelection{};
+    selectedChainNode_ = ChainNodePath{};
+    modSelection_ = ModSelection{};
+    macroSelection_ = MacroSelection{};
+
+    selectionType_ = SelectionType::Param;
+    paramSelection_.devicePath = devicePath;
+    paramSelection_.paramIndex = paramIndex;
+
+    // Sync with managers
+    ClipManager::getInstance().clearClipSelection();
+
+    if (typeChanged) {
+        notifySelectionTypeChanged(SelectionType::Param);
+    }
+    notifyParamSelectionChanged(paramSelection_);
+}
+
+void SelectionManager::clearParamSelection() {
+    if (selectionType_ != SelectionType::Param) {
+        return;
+    }
+
+    paramSelection_ = ParamSelection{};
+
+    // Return to track selection if we have a track
+    if (selectedTrackId_ != INVALID_TRACK_ID) {
+        selectionType_ = SelectionType::Track;
+        notifySelectionTypeChanged(SelectionType::Track);
+    } else {
+        selectionType_ = SelectionType::None;
+        notifySelectionTypeChanged(SelectionType::None);
+    }
+
+    notifyParamSelectionChanged(paramSelection_);
+}
+
+void SelectionManager::notifyParamSelectionChanged(const ParamSelection& selection) {
+    for (auto* listener : listeners_) {
+        listener->paramSelectionChanged(selection);
     }
 }
 

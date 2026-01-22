@@ -153,6 +153,11 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     macroPanel_->onMacroNameChanged = [this](int macroIndex, juce::String name) {
         magda::TrackManager::getInstance().setRackMacroName(rackPath_, macroIndex, name);
     };
+    macroPanel_->onMacroClicked = [this](int macroIndex) {
+        // Select this macro in the SelectionManager for inspector display
+        magda::SelectionManager::getInstance().selectMacro(rackPath_, macroIndex);
+        DBG("Macro clicked: " << macroIndex << " on path: " << rackPath_.toString());
+    };
     macroPanel_->onAddPageRequested = [this](int /*itemsToAdd*/) {
         magda::TrackManager::getInstance().addRackMacroPage(rackPath_);
     };
@@ -173,8 +178,10 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
         magda::TrackManager::getInstance().setRackModName(rackPath_, modIndex, name);
     };
     modsPanel_->onModClicked = [this](int modIndex) {
+        // Select this mod in the SelectionManager for inspector display
+        magda::SelectionManager::getInstance().selectMod(rackPath_, modIndex);
         // TODO: Open modulator editor panel
-        DBG("Mod clicked: " << modIndex);
+        DBG("Mod clicked: " << modIndex << " on path: " << rackPath_.toString());
     };
     modsPanel_->onAddPageRequested = [this](int /*itemsToAdd*/) {
         magda::TrackManager::getInstance().addRackModPage(rackPath_);
