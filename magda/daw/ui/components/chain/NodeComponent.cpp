@@ -178,6 +178,77 @@ NodeComponent::~NodeComponent() {
 void NodeComponent::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
+    // When collapsed, draw a narrow vertical strip with rotated name
+    // BUT still draw side panels if visible
+    if (collapsed_) {
+        // === LEFT SIDE PANELS (even when collapsed) ===
+        if (modPanelVisible_) {
+            auto modArea = bounds.removeFromLeft(getModPanelWidth());
+            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+            g.fillRect(modArea);
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.drawRect(modArea);
+            paintModPanel(g, modArea);
+        }
+
+        if (paramPanelVisible_) {
+            auto paramArea = bounds.removeFromLeft(getParamPanelWidth());
+            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+            g.fillRect(paramArea);
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.drawRect(paramArea);
+            paintParamPanel(g, paramArea);
+        }
+
+        // === RIGHT SIDE PANEL (even when collapsed) ===
+        if (gainPanelVisible_) {
+            auto gainArea = bounds.removeFromRight(getGainPanelWidth());
+            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+            g.fillRect(gainArea);
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.drawRect(gainArea);
+            paintGainPanel(g, gainArea);
+        }
+
+        // === COLLAPSED MAIN STRIP (remaining bounds) ===
+        // Background
+        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.03f));
+        g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
+
+        // Border
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawRoundedRectangle(bounds.toFloat(), 4.0f, 1.0f);
+
+        // Draw name vertically (rotated 90 degrees)
+        g.saveState();
+        g.setColour(DarkTheme::getTextColour());
+        g.setFont(FontManager::getInstance().getUIFontBold(10.0f));
+
+        // Rotate around center and draw text
+        auto center = bounds.getCentre().toFloat();
+        g.addTransform(juce::AffineTransform::rotation(-juce::MathConstants<float>::halfPi,
+                                                       center.x, center.y));
+        // Draw text centered (swapped width/height due to rotation)
+        juce::Rectangle<int> textBounds(static_cast<int>(center.x - bounds.getHeight() / 2),
+                                        static_cast<int>(center.y - bounds.getWidth() / 2),
+                                        bounds.getHeight(), bounds.getWidth());
+        g.drawText(getNodeName(), textBounds, juce::Justification::centred);
+        g.restoreState();
+
+        // Dim if bypassed
+        if (!bypassButton_->getToggleState()) {
+            g.setColour(juce::Colours::black.withAlpha(0.3f));
+            g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
+        }
+
+        // Selection border (around main strip only)
+        if (selected_) {
+            g.setColour(juce::Colour(0xff888888));
+            g.drawRoundedRectangle(bounds.toFloat().reduced(1.0f), 4.0f, 2.0f);
+        }
+        return;
+    }
+
     // === LEFT SIDE PANELS: [Mods][Params] (squared corners) ===
     if (modPanelVisible_) {
         auto modArea = bounds.removeFromLeft(getModPanelWidth());
@@ -253,6 +324,69 @@ void NodeComponent::paint(juce::Graphics& g) {
 
 void NodeComponent::resized() {
     auto bounds = getLocalBounds();
+
+    // When collapsed (narrow width), arrange key icons vertically
+    // BUT still layout side panels if visible
+    if (collapsed_) {
+        // === LEFT SIDE PANELS (even when collapsed) ===
+        if (modPanelVisible_) {
+            auto modArea = bounds.removeFromLeft(getModPanelWidth());
+            resizedModPanel(modArea);
+        } else {
+            // Hide mod slot buttons when panel is not visible
+            for (auto& btn : modSlotButtons_) {
+                if (btn)
+                    btn->setVisible(false);
+            }
+        }
+
+        if (paramPanelVisible_) {
+            auto paramArea = bounds.removeFromLeft(getParamPanelWidth());
+            resizedParamPanel(paramArea);
+        } else {
+            // Hide param knobs when panel is not visible
+            for (auto& knob : paramKnobs_) {
+                knob->setVisible(false);
+            }
+        }
+
+        // === RIGHT SIDE PANEL (even when collapsed) ===
+        if (gainPanelVisible_) {
+            auto gainArea = bounds.removeFromRight(getGainPanelWidth());
+            resizedGainPanel(gainArea);
+        }
+
+        // === COLLAPSED MAIN STRIP (remaining bounds) ===
+        // Hide footer panel toggle buttons
+        modToggleButton_.setVisible(false);
+        paramToggleButton_.setVisible(false);
+        gainToggleButton_.setVisible(false);
+        nameLabel_.setVisible(false);
+
+        // Arrange buttons vertically at top of collapsed strip
+        auto area = bounds.reduced(4);
+        int buttonSize = juce::jmin(BUTTON_SIZE, area.getWidth() - 4);
+
+        // Delete button at top (always visible)
+        deleteButton_.setBounds(
+            area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+        deleteButton_.setVisible(true);
+        area.removeFromTop(4);
+
+        // Bypass button below delete (only if it was visible - devices use their own)
+        if (bypassButton_->isVisible()) {
+            bypassButton_->setBounds(
+                area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+            area.removeFromTop(4);
+        }
+
+        // Let subclass add extra collapsed buttons
+        resizedCollapsed(area);
+
+        // Call resizedContent with empty area so subclasses can hide their content
+        resizedContent(juce::Rectangle<int>());
+        return;
+    }
 
     // === LEFT SIDE PANELS: [Mods][Params] ===
     if (modPanelVisible_) {
@@ -482,10 +616,28 @@ void NodeComponent::resizedGainPanel(juce::Rectangle<int> /*panelArea*/) {
     // Default: nothing - gain meter drawn in paintGainPanel
 }
 
+void NodeComponent::resizedCollapsed(juce::Rectangle<int>& /*area*/) {
+    // Default: nothing - subclasses can add extra buttons
+}
+
 void NodeComponent::setSelected(bool selected) {
     if (selected_ != selected) {
         selected_ = selected;
         repaint();
+    }
+}
+
+void NodeComponent::setCollapsed(bool collapsed) {
+    if (collapsed_ != collapsed) {
+        collapsed_ = collapsed;
+        resized();
+        repaint();
+        if (onCollapsedChanged) {
+            onCollapsedChanged(collapsed_);
+        }
+        if (onLayoutChanged) {
+            onLayoutChanged();
+        }
     }
 }
 
@@ -519,18 +671,24 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
         // Check if mouse is still within bounds (not a drag-away)
         if (getLocalBounds().contains(e.getPosition())) {
             DBG("NodeComponent::mouseUp - name='" + getNodeName() +
-                "' pathValid=" + juce::String(nodePath_.isValid() ? 1 : 0) +
-                " trackId=" + juce::String(nodePath_.trackId));
-            // Use centralized selection if we have a valid path
-            if (nodePath_.isValid()) {
-                magda::SelectionManager::getInstance().selectChainNode(nodePath_);
-            } else {
-                DBG("  -> Path NOT valid, skipping centralized selection");
-            }
+                "' pathValid=" + juce::String(nodePath_.isValid() ? 1 : 0) + " trackId=" +
+                juce::String(nodePath_.trackId) + " selected=" + juce::String(selected_ ? 1 : 0));
 
-            // Also call legacy callback for backward compatibility during transition
-            if (onSelected) {
-                onSelected();
+            // If already selected, toggle collapsed state
+            if (selected_) {
+                setCollapsed(!collapsed_);
+            } else {
+                // Use centralized selection if we have a valid path
+                if (nodePath_.isValid()) {
+                    magda::SelectionManager::getInstance().selectChainNode(nodePath_);
+                } else {
+                    DBG("  -> Path NOT valid, skipping centralized selection");
+                }
+
+                // Also call legacy callback for backward compatibility during transition
+                if (onSelected) {
+                    onSelected();
+                }
             }
         }
     }

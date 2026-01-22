@@ -57,6 +57,9 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
         modButton_->onClick = [this]() {
             modButton_->setActive(modButton_->getToggleState());
             modPanelVisible_ = modButton_->getToggleState();
+            // Side panel shows alongside collapsed strip - no need to expand
+            resized();
+            repaint();
             if (onModPanelToggled)
                 onModPanelToggled(modPanelVisible_);
         };
@@ -136,6 +139,10 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
     }
 
     int getPreferredWidth() const override {
+        if (collapsed_) {
+            // When collapsed, still add side panel widths
+            return getLeftPanelsWidth() + COLLAPSED_WIDTH + getRightPanelsWidth();
+        }
         return getTotalWidth(BASE_SLOT_WIDTH);
     }
 
@@ -200,6 +207,22 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
     }
 
     void resizedContent(juce::Rectangle<int> contentArea) override {
+        // When collapsed, hide content controls only (buttons handled by resizedCollapsed)
+        if (collapsed_) {
+            for (int i = 0; i < NUM_PARAMS; ++i) {
+                paramLabels_[i]->setVisible(false);
+                paramSliders_[i]->setVisible(false);
+            }
+            gainSlider_.setVisible(false);
+            return;
+        }
+
+        // Show header controls when expanded
+        modButton_->setVisible(true);
+        uiButton_->setVisible(true);
+        onButton_->setVisible(true);
+        gainSlider_.setVisible(true);
+
         // Skip manufacturer label area
         contentArea.removeFromTop(12);
         contentArea = contentArea.reduced(2, 0);
@@ -212,6 +235,8 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
         for (int i = 0; i < NUM_PARAMS; ++i) {
             paramLabels_[i]->setFont(labelFont);
             paramSliders_[i]->setFont(valueFont);
+            paramLabels_[i]->setVisible(true);
+            paramSliders_[i]->setVisible(true);
         }
 
         // Layout params in a 4-column grid, scaled to fit available space
@@ -230,6 +255,29 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
             paramLabels_[i]->setBounds(x, y, cellWidth - 2, labelHeight);
             paramSliders_[i]->setBounds(x, y + labelHeight, cellWidth - 2, sliderHeight);
         }
+    }
+
+    void resizedCollapsed(juce::Rectangle<int>& area) override {
+        // Add device-specific buttons vertically when collapsed
+        // Order: X (from base), ON, UI, Mod
+        int buttonSize = juce::jmin(16, area.getWidth() - 4);
+
+        // On/power button (right after X)
+        onButton_->setBounds(
+            area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+        onButton_->setVisible(true);
+        area.removeFromTop(4);
+
+        // UI button
+        uiButton_->setBounds(
+            area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+        uiButton_->setVisible(true);
+        area.removeFromTop(4);
+
+        // Mod button
+        modButton_->setBounds(
+            area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+        modButton_->setVisible(true);
     }
 
   private:

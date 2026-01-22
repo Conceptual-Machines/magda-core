@@ -9,6 +9,7 @@
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "ui/components/common/SvgButton.hpp"
+#include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::ui {
 
@@ -63,6 +64,7 @@ class RackComponent : public NodeComponent {
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override;
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
+    void resizedCollapsed(juce::Rectangle<int>& area) override;
 
     // Hide footer - MOD/MACRO buttons are in header instead
     int getFooterHeight() const override {
@@ -89,8 +91,9 @@ class RackComponent : public NodeComponent {
     magda::RackId rackId_;
 
     // Header extra controls
-    std::unique_ptr<magda::SvgButton> modButton_;    // Modulators toggle
-    std::unique_ptr<magda::SvgButton> macroButton_;  // Macros toggle
+    std::unique_ptr<magda::SvgButton> modButton_;            // Modulators toggle
+    std::unique_ptr<magda::SvgButton> macroButton_;          // Macros toggle
+    TextSlider volumeSlider_{TextSlider::Format::Decibels};  // Rack volume (dB)
     juce::TextButton addChainButton_;
 
     // Content area

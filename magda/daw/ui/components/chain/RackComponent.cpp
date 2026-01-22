@@ -36,7 +36,8 @@ RackComponent::RackComponent(const magda::ChainNodePath& rackPath, const magda::
 }
 
 void RackComponent::initializeCommon(const magda::RackInfo& rack) {
-    // Set up base class callbacks
+    // Set up base class with path for selection
+    setNodePath(rackPath_);
     setNodeName(rack.name);
     setBypassed(rack.bypassed);
 
@@ -58,6 +59,9 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     modButton_->onClick = [this]() {
         modButton_->setActive(modButton_->getToggleState());
         modPanelVisible_ = modButton_->getToggleState();
+        // Side panel shows alongside collapsed strip - no need to expand
+        resized();
+        repaint();
         if (onModPanelToggled)
             onModPanelToggled(modPanelVisible_);
         if (onLayoutChanged)
@@ -75,6 +79,9 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     macroButton_->onClick = [this]() {
         macroButton_->setActive(macroButton_->getToggleState());
         paramPanelVisible_ = macroButton_->getToggleState();
+        // Side panel shows alongside collapsed strip - no need to expand
+        resized();
+        repaint();
         if (onParamPanelToggled)
             onParamPanelToggled(paramPanelVisible_);
         if (onLayoutChanged)
@@ -82,13 +89,23 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     };
     addAndMakeVisible(*macroButton_);
 
+    // Volume slider (dB format)
+    volumeSlider_.setRange(-60.0, 6.0, 0.1);
+    volumeSlider_.setValue(rack.volume, juce::dontSendNotification);
+    volumeSlider_.onValueChanged = [this](double db) {
+        // TODO: Add TrackManager method to set rack volume
+        DBG("Rack volume changed to " << db << " dB");
+    };
+    addAndMakeVisible(volumeSlider_);
+
     // === CONTENT AREA SETUP ===
 
-    // "Chains:" label
+    // "Chains:" label - clicks pass through for selection
     chainsLabel_.setText("Chains:", juce::dontSendNotification);
     chainsLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     chainsLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     chainsLabel_.setJustificationType(juce::Justification::centredLeft);
+    chainsLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(chainsLabel_);
 
     // Add chain button (in content area, next to Chains: label)
@@ -148,6 +165,26 @@ void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> content
 }
 
 void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
+    // When collapsed, hide content controls only (buttons handled by resizedCollapsed)
+    if (collapsed_) {
+        chainsLabel_.setVisible(false);
+        addChainButton_.setVisible(false);
+        chainViewport_.setVisible(false);
+        if (chainPanel_) {
+            chainPanel_->setVisible(false);
+        }
+        volumeSlider_.setVisible(false);
+        return;
+    }
+
+    // Show content controls when expanded
+    chainsLabel_.setVisible(true);
+    addChainButton_.setVisible(true);
+    chainViewport_.setVisible(true);
+    modButton_->setVisible(true);
+    macroButton_->setVisible(true);
+    volumeSlider_.setVisible(true);
+
     // Calculate chain panel positioning
     juce::Rectangle<int> chainPanelArea;
     if (chainPanel_ && chainPanel_->isVisible()) {
@@ -214,6 +251,24 @@ void RackComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     headerArea.removeFromLeft(4);
     macroButton_->setBounds(headerArea.removeFromLeft(20));
     headerArea.removeFromLeft(4);
+
+    // Volume slider on the right side of header
+    volumeSlider_.setBounds(headerArea.removeFromRight(45));
+    headerArea.removeFromRight(4);
+}
+
+void RackComponent::resizedCollapsed(juce::Rectangle<int>& area) {
+    // Add mod and macro buttons vertically when collapsed
+    int buttonSize = juce::jmin(16, area.getWidth() - 4);
+
+    modButton_->setBounds(
+        area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+    modButton_->setVisible(true);
+    area.removeFromTop(4);
+
+    macroButton_->setBounds(
+        area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+    macroButton_->setVisible(true);
 }
 
 int RackComponent::getPreferredHeight() const {
@@ -225,6 +280,11 @@ int RackComponent::getPreferredHeight() const {
 }
 
 int RackComponent::getPreferredWidth() const {
+    // When collapsed, return collapsed strip width + any visible side panels
+    if (collapsed_) {
+        return getLeftPanelsWidth() + NodeComponent::COLLAPSED_WIDTH + getRightPanelsWidth();
+    }
+
     int baseWidth = getMinimumWidth();
 
     // Add chain panel width if visible

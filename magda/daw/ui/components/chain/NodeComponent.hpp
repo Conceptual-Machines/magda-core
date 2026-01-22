@@ -70,14 +70,21 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
         return selected_;
     }
 
+    // Collapse (show header only)
+    void setCollapsed(bool collapsed);
+    bool isCollapsed() const {
+        return collapsed_;
+    }
+
     // Callbacks
     std::function<void(bool)> onBypassChanged;
     std::function<void()> onDeleteClicked;
     std::function<void(bool)> onModPanelToggled;
     std::function<void(bool)> onParamPanelToggled;
     std::function<void(bool)> onGainPanelToggled;
-    std::function<void()> onLayoutChanged;  // Called when size changes (e.g., panel toggle)
-    std::function<void()> onSelected;       // Called when node is clicked/selected
+    std::function<void()> onLayoutChanged;         // Called when size changes (e.g., panel toggle)
+    std::function<void()> onSelected;              // Called when node is clicked/selected
+    std::function<void(bool)> onCollapsedChanged;  // Called when collapsed state changes
 
     // Mouse handling for selection
     void mouseDown(const juce::MouseEvent& e) override;
@@ -92,8 +99,15 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
 
     // Virtual method for subclasses to report their preferred width
     virtual int getPreferredWidth() const {
+        if (collapsed_) {
+            // When collapsed, still add side panel widths
+            return getLeftPanelsWidth() + COLLAPSED_WIDTH + getRightPanelsWidth();
+        }
         return getTotalWidth(200);  // Default base width
     }
+
+    // Width when collapsed
+    static constexpr int COLLAPSED_WIDTH = 40;
 
   protected:
     // Override these to customize content
@@ -113,6 +127,9 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     virtual void resizedModPanel(juce::Rectangle<int> panelArea);
     virtual void resizedParamPanel(juce::Rectangle<int> panelArea);
     virtual void resizedGainPanel(juce::Rectangle<int> panelArea);
+
+    // Override to add extra buttons when collapsed (area is below bypass/delete)
+    virtual void resizedCollapsed(juce::Rectangle<int>& area);
 
     // Override to provide custom panel widths
     virtual int getModPanelWidth() const {
@@ -152,6 +169,9 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     // Selection state
     bool selected_ = false;
     bool mouseDownForSelection_ = false;
+
+    // Collapsed state (show header only)
+    bool collapsed_ = false;
 
     // Unique path for centralized selection
     magda::ChainNodePath nodePath_;
