@@ -672,15 +672,19 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
 
         // Check if mouse is still within bounds (not a drag-away)
         if (getLocalBounds().contains(e.getPosition())) {
-            // Single click only selects - never toggles collapsed state
-            // Use centralized selection if we have a valid path
-            if (nodePath_.isValid()) {
-                magda::SelectionManager::getInstance().selectChainNode(nodePath_);
-            }
+            // If already selected, toggle collapsed state
+            if (selected_) {
+                setCollapsed(!collapsed_);
+            } else {
+                // Use centralized selection if we have a valid path
+                if (nodePath_.isValid()) {
+                    magda::SelectionManager::getInstance().selectChainNode(nodePath_);
+                }
 
-            // Also call legacy callback for backward compatibility during transition
-            if (onSelected) {
-                onSelected();
+                // Also call legacy callback for backward compatibility during transition
+                if (onSelected) {
+                    onSelected();
+                }
             }
         }
     }
