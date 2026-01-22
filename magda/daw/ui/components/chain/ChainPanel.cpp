@@ -330,6 +330,22 @@ class ChainPanel::ElementSlotsContainer : public juce::Component {
             g.drawLine(static_cast<float>(arrowEnd - 4), static_cast<float>(arrowY + 3),
                        static_cast<float>(arrowEnd), static_cast<float>(arrowY), 1.5f);
         }
+
+        // Draw insertion indicator during drag
+        if (owner_.dragInsertIndex_ >= 0) {
+            int indicatorX = owner_.calculateIndicatorX(owner_.dragInsertIndex_);
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+            g.fillRect(indicatorX - 2, 0, 4, getHeight());
+        }
+
+        // Draw ghost image during drag
+        if (owner_.dragGhostImage_.isValid()) {
+            g.setOpacity(0.6f);
+            int ghostX = owner_.dragMousePos_.x - owner_.dragGhostImage_.getWidth() / 2;
+            int ghostY = owner_.dragMousePos_.y - owner_.dragGhostImage_.getHeight() / 2;
+            g.drawImageAt(owner_.dragGhostImage_, ghostX, ghostY);
+            g.setOpacity(1.0f);
+        }
     }
 
     void mouseDown(const juce::MouseEvent& /*e*/) override {
@@ -671,6 +687,50 @@ void ChainPanel::rebuildElementSlots() {
 
     // Move new slots to member variable (old slots are destroyed here)
     elementSlots_ = std::move(newSlots);
+
+    // Wire up drag-to-reorder callbacks for all element slots
+    for (auto& slot : elementSlots_) {
+        slot->onDragStart = [this](NodeComponent* node, const juce::MouseEvent&) {
+            draggedElement_ = node;
+            dragOriginalIndex_ = findElementIndex(node);
+            dragInsertIndex_ = dragOriginalIndex_;
+            // Capture ghost image and make original semi-transparent
+            dragGhostImage_ = node->createComponentSnapshot(node->getLocalBounds());
+            node->setAlpha(0.4f);
+        };
+
+        slot->onDragMove = [this](NodeComponent*, const juce::MouseEvent& e) {
+            auto pos = e.getEventRelativeTo(elementSlotsContainer_.get()).getPosition();
+            dragInsertIndex_ = calculateInsertIndex(pos.x);
+            dragMousePos_ = pos;
+            elementSlotsContainer_->repaint();
+        };
+
+        slot->onDragEnd = [this](NodeComponent* node, const juce::MouseEvent&) {
+            // Restore alpha and clear ghost
+            node->setAlpha(1.0f);
+            dragGhostImage_ = juce::Image();
+
+            int elementCount = static_cast<int>(elementSlots_.size());
+            if (dragOriginalIndex_ >= 0 && dragInsertIndex_ >= 0 &&
+                dragOriginalIndex_ != dragInsertIndex_) {
+                // Convert insert position to target index
+                int targetIndex = dragInsertIndex_;
+                if (dragInsertIndex_ > dragOriginalIndex_) {
+                    targetIndex = dragInsertIndex_ - 1;
+                }
+                targetIndex = juce::jlimit(0, elementCount - 1, targetIndex);
+                if (targetIndex != dragOriginalIndex_) {
+                    magda::TrackManager::getInstance().moveElementInChainByPath(
+                        chainPath_, dragOriginalIndex_, targetIndex);
+                }
+            }
+            draggedElement_ = nullptr;
+            dragOriginalIndex_ = -1;
+            dragInsertIndex_ = -1;
+            elementSlotsContainer_->repaint();
+        };
+    }
 }
 
 void ChainPanel::onAddDeviceClicked() {
@@ -786,6 +846,44 @@ void ChainPanel::onDeviceSlotSelected(magda::DeviceId deviceId) {
     if (onDeviceSelected) {
         onDeviceSelected(deviceId);
     }
+}
+
+int ChainPanel::findElementIndex(NodeComponent* element) const {
+    for (size_t i = 0; i < elementSlots_.size(); ++i) {
+        if (elementSlots_[i].get() == element) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+int ChainPanel::calculateInsertIndex(int mouseX) const {
+    // Find insert position based on mouse X and element midpoints
+    for (size_t i = 0; i < elementSlots_.size(); ++i) {
+        int midX = elementSlots_[i]->getX() + elementSlots_[i]->getWidth() / 2;
+        if (mouseX < midX) {
+            return static_cast<int>(i);
+        }
+    }
+    // After last element
+    return static_cast<int>(elementSlots_.size());
+}
+
+int ChainPanel::calculateIndicatorX(int index) const {
+    static constexpr int LEFT_PADDING = 4;
+
+    // Before first element
+    if (index == 0) {
+        return LEFT_PADDING / 2;
+    }
+
+    // After previous element
+    if (index > 0 && index <= static_cast<int>(elementSlots_.size())) {
+        return elementSlots_[index - 1]->getRight() + ARROW_WIDTH / 2;
+    }
+
+    // Fallback
+    return LEFT_PADDING;
 }
 
 }  // namespace magda::daw::ui

@@ -825,6 +825,63 @@ void TrackManager::moveDeviceInChain(TrackId trackId, RackId rackId, ChainId cha
     }
 }
 
+void TrackManager::moveElementInChainByPath(const ChainNodePath& chainPath, int fromIndex,
+                                            int toIndex) {
+    // The chainPath should end with a Chain step
+    if (chainPath.steps.empty()) {
+        DBG("moveElementInChainByPath FAILED - empty path!");
+        return;
+    }
+
+    // Extract chainId from the last step (should be Chain type)
+    ChainId chainId = INVALID_CHAIN_ID;
+    if (chainPath.steps.back().type == ChainStepType::Chain) {
+        chainId = chainPath.steps.back().id;
+    } else {
+        DBG("moveElementInChainByPath FAILED - path doesn't end with Chain step!");
+        return;
+    }
+
+    // Build the parent rack path (everything except the last Chain step)
+    ChainNodePath rackPath;
+    rackPath.trackId = chainPath.trackId;
+    for (size_t i = 0; i < chainPath.steps.size() - 1; ++i) {
+        rackPath.steps.push_back(chainPath.steps[i]);
+    }
+
+    // Get the parent rack (mutable)
+    RackInfo* rack = getRackByPath(rackPath);
+    if (!rack) {
+        DBG("moveElementInChainByPath FAILED - rack not found via path!");
+        return;
+    }
+
+    // Find the chain within the rack
+    ChainInfo* chain = nullptr;
+    for (auto& c : rack->chains) {
+        if (c.id == chainId) {
+            chain = &c;
+            break;
+        }
+    }
+
+    if (!chain) {
+        DBG("moveElementInChainByPath FAILED - chain not found in rack!");
+        return;
+    }
+
+    auto& elements = chain->elements;
+    int size = static_cast<int>(elements.size());
+
+    if (fromIndex >= 0 && fromIndex < size && toIndex >= 0 && toIndex < size &&
+        fromIndex != toIndex) {
+        ChainElement element = std::move(elements[fromIndex]);
+        elements.erase(elements.begin() + fromIndex);
+        elements.insert(elements.begin() + toIndex, std::move(element));
+        notifyTrackDevicesChanged(chainPath.trackId);
+    }
+}
+
 DeviceInfo* TrackManager::getDeviceInChain(TrackId trackId, RackId rackId, ChainId chainId,
                                            DeviceId deviceId) {
     if (auto* chain = getChain(trackId, rackId, chainId)) {

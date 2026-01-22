@@ -134,10 +134,11 @@ class TrackChainContent : public PanelContent,
     juce::Image dragGhostImage_;
     juce::Point<int> dragMousePos_;
 
-    // Collapsed state preservation (path -> collapsed) - preserves ALL nodes' states during rebuild
-    std::map<juce::String, bool> savedCollapsedStates_;
-    void saveCollapsedStates();
-    void restoreCollapsedStates();
+    // State preservation during rebuild - preserves ALL nodes' states
+    std::map<juce::String, bool> savedCollapsedStates_;           // path -> collapsed
+    std::map<juce::String, magda::ChainId> savedExpandedChains_;  // rackPath -> expanded chainId
+    void saveNodeStates();
+    void restoreNodeStates();
 
     // Helper methods for drag-to-reorder
     int findNodeIndex(NodeComponent* node) const;

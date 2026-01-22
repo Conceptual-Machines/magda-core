@@ -1046,8 +1046,8 @@ void TrackChainContent::showHeader(bool show) {
 }
 
 void TrackChainContent::rebuildNodeComponents() {
-    // Save collapsed states BEFORE clearing components
-    saveCollapsedStates();
+    // Save node states (collapsed, expanded chains) BEFORE clearing components
+    saveNodeStates();
 
     // Clear existing components
     unfocusAllComponents();
@@ -1186,8 +1186,8 @@ void TrackChainContent::rebuildNodeComponents() {
         }
     }
 
-    // Restore collapsed states for ALL nodes
-    restoreCollapsedStates();
+    // Restore node states (collapsed, expanded chains) for ALL nodes
+    restoreNodeStates();
 
     // Restore selection state from SelectionManager
     const auto& selectedPath = magda::SelectionManager::getInstance().getSelectedChainNode();
@@ -1325,23 +1325,43 @@ int TrackChainContent::calculateIndicatorX(int index) const {
     return 8;
 }
 
-void TrackChainContent::saveCollapsedStates() {
+void TrackChainContent::saveNodeStates() {
     savedCollapsedStates_.clear();
+    savedExpandedChains_.clear();
+
     for (const auto& node : nodeComponents_) {
         const auto& path = node->getNodePath();
         if (path.isValid()) {
+            // Save collapsed state
             savedCollapsedStates_[path.toString()] = node->isCollapsed();
+
+            // Save expanded chain for racks
+            if (auto* rack = dynamic_cast<RackComponent*>(node.get())) {
+                if (rack->isChainPanelVisible()) {
+                    savedExpandedChains_[path.toString()] = rack->getSelectedChainId();
+                }
+            }
         }
     }
 }
 
-void TrackChainContent::restoreCollapsedStates() {
+void TrackChainContent::restoreNodeStates() {
     for (auto& node : nodeComponents_) {
         const auto& path = node->getNodePath();
         if (path.isValid()) {
-            auto it = savedCollapsedStates_.find(path.toString());
-            if (it != savedCollapsedStates_.end()) {
-                node->setCollapsed(it->second);
+            // Restore collapsed state
+            auto collapsedIt = savedCollapsedStates_.find(path.toString());
+            if (collapsedIt != savedCollapsedStates_.end()) {
+                node->setCollapsed(collapsedIt->second);
+            }
+
+            // Restore expanded chain for racks
+            if (auto* rack = dynamic_cast<RackComponent*>(node.get())) {
+                auto chainIt = savedExpandedChains_.find(path.toString());
+                if (chainIt != savedExpandedChains_.end() &&
+                    chainIt->second != magda::INVALID_CHAIN_ID) {
+                    rack->showChainPanel(chainIt->second);
+                }
             }
         }
     }

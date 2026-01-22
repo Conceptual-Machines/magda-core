@@ -154,6 +154,7 @@ class TrackManager {
     void removeDeviceFromChainByPath(const ChainNodePath& devicePath);
     void moveDeviceInChain(TrackId trackId, RackId rackId, ChainId chainId, DeviceId deviceId,
                            int newIndex);
+    void moveElementInChainByPath(const ChainNodePath& chainPath, int fromIndex, int toIndex);
     DeviceInfo* getDeviceInChain(TrackId trackId, RackId rackId, ChainId chainId,
                                  DeviceId deviceId);
     DeviceInfo* getDeviceInChainByPath(const ChainNodePath& devicePath);

@@ -52,6 +52,9 @@ class RackComponent : public NodeComponent {
     void showChainPanel(magda::ChainId chainId);
     void hideChainPanel();
     bool isChainPanelVisible() const;
+    magda::ChainId getSelectedChainId() const {
+        return selectedChainId_;
+    }
 
     // Callback when a chain row is selected (still called, but panel shown internally)
     std::function<void(magda::TrackId, magda::RackId, magda::ChainId)> onChainSelected;

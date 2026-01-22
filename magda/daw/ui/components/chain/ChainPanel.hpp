@@ -108,6 +108,18 @@ class ChainPanel : public NodeComponent {
     static constexpr int ARROW_WIDTH = 16;
     static constexpr int MOD_MACRO_PANEL_HEIGHT = 80;
 
+    // Drag-to-reorder state
+    NodeComponent* draggedElement_ = nullptr;
+    int dragOriginalIndex_ = -1;
+    int dragInsertIndex_ = -1;
+    juce::Image dragGhostImage_;
+    juce::Point<int> dragMousePos_;
+
+    // Helper methods for drag-to-reorder
+    int findElementIndex(NodeComponent* element) const;
+    int calculateInsertIndex(int mouseX) const;
+    int calculateIndicatorX(int index) const;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChainPanel)
 };
 
