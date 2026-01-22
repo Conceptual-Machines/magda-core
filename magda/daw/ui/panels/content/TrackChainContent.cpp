@@ -579,6 +579,7 @@ TrackChainContent::TrackChainContent() : chainContainer_(std::make_unique<ChainC
     globalModsButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     globalModsButton_->setActiveColor(juce::Colours::white);
     globalModsButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    globalModsButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     globalModsButton_->onClick = [this]() {
         globalModsButton_->setActive(globalModsButton_->getToggleState());
         globalModsVisible_ = globalModsButton_->getToggleState();
@@ -587,32 +588,34 @@ TrackChainContent::TrackChainContent() : chainContainer_(std::make_unique<ChainC
     };
     addChildComponent(*globalModsButton_);
 
-    // Add rack button
-    addRackButton_.setButtonText("RACK+");
-    addRackButton_.setColour(juce::TextButton::buttonColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
-    addRackButton_.setColour(juce::TextButton::textColourOffId,
-                             DarkTheme::getSecondaryTextColour());
-    addRackButton_.onClick = [this]() {
+    // Link button (parameter linking)
+    linkButton_ = std::make_unique<magda::SvgButton>("Link", BinaryData::link_bright_svg,
+                                                     BinaryData::link_bright_svgSize);
+    linkButton_->setClickingTogglesState(true);
+    linkButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    linkButton_->setActiveColor(juce::Colours::white);
+    linkButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    linkButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    linkButton_->onClick = [this]() {
+        linkButton_->setActive(linkButton_->getToggleState());
+        // TODO: Toggle parameter linking mode
+        DBG("Link mode: " << (linkButton_->getToggleState() ? "ON" : "OFF"));
+    };
+    addChildComponent(*linkButton_);
+
+    // Add rack button (rack icon with blue fill, grey border)
+    addRackButton_ =
+        std::make_unique<magda::SvgButton>("Rack", BinaryData::rack_svg, BinaryData::rack_svgSize);
+    addRackButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // Match SVG fill color
+    addRackButton_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    addRackButton_->setHoverColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).brighter(0.2f));
+    addRackButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    addRackButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::TrackManager::getInstance().addRackToTrack(selectedTrackId_);
         }
     };
-    addChildComponent(addRackButton_);
-
-    // Add multi-band rack button
-    addMultibandRackButton_.setButtonText("RACK-MB+");
-    addMultibandRackButton_.setColour(juce::TextButton::buttonColourId,
-                                      DarkTheme::getColour(DarkTheme::SURFACE));
-    addMultibandRackButton_.setColour(juce::TextButton::textColourOffId,
-                                      DarkTheme::getSecondaryTextColour());
-    addMultibandRackButton_.onClick = [this]() {
-        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            // TODO: Add multi-band rack with frequency splits
-            magda::TrackManager::getInstance().addRackToTrack(selectedTrackId_, "MB Rack");
-        }
-    };
-    addChildComponent(addMultibandRackButton_);
+    addChildComponent(*addRackButton_);
 
     // === HEADER BAR CONTROLS - RIGHT SIDE (track info) ===
 
@@ -621,6 +624,44 @@ TrackChainContent::TrackChainContent() : chainContainer_(std::make_unique<ChainC
     trackNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     trackNameLabel_.setJustificationType(juce::Justification::centredRight);
     addChildComponent(trackNameLabel_);
+
+    // Mute button
+    muteButton_.setButtonText("M");
+    muteButton_.setColour(juce::TextButton::buttonColourId,
+                          DarkTheme::getColour(DarkTheme::SURFACE));
+    muteButton_.setColour(juce::TextButton::buttonOnColourId,
+                          DarkTheme::getColour(DarkTheme::STATUS_WARNING));
+    muteButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+    muteButton_.setColour(juce::TextButton::textColourOnId,
+                          DarkTheme::getColour(DarkTheme::BACKGROUND));
+    muteButton_.setClickingTogglesState(true);
+    muteButton_.onClick = [this]() {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+            magda::TrackManager::getInstance().setTrackMuted(selectedTrackId_,
+                                                             muteButton_.getToggleState());
+        }
+    };
+    muteButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    addChildComponent(muteButton_);
+
+    // Solo button
+    soloButton_.setButtonText("S");
+    soloButton_.setColour(juce::TextButton::buttonColourId,
+                          DarkTheme::getColour(DarkTheme::SURFACE));
+    soloButton_.setColour(juce::TextButton::buttonOnColourId,
+                          DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    soloButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+    soloButton_.setColour(juce::TextButton::textColourOnId,
+                          DarkTheme::getColour(DarkTheme::BACKGROUND));
+    soloButton_.setClickingTogglesState(true);
+    soloButton_.onClick = [this]() {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+            magda::TrackManager::getInstance().setTrackSoloed(selectedTrackId_,
+                                                              soloButton_.getToggleState());
+        }
+    };
+    soloButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    addChildComponent(soloButton_);
 
     // Volume text slider (dB format)
     volumeSlider_.setRange(-60.0, 6.0, 0.1);
@@ -632,6 +673,17 @@ TrackChainContent::TrackChainContent() : chainContainer_(std::make_unique<ChainC
         }
     };
     addChildComponent(volumeSlider_);
+
+    // Pan text slider
+    panSlider_.setRange(-1.0, 1.0, 0.01);
+    panSlider_.setValue(0.0, juce::dontSendNotification);  // Center
+    panSlider_.onValueChanged = [this](double pan) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+            magda::TrackManager::getInstance().setTrackPan(selectedTrackId_,
+                                                           static_cast<float>(pan));
+        }
+    };
+    addChildComponent(panSlider_);
 
     // Chain bypass button (power icon - same as device bypass buttons)
     chainBypassButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_on_svg,
@@ -732,17 +784,23 @@ void TrackChainContent::resized() {
         auto headerArea = bounds.removeFromTop(HEADER_HEIGHT).reduced(8, 4);
 
         // LEFT SIDE - Action buttons
-        globalModsButton_->setBounds(headerArea.removeFromLeft(24));
-        headerArea.removeFromLeft(4);
-        addRackButton_.setBounds(headerArea.removeFromLeft(55));
-        headerArea.removeFromLeft(4);
-        addMultibandRackButton_.setBounds(headerArea.removeFromLeft(75));
+        globalModsButton_->setBounds(headerArea.removeFromLeft(20));
+        headerArea.removeFromLeft(2);
+        linkButton_->setBounds(headerArea.removeFromLeft(20));
+        headerArea.removeFromLeft(8);
+        addRackButton_->setBounds(headerArea.removeFromLeft(20));
         headerArea.removeFromLeft(16);
 
         // RIGHT SIDE - Track info (from right to left)
-        chainBypassButton_->setBounds(headerArea.removeFromRight(24));
-        headerArea.removeFromRight(8);
+        chainBypassButton_->setBounds(headerArea.removeFromRight(17));
+        headerArea.removeFromRight(4);
+        panSlider_.setBounds(headerArea.removeFromRight(40));
+        headerArea.removeFromRight(4);
         volumeSlider_.setBounds(headerArea.removeFromRight(50));
+        headerArea.removeFromRight(4);
+        soloButton_.setBounds(headerArea.removeFromRight(18));
+        headerArea.removeFromRight(2);
+        muteButton_.setBounds(headerArea.removeFromRight(18));
         headerArea.removeFromRight(8);
         trackNameLabel_.setBounds(headerArea);  // Name takes remaining space
 
@@ -870,9 +928,16 @@ void TrackChainContent::updateFromSelectedTrack() {
         if (track) {
             trackNameLabel_.setText(track->name, juce::dontSendNotification);
 
+            // Update mute/solo state
+            muteButton_.setToggleState(track->muted, juce::dontSendNotification);
+            soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
+
             // Convert linear gain to dB for volume slider
             float db = gainToDb(track->volume);
             volumeSlider_.setValue(db, juce::dontSendNotification);
+
+            // Update pan slider
+            panSlider_.setValue(track->pan, juce::dontSendNotification);
 
             // Reset chain bypass button state (active = not bypassed)
             chainBypassButton_->setToggleState(true, juce::dontSendNotification);
@@ -897,11 +962,14 @@ void TrackChainContent::updateFromSelectedTrack() {
 void TrackChainContent::showHeader(bool show) {
     // Left side - action buttons
     globalModsButton_->setVisible(show);
-    addRackButton_.setVisible(show);
-    addMultibandRackButton_.setVisible(show);
+    linkButton_->setVisible(show);
+    addRackButton_->setVisible(show);
     // Right side - track info
     trackNameLabel_.setVisible(show);
+    muteButton_.setVisible(show);
+    soloButton_.setVisible(show);
     volumeSlider_.setVisible(show);
+    panSlider_.setVisible(show);
     chainBypassButton_->setVisible(show);
 }
 

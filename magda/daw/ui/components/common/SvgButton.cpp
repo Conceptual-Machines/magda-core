@@ -128,6 +128,13 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
     }
 
+    // Draw border if set
+    if (hasBorder) {
+        g.setColour(borderColor);
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(borderThickness * 0.5f), 2.0f,
+                               borderThickness);
+    }
+
     // Calculate icon bounds (centered with some padding)
     auto bounds = getLocalBounds().reduced(4);
 

@@ -4,6 +4,7 @@
 
 #include "NodeComponent.hpp"
 #include "RackComponent.hpp"
+#include "core/SelectionManager.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
 #include "ui/debug/DebugSettings.hpp"
@@ -712,6 +713,8 @@ void ChainPanel::clearDeviceSelection() {
     if (onDeviceSelected) {
         onDeviceSelected(magda::INVALID_DEVICE_ID);
     }
+    // Clear centralized selection so re-selecting the same node works
+    magda::SelectionManager::getInstance().clearChainNodeSelection();
 }
 
 void ChainPanel::onDeviceSlotSelected(magda::DeviceId deviceId) {

@@ -64,12 +64,15 @@ class TrackChainContent : public PanelContent, public magda::TrackManagerListene
 
     // Header bar controls - LEFT side (action buttons)
     std::unique_ptr<magda::SvgButton> globalModsButton_;  // Toggle global modulators panel
-    juce::TextButton addRackButton_;                      // Add rack button
-    juce::TextButton addMultibandRackButton_;             // Add multi-band rack button
+    std::unique_ptr<magda::SvgButton> linkButton_;        // Parameter linking
+    std::unique_ptr<magda::SvgButton> addRackButton_;     // Add rack button
 
     // Header bar controls - RIGHT side (track info)
     juce::Label trackNameLabel_;
+    juce::TextButton muteButton_;                            // Track mute
+    juce::TextButton soloButton_;                            // Track solo
     TextSlider volumeSlider_{TextSlider::Format::Decibels};  // Track volume (dB)
+    TextSlider panSlider_{TextSlider::Format::Pan};          // Track pan (L/R)
     std::unique_ptr<magda::SvgButton> chainBypassButton_;    // On/off - bypasses entire track chain
 
     // Global mods panel visibility
@@ -112,7 +115,7 @@ class TrackChainContent : public PanelContent, public magda::TrackManagerListene
     void onDeviceSlotSelected(magda::DeviceId deviceId);
     void clearDeviceSelection();
 
-    static constexpr int HEADER_HEIGHT = 36;
+    static constexpr int HEADER_HEIGHT = 28;
     static constexpr int MODS_PANEL_WIDTH = 160;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TrackChainContent)
