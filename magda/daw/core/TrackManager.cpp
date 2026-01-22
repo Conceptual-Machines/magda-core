@@ -416,7 +416,14 @@ RackId TrackManager::addRackToTrack(TrackId trackId, const juce::String& name) {
         RackInfo rack;
         rack.id = nextRackId_++;
         rack.name = name.isEmpty() ? ("Rack " + juce::String(rack.id)) : name;
-        track->racks.push_back(rack);
+
+        // Add a default chain to the new rack
+        ChainInfo defaultChain;
+        defaultChain.id = nextChainId_++;
+        defaultChain.name = "Chain 1";
+        rack.chains.push_back(std::move(defaultChain));
+
+        track->racks.push_back(std::move(rack));
         notifyTrackDevicesChanged(trackId);
         DBG("Added rack: " << rack.name << " (id=" << rack.id << ") to track " << trackId);
         return rack.id;
