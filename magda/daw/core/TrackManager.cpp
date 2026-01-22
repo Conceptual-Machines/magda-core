@@ -1252,6 +1252,74 @@ void TrackManager::removeRackFromChainByPath(const ChainNodePath& rackPath) {
 }
 
 // ============================================================================
+// Macro Management
+// ============================================================================
+
+void TrackManager::setRackMacroValue(const ChainNodePath& rackPath, int macroIndex, float value) {
+    if (macroIndex < 0 || macroIndex >= NUM_MACROS) {
+        return;
+    }
+    if (auto* rack = getRackByPath(rackPath)) {
+        rack->macros[macroIndex].value = juce::jlimit(0.0f, 1.0f, value);
+        notifyTrackDevicesChanged(rackPath.trackId);
+    }
+}
+
+void TrackManager::setRackMacroTarget(const ChainNodePath& rackPath, int macroIndex,
+                                      MacroTarget target) {
+    if (macroIndex < 0 || macroIndex >= NUM_MACROS) {
+        return;
+    }
+    if (auto* rack = getRackByPath(rackPath)) {
+        rack->macros[macroIndex].target = target;
+        notifyTrackDevicesChanged(rackPath.trackId);
+    }
+}
+
+void TrackManager::setRackMacroName(const ChainNodePath& rackPath, int macroIndex,
+                                    const juce::String& name) {
+    if (macroIndex < 0 || macroIndex >= NUM_MACROS) {
+        return;
+    }
+    if (auto* rack = getRackByPath(rackPath)) {
+        rack->macros[macroIndex].name = name;
+        notifyTrackDevicesChanged(rackPath.trackId);
+    }
+}
+
+void TrackManager::setChainMacroValue(const ChainNodePath& chainPath, int macroIndex, float value) {
+    if (macroIndex < 0 || macroIndex >= NUM_MACROS) {
+        return;
+    }
+    if (auto* chain = getChainFromPath(*this, chainPath)) {
+        chain->macros[macroIndex].value = juce::jlimit(0.0f, 1.0f, value);
+        notifyTrackDevicesChanged(chainPath.trackId);
+    }
+}
+
+void TrackManager::setChainMacroTarget(const ChainNodePath& chainPath, int macroIndex,
+                                       MacroTarget target) {
+    if (macroIndex < 0 || macroIndex >= NUM_MACROS) {
+        return;
+    }
+    if (auto* chain = getChainFromPath(*this, chainPath)) {
+        chain->macros[macroIndex].target = target;
+        notifyTrackDevicesChanged(chainPath.trackId);
+    }
+}
+
+void TrackManager::setChainMacroName(const ChainNodePath& chainPath, int macroIndex,
+                                     const juce::String& name) {
+    if (macroIndex < 0 || macroIndex >= NUM_MACROS) {
+        return;
+    }
+    if (auto* chain = getChainFromPath(*this, chainPath)) {
+        chain->macros[macroIndex].name = name;
+        notifyTrackDevicesChanged(chainPath.trackId);
+    }
+}
+
+// ============================================================================
 // Path Resolution
 // ============================================================================
 

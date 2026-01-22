@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "MacroPanelComponent.hpp"
 #include "NodeComponent.hpp"
 #include "core/RackInfo.hpp"
 #include "core/SelectionManager.hpp"
@@ -20,7 +21,7 @@ class RackComponent;  // Forward declaration for nested racks
  * Works recursively - can contain nested RackComponents which in turn
  * contain ChainPanels. Uses ChainNodePath to track its location.
  */
-class ChainPanel : public NodeComponent {
+class ChainPanel : public NodeComponent, private juce::Timer {
   public:
     ChainPanel();
     ~ChainPanel() override;
@@ -71,11 +72,6 @@ class ChainPanel : public NodeComponent {
         return 0;
     }
 
-    // No footer - we handle mod/macro panels in content area
-    int getFooterHeight() const override {
-        return 0;
-    }
-
   private:
     class DeviceSlotComponent;
     class ElementSlotsContainer;
@@ -83,6 +79,7 @@ class ChainPanel : public NodeComponent {
     void rebuildElementSlots();
     void onAddDeviceClicked();
     int calculateTotalContentWidth() const;
+    void updateMacroPanel();  // Update macro panel with current chain data
 
     magda::ChainNodePath chainPath_;  // Full path to this chain
     magda::TrackId trackId_;
@@ -100,6 +97,9 @@ class ChainPanel : public NodeComponent {
     // Chain-level mod/macro panel state
     bool chainModPanelVisible_ = false;
     bool chainMacroPanelVisible_ = false;
+
+    // Macro panel component
+    std::unique_ptr<MacroPanelComponent> macroPanel_;
 
     // Device selection
     magda::DeviceId selectedDeviceId_ = magda::INVALID_DEVICE_ID;
@@ -123,6 +123,9 @@ class ChainPanel : public NodeComponent {
     int findElementIndex(NodeComponent* element) const;
     int calculateInsertIndex(int mouseX) const;
     int calculateIndicatorX(int index) const;
+
+    // Timer callback for detecting stale drop state
+    void timerCallback() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChainPanel)
 };

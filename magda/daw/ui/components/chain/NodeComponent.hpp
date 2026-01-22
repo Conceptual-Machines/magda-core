@@ -20,13 +20,7 @@ namespace magda::daw::ui {
  * ├─────────────────────────────────────────────────────────┤
  * │                    Content Area                         │ ← Content (subclass)
  * ├─────────────────────────────────────────────────────────┤
- * │ Modulators Panel (when M toggled)                       │ ← Optional
- * ├─────────────────────────────────────────────────────────┤
- * │ Parameters Panel (when P toggled)                       │ ← Optional
- * ├─────────────────────────────────────────────────────────┤
- * │ Gain Panel (when G toggled)                             │ ← Optional
- * ├─────────────────────────────────────────────────────────┤
- * │ [M] [P]                                            [G]  │ ← Footer
+ * │ [Mods Panel]  [Content]  [Gain Panel]                   │ ← Side panels (optional)
  * └─────────────────────────────────────────────────────────┘
  */
 class NodeComponent : public juce::Component, public magda::SelectionManagerListener {
@@ -86,6 +80,11 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     std::function<void()> onLayoutChanged;         // Called when size changes (e.g., panel toggle)
     std::function<void()> onSelected;              // Called when node is clicked/selected
     std::function<void(bool)> onCollapsedChanged;  // Called when collapsed state changes
+
+    // Toggle side panel visibility programmatically
+    void setModPanelVisible(bool visible);
+    void setParamPanelVisible(bool visible);
+    void setGainPanelVisible(bool visible);
 
     // Drag-to-reorder callbacks (for parent container coordination)
     std::function<void(NodeComponent*, const juce::MouseEvent&)> onDragStart;
@@ -154,16 +153,6 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
         return HEADER_HEIGHT;
     }
 
-    // Override to hide footer (return 0)
-    virtual int getFooterHeight() const {
-        return FOOTER_HEIGHT;
-    }
-
-    // Control footer button visibility
-    void setParamButtonVisible(bool visible);
-    void setModButtonVisible(bool visible);
-    void setGainButtonVisible(bool visible);
-
     // Control header button visibility (for custom header layouts)
     void setBypassButtonVisible(bool visible);
     void setDeleteButtonVisible(bool visible);
@@ -192,7 +181,6 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
 
     // Layout constants
     static constexpr int HEADER_HEIGHT = 20;
-    static constexpr int FOOTER_HEIGHT = 30;
     static constexpr int BUTTON_SIZE = 16;
     static constexpr int DEFAULT_PANEL_WIDTH = 60;  // Width for side panels (mods, params)
     static constexpr int GAIN_PANEL_WIDTH = 32;     // Width for gain panel (right side)
@@ -202,11 +190,6 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     std::unique_ptr<magda::SvgButton> bypassButton_;
     juce::Label nameLabel_;
     juce::TextButton deleteButton_;
-
-    // Footer controls (panel toggles)
-    juce::TextButton modToggleButton_;
-    juce::TextButton paramToggleButton_;
-    juce::TextButton gainToggleButton_;
 
     // Mod panel controls (3 modulator slots)
     std::unique_ptr<juce::TextButton> modSlotButtons_[3];

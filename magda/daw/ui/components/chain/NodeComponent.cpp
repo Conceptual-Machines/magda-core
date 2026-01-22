@@ -57,83 +57,6 @@ NodeComponent::NodeComponent() {
     deleteButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addAndMakeVisible(deleteButton_);
 
-    // === FOOTER ===
-
-    // Modulator toggle button
-    modToggleButton_.setButtonText("M");
-    modToggleButton_.setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
-    modToggleButton_.setColour(juce::TextButton::buttonOnColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    modToggleButton_.setColour(juce::TextButton::textColourOffId,
-                               DarkTheme::getSecondaryTextColour());
-    modToggleButton_.setColour(juce::TextButton::textColourOnId,
-                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    modToggleButton_.setClickingTogglesState(true);
-    modToggleButton_.onClick = [this]() {
-        modPanelVisible_ = modToggleButton_.getToggleState();
-        if (onModPanelToggled) {
-            onModPanelToggled(modPanelVisible_);
-        }
-        resized();
-        repaint();
-        if (onLayoutChanged) {
-            onLayoutChanged();
-        }
-    };
-    modToggleButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    addAndMakeVisible(modToggleButton_);
-
-    // Params toggle button
-    paramToggleButton_.setButtonText("P");
-    paramToggleButton_.setColour(juce::TextButton::buttonColourId,
-                                 DarkTheme::getColour(DarkTheme::SURFACE));
-    paramToggleButton_.setColour(juce::TextButton::buttonOnColourId,
-                                 DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
-    paramToggleButton_.setColour(juce::TextButton::textColourOffId,
-                                 DarkTheme::getSecondaryTextColour());
-    paramToggleButton_.setColour(juce::TextButton::textColourOnId,
-                                 DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    paramToggleButton_.setClickingTogglesState(true);
-    paramToggleButton_.onClick = [this]() {
-        paramPanelVisible_ = paramToggleButton_.getToggleState();
-        if (onParamPanelToggled) {
-            onParamPanelToggled(paramPanelVisible_);
-        }
-        resized();
-        repaint();
-        if (onLayoutChanged) {
-            onLayoutChanged();
-        }
-    };
-    paramToggleButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    addAndMakeVisible(paramToggleButton_);
-
-    // Gain toggle button
-    gainToggleButton_.setButtonText("G");
-    gainToggleButton_.setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
-    gainToggleButton_.setColour(juce::TextButton::buttonOnColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    gainToggleButton_.setColour(juce::TextButton::textColourOffId,
-                                DarkTheme::getSecondaryTextColour());
-    gainToggleButton_.setColour(juce::TextButton::textColourOnId,
-                                DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    gainToggleButton_.setClickingTogglesState(true);
-    gainToggleButton_.onClick = [this]() {
-        gainPanelVisible_ = gainToggleButton_.getToggleState();
-        if (onGainPanelToggled) {
-            onGainPanelToggled(gainPanelVisible_);
-        }
-        resized();
-        repaint();
-        if (onLayoutChanged) {
-            onLayoutChanged();
-        }
-    };
-    gainToggleButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    addAndMakeVisible(gainToggleButton_);
-
     // === MOD PANEL CONTROLS ===
     for (int i = 0; i < 3; ++i) {
         modSlotButtons_[i] = std::make_unique<juce::TextButton>("+");
@@ -296,17 +219,9 @@ void NodeComponent::paint(juce::Graphics& g) {
                              static_cast<float>(bounds.getRight()));
     }
 
-    // Footer separator (only if footer visible)
-    int footerHeight = getFooterHeight();
-    if (footerHeight > 0) {
-        g.drawHorizontalLine(getHeight() - footerHeight, static_cast<float>(bounds.getX()),
-                             static_cast<float>(bounds.getRight()));
-    }
-
-    // Calculate content area (between header and footer)
+    // Calculate content area (below header)
     auto contentArea = bounds;
     contentArea.removeFromTop(headerHeight);
-    contentArea.removeFromBottom(footerHeight);
 
     // Let subclass paint main content
     paintContent(g, contentArea);
@@ -359,10 +274,6 @@ void NodeComponent::resized() {
         }
 
         // === COLLAPSED MAIN STRIP (remaining bounds) ===
-        // Hide footer panel toggle buttons
-        modToggleButton_.setVisible(false);
-        paramToggleButton_.setVisible(false);
-        gainToggleButton_.setVisible(false);
         nameLabel_.setVisible(false);
 
         // Arrange buttons vertically at top of collapsed strip
@@ -449,27 +360,6 @@ void NodeComponent::resized() {
         nameLabel_.setVisible(false);
     }
 
-    // === FOOTER: [M] [P] ... [G] === (only if footer visible)
-    int footerHeight = getFooterHeight();
-    if (footerHeight > 0) {
-        auto footerArea = bounds.removeFromBottom(footerHeight).reduced(3, 2);
-        modToggleButton_.setBounds(footerArea.removeFromLeft(BUTTON_SIZE));
-        footerArea.removeFromLeft(2);
-        paramToggleButton_.setBounds(footerArea.removeFromLeft(BUTTON_SIZE));
-        gainToggleButton_.setBounds(footerArea.removeFromRight(BUTTON_SIZE));
-
-        modToggleButton_.setVisible(true);
-        paramToggleButton_.setVisible(
-            paramToggleButton_.isVisible());  // Respect setParamButtonVisible
-        gainToggleButton_.setVisible(
-            gainToggleButton_.isVisible());  // Respect setGainButtonVisible
-    } else {
-        // Hide footer controls
-        modToggleButton_.setVisible(false);
-        paramToggleButton_.setVisible(false);
-        gainToggleButton_.setVisible(false);
-    }
-
     // === CONTENT (remaining area) ===
     // Reduce by 2 horizontally, 1 vertically to keep border visible
     auto contentArea = bounds.reduced(2, 1);
@@ -493,16 +383,46 @@ bool NodeComponent::isBypassed() const {
     return !bypassButton_->getToggleState();  // Toggle OFF = bypassed
 }
 
-void NodeComponent::setParamButtonVisible(bool visible) {
-    paramToggleButton_.setVisible(visible);
+void NodeComponent::setModPanelVisible(bool visible) {
+    if (modPanelVisible_ != visible) {
+        modPanelVisible_ = visible;
+        if (onModPanelToggled) {
+            onModPanelToggled(modPanelVisible_);
+        }
+        resized();
+        repaint();
+        if (onLayoutChanged) {
+            onLayoutChanged();
+        }
+    }
 }
 
-void NodeComponent::setModButtonVisible(bool visible) {
-    modToggleButton_.setVisible(visible);
+void NodeComponent::setParamPanelVisible(bool visible) {
+    if (paramPanelVisible_ != visible) {
+        paramPanelVisible_ = visible;
+        if (onParamPanelToggled) {
+            onParamPanelToggled(paramPanelVisible_);
+        }
+        resized();
+        repaint();
+        if (onLayoutChanged) {
+            onLayoutChanged();
+        }
+    }
 }
 
-void NodeComponent::setGainButtonVisible(bool visible) {
-    gainToggleButton_.setVisible(visible);
+void NodeComponent::setGainPanelVisible(bool visible) {
+    if (gainPanelVisible_ != visible) {
+        gainPanelVisible_ = visible;
+        if (onGainPanelToggled) {
+            onGainPanelToggled(gainPanelVisible_);
+        }
+        resized();
+        repaint();
+        if (onLayoutChanged) {
+            onLayoutChanged();
+        }
+    }
 }
 
 void NodeComponent::setBypassButtonVisible(bool visible) {

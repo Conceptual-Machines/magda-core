@@ -44,9 +44,6 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
             owner_.onDeviceLayoutChanged();
         };
 
-        // Hide param button - params shown inline instead
-        setParamButtonVisible(false);
-
         // Mod button (toggle mod panel) - sine wave icon
         modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::sinewavebright_svg,
                                                         BinaryData::sinewavebright_svgSize);
@@ -180,11 +177,6 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
         // Remaining space is for the name label (handled by NodeComponent)
     }
 
-    // No footer for devices
-    int getFooterHeight() const override {
-        return 0;
-    }
-
     // Devices show mod panel but not param/gain panels (params are inline)
     int getModPanelWidth() const override {
         return DEFAULT_PANEL_WIDTH;  // 60px
@@ -307,6 +299,21 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
         elementSlots_ = slots;
     }
 
+    void mouseDown(const juce::MouseEvent& /*e*/) override {
+        // Click on empty area - clear device selection
+        owner_.clearDeviceSelection();
+    }
+
+    void mouseMove(const juce::MouseEvent&) override {
+        // Check if drop state is stale (drag was cancelled)
+        checkAndResetStaleDropState();
+    }
+
+    void mouseEnter(const juce::MouseEvent&) override {
+        // Check if drop state is stale (drag was cancelled while outside)
+        checkAndResetStaleDropState();
+    }
+
     void paint(juce::Graphics& g) override {
         if (!elementSlots_)
             return;
@@ -350,11 +357,6 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
         }
     }
 
-    void mouseDown(const juce::MouseEvent& /*e*/) override {
-        // Click on empty area - clear device selection
-        owner_.clearDeviceSelection();
-    }
-
     // DragAndDropTarget implementation
     bool isInterestedInDragSource(const SourceDetails& details) override {
         // Accept plugin drops if we have a valid chain
@@ -369,7 +371,8 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
 
     void itemDragEnter(const SourceDetails& details) override {
         owner_.dropInsertIndex_ = owner_.calculateInsertIndex(details.localPosition.x);
-        owner_.resized();  // Trigger relayout to add left padding
+        owner_.startTimerHz(10);  // Start timer to detect stale drop state
+        owner_.resized();         // Trigger relayout to add left padding
         repaint();
     }
 
@@ -380,6 +383,7 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
 
     void itemDragExit(const SourceDetails&) override {
         owner_.dropInsertIndex_ = -1;
+        owner_.stopTimer();
         owner_.resized();  // Trigger relayout to remove left padding
         repaint();
     }
@@ -414,11 +418,24 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
                 juce::String(insertIndex));
         }
         owner_.dropInsertIndex_ = -1;
+        owner_.stopTimer();
         owner_.resized();  // Trigger relayout to remove left padding
         repaint();
     }
 
   private:
+    void checkAndResetStaleDropState() {
+        if (owner_.dropInsertIndex_ >= 0) {
+            if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor(this)) {
+                if (!container->isDragAndDropActive()) {
+                    owner_.dropInsertIndex_ = -1;
+                    owner_.resized();
+                    repaint();
+                }
+            }
+        }
+    }
+
     ChainPanel& owner_;
     const std::vector<std::unique_ptr<NodeComponent>>* elementSlots_ = nullptr;
 };
@@ -466,16 +483,40 @@ ChainPanel::ChainPanel() : elementSlotsContainer_(std::make_unique<ElementSlotsC
     addDeviceButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     elementSlotsContainer_->addAndMakeVisible(addDeviceButton_);
 
+    // Create macro panel (initially hidden)
+    macroPanel_ = std::make_unique<MacroPanelComponent>();
+    macroPanel_->onMacroValueChanged = [this](int macroIndex, float value) {
+        if (hasChain_) {
+            magda::TrackManager::getInstance().setChainMacroValue(chainPath_, macroIndex, value);
+        }
+    };
+    macroPanel_->onMacroTargetChanged = [this](int macroIndex, magda::MacroTarget target) {
+        if (hasChain_) {
+            magda::TrackManager::getInstance().setChainMacroTarget(chainPath_, macroIndex, target);
+        }
+    };
+    macroPanel_->onMacroNameChanged = [this](int macroIndex, juce::String name) {
+        if (hasChain_) {
+            magda::TrackManager::getInstance().setChainMacroName(chainPath_, macroIndex, name);
+        }
+    };
+    addChildComponent(*macroPanel_);
+
     setVisible(false);
 }
 
-ChainPanel::~ChainPanel() = default;
+ChainPanel::~ChainPanel() {
+    stopTimer();
+}
 
 void ChainPanel::paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) {
-    // Paint mod/macro panel at bottom if visible
-    if (chainModPanelVisible_ || chainMacroPanelVisible_) {
+    // Paint mod panel at bottom if visible (macro panel is a component, not painted)
+    if (chainModPanelVisible_) {
         auto panelArea = contentArea;
-        panelArea.removeFromTop(contentArea.getHeight() - MOD_MACRO_PANEL_HEIGHT);
+        // If macro panel is also visible, mod panel takes only half of the footer
+        int modPanelHeight =
+            chainMacroPanelVisible_ ? MOD_MACRO_PANEL_HEIGHT / 2 : MOD_MACRO_PANEL_HEIGHT;
+        panelArea.removeFromTop(contentArea.getHeight() - modPanelHeight);
 
         // Background
         g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
@@ -488,40 +529,35 @@ void ChainPanel::paintContent(juce::Graphics& g, juce::Rectangle<int> contentAre
 
         panelArea = panelArea.reduced(8, 4);
 
-        // Draw content based on which panel is visible
-        if (chainModPanelVisible_) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-            g.setFont(FontManager::getInstance().getUIFontBold(10.0f));
-            g.drawText("MODULATORS", panelArea.removeFromTop(16), juce::Justification::centredLeft);
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        g.setFont(FontManager::getInstance().getUIFontBold(10.0f));
+        g.drawText("MODULATORS", panelArea.removeFromTop(16), juce::Justification::centredLeft);
 
-            g.setColour(DarkTheme::getSecondaryTextColour());
-            g.setFont(FontManager::getInstance().getUIFont(9.0f));
-            g.drawText("LFO, ADSR, Envelope Follower slots for this chain",
-                       panelArea.removeFromTop(14), juce::Justification::centredLeft);
-        }
-
-        if (chainMacroPanelVisible_) {
-            auto macroArea = panelArea;
-            if (chainModPanelVisible_) {
-                macroArea.removeFromTop(4);  // Gap after mod panel content
-            }
-
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
-            g.setFont(FontManager::getInstance().getUIFontBold(10.0f));
-            g.drawText("MACROS", macroArea.removeFromTop(16), juce::Justification::centredLeft);
-
-            g.setColour(DarkTheme::getSecondaryTextColour());
-            g.setFont(FontManager::getInstance().getUIFont(9.0f));
-            g.drawText("8 macro knobs for quick parameter access", macroArea.removeFromTop(14),
-                       juce::Justification::centredLeft);
-        }
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setFont(FontManager::getInstance().getUIFont(9.0f));
+        g.drawText("LFO, ADSR, Envelope Follower slots for this chain", panelArea.removeFromTop(14),
+                   juce::Justification::centredLeft);
     }
 }
 
 void ChainPanel::resizedContent(juce::Rectangle<int> contentArea) {
     // Reserve space at bottom for mod/macro panel if visible
-    if (chainModPanelVisible_ || chainMacroPanelVisible_) {
-        contentArea.removeFromBottom(MOD_MACRO_PANEL_HEIGHT);
+    if (chainMacroPanelVisible_ && macroPanel_) {
+        auto macroArea = contentArea.removeFromBottom(MOD_MACRO_PANEL_HEIGHT);
+        macroPanel_->setBounds(macroArea);
+        macroPanel_->setVisible(true);
+
+        // Update macro panel with current chain's macros and available devices
+        updateMacroPanel();
+    } else if (macroPanel_) {
+        macroPanel_->setVisible(false);
+    }
+
+    if (chainModPanelVisible_) {
+        // Mod panel is painted, so just remove the space (or half if macro also visible)
+        if (!chainMacroPanelVisible_) {
+            contentArea.removeFromBottom(MOD_MACRO_PANEL_HEIGHT);
+        }
     }
 
     // Viewport fills the remaining content area
@@ -773,6 +809,7 @@ void ChainPanel::rebuildElementSlots() {
             // Capture ghost image and make original semi-transparent
             safeThis->dragGhostImage_ = node->createComponentSnapshot(node->getLocalBounds());
             node->setAlpha(0.4f);
+            safeThis->startTimerHz(10);  // Start timer to detect stale drag state
             // Re-layout to add left padding for drop indicator
             safeThis->resized();
         };
@@ -793,6 +830,7 @@ void ChainPanel::rebuildElementSlots() {
             // Restore alpha and clear ghost
             node->setAlpha(1.0f);
             safeThis->dragGhostImage_ = juce::Image();
+            safeThis->stopTimer();
 
             int elementCount = static_cast<int>(safeThis->elementSlots_.size());
             if (safeThis->dragOriginalIndex_ >= 0 && safeThis->dragInsertIndex_ >= 0 &&
@@ -824,8 +862,9 @@ void ChainPanel::rebuildElementSlots() {
             safeThis->draggedElement_ = nullptr;
             safeThis->dragOriginalIndex_ = -1;
             safeThis->dragInsertIndex_ = -1;
-            // Re-layout to remove left padding
+            // Re-layout and repaint to remove left padding and indicator
             safeThis->resized();
+            safeThis->elementSlotsContainer_->repaint();
         };
     }
 }
@@ -894,6 +933,31 @@ void ChainPanel::onAddDeviceClicked() {
             }
         }
     });
+}
+
+void ChainPanel::updateMacroPanel() {
+    if (!macroPanel_ || !hasChain_) {
+        return;
+    }
+
+    // Get the chain data via path resolution
+    auto resolved = magda::TrackManager::getInstance().resolvePath(chainPath_);
+    if (!resolved.valid || !resolved.chain) {
+        return;
+    }
+
+    // Update macros
+    macroPanel_->setMacros(resolved.chain->macros);
+
+    // Collect available devices for linking
+    std::vector<std::pair<magda::DeviceId, juce::String>> availableDevices;
+    for (const auto& element : resolved.chain->elements) {
+        if (magda::isDevice(element)) {
+            const auto& device = magda::getDevice(element);
+            availableDevices.emplace_back(device.id, device.name);
+        }
+    }
+    macroPanel_->setAvailableDevices(availableDevices);
 }
 
 void ChainPanel::setModPanelVisible(bool visible) {
@@ -979,6 +1043,45 @@ int ChainPanel::calculateIndicatorX(int index) const {
 
     // Fallback
     return DRAG_LEFT_PADDING / 2;
+}
+
+void ChainPanel::timerCallback() {
+    // Check if internal drag state is stale (drag was cancelled)
+    if (dragInsertIndex_ >= 0 || draggedElement_ != nullptr) {
+        // Check if any mouse button is still down - if not, the drag was cancelled
+        if (!juce::Desktop::getInstance().getMainMouseSource().isDragging()) {
+            if (draggedElement_) {
+                draggedElement_->setAlpha(1.0f);
+            }
+            draggedElement_ = nullptr;
+            dragOriginalIndex_ = -1;
+            dragInsertIndex_ = -1;
+            dragGhostImage_ = juce::Image();
+            stopTimer();
+            resized();
+            elementSlotsContainer_->repaint();
+            return;
+        }
+    }
+
+    // Check if external drop state is stale (drag was cancelled)
+    if (dropInsertIndex_ >= 0) {
+        if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor(
+                elementSlotsContainer_.get())) {
+            if (!container->isDragAndDropActive()) {
+                dropInsertIndex_ = -1;
+                stopTimer();
+                resized();
+                elementSlotsContainer_->repaint();
+                return;
+            }
+        }
+    }
+
+    // No stale state, stop the timer
+    if (dragInsertIndex_ < 0 && draggedElement_ == nullptr && dropInsertIndex_ < 0) {
+        stopTimer();
+    }
 }
 
 }  // namespace magda::daw::ui

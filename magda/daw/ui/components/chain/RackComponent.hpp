@@ -4,6 +4,7 @@
 
 #include <functional>
 
+#include "MacroPanelComponent.hpp"
 #include "NodeComponent.hpp"
 #include "core/RackInfo.hpp"
 #include "core/SelectionManager.hpp"
@@ -69,11 +70,6 @@ class RackComponent : public NodeComponent {
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
     void resizedCollapsed(juce::Rectangle<int>& area) override;
 
-    // Hide footer - MOD/MACRO buttons are in header instead
-    int getFooterHeight() const override {
-        return 0;
-    }
-
     // Get the full path to this rack (for nested context)
     const magda::ChainNodePath& getRackPath() const {
         return rackPath_;
@@ -113,6 +109,15 @@ class RackComponent : public NodeComponent {
     std::unique_ptr<ChainPanel> chainPanel_;
     magda::ChainId selectedChainId_ = magda::INVALID_CHAIN_ID;
     int availableWidth_ = 0;  // 0 = no limit
+
+    // Macro panel (shown in left side param panel when P button toggled)
+    std::unique_ptr<MacroPanelComponent> macroPanel_;
+    void updateMacroPanel();  // Update macro panel with current rack data
+
+    // Override param panel for macro display (left side panel)
+    int getParamPanelWidth() const override;
+    void resizedParamPanel(juce::Rectangle<int> panelArea) override;
+    void paintParamPanel(juce::Graphics& g, juce::Rectangle<int> panelArea) override;
 
     static constexpr int CHAINS_LABEL_HEIGHT = 18;
     static constexpr int MIN_CONTENT_HEIGHT = 30;

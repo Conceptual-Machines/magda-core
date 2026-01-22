@@ -23,7 +23,8 @@ class NodeComponent;
  */
 class TrackChainContent : public PanelContent,
                           public magda::TrackManagerListener,
-                          public magda::SelectionManagerListener {
+                          public magda::SelectionManagerListener,
+                          private juce::Timer {
   public:
     TrackChainContent();
     ~TrackChainContent() override;
@@ -148,6 +149,9 @@ class TrackChainContent : public PanelContent,
     int findNodeIndex(NodeComponent* node) const;
     int calculateInsertIndex(int mouseX) const;
     int calculateIndicatorX(int index) const;
+
+    // Timer callback for detecting stale drop state
+    void timerCallback() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TrackChainContent)
 };

@@ -384,11 +384,6 @@ class TrackChainContent::DeviceSlotComponent : public NodeComponent {
     }
 
   protected:
-    // No footer for devices
-    int getFooterHeight() const override {
-        return 0;
-    }
-
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override {
         // Manufacturer label at top
         auto labelArea = contentArea.removeFromTop(12);
@@ -529,6 +524,16 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
         owner_.clearDeviceSelection();
     }
 
+    void mouseMove(const juce::MouseEvent&) override {
+        // Check if drop state is stale (drag was cancelled)
+        checkAndResetStaleDropState();
+    }
+
+    void mouseEnter(const juce::MouseEvent&) override {
+        // Check if drop state is stale (drag was cancelled while outside)
+        checkAndResetStaleDropState();
+    }
+
     void paint(juce::Graphics& g) override {
         // Draw arrows between elements
         int arrowY = getHeight() / 2;
@@ -575,7 +580,8 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
 
     void itemDragEnter(const SourceDetails& details) override {
         owner_.dropInsertIndex_ = owner_.calculateInsertIndex(details.localPosition.x);
-        owner_.resized();  // Trigger relayout to add left padding
+        owner_.startTimerHz(10);  // Start timer to detect stale drop state
+        owner_.resized();         // Trigger relayout to add left padding
         repaint();
     }
 
@@ -586,6 +592,7 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
 
     void itemDragExit(const SourceDetails&) override {
         owner_.dropInsertIndex_ = -1;
+        owner_.stopTimer();
         owner_.resized();  // Trigger relayout to remove left padding
         repaint();
     }
@@ -620,11 +627,24 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
                 juce::String(insertIndex));
         }
         owner_.dropInsertIndex_ = -1;
+        owner_.stopTimer();
         owner_.resized();  // Trigger relayout to remove left padding
         repaint();
     }
 
   private:
+    void checkAndResetStaleDropState() {
+        if (owner_.dropInsertIndex_ >= 0) {
+            if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor(this)) {
+                if (!container->isDragAndDropActive()) {
+                    owner_.dropInsertIndex_ = -1;
+                    owner_.resized();
+                    repaint();
+                }
+            }
+        }
+    }
+
     void drawArrow(juce::Graphics& g, int x, int y) {
         int arrowStart = x + 4;
         int arrowEnd = x + 16;
@@ -844,6 +864,7 @@ TrackChainContent::TrackChainContent() : chainContainer_(std::make_unique<ChainC
 }
 
 TrackChainContent::~TrackChainContent() {
+    stopTimer();
     magda::TrackManager::getInstance().removeListener(this);
     magda::SelectionManager::getInstance().removeListener(this);
 }
@@ -1144,6 +1165,7 @@ void TrackChainContent::rebuildNodeComponents() {
                 // Capture ghost image and make original semi-transparent
                 dragGhostImage_ = node->createComponentSnapshot(node->getLocalBounds());
                 node->setAlpha(0.4f);
+                startTimerHz(10);  // Start timer to detect stale drag state
                 // Re-layout to add left padding for drop indicator
                 resized();
             };
@@ -1159,6 +1181,7 @@ void TrackChainContent::rebuildNodeComponents() {
                 // Restore alpha and clear ghost
                 node->setAlpha(1.0f);
                 dragGhostImage_ = juce::Image();
+                stopTimer();
 
                 int nodeCount = static_cast<int>(nodeComponents_.size());
                 if (dragOriginalIndex_ >= 0 && dragInsertIndex_ >= 0 &&
@@ -1177,8 +1200,9 @@ void TrackChainContent::rebuildNodeComponents() {
                 draggedNode_ = nullptr;
                 dragOriginalIndex_ = -1;
                 dragInsertIndex_ = -1;
-                // Re-layout to remove left padding
+                // Re-layout and repaint to remove left padding and indicator
                 resized();
+                chainContainer_->repaint();
             };
 
             chainContainer_->addAndMakeVisible(*slot);
@@ -1218,6 +1242,7 @@ void TrackChainContent::rebuildNodeComponents() {
                 // Capture ghost image and make original semi-transparent
                 dragGhostImage_ = node->createComponentSnapshot(node->getLocalBounds());
                 node->setAlpha(0.4f);
+                startTimerHz(10);  // Start timer to detect stale drag state
                 // Re-layout to add left padding for drop indicator
                 resized();
             };
@@ -1233,6 +1258,7 @@ void TrackChainContent::rebuildNodeComponents() {
                 // Restore alpha and clear ghost
                 node->setAlpha(1.0f);
                 dragGhostImage_ = juce::Image();
+                stopTimer();
 
                 int nodeCount = static_cast<int>(nodeComponents_.size());
                 if (dragOriginalIndex_ >= 0 && dragInsertIndex_ >= 0 &&
@@ -1250,8 +1276,9 @@ void TrackChainContent::rebuildNodeComponents() {
                 draggedNode_ = nullptr;
                 dragOriginalIndex_ = -1;
                 dragInsertIndex_ = -1;
-                // Re-layout to remove left padding
+                // Re-layout and repaint to remove left padding and indicator
                 resized();
+                chainContainer_->repaint();
             };
 
             chainContainer_->addAndMakeVisible(*rackComp);
@@ -1437,6 +1464,45 @@ void TrackChainContent::restoreNodeStates() {
                 }
             }
         }
+    }
+}
+
+void TrackChainContent::timerCallback() {
+    // Check if internal drag state is stale (drag was cancelled)
+    if (dragInsertIndex_ >= 0 || draggedNode_ != nullptr) {
+        // Check if any mouse button is still down - if not, the drag was cancelled
+        if (!juce::Desktop::getInstance().getMainMouseSource().isDragging()) {
+            if (draggedNode_) {
+                draggedNode_->setAlpha(1.0f);
+            }
+            draggedNode_ = nullptr;
+            dragOriginalIndex_ = -1;
+            dragInsertIndex_ = -1;
+            dragGhostImage_ = juce::Image();
+            stopTimer();
+            resized();
+            chainContainer_->repaint();
+            return;
+        }
+    }
+
+    // Check if external drop state is stale (drag was cancelled)
+    if (dropInsertIndex_ >= 0) {
+        if (auto* container =
+                juce::DragAndDropContainer::findParentDragContainerFor(chainContainer_.get())) {
+            if (!container->isDragAndDropActive()) {
+                dropInsertIndex_ = -1;
+                stopTimer();
+                resized();
+                chainContainer_->repaint();
+                return;
+            }
+        }
+    }
+
+    // No stale state, stop the timer
+    if (dragInsertIndex_ < 0 && draggedNode_ == nullptr && dropInsertIndex_ < 0) {
+        stopTimer();
     }
 }
 

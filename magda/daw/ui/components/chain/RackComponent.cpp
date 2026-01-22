@@ -141,6 +141,19 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     chainPanel_->onLayoutChanged = [this]() { childLayoutChanged(); };
     addChildComponent(*chainPanel_);
 
+    // Create macro panel (initially hidden, shown when macro button is toggled)
+    macroPanel_ = std::make_unique<MacroPanelComponent>();
+    macroPanel_->onMacroValueChanged = [this](int macroIndex, float value) {
+        magda::TrackManager::getInstance().setRackMacroValue(rackPath_, macroIndex, value);
+    };
+    macroPanel_->onMacroTargetChanged = [this](int macroIndex, magda::MacroTarget target) {
+        magda::TrackManager::getInstance().setRackMacroTarget(rackPath_, macroIndex, target);
+    };
+    macroPanel_->onMacroNameChanged = [this](int macroIndex, juce::String name) {
+        magda::TrackManager::getInstance().setRackMacroName(rackPath_, macroIndex, name);
+    };
+    addChildComponent(*macroPanel_);
+
     // Build chain rows
     updateFromRack(rack);
 }
@@ -169,6 +182,9 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
         if (chainPanel_) {
             chainPanel_->setVisible(false);
         }
+        if (macroPanel_) {
+            macroPanel_->setVisible(false);
+        }
         volumeSlider_.setVisible(false);
         return;
     }
@@ -180,6 +196,12 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
     modButton_->setVisible(true);
     macroButton_->setVisible(true);
     volumeSlider_.setVisible(true);
+
+    // Hide macro panel if param panel is not visible
+    // (resizedParamPanel will show it when visible)
+    if (!paramPanelVisible_ && macroPanel_) {
+        macroPanel_->setVisible(false);
+    }
 
     // Calculate chain panel positioning
     juce::Rectangle<int> chainPanelArea;
@@ -508,6 +530,55 @@ void RackComponent::hideChainPanel() {
 
 bool RackComponent::isChainPanelVisible() const {
     return chainPanel_ && chainPanel_->isVisible();
+}
+
+void RackComponent::updateMacroPanel() {
+    if (!macroPanel_) {
+        return;
+    }
+
+    // Get the rack data via path resolution
+    const auto* rack = magda::TrackManager::getInstance().getRackByPath(rackPath_);
+    if (!rack) {
+        return;
+    }
+
+    // Update macros
+    macroPanel_->setMacros(rack->macros);
+
+    // Collect available devices for linking (devices from all chains in this rack)
+    std::vector<std::pair<magda::DeviceId, juce::String>> availableDevices;
+    for (const auto& chain : rack->chains) {
+        for (const auto& element : chain.elements) {
+            if (magda::isDevice(element)) {
+                const auto& device = magda::getDevice(element);
+                availableDevices.emplace_back(device.id, device.name);
+            }
+        }
+    }
+    macroPanel_->setAvailableDevices(availableDevices);
+}
+
+int RackComponent::getParamPanelWidth() const {
+    // Width for 2 columns of macro knobs (2x4 grid)
+    return 130;
+}
+
+void RackComponent::paintParamPanel(juce::Graphics& g, juce::Rectangle<int> panelArea) {
+    // Draw "MACROS" header
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    g.setFont(FontManager::getInstance().getUIFontBold(9.0f));
+    g.drawText("MACROS", panelArea.removeFromTop(16), juce::Justification::centred);
+}
+
+void RackComponent::resizedParamPanel(juce::Rectangle<int> panelArea) {
+    panelArea.removeFromTop(16);  // Skip "MACROS" header
+
+    if (macroPanel_) {
+        macroPanel_->setBounds(panelArea);
+        macroPanel_->setVisible(true);
+        updateMacroPanel();
+    }
 }
 
 }  // namespace magda::daw::ui

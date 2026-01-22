@@ -178,6 +178,9 @@ set(DAW_UI_SOURCES
     ui/components/chain/ChainRowComponent.cpp
     ui/components/chain/RackComponent.cpp
     ui/components/chain/ChainPanel.cpp
+    ui/components/chain/PagedControlPanel.cpp
+    ui/components/chain/MacroKnobComponent.cpp
+    ui/components/chain/MacroPanelComponent.cpp
 )
 
 # All DAW headers
@@ -296,6 +299,11 @@ set(DAW_HEADERS
     ui/components/chain/ChainRowComponent.hpp
     ui/components/chain/RackComponent.hpp
     ui/components/chain/ChainPanel.hpp
+    ui/components/chain/PagedControlPanel.hpp
+    ui/components/chain/MacroKnobComponent.hpp
+    ui/components/chain/MacroPanelComponent.hpp
+    # Core - Macro
+    core/MacroInfo.hpp
 )
 
 # Create DAW library (core functionality)

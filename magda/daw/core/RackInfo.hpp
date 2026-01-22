@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "DeviceInfo.hpp"
+#include "MacroInfo.hpp"
 
 namespace magda {
 
@@ -71,6 +72,9 @@ struct ChainInfo {
     float volume = 0.0f;  // Chain volume in dB (0 = unity)
     float pan = 0.0f;     // Chain pan (-1 to 1)
 
+    // Macro controls for chain-level parameter mapping
+    MacroArray macros = createDefaultMacros();
+
     // UI state
     bool expanded = true;
 
@@ -90,6 +94,7 @@ struct ChainInfo {
           solo(other.solo),
           volume(other.volume),
           pan(other.pan),
+          macros(other.macros),
           expanded(other.expanded) {
         elements.reserve(other.elements.size());
         for (const auto& element : other.elements) {
@@ -107,6 +112,7 @@ struct ChainInfo {
             solo = other.solo;
             volume = other.volume;
             pan = other.pan;
+            macros = other.macros;
             expanded = other.expanded;
             elements.clear();
             elements.reserve(other.elements.size());
@@ -156,8 +162,8 @@ struct RackInfo {
     float volume = 0.0f;   // Rack output volume in dB (0 = unity)
     float pan = 0.0f;      // Rack output pan (-1 to 1)
 
-    // Future: Macro controls for rack-wide parameter mapping
-    // std::array<float, 8> macros;
+    // Macro controls for rack-wide parameter mapping
+    MacroArray macros = createDefaultMacros();
 
     // Default constructor
     RackInfo() = default;
@@ -174,7 +180,8 @@ struct RackInfo {
           bypassed(other.bypassed),
           expanded(other.expanded),
           volume(other.volume),
-          pan(other.pan) {}
+          pan(other.pan),
+          macros(other.macros) {}
 
     // Copy assignment
     RackInfo& operator=(const RackInfo& other) {
@@ -186,6 +193,7 @@ struct RackInfo {
             expanded = other.expanded;
             volume = other.volume;
             pan = other.pan;
+            macros = other.macros;
         }
         return *this;
     }
