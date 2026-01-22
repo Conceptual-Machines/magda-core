@@ -32,6 +32,7 @@ class TrackChainContent : public PanelContent, public magda::TrackManagerListene
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseDown(const juce::MouseEvent& e) override;
 
     void onActivated() override;
     void onDeactivated() override;

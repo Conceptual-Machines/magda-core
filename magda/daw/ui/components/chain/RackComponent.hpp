@@ -57,6 +57,8 @@ class RackComponent : public NodeComponent {
     // Callback when a device in the chain panel is selected (or deselected with INVALID_DEVICE_ID)
     std::function<void(magda::DeviceId)> onDeviceSelected;
 
+    void mouseDown(const juce::MouseEvent& e) override;
+
   protected:
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override;
     void resizedContent(juce::Rectangle<int> contentArea) override;

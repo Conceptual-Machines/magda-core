@@ -770,6 +770,13 @@ void TrackChainContent::paint(juce::Graphics& g) {
     }
 }
 
+void TrackChainContent::mouseDown(const juce::MouseEvent& e) {
+    // Click on header area selects the track
+    if (selectedTrackId_ != magda::INVALID_TRACK_ID && e.y < HEADER_HEIGHT) {
+        magda::SelectionManager::getInstance().selectTrack(selectedTrackId_);
+    }
+}
+
 void TrackChainContent::resized() {
     auto bounds = getLocalBounds();
 

@@ -104,6 +104,9 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     // Viewport for chain rows
     chainViewport_.setViewedComponent(&chainRowsContainer_, false);
     chainViewport_.setScrollBarsShown(true, false);  // Vertical only
+    // Allow clicks on empty areas to pass through to parent for selection
+    chainViewport_.setInterceptsMouseClicks(false, true);
+    chainRowsContainer_.setInterceptsMouseClicks(false, true);
     addAndMakeVisible(chainViewport_);
 
     // Create chain panel (initially hidden)
@@ -126,6 +129,15 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
 }
 
 RackComponent::~RackComponent() = default;
+
+void RackComponent::mouseDown(const juce::MouseEvent& e) {
+    // Select this rack when clicking anywhere in the content area
+    if (e.mods.isLeftButtonDown() && rackPath_.isValid()) {
+        magda::SelectionManager::getInstance().selectChainNode(rackPath_);
+    }
+    // Let the base class also handle it for consistency
+    NodeComponent::mouseDown(e);
+}
 
 void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) {
     // Chains label separator (below "Chains:" label)
