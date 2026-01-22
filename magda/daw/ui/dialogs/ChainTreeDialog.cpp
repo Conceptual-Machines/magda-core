@@ -83,6 +83,10 @@ class ChainTreeItemBase : public juce::TreeViewItem {
         return text_ + "_" + juce::String(reinterpret_cast<juce::pointer_sized_int>(this));
     }
 
+    const ChainNodePath& getPath() const {
+        return path_;
+    }
+
   protected:
     virtual juce::Colour getItemColour() const {
         return DarkTheme::getTextColour();
@@ -184,7 +188,9 @@ class ChainTreeItem : public ChainTreeItemBase {
 // Content Component
 // ============================================================================
 
-class ChainTreeDialog::ContentComponent : public juce::Component, public TrackManagerListener {
+class ChainTreeDialog::ContentComponent : public juce::Component,
+                                          public TrackManagerListener,
+                                          public SelectionManagerListener {
   public:
     explicit ContentComponent(TrackId trackId) : trackId_(trackId) {
         // Setup tree view
@@ -205,8 +211,9 @@ class ChainTreeDialog::ContentComponent : public juce::Component, public TrackMa
         infoLabel_.setJustificationType(juce::Justification::centred);
         addAndMakeVisible(infoLabel_);
 
-        // Register listener
+        // Register listeners
         TrackManager::getInstance().addListener(this);
+        SelectionManager::getInstance().addListener(this);
 
         buildTree();
         setSize(400, 500);
@@ -215,6 +222,7 @@ class ChainTreeDialog::ContentComponent : public juce::Component, public TrackMa
     ~ContentComponent() override {
         treeView_.setRootItem(nullptr);
         TrackManager::getInstance().removeListener(this);
+        SelectionManager::getInstance().removeListener(this);
     }
 
     void paint(juce::Graphics& g) override {
@@ -247,7 +255,48 @@ class ChainTreeDialog::ContentComponent : public juce::Component, public TrackMa
         }
     }
 
+    // SelectionManagerListener
+    void selectionTypeChanged(SelectionType /*newType*/) override {}
+
+    void chainNodeSelectionChanged(const ChainNodePath& path) override {
+        // Find and select the tree item matching this path
+        if (path.trackId != trackId_) {
+            return;  // Different track
+        }
+
+        // Find the matching tree item
+        if (auto* item = findTreeItemByPath(rootItem_.get(), path)) {
+            item->setSelected(true, true);
+            // Ensure parent items are expanded
+            auto* parent = item->getParentItem();
+            while (parent) {
+                parent->setOpen(true);
+                parent = parent->getParentItem();
+            }
+        }
+    }
+
   private:
+    ChainTreeItemBase* findTreeItemByPath(juce::TreeViewItem* item, const ChainNodePath& path) {
+        if (!item)
+            return nullptr;
+
+        // Check if this item matches
+        if (auto* chainItem = dynamic_cast<ChainTreeItemBase*>(item)) {
+            if (chainItem->getPath() == path) {
+                return chainItem;
+            }
+        }
+
+        // Search children
+        for (int i = 0; i < item->getNumSubItems(); ++i) {
+            if (auto* found = findTreeItemByPath(item->getSubItem(i), path)) {
+                return found;
+            }
+        }
+
+        return nullptr;
+    }
     void buildTree() {
         treeView_.setRootItem(nullptr);
         rootItem_.reset();
