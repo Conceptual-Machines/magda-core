@@ -90,9 +90,8 @@ void ModKnobComponent::resized() {
 void ModKnobComponent::mouseDown(const juce::MouseEvent& e) {
     // Left-click triggers onClicked callback to open modulator panel
     if (!e.mods.isPopupMenu()) {
-        // Check if click is not on slider or name label
-        if (!amountSlider_.getBounds().contains(e.getPosition()) &&
-            !nameLabel_.getBounds().contains(e.getPosition())) {
+        // Check if click is not on slider (slider needs to handle its own drag)
+        if (!amountSlider_.getBounds().contains(e.getPosition())) {
             if (onClicked) {
                 onClicked();
             }

@@ -51,17 +51,17 @@ void MacroKnobComponent::setSelected(bool selected) {
 }
 
 void MacroKnobComponent::paint(juce::Graphics& g) {
-    // Background - highlight when selected
+    // Background - highlight when selected (purple for macros)
     if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.3f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.3f));
     } else {
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).brighter(0.04f));
     }
     g.fillRoundedRectangle(getLocalBounds().toFloat(), 3.0f);
 
-    // Border - orange when selected
+    // Border - purple when selected
     if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 3.0f, 2.0f);
     } else {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
@@ -90,9 +90,8 @@ void MacroKnobComponent::resized() {
 void MacroKnobComponent::mouseDown(const juce::MouseEvent& e) {
     // Left-click triggers onClicked callback for selection
     if (!e.mods.isPopupMenu()) {
-        // Check if click is not on slider or name label
-        if (!valueSlider_.getBounds().contains(e.getPosition()) &&
-            !nameLabel_.getBounds().contains(e.getPosition())) {
+        // Check if click is not on slider (slider needs to handle its own drag)
+        if (!valueSlider_.getBounds().contains(e.getPosition())) {
             if (onClicked) {
                 onClicked();
             }
