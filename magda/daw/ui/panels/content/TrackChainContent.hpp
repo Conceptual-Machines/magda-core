@@ -129,6 +129,8 @@ class TrackChainContent : public PanelContent,
     NodeComponent* draggedNode_ = nullptr;
     int dragOriginalIndex_ = -1;
     int dragInsertIndex_ = -1;
+    juce::Image dragGhostImage_;
+    juce::Point<int> dragMousePos_;
 
     // Helper methods for drag-to-reorder
     int findNodeIndex(NodeComponent* node) const;

@@ -548,6 +548,15 @@ class TrackChainContent::ChainContainer : public juce::Component {
             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
             g.fillRect(indicatorX - 2, 0, 4, getHeight());
         }
+
+        // Draw ghost image during drag
+        if (owner_.dragGhostImage_.isValid()) {
+            g.setOpacity(0.6f);
+            int ghostX = owner_.dragMousePos_.x - owner_.dragGhostImage_.getWidth() / 2;
+            int ghostY = owner_.dragMousePos_.y - owner_.dragGhostImage_.getHeight() / 2;
+            g.drawImageAt(owner_.dragGhostImage_, ghostX, ghostY);
+            g.setOpacity(1.0f);
+        }
     }
 
   private:
@@ -1059,18 +1068,24 @@ void TrackChainContent::rebuildNodeComponents() {
                 draggedNode_ = node;
                 dragOriginalIndex_ = findNodeIndex(node);
                 dragInsertIndex_ = dragOriginalIndex_;
+                // Capture ghost image and make original semi-transparent
+                dragGhostImage_ = node->createComponentSnapshot(node->getLocalBounds());
+                node->setAlpha(0.4f);
             };
 
             slot->onDragMove = [this](NodeComponent*, const juce::MouseEvent& e) {
                 auto pos = e.getEventRelativeTo(chainContainer_.get()).getPosition();
                 dragInsertIndex_ = calculateInsertIndex(pos.x);
+                dragMousePos_ = pos;
                 chainContainer_->repaint();
             };
 
-            slot->onDragEnd = [this](NodeComponent*, const juce::MouseEvent&) {
+            slot->onDragEnd = [this](NodeComponent* node, const juce::MouseEvent&) {
+                // Restore alpha and clear ghost
+                node->setAlpha(1.0f);
+                dragGhostImage_ = juce::Image();
+
                 int nodeCount = static_cast<int>(nodeComponents_.size());
-                DBG("Node onDragEnd: origIdx=" << dragOriginalIndex_ << " insertIdx="
-                                               << dragInsertIndex_ << " nodeCount=" << nodeCount);
                 if (dragOriginalIndex_ >= 0 && dragInsertIndex_ >= 0 &&
                     dragOriginalIndex_ != dragInsertIndex_) {
                     // Convert insert position to target index
@@ -1079,7 +1094,6 @@ void TrackChainContent::rebuildNodeComponents() {
                         targetIndex = dragInsertIndex_ - 1;
                     }
                     targetIndex = juce::jlimit(0, nodeCount - 1, targetIndex);
-                    DBG("Moving node from=" << dragOriginalIndex_ << " to=" << targetIndex);
                     if (targetIndex != dragOriginalIndex_) {
                         magda::TrackManager::getInstance().moveNode(
                             selectedTrackId_, dragOriginalIndex_, targetIndex);
@@ -1125,18 +1139,24 @@ void TrackChainContent::rebuildNodeComponents() {
                 draggedNode_ = node;
                 dragOriginalIndex_ = findNodeIndex(node);
                 dragInsertIndex_ = dragOriginalIndex_;
+                // Capture ghost image and make original semi-transparent
+                dragGhostImage_ = node->createComponentSnapshot(node->getLocalBounds());
+                node->setAlpha(0.4f);
             };
 
             rackComp->onDragMove = [this](NodeComponent*, const juce::MouseEvent& e) {
                 auto pos = e.getEventRelativeTo(chainContainer_.get()).getPosition();
                 dragInsertIndex_ = calculateInsertIndex(pos.x);
+                dragMousePos_ = pos;
                 chainContainer_->repaint();
             };
 
-            rackComp->onDragEnd = [this](NodeComponent*, const juce::MouseEvent&) {
+            rackComp->onDragEnd = [this](NodeComponent* node, const juce::MouseEvent&) {
+                // Restore alpha and clear ghost
+                node->setAlpha(1.0f);
+                dragGhostImage_ = juce::Image();
+
                 int nodeCount = static_cast<int>(nodeComponents_.size());
-                DBG("Node onDragEnd: origIdx=" << dragOriginalIndex_ << " insertIdx="
-                                               << dragInsertIndex_ << " nodeCount=" << nodeCount);
                 if (dragOriginalIndex_ >= 0 && dragInsertIndex_ >= 0 &&
                     dragOriginalIndex_ != dragInsertIndex_) {
                     int targetIndex = dragInsertIndex_;
@@ -1144,7 +1164,6 @@ void TrackChainContent::rebuildNodeComponents() {
                         targetIndex = dragInsertIndex_ - 1;
                     }
                     targetIndex = juce::jlimit(0, nodeCount - 1, targetIndex);
-                    DBG("Moving node from=" << dragOriginalIndex_ << " to=" << targetIndex);
                     if (targetIndex != dragOriginalIndex_) {
                         magda::TrackManager::getInstance().moveNode(
                             selectedTrackId_, dragOriginalIndex_, targetIndex);
