@@ -385,6 +385,7 @@ ChainTreeDialog::ChainTreeDialog(TrackId trackId)
     centreWithSize(400, 500);
     setResizable(true, true);
     setUsingNativeTitleBar(true);
+    setAlwaysOnTop(true);  // Keep dialog visible when selection changes main window
 }
 
 ChainTreeDialog::~ChainTreeDialog() = default;
