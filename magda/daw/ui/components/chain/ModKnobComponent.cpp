@@ -30,6 +30,22 @@ ModKnobComponent::ModKnobComponent(int modIndex) : modIndex_(modIndex) {
             onAmountChanged(currentMod_.amount);
         }
     };
+    amountSlider_.onAltClicked = [this]() {
+        // Alt+click on slider: if a param is selected, show amount popup
+        if (selectedParam_.isValid()) {
+            const auto* existingLink = currentMod_.getLink(selectedParam_);
+            bool isLinked = existingLink != nullptr ||
+                            (currentMod_.target.deviceId == selectedParam_.deviceId &&
+                             currentMod_.target.paramIndex == selectedParam_.paramIndex);
+
+            if (isLinked) {
+                float currentAmount = existingLink ? existingLink->amount : currentMod_.amount;
+                showAmountSlider(currentAmount, false);
+            } else {
+                showAmountSlider(0.5f, true);
+            }
+        }
+    };
     addAndMakeVisible(amountSlider_);
 }
 
@@ -127,7 +143,22 @@ void ModKnobComponent::mouseDown(const juce::MouseEvent& e) {
     if (!e.mods.isPopupMenu()) {
         // Check if click is not on slider (slider needs to handle its own drag)
         if (!amountSlider_.getBounds().contains(e.getPosition())) {
-            if (onClicked) {
+            // Alt+click: if a param is selected, directly show amount slider
+            if (e.mods.isAltDown() && selectedParam_.isValid()) {
+                // Check if linked to selected param
+                const auto* existingLink = currentMod_.getLink(selectedParam_);
+                bool isLinked = existingLink != nullptr ||
+                                (currentMod_.target.deviceId == selectedParam_.deviceId &&
+                                 currentMod_.target.paramIndex == selectedParam_.paramIndex);
+
+                if (isLinked) {
+                    float currentAmount = existingLink ? existingLink->amount : currentMod_.amount;
+                    showAmountSlider(currentAmount, false);
+                } else {
+                    // Create new link with default 50%
+                    showAmountSlider(0.5f, true);
+                }
+            } else if (onClicked) {
                 onClicked();
             }
         }
@@ -139,6 +170,40 @@ void ModKnobComponent::mouseUp(const juce::MouseEvent& e) {
     if (e.mods.isPopupMenu()) {
         showLinkMenu();
     }
+}
+
+void ModKnobComponent::showAmountSlider(float currentAmount, bool isNewLink) {
+    // Create a simple slider component for the popup
+    auto* slider = new juce::Slider(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
+    slider->setRange(0.0, 100.0, 1.0);
+    slider->setValue(currentAmount * 100.0, juce::dontSendNotification);
+    slider->setTextValueSuffix("%");
+    slider->setSize(200, 30);
+
+    auto safeThis = juce::Component::SafePointer<ModKnobComponent>(this);
+    auto target = selectedParam_;
+
+    // When slider changes, update the amount
+    slider->onValueChange = [safeThis, slider, target, isNewLink]() {
+        if (safeThis == nullptr)
+            return;
+        float amount = static_cast<float>(slider->getValue() / 100.0);
+
+        if (isNewLink) {
+            if (safeThis->onNewLinkCreated) {
+                safeThis->onNewLinkCreated(target, amount);
+            }
+        } else {
+            if (safeThis->onLinkAmountChanged) {
+                safeThis->onLinkAmountChanged(target, amount);
+            }
+        }
+    };
+
+    // Show as callout box
+    auto& callout = juce::CallOutBox::launchAsynchronously(std::unique_ptr<juce::Component>(slider),
+                                                           getScreenBounds(), nullptr);
+    (void)callout;
 }
 
 void ModKnobComponent::paintLinkIndicator(juce::Graphics& g, juce::Rectangle<int> area) {

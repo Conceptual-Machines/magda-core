@@ -79,7 +79,8 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
     }
 
     std::function<void(double)> onValueChanged;
-    std::function<void()> onClicked;  // Called on single left-click (no drag)
+    std::function<void()> onClicked;     // Called on single left-click (no drag)
+    std::function<void()> onAltClicked;  // Called on Alt+click (no drag)
     std::function<void()>
         onRightClicked;  // Called on right-click (when rightClickEditsText_ is false)
 
@@ -126,6 +127,9 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
                     // Right-click callback (for context menus, etc.)
                     onRightClicked();
                 }
+            } else if (e.mods.isAltDown() && onAltClicked) {
+                // Alt+click callback (for direct amount editing)
+                onAltClicked();
             } else if (onClicked) {
                 // Single left-click callback
                 onClicked();

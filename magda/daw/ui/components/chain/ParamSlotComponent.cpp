@@ -24,6 +24,28 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
             magda::SelectionManager::getInstance().selectParam(devicePath_, paramIndex_);
         }
     };
+    valueSlider_.onAltClicked = [this]() {
+        // Alt+click: if a mod is selected, directly show amount slider
+        if (selectedModIndex_ >= 0 && availableMods_ &&
+            selectedModIndex_ < static_cast<int>(availableMods_->size())) {
+            const auto& selectedMod = (*availableMods_)[static_cast<size_t>(selectedModIndex_)];
+            magda::ModTarget thisTarget{deviceId_, paramIndex_};
+
+            // Check if already linked
+            const auto* existingLink = selectedMod.getLink(thisTarget);
+            bool isLinked =
+                existingLink != nullptr || (selectedMod.target.deviceId == deviceId_ &&
+                                            selectedMod.target.paramIndex == paramIndex_);
+
+            if (isLinked) {
+                float currentAmount = existingLink ? existingLink->amount : selectedMod.amount;
+                showAmountSlider(selectedModIndex_, currentAmount, false);
+            } else {
+                // Not linked yet - create new link with default 50%
+                showAmountSlider(selectedModIndex_, 0.5f, true);
+            }
+        }
+    };
     valueSlider_.onRightClicked = [this]() {
         // Show link menu on right-click
         showLinkMenu();
@@ -95,9 +117,28 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
     if (e.mods.isPopupMenu()) {
         showLinkMenu();
     } else if (e.mods.isLeftButtonDown()) {
-        // Select this param
-        if (devicePath_.isValid()) {
-            magda::SelectionManager::getInstance().selectParam(devicePath_, paramIndex_);
+        // Alt+click: if a mod is selected, directly show amount slider
+        if (e.mods.isAltDown() && selectedModIndex_ >= 0 && availableMods_ &&
+            selectedModIndex_ < static_cast<int>(availableMods_->size())) {
+            const auto& selectedMod = (*availableMods_)[static_cast<size_t>(selectedModIndex_)];
+            magda::ModTarget thisTarget{deviceId_, paramIndex_};
+
+            const auto* existingLink = selectedMod.getLink(thisTarget);
+            bool isLinked =
+                existingLink != nullptr || (selectedMod.target.deviceId == deviceId_ &&
+                                            selectedMod.target.paramIndex == paramIndex_);
+
+            if (isLinked) {
+                float currentAmount = existingLink ? existingLink->amount : selectedMod.amount;
+                showAmountSlider(selectedModIndex_, currentAmount, false);
+            } else {
+                showAmountSlider(selectedModIndex_, 0.5f, true);
+            }
+        } else {
+            // Regular click: select this param
+            if (devicePath_.isValid()) {
+                magda::SelectionManager::getInstance().selectParam(devicePath_, paramIndex_);
+            }
         }
     }
 }

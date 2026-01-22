@@ -54,6 +54,9 @@ class ModKnobComponent : public juce::Component {
     std::function<void(magda::ModTarget)> onTargetChanged;
     std::function<void(juce::String)> onNameChanged;
     std::function<void()> onClicked;  // Opens modulator editor panel
+    // Link amount callbacks (for when a param is selected)
+    std::function<void(magda::ModTarget, float)> onLinkAmountChanged;
+    std::function<void(magda::ModTarget, float)> onNewLinkCreated;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -62,6 +65,7 @@ class ModKnobComponent : public juce::Component {
 
   private:
     void showLinkMenu();
+    void showAmountSlider(float currentAmount, bool isNewLink);
     void paintLinkIndicator(juce::Graphics& g, juce::Rectangle<int> area);
     void onNameLabelEdited();
 
