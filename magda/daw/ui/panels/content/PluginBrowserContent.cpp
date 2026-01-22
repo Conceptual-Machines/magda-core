@@ -421,6 +421,7 @@ void PluginBrowserContent::showPluginContextMenu(const MockPluginInfo& plugin,
                 device.name = plugin.name;
                 device.manufacturer = plugin.manufacturer;
                 device.pluginId = plugin.name + "_" + plugin.format;
+                device.isInstrument = (plugin.category == "Instrument");
                 if (plugin.format == "VST3") {
                     device.format = magda::PluginFormat::VST3;
                 } else if (plugin.format == "AU") {

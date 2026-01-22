@@ -139,7 +139,10 @@ class TrackTreeItem : public ChainTreeItemBase {
 class DeviceTreeItem : public ChainTreeItemBase {
   public:
     DeviceTreeItem(const DeviceInfo& device, const ChainNodePath& path)
-        : ChainTreeItemBase(device.name, juce::String::fromUTF8("📦"), path) {
+        : ChainTreeItemBase(device.name,
+                            device.isInstrument ? juce::String::fromUTF8("🎹")
+                                                : juce::String::fromUTF8("🎛️"),
+                            path) {
         setSecondaryText(device.manufacturer);
     }
 
