@@ -43,7 +43,9 @@ class MainWindow : public juce::DocumentWindow {
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainWindow)
 };
 
-class MainWindow::MainComponent : public juce::Component, public ViewModeListener {
+class MainWindow::MainComponent : public juce::Component,
+                                  public juce::DragAndDropContainer,
+                                  public ViewModeListener {
   public:
     MainComponent();
     ~MainComponent() override;

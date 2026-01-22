@@ -516,7 +516,7 @@ class TrackChainContent::DeviceSlotComponent : public NodeComponent {
 //==============================================================================
 // ChainContainer - Container for track chain that paints arrows between elements
 //==============================================================================
-class TrackChainContent::ChainContainer : public juce::Component {
+class TrackChainContent::ChainContainer : public juce::Component, public juce::DragAndDropTarget {
   public:
     explicit ChainContainer(TrackChainContent& owner) : owner_(owner) {}
 
@@ -542,9 +542,11 @@ class TrackChainContent::ChainContainer : public juce::Component {
             }
         }
 
-        // Draw insertion indicator during drag
-        if (owner_.dragInsertIndex_ >= 0) {
-            int indicatorX = owner_.calculateIndicatorX(owner_.dragInsertIndex_);
+        // Draw insertion indicator during drag (reorder or drop)
+        if (owner_.dragInsertIndex_ >= 0 || owner_.dropInsertIndex_ >= 0) {
+            int indicatorIndex =
+                owner_.dragInsertIndex_ >= 0 ? owner_.dragInsertIndex_ : owner_.dropInsertIndex_;
+            int indicatorX = owner_.calculateIndicatorX(indicatorIndex);
             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
             g.fillRect(indicatorX - 2, 0, 4, getHeight());
         }
@@ -557,6 +559,69 @@ class TrackChainContent::ChainContainer : public juce::Component {
             g.drawImageAt(owner_.dragGhostImage_, ghostX, ghostY);
             g.setOpacity(1.0f);
         }
+    }
+
+    // DragAndDropTarget implementation
+    bool isInterestedInDragSource(const SourceDetails& details) override {
+        // Accept plugin drops if we have a track selected
+        if (owner_.selectedTrackId_ == magda::INVALID_TRACK_ID) {
+            return false;
+        }
+        if (auto* obj = details.description.getDynamicObject()) {
+            return obj->getProperty("type").toString() == "plugin";
+        }
+        return false;
+    }
+
+    void itemDragEnter(const SourceDetails& details) override {
+        owner_.dropInsertIndex_ = owner_.calculateInsertIndex(details.localPosition.x);
+        owner_.resized();  // Trigger relayout to add left padding
+        repaint();
+    }
+
+    void itemDragMove(const SourceDetails& details) override {
+        owner_.dropInsertIndex_ = owner_.calculateInsertIndex(details.localPosition.x);
+        repaint();
+    }
+
+    void itemDragExit(const SourceDetails&) override {
+        owner_.dropInsertIndex_ = -1;
+        owner_.resized();  // Trigger relayout to remove left padding
+        repaint();
+    }
+
+    void itemDropped(const SourceDetails& details) override {
+        if (auto* obj = details.description.getDynamicObject()) {
+            // Create DeviceInfo from dropped plugin
+            magda::DeviceInfo device;
+            device.name = obj->getProperty("name").toString().toStdString();
+            device.manufacturer = obj->getProperty("manufacturer").toString().toStdString();
+            device.pluginId = obj->getProperty("name").toString().toStdString() + "_" +
+                              obj->getProperty("format").toString().toStdString();
+            device.isInstrument = static_cast<bool>(obj->getProperty("isInstrument"));
+
+            juce::String format = obj->getProperty("format").toString();
+            if (format == "VST3") {
+                device.format = magda::PluginFormat::VST3;
+            } else if (format == "AU") {
+                device.format = magda::PluginFormat::AU;
+            } else if (format == "VST") {
+                device.format = magda::PluginFormat::VST;
+            }
+
+            // Insert at the drop position
+            int insertIndex = owner_.dropInsertIndex_ >= 0
+                                  ? owner_.dropInsertIndex_
+                                  : static_cast<int>(nodeComponents_->size());
+            magda::TrackManager::getInstance().addDeviceToTrack(owner_.selectedTrackId_, device,
+                                                                insertIndex);
+
+            DBG("Dropped plugin: " + juce::String(device.name) + " at index " +
+                juce::String(insertIndex));
+        }
+        owner_.dropInsertIndex_ = -1;
+        owner_.resized();  // Trigger relayout to remove left padding
+        repaint();
     }
 
   private:
@@ -920,9 +985,9 @@ void TrackChainContent::layoutChainContent() {
     chainContainer_->setSize(juce::jmax(totalWidth, availableWidth), chainHeight);
     chainContainer_->setNodeComponents(&nodeComponents_);
 
-    // Add left padding during drag to show insertion indicator before first node
-    bool isDragging = dragOriginalIndex_ >= 0;
-    int x = isDragging ? DRAG_LEFT_PADDING : 0;
+    // Add left padding during drag/drop to show insertion indicator before first node
+    bool isDraggingOrDropping = dragOriginalIndex_ >= 0 || dropInsertIndex_ >= 0;
+    int x = isDraggingOrDropping ? DRAG_LEFT_PADDING : 0;
 
     // Layout all node components horizontally
     for (auto& node : nodeComponents_) {
@@ -939,9 +1004,9 @@ void TrackChainContent::layoutChainContent() {
 }
 
 int TrackChainContent::calculateTotalContentWidth() const {
-    // Add left padding during drag to show insertion indicator before first node
-    bool isDragging = dragOriginalIndex_ >= 0;
-    int totalWidth = isDragging ? DRAG_LEFT_PADDING : 0;
+    // Add left padding during drag/drop to show insertion indicator before first node
+    bool isDraggingOrDropping = dragOriginalIndex_ >= 0 || dropInsertIndex_ >= 0;
+    int totalWidth = isDraggingOrDropping ? DRAG_LEFT_PADDING : 0;
 
     // Add width for all node components
     for (const auto& node : nodeComponents_) {

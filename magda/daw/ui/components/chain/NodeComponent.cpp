@@ -471,7 +471,8 @@ void NodeComponent::resized() {
     }
 
     // === CONTENT (remaining area) ===
-    auto contentArea = bounds.reduced(2, 0);
+    // Reduce by 2 horizontally, 1 vertically to keep border visible
+    auto contentArea = bounds.reduced(2, 1);
     resizedContent(contentArea);
 }
 

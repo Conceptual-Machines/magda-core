@@ -381,6 +381,27 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
     return INVALID_DEVICE_ID;
 }
 
+DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device,
+                                        int insertIndex) {
+    if (auto* track = getTrack(trackId)) {
+        DeviceInfo newDevice = device;
+        newDevice.id = nextDeviceId_++;
+
+        // Clamp insert index to valid range
+        int maxIndex = static_cast<int>(track->chainElements.size());
+        insertIndex = std::clamp(insertIndex, 0, maxIndex);
+
+        // Insert at specified position
+        track->chainElements.insert(track->chainElements.begin() + insertIndex,
+                                    makeDeviceElement(newDevice));
+        notifyTrackDevicesChanged(trackId);
+        DBG("Added device: " << newDevice.name << " (id=" << newDevice.id << ") to track "
+                             << trackId << " at index " << insertIndex);
+        return newDevice.id;
+    }
+    return INVALID_DEVICE_ID;
+}
+
 void TrackManager::removeDeviceFromTrack(TrackId trackId, DeviceId deviceId) {
     if (auto* track = getTrack(trackId)) {
         auto& elements = track->chainElements;
@@ -786,6 +807,65 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
     }
 
     DBG("addDeviceToChainByPath FAILED - rack not found via path!");
+    return INVALID_DEVICE_ID;
+}
+
+DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
+                                              const DeviceInfo& device, int insertIndex) {
+    // Similar to the non-indexed version but inserts at a specific position
+    if (chainPath.steps.empty()) {
+        DBG("addDeviceToChainByPath (indexed) FAILED - empty path!");
+        return INVALID_DEVICE_ID;
+    }
+
+    // Extract chainId from the last step (should be Chain type)
+    ChainId chainId = INVALID_CHAIN_ID;
+    if (chainPath.steps.back().type == ChainStepType::Chain) {
+        chainId = chainPath.steps.back().id;
+    } else {
+        DBG("addDeviceToChainByPath (indexed) FAILED - path doesn't end with Chain step!");
+        return INVALID_DEVICE_ID;
+    }
+
+    // Build the parent rack path (everything except the last Chain step)
+    ChainNodePath rackPath;
+    rackPath.trackId = chainPath.trackId;
+    for (size_t i = 0; i < chainPath.steps.size() - 1; ++i) {
+        rackPath.steps.push_back(chainPath.steps[i]);
+    }
+
+    // Get the parent rack
+    if (auto* rack = getRackByPath(rackPath)) {
+        // Find the chain within the rack
+        ChainInfo* chain = nullptr;
+        for (auto& c : rack->chains) {
+            if (c.id == chainId) {
+                chain = &c;
+                break;
+            }
+        }
+
+        if (!chain) {
+            DBG("addDeviceToChainByPath (indexed) FAILED - chain not found in rack!");
+            return INVALID_DEVICE_ID;
+        }
+
+        // Add the device at the specified index
+        DeviceInfo newDevice = device;
+        newDevice.id = nextDeviceId_++;
+
+        // Clamp insert index to valid range
+        int maxIndex = static_cast<int>(chain->elements.size());
+        insertIndex = std::clamp(insertIndex, 0, maxIndex);
+
+        chain->elements.insert(chain->elements.begin() + insertIndex, makeDeviceElement(newDevice));
+        notifyTrackDevicesChanged(chainPath.trackId);
+        DBG("Added device via path: " << newDevice.name << " (id=" << newDevice.id << ") to chain "
+                                      << chainId << " at index " << insertIndex);
+        return newDevice.id;
+    }
+
+    DBG("addDeviceToChainByPath (indexed) FAILED - rack not found via path!");
     return INVALID_DEVICE_ID;
 }
 

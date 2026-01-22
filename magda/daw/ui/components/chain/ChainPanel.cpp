@@ -299,7 +299,7 @@ class ChainPanel::DeviceSlotComponent : public NodeComponent {
 //==============================================================================
 // ElementSlotsContainer - Custom container that paints arrows between chain elements
 //==============================================================================
-class ChainPanel::ElementSlotsContainer : public juce::Component {
+class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::DragAndDropTarget {
   public:
     explicit ElementSlotsContainer(ChainPanel& owner) : owner_(owner) {}
 
@@ -331,9 +331,11 @@ class ChainPanel::ElementSlotsContainer : public juce::Component {
                        static_cast<float>(arrowEnd), static_cast<float>(arrowY), 1.5f);
         }
 
-        // Draw insertion indicator during drag
-        if (owner_.dragInsertIndex_ >= 0) {
-            int indicatorX = owner_.calculateIndicatorX(owner_.dragInsertIndex_);
+        // Draw insertion indicator during drag (reorder or drop)
+        if (owner_.dragInsertIndex_ >= 0 || owner_.dropInsertIndex_ >= 0) {
+            int indicatorIndex =
+                owner_.dragInsertIndex_ >= 0 ? owner_.dragInsertIndex_ : owner_.dropInsertIndex_;
+            int indicatorX = owner_.calculateIndicatorX(indicatorIndex);
             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
             g.fillRect(indicatorX - 2, 0, 4, getHeight());
         }
@@ -351,6 +353,69 @@ class ChainPanel::ElementSlotsContainer : public juce::Component {
     void mouseDown(const juce::MouseEvent& /*e*/) override {
         // Click on empty area - clear device selection
         owner_.clearDeviceSelection();
+    }
+
+    // DragAndDropTarget implementation
+    bool isInterestedInDragSource(const SourceDetails& details) override {
+        // Accept plugin drops if we have a valid chain
+        if (!owner_.hasChain_) {
+            return false;
+        }
+        if (auto* obj = details.description.getDynamicObject()) {
+            return obj->getProperty("type").toString() == "plugin";
+        }
+        return false;
+    }
+
+    void itemDragEnter(const SourceDetails& details) override {
+        owner_.dropInsertIndex_ = owner_.calculateInsertIndex(details.localPosition.x);
+        owner_.resized();  // Trigger relayout to add left padding
+        repaint();
+    }
+
+    void itemDragMove(const SourceDetails& details) override {
+        owner_.dropInsertIndex_ = owner_.calculateInsertIndex(details.localPosition.x);
+        repaint();
+    }
+
+    void itemDragExit(const SourceDetails&) override {
+        owner_.dropInsertIndex_ = -1;
+        owner_.resized();  // Trigger relayout to remove left padding
+        repaint();
+    }
+
+    void itemDropped(const SourceDetails& details) override {
+        if (auto* obj = details.description.getDynamicObject()) {
+            // Create DeviceInfo from dropped plugin
+            magda::DeviceInfo device;
+            device.name = obj->getProperty("name").toString().toStdString();
+            device.manufacturer = obj->getProperty("manufacturer").toString().toStdString();
+            device.pluginId = obj->getProperty("name").toString().toStdString() + "_" +
+                              obj->getProperty("format").toString().toStdString();
+            device.isInstrument = static_cast<bool>(obj->getProperty("isInstrument"));
+
+            juce::String format = obj->getProperty("format").toString();
+            if (format == "VST3") {
+                device.format = magda::PluginFormat::VST3;
+            } else if (format == "AU") {
+                device.format = magda::PluginFormat::AU;
+            } else if (format == "VST") {
+                device.format = magda::PluginFormat::VST;
+            }
+
+            // Insert at the drop position
+            int insertIndex = owner_.dropInsertIndex_ >= 0
+                                  ? owner_.dropInsertIndex_
+                                  : static_cast<int>(elementSlots_->size());
+            magda::TrackManager::getInstance().addDeviceToChainByPath(owner_.chainPath_, device,
+                                                                      insertIndex);
+
+            DBG("Dropped plugin: " + juce::String(device.name) + " into chain at index " +
+                juce::String(insertIndex));
+        }
+        owner_.dropInsertIndex_ = -1;
+        owner_.resized();  // Trigger relayout to remove left padding
+        repaint();
     }
 
   private:
@@ -475,9 +540,9 @@ void ChainPanel::resizedContent(juce::Rectangle<int> contentArea) {
     elementSlotsContainer_->setSize(totalWidth, containerHeight);
     elementSlotsContainer_->setElementSlots(&elementSlots_);
 
-    // Add left padding during drag to show insertion indicator before first element
-    bool isDragging = dragOriginalIndex_ >= 0;
-    int x = isDragging ? DRAG_LEFT_PADDING : 0;
+    // Add left padding during drag/drop to show insertion indicator before first element
+    bool isDraggingOrDropping = dragOriginalIndex_ >= 0 || dropInsertIndex_ >= 0;
+    int x = isDraggingOrDropping ? DRAG_LEFT_PADDING : 0;
 
     // Layout element slots inside the container
     for (auto& slot : elementSlots_) {
@@ -491,9 +556,9 @@ void ChainPanel::resizedContent(juce::Rectangle<int> contentArea) {
 }
 
 int ChainPanel::calculateTotalContentWidth() const {
-    // Add left padding during drag to show insertion indicator before first element
-    bool isDragging = dragOriginalIndex_ >= 0;
-    int totalWidth = isDragging ? DRAG_LEFT_PADDING : 0;
+    // Add left padding during drag/drop to show insertion indicator before first element
+    bool isDraggingOrDropping = dragOriginalIndex_ >= 0 || dropInsertIndex_ >= 0;
+    int totalWidth = isDraggingOrDropping ? DRAG_LEFT_PADDING : 0;
 
     for (const auto& slot : elementSlots_) {
         totalWidth += slot->getPreferredWidth() + ARROW_WIDTH;

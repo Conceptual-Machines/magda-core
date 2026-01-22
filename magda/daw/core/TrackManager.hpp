@@ -117,6 +117,7 @@ class TrackManager {
 
     // Device management on track
     DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device);
+    DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device, int insertIndex);
     void removeDeviceFromTrack(TrackId trackId, DeviceId deviceId);
     void setDeviceBypassed(TrackId trackId, DeviceId deviceId, bool bypassed);
     DeviceInfo* getDevice(TrackId trackId, DeviceId deviceId);
@@ -150,6 +151,8 @@ class TrackManager {
     DeviceId addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,
                               const DeviceInfo& device);
     DeviceId addDeviceToChainByPath(const ChainNodePath& chainPath, const DeviceInfo& device);
+    DeviceId addDeviceToChainByPath(const ChainNodePath& chainPath, const DeviceInfo& device,
+                                    int insertIndex);
     void removeDeviceFromChain(TrackId trackId, RackId rackId, ChainId chainId, DeviceId deviceId);
     void removeDeviceFromChainByPath(const ChainNodePath& devicePath);
     void moveDeviceInChain(TrackId trackId, RackId rackId, ChainId chainId, DeviceId deviceId,

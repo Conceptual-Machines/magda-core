@@ -81,6 +81,24 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
         return plugin_.name + "_" + plugin_.format;
     }
 
+    // Enable drag-and-drop from plugin browser
+    juce::var getDragSourceDescription() override {
+        // Encode plugin info as a DynamicObject for drop targets
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty("type", "plugin");
+        obj->setProperty("name", plugin_.name);
+        obj->setProperty("manufacturer", plugin_.manufacturer);
+        obj->setProperty("category", plugin_.category);
+        obj->setProperty("format", plugin_.format);
+        obj->setProperty("subcategory", plugin_.subcategory);
+        obj->setProperty("isInstrument", plugin_.category == "Instrument");
+        return juce::var(obj);
+    }
+
+    bool isInterestedInDragSource(const juce::DragAndDropTarget::SourceDetails&) override {
+        return false;  // Plugin items don't accept drops
+    }
+
   private:
     MockPluginInfo plugin_;
     PluginBrowserContent& owner_;

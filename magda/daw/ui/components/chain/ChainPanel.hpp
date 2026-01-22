@@ -116,6 +116,9 @@ class ChainPanel : public NodeComponent {
     juce::Image dragGhostImage_;
     juce::Point<int> dragMousePos_;
 
+    // External drop state (plugin drops from browser)
+    int dropInsertIndex_ = -1;
+
     // Helper methods for drag-to-reorder
     int findElementIndex(NodeComponent* element) const;
     int calculateInsertIndex(int mouseX) const;
