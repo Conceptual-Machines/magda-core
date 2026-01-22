@@ -16,6 +16,8 @@ MacroKnobComponent::MacroKnobComponent(int macroIndex) : macroIndex_(macroIndex)
     nameLabel_.setJustificationType(juce::Justification::centred);
     nameLabel_.setEditable(false, true, false);  // Single-click doesn't edit, double-click does
     nameLabel_.onTextChange = [this]() { onNameLabelEdited(); };
+    // Pass single clicks through to parent for selection (double-click still edits)
+    nameLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(nameLabel_);
 
     // Value slider
