@@ -91,7 +91,12 @@ class MacroKnobComponent : public juce::Component, public magda::LinkModeManager
     // Drag state
     juce::Point<int> dragStartPos_;
     bool isDragging_ = false;
+    bool isKnobDragging_ = false;  // True when dragging the knob to change value
+    float dragStartValue_ = 0.0f;  // Value when knob drag started
     static constexpr int DRAG_THRESHOLD = 5;
+
+    // Helper to get knob bounds for hit testing
+    juce::Rectangle<int> getKnobBounds() const;
 
     static constexpr int KNOB_SIZE = 28;
     static constexpr int NAME_LABEL_HEIGHT = 11;

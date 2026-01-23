@@ -168,11 +168,24 @@ void MacroKnobComponent::resized() {
     linkButton_->setBounds(bounds.removeFromTop(LINK_BUTTON_HEIGHT));
 }
 
+juce::Rectangle<int> MacroKnobComponent::getKnobBounds() const {
+    auto bounds = getLocalBounds().reduced(1);
+    bounds.removeFromTop(NAME_LABEL_HEIGHT);  // Skip name label
+    return bounds.removeFromTop(KNOB_SIZE);
+}
+
 void MacroKnobComponent::mouseDown(const juce::MouseEvent& e) {
     if (!e.mods.isPopupMenu()) {
-        // Track drag start position
         dragStartPos_ = e.getPosition();
         isDragging_ = false;
+
+        // Check if click is in knob area
+        if (getKnobBounds().contains(e.getPosition())) {
+            isKnobDragging_ = true;
+            dragStartValue_ = currentMacro_.value;
+        } else {
+            isKnobDragging_ = false;
+        }
     }
 }
 
@@ -180,7 +193,25 @@ void MacroKnobComponent::mouseDrag(const juce::MouseEvent& e) {
     if (e.mods.isPopupMenu())
         return;
 
-    // Check if we've moved enough to start a drag
+    if (isKnobDragging_) {
+        // Knob dragging - change value based on vertical movement
+        // Drag up = increase, drag down = decrease
+        float deltaY = static_cast<float>(dragStartPos_.y - e.getPosition().y);
+        float sensitivity = 0.005f;  // Adjust for feel
+        float newValue = juce::jlimit(0.0f, 1.0f, dragStartValue_ + deltaY * sensitivity);
+
+        if (newValue != currentMacro_.value) {
+            currentMacro_.value = newValue;
+            valueSlider_.setValue(newValue, juce::dontSendNotification);
+            repaint();
+            if (onValueChanged) {
+                onValueChanged(newValue);
+            }
+        }
+        return;
+    }
+
+    // Check if we've moved enough to start a link drag
     if (!isDragging_) {
         auto distance = e.getPosition().getDistanceFrom(dragStartPos_);
         if (distance > DRAG_THRESHOLD) {
@@ -207,13 +238,14 @@ void MacroKnobComponent::mouseUp(const juce::MouseEvent& e) {
     if (e.mods.isPopupMenu()) {
         // Right-click shows link menu
         showLinkMenu();
-    } else if (!isDragging_) {
+    } else if (!isDragging_ && !isKnobDragging_) {
         // Left-click (no drag) - select this macro
         if (onClicked) {
             onClicked();
         }
     }
     isDragging_ = false;
+    isKnobDragging_ = false;
 }
 
 void MacroKnobComponent::macroLinkModeChanged(bool active, const magda::MacroSelection& selection) {
