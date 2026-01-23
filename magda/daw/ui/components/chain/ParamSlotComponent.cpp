@@ -772,17 +772,11 @@ void ParamSlotComponent::paintModulationIndicators(juce::Graphics& g) {
         float totalMacroModulation = 0.0f;
         magda::MacroTarget thisTarget{deviceId_, paramIndex_};
 
-        DBG("paintModulationIndicators param=" << paramIndex_ << " deviceId=" << deviceId_);
-        DBG("  availableMacros_=" << (availableMacros_ ? "yes" : "null") << " availableRackMacros_="
-                                  << (availableRackMacros_ ? "yes" : "null"));
-
         // Check device-level macros
         if (availableMacros_ && deviceId_ != magda::INVALID_DEVICE_ID) {
             for (size_t i = 0; i < availableMacros_->size(); ++i) {
                 const auto& macro = (*availableMacros_)[i];
                 if (const auto* link = macro.getLink(thisTarget)) {
-                    DBG("  Device macro " << i << ": value=" << macro.value
-                                          << " amount=" << link->amount);
                     totalMacroModulation += macro.value * link->amount;
                 }
             }
@@ -793,14 +787,10 @@ void ParamSlotComponent::paintModulationIndicators(juce::Graphics& g) {
             for (size_t i = 0; i < availableRackMacros_->size(); ++i) {
                 const auto& macro = (*availableRackMacros_)[i];
                 if (const auto* link = macro.getLink(thisTarget)) {
-                    DBG("  Rack macro " << i << ": value=" << macro.value
-                                        << " amount=" << link->amount);
                     totalMacroModulation += macro.value * link->amount;
                 }
             }
         }
-
-        DBG("  totalMacroModulation=" << totalMacroModulation);
 
         // Draw MACRO movement line (purple) at TOP if any macro modulation exists
         if (totalMacroModulation > 0.0f) {
