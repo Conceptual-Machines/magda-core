@@ -35,7 +35,8 @@ ModKnobComponent::ModKnobComponent(int modIndex) : modIndex_(modIndex) {
     amountSlider_.setVisible(false);  // Hide - amount is per-parameter, not global
     addChildComponent(amountSlider_);
 
-    // Waveform display
+    // Waveform display (don't intercept mouse clicks - pass through to parent)
+    waveformDisplay_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(waveformDisplay_);
 
     // Link button - toggles link mode for this mod (using link_flat icon)
