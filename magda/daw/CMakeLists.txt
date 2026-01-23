@@ -97,6 +97,7 @@ set(DAW_CORE_SOURCES
     core/ClipCommands.cpp
     core/TrackCommands.cpp
     core/MidiNoteCommands.cpp
+    core/ParameterUtils.cpp
     engine/TracktionEngineWrapper.cpp
     # UI components needed by tests
     ui/components/timeline/TimelineComponent.cpp
@@ -322,6 +323,9 @@ set(DAW_HEADERS
     # Core - Macro and Mod
     core/MacroInfo.hpp
     core/ModInfo.hpp
+    # Core - Parameter
+    core/ParameterInfo.hpp
+    core/ParameterUtils.hpp
 )
 
 # Create DAW library (core functionality)
