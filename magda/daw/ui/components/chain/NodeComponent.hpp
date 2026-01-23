@@ -246,6 +246,7 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     virtual void onMacroLinkRemovedInternal(int /*macroIndex*/, magda::MacroTarget /*target*/) {}
     virtual void onModClickedInternal(int /*modIndex*/) {}
     virtual void onMacroClickedInternal(int /*macroIndex*/) {}
+    virtual void onAddModRequestedInternal(int /*slotIndex*/, magda::ModType /*type*/) {}
 
     // Virtual callbacks for page management (subclasses implement to persist)
     virtual void onModPageAddRequested(int /*itemsToAdd*/) {}

@@ -907,6 +907,9 @@ void NodeComponent::initializeModsMacrosPanels() {
             showModulatorEditor(modIndex);
         }
     };
+    modsPanel_->onAddModRequested = [this](int slotIndex, magda::ModType type) {
+        onAddModRequestedInternal(slotIndex, type);
+    };
     modsPanel_->onAddPageRequested = [this](int itemsToAdd) { onModPageAddRequested(itemsToAdd); };
     modsPanel_->onRemovePageRequested = [this](int itemsToRemove) {
         onModPageRemoveRequested(itemsToRemove);

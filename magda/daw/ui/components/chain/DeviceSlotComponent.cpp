@@ -632,6 +632,11 @@ void DeviceSlotComponent::onModLinkRemovedInternal(int modIndex, magda::ModTarge
     updateParamModulation();
 }
 
+void DeviceSlotComponent::onAddModRequestedInternal(int slotIndex, magda::ModType type) {
+    magda::TrackManager::getInstance().addDeviceMod(nodePath_, slotIndex, type);
+    updateModsPanel();
+}
+
 void DeviceSlotComponent::onModPageAddRequested(int /*itemsToAdd*/) {
     magda::TrackManager::getInstance().addDeviceModPage(nodePath_);
 }

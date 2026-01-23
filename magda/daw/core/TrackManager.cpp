@@ -1433,6 +1433,25 @@ void TrackManager::setRackModRate(const ChainNodePath& rackPath, int modIndex, f
     }
 }
 
+void TrackManager::addRackMod(const ChainNodePath& rackPath, int slotIndex, ModType type) {
+    if (auto* rack = getRackByPath(rackPath)) {
+        // Add a single mod at the specified slot index
+        if (slotIndex >= 0 && slotIndex <= static_cast<int>(rack->mods.size())) {
+            ModInfo newMod(slotIndex);
+            newMod.type = type;
+            newMod.name = ModInfo::getDefaultName(slotIndex, type);
+            rack->mods.insert(rack->mods.begin() + slotIndex, newMod);
+
+            // Update IDs for mods after the inserted one
+            for (int i = slotIndex + 1; i < static_cast<int>(rack->mods.size()); ++i) {
+                rack->mods[i].id = i;
+            }
+
+            notifyTrackDevicesChanged(rackPath.trackId);
+        }
+    }
+}
+
 void TrackManager::addRackModPage(const ChainNodePath& rackPath) {
     if (auto* rack = getRackByPath(rackPath)) {
         addModPage(rack->mods);
@@ -1560,6 +1579,25 @@ void TrackManager::setDeviceModWaveform(const ChainNodePath& devicePath, int mod
         }
         device->mods[modIndex].waveform = waveform;
         // Don't notify - simple value change doesn't need UI rebuild
+    }
+}
+
+void TrackManager::addDeviceMod(const ChainNodePath& devicePath, int slotIndex, ModType type) {
+    if (auto* device = getDeviceInChainByPath(devicePath)) {
+        // Add a single mod at the specified slot index
+        if (slotIndex >= 0 && slotIndex <= static_cast<int>(device->mods.size())) {
+            ModInfo newMod(slotIndex);
+            newMod.type = type;
+            newMod.name = ModInfo::getDefaultName(slotIndex, type);
+            device->mods.insert(device->mods.begin() + slotIndex, newMod);
+
+            // Update IDs for mods after the inserted one
+            for (int i = slotIndex + 1; i < static_cast<int>(device->mods.size()); ++i) {
+                device->mods[i].id = i;
+            }
+
+            notifyTrackDevicesChanged(devicePath.trackId);
+        }
     }
 }
 

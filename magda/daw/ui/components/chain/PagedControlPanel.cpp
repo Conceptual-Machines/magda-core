@@ -173,6 +173,20 @@ void PagedControlPanel::paint(juce::Graphics& g) {
     // Background
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
     g.fillRect(getLocalBounds());
+
+    // Show empty state message if no items
+    if (getTotalItemCount() == 0 && canAddPage_) {
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setFont(FontManager::getInstance().getUIFont(10.0f));
+        auto bounds = getLocalBounds().reduced(4);
+        // Skip nav area if it exists
+        int totalPages = getTotalPages();
+        bool showNav = totalPages > 1 || canAddPage_ || canRemovePage_;
+        if (showNav) {
+            bounds.removeFromTop(NAV_HEIGHT);
+        }
+        g.drawText("Click + to add", bounds, juce::Justification::centred);
+    }
 }
 
 void PagedControlPanel::resized() {

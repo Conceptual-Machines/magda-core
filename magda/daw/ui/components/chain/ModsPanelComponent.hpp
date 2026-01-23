@@ -14,6 +14,21 @@
 namespace magda::daw::ui {
 
 /**
+ * @brief Empty slot button for adding new mods
+ */
+class AddModButton : public juce::Component {
+  public:
+    AddModButton();
+
+    std::function<void()> onClick;
+
+    void paint(juce::Graphics& g) override;
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseEnter(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent& e) override;
+};
+
+/**
  * @brief Paginated panel for modulator cells
  *
  * Shows 8 mods per page in a 2x4 grid with page navigation.
@@ -53,6 +68,7 @@ class ModsPanelComponent : public PagedControlPanel {
     std::function<void(int modIndex, magda::ModTarget target)> onModTargetChanged;
     std::function<void(int modIndex, juce::String name)> onModNameChanged;
     std::function<void(int modIndex)> onModClicked;  // Opens modulator editor
+    std::function<void(int slotIndex, magda::ModType type)> onAddModRequested;  // Add mod in slot
 
   protected:
     // PagedControlPanel overrides
@@ -64,10 +80,13 @@ class ModsPanelComponent : public PagedControlPanel {
 
   private:
     std::vector<std::unique_ptr<ModKnobComponent>> knobs_;
+    std::vector<std::unique_ptr<AddModButton>> addButtons_;
     std::vector<std::pair<magda::DeviceId, juce::String>> availableDevices_;
     magda::ChainNodePath parentPath_;
+    int currentModCount_ = 0;  // Track how many actual mods exist
 
     void ensureKnobCount(int count);
+    void ensureSlotCount(int count);  // Ensure we have knobs + add buttons for all slots
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ModsPanelComponent)
 };

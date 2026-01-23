@@ -90,6 +90,7 @@ class DeviceSlotComponent : public NodeComponent {
     void onMacroLinkRemovedInternal(int macroIndex, magda::MacroTarget target) override;
     void onModClickedInternal(int modIndex) override;
     void onMacroClickedInternal(int macroIndex) override;
+    void onAddModRequestedInternal(int slotIndex, magda::ModType type) override;
     void onModPageAddRequested(int itemsToAdd) override;
     void onModPageRemoveRequested(int itemsToRemove) override;
     void onMacroPageAddRequested(int itemsToAdd) override;
