@@ -19,6 +19,11 @@ constexpr int NUM_MODS = MODS_PER_PAGE * DEFAULT_MOD_PAGES;
 enum class ModType { LFO, Envelope, Random, Follower };
 
 /**
+ * @brief LFO waveform shapes
+ */
+enum class LFOWaveform { Sine, Triangle, Square, Saw, ReverseSaw };
+
+/**
  * @brief Target for a mod link (which device parameter it modulates)
  */
 struct ModTarget {
@@ -61,8 +66,11 @@ struct ModInfo {
     ModId id = INVALID_MOD_ID;
     juce::String name;  // e.g., "LFO 1" or user-defined
     ModType type = ModType::LFO;
-    float rate = 1.0f;           // Rate/speed of modulation
-    std::vector<ModLink> links;  // All parameter links for this mod
+    float rate = 1.0f;                         // Rate/speed of modulation (Hz)
+    LFOWaveform waveform = LFOWaveform::Sine;  // LFO waveform shape
+    float phase = 0.0f;                        // 0.0 to 1.0, current position in cycle
+    float value = 0.5f;                        // 0.0 to 1.0, current LFO output
+    std::vector<ModLink> links;                // All parameter links for this mod
 
     // Legacy single target/amount for backward compatibility
     // TODO: Remove after migration
