@@ -122,6 +122,11 @@ void ModKnobComponent::resized() {
 }
 
 void ModKnobComponent::mouseDown(const juce::MouseEvent& e) {
+    // Check if click is on link button - if so, ignore and let button handle it
+    if (linkButton_ && linkButton_->getBounds().contains(e.getPosition())) {
+        return;
+    }
+
     if (!e.mods.isPopupMenu()) {
         // Track drag start position
         dragStartPos_ = e.getPosition();
@@ -132,6 +137,11 @@ void ModKnobComponent::mouseDown(const juce::MouseEvent& e) {
 void ModKnobComponent::mouseDrag(const juce::MouseEvent& e) {
     if (e.mods.isPopupMenu())
         return;
+
+    // If click started on link button, ignore drag
+    if (linkButton_ && linkButton_->getBounds().contains(dragStartPos_)) {
+        return;
+    }
 
     // Check if we've moved enough to start a drag
     if (!isDragging_) {
@@ -162,6 +172,13 @@ void ModKnobComponent::mouseUp(const juce::MouseEvent& e) {
         // Right-click shows link menu
         showLinkMenu();
     } else if (!isDragging_) {
+        // Check if click is on link button - if so, let the button handle it
+        if (linkButton_ && linkButton_->getBounds().contains(e.getPosition())) {
+            // Link button will handle this click
+            isDragging_ = false;
+            return;
+        }
+
         // Left-click (no drag) - select this mod
         if (onClicked) {
             onClicked();
