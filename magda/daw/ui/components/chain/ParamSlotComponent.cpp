@@ -425,20 +425,17 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
             float initialAmount = 0.5f;
             bool isLinked = false;
 
-            // Check both device-level and rack-level mods
+            // Use parentPath to determine if device-level or rack-level mod
             const magda::ModInfo* modPtr = nullptr;
             if (activeMod_.modIndex >= 0) {
-                if (availableMods_ &&
+                if (activeMod_.parentPath == devicePath_ && availableMods_ &&
                     activeMod_.modIndex < static_cast<int>(availableMods_->size())) {
+                    // Device-level mod
                     modPtr = &(*availableMods_)[static_cast<size_t>(activeMod_.modIndex)];
-                    DBG("mouseDown: Found DEVICE mod at index " << activeMod_.modIndex);
                 } else if (availableRackMods_ &&
                            activeMod_.modIndex < static_cast<int>(availableRackMods_->size())) {
+                    // Rack-level mod
                     modPtr = &(*availableRackMods_)[static_cast<size_t>(activeMod_.modIndex)];
-                    DBG("mouseDown: Found RACK mod at index " << activeMod_.modIndex);
-                } else {
-                    DBG("mouseDown: activeMod_.isValid but mod not found! modIndex="
-                        << activeMod_.modIndex);
                 }
             }
 
@@ -837,44 +834,7 @@ void ParamSlotComponent::paintModulationIndicators(juce::Graphics& g) {
         }
     }
 
-    // MOVEMENT LINES: Always draw movement lines (current modulation output)
-    // These show underneath the amount lines in link mode
-
-    // Calculate TOTAL macro modulation output (sum of all linked macros)
-    float totalMacroModulation = 0.0f;
-    magda::MacroTarget macroTargetForMovement{deviceId_, paramIndex_};
-
-    // Check device-level macros
-    if (availableMacros_ && deviceId_ != magda::INVALID_DEVICE_ID) {
-        for (size_t i = 0; i < availableMacros_->size(); ++i) {
-            const auto& macro = (*availableMacros_)[i];
-            if (const auto* link = macro.getLink(macroTargetForMovement)) {
-                totalMacroModulation += macro.value * link->amount;
-            }
-        }
-    }
-
-    // Check rack-level macros
-    if (availableRackMacros_ && deviceId_ != magda::INVALID_DEVICE_ID) {
-        for (size_t i = 0; i < availableRackMacros_->size(); ++i) {
-            const auto& macro = (*availableRackMacros_)[i];
-            if (const auto* link = macro.getLink(macroTargetForMovement)) {
-                totalMacroModulation += macro.value * link->amount;
-            }
-        }
-    }
-
-    // Draw MACRO movement line (purple) at TOP if any macro modulation exists
-    if (totalMacroModulation > 0.0f) {
-        int y = sliderBounds.getY() + 2;
-        int barWidth = juce::jmax(1, static_cast<int>(maxWidth * totalMacroModulation));
-        // Slightly dimmer purple for movement display
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.6f));
-        g.fillRoundedRectangle(static_cast<float>(leftX), static_cast<float>(y),
-                               static_cast<float>(barWidth), static_cast<float>(movementBarHeight),
-                               1.0f);
-    }
-
+    // MOD MOVEMENT LINE: Shows current LFO output (animated)
     // Calculate TOTAL mod modulation output (sum of all linked mods)
     float totalModModulation = 0.0f;
     magda::ModTarget modTarget{deviceId_, paramIndex_};
