@@ -656,9 +656,19 @@ TrackChainContent::TrackChainContent()
     };
     addChildComponent(*chainBypassButton_);
 
+    // Link mode indicator label (centered, big text)
+    linkModeLabel_.setText("LINK MODE", juce::dontSendNotification);
+    linkModeLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
+    linkModeLabel_.setColour(juce::Label::textColourId,
+                             DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    linkModeLabel_.setJustificationType(juce::Justification::centred);
+    linkModeLabel_.setVisible(false);
+    addChildComponent(linkModeLabel_);
+
     // Register as listeners
     magda::TrackManager::getInstance().addListener(this);
     magda::SelectionManager::getInstance().addListener(this);
+    magda::LinkModeManager::getInstance().addListener(this);
 
     // Check if there's already a selected track
     selectedTrackId_ = magda::TrackManager::getInstance().getSelectedTrack();
@@ -669,6 +679,7 @@ TrackChainContent::~TrackChainContent() {
     stopTimer();
     magda::TrackManager::getInstance().removeListener(this);
     magda::SelectionManager::getInstance().removeListener(this);
+    magda::LinkModeManager::getInstance().removeListener(this);
 }
 
 void TrackChainContent::paint(juce::Graphics& g) {
@@ -804,6 +815,12 @@ void TrackChainContent::resized() {
         headerArea.removeFromRight(8);
         trackNameLabel_.setBounds(headerArea);  // Name takes remaining space
 
+        // Link mode label - centered in header, overlays track name when visible
+        if (linkModeLabel_.isVisible()) {
+            auto linkLabelBounds = getLocalBounds().removeFromTop(HEADER_HEIGHT);
+            linkModeLabel_.setBounds(linkLabelBounds);
+        }
+
         showHeader(true);
 
         // === MODS PANEL (left side, if visible) ===
@@ -918,6 +935,25 @@ void TrackChainContent::selectionTypeChanged(magda::SelectionType /*newType*/) {
     // Repaint header when selection type changes (Track vs ChainNode)
     // to update the header background color
     repaint();
+}
+
+void TrackChainContent::modLinkModeChanged(bool active, const magda::ModSelection& /*selection*/) {
+    linkModeLabel_.setVisible(active);
+    if (active) {
+        linkModeLabel_.setColour(juce::Label::textColourId,
+                                 DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    }
+    resized();
+}
+
+void TrackChainContent::macroLinkModeChanged(bool active,
+                                             const magda::MacroSelection& /*selection*/) {
+    linkModeLabel_.setVisible(active);
+    if (active) {
+        linkModeLabel_.setColour(juce::Label::textColourId,
+                                 DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    }
+    resized();
 }
 
 void TrackChainContent::updateFromSelectedTrack() {

@@ -834,6 +834,51 @@ void ParamSlotComponent::paintModulationIndicators(juce::Graphics& g) {
         }
     }
 
+    // MACRO MOVEMENT LINE: Shows current macro modulation (only when NOT in link mode)
+    // In link mode, the amount line already shows what we need
+    if (!activeMacro_.isValid()) {
+        float totalMacroModulation = 0.0f;
+        magda::MacroTarget macroTarget{deviceId_, paramIndex_};
+
+        // Check device-level macros
+        if (availableMacros_ && deviceId_ != magda::INVALID_DEVICE_ID) {
+            for (size_t i = 0; i < availableMacros_->size(); ++i) {
+                const auto& macro = (*availableMacros_)[i];
+                if (const auto* link = macro.getLink(macroTarget)) {
+                    totalMacroModulation += macro.value * link->amount;
+                }
+            }
+        }
+
+        // Check rack-level macros
+        if (availableRackMacros_ && deviceId_ != magda::INVALID_DEVICE_ID) {
+            for (size_t i = 0; i < availableRackMacros_->size(); ++i) {
+                const auto& macro = (*availableRackMacros_)[i];
+                if (const auto* link = macro.getLink(macroTarget)) {
+                    totalMacroModulation += macro.value * link->amount;
+                }
+            }
+        }
+
+        // Draw MACRO movement line (purple) at TOP if any macro modulation exists
+        if (totalMacroModulation > 0.0f) {
+            int y = sliderBounds.getY() + 2;
+
+            // Get current parameter value (0.0 to 1.0)
+            float currentParamValue = static_cast<float>(valueSlider_.getValue());
+
+            // Bar starts from current param value and extends by modulation amount
+            int startX = leftX + static_cast<int>(maxWidth * currentParamValue);
+            int barWidth = juce::jmax(1, static_cast<int>(maxWidth * totalMacroModulation));
+
+            // Slightly dimmer purple for movement display
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.6f));
+            g.fillRoundedRectangle(static_cast<float>(startX), static_cast<float>(y),
+                                   static_cast<float>(barWidth),
+                                   static_cast<float>(movementBarHeight), 1.0f);
+        }
+    }
+
     // MOD MOVEMENT LINE: Shows current LFO output (animated)
     // Calculate TOTAL mod modulation output (sum of all linked mods)
     float totalModModulation = 0.0f;
@@ -1202,12 +1247,12 @@ bool ParamSlotComponent::hasActiveModLinks() const {
         return false;
     }
 
-    magda::ModTarget thisTarget{deviceId_, paramIndex_};
+    magda::ModTarget modTarget{deviceId_, paramIndex_};
 
     // Check device-level mods
     if (availableMods_) {
         for (const auto& mod : *availableMods_) {
-            if (mod.getLink(thisTarget) != nullptr) {
+            if (mod.getLink(modTarget) != nullptr) {
                 return true;  // Found at least one mod link
             }
         }
@@ -1216,8 +1261,27 @@ bool ParamSlotComponent::hasActiveModLinks() const {
     // Check rack-level mods
     if (availableRackMods_) {
         for (const auto& mod : *availableRackMods_) {
-            if (mod.getLink(thisTarget) != nullptr) {
+            if (mod.getLink(modTarget) != nullptr) {
                 return true;  // Found at least one rack mod link
+            }
+        }
+    }
+
+    // Check device-level macros
+    magda::MacroTarget macroTarget{deviceId_, paramIndex_};
+    if (availableMacros_) {
+        for (const auto& macro : *availableMacros_) {
+            if (macro.getLink(macroTarget) != nullptr) {
+                return true;  // Found at least one macro link
+            }
+        }
+    }
+
+    // Check rack-level macros
+    if (availableRackMacros_) {
+        for (const auto& macro : *availableRackMacros_) {
+            if (macro.getLink(macroTarget) != nullptr) {
+                return true;  // Found at least one rack macro link
             }
         }
     }
@@ -1227,12 +1291,12 @@ bool ParamSlotComponent::hasActiveModLinks() const {
 
 void ParamSlotComponent::updateModTimerState() {
     if (hasActiveModLinks()) {
-        // Start timer at 30 FPS to animate LFO bars (60 FPS would be overkill for UI)
+        // Start timer at 30 FPS to animate modulation bars
         if (!isTimerRunning()) {
             startTimer(33);  // ~30 FPS
         }
     } else {
-        // No active mod links, stop the timer to save CPU
+        // No active links, stop the timer to save CPU
         stopTimer();
     }
 }

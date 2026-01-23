@@ -2,6 +2,7 @@
 
 #include <map>
 
+#include "../../../core/LinkModeManager.hpp"
 #include "../../themes/MixerLookAndFeel.hpp"
 #include "PanelContent.hpp"
 #include "core/DeviceInfo.hpp"
@@ -25,6 +26,7 @@ class DeviceSlotComponent;
 class TrackChainContent : public PanelContent,
                           public magda::TrackManagerListener,
                           public magda::SelectionManagerListener,
+                          public magda::LinkModeManagerListener,
                           private juce::Timer {
   public:
     TrackChainContent();
@@ -57,6 +59,10 @@ class TrackChainContent : public PanelContent,
     // SelectionManagerListener
     void selectionTypeChanged(magda::SelectionType newType) override;
 
+    // LinkModeManagerListener
+    void modLinkModeChanged(bool active, const magda::ModSelection& selection) override;
+    void macroLinkModeChanged(bool active, const magda::MacroSelection& selection) override;
+
     // Selection state for plugin browser context menu
     bool hasSelectedTrack() const;
     bool hasSelectedChain() const;
@@ -76,6 +82,7 @@ class TrackChainContent : public PanelContent,
 
   private:
     juce::Label noSelectionLabel_;
+    juce::Label linkModeLabel_;  // Shows "LINK MODE" when mod/macro linking is active
 
     // Header bar controls - LEFT side (action buttons)
     std::unique_ptr<magda::SvgButton> globalModsButton_;  // Toggle global modulators panel
