@@ -69,6 +69,8 @@ class ModsPanelComponent : public PagedControlPanel {
     std::function<void(int modIndex, juce::String name)> onModNameChanged;
     std::function<void(int modIndex)> onModClicked;  // Opens modulator editor
     std::function<void(int slotIndex, magda::ModType type)> onAddModRequested;  // Add mod in slot
+    std::function<void(int modIndex)> onModRemoveRequested;                     // Remove mod
+    std::function<void(int modIndex, bool enabled)> onModEnableToggled;  // Enable/disable mod
 
     void paint(juce::Graphics& g) override;
 

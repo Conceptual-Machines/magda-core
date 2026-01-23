@@ -1452,6 +1452,31 @@ void TrackManager::addRackMod(const ChainNodePath& rackPath, int slotIndex, ModT
     }
 }
 
+void TrackManager::removeRackMod(const ChainNodePath& rackPath, int modIndex) {
+    if (auto* rack = getRackByPath(rackPath)) {
+        if (modIndex >= 0 && modIndex < static_cast<int>(rack->mods.size())) {
+            rack->mods.erase(rack->mods.begin() + modIndex);
+
+            // Update IDs for remaining mods
+            for (int i = modIndex; i < static_cast<int>(rack->mods.size()); ++i) {
+                rack->mods[i].id = i;
+                rack->mods[i].name = ModInfo::getDefaultName(i, rack->mods[i].type);
+            }
+
+            notifyTrackDevicesChanged(rackPath.trackId);
+        }
+    }
+}
+
+void TrackManager::setRackModEnabled(const ChainNodePath& rackPath, int modIndex, bool enabled) {
+    if (auto* rack = getRackByPath(rackPath)) {
+        if (modIndex >= 0 && modIndex < static_cast<int>(rack->mods.size())) {
+            rack->mods[modIndex].enabled = enabled;
+            notifyTrackDevicesChanged(rackPath.trackId);
+        }
+    }
+}
+
 void TrackManager::addRackModPage(const ChainNodePath& rackPath) {
     if (auto* rack = getRackByPath(rackPath)) {
         addModPage(rack->mods);
@@ -1601,6 +1626,32 @@ void TrackManager::addDeviceMod(const ChainNodePath& devicePath, int slotIndex, 
     }
 }
 
+void TrackManager::removeDeviceMod(const ChainNodePath& devicePath, int modIndex) {
+    if (auto* device = getDeviceInChainByPath(devicePath)) {
+        if (modIndex >= 0 && modIndex < static_cast<int>(device->mods.size())) {
+            device->mods.erase(device->mods.begin() + modIndex);
+
+            // Update IDs for remaining mods
+            for (int i = modIndex; i < static_cast<int>(device->mods.size()); ++i) {
+                device->mods[i].id = i;
+                device->mods[i].name = ModInfo::getDefaultName(i, device->mods[i].type);
+            }
+
+            notifyTrackDevicesChanged(devicePath.trackId);
+        }
+    }
+}
+
+void TrackManager::setDeviceModEnabled(const ChainNodePath& devicePath, int modIndex,
+                                       bool enabled) {
+    if (auto* device = getDeviceInChainByPath(devicePath)) {
+        if (modIndex >= 0 && modIndex < static_cast<int>(device->mods.size())) {
+            device->mods[modIndex].enabled = enabled;
+            notifyTrackDevicesChanged(devicePath.trackId);
+        }
+    }
+}
+
 void TrackManager::addDeviceModPage(const ChainNodePath& devicePath) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
         addModPage(device->mods);
@@ -1619,6 +1670,12 @@ void TrackManager::removeDeviceModPage(const ChainNodePath& devicePath) {
 void TrackManager::updateAllMods(double deltaTime) {
     // Lambda to update a single mod's phase and value
     auto updateMod = [deltaTime](ModInfo& mod) {
+        // Skip disabled mods - set value to 0 so they don't affect modulation
+        if (!mod.enabled) {
+            mod.value = 0.0f;
+            return;
+        }
+
         if (mod.type == ModType::LFO) {
             // Update phase (wraps at 1.0)
             mod.phase += static_cast<float>(mod.rate * deltaTime);

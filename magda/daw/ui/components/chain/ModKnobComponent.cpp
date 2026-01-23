@@ -52,6 +52,9 @@ ModKnobComponent::ModKnobComponent(int modIndex) : modIndex_(modIndex) {
 
     // Register for link mode notifications
     magda::LinkModeManager::getInstance().addListener(this);
+
+    // Enable keyboard focus for Delete key shortcut
+    setWantsKeyboardFocus(true);
 }
 
 ModKnobComponent::~ModKnobComponent() {
@@ -119,6 +122,12 @@ void ModKnobComponent::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
         g.fillEllipse(centerX - dotSize * 0.5f, dotY, dotSize, dotSize);
     }
+
+    // Draw disabled overlay when mod is disabled
+    if (!currentMod_.enabled) {
+        g.setColour(juce::Colours::black.withAlpha(0.5f));
+        g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
+    }
 }
 
 void ModKnobComponent::resized() {
@@ -175,15 +184,27 @@ void ModKnobComponent::mouseDrag(const juce::MouseEvent& e) {
 
 void ModKnobComponent::mouseUp(const juce::MouseEvent& e) {
     if (e.mods.isPopupMenu()) {
-        // Right-click shows link menu
-        showLinkMenu();
+        // Right-click shows context menu
+        showContextMenu();
     } else if (!isDragging_) {
-        // Left-click (no drag) - select this mod
+        // Left-click (no drag) - select this mod and grab keyboard focus
+        grabKeyboardFocus();
         if (onClicked) {
             onClicked();
         }
     }
     isDragging_ = false;
+}
+
+bool ModKnobComponent::keyPressed(const juce::KeyPress& key) {
+    // Delete or Backspace removes the mod when selected
+    if (selected_ && (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)) {
+        if (onRemoveRequested) {
+            onRemoveRequested();
+        }
+        return true;
+    }
+    return false;
 }
 
 void ModKnobComponent::modLinkModeChanged(bool active, const magda::ModSelection& selection) {
@@ -205,77 +226,36 @@ void ModKnobComponent::paintLinkIndicator(juce::Graphics& g, juce::Rectangle<int
     (void)area;
 }
 
-void ModKnobComponent::showLinkMenu() {
+void ModKnobComponent::showContextMenu() {
     juce::PopupMenu menu;
 
-    // Mock param names (same as DeviceSlotComponent)
-    static const char* mockParamNames[16] = {
-        "Cutoff",   "Resonance", "Drive",    "Mix",   "Attack", "Decay", "Sustain", "Release",
-        "LFO Rate", "LFO Depth", "Feedback", "Width", "Low",    "Mid",   "High",    "Output"};
-
-    menu.addSectionHeader("Link to Parameter...");
-    menu.addSeparator();
-
-    // Add submenu for each available device
-    int itemId = 1;
-    for (const auto& [deviceId, deviceName] : availableTargets_) {
-        juce::PopupMenu deviceMenu;
-
-        // Use proper param names
-        for (int paramIdx = 0; paramIdx < 16; ++paramIdx) {
-            juce::String paramName = mockParamNames[paramIdx];
-
-            // Check if this is the currently linked target
-            bool isCurrentTarget = currentMod_.target.deviceId == deviceId &&
-                                   currentMod_.target.paramIndex == paramIdx;
-
-            deviceMenu.addItem(itemId, paramName, true, isCurrentTarget);
-            itemId++;
-        }
-
-        menu.addSubMenu(deviceName, deviceMenu);
-    }
+    // Enable/Disable option
+    bool isEnabled = currentMod_.enabled;
+    menu.addItem(1, isEnabled ? "Disable" : "Enable");
 
     menu.addSeparator();
 
-    // Clear link option
-    int clearLinkId = 10000;
-    menu.addItem(clearLinkId, "Clear Link", currentMod_.isLinked());
+    // Remove option (Delete key works when selected)
+    menu.addItem(2, "Remove (Delete)");
 
     // Show menu and handle selection
     auto safeThis = juce::Component::SafePointer<ModKnobComponent>(this);
-    auto targets = availableTargets_;  // Capture by value for async safety
+    bool capturedEnabled = isEnabled;
 
-    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, targets, clearLinkId](int result) {
+    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, capturedEnabled](int result) {
         if (safeThis == nullptr || result == 0) {
             return;
         }
 
-        if (result == clearLinkId) {
-            // Clear the link
-            safeThis->currentMod_.target = magda::ModTarget{};
-            safeThis->repaint();
-            if (safeThis->onTargetChanged) {
-                safeThis->onTargetChanged(safeThis->currentMod_.target);
+        if (result == 1) {
+            // Toggle enable/disable
+            if (safeThis->onEnableToggled) {
+                safeThis->onEnableToggled(!capturedEnabled);
             }
-            return;
-        }
-
-        // Calculate which device and param was selected
-        int itemId = 1;
-        for (const auto& [deviceId, deviceName] : targets) {
-            for (int paramIdx = 0; paramIdx < 16; ++paramIdx) {
-                if (itemId == result) {
-                    // Set the new target
-                    safeThis->currentMod_.target.deviceId = deviceId;
-                    safeThis->currentMod_.target.paramIndex = paramIdx;
-                    safeThis->repaint();
-                    if (safeThis->onTargetChanged) {
-                        safeThis->onTargetChanged(safeThis->currentMod_.target);
-                    }
-                    return;
-                }
-                itemId++;
+        } else if (result == 2) {
+            // Remove
+            if (safeThis->onRemoveRequested) {
+                safeThis->onRemoveRequested();
             }
         }
     });

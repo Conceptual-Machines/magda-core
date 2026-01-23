@@ -124,13 +124,16 @@ class ModKnobComponent : public juce::Component, public magda::LinkModeManagerLi
     std::function<void(float)> onAmountChanged;
     std::function<void(magda::ModTarget)> onTargetChanged;
     std::function<void(juce::String)> onNameChanged;
-    std::function<void()> onClicked;  // Opens modulator editor panel
+    std::function<void()> onClicked;            // Opens modulator editor panel
+    std::function<void()> onRemoveRequested;    // Remove this mod
+    std::function<void(bool)> onEnableToggled;  // Enable/disable this mod
 
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
+    bool keyPressed(const juce::KeyPress& key) override;
 
     // Drag-and-drop description prefix
     static constexpr const char* DRAG_PREFIX = "mod_drag:";
@@ -139,7 +142,7 @@ class ModKnobComponent : public juce::Component, public magda::LinkModeManagerLi
     // LinkModeManagerListener implementation
     void modLinkModeChanged(bool active, const magda::ModSelection& selection) override;
 
-    void showLinkMenu();
+    void showContextMenu();
     void paintLinkIndicator(juce::Graphics& g, juce::Rectangle<int> area);
     void onNameLabelEdited();
     void onLinkButtonClicked();

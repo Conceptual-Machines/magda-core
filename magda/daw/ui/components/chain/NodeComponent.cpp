@@ -910,6 +910,12 @@ void NodeComponent::initializeModsMacrosPanels() {
     modsPanel_->onAddModRequested = [this](int slotIndex, magda::ModType type) {
         onAddModRequestedInternal(slotIndex, type);
     };
+    modsPanel_->onModRemoveRequested = [this](int modIndex) {
+        onModRemoveRequestedInternal(modIndex);
+    };
+    modsPanel_->onModEnableToggled = [this](int modIndex, bool enabled) {
+        onModEnableToggledInternal(modIndex, enabled);
+    };
     modsPanel_->onAddPageRequested = [this](int itemsToAdd) { onModPageAddRequested(itemsToAdd); };
     modsPanel_->onRemovePageRequested = [this](int itemsToRemove) {
         onModPageRemoveRequested(itemsToRemove);

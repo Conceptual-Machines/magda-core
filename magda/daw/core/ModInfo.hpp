@@ -66,6 +66,7 @@ struct ModInfo {
     ModId id = INVALID_MOD_ID;
     juce::String name;  // e.g., "LFO 1" or user-defined
     ModType type = ModType::LFO;
+    bool enabled = true;                       // Whether the mod is active
     float rate = 1.0f;                         // Rate/speed of modulation (Hz)
     LFOWaveform waveform = LFOWaveform::Sine;  // LFO waveform shape
     float phase = 0.0f;                        // 0.0 to 1.0, current position in cycle

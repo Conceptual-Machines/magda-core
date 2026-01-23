@@ -119,6 +119,18 @@ void ModsPanelComponent::ensureKnobCount(int count) {
             }
         };
 
+        knob->onRemoveRequested = [this, i]() {
+            if (onModRemoveRequested) {
+                onModRemoveRequested(i);
+            }
+        };
+
+        knob->onEnableToggled = [this, i](bool enabled) {
+            if (onModEnableToggled) {
+                onModEnableToggled(i, enabled);
+            }
+        };
+
         knob->setAvailableTargets(availableDevices_);
         knob->setParentPath(parentPath_);
         addAndMakeVisible(*knob);

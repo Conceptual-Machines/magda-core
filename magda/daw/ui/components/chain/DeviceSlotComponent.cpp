@@ -638,6 +638,14 @@ void DeviceSlotComponent::onAddModRequestedInternal(int slotIndex, magda::ModTyp
     // (TrackChainContent::trackDevicesChanged -> rebuildNodeComponents)
 }
 
+void DeviceSlotComponent::onModRemoveRequestedInternal(int modIndex) {
+    magda::TrackManager::getInstance().removeDeviceMod(nodePath_, modIndex);
+}
+
+void DeviceSlotComponent::onModEnableToggledInternal(int modIndex, bool enabled) {
+    magda::TrackManager::getInstance().setDeviceModEnabled(nodePath_, modIndex, enabled);
+}
+
 void DeviceSlotComponent::onModPageAddRequested(int /*itemsToAdd*/) {
     // Page management is now handled entirely in ModsPanelComponent UI
     // No need to modify data model - pages are just UI slots for adding mods

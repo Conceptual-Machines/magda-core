@@ -637,6 +637,14 @@ void RackComponent::onAddModRequestedInternal(int slotIndex, magda::ModType type
     // (TrackChainContent::trackDevicesChanged -> rebuildNodeComponents)
 }
 
+void RackComponent::onModRemoveRequestedInternal(int modIndex) {
+    magda::TrackManager::getInstance().removeRackMod(rackPath_, modIndex);
+}
+
+void RackComponent::onModEnableToggledInternal(int modIndex, bool enabled) {
+    magda::TrackManager::getInstance().setRackModEnabled(rackPath_, modIndex, enabled);
+}
+
 void RackComponent::onModPageAddRequested(int /*itemsToAdd*/) {
     // Page management is now handled entirely in ModsPanelComponent UI
     // No need to modify data model - pages are just UI slots for adding mods
