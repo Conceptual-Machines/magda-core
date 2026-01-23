@@ -407,10 +407,7 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
 
     // Handle link mode - prepare for drag to set amount/value
     if (isInLinkMode_ && e.mods.isLeftButtonDown()) {
-        // FIRST: Create/show persistent slider for this parameter
-        handleLinkModeClick();
-
-        // THEN: Mod link mode - drag to set per-parameter amount
+        // Mod link mode - drag to set per-parameter amount
         if (activeMod_.isValid()) {
             float initialAmount = 0.5f;
             bool isLinked = false;
@@ -640,18 +637,20 @@ std::vector<std::pair<int, const magda::ModLink*>> ParamSlotComponent::getLinked
     return linked;
 }
 
-std::vector<std::pair<int, const magda::MacroInfo*>> ParamSlotComponent::getLinkedMacros() const {
-    std::vector<std::pair<int, const magda::MacroInfo*>> linked;
+std::vector<std::pair<int, const magda::MacroLink*>> ParamSlotComponent::getLinkedMacros() const {
+    std::vector<std::pair<int, const magda::MacroLink*>> linked;
     if (!availableMacros_ || deviceId_ == magda::INVALID_DEVICE_ID) {
         return linked;
     }
+
+    magda::MacroTarget thisTarget{deviceId_, paramIndex_};
 
     // If a macro is selected, only check that specific macro
     if (selectedMacroIndex_ >= 0 &&
         selectedMacroIndex_ < static_cast<int>(availableMacros_->size())) {
         const auto& macro = (*availableMacros_)[static_cast<size_t>(selectedMacroIndex_)];
-        if (macro.target.deviceId == deviceId_ && macro.target.paramIndex == paramIndex_) {
-            linked.push_back({selectedMacroIndex_, &macro});
+        if (const auto* link = macro.getLink(thisTarget)) {
+            linked.push_back({selectedMacroIndex_, link});
         }
         return linked;
     }
@@ -659,8 +658,8 @@ std::vector<std::pair<int, const magda::MacroInfo*>> ParamSlotComponent::getLink
     // No macro selected - show all linked macros
     for (size_t i = 0; i < availableMacros_->size(); ++i) {
         const auto& macro = (*availableMacros_)[i];
-        if (macro.target.deviceId == deviceId_ && macro.target.paramIndex == paramIndex_) {
-            linked.push_back({static_cast<int>(i), &macro});
+        if (const auto* link = macro.getLink(thisTarget)) {
+            linked.push_back({static_cast<int>(i), link});
         }
     }
     return linked;
@@ -700,8 +699,9 @@ void ParamSlotComponent::paintModulationIndicators(juce::Graphics& g) {
     if (activeMacro_.isValid()) {
         int y = sliderBounds.getY() + 2;
         auto linkedMacros = getLinkedMacros();
-        for (const auto& [macroIndex, macro] : linkedMacros) {
-            int barWidth = juce::jmax(1, static_cast<int>(maxWidth * macro->value));
+        for (const auto& [macroIndex, link] : linkedMacros) {
+            float linkAmount = link->amount;  // Use per-parameter amount, not global macro value
+            int barWidth = juce::jmax(1, static_cast<int>(maxWidth * linkAmount));
 
             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.5f));
             g.fillRoundedRectangle(static_cast<float>(leftX), static_cast<float>(y),
@@ -809,8 +809,14 @@ void ParamSlotComponent::showLinkMenu() {
             menu.addItem(1500 + modIndex, "Unlink " + label);
         }
 
-        for (const auto& [macroIndex, macro] : linkedMacros) {
-            menu.addItem(2000 + macroIndex, "Unlink from " + macro->name + " (Macro)");
+        for (const auto& [macroIndex, link] : linkedMacros) {
+            juce::String macroName = "Macro " + juce::String(macroIndex + 1);
+            if (availableMacros_ && macroIndex < static_cast<int>(availableMacros_->size())) {
+                macroName = (*availableMacros_)[static_cast<size_t>(macroIndex)].name;
+            }
+            int currentAmountPercent = static_cast<int>(link->amount * 100);
+            juce::String label = macroName + " (" + juce::String(currentAmountPercent) + "%)";
+            menu.addItem(2000 + macroIndex, "Unlink " + label);
         }
 
         menu.addSeparator();

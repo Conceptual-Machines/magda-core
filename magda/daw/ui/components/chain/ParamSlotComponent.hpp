@@ -160,7 +160,7 @@ class ParamSlotComponent : public juce::Component,
     // Find mods/macros targeting this param (returns mod index + link pointer)
     // If selectedModIndex_ >= 0, only returns that mod's link (if any)
     std::vector<std::pair<int, const magda::ModLink*>> getLinkedMods() const;
-    std::vector<std::pair<int, const magda::MacroInfo*>> getLinkedMacros() const;
+    std::vector<std::pair<int, const magda::MacroLink*>> getLinkedMacros() const;
 
     // Check if this parameter is within the scope of a mod/macro parent
     bool isInScopeOf(const magda::ChainNodePath& parentPath) const;
