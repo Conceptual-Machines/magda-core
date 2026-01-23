@@ -36,7 +36,8 @@ class ChainPanel : public NodeComponent, private juce::Timer {
     const magda::ChainNodePath& getChainPath() const {
         return chainPath_;
     }
-    void refresh();  // Rebuild device slots without resetting panel state
+    void refresh();                // Rebuild device slots without resetting panel state
+    void updateParamIndicators();  // Repaint parameter modulation indicators
     void clear();
     void onDeviceLayoutChanged();    // Called when a device slot's size changes (panel toggle)
     int getContentWidth() const;     // Returns full width needed to show all devices

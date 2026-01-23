@@ -440,6 +440,15 @@ void ChainPanel::refresh() {
     repaint();
 }
 
+void ChainPanel::updateParamIndicators() {
+    // Repaint all device slots to update parameter modulation indicators
+    for (auto& slot : elementSlots_) {
+        if (auto* deviceSlot = dynamic_cast<DeviceSlotComponent*>(slot.get())) {
+            deviceSlot->repaint();
+        }
+    }
+}
+
 void ChainPanel::clear() {
     DBG("ChainPanel::clear() called - chainId=" << chainId_ << " rackId=" << rackId_);
     // Unfocus any child components before destroying them to prevent use-after-free

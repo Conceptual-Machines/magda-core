@@ -455,25 +455,33 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
             return;
         }
 
-        // Macro link mode - drag to set macro's global value
+        // Macro link mode - drag to set per-parameter link amount (like mods)
         if (activeMacro_.isValid()) {
-            float initialValue = 0.5f;
+            float initialAmount = 0.5f;
+            bool isLinked = false;
 
             if (availableMacros_ && activeMacro_.macroIndex >= 0 &&
                 activeMacro_.macroIndex < static_cast<int>(availableMacros_->size())) {
                 const auto& macro =
                     (*availableMacros_)[static_cast<size_t>(activeMacro_.macroIndex)];
-                initialValue = macro.value;
+                magda::MacroTarget thisTarget{deviceId_, paramIndex_};
+
+                const auto* existingLink = macro.getLink(thisTarget);
+                isLinked = existingLink != nullptr;
+
+                if (isLinked) {
+                    initialAmount = existingLink->amount;  // Use existing link amount
+                }
             }
 
             // Start link mode drag for macros
-            isLinkModeDrag_ = true;  // Reuse same drag flag
-            linkModeDragStartAmount_ = initialValue;
-            linkModeDragCurrentAmount_ = initialValue;
+            isLinkModeDrag_ = true;
+            linkModeDragStartAmount_ = initialAmount;
+            linkModeDragCurrentAmount_ = initialAmount;
             linkModeDragStartY_ = e.getMouseDownY();
 
-            // Show tooltip-style value label (purple for macros)
-            int percent = static_cast<int>(initialValue * 100);
+            // Show tooltip-style amount label (purple for macros)
+            int percent = static_cast<int>(initialAmount * 100);
             amountLabel_.setText(juce::String(percent) + "%", juce::dontSendNotification);
             amountLabel_.setColour(juce::Label::backgroundColourId,
                                    DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.95f));
@@ -548,24 +556,26 @@ void ParamSlotComponent::mouseDrag(const juce::MouseEvent& e) {
 
             repaint();
         }
-        // Handle macro drag - set macro's global value and create link if needed
+        // Handle macro drag - set per-parameter link amount (like mods)
         else if (activeMacro_.isValid() && availableMacros_ && activeMacro_.macroIndex >= 0 &&
                  activeMacro_.macroIndex < static_cast<int>(availableMacros_->size())) {
             const auto& macro = (*availableMacros_)[static_cast<size_t>(activeMacro_.macroIndex)];
             magda::MacroTarget thisTarget{deviceId_, paramIndex_};
 
             // Check if already linked
-            bool isLinked =
-                macro.target.deviceId == deviceId_ && macro.target.paramIndex == paramIndex_;
+            const auto* existingLink = macro.getLink(thisTarget);
+            bool isLinked = existingLink != nullptr;
 
-            // Create link on first drag if not already linked
-            if (!isLinked && onMacroLinked) {
-                onMacroLinked(activeMacro_.macroIndex, thisTarget);
-            }
-
-            // Update macro's global value
-            if (onMacroValueChanged) {
-                onMacroValueChanged(activeMacro_.macroIndex, newAmount);
+            if (isLinked) {
+                // Update existing link amount
+                if (onMacroAmountChanged) {
+                    onMacroAmountChanged(activeMacro_.macroIndex, thisTarget, newAmount);
+                }
+            } else {
+                // Create new link with current amount
+                if (onMacroLinkedWithAmount) {
+                    onMacroLinkedWithAmount(activeMacro_.macroIndex, thisTarget, newAmount);
+                }
             }
 
             repaint();
@@ -667,70 +677,108 @@ std::vector<std::pair<int, const magda::MacroLink*>> ParamSlotComponent::getLink
 
 void ParamSlotComponent::paintModulationIndicators(juce::Graphics& g) {
     auto sliderBounds = valueSlider_.getBounds();
+    auto cellBounds = getLocalBounds();
 
     // Guard against invalid bounds
-    if (sliderBounds.getWidth() <= 4 || sliderBounds.getHeight() <= 0) {
+    if (sliderBounds.getWidth() <= 0 || sliderBounds.getHeight() <= 0) {
         return;
     }
 
-    // Use most of the slider width for the max bar width
-    int maxWidth = sliderBounds.getWidth() - 4;
-    int leftX = sliderBounds.getX() + 2;
+    // Use FULL cell width for modulation bars (100% amount = full cell width left to right)
+    int maxWidth = cellBounds.getWidth();
+    int leftX = 0;
 
     // Bar height (thickness)
-    const int barHeight = 3;
+    const int barHeight = 5;
 
-    // Only draw mod/macro indicators when in link mode
-    if (!isInLinkMode_) {
-        return;
-    }
+    // ========================================================================
+    // In LINK MODE: Show AMOUNT lines (what you're editing)
+    // Outside link mode: Show MOVEMENT lines (current modulation output)
+    // ========================================================================
 
-    // If we're dragging in MOD link mode, only show mod preview at BOTTOM
-    if (isLinkModeDrag_ && activeMod_.isValid()) {
-        int y = sliderBounds.getBottom() - 2;
-        int barWidth = juce::jmax(1, static_cast<int>(maxWidth * linkModeDragCurrentAmount_));
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.5f));
-        g.fillRoundedRectangle(static_cast<float>(leftX), static_cast<float>(y - barHeight),
-                               static_cast<float>(barWidth), static_cast<float>(barHeight), 1.0f);
-        return;  // Don't draw other indicators while dragging
-    }
+    if (isInLinkMode_) {
+        // LINK MODE: Show amount lines only
 
-    // Draw MACRO indicators (purple) at TOP - only when in macro link mode
-    // CRITICAL: Only show the ACTIVE macro's link, not all macros
-    if (activeMacro_.isValid() && availableMacros_ && activeMacro_.macroIndex >= 0 &&
-        activeMacro_.macroIndex < static_cast<int>(availableMacros_->size())) {
-        int y = sliderBounds.getY() + 2;
-        const auto& macro = (*availableMacros_)[static_cast<size_t>(activeMacro_.macroIndex)];
-        magda::MacroTarget thisTarget{deviceId_, paramIndex_};
+        // If we're dragging in MOD link mode, show mod amount preview at BOTTOM
+        if (isLinkModeDrag_ && activeMod_.isValid()) {
+            int y = sliderBounds.getBottom() - 6;  // Near bottom of slider
+            int barWidth = juce::jmax(1, static_cast<int>(maxWidth * linkModeDragCurrentAmount_));
+            // Brighter orange for link mode drag
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.9f));
+            g.fillRoundedRectangle(static_cast<float>(leftX), static_cast<float>(y - barHeight),
+                                   static_cast<float>(barWidth), static_cast<float>(barHeight),
+                                   1.0f);
+            return;  // Don't draw other amount indicators while dragging
+        }
 
-        if (const auto* link = macro.getLink(thisTarget)) {
-            float linkAmount = link->amount;
-            int barWidth = juce::jmax(1, static_cast<int>(maxWidth * linkAmount));
+        // Draw MACRO amount line at TOP+4 - only for the ACTIVE macro in link mode
+        if (activeMacro_.isValid() && availableMacros_ && activeMacro_.macroIndex >= 0 &&
+            activeMacro_.macroIndex < static_cast<int>(availableMacros_->size())) {
+            int y = sliderBounds.getY() + 6;  // Offset below movement line
+            const auto& macro = (*availableMacros_)[static_cast<size_t>(activeMacro_.macroIndex)];
+            magda::MacroTarget thisTarget{deviceId_, paramIndex_};
 
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.5f));
+            if (const auto* link = macro.getLink(thisTarget)) {
+                float linkAmount = link->amount;  // Max modulation range (amount)
+                int barWidth = juce::jmax(1, static_cast<int>(maxWidth * linkAmount));
+
+                DBG("MACRO AMOUNT BAR: linkAmount=" << linkAmount << " maxWidth=" << maxWidth
+                                                    << " barWidth=" << barWidth);
+                DBG("  Drawing rect: x=" << leftX << " y=" << y << " width=" << barWidth
+                                         << " height=" << barHeight);
+
+                // Brighter purple for link mode (editing amount)
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.9f));
+                g.fillRoundedRectangle(static_cast<float>(leftX), static_cast<float>(y),
+                                       static_cast<float>(barWidth), static_cast<float>(barHeight),
+                                       1.0f);
+            }
+        }
+
+        // Draw MOD amount line at BOTTOM-4 - only for the ACTIVE mod in link mode
+        if (activeMod_.isValid() && availableMods_ && activeMod_.modIndex >= 0 &&
+            activeMod_.modIndex < static_cast<int>(availableMods_->size())) {
+            int y = sliderBounds.getBottom() - 6;  // Near bottom of slider
+            const auto& mod = (*availableMods_)[static_cast<size_t>(activeMod_.modIndex)];
+            magda::ModTarget thisTarget{deviceId_, paramIndex_};
+
+            if (const auto* link = mod.getLink(thisTarget)) {
+                float linkAmount = link->amount;
+                int barWidth = juce::jmax(1, static_cast<int>(maxWidth * linkAmount));
+                // Brighter orange for link mode (editing amount)
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.9f));
+                g.fillRoundedRectangle(static_cast<float>(leftX), static_cast<float>(y - barHeight),
+                                       static_cast<float>(barWidth), static_cast<float>(barHeight),
+                                       1.0f);
+            }
+        }
+    } else {
+        // NORMAL MODE: Show movement lines (current modulation output)
+
+        // Calculate TOTAL macro modulation output (sum of all linked macros)
+        float totalMacroModulation = 0.0f;
+        if (availableMacros_ && deviceId_ != magda::INVALID_DEVICE_ID) {
+            magda::MacroTarget thisTarget{deviceId_, paramIndex_};
+            for (size_t i = 0; i < availableMacros_->size(); ++i) {
+                const auto& macro = (*availableMacros_)[i];
+                if (const auto* link = macro.getLink(thisTarget)) {
+                    totalMacroModulation += macro.value * link->amount;
+                }
+            }
+        }
+
+        // Draw MACRO movement line (purple) at TOP if any macro modulation exists
+        if (totalMacroModulation > 0.0f) {
+            int y = sliderBounds.getY() + 2;
+            int barWidth = juce::jmax(1, static_cast<int>(maxWidth * totalMacroModulation));
+            // Slightly dimmer purple for normal mode (showing movement)
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.6f));
             g.fillRoundedRectangle(static_cast<float>(leftX), static_cast<float>(y),
                                    static_cast<float>(barWidth), static_cast<float>(barHeight),
                                    1.0f);
         }
-    }
 
-    // Draw MOD indicators (orange) at BOTTOM - only when in mod link mode
-    // CRITICAL: Only show the ACTIVE mod's link, not all mods
-    if (activeMod_.isValid() && availableMods_ && activeMod_.modIndex >= 0 &&
-        activeMod_.modIndex < static_cast<int>(availableMods_->size())) {
-        int y = sliderBounds.getBottom() - 2;
-        const auto& mod = (*availableMods_)[static_cast<size_t>(activeMod_.modIndex)];
-        magda::ModTarget thisTarget{deviceId_, paramIndex_};
-
-        if (const auto* link = mod.getLink(thisTarget)) {
-            float linkAmount = link->amount;
-            int barWidth = juce::jmax(1, static_cast<int>(maxWidth * linkAmount));
-
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.5f));
-            g.fillRoundedRectangle(static_cast<float>(leftX), static_cast<float>(y - barHeight),
-                                   static_cast<float>(barWidth), static_cast<float>(barHeight),
-                                   1.0f);
-        }
+        // TODO: Calculate TOTAL mod modulation output (mods use LFOs, not simple values)
     }
 }
 

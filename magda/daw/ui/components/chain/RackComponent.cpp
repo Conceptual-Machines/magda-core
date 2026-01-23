@@ -603,6 +603,11 @@ void RackComponent::onModRateChangedInternal(int modIndex, float rate) {
 
 void RackComponent::onMacroValueChangedInternal(int macroIndex, float value) {
     magda::TrackManager::getInstance().setRackMacroValue(rackPath_, macroIndex, value);
+
+    // Refresh chain panel to update parameter movement indicators
+    if (chainPanel_ && chainPanel_->isVisible()) {
+        chainPanel_->updateParamIndicators();
+    }
 }
 
 void RackComponent::onMacroTargetChangedInternal(int macroIndex, magda::MacroTarget target) {
