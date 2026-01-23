@@ -81,6 +81,9 @@ class ModsPanelComponent : public PagedControlPanel {
     juce::String getPanelTitle() const override {
         return "MODS";
     }
+    int getGridColumns() const override {
+        return 1;  // Single column for mods
+    }
 
   private:
     std::vector<std::unique_ptr<ModKnobComponent>> knobs_;

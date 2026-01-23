@@ -90,10 +90,14 @@ class PagedControlPanel : public juce::Component {
     int getLastVisibleIndex() const;
     int getVisibleItemCount() const;
 
+    // Grid configuration - subclasses can override
+    virtual int getGridColumns() const {
+        return 2;
+    }
+
     // Navigation area height (only shown if multiple pages)
     static constexpr int NAV_HEIGHT = 16;
     static constexpr int GRID_SPACING = 2;
-    static constexpr int GRID_COLUMNS = 2;
 
   private:
     void updateNavButtons();

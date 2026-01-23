@@ -9,7 +9,7 @@
 
 namespace magda {
 
-constexpr int MODS_PER_PAGE = 8;
+constexpr int MODS_PER_PAGE = 4;
 constexpr int DEFAULT_MOD_PAGES = 2;
 constexpr int NUM_MODS = MODS_PER_PAGE * DEFAULT_MOD_PAGES;
 

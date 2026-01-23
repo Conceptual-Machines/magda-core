@@ -78,7 +78,7 @@ ModsPanelComponent::ModsPanelComponent() : PagedControlPanel(magda::MODS_PER_PAG
         }
     };
 
-    // Start with 1 page (8 slots) with + buttons in empty slots
+    // Start with 1 page (4 slots) with + buttons in empty slots
     ensureSlotCount(allocatedPages_ * magda::MODS_PER_PAGE);
 }
 
@@ -221,16 +221,17 @@ void ModsPanelComponent::paint(juce::Graphics& g) {
     if (visibleCount <= 0)
         return;
 
-    int rows = (visibleCount + GRID_COLUMNS - 1) / GRID_COLUMNS;
-    int itemWidth = (bounds.getWidth() - GRID_SPACING) / GRID_COLUMNS;
+    int gridCols = getGridColumns();
+    int rows = (visibleCount + gridCols - 1) / gridCols;
+    int itemWidth = (bounds.getWidth() - (gridCols - 1) * GRID_SPACING) / gridCols;
     int itemHeight = (bounds.getHeight() - (rows - 1) * GRID_SPACING) / rows;
 
     // Draw grid cell outlines for all slots
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
 
     for (int i = 0; i < visibleCount; ++i) {
-        int col = i % GRID_COLUMNS;
-        int row = i / GRID_COLUMNS;
+        int col = i % gridCols;
+        int row = i / gridCols;
         int x = bounds.getX() + col * (itemWidth + GRID_SPACING);
         int y = bounds.getY() + row * (itemHeight + GRID_SPACING);
 

@@ -227,14 +227,15 @@ void PagedControlPanel::resized() {
     if (visibleCount <= 0)
         return;
 
-    int rows = (visibleCount + GRID_COLUMNS - 1) / GRID_COLUMNS;
-    int itemWidth = (bounds.getWidth() - GRID_SPACING) / GRID_COLUMNS;
+    int gridCols = getGridColumns();
+    int rows = (visibleCount + gridCols - 1) / gridCols;
+    int itemWidth = (bounds.getWidth() - (gridCols - 1) * GRID_SPACING) / gridCols;
     int itemHeight = (bounds.getHeight() - (rows - 1) * GRID_SPACING) / rows;
 
     int firstIdx = getFirstVisibleIndex();
     for (int i = 0; i < visibleCount; ++i) {
-        int col = i % GRID_COLUMNS;
-        int row = i / GRID_COLUMNS;
+        int col = i % gridCols;
+        int row = i / gridCols;
         int x = bounds.getX() + col * (itemWidth + GRID_SPACING);
         int y = bounds.getY() + row * (itemHeight + GRID_SPACING);
 
