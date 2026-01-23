@@ -227,6 +227,7 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     virtual void onModTargetChangedInternal(int /*modIndex*/, magda::ModTarget /*target*/) {}
     virtual void onModNameChangedInternal(int /*modIndex*/, const juce::String& /*name*/) {}
     virtual void onModTypeChangedInternal(int /*modIndex*/, magda::ModType /*type*/) {}
+    virtual void onModWaveformChangedInternal(int /*modIndex*/, magda::LFOWaveform /*waveform*/) {}
     virtual void onModRateChangedInternal(int /*modIndex*/, float /*rate*/) {}
     // Contextual link callbacks (when param is selected and mod amount slider is used)
     virtual void onModLinkAmountChangedInternal(int /*modIndex*/, magda::ModTarget /*target*/,

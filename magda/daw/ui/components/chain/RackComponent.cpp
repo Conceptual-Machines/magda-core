@@ -597,6 +597,10 @@ void RackComponent::onModTypeChangedInternal(int modIndex, magda::ModType type) 
     magda::TrackManager::getInstance().setRackModType(rackPath_, modIndex, type);
 }
 
+void RackComponent::onModWaveformChangedInternal(int modIndex, magda::LFOWaveform waveform) {
+    magda::TrackManager::getInstance().setRackModWaveform(rackPath_, modIndex, waveform);
+}
+
 void RackComponent::onModRateChangedInternal(int modIndex, float rate) {
     magda::TrackManager::getInstance().setRackModRate(rackPath_, modIndex, rate);
 }

@@ -122,6 +122,7 @@ class RackComponent : public NodeComponent {
     void onModTargetChangedInternal(int modIndex, magda::ModTarget target) override;
     void onModNameChangedInternal(int modIndex, const juce::String& name) override;
     void onModTypeChangedInternal(int modIndex, magda::ModType type) override;
+    void onModWaveformChangedInternal(int modIndex, magda::LFOWaveform waveform) override;
     void onModRateChangedInternal(int modIndex, float rate) override;
     void onMacroValueChangedInternal(int macroIndex, float value) override;
     void onMacroTargetChangedInternal(int macroIndex, magda::MacroTarget target) override;

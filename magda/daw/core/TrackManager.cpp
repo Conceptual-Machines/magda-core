@@ -1422,6 +1422,17 @@ void TrackManager::setRackModType(const ChainNodePath& rackPath, int modIndex, M
     }
 }
 
+void TrackManager::setRackModWaveform(const ChainNodePath& rackPath, int modIndex,
+                                      LFOWaveform waveform) {
+    if (auto* rack = getRackByPath(rackPath)) {
+        if (modIndex < 0 || modIndex >= static_cast<int>(rack->mods.size())) {
+            return;
+        }
+        rack->mods[modIndex].waveform = waveform;
+        // Don't notify - simple value change doesn't need UI rebuild
+    }
+}
+
 void TrackManager::setRackModRate(const ChainNodePath& rackPath, int modIndex, float rate) {
     if (auto* rack = getRackByPath(rackPath)) {
         if (modIndex < 0 || modIndex >= static_cast<int>(rack->mods.size())) {
@@ -1537,6 +1548,17 @@ void TrackManager::setDeviceModType(const ChainNodePath& devicePath, int modInde
         if (device->mods[modIndex].name == defaultOldName) {
             device->mods[modIndex].name = ModInfo::getDefaultName(modIndex, type);
         }
+        // Don't notify - simple value change doesn't need UI rebuild
+    }
+}
+
+void TrackManager::setDeviceModWaveform(const ChainNodePath& devicePath, int modIndex,
+                                        LFOWaveform waveform) {
+    if (auto* device = getDeviceInChainByPath(devicePath)) {
+        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
+            return;
+        }
+        device->mods[modIndex].waveform = waveform;
         // Don't notify - simple value change doesn't need UI rebuild
     }
 }

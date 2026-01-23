@@ -52,6 +52,18 @@ void ModsPanelComponent::ensureKnobCount(int count) {
             }
         };
 
+        knob->onWaveformChanged = [this, i](magda::LFOWaveform waveform) {
+            if (onModWaveformChanged) {
+                onModWaveformChanged(i, waveform);
+            }
+        };
+
+        knob->onRateChanged = [this, i](float rate) {
+            if (onModRateChanged) {
+                onModRateChanged(i, rate);
+            }
+        };
+
         knob->setAvailableTargets(availableDevices_);
         knob->setParentPath(parentPath_);
         addAndMakeVisible(*knob);

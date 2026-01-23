@@ -907,6 +907,12 @@ void NodeComponent::initializeModsMacrosPanels() {
             showModulatorEditor(modIndex);
         }
     };
+    modsPanel_->onModWaveformChanged = [this](int modIndex, magda::LFOWaveform waveform) {
+        onModWaveformChangedInternal(modIndex, waveform);
+    };
+    modsPanel_->onModRateChanged = [this](int modIndex, float rate) {
+        onModRateChangedInternal(modIndex, rate);
+    };
     modsPanel_->onAddPageRequested = [this](int itemsToAdd) { onModPageAddRequested(itemsToAdd); };
     modsPanel_->onRemovePageRequested = [this](int itemsToRemove) {
         onModPageRemoveRequested(itemsToRemove);

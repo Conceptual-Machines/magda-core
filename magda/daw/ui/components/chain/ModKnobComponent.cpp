@@ -35,6 +35,35 @@ ModKnobComponent::ModKnobComponent(int modIndex) : modIndex_(modIndex) {
     amountSlider_.setVisible(false);  // Hide - amount is per-parameter, not global
     addChildComponent(amountSlider_);
 
+    // Waveform selector
+    waveformCombo_.addItem("Sine", static_cast<int>(magda::LFOWaveform::Sine) + 1);
+    waveformCombo_.addItem("Triangle", static_cast<int>(magda::LFOWaveform::Triangle) + 1);
+    waveformCombo_.addItem("Square", static_cast<int>(magda::LFOWaveform::Square) + 1);
+    waveformCombo_.addItem("Saw", static_cast<int>(magda::LFOWaveform::Saw) + 1);
+    waveformCombo_.addItem("RevSaw", static_cast<int>(magda::LFOWaveform::ReverseSaw) + 1);
+    waveformCombo_.setSelectedId(static_cast<int>(currentMod_.waveform) + 1,
+                                 juce::dontSendNotification);
+    waveformCombo_.onChange = [this]() {
+        auto newWaveform = static_cast<magda::LFOWaveform>(waveformCombo_.getSelectedId() - 1);
+        currentMod_.waveform = newWaveform;
+        if (onWaveformChanged) {
+            onWaveformChanged(newWaveform);
+        }
+    };
+    addAndMakeVisible(waveformCombo_);
+
+    // Rate slider (LFO frequency in Hz)
+    rateSlider_.setRange(0.1, 20.0, 0.1);
+    rateSlider_.setValue(currentMod_.rate, juce::dontSendNotification);
+    rateSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    rateSlider_.onValueChanged = [this](double value) {
+        currentMod_.rate = static_cast<float>(value);
+        if (onRateChanged) {
+            onRateChanged(currentMod_.rate);
+        }
+    };
+    addAndMakeVisible(rateSlider_);
+
     // Link button - toggles link mode for this mod (using link_flat icon)
     linkButton_ = std::make_unique<magda::SvgButton>("Link", BinaryData::link_flat_svg,
                                                      BinaryData::link_flat_svgSize);
@@ -58,6 +87,8 @@ void ModKnobComponent::setModInfo(const magda::ModInfo& mod) {
     currentMod_ = mod;
     nameLabel_.setText(mod.name, juce::dontSendNotification);
     amountSlider_.setValue(mod.amount, juce::dontSendNotification);
+    waveformCombo_.setSelectedId(static_cast<int>(mod.waveform) + 1, juce::dontSendNotification);
+    rateSlider_.setValue(mod.rate, juce::dontSendNotification);
     repaint();
 }
 
@@ -110,8 +141,11 @@ void ModKnobComponent::resized() {
     // Name label at top
     nameLabel_.setBounds(bounds.removeFromTop(NAME_LABEL_HEIGHT));
 
-    // Amount slider is hidden - skip layout
-    // (This space could be used for LFO rate or other mod-specific controls)
+    // Waveform combo box
+    waveformCombo_.setBounds(bounds.removeFromTop(WAVEFORM_COMBO_HEIGHT));
+
+    // Rate slider
+    rateSlider_.setBounds(bounds.removeFromTop(RATE_SLIDER_HEIGHT));
 
     // Skip remaining space and position link button at the very bottom
     auto remainingHeight = bounds.getHeight();

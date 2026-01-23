@@ -813,7 +813,31 @@ void ParamSlotComponent::paintModulationIndicators(juce::Graphics& g) {
                                    1.0f);
         }
 
-        // TODO: Calculate TOTAL mod modulation output (mods use LFOs, not simple values)
+        // Calculate TOTAL mod modulation output (sum of all linked mods)
+        float totalModModulation = 0.0f;
+        magda::ModTarget modTarget{deviceId_, paramIndex_};
+
+        // Check device-level mods
+        if (availableMods_ && deviceId_ != magda::INVALID_DEVICE_ID) {
+            for (size_t i = 0; i < availableMods_->size(); ++i) {
+                const auto& mod = (*availableMods_)[i];
+                if (const auto* link = mod.getLink(modTarget)) {
+                    // Mod modulation = mod.value (LFO output) × link.amount
+                    totalModModulation += mod.value * link->amount;
+                }
+            }
+        }
+
+        // Draw MOD movement line (orange) at BOTTOM if any mod modulation exists
+        if (totalModModulation > 0.0f) {
+            int y = sliderBounds.getBottom() - 6;  // Near bottom, matching link mode position
+            int barWidth = juce::jmax(1, static_cast<int>(maxWidth * totalModModulation));
+            // Dimmer orange for normal mode (showing movement)
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.6f));
+            g.fillRoundedRectangle(static_cast<float>(leftX), static_cast<float>(y - barHeight),
+                                   static_cast<float>(barWidth), static_cast<float>(barHeight),
+                                   1.0f);
+        }
     }
 }
 

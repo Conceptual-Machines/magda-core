@@ -187,6 +187,7 @@ class TrackManager {
     void setRackModTarget(const ChainNodePath& rackPath, int modIndex, ModTarget target);
     void setRackModName(const ChainNodePath& rackPath, int modIndex, const juce::String& name);
     void setRackModType(const ChainNodePath& rackPath, int modIndex, ModType type);
+    void setRackModWaveform(const ChainNodePath& rackPath, int modIndex, LFOWaveform waveform);
     void setRackModRate(const ChainNodePath& rackPath, int modIndex, float rate);
     void addRackModPage(const ChainNodePath& rackPath);
     void removeRackModPage(const ChainNodePath& rackPath);
@@ -199,6 +200,7 @@ class TrackManager {
                                 float amount);
     void setDeviceModName(const ChainNodePath& devicePath, int modIndex, const juce::String& name);
     void setDeviceModType(const ChainNodePath& devicePath, int modIndex, ModType type);
+    void setDeviceModWaveform(const ChainNodePath& devicePath, int modIndex, LFOWaveform waveform);
     void setDeviceModRate(const ChainNodePath& devicePath, int modIndex, float rate);
     void addDeviceModPage(const ChainNodePath& devicePath);
     void removeDeviceModPage(const ChainNodePath& devicePath);

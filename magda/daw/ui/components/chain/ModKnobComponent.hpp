@@ -60,6 +60,8 @@ class ModKnobComponent : public juce::Component, public magda::LinkModeManagerLi
     std::function<void(magda::ModTarget)> onTargetChanged;
     std::function<void(juce::String)> onNameChanged;
     std::function<void()> onClicked;  // Opens modulator editor panel
+    std::function<void(magda::LFOWaveform)> onWaveformChanged;
+    std::function<void(float)> onRateChanged;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -82,6 +84,8 @@ class ModKnobComponent : public juce::Component, public magda::LinkModeManagerLi
     int modIndex_;
     juce::Label nameLabel_;
     TextSlider amountSlider_{TextSlider::Format::Decimal};
+    juce::ComboBox waveformCombo_;
+    TextSlider rateSlider_{TextSlider::Format::Decimal};
     std::unique_ptr<magda::SvgButton> linkButton_;
     magda::ModInfo currentMod_;
     std::vector<std::pair<magda::DeviceId, juce::String>> availableTargets_;
@@ -95,6 +99,8 @@ class ModKnobComponent : public juce::Component, public magda::LinkModeManagerLi
 
     static constexpr int NAME_LABEL_HEIGHT = 11;
     static constexpr int AMOUNT_SLIDER_HEIGHT = 14;
+    static constexpr int WAVEFORM_COMBO_HEIGHT = 12;
+    static constexpr int RATE_SLIDER_HEIGHT = 14;
     static constexpr int LINK_BUTTON_HEIGHT = 12;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ModKnobComponent)

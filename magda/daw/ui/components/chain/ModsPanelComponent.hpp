@@ -53,6 +53,8 @@ class ModsPanelComponent : public PagedControlPanel {
     std::function<void(int modIndex, magda::ModTarget target)> onModTargetChanged;
     std::function<void(int modIndex, juce::String name)> onModNameChanged;
     std::function<void(int modIndex)> onModClicked;  // Opens modulator editor
+    std::function<void(int modIndex, magda::LFOWaveform waveform)> onModWaveformChanged;
+    std::function<void(int modIndex, float rate)> onModRateChanged;
 
   protected:
     // PagedControlPanel overrides

@@ -18,6 +18,7 @@
 #include "../views/SessionView.hpp"
 #include "core/Config.hpp"
 #include "core/LinkModeManager.hpp"
+#include "core/ModulatorEngine.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
@@ -147,6 +148,9 @@ MainWindow::MainComponent::MainComponent() {
 
     mixerView = std::make_unique<MixerView>();
     addChildComponent(*mixerView);
+
+    // Start modulation engine for LFOs
+    magda::ModulatorEngine::getInstance().start();
 
     // Wire up callbacks between views and transport
     mainView->onLoopRegionChanged = [this](double start, double end, bool enabled) {
