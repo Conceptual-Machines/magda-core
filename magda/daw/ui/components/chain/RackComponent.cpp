@@ -631,6 +631,18 @@ void RackComponent::onMacroClickedInternal(int macroIndex) {
 
 // === Virtual callbacks for page management ===
 
+void RackComponent::onAddModRequestedInternal(int slotIndex, magda::ModType type) {
+    magda::TrackManager::getInstance().addRackMod(rackPath_, slotIndex, type);
+
+    // Defer UI update to avoid destroying the button during its own click handler
+    juce::MessageManager::callAsync(
+        [safeThis = juce::Component::SafePointer<RackComponent>(this)]() {
+            if (safeThis != nullptr) {
+                safeThis->updateModsPanel();
+            }
+        });
+}
+
 void RackComponent::onModPageAddRequested(int /*itemsToAdd*/) {
     // Page management is now handled entirely in ModsPanelComponent UI
     // No need to modify data model - pages are just UI slots for adding mods
