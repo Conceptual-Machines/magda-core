@@ -72,7 +72,6 @@ class AutomationLaneComponent : public juce::Component,
 
     // Callbacks for parent coordination
     std::function<void(AutomationLaneId, int)> onHeightChanged;
-    std::function<void(AutomationLaneId)> onHideLane;
 
   private:
     AutomationLaneId laneId_;
@@ -88,8 +87,7 @@ class AutomationLaneComponent : public juce::Component,
     std::unique_ptr<AutomationCurveEditor> curveEditor_;
     std::vector<std::unique_ptr<AutomationClipComponent>> clipComponents_;
 
-    juce::TextButton visibilityButton_;
-    juce::TextButton armButton_;
+    juce::TextButton drawModeButton_;
     juce::Label nameLabel_;
 
     void setupHeader();

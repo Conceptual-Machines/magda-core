@@ -19,37 +19,24 @@ AutomationLaneComponent::~AutomationLaneComponent() {
 }
 
 void AutomationLaneComponent::setupHeader() {
-    // Hide lane button (X to close/hide this lane)
-    visibilityButton_.setButtonText("X");
-    visibilityButton_.setColour(juce::TextButton::buttonColourId, juce::Colour(0x00000000));
-    visibilityButton_.setColour(juce::TextButton::textColourOffId, juce::Colour(0xFFAAAAAA));
-    visibilityButton_.setTooltip("Hide this automation lane");
-    visibilityButton_.onClick = [this]() {
-        // Hide this specific lane via callback to parent
-        if (onHideLane) {
-            onHideLane(laneId_);
-        }
-    };
-    addAndMakeVisible(visibilityButton_);
-
     // Draw mode toggle button (pencil)
-    armButton_.setButtonText("✎");
-    armButton_.setColour(juce::TextButton::buttonColourId, juce::Colour(0x00000000));
-    armButton_.setColour(juce::TextButton::textColourOffId, juce::Colour(0xFFFFFFFF));
-    armButton_.setClickingTogglesState(true);
-    armButton_.setToggleState(true, juce::dontSendNotification);  // Start in draw mode
-    armButton_.setTooltip("Toggle draw mode");
-    armButton_.onClick = [this]() {
-        bool drawMode = armButton_.getToggleState();
+    drawModeButton_.setButtonText("✎");
+    drawModeButton_.setColour(juce::TextButton::buttonColourId, juce::Colour(0x00000000));
+    drawModeButton_.setColour(juce::TextButton::textColourOffId, juce::Colour(0xFFFFFFFF));
+    drawModeButton_.setClickingTogglesState(true);
+    drawModeButton_.setToggleState(true, juce::dontSendNotification);  // Start in draw mode
+    drawModeButton_.setTooltip("Toggle draw mode");
+    drawModeButton_.onClick = [this]() {
+        bool drawMode = drawModeButton_.getToggleState();
         if (curveEditor_) {
             curveEditor_->setDrawMode(drawMode ? AutomationDrawMode::Pencil
                                                : AutomationDrawMode::Select);
         }
         // Update button appearance
-        armButton_.setColour(juce::TextButton::textColourOffId,
-                             drawMode ? juce::Colour(0xFFFFFFFF) : juce::Colour(0xFF666666));
+        drawModeButton_.setColour(juce::TextButton::textColourOffId,
+                                  drawMode ? juce::Colour(0xFFFFFFFF) : juce::Colour(0xFF666666));
     };
-    addAndMakeVisible(armButton_);
+    addAndMakeVisible(drawModeButton_);
 
     // Name label
     nameLabel_.setColour(juce::Label::textColourId, juce::Colour(0xFFCCCCCC));
@@ -101,11 +88,10 @@ void AutomationLaneComponent::resized() {
     int buttonSize = HEADER_HEIGHT - 4;
     int margin = 2;
 
-    visibilityButton_.setBounds(margin, margin, buttonSize, buttonSize);
-    armButton_.setBounds(margin + buttonSize + 2, margin, buttonSize, buttonSize);
+    drawModeButton_.setBounds(margin, margin, buttonSize, buttonSize);
 
     auto labelBounds = headerBounds;
-    labelBounds.removeFromLeft(margin + buttonSize * 2 + 6);
+    labelBounds.removeFromLeft(margin + buttonSize + 4);
     nameLabel_.setBounds(labelBounds.reduced(2));
 
     // Content area (leave room for resize handle at bottom)
@@ -196,13 +182,6 @@ void AutomationLaneComponent::automationLanePropertyChanged(AutomationLaneId lan
     if (laneId == laneId_) {
         if (const auto* lane = getLaneInfo()) {
             nameLabel_.setText(lane->getDisplayName(), juce::dontSendNotification);
-
-            // Update button states
-            visibilityButton_.setColour(juce::TextButton::textColourOffId,
-                                        lane->visible ? juce::Colour(0xFFFFFFFF)
-                                                      : juce::Colour(0xFF666666));
-            armButton_.setColour(juce::TextButton::textColourOffId,
-                                 lane->armed ? juce::Colour(0xFFCC4444) : juce::Colour(0xFF666666));
         }
         repaint();
     }

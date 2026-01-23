@@ -1924,12 +1924,6 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
                 repaint();
             };
 
-            // Wire up hide lane callback
-            entry.component->onHideLane = [](AutomationLaneId hideLaneId) {
-                // Hide the lane via AutomationManager
-                AutomationManager::getInstance().setLaneVisible(hideLaneId, false);
-            };
-
             addAndMakeVisible(entry.component.get());
             automationLaneComponents_.push_back(std::move(entry));
         }
