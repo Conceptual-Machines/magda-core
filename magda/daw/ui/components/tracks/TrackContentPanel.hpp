@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "../../layout/LayoutConfig.hpp"
 #include "../../state/TimelineController.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/ClipManager.hpp"
@@ -139,8 +140,8 @@ class TrackContentPanel : public juce::Component,
     // Controller reference (not owned)
     TimelineController* timelineController = nullptr;
 
-    // Layout constants
-    static constexpr int LEFT_PADDING = 18;  // Left padding to align with timeline
+    // Layout constants - use shared constant from LayoutConfig
+    static constexpr int LEFT_PADDING = LayoutConfig::TIMELINE_LEFT_PADDING;
 
     struct TrackLane {
         bool selected = false;

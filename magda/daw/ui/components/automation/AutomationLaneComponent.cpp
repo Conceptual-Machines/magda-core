@@ -1,6 +1,7 @@
 #include "AutomationLaneComponent.hpp"
 
 #include <cmath>
+#include <vector>
 
 namespace magda {
 
@@ -71,9 +72,11 @@ void AutomationLaneComponent::resized() {
     auto contentBounds = bounds;
     contentBounds.removeFromBottom(RESIZE_HANDLE_HEIGHT);
 
-    // Curve editor fills full content area - scale labels are painted on top
+    // Curve editor starts after scale labels
     if (curveEditor_) {
-        curveEditor_->setBounds(contentBounds);
+        auto curveArea = contentBounds;
+        curveArea.removeFromLeft(SCALE_LABEL_WIDTH);
+        curveEditor_->setBounds(curveArea);
     }
 
     updateClipPositions();
@@ -319,11 +322,25 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
     g.drawVerticalLine(area.getRight() - 1, static_cast<float>(area.getY()),
                        static_cast<float>(area.getBottom()));
 
-    // Draw scale labels at key positions: 100%, 50%, 0%
+    // Get scale positions based on target type
+    const auto* lane = getLaneInfo();
+    std::vector<double> values;
+
+    if (lane && lane->target.type == AutomationTargetType::TrackVolume) {
+        // Volume scale: normalized position -> dB
+        // 1.0 = +6dB, 0.75 = 0dB, 0.5 = -20dB, 0.25 = -40dB, 0.0 = -inf
+        values = {1.0, 0.75, 0.5, 0.25, 0.0};
+    } else if (lane && lane->target.type == AutomationTargetType::TrackPan) {
+        // Pan: L, C, R
+        values = {1.0, 0.5, 0.0};
+    } else {
+        // Default: 100%, 75%, 50%, 25%, 0%
+        values = {1.0, 0.75, 0.5, 0.25, 0.0};
+    }
+
     g.setColour(juce::Colour(0xFF888888));
     g.setFont(9.0f);
 
-    const double values[] = {1.0, 0.5, 0.0};
     for (double value : values) {
         int y = area.getY() + valueToPixel(value, area.getHeight());
         juce::String label = formatScaleValue(value);
@@ -354,11 +371,25 @@ juce::String AutomationLaneComponent::formatScaleValue(double normalizedValue) c
 
     switch (lane->target.type) {
         case AutomationTargetType::TrackVolume: {
-            // Volume: 0.8 = 0dB, 0 = -inf
+            // Volume scale: 0 = -inf, 0.75 = 0dB, 1.0 = +6dB
+            // Matches mixer fader scale
+            constexpr double MIN_DB = -60.0;
+            constexpr double MAX_DB = 6.0;
+            constexpr double UNITY_POS = 0.75;
+
             if (normalizedValue <= 0.001) {
                 return "-inf";
             }
-            double dB = 20.0 * std::log10(normalizedValue / 0.8);
+
+            double dB;
+            if (normalizedValue <= UNITY_POS) {
+                // Below unity: 0..0.75 maps to -60..0 dB
+                dB = MIN_DB + (normalizedValue / UNITY_POS) * (0.0 - MIN_DB);
+            } else {
+                // Above unity: 0.75..1.0 maps to 0..+6 dB
+                dB = ((normalizedValue - UNITY_POS) / (1.0 - UNITY_POS)) * MAX_DB;
+            }
+
             if (dB > 0) {
                 return "+" + juce::String(static_cast<int>(std::round(dB)));
             }

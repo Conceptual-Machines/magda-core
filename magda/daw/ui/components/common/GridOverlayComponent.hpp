@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "../../layout/LayoutConfig.hpp"
 #include "../../state/TimelineController.hpp"
 
 namespace magda {
@@ -74,7 +75,7 @@ class GridOverlayComponent : public juce::Component, public TimelineStateListene
     double tempoBPM = 120.0;
     int timeSignatureNumerator = 4;
     int timeSignatureDenominator = 4;
-    int leftPadding = 18;  // Default to match timeline LEFT_PADDING
+    int leftPadding = LayoutConfig::TIMELINE_LEFT_PADDING;  // Default to match timeline
     int scrollOffset = 0;  // Horizontal scroll offset for viewport-relative drawing
 
     // Grid drawing methods

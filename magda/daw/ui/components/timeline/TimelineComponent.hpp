@@ -135,8 +135,8 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     // Controller reference (not owned)
     TimelineController* timelineController = nullptr;
 
-    // Layout constants
-    static constexpr int LEFT_PADDING = 18;  // Left padding to ensure first time label is visible
+    // Layout constants - use shared constant from LayoutConfig
+    static constexpr int LEFT_PADDING = LayoutConfig::TIMELINE_LEFT_PADDING;
 
     // Local state (cached from controller for quick access during rendering)
     // These are updated via TimelineStateListener callbacks

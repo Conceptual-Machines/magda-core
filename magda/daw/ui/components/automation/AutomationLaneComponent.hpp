@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 
+#include "../../layout/LayoutConfig.hpp"
 #include "AutomationClipComponent.hpp"
 #include "AutomationCurveEditor.hpp"
 #include "core/AutomationInfo.hpp"
@@ -71,7 +72,7 @@ class AutomationLaneComponent : public juce::Component,
     static constexpr int DEFAULT_LANE_HEIGHT = 60;
     static constexpr int RESIZE_HANDLE_HEIGHT = 5;
     static constexpr int SCALE_LABEL_WIDTH =
-        18;  // Left margin for Y-axis scale labels (matches TrackContentPanel::LEFT_PADDING)
+        LayoutConfig::TIMELINE_LEFT_PADDING;  // Left margin for Y-axis scale labels
 
     // Callbacks for parent coordination
     std::function<void(AutomationLaneId, int)> onHeightChanged;

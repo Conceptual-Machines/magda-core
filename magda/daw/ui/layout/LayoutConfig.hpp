@@ -57,6 +57,9 @@ struct LayoutConfig {
     int componentSpacing = 4;
     int panelPadding = 8;
 
+    // Timeline content left padding - shared across timeline, track content, automation lanes
+    static constexpr int TIMELINE_LEFT_PADDING = 23;
+
     // Zoom controls
     int zoomButtonSize = 24;
     int zoomSliderMinWidth = 60;
