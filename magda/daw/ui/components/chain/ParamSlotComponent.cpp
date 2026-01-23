@@ -179,8 +179,12 @@ void ParamSlotComponent::modLinkModeChanged(bool active, const magda::ModSelecti
 }
 
 void ParamSlotComponent::macroLinkModeChanged(bool active, const magda::MacroSelection& selection) {
+    DBG("macroLinkModeChanged param=" << paramIndex_ << " active=" << (active ? 1 : 0)
+                                      << " macroIndex=" << selection.macroIndex);
+
     // CRITICAL: Only respond if this parameter is within the scope of the macro's parent
     bool isInScope = isInScopeOf(selection.parentPath);
+    DBG("  isInScope=" << (isInScope ? 1 : 0));
 
     // Only enter link mode if we're in scope
     isInLinkMode_ = active && isInScope;
@@ -268,6 +272,11 @@ void ParamSlotComponent::handleLinkModeClick() {
 }
 
 void ParamSlotComponent::showLinkModeSlider(bool /*isNewLink*/, float initialAmount) {
+    const char* type = activeMod_.isValid() ? "MOD" : "MACRO";
+    int index = activeMod_.isValid() ? activeMod_.modIndex : activeMacro_.macroIndex;
+    DBG("SHOW SLIDER: " << type << " " << index << " on param " << paramIndex_
+                        << " amount=" << initialAmount);
+
     if (!linkModeSlider_) {
         linkModeSlider_ = std::make_unique<juce::Slider>(juce::Slider::LinearHorizontal,
                                                          juce::Slider::TextBoxRight);
@@ -294,6 +303,9 @@ void ParamSlotComponent::showLinkModeSlider(bool /*isNewLink*/, float initialAmo
         };
 
         addAndMakeVisible(*linkModeSlider_);
+        DBG("  Created NEW slider widget");
+    } else {
+        DBG("  Reusing existing slider widget, visible=" << (linkModeSlider_->isVisible() ? 1 : 0));
     }
 
     // Update slider colors based on whether it's a mod or macro
@@ -306,12 +318,15 @@ void ParamSlotComponent::showLinkModeSlider(bool /*isNewLink*/, float initialAmo
     linkModeSlider_->setBounds(getLocalBounds().reduced(2));
     linkModeSlider_->toFront(true);
     linkModeSlider_->setVisible(true);
+    DBG("  Slider NOW visible=" << (linkModeSlider_->isVisible() ? 1 : 0));
     // Don't grab keyboard focus - let sliders stay visible on multiple parameters
     // linkModeSlider_->grabKeyboardFocus();
 }
 
 void ParamSlotComponent::hideLinkModeSlider() {
     if (linkModeSlider_) {
+        DBG("HIDE SLIDER on param "
+            << paramIndex_ << " (was visible=" << (linkModeSlider_->isVisible() ? 1 : 0) << ")");
         linkModeSlider_->setVisible(false);
     }
 }
