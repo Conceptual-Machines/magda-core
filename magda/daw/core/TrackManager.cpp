@@ -1549,6 +1549,17 @@ void TrackManager::setDeviceModRate(const ChainNodePath& devicePath, int modInde
     }
 }
 
+void TrackManager::setDeviceModWaveform(const ChainNodePath& devicePath, int modIndex,
+                                        LFOWaveform waveform) {
+    if (auto* device = getDeviceInChainByPath(devicePath)) {
+        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
+            return;
+        }
+        device->mods[modIndex].waveform = waveform;
+        // Don't notify - simple value change doesn't need UI rebuild
+    }
+}
+
 void TrackManager::addDeviceModPage(const ChainNodePath& devicePath) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
         addModPage(device->mods);

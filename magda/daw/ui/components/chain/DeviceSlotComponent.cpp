@@ -539,6 +539,10 @@ void DeviceSlotComponent::onModRateChangedInternal(int modIndex, float rate) {
     magda::TrackManager::getInstance().setDeviceModRate(nodePath_, modIndex, rate);
 }
 
+void DeviceSlotComponent::onModWaveformChangedInternal(int modIndex, magda::LFOWaveform waveform) {
+    magda::TrackManager::getInstance().setDeviceModWaveform(nodePath_, modIndex, waveform);
+}
+
 void DeviceSlotComponent::onMacroValueChangedInternal(int macroIndex, float value) {
     magda::TrackManager::getInstance().setDeviceMacroValue(nodePath_, macroIndex, value);
     updateParamModulation();  // Refresh param indicators to show new value

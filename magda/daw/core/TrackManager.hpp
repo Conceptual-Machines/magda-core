@@ -200,6 +200,7 @@ class TrackManager {
     void setDeviceModName(const ChainNodePath& devicePath, int modIndex, const juce::String& name);
     void setDeviceModType(const ChainNodePath& devicePath, int modIndex, ModType type);
     void setDeviceModRate(const ChainNodePath& devicePath, int modIndex, float rate);
+    void setDeviceModWaveform(const ChainNodePath& devicePath, int modIndex, LFOWaveform waveform);
     void addDeviceModPage(const ChainNodePath& devicePath);
     void removeDeviceModPage(const ChainNodePath& devicePath);
 

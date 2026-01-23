@@ -959,6 +959,11 @@ void NodeComponent::initializeModsMacrosPanels() {
             onModRateChangedInternal(selectedModIndex_, rate);
         }
     };
+    modulatorEditorPanel_->onWaveformChanged = [this](magda::LFOWaveform waveform) {
+        if (selectedModIndex_ >= 0) {
+            onModWaveformChangedInternal(selectedModIndex_, waveform);
+        }
+    };
     addChildComponent(*modulatorEditorPanel_);
 
     // Create macro editor panel

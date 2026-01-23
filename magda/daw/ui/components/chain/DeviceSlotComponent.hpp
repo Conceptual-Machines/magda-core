@@ -78,6 +78,7 @@ class DeviceSlotComponent : public NodeComponent {
     void onModNameChangedInternal(int modIndex, const juce::String& name) override;
     void onModTypeChangedInternal(int modIndex, magda::ModType type) override;
     void onModRateChangedInternal(int modIndex, float rate) override;
+    void onModWaveformChangedInternal(int modIndex, magda::LFOWaveform waveform) override;
     void onMacroValueChangedInternal(int macroIndex, float value) override;
     void onMacroTargetChangedInternal(int macroIndex, magda::MacroTarget target) override;
     void onMacroNameChangedInternal(int macroIndex, const juce::String& name) override;
