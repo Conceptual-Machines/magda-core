@@ -481,19 +481,42 @@ void RackComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) 
 }
 
 void RackComponent::onAddChainClicked() {
-    DBG("RackComponent::onAddChainClicked - rackPath_ has "
-        << rackPath_.steps.size() << " steps, trackId=" << rackPath_.trackId);
+    DBG("RackComponent::onAddChainClicked - START");
+    DBG("  rackPath_.trackId=" << rackPath_.trackId);
+    DBG("  rackPath_.steps.size()=" << rackPath_.steps.size());
+
+    // Sanity check for memory corruption
+    if (rackPath_.steps.size() > 100) {
+        DBG("ERROR: rackPath_.steps.size() is suspiciously large: " << rackPath_.steps.size());
+        DBG("  This suggests memory corruption. Aborting chain creation.");
+        return;
+    }
+
     for (size_t i = 0; i < rackPath_.steps.size(); ++i) {
         DBG("  step[" << i << "]: type=" << static_cast<int>(rackPath_.steps[i].type)
                       << ", id=" << rackPath_.steps[i].id);
     }
+
+    DBG("  Calling TrackManager::addChainToRack...");
     auto newChainId = magda::TrackManager::getInstance().addChainToRack(rackPath_);
+    DBG("  newChainId=" << newChainId);
 
     // Auto-select the newly created chain
     if (newChainId != magda::INVALID_CHAIN_ID) {
-        auto newChainPath = rackPath_.withChain(newChainId);
-        magda::SelectionManager::getInstance().selectChainNode(newChainPath);
+        DBG("  About to call rackPath_.withChain(" << newChainId << ")...");
+        DBG("  rackPath_.steps.size() before withChain=" << rackPath_.steps.size());
+
+        // Extra paranoid check right before the crash point
+        try {
+            auto newChainPath = rackPath_.withChain(newChainId);
+            DBG("  withChain succeeded, calling selectChainNode...");
+            magda::SelectionManager::getInstance().selectChainNode(newChainPath);
+            DBG("  selectChainNode succeeded");
+        } catch (...) {
+            DBG("EXCEPTION caught in onAddChainClicked during withChain/selectChainNode");
+        }
     }
+    DBG("RackComponent::onAddChainClicked - END");
 }
 
 void RackComponent::showChainPanel(magda::ChainId chainId) {
