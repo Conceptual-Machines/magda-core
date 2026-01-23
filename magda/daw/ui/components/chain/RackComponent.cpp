@@ -447,15 +447,15 @@ void RackComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) 
     }
 
     // Check if the path is a chain within this rack
-    if (path.steps.size() != rackPath_.steps.size() + 1) {
-        return;  // Not a direct child chain
+    if (path.steps.empty() || path.steps.size() != rackPath_.steps.size() + 1) {
+        return;  // Not a direct child chain or invalid path
     }
 
     // Verify all parent steps match
     for (size_t i = 0; i < rackPath_.steps.size(); ++i) {
-        if (path.steps[i].type != rackPath_.steps[i].type ||
+        if (i >= path.steps.size() || path.steps[i].type != rackPath_.steps[i].type ||
             path.steps[i].id != rackPath_.steps[i].id) {
-            return;  // Not in this rack
+            return;  // Not in this rack or invalid path
         }
     }
 
