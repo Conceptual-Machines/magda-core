@@ -847,6 +847,16 @@ void ParamSlotComponent::paintModulationIndicators(juce::Graphics& g) {
         }
     }
 
+    // Check rack-level mods
+    if (availableRackMods_ && deviceId_ != magda::INVALID_DEVICE_ID) {
+        for (size_t i = 0; i < availableRackMods_->size(); ++i) {
+            const auto& mod = (*availableRackMods_)[i];
+            if (const auto* link = mod.getLink(modTarget)) {
+                totalModModulation += mod.value * link->amount;
+            }
+        }
+    }
+
     // Draw MOD movement line (orange) at BOTTOM if any mod modulation exists
     if (totalModModulation > 0.0f) {
         int y = sliderBounds.getBottom() - 6;

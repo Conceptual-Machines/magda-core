@@ -316,7 +316,8 @@ void DeviceSlotComponent::updateParamModulation() {
     const auto* mods = getModsData();
     const auto* macros = getMacrosData();
 
-    // Get rack-level macros from parent rack
+    // Get rack-level mods and macros from parent rack
+    const magda::ModArray* rackMods = nullptr;
     const magda::MacroArray* rackMacros = nullptr;
     // Build rack path by taking only the rack step (first step should be the rack)
     if (!nodePath_.steps.empty() && nodePath_.steps[0].type == magda::ChainStepType::Rack) {
@@ -324,6 +325,7 @@ void DeviceSlotComponent::updateParamModulation() {
         rackPath.trackId = nodePath_.trackId;
         rackPath.steps.push_back(nodePath_.steps[0]);  // Just the rack step
         if (auto* rack = magda::TrackManager::getInstance().getRackByPath(rackPath)) {
+            rackMods = &rack->mods;
             rackMacros = &rack->macros;
         }
     }
@@ -354,6 +356,7 @@ void DeviceSlotComponent::updateParamModulation() {
         paramSlots_[i]->setDeviceId(device_.id);
         paramSlots_[i]->setDevicePath(nodePath_);  // For param selection
         paramSlots_[i]->setAvailableMods(mods);
+        paramSlots_[i]->setAvailableRackMods(rackMods);  // Pass rack-level mods
         paramSlots_[i]->setAvailableMacros(macros);
         paramSlots_[i]->setAvailableRackMacros(rackMacros);  // Pass rack-level macros
         paramSlots_[i]->setSelectedModIndex(selectedModIndex);
@@ -634,8 +637,8 @@ void DeviceSlotComponent::onModLinkRemovedInternal(int modIndex, magda::ModTarge
 
 void DeviceSlotComponent::onAddModRequestedInternal(int slotIndex, magda::ModType type) {
     magda::TrackManager::getInstance().addDeviceMod(nodePath_, slotIndex, type);
-    // UI update is handled automatically by TrackManager notification
-    // (TrackChainContent::trackDevicesChanged -> rebuildNodeComponents)
+    // Update the mods panel directly to avoid full UI rebuild (which closes the panel)
+    updateModsPanel();
 }
 
 void DeviceSlotComponent::onModRemoveRequestedInternal(int modIndex) {

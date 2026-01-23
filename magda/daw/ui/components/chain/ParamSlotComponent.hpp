@@ -52,6 +52,9 @@ class ParamSlotComponent : public juce::Component,
     void setAvailableRackMacros(const magda::MacroArray* rackMacros) {
         availableRackMacros_ = rackMacros;
     }
+    void setAvailableRackMods(const magda::ModArray* rackMods) {
+        availableRackMods_ = rackMods;
+    }
 
     // Contextual selection - when set, only shows this mod's/macro's link
     void setSelectedModIndex(int modIndex) {
@@ -132,8 +135,9 @@ class ParamSlotComponent : public juce::Component,
 
     int paramIndex_;
     magda::DeviceId deviceId_ = magda::INVALID_DEVICE_ID;
-    magda::ChainNodePath devicePath_;  // For param selection
-    const magda::ModArray* availableMods_ = nullptr;
+    magda::ChainNodePath devicePath_;                         // For param selection
+    const magda::ModArray* availableMods_ = nullptr;          // Device-level mods
+    const magda::ModArray* availableRackMods_ = nullptr;      // Rack-level mods
     const magda::MacroArray* availableMacros_ = nullptr;      // Device-level macros
     const magda::MacroArray* availableRackMacros_ = nullptr;  // Rack-level macros
     int selectedModIndex_ = -1;                               // -1 means no mod selected (show all)

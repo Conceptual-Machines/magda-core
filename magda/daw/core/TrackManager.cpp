@@ -1447,7 +1447,7 @@ void TrackManager::addRackMod(const ChainNodePath& rackPath, int slotIndex, ModT
                 rack->mods[i].id = i;
             }
 
-            notifyTrackDevicesChanged(rackPath.trackId);
+            // Don't notify - caller handles UI update to avoid panel closing
         }
     }
 }
@@ -1621,7 +1621,7 @@ void TrackManager::addDeviceMod(const ChainNodePath& devicePath, int slotIndex, 
                 device->mods[i].id = i;
             }
 
-            notifyTrackDevicesChanged(devicePath.trackId);
+            // Don't notify - caller handles UI update to avoid panel closing
         }
     }
 }

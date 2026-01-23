@@ -633,8 +633,8 @@ void RackComponent::onMacroClickedInternal(int macroIndex) {
 
 void RackComponent::onAddModRequestedInternal(int slotIndex, magda::ModType type) {
     magda::TrackManager::getInstance().addRackMod(rackPath_, slotIndex, type);
-    // UI update is handled automatically by TrackManager notification
-    // (TrackChainContent::trackDevicesChanged -> rebuildNodeComponents)
+    // Update the mods panel directly to avoid full UI rebuild (which closes the panel)
+    updateModsPanel();
 }
 
 void RackComponent::onModRemoveRequestedInternal(int modIndex) {
