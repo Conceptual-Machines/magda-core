@@ -407,7 +407,10 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
 
     // Handle link mode - prepare for drag to set amount/value
     if (isInLinkMode_ && e.mods.isLeftButtonDown()) {
-        // Mod link mode - drag to set per-parameter amount
+        // FIRST: Create/show persistent slider for this parameter
+        handleLinkModeClick();
+
+        // THEN: Mod link mode - drag to set per-parameter amount
         if (activeMod_.isValid()) {
             float initialAmount = 0.5f;
             bool isLinked = false;
