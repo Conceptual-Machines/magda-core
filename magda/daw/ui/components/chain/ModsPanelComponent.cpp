@@ -63,7 +63,8 @@ void ModsPanelComponent::setMods(const magda::ModArray& mods) {
     ensureKnobCount(static_cast<int>(mods.size()));
 
     for (size_t i = 0; i < mods.size() && i < knobs_.size(); ++i) {
-        knobs_[i]->setModInfo(mods[i]);
+        // Pass pointer to live mod for waveform animation
+        knobs_[i]->setModInfo(mods[i], &mods[i]);
     }
 
     resized();

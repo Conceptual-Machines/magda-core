@@ -35,6 +35,9 @@ ModKnobComponent::ModKnobComponent(int modIndex) : modIndex_(modIndex) {
     amountSlider_.setVisible(false);  // Hide - amount is per-parameter, not global
     addChildComponent(amountSlider_);
 
+    // Waveform display
+    addAndMakeVisible(waveformDisplay_);
+
     // Link button - toggles link mode for this mod (using link_flat icon)
     linkButton_ = std::make_unique<magda::SvgButton>("Link", BinaryData::link_flat_svg,
                                                      BinaryData::link_flat_svgSize);
@@ -54,8 +57,11 @@ ModKnobComponent::~ModKnobComponent() {
     magda::LinkModeManager::getInstance().removeListener(this);
 }
 
-void ModKnobComponent::setModInfo(const magda::ModInfo& mod) {
+void ModKnobComponent::setModInfo(const magda::ModInfo& mod, const magda::ModInfo* liveMod) {
     currentMod_ = mod;
+    liveModPtr_ = liveMod;
+    // Use live mod pointer if available (for animation), otherwise use local copy
+    waveformDisplay_.setModInfo(liveMod ? liveMod : &currentMod_);
     nameLabel_.setText(mod.name, juce::dontSendNotification);
     amountSlider_.setValue(mod.amount, juce::dontSendNotification);
     repaint();
@@ -120,15 +126,14 @@ void ModKnobComponent::resized() {
     // Name label at top
     nameLabel_.setBounds(bounds.removeFromTop(NAME_LABEL_HEIGHT));
 
-    // Amount slider is hidden - skip layout
-    // (This space could be used for LFO rate or other mod-specific controls)
+    // Link button at the very bottom
+    auto linkButtonBounds = bounds.removeFromBottom(LINK_BUTTON_HEIGHT);
+    linkButton_->setBounds(linkButtonBounds);
 
-    // Skip remaining space and position link button at the very bottom
-    auto remainingHeight = bounds.getHeight();
-    if (remainingHeight > LINK_BUTTON_HEIGHT) {
-        bounds.removeFromTop(remainingHeight - LINK_BUTTON_HEIGHT);
+    // Waveform display takes remaining space in the middle
+    if (bounds.getHeight() > 4) {
+        waveformDisplay_.setBounds(bounds.reduced(2));
     }
-    linkButton_->setBounds(bounds.removeFromTop(LINK_BUTTON_HEIGHT));
 }
 
 void ModKnobComponent::mouseDown(const juce::MouseEvent& e) {
