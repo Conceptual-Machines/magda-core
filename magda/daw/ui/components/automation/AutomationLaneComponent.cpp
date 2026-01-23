@@ -390,10 +390,7 @@ juce::String AutomationLaneComponent::formatScaleValue(double normalizedValue) c
                 dB = ((normalizedValue - UNITY_POS) / (1.0 - UNITY_POS)) * MAX_DB;
             }
 
-            if (dB > 0) {
-                return "+" + juce::String(static_cast<int>(std::round(dB)));
-            }
-            return juce::String(static_cast<int>(std::round(dB)));
+            return juce::String(static_cast<int>(std::abs(std::round(dB))));
         }
 
         case AutomationTargetType::TrackPan: {

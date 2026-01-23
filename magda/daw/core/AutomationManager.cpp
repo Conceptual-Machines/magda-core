@@ -3,7 +3,62 @@
 #include <algorithm>
 #include <cmath>
 
+#include "TrackManager.hpp"
+
 namespace magda {
+
+// Volume conversion constants (must match MixerView.cpp)
+static constexpr float MIN_DB = -60.0f;
+static constexpr float MAX_DB = 6.0f;
+static constexpr float UNITY_DB = 0.0f;
+
+// Convert linear gain to dB
+static float gainToDb(float gain) {
+    if (gain <= 0.0f)
+        return MIN_DB;
+    return 20.0f * std::log10(gain);
+}
+
+// Convert dB to normalized fader/automation position (0-1)
+// Unity (0dB) at 0.75 position
+static float dbToNormalizedPos(float db) {
+    if (db <= MIN_DB)
+        return 0.0f;
+    if (db >= MAX_DB)
+        return 1.0f;
+
+    if (db < UNITY_DB) {
+        // Below unity: map -60dB..0dB to 0..0.75
+        return 0.75f * (db - MIN_DB) / (UNITY_DB - MIN_DB);
+    } else {
+        // Above unity: map 0dB..+6dB to 0.75..1.0
+        return 0.75f + 0.25f * (db - UNITY_DB) / (MAX_DB - UNITY_DB);
+    }
+}
+
+// Get current normalized value for an automation target
+static double getCurrentTargetValue(const AutomationTarget& target) {
+    switch (target.type) {
+        case AutomationTargetType::TrackVolume: {
+            const auto* track = TrackManager::getInstance().getTrack(target.trackId);
+            if (track) {
+                float db = gainToDb(track->volume);
+                return static_cast<double>(dbToNormalizedPos(db));
+            }
+            return 0.75;  // Default to unity (0dB)
+        }
+        case AutomationTargetType::TrackPan: {
+            const auto* track = TrackManager::getInstance().getTrack(target.trackId);
+            if (track) {
+                // Pan is -1 to 1, convert to 0-1
+                return static_cast<double>((track->pan + 1.0f) / 2.0f);
+            }
+            return 0.5;  // Default to center
+        }
+        default:
+            return 0.5;  // Default for unknown targets
+    }
+}
 
 AutomationManager& AutomationManager::getInstance() {
     static AutomationManager instance;
@@ -23,6 +78,17 @@ AutomationLaneId AutomationManager::createLane(const AutomationTarget& target,
     lane.target = target;
     lane.type = type;
     lane.name = target.getDisplayName();
+
+    // For absolute lanes, add an initial point at the current target value
+    if (type == AutomationLaneType::Absolute) {
+        double initialValue = getCurrentTargetValue(target);
+        AutomationPoint point;
+        point.id = nextPointId_++;
+        point.time = 0.0;
+        point.value = initialValue;
+        point.curveType = AutomationCurveType::Linear;
+        lane.absolutePoints.push_back(point);
+    }
 
     lanes_.push_back(lane);
     notifyLanesChanged();
