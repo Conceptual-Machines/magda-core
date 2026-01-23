@@ -1,5 +1,6 @@
 #include "ModulatorEditorPanel.hpp"
 
+#include "BinaryData.h"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -177,16 +178,14 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     addAndMakeVisible(triggerModeCombo_);
 
     // Advanced settings button
-    advancedButton_.setButtonText("...");
-    advancedButton_.setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
-    advancedButton_.setColour(juce::TextButton::textColourOffId,
-                              DarkTheme::getSecondaryTextColour());
-    advancedButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    advancedButton_.onClick = [this]() {
+    advancedButton_ = std::make_unique<magda::SvgButton>("Advanced", BinaryData::settings_nobg_svg,
+                                                         BinaryData::settings_nobg_svgSize);
+    advancedButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    advancedButton_->setHoverColor(DarkTheme::getTextColour());
+    advancedButton_->onClick = [this]() {
         // TODO: Show advanced trigger settings popup
     };
-    addAndMakeVisible(advancedButton_);
+    addAndMakeVisible(advancedButton_.get());
 
     // Target label
     targetLabel_.setFont(FontManager::getInstance().getUIFont(8.0f));
@@ -215,7 +214,7 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
         syncDivisionCombo_.setEnabled(false);
         rateSlider_.setEnabled(false);
         triggerModeCombo_.setEnabled(false);
-        advancedButton_.setEnabled(false);
+        advancedButton_->setEnabled(false);
         targetLabel_.setText("No Target", juce::dontSendNotification);
     } else {
         typeSelector_.setEnabled(true);
@@ -225,7 +224,7 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
         syncDivisionCombo_.setEnabled(true);
         rateSlider_.setEnabled(true);
         triggerModeCombo_.setEnabled(true);
-        advancedButton_.setEnabled(true);
+        advancedButton_->setEnabled(true);
     }
 }
 
@@ -342,7 +341,7 @@ void ModulatorEditorPanel::resized() {
 
     // Advanced button on the right
     int advButtonWidth = 20;
-    advancedButton_.setBounds(triggerRow.removeFromRight(advButtonWidth));
+    advancedButton_->setBounds(triggerRow.removeFromRight(advButtonWidth));
     triggerRow.removeFromRight(4);  // Small gap
 
     // Trigger combo takes remaining space

@@ -7,6 +7,7 @@
 
 #include "core/ModInfo.hpp"
 #include "core/ModulatorEngine.hpp"
+#include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::ui {
@@ -169,7 +170,7 @@ class ModulatorEditorPanel : public juce::Component {
     juce::ComboBox syncDivisionCombo_;
     TextSlider rateSlider_{TextSlider::Format::Decimal};
     juce::ComboBox triggerModeCombo_;
-    juce::TextButton advancedButton_;
+    std::unique_ptr<magda::SvgButton> advancedButton_;
     juce::Label targetLabel_;
 
     void updateFromMod();
