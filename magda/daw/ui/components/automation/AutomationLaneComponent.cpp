@@ -1,5 +1,7 @@
 #include "AutomationLaneComponent.hpp"
 
+#include <cmath>
+
 namespace magda {
 
 AutomationLaneComponent::AutomationLaneComponent(AutomationLaneId laneId) : laneId_(laneId) {
@@ -19,25 +21,6 @@ AutomationLaneComponent::~AutomationLaneComponent() {
 }
 
 void AutomationLaneComponent::setupHeader() {
-    // Draw mode toggle button (pencil)
-    drawModeButton_.setButtonText("✎");
-    drawModeButton_.setColour(juce::TextButton::buttonColourId, juce::Colour(0x00000000));
-    drawModeButton_.setColour(juce::TextButton::textColourOffId, juce::Colour(0xFFFFFFFF));
-    drawModeButton_.setClickingTogglesState(true);
-    drawModeButton_.setToggleState(true, juce::dontSendNotification);  // Start in draw mode
-    drawModeButton_.setTooltip("Toggle draw mode");
-    drawModeButton_.onClick = [this]() {
-        bool drawMode = drawModeButton_.getToggleState();
-        if (curveEditor_) {
-            curveEditor_->setDrawMode(drawMode ? AutomationDrawMode::Pencil
-                                               : AutomationDrawMode::Select);
-        }
-        // Update button appearance
-        drawModeButton_.setColour(juce::TextButton::textColourOffId,
-                                  drawMode ? juce::Colour(0xFFFFFFFF) : juce::Colour(0xFF666666));
-    };
-    addAndMakeVisible(drawModeButton_);
-
     // Name label
     nameLabel_.setColour(juce::Label::textColourId, juce::Colour(0xFFCCCCCC));
     nameLabel_.setJustificationType(juce::Justification::centredLeft);
@@ -46,6 +29,11 @@ void AutomationLaneComponent::setupHeader() {
     // Update name
     if (const auto* lane = getLaneInfo()) {
         nameLabel_.setText(lane->getDisplayName(), juce::dontSendNotification);
+    }
+
+    // Start curve editor in pencil draw mode by default
+    if (curveEditor_) {
+        curveEditor_->setDrawMode(AutomationDrawMode::Pencil);
     }
 }
 
@@ -78,6 +66,13 @@ void AutomationLaneComponent::paint(juce::Graphics& g) {
         g.setColour(juce::Colour(0xFFCC4444));
         g.fillRect(0, 0, 3, HEADER_HEIGHT);
     }
+
+    // Scale labels in the left padding area (matches TrackContentPanel::LEFT_PADDING)
+    auto scaleBounds = getLocalBounds();
+    scaleBounds.removeFromTop(HEADER_HEIGHT);
+    scaleBounds.removeFromBottom(RESIZE_HANDLE_HEIGHT);
+    scaleBounds.setWidth(SCALE_LABEL_WIDTH);
+    paintScaleLabels(g, scaleBounds);
 }
 
 void AutomationLaneComponent::resized() {
@@ -85,18 +80,14 @@ void AutomationLaneComponent::resized() {
 
     // Header layout
     auto headerBounds = bounds.removeFromTop(HEADER_HEIGHT);
-    int buttonSize = HEADER_HEIGHT - 4;
-    int margin = 2;
-
-    drawModeButton_.setBounds(margin, margin, buttonSize, buttonSize);
-
-    auto labelBounds = headerBounds;
-    labelBounds.removeFromLeft(margin + buttonSize + 4);
-    nameLabel_.setBounds(labelBounds.reduced(2));
+    nameLabel_.setBounds(headerBounds.reduced(4, 2));
 
     // Content area (leave room for resize handle at bottom)
     auto contentBounds = bounds;
     contentBounds.removeFromBottom(RESIZE_HANDLE_HEIGHT);
+
+    // Curve editor starts after the scale label area to align with timeline
+    contentBounds.removeFromLeft(SCALE_LABEL_WIDTH);
 
     if (curveEditor_) {
         curveEditor_->setBounds(contentBounds);
@@ -330,6 +321,87 @@ void AutomationLaneComponent::showContextMenu() {
                 [laneId]() { AutomationManager::getInstance().setLaneVisible(laneId, false); });
         }
     });
+}
+
+void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangle<int> area) {
+    if (area.getHeight() <= 0)
+        return;
+
+    // Background for scale area
+    g.setColour(juce::Colour(0xFF1A1A1A));
+    g.fillRect(area);
+
+    // Right border
+    g.setColour(juce::Colour(0xFF333333));
+    g.drawVerticalLine(area.getRight() - 1, static_cast<float>(area.getY()),
+                       static_cast<float>(area.getBottom()));
+
+    // Draw scale labels at key positions: 100%, 50%, 0%
+    g.setColour(juce::Colour(0xFF888888));
+    g.setFont(9.0f);
+
+    const double values[] = {1.0, 0.5, 0.0};
+    for (double value : values) {
+        int y = area.getY() + valueToPixel(value, area.getHeight());
+        juce::String label = formatScaleValue(value);
+
+        // Draw label right-aligned with small margin
+        auto labelBounds = juce::Rectangle<int>(2, y - 5, area.getWidth() - 6, 10);
+
+        // Constrain to area
+        if (labelBounds.getY() < area.getY()) {
+            labelBounds.setY(area.getY());
+        }
+        if (labelBounds.getBottom() > area.getBottom()) {
+            labelBounds.setY(area.getBottom() - 10);
+        }
+
+        g.drawText(label, labelBounds, juce::Justification::centredRight);
+
+        // Draw small tick mark
+        g.drawHorizontalLine(y, static_cast<float>(area.getRight() - 4),
+                             static_cast<float>(area.getRight() - 1));
+    }
+}
+
+juce::String AutomationLaneComponent::formatScaleValue(double normalizedValue) const {
+    const auto* lane = getLaneInfo();
+    if (!lane)
+        return juce::String(static_cast<int>(normalizedValue * 100)) + "%";
+
+    switch (lane->target.type) {
+        case AutomationTargetType::TrackVolume: {
+            // Volume: 0.8 = 0dB, 0 = -inf
+            if (normalizedValue <= 0.001) {
+                return "-inf";
+            }
+            double dB = 20.0 * std::log10(normalizedValue / 0.8);
+            if (dB > 0) {
+                return "+" + juce::String(static_cast<int>(std::round(dB)));
+            }
+            return juce::String(static_cast<int>(std::round(dB)));
+        }
+
+        case AutomationTargetType::TrackPan: {
+            // Pan: 0 = full left, 0.5 = center, 1 = full right
+            if (normalizedValue < 0.48) {
+                int percent = static_cast<int>((0.5 - normalizedValue) * 200);
+                return juce::String(percent) + "L";
+            } else if (normalizedValue > 0.52) {
+                int percent = static_cast<int>((normalizedValue - 0.5) * 200);
+                return juce::String(percent) + "R";
+            }
+            return "C";
+        }
+
+        default:
+            // Generic 0-100%
+            return juce::String(static_cast<int>(normalizedValue * 100)) + "%";
+    }
+}
+
+int AutomationLaneComponent::valueToPixel(double value, int areaHeight) const {
+    return static_cast<int>((1.0 - value) * areaHeight);
 }
 
 }  // namespace magda

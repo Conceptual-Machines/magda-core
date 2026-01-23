@@ -69,6 +69,8 @@ class AutomationLaneComponent : public juce::Component,
     static constexpr int MAX_LANE_HEIGHT = 200;
     static constexpr int DEFAULT_LANE_HEIGHT = 60;
     static constexpr int RESIZE_HANDLE_HEIGHT = 5;
+    static constexpr int SCALE_LABEL_WIDTH =
+        18;  // Left margin for Y-axis scale labels (matches TrackContentPanel::LEFT_PADDING)
 
     // Callbacks for parent coordination
     std::function<void(AutomationLaneId, int)> onHeightChanged;
@@ -87,7 +89,6 @@ class AutomationLaneComponent : public juce::Component,
     std::unique_ptr<AutomationCurveEditor> curveEditor_;
     std::vector<std::unique_ptr<AutomationClipComponent>> clipComponents_;
 
-    juce::TextButton drawModeButton_;
     juce::Label nameLabel_;
 
     void setupHeader();
@@ -103,6 +104,11 @@ class AutomationLaneComponent : public juce::Component,
     // Resize helpers
     bool isInResizeArea(int y) const;
     juce::Rectangle<int> getResizeHandleArea() const;
+
+    // Scale label helpers
+    void paintScaleLabels(juce::Graphics& g, juce::Rectangle<int> area);
+    juce::String formatScaleValue(double normalizedValue) const;
+    int valueToPixel(double value, int areaHeight) const;
 };
 
 }  // namespace magda
