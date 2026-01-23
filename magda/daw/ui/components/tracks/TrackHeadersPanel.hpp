@@ -25,8 +25,6 @@ class TrackHeadersPanel : public juce::Component,
     static constexpr int DEFAULT_TRACK_HEIGHT = 80;
     static constexpr int MIN_TRACK_HEIGHT = 40;
     static constexpr int MAX_TRACK_HEIGHT = 200;
-    static constexpr int SCALE_LABEL_OVERFLOW =
-        18;  // How far scale labels extend into content area
 
     TrackHeadersPanel();
     ~TrackHeadersPanel() override;
@@ -200,12 +198,6 @@ class TrackHeadersPanel : public juce::Component,
 
     // Automation lane header painting
     void paintAutomationLaneHeaders(juce::Graphics& g, int trackIndex);
-    void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo* lane,
-                                   juce::Rectangle<int> area);
-    void paintScaleLabels(juce::Graphics& g, juce::Rectangle<int> area,
-                          const AutomationLaneInfo* lane);
-    juce::String formatScaleValue(double normalizedValue, const AutomationLaneInfo* lane) const;
-    int valueToPixel(double value, int areaHeight) const;
 
     // Indentation
     static constexpr int INDENT_WIDTH = 20;

@@ -29,6 +29,7 @@ class AutomationLaneComponent : public juce::Component,
 
     // Component
     void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
 
     // Mouse interaction

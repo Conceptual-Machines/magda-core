@@ -21,11 +21,7 @@ AutomationLaneComponent::~AutomationLaneComponent() {
 }
 
 void AutomationLaneComponent::setupHeader() {
-    // Name label is now painted by TrackHeadersPanel, but we keep the state for potential use
-    if (const auto* lane = getLaneInfo()) {
-        nameLabel_.setText(lane->getDisplayName(), juce::dontSendNotification);
-    }
-
+    // Name label is now painted by TrackHeadersPanel
     // Start curve editor in pencil draw mode by default
     if (curveEditor_) {
         curveEditor_->setDrawMode(AutomationDrawMode::Pencil);
@@ -39,7 +35,7 @@ void AutomationLaneComponent::paint(juce::Graphics& g) {
     juce::Colour bgColour = isSelected_ ? juce::Colour(0xFF2A2A2A) : juce::Colour(0xFF1E1E1E);
     g.fillAll(bgColour);
 
-    // Header background (painted by TrackHeadersPanel, but we still need a background here)
+    // Header area - just a simple background (name is painted by TrackHeadersPanel)
     auto headerBounds = bounds.removeFromTop(HEADER_HEIGHT);
     g.setColour(juce::Colour(0xFF252525));
     g.fillRect(headerBounds);
@@ -54,29 +50,28 @@ void AutomationLaneComponent::paint(juce::Graphics& g) {
     g.fillRect(resizeArea);
     g.setColour(juce::Colour(0xFF444444));
     g.drawHorizontalLine(getHeight() - RESIZE_HANDLE_HEIGHT, 0.0f, static_cast<float>(getWidth()));
+}
 
-    // Armed indicator
-    const auto* lane = getLaneInfo();
-    if (lane && lane->armed) {
-        g.setColour(juce::Colour(0xFFCC4444));
-        g.fillRect(0, 0, 3, HEADER_HEIGHT);
-    }
-
-    // Scale labels are now painted by TrackHeadersPanel extending into the content area
+void AutomationLaneComponent::paintOverChildren(juce::Graphics& g) {
+    // Scale labels in the left padding area - painted AFTER children so they appear on top
+    auto scaleBounds = getLocalBounds();
+    scaleBounds.removeFromTop(HEADER_HEIGHT);
+    scaleBounds.removeFromBottom(RESIZE_HANDLE_HEIGHT);
+    scaleBounds.setWidth(SCALE_LABEL_WIDTH);
+    paintScaleLabels(g, scaleBounds);
 }
 
 void AutomationLaneComponent::resized() {
     auto bounds = getLocalBounds();
 
-    // Header layout - name label no longer shown here (painted by TrackHeadersPanel)
+    // Skip header area (name is painted by TrackHeadersPanel)
     bounds.removeFromTop(HEADER_HEIGHT);
 
     // Content area (leave room for resize handle at bottom)
     auto contentBounds = bounds;
     contentBounds.removeFromBottom(RESIZE_HANDLE_HEIGHT);
 
-    // Curve editor fills content area - scale labels are painted by TrackHeadersPanel
-    // extending into the left padding area
+    // Curve editor fills full content area - scale labels are painted on top
     if (curveEditor_) {
         curveEditor_->setBounds(contentBounds);
     }

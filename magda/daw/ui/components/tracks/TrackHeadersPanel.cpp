@@ -276,9 +276,6 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
 TrackHeadersPanel::TrackHeadersPanel() {
     setSize(TRACK_HEADER_WIDTH, 400);
 
-    // Allow painting outside bounds so scale labels can extend into content area
-    setPaintingIsUnclipped(true);
-
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
 
@@ -448,7 +445,7 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
 
-    // Draw track headers and their automation lane headers
+    // Draw track headers and automation lane headers
     for (size_t i = 0; i < trackHeaders.size(); ++i) {
         auto headerArea = getTrackHeaderArea(static_cast<int>(i));
         if (headerArea.intersects(getLocalBounds())) {
@@ -460,7 +457,7 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
             paintResizeHandle(g, resizeArea);
         }
 
-        // Paint automation lane headers for this track
+        // Draw automation lane headers for this track
         paintAutomationLaneHeaders(g, static_cast<int>(i));
     }
 
@@ -1726,136 +1723,27 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
                                            AutomationLaneComponent::RESIZE_HANDLE_HEIGHT)
                                         : AutomationLaneComponent::HEADER_HEIGHT;
 
-        // Create the area for this automation lane header
-        auto area = juce::Rectangle<int>(0, y, getWidth(), laneHeight);
+        // Header area for this automation lane
+        auto headerArea =
+            juce::Rectangle<int>(0, y, getWidth(), AutomationLaneComponent::HEADER_HEIGHT);
 
-        paintAutomationLaneHeader(g, lane, area);
+        // Header background
+        g.setColour(juce::Colour(0xFF252525));
+        g.fillRect(headerArea);
+
+        // Header border
+        g.setColour(juce::Colour(0xFF333333));
+        g.drawHorizontalLine(headerArea.getBottom() - 1, static_cast<float>(headerArea.getX()),
+                             static_cast<float>(headerArea.getRight()));
+
+        // Parameter name
+        g.setColour(juce::Colour(0xFFCCCCCC));
+        g.setFont(11.0f);
+        auto nameArea = headerArea.reduced(4, 2);
+        g.drawText(lane->getDisplayName(), nameArea, juce::Justification::centredLeft);
 
         y += laneHeight;
     }
-}
-
-void TrackHeadersPanel::paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo* lane,
-                                                  juce::Rectangle<int> area) {
-    if (!lane) {
-        return;
-    }
-
-    // Header background
-    auto headerArea = area.removeFromTop(AutomationLaneComponent::HEADER_HEIGHT);
-    g.setColour(juce::Colour(0xFF252525));
-    g.fillRect(headerArea);
-
-    // Header border
-    g.setColour(juce::Colour(0xFF333333));
-    g.drawHorizontalLine(headerArea.getBottom() - 1, static_cast<float>(headerArea.getX()),
-                         static_cast<float>(headerArea.getRight()));
-
-    // Parameter name
-    g.setColour(juce::Colour(0xFFCCCCCC));
-    g.setFont(11.0f);
-    auto nameArea = headerArea.reduced(4, 2);
-    g.drawText(lane->getDisplayName(), nameArea, juce::Justification::centredLeft);
-
-    // Only draw scale labels if lane is expanded
-    if (!lane->expanded) {
-        return;
-    }
-
-    // Content area (after header, before resize handle)
-    auto contentArea = area;
-    contentArea.removeFromBottom(AutomationLaneComponent::RESIZE_HANDLE_HEIGHT);
-
-    // Scale labels extend to the right, into the content area
-    auto scaleArea = contentArea;
-    scaleArea.setX(getWidth());  // Start at the right edge of headers
-    scaleArea.setWidth(SCALE_LABEL_OVERFLOW);
-
-    paintScaleLabels(g, scaleArea, lane);
-}
-
-void TrackHeadersPanel::paintScaleLabels(juce::Graphics& g, juce::Rectangle<int> area,
-                                         const AutomationLaneInfo* lane) {
-    if (area.getHeight() <= 0) {
-        return;
-    }
-
-    // Background for scale area
-    g.setColour(juce::Colour(0xFF1A1A1A));
-    g.fillRect(area);
-
-    // Right border (left border of content area)
-    g.setColour(juce::Colour(0xFF333333));
-    g.drawVerticalLine(area.getRight() - 1, static_cast<float>(area.getY()),
-                       static_cast<float>(area.getBottom()));
-
-    // Draw scale labels at key positions: 100%, 50%, 0%
-    g.setColour(juce::Colour(0xFF888888));
-    g.setFont(9.0f);
-
-    const double values[] = {1.0, 0.5, 0.0};
-    for (double value : values) {
-        int y = area.getY() + valueToPixel(value, area.getHeight());
-        juce::String label = formatScaleValue(value, lane);
-
-        // Draw label right-aligned with small margin
-        auto labelBounds = juce::Rectangle<int>(area.getX() + 1, y - 5, area.getWidth() - 5, 10);
-
-        // Constrain to area
-        if (labelBounds.getY() < area.getY()) {
-            labelBounds.setY(area.getY());
-        }
-        if (labelBounds.getBottom() > area.getBottom()) {
-            labelBounds.setY(area.getBottom() - 10);
-        }
-
-        g.drawText(label, labelBounds, juce::Justification::centredRight);
-
-        // Draw small tick mark
-        g.drawHorizontalLine(y, static_cast<float>(area.getRight() - 4),
-                             static_cast<float>(area.getRight() - 1));
-    }
-}
-
-juce::String TrackHeadersPanel::formatScaleValue(double normalizedValue,
-                                                 const AutomationLaneInfo* lane) const {
-    if (!lane) {
-        return juce::String(static_cast<int>(normalizedValue * 100)) + "%";
-    }
-
-    switch (lane->target.type) {
-        case AutomationTargetType::TrackVolume: {
-            // Volume: 0.8 = 0dB, 0 = -inf
-            if (normalizedValue <= 0.001) {
-                return "-inf";
-            }
-            double dB = 20.0 * std::log10(normalizedValue / 0.8);
-            if (dB > 0) {
-                return "+" + juce::String(static_cast<int>(std::round(dB)));
-            }
-            return juce::String(static_cast<int>(std::round(dB)));
-        }
-
-        case AutomationTargetType::TrackPan: {
-            // Pan: 0 = full left, 0.5 = center, 1 = full right
-            if (normalizedValue < 0.48) {
-                int percent = static_cast<int>((0.5 - normalizedValue) * 200);
-                return juce::String(percent) + "L";
-            } else if (normalizedValue > 0.52) {
-                int percent = static_cast<int>((normalizedValue - 0.5) * 200);
-                return juce::String(percent) + "R";
-            }
-            return "C";
-        }
-
-        default:
-            // Generic 0-100%
-            return juce::String(static_cast<int>(normalizedValue * 100)) + "%";
-    }
-}
-
-int TrackHeadersPanel::valueToPixel(double value, int areaHeight) const {
-    return static_cast<int>((1.0 - value) * areaHeight);
 }
 
 }  // namespace magda
