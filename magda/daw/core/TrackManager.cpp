@@ -1397,6 +1397,29 @@ void TrackManager::setRackModTarget(const ChainNodePath& rackPath, int modIndex,
     }
 }
 
+void TrackManager::setRackModLinkAmount(const ChainNodePath& rackPath, int modIndex,
+                                        ModTarget target, float amount) {
+    if (auto* rack = getRackByPath(rackPath)) {
+        if (modIndex < 0 || modIndex >= static_cast<int>(rack->mods.size())) {
+            return;
+        }
+        // Update amount in links vector (or create link if it doesn't exist)
+        if (auto* link = rack->mods[modIndex].getLink(target)) {
+            link->amount = amount;
+        } else {
+            // Link doesn't exist - create it
+            ModLink newLink;
+            newLink.target = target;
+            newLink.amount = amount;
+            rack->mods[modIndex].links.push_back(newLink);
+        }
+        // Also update legacy amount if target matches
+        if (rack->mods[modIndex].target == target) {
+            rack->mods[modIndex].amount = amount;
+        }
+    }
+}
+
 void TrackManager::setRackModName(const ChainNodePath& rackPath, int modIndex,
                                   const juce::String& name) {
     if (auto* rack = getRackByPath(rackPath)) {

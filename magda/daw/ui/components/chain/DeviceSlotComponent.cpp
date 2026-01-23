@@ -172,23 +172,30 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         };
         paramSlots_[i]->onModLinkedWithAmount = [this](int modIndex, magda::ModTarget target,
                                                        float amount) {
-            magda::TrackManager::getInstance().setDeviceModTarget(nodePath_, modIndex, target);
-            magda::TrackManager::getInstance().setDeviceModLinkAmount(nodePath_, modIndex, target,
-                                                                      amount);
-            updateParamModulation();
-            updateModsPanel();  // Refresh mod knobs with new link data
-
-            // Auto-expand mods panel and select the linked mod
-            // BUT only if this device's mod is in link mode (not a parent rack's mod)
+            // Check if the active mod is from this device or a parent rack
             auto activeModSelection = magda::LinkModeManager::getInstance().getModInLinkMode();
             if (activeModSelection.isValid() && activeModSelection.parentPath == nodePath_) {
+                // Device-level mod
+                magda::TrackManager::getInstance().setDeviceModTarget(nodePath_, modIndex, target);
+                magda::TrackManager::getInstance().setDeviceModLinkAmount(nodePath_, modIndex,
+                                                                          target, amount);
+                updateModsPanel();  // Refresh mod knobs with new link data
+
+                // Auto-expand mods panel and select the linked mod
                 if (!modPanelVisible_) {
                     modButton_->setToggleState(true, juce::dontSendNotification);
                     modButton_->setActive(true);
                     setModPanelVisible(true);
                 }
                 magda::SelectionManager::getInstance().selectMod(nodePath_, modIndex);
+            } else if (activeModSelection.isValid()) {
+                // Rack-level mod (use the parent path from the active selection)
+                magda::TrackManager::getInstance().setRackModTarget(activeModSelection.parentPath,
+                                                                    modIndex, target);
+                magda::TrackManager::getInstance().setRackModLinkAmount(
+                    activeModSelection.parentPath, modIndex, target, amount);
             }
+            updateParamModulation();
         };
         paramSlots_[i]->onModUnlinked = [this](int modIndex, magda::ModTarget target) {
             magda::TrackManager::getInstance().removeDeviceModLink(nodePath_, modIndex, target);
@@ -197,11 +204,19 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         };
         paramSlots_[i]->onModAmountChanged = [this](int modIndex, magda::ModTarget target,
                                                     float amount) {
-            // Update per-parameter link amount
-            magda::TrackManager::getInstance().setDeviceModLinkAmount(nodePath_, modIndex, target,
-                                                                      amount);
+            // Check if the active mod is from this device or a parent rack
+            auto activeModSelection = magda::LinkModeManager::getInstance().getModInLinkMode();
+            if (activeModSelection.isValid() && activeModSelection.parentPath == nodePath_) {
+                // Device-level mod
+                magda::TrackManager::getInstance().setDeviceModLinkAmount(nodePath_, modIndex,
+                                                                          target, amount);
+                updateModsPanel();  // Refresh mod knob to show new amount
+            } else if (activeModSelection.isValid()) {
+                // Rack-level mod (use the parent path from the active selection)
+                magda::TrackManager::getInstance().setRackModLinkAmount(
+                    activeModSelection.parentPath, modIndex, target, amount);
+            }
             updateParamModulation();
-            updateModsPanel();  // Refresh mod knob to show new amount
         };
         paramSlots_[i]->onMacroLinked = [this](int macroIndex, magda::MacroTarget target) {
             onMacroTargetChangedInternal(macroIndex, target);

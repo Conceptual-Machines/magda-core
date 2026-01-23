@@ -224,18 +224,31 @@ void ParamSlotComponent::handleLinkModeClick() {
     }
 
     // Check if a mod or macro is active
-    if (activeMod_.isValid() && availableMods_ && activeMod_.modIndex >= 0 &&
-        activeMod_.modIndex < static_cast<int>(availableMods_->size())) {
+    // For mods, use parentPath to determine if device-level or rack-level
+    const magda::ModInfo* modPtr = nullptr;
+    if (activeMod_.isValid() && activeMod_.modIndex >= 0) {
+        if (activeMod_.parentPath == devicePath_ && availableMods_ &&
+            activeMod_.modIndex < static_cast<int>(availableMods_->size())) {
+            // Device-level mod
+            modPtr = &(*availableMods_)[static_cast<size_t>(activeMod_.modIndex)];
+        } else if (availableRackMods_ &&
+                   activeMod_.modIndex < static_cast<int>(availableRackMods_->size())) {
+            // Rack-level mod
+            modPtr = &(*availableRackMods_)[static_cast<size_t>(activeMod_.modIndex)];
+        }
+    }
+
+    if (modPtr) {
         // Mod link mode
-        const auto& mod = (*availableMods_)[static_cast<size_t>(activeMod_.modIndex)];
         magda::ModTarget thisTarget{deviceId_, paramIndex_};
 
         // Check if already linked
-        const auto* existingLink = mod.getLink(thisTarget);
-        bool isLinked = existingLink != nullptr ||
-                        (mod.target.deviceId == deviceId_ && mod.target.paramIndex == paramIndex_);
+        const auto* existingLink = modPtr->getLink(thisTarget);
+        bool isLinked = existingLink != nullptr || (modPtr->target.deviceId == deviceId_ &&
+                                                    modPtr->target.paramIndex == paramIndex_);
 
-        float initialAmount = isLinked ? (existingLink ? existingLink->amount : mod.amount) : 0.5f;
+        float initialAmount =
+            isLinked ? (existingLink ? existingLink->amount : modPtr->amount) : 0.5f;
 
         if (!isLinked) {
             // Create new link
@@ -412,17 +425,32 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
             float initialAmount = 0.5f;
             bool isLinked = false;
 
-            if (availableMods_ && activeMod_.modIndex >= 0 &&
-                activeMod_.modIndex < static_cast<int>(availableMods_->size())) {
-                const auto& mod = (*availableMods_)[static_cast<size_t>(activeMod_.modIndex)];
+            // Check both device-level and rack-level mods
+            const magda::ModInfo* modPtr = nullptr;
+            if (activeMod_.modIndex >= 0) {
+                if (availableMods_ &&
+                    activeMod_.modIndex < static_cast<int>(availableMods_->size())) {
+                    modPtr = &(*availableMods_)[static_cast<size_t>(activeMod_.modIndex)];
+                    DBG("mouseDown: Found DEVICE mod at index " << activeMod_.modIndex);
+                } else if (availableRackMods_ &&
+                           activeMod_.modIndex < static_cast<int>(availableRackMods_->size())) {
+                    modPtr = &(*availableRackMods_)[static_cast<size_t>(activeMod_.modIndex)];
+                    DBG("mouseDown: Found RACK mod at index " << activeMod_.modIndex);
+                } else {
+                    DBG("mouseDown: activeMod_.isValid but mod not found! modIndex="
+                        << activeMod_.modIndex);
+                }
+            }
+
+            if (modPtr) {
                 magda::ModTarget thisTarget{deviceId_, paramIndex_};
 
-                const auto* existingLink = mod.getLink(thisTarget);
-                isLinked = existingLink != nullptr || (mod.target.deviceId == deviceId_ &&
-                                                       mod.target.paramIndex == paramIndex_);
+                const auto* existingLink = modPtr->getLink(thisTarget);
+                isLinked = existingLink != nullptr || (modPtr->target.deviceId == deviceId_ &&
+                                                       modPtr->target.paramIndex == paramIndex_);
 
                 if (isLinked) {
-                    initialAmount = existingLink ? existingLink->amount : mod.amount;
+                    initialAmount = existingLink ? existingLink->amount : modPtr->amount;
                 }
             }
 
@@ -532,15 +560,27 @@ void ParamSlotComponent::mouseDrag(const juce::MouseEvent& e) {
         amountLabel_.setText(juce::String(percent) + "%", juce::dontSendNotification);
 
         // Handle mod drag - set per-parameter amount
-        if (activeMod_.isValid() && availableMods_ && activeMod_.modIndex >= 0 &&
-            activeMod_.modIndex < static_cast<int>(availableMods_->size())) {
+        // Use parentPath to determine if device-level or rack-level mod
+        const magda::ModInfo* modPtr = nullptr;
+        if (activeMod_.isValid() && activeMod_.modIndex >= 0) {
+            if (activeMod_.parentPath == devicePath_ && availableMods_ &&
+                activeMod_.modIndex < static_cast<int>(availableMods_->size())) {
+                // Device-level mod
+                modPtr = &(*availableMods_)[static_cast<size_t>(activeMod_.modIndex)];
+            } else if (availableRackMods_ &&
+                       activeMod_.modIndex < static_cast<int>(availableRackMods_->size())) {
+                // Rack-level mod
+                modPtr = &(*availableRackMods_)[static_cast<size_t>(activeMod_.modIndex)];
+            }
+        }
+
+        if (modPtr) {
             magda::ModTarget thisTarget{deviceId_, paramIndex_};
 
             // Check if link exists
-            const auto& mod = (*availableMods_)[static_cast<size_t>(activeMod_.modIndex)];
-            const auto* existingLink = mod.getLink(thisTarget);
-            bool isLinked = existingLink != nullptr || (mod.target.deviceId == deviceId_ &&
-                                                        mod.target.paramIndex == paramIndex_);
+            const auto* existingLink = modPtr->getLink(thisTarget);
+            bool isLinked = existingLink != nullptr || (modPtr->target.deviceId == deviceId_ &&
+                                                        modPtr->target.paramIndex == paramIndex_);
 
             if (isLinked) {
                 // Update existing link amount
@@ -718,9 +758,9 @@ void ParamSlotComponent::paintModulationIndicators(juce::Graphics& g) {
                                    static_cast<float>(amountBarHeight), 1.0f);
         }
 
-        // Draw MACRO amount line at TOP+4 - only for the ACTIVE macro in link mode
+        // Draw MACRO amount line at TOP - only for the ACTIVE macro in link mode
         if (activeMacro_.isValid() && activeMacro_.macroIndex >= 0) {
-            int y = sliderBounds.getY() + 6;  // Offset below movement line
+            int y = sliderBounds.getY() + 2;
             magda::MacroTarget thisTarget{deviceId_, paramIndex_};
             const magda::MacroInfo* macro = nullptr;
 
@@ -738,17 +778,18 @@ void ParamSlotComponent::paintModulationIndicators(juce::Graphics& g) {
 
             if (macro) {
                 if (const auto* link = macro->getLink(thisTarget)) {
-                    float linkAmount = link->amount;  // Max modulation range (amount)
-                    int barWidth = juce::jmax(1, static_cast<int>(maxWidth * linkAmount));
+                    float linkAmount = link->amount;
 
-                    DBG("MACRO AMOUNT BAR: linkAmount=" << linkAmount << " maxWidth=" << maxWidth
-                                                        << " barWidth=" << barWidth);
-                    DBG("  Drawing rect: x=" << leftX << " y=" << y << " width=" << barWidth
-                                             << " height=" << amountBarHeight);
+                    // Get current parameter value (0.0 to 1.0)
+                    float currentParamValue = static_cast<float>(valueSlider_.getValue());
+
+                    // Bar starts from current param value and extends by amount
+                    int startX = leftX + static_cast<int>(maxWidth * currentParamValue);
+                    int barWidth = juce::jmax(1, static_cast<int>(maxWidth * linkAmount));
 
                     // Brighter purple for link mode (editing amount)
                     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.9f));
-                    g.fillRoundedRectangle(static_cast<float>(leftX), static_cast<float>(y),
+                    g.fillRoundedRectangle(static_cast<float>(startX), static_cast<float>(y),
                                            static_cast<float>(barWidth),
                                            static_cast<float>(amountBarHeight), 1.0f);
                 }
@@ -757,28 +798,41 @@ void ParamSlotComponent::paintModulationIndicators(juce::Graphics& g) {
 
         // Draw MOD amount line - only for the ACTIVE mod in link mode
         // Position above where movement line would be (thinner, brighter)
-        if (activeMod_.isValid() && availableMods_ && activeMod_.modIndex >= 0 &&
-            activeMod_.modIndex < static_cast<int>(availableMods_->size())) {
-            // Position above where movement line would be
-            int y = sliderBounds.getBottom() - 6 - movementBarHeight - 2;
-            const auto& mod = (*availableMods_)[static_cast<size_t>(activeMod_.modIndex)];
-            magda::ModTarget thisTarget{deviceId_, paramIndex_};
+        if (activeMod_.isValid() && activeMod_.modIndex >= 0) {
+            // Check if active mod is from device-level or rack-level
+            // Compare the active mod's parent path with this device's path
+            const magda::ModInfo* modPtr = nullptr;
+            if (activeMod_.parentPath == devicePath_ && availableMods_ &&
+                activeMod_.modIndex < static_cast<int>(availableMods_->size())) {
+                // Device-level mod
+                modPtr = &(*availableMods_)[static_cast<size_t>(activeMod_.modIndex)];
+            } else if (availableRackMods_ &&
+                       activeMod_.modIndex < static_cast<int>(availableRackMods_->size())) {
+                // Rack-level mod
+                modPtr = &(*availableRackMods_)[static_cast<size_t>(activeMod_.modIndex)];
+            }
 
-            if (const auto* link = mod.getLink(thisTarget)) {
-                float linkAmount = link->amount;
+            if (modPtr) {
+                // Position above where movement line would be
+                int y = sliderBounds.getBottom() - 6 - movementBarHeight - 2;
+                magda::ModTarget thisTarget{deviceId_, paramIndex_};
 
-                // Get current parameter value (0.0 to 1.0)
-                float currentParamValue = static_cast<float>(valueSlider_.getValue());
+                if (const auto* link = modPtr->getLink(thisTarget)) {
+                    float linkAmount = link->amount;
 
-                // Bar starts from current param value and extends by amount (unipolar mode)
-                int startX = leftX + static_cast<int>(maxWidth * currentParamValue);
-                int barWidth = juce::jmax(1, static_cast<int>(maxWidth * linkAmount));
+                    // Get current parameter value (0.0 to 1.0)
+                    float currentParamValue = static_cast<float>(valueSlider_.getValue());
 
-                // Brighter orange for link mode (editing amount, thinner, above movement)
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));  // Full brightness
-                g.fillRoundedRectangle(static_cast<float>(startX), static_cast<float>(y),
-                                       static_cast<float>(barWidth),
-                                       static_cast<float>(amountBarHeight), 1.0f);
+                    // Bar starts from current param value and extends by amount (unipolar mode)
+                    int startX = leftX + static_cast<int>(maxWidth * currentParamValue);
+                    int barWidth = juce::jmax(1, static_cast<int>(maxWidth * linkAmount));
+
+                    // Brighter orange for link mode (editing amount, thinner, above movement)
+                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));  // Full brightness
+                    g.fillRoundedRectangle(static_cast<float>(startX), static_cast<float>(y),
+                                           static_cast<float>(barWidth),
+                                           static_cast<float>(amountBarHeight), 1.0f);
+                }
             }
         }
     }
@@ -790,17 +844,11 @@ void ParamSlotComponent::paintModulationIndicators(juce::Graphics& g) {
     float totalMacroModulation = 0.0f;
     magda::MacroTarget macroTargetForMovement{deviceId_, paramIndex_};
 
-    DBG("paintModulationIndicators param=" << paramIndex_ << " deviceId=" << deviceId_);
-    DBG("  availableMacros_=" << (availableMacros_ ? "yes" : "null") << " availableRackMacros_="
-                              << (availableRackMacros_ ? "yes" : "null"));
-
     // Check device-level macros
     if (availableMacros_ && deviceId_ != magda::INVALID_DEVICE_ID) {
         for (size_t i = 0; i < availableMacros_->size(); ++i) {
             const auto& macro = (*availableMacros_)[i];
             if (const auto* link = macro.getLink(macroTargetForMovement)) {
-                DBG("  Device macro " << i << ": value=" << macro.value
-                                      << " amount=" << link->amount);
                 totalMacroModulation += macro.value * link->amount;
             }
         }
@@ -811,14 +859,10 @@ void ParamSlotComponent::paintModulationIndicators(juce::Graphics& g) {
         for (size_t i = 0; i < availableRackMacros_->size(); ++i) {
             const auto& macro = (*availableRackMacros_)[i];
             if (const auto* link = macro.getLink(macroTargetForMovement)) {
-                DBG("  Rack macro " << i << ": value=" << macro.value
-                                    << " amount=" << link->amount);
                 totalMacroModulation += macro.value * link->amount;
             }
         }
     }
-
-    DBG("  totalMacroModulation=" << totalMacroModulation);
 
     // Draw MACRO movement line (purple) at TOP if any macro modulation exists
     if (totalMacroModulation > 0.0f) {
@@ -1194,14 +1238,27 @@ void ParamSlotComponent::timerCallback() {
 }
 
 bool ParamSlotComponent::hasActiveModLinks() const {
-    if (!availableMods_ || deviceId_ == magda::INVALID_DEVICE_ID) {
+    if (deviceId_ == magda::INVALID_DEVICE_ID) {
         return false;
     }
 
     magda::ModTarget thisTarget{deviceId_, paramIndex_};
-    for (const auto& mod : *availableMods_) {
-        if (mod.getLink(thisTarget) != nullptr) {
-            return true;  // Found at least one mod link
+
+    // Check device-level mods
+    if (availableMods_) {
+        for (const auto& mod : *availableMods_) {
+            if (mod.getLink(thisTarget) != nullptr) {
+                return true;  // Found at least one mod link
+            }
+        }
+    }
+
+    // Check rack-level mods
+    if (availableRackMods_) {
+        for (const auto& mod : *availableRackMods_) {
+            if (mod.getLink(thisTarget) != nullptr) {
+                return true;  // Found at least one rack mod link
+            }
         }
     }
 

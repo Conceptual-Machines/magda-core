@@ -185,6 +185,8 @@ class TrackManager {
     // Mod management for racks (path-based for nested rack support)
     void setRackModAmount(const ChainNodePath& rackPath, int modIndex, float amount);
     void setRackModTarget(const ChainNodePath& rackPath, int modIndex, ModTarget target);
+    void setRackModLinkAmount(const ChainNodePath& rackPath, int modIndex, ModTarget target,
+                              float amount);
     void setRackModName(const ChainNodePath& rackPath, int modIndex, const juce::String& name);
     void setRackModType(const ChainNodePath& rackPath, int modIndex, ModType type);
     void setRackModRate(const ChainNodePath& rackPath, int modIndex, float rate);
