@@ -154,8 +154,8 @@ void ModsPanelComponent::ensureKnobCount(int count) {
 }
 
 void ModsPanelComponent::ensureSlotCount(int count) {
-    // Ensure we have enough knobs (created on demand as mods are added)
-    ensureKnobCount(count);
+    // NOTE: Do NOT create knobs here - knobs are created on demand when mods are added
+    // via ensureKnobCount(currentModCount_) in setMods()
 
     // Ensure we have enough add buttons for empty slots
     while (static_cast<int>(addButtons_.size()) < count) {

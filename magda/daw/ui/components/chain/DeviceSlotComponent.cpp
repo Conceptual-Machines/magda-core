@@ -634,14 +634,8 @@ void DeviceSlotComponent::onModLinkRemovedInternal(int modIndex, magda::ModTarge
 
 void DeviceSlotComponent::onAddModRequestedInternal(int slotIndex, magda::ModType type) {
     magda::TrackManager::getInstance().addDeviceMod(nodePath_, slotIndex, type);
-
-    // Defer UI update to avoid destroying the button during its own click handler
-    juce::MessageManager::callAsync(
-        [safeThis = juce::Component::SafePointer<DeviceSlotComponent>(this)]() {
-            if (safeThis != nullptr) {
-                safeThis->updateModsPanel();
-            }
-        });
+    // UI update is handled automatically by TrackManager notification
+    // (TrackChainContent::trackDevicesChanged -> rebuildNodeComponents)
 }
 
 void DeviceSlotComponent::onModPageAddRequested(int /*itemsToAdd*/) {
