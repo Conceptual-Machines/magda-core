@@ -11,6 +11,11 @@ AddModButton::AddModButton() = default;
 void AddModButton::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
+    // Only show add button on hover
+    if (!isMouseOver()) {
+        return;  // Empty slot - show nothing
+    }
+
     // Dashed border
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER).brighter(0.2f));
     float dashLengths[2] = {4.0f, 4.0f};
@@ -49,22 +54,44 @@ void AddModButton::mouseDown(const juce::MouseEvent& /*e*/) {
 
 void AddModButton::mouseEnter(const juce::MouseEvent& /*e*/) {
     setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    repaint();  // Show the button
 }
 
 void AddModButton::mouseExit(const juce::MouseEvent& /*e*/) {
     setMouseCursor(juce::MouseCursor::NormalCursor);
+    repaint();  // Hide the button
 }
 
 // ModsPanelComponent implementation
 
 ModsPanelComponent::ModsPanelComponent() : PagedControlPanel(magda::MODS_PER_PAGE) {
-    // Disable page management - users add individual mods via + buttons
-    setCanAddPage(false);
-    setCanRemovePage(false);
-    setMinPages(0);
+    // Enable page management - users can add more pages of empty slots
+    setCanAddPage(true);
+    setCanRemovePage(true);
+    setMinPages(1);  // Always keep at least 1 page
 
-    // Always show a full page (8 slots) with + buttons in empty slots
-    ensureSlotCount(magda::MODS_PER_PAGE);
+    // Wire up page management callbacks
+    onAddPageRequested = [this](int /*itemsPerPage*/) {
+        allocatedPages_++;
+        ensureSlotCount(allocatedPages_ * magda::MODS_PER_PAGE);
+        resized();
+        repaint();
+    };
+
+    onRemovePageRequested = [this](int /*itemsPerPage*/) {
+        if (allocatedPages_ > 1) {
+            // Only allow removing page if last page is completely empty
+            int lastPageStartIndex = (allocatedPages_ - 1) * magda::MODS_PER_PAGE;
+            if (currentModCount_ <= lastPageStartIndex) {
+                allocatedPages_--;
+                resized();
+                repaint();
+            }
+        }
+    };
+
+    // Start with 1 page (8 slots) with + buttons in empty slots
+    ensureSlotCount(allocatedPages_ * magda::MODS_PER_PAGE);
 }
 
 void ModsPanelComponent::ensureKnobCount(int count) {
@@ -137,6 +164,15 @@ void ModsPanelComponent::setMods(const magda::ModArray& mods) {
     currentModCount_ = static_cast<int>(mods.size());
     ensureKnobCount(currentModCount_);
 
+    // Calculate required pages based on highest mod index
+    if (currentModCount_ > 0) {
+        int requiredPages = (currentModCount_ + magda::MODS_PER_PAGE - 1) / magda::MODS_PER_PAGE;
+        if (requiredPages > allocatedPages_) {
+            allocatedPages_ = requiredPages;
+            ensureSlotCount(allocatedPages_ * magda::MODS_PER_PAGE);
+        }
+    }
+
     // Update existing mods
     for (size_t i = 0; i < mods.size() && i < knobs_.size(); ++i) {
         // Pass pointer to live mod for waveform animation
@@ -169,8 +205,8 @@ void ModsPanelComponent::setSelectedModIndex(int modIndex) {
 }
 
 int ModsPanelComponent::getTotalItemCount() const {
-    // Always show at least MODS_PER_PAGE (8) slots
-    return juce::jmax(magda::MODS_PER_PAGE, currentModCount_);
+    // Return total allocated slots across all pages
+    return allocatedPages_ * magda::MODS_PER_PAGE;
 }
 
 juce::Component* ModsPanelComponent::getItemComponent(int index) {

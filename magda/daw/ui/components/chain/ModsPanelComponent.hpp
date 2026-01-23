@@ -84,6 +84,7 @@ class ModsPanelComponent : public PagedControlPanel {
     std::vector<std::pair<magda::DeviceId, juce::String>> availableDevices_;
     magda::ChainNodePath parentPath_;
     int currentModCount_ = 0;  // Track how many actual mods exist
+    int allocatedPages_ = 1;   // Track how many pages of slots are allocated (UI only)
 
     void ensureKnobCount(int count);
     void ensureSlotCount(int count);  // Ensure we have knobs + add buttons for all slots
