@@ -102,6 +102,16 @@ void ModKnobComponent::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 3.0f, 1.0f);
     }
+
+    // Draw indicator dot above link button if mod is linked to any parameters
+    if (currentMod_.isLinked()) {
+        float dotSize = 5.0f;
+        float centerX = bounds.getWidth() * 0.5f;
+        float dotY = bounds.getHeight() - LINK_BUTTON_HEIGHT - dotSize - 2.0f;
+
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        g.fillEllipse(centerX - dotSize * 0.5f, dotY, dotSize, dotSize);
+    }
 }
 
 void ModKnobComponent::resized() {
