@@ -139,7 +139,6 @@ class ModulatorEditorPanel : public juce::Component {
     }
 
     // Callbacks
-    std::function<void(magda::ModType type)> onTypeChanged;
     std::function<void(float rate)> onRateChanged;
     std::function<void(magda::LFOWaveform waveform)> onWaveformChanged;
     std::function<void(float phaseOffset)> onPhaseOffsetChanged;
@@ -162,7 +161,6 @@ class ModulatorEditorPanel : public juce::Component {
 
     // UI Components
     juce::Label nameLabel_;
-    juce::ComboBox typeSelector_;
     juce::ComboBox waveformCombo_;
     WaveformDisplay waveformDisplay_;
     TextSlider phaseSlider_{TextSlider::Format::Decimal};

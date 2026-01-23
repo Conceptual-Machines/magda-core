@@ -19,27 +19,6 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     nameLabel_.setText("No Mod Selected", juce::dontSendNotification);
     addAndMakeVisible(nameLabel_);
 
-    // Type selector
-    typeSelector_.addItem("LFO", static_cast<int>(magda::ModType::LFO) + 1);
-    typeSelector_.addItem("Envelope", static_cast<int>(magda::ModType::Envelope) + 1);
-    typeSelector_.addItem("Random", static_cast<int>(magda::ModType::Random) + 1);
-    typeSelector_.addItem("Follower", static_cast<int>(magda::ModType::Follower) + 1);
-    typeSelector_.setSelectedId(1, juce::dontSendNotification);
-    typeSelector_.setColour(juce::ComboBox::backgroundColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
-    typeSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    typeSelector_.setColour(juce::ComboBox::outlineColourId,
-                            DarkTheme::getColour(DarkTheme::BORDER));
-    typeSelector_.setJustificationType(juce::Justification::centredLeft);
-    typeSelector_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
-    typeSelector_.onChange = [this]() {
-        int id = typeSelector_.getSelectedId();
-        if (id > 0 && onTypeChanged) {
-            onTypeChanged(static_cast<magda::ModType>(id - 1));
-        }
-    };
-    addAndMakeVisible(typeSelector_);
-
     // Waveform selector
     waveformCombo_.addItem("Sine", static_cast<int>(magda::LFOWaveform::Sine) + 1);
     waveformCombo_.addItem("Triangle", static_cast<int>(magda::LFOWaveform::Triangle) + 1);
@@ -207,7 +186,6 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
     selectedModIndex_ = index;
     if (index < 0) {
         nameLabel_.setText("No Mod Selected", juce::dontSendNotification);
-        typeSelector_.setEnabled(false);
         waveformCombo_.setEnabled(false);
         phaseSlider_.setEnabled(false);
         syncToggle_.setEnabled(false);
@@ -217,7 +195,6 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
         advancedButton_->setEnabled(false);
         targetLabel_.setText("No Target", juce::dontSendNotification);
     } else {
-        typeSelector_.setEnabled(true);
         waveformCombo_.setEnabled(true);
         phaseSlider_.setEnabled(true);
         syncToggle_.setEnabled(true);
@@ -230,7 +207,6 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
 
 void ModulatorEditorPanel::updateFromMod() {
     nameLabel_.setText(currentMod_.name, juce::dontSendNotification);
-    typeSelector_.setSelectedId(static_cast<int>(currentMod_.type) + 1, juce::dontSendNotification);
     waveformCombo_.setSelectedId(static_cast<int>(currentMod_.waveform) + 1,
                                  juce::dontSendNotification);
     // Convert normalized (0-1) to degrees (0-360)
@@ -273,14 +249,9 @@ void ModulatorEditorPanel::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().reduced(6);
     bounds.removeFromTop(18 + 6);  // Skip name label + gap
 
-    // "Type" label
+    // "Waveform" label
     g.setColour(DarkTheme::getSecondaryTextColour());
     g.setFont(FontManager::getInstance().getUIFont(8.0f));
-    g.drawText("Type", bounds.removeFromTop(10), juce::Justification::centredLeft);
-
-    bounds.removeFromTop(18 + 6);  // Skip type selector + gap
-
-    // "Waveform" label
     g.drawText("Waveform", bounds.removeFromTop(10), juce::Justification::centredLeft);
 
     bounds.removeFromTop(18 + 4);  // Skip waveform selector + gap
@@ -301,11 +272,6 @@ void ModulatorEditorPanel::resized() {
 
     // Name label at top
     nameLabel_.setBounds(bounds.removeFromTop(18));
-    bounds.removeFromTop(6);
-
-    // Type label area (painted) + selector
-    bounds.removeFromTop(10);  // "Type" label
-    typeSelector_.setBounds(bounds.removeFromTop(18));
     bounds.removeFromTop(6);
 
     // Waveform label area (painted) + selector

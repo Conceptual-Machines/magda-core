@@ -958,11 +958,6 @@ void NodeComponent::initializeModsMacrosPanels() {
 
     // Create modulator editor panel
     modulatorEditorPanel_ = std::make_unique<ModulatorEditorPanel>();
-    modulatorEditorPanel_->onTypeChanged = [this](magda::ModType type) {
-        if (selectedModIndex_ >= 0) {
-            onModTypeChangedInternal(selectedModIndex_, type);
-        }
-    };
     modulatorEditorPanel_->onRateChanged = [this](float rate) {
         if (selectedModIndex_ >= 0) {
             onModRateChangedInternal(selectedModIndex_, rate);

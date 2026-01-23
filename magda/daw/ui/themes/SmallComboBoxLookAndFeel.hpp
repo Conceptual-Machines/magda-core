@@ -83,15 +83,7 @@ class SmallComboBoxLookAndFeel : public juce::LookAndFeel_V4 {
         g.setFont(getPopupMenuFont());
         g.drawFittedText(text, textArea, juce::Justification::centredLeft, 1);
 
-        if (isTicked) {
-            auto tickArea =
-                juce::Rectangle<int>(area.getX(), area.getY(), area.getHeight(), area.getHeight())
-                    .reduced(4);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-            g.fillEllipse(tickArea.toFloat());
-        }
-
-        juce::ignoreUnused(hasSubMenu, shortcutKeyText, icon);
+        juce::ignoreUnused(isTicked, hasSubMenu, shortcutKeyText, icon);
     }
 
     void drawPopupMenuBackground(juce::Graphics& g, int width, int height) override {
