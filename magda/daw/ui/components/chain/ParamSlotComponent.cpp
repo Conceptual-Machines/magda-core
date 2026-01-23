@@ -696,27 +696,33 @@ void ParamSlotComponent::paintModulationIndicators(juce::Graphics& g) {
     }
 
     // Draw MACRO indicators (purple) at TOP - only when in macro link mode
-    if (activeMacro_.isValid()) {
+    // CRITICAL: Only show the ACTIVE macro's link, not all macros
+    if (activeMacro_.isValid() && availableMacros_ && activeMacro_.macroIndex >= 0 &&
+        activeMacro_.macroIndex < static_cast<int>(availableMacros_->size())) {
         int y = sliderBounds.getY() + 2;
-        auto linkedMacros = getLinkedMacros();
-        for (const auto& [macroIndex, link] : linkedMacros) {
-            float linkAmount = link->amount;  // Use per-parameter amount, not global macro value
+        const auto& macro = (*availableMacros_)[static_cast<size_t>(activeMacro_.macroIndex)];
+        magda::MacroTarget thisTarget{deviceId_, paramIndex_};
+
+        if (const auto* link = macro.getLink(thisTarget)) {
+            float linkAmount = link->amount;
             int barWidth = juce::jmax(1, static_cast<int>(maxWidth * linkAmount));
 
             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.5f));
             g.fillRoundedRectangle(static_cast<float>(leftX), static_cast<float>(y),
                                    static_cast<float>(barWidth), static_cast<float>(barHeight),
                                    1.0f);
-
-            y += (barHeight + 1);  // Move down for next bar
         }
     }
 
     // Draw MOD indicators (orange) at BOTTOM - only when in mod link mode
-    if (activeMod_.isValid()) {
+    // CRITICAL: Only show the ACTIVE mod's link, not all mods
+    if (activeMod_.isValid() && availableMods_ && activeMod_.modIndex >= 0 &&
+        activeMod_.modIndex < static_cast<int>(availableMods_->size())) {
         int y = sliderBounds.getBottom() - 2;
-        auto linkedMods = getLinkedMods();
-        for (const auto& [modIndex, link] : linkedMods) {
+        const auto& mod = (*availableMods_)[static_cast<size_t>(activeMod_.modIndex)];
+        magda::ModTarget thisTarget{deviceId_, paramIndex_};
+
+        if (const auto* link = mod.getLink(thisTarget)) {
             float linkAmount = link->amount;
             int barWidth = juce::jmax(1, static_cast<int>(maxWidth * linkAmount));
 
@@ -724,8 +730,6 @@ void ParamSlotComponent::paintModulationIndicators(juce::Graphics& g) {
             g.fillRoundedRectangle(static_cast<float>(leftX), static_cast<float>(y - barHeight),
                                    static_cast<float>(barWidth), static_cast<float>(barHeight),
                                    1.0f);
-
-            y -= (barHeight + 1);  // Move up for next bar
         }
     }
 }
