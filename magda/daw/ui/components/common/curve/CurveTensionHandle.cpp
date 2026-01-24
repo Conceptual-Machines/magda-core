@@ -57,7 +57,7 @@ void CurveTensionHandle::mouseDrag(const juce::MouseEvent& e) {
     // Dragging up bends curve outward (away from straight line)
     // 50 pixels of drag = full range
     // Normal: -1 to +1, Shift held: -3 to +3 for extreme squared curves
-    int deltaY = dragStartY_ - e.y;
+    int deltaY = e.y - dragStartY_;  // Inverted: drag down = positive tension
 
     // Invert direction when curve goes downward so "up" always means "outward"
     if (slopeGoesDown_) {
