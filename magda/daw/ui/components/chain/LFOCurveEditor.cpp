@@ -35,6 +35,11 @@ void LFOCurveEditor::setModInfo(ModInfo* mod) {
             point.curveType = CurveType::Linear;
             points_.push_back(point);
         }
+        // Ensure first and last points are pinned to edges
+        if (!points_.empty()) {
+            points_.front().x = 0.0;
+            points_.back().x = 1.0;
+        }
     } else if (mod) {
         // Initialize with default triangle-like curve
         CurvePoint p1;
@@ -142,9 +147,20 @@ void LFOCurveEditor::onPointMoved(uint32_t pointId, double newX, double newY) {
     newX = juce::jlimit(0.0, 1.0, newX);
     newY = juce::jlimit(0.0, 1.0, newY);
 
+    // Check if this is the first or last point (they should be pinned to edges)
+    bool isFirstPoint = !points_.empty() && points_.front().id == pointId;
+    bool isLastPoint = !points_.empty() && points_.back().id == pointId;
+
     for (auto& point : points_) {
         if (point.id == pointId) {
-            point.x = newX;
+            // First point is pinned to x=0, last point to x=1
+            if (isFirstPoint) {
+                point.x = 0.0;
+            } else if (isLastPoint) {
+                point.x = 1.0;
+            } else {
+                point.x = newX;
+            }
             point.y = newY;
             break;
         }
@@ -217,19 +233,23 @@ void LFOCurveEditor::onPointDragPreview(uint32_t pointId, double newX, double ne
     if (!modInfo_)
         return;
 
-    // Find and update the point in ModInfo
-    for (auto& cp : modInfo_->curvePoints) {
-        // Find by matching position (since we don't store IDs in ModInfo)
-        // This works because points are sorted and we update in real-time
-        for (const auto& p : points_) {
-            if (p.id == pointId) {
-                // Find the corresponding point in curvePoints by original position
-                if (std::abs(cp.phase - static_cast<float>(p.x)) < 0.001f) {
-                    cp.phase = static_cast<float>(newX);
-                    cp.value = static_cast<float>(newY);
-                    return;
-                }
-            }
+    // Check if this is the first or last point (they should be pinned to edges)
+    bool isFirstPoint = !points_.empty() && points_.front().id == pointId;
+    bool isLastPoint = !points_.empty() && points_.back().id == pointId;
+
+    // Pin first/last points to edges
+    if (isFirstPoint) {
+        newX = 0.0;
+    } else if (isLastPoint) {
+        newX = 1.0;
+    }
+
+    // Find and update the point in ModInfo by index
+    for (size_t i = 0; i < points_.size() && i < modInfo_->curvePoints.size(); ++i) {
+        if (points_[i].id == pointId) {
+            modInfo_->curvePoints[i].phase = static_cast<float>(newX);
+            modInfo_->curvePoints[i].value = static_cast<float>(newY);
+            return;
         }
     }
 }
