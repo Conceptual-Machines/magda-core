@@ -5,6 +5,8 @@
 #include <set>
 #include <vector>
 
+#include "../layout/LayoutConfig.hpp"
+
 namespace magda {
 
 // Time display mode for timeline
@@ -193,7 +195,7 @@ struct TimelineState {
     int selectedSectionIndex = -1;
 
     // Layout constant (shared across components)
-    static constexpr int LEFT_PADDING = 18;
+    static constexpr int LEFT_PADDING = LayoutConfig::TIMELINE_LEFT_PADDING;
 
     // ===== Coordinate conversion helpers =====
 
