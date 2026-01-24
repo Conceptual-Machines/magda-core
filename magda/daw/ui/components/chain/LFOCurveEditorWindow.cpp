@@ -233,57 +233,58 @@ void LFOCurveEditorContent::updateControlsFromModInfo() {
 }
 
 void LFOCurveEditorContent::paint(juce::Graphics& g) {
-    // Toolbar background
-    auto toolbarBounds = getLocalBounds().removeFromTop(TOOLBAR_HEIGHT);
+    // Footer background
+    auto footerBounds = getLocalBounds().removeFromBottom(FOOTER_HEIGHT);
     g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-    g.fillRect(toolbarBounds);
+    g.fillRect(footerBounds);
 
-    // Toolbar bottom border
+    // Footer top border
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawHorizontalLine(TOOLBAR_HEIGHT - 1, 0.0f, static_cast<float>(getWidth()));
+    g.drawHorizontalLine(getHeight() - FOOTER_HEIGHT, 0.0f, static_cast<float>(getWidth()));
 }
 
 void LFOCurveEditorContent::resized() {
     auto bounds = getLocalBounds();
 
-    // Toolbar at top
-    auto toolbar = bounds.removeFromTop(TOOLBAR_HEIGHT);
-    toolbar.reduce(4, 4);
+    // Footer at bottom
+    auto footer = bounds.removeFromBottom(FOOTER_HEIGHT);
+    footer.reduce(6, 4);
+
+    constexpr int gap = 6;
 
     // Rate section: [Sync][Rate/Division]
-    constexpr int syncWidth = 36;
+    constexpr int syncWidth = 38;
     constexpr int rateWidth = 60;
-    constexpr int gap = 4;
 
-    syncToggle_.setBounds(toolbar.removeFromLeft(syncWidth));
-    toolbar.removeFromLeft(gap);
-    auto rateBounds = toolbar.removeFromLeft(rateWidth);
+    syncToggle_.setBounds(footer.removeFromLeft(syncWidth));
+    footer.removeFromLeft(gap);
+    auto rateBounds = footer.removeFromLeft(rateWidth);
     rateSlider_.setBounds(rateBounds);
     syncDivisionCombo_.setBounds(rateBounds);
-    toolbar.removeFromLeft(gap * 2);
+    footer.removeFromLeft(gap * 2);
 
     // Mode section: [Loop/1-Shot][MSEG]
-    constexpr int modeWidth = 44;
-    loopOneShotToggle_.setBounds(toolbar.removeFromLeft(modeWidth));
-    toolbar.removeFromLeft(gap);
-    msegToggle_.setBounds(toolbar.removeFromLeft(modeWidth));
-    toolbar.removeFromLeft(gap * 2);
+    constexpr int modeWidth = 46;
+    loopOneShotToggle_.setBounds(footer.removeFromLeft(modeWidth));
+    footer.removeFromLeft(gap);
+    msegToggle_.setBounds(footer.removeFromLeft(modeWidth));
+    footer.removeFromLeft(gap * 2);
 
     // Grid section: [Grid:][X combo][Y combo][Snap X][Snap Y]
-    constexpr int labelWidth = 28;
-    constexpr int comboWidth = 36;
-    constexpr int snapWidth = 20;
+    constexpr int labelWidth = 30;
+    constexpr int comboWidth = 38;
+    constexpr int snapWidth = 22;
 
-    gridLabel_.setBounds(toolbar.removeFromLeft(labelWidth));
-    gridXCombo_.setBounds(toolbar.removeFromLeft(comboWidth));
-    toolbar.removeFromLeft(2);
-    gridYCombo_.setBounds(toolbar.removeFromLeft(comboWidth));
-    toolbar.removeFromLeft(gap);
-    snapXToggle_.setBounds(toolbar.removeFromLeft(snapWidth));
-    toolbar.removeFromLeft(2);
-    snapYToggle_.setBounds(toolbar.removeFromLeft(snapWidth));
+    gridLabel_.setBounds(footer.removeFromLeft(labelWidth));
+    gridXCombo_.setBounds(footer.removeFromLeft(comboWidth));
+    footer.removeFromLeft(4);
+    gridYCombo_.setBounds(footer.removeFromLeft(comboWidth));
+    footer.removeFromLeft(gap);
+    snapXToggle_.setBounds(footer.removeFromLeft(snapWidth));
+    footer.removeFromLeft(4);
+    snapYToggle_.setBounds(footer.removeFromLeft(snapWidth));
 
-    // Curve editor takes remaining space
+    // Curve editor takes remaining space (above footer)
     curveEditor_.setBounds(bounds.expanded(curveEditor_.getPadding()));
 }
 
