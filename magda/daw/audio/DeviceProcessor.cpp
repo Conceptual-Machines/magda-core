@@ -230,12 +230,16 @@ void ToneGeneratorProcessor::setFrequency(float hz) {
         // Clamp to valid range
         hz = juce::jlimit(20.0f, 20000.0f, hz);
 
-        // CRITICAL: Set CachedValue directly - bypasses AutomatableParameter quantization
-        // The audio engine reads from tone->frequency, NOT from frequencyParam
-        // AutomatableParameter is only for automation playback, not manual control
+        // Update parameter first (will quantize and update CachedValue)
+        if (tone->frequencyParam) {
+            tone->frequencyParam->setParameter(hz, juce::dontSendNotification);
+        }
+
+        // CRITICAL: Overwrite CachedValue with precise value (bypasses quantization)
+        // Set AFTER parameter update so we get full precision
         tone->frequency = hz;
 
-        DBG("ToneGen::setFrequency " << hz << " Hz (direct), actual=" << tone->frequency.get());
+        DBG("ToneGen::setFrequency " << hz << " Hz, actual=" << tone->frequency.get());
     }
 }
 
@@ -248,9 +252,15 @@ float ToneGeneratorProcessor::getFrequency() const {
 
 void ToneGeneratorProcessor::setLevel(float level) {
     if (auto* tone = getTonePlugin()) {
-        // Set CachedValue directly - audio engine reads from this
-        // AutomatableParameter is only for automation, not manual control
+        // Update parameter first (will quantize)
+        if (tone->levelParam) {
+            tone->levelParam->setParameter(level, juce::dontSendNotification);
+        }
+
+        // Overwrite CachedValue with precise value
         tone->level = level;
+
+        DBG("ToneGen::setLevel " << level << " (linear), actual=" << tone->level.get());
     }
 }
 
@@ -267,7 +277,12 @@ void ToneGeneratorProcessor::setOscType(int type) {
         // TE enum: 0=sin, 1=triangle, 2=sawUp, 3=sawDown, 4=square, 5=noise
         float teType = (type == 0) ? 0.0f : 5.0f;  // 0→sin, 1→noise
 
-        // Set CachedValue directly - audio engine reads from this
+        // Update parameter first
+        if (tone->oscTypeParam) {
+            tone->oscTypeParam->setParameter(teType, juce::dontSendNotification);
+        }
+
+        // Overwrite CachedValue (though discrete parameter doesn't need precision)
         tone->oscType = teType;
     }
 }
