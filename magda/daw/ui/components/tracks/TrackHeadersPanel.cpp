@@ -305,6 +305,22 @@ TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(au
     // Register as AutomationManager listener
     AutomationManager::getInstance().addListener(this);
 
+    // Set up MIDI activity monitoring
+    if (audioEngine_) {
+        auto* midiBridge = audioEngine_->getMidiBridge();
+        if (midiBridge) {
+            midiBridge->onNoteEvent = [this](TrackId trackId, const MidiNoteEvent& event) {
+                // Find the track header and trigger MIDI activity
+                for (auto& header : trackHeaders) {
+                    if (header->trackId == trackId) {
+                        header->midiActivity = 1.0f;  // Full activity on note event
+                        break;
+                    }
+                }
+            };
+        }
+    }
+
     // Build tracks from TrackManager
     tracksChanged();
 
@@ -334,13 +350,26 @@ void TrackHeadersPanel::timerCallback() {
 
     auto& meteringBuffer = bridge->getMeteringBuffer();
 
-    // Update meters for all visible tracks
+    // Decay rate for MIDI activity (fade out over time)
+    const float midiDecayRate = 0.92f;  // Per frame decay (fast fade)
+
+    // Update meters and MIDI activity for all visible tracks
     for (auto& header : trackHeaders) {
+        // Update audio meters
         MeterData data;
         if (meteringBuffer.popLevels(header->trackId, data)) {
             if (header->meterComponent) {
                 static_cast<TrackMeter*>(header->meterComponent.get())
                     ->setLevels(data.peakL, data.peakR);
+            }
+        }
+
+        // Decay MIDI activity indicator
+        if (header->midiActivity > 0.01f) {
+            header->midiActivity *= midiDecayRate;
+            if (header->midiIndicator) {
+                static_cast<MidiActivityIndicator*>(header->midiIndicator.get())
+                    ->setActivity(header->midiActivity);
             }
         }
     }
@@ -434,17 +463,20 @@ void TrackHeadersPanel::setupMidiCallbacks(TrackHeader& header, TrackId trackId)
     // Handle MIDI input selection changes
     header.midiInSelector->onSelectionChanged = [this, trackId, midiBridge](int selectedId) {
         if (selectedId == 2) {
-            // "None" selected - clear MIDI input
+            // "None" selected - clear MIDI input and stop monitoring
             midiBridge->clearTrackMidiInput(trackId);
+            midiBridge->stopMonitoring(trackId);
         } else if (selectedId == 1) {
             // "All Inputs" selected - set special "all" device ID
             midiBridge->setTrackMidiInput(trackId, "all");
+            midiBridge->startMonitoring(trackId);
         } else if (selectedId >= 10) {
             // Specific device selected
             auto midiInputs = midiBridge->getAvailableMidiInputs();
             int deviceIndex = selectedId - 10;
             if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
                 midiBridge->setTrackMidiInput(trackId, midiInputs[deviceIndex].id);
+                midiBridge->startMonitoring(trackId);
             }
         }
     };
