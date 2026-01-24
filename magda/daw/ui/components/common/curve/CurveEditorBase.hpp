@@ -99,7 +99,7 @@ class CurveEditorBase : public juce::Component {
   protected:
     CurveDrawMode drawMode_ = CurveDrawMode::Select;
     juce::Colour curveColour_{0xFF6688CC};  // Default curve color
-    int padding_ = 2;                       // Content area padding
+    int padding_ = 6;                       // Content area padding (>= half of point size)
 
     // Components
     std::vector<std::unique_ptr<CurvePointComponent>> pointComponents_;
