@@ -70,6 +70,29 @@ void AudioBridge::trackDevicesChanged(TrackId trackId) {
     syncTrackPlugins(trackId);
 }
 
+void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
+    // A device property changed (gain, level, etc.) - sync to processor
+    auto* processor = getDeviceProcessor(deviceId);
+    if (!processor)
+        return;
+
+    // Find the DeviceInfo to get updated values
+    // We need to search through all tracks to find this device
+    auto& tm = TrackManager::getInstance();
+    for (const auto& track : tm.getTracks()) {
+        for (const auto& element : track.chainElements) {
+            if (std::holds_alternative<DeviceInfo>(element)) {
+                const auto& device = std::get<DeviceInfo>(element);
+                if (device.id == deviceId) {
+                    // Sync processor from the updated DeviceInfo
+                    processor->syncFromDeviceInfo(device);
+                    return;
+                }
+            }
+        }
+    }
+}
+
 // =============================================================================
 // Plugin Loading
 // =============================================================================

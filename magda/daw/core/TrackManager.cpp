@@ -1107,6 +1107,24 @@ void TrackManager::setDeviceInChainBypassedByPath(const ChainNodePath& devicePat
     }
 }
 
+void TrackManager::setDeviceGainDb(const ChainNodePath& devicePath, float gainDb) {
+    if (auto* device = getDeviceInChainByPath(devicePath)) {
+        device->gainDb = gainDb;
+        // Convert dB to linear: 10^(dB/20)
+        device->gainValue = std::pow(10.0f, gainDb / 20.0f);
+        notifyDevicePropertyChanged(device->id);
+    }
+}
+
+void TrackManager::setDeviceLevel(const ChainNodePath& devicePath, float level) {
+    if (auto* device = getDeviceInChainByPath(devicePath)) {
+        device->gainValue = level;
+        // Convert linear to dB: 20 * log10(level)
+        device->gainDb = (level > 0.0f) ? 20.0f * std::log10(level) : -100.0f;
+        notifyDevicePropertyChanged(device->id);
+    }
+}
+
 RackId TrackManager::addRackToChain(TrackId trackId, RackId parentRackId, ChainId chainId,
                                     const juce::String& name) {
     if (auto* chain = getChain(trackId, parentRackId, chainId)) {
@@ -2211,6 +2229,8 @@ void TrackManager::createDefaultTracks(int count) {
         device.manufacturer = "MAGDA";
         device.format = PluginFormat::Internal;
         device.isInstrument = true;  // Generates audio
+        device.gainDb = -12.0f;      // Default output level (-12dB shows green on meters)
+        device.gainValue = 0.25f;    // Linear equivalent
         track1.chainElements.push_back(makeDeviceElement(device));
 
         // Add a rack with one chain
@@ -2272,6 +2292,12 @@ void TrackManager::notifyTrackSelectionChanged(TrackId trackId) {
 void TrackManager::notifyTrackDevicesChanged(TrackId trackId) {
     for (auto* listener : listeners_) {
         listener->trackDevicesChanged(trackId);
+    }
+}
+
+void TrackManager::notifyDevicePropertyChanged(DeviceId deviceId) {
+    for (auto* listener : listeners_) {
+        listener->devicePropertyChanged(deviceId);
     }
 }
 

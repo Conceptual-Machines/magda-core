@@ -52,6 +52,11 @@ class TrackManagerListener {
     virtual void trackDevicesChanged(TrackId trackId) {
         juce::ignoreUnused(trackId);
     }
+
+    // Called when a device parameter changes (gain, level, etc.)
+    virtual void devicePropertyChanged(DeviceId deviceId) {
+        juce::ignoreUnused(deviceId);
+    }
 };
 
 /**
@@ -164,6 +169,10 @@ class TrackManager {
     void setDeviceInChainBypassed(TrackId trackId, RackId rackId, ChainId chainId,
                                   DeviceId deviceId, bool bypassed);
     void setDeviceInChainBypassedByPath(const ChainNodePath& devicePath, bool bypassed);
+
+    // Device parameter setters (notify listeners for audio sync)
+    void setDeviceGainDb(const ChainNodePath& devicePath, float gainDb);
+    void setDeviceLevel(const ChainNodePath& devicePath, float level);  // 0-1 linear
 
     // Nested rack management within chains
     RackId addRackToChain(TrackId trackId, RackId parentRackId, ChainId chainId,
@@ -344,6 +353,7 @@ class TrackManager {
     void notifyMasterChannelChanged();
     void notifyTrackSelectionChanged(TrackId trackId);
     void notifyTrackDevicesChanged(TrackId trackId);
+    void notifyDevicePropertyChanged(DeviceId deviceId);
 
     // Helper for recursive mod updates
     void updateRackMods(RackInfo& rack, double deltaTime);

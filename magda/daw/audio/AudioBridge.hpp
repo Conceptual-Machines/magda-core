@@ -48,6 +48,7 @@ class AudioBridge : public TrackManagerListener, public juce::Timer {
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
     void trackDevicesChanged(TrackId trackId) override;
+    void devicePropertyChanged(DeviceId deviceId) override;
 
     // =========================================================================
     // Plugin Loading

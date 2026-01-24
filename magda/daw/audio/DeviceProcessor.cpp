@@ -172,9 +172,9 @@ int ToneGeneratorProcessor::getOscType() const {
 
 void ToneGeneratorProcessor::applyGain() {
     // For tone generator, gain is applied via the level parameter
-    // Combined with the base level, we get: finalLevel = baseLevel * gainLinear
-    // But for simplicity, we just use level directly for now
-    // The gain stage can be applied as a multiplier in the future
+    // Map gainDb to level: 0dB = 1.0, -12dB = 0.25, etc.
+    // We apply gainLinear_ directly as the level (0-1 range)
+    setLevel(gainLinear_);
 }
 
 // =============================================================================

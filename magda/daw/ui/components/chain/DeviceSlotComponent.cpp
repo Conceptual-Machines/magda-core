@@ -97,9 +97,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     gainSlider_.setRange(-60.0, 12.0, 0.1);
     gainSlider_.setValue(device_.gainDb, juce::dontSendNotification);
     gainSlider_.onValueChanged = [this](double value) {
-        if (auto* dev = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
-            dev->gainDb = static_cast<float>(value);
-        }
+        // Use TrackManager method to notify AudioBridge for audio sync
+        magda::TrackManager::getInstance().setDeviceGainDb(nodePath_, static_cast<float>(value));
     };
     addAndMakeVisible(gainSlider_);
 
