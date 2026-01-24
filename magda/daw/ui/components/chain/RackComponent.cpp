@@ -613,10 +613,6 @@ void RackComponent::onModRateChangedInternal(int modIndex, float rate) {
     magda::TrackManager::getInstance().setRackModRate(rackPath_, modIndex, rate);
 }
 
-void RackComponent::onModWaveformChangedInternal(int modIndex, magda::LFOWaveform waveform) {
-    magda::TrackManager::getInstance().setRackModWaveform(rackPath_, modIndex, waveform);
-}
-
 void RackComponent::onModPhaseOffsetChangedInternal(int modIndex, float phaseOffset) {
     magda::TrackManager::getInstance().setRackModPhaseOffset(rackPath_, modIndex, phaseOffset);
 }

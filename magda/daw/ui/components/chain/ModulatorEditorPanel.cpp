@@ -246,26 +246,6 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     };
     addChildComponent(syncDivisionCombo_);  // Hidden by default (shown when sync enabled)
 
-    // Waveform selector (for LFO type)
-    waveformSelector_.addItem("Sine", static_cast<int>(magda::LFOWaveform::Sine) + 1);
-    waveformSelector_.addItem("Triangle", static_cast<int>(magda::LFOWaveform::Triangle) + 1);
-    waveformSelector_.addItem("Square", static_cast<int>(magda::LFOWaveform::Square) + 1);
-    waveformSelector_.addItem("Saw", static_cast<int>(magda::LFOWaveform::Saw) + 1);
-    waveformSelector_.addItem("Rev Saw", static_cast<int>(magda::LFOWaveform::ReverseSaw) + 1);
-    waveformSelector_.setSelectedId(1, juce::dontSendNotification);
-    waveformSelector_.setColour(juce::ComboBox::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
-    waveformSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    waveformSelector_.setColour(juce::ComboBox::outlineColourId,
-                                DarkTheme::getColour(DarkTheme::BORDER));
-    waveformSelector_.onChange = [this]() {
-        int id = waveformSelector_.getSelectedId();
-        if (id > 0 && onWaveformChanged) {
-            onWaveformChanged(static_cast<magda::LFOWaveform>(id - 1));
-        }
-    };
-    addAndMakeVisible(waveformSelector_);
-
     // Rate slider
     rateSlider_.setRange(0.01, 20.0, 0.01);
     rateSlider_.setValue(1.0, juce::dontSendNotification);

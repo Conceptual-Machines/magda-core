@@ -157,13 +157,6 @@ struct ModInfo {
 
     std::vector<ModLink> links;  // All parameter links for this mod
 
-    // Modulation output
-    float value = 0.5f;  // Current modulation output (0.0 to 1.0)
-
-    // LFO-specific parameters
-    LFOWaveform waveform = LFOWaveform::Sine;
-    float phase = 0.0f;  // Current phase (0.0 to 1.0, wraps around)
-
     // Legacy single target/amount for backward compatibility
     // TODO: Remove after migration
     ModTarget target;     // Deprecated - use links instead

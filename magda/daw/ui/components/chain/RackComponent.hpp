@@ -124,7 +124,6 @@ class RackComponent : public NodeComponent {
     void onModTypeChangedInternal(int modIndex, magda::ModType type) override;
     void onModWaveformChangedInternal(int modIndex, magda::LFOWaveform waveform) override;
     void onModRateChangedInternal(int modIndex, float rate) override;
-    void onModWaveformChangedInternal(int modIndex, magda::LFOWaveform waveform) override;
     void onModPhaseOffsetChangedInternal(int modIndex, float phaseOffset) override;
     void onModTempoSyncChangedInternal(int modIndex, bool tempoSync) override;
     void onModSyncDivisionChangedInternal(int modIndex, magda::SyncDivision division) override;

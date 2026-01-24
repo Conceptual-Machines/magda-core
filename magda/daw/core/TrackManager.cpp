@@ -1451,17 +1451,6 @@ void TrackManager::setRackModPhaseOffset(const ChainNodePath& rackPath, int modI
     }
 }
 
-void TrackManager::setRackModWaveform(const ChainNodePath& rackPath, int modIndex,
-                                      LFOWaveform waveform) {
-    if (auto* rack = getRackByPath(rackPath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(rack->mods.size())) {
-            return;
-        }
-        rack->mods[modIndex].waveform = waveform;
-        // Don't notify - simple value change doesn't need UI rebuild
-    }
-}
-
 void TrackManager::setRackModTempoSync(const ChainNodePath& rackPath, int modIndex,
                                        bool tempoSync) {
     if (auto* rack = getRackByPath(rackPath)) {
@@ -1679,17 +1668,6 @@ void TrackManager::setDeviceModRate(const ChainNodePath& devicePath, int modInde
             return;
         }
         device->mods[modIndex].rate = rate;
-        // Don't notify - simple value change doesn't need UI rebuild
-    }
-}
-
-void TrackManager::setDeviceModWaveform(const ChainNodePath& devicePath, int modIndex,
-                                        LFOWaveform waveform) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        device->mods[modIndex].waveform = waveform;
         // Don't notify - simple value change doesn't need UI rebuild
     }
 }
@@ -2293,12 +2271,6 @@ void TrackManager::notifyTrackDevicesChanged(TrackId trackId) {
     for (auto* listener : listeners_) {
         listener->trackDevicesChanged(trackId);
     }
-}
-
-void TrackManager::updateAllMods(double deltaTime) {
-    // TODO: Implement recursive mod updates across track/rack/chain hierarchy
-    // For now, this is a stub - ModulatorEngine will call this
-    (void)deltaTime;  // Suppress unused parameter warning
 }
 
 void TrackManager::updateRackMods(RackInfo& rack, double deltaTime) {

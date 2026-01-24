@@ -561,10 +561,6 @@ void DeviceSlotComponent::onModRateChangedInternal(int modIndex, float rate) {
     magda::TrackManager::getInstance().setDeviceModRate(nodePath_, modIndex, rate);
 }
 
-void DeviceSlotComponent::onModWaveformChangedInternal(int modIndex, magda::LFOWaveform waveform) {
-    magda::TrackManager::getInstance().setDeviceModWaveform(nodePath_, modIndex, waveform);
-}
-
 void DeviceSlotComponent::onModPhaseOffsetChangedInternal(int modIndex, float phaseOffset) {
     magda::TrackManager::getInstance().setDeviceModPhaseOffset(nodePath_, modIndex, phaseOffset);
 }

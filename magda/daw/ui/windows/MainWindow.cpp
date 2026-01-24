@@ -170,9 +170,6 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     mixerView = std::make_unique<MixerView>();
     addChildComponent(*mixerView);
 
-    // Start modulation engine for LFOs
-    magda::ModulatorEngine::getInstance().start();
-
     // Wire up callbacks between views and transport
     mainView->onLoopRegionChanged = [this](double start, double end, bool enabled) {
         transportPanel->setLoopRegion(start, end, enabled);
@@ -252,14 +249,19 @@ void MainWindow::MainComponent::setupViewModeListener() {
     switchToView(currentViewMode);
 }
 
-void MainWindow::MainComponent::setupAudioEngineCallbacks() {
+void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
+    if (!engine) {
+        DBG("Warning: setupAudioEngineCallbacks called with null engine");
+        return;
+    }
+
     // Register audio engine as listener on TimelineController
     // This enables the observer pattern: UI -> TimelineController -> AudioEngine
-    mainView->getTimelineController().addAudioEngineListener(audioEngine_.get());
+    mainView->getTimelineController().addAudioEngineListener(engine);
 
     // Create position timer for playhead updates (AudioEngine -> UI)
     positionTimer_ =
-        std::make_unique<PlaybackPositionTimer>(*audioEngine_, mainView->getTimelineController());
+        std::make_unique<PlaybackPositionTimer>(*engine, mainView->getTimelineController());
 
     // Wire transport callbacks - just dispatch events, TimelineController notifies audio engine
     transportPanel->onPlay = [this]() {
@@ -293,9 +295,9 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks() {
         mainView->getTimelineController().dispatch(SetTempoEvent{bpm});
     };
 
-    transportPanel->onMetronomeToggle = [this](bool enabled) {
+    transportPanel->onMetronomeToggle = [engine](bool enabled) {
         // Metronome is audio-engine only, not part of timeline state
-        audioEngine_->setMetronomeEnabled(enabled);
+        engine->setMetronomeEnabled(enabled);
     };
 
     transportPanel->onSnapToggle = [this](bool enabled) {

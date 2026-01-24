@@ -192,7 +192,6 @@ class TrackManager {
     void setRackModWaveform(const ChainNodePath& rackPath, int modIndex, LFOWaveform waveform);
     void setRackModRate(const ChainNodePath& rackPath, int modIndex, float rate);
     void setRackModPhaseOffset(const ChainNodePath& rackPath, int modIndex, float phaseOffset);
-    void setRackModWaveform(const ChainNodePath& rackPath, int modIndex, LFOWaveform waveform);
     void setRackModTempoSync(const ChainNodePath& rackPath, int modIndex, bool tempoSync);
     void setRackModSyncDivision(const ChainNodePath& rackPath, int modIndex, SyncDivision division);
     void setRackModTriggerMode(const ChainNodePath& rackPath, int modIndex, LFOTriggerMode mode);
@@ -214,7 +213,6 @@ class TrackManager {
     void setDeviceModType(const ChainNodePath& devicePath, int modIndex, ModType type);
     void setDeviceModWaveform(const ChainNodePath& devicePath, int modIndex, LFOWaveform waveform);
     void setDeviceModRate(const ChainNodePath& devicePath, int modIndex, float rate);
-    void setDeviceModWaveform(const ChainNodePath& devicePath, int modIndex, LFOWaveform waveform);
     void setDeviceModPhaseOffset(const ChainNodePath& devicePath, int modIndex, float phaseOffset);
     void setDeviceModTempoSync(const ChainNodePath& devicePath, int modIndex, bool tempoSync);
     void setDeviceModSyncDivision(const ChainNodePath& devicePath, int modIndex,
@@ -319,8 +317,7 @@ class TrackManager {
     void removeListener(TrackManagerListener* listener);
 
     // Modulation management
-    void updateAllMods(double deltaTime);  // Update all mod values (called by ModulatorEngine)
-    void notifyModulationChanged();        // Called when mod values change (for UI refresh)
+    void notifyModulationChanged();  // Called when mod values change (for UI refresh)
 
     // Initialize with default tracks
     void createDefaultTracks(int count = 8);

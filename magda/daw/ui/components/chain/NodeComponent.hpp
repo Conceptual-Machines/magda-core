@@ -230,7 +230,6 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     virtual void onModTypeChangedInternal(int /*modIndex*/, magda::ModType /*type*/) {}
     virtual void onModWaveformChangedInternal(int /*modIndex*/, magda::LFOWaveform /*waveform*/) {}
     virtual void onModRateChangedInternal(int /*modIndex*/, float /*rate*/) {}
-    virtual void onModWaveformChangedInternal(int /*modIndex*/, magda::LFOWaveform /*waveform*/) {}
     virtual void onModPhaseOffsetChangedInternal(int /*modIndex*/, float /*phaseOffset*/) {}
     virtual void onModTempoSyncChangedInternal(int /*modIndex*/, bool /*tempoSync*/) {}
     virtual void onModSyncDivisionChangedInternal(int /*modIndex*/,
