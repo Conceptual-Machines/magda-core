@@ -7,6 +7,7 @@
 
 #include "core/ModInfo.hpp"
 #include "core/ModulatorEngine.hpp"
+#include "ui/components/chain/LFOCurveEditor.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
@@ -56,7 +57,7 @@ class WaveformDisplay : public juce::Component, private juce::Timer {
             float displayPhase = static_cast<float>(i) / static_cast<float>(numPoints - 1);
             // Apply phase offset to show how waveform is shifted
             float effectivePhase = std::fmod(displayPhase + mod_->phaseOffset, 1.0f);
-            float value = magda::ModulatorEngine::generateWaveform(mod_->waveform, effectivePhase);
+            float value = magda::ModulatorEngine::generateWaveformForMod(*mod_, effectivePhase);
 
             // Invert value so high values are at top
             float y = centerY + (0.5f - value) * (height - 8.0f);
@@ -141,10 +142,11 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
     // Callbacks
     std::function<void(float rate)> onRateChanged;
     std::function<void(magda::LFOWaveform waveform)> onWaveformChanged;
-    std::function<void(float phaseOffset)> onPhaseOffsetChanged;
     std::function<void(bool tempoSync)> onTempoSyncChanged;
     std::function<void(magda::SyncDivision division)> onSyncDivisionChanged;
     std::function<void(magda::LFOTriggerMode mode)> onTriggerModeChanged;
+    std::function<void(magda::CurvePreset preset)> onCurvePresetChanged;
+    std::function<void()> onOpenCurveEditor;  // Opens curve editor in new window
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -161,9 +163,11 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
 
     // UI Components
     juce::Label nameLabel_;
-    juce::ComboBox waveformCombo_;
+    juce::ComboBox waveformCombo_;     // LFO shape selector (Sine, Triangle, etc.)
+    juce::ComboBox curvePresetCombo_;  // Curve preset selector (for Custom waveform)
     WaveformDisplay waveformDisplay_;
-    TextSlider phaseSlider_{TextSlider::Format::Decimal};
+    magda::LFOCurveEditor curveEditor_;  // Custom waveform editor
+    bool isCurveMode_ = false;           // True when waveform is Custom
     juce::TextButton syncToggle_;
     juce::ComboBox syncDivisionCombo_;
     TextSlider rateSlider_{TextSlider::Format::Decimal};

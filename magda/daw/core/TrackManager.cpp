@@ -1508,13 +1508,30 @@ void TrackManager::setRackModTriggerMode(const ChainNodePath& rackPath, int modI
     }
 }
 
-void TrackManager::addRackMod(const ChainNodePath& rackPath, int slotIndex, ModType type) {
+void TrackManager::setRackModCurvePreset(const ChainNodePath& rackPath, int modIndex,
+                                         CurvePreset preset) {
+    if (auto* rack = getRackByPath(rackPath)) {
+        if (modIndex < 0 || modIndex >= static_cast<int>(rack->mods.size())) {
+            return;
+        }
+        rack->mods[modIndex].curvePreset = preset;
+    }
+}
+
+void TrackManager::addRackMod(const ChainNodePath& rackPath, int slotIndex, ModType type,
+                              LFOWaveform waveform) {
     if (auto* rack = getRackByPath(rackPath)) {
         // Add a single mod at the specified slot index
         if (slotIndex >= 0 && slotIndex <= static_cast<int>(rack->mods.size())) {
             ModInfo newMod(slotIndex);
             newMod.type = type;
-            newMod.name = ModInfo::getDefaultName(slotIndex, type);
+            newMod.waveform = waveform;
+            // Use "Curve" name for custom waveform
+            if (waveform == LFOWaveform::Custom) {
+                newMod.name = "Curve " + juce::String(slotIndex + 1);
+            } else {
+                newMod.name = ModInfo::getDefaultName(slotIndex, type);
+            }
             rack->mods.insert(rack->mods.begin() + slotIndex, newMod);
 
             // Update IDs for mods after the inserted one
@@ -1723,13 +1740,30 @@ void TrackManager::setDeviceModTriggerMode(const ChainNodePath& devicePath, int 
     }
 }
 
-void TrackManager::addDeviceMod(const ChainNodePath& devicePath, int slotIndex, ModType type) {
+void TrackManager::setDeviceModCurvePreset(const ChainNodePath& devicePath, int modIndex,
+                                           CurvePreset preset) {
+    if (auto* device = getDeviceInChainByPath(devicePath)) {
+        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
+            return;
+        }
+        device->mods[modIndex].curvePreset = preset;
+    }
+}
+
+void TrackManager::addDeviceMod(const ChainNodePath& devicePath, int slotIndex, ModType type,
+                                LFOWaveform waveform) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
         // Add a single mod at the specified slot index
         if (slotIndex >= 0 && slotIndex <= static_cast<int>(device->mods.size())) {
             ModInfo newMod(slotIndex);
             newMod.type = type;
-            newMod.name = ModInfo::getDefaultName(slotIndex, type);
+            newMod.waveform = waveform;
+            // Use "Curve" name for custom waveform
+            if (waveform == LFOWaveform::Custom) {
+                newMod.name = "Curve " + juce::String(slotIndex + 1);
+            } else {
+                newMod.name = ModInfo::getDefaultName(slotIndex, type);
+            }
             device->mods.insert(device->mods.begin() + slotIndex, newMod);
 
             // Update IDs for mods after the inserted one
@@ -1835,8 +1869,8 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             }
             // Apply phase offset when generating waveform
             float effectivePhase = std::fmod(mod.phase + mod.phaseOffset, 1.0f);
-            // Generate waveform output using ModulatorEngine
-            mod.value = ModulatorEngine::generateWaveform(mod.waveform, effectivePhase);
+            // Generate waveform output using ModulatorEngine (handles Custom curves too)
+            mod.value = ModulatorEngine::generateWaveformForMod(mod, effectivePhase);
         }
     };
 

@@ -630,6 +630,10 @@ void RackComponent::onModTriggerModeChangedInternal(int modIndex, magda::LFOTrig
     magda::TrackManager::getInstance().setRackModTriggerMode(rackPath_, modIndex, mode);
 }
 
+void RackComponent::onModCurvePresetChangedInternal(int modIndex, magda::CurvePreset preset) {
+    magda::TrackManager::getInstance().setRackModCurvePreset(rackPath_, modIndex, preset);
+}
+
 void RackComponent::onMacroValueChangedInternal(int macroIndex, float value) {
     magda::TrackManager::getInstance().setRackMacroValue(rackPath_, macroIndex, value);
 
@@ -660,8 +664,9 @@ void RackComponent::onMacroClickedInternal(int macroIndex) {
 
 // === Virtual callbacks for page management ===
 
-void RackComponent::onAddModRequestedInternal(int slotIndex, magda::ModType type) {
-    magda::TrackManager::getInstance().addRackMod(rackPath_, slotIndex, type);
+void RackComponent::onAddModRequestedInternal(int slotIndex, magda::ModType type,
+                                              magda::LFOWaveform waveform) {
+    magda::TrackManager::getInstance().addRackMod(rackPath_, slotIndex, type, waveform);
     // Update the mods panel directly to avoid full UI rebuild (which closes the panel)
     updateModsPanel();
 }

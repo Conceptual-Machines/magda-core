@@ -95,9 +95,69 @@ class ModulatorEngine : public juce::Timer {
             case LFOWaveform::ReverseSaw:
                 return 1.0f - phase;
 
+            case LFOWaveform::Custom:
+                // For Custom, default to triangle - use generateCurvePreset for full support
+                return (phase < 0.5f) ? phase * 2.0f : 2.0f - phase * 2.0f;
+
             default:
                 return 0.5f;
         }
+    }
+
+    /**
+     * @brief Generate curve preset value for given phase
+     * @param preset The curve preset type
+     * @param phase Current phase (0.0 to 1.0)
+     * @return Output value (0.0 to 1.0)
+     */
+    static float generateCurvePreset(CurvePreset preset, float phase) {
+        constexpr float PI = 3.14159265359f;
+
+        switch (preset) {
+            case CurvePreset::Triangle:
+                return (phase < 0.5f) ? phase * 2.0f : 2.0f - phase * 2.0f;
+
+            case CurvePreset::Sine:
+                return (std::sin(2.0f * PI * phase) + 1.0f) * 0.5f;
+
+            case CurvePreset::RampUp:
+                return phase;
+
+            case CurvePreset::RampDown:
+                return 1.0f - phase;
+
+            case CurvePreset::SCurve: {
+                // Smooth S-curve using smoothstep
+                float t = phase;
+                return t * t * (3.0f - 2.0f * t);
+            }
+
+            case CurvePreset::Exponential:
+                // Exponential rise
+                return (std::exp(phase * 3.0f) - 1.0f) / (std::exp(3.0f) - 1.0f);
+
+            case CurvePreset::Logarithmic:
+                // Logarithmic rise
+                return std::log(1.0f + phase * (std::exp(1.0f) - 1.0f));
+
+            case CurvePreset::Custom:
+            default:
+                // Custom uses curve points - default to linear ramp
+                return phase;
+        }
+    }
+
+    /**
+     * @brief Generate waveform value for a mod (handles Custom waveforms with curve presets)
+     * @param mod The modulator info
+     * @param phase Current phase (0.0 to 1.0)
+     * @return Output value (0.0 to 1.0)
+     */
+    static float generateWaveformForMod(const ModInfo& mod, float phase) {
+        if (mod.waveform == LFOWaveform::Custom) {
+            return generateCurvePreset(mod.curvePreset, phase);
+        }
+        return generateWaveform(mod.waveform, phase);
     }
 
   private:

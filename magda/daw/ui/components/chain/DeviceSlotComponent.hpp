@@ -83,6 +83,7 @@ class DeviceSlotComponent : public NodeComponent {
     void onModTempoSyncChangedInternal(int modIndex, bool tempoSync) override;
     void onModSyncDivisionChangedInternal(int modIndex, magda::SyncDivision division) override;
     void onModTriggerModeChangedInternal(int modIndex, magda::LFOTriggerMode mode) override;
+    void onModCurvePresetChangedInternal(int modIndex, magda::CurvePreset preset) override;
     void onMacroValueChangedInternal(int macroIndex, float value) override;
     void onMacroTargetChangedInternal(int macroIndex, magda::MacroTarget target) override;
     void onMacroNameChangedInternal(int macroIndex, const juce::String& name) override;
@@ -94,7 +95,8 @@ class DeviceSlotComponent : public NodeComponent {
     void onMacroLinkRemovedInternal(int macroIndex, magda::MacroTarget target) override;
     void onModClickedInternal(int modIndex) override;
     void onMacroClickedInternal(int macroIndex) override;
-    void onAddModRequestedInternal(int slotIndex, magda::ModType type) override;
+    void onAddModRequestedInternal(int slotIndex, magda::ModType type,
+                                   magda::LFOWaveform waveform) override;
     void onModRemoveRequestedInternal(int modIndex) override;
     void onModEnableToggledInternal(int modIndex, bool enabled) override;
     void onModPageAddRequested(int itemsToAdd) override;

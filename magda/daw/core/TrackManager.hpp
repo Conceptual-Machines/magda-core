@@ -195,7 +195,9 @@ class TrackManager {
     void setRackModTempoSync(const ChainNodePath& rackPath, int modIndex, bool tempoSync);
     void setRackModSyncDivision(const ChainNodePath& rackPath, int modIndex, SyncDivision division);
     void setRackModTriggerMode(const ChainNodePath& rackPath, int modIndex, LFOTriggerMode mode);
-    void addRackMod(const ChainNodePath& rackPath, int slotIndex, ModType type);
+    void setRackModCurvePreset(const ChainNodePath& rackPath, int modIndex, CurvePreset preset);
+    void addRackMod(const ChainNodePath& rackPath, int slotIndex, ModType type,
+                    LFOWaveform waveform = LFOWaveform::Sine);
     void removeRackMod(const ChainNodePath& rackPath, int modIndex);
     void setRackModEnabled(const ChainNodePath& rackPath, int modIndex, bool enabled);
     void addRackModPage(const ChainNodePath& rackPath);
@@ -217,7 +219,9 @@ class TrackManager {
                                   SyncDivision division);
     void setDeviceModTriggerMode(const ChainNodePath& devicePath, int modIndex,
                                  LFOTriggerMode mode);
-    void addDeviceMod(const ChainNodePath& devicePath, int slotIndex, ModType type);
+    void setDeviceModCurvePreset(const ChainNodePath& devicePath, int modIndex, CurvePreset preset);
+    void addDeviceMod(const ChainNodePath& devicePath, int slotIndex, ModType type,
+                      LFOWaveform waveform = LFOWaveform::Sine);
     void removeDeviceMod(const ChainNodePath& devicePath, int modIndex);
     void setDeviceModEnabled(const ChainNodePath& devicePath, int modIndex, bool enabled);
     void addDeviceModPage(const ChainNodePath& devicePath);

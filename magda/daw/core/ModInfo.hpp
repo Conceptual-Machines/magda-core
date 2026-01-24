@@ -21,7 +21,14 @@ enum class ModType { LFO, Envelope, Random, Follower };
 /**
  * @brief LFO waveform shapes
  */
-enum class LFOWaveform { Sine, Triangle, Square, Saw, ReverseSaw };
+enum class LFOWaveform {
+    Sine,
+    Triangle,
+    Square,
+    Saw,
+    ReverseSaw,
+    Custom  // User-defined curve from curve editor
+};
 
 /**
  * @brief Tempo sync divisions for LFO rate
@@ -39,6 +46,29 @@ enum class SyncDivision {
     TripletHalf = 33,     // 1/2 triplet
     TripletQuarter = 66,  // 1/4 triplet
     TripletEighth = 132   // 1/8 triplet
+};
+
+/**
+ * @brief Curve presets for Custom waveform
+ */
+enum class CurvePreset {
+    Triangle,     // Simple triangle
+    Sine,         // Smooth sine-like curve
+    RampUp,       // Linear ramp up
+    RampDown,     // Linear ramp down
+    SCurve,       // S-curve (smooth transition)
+    Exponential,  // Exponential rise/fall
+    Logarithmic,  // Logarithmic rise/fall
+    Custom        // User-edited curve
+};
+
+/**
+ * @brief A point on a custom curve (for LFO Custom waveform)
+ */
+struct CurvePointData {
+    float phase = 0.0f;    // 0.0 to 1.0, position in cycle
+    float value = 0.5f;    // 0.0 to 1.0, output value
+    float tension = 0.0f;  // -3 to +3, curve tension
 };
 
 /**
@@ -112,6 +142,10 @@ struct ModInfo {
     // Advanced receiver settings (for future MIDI/Audio trigger modes)
     int midiChannel = 0;  // 0 = any, 1-16 = specific
     int midiNote = -1;    // -1 = any, 0-127 = specific
+
+    // Custom curve settings (when waveform == Custom)
+    CurvePreset curvePreset = CurvePreset::Triangle;
+    std::vector<CurvePointData> curvePoints;  // User-defined curve points
 
     std::vector<ModLink> links;  // All parameter links for this mod
 

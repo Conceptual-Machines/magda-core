@@ -22,7 +22,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     nameLabel_.setText("No Mod Selected", juce::dontSendNotification);
     addAndMakeVisible(nameLabel_);
 
-    // Waveform selector
+    // Waveform selector (for LFO shapes - hidden when Custom/Curve)
     waveformCombo_.addItem("Sine", static_cast<int>(magda::LFOWaveform::Sine) + 1);
     waveformCombo_.addItem("Triangle", static_cast<int>(magda::LFOWaveform::Triangle) + 1);
     waveformCombo_.addItem("Square", static_cast<int>(magda::LFOWaveform::Square) + 1);
@@ -44,22 +44,40 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     };
     addAndMakeVisible(waveformCombo_);
 
+    // Curve preset selector (for Custom waveform - hidden when LFO shapes)
+    curvePresetCombo_.addItem("Triangle", static_cast<int>(magda::CurvePreset::Triangle) + 1);
+    curvePresetCombo_.addItem("Sine", static_cast<int>(magda::CurvePreset::Sine) + 1);
+    curvePresetCombo_.addItem("Ramp Up", static_cast<int>(magda::CurvePreset::RampUp) + 1);
+    curvePresetCombo_.addItem("Ramp Down", static_cast<int>(magda::CurvePreset::RampDown) + 1);
+    curvePresetCombo_.addItem("S-Curve", static_cast<int>(magda::CurvePreset::SCurve) + 1);
+    curvePresetCombo_.addItem("Custom", static_cast<int>(magda::CurvePreset::Custom) + 1);
+    curvePresetCombo_.setSelectedId(static_cast<int>(magda::CurvePreset::Triangle) + 1,
+                                    juce::dontSendNotification);
+    curvePresetCombo_.setColour(juce::ComboBox::backgroundColourId,
+                                DarkTheme::getColour(DarkTheme::SURFACE));
+    curvePresetCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    curvePresetCombo_.setColour(juce::ComboBox::outlineColourId,
+                                DarkTheme::getColour(DarkTheme::BORDER));
+    curvePresetCombo_.setJustificationType(juce::Justification::centredLeft);
+    curvePresetCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
+    curvePresetCombo_.onChange = [this]() {
+        int id = curvePresetCombo_.getSelectedId();
+        if (id > 0 && onCurvePresetChanged) {
+            onCurvePresetChanged(static_cast<magda::CurvePreset>(id - 1));
+        }
+    };
+    addChildComponent(curvePresetCombo_);  // Hidden by default
+
     // Waveform display
     addAndMakeVisible(waveformDisplay_);
 
-    // Phase offset slider (0° to 360°)
-    phaseSlider_.setRange(0.0, 360.0, 1.0);
-    phaseSlider_.setValue(0.0, juce::dontSendNotification);
-    phaseSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    phaseSlider_.onValueChanged = [this](double value) {
-        // Convert degrees (0-360) to normalized (0-1)
-        float normalized = static_cast<float>(value / 360.0);
-        currentMod_.phaseOffset = normalized;
-        if (onPhaseOffsetChanged) {
-            onPhaseOffsetChanged(normalized);
-        }
+    // Curve editor (initially hidden)
+    curveEditor_.setVisible(false);
+    curveEditor_.onWaveformChanged = [this]() {
+        // TODO: Update ModInfo with custom waveform data
+        repaint();
     };
-    addAndMakeVisible(phaseSlider_);
+    addChildComponent(curveEditor_);
 
     // Sync toggle button (small square button style)
     syncToggle_.setButtonText("Free");
@@ -183,7 +201,6 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
     if (index < 0) {
         nameLabel_.setText("No Mod Selected", juce::dontSendNotification);
         waveformCombo_.setEnabled(false);
-        phaseSlider_.setEnabled(false);
         syncToggle_.setEnabled(false);
         syncDivisionCombo_.setEnabled(false);
         rateSlider_.setEnabled(false);
@@ -191,7 +208,6 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
         advancedButton_->setEnabled(false);
     } else {
         waveformCombo_.setEnabled(true);
-        phaseSlider_.setEnabled(true);
         syncToggle_.setEnabled(true);
         syncDivisionCombo_.setEnabled(true);
         rateSlider_.setEnabled(true);
@@ -202,10 +218,31 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
 
 void ModulatorEditorPanel::updateFromMod() {
     nameLabel_.setText(currentMod_.name, juce::dontSendNotification);
-    waveformCombo_.setSelectedId(static_cast<int>(currentMod_.waveform) + 1,
-                                 juce::dontSendNotification);
-    // Convert normalized (0-1) to degrees (0-360)
-    phaseSlider_.setValue(currentMod_.phaseOffset * 360.0, juce::dontSendNotification);
+
+    // Check if this is a Custom (Curve) waveform
+    isCurveMode_ = (currentMod_.waveform == magda::LFOWaveform::Custom);
+
+    // Determine if we should show curve editor (only for custom preset with editable points)
+    bool showCurveEditor = isCurveMode_ && (currentMod_.curvePreset == magda::CurvePreset::Custom);
+
+    // Show/hide appropriate selector based on curve mode
+    waveformCombo_.setVisible(!isCurveMode_);
+    curvePresetCombo_.setVisible(isCurveMode_);
+
+    // Show curve editor only for custom preset, otherwise show waveform display
+    // (waveformDisplay_ now correctly renders curve presets via generateWaveformForMod)
+    curveEditor_.setVisible(showCurveEditor);
+    waveformDisplay_.setVisible(!showCurveEditor);
+
+    if (isCurveMode_) {
+        // Curve mode - show curve preset
+        curvePresetCombo_.setSelectedId(static_cast<int>(currentMod_.curvePreset) + 1,
+                                        juce::dontSendNotification);
+    } else {
+        // LFO mode - show waveform shape
+        waveformCombo_.setSelectedId(static_cast<int>(currentMod_.waveform) + 1,
+                                     juce::dontSendNotification);
+    }
 
     // Tempo sync controls
     syncToggle_.setToggleState(currentMod_.tempoSync, juce::dontSendNotification);
@@ -236,18 +273,14 @@ void ModulatorEditorPanel::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().reduced(6);
     bounds.removeFromTop(18 + 6);  // Skip name label + gap
 
-    // "Waveform" label
+    // "Waveform" or "Preset" label depending on mode
     g.setColour(DarkTheme::getSecondaryTextColour());
     g.setFont(FontManager::getInstance().getUIFont(8.0f));
-    g.drawText("Waveform", bounds.removeFromTop(10), juce::Justification::centredLeft);
+    g.drawText(isCurveMode_ ? "Preset" : "Waveform", bounds.removeFromTop(10),
+               juce::Justification::centredLeft);
 
     bounds.removeFromTop(18 + 4);  // Skip waveform selector + gap
     bounds.removeFromTop(46 + 6);  // Skip waveform display + gap
-
-    // "Phase" label
-    g.drawText("Phase", bounds.removeFromTop(10), juce::Justification::centredLeft);
-
-    bounds.removeFromTop(18 + 6);  // Skip phase slider + gap
     bounds.removeFromTop(18 + 6);  // Skip rate row + gap
 
     // "Trigger" label
@@ -288,18 +321,17 @@ void ModulatorEditorPanel::resized() {
     nameLabel_.setBounds(bounds.removeFromTop(18));
     bounds.removeFromTop(6);
 
-    // Waveform label area (painted) + selector
-    bounds.removeFromTop(10);  // "Waveform" label
-    waveformCombo_.setBounds(bounds.removeFromTop(18));
+    // Waveform/Preset label area (painted) + selector
+    bounds.removeFromTop(10);  // "Waveform" or "Preset" label
+    auto selectorRow = bounds.removeFromTop(18);
+    waveformCombo_.setBounds(selectorRow);
+    curvePresetCombo_.setBounds(selectorRow);  // Same position, shown alternately
     bounds.removeFromTop(4);
 
-    // Waveform display (animated visualization)
-    waveformDisplay_.setBounds(bounds.removeFromTop(46));
-    bounds.removeFromTop(6);
-
-    // Phase label area (painted) + slider
-    bounds.removeFromTop(10);  // "Phase" label
-    phaseSlider_.setBounds(bounds.removeFromTop(18));
+    // Waveform display or curve editor (same area)
+    auto waveformArea = bounds.removeFromTop(46);
+    waveformDisplay_.setBounds(waveformArea);
+    curveEditor_.setBounds(waveformArea);
     bounds.removeFromTop(6);
 
     // Rate row: [Sync button] [Rate slider/division combo]
@@ -333,7 +365,13 @@ void ModulatorEditorPanel::resized() {
     triggerModeCombo_.setBounds(triggerRow);
 }
 
-void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& /*e*/) {
+void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& e) {
+    // Check if click is on the curve editor area when in curve mode
+    if (isCurveMode_ && curveEditor_.getBounds().contains(e.getPosition())) {
+        if (onOpenCurveEditor) {
+            onOpenCurveEditor();
+        }
+    }
     // Consume mouse events to prevent propagation to parent
 }
 

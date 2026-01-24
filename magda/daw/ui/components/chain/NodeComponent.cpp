@@ -907,8 +907,9 @@ void NodeComponent::initializeModsMacrosPanels() {
             showModulatorEditor(modIndex);
         }
     };
-    modsPanel_->onAddModRequested = [this](int slotIndex, magda::ModType type) {
-        onAddModRequestedInternal(slotIndex, type);
+    modsPanel_->onAddModRequested = [this](int slotIndex, magda::ModType type,
+                                           magda::LFOWaveform waveform) {
+        onAddModRequestedInternal(slotIndex, type, waveform);
     };
     modsPanel_->onModRemoveRequested = [this](int modIndex) {
         onModRemoveRequestedInternal(modIndex);
@@ -968,11 +969,6 @@ void NodeComponent::initializeModsMacrosPanels() {
             onModWaveformChangedInternal(selectedModIndex_, waveform);
         }
     };
-    modulatorEditorPanel_->onPhaseOffsetChanged = [this](float phaseOffset) {
-        if (selectedModIndex_ >= 0) {
-            onModPhaseOffsetChangedInternal(selectedModIndex_, phaseOffset);
-        }
-    };
     modulatorEditorPanel_->onTempoSyncChanged = [this](bool tempoSync) {
         if (selectedModIndex_ >= 0) {
             onModTempoSyncChangedInternal(selectedModIndex_, tempoSync);
@@ -986,6 +982,16 @@ void NodeComponent::initializeModsMacrosPanels() {
     modulatorEditorPanel_->onTriggerModeChanged = [this](magda::LFOTriggerMode mode) {
         if (selectedModIndex_ >= 0) {
             onModTriggerModeChangedInternal(selectedModIndex_, mode);
+        }
+    };
+    modulatorEditorPanel_->onCurvePresetChanged = [this](magda::CurvePreset preset) {
+        if (selectedModIndex_ >= 0) {
+            onModCurvePresetChangedInternal(selectedModIndex_, preset);
+        }
+    };
+    modulatorEditorPanel_->onOpenCurveEditor = [this]() {
+        if (selectedModIndex_ >= 0) {
+            onOpenCurveEditorInternal(selectedModIndex_);
         }
     };
     addChildComponent(*modulatorEditorPanel_);

@@ -579,6 +579,10 @@ void DeviceSlotComponent::onModTriggerModeChangedInternal(int modIndex,
     magda::TrackManager::getInstance().setDeviceModTriggerMode(nodePath_, modIndex, mode);
 }
 
+void DeviceSlotComponent::onModCurvePresetChangedInternal(int modIndex, magda::CurvePreset preset) {
+    magda::TrackManager::getInstance().setDeviceModCurvePreset(nodePath_, modIndex, preset);
+}
+
 void DeviceSlotComponent::onMacroValueChangedInternal(int macroIndex, float value) {
     magda::TrackManager::getInstance().setDeviceMacroValue(nodePath_, macroIndex, value);
     updateParamModulation();  // Refresh param indicators to show new value
@@ -668,8 +672,9 @@ void DeviceSlotComponent::onModLinkRemovedInternal(int modIndex, magda::ModTarge
     updateParamModulation();
 }
 
-void DeviceSlotComponent::onAddModRequestedInternal(int slotIndex, magda::ModType type) {
-    magda::TrackManager::getInstance().addDeviceMod(nodePath_, slotIndex, type);
+void DeviceSlotComponent::onAddModRequestedInternal(int slotIndex, magda::ModType type,
+                                                    magda::LFOWaveform waveform) {
+    magda::TrackManager::getInstance().addDeviceMod(nodePath_, slotIndex, type, waveform);
     // Update the mods panel directly to avoid full UI rebuild (which closes the panel)
     updateModsPanel();
 }

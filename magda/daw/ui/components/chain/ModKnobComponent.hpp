@@ -43,7 +43,7 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
 
         for (int i = 0; i < numPoints; ++i) {
             float phase = static_cast<float>(i) / static_cast<float>(numPoints - 1);
-            float value = magda::ModulatorEngine::generateWaveform(mod_->waveform, phase);
+            float value = magda::ModulatorEngine::generateWaveformForMod(*mod_, phase);
 
             // Invert value so high values are at top
             float y = centerY + (0.5f - value) * (height - 2.0f);

@@ -35,9 +35,24 @@ void AddModButton::paint(juce::Graphics& g) {
 }
 
 void AddModButton::mouseDown(const juce::MouseEvent& /*e*/) {
-    if (onClick) {
-        onClick();
-    }
+    showAddMenu();
+}
+
+void AddModButton::showAddMenu() {
+    juce::PopupMenu menu;
+
+    menu.addItem(1, "LFO");
+    menu.addItem(2, "Curve");
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this), [this](int result) {
+        if (result == 1 && onAddMod) {
+            // Standard LFO with sine wave
+            onAddMod(magda::ModType::LFO, magda::LFOWaveform::Sine);
+        } else if (result == 2 && onAddMod) {
+            // Curve LFO with custom waveform
+            onAddMod(magda::ModType::LFO, magda::LFOWaveform::Custom);
+        }
+    });
 }
 
 void AddModButton::mouseEnter(const juce::MouseEvent& /*e*/) {
@@ -147,11 +162,10 @@ void ModsPanelComponent::ensureSlotCount(int count) {
         int slotIndex = static_cast<int>(addButtons_.size());
         auto addButton = std::make_unique<AddModButton>();
 
-        // Wire up callback with slot index
-        addButton->onClick = [this, slotIndex]() {
+        // Wire up callback with slot index - receives type and waveform from popup menu
+        addButton->onAddMod = [this, slotIndex](magda::ModType type, magda::LFOWaveform waveform) {
             if (onAddModRequested) {
-                // Only add LFO for now (as per user request)
-                onAddModRequested(slotIndex, magda::ModType::LFO);
+                onAddModRequested(slotIndex, type, waveform);
             }
         };
 
