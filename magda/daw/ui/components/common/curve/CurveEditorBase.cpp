@@ -316,14 +316,15 @@ bool CurveEditorBase::keyPressed(const juce::KeyPress& key) {
 }
 
 double CurveEditorBase::pixelToY(int py) const {
-    int height = getHeight();
-    if (height <= 0)
+    auto content = getContentBounds();
+    if (content.getHeight() <= 0)
         return 0.5;
-    return 1.0 - (static_cast<double>(py) / height);
+    return 1.0 - (static_cast<double>(py - content.getY()) / content.getHeight());
 }
 
 int CurveEditorBase::yToPixel(double y) const {
-    return static_cast<int>((1.0 - y) * getHeight());
+    auto content = getContentBounds();
+    return content.getY() + static_cast<int>((1.0 - y) * content.getHeight());
 }
 
 std::pair<double, double> CurveEditorBase::getEffectivePosition(const CurvePoint& p) const {

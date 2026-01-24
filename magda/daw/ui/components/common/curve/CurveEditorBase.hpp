@@ -60,10 +60,24 @@ class CurveEditorBase : public juce::Component {
         return curveColour_;
     }
 
+    // Padding for content area
+    void setPadding(int padding) {
+        padding_ = padding;
+    }
+    int getPadding() const {
+        return padding_;
+    }
+
+    // Get content bounds (area minus padding)
+    juce::Rectangle<int> getContentBounds() const {
+        return getLocalBounds().reduced(padding_);
+    }
+
     // Coordinate conversion - must be implemented by subclasses
     virtual double getPixelsPerX() const = 0;  // Pixels per X unit (time or phase)
     virtual double getPixelsPerY() const {
-        return getHeight() > 0 ? static_cast<double>(getHeight()) : 100.0;
+        auto content = getContentBounds();
+        return content.getHeight() > 0 ? static_cast<double>(content.getHeight()) : 100.0;
     }
 
     virtual double pixelToX(int px) const = 0;  // Convert pixel to X coordinate
@@ -85,6 +99,7 @@ class CurveEditorBase : public juce::Component {
   protected:
     CurveDrawMode drawMode_ = CurveDrawMode::Select;
     juce::Colour curveColour_{0xFF6688CC};  // Default curve color
+    int padding_ = 2;                       // Content area padding
 
     // Components
     std::vector<std::unique_ptr<CurvePointComponent>> pointComponents_;

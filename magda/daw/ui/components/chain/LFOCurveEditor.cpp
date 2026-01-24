@@ -95,19 +95,21 @@ void LFOCurveEditor::paint(juce::Graphics& g) {
 }
 
 double LFOCurveEditor::getPixelsPerX() const {
-    // X is phase 0-1, so pixels per X = width
-    return getWidth() > 0 ? static_cast<double>(getWidth()) : 100.0;
+    // X is phase 0-1, so pixels per X = content width
+    auto content = getContentBounds();
+    return content.getWidth() > 0 ? static_cast<double>(content.getWidth()) : 100.0;
 }
 
 double LFOCurveEditor::pixelToX(int px) const {
-    int width = getWidth();
-    if (width <= 0)
+    auto content = getContentBounds();
+    if (content.getWidth() <= 0)
         return 0.0;
-    return static_cast<double>(px) / width;
+    return static_cast<double>(px - content.getX()) / content.getWidth();
 }
 
 int LFOCurveEditor::xToPixel(double x) const {
-    return static_cast<int>(x * getWidth());
+    auto content = getContentBounds();
+    return content.getX() + static_cast<int>(x * content.getWidth());
 }
 
 const std::vector<CurvePoint>& LFOCurveEditor::getPoints() const {
