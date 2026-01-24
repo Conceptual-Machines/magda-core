@@ -382,6 +382,23 @@ void AudioBridge::syncTrackPlugins(TrackId trackId) {
 
     // Ensure LevelMeter is at the end of the plugin chain for metering
     addLevelMeterToTrack(trackId);
+
+    // Debug: Print the final plugin chain for track 1
+    if (trackId == 1 && teTrack) {
+        std::cout << "\nTrack 1 final plugin chain:" << std::endl;
+        auto& plugins = teTrack->pluginList;
+        for (int i = 0; i < plugins.size(); ++i) {
+            auto* p = plugins[i];
+            std::cout << "  [" << i << "] " << p->getName() << " (enabled: " << p->isEnabled()
+                      << ")";
+
+            if (auto* tone = dynamic_cast<te::ToneGeneratorPlugin*>(p)) {
+                std::cout << " - freq=" << tone->frequency << ", level=" << tone->level;
+            }
+            std::cout << std::endl;
+        }
+        std::cout << std::endl;
+    }
 }
 
 void AudioBridge::ensureTrackMapping(TrackId trackId) {
@@ -441,8 +458,21 @@ void AudioBridge::timerCallback() {
 
         // Debug: Print actual dB values for track 1
         if (trackId == 1 && ++debugCounter % 30 == 0) {  // Once per second
-            std::cout << "Track 1 LevelMeasurer: " << levelL.dB << " dB / " << levelR.dB << " dB"
-                      << std::endl;
+            float linearL = juce::Decibels::decibelsToGain(levelL.dB);
+            float linearR = juce::Decibels::decibelsToGain(levelR.dB);
+
+            std::cout << "Track 1 LevelMeasurer RAW:" << std::endl;
+            std::cout << "  dB from measurer: " << levelL.dB << " / " << levelR.dB << std::endl;
+            std::cout << "  Linear converted: " << linearL << " / " << linearR << std::endl;
+            std::cout << "  Time: " << levelL.time << std::endl;
+
+            // Also check the track's volume
+            if (track) {
+                std::cout << "  Track volume dB: "
+                          << track->getVolumePlugin()->volParam->getCurrentValue() << std::endl;
+                std::cout << "  Track pan: "
+                          << track->getVolumePlugin()->panParam->getCurrentValue() << std::endl;
+            }
         }
 
         // Convert from dB to linear gain (0-1)
@@ -477,8 +507,19 @@ te::Plugin::Ptr AudioBridge::createToneGenerator(te::AudioTrack* track) {
         if (auto* toneGen = dynamic_cast<te::ToneGeneratorPlugin*>(plugin.get())) {
             toneGen->frequency = 440.0f;  // A4 note
             toneGen->level = 0.25f;       // Quarter amplitude for -12dB
-            std::cout << "ToneGenerator created: freq=" << toneGen->frequency
-                      << "Hz, level=" << toneGen->level << " (-12dB target)" << std::endl;
+
+            std::cout << "ToneGenerator created:" << std::endl;
+            std::cout << "  freq=" << toneGen->frequency << " Hz" << std::endl;
+            std::cout << "  level=" << toneGen->level << " (target: -12dB)" << std::endl;
+
+            // Check if we can use the automatable parameter instead
+            if (toneGen->levelParam) {
+                std::cout << "  levelParam exists, current value: "
+                          << toneGen->levelParam->getCurrentValue() << std::endl;
+                toneGen->levelParam->setParameter(0.25f, juce::sendNotificationSync);
+                std::cout << "  levelParam after set: " << toneGen->levelParam->getCurrentValue()
+                          << std::endl;
+            }
         }
     }
     return plugin;
