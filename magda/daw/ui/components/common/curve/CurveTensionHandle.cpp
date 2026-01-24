@@ -54,10 +54,16 @@ void CurveTensionHandle::mouseDrag(const juce::MouseEvent& e) {
     if (!isDragging_)
         return;
 
-    // Dragging up increases tension (convex/outward), down decreases (concave/inward)
+    // Dragging up bends curve outward (away from straight line)
     // 50 pixels of drag = full range
     // Normal: -1 to +1, Shift held: -3 to +3 for extreme squared curves
     int deltaY = dragStartY_ - e.y;
+
+    // Invert direction when curve goes downward so "up" always means "outward"
+    if (slopeGoesDown_) {
+        deltaY = -deltaY;
+    }
+
     double deltaTension = static_cast<double>(deltaY) / 50.0;
 
     double minTension = e.mods.isShiftDown() ? -3.0 : -1.0;

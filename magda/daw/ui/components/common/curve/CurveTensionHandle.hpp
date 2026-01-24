@@ -39,6 +39,12 @@ class CurveTensionHandle : public juce::Component {
         return tension_;
     }
 
+    // Set whether the curve segment goes downward (y2 < y1)
+    // When true, drag direction is inverted so "up" always bends outward
+    void setSlopeGoesDown(bool goesDown) {
+        slopeGoesDown_ = goesDown;
+    }
+
     // Callbacks
     std::function<void(uint32_t, double)> onTensionChanged;
     std::function<void(uint32_t, double)> onTensionDragPreview;
@@ -50,6 +56,7 @@ class CurveTensionHandle : public juce::Component {
     double tension_ = 0.0;
     bool isDragging_ = false;
     bool isHovered_ = false;
+    bool slopeGoesDown_ = false;  // True if curve segment goes downward
     int dragStartY_ = 0;
     double dragStartTension_ = 0.0;
 };

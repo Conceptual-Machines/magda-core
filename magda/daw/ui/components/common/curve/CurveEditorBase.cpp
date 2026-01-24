@@ -397,6 +397,10 @@ void CurveEditorBase::rebuildPointComponents() {
             auto th = std::make_unique<CurveTensionHandle>(point.id);
             th->setTension(point.tension);
 
+            // Set slope direction so drag feels intuitive
+            const auto& nextPoint = points[i + 1];
+            th->setSlopeGoesDown(nextPoint.y < point.y);
+
             th->onTensionChanged = [this](uint32_t pointId, double tension) {
                 // Clear preview state
                 tensionPreviewPointId_ = INVALID_CURVE_POINT_ID;
@@ -542,6 +546,8 @@ void CurveEditorBase::updateTensionHandlePositions() {
             int py = yToPixel(midY);
 
             tensionHandles_[tensionIdx]->setCentrePosition(px, py);
+            // Update slope direction in case points were moved
+            tensionHandles_[tensionIdx]->setSlopeGoesDown(y2 < y1);
             ++tensionIdx;
         }
     }
