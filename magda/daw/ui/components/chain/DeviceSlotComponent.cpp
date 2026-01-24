@@ -919,10 +919,9 @@ void DeviceSlotComponent::updateCustomUI() {
         float frequency = 440.0f;
         float level = -12.0f;
         int waveform = 0;
-        int triggerMode = 1;
 
         // Read from device parameters if available
-        if (device_.parameters.size() >= 4) {
+        if (device_.parameters.size() >= 3) {
             // Param 0: Frequency (normalized 0-1)
             float freqNorm = device_.parameters[0].currentValue;
             float logMin = std::log(20.0f);
@@ -935,12 +934,9 @@ void DeviceSlotComponent::updateCustomUI() {
 
             // Param 2: Waveform (0 or 1)
             waveform = static_cast<int>(device_.parameters[2].currentValue);
-
-            // Param 3: Trigger mode (0-2)
-            triggerMode = static_cast<int>(device_.parameters[3].currentValue);
         }
 
-        toneGeneratorUI_->updateParameters(frequency, level, waveform, triggerMode);
+        toneGeneratorUI_->updateParameters(frequency, level, waveform);
     }
 }
 

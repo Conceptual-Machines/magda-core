@@ -488,42 +488,26 @@ void AudioBridge::updateTransportState(bool isPlaying, bool justStarted, bool ju
 
     for (const auto& [deviceId, processor] : deviceProcessors_) {
         if (auto* toneProc = dynamic_cast<ToneGeneratorProcessor*>(processor.get())) {
-            int triggerMode = toneProc->getTriggerMode();
+            // Test Tone is always transport-synced
+            bool isMuted = transportMutedLevels_.find(deviceId) != transportMutedLevels_.end();
 
-            // 0 = Free (always play), 1 = Transport (play with transport), 2 = MIDI (not
-            // implemented yet)
-            if (triggerMode == 1) {  // Transport mode
-                bool isMuted = transportMutedLevels_.find(deviceId) != transportMutedLevels_.end();
-
-                if (isPlaying && isMuted) {
-                    // Restore level when playing
-                    auto it = transportMutedLevels_.find(deviceId);
-                    if (it != transportMutedLevels_.end()) {
-                        float restoredLevel = it->second;
-                        toneProc->setLevel(restoredLevel);
-                        transportMutedLevels_.erase(it);
-                        std::cout << "    Transport PLAYING - restoring level to " << restoredLevel
-                                  << std::endl;
-                    }
-                } else if (!isPlaying && !isMuted) {
-                    // Mute when stopped - store current level first
-                    float currentLevel = toneProc->getLevel();
-                    if (currentLevel > 0.0f) {  // Only mute if not already at 0
-                        transportMutedLevels_[deviceId] = currentLevel;
-                        toneProc->setLevel(0.0f);
-                        std::cout << "    Transport STOPPED - muting level (was " << currentLevel
-                                  << ")" << std::endl;
-                    }
-                }
-            } else {
-                // Free or MIDI mode - ensure not in muted map
+            if (isPlaying && isMuted) {
+                // Restore level when playing
                 auto it = transportMutedLevels_.find(deviceId);
                 if (it != transportMutedLevels_.end()) {
-                    // Switched from Transport to Free/MIDI - restore level
                     float restoredLevel = it->second;
                     toneProc->setLevel(restoredLevel);
                     transportMutedLevels_.erase(it);
-                    std::cout << "    Switched to Free mode - restoring level to " << restoredLevel
+                    std::cout << "    Transport PLAYING - restoring level to " << restoredLevel
+                              << std::endl;
+                }
+            } else if (!isPlaying && !isMuted) {
+                // Mute when stopped - store current level first
+                float currentLevel = toneProc->getLevel();
+                if (currentLevel > 0.0f) {  // Only mute if not already at 0
+                    transportMutedLevels_[deviceId] = currentLevel;
+                    toneProc->setLevel(0.0f);
+                    std::cout << "    Transport STOPPED - muting level (was " << currentLevel << ")"
                               << std::endl;
                 }
             }
@@ -706,16 +690,16 @@ te::Plugin::Ptr AudioBridge::loadDeviceAsPlugin(TrackId trackId, const DeviceInf
         // Apply device state
         plugin->setEnabled(!device.bypassed);
 
-        // For tone generators in Transport mode, sync initial state with transport
+        // For tone generators (always transport-synced), sync initial state with transport
         if (auto* toneProc = dynamic_cast<ToneGeneratorProcessor*>(processor.get())) {
-            if (toneProc->getTriggerMode() == 1) {  // Transport mode
-                // Get current transport state
-                bool isPlaying = transportPlaying_.load(std::memory_order_acquire);
-                // Only enable if both: not bypassed AND transport is playing
-                plugin->setEnabled(!device.bypassed && isPlaying);
-                std::cout << "Tone generator in Transport mode - initial enabled state: "
-                          << plugin->isEnabled() << " (bypassed=" << device.bypassed
-                          << ", playing=" << isPlaying << ")" << std::endl;
+            // Get current transport state
+            bool isPlaying = transportPlaying_.load(std::memory_order_acquire);
+            // Mute level if transport is not playing
+            if (!isPlaying && toneProc->getLevel() > 0.0f) {
+                transportMutedLevels_[device.id] = toneProc->getLevel();
+                toneProc->setLevel(0.0f);
+                std::cout << "Tone generator loaded while transport stopped - muting level"
+                          << std::endl;
             }
         }
 

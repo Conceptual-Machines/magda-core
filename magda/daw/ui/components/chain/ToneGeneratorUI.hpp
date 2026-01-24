@@ -13,7 +13,8 @@ namespace magda::daw::ui {
  * - Waveform selector (Sine/Noise)
  * - Frequency slider with Hz/kHz formatting
  * - Level slider in dB
- * - Trigger mode buttons (Free/Transport/MIDI)
+ *
+ * Note: Test Tone is always transport-synced (plays when transport plays)
  */
 class ToneGeneratorUI : public juce::Component {
   public:
@@ -25,13 +26,12 @@ class ToneGeneratorUI : public juce::Component {
      * @param frequency Frequency in Hz (20-20000)
      * @param level Level in dB (-60 to 0)
      * @param waveform Waveform type (0=Sine, 1=Noise)
-     * @param triggerMode Trigger mode (0=Free, 1=Transport, 2=MIDI)
      */
-    void updateParameters(float frequency, float level, int waveform, int triggerMode);
+    void updateParameters(float frequency, float level, int waveform);
 
     /**
      * @brief Callback when a parameter changes (paramIndex, normalizedValue)
-     * ParamIndex: 0=frequency, 1=level, 2=waveform, 3=trigger
+     * ParamIndex: 0=frequency, 1=level, 2=waveform
      */
     std::function<void(int paramIndex, float normalizedValue)> onParameterChanged;
 
@@ -47,11 +47,6 @@ class ToneGeneratorUI : public juce::Component {
 
     // Level slider (-60 to 0 dB)
     TextSlider levelSlider_{TextSlider::Format::Decibels};
-
-    // Trigger mode buttons
-    juce::Label triggerLabel_;
-    std::array<std::unique_ptr<juce::TextButton>, 3> triggerButtons_;
-    int currentTriggerMode_ = 1;  // Default: Transport
 
     // Convert frequency to display string
     juce::String formatFrequency(float hz) const;

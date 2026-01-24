@@ -58,45 +58,9 @@ ToneGeneratorUI::ToneGeneratorUI() {
         }
     };
     addAndMakeVisible(levelSlider_);
-
-    // Trigger label
-    triggerLabel_.setText("Trigger:", juce::dontSendNotification);
-    triggerLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    triggerLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    triggerLabel_.setJustificationType(juce::Justification::centredRight);
-    addAndMakeVisible(triggerLabel_);
-
-    // Trigger mode buttons
-    const juce::StringArray triggerLabels = {"Free", "Transport", "MIDI"};
-    for (int i = 0; i < 3; ++i) {
-        triggerButtons_[i] = std::make_unique<juce::TextButton>(triggerLabels[i]);
-        triggerButtons_[i]->setClickingTogglesState(true);
-        triggerButtons_[i]->setRadioGroupId(1001);  // Make them mutually exclusive
-        triggerButtons_[i]->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-        triggerButtons_[i]->setColour(juce::TextButton::buttonColourId,
-                                      DarkTheme::getColour(DarkTheme::SURFACE));
-        triggerButtons_[i]->setColour(juce::TextButton::buttonOnColourId,
-                                      DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
-        triggerButtons_[i]->setColour(juce::TextButton::textColourOffId,
-                                      DarkTheme::getSecondaryTextColour());
-        triggerButtons_[i]->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-
-        triggerButtons_[i]->onClick = [this, i]() {
-            currentTriggerMode_ = i;
-            if (onParameterChanged) {
-                // Normalize: 0-2 → 0-1
-                onParameterChanged(3, static_cast<float>(i) / 2.0f);
-            }
-        };
-        addAndMakeVisible(*triggerButtons_[i]);
-    }
-
-    // Set default trigger mode (Transport)
-    triggerButtons_[1]->setToggleState(true, juce::dontSendNotification);
 }
 
-void ToneGeneratorUI::updateParameters(float frequency, float level, int waveform,
-                                       int triggerMode) {
+void ToneGeneratorUI::updateParameters(float frequency, float level, int waveform) {
     // Update waveform selector
     waveformSelector_.setSelectedId(waveform + 1, juce::dontSendNotification);
 
@@ -105,14 +69,6 @@ void ToneGeneratorUI::updateParameters(float frequency, float level, int wavefor
 
     // Update level slider
     levelSlider_.setValue(level, juce::dontSendNotification);
-
-    // Update trigger buttons
-    if (triggerMode >= 0 && triggerMode <= 2) {
-        currentTriggerMode_ = triggerMode;
-        for (int i = 0; i < 3; ++i) {
-            triggerButtons_[i]->setToggleState(i == triggerMode, juce::dontSendNotification);
-        }
-    }
 }
 
 void ToneGeneratorUI::paint(juce::Graphics& g) {
@@ -141,19 +97,6 @@ void ToneGeneratorUI::resized() {
     // Row 3: Level slider
     auto levelArea = area.removeFromTop(24);
     levelSlider_.setBounds(levelArea);
-    area.removeFromTop(4);
-
-    // Row 4: Trigger label + buttons
-    auto triggerArea = area.removeFromTop(20);
-    triggerLabel_.setBounds(triggerArea.removeFromLeft(50));
-    triggerArea.removeFromLeft(4);
-
-    int buttonWidth = (triggerArea.getWidth() - 8) / 3;  // 3 buttons with gaps
-    for (int i = 0; i < 3; ++i) {
-        triggerButtons_[i]->setBounds(triggerArea.removeFromLeft(buttonWidth));
-        if (i < 2)
-            triggerArea.removeFromLeft(4);  // Gap between buttons
-    }
 }
 
 juce::String ToneGeneratorUI::formatFrequency(float hz) const {

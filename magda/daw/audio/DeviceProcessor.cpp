@@ -180,11 +180,6 @@ void ToneGeneratorProcessor::setParameter(const juce::String& paramName, float v
         int type = static_cast<int>(std::round(value));
         DBG("ToneGen::setParameter oscType=" << type);
         setOscType(type);  // 0 or 1
-    } else if (paramName.equalsIgnoreCase("trigger") || paramName.equalsIgnoreCase("triggerMode")) {
-        // 0 = free, 1 = transport, 2 = midi
-        int mode = static_cast<int>(std::round(value * 2.0f));
-        DBG("ToneGen::setParameter trigger=" << mode);
-        setTriggerMode(mode);
     }
 }
 
@@ -203,18 +198,16 @@ float ToneGeneratorProcessor::getParameter(const juce::String& paramName, bool n
     } else if (paramName.equalsIgnoreCase("oscType") || paramName.equalsIgnoreCase("type") ||
                paramName.equalsIgnoreCase("waveform")) {
         return static_cast<float>(getOscType());  // 0 or 1
-    } else if (paramName.equalsIgnoreCase("trigger") || paramName.equalsIgnoreCase("triggerMode")) {
-        return static_cast<float>(getTriggerMode()) / 2.0f;  // 0-2 → 0-1
     }
     return 0.0f;
 }
 
 std::vector<juce::String> ToneGeneratorProcessor::getParameterNames() const {
-    return {"frequency", "level", "oscType", "trigger"};
+    return {"frequency", "level", "oscType"};
 }
 
 int ToneGeneratorProcessor::getParameterCount() const {
-    return 4;  // frequency, level, oscType, trigger
+    return 3;  // frequency, level, oscType
 }
 
 ParameterInfo ToneGeneratorProcessor::getParameterInfo(int index) const {
@@ -260,17 +253,6 @@ ParameterInfo ToneGeneratorProcessor::getParameterInfo(int index) const {
             info.currentValue = static_cast<float>(getOscType());  // 0 or 1
             info.scale = ParameterScale::Discrete;
             info.choices = {"Sine", "Noise"};
-            break;
-
-        case 3:  // Trigger Mode
-            info.name = "Trigger";
-            info.unit = "";
-            info.minValue = 0.0f;
-            info.maxValue = 2.0f;
-            info.defaultValue = 1.0f;  // Transport (default)
-            info.currentValue = static_cast<float>(triggerMode_);
-            info.scale = ParameterScale::Discrete;
-            info.choices = {"Free", "Transport", "MIDI"};
             break;
 
         default:
@@ -342,20 +324,6 @@ int ToneGeneratorProcessor::getOscType() const {
         return (teType == 5) ? 1 : 0;  // noise→1, everything else→0 (sine)
     }
     return 0;  // Sine
-}
-
-void ToneGeneratorProcessor::setTriggerMode(int mode) {
-    int oldMode = triggerMode_;
-    triggerMode_ = juce::jlimit(0, 2, mode);
-    DBG("ToneGen::setTriggerMode " << triggerMode_ << " (0=free, 1=transport, 2=midi)");
-
-    // When trigger mode changes, we need to re-evaluate transport state immediately
-    // This is handled by the AudioBridge when it polls updateTriggerState()
-    // The next timer tick will apply the correct gating based on the new mode
-}
-
-int ToneGeneratorProcessor::getTriggerMode() const {
-    return triggerMode_;
 }
 
 void ToneGeneratorProcessor::applyGain() {

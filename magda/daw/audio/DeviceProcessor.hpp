@@ -179,16 +179,12 @@ class ToneGeneratorProcessor : public DeviceProcessor {
     void setOscType(int type);  // 0=sine, 1=noise
     int getOscType() const;
 
-    void setTriggerMode(int mode);  // 0=free, 1=transport, 2=midi
-    int getTriggerMode() const;
-
   protected:
     void applyGain() override;
 
   private:
     te::ToneGeneratorPlugin* getTonePlugin() const;
     bool initialized_ = false;
-    int triggerMode_ = 1;  // 0=free, 1=transport (default), 2=midi
 };
 
 /**
