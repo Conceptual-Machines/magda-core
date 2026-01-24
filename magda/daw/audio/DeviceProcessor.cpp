@@ -164,8 +164,15 @@ void ToneGeneratorProcessor::setParameter(const juce::String& paramName, float v
         }
     } else if (paramName.equalsIgnoreCase("level") || paramName.equalsIgnoreCase("gain") ||
                paramName.equalsIgnoreCase("volume")) {
-        float level = isNormalized ? value : juce::Decibels::decibelsToGain(value);
-        DBG("ToneGen::setParameter level=" << level);
+        float level;
+        if (isNormalized) {
+            // Normalized value is position in -60 to 0 dB range, convert to linear
+            float db = -60.0f + value * 60.0f;
+            level = juce::Decibels::decibelsToGain(db, -60.0f);
+        } else {
+            level = juce::Decibels::decibelsToGain(value);
+        }
+        DBG("ToneGen::setParameter level=" << level << " (normalized=" << value << ")");
         setLevel(level);
     } else if (paramName.equalsIgnoreCase("oscType") || paramName.equalsIgnoreCase("type") ||
                paramName.equalsIgnoreCase("waveform")) {
@@ -222,15 +229,19 @@ ParameterInfo ToneGeneratorProcessor::getParameterInfo(int index) const {
             break;
         }
 
-        case 1:  // Level
+        case 1: {  // Level - display as dB
             info.name = "Level";
-            info.unit = "";
-            info.minValue = 0.0f;
-            info.maxValue = 1.0f;
-            info.defaultValue = 0.25f;
-            info.currentValue = getLevel();  // Already 0-1
+            info.unit = "dB";
+            info.minValue = -60.0f;
+            info.maxValue = 0.0f;
+            info.defaultValue = -12.0f;  // 0.25 linear ≈ -12 dB
             info.scale = ParameterScale::Linear;
+            // Convert linear level to normalized position in dB range
+            float level = getLevel();
+            float db = level > 0.0f ? juce::Decibels::gainToDecibels(level, -60.0f) : -60.0f;
+            info.currentValue = juce::jlimit(0.0f, 1.0f, (db + 60.0f) / 60.0f);
             break;
+        }
 
         case 2:  // Oscillator Type
             info.name = "Waveform";
