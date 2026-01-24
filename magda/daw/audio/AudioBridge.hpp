@@ -219,6 +219,7 @@ class AudioBridge : public TrackManagerListener, public juce::Timer {
     te::Plugin::Ptr createToneGenerator(te::AudioTrack* track);
     te::Plugin::Ptr createVolumeAndPan(te::AudioTrack* track);
     te::Plugin::Ptr createLevelMeter(te::AudioTrack* track);
+    te::Plugin::Ptr createFourOscSynth(te::AudioTrack* track);
 
     // Convert DeviceInfo to plugin
     te::Plugin::Ptr loadDeviceAsPlugin(TrackId trackId, const DeviceInfo& device);

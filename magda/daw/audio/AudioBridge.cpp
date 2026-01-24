@@ -584,9 +584,9 @@ te::Plugin::Ptr AudioBridge::createToneGenerator(te::AudioTrack* track) {
     if (!track)
         return nullptr;
 
-    // Create 4OSC synth plugin via PluginCache
-    // FourOscProcessor will handle parameter configuration
-    auto plugin = edit_.getPluginCache().createNewPlugin(te::FourOscPlugin::xmlTypeName, {});
+    // Create tone generator plugin via PluginCache
+    // ToneGeneratorProcessor will handle parameter configuration
+    auto plugin = edit_.getPluginCache().createNewPlugin(te::ToneGeneratorPlugin::xmlTypeName, {});
     if (plugin) {
         track->pluginList.insertPlugin(plugin, -1, nullptr);
     }
@@ -617,6 +617,18 @@ te::Plugin::Ptr AudioBridge::createLevelMeter(te::AudioTrack* track) {
     return plugin;
 }
 
+te::Plugin::Ptr AudioBridge::createFourOscSynth(te::AudioTrack* track) {
+    if (!track)
+        return nullptr;
+
+    // Create 4OSC synthesizer plugin
+    auto plugin = edit_.getPluginCache().createNewPlugin(te::FourOscPlugin::xmlTypeName, {});
+    if (plugin) {
+        track->pluginList.insertPlugin(plugin, -1, nullptr);
+    }
+    return plugin;
+}
+
 te::Plugin::Ptr AudioBridge::loadDeviceAsPlugin(TrackId trackId, const DeviceInfo& device) {
     auto* track = getAudioTrack(trackId);
     if (!track)
@@ -627,12 +639,16 @@ te::Plugin::Ptr AudioBridge::loadDeviceAsPlugin(TrackId trackId, const DeviceInf
 
     if (device.format == PluginFormat::Internal) {
         // Map internal device types to Tracktion plugins and create processors
-        if (device.pluginId.containsIgnoreCase("4osc") ||
-            device.pluginId.containsIgnoreCase("tone")) {  // Support legacy "tone" for now
-            plugin = createToneGenerator(track);           // Now creates FourOscPlugin
+        if (device.pluginId.containsIgnoreCase("tone")) {
+            plugin = createToneGenerator(track);
             if (plugin) {
                 processor = std::make_unique<ToneGeneratorProcessor>(device.id, plugin);
-                // ToneGeneratorProcessor will configure 4OSC to use only oscillator 1
+            }
+        } else if (device.pluginId.containsIgnoreCase("4osc")) {
+            plugin = createFourOscSynth(track);
+            if (plugin) {
+                // TODO: Create FourOscProcessor to manage all 4 oscillators + ADSR + filter
+                processor = std::make_unique<DeviceProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("volume")) {
             plugin = createVolumeAndPan(track);
