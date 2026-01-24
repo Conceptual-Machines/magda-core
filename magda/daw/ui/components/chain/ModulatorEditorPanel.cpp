@@ -348,8 +348,9 @@ void ModulatorEditorPanel::paint(juce::Graphics& g) {
         g.drawText("Waveform", bounds.removeFromTop(10), juce::Justification::centredLeft);
         bounds.removeFromTop(18 + 4);  // Skip waveform selector + gap
     }
-    bounds.removeFromTop(46 + 6);  // Skip waveform/curve display + gap
-    bounds.removeFromTop(18 + 6);  // Skip rate row + gap
+    int displayHeight = isCurveMode_ ? 70 : 46;
+    bounds.removeFromTop(displayHeight + 6);  // Skip waveform/curve display + gap
+    bounds.removeFromTop(18 + 6);             // Skip rate row + gap
 
     // "Trigger" label
     g.drawText("Trigger", bounds.removeFromTop(10), juce::Justification::centredLeft);
@@ -357,9 +358,9 @@ void ModulatorEditorPanel::paint(juce::Graphics& g) {
     // Skip to trigger row for monitor dot
     auto triggerRow = bounds.removeFromTop(18);
     // Layout: [dropdown] [gap] [monitor dot] [gap] [advanced button]
-    // Advanced button width: 20, gap: 4, monitor dot: 6
     int advButtonWidth = 20;
     int dotDiameter = 6;
+    int comboWidth = 80;                         // Fixed width for combo
     triggerRow.removeFromRight(advButtonWidth);  // Skip advanced button
     triggerRow.removeFromRight(4);               // Skip gap before advanced
     auto dotArea = triggerRow.removeFromRight(dotDiameter);
@@ -370,6 +371,7 @@ void ModulatorEditorPanel::paint(juce::Graphics& g) {
     auto dotBounds =
         juce::Rectangle<float>(static_cast<float>(dotArea.getX()), dotArea.getCentreY() - dotRadius,
                                dotRadius * 2, dotRadius * 2);
+    juce::ignoreUnused(comboWidth);
 
     // Use live mod pointer for real-time trigger state
     const magda::ModInfo* mod = liveModPtr_ ? liveModPtr_ : &currentMod_;
@@ -439,8 +441,9 @@ void ModulatorEditorPanel::resized() {
     triggerRow.removeFromRight(dotDiameter);  // Monitor dot space
     triggerRow.removeFromRight(4);            // Gap before dot
 
-    // Trigger combo takes remaining space
-    triggerModeCombo_.setBounds(triggerRow);
+    // Trigger combo with fixed width
+    int comboWidth = 80;
+    triggerModeCombo_.setBounds(triggerRow.removeFromLeft(comboWidth));
 }
 
 void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& /*e*/) {
