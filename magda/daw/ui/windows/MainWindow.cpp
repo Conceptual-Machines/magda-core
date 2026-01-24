@@ -659,12 +659,28 @@ void MainWindow::setupMenuCallbacks() {
     callbacks.onPreferences = [this]() { PreferencesDialog::showDialog(this); };
 
     callbacks.onAudioSettings = [this]() {
-        if (mainComponent) {
-            auto* engine = mainComponent->getAudioEngine();
-            if (engine) {
-                AudioSettingsDialog::showDialog(this, engine->getDeviceManager());
-            }
+        DBG("onAudioSettings called");
+        if (!mainComponent) {
+            DBG("ERROR: mainComponent is null");
+            return;
         }
+        DBG("mainComponent valid");
+
+        auto* engine = mainComponent->getAudioEngine();
+        if (!engine) {
+            DBG("ERROR: engine is null");
+            return;
+        }
+        DBG("engine valid");
+
+        auto* deviceManager = engine->getDeviceManager();
+        if (!deviceManager) {
+            DBG("ERROR: deviceManager is null");
+            return;
+        }
+        DBG("deviceManager valid - showing dialog");
+
+        AudioSettingsDialog::showDialog(this, deviceManager);
     };
 
     // View menu callbacks
