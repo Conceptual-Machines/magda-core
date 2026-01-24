@@ -142,6 +142,30 @@ void LFOCurveEditorContent::setupControls() {
     };
     addAndMakeVisible(msegToggle_);
 
+    // Preset selector
+    presetCombo_.addItem("Triangle", static_cast<int>(magda::CurvePreset::Triangle) + 1);
+    presetCombo_.addItem("Sine", static_cast<int>(magda::CurvePreset::Sine) + 1);
+    presetCombo_.addItem("Ramp Up", static_cast<int>(magda::CurvePreset::RampUp) + 1);
+    presetCombo_.addItem("Ramp Down", static_cast<int>(magda::CurvePreset::RampDown) + 1);
+    presetCombo_.addItem("S-Curve", static_cast<int>(magda::CurvePreset::SCurve) + 1);
+    presetCombo_.addItem("Exp", static_cast<int>(magda::CurvePreset::Exponential) + 1);
+    presetCombo_.addItem("Log", static_cast<int>(magda::CurvePreset::Logarithmic) + 1);
+    presetCombo_.setTextWhenNothingSelected("Preset");
+    presetCombo_.setColour(juce::ComboBox::backgroundColourId,
+                           DarkTheme::getColour(DarkTheme::SURFACE));
+    presetCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    presetCombo_.setColour(juce::ComboBox::outlineColourId,
+                           DarkTheme::getColour(DarkTheme::BORDER));
+    presetCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
+    presetCombo_.onChange = [this]() {
+        int id = presetCombo_.getSelectedId();
+        if (id > 0) {
+            auto preset = static_cast<magda::CurvePreset>(id - 1);
+            curveEditor_.loadPreset(preset);
+        }
+    };
+    addAndMakeVisible(presetCombo_);
+
     // Grid label
     gridLabel_.setText("Grid:", juce::dontSendNotification);
     gridLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
@@ -268,6 +292,11 @@ void LFOCurveEditorContent::resized() {
     loopOneShotToggle_.setBounds(footer.removeFromLeft(modeWidth));
     footer.removeFromLeft(gap);
     msegToggle_.setBounds(footer.removeFromLeft(modeWidth));
+    footer.removeFromLeft(gap * 2);
+
+    // Preset selector
+    constexpr int presetWidth = 70;
+    presetCombo_.setBounds(footer.removeFromLeft(presetWidth));
     footer.removeFromLeft(gap * 2);
 
     // Grid section: [Grid:][X combo][Y combo][Snap X][Snap Y]

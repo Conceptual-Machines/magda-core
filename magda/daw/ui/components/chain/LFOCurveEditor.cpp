@@ -482,4 +482,80 @@ void LFOCurveEditor::notifyWaveformChanged() {
     }
 }
 
+void LFOCurveEditor::loadPreset(CurvePreset preset) {
+    points_.clear();
+    nextPointId_ = 1;
+
+    auto addPoint = [this](double x, double y, double tension = 0.0) {
+        CurvePoint p;
+        p.id = nextPointId_++;
+        p.x = x;
+        p.y = y;
+        p.tension = tension;
+        p.curveType = CurveType::Linear;
+        points_.push_back(p);
+    };
+
+    switch (preset) {
+        case CurvePreset::Triangle:
+            addPoint(0.0, 0.0);
+            addPoint(0.5, 1.0);
+            addPoint(1.0, 0.0);
+            break;
+
+        case CurvePreset::Sine:
+            // Approximate sine with tension curves
+            addPoint(0.0, 0.5);
+            addPoint(0.25, 1.0, 0.5);
+            addPoint(0.5, 0.5);
+            addPoint(0.75, 0.0, 0.5);
+            addPoint(1.0, 0.5);
+            break;
+
+        case CurvePreset::RampUp:
+            addPoint(0.0, 0.0);
+            addPoint(1.0, 1.0);
+            break;
+
+        case CurvePreset::RampDown:
+            addPoint(0.0, 1.0);
+            addPoint(1.0, 0.0);
+            break;
+
+        case CurvePreset::SCurve:
+            addPoint(0.0, 0.0);
+            addPoint(0.5, 0.5, 1.0);  // S-curve tension
+            addPoint(1.0, 1.0);
+            break;
+
+        case CurvePreset::Exponential:
+            addPoint(0.0, 0.0);
+            addPoint(0.5, 0.1, -0.8);
+            addPoint(1.0, 1.0);
+            break;
+
+        case CurvePreset::Logarithmic:
+            addPoint(0.0, 0.0);
+            addPoint(0.5, 0.9, 0.8);
+            addPoint(1.0, 1.0);
+            break;
+
+        case CurvePreset::Custom:
+        default:
+            // Default triangle
+            addPoint(0.0, 0.0);
+            addPoint(0.5, 1.0);
+            addPoint(1.0, 0.0);
+            break;
+    }
+
+    if (modInfo_) {
+        modInfo_->curvePreset = preset;
+    }
+
+    rebuildPointComponents();
+    repaint();
+    notifyWaveformChanged();
+}
+
 }  // namespace magda

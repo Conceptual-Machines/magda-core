@@ -104,6 +104,9 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
         return showLoopRegion_;
     }
 
+    // Load a preset curve shape
+    void loadPreset(CurvePreset preset);
+
   protected:
     // CurveEditorBase data mutation callbacks
     void onPointAdded(double x, double y, CurveType curveType) override;

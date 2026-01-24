@@ -43,6 +43,9 @@ class LFOCurveEditorContent : public juce::Component {
     juce::TextButton loopOneShotToggle_;
     juce::TextButton msegToggle_;
 
+    // Preset selector
+    juce::ComboBox presetCombo_;
+
     // Grid controls
     juce::Label gridLabel_;
     juce::ComboBox gridXCombo_;
