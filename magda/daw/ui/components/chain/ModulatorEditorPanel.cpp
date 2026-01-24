@@ -326,6 +326,9 @@ void ModulatorEditorPanel::updateFromMod() {
     // Trigger mode
     triggerModeCombo_.setSelectedId(static_cast<int>(currentMod_.triggerMode) + 1,
                                     juce::dontSendNotification);
+
+    // Update layout since curve/LFO mode affects component positions
+    resized();
 }
 
 void ModulatorEditorPanel::paint(juce::Graphics& g) {
