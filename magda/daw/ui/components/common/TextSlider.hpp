@@ -159,14 +159,26 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
         if (hasDragged_) {
             if (isShiftDrag_ && onShiftDrag) {
                 // Shift+drag: call the callback with normalized value (0-1)
+                // Used for macro/modulation linking
                 float dragSensitivity = 1.0f / 100.0f;  // 100 pixels for full range
                 float delta = static_cast<float>(dragStartY_ - e.y) * dragSensitivity;
                 float newValue = juce::jlimit(0.0f, 1.0f, shiftDragStartValue_ + delta);
                 onShiftDrag(newValue);
             } else {
-                // Normal drag: change the slider value
-                double dragSensitivity = (maxValue_ - minValue_) / 200.0;
-                double delta = (dragStartY_ - e.y) * dragSensitivity;
+                // Normal drag: change the slider value with modifier-based sensitivity
+                // Normal: 200 pixels = full range
+                // Shift: 2000 pixels = full range (10x finer)
+                // Ctrl/Cmd: 20000 pixels = full range (100x finer)
+                double baseSensitivity = (maxValue_ - minValue_) / 200.0;
+                double sensitivity = baseSensitivity;
+
+                if (e.mods.isShiftDown()) {
+                    sensitivity = baseSensitivity / 10.0;  // Fine control
+                } else if (e.mods.isCommandDown() || e.mods.isCtrlDown()) {
+                    sensitivity = baseSensitivity / 100.0;  // Very fine control
+                }
+
+                double delta = (dragStartY_ - e.y) * sensitivity;
                 setValue(dragStartValue_ + delta);
             }
         }
