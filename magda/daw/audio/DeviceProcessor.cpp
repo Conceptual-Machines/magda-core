@@ -99,13 +99,6 @@ ToneGeneratorProcessor::ToneGeneratorProcessor(DeviceId deviceId, te::Plugin::Pt
     : DeviceProcessor(deviceId, plugin) {
     // Note: Don't set defaults here - the plugin may not be fully ready
     // Call initializeDefaults() after the processor is stored and plugin is initialized
-    if (auto* tone = getTonePlugin()) {
-        DBG("ToneGeneratorProcessor created: plugin freq="
-            << tone->frequency.get() << " Hz, level=" << tone->level.get()
-            << " frequencyParam=" << (tone->frequencyParam ? "yes" : "no"));
-    } else {
-        DBG("ToneGeneratorProcessor created but getTonePlugin() returned nullptr!");
-    }
 }
 
 void ToneGeneratorProcessor::initializeDefaults() {
@@ -119,8 +112,6 @@ void ToneGeneratorProcessor::initializeDefaults() {
         setOscType(0);  // Sine wave
 
         initialized_ = true;
-        DBG("ToneGeneratorProcessor::initializeDefaults: freq=" << getFrequency()
-                                                                << " Hz, level=" << getLevel());
     }
 }
 
@@ -131,19 +122,16 @@ te::ToneGeneratorPlugin* ToneGeneratorProcessor::getTonePlugin() const {
 void ToneGeneratorProcessor::setParameter(const juce::String& paramName, float value) {
     if (paramName.equalsIgnoreCase("frequency") || paramName.equalsIgnoreCase("freq")) {
         // Value is actual Hz (20-20000)
-        DBG("ToneGen::setParameter freq=" << value << " Hz");
         setFrequency(value);
     } else if (paramName.equalsIgnoreCase("level") || paramName.equalsIgnoreCase("gain") ||
                paramName.equalsIgnoreCase("volume")) {
         // Value is actual dB (-60 to +6)
         float level = juce::Decibels::decibelsToGain(value, -60.0f);
-        DBG("ToneGen::setParameter level=" << value << " dB (linear=" << level << ")");
         setLevel(level);
     } else if (paramName.equalsIgnoreCase("oscType") || paramName.equalsIgnoreCase("type") ||
                paramName.equalsIgnoreCase("waveform")) {
         // Value is actual choice index (0 or 1)
         int type = static_cast<int>(std::round(value));
-        DBG("ToneGen::setParameter oscType=" << type);
         setOscType(type);
     }
 }
@@ -237,8 +225,6 @@ void ToneGeneratorProcessor::setFrequency(float hz) {
 
         // CRITICAL: Overwrite CachedValue with precise value (bypasses quantization)
         tone->frequency = hz;
-
-        DBG("ToneGen::setFrequency " << hz << " Hz, actual=" << tone->frequency.get());
     }
 }
 
@@ -259,8 +245,6 @@ void ToneGeneratorProcessor::setLevel(float level) {
 
         // Overwrite CachedValue with precise value
         tone->level = level;
-
-        DBG("ToneGen::setLevel " << level << " (linear), actual=" << tone->level.get());
     }
 }
 

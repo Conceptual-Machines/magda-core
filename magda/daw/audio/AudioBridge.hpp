@@ -248,9 +248,6 @@ class AudioBridge : public TrackManagerListener, public juce::Timer {
     std::atomic<bool> justStartedFlag_{false};
     std::atomic<bool> justLoopedFlag_{false};
 
-    // Store original levels before transport muting (protected by mappingLock_)
-    std::unordered_map<DeviceId, float> transportMutedLevels_;
-
     // Synchronization
     juce::CriticalSection mappingLock_;  // Protects mapping updates
 

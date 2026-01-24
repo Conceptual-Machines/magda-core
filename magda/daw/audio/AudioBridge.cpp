@@ -472,50 +472,15 @@ void AudioBridge::updateTransportState(bool isPlaying, bool justStarted, bool ju
     justStartedFlag_.store(justStarted, std::memory_order_release);
     justLoopedFlag_.store(justLooped, std::memory_order_release);
 
-    // Log state changes for debugging
-    static bool lastPlaying = false;
-    bool stateChanged = (isPlaying != lastPlaying);
-
-    if (stateChanged) {
-        std::cout << "=== Transport state changed: " << (isPlaying ? "PLAYING" : "STOPPED")
-                  << " (justStarted=" << justStarted << ", justLooped=" << justLooped << ")"
-                  << std::endl;
-    }
-
-    // Always check all devices in Transport mode, not just on state changes
-    // This handles trigger mode changes (e.g., Free→Transport while stopped)
+    // Enable/disable tone generators based on transport state
     juce::ScopedLock lock(mappingLock_);
 
     for (const auto& [deviceId, processor] : deviceProcessors_) {
         if (auto* toneProc = dynamic_cast<ToneGeneratorProcessor*>(processor.get())) {
             // Test Tone is always transport-synced
-            bool isMuted = transportMutedLevels_.find(deviceId) != transportMutedLevels_.end();
-
-            if (isPlaying && isMuted) {
-                // Restore level when playing
-                auto it = transportMutedLevels_.find(deviceId);
-                if (it != transportMutedLevels_.end()) {
-                    float restoredLevel = it->second;
-                    toneProc->setLevel(restoredLevel);
-                    transportMutedLevels_.erase(it);
-                    std::cout << "    Transport PLAYING - restoring level to " << restoredLevel
-                              << std::endl;
-                }
-            } else if (!isPlaying && !isMuted) {
-                // Mute when stopped - store current level first
-                float currentLevel = toneProc->getLevel();
-                if (currentLevel > 0.0f) {  // Only mute if not already at 0
-                    transportMutedLevels_[deviceId] = currentLevel;
-                    toneProc->setLevel(0.0f);
-                    std::cout << "    Transport STOPPED - muting level (was " << currentLevel << ")"
-                              << std::endl;
-                }
-            }
+            // Simply bypass when stopped, enable when playing
+            toneProc->setBypassed(!isPlaying);
         }
-    }
-
-    if (stateChanged) {
-        lastPlaying = isPlaying;
     }
 }
 
@@ -573,7 +538,6 @@ te::Plugin::Ptr AudioBridge::createToneGenerator(te::AudioTrack* track) {
     auto plugin = edit_.getPluginCache().createNewPlugin(te::ToneGeneratorPlugin::xmlTypeName, {});
     if (plugin) {
         track->pluginList.insertPlugin(plugin, -1, nullptr);
-        DBG("ToneGenerator created - using direct CachedValue access for smooth control");
     }
     return plugin;
 }
@@ -701,13 +665,8 @@ te::Plugin::Ptr AudioBridge::loadDeviceAsPlugin(TrackId trackId, const DeviceInf
         if (auto* toneProc = dynamic_cast<ToneGeneratorProcessor*>(processor.get())) {
             // Get current transport state
             bool isPlaying = transportPlaying_.load(std::memory_order_acquire);
-            // Mute level if transport is not playing
-            if (!isPlaying && toneProc->getLevel() > 0.0f) {
-                transportMutedLevels_[device.id] = toneProc->getLevel();
-                toneProc->setLevel(0.0f);
-                std::cout << "Tone generator loaded while transport stopped - muting level"
-                          << std::endl;
-            }
+            // Bypass if transport is not playing
+            toneProc->setBypassed(!isPlaying);
         }
 
         std::cout << "Loaded device " << device.id << " (" << device.name << ") as plugin"
