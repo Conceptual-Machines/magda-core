@@ -35,7 +35,7 @@ void LFOCurveEditor::setModInfo(ModInfo* mod) {
             point.curveType = CurveType::Linear;
             points_.push_back(point);
         }
-    } else {
+    } else if (mod) {
         // Initialize with default triangle-like curve
         CurvePoint p1;
         p1.id = nextPointId_++;
@@ -57,6 +57,9 @@ void LFOCurveEditor::setModInfo(ModInfo* mod) {
         p3.y = 0.0;
         p3.curveType = CurveType::Linear;
         points_.push_back(p3);
+
+        // Save defaults to ModInfo so mini waveform is synced immediately
+        notifyWaveformChanged();
     }
 
     rebuildPointComponents();
