@@ -3,9 +3,12 @@
 #include <juce_core/juce_core.h>
 #include <juce_graphics/juce_graphics.h>
 
+#include <array>
+#include <cmath>
 #include <vector>
 
 #include "AutomationTypes.hpp"
+#include "ParameterInfo.hpp"
 #include "SelectionManager.hpp"
 #include "TypeIds.hpp"
 
@@ -125,6 +128,26 @@ struct AutomationTarget {
                 return "Mod " + juce::String(modId) + " Param " + juce::String(modParamIndex);
         }
         return "Unknown";
+    }
+
+    /**
+     * @brief Get the ParameterInfo for this automation target
+     *
+     * Provides consistent value conversion and display formatting.
+     */
+    ParameterInfo getParameterInfo() const {
+        switch (type) {
+            case AutomationTargetType::TrackVolume:
+                return ParameterPresets::faderVolume(-1, "Volume");
+            case AutomationTargetType::TrackPan:
+                return ParameterPresets::pan(-1, "Pan");
+            case AutomationTargetType::DeviceParameter:
+            case AutomationTargetType::Macro:
+            case AutomationTargetType::ModParameter:
+            default:
+                // Default to percentage for unknown parameters
+                return ParameterPresets::percent(-1, getDisplayName());
+        }
     }
 };
 

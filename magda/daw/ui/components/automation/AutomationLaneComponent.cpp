@@ -3,6 +3,8 @@
 #include <cmath>
 #include <vector>
 
+#include "../../../core/ParameterUtils.hpp"
+
 namespace magda {
 
 AutomationLaneComponent::AutomationLaneComponent(AutomationLaneId laneId) : laneId_(laneId) {
@@ -309,24 +311,10 @@ void AutomationLaneComponent::showContextMenu() {
     });
 }
 
-// Convert dB to normalized fader position (0-1)
-// Unity (0dB) at 0.75, +6dB at 1.0, -60dB at 0.0
-static double dbToNormalizedPosition(double db) {
-    constexpr double MIN_DB = -60.0;
-    constexpr double MAX_DB = 6.0;
-
-    if (db <= MIN_DB)
-        return 0.0;
-    if (db >= MAX_DB)
-        return 1.0;
-
-    if (db < 0.0) {
-        // Below unity: map -60dB..0dB to 0..0.75
-        return 0.75 * (db - MIN_DB) / (0.0 - MIN_DB);
-    } else {
-        // Above unity: map 0dB..+6dB to 0.75..1.0
-        return 0.75 + 0.25 * db / MAX_DB;
-    }
+// Convert real value to normalized position using ParameterInfo
+static double realToNormalizedForTarget(double realValue, const ParameterInfo& info) {
+    return static_cast<double>(
+        ParameterUtils::realToNormalized(static_cast<float>(realValue), info));
 }
 
 void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangle<int> area) {
@@ -343,70 +331,79 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
                        static_cast<float>(area.getBottom()));
 
     const auto* lane = getLaneInfo();
+    if (!lane)
+        return;
+
+    // Get parameter info for this target
+    ParameterInfo paramInfo = lane->target.getParameterInfo();
 
     g.setColour(juce::Colour(0xFF888888));
     g.setFont(9.0f);
 
-    if (lane && lane->target.type == AutomationTargetType::TrackVolume) {
-        // Standard dB values for volume scale
-        // Select subset based on available height
+    // Helper lambda to draw a label at a real value position
+    auto drawLabelAtRealValue = [&](double realValue, const juce::String& label) {
+        double normalizedValue = realToNormalizedForTarget(realValue, paramInfo);
+        int y = area.getY() + valueToPixel(normalizedValue, area.getHeight());
+
+        auto labelBounds = juce::Rectangle<int>(2, y - 5, area.getWidth() - 6, 10);
+        if (labelBounds.getY() < area.getY())
+            labelBounds.setY(area.getY());
+        if (labelBounds.getBottom() > area.getBottom())
+            labelBounds.setY(area.getBottom() - 10);
+
+        g.drawText(label, labelBounds, juce::Justification::centredRight);
+        g.drawHorizontalLine(y, static_cast<float>(area.getRight() - 4),
+                             static_cast<float>(area.getRight() - 1));
+    };
+
+    // Choose label values based on parameter scale type
+    if (paramInfo.scale == ParameterScale::FaderDB) {
+        // Standard dB values for fader-style volume
         std::vector<std::pair<double, juce::String>> dbLabels;
 
         if (area.getHeight() >= 100) {
-            // Large: show more detail
             dbLabels = {{6.0, "6"},    {0.0, "0"},    {-6.0, "6"},   {-12.0, "12"},
                         {-24.0, "24"}, {-48.0, "48"}, {-60.0, "inf"}};
         } else if (area.getHeight() >= 60) {
-            // Medium: essential values
             dbLabels = {{6.0, "6"}, {0.0, "0"}, {-12.0, "12"}, {-60.0, "inf"}};
         } else {
-            // Small: minimum
             dbLabels = {{6.0, "6"}, {0.0, "0"}, {-60.0, "inf"}};
         }
 
         for (const auto& [db, label] : dbLabels) {
-            double normalizedValue = dbToNormalizedPosition(db);
-            int y = area.getY() + valueToPixel(normalizedValue, area.getHeight());
-
-            auto labelBounds = juce::Rectangle<int>(2, y - 5, area.getWidth() - 6, 10);
-            if (labelBounds.getY() < area.getY())
-                labelBounds.setY(area.getY());
-            if (labelBounds.getBottom() > area.getBottom())
-                labelBounds.setY(area.getBottom() - 10);
-
-            g.drawText(label, labelBounds, juce::Justification::centredRight);
-            g.drawHorizontalLine(y, static_cast<float>(area.getRight() - 4),
-                                 static_cast<float>(area.getRight() - 1));
+            drawLabelAtRealValue(db, label);
         }
-    } else if (lane && lane->target.type == AutomationTargetType::TrackPan) {
-        // Pan: L, C, R
-        std::vector<double> values = {1.0, 0.5, 0.0};
-        for (double value : values) {
-            int y = area.getY() + valueToPixel(value, area.getHeight());
-            juce::String label = formatScaleValue(value);
+    } else if (lane->target.type == AutomationTargetType::TrackPan) {
+        // Pan: L, C, R (real values -1, 0, +1)
+        drawLabelAtRealValue(1.0, "R");
+        drawLabelAtRealValue(0.0, "C");
+        drawLabelAtRealValue(-1.0, "L");
+    } else if (paramInfo.scale == ParameterScale::Discrete && !paramInfo.choices.empty()) {
+        // Discrete choices
+        int numChoices = static_cast<int>(paramInfo.choices.size());
+        int maxLabels = juce::jmin(numChoices, area.getHeight() >= 80 ? 5 : 3);
+        int step = juce::jmax(1, numChoices / maxLabels);
 
-            auto labelBounds = juce::Rectangle<int>(2, y - 5, area.getWidth() - 6, 10);
-            if (labelBounds.getY() < area.getY())
-                labelBounds.setY(area.getY());
-            if (labelBounds.getBottom() > area.getBottom())
-                labelBounds.setY(area.getBottom() - 10);
-
-            g.drawText(label, labelBounds, juce::Justification::centredRight);
-            g.drawHorizontalLine(y, static_cast<float>(area.getRight() - 4),
-                                 static_cast<float>(area.getRight() - 1));
+        for (int i = 0; i < numChoices; i += step) {
+            drawLabelAtRealValue(static_cast<double>(i), paramInfo.choices[static_cast<size_t>(i)]);
         }
     } else {
-        // Default: percentage scale
-        std::vector<double> values = {1.0, 0.75, 0.5, 0.25, 0.0};
-        for (double value : values) {
-            int y = area.getY() + valueToPixel(value, area.getHeight());
-            juce::String label = formatScaleValue(value);
+        // Default: linear percentage scale
+        std::vector<double> normalizedValues = {1.0, 0.75, 0.5, 0.25, 0.0};
+        for (double normValue : normalizedValues) {
+            float realValue =
+                ParameterUtils::normalizedToReal(static_cast<float>(normValue), paramInfo);
+            int y = area.getY() + valueToPixel(normValue, area.getHeight());
 
             auto labelBounds = juce::Rectangle<int>(2, y - 5, area.getWidth() - 6, 10);
             if (labelBounds.getY() < area.getY())
                 labelBounds.setY(area.getY());
             if (labelBounds.getBottom() > area.getBottom())
                 labelBounds.setY(area.getBottom() - 10);
+
+            // Format as percentage for generic params
+            juce::String label = juce::String(static_cast<int>(std::round(realValue))) +
+                                 (paramInfo.unit.isNotEmpty() ? "" : "%");
 
             g.drawText(label, labelBounds, juce::Justification::centredRight);
             g.drawHorizontalLine(y, static_cast<float>(area.getRight() - 4),
@@ -420,46 +417,50 @@ juce::String AutomationLaneComponent::formatScaleValue(double normalizedValue) c
     if (!lane)
         return juce::String(static_cast<int>(normalizedValue * 100)) + "%";
 
-    switch (lane->target.type) {
-        case AutomationTargetType::TrackVolume: {
-            // Volume scale: 0 = -inf, 0.75 = 0dB, 1.0 = +6dB
-            // Matches mixer fader scale
-            constexpr double MIN_DB = -60.0;
-            constexpr double MAX_DB = 6.0;
-            constexpr double UNITY_POS = 0.75;
+    // Get parameter info and convert to real value
+    ParameterInfo paramInfo = lane->target.getParameterInfo();
+    float realValue =
+        ParameterUtils::normalizedToReal(static_cast<float>(normalizedValue), paramInfo);
 
+    // Use compact formatting for automation lane labels
+    switch (paramInfo.scale) {
+        case ParameterScale::FaderDB: {
+            // Volume: show absolute dB value (no sign)
             if (normalizedValue <= 0.001) {
-                return "-inf";
+                return "inf";
             }
-
-            double dB;
-            if (normalizedValue <= UNITY_POS) {
-                // Below unity: 0..0.75 maps to -60..0 dB
-                dB = MIN_DB + (normalizedValue / UNITY_POS) * (0.0 - MIN_DB);
-            } else {
-                // Above unity: 0.75..1.0 maps to 0..+6 dB
-                dB = ((normalizedValue - UNITY_POS) / (1.0 - UNITY_POS)) * MAX_DB;
-            }
-
-            return juce::String(static_cast<int>(std::abs(std::round(dB))));
+            return juce::String(static_cast<int>(std::abs(std::round(realValue))));
         }
 
-        case AutomationTargetType::TrackPan: {
-            // Pan: 0 = full left, 0.5 = center, 1 = full right
-            if (normalizedValue < 0.48) {
-                int percent = static_cast<int>((0.5 - normalizedValue) * 200);
-                return juce::String(percent) + "L";
-            } else if (normalizedValue > 0.52) {
-                int percent = static_cast<int>((normalizedValue - 0.5) * 200);
-                return juce::String(percent) + "R";
+        case ParameterScale::Boolean:
+            return realValue >= 0.5f ? "On" : "Off";
+
+        case ParameterScale::Discrete: {
+            int index = static_cast<int>(std::round(realValue));
+            if (index >= 0 && index < static_cast<int>(paramInfo.choices.size())) {
+                return paramInfo.choices[static_cast<size_t>(index)];
             }
-            return "C";
+            return juce::String(index);
         }
 
         default:
-            // Generic 0-100%
-            return juce::String(static_cast<int>(normalizedValue * 100)) + "%";
+            break;
     }
+
+    // Handle pan specially (unit is empty but it's a special case)
+    if (lane->target.type == AutomationTargetType::TrackPan) {
+        if (realValue < -0.02f) {
+            int percent = static_cast<int>(std::abs(realValue) * 100);
+            return juce::String(percent) + "L";
+        } else if (realValue > 0.02f) {
+            int percent = static_cast<int>(realValue * 100);
+            return juce::String(percent) + "R";
+        }
+        return "C";
+    }
+
+    // Generic percentage
+    return juce::String(static_cast<int>(normalizedValue * 100)) + "%";
 }
 
 int AutomationLaneComponent::valueToPixel(double value, int areaHeight) const {

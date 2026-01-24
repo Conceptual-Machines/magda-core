@@ -37,6 +37,27 @@ float normalizedToReal(float normalized, const ParameterInfo& info) {
         case ParameterScale::Boolean:
             return normalized >= 0.5f ? 1.0f : 0.0f;
 
+        case ParameterScale::FaderDB: {
+            // Fader-style dB scale: 0.75 = 0dB (unity)
+            // 0.0 = minValue (e.g., -60dB), 1.0 = maxValue (e.g., +6dB)
+            constexpr float UNITY_POS = 0.75f;
+            constexpr float UNITY_DB = 0.0f;
+
+            if (normalized <= 0.0f)
+                return info.minValue;
+            if (normalized >= 1.0f)
+                return info.maxValue;
+
+            if (normalized < UNITY_POS) {
+                // Below unity: 0..0.75 maps to minValue..0dB
+                return info.minValue + (normalized / UNITY_POS) * (UNITY_DB - info.minValue);
+            } else {
+                // Above unity: 0.75..1.0 maps to 0dB..maxValue
+                return UNITY_DB +
+                       ((normalized - UNITY_POS) / (1.0f - UNITY_POS)) * (info.maxValue - UNITY_DB);
+            }
+        }
+
         default:
             return info.minValue + normalized * (info.maxValue - info.minValue);
     }
@@ -84,6 +105,26 @@ float realToNormalized(float real, const ParameterInfo& info) {
 
         case ParameterScale::Boolean:
             return real >= 0.5f ? 1.0f : 0.0f;
+
+        case ParameterScale::FaderDB: {
+            // Fader-style dB scale: 0.75 = 0dB (unity)
+            constexpr float UNITY_POS = 0.75f;
+            constexpr float UNITY_DB = 0.0f;
+
+            if (real <= info.minValue)
+                return 0.0f;
+            if (real >= info.maxValue)
+                return 1.0f;
+
+            if (real < UNITY_DB) {
+                // Below unity: minValue..0dB maps to 0..0.75
+                return UNITY_POS * (real - info.minValue) / (UNITY_DB - info.minValue);
+            } else {
+                // Above unity: 0dB..maxValue maps to 0.75..1.0
+                return UNITY_POS +
+                       (1.0f - UNITY_POS) * (real - UNITY_DB) / (info.maxValue - UNITY_DB);
+            }
+        }
 
         default: {
             float range = info.maxValue - info.minValue;

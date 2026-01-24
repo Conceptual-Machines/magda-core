@@ -16,7 +16,8 @@ enum class ParameterScale {
     Logarithmic,  // value = min * pow(max/min, normalized) - for freq, time
     Exponential,  // value = pow(normalized, exponent) * (max - min) + min - for curves
     Discrete,     // value = choices[round(normalized * (count-1))]
-    Boolean       // value = normalized >= 0.5
+    Boolean,      // value = normalized >= 0.5
+    FaderDB       // Fader-style dB: 0.75 = 0dB (unity), 0.0 = minDb, 1.0 = maxDb
 };
 
 /**
@@ -199,6 +200,46 @@ inline ParameterInfo discrete(int index, const juce::String& name,
     info.scale = ParameterScale::Discrete;
     info.choices = choices;
     info.modulatable = false;  // Typically can't modulate discrete choices
+    return info;
+}
+
+/**
+ * @brief Create a fader-style volume parameter
+ *
+ * Uses the standard DAW fader scale where:
+ * - normalized 0.0 = -60 dB (silence)
+ * - normalized 0.75 = 0 dB (unity gain)
+ * - normalized 1.0 = +6 dB (max boost)
+ *
+ * @param index Parameter index
+ * @param name Display name
+ */
+inline ParameterInfo faderVolume(int index, const juce::String& name) {
+    ParameterInfo info;
+    info.paramIndex = index;
+    info.name = name;
+    info.unit = "dB";
+    info.minValue = -60.0f;
+    info.maxValue = 6.0f;
+    info.defaultValue = 0.0f;  // Unity gain
+    info.scale = ParameterScale::FaderDB;
+    return info;
+}
+
+/**
+ * @brief Create a pan parameter (-100% L to +100% R)
+ * @param index Parameter index
+ * @param name Display name
+ */
+inline ParameterInfo pan(int index, const juce::String& name) {
+    ParameterInfo info;
+    info.paramIndex = index;
+    info.name = name;
+    info.unit = "";  // Uses L/C/R display
+    info.minValue = -1.0f;
+    info.maxValue = 1.0f;
+    info.defaultValue = 0.0f;  // Center
+    info.scale = ParameterScale::Linear;
     return info;
 }
 
