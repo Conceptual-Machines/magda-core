@@ -345,6 +345,23 @@ void TrackHeadersPanel::timerCallback() {
     // Decay rate for MIDI activity (fade out over time)
     const float midiDecayRate = 0.92f;  // Per frame decay (fast fade)
 
+    // Check for MIDI device changes every 60 frames (2 seconds at 30 FPS)
+    static int midiDeviceCheckCounter = 0;
+    if (++midiDeviceCheckCounter >= 60) {
+        midiDeviceCheckCounter = 0;
+
+        // Check if MIDI device count has changed
+        auto* midiBridge = audioEngine_->getMidiBridge();
+        if (midiBridge) {
+            auto midiInputs = midiBridge->getAvailableMidiInputs();
+            static size_t lastMidiDeviceCount = 0;
+            if (midiInputs.size() != lastMidiDeviceCount) {
+                lastMidiDeviceCount = midiInputs.size();
+                refreshMidiSelectors();
+            }
+        }
+    }
+
     // Update meters and MIDI activity for all visible tracks
     for (auto& header : trackHeaders) {
         // Update audio meters
@@ -1256,14 +1273,8 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 const int buttonGap = 2;
                 const int contentRowHeight = rowHeight - 2;
 
-                // Count visible rows
-                bool showAudioRow = header.audioInEnabled || header.audioOutEnabled;
-                bool showMidiRow = header.midiInEnabled || header.midiOutEnabled;
-                int numRows = 2;  // Always have buttons row and volume/pan row
-                if (showAudioRow)
-                    numRows++;
-                if (showMidiRow)
-                    numRows++;
+                // Always show routing rows (4 rows total: buttons, audio, MIDI, volume/pan)
+                int numRows = 4;
 
                 // Calculate even spacing between rows
                 int totalContentHeight = numRows * contentRowHeight;
@@ -1284,49 +1295,23 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 
                 tcpArea.removeFromTop(rowGap);
 
-                // Audio routing row (if either enabled)
-                if (showAudioRow) {
-                    auto audioRow = tcpArea.removeFromTop(contentRowHeight);
-                    if (header.audioInEnabled) {
-                        header.audioInSelector->setBounds(audioRow.removeFromLeft(dropdownWidth));
-                        header.audioInSelector->setVisible(true);
-                        audioRow.removeFromLeft(spacing);
-                    } else {
-                        header.audioInSelector->setVisible(false);
-                    }
-                    if (header.audioOutEnabled) {
-                        header.audioOutSelector->setBounds(audioRow.removeFromLeft(dropdownWidth));
-                        header.audioOutSelector->setVisible(true);
-                    } else {
-                        header.audioOutSelector->setVisible(false);
-                    }
-                    tcpArea.removeFromTop(rowGap);
-                } else {
-                    header.audioInSelector->setVisible(false);
-                    header.audioOutSelector->setVisible(false);
-                }
+                // Audio routing row (always visible)
+                auto audioRow = tcpArea.removeFromTop(contentRowHeight);
+                header.audioInSelector->setBounds(audioRow.removeFromLeft(dropdownWidth));
+                header.audioInSelector->setVisible(true);
+                audioRow.removeFromLeft(spacing);
+                header.audioOutSelector->setBounds(audioRow.removeFromLeft(dropdownWidth));
+                header.audioOutSelector->setVisible(true);
+                tcpArea.removeFromTop(rowGap);
 
-                // MIDI routing row (if either enabled)
-                if (showMidiRow) {
-                    auto midiRow = tcpArea.removeFromTop(contentRowHeight);
-                    if (header.midiInEnabled) {
-                        header.midiInSelector->setBounds(midiRow.removeFromLeft(dropdownWidth));
-                        header.midiInSelector->setVisible(true);
-                        midiRow.removeFromLeft(spacing);
-                    } else {
-                        header.midiInSelector->setVisible(false);
-                    }
-                    if (header.midiOutEnabled) {
-                        header.midiOutSelector->setBounds(midiRow.removeFromLeft(dropdownWidth));
-                        header.midiOutSelector->setVisible(true);
-                    } else {
-                        header.midiOutSelector->setVisible(false);
-                    }
-                    tcpArea.removeFromTop(rowGap);
-                } else {
-                    header.midiInSelector->setVisible(false);
-                    header.midiOutSelector->setVisible(false);
-                }
+                // MIDI routing row (always visible)
+                auto midiRow = tcpArea.removeFromTop(contentRowHeight);
+                header.midiInSelector->setBounds(midiRow.removeFromLeft(dropdownWidth));
+                header.midiInSelector->setVisible(true);
+                midiRow.removeFromLeft(spacing);
+                header.midiOutSelector->setBounds(midiRow.removeFromLeft(dropdownWidth));
+                header.midiOutSelector->setVisible(true);
+                tcpArea.removeFromTop(rowGap);
 
                 // Volume, Pan, Sends row (always visible)
                 auto mixRow = tcpArea.removeFromTop(contentRowHeight);
