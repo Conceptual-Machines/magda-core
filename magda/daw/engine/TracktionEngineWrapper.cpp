@@ -23,9 +23,20 @@ bool TracktionEngineWrapper::initialize() {
         // Register ToneGeneratorPlugin (not registered by default)
         engine_->getPluginManager().createBuiltInType<tracktion::ToneGeneratorPlugin>();
 
+        // Disable all wave input devices to avoid channel mismatch assertions
+        // We don't need audio inputs for playback - they can be enabled explicitly when needed
+        for (auto* waveInput : engine_->getDeviceManager().getWaveInputDevices()) {
+            waveInput->setEnabled(false);
+        }
+
         // Create a temporary Edit (project) so transport methods work
         auto editFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
                             .getChildFile("magda_temp.tracktionedit");
+
+        // Delete any existing temp file to ensure clean state (no stale input device config)
+        if (editFile.existsAsFile()) {
+            editFile.deleteFile();
+        }
 
         currentEdit_ = tracktion::createEmptyEdit(*engine_, editFile);
 
@@ -556,20 +567,32 @@ bool TracktionEngineWrapper::clipExists(const std::string& clip_id) const {
     return clipMap_.find(clip_id) != clipMap_.end();
 }
 
-// MixerInterface implementation - simplified with stubs
+// MixerInterface implementation - uses VolumeAndPanPlugin
 void TracktionEngineWrapper::setTrackVolume(const std::string& track_id, double volume) {
     auto track = findTrackById(track_id);
     if (track) {
-        // Simplified - just log the operation
-        std::cout << "Set track volume: " << track_id << " = " << volume << std::endl;
+        // Find VolumeAndPanPlugin on track
+        if (auto volPan =
+                track->pluginList.findFirstPluginOfType<tracktion::VolumeAndPanPlugin>()) {
+            // Convert linear gain to dB for the plugin
+            float db =
+                volume > 0.0 ? static_cast<float>(juce::Decibels::gainToDecibels(volume)) : -100.0f;
+            volPan->setVolumeDb(db);
+        } else {
+            // No VolumeAndPanPlugin found - this shouldn't happen as Tracktion auto-creates one
+            std::cerr << "Warning: No VolumeAndPanPlugin on track " << track_id << std::endl;
+        }
     }
 }
 
 double TracktionEngineWrapper::getTrackVolume(const std::string& track_id) const {
     auto track = findTrackById(track_id);
     if (track) {
-        // Return default volume
-        return 1.0;
+        if (auto volPan =
+                track->pluginList.findFirstPluginOfType<tracktion::VolumeAndPanPlugin>()) {
+            float db = volPan->getVolumeDb();
+            return juce::Decibels::decibelsToGain(db);
+        }
     }
     return 1.0;
 }
@@ -577,16 +600,21 @@ double TracktionEngineWrapper::getTrackVolume(const std::string& track_id) const
 void TracktionEngineWrapper::setTrackPan(const std::string& track_id, double pan) {
     auto track = findTrackById(track_id);
     if (track) {
-        // Simplified - just log the operation
-        std::cout << "Set track pan: " << track_id << " = " << pan << std::endl;
+        if (auto volPan =
+                track->pluginList.findFirstPluginOfType<tracktion::VolumeAndPanPlugin>()) {
+            // Pan is -1.0 (left) to 1.0 (right)
+            volPan->setPan(static_cast<float>(pan));
+        }
     }
 }
 
 double TracktionEngineWrapper::getTrackPan(const std::string& track_id) const {
     auto track = findTrackById(track_id);
     if (track) {
-        // Return center pan
-        return 0.0;
+        if (auto volPan =
+                track->pluginList.findFirstPluginOfType<tracktion::VolumeAndPanPlugin>()) {
+            return volPan->getPan();
+        }
     }
     return 0.0;
 }

@@ -8,6 +8,10 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit) : engine_(engine), 
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
 
+    // Master metering will be registered when playback context is available
+    // (done in timerCallback when context exists)
+    masterMeterRegistered_ = false;
+
     // Start timer for metering updates (30 FPS for smooth UI)
     startTimerHz(30);
 
@@ -22,7 +26,14 @@ AudioBridge::~AudioBridge() {
     {
         juce::ScopedLock lock(mappingLock_);
 
-        // Unregister all meter clients
+        // Unregister master meter client from playback context
+        if (masterMeterRegistered_) {
+            if (auto* ctx = edit_.getCurrentPlaybackContext()) {
+                ctx->masterLevels.removeClient(masterMeterClient_);
+            }
+        }
+
+        // Unregister all track meter clients
         for (auto& [trackId, track] : trackMapping_) {
             if (track) {
                 auto* levelMeter = track->getLevelMeterPlugin();
@@ -54,13 +65,18 @@ void AudioBridge::tracksChanged() {
 }
 
 void AudioBridge::trackPropertyChanged(int trackId) {
-    // Track property changed (mute, solo, etc.) - may need to sync
+    // Track property changed (volume, pan, mute, solo) - sync to Tracktion Engine
     auto* track = getAudioTrack(trackId);
     if (track) {
         auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
         if (trackInfo) {
+            // Sync mute/solo to track
             track->setMute(trackInfo->muted);
             track->setSolo(trackInfo->soloed);
+
+            // Sync volume/pan to VolumeAndPanPlugin
+            setTrackVolume(trackId, trackInfo->volume);
+            setTrackPan(trackId, trackInfo->pan);
         }
     }
 }
@@ -68,6 +84,15 @@ void AudioBridge::trackPropertyChanged(int trackId) {
 void AudioBridge::trackDevicesChanged(TrackId trackId) {
     // Devices on a track changed - resync that track's plugins
     syncTrackPlugins(trackId);
+}
+
+void AudioBridge::masterChannelChanged() {
+    // Master channel property changed - sync to Tracktion Engine
+    const auto& master = TrackManager::getInstance().getMasterChannel();
+    setMasterVolume(master.volume);
+    setMasterPan(master.pan);
+
+    // TODO: Handle master mute (may need different approach than track mute)
 }
 
 void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
@@ -271,12 +296,15 @@ te::AudioTrack* AudioBridge::createAudioTrack(TrackId trackId, const juce::Strin
     if (track) {
         track->setName(name);
 
+        // Route track output to master/default output
+        track->getOutput().setOutputToDefaultDevice(false);  // false = audio (not MIDI)
+
         juce::ScopedLock lock(mappingLock_);
         trackMapping_[trackId] = track;
 
         // Don't register meter client yet - will do it when LevelMeter is added
         std::cout << "Created Tracktion AudioTrack for MAGDA track " << trackId << ": " << name
-                  << std::endl;
+                  << " (routed to master)" << std::endl;
     }
 
     return track;
@@ -340,6 +368,9 @@ void AudioBridge::syncAll() {
         ensureTrackMapping(track.id);
         syncTrackPlugins(track.id);
     }
+
+    // Sync master channel volume/pan to Tracktion Engine
+    masterChannelChanged();
 }
 
 void AudioBridge::syncTrackPlugins(TrackId trackId) {
@@ -511,6 +542,7 @@ void AudioBridge::timerCallback() {
     // Update metering from level measurers (runs at 30 FPS on message thread)
     juce::ScopedLock lock(mappingLock_);
 
+    // Update track metering
     for (const auto& [trackId, track] : trackMapping_) {
         if (!track)
             continue;
@@ -540,6 +572,27 @@ void AudioBridge::timerCallback() {
         data.rmsR = data.peakR * 0.7f;
 
         meteringBuffer_.pushLevels(trackId, data);
+    }
+
+    // Register master meter client with playback context if not done yet
+    if (!masterMeterRegistered_) {
+        if (auto* ctx = edit_.getCurrentPlaybackContext()) {
+            ctx->masterLevels.addClient(masterMeterClient_);
+            masterMeterRegistered_ = true;
+        }
+    }
+
+    // Update master metering from playback context's masterLevels
+    if (masterMeterRegistered_) {
+        auto levelL = masterMeterClient_.getAndClearAudioLevel(0);
+        auto levelR = masterMeterClient_.getAndClearAudioLevel(1);
+
+        // Convert from dB to linear gain
+        float peakL = juce::Decibels::decibelsToGain(levelL.dB);
+        float peakR = juce::Decibels::decibelsToGain(levelR.dB);
+
+        masterPeakL_.store(peakL, std::memory_order_relaxed);
+        masterPeakR_.store(peakR, std::memory_order_relaxed);
     }
 }
 
@@ -692,6 +745,87 @@ te::Plugin::Ptr AudioBridge::loadDeviceAsPlugin(TrackId trackId, const DeviceInf
     }
 
     return plugin;
+}
+
+// =============================================================================
+// Mixer Controls
+// =============================================================================
+
+void AudioBridge::setTrackVolume(TrackId trackId, float volume) {
+    auto* track = getAudioTrack(trackId);
+    if (!track) {
+        DBG("AudioBridge::setTrackVolume - track not found: " << trackId);
+        return;
+    }
+
+    // Find VolumeAndPanPlugin on track
+    if (auto volPan = track->pluginList.findFirstPluginOfType<te::VolumeAndPanPlugin>()) {
+        float db = volume > 0.0f ? juce::Decibels::gainToDecibels(volume) : -100.0f;
+        volPan->setVolumeDb(db);
+    }
+}
+
+float AudioBridge::getTrackVolume(TrackId trackId) const {
+    auto* track = const_cast<AudioBridge*>(this)->getAudioTrack(trackId);
+    if (!track) {
+        return 1.0f;
+    }
+
+    if (auto volPan = track->pluginList.findFirstPluginOfType<te::VolumeAndPanPlugin>()) {
+        return juce::Decibels::decibelsToGain(volPan->getVolumeDb());
+    }
+    return 1.0f;
+}
+
+void AudioBridge::setTrackPan(TrackId trackId, float pan) {
+    auto* track = getAudioTrack(trackId);
+    if (!track) {
+        DBG("AudioBridge::setTrackPan - track not found: " << trackId);
+        return;
+    }
+
+    if (auto volPan = track->pluginList.findFirstPluginOfType<te::VolumeAndPanPlugin>()) {
+        volPan->setPan(pan);
+    }
+}
+
+float AudioBridge::getTrackPan(TrackId trackId) const {
+    auto* track = const_cast<AudioBridge*>(this)->getAudioTrack(trackId);
+    if (!track) {
+        return 0.0f;
+    }
+
+    if (auto volPan = track->pluginList.findFirstPluginOfType<te::VolumeAndPanPlugin>()) {
+        return volPan->getPan();
+    }
+    return 0.0f;
+}
+
+void AudioBridge::setMasterVolume(float volume) {
+    if (auto masterPlugin = edit_.getMasterVolumePlugin()) {
+        float db = volume > 0.0f ? juce::Decibels::gainToDecibels(volume) : -100.0f;
+        masterPlugin->setVolumeDb(db);
+    }
+}
+
+float AudioBridge::getMasterVolume() const {
+    if (auto masterPlugin = edit_.getMasterVolumePlugin()) {
+        return juce::Decibels::decibelsToGain(masterPlugin->getVolumeDb());
+    }
+    return 1.0f;
+}
+
+void AudioBridge::setMasterPan(float pan) {
+    if (auto masterPlugin = edit_.getMasterVolumePlugin()) {
+        masterPlugin->setPan(pan);
+    }
+}
+
+float AudioBridge::getMasterPan() const {
+    if (auto masterPlugin = edit_.getMasterVolumePlugin()) {
+        return masterPlugin->getPan();
+    }
+    return 0.0f;
 }
 
 // =============================================================================

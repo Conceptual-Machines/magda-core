@@ -31,10 +31,10 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
     track.name = name.isEmpty() ? generateTrackName() : name;
     track.colour = TrackInfo::getDefaultColor(static_cast<int>(tracks_.size()));
 
-    // Set default routing - all enabled by default
+    // Set default routing
     track.audioOutputDevice = "master";  // Audio always routes to master
     track.midiInputDevice = "all";       // MIDI listens to all inputs
-    track.audioInputDevice = "default";  // Audio input enabled (not functional yet)
+    track.audioInputDevice = "";         // Audio input disabled by default (enable via UI)
     // midiOutputDevice left empty - requires specific device selection
 
     TrackId trackId = track.id;

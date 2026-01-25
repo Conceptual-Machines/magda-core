@@ -52,22 +52,6 @@ float faderPosToDb(float pos) {
         return UNITY_DB + ((pos - 0.75f) / 0.25f) * (MAX_DB - UNITY_DB);
     }
 }
-
-// Meter-specific scaling: simple logarithmic curve
-// Single power curve compresses bottom, leaves room at top for headroom
-float dbToMeterPos(float db) {
-    if (db <= MIN_DB)
-        return 0.0f;
-    if (db >= MAX_DB)
-        return 1.0f;
-
-    // Normalize to 0-1 range
-    float normalized = (db - MIN_DB) / (MAX_DB - MIN_DB);
-
-    // Apply power curve: y = x^3
-    // -12 dB → ~38%, 0 dB → ~75%, +6 dB → 100%
-    return std::pow(normalized, 3.0f);
-}
 }  // namespace
 
 // Stereo level meter component (L/R bars)
@@ -120,9 +104,9 @@ class MasterChannelStrip::LevelMeter : public juce::Component {
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
         g.fillRoundedRectangle(bounds, 1.0f);
 
-        // Meter fill (using linear dB scaling, not fader scaling)
+        // Meter fill (using fader scaling to match dB labels)
         float db = gainToDb(level);
-        float displayLevel = dbToMeterPos(db);
+        float displayLevel = dbToFaderPos(db);
         float meterHeight = bounds.getHeight() * displayLevel;
         auto fillBounds = bounds;
         fillBounds = fillBounds.removeFromBottom(meterHeight);
@@ -231,14 +215,6 @@ void MasterChannelStrip::setupControls() {
                 dbText = juce::String(db, 1) + " dB";
             }
             volumeValueLabel->setText(dbText, juce::dontSendNotification);
-        }
-        // DEBUG: Link fader to meters for alignment testing
-        DBG("Master fader: pos=" << faderPos << " db=" << db << " gain=" << gain);
-        if (peakMeter) {
-            peakMeter->setLevel(gain);
-        }
-        if (vuMeter) {
-            vuMeter->setLevel(gain * 0.8f);  // VU typically reads lower
         }
     };
     addAndMakeVisible(*volumeSlider);

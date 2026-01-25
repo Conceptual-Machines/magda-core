@@ -16,6 +16,9 @@
 
 namespace magda {
 
+// Forward declarations
+class AudioEngine;
+
 /**
  * @brief Mixer view - channel strip mixer interface
  *
@@ -29,8 +32,12 @@ class MixerView : public juce::Component,
                   public TrackManagerListener,
                   public ViewModeListener {
   public:
-    MixerView();
+    explicit MixerView(AudioEngine* audioEngine = nullptr);
     ~MixerView() override;
+
+    void setAudioEngine(AudioEngine* audioEngine) {
+        audioEngine_ = audioEngine;
+    }
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -77,6 +84,7 @@ class MixerView : public juce::Component,
         void mouseDown(const juce::MouseEvent& event) override;
 
         void setMeterLevel(float level);
+        void setMeterLevels(float leftLevel, float rightLevel);
         float getMeterLevel() const {
             return meterLevel;
         }
@@ -195,6 +203,9 @@ class MixerView : public juce::Component,
     bool isResizingChannel_ = false;
     int resizeStartX_ = 0;
     int resizeStartWidth_ = 0;
+
+    // Audio engine for metering
+    AudioEngine* audioEngine_ = nullptr;
 
     bool isInChannelResizeZone(const juce::Point<int>& pos) const;
 

@@ -23,6 +23,7 @@ class AudioEngine;
 
 class MainView : public juce::Component,
                  public juce::ScrollBar::Listener,
+                 public juce::Timer,
                  public TimelineStateListener,
                  public TrackManagerListener,
                  public ViewModeListener {
@@ -86,6 +87,9 @@ class MainView : public juce::Component,
 
     // ViewModeListener implementation
     void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
+
+    // Timer implementation (for metering updates)
+    void timerCallback() override;
 
     // Access to the timeline controller (for child components)
     TimelineController& getTimelineController() {

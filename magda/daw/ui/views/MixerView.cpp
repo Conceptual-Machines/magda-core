@@ -2,6 +2,10 @@
 
 #include <cmath>
 
+#include "../../audio/AudioBridge.hpp"
+#include "../../audio/MeteringBuffer.hpp"
+#include "../../engine/AudioEngine.hpp"
+#include "../../engine/TracktionEngineWrapper.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/SelectionManager.hpp"
@@ -288,10 +292,6 @@ void MixerView::ChannelStrip::setupControls() {
                 dbText = juce::String(db, 1) + " dB";
             }
             faderValueLabel->setText(dbText, juce::dontSendNotification);
-        }
-        // DEBUG: Link fader to meter for alignment testing
-        if (levelMeter) {
-            levelMeter->setLevel(gain);
         }
     };
     // Apply custom look and feel for fader styling
@@ -621,14 +621,19 @@ void MixerView::ChannelStrip::resized() {
 }
 
 void MixerView::ChannelStrip::setMeterLevel(float level) {
-    meterLevel = level;
+    setMeterLevels(level, level);
+}
+
+void MixerView::ChannelStrip::setMeterLevels(float leftLevel, float rightLevel) {
+    meterLevel = std::max(leftLevel, rightLevel);
     if (levelMeter) {
-        levelMeter->setLevel(level);
+        levelMeter->setLevels(leftLevel, rightLevel);
     }
 
     // Update peak value
-    if (level > peakValue_) {
-        peakValue_ = level;
+    float maxLevel = std::max(leftLevel, rightLevel);
+    if (maxLevel > peakValue_) {
+        peakValue_ = maxLevel;
         if (peakLabel) {
             float db = gainToDb(peakValue_);
             juce::String peakText;
@@ -656,7 +661,7 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& /*event*/) {
 }
 
 // MixerView implementation
-MixerView::MixerView() {
+MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     // Get current view mode
     currentViewMode_ = ViewModeController::getInstance().getViewMode();
 
@@ -817,8 +822,36 @@ void MixerView::resized() {
 }
 
 void MixerView::timerCallback() {
-    // DEBUG: Meters are now linked to faders for alignment testing
-    // Timer not needed when faders drive meters directly
+    // Read metering data from AudioBridge
+    if (!audioEngine_)
+        return;
+
+    auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(audioEngine_);
+    if (!teWrapper)
+        return;
+
+    auto* bridge = teWrapper->getAudioBridge();
+    if (!bridge)
+        return;
+
+    auto& meteringBuffer = bridge->getMeteringBuffer();
+
+    // Update channel strip meters
+    for (auto& strip : channelStrips) {
+        int trackId = strip->getTrackId();
+        MeterData data;
+        if (meteringBuffer.popLevels(trackId, data)) {
+            // Use stereo peak levels
+            strip->setMeterLevels(data.peakL, data.peakR);
+        }
+    }
+
+    // Update master strip meters
+    if (masterStrip) {
+        float masterPeakL = bridge->getMasterPeakL();
+        float masterPeakR = bridge->getMasterPeakR();
+        masterStrip->setPeakLevels(masterPeakL, masterPeakR);
+    }
 }
 
 bool MixerView::keyPressed(const juce::KeyPress& key) {

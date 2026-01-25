@@ -49,6 +49,7 @@ class AudioBridge : public TrackManagerListener, public juce::Timer {
     void trackPropertyChanged(int trackId) override;
     void trackDevicesChanged(TrackId trackId) override;
     void devicePropertyChanged(DeviceId deviceId) override;
+    void masterChannelChanged() override;
 
     // =========================================================================
     // Plugin Loading
@@ -226,6 +227,82 @@ class AudioBridge : public TrackManagerListener, public juce::Timer {
     bool consumeMidiActivity(TrackId trackId);
 
     // =========================================================================
+    // Mixer Controls
+    // =========================================================================
+
+    /**
+     * @brief Set track volume (linear gain, 0.0-2.0)
+     * @param trackId MAGDA track ID
+     * @param volume Linear gain (0.0 = silence, 1.0 = unity, 2.0 = +6dB)
+     */
+    void setTrackVolume(TrackId trackId, float volume);
+
+    /**
+     * @brief Get track volume (linear gain)
+     * @param trackId MAGDA track ID
+     * @return Linear gain value
+     */
+    float getTrackVolume(TrackId trackId) const;
+
+    /**
+     * @brief Set track pan
+     * @param trackId MAGDA track ID
+     * @param pan Pan position (-1.0 = full left, 0.0 = center, 1.0 = full right)
+     */
+    void setTrackPan(TrackId trackId, float pan);
+
+    /**
+     * @brief Get track pan
+     * @param trackId MAGDA track ID
+     * @return Pan position
+     */
+    float getTrackPan(TrackId trackId) const;
+
+    /**
+     * @brief Set master volume (linear gain)
+     * @param volume Linear gain (0.0 = silence, 1.0 = unity, 2.0 = +6dB)
+     */
+    void setMasterVolume(float volume);
+
+    /**
+     * @brief Get master volume (linear gain)
+     * @return Linear gain value
+     */
+    float getMasterVolume() const;
+
+    /**
+     * @brief Set master pan
+     * @param pan Pan position (-1.0 to 1.0)
+     */
+    void setMasterPan(float pan);
+
+    /**
+     * @brief Get master pan
+     * @return Pan position
+     */
+    float getMasterPan() const;
+
+    // =========================================================================
+    // Master Metering
+    // =========================================================================
+
+    /**
+     * @brief Get master channel peak level (left)
+     * @return Peak level as linear gain
+     */
+    float getMasterPeakL() const {
+        return masterPeakL_.load(std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Get master channel peak level (right)
+     * @return Peak level as linear gain
+     */
+    float getMasterPeakR() const {
+        return masterPeakR_.load(std::memory_order_relaxed);
+    }
+
+    // =========================================================================
     // Audio Routing
     // =========================================================================
 
@@ -299,6 +376,12 @@ class AudioBridge : public TrackManagerListener, public juce::Timer {
     // MIDI activity flags (audio thread writes, UI thread reads/clears - lock-free)
     static constexpr int kMaxTracks = 128;
     std::array<std::atomic<bool>, kMaxTracks> midiActivityFlags_;
+
+    // Master channel metering (lock-free atomics for thread safety)
+    std::atomic<float> masterPeakL_{0.0f};
+    std::atomic<float> masterPeakR_{0.0f};
+    te::LevelMeasurer::Client masterMeterClient_;
+    bool masterMeterRegistered_{false};  // Whether master meter client is registered
 
     // Synchronization
     juce::CriticalSection mappingLock_;  // Protects mapping updates

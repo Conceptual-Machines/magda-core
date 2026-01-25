@@ -10,9 +10,11 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "Config.hpp"
+#include "audio/AudioBridge.hpp"
 #include "core/ClipManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
+#include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda {
 
@@ -87,6 +89,9 @@ MainView::MainView(AudioEngine* audioEngine)
     // Initialize master visibility
     const auto& master = TrackManager::getInstance().getMasterChannel();
     masterVisible_ = master.isVisibleIn(currentViewMode_);
+
+    // Start timer for metering updates (30 FPS)
+    startTimerHz(30);
 }
 
 void MainView::setupTimelineController() {
@@ -270,6 +275,9 @@ void MainView::setupCallbacks() {
 }
 
 MainView::~MainView() {
+    // Stop metering timer
+    stopTimer();
+
     // Remove listener before destruction
     if (timelineController) {
         timelineController->removeListener(this);
@@ -283,6 +291,27 @@ MainView::~MainView() {
     auto& config = magda::Config::getInstance();
     config.saveToFile("magda_config.txt");
     std::cout << "🎯 CONFIG: Saved configuration on shutdown" << std::endl;
+}
+
+// ===== Timer Implementation (for metering) =====
+
+void MainView::timerCallback() {
+    // Update master metering from audio engine
+    if (!audioEngine_ || !masterHeaderPanel)
+        return;
+
+    auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(audioEngine_);
+    if (!teWrapper)
+        return;
+
+    auto* bridge = teWrapper->getAudioBridge();
+    if (!bridge)
+        return;
+
+    // Update master header panel with real levels
+    float masterPeakL = bridge->getMasterPeakL();
+    float masterPeakR = bridge->getMasterPeakR();
+    masterHeaderPanel->setPeakLevels(masterPeakL, masterPeakR);
 }
 
 // ===== TimelineStateListener Implementation =====

@@ -172,7 +172,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     sessionView = std::make_unique<SessionView>();
     addChildComponent(*sessionView);
 
-    mixerView = std::make_unique<MixerView>();
+    mixerView = std::make_unique<MixerView>(externalEngine);
     addChildComponent(*mixerView);
 
     // Wire up callbacks between views and transport
