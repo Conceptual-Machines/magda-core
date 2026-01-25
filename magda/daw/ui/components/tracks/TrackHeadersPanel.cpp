@@ -313,6 +313,10 @@ TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(au
 
     // Start timer for metering updates (30 FPS)
     startTimerHz(30);
+
+    // Schedule a one-time refresh of MIDI selectors after 1 second
+    // This allows Tracktion Engine time to complete MIDI device scan
+    juce::Timer::callAfterDelay(1000, [this]() { refreshMidiSelectors(); });
 }
 
 TrackHeadersPanel::~TrackHeadersPanel() {
@@ -367,23 +371,110 @@ void TrackHeadersPanel::viewModeChanged(ViewMode mode, const AudioEngineProfile&
     tracksChanged();  // Rebuild with new visibility settings
 }
 
+void TrackHeadersPanel::populateAudioInputOptions(RoutingSelector* selector) {
+    if (!selector || !audioEngine_) {
+        return;
+    }
+
+    auto* deviceManager = audioEngine_->getDeviceManager();
+    if (!deviceManager) {
+        return;
+    }
+
+    std::vector<RoutingSelector::RoutingOption> options;
+
+    // Get current audio device
+    auto* currentDevice = deviceManager->getCurrentAudioDevice();
+    if (currentDevice) {
+        auto inputChannelNames = currentDevice->getInputChannelNames();
+
+        // Add "None" option
+        options.push_back({1, "None"});
+
+        if (inputChannelNames.size() > 0) {
+            options.push_back({0, "", true});  // separator
+
+            // Add each input channel as an option (starting from ID 10)
+            int id = 10;
+            for (int i = 0; i < inputChannelNames.size(); ++i) {
+                // Create pair names for stereo (Input 1-2, Input 3-4, etc.)
+                if (i % 2 == 0) {
+                    if (i + 1 < inputChannelNames.size()) {
+                        options.push_back(
+                            {id++, "Input " + juce::String(i + 1) + "-" + juce::String(i + 2)});
+                    } else {
+                        // Odd number of channels - add single channel
+                        options.push_back({id++, inputChannelNames[i]});
+                    }
+                }
+            }
+        }
+    } else {
+        options.push_back({1, "None"});
+        options.push_back({2, "(No Device Active)"});
+    }
+
+    selector->setOptions(options);
+}
+
+void TrackHeadersPanel::populateAudioOutputOptions(RoutingSelector* selector) {
+    if (!selector || !audioEngine_) {
+        return;
+    }
+
+    auto* deviceManager = audioEngine_->getDeviceManager();
+    if (!deviceManager) {
+        return;
+    }
+
+    std::vector<RoutingSelector::RoutingOption> options;
+
+    // Get current audio device
+    auto* currentDevice = deviceManager->getCurrentAudioDevice();
+    if (currentDevice) {
+        auto outputChannelNames = currentDevice->getOutputChannelNames();
+
+        // Add "Master" as default output
+        options.push_back({1, "Master"});
+
+        if (outputChannelNames.size() > 0) {
+            options.push_back({0, "", true});  // separator
+
+            // Add each output channel pair as an option (starting from ID 10)
+            int id = 10;
+            for (int i = 0; i < outputChannelNames.size(); ++i) {
+                // Create pair names for stereo (Output 1-2, Output 3-4, etc.)
+                if (i % 2 == 0) {
+                    if (i + 1 < outputChannelNames.size()) {
+                        options.push_back(
+                            {id++, "Output " + juce::String(i + 1) + "-" + juce::String(i + 2)});
+                    } else {
+                        // Odd number of channels - add single channel
+                        options.push_back({id++, outputChannelNames[i]});
+                    }
+                }
+            }
+        }
+    } else {
+        options.push_back({1, "Master"});
+        options.push_back({2, "(No Device Active)"});
+    }
+
+    selector->setOptions(options);
+}
+
 void TrackHeadersPanel::populateMidiInputOptions(RoutingSelector* selector) {
     if (!selector || !audioEngine_) {
-        DBG("populateMidiInputOptions: selector=" << (selector ? "valid" : "null")
-                                                  << " audioEngine="
-                                                  << (audioEngine_ ? "valid" : "null"));
         return;
     }
 
     auto* midiBridge = audioEngine_->getMidiBridge();
     if (!midiBridge) {
-        DBG("populateMidiInputOptions: midiBridge is null");
         return;
     }
 
     // Get available MIDI inputs from MidiBridge
     auto midiInputs = midiBridge->getAvailableMidiInputs();
-    DBG("populateMidiInputOptions: Found " << midiInputs.size() << " MIDI inputs");
 
     // Build options list
     std::vector<RoutingSelector::RoutingOption> options;
@@ -405,21 +496,16 @@ void TrackHeadersPanel::populateMidiInputOptions(RoutingSelector* selector) {
 
 void TrackHeadersPanel::populateMidiOutputOptions(RoutingSelector* selector) {
     if (!selector || !audioEngine_) {
-        DBG("populateMidiOutputOptions: selector=" << (selector ? "valid" : "null")
-                                                   << " audioEngine="
-                                                   << (audioEngine_ ? "valid" : "null"));
         return;
     }
 
     auto* midiBridge = audioEngine_->getMidiBridge();
     if (!midiBridge) {
-        DBG("populateMidiOutputOptions: midiBridge is null");
         return;
     }
 
     // Get available MIDI outputs from MidiBridge
     auto midiOutputs = midiBridge->getAvailableMidiOutputs();
-    DBG("populateMidiOutputOptions: Found " << midiOutputs.size() << " MIDI outputs");
 
     // Build options list
     std::vector<RoutingSelector::RoutingOption> options;
@@ -437,6 +523,19 @@ void TrackHeadersPanel::populateMidiOutputOptions(RoutingSelector* selector) {
     }
 
     selector->setOptions(options);
+}
+
+void TrackHeadersPanel::refreshMidiSelectors() {
+    for (auto& header : trackHeaders) {
+        if (header->midiInSelector) {
+            populateMidiInputOptions(header->midiInSelector.get());
+        }
+        if (header->midiOutSelector) {
+            populateMidiOutputOptions(header->midiOutSelector.get());
+        }
+    }
+
+    repaint();
 }
 
 void TrackHeadersPanel::setupMidiCallbacks(TrackHeader& header, TrackId trackId) {
@@ -874,6 +973,14 @@ void TrackHeadersPanel::setupTrackHeader(TrackHeader& header, int trackIndex) {
             }
         }
     };
+
+    // Populate audio input/output options from device manager
+    populateAudioInputOptions(header.audioInSelector.get());
+    populateAudioOutputOptions(header.audioOutSelector.get());
+
+    // Populate MIDI input/output options
+    populateMidiInputOptions(header.midiInSelector.get());
+    populateMidiOutputOptions(header.midiOutSelector.get());
 }
 
 void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId) {
@@ -969,6 +1076,10 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
             repaint();
         }
     };
+
+    // Populate audio input/output options from device manager
+    populateAudioInputOptions(header.audioInSelector.get());
+    populateAudioOutputOptions(header.audioOutSelector.get());
 
     // Populate MIDI input/output options and set up routing callbacks
     populateMidiInputOptions(header.midiInSelector.get());

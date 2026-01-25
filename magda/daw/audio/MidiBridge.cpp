@@ -9,19 +9,18 @@ MidiBridge::MidiBridge(te::Engine& engine) : engine_(engine) {
 std::vector<MidiDeviceInfo> MidiBridge::getAvailableMidiInputs() const {
     std::vector<MidiDeviceInfo> devices;
 
-    auto& deviceManager = engine_.getDeviceManager();
-    auto midiInputs = deviceManager.getMidiInDevices();
+    // Use JUCE's MidiInput::getAvailableDevices() instead of Tracktion's device manager
+    // This works immediately without waiting for async scan
+    auto midiInputs = juce::MidiInput::getAvailableDevices();
 
     for (const auto& device : midiInputs) {
-        if (device) {
-            MidiDeviceInfo info;
-            info.id = device->getDeviceID();
-            info.name = device->getName();
-            info.isEnabled = device->isEnabled();
-            info.isAvailable = true;
+        MidiDeviceInfo info;
+        info.id = device.identifier;
+        info.name = device.name;
+        info.isEnabled = false;  // Input enable state handled separately
+        info.isAvailable = true;
 
-            devices.push_back(info);
-        }
+        devices.push_back(info);
     }
 
     DBG("Found " << devices.size() << " MIDI input devices");

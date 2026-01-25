@@ -390,24 +390,12 @@ void MixerView::ChannelStrip::setupControls() {
         addAndMakeVisible(*audioOutSelector);
 
         midiInSelector = std::make_unique<RoutingSelector>(RoutingSelector::Type::MidiIn);
-        midiInSelector->setOptions({
-            {1, "All Channels"},
-            {2, "Channel 1"},
-            {3, "Channel 2"},
-            {0, "", true},  // Separator
-            {10, "External Controller"},
-        });
+        // Options should be populated from MidiBridge
         midiInSelector->setSelectedId(1);
         addAndMakeVisible(*midiInSelector);
 
         midiOutSelector = std::make_unique<RoutingSelector>(RoutingSelector::Type::MidiOut);
-        midiOutSelector->setOptions({
-            {1, "All Channels"},
-            {2, "Channel 1"},
-            {3, "Channel 2"},
-            {0, "", true},  // Separator
-            {10, "External Synth"},
-        });
+        // Options should be populated from MidiBridge
         midiOutSelector->setSelectedId(1);
         addAndMakeVisible(*midiOutSelector);
     }

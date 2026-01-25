@@ -804,7 +804,6 @@ void MainView::scrollBarMoved(juce::ScrollBar* scrollBarThatHasMoved, double new
     if (scrollBarThatHasMoved == &trackContentViewport->getVerticalScrollBar()) {
         // Sync track headers viewport to same vertical position
         int scrollY = trackContentViewport->getViewPositionY();
-        DBG("Vertical scroll: scrollY=" + juce::String(scrollY));
         trackHeadersViewport->setViewPosition(0, scrollY);
 
         // Update zoom scroll bar (skip if we're handling a ZoomScrollBar change)

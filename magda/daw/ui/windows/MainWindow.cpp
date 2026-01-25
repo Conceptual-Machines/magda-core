@@ -103,8 +103,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
 
     // Use external engine if provided, otherwise create our own
     if (externalEngine) {
-        audioEngine_.reset();  // Don't own it
-        // Just store a reference for use (audioEngine_ will be nullptr, use getter instead)
+        externalAudioEngine_ = externalEngine;  // Store external engine pointer
         std::cout << "MainComponent using external audio engine" << std::endl;
     } else {
         // Create audio engine FIRST (before creating views that need it)

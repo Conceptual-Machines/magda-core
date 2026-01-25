@@ -9,7 +9,8 @@
 
 namespace magda {
 class TimelineController;  // Forward declaration
-}
+class AudioEngine;         // Forward declaration
+}  // namespace magda
 
 namespace magda::daw::ui {
 
@@ -44,6 +45,9 @@ class InspectorContent : public PanelContent,
     // Set the timeline controller reference (for accessing tempo/time signature)
     void setTimelineController(magda::TimelineController* controller);
 
+    // Set the audio engine reference (for accessing audio/MIDI devices)
+    void setAudioEngine(magda::AudioEngine* engine);
+
     // TrackManagerListener
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
@@ -70,6 +74,9 @@ class InspectorContent : public PanelContent,
 
     // Timeline controller reference (for tempo/time signature)
     magda::TimelineController* timelineController_ = nullptr;
+
+    // Audio engine reference (for audio/MIDI devices)
+    magda::AudioEngine* audioEngine_ = nullptr;
 
     // Current selection state
     magda::SelectionType currentSelectionType_ = magda::SelectionType::None;

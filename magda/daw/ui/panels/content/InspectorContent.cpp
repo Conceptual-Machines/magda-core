@@ -169,27 +169,14 @@ InspectorContent::InspectorContent() {
     // MIDI input selector
     midiInSelector_ =
         std::make_unique<magda::RoutingSelector>(magda::RoutingSelector::Type::MidiIn);
-    midiInSelector_->setOptions({
-        {1, "All Inputs"},
-        {2, "None"},
-        {0, "", true},
-        {10, "Channel 1"},
-        {11, "Channel 2"},
-        {12, "Channel 3"},
-    });
+    // Options should be populated from MidiBridge
     midiInSelector_->setSelectedId(1);
     addChildComponent(*midiInSelector_);
 
     // MIDI output selector
     midiOutSelector_ =
         std::make_unique<magda::RoutingSelector>(magda::RoutingSelector::Type::MidiOut);
-    midiOutSelector_->setOptions({
-        {1, "None"},
-        {2, "All Outputs"},
-        {0, "", true},
-        {10, "Channel 1"},
-        {11, "Channel 2"},
-    });
+    // Options should be populated from MidiBridge
     midiOutSelector_->setSelectedId(1);
     addChildComponent(*midiOutSelector_);
 

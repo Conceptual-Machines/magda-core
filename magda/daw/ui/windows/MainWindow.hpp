@@ -77,15 +77,17 @@ class MainWindow::MainComponent : public juce::Component,
 
     // Access to audio engine for settings dialog
     AudioEngine* getAudioEngine() {
-        return audioEngine_.get();
+        // Return external engine if provided, otherwise return owned engine
+        return externalAudioEngine_ ? externalAudioEngine_ : audioEngine_.get();
     }
 
   private:
     // Current view mode
     ViewMode currentViewMode = ViewMode::Arrange;
 
-    // Audio engine
-    std::unique_ptr<AudioEngine> audioEngine_;
+    // Audio engine (either owned or external reference)
+    std::unique_ptr<AudioEngine> audioEngine_;    // Owned engine (if no external engine)
+    AudioEngine* externalAudioEngine_ = nullptr;  // Non-owning pointer to external engine
     std::unique_ptr<PlaybackPositionTimer> positionTimer_;
 
     // Main layout panels
