@@ -886,6 +886,9 @@ void InspectorContent::updateFromSelectedTrack() {
         juce::String clipText = juce::String(clipCount) + (clipCount == 1 ? " clip" : " clips");
         clipCountLabel_.setText(clipText, juce::dontSendNotification);
 
+        // Update routing selectors to match track state
+        updateRoutingSelectorsFromTrack();
+
         showTrackControls(true);
         noSelectionLabel_.setVisible(false);
     } else {
@@ -1339,6 +1342,41 @@ void InspectorContent::populateMidiOutputOptions() {
     }
 
     midiOutSelector_->setOptions(options);
+}
+
+void InspectorContent::updateRoutingSelectorsFromTrack() {
+    if (selectedTrackId_ == magda::INVALID_TRACK_ID || !audioEngine_) {
+        return;
+    }
+
+    auto* midiBridge = audioEngine_->getMidiBridge();
+    if (!midiBridge) {
+        return;
+    }
+
+    // Update MIDI input selector
+    juce::String currentMidiInput = midiBridge->getTrackMidiInput(selectedTrackId_);
+    if (currentMidiInput.isEmpty()) {
+        // No input selected
+        midiInSelector_->setSelectedId(2);  // "None"
+    } else if (currentMidiInput == "all") {
+        // All inputs selected
+        midiInSelector_->setSelectedId(1);  // "All Inputs"
+    } else {
+        // Specific device selected - find it in the list
+        auto midiInputs = midiBridge->getAvailableMidiInputs();
+        int selectedId = 2;  // Default to "None" if not found
+        for (size_t i = 0; i < midiInputs.size(); ++i) {
+            if (midiInputs[i].id == currentMidiInput) {
+                selectedId = 10 + static_cast<int>(i);
+                break;
+            }
+        }
+        midiInSelector_->setSelectedId(selectedId);
+    }
+
+    // TODO: Update audio input/output selectors when those are implemented
+    // TODO: Update MIDI output selector when that's implemented
 }
 
 }  // namespace magda::daw::ui

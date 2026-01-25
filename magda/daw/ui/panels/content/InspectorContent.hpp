@@ -165,6 +165,7 @@ class InspectorContent : public PanelContent,
     void populateAudioOutputOptions();
     void populateMidiInputOptions();
     void populateMidiOutputOptions();
+    void updateRoutingSelectorsFromTrack();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(InspectorContent)
 };
