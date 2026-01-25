@@ -155,14 +155,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     addAndMakeVisible(*pageLabel_);
 
     // Create parameter slots
-    int numParams = static_cast<int>(device.parameters.size());
-    DBG("DeviceSlotComponent::ctor deviceId=" << device.id << " numParams=" << numParams);
-    for (int i = 0; i < numParams && i < NUM_PARAMS_PER_PAGE; ++i) {
-        DBG("  param[" << i << "] name=" << device.parameters[static_cast<size_t>(i)].name
-                       << " currentValue="
-                       << device.parameters[static_cast<size_t>(i)].currentValue);
-    }
-
+    const int numParams = static_cast<int>(device.parameters.size());
     for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
         paramSlots_[i] = std::make_unique<ParamSlotComponent>(i);
         paramSlots_[i]->setDeviceId(device.id);

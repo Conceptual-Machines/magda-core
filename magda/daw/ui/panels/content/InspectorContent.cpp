@@ -864,8 +864,6 @@ void InspectorContent::updateSelectionDisplay() {
 }
 
 void InspectorContent::updateFromSelectedTrack() {
-    DBG("InspectorContent::updateFromSelectedTrack - trackId=" << selectedTrackId_);
-
     if (selectedTrackId_ == magda::INVALID_TRACK_ID) {
         showTrackControls(false);
         noSelectionLabel_.setVisible(true);

@@ -256,6 +256,44 @@ te::Plugin::Ptr AudioBridge::addLevelMeterToTrack(TrackId trackId) {
     return plugin;
 }
 
+void AudioBridge::ensureVolumePluginPosition(te::AudioTrack* track) {
+    if (!track)
+        return;
+
+    auto& plugins = track->pluginList;
+
+    // Find any VolumeAndPanPlugin in the chain
+    te::Plugin::Ptr volPanPlugin;
+    int volPanIndex = -1;
+
+    for (int i = 0; i < plugins.size(); ++i) {
+        if (dynamic_cast<te::VolumeAndPanPlugin*>(plugins[i])) {
+            volPanPlugin = plugins[i];
+            volPanIndex = i;
+            break;
+        }
+    }
+
+    if (!volPanPlugin) {
+        // No VolumeAndPan found - create one at the end
+        auto newPlugin = edit_.getPluginCache().createNewPlugin(te::VolumeAndPanPlugin::create());
+        if (newPlugin) {
+            plugins.insertPlugin(newPlugin, -1, nullptr);
+        }
+        return;
+    }
+
+    // If VolumeAndPan is not at the end, move it there
+    // (It will end up second-to-last after LevelMeter is added)
+    int lastIndex = plugins.size() - 1;
+    if (volPanIndex < lastIndex) {
+        // Move to end: remove from current position and re-insert at end
+        // Keep a reference to prevent deletion
+        volPanPlugin->removeFromParent();
+        plugins.insertPlugin(volPanPlugin, -1, nullptr);
+    }
+}
+
 // =============================================================================
 // Track Mapping
 // =============================================================================
@@ -445,25 +483,12 @@ void AudioBridge::syncTrackPlugins(TrackId trackId) {
         }
     }
 
+    // Ensure VolumeAndPan is near the end of the chain (before LevelMeter)
+    // This is the track's fader control - it should come AFTER audio sources
+    ensureVolumePluginPosition(teTrack);
+
     // Ensure LevelMeter is at the end of the plugin chain for metering
     addLevelMeterToTrack(trackId);
-
-    // Debug: Print the final plugin chain for track 1
-    if (trackId == 1 && teTrack) {
-        std::cout << "\nTrack 1 final plugin chain:" << std::endl;
-        auto& plugins = teTrack->pluginList;
-        for (int i = 0; i < plugins.size(); ++i) {
-            auto* p = plugins[i];
-            std::cout << "  [" << i << "] " << p->getName() << " (enabled: " << p->isEnabled()
-                      << ")";
-
-            if (auto* tone = dynamic_cast<te::ToneGeneratorPlugin*>(p)) {
-                std::cout << " - freq=" << tone->frequency << ", level=" << tone->level;
-            }
-            std::cout << std::endl;
-        }
-        std::cout << std::endl;
-    }
 }
 
 void AudioBridge::ensureTrackMapping(TrackId trackId) {
@@ -753,13 +778,11 @@ te::Plugin::Ptr AudioBridge::loadDeviceAsPlugin(TrackId trackId, const DeviceInf
 
 void AudioBridge::setTrackVolume(TrackId trackId, float volume) {
     auto* track = getAudioTrack(trackId);
-    if (!track) {
-        DBG("AudioBridge::setTrackVolume - track not found: " << trackId);
+    if (!track)
         return;
-    }
 
-    // Find VolumeAndPanPlugin on track
-    if (auto volPan = track->pluginList.findFirstPluginOfType<te::VolumeAndPanPlugin>()) {
+    // Use the track's volume plugin (positioned at end of chain before LevelMeter)
+    if (auto* volPan = track->getVolumePlugin()) {
         float db = volume > 0.0f ? juce::Decibels::gainToDecibels(volume) : -100.0f;
         volPan->setVolumeDb(db);
     }
@@ -771,7 +794,7 @@ float AudioBridge::getTrackVolume(TrackId trackId) const {
         return 1.0f;
     }
 
-    if (auto volPan = track->pluginList.findFirstPluginOfType<te::VolumeAndPanPlugin>()) {
+    if (auto* volPan = track->getVolumePlugin()) {
         return juce::Decibels::decibelsToGain(volPan->getVolumeDb());
     }
     return 1.0f;
@@ -784,7 +807,8 @@ void AudioBridge::setTrackPan(TrackId trackId, float pan) {
         return;
     }
 
-    if (auto volPan = track->pluginList.findFirstPluginOfType<te::VolumeAndPanPlugin>()) {
+    // Use the track's built-in volume plugin
+    if (auto* volPan = track->getVolumePlugin()) {
         volPan->setPan(pan);
     }
 }
@@ -795,7 +819,7 @@ float AudioBridge::getTrackPan(TrackId trackId) const {
         return 0.0f;
     }
 
-    if (auto volPan = track->pluginList.findFirstPluginOfType<te::VolumeAndPanPlugin>()) {
+    if (auto* volPan = track->getVolumePlugin()) {
         return volPan->getPan();
     }
     return 0.0f;

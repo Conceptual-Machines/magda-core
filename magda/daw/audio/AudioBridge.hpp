@@ -78,6 +78,12 @@ class AudioBridge : public TrackManagerListener, public juce::Timer {
      */
     te::Plugin::Ptr addLevelMeterToTrack(TrackId trackId);
 
+    /**
+     * @brief Ensure VolumeAndPanPlugin is at the correct position (near end of chain)
+     * @param track The Tracktion Engine audio track
+     */
+    void ensureVolumePluginPosition(te::AudioTrack* track);
+
     // =========================================================================
     // Track Mapping
     // =========================================================================

@@ -700,14 +700,11 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     // Build channel strips from TrackManager
     rebuildChannelStrips();
 
-    // Create debug panel (hidden by default, F12 to toggle)
-    debugPanel_ = std::make_unique<MixerDebugPanel>();
-    debugPanel_->setVisible(false);
-    debugPanel_->onMetricsChanged = [this]() { rebuildChannelStrips(); };
-    addAndMakeVisible(*debugPanel_);
-
-    // Enable keyboard focus for F12 toggle
-    setWantsKeyboardFocus(true);
+    // Debug panel disabled - remove F12 toggle
+    // debugPanel_ = std::make_unique<MixerDebugPanel>();
+    // debugPanel_->setVisible(false);
+    // debugPanel_->onMetricsChanged = [this]() { rebuildChannelStrips(); };
+    // addAndMakeVisible(*debugPanel_);
 
     // Start timer for meter animation (30fps)
     startTimer(33);
@@ -854,19 +851,8 @@ void MixerView::timerCallback() {
     }
 }
 
-bool MixerView::keyPressed(const juce::KeyPress& key) {
-    if (key == juce::KeyPress::F12Key) {
-        bool willBeVisible = !debugPanel_->isVisible();
-        debugPanel_->setVisible(willBeVisible);
-
-        // Position in top-right when first shown
-        if (willBeVisible && debugPanel_->getX() == 0) {
-            int panelX = getWidth() - debugPanel_->getWidth() - 10;
-            int panelY = 10;
-            debugPanel_->setTopLeftPosition(panelX, panelY);
-        }
-        return true;
-    }
+bool MixerView::keyPressed(const juce::KeyPress& /*key*/) {
+    // Debug panel disabled
     return false;
 }
 
