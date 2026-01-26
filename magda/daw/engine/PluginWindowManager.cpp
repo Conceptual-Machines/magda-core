@@ -48,12 +48,20 @@ void PluginWindowManager::showPluginWindow(DeviceId deviceId, te::Plugin::Ptr pl
 
     if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
         if (extPlugin->windowState) {
-            DBG("  -> Calling showWindowExplicitly() for: " << extPlugin->getName());
-            extPlugin->windowState->showWindowExplicitly();
+            // If window exists but is hidden, just make it visible again
+            if (extPlugin->windowState->pluginWindow &&
+                !extPlugin->windowState->pluginWindow->isVisible()) {
+                DBG("  -> Making hidden window visible for: " << extPlugin->getName());
+                extPlugin->windowState->pluginWindow->setVisible(true);
+                extPlugin->windowState->pluginWindow->toFront(true);
+            } else {
+                // No window or window is already visible - use showWindowExplicitly
+                DBG("  -> Calling showWindowExplicitly() for: " << extPlugin->getName());
+                extPlugin->windowState->showWindowExplicitly();
+            }
 
             bool showing = extPlugin->windowState->isWindowShowing();
-            DBG("  -> After showWindowExplicitly, isWindowShowing=" << (showing ? "true"
-                                                                                : "false"));
+            DBG("  -> After show, isWindowShowing=" << (showing ? "true" : "false"));
 
             // Track this window
             {
@@ -82,10 +90,12 @@ void PluginWindowManager::hidePluginWindow(DeviceId deviceId, te::Plugin::Ptr pl
     }
 
     if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
-        if (extPlugin->windowState) {
-            DBG("PluginWindowManager::hidePluginWindow - closing window for: "
+        if (extPlugin->windowState && extPlugin->windowState->pluginWindow) {
+            DBG("PluginWindowManager::hidePluginWindow - hiding window for: "
                 << extPlugin->getName());
-            extPlugin->windowState->closeWindowExplicitly();
+            // Just hide the window instead of destroying it to avoid malloc errors
+            // The window will be properly destroyed when the plugin is unloaded
+            extPlugin->windowState->pluginWindow->setVisible(false);
 
             // Update tracking
             {
@@ -127,8 +137,9 @@ bool PluginWindowManager::isPluginWindowOpen(DeviceId deviceId, te::Plugin::Ptr 
     }
 
     if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
-        if (extPlugin->windowState) {
-            return extPlugin->windowState->isWindowShowing();
+        if (extPlugin->windowState && extPlugin->windowState->pluginWindow) {
+            // Check actual visibility of the window component
+            return extPlugin->windowState->pluginWindow->isVisible();
         }
     }
     return false;
@@ -247,8 +258,9 @@ void PluginWindowManager::timerCallback() {
         }
     }
 
-    // Close windows that requested close - use async to ensure we're completely
-    // out of any event handling context
+    // Handle windows that requested close - just hide them instead of destroying
+    // This avoids the malloc error that occurs when closeWindowExplicitly() is called.
+    // The window stays alive in memory but hidden until the plugin is unloaded.
     for (const auto& [deviceId, plugin] : windowsToClose) {
         // Capture plugin ptr (ref counted) to keep it alive during async call
         te::Plugin::Ptr pluginCopy = plugin;
@@ -258,9 +270,11 @@ void PluginWindowManager::timerCallback() {
         juce::MessageManager::callAsync([pluginCopy, deviceIdCopy, callback]() {
             if (pluginCopy) {
                 if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(pluginCopy.get())) {
-                    if (extPlugin->windowState) {
-                        DBG("PluginWindowManager - async close for device " << deviceIdCopy);
-                        extPlugin->windowState->closeWindowExplicitly();
+                    if (extPlugin->windowState && extPlugin->windowState->pluginWindow) {
+                        DBG("PluginWindowManager - hiding window for device " << deviceIdCopy);
+                        // Just hide the window instead of destroying it
+                        // This allows re-showing with showWindowExplicitly()
+                        extPlugin->windowState->pluginWindow->setVisible(false);
                     }
                 }
             }
