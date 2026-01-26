@@ -821,7 +821,7 @@ void MainWindow::setupMenuBar() {
     // On other platforms, show menu bar in window
     menuBar =
         std::make_unique<juce::MenuBarComponent>(MenuManager::getInstance().getMenuBarModel());
-    addAndMakeVisible(*menuBar);
+    addAndMakeVisible(menuBar.get());
 #endif
 }
 
