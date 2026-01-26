@@ -2,13 +2,16 @@ cmake_minimum_required(VERSION 3.24)
 
 project(Magda VERSION 0.1.0 LANGUAGES C CXX)
 
-# Enable ccache for faster rebuilds
-find_program(CCACHE_PROGRAM ccache)
-if(CCACHE_PROGRAM)
-    set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
-    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
-    message(STATUS "Using ccache: ${CCACHE_PROGRAM}")
-endif()
+# ccache disabled - causes unnecessary rebuilds with Ninja
+# The interaction between ccache, Ninja, and JUCE's glob verification
+# causes all 258+ targets to rebuild on every invocation.
+# TODO: Investigate proper ccache configuration for JUCE projects
+# find_program(CCACHE_PROGRAM ccache)
+# if(CCACHE_PROGRAM)
+#     set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+#     set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+#     message(STATUS "Using ccache: ${CCACHE_PROGRAM}")
+# endif()
 
 # Set C++ standard (required for Tracktion Engine)
 set(CMAKE_CXX_STANDARD 20)
