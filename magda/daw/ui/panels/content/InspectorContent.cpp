@@ -569,11 +569,17 @@ void InspectorContent::resized() {
 
         // Device parameters section (if visible)
         if (deviceParamsLabel_.isVisible()) {
-            deviceParamsLabel_.setBounds(bounds.removeFromTop(16));
+            auto labelBounds = bounds.removeFromTop(16);
+            deviceParamsLabel_.setBounds(labelBounds);
+            DBG("InspectorContent::resized - deviceParamsLabel bounds: " << labelBounds.toString());
+
             bounds.removeFromTop(4);
 
             // Viewport takes remaining space
             deviceParamsViewport_.setBounds(bounds);
+            DBG("InspectorContent::resized - deviceParamsViewport bounds: "
+                << bounds.toString() << " container size: " << deviceParamsContainer_.getWidth()
+                << "x" << deviceParamsContainer_.getHeight());
         }
     }
 }
@@ -1139,6 +1145,9 @@ void InspectorContent::updateFromSelectedChainNode() {
     // Show device parameters if this is a device
     if (selectedChainNode_.getType() == magda::ChainNodeType::Device ||
         selectedChainNode_.getType() == magda::ChainNodeType::TopLevelDevice) {
+        DBG("InspectorContent: Showing device parameters for chain node type="
+            << static_cast<int>(selectedChainNode_.getType()));
+
         // Get the device info
         const magda::DeviceInfo* deviceInfo = nullptr;
 
@@ -1152,6 +1161,9 @@ void InspectorContent::updateFromSelectedChainNode() {
                         const auto& device = magda::getDevice(element);
                         if (device.id == selectedChainNode_.topLevelDeviceId) {
                             deviceInfo = &device;
+                            DBG("  Found top-level device: " << device.name << " with "
+                                                             << device.parameters.size()
+                                                             << " parameters");
                             break;
                         }
                     }
@@ -1163,13 +1175,17 @@ void InspectorContent::updateFromSelectedChainNode() {
             auto resolved = magda::TrackManager::getInstance().resolvePath(selectedChainNode_);
             if (resolved.valid && resolved.device) {
                 deviceInfo = resolved.device;
+                DBG("  Found nested device: " << deviceInfo->name << " with "
+                                              << deviceInfo->parameters.size() << " parameters");
             }
         }
 
         if (deviceInfo && !deviceInfo->parameters.empty()) {
+            DBG("  Creating param controls for " << deviceInfo->parameters.size() << " parameters");
             createDeviceParamControls(*deviceInfo);
             showDeviceParamControls(true);
         } else {
+            DBG("  No device info or no parameters - hiding controls");
             showDeviceParamControls(false);
         }
     } else {
@@ -1685,11 +1701,15 @@ void InspectorContent::updateRoutingSelectorsFromTrack() {
 }
 
 void InspectorContent::createDeviceParamControls(const magda::DeviceInfo& device) {
+    DBG("InspectorContent::createDeviceParamControls - device=" << device.name << " paramCount="
+                                                                << device.parameters.size());
+
     // Clear existing controls
     deviceParamControls_.clear();
     deviceParamsContainer_.removeAllChildren();
 
     if (device.parameters.empty()) {
+        DBG("  No parameters to display");
         deviceParamsContainer_.setSize(0, 0);
         return;
     }
@@ -1698,6 +1718,7 @@ void InspectorContent::createDeviceParamControls(const magda::DeviceInfo& device
     const int nameWidth = 120;
     const int valueWidth = 60;
     const int padding = 8;
+    const int containerWidth = getWidth() - 20;  // Account for scrollbar
 
     int y = padding;
     for (size_t i = 0; i < device.parameters.size(); ++i) {
@@ -1723,7 +1744,7 @@ void InspectorContent::createDeviceParamControls(const magda::DeviceInfo& device
         control->valueLabel.setColour(juce::Label::textColourId,
                                       DarkTheme::getSecondaryTextColour());
         control->valueLabel.setJustificationType(juce::Justification::centredRight);
-        control->valueLabel.setBounds(getWidth() - valueWidth - padding, y, valueWidth, 20);
+        control->valueLabel.setBounds(containerWidth - valueWidth - padding, y, valueWidth, 20);
         deviceParamsContainer_.addAndMakeVisible(control->valueLabel);
 
         // Slider
@@ -1767,7 +1788,7 @@ void InspectorContent::createDeviceParamControls(const magda::DeviceInfo& device
             }
         };
 
-        control->slider.setBounds(padding, y + 22, getWidth() - 2 * padding, 20);
+        control->slider.setBounds(padding, y + 22, containerWidth - 2 * padding, 20);
         deviceParamsContainer_.addAndMakeVisible(control->slider);
 
         deviceParamControls_.push_back(std::move(control));
@@ -1775,12 +1796,16 @@ void InspectorContent::createDeviceParamControls(const magda::DeviceInfo& device
     }
 
     // Set container size based on parameter count
-    deviceParamsContainer_.setSize(getWidth() - 20, y);
+    deviceParamsContainer_.setSize(containerWidth, y);
+    DBG("  Created " << deviceParamControls_.size()
+                     << " param controls, container size=" << containerWidth << "x" << y);
 }
 
 void InspectorContent::showDeviceParamControls(bool show) {
+    DBG("InspectorContent::showDeviceParamControls(" << (show ? "true" : "false") << ")");
     deviceParamsLabel_.setVisible(show);
     deviceParamsViewport_.setVisible(show);
+    deviceParamsContainer_.setVisible(show);
 }
 
 }  // namespace magda::daw::ui

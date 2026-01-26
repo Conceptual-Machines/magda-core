@@ -26,8 +26,18 @@ setup:
 debug:
 	@echo "🔨 Building MAGDA DAW (Debug)..."
 	@mkdir -p $(BUILD_DIR)
-	cd $(BUILD_DIR) && cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
+	@if [ ! -f $(BUILD_DIR)/CMakeCache.txt ]; then \
+		echo "📝 Configuring project..."; \
+		cd $(BUILD_DIR) && cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=OFF ..; \
+	fi
 	cd $(BUILD_DIR) && ninja
+
+# Reconfigure build (force CMake to run)
+.PHONY: configure
+configure:
+	@echo "📝 Reconfiguring MAGDA DAW (Debug)..."
+	@mkdir -p $(BUILD_DIR)
+	cd $(BUILD_DIR) && cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
 
 # Release build
 .PHONY: release
