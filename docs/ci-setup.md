@@ -31,6 +31,7 @@ Runs on every push to `main` and `develop` branches, and on all pull requests.
 # Install dependencies (Ubuntu/Debian)
 sudo apt-get install -y \
   build-essential cmake ninja-build \
+  libgtk-3-dev \
   libasound2-dev libjack-jackd2-dev \
   libfreetype6-dev libx11-dev \
   libxcomposite-dev libxcursor-dev \
