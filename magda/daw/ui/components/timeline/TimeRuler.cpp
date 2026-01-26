@@ -2,6 +2,9 @@
 
 #include <cmath>
 
+#include "DarkTheme.hpp"
+#include "LayoutConfig.hpp"
+
 namespace magda {
 
 TimeRuler::TimeRuler() {

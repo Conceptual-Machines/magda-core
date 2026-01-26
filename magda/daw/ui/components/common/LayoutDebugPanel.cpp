@@ -1,6 +1,7 @@
 #include "LayoutDebugPanel.hpp"
 
 #include "../../themes/DarkTheme.hpp"
+#include "LayoutConfig.hpp"
 
 namespace magda {
 

@@ -1,5 +1,7 @@
 #include "ZoomControls.hpp"
 
+#include "DarkTheme.hpp"
+
 namespace magda {
 
 ZoomControls::ZoomControls() {
