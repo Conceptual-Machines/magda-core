@@ -400,15 +400,15 @@ target_link_libraries(magda_daw
     juce::juce_gui_basics
     tracktion::tracktion_engine
     MagdaAssets
+    # Link GTK/WebKit dependencies on Linux for web browser support
+    $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>
 )
 
 # Enable plugin hosting for external VST3/AU plugins
-# Disable web browser (not needed for DAW, avoids GTK dependency issues)
 target_compile_definitions(magda_daw
     PUBLIC
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=1
-    JUCE_WEB_BROWSER=0
 )
 
 # Link required libraries for DAW application
@@ -422,16 +422,16 @@ target_link_libraries(magda_daw_app
     juce::juce_audio_processors
     juce::juce_audio_utils
     tracktion::tracktion_engine
+    # Link GTK/WebKit dependencies on Linux for web browser support
+    $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>
 )
 
 # Enable plugin hosting for the app target as well
 # (needed because JUCE modules are compiled per-target)
-# Disable web browser (not needed for DAW, avoids GTK dependency issues)
 target_compile_definitions(magda_daw_app
     PRIVATE
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=1
-    JUCE_WEB_BROWSER=0
 )
 
 # Include directories for DAW library
