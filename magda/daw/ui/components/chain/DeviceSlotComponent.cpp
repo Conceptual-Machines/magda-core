@@ -341,7 +341,12 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
 
     // Initialize pagination (mock: 4 pages)
     totalPages_ = 4;
-    currentPage_ = 0;
+    currentPage_ = device_.currentParameterPage;
+    // Clamp to valid range in case device had invalid page
+    if (currentPage_ >= totalPages_)
+        currentPage_ = totalPages_ - 1;
+    if (currentPage_ < 0)
+        currentPage_ = 0;
     updatePageControls();
 
     // Create custom UI for internal devices
@@ -396,6 +401,14 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);
     onButton_->setActive(!device.bypassed);
     gainSlider_.setValue(device.gainDb, juce::dontSendNotification);
+
+    // Update current page from device state
+    currentPage_ = device.currentParameterPage;
+    if (currentPage_ >= totalPages_)
+        currentPage_ = totalPages_ - 1;
+    if (currentPage_ < 0)
+        currentPage_ = 0;
+    updatePageControls();
 
     // Create custom UI if this is an internal device and we don't have one yet
     if (isInternalDevice() && !toneGeneratorUI_) {
@@ -853,6 +866,9 @@ void DeviceSlotComponent::updatePageControls() {
 void DeviceSlotComponent::goToPrevPage() {
     if (currentPage_ > 0) {
         currentPage_--;
+        // Save page state to device (UI-only state, no TrackManager notification needed)
+        device_.currentParameterPage = currentPage_;
+
         updatePageControls();
         // TODO: Update param labels/values for new page
         repaint();
@@ -862,6 +878,9 @@ void DeviceSlotComponent::goToPrevPage() {
 void DeviceSlotComponent::goToNextPage() {
     if (currentPage_ < totalPages_ - 1) {
         currentPage_++;
+        // Save page state to device (UI-only state, no TrackManager notification needed)
+        device_.currentParameterPage = currentPage_;
+
         updatePageControls();
         // TODO: Update param labels/values for new page
         repaint();

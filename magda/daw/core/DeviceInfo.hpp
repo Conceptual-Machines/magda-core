@@ -55,6 +55,9 @@ struct DeviceInfo {
     // Modulators for device-level modulation
     ModArray mods = createDefaultMods();
 
+    // UI state
+    int currentParameterPage = 0;  // Current parameter page (for multi-page param display)
+
     juce::String getFormatString() const {
         switch (format) {
             case PluginFormat::VST3:
