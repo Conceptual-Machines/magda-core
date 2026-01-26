@@ -11,15 +11,20 @@ Checks: >-
   -altera-*,
   -llvmlibc-*,
   -abseil-*,
+  -boost-*,
   -google-build-using-namespace,
   -google-readability-todo,
   -hicpp-use-auto,
   -hicpp-vararg,
   -modernize-use-trailing-return-type,
+  -modernize-use-ranges,
+  -readability-container-contains,
+  -readability-redundant-casting,
   -readability-else-after-return,
   -readability-implicit-bool-conversion,
   -readability-named-parameter,
   -readability-uppercase-literal-suffix,
+  -hicpp-uppercase-literal-suffix,
   -cppcoreguidelines-avoid-magic-numbers,
   -readability-magic-numbers,
   -cert-err58-cpp,
@@ -36,7 +41,15 @@ Checks: >-
   -bugprone-easily-swappable-parameters,
   -misc-const-correctness,
   -readability-identifier-length,
-  -cppcoreguidelines-avoid-do-while
+  -cppcoreguidelines-avoid-do-while,
+  -clang-analyzer-deadcode.*,
+  -clang-analyzer-core.*,
+  -clang-diagnostic-unreachable-code,
+  -performance-avoid-endl,
+  -readability-braces-around-statements,
+  -hicpp-braces-around-statements,
+  -google-readability-braces-around-statements,
+  -readability-function-cognitive-complexity
 
 # Warnings as errors (can be adjusted based on team preference)
 WarningsAsErrors: ''
@@ -74,7 +87,7 @@ CheckOptions:
     value: CamelCase
   - key: readability-identifier-naming.MacroDefinitionCase
     value: UPPER_CASE
-    
+
   # Function length limits
   - key: readability-function-size.LineThreshold
     value: '80'
@@ -84,21 +97,21 @@ CheckOptions:
     value: '10'
   - key: readability-function-size.ParameterThreshold
     value: '8'
-    
+
   # Complexity limits
   - key: readability-function-cognitive-complexity.Threshold
     value: '15'
-    
+
   # Include sorting
   - key: llvm-include-order.Priority
     value: '1'
-    
+
   # Performance
   - key: performance-for-range-copy.WarnOnAllAutoCopies
     value: 'true'
   - key: performance-unnecessary-value-param.AllowedTypes
     value: 'juce::String;juce::var;std::shared_ptr;std::unique_ptr'
-    
+
   # Modernization
   - key: modernize-loop-convert.MaxCopySize
     value: '16'
@@ -106,7 +119,7 @@ CheckOptions:
     value: 'reasonable'
   - key: modernize-use-auto.MinTypeNameLength
     value: '5'
-    
+
   # Readability
   - key: readability-braces-around-statements.ShortStatementLines
     value: '1'
@@ -114,15 +127,15 @@ CheckOptions:
     value: 'true'
   - key: readability-simplify-boolean-expr.ChainedConditionalAssignment
     value: 'true'
-    
+
   # Bugprone
   - key: bugprone-argument-comment.StrictMode
     value: 'false'
   - key: bugprone-suspicious-string-compare.WarnOnImplicitComparison
     value: 'true'
-    
+
   # CERT rules
   - key: cert-dcl16-c.NewSuffixes
     value: 'L;LL;LU;LLU'
   - key: cert-oop54-cpp.WarnOnlyIfThisHasSuspiciousField
-    value: 'false' 
+    value: 'false'

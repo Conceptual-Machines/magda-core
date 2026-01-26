@@ -14,7 +14,7 @@ namespace magda {
  * audio engine optimization profile. Currently a stub for future
  * TracktionEngineWrapper integration.
  */
-class AudioEngineOptimizer : public ViewModeListener {
+class AudioEngineOptimizer final : public ViewModeListener {
   public:
     AudioEngineOptimizer();
     ~AudioEngineOptimizer() override;

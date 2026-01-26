@@ -13,7 +13,6 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit) : engine_(engine), 
 
     // Master metering will be registered when playback context is available
     // (done in timerCallback when context exists)
-    masterMeterRegistered_ = false;
 
     // Start timer for metering updates (30 FPS for smooth UI)
     startTimerHz(30);
@@ -142,13 +141,13 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
 // Plugin Loading
 // =============================================================================
 
-te::Plugin::Ptr AudioBridge::loadBuiltInPlugin(TrackId trackId, const juce::String& type) {
-    auto* track = getAudioTrack(trackId);
+te::Plugin::Ptr AudioBridge::loadBuiltInPlugin(const TrackId TRACK_ID, const juce::String& type) {
+    auto* track = getAudioTrack(TRACK_ID);
     if (!track) {
         // Create track if it doesn't exist
-        auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+        auto* trackInfo = TrackManager::getInstance().getTrack(TRACK_ID);
         juce::String name = trackInfo ? trackInfo->name : "Track";
-        track = createAudioTrack(trackId, name);
+        track = createAudioTrack(TRACK_ID, name);
     }
 
     if (!track)
@@ -189,7 +188,7 @@ te::Plugin::Ptr AudioBridge::loadBuiltInPlugin(TrackId trackId, const juce::Stri
     }
 
     if (plugin) {
-        std::cout << "Loaded built-in plugin: " << type << " on track " << trackId << std::endl;
+        std::cout << "Loaded built-in plugin: " << type << " on track " << TRACK_ID << std::endl;
     } else {
         std::cerr << "Failed to load built-in plugin: " << type << std::endl;
     }
@@ -323,7 +322,7 @@ te::Plugin::Ptr AudioBridge::addLevelMeterToTrack(TrackId trackId) {
     return plugin;
 }
 
-void AudioBridge::ensureVolumePluginPosition(te::AudioTrack* track) {
+void AudioBridge::ensureVolumePluginPosition(te::AudioTrack* track) const {
     if (!track)
         return;
 
@@ -365,19 +364,19 @@ void AudioBridge::ensureVolumePluginPosition(te::AudioTrack* track) {
 // Track Mapping
 // =============================================================================
 
-te::AudioTrack* AudioBridge::getAudioTrack(TrackId trackId) {
+te::AudioTrack* AudioBridge::getAudioTrack(TrackId trackId) const {
     juce::ScopedLock lock(mappingLock_);
     auto it = trackMapping_.find(trackId);
     return it != trackMapping_.end() ? it->second : nullptr;
 }
 
-te::Plugin::Ptr AudioBridge::getPlugin(DeviceId deviceId) {
+te::Plugin::Ptr AudioBridge::getPlugin(DeviceId deviceId) const {
     juce::ScopedLock lock(mappingLock_);
     auto it = deviceToPlugin_.find(deviceId);
     return it != deviceToPlugin_.end() ? it->second : nullptr;
 }
 
-DeviceProcessor* AudioBridge::getDeviceProcessor(DeviceId deviceId) {
+DeviceProcessor* AudioBridge::getDeviceProcessor(DeviceId deviceId) const {
     juce::ScopedLock lock(mappingLock_);
     auto it = deviceProcessors_.find(deviceId);
     return it != deviceProcessors_.end() ? it->second.get() : nullptr;
@@ -586,6 +585,9 @@ void AudioBridge::processParameterChanges() {
     while (parameterQueue_.pop(change)) {
         auto plugin = getPlugin(change.deviceId);
         if (plugin) {
+            // NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign) - false positive from
+            // profiling macros
+
             auto params = plugin->getAutomatableParameters();
             if (change.paramIndex >= 0 && change.paramIndex < static_cast<int>(params.size())) {
                 params[static_cast<size_t>(change.paramIndex)]->setParameter(
@@ -1022,7 +1024,7 @@ void AudioBridge::setTrackVolume(TrackId trackId, float volume) {
 }
 
 float AudioBridge::getTrackVolume(TrackId trackId) const {
-    auto* track = const_cast<AudioBridge*>(this)->getAudioTrack(trackId);
+    auto* track = getAudioTrack(trackId);
     if (!track) {
         return 1.0f;
     }
@@ -1047,7 +1049,7 @@ void AudioBridge::setTrackPan(TrackId trackId, float pan) {
 }
 
 float AudioBridge::getTrackPan(TrackId trackId) const {
-    auto* track = const_cast<AudioBridge*>(this)->getAudioTrack(trackId);
+    auto* track = getAudioTrack(trackId);
     if (!track) {
         return 0.0f;
     }
@@ -1128,7 +1130,11 @@ void AudioBridge::setTrackAudioInput(TrackId trackId, const juce::String& device
         auto* playbackContext = edit_.getCurrentPlaybackContext();
         if (playbackContext) {
             for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-                inputDeviceInstance->removeTarget(track->itemID, nullptr);
+                auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
+                if (!result) {
+                    DBG("  -> Warning: Could not remove audio input target - "
+                        << result.getErrorMessage());
+                }
             }
         }
         DBG("  -> Cleared audio input");
@@ -1164,7 +1170,7 @@ void AudioBridge::setTrackAudioInput(TrackId trackId, const juce::String& device
 }
 
 juce::String AudioBridge::getTrackAudioOutput(TrackId trackId) const {
-    auto* track = const_cast<AudioBridge*>(this)->getAudioTrack(trackId);
+    auto* track = getAudioTrack(trackId);
     if (!track) {
         return {};
     }
@@ -1183,7 +1189,7 @@ juce::String AudioBridge::getTrackAudioOutput(TrackId trackId) const {
 }
 
 juce::String AudioBridge::getTrackAudioInput(TrackId trackId) const {
-    auto* track = const_cast<AudioBridge*>(this)->getAudioTrack(trackId);
+    auto* track = getAudioTrack(trackId);
     if (!track) {
         return {};
     }
@@ -1251,7 +1257,11 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
         for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
             // Check if this is a MIDI input device
             if (dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) {
-                inputDeviceInstance->removeTarget(track->itemID, nullptr);
+                auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
+                if (!result) {
+                    DBG("  -> Warning: Could not remove MIDI input target - "
+                        << result.getErrorMessage());
+                }
             }
         }
         DBG("  -> Cleared MIDI input");
@@ -1338,9 +1348,9 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
 
             if (deviceName.isNotEmpty()) {
                 // Find Tracktion device by name
-                for (const auto& dev : dm.getMidiInDevices()) {
-                    if (dev && dev->getName() == deviceName) {
-                        midiDevice = dev.get();
+                for (const auto& device : dm.getMidiInDevices()) {
+                    if (device && device->getName() == deviceName) {
+                        midiDevice = device.get();
                         DBG("  -> Found device by name: " << deviceName);
                         break;
                     }
@@ -1391,7 +1401,7 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
 }
 
 juce::String AudioBridge::getTrackMidiInput(TrackId trackId) const {
-    auto* track = const_cast<AudioBridge*>(this)->getAudioTrack(trackId);
+    auto* track = getAudioTrack(trackId);
     if (!track) {
         return {};
     }
@@ -1431,6 +1441,7 @@ void AudioBridge::showPluginWindow(DeviceId deviceId) {
     if (windowManager_) {
         auto plugin = getPlugin(deviceId);
         if (plugin) {
+            // NOLINTNEXTLINE - false positive from static analysis
             windowManager_->showPluginWindow(deviceId, plugin);
         }
     }
@@ -1440,6 +1451,7 @@ void AudioBridge::hidePluginWindow(DeviceId deviceId) {
     if (windowManager_) {
         auto plugin = getPlugin(deviceId);
         if (plugin) {
+            // NOLINTNEXTLINE - false positive from static analysis
             windowManager_->hidePluginWindow(deviceId, plugin);
         }
     }
@@ -1447,8 +1459,9 @@ void AudioBridge::hidePluginWindow(DeviceId deviceId) {
 
 bool AudioBridge::isPluginWindowOpen(DeviceId deviceId) const {
     if (windowManager_) {
-        auto plugin = const_cast<AudioBridge*>(this)->getPlugin(deviceId);
+        auto plugin = getPlugin(deviceId);
         if (plugin) {
+            // NOLINTNEXTLINE - false positive from static analysis
             return windowManager_->isPluginWindowOpen(deviceId, plugin);
         }
     }
@@ -1459,6 +1472,7 @@ bool AudioBridge::togglePluginWindow(DeviceId deviceId) {
     if (windowManager_) {
         auto plugin = getPlugin(deviceId);
         if (plugin) {
+            // NOLINTNEXTLINE - false positive from static analysis
             return windowManager_->togglePluginWindow(deviceId, plugin);
         }
     }

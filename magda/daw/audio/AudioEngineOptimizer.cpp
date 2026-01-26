@@ -12,7 +12,7 @@ AudioEngineOptimizer::~AudioEngineOptimizer() {
     ViewModeController::getInstance().removeListener(this);
 }
 
-void AudioEngineOptimizer::viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) {
+void AudioEngineOptimizer::viewModeChanged(const ViewMode mode, const AudioEngineProfile& profile) {
     DBG("View mode changed to: " << getViewModeName(mode));
     applyProfile(profile);
 }

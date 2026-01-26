@@ -107,7 +107,7 @@ class AudioBridge : public TrackManagerListener, public juce::Timer {
      * @brief Ensure VolumeAndPanPlugin is at the correct position (near end of chain)
      * @param track The Tracktion Engine audio track
      */
-    void ensureVolumePluginPosition(te::AudioTrack* track);
+    void ensureVolumePluginPosition(te::AudioTrack* track) const;
 
     // =========================================================================
     // Track Mapping
@@ -118,21 +118,21 @@ class AudioBridge : public TrackManagerListener, public juce::Timer {
      * @param trackId MAGDA track ID
      * @return The AudioTrack, or nullptr if not found
      */
-    te::AudioTrack* getAudioTrack(TrackId trackId);
+    te::AudioTrack* getAudioTrack(TrackId trackId) const;
 
     /**
      * @brief Get the Tracktion Plugin for a MAGDA device
      * @param deviceId MAGDA device ID
      * @return The Plugin, or nullptr if not found
      */
-    te::Plugin::Ptr getPlugin(DeviceId deviceId);
+    te::Plugin::Ptr getPlugin(DeviceId deviceId) const;
 
     /**
      * @brief Get the DeviceProcessor for a MAGDA device
      * @param deviceId MAGDA device ID
      * @return The DeviceProcessor, or nullptr if not found
      */
-    DeviceProcessor* getDeviceProcessor(DeviceId deviceId);
+    DeviceProcessor* getDeviceProcessor(DeviceId deviceId) const;
 
     /**
      * @brief Create a Tracktion AudioTrack for a MAGDA track
@@ -495,7 +495,8 @@ class AudioBridge : public TrackManagerListener, public juce::Timer {
     bool masterMeterRegistered_{false};  // Whether master meter client is registered
 
     // Synchronization
-    juce::CriticalSection mappingLock_;  // Protects mapping updates
+    mutable juce::CriticalSection
+        mappingLock_;  // Protects mapping updates (mutable for const getters)
 
     // Pending MIDI routes (applied when playback context becomes available)
     std::vector<std::pair<TrackId, juce::String>> pendingMidiRoutes_;

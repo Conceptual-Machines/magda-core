@@ -1,5 +1,6 @@
 # Test sources
 set(TEST_SOURCES
+    test_audio_bridge.cpp
     test_command.cpp
     test_interfaces.cpp
     test_nested_racks.cpp
