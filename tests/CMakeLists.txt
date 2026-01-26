@@ -51,6 +51,8 @@ target_link_libraries(magda_juce_tests
     PRIVATE
     juce::juce_core
     juce::juce_events
+    # Link curl dependencies on Linux
+    $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
 )
 
 # Include directories for JUCE tests
