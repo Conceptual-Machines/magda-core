@@ -20,6 +20,7 @@ Checks: >-
   -modernize-use-ranges,
   -readability-container-contains,
   -readability-redundant-casting,
+  -readability-make-member-function-const,
   -readability-else-after-return,
   -readability-implicit-bool-conversion,
   -readability-named-parameter,
