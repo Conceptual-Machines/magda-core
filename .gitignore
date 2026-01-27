@@ -79,3 +79,6 @@ Builds/
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# User-specific config files
+magda_config.txt
