@@ -84,6 +84,12 @@ class PianoRollGridComponent : public juce::Component {
         return timelineLengthBeats_;
     }
 
+    // Playhead position (for drawing playhead line during playback)
+    void setPlayheadPosition(double positionSeconds);
+    double getPlayheadPosition() const {
+        return playheadPosition_;
+    }
+
     // Grid snap settings
     enum class GridResolution {
         Off,
@@ -147,6 +153,9 @@ class PianoRollGridComponent : public juce::Component {
     double clipLengthBeats_ = 0.0;       // Clip's length (in beats)
     double timelineLengthBeats_ = 64.0;  // Full timeline length (in beats) for drawing grid
     bool relativeMode_ = true;  // true = notes at beat 0, false = notes at absolute position
+
+    // Playhead position (in seconds)
+    double playheadPosition_ = -1.0;  // -1 = not playing, hide playhead
 
     // Note components
     std::vector<std::unique_ptr<NoteComponent>> noteComponents_;

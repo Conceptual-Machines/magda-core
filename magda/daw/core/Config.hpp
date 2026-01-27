@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 
 namespace magda {
 
@@ -116,12 +117,51 @@ class Config {
         scrollbarOnLeft = onLeft;
     }
 
+    // Audio Device Configuration
+    std::string getPreferredAudioDevice() const {
+        return preferredAudioDevice;
+    }
+    void setPreferredAudioDevice(const std::string& deviceName) {
+        preferredAudioDevice = deviceName;
+    }
+
+    std::string getPreferredInputDevice() const {
+        return preferredInputDevice;
+    }
+    void setPreferredInputDevice(const std::string& deviceName) {
+        preferredInputDevice = deviceName;
+    }
+
+    std::string getPreferredOutputDevice() const {
+        return preferredOutputDevice;
+    }
+    void setPreferredOutputDevice(const std::string& deviceName) {
+        preferredOutputDevice = deviceName;
+    }
+
+    int getPreferredInputChannels() const {
+        return preferredInputChannels;
+    }
+    void setPreferredInputChannels(int channels) {
+        preferredInputChannels = channels;
+    }
+
+    int getPreferredOutputChannels() const {
+        return preferredOutputChannels;
+    }
+    void setPreferredOutputChannels(int channels) {
+        preferredOutputChannels = channels;
+    }
+
     // Save/Load Configuration (for future use)
     void saveToFile(const std::string& filename);
     void loadFromFile(const std::string& filename);
 
   private:
     Config() = default;
+
+    // Helper to parse a single config line
+    void parseConfigLine(const std::string& key, const std::string& value);
 
     // Timeline settings
     double defaultTimelineLength = 300.0;   // 5 minutes in seconds
@@ -148,6 +188,13 @@ class Config {
 
     // Layout settings
     bool scrollbarOnLeft = false;  // Scrollbar on right by default
+
+    // Audio device settings
+    std::string preferredAudioDevice = "";   // Preferred audio interface (empty = system default)
+    std::string preferredInputDevice = "";   // Preferred input device (empty = system default)
+    std::string preferredOutputDevice = "";  // Preferred output device (empty = system default)
+    int preferredInputChannels = 0;   // Preferred input channel count (0 = use device default)
+    int preferredOutputChannels = 0;  // Preferred output channel count (0 = use device default)
 };
 
 }  // namespace magda

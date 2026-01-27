@@ -8,6 +8,12 @@ CompileFlags:
     - -Wall
     - -Wextra
 
+Index:
+  # Index in background without blocking the editor
+  Background: Build
+  # Don't index standard library (you already know std::, juce::, etc.)
+  StandardLibrary: No
+
 Diagnostics:
   # Suppress overly aggressive warnings
   Suppress:

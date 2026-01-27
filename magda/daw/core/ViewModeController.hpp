@@ -14,10 +14,20 @@ class ViewModeListener {
   public:
     virtual ~ViewModeListener() = default;
 
+    // Interface classes shouldn't be copied or moved
+    ViewModeListener(const ViewModeListener&) = delete;
+    ViewModeListener& operator=(const ViewModeListener&) = delete;
+    ViewModeListener(ViewModeListener&&) = delete;
+    ViewModeListener& operator=(ViewModeListener&&) = delete;
+
     /**
      * Called when the view mode changes.
      */
     virtual void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) = 0;
+
+  protected:
+    // Allow derived classes to construct
+    ViewModeListener() = default;
 };
 
 /**

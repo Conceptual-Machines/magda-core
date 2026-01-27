@@ -49,6 +49,12 @@ class TimeRuler : public juce::Component, private juce::Timer {
         return clipLength;
     }
 
+    // Playhead position (for drawing playhead line during playback)
+    void setPlayheadPosition(double positionSeconds);
+    double getPlayheadPosition() const {
+        return playheadPosition;
+    }
+
     // Left padding (for alignment - can be set to 0 for piano roll)
     void setLeftPadding(int padding);
     int getLeftPadding() const {
@@ -92,6 +98,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     double timeOffset = 0.0;    // seconds - absolute position of content start
     bool relativeMode = false;  // true = show relative time (1, 2, 3...), false = show absolute
     double clipLength = 0.0;    // seconds - length of clip (0 = no boundary marker)
+    double playheadPosition = -1.0;  // seconds - current playback position (-1 = not playing)
 
     // Layout
     int leftPadding = 18;  // Configurable padding (default 18 for main timeline)

@@ -29,7 +29,13 @@ void PianoRollKeyboard::paint(juce::Graphics& g) {
             continue;
         }
 
-        if (isBlackKey(note)) {
+        // Highlight currently playing note
+        bool isPressed = (note == currentPlayingNote_ && isPlayingNote_);
+
+        if (isPressed) {
+            // Highlight color for pressed key
+            g.setColour(juce::Colour(0xFF4A9EFF));  // Blue highlight
+        } else if (isBlackKey(note)) {
             g.setColour(juce::Colour(0xFF1a1a1a));  // True black keys
         } else {
             g.setColour(juce::Colour(0xFFE8E8E8));  // True white keys
@@ -101,6 +107,21 @@ void PianoRollKeyboard::mouseDown(const juce::MouseEvent& event) {
 
     // Capture anchor note at mouse position
     zoomAnchorNote_ = yToNoteNumber(event.y);
+
+    // Start note preview
+    currentPlayingNote_ = yToNoteNumber(event.y);
+    isPlayingNote_ = true;
+
+    DBG("Piano keyboard: Note pressed - " << currentPlayingNote_);
+
+    if (onNotePreview) {
+        DBG("Piano keyboard: Calling onNotePreview callback");
+        onNotePreview(currentPlayingNote_, 100, true);  // Note on with velocity 100
+    } else {
+        DBG("Piano keyboard: WARNING - onNotePreview callback not set!");
+    }
+
+    repaint();  // Redraw to show highlight
 }
 
 void PianoRollKeyboard::mouseDrag(const juce::MouseEvent& event) {
@@ -110,6 +131,15 @@ void PianoRollKeyboard::mouseDrag(const juce::MouseEvent& event) {
     // Determine drag mode if not yet set
     if (dragMode_ == DragMode::None) {
         if (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD) {
+            // Stop note preview when drag starts
+            if (isPlayingNote_ && onNotePreview) {
+                DBG("Piano keyboard: Stopping note due to drag");
+                onNotePreview(currentPlayingNote_, 0, false);  // Note off
+                isPlayingNote_ = false;
+                currentPlayingNote_ = -1;
+                repaint();  // Redraw to remove highlight
+            }
+
             // Vertical drag = scroll (along keyboard), horizontal drag = zoom
             dragMode_ = (deltaY > deltaX) ? DragMode::Scrolling : DragMode::Zooming;
         }
@@ -141,6 +171,15 @@ void PianoRollKeyboard::mouseDrag(const juce::MouseEvent& event) {
 }
 
 void PianoRollKeyboard::mouseUp(const juce::MouseEvent& /*event*/) {
+    // Stop note preview if still playing
+    if (isPlayingNote_ && onNotePreview) {
+        DBG("Piano keyboard: Note released - " << currentPlayingNote_);
+        onNotePreview(currentPlayingNote_, 0, false);  // Note off
+        isPlayingNote_ = false;
+        currentPlayingNote_ = -1;
+        repaint();  // Redraw to remove highlight
+    }
+
     dragMode_ = DragMode::None;
 }
 

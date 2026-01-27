@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 
+#include "../core/ClipManager.hpp"
 #include "../core/DeviceInfo.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/TypeIds.hpp"
@@ -18,6 +19,7 @@ namespace magda {
 // Forward declarations
 namespace te = tracktion;
 class PluginWindowManager;
+class TracktionEngineWrapper;
 
 /**
  * @brief Result of attempting to load a plugin
@@ -36,20 +38,22 @@ struct PluginLoadResult {
 };
 
 /**
- * @brief Bridges TrackManager (UI model) to Tracktion Engine (audio processing)
+ * @brief Bridges TrackManager and ClipManager (UI models) to Tracktion Engine (audio processing)
  *
  * Responsibilities:
  * - Listens to TrackManager for device changes
+ * - Listens to ClipManager for clip changes
  * - Maps DeviceId to tracktion::Plugin instances
  * - Maps TrackId to tracktion::AudioTrack instances
+ * - Maps ClipId to tracktion::Clip instances
  * - Loads built-in and external plugins
  * - Manages metering and parameter communication
  *
  * Thread Safety:
- * - UI thread: Receives TrackManager notifications, updates mappings
+ * - UI thread: Receives TrackManager/ClipManager notifications, updates mappings
  * - Audio thread: Reads mappings, processes parameter changes, pushes metering
  */
-class AudioBridge : public TrackManagerListener, public juce::Timer {
+class AudioBridge : public TrackManagerListener, public ClipManagerListener, public juce::Timer {
   public:
     /**
      * @brief Construct AudioBridge with Tracktion Engine references
@@ -69,6 +73,30 @@ class AudioBridge : public TrackManagerListener, public juce::Timer {
     void devicePropertyChanged(DeviceId deviceId) override;
     void deviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue) override;
     void masterChannelChanged() override;
+
+    // =========================================================================
+    // ClipManagerListener implementation
+    // =========================================================================
+
+    void clipsChanged() override;
+    void clipPropertyChanged(ClipId clipId) override;
+    void clipSelectionChanged(ClipId clipId) override;
+
+    // =========================================================================
+    // Clip Synchronization
+    // =========================================================================
+
+    /**
+     * @brief Sync a single clip to Tracktion Engine
+     * @param clipId The MAGDA clip ID to sync
+     */
+    void syncClipToEngine(ClipId clipId);
+
+    /**
+     * @brief Remove a clip from Tracktion Engine
+     * @param clipId The MAGDA clip ID to remove
+     */
+    void removeClipFromEngine(ClipId clipId);
 
     // =========================================================================
     // Plugin Loading
@@ -415,6 +443,14 @@ class AudioBridge : public TrackManagerListener, public juce::Timer {
         windowManager_ = manager;
     }
 
+    /**
+     * @brief Set the engine wrapper (for accessing ClipInterface methods)
+     * @param wrapper Pointer to TracktionEngineWrapper (owns this AudioBridge)
+     */
+    void setEngineWrapper(TracktionEngineWrapper* wrapper) {
+        engineWrapper_ = wrapper;
+    }
+
     // =========================================================================
     // Plugin Editor Windows (delegates to PluginWindowManager)
     // =========================================================================
@@ -467,8 +503,13 @@ class AudioBridge : public TrackManagerListener, public juce::Timer {
 
     // Bidirectional mappings
     std::map<TrackId, te::AudioTrack*> trackMapping_;
+    std::map<TrackId, std::string> trackIdToEngineId_;  // MAGDA TrackId → Engine string ID
     std::map<DeviceId, te::Plugin::Ptr> deviceToPlugin_;
     std::map<te::Plugin*, DeviceId> pluginToDevice_;
+
+    // Clip ID mappings (MAGDA ClipId <-> Tracktion Engine clip ID)
+    std::map<ClipId, std::string> clipIdToEngineId_;  // MAGDA → TE
+    std::map<std::string, ClipId> engineIdToClipId_;  // TE → MAGDA
 
     // Device processors (own the processing logic for each device)
     std::map<DeviceId, std::unique_ptr<DeviceProcessor>> deviceProcessors_;
@@ -505,6 +546,9 @@ class AudioBridge : public TrackManagerListener, public juce::Timer {
 
     // Plugin window manager (owned by TracktionEngineWrapper, destroyed before us)
     PluginWindowManager* windowManager_ = nullptr;
+
+    // Engine wrapper (owns this AudioBridge, used for ClipInterface access)
+    TracktionEngineWrapper* engineWrapper_ = nullptr;
 
     // Shutdown flag to prevent operations during cleanup
     std::atomic<bool> isShuttingDown_{false};

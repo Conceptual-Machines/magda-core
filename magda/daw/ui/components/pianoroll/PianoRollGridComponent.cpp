@@ -1,5 +1,6 @@
 #include "PianoRollGridComponent.hpp"
 
+#include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "core/ClipManager.hpp"
 
@@ -39,6 +40,29 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         if (clipEndX >= 0 && clipEndX <= bounds.getRight()) {
             g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
             g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
+        }
+    }
+
+    // Draw playhead line if playing
+    if (playheadPosition_ >= 0.0) {
+        // Convert seconds to beats
+        // Get tempo from TimelineController
+        double tempo = 120.0;  // Default
+        if (auto* controller = TimelineController::getCurrent()) {
+            tempo = controller->getState().tempo.bpm;
+        }
+        double secondsPerBeat = 60.0 / tempo;
+        double playheadBeats = playheadPosition_ / secondsPerBeat;
+
+        // In absolute mode, playhead is at absolute position
+        // In relative mode, need to offset by clip start
+        double displayBeat = relativeMode_ ? (playheadBeats - clipStartBeats_) : playheadBeats;
+
+        int playheadX = beatToPixel(displayBeat);
+        if (playheadX >= 0 && playheadX <= bounds.getRight()) {
+            // Draw playhead line (red)
+            g.setColour(juce::Colour(0xFFFF4444));
+            g.fillRect(playheadX - 1, 0, 2, bounds.getHeight());
         }
     }
 }
@@ -407,6 +431,13 @@ bool PianoRollGridComponent::isBlackKey(int noteNumber) const {
 juce::Colour PianoRollGridComponent::getClipColour() const {
     const auto* clip = ClipManager::getInstance().getClip(clipId_);
     return clip ? clip->colour : juce::Colour(0xFF6688CC);
+}
+
+void PianoRollGridComponent::setPlayheadPosition(double positionSeconds) {
+    if (playheadPosition_ != positionSeconds) {
+        playheadPosition_ = positionSeconds;
+        repaint();
+    }
 }
 
 }  // namespace magda

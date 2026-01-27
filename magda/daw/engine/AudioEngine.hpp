@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "../ui/state/TransportStateListener.hpp"
 
 namespace juce {
@@ -62,6 +64,17 @@ class AudioEngine : public AudioEngineListener {
     // ===== MIDI Management =====
     virtual class MidiBridge* getMidiBridge() = 0;
     virtual const class MidiBridge* getMidiBridge() const = 0;
+
+    // ===== MIDI Preview =====
+    /**
+     * @brief Preview a MIDI note on a track (for keyboard audition)
+     * @param track_id Track ID to send note to
+     * @param noteNumber MIDI note number (0-127)
+     * @param velocity Velocity (0-127), 0 for note-off
+     * @param isNoteOn True for note-on, false for note-off
+     */
+    virtual void previewNoteOnTrack(const std::string& track_id, int noteNumber, int velocity,
+                                    bool isNoteOn) = 0;
 };
 
 }  // namespace magda

@@ -86,6 +86,13 @@ void TimeRuler::setClipLength(double lengthSeconds) {
     repaint();
 }
 
+void TimeRuler::setPlayheadPosition(double positionSeconds) {
+    if (playheadPosition != positionSeconds) {
+        playheadPosition = positionSeconds;
+        repaint();
+    }
+}
+
 void TimeRuler::setLeftPadding(int padding) {
     leftPadding = padding;
     repaint();
@@ -328,6 +335,19 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
                 g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
                 g.fillRect(clipEndX - 1, 0, 3, height);
             }
+        }
+    }
+
+    // Draw playhead line if playing
+    if (playheadPosition >= 0.0) {
+        // In absolute mode, playhead is at absolute position
+        // In relative mode, playhead is relative to timeOffset
+        double displayTime = relativeMode ? (playheadPosition - timeOffset) : playheadPosition;
+        int playheadX = timeToPixel(displayTime);
+        if (playheadX >= 0 && playheadX <= width) {
+            // Draw playhead line (red)
+            g.setColour(juce::Colour(0xFFFF4444));
+            g.fillRect(playheadX - 1, 0, 2, height);
         }
     }
 }

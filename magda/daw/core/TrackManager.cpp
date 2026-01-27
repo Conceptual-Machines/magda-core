@@ -373,6 +373,26 @@ void TrackManager::setAudioEngine(AudioEngine* audioEngine) {
     }
 }
 
+void TrackManager::previewNote(TrackId trackId, int noteNumber, int velocity, bool isNoteOn) {
+    DBG("TrackManager::previewNote - Track=" << trackId << ", Note=" << noteNumber << ", Velocity="
+                                             << velocity << ", On=" << (isNoteOn ? "YES" : "NO"));
+
+    // Forward to engine wrapper for playback through track's instruments
+    if (audioEngine_) {
+        auto* track = getTrack(trackId);
+        if (track) {
+            DBG("TrackManager: Found track, forwarding to engine");
+            // Convert TrackId to engine track ID string
+            audioEngine_->previewNoteOnTrack(std::to_string(trackId), noteNumber, velocity,
+                                             isNoteOn);
+        } else {
+            DBG("TrackManager: WARNING - Track not found!");
+        }
+    } else {
+        DBG("TrackManager: WARNING - No audio engine!");
+    }
+}
+
 // ============================================================================
 // Track Routing Setters
 // ============================================================================

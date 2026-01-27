@@ -4,6 +4,7 @@
 
 #include "PanelContent.hpp"
 #include "core/ClipManager.hpp"
+#include "ui/state/TimelineController.hpp"
 
 namespace magda {
 class PianoRollGridComponent;
@@ -23,7 +24,9 @@ namespace magda::daw::ui {
  * - Note rectangles in the grid representing MIDI notes (interactive)
  * - Time ruler along the top (switchable between absolute/relative)
  */
-class PianoRollContent : public PanelContent, public magda::ClipManagerListener {
+class PianoRollContent : public PanelContent,
+                         public magda::ClipManagerListener,
+                         public magda::TimelineStateListener {
   public:
     PianoRollContent();
     ~PianoRollContent() override;
@@ -49,6 +52,10 @@ class PianoRollContent : public PanelContent, public magda::ClipManagerListener 
     void clipSelectionChanged(magda::ClipId clipId) override;
     void clipDragPreview(magda::ClipId clipId, double previewStartTime,
                          double previewLength) override;
+
+    // TimelineStateListener
+    void timelineStateChanged(const magda::TimelineState& state) override;
+    void playheadStateChanged(const magda::TimelineState& state) override;
 
     // Set the clip to edit
     void setClip(magda::ClipId clipId);

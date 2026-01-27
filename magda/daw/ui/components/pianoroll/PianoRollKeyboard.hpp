@@ -35,8 +35,9 @@ class PianoRollKeyboard : public juce::Component {
     }
 
     // Callbacks
-    std::function<void(int, int, int)> onZoomChanged;  // newNoteHeight, anchorNote, anchorScreenY
-    std::function<void(int)> onScrollRequested;        // deltaY scroll amount
+    std::function<void(int, int, int)> onZoomChanged;   // newNoteHeight, anchorNote, anchorScreenY
+    std::function<void(int)> onScrollRequested;         // deltaY scroll amount
+    std::function<void(int, int, bool)> onNotePreview;  // noteNumber, velocity, isNoteOn
 
   private:
     int noteHeight_ = 12;
@@ -53,6 +54,10 @@ class PianoRollKeyboard : public juce::Component {
     int zoomStartHeight_ = 0;
     int zoomAnchorNote_ = 0;
     static constexpr int DRAG_THRESHOLD = 3;
+
+    // Note preview state
+    int currentPlayingNote_ = -1;
+    bool isPlayingNote_ = false;
 
     bool isBlackKey(int noteNumber) const;
     juce::String getNoteName(int noteNumber) const;

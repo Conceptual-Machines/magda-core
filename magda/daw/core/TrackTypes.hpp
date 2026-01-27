@@ -42,18 +42,4 @@ inline bool canHaveChildren(TrackType type) {
     return type == TrackType::Group;
 }
 
-/**
- * @brief Check if track type can contain MIDI
- */
-inline bool canContainMIDI(TrackType type) {
-    return type == TrackType::Instrument || type == TrackType::MIDI || type == TrackType::Group;
-}
-
-/**
- * @brief Check if track type can contain audio
- */
-inline bool canContainAudio(TrackType type) {
-    return type == TrackType::Audio;
-}
-
 }  // namespace magda

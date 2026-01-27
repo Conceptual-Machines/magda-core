@@ -104,6 +104,16 @@ class TracktionEngineWrapper : public AudioEngine,
     std::vector<std::string> getAllTrackIds() const override;
     bool trackExists(const std::string& track_id) const override;
 
+    /**
+     * @brief Preview a MIDI note on a track (for keyboard audition)
+     * @param track_id Track ID to send note to
+     * @param noteNumber MIDI note number (0-127)
+     * @param velocity Velocity (0-127), 0 for note-off
+     * @param isNoteOn True for note-on, false for note-off
+     */
+    void previewNoteOnTrack(const std::string& track_id, int noteNumber, int velocity,
+                            bool isNoteOn) override;
+
     // ClipInterface implementation - fixed method signatures
     std::string addMidiClip(const std::string& track_id, double start_time, double length,
                             const std::vector<MidiNote>& notes) override;
@@ -282,6 +292,24 @@ class TracktionEngineWrapper : public AudioEngine,
      * @return Path to the plugin list XML file
      */
     juce::File getPluginListFile() const;
+
+    // =========================================================================
+    // PDC (Plugin Delay Compensation) Query
+    // =========================================================================
+
+    /**
+     * @brief Get the latency of a specific plugin in seconds
+     * @param effect_id The effect/plugin ID
+     * @return Latency in seconds, or 0 if plugin not found
+     */
+    double getPluginLatencySeconds(const std::string& effect_id) const;
+
+    /**
+     * @brief Get the maximum latency across all tracks in the playback graph
+     * This is the total PDC that Tracktion Engine compensates for
+     * @return Maximum latency in seconds
+     */
+    double getGlobalLatencySeconds() const;
 
     /**
      * @brief Callback when plugin scan completes

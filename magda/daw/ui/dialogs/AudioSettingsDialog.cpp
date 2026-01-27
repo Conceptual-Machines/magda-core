@@ -1,5 +1,6 @@
 #include "AudioSettingsDialog.hpp"
 
+#include "../../core/Config.hpp"
 #include "../themes/DarkTheme.hpp"
 
 namespace magda {
@@ -24,27 +25,28 @@ void CustomChannelSelector::updateFromDevice() {
     channelToggles_.clear();
 
     auto* device = deviceManager_->getCurrentAudioDevice();
-    if (!device)
+    if (!device) {
+        DBG("CustomChannelSelector::updateFromDevice - No current audio device!");
         return;
+    }
+
+    DBG("CustomChannelSelector::updateFromDevice - Device: " + device->getName() +
+        " (isInput=" + juce::String(isInput_ ? "true" : "false") + ")");
 
     // Get channel names and active channels from current setup
     auto setup = deviceManager_->getAudioDeviceSetup();
     auto channelNames = isInput_ ? device->getInputChannelNames() : device->getOutputChannelNames();
     auto activeChannels = isInput_ ? setup.inputChannels : setup.outputChannels;
 
-    // Determine how many channels to show
-    // If channels are already active, show up to the highest active channel
-    // If no channels active yet, show a reasonable default (up to 4 or channelNames.size())
-    int numChannels = 0;
-
-    if (activeChannels.countNumberOfSetBits() > 0) {
-        // Show all channels up to the highest active one
-        numChannels = activeChannels.getHighestBit() + 1;
-    } else {
-        // No channels active yet - show a default set (typically 2-4 channels for consumer
-        // interfaces) Limit to actual channel names available
-        numChannels = juce::jmin(4, (int)channelNames.size());
+    DBG("  Channel count: " + juce::String(channelNames.size()));
+    DBG("  Active channels: " + activeChannels.toString(2));
+    for (int i = 0; i < channelNames.size(); ++i) {
+        DBG("    Channel " + juce::String(i) + ": " + channelNames[i]);
     }
+
+    // Show ALL available channels from the device, regardless of which are currently active
+    // The user can then select which ones to enable/disable
+    int numChannels = channelNames.size();
 
     // Create stereo pair toggles first
     for (int i = 0; i < numChannels; i += 2) {
@@ -235,8 +237,37 @@ void CustomChannelSelector::resized() {
 
 AudioSettingsDialog::AudioSettingsDialog(juce::AudioDeviceManager* deviceManager)
     : deviceManager_(deviceManager) {
-    // Create the device selector component (device selection + MIDI, no channel selection)
-    // We handle channel selection with custom components below
+    // Input device selection dropdown
+    inputDeviceLabel_.setText("Input Device:", juce::dontSendNotification);
+    inputDeviceLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+    addAndMakeVisible(inputDeviceLabel_);
+
+    inputDeviceComboBox_.onChange = [this]() { onInputDeviceSelected(); };
+    addAndMakeVisible(inputDeviceComboBox_);
+
+    // Output device selection dropdown
+    outputDeviceLabel_.setText("Output Device:", juce::dontSendNotification);
+    outputDeviceLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+    addAndMakeVisible(outputDeviceLabel_);
+
+    outputDeviceComboBox_.onChange = [this]() { onOutputDeviceSelected(); };
+    addAndMakeVisible(outputDeviceComboBox_);
+
+    populateDeviceLists();
+
+    // "Set as preferred devices" checkbox
+    setAsPreferredCheckbox_.setButtonText("Set as preferred devices (auto-select on startup)");
+    addAndMakeVisible(setAsPreferredCheckbox_);
+
+    // Check if current devices match preferred devices in Config
+    auto& config = magda::Config::getInstance();
+    auto setup = deviceManager->getAudioDeviceSetup();
+    bool inputMatches = setup.inputDeviceName.toStdString() == config.getPreferredInputDevice();
+    bool outputMatches = setup.outputDeviceName.toStdString() == config.getPreferredOutputDevice();
+    setAsPreferredCheckbox_.setToggleState(inputMatches && outputMatches,
+                                           juce::dontSendNotification);
+
+    // Create the device selector component (MIDI only, no audio device selection)
     deviceSelector_ = std::make_unique<juce::AudioDeviceSelectorComponent>(
         *deviceManager,
         0,      // minAudioInputChannels (0 = don't show channel selection)
@@ -257,9 +288,23 @@ AudioSettingsDialog::AudioSettingsDialog(juce::AudioDeviceManager* deviceManager
     outputChannelSelector_ = std::make_unique<CustomChannelSelector>(deviceManager, false);
     addAndMakeVisible(*outputChannelSelector_);
 
+    // Setup device name label
+    deviceNameLabel_.setFont(juce::Font(16.0f, juce::Font::bold));
+    deviceNameLabel_.setJustificationType(juce::Justification::centred);
+    if (auto* device = deviceManager->getCurrentAudioDevice()) {
+        juce::String labelText = "Current Device: " + device->getName();
+        labelText += " (" + juce::String(device->getInputChannelNames().size()) + " in, ";
+        labelText += juce::String(device->getOutputChannelNames().size()) + " out)";
+        deviceNameLabel_.setText(labelText, juce::dontSendNotification);
+    } else {
+        deviceNameLabel_.setText("No audio device selected", juce::dontSendNotification);
+    }
+    addAndMakeVisible(deviceNameLabel_);
+
     // Setup close button
     closeButton_.setButtonText("Close");
     closeButton_.onClick = [this]() {
+        savePreferencesIfNeeded();
         if (auto* dw = findParentComponentOfClass<juce::DialogWindow>()) {
             dw->exitModalState(0);
         }
@@ -267,7 +312,7 @@ AudioSettingsDialog::AudioSettingsDialog(juce::AudioDeviceManager* deviceManager
     addAndMakeVisible(closeButton_);
 
     // Set preferred size
-    setSize(700, 650);
+    setSize(700, 700);
 }
 
 AudioSettingsDialog::~AudioSettingsDialog() = default;
@@ -279,20 +324,40 @@ void AudioSettingsDialog::paint(juce::Graphics& g) {
 void AudioSettingsDialog::resized() {
     auto bounds = getLocalBounds().reduced(10);
 
-    // Button at bottom
+    // Device name label at top
+    deviceNameLabel_.setBounds(bounds.removeFromTop(30));
+    bounds.removeFromTop(10);  // spacing
+
+    // Input device selection dropdown
+    auto inputDeviceArea = bounds.removeFromTop(28);
+    inputDeviceLabel_.setBounds(inputDeviceArea.removeFromLeft(120));
+    inputDeviceArea.removeFromLeft(10);  // spacing
+    inputDeviceComboBox_.setBounds(inputDeviceArea);
+    bounds.removeFromTop(5);  // spacing
+
+    // Output device selection dropdown
+    auto outputDeviceArea = bounds.removeFromTop(28);
+    outputDeviceLabel_.setBounds(outputDeviceArea.removeFromLeft(120));
+    outputDeviceArea.removeFromLeft(10);  // spacing
+    outputDeviceComboBox_.setBounds(outputDeviceArea);
+    bounds.removeFromTop(5);  // spacing
+
+    // "Set as preferred" checkbox
+    setAsPreferredCheckbox_.setBounds(bounds.removeFromTop(24));
+    bounds.removeFromTop(15);  // spacing
+
+    // Close button at bottom
     const int buttonHeight = 28;
     const int buttonWidth = 80;
     auto buttonArea = bounds.removeFromBottom(buttonHeight);
     bounds.removeFromBottom(10);  // spacing
-
-    // Center the close button
     closeButton_.setBounds(buttonArea.withSizeKeepingCentre(buttonWidth, buttonHeight));
 
     // Split remaining space: device selector on left, channel selectors on right
     auto deviceArea = bounds.removeFromLeft(bounds.getWidth() / 2);
     bounds.removeFromLeft(10);  // spacing
 
-    // Device selector (device + MIDI selection)
+    // Device selector (MIDI selection)
     deviceSelector_->setBounds(deviceArea);
 
     // Channel selectors on the right, split vertically
@@ -301,6 +366,141 @@ void AudioSettingsDialog::resized() {
 
     inputChannelSelector_->setBounds(inputArea);
     outputChannelSelector_->setBounds(bounds);
+}
+
+void AudioSettingsDialog::populateDeviceLists() {
+    inputDeviceComboBox_.clear();
+    outputDeviceComboBox_.clear();
+
+    auto& deviceTypes = deviceManager_->getAvailableDeviceTypes();
+    if (deviceTypes.isEmpty())
+        return;
+
+    // Get first device type (CoreAudio on macOS)
+    auto* deviceType = deviceTypes[0];
+    deviceType->scanForDevices();
+
+    auto inputDevices = deviceType->getDeviceNames(true);    // Get input devices
+    auto outputDevices = deviceType->getDeviceNames(false);  // Get output devices
+
+    // Populate input device dropdown
+    for (int i = 0; i < inputDevices.size(); ++i) {
+        inputDeviceComboBox_.addItem(inputDevices[i], i + 1);
+    }
+
+    // Populate output device dropdown
+    for (int i = 0; i < outputDevices.size(); ++i) {
+        outputDeviceComboBox_.addItem(outputDevices[i], i + 1);
+    }
+
+    // Select current devices
+    auto setup = deviceManager_->getAudioDeviceSetup();
+
+    int inputIndex = inputDevices.indexOf(setup.inputDeviceName);
+    if (inputIndex >= 0) {
+        inputDeviceComboBox_.setSelectedId(inputIndex + 1, juce::dontSendNotification);
+    }
+
+    int outputIndex = outputDevices.indexOf(setup.outputDeviceName);
+    if (outputIndex >= 0) {
+        outputDeviceComboBox_.setSelectedId(outputIndex + 1, juce::dontSendNotification);
+    }
+}
+
+void AudioSettingsDialog::onInputDeviceSelected() {
+    int selectedId = inputDeviceComboBox_.getSelectedId();
+    if (selectedId == 0)
+        return;
+
+    juce::String selectedDeviceName = inputDeviceComboBox_.getItemText(selectedId - 1);
+
+    // Get current setup
+    auto setup = deviceManager_->getAudioDeviceSetup();
+
+    // Change input device
+    setup.inputDeviceName = selectedDeviceName;
+
+    // Apply new device setup
+    auto result = deviceManager_->setAudioDeviceSetup(setup, true);
+    if (!result.isEmpty()) {
+        DBG("Failed to switch input device: " << result);
+        return;
+    }
+
+    // Update channel selectors to reflect new device
+    inputChannelSelector_->updateFromDevice();
+
+    // Update device name label
+    if (auto* device = deviceManager_->getCurrentAudioDevice()) {
+        juce::String labelText = "Input: " + setup.inputDeviceName;
+        labelText += " | Output: " + setup.outputDeviceName;
+        deviceNameLabel_.setText(labelText, juce::dontSendNotification);
+    }
+}
+
+void AudioSettingsDialog::onOutputDeviceSelected() {
+    int selectedId = outputDeviceComboBox_.getSelectedId();
+    if (selectedId == 0)
+        return;
+
+    juce::String selectedDeviceName = outputDeviceComboBox_.getItemText(selectedId - 1);
+
+    // Get current setup
+    auto setup = deviceManager_->getAudioDeviceSetup();
+
+    // Change output device
+    setup.outputDeviceName = selectedDeviceName;
+
+    // Apply new device setup
+    auto result = deviceManager_->setAudioDeviceSetup(setup, true);
+    if (!result.isEmpty()) {
+        DBG("Failed to switch output device: " << result);
+        return;
+    }
+
+    // Update channel selectors to reflect new device
+    outputChannelSelector_->updateFromDevice();
+
+    // Update device name label
+    if (auto* device = deviceManager_->getCurrentAudioDevice()) {
+        juce::String labelText = "Input: " + setup.inputDeviceName;
+        labelText += " | Output: " + setup.outputDeviceName;
+        deviceNameLabel_.setText(labelText, juce::dontSendNotification);
+    }
+}
+
+void AudioSettingsDialog::savePreferencesIfNeeded() {
+    if (!setAsPreferredCheckbox_.getToggleState())
+        return;
+
+    auto setup = deviceManager_->getAudioDeviceSetup();
+
+    // Count enabled input channels
+    int inputChannelCount = 0;
+    for (int i = 0; i < setup.inputChannels.getHighestBit() + 1; ++i) {
+        if (setup.inputChannels[i]) {
+            inputChannelCount = i + 1;
+        }
+    }
+
+    // Count enabled output channels
+    int outputChannelCount = 0;
+    for (int i = 0; i < setup.outputChannels.getHighestBit() + 1; ++i) {
+        if (setup.outputChannels[i]) {
+            outputChannelCount = i + 1;
+        }
+    }
+
+    // Save to Config
+    auto& config = magda::Config::getInstance();
+    config.setPreferredInputDevice(setup.inputDeviceName.toStdString());
+    config.setPreferredOutputDevice(setup.outputDeviceName.toStdString());
+    config.setPreferredInputChannels(inputChannelCount);
+    config.setPreferredOutputChannels(outputChannelCount);
+
+    DBG("Saved preferred devices: Input=" << setup.inputDeviceName << " (" << inputChannelCount
+                                          << " ch), Output=" << setup.outputDeviceName << " ("
+                                          << outputChannelCount << " ch)");
 }
 
 void AudioSettingsDialog::showDialog(juce::Component* parent,

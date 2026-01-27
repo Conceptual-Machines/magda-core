@@ -1134,19 +1134,6 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     // Settings menu callbacks
-    callbacks.onMidiSettings = [this]() {
-        // For now, show the same dialog - it has both audio and MIDI settings
-        if (!mainComponent)
-            return;
-        auto* engine = mainComponent->getAudioEngine();
-        if (!engine)
-            return;
-        auto* deviceManager = engine->getDeviceManager();
-        if (!deviceManager)
-            return;
-        AudioSettingsDialog::showDialog(this, deviceManager);
-    };
-
     callbacks.onPluginScan = [this]() {
         if (!mainComponent)
             return;

@@ -121,6 +121,15 @@ class TrackManager {
     std::vector<TrackId> getTopLevelTracks() const;
     std::vector<TrackId> getAllDescendants(TrackId trackId) const;
 
+    /**
+     * @brief Preview a MIDI note on a track (for keyboard audition)
+     * @param trackId Track to send note to
+     * @param noteNumber MIDI note number (0-127)
+     * @param velocity Velocity (0-127)
+     * @param isNoteOn True for note-on, false for note-off
+     */
+    void previewNote(TrackId trackId, int noteNumber, int velocity, bool isNoteOn);
+
     // Access
     const std::vector<TrackInfo>& getTracks() const {
         return tracks_;

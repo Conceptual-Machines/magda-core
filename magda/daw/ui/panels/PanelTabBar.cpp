@@ -29,6 +29,13 @@ SvgIconData getSvgForContentType(PanelContentType type) {
         case PanelContentType::TrackChain:
             // Use plug icon as placeholder for chain (could add dedicated icon later)
             return {BinaryData::plug_svg, BinaryData::plug_svgSize};
+        case PanelContentType::PianoRoll:
+            // Use script icon as placeholder for piano roll (could add dedicated icon later)
+            return {BinaryData::script_svg, BinaryData::script_svgSize};
+        case PanelContentType::WaveformEditor:
+            return {BinaryData::sinewave_svg, BinaryData::sinewave_svgSize};
+        case PanelContentType::Empty:
+            break;
     }
     return {};
 }

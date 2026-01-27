@@ -11,6 +11,9 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit) : engine_(engine), 
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
 
+    // Register as ClipManager listener
+    ClipManager::getInstance().addListener(this);
+
     // Master metering will be registered when playback context is available
     // (done in timerCallback when context exists)
 
@@ -29,8 +32,9 @@ AudioBridge::~AudioBridge() {
     // Stop timer immediately
     stopTimer();
 
-    // Remove listener to stop receiving notifications
+    // Remove listeners to stop receiving notifications
     TrackManager::getInstance().removeListener(this);
+    ClipManager::getInstance().removeListener(this);
 
     // NOTE: Plugin windows are now closed by PluginWindowManager BEFORE AudioBridge
     // is destroyed (in TracktionEngineWrapper::shutdown()). No window cleanup needed here.
@@ -148,6 +152,209 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
         }
     }
     DBG("  Device not found in any track!");
+}
+
+// =============================================================================
+// ClipManagerListener implementation
+// =============================================================================
+
+void AudioBridge::clipsChanged() {
+    DBG("AudioBridge::clipsChanged - clips list changed");
+
+    // If we're shutting down, don't attempt to modify the engine graph
+    if (isShuttingDown_.load(std::memory_order_acquire))
+        return;
+
+    // TODO: Properly reconcile added/removed clips with the engine
+    // Currently, deleting a clip in ClipManager will leave the old Tracktion clip
+    // playing/visible in the engine (and mappings may become stale).
+    // Need to detect removed clip IDs and call removeClipFromEngine, and
+    // optionally sync newly added clips. For now, clips are synced lazily
+    // when clipPropertyChanged() is called, which avoids rapid audio graph rebuilds.
+}
+
+void AudioBridge::clipPropertyChanged(ClipId clipId) {
+    // A specific clip's properties changed - sync to engine
+    DBG("AudioBridge::clipPropertyChanged - clipId=" << clipId);
+    syncClipToEngine(clipId);
+}
+
+void AudioBridge::clipSelectionChanged(ClipId clipId) {
+    // Selection changed - we don't need to do anything here
+    // The UI will handle this
+    juce::ignoreUnused(clipId);
+}
+
+// =============================================================================
+// Clip Synchronization
+// =============================================================================
+
+void AudioBridge::syncClipToEngine(ClipId clipId) {
+    DBG(">>> syncClipToEngine called for clipId=" << clipId);
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (!clip) {
+        DBG("syncClipToEngine: Clip not found: " << clipId);
+        return;
+    }
+
+    // Only handle MIDI clips for now
+    if (clip->type != ClipType::MIDI) {
+        DBG("syncClipToEngine: Skipping non-MIDI clip");
+        return;
+    }
+
+    // Get the Tracktion AudioTrack for this MAGDA track
+    auto* audioTrack = getAudioTrack(clip->trackId);
+    if (!audioTrack) {
+        DBG("syncClipToEngine: Tracktion track not found for MAGDA track: " << clip->trackId);
+        return;
+    }
+
+    DBG("syncClipToEngine: Found audio track for MAGDA track " << clip->trackId);
+
+    namespace te = tracktion;
+    te::MidiClip* midiClipPtr = nullptr;
+
+    // Check if clip already exists in Tracktion Engine
+    auto it = clipIdToEngineId_.find(clipId);
+    if (it != clipIdToEngineId_.end()) {
+        // Clip exists - find it and update
+        std::string engineId = it->second;
+
+        // Find the MidiClip in the track
+        for (auto* teClip : audioTrack->getClips()) {
+            if (teClip->itemID.toString().toStdString() == engineId) {
+                midiClipPtr = dynamic_cast<te::MidiClip*>(teClip);
+                break;
+            }
+        }
+
+        if (!midiClipPtr) {
+            DBG("syncClipToEngine: Clip " << clipId
+                                          << " mapping exists but clip not found in engine");
+            // Clear stale mapping and recreate
+            clipIdToEngineId_.erase(it);
+            engineIdToClipId_.erase(engineId);
+        } else {
+            DBG("syncClipToEngine: Updating existing clip " << clipId);
+        }
+    }
+
+    // Create clip if it doesn't exist
+    if (!midiClipPtr) {
+        auto timeRange =
+            te::TimeRange(te::TimePosition::fromSeconds(clip->startTime),
+                          te::TimePosition::fromSeconds(clip->startTime + clip->length));
+
+        auto clipRef = audioTrack->insertMIDIClip(timeRange, nullptr);
+        if (!clipRef) {
+            DBG("syncClipToEngine: Failed to create MIDI clip");
+            return;
+        }
+
+        midiClipPtr = clipRef.get();
+
+        // Store clip ID mapping (use clip's EditItemID as string)
+        std::string engineClipId = midiClipPtr->itemID.toString().toStdString();
+        clipIdToEngineId_[clipId] = engineClipId;
+        engineIdToClipId_[engineClipId] = clipId;
+
+        DBG("syncClipToEngine: Created new clip " << clipId);
+    }
+
+    // Update clip position/length
+    // CRITICAL: Use preserveSync=true to maintain the content offset
+    // When false, Tracktion adjusts the content offset which breaks note playback
+    midiClipPtr->setStart(te::TimePosition::fromSeconds(clip->startTime), true, false);
+    midiClipPtr->setEnd(te::TimePosition::fromSeconds(clip->startTime + clip->length), false);
+
+    // Force offset to 0 to ensure notes play from clip start
+    midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
+
+    // Clear existing notes and add all notes from ClipManager
+    auto& sequence = midiClipPtr->getSequence();
+    sequence.clear(nullptr);  // Clear all notes
+
+    // Get tempo info for conversion verification
+    auto& tempoSeq = midiClipPtr->edit.tempoSequence;
+    auto clipStartTime = te::TimePosition::fromSeconds(clip->startTime);
+    auto clipStartBeat = tempoSeq.timeToBeats(clipStartTime);
+
+    DBG("=== syncClipToEngine Debug ===");
+    DBG("Clip ID: " << clipId);
+    DBG("Clip startTime: " << clip->startTime << "s, length: " << clip->length << "s");
+    DBG("Clip END time: " << (clip->startTime + clip->length) << "s");
+    DBG("Clip startBeat on timeline: " << clipStartBeat.inBeats());
+    DBG("Current tempo: " << tempoSeq.getTempoAt(clipStartTime).getBpm());
+    DBG("Number of notes: " << clip->midiNotes.size());
+
+    // Calculate clip end beat for boundary checking
+    auto clipEndTime = te::TimePosition::fromSeconds(clip->startTime + clip->length);
+    auto clipEndBeat = tempoSeq.timeToBeats(clipEndTime);
+    double clipLengthInBeats = clipEndBeat.inBeats() - clipStartBeat.inBeats();
+    DBG("Clip length in beats: " << clipLengthInBeats);
+
+    for (const auto& note : clip->midiNotes) {
+        te::BeatPosition startBeat = te::BeatPosition::fromBeats(note.startBeat);
+        te::BeatDuration lengthBeats = te::BeatDuration::fromBeats(note.lengthBeats);
+
+        // Convert to absolute timeline time for verification
+        auto noteAbsoluteTime = tempoSeq.beatsToTime(
+            te::BeatPosition::fromBeats(clipStartBeat.inBeats() + note.startBeat));
+        auto noteEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(
+            clipStartBeat.inBeats() + note.startBeat + note.lengthBeats));
+
+        // Check if note is within clip boundary
+        bool noteStartWithinClip = note.startBeat < clipLengthInBeats;
+        bool noteEndWithinClip = (note.startBeat + note.lengthBeats) <= clipLengthInBeats;
+
+        DBG("  Note " << note.noteNumber << ": clip-relative beat=" << note.startBeat
+                      << ", length=" << note.lengthBeats << ", velocity=" << note.velocity);
+        DBG("    -> Absolute timeline: " << noteAbsoluteTime.inSeconds() << "s to "
+                                         << noteEndTime.inSeconds() << "s");
+        DBG("    -> Within clip boundary? start=" << (noteStartWithinClip ? "YES" : "NO")
+                                                  << ", end="
+                                                  << (noteEndWithinClip ? "YES" : "NO"));
+
+        sequence.addNote(note.noteNumber, startBeat, lengthBeats, note.velocity,
+                         0,         // colour index
+                         nullptr);  // undo manager
+    }
+
+    DBG("syncClipToEngine: Synced clip " << clipId << " with " << clip->midiNotes.size()
+                                         << " notes");
+}
+
+void AudioBridge::removeClipFromEngine(ClipId clipId) {
+    // Remove clip from engine
+    auto it = clipIdToEngineId_.find(clipId);
+    if (it == clipIdToEngineId_.end()) {
+        DBG("removeClipFromEngine: Clip not in engine: " << clipId);
+        return;
+    }
+
+    std::string engineId = it->second;
+
+    // Find the clip in Tracktion Engine and remove it
+    // We need to find which track contains this clip
+    for (auto* track : tracktion::getAudioTracks(edit_)) {
+        for (auto* clip : track->getClips()) {
+            if (clip->itemID.toString().toStdString() == engineId) {
+                // Found the clip - remove it
+                clip->removeFromParent();
+
+                // Remove from mappings
+                clipIdToEngineId_.erase(it);
+                engineIdToClipId_.erase(engineId);
+
+                DBG("removeClipFromEngine: Removed clip " << clipId);
+                return;
+            }
+        }
+    }
+
+    DBG("removeClipFromEngine: Clip not found in Tracktion Engine: " << engineId);
 }
 
 // =============================================================================
@@ -619,6 +826,9 @@ void AudioBridge::updateTransportState(bool isPlaying, bool justStarted, bool ju
             // Test Tone is always transport-synced
             // Simply bypass when stopped, enable when playing
             toneProc->setBypassed(!isPlaying);
+            DBG("AudioBridge::updateTransportState - Tone generator device "
+                << deviceId << " bypassed=" << (!isPlaying ? "YES" : "NO")
+                << " (isPlaying=" << (isPlaying ? "YES" : "NO") << ")");
         }
     }
 }
@@ -767,6 +977,16 @@ te::Plugin::Ptr AudioBridge::createToneGenerator(te::AudioTrack* track) {
     auto plugin = edit_.getPluginCache().createNewPlugin(te::ToneGeneratorPlugin::xmlTypeName, {});
     if (plugin) {
         track->pluginList.insertPlugin(plugin, -1, nullptr);
+        DBG("AudioBridge::createToneGenerator - Created tone generator on track: " +
+            track->getName());
+        DBG("  Plugin enabled: " << (plugin->isEnabled() ? "YES" : "NO"));
+        if (auto* outputDevice = track->getOutput().getOutputDevice(false)) {
+            DBG("  Track output device: " + outputDevice->getName());
+        } else {
+            DBG("  Track output device: NULL!");
+        }
+    } else {
+        DBG("AudioBridge::createToneGenerator - FAILED to create tone generator!");
     }
     return plugin;
 }

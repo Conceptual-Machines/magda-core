@@ -101,8 +101,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addItem(Preferences, "Preferences...", true, false);
 #endif
     } else if (menuName == "Settings") {
-        menu.addItem(AudioSettings, "Audio Settings...", true, false);
-        menu.addItem(MidiSettings, "MIDI Settings...", true, false);
+        menu.addItem(AudioSettings, "Audio/MIDI Settings...", true, false);
         menu.addSeparator();
 
         // Plugin submenu
@@ -242,10 +241,6 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case AudioSettings:
             if (callbacks_.onAudioSettings)
                 callbacks_.onAudioSettings();
-            break;
-        case MidiSettings:
-            if (callbacks_.onMidiSettings)
-                callbacks_.onMidiSettings();
             break;
         case PluginScan:
             if (callbacks_.onPluginScan)

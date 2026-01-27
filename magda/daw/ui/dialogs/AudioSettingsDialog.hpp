@@ -54,10 +54,23 @@ class AudioSettingsDialog : public juce::Component {
     static void showDialog(juce::Component* parent, juce::AudioDeviceManager* deviceManager);
 
   private:
+    void populateDeviceLists();
+    void onInputDeviceSelected();
+    void onOutputDeviceSelected();
+    void savePreferencesIfNeeded();
+
     std::unique_ptr<juce::AudioDeviceSelectorComponent> deviceSelector_;
     std::unique_ptr<CustomChannelSelector> inputChannelSelector_;
     std::unique_ptr<CustomChannelSelector> outputChannelSelector_;
+
+    juce::Label inputDeviceLabel_;
+    juce::ComboBox inputDeviceComboBox_;
+    juce::Label outputDeviceLabel_;
+    juce::ComboBox outputDeviceComboBox_;
+    juce::ToggleButton setAsPreferredCheckbox_;
+
     juce::TextButton closeButton_;
+    juce::Label deviceNameLabel_;
     juce::AudioDeviceManager* deviceManager_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioSettingsDialog)

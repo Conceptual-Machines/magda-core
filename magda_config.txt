@@ -1,9 +1,0 @@
-defaultTimelineLength=300
-defaultZoomViewDuration=60
-minZoomLevel=0.1
-maxZoomLevel=10000
-zoomInSensitivity=25
-zoomOutSensitivity=40
-zoomInSensitivityShift=8
-zoomOutSensitivityShift=8
-scrollbarOnLeft=0

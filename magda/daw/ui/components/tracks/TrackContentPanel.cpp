@@ -900,6 +900,10 @@ void TrackContentPanel::rebuildClipComponents() {
             if (!clip)
                 return;
 
+            // Ensure clip is selected before opening editor
+            // (onClipSelected may have already been called, but this ensures it)
+            ClipManager::getInstance().setSelectedClip(id);
+
             auto& panelController = daw::ui::PanelController::getInstance();
 
             // Expand the bottom panel if collapsed
@@ -1001,16 +1005,11 @@ void TrackContentPanel::createClipFromTimeSelection() {
             if (track) {
                 double length = selection.endTime - selection.startTime;
 
-                // Determine clip type based on track type
-                if (canContainMIDI(track->type)) {
-                    auto cmd = std::make_unique<CreateClipCommand>(ClipType::MIDI, trackId,
-                                                                   selection.startTime, length);
-                    UndoManager::getInstance().executeCommand(std::move(cmd));
-                } else if (canContainAudio(track->type)) {
-                    auto cmd = std::make_unique<CreateClipCommand>(ClipType::Audio, trackId,
-                                                                   selection.startTime, length, "");
-                    UndoManager::getInstance().executeCommand(std::move(cmd));
-                }
+                // Create MIDI clip by default (tracks are hybrid - can contain both MIDI and audio)
+                // TODO: Add UI to choose clip type when needed
+                auto cmd = std::make_unique<CreateClipCommand>(ClipType::MIDI, trackId,
+                                                               selection.startTime, length);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
             }
         }
     }

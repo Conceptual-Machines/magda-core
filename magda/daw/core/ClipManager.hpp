@@ -92,6 +92,12 @@ class ClipManager {
     void forceNotifyClipsChanged();
 
     /**
+     * @brief Force a clip property changed notification for a specific clip
+     * Used by commands that directly modify clip data without going through ClipManager methods
+     */
+    void forceNotifyClipPropertyChanged(ClipId clipId);
+
+    /**
      * @brief Duplicate a clip (places copy right after original)
      * @return The ID of the new clip
      */

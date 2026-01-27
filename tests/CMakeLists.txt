@@ -3,10 +3,12 @@ set(TEST_SOURCES
     test_audio_bridge.cpp
     test_command.cpp
     test_interfaces.cpp
+    test_midi_clip_sync.cpp
     test_nested_racks.cpp
     test_modulation.cpp
     test_parameter_utils.cpp
     test_plugin_loading.cpp
+    test_plugin_format.cpp
     test_plugin_window_manager.cpp
     test_device_parameter_pagination.cpp
 )

@@ -33,7 +33,6 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
 
         // Settings menu
         std::function<void()> onAudioSettings;
-        std::function<void()> onMidiSettings;
         std::function<void()> onPluginScan;
         std::function<void()> onPluginClear;
         std::function<void()> onPluginOpenFolder;
@@ -134,7 +133,6 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
 
         // Settings menu (800-899)
         AudioSettings = 800,
-        MidiSettings,
         PluginScan = 810,
         PluginClear,
         PluginOpenFolder,

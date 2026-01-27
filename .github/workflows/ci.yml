@@ -129,13 +129,19 @@ jobs:
     - name: Check code formatting
       run: |
         echo "Checking code formatting with clang-format..."
-        find magda/daw magda/agents tests -name "*.cpp" -o -name "*.hpp" -o -name "*.h" 2>/dev/null | \
-          xargs clang-format --dry-run --Werror 2>&1 | tee format-check.log || true
+        echo "Running: find + clang-format --dry-run --Werror"
 
-        if grep -q "warning:" format-check.log; then
-          echo "❌ Format check found issues"
-          echo "Run make format to fix formatting issues"
-          exit 1
-        else
+        # Run clang-format check and capture output
+        # --Werror makes formatting issues return non-zero exit code
+        if find magda/daw magda/agents tests -name "*.cpp" -o -name "*.hpp" -o -name "*.h" 2>/dev/null | \
+          xargs clang-format --dry-run --Werror 2>&1 | tee format-check.log; then
           echo "✅ Format check passed!"
+        else
+          echo ""
+          echo "❌ Format check found issues"
+          echo "Files with formatting problems:"
+          cat format-check.log
+          echo ""
+          echo "To fix these issues, run: make format"
+          exit 1
         fi

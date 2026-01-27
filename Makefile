@@ -143,16 +143,92 @@ format:
 		echo "❌ clang-format not found. Please install it first."; \
 	fi
 
-# Lint code
+# Lint code with clang-tidy (analyze all source files)
 .PHONY: lint
 lint:
-	@echo "🔍 Linting code..."
-	@if command -v clang-tidy >/dev/null 2>&1; then \
-		find . -name "*.cpp" | grep -E "(daw|agents|tests)" | xargs clang-tidy; \
-		echo "✅ Code linting complete"; \
-	else \
-		echo "❌ clang-tidy not found. Please install it first."; \
+	@echo "🔍 Running clang-tidy on all source files..."
+	@if [ ! -f $(BUILD_DIR)/compile_commands.json ]; then \
+		echo "❌ compile_commands.json not found. Run 'make debug' first."; \
+		exit 1; \
 	fi
+	@if [ ! -f /opt/homebrew/opt/llvm/bin/clang-tidy ]; then \
+		echo "❌ clang-tidy not found at /opt/homebrew/opt/llvm/bin/clang-tidy"; \
+		echo "Install with: brew install llvm"; \
+		exit 1; \
+	fi
+	@echo "📋 Analyzing magda/daw sources..."
+	@find magda/daw -name "*.cpp" -type f -exec \
+		/opt/homebrew/opt/llvm/bin/clang-tidy \
+		{} \
+		--config-file=.clang-tidy \
+		--format-style=file \
+		-p=$(BUILD_DIR) \
+		--quiet \;
+	@echo "✅ Code analysis complete"
+
+# Lint recently modified files only
+.PHONY: lint-changed
+lint-changed:
+	@echo "🔍 Running clang-tidy on modified files..."
+	@if [ ! -f $(BUILD_DIR)/compile_commands.json ]; then \
+		echo "❌ compile_commands.json not found. Run 'make debug' first."; \
+		exit 1; \
+	fi
+	@CHANGED_FILES=$$(git diff --name-only --diff-filter=d HEAD | grep '\.cpp$$' || true); \
+	if [ -z "$$CHANGED_FILES" ]; then \
+		echo "No modified .cpp files found"; \
+	else \
+		echo "Analyzing: $$CHANGED_FILES"; \
+		for file in $$CHANGED_FILES; do \
+			/opt/homebrew/opt/llvm/bin/clang-tidy \
+				$$file \
+				--config-file=.clang-tidy \
+				--format-style=file \
+				-p=$(BUILD_DIR) \
+				--quiet; \
+		done; \
+	fi
+	@echo "✅ Analysis complete"
+
+# Lint with automatic fixes (use with caution)
+.PHONY: lint-fix
+lint-fix:
+	@echo "🔧 Running clang-tidy with automatic fixes..."
+	@if [ ! -f $(BUILD_DIR)/compile_commands.json ]; then \
+		echo "❌ compile_commands.json not found. Run 'make debug' first."; \
+		exit 1; \
+	fi
+	@echo "⚠️  This will modify your source files!"
+	@read -p "Continue? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		find magda/daw -name "*.cpp" -type f -exec \
+			/opt/homebrew/opt/llvm/bin/clang-tidy \
+			{} \
+			--config-file=.clang-tidy \
+			--format-style=file \
+			-p=$(BUILD_DIR) \
+			--fix \
+			--fix-errors \;; \
+		echo "✅ Fixes applied"; \
+	else \
+		echo "❌ Cancelled"; \
+	fi
+
+# Lint specific file
+.PHONY: lint-file
+lint-file:
+	@if [ -z "$(FILE)" ]; then \
+		echo "❌ Usage: make lint-file FILE=path/to/file.cpp"; \
+		exit 1; \
+	fi
+	@echo "🔍 Analyzing $(FILE)..."
+	@/opt/homebrew/opt/llvm/bin/clang-tidy \
+		$(FILE) \
+		--config-file=.clang-tidy \
+		--format-style=file \
+		-p=$(BUILD_DIR)
+	@echo "✅ Analysis complete"
 
 # Show help
 .PHONY: help
@@ -181,10 +257,15 @@ help:
 	@echo "  test-threading - Run thread safety tests only"
 	@echo "  test-list      - List all available tests"
 	@echo ""
+	@echo "Code Quality targets:"
+	@echo "  format         - Format code with clang-format"
+	@echo "  lint           - Analyze all source files with clang-tidy"
+	@echo "  lint-changed   - Analyze only modified files"
+	@echo "  lint-fix       - Apply automatic fixes (use with caution)"
+	@echo "  lint-file      - Analyze specific file (usage: make lint-file FILE=path/to/file.cpp)"
+	@echo ""
 	@echo "Other targets:"
 	@echo "  setup          - Initialize git submodules"
-	@echo "  format         - Format code with clang-format"
-	@echo "  lint           - Lint code with clang-tidy"
 	@echo "  help           - Show this help message"
 	@echo ""
 	@echo "Build directories:"

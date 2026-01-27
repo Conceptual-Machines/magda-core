@@ -10,6 +10,8 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files
+        args: ['--maxkb=500']
+        exclude: ^assets/.*\.png$
       - id: check-case-conflict
       - id: check-merge-conflict
       - id: check-symlinks
@@ -50,7 +52,7 @@ repos:
       - id: clang-tidy-check
         name: Clang-Tidy Check
         entry: bash
-        args: 
+        args:
           - -c
           - |
             if command -v /opt/homebrew/opt/llvm/bin/clang-tidy >/dev/null 2>&1; then
@@ -81,4 +83,4 @@ repos:
 
 # Configuration
 default_stages: [commit]
-minimum_pre_commit_version: 2.20.0 
+minimum_pre_commit_version: 2.20.0

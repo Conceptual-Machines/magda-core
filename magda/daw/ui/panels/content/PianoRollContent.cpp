@@ -6,6 +6,7 @@
 #include "BinaryData.h"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/pianoroll/PianoRollGridComponent.hpp"
@@ -157,6 +158,28 @@ PianoRollContent::PianoRollContent() {
         viewport_->setViewPosition(viewport_->getViewPositionX(), newScrollY);
     };
 
+    // Set up note preview callback for keyboard click-to-play
+    keyboard_->onNotePreview = [this](int noteNumber, int velocity, bool isNoteOn) {
+        DBG("PianoRollContent: Note preview callback - Note="
+            << noteNumber << ", Velocity=" << velocity << ", On=" << (isNoteOn ? "YES" : "NO"));
+
+        // Get track ID from currently edited clip
+        if (editingClipId_ != magda::INVALID_CLIP_ID) {
+            const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+            if (clip && clip->trackId != magda::INVALID_TRACK_ID) {
+                DBG("PianoRollContent: Calling TrackManager::previewNote for track "
+                    << clip->trackId);
+                // Preview note through track's instruments
+                magda::TrackManager::getInstance().previewNote(clip->trackId, noteNumber, velocity,
+                                                               isNoteOn);
+            } else {
+                DBG("PianoRollContent: No valid clip or track ID");
+            }
+        } else {
+            DBG("PianoRollContent: No clip being edited");
+        }
+    };
+
     addAndMakeVisible(keyboard_.get());
 
     // Create viewport for scrolling (custom viewport that notifies on scroll)
@@ -229,6 +252,11 @@ PianoRollContent::PianoRollContent() {
     // Register as ClipManager listener
     magda::ClipManager::getInstance().addListener(this);
 
+    // Register as TimelineController listener for playhead updates
+    if (auto* controller = magda::TimelineController::getCurrent()) {
+        controller->addListener(this);
+    }
+
     // Check if there's already a selected MIDI clip
     magda::ClipId selectedClip = magda::ClipManager::getInstance().getSelectedClip();
     if (selectedClip != magda::INVALID_CLIP_ID) {
@@ -244,41 +272,45 @@ PianoRollContent::PianoRollContent() {
 PianoRollContent::~PianoRollContent() {
     timeModeButton_->setLookAndFeel(nullptr);
     magda::ClipManager::getInstance().removeListener(this);
+
+    // Unregister from TimelineController
+    if (auto* controller = magda::TimelineController::getCurrent()) {
+        controller->removeListener(this);
+    }
 }
 
 void PianoRollContent::setupGridCallbacks() {
     // Handle note addition
-    gridComponent_->onNoteAdded = [this](magda::ClipId clipId, double beat, int noteNumber,
-                                         int velocity) {
+    gridComponent_->onNoteAdded = [](magda::ClipId clipId, double beat, int noteNumber,
+                                     int velocity) {
         double defaultLength = 1.0;
         auto cmd = std::make_unique<magda::AddMidiNoteCommand>(clipId, beat, noteNumber,
                                                                defaultLength, velocity);
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
-        gridComponent_->refreshNotes();
+        // Note: UI refresh handled via ClipManagerListener::clipPropertyChanged()
     };
 
     // Handle note movement
-    gridComponent_->onNoteMoved = [this](magda::ClipId clipId, size_t noteIndex, double newBeat,
-                                         int newNoteNumber) {
+    gridComponent_->onNoteMoved = [](magda::ClipId clipId, size_t noteIndex, double newBeat,
+                                     int newNoteNumber) {
         auto cmd =
             std::make_unique<magda::MoveMidiNoteCommand>(clipId, noteIndex, newBeat, newNoteNumber);
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
-        gridComponent_->refreshNotes();
+        // Note: UI refresh handled via ClipManagerListener::clipPropertyChanged()
     };
 
     // Handle note resizing
-    gridComponent_->onNoteResized = [this](magda::ClipId clipId, size_t noteIndex,
-                                           double newLength) {
+    gridComponent_->onNoteResized = [](magda::ClipId clipId, size_t noteIndex, double newLength) {
         auto cmd = std::make_unique<magda::ResizeMidiNoteCommand>(clipId, noteIndex, newLength);
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
-        gridComponent_->refreshNotes();
+        // Note: UI refresh handled via ClipManagerListener::clipPropertyChanged()
     };
 
     // Handle note deletion
-    gridComponent_->onNoteDeleted = [this](magda::ClipId clipId, size_t noteIndex) {
+    gridComponent_->onNoteDeleted = [](magda::ClipId clipId, size_t noteIndex) {
         auto cmd = std::make_unique<magda::DeleteMidiNoteCommand>(clipId, noteIndex);
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
-        gridComponent_->refreshNotes();
+        // Note: UI refresh handled via ClipManagerListener::clipPropertyChanged()
     };
 
     // Handle note selection - update SelectionManager
@@ -646,11 +678,23 @@ void PianoRollContent::clipsChanged() {
 
 void PianoRollContent::clipPropertyChanged(magda::ClipId clipId) {
     if (clipId == editingClipId_) {
-        gridComponent_->refreshNotes();
-        updateGridSize();
-        updateTimeRuler();
-        updateVelocityLane();
-        repaint();
+        // Defer UI refresh asynchronously to prevent deleting components during event handling
+        // This is the core of the Observer pattern - data changes notify listeners,
+        // and listeners schedule their own UI updates safely
+        // Use SafePointer to avoid use-after-free if component is destroyed before callback runs
+        juce::Component::SafePointer<PianoRollContent> safeThis(this);
+        juce::MessageManager::callAsync([safeThis, clipId]() {
+            if (auto* self = safeThis.getComponent()) {
+                // Verify clip is still being edited (could have changed during async delay)
+                if (clipId == self->editingClipId_) {
+                    self->gridComponent_->refreshNotes();
+                    self->updateGridSize();
+                    self->updateTimeRuler();
+                    self->updateVelocityLane();
+                    self->repaint();
+                }
+            }
+        });
     }
 }
 
@@ -694,6 +738,27 @@ void PianoRollContent::clipDragPreview(magda::ClipId clipId, double previewStart
 
     gridComponent_->setClipStartBeats(clipStartBeats);
     gridComponent_->setClipLengthBeats(clipLengthBeats);
+}
+
+// ============================================================================
+// TimelineStateListener
+// ============================================================================
+
+void PianoRollContent::timelineStateChanged(const magda::TimelineState& state) {
+    // General state changes (tempo, time signature, etc.)
+    updateTimeRuler();
+    updateGridSize();
+    repaint();
+}
+
+void PianoRollContent::playheadStateChanged(const magda::TimelineState& state) {
+    // Update grid component with current playback position
+    if (gridComponent_) {
+        gridComponent_->setPlayheadPosition(state.playhead.playbackPosition);
+    }
+    if (timeRuler_) {
+        timeRuler_->setPlayheadPosition(state.playhead.playbackPosition);
+    }
 }
 
 // ============================================================================

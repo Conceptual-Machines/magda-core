@@ -71,7 +71,7 @@ void MoveMidiNoteCommand::execute() {
     clip->midiNotes[noteIndex_].startBeat = newStartBeat_;
     clip->midiNotes[noteIndex_].noteNumber = newNoteNumber_;
 
-    clipManager.forceNotifyClipsChanged();
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
     executed_ = true;
 }
 
@@ -90,7 +90,7 @@ void MoveMidiNoteCommand::undo() {
     clip->midiNotes[noteIndex_].startBeat = oldStartBeat_;
     clip->midiNotes[noteIndex_].noteNumber = oldNoteNumber_;
 
-    clipManager.forceNotifyClipsChanged();
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
 }
 
 bool MoveMidiNoteCommand::canMergeWith(const UndoableCommand* other) const {
@@ -129,7 +129,7 @@ void ResizeMidiNoteCommand::execute() {
 
     clip->midiNotes[noteIndex_].lengthBeats = newLengthBeats_;
 
-    clipManager.forceNotifyClipsChanged();
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
     executed_ = true;
 }
 
@@ -147,7 +147,7 @@ void ResizeMidiNoteCommand::undo() {
 
     clip->midiNotes[noteIndex_].lengthBeats = oldLengthBeats_;
 
-    clipManager.forceNotifyClipsChanged();
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
 }
 
 bool ResizeMidiNoteCommand::canMergeWith(const UndoableCommand* other) const {
@@ -198,7 +198,7 @@ void DeleteMidiNoteCommand::undo() {
     clip->midiNotes.insert(clip->midiNotes.begin() + static_cast<std::ptrdiff_t>(insertPos),
                            deletedNote_);
 
-    clipManager.forceNotifyClipsChanged();
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
 }
 
 // ============================================================================
@@ -225,7 +225,7 @@ void SetMidiNoteVelocityCommand::execute() {
 
     clip->midiNotes[noteIndex_].velocity = newVelocity_;
 
-    clipManager.forceNotifyClipsChanged();
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
     executed_ = true;
 }
 
@@ -243,7 +243,7 @@ void SetMidiNoteVelocityCommand::undo() {
 
     clip->midiNotes[noteIndex_].velocity = oldVelocity_;
 
-    clipManager.forceNotifyClipsChanged();
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
 }
 
 bool SetMidiNoteVelocityCommand::canMergeWith(const UndoableCommand* other) const {

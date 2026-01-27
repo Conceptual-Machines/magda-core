@@ -4,6 +4,7 @@
 
 #include "../audio/AudioBridge.hpp"
 #include "../audio/MidiBridge.hpp"
+#include "../core/Config.hpp"
 #include "../core/DeviceInfo.hpp"
 #include "../core/TrackManager.hpp"
 #include "MagdaUIBehaviour.hpp"
@@ -54,11 +55,114 @@ bool TracktionEngineWrapper::initialize() {
         // Initialize the DeviceManager FIRST - this creates MIDI device wrappers
         // Parameters: default number of input channels, default number of output channels
         auto& dm = engine_->getDeviceManager();
-        dm.initialise(0, 2);
-        DBG("DeviceManager initialized");
+
+        // Get JUCE's AudioDeviceManager to access device list
+        auto& juceDeviceManager = dm.deviceManager;
+
+        // Log available audio device types (CoreAudio on macOS)
+        DBG("Available audio device types:");
+        for (auto* type : juceDeviceManager.getAvailableDeviceTypes()) {
+            DBG("  - " << type->getTypeName());
+
+            // Log devices for each type
+            type->scanForDevices();
+            auto inputNames = type->getDeviceNames(true);    // inputs
+            auto outputNames = type->getDeviceNames(false);  // outputs
+
+            DBG("    Input devices:");
+            for (const auto& name : inputNames) {
+                DBG("      - " << name);
+            }
+            DBG("    Output devices:");
+            for (const auto& name : outputNames) {
+                DBG("      - " << name);
+            }
+        }
+
+        // Get user's preferred audio device settings from Config
+        auto& config = magda::Config::getInstance();
+        std::string preferredInputDevice = config.getPreferredInputDevice();
+        std::string preferredOutputDevice = config.getPreferredOutputDevice();
+        int preferredInputs = config.getPreferredInputChannels();
+        int preferredOutputs = config.getPreferredOutputChannels();
+
+        // Initialize DeviceManager with preferred channel counts
+        // If preference is 0, use system defaults (0, 2)
+        int inputChannels = (preferredInputs > 0) ? preferredInputs : 0;
+        int outputChannels = (preferredOutputs > 0) ? preferredOutputs : 2;
+        dm.initialise(inputChannels, outputChannels);
+        DBG("DeviceManager initialized with " << inputChannels << " input / " << outputChannels
+                                              << " output channels");
+
+        // Try to select preferred audio devices if specified
+        if (!preferredInputDevice.empty() || !preferredOutputDevice.empty()) {
+            auto& deviceTypes = juceDeviceManager.getAvailableDeviceTypes();
+            if (!deviceTypes.isEmpty()) {
+                auto* deviceType = deviceTypes[0];  // Use first available type (CoreAudio on macOS)
+                deviceType->scanForDevices();
+
+                auto outputDevices = deviceType->getDeviceNames(false);  // outputs
+                auto inputDevices = deviceType->getDeviceNames(true);    // inputs
+
+                juce::AudioDeviceManager::AudioDeviceSetup setup;
+                juceDeviceManager.getAudioDeviceSetup(setup);
+
+                // Set input device if specified
+                if (!preferredInputDevice.empty() && inputDevices.contains(preferredInputDevice)) {
+                    setup.inputDeviceName = preferredInputDevice;
+                    DBG("Found preferred input device: " << preferredInputDevice);
+                }
+
+                // Set output device if specified
+                if (!preferredOutputDevice.empty() &&
+                    outputDevices.contains(preferredOutputDevice)) {
+                    setup.outputDeviceName = preferredOutputDevice;
+                    DBG("Found preferred output device: " << preferredOutputDevice);
+                }
+
+                // Enable channels based on preference
+                // Only override channel configuration if user specified a preference (> 0)
+                // Otherwise, keep the existing channel setup (device defaults)
+                if (preferredInputs > 0) {
+                    setup.inputChannels.clear();
+                    for (int i = 0; i < preferredInputs; ++i) {
+                        setup.inputChannels.setBit(i, true);
+                    }
+                }
+
+                if (preferredOutputs > 0) {
+                    setup.outputChannels.clear();
+                    for (int i = 0; i < preferredOutputs; ++i) {
+                        setup.outputChannels.setBit(i, true);
+                    }
+                }
+
+                // Try to set the devices
+                auto result = juceDeviceManager.setAudioDeviceSetup(setup, true);
+                if (result.isEmpty()) {
+                    DBG("Successfully selected preferred devices - Input: "
+                        << setup.inputDeviceName << " (" << preferredInputs << " ch), Output: "
+                        << setup.outputDeviceName << " (" << preferredOutputs << " ch)");
+                } else {
+                    DBG("Failed to select preferred devices: " << result);
+                }
+            }
+        }
+
+        // Log currently selected device
+        if (auto* currentDevice = juceDeviceManager.getCurrentAudioDevice()) {
+            DBG("Current audio device: " + currentDevice->getName());
+            DBG("  Type: " + currentDevice->getTypeName());
+            DBG("  Sample rate: " + juce::String(currentDevice->getCurrentSampleRate()));
+            DBG("  Buffer size: " + juce::String(currentDevice->getCurrentBufferSizeSamples()));
+            DBG("  Input channels: " + juce::String(currentDevice->getInputChannelNames().size()));
+            DBG("  Output channels: " +
+                juce::String(currentDevice->getOutputChannelNames().size()));
+        } else {
+            DBG("WARNING: No audio device selected!");
+        }
 
         // Enable MIDI devices at JUCE level - this must be done so TE picks them up
-        auto& juceDeviceManager = dm.deviceManager;
         auto midiInputs = juce::MidiInput::getAvailableDevices();
         DBG("JUCE MIDI inputs available: " << midiInputs.size());
         for (const auto& midiInput : midiInputs) {
@@ -84,11 +188,8 @@ bool TracktionEngineWrapper::initialize() {
             }
         }
 
-        // Disable all wave input devices to avoid channel mismatch assertions
-        // We don't need audio inputs for playback - they can be enabled explicitly when needed
-        for (auto* waveInput : dm.getWaveInputDevices()) {
-            waveInput->setEnabled(false);
-        }
+        // Note: Audio inputs are now enabled by default (changed from previous behavior)
+        // Users can configure them via Audio Settings dialog
 
         // Create a temporary Edit (project) so transport methods work
         auto editFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
@@ -132,8 +233,9 @@ bool TracktionEngineWrapper::initialize() {
             // Must be created AFTER AudioBridge, destroyed BEFORE AudioBridge
             pluginWindowManager_ = std::make_unique<PluginWindowManager>(*engine_, *currentEdit_);
 
-            // Tell AudioBridge about the window manager for delegation
+            // Tell AudioBridge about the window manager and engine wrapper for delegation
             audioBridge_->setPluginWindowManager(pluginWindowManager_.get());
+            audioBridge_->setEngineWrapper(this);
 
             // Enable all MIDI input devices (redundant now but keeps the API consistent)
             audioBridge_->enableAllMidiInputDevices();
@@ -217,6 +319,52 @@ void TracktionEngineWrapper::shutdown() {
 
     std::cout << "Tracktion Engine shutdown complete" << std::endl;
 }
+
+// =============================================================================
+// PDC Query Methods
+// =============================================================================
+
+double TracktionEngineWrapper::getPluginLatencySeconds(const std::string& effect_id) const {
+    // TODO: Implement when we have effect tracking
+    // For now, iterate all tracks and their plugins to find by ID
+    juce::ignoreUnused(effect_id);
+    return 0.0;
+}
+
+double TracktionEngineWrapper::getGlobalLatencySeconds() const {
+    if (!currentEdit_) {
+        return 0.0;
+    }
+
+    // Get the playback context which contains the audio graph
+    auto* context = currentEdit_->getCurrentPlaybackContext();
+    if (!context) {
+        return 0.0;
+    }
+
+    // Tracktion Engine calculates PDC automatically and stores max latency
+    // The easiest approach is to iterate all tracks and find max plugin latency
+    double maxLatency = 0.0;
+
+    for (auto* track : currentEdit_->getTrackList()) {
+        if (auto* audioTrack = dynamic_cast<tracktion::AudioTrack*>(track)) {
+            // Check all plugins on this track
+            for (auto* plugin : audioTrack->pluginList) {
+                // Use base Plugin class method (works for all plugin types)
+                maxLatency = std::max(maxLatency, plugin->getLatencySeconds());
+            }
+        }
+    }
+
+    // Add device latency
+    maxLatency += engine_->getDeviceManager().getOutputLatencySeconds();
+
+    return maxLatency;
+}
+
+// =============================================================================
+// Change Listener
+// =============================================================================
 
 void TracktionEngineWrapper::changeListenerCallback(juce::ChangeBroadcaster* source) {
     // DeviceManager changed - this happens during MIDI device scanning
@@ -342,7 +490,13 @@ void TracktionEngineWrapper::play() {
     }
 
     if (currentEdit_) {
-        currentEdit_->getTransport().play(false);
+        auto& transport = currentEdit_->getTransport();
+
+        // Tracktion Engine handles PDC (Plugin Delay Compensation) internally
+        // by analyzing the playback graph and shifting audio streams accordingly.
+        // Notes are stored clip-relative, so they play at the correct absolute time
+        // regardless of PDC. No pre-roll needed!
+        transport.play(false);
         std::cout << "Playback started" << std::endl;
     }
 }
@@ -708,12 +862,125 @@ bool TracktionEngineWrapper::trackExists(const std::string& track_id) const {
     return trackMap_.find(track_id) != trackMap_.end();
 }
 
+void TracktionEngineWrapper::previewNoteOnTrack(const std::string& track_id, int noteNumber,
+                                                int velocity, bool isNoteOn) {
+    DBG("TracktionEngineWrapper::previewNoteOnTrack - Track="
+        << track_id << ", Note=" << noteNumber << ", Velocity=" << velocity
+        << ", On=" << (isNoteOn ? "YES" : "NO"));
+
+    if (!audioBridge_) {
+        DBG("TracktionEngineWrapper: WARNING - No AudioBridge!");
+        return;
+    }
+
+    // Convert string track ID to integer (MAGDA TrackId) with validation
+    int magdaTrackId = 0;
+    try {
+        magdaTrackId = std::stoi(track_id);
+    } catch (const std::exception& e) {
+        DBG("TracktionEngineWrapper: WARNING - Invalid track ID '"
+            << track_id << "' passed to previewNoteOnTrack: " << e.what());
+        return;
+    }
+    DBG("TracktionEngineWrapper: Looking up MAGDA track ID: " << magdaTrackId);
+
+    // Use AudioBridge to get the Tracktion AudioTrack
+    auto* audioTrack = audioBridge_->getAudioTrack(magdaTrackId);
+    if (!audioTrack) {
+        DBG("TracktionEngineWrapper: WARNING - Track not found in AudioBridge!");
+        return;
+    }
+
+    DBG("TracktionEngineWrapper: Track found, injecting MIDI");
+
+    // Ensure MIDI input device is in monitoring mode (always audible)
+    auto& midiInput = audioTrack->getMidiInputDevice();
+    auto currentMode = midiInput.getMonitorMode();
+    DBG("TracktionEngineWrapper: Current monitor mode: " << (int)currentMode);
+
+    if (currentMode != tracktion::InputDevice::MonitorMode::on) {
+        DBG("TracktionEngineWrapper: Enabling monitor mode");
+        midiInput.setMonitorMode(tracktion::InputDevice::MonitorMode::on);
+    }
+
+    // Create MIDI message
+    juce::MidiMessage message =
+        isNoteOn ? juce::MidiMessage::noteOn(1, noteNumber, (juce::uint8)velocity)
+                 : juce::MidiMessage::noteOff(1, noteNumber, (juce::uint8)velocity);
+
+    DBG("TracktionEngineWrapper: MIDI message created - " << message.getDescription());
+
+    // Inject MIDI through DeviceManager (simulates physical MIDI keyboard input)
+    // This ensures the message goes through the normal MIDI routing graph
+    DBG("TracktionEngineWrapper: Injecting MIDI through DeviceManager");
+    engine_->getDeviceManager().injectMIDIMessageToDefaultDevice(message);
+    DBG("TracktionEngineWrapper: MIDI message injected successfully");
+}
+
 // ClipInterface implementation
+
+// Helper: Convert beats to seconds using current tempo
+static double beatsToSeconds(double beats, double tempo) {
+    return beats * (60.0 / tempo);
+}
+
+// Helper: Convert seconds to beats using current tempo
+static double secondsToBeats(double seconds, double tempo) {
+    return seconds / (60.0 / tempo);
+}
+
 std::string TracktionEngineWrapper::addMidiClip(const std::string& track_id, double start_time,
                                                 double length, const std::vector<MidiNote>& notes) {
-    // TODO: Implement MIDI clip creation with notes
+    auto track = findTrackById(track_id);
+    if (!track || !currentEdit_) {
+        std::cerr << "addMidiClip: Track not found or no edit: " << track_id << std::endl;
+        return "";
+    }
+
+    // Cast to AudioTrack (needed for insertMIDIClip)
+    auto* audioTrack = dynamic_cast<tracktion::AudioTrack*>(track);
+    if (!audioTrack) {
+        std::cerr << "addMidiClip: Track is not an AudioTrack: " << track_id << std::endl;
+        return "";
+    }
+
+    // Create MIDI clip at specified position
+    namespace te = tracktion;
+    auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(start_time),
+                                   te::TimePosition::fromSeconds(start_time + length));
+
+    auto midiClipPtr = audioTrack->insertMIDIClip(timeRange, nullptr);
+    if (!midiClipPtr) {
+        std::cerr << "addMidiClip: Failed to create MIDI clip" << std::endl;
+        return "";
+    }
+
+    // Get current tempo for beat-to-seconds conversion
+    double tempo = getTempo();
+
+    // Add notes to the clip's sequence
+    auto& sequence = midiClipPtr->getSequence();
+    for (const auto& note : notes) {
+        // Convert beat-relative position to absolute beats
+        // Note: Tracktion Engine uses beats, not seconds for MIDI notes
+        te::BeatPosition startBeat = te::BeatPosition::fromBeats(note.startBeat);
+        te::BeatDuration lengthBeats = te::BeatDuration::fromBeats(note.lengthBeats);
+
+        DBG("Adding MIDI note: number=" << note.noteNumber << " start=" << note.startBeat
+                                        << " beats, length=" << note.lengthBeats
+                                        << " beats, velocity=" << note.velocity);
+
+        sequence.addNote(note.noteNumber, startBeat, lengthBeats, note.velocity,
+                         0,         // colour index
+                         nullptr);  // undo manager
+    }
+
+    // Generate ID and store in clipMap_
     auto clipId = generateClipId();
-    std::cout << "Created MIDI clip (stub): " << clipId << std::endl;
+    clipMap_[clipId] = midiClipPtr;
+
+    std::cout << "Created MIDI clip: " << clipId << " on track " << track_id << " with "
+              << notes.size() << " notes" << std::endl;
     return clipId;
 }
 
@@ -726,49 +993,207 @@ std::string TracktionEngineWrapper::addAudioClip(const std::string& track_id, do
 }
 
 void TracktionEngineWrapper::deleteClip(const std::string& clip_id) {
-    // TODO: Implement clip deletion
-    std::cout << "Deleted clip (stub): " << clip_id << std::endl;
+    auto* clip = findClipById(clip_id);
+    if (!clip) {
+        std::cerr << "deleteClip: Clip not found: " << clip_id << std::endl;
+        return;
+    }
+
+    // Remove from track
+    clip->removeFromParent();
+
+    // Remove from clipMap_
+    clipMap_.erase(clip_id);
+
+    std::cout << "Deleted clip: " << clip_id << std::endl;
 }
 
 void TracktionEngineWrapper::moveClip(const std::string& clip_id, double new_start_time) {
-    // TODO: Implement clip moving
-    std::cout << "Moved clip (stub): " << clip_id << " to " << new_start_time << std::endl;
+    auto* clip = findClipById(clip_id);
+    if (!clip) {
+        std::cerr << "moveClip: Clip not found: " << clip_id << std::endl;
+        return;
+    }
+
+    // Get current position and create new position with updated start time
+    auto currentPos = clip->getPosition();
+    auto currentLength = currentPos.getLength().inSeconds();
+
+    namespace te = tracktion;
+    auto newTimeRange =
+        te::TimeRange(te::TimePosition::fromSeconds(new_start_time),
+                      te::TimePosition::fromSeconds(new_start_time + currentLength));
+
+    clip->setStart(newTimeRange.getStart(), false, false);
+
+    std::cout << "Moved clip: " << clip_id << " to " << new_start_time << std::endl;
 }
 
 void TracktionEngineWrapper::resizeClip(const std::string& clip_id, double new_length) {
-    // TODO: Implement clip resizing
-    std::cout << "Resized clip (stub): " << clip_id << " to " << new_length << std::endl;
+    auto* clip = findClipById(clip_id);
+    if (!clip) {
+        std::cerr << "resizeClip: Clip not found: " << clip_id << std::endl;
+        return;
+    }
+
+    // Get current position and create new position with updated length
+    auto currentPos = clip->getPosition();
+    auto currentStart = currentPos.getStart();
+
+    namespace te = tracktion;
+    auto newEnd = te::TimePosition::fromSeconds(currentStart.inSeconds() + new_length);
+
+    clip->setEnd(newEnd, false);
+
+    std::cout << "Resized clip: " << clip_id << " to " << new_length << std::endl;
 }
 
 double TracktionEngineWrapper::getClipStartTime(const std::string& clip_id) const {
-    // TODO: Implement clip start time retrieval
-    return 0.0;
+    auto* clip = findClipById(clip_id);
+    if (!clip) {
+        std::cerr << "getClipStartTime: Clip not found: " << clip_id << std::endl;
+        return 0.0;
+    }
+
+    return clip->getPosition().getStart().inSeconds();
 }
 
 double TracktionEngineWrapper::getClipLength(const std::string& clip_id) const {
-    // TODO: Implement clip length retrieval
-    return 1.0;
+    auto* clip = findClipById(clip_id);
+    if (!clip) {
+        std::cerr << "getClipLength: Clip not found: " << clip_id << std::endl;
+        return 1.0;
+    }
+
+    return clip->getPosition().getLength().inSeconds();
 }
 
 void TracktionEngineWrapper::addNoteToMidiClip(const std::string& clip_id, const MidiNote& note) {
-    // TODO: Implement note addition to MIDI clip
-    std::cout << "Added note to MIDI clip (stub): " << clip_id << std::endl;
+    auto* clip = findClipById(clip_id);
+    if (!clip) {
+        std::cerr << "addNoteToMidiClip: Clip not found: " << clip_id << std::endl;
+        return;
+    }
+
+    // Cast to MidiClip
+    namespace te = tracktion;
+    auto* midiClip = dynamic_cast<te::MidiClip*>(clip);
+    if (!midiClip) {
+        std::cerr << "addNoteToMidiClip: Clip is not a MIDI clip: " << clip_id << std::endl;
+        return;
+    }
+
+    // Convert beat-relative position to absolute beats
+    namespace te = tracktion;
+    te::BeatPosition startBeat = te::BeatPosition::fromBeats(note.startBeat);
+    te::BeatDuration lengthBeats = te::BeatDuration::fromBeats(note.lengthBeats);
+
+    // Add note to sequence
+    auto& sequence = midiClip->getSequence();
+    sequence.addNote(note.noteNumber, startBeat, lengthBeats, note.velocity,
+                     0,         // colour index
+                     nullptr);  // undo manager
+
+    std::cout << "Added note " << note.noteNumber << " to MIDI clip: " << clip_id << std::endl;
 }
 
 void TracktionEngineWrapper::removeNotesFromMidiClip(const std::string& clip_id, double start_time,
                                                      double end_time) {
-    // TODO: Implement note removal from MIDI clip
-    std::cout << "Removed notes from MIDI clip (stub): " << clip_id << std::endl;
+    auto* clip = findClipById(clip_id);
+    if (!clip) {
+        std::cerr << "removeNotesFromMidiClip: Clip not found: " << clip_id << std::endl;
+        return;
+    }
+
+    // Cast to MidiClip
+    namespace te = tracktion;
+    auto* midiClip = dynamic_cast<te::MidiClip*>(clip);
+    if (!midiClip) {
+        std::cerr << "removeNotesFromMidiClip: Clip is not a MIDI clip: " << clip_id << std::endl;
+        return;
+    }
+
+    // Remove notes in the specified time range
+    // Note: start_time and end_time are in beats (relative to clip)
+    auto& sequence = midiClip->getSequence();
+    juce::Array<te::MidiNote*> notesToRemove;
+
+    for (auto* note : sequence.getNotes()) {
+        double noteStart = note->getStartBeat().inBeats();
+        if (noteStart >= start_time && noteStart < end_time) {
+            notesToRemove.add(note);
+        }
+    }
+
+    for (auto* note : notesToRemove) {
+        sequence.removeNote(*note, nullptr);  // nullptr = no undo
+    }
+
+    std::cout << "Removed " << notesToRemove.size() << " notes from MIDI clip: " << clip_id
+              << std::endl;
 }
 
 std::vector<MidiNote> TracktionEngineWrapper::getMidiClipNotes(const std::string& clip_id) const {
-    // TODO: Implement note retrieval from MIDI clip
-    return {};
+    auto* clip = findClipById(clip_id);
+    if (!clip) {
+        std::cerr << "getMidiClipNotes: Clip not found: " << clip_id << std::endl;
+        return {};
+    }
+
+    // Cast to MidiClip
+    namespace te = tracktion;
+    auto* midiClip = dynamic_cast<te::MidiClip*>(clip);
+    if (!midiClip) {
+        std::cerr << "getMidiClipNotes: Clip is not a MIDI clip: " << clip_id << std::endl;
+        return {};
+    }
+
+    // Read notes from sequence and convert to our format
+    std::vector<MidiNote> notes;
+    auto& sequence = midiClip->getSequence();
+
+    for (auto* note : sequence.getNotes()) {
+        MidiNote midiNote;
+        midiNote.noteNumber = note->getNoteNumber();
+        midiNote.velocity = note->getVelocity();
+
+        // Note: Tracktion Engine stores MIDI notes in beats (relative to clip)
+        midiNote.startBeat = note->getStartBeat().inBeats();
+        midiNote.lengthBeats = note->getLengthBeats().inBeats();
+
+        notes.push_back(midiNote);
+    }
+
+    return notes;
 }
 
 std::vector<std::string> TracktionEngineWrapper::getTrackClips(const std::string& track_id) const {
-    // TODO: Implement track clip retrieval
-    return {};
+    auto track = findTrackById(track_id);
+    if (!track) {
+        std::cerr << "getTrackClips: Track not found: " << track_id << std::endl;
+        return {};
+    }
+
+    // Cast to AudioTrack (needed for getClips)
+    auto* audioTrack = dynamic_cast<tracktion::AudioTrack*>(track);
+    if (!audioTrack) {
+        std::cerr << "getTrackClips: Track is not an AudioTrack: " << track_id << std::endl;
+        return {};
+    }
+
+    // Iterate clips and find their IDs in our clipMap_
+    std::vector<std::string> clipIds;
+    for (auto* clip : audioTrack->getClips()) {
+        // Search clipMap_ for this clip pointer
+        for (const auto& [id, clipPtr] : clipMap_) {
+            if (clipPtr.get() == clip) {
+                clipIds.push_back(id);
+                break;
+            }
+        }
+    }
+
+    return clipIds;
 }
 
 bool TracktionEngineWrapper::clipExists(const std::string& clip_id) const {

@@ -94,6 +94,10 @@ void ClipManager::forceNotifyClipsChanged() {
     notifyClipsChanged();
 }
 
+void ClipManager::forceNotifyClipPropertyChanged(ClipId clipId) {
+    notifyClipPropertyChanged(clipId);
+}
+
 ClipId ClipManager::duplicateClip(ClipId clipId) {
     auto it = std::find_if(clips_.begin(), clips_.end(),
                            [clipId](const ClipInfo& c) { return c.id == clipId; });
