@@ -54,8 +54,8 @@ bool TracktionEngineWrapper::initialize() {
         // Initialize the DeviceManager FIRST - this creates MIDI device wrappers
         // Parameters: default number of input channels, default number of output channels
         auto& dm = engine_->getDeviceManager();
-        dm.initialise(0, 2);
-        DBG("DeviceManager initialized");
+        dm.initialise(2, 2);  // 2 inputs, 2 outputs (stereo in/out)
+        DBG("DeviceManager initialized with stereo I/O");
 
         // Enable MIDI devices at JUCE level - this must be done so TE picks them up
         auto& juceDeviceManager = dm.deviceManager;
@@ -84,11 +84,8 @@ bool TracktionEngineWrapper::initialize() {
             }
         }
 
-        // Disable all wave input devices to avoid channel mismatch assertions
-        // We don't need audio inputs for playback - they can be enabled explicitly when needed
-        for (auto* waveInput : dm.getWaveInputDevices()) {
-            waveInput->setEnabled(false);
-        }
+        // Note: Audio inputs are now enabled by default (changed from previous behavior)
+        // Users can configure them via Audio Settings dialog
 
         // Create a temporary Edit (project) so transport methods work
         auto editFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
