@@ -160,9 +160,17 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
 
 void AudioBridge::clipsChanged() {
     // Clips were added/removed - sync all clips to engine
-    // For now, we'll do this lazily - only sync when clips are actually modified
-    // This avoids unnecessary work on bulk operations
     DBG("AudioBridge::clipsChanged - clips list changed");
+
+    // Sync all MIDI clips to ensure new clips are created
+    auto& clipMgr = ClipManager::getInstance();
+    const auto& allClips = clipMgr.getClips();
+
+    for (const auto& clip : allClips) {
+        if (clip.type == ClipType::MIDI) {
+            syncClipToEngine(clip.id);
+        }
+    }
 }
 
 void AudioBridge::clipPropertyChanged(ClipId clipId) {
@@ -199,28 +207,64 @@ void AudioBridge::syncClipToEngine(ClipId clipId) {
         return;
     }
 
+    namespace te = tracktion;
+    te::MidiClip* midiClipPtr = nullptr;
+
     // Check if clip already exists in Tracktion Engine
-    // We'll use a simpler approach: store te::MidiClip pointer in a map
     auto it = clipIdToEngineId_.find(clipId);
     if (it != clipIdToEngineId_.end()) {
-        // Clip exists - for now, just return (TODO: handle updates)
-        DBG("syncClipToEngine: Clip " << clipId << " already synced");
-        return;
+        // Clip exists - find it and update
+        std::string engineId = it->second;
+
+        // Find the MidiClip in the track
+        for (auto* teClip : audioTrack->getClips()) {
+            if (teClip->itemID.toString().toStdString() == engineId) {
+                midiClipPtr = dynamic_cast<te::MidiClip*>(teClip);
+                break;
+            }
+        }
+
+        if (!midiClipPtr) {
+            DBG("syncClipToEngine: Clip " << clipId
+                                          << " mapping exists but clip not found in engine");
+            // Clear stale mapping and recreate
+            clipIdToEngineId_.erase(it);
+            engineIdToClipId_.erase(engineId);
+        } else {
+            DBG("syncClipToEngine: Updating existing clip " << clipId);
+        }
     }
 
-    // Create MIDI clip directly in Tracktion Engine
-    namespace te = tracktion;
-    auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(clip->startTime),
-                                   te::TimePosition::fromSeconds(clip->startTime + clip->length));
-
-    auto midiClipPtr = audioTrack->insertMIDIClip(timeRange, nullptr);
+    // Create clip if it doesn't exist
     if (!midiClipPtr) {
-        DBG("syncClipToEngine: Failed to create MIDI clip");
-        return;
+        auto timeRange =
+            te::TimeRange(te::TimePosition::fromSeconds(clip->startTime),
+                          te::TimePosition::fromSeconds(clip->startTime + clip->length));
+
+        auto clipRef = audioTrack->insertMIDIClip(timeRange, nullptr);
+        if (!clipRef) {
+            DBG("syncClipToEngine: Failed to create MIDI clip");
+            return;
+        }
+
+        midiClipPtr = clipRef.get();
+
+        // Store clip ID mapping (use clip's EditItemID as string)
+        std::string engineClipId = midiClipPtr->itemID.toString().toStdString();
+        clipIdToEngineId_[clipId] = engineClipId;
+        engineIdToClipId_[engineClipId] = clipId;
+
+        DBG("syncClipToEngine: Created new clip " << clipId);
     }
 
-    // Add notes to the clip's sequence (notes are stored in beats relative to clip)
+    // Update clip position/length
+    midiClipPtr->setStart(te::TimePosition::fromSeconds(clip->startTime), false, false);
+    midiClipPtr->setEnd(te::TimePosition::fromSeconds(clip->startTime + clip->length), false);
+
+    // Clear existing notes and add all notes from ClipManager
     auto& sequence = midiClipPtr->getSequence();
+    sequence.clear(nullptr);  // Clear all notes
+
     for (const auto& note : clip->midiNotes) {
         te::BeatPosition startBeat = te::BeatPosition::fromBeats(note.startBeat);
         te::BeatDuration lengthBeats = te::BeatDuration::fromBeats(note.lengthBeats);
@@ -230,13 +274,8 @@ void AudioBridge::syncClipToEngine(ClipId clipId) {
                          nullptr);  // undo manager
     }
 
-    // Store clip ID mapping (use clip's EditItemID as string)
-    std::string engineClipId = midiClipPtr->itemID.toString().toStdString();
-    clipIdToEngineId_[clipId] = engineClipId;
-    engineIdToClipId_[engineClipId] = clipId;
-
-    DBG("syncClipToEngine: Created clip " << clipId << " with " << clip->midiNotes.size()
-                                          << " notes");
+    DBG("syncClipToEngine: Synced clip " << clipId << " with " << clip->midiNotes.size()
+                                         << " notes");
 }
 
 void AudioBridge::removeClipFromEngine(ClipId clipId) {
