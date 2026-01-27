@@ -38,6 +38,9 @@ class MainWindow : public juce::DocumentWindow {
     // Menu bar
     std::unique_ptr<juce::MenuBarComponent> menuBar;
 
+    // File chooser for async file import
+    std::unique_ptr<juce::FileChooser> fileChooser_;
+
     void setupMenuBar();
     void setupMenuCallbacks();
 

@@ -109,6 +109,7 @@ set(DAW_CORE_SOURCES
     engine/PluginWindowManager.cpp
     # Audio integration
     audio/AudioBridge.cpp
+    audio/AudioThumbnailManager.cpp
     audio/DeviceProcessor.cpp
     audio/MidiBridge.cpp
     # TODO: Custom synth library (SimpleSynthPlugin.cpp) - for future implementation

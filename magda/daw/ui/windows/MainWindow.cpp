@@ -1,5 +1,7 @@
 #include "MainWindow.hpp"
 
+#include "../../core/ClipCommands.hpp"
+#include "../../core/ClipManager.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
 #include "../debug/DebugDialog.hpp"
 #include "../debug/DebugSettings.hpp"
@@ -855,9 +857,77 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onImportAudio = [this]() {
-        // TODO: Implement import audio
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Import Audio",
-                                               "Import audio functionality not yet implemented.");
+        if (!mainComponent)
+            return;
+
+        // Create file chooser for audio files
+        fileChooser_ = std::make_unique<juce::FileChooser>(
+            "Select Audio Files to Import",
+            juce::File::getSpecialLocation(juce::File::userMusicDirectory),
+            "*.wav;*.aiff;*.aif;*.mp3;*.ogg;*.flac",  // Supported formats
+            true,                                     // use native dialog
+            false                                     // not a directory browser
+        );
+
+        auto flags = juce::FileBrowserComponent::openMode |
+                     juce::FileBrowserComponent::canSelectMultipleItems |
+                     juce::FileBrowserComponent::canSelectFiles;
+
+        fileChooser_->launchAsync(flags, [this](const juce::FileChooser& chooser) {
+            auto files = chooser.getResults();
+            if (files.isEmpty())
+                return;  // User cancelled
+
+            // Get selected track (or use first audio track)
+            auto& trackManager = TrackManager::getInstance();
+            const auto& tracks = trackManager.getTracks();
+
+            TrackId targetTrackId = INVALID_TRACK_ID;
+            for (const auto& track : tracks) {
+                if (track.type == TrackType::Audio) {
+                    targetTrackId = track.id;
+                    break;
+                }
+            }
+
+            if (targetTrackId == INVALID_TRACK_ID) {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::WarningIcon, "Import Audio",
+                    "No audio track found. Please create an audio track first.");
+                return;
+            }
+
+            // Get audio engine for file validation
+            auto* engine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
+            if (!engine)
+                return;
+
+            // Import each file as a clip
+            double currentTime = 0.0;  // Start at timeline beginning
+
+            for (const auto& file : files) {
+                // Get audio file duration to space clips
+                namespace te = tracktion;
+                te::AudioFile audioFile(*engine->getEngine(), file);
+                double fileDuration =
+                    audioFile.isValid() ? audioFile.getLength() : 4.0;  // fallback
+
+                // Create audio clip via command (for undo support)
+                auto cmd =
+                    std::make_unique<CreateClipCommand>(ClipType::Audio, targetTrackId, currentTime,
+                                                        fileDuration, file.getFullPathName());
+
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                // Space clips sequentially
+                currentTime += fileDuration + 0.5;  // 0.5s gap between clips
+            }
+
+            juce::String message =
+                juce::String(files.size()) + " audio file(s) imported successfully.";
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Import Audio",
+                                                   message);
+        });
     };
 
     callbacks.onExportAudio = [this]() {

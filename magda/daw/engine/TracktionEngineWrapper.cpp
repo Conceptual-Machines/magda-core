@@ -986,9 +986,56 @@ std::string TracktionEngineWrapper::addMidiClip(const std::string& track_id, dou
 
 std::string TracktionEngineWrapper::addAudioClip(const std::string& track_id, double start_time,
                                                  const std::string& audio_file_path) {
-    // TODO: Implement audio clip creation
+    // 1. Find Tracktion AudioTrack
+    auto* track = findTrackById(track_id);
+    if (!track || !currentEdit_) {
+        DBG("TracktionEngineWrapper: Track not found or no edit: " << track_id);
+        return "";
+    }
+
+    auto* audioTrack = dynamic_cast<tracktion::AudioTrack*>(track);
+    if (!audioTrack) {
+        DBG("TracktionEngineWrapper: Track is not an AudioTrack");
+        return "";
+    }
+
+    // 2. Validate audio file exists
+    juce::File audioFile(audio_file_path);
+    if (!audioFile.existsAsFile()) {
+        DBG("TracktionEngineWrapper: Audio file not found: " << audio_file_path);
+        return "";
+    }
+
+    // 3. Get audio file metadata to determine length
+    namespace te = tracktion;
+    te::AudioFile teAudioFile(audioTrack->edit.engine, audioFile);
+    if (!teAudioFile.isValid()) {
+        DBG("TracktionEngineWrapper: Invalid audio file: " << audio_file_path);
+        return "";
+    }
+
+    double fileLengthSeconds = teAudioFile.getLength();
+
+    // 4. Create time range for clip position
+    auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(start_time),
+                                   te::TimePosition::fromSeconds(start_time + fileLengthSeconds));
+
+    // 5. Insert WaveAudioClip onto track
+    auto clipPtr =
+        insertWaveClip(*audioTrack,
+                       audioFile.getFileNameWithoutExtension(),  // clip name
+                       audioFile, te::ClipPosition{timeRange}, te::DeleteExistingClips::no);
+
+    if (!clipPtr) {
+        DBG("TracktionEngineWrapper: Failed to create WaveAudioClip");
+        return "";
+    }
+
+    // 6. Store in clip map with generated ID
     auto clipId = generateClipId();
-    std::cout << "Created audio clip (stub): " << clipId << std::endl;
+    clipMap_[clipId] = clipPtr.get();  // Store raw pointer
+
+    DBG("TracktionEngineWrapper: Created audio clip '" << clipId << "' from " << audio_file_path);
     return clipId;
 }
 

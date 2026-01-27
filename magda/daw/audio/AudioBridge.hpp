@@ -485,6 +485,10 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Timer callback for metering updates (runs on message thread)
     void timerCallback() override;
 
+    // Clip synchronization helpers
+    void syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip);
+    void syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip);
+
     // Create track mapping
     void ensureTrackMapping(TrackId trackId);
 

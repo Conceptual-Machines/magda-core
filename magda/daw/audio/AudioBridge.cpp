@@ -165,12 +165,16 @@ void AudioBridge::clipsChanged() {
     if (isShuttingDown_.load(std::memory_order_acquire))
         return;
 
-    // TODO: Properly reconcile added/removed clips with the engine
-    // Currently, deleting a clip in ClipManager will leave the old Tracktion clip
-    // playing/visible in the engine (and mappings may become stale).
-    // Need to detect removed clip IDs and call removeClipFromEngine, and
-    // optionally sync newly added clips. For now, clips are synced lazily
-    // when clipPropertyChanged() is called, which avoids rapid audio graph rebuilds.
+    // Sync all clips to engine when the clip list changes
+    // This ensures newly created clips are immediately available for playback
+    auto& clipManager = ClipManager::getInstance();
+    const auto& clips = clipManager.getClips();
+
+    for (const auto& clip : clips) {
+        syncClipToEngine(clip.id);
+    }
+
+    DBG("AudioBridge::clipsChanged - synced " << clips.size() << " clips to engine");
 }
 
 void AudioBridge::clipPropertyChanged(ClipId clipId) {
@@ -198,12 +202,17 @@ void AudioBridge::syncClipToEngine(ClipId clipId) {
         return;
     }
 
-    // Only handle MIDI clips for now
-    if (clip->type != ClipType::MIDI) {
-        DBG("syncClipToEngine: Skipping non-MIDI clip");
-        return;
+    // Route to appropriate sync method by type
+    if (clip->type == ClipType::MIDI) {
+        syncMidiClipToEngine(clipId, clip);
+    } else if (clip->type == ClipType::Audio) {
+        syncAudioClipToEngine(clipId, clip);
+    } else {
+        DBG("syncClipToEngine: Unknown clip type for clip " << clipId);
     }
+}
 
+void AudioBridge::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip) {
     // Get the Tracktion AudioTrack for this MAGDA track
     auto* audioTrack = getAudioTrack(clip->trackId);
     if (!audioTrack) {
@@ -324,6 +333,94 @@ void AudioBridge::syncClipToEngine(ClipId clipId) {
 
     DBG("syncClipToEngine: Synced clip " << clipId << " with " << clip->midiNotes.size()
                                          << " notes");
+}
+
+void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
+    namespace te = tracktion;
+
+    // 1. Get Tracktion track
+    auto* audioTrack = getAudioTrack(clip->trackId);
+    if (!audioTrack) {
+        DBG("AudioBridge: Track not found for audio clip " << clipId);
+        return;
+    }
+
+    // 2. Check if clip already synced
+    te::WaveAudioClip* audioClipPtr = nullptr;
+    auto it = clipIdToEngineId_.find(clipId);
+
+    if (it != clipIdToEngineId_.end()) {
+        // UPDATE existing clip
+        std::string engineId = it->second;
+
+        // Find clip in track by engine ID
+        for (auto* teClip : audioTrack->getClips()) {
+            if (teClip->itemID.toString().toStdString() == engineId) {
+                audioClipPtr = dynamic_cast<te::WaveAudioClip*>(teClip);
+                break;
+            }
+        }
+
+        // If mapping is stale, clear it
+        if (!audioClipPtr) {
+            DBG("AudioBridge: Clip mapping stale, recreating for clip " << clipId);
+            clipIdToEngineId_.erase(it);
+            engineIdToClipId_.erase(engineId);
+        }
+    }
+
+    // 3. CREATE new clip if doesn't exist
+    if (!audioClipPtr) {
+        juce::File audioFile(clip->audioFilePath);
+        if (!audioFile.existsAsFile()) {
+            DBG("AudioBridge: Audio file not found: " << clip->audioFilePath);
+            return;
+        }
+
+        auto timeRange =
+            te::TimeRange(te::TimePosition::fromSeconds(clip->startTime),
+                          te::TimePosition::fromSeconds(clip->startTime + clip->length));
+
+        auto clipRef =
+            insertWaveClip(*audioTrack, audioFile.getFileNameWithoutExtension(), audioFile,
+                           te::ClipPosition{timeRange}, te::DeleteExistingClips::no);
+
+        if (!clipRef) {
+            DBG("AudioBridge: Failed to create WaveAudioClip");
+            return;
+        }
+
+        audioClipPtr = clipRef.get();
+
+        // Store bidirectional mapping
+        std::string engineClipId = audioClipPtr->itemID.toString().toStdString();
+        clipIdToEngineId_[clipId] = engineClipId;
+        engineIdToClipId_[engineClipId] = clipId;
+
+        DBG("AudioBridge: Created WaveAudioClip (engine ID: " << engineClipId << ")");
+    }
+
+    // 4. UPDATE clip position/length (if changed)
+    auto currentStart = audioClipPtr->getPosition().getStart().inSeconds();
+    auto currentEnd = audioClipPtr->getPosition().getEnd().inSeconds();
+
+    if (std::abs(currentStart - clip->startTime) > 0.001) {
+        audioClipPtr->setStart(te::TimePosition::fromSeconds(clip->startTime),
+                               true,    // preserve offset
+                               false);  // don't snap to beat
+    }
+
+    if (std::abs(currentEnd - (clip->startTime + clip->length)) > 0.001) {
+        audioClipPtr->setEnd(te::TimePosition::fromSeconds(clip->startTime + clip->length),
+                             false);  // don't snap to beat
+    }
+
+    // 5. UPDATE audio offset (trim point) if supported
+    if (clip->audioOffset > 0.0) {
+        audioClipPtr->setOffset(te::TimeDuration::fromSeconds(clip->audioOffset));
+    }
+
+    DBG("AudioBridge: Synced audio clip " << clipId << " to engine");
 }
 
 void AudioBridge::removeClipFromEngine(ClipId clipId) {

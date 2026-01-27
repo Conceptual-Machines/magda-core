@@ -24,6 +24,7 @@ class ClipComponent;
 class AutomationLaneComponent;
 
 class TrackContentPanel : public juce::Component,
+                          public juce::FileDragAndDropTarget,
                           public TimelineStateListener,
                           public TrackManagerListener,
                           public ClipManagerListener,
@@ -60,6 +61,13 @@ class TrackContentPanel : public juce::Component,
     // AutomationManagerListener implementation
     void automationLanesChanged() override;
     void automationLanePropertyChanged(AutomationLaneId laneId) override;
+
+    // FileDragAndDropTarget implementation
+    bool isInterestedInFileDrag(const juce::StringArray& files) override;
+    void fileDragEnter(const juce::StringArray& files, int x, int y) override;
+    void fileDragMove(const juce::StringArray& files, int x, int y) override;
+    void fileDragExit(const juce::StringArray& files) override;
+    void filesDropped(const juce::StringArray& files, int x, int y) override;
 
     // Set the controller reference (called by MainView after construction)
     void setController(TimelineController* controller);
@@ -301,6 +309,13 @@ class TrackContentPanel : public juce::Component,
     // Keyboard handling
     // ========================================================================
     bool keyPressed(const juce::KeyPress& key) override;
+
+    // ========================================================================
+    // File Drag-and-Drop State
+    // ========================================================================
+    bool showDropIndicator_ = false;
+    double dropInsertTime_ = 0.0;
+    int dropTargetTrackIndex_ = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TrackContentPanel)
 };

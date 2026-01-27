@@ -3,6 +3,7 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../tracks/TrackContentPanel.hpp"
+#include "audio/AudioThumbnailManager.hpp"
 #include "core/SelectionManager.hpp"
 
 namespace magda {
@@ -65,22 +66,26 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     g.setColour(bgColour);
     g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
 
-    // Waveform placeholder - draw simplified representation
+    // Waveform area (below header)
     auto waveformArea = bounds.reduced(2, HEADER_HEIGHT + 2);
-    g.setColour(clip.colour.brighter(0.2f));
 
-    // Draw a simple sine wave representation
-    juce::Path waveform;
-    waveform.startNewSubPath(waveformArea.getX(), waveformArea.getCentreY());
+    if (!clip.audioFilePath.isEmpty()) {
+        // Draw real waveform from audio file
+        auto& thumbnailManager = AudioThumbnailManager::getInstance();
 
-    float amplitude = waveformArea.getHeight() * 0.3f;
-    for (int x = 0; x < waveformArea.getWidth(); x += 3) {
-        float phase = static_cast<float>(x) / 20.0f;
-        float y = waveformArea.getCentreY() + std::sin(phase) * amplitude;
-        waveform.lineTo(waveformArea.getX() + x, y);
+        // Calculate the time range to display
+        // audioOffset is the trim/start point in the audio file
+        double displayStart = clip.audioOffset;
+        double displayEnd = clip.audioOffset + clip.length;
+
+        // Draw waveform
+        thumbnailManager.drawWaveform(g, waveformArea, clip.audioFilePath, displayStart, displayEnd,
+                                      clip.colour.brighter(0.2f));
+    } else {
+        // Fallback: draw placeholder if no audio file path
+        g.setColour(clip.colour.brighter(0.2f).withAlpha(0.3f));
+        g.drawText("No Audio", waveformArea, juce::Justification::centred);
     }
-
-    g.strokePath(waveform, juce::PathStrokeType(1.5f));
 
     // Border
     g.setColour(clip.colour);
