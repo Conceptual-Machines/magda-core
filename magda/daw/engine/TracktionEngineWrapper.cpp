@@ -197,6 +197,9 @@ bool TracktionEngineWrapper::initialize() {
             // Note: Master track automatically routes to default audio device (first enabled stereo
             // pair) This is configured by Tracktion Engine's default behavior
 
+            // Create a default test project with one MIDI clip
+            createDefaultTestProject();
+
             // Ensure the playback context is created and graph is allocated
             // This is needed for MIDI routing to work even before pressing play
             currentEdit_->getTransport().ensureContextAllocated();
@@ -300,6 +303,62 @@ void TracktionEngineWrapper::shutdown() {
     }
 
     std::cout << "Tracktion Engine shutdown complete" << std::endl;
+}
+
+void TracktionEngineWrapper::createDefaultTestProject() {
+    if (!currentEdit_) {
+        return;
+    }
+
+    std::cout << "Creating default test project..." << std::endl;
+
+    // Create one instrument track
+    auto trackPtr =
+        currentEdit_->insertNewAudioTrack(te::TrackInsertPoint(nullptr, nullptr), nullptr);
+    if (!trackPtr) {
+        std::cerr << "Failed to create audio track" << std::endl;
+        return;
+    }
+
+    auto* track = trackPtr.get();
+    track->setName("Test Track");
+    std::cout << "Created audio track: " << track->getName() << std::endl;
+
+    // Load 4OSC synth on the track
+    auto fourOscPlugin =
+        track->edit.getPluginCache().createNewPlugin(te::FourOscPlugin::xmlTypeName, {});
+    if (fourOscPlugin) {
+        track->pluginList.insertPlugin(fourOscPlugin, 0, nullptr);
+        std::cout << "Loaded 4OSC synth on track" << std::endl;
+    } else {
+        std::cerr << "Failed to create 4OSC plugin" << std::endl;
+    }
+
+    // Create one MIDI clip from 1 to 3 seconds (one bar at 120 BPM = 4 beats = 2 seconds)
+    auto timeRange =
+        te::TimeRange(te::TimePosition::fromSeconds(1.0), te::TimePosition::fromSeconds(3.0));
+
+    auto midiClip = track->insertMIDIClip(timeRange, nullptr);
+    if (!midiClip) {
+        std::cerr << "Failed to create MIDI clip" << std::endl;
+        return;
+    }
+
+    std::cout << "Created MIDI clip from 1.0s to 3.0s" << std::endl;
+
+    // Add one C4 note for the duration of the clip (2 seconds = 4 beats = 1 bar at 4/4, 120 BPM)
+    auto& sequence = midiClip->getSequence();
+    te::BeatPosition startBeat = te::BeatPosition::fromBeats(0.0);    // Start of clip
+    te::BeatDuration lengthBeats = te::BeatDuration::fromBeats(4.0);  // 4 beats = 1 bar at 4/4
+
+    sequence.addNote(60,  // C4 (middle C)
+                     startBeat, lengthBeats,
+                     100,       // velocity
+                     0,         // colour index
+                     nullptr);  // undo manager
+
+    std::cout << "Added C4 note to clip (4 beats = 1 bar duration)" << std::endl;
+    std::cout << "Default test project created! Press Play to hear it." << std::endl;
 }
 
 void TracktionEngineWrapper::changeListenerCallback(juce::ChangeBroadcaster* source) {

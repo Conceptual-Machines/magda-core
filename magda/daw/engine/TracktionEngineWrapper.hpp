@@ -320,6 +320,7 @@ class TracktionEngineWrapper : public AudioEngine,
     std::string generateTrackId();
     std::string generateClipId();
     std::string generateEffectId();
+    void createDefaultTestProject();
 
     // State tracking
     std::map<std::string, tracktion::Track::Ptr> trackMap_;
