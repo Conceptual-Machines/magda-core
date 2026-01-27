@@ -381,6 +381,8 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
                 device.format = magda::PluginFormat::AU;
             } else if (format == "VST") {
                 device.format = magda::PluginFormat::VST;
+            } else if (format == "Internal") {
+                device.format = magda::PluginFormat::Internal;
             }
 
             // Insert at the drop position
