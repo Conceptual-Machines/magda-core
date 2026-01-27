@@ -78,9 +78,10 @@ bool TracktionEngineWrapper::initialize() {
             }
         }
 
-        // Initialize with stereo I/O
-        dm.initialise(2, 2);
-        DBG("DeviceManager initialized with stereo I/O");
+        // Initialize with enough channels for common audio interfaces
+        // M4 has 8 inputs and 4 outputs, so we initialize with those channel counts
+        dm.initialise(8, 4);
+        DBG("DeviceManager initialized with 8 input / 4 output channels");
 
         // Try to select M4 interface if available
         auto* coreAudioType = juceDeviceManager.getAvailableDeviceTypes()[0];
@@ -102,10 +103,26 @@ bool TracktionEngineWrapper::initialize() {
                 setup.outputDeviceName = "M4";
                 setup.inputDeviceName = "M4";
 
+                // Enable all available channels (M4 has 8 inputs, 4 outputs)
+                // Set up BigIntegers to enable all channels
+                setup.inputChannels.clear();
+                setup.outputChannels.clear();
+
+                // Enable all 8 input channels
+                for (int i = 0; i < 8; ++i) {
+                    setup.inputChannels.setBit(i, true);
+                }
+
+                // Enable all 4 output channels
+                for (int i = 0; i < 4; ++i) {
+                    setup.outputChannels.setBit(i, true);
+                }
+
                 // Try to set it
                 auto result = juceDeviceManager.setAudioDeviceSetup(setup, true);
                 if (result.isEmpty()) {
-                    std::cout << "Successfully selected M4 interface" << std::endl;
+                    std::cout << "Successfully selected M4 interface with all channels enabled"
+                              << std::endl;
                 } else {
                     std::cout << "Failed to select M4: " << result.toStdString() << std::endl;
                 }

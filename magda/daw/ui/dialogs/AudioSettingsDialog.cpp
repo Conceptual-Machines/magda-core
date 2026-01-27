@@ -43,19 +43,9 @@ void CustomChannelSelector::updateFromDevice() {
         DBG("    Channel " + juce::String(i) + ": " + channelNames[i]);
     }
 
-    // Determine how many channels to show
-    // If channels are already active, show up to the highest active channel
-    // If no channels active yet, show a reasonable default (up to 4 or channelNames.size())
-    int numChannels = 0;
-
-    if (activeChannels.countNumberOfSetBits() > 0) {
-        // Show all channels up to the highest active one
-        numChannels = activeChannels.getHighestBit() + 1;
-    } else {
-        // No channels active yet - show a default set (typically 2-4 channels for consumer
-        // interfaces) Limit to actual channel names available
-        numChannels = juce::jmin(4, (int)channelNames.size());
-    }
+    // Show ALL available channels from the device, regardless of which are currently active
+    // The user can then select which ones to enable/disable
+    int numChannels = channelNames.size();
 
     // Create stereo pair toggles first
     for (int i = 0; i < numChannels; i += 2) {
