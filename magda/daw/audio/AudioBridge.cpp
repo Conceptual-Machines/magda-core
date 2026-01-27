@@ -159,18 +159,10 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
 // =============================================================================
 
 void AudioBridge::clipsChanged() {
-    // Clips were added/removed - sync all clips to engine
+    // Clips were added/removed - for now, do nothing here
+    // Clips will be synced lazily when clipPropertyChanged() is called
+    // This avoids rapid audio graph rebuilds that can cause crashes
     DBG("AudioBridge::clipsChanged - clips list changed");
-
-    // Sync all MIDI clips to ensure new clips are created
-    auto& clipMgr = ClipManager::getInstance();
-    const auto& allClips = clipMgr.getClips();
-
-    for (const auto& clip : allClips) {
-        if (clip.type == ClipType::MIDI) {
-            syncClipToEngine(clip.id);
-        }
-    }
 }
 
 void AudioBridge::clipPropertyChanged(ClipId clipId) {
