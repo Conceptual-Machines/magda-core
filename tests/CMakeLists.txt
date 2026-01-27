@@ -8,6 +8,7 @@ set(TEST_SOURCES
     test_parameter_utils.cpp
     test_plugin_loading.cpp
     test_plugin_window_manager.cpp
+    test_device_parameter_pagination.cpp
 )
 
 # Create test executable
