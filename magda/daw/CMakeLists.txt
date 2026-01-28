@@ -191,6 +191,8 @@ set(DAW_UI_SOURCES
     ui/components/pianoroll/PianoRollGridComponent.cpp
     ui/components/pianoroll/PianoRollKeyboard.cpp
     ui/components/pianoroll/VelocityLaneComponent.cpp
+    # Components - Waveform
+    ui/components/waveform/WaveformGridComponent.cpp
     # Components - Common Curve Editor
     ui/components/common/curve/CurveEditorBase.cpp
     ui/components/common/curve/CurvePointComponent.cpp
@@ -339,6 +341,8 @@ set(DAW_HEADERS
     ui/components/pianoroll/PianoRollGridComponent.hpp
     ui/components/pianoroll/PianoRollKeyboard.hpp
     ui/components/pianoroll/VelocityLaneComponent.hpp
+    # Components - Waveform
+    ui/components/waveform/WaveformGridComponent.hpp
     # Components - Mixer
     ui/components/mixer/MasterChannelStrip.hpp
     ui/components/mixer/RoutingSelector.hpp
@@ -473,6 +477,7 @@ target_include_directories(magda_daw_app
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/components/tracks
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/components/clips
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/components/pianoroll
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/components/waveform
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/components/chain
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/components/automation
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/components/common/curve
