@@ -122,6 +122,10 @@ class WaveformGridComponent : public juce::Component {
     double dragStartStretchFactor_ = 1.0;
     double dragStartFileDuration_ = 0.0;
 
+    // Throttled update for live preview
+    static constexpr int DRAG_UPDATE_INTERVAL_MS = 50;  // Update arrangement view every 50ms
+    juce::int64 lastDragUpdateTime_ = 0;
+
     // Painting helpers
     void paintWaveform(juce::Graphics& g, const magda::ClipInfo& clip);
     void paintClipBoundaries(juce::Graphics& g);

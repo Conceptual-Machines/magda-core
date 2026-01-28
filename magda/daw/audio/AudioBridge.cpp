@@ -1,6 +1,7 @@
 #include "AudioBridge.hpp"
 
 #include <iostream>
+#include <unordered_set>
 
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
@@ -165,11 +166,30 @@ void AudioBridge::clipsChanged() {
     if (isShuttingDown_.load(std::memory_order_acquire))
         return;
 
-    // Sync all clips to engine when the clip list changes
-    // This ensures newly created clips are immediately available for playback
     auto& clipManager = ClipManager::getInstance();
     const auto& clips = clipManager.getClips();
 
+    // Build set of current clip IDs for fast lookup
+    std::unordered_set<ClipId> currentClipIds;
+    for (const auto& clip : clips) {
+        currentClipIds.insert(clip.id);
+    }
+
+    // Find clips that are in the engine but no longer in ClipManager (deleted)
+    std::vector<ClipId> clipsToRemove;
+    for (const auto& [clipId, engineId] : clipIdToEngineId_) {
+        if (currentClipIds.find(clipId) == currentClipIds.end()) {
+            clipsToRemove.push_back(clipId);
+        }
+    }
+
+    // Remove deleted clips from engine
+    for (ClipId clipId : clipsToRemove) {
+        DBG("AudioBridge::clipsChanged - removing deleted clip " << clipId);
+        removeClipFromEngine(clipId);
+    }
+
+    // Sync remaining clips to engine (add new ones, update existing)
     for (const auto& clip : clips) {
         syncClipToEngine(clip.id);
     }
@@ -406,33 +426,51 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     // 4. UPDATE clip position/length using audio source position within clip
     // The engine clip plays audio starting at clip->startTime + source.position,
     // for source.length duration, reading from source.offset in the file.
-    double engineStart = clip->startTime;
-    double engineEnd = clip->startTime + clip->length;
+    // IMPORTANT: Clamp to clip boundaries so audio stops at visual clip end.
+    double clipStart = clip->startTime;
+    double clipEnd = clip->startTime + clip->length;
+    double engineStart = clipStart;
+    double engineEnd = clipEnd;
     double engineOffset = 0.0;
 
     if (!clip->audioSources.empty()) {
         const auto& source = clip->audioSources[0];
-        engineStart = clip->startTime + source.position;
-        engineEnd = engineStart + source.length;
-        engineOffset = source.offset;
+        double sourceStart = clip->startTime + source.position;
+        double sourceEnd = sourceStart + source.length;
+
+        // Clamp engine boundaries to clip boundaries
+        // Audio should only play within the visible clip region
+        engineStart = std::max(sourceStart, clipStart);
+        engineEnd = std::min(sourceEnd, clipEnd);
+
+        // Adjust offset if source starts before clip (left side clipped)
+        if (sourceStart < clipStart) {
+            double clippedTime = clipStart - sourceStart;
+            engineOffset = source.offset + (clippedTime / source.stretchFactor);
+        } else {
+            engineOffset = source.offset;
+        }
     }
 
-    auto currentStart = audioClipPtr->getPosition().getStart().inSeconds();
-    auto currentEnd = audioClipPtr->getPosition().getEnd().inSeconds();
+    auto currentPos = audioClipPtr->getPosition();
+    auto currentStart = currentPos.getStart().inSeconds();
+    auto currentEnd = currentPos.getEnd().inSeconds();
 
-    if (std::abs(currentStart - engineStart) > 0.001) {
-        audioClipPtr->setStart(te::TimePosition::fromSeconds(engineStart),
-                               true,    // preserve offset
-                               false);  // don't snap to beat
-    }
+    // Use setPosition() to update start and length atomically (reduces audio glitches)
+    bool needsPositionUpdate =
+        std::abs(currentStart - engineStart) > 0.001 || std::abs(currentEnd - engineEnd) > 0.001;
 
-    if (std::abs(currentEnd - engineEnd) > 0.001) {
-        audioClipPtr->setEnd(te::TimePosition::fromSeconds(engineEnd),
-                             false);  // don't snap to beat
+    if (needsPositionUpdate) {
+        auto newTimeRange = te::TimeRange(te::TimePosition::fromSeconds(engineStart),
+                                          te::TimePosition::fromSeconds(engineEnd));
+        audioClipPtr->setPosition(te::ClipPosition{newTimeRange, currentPos.getOffset()});
     }
 
     // 5. UPDATE audio offset (trim point in file)
-    audioClipPtr->setOffset(te::TimeDuration::fromSeconds(engineOffset));
+    auto currentOffset = audioClipPtr->getPosition().getOffset().inSeconds();
+    if (std::abs(currentOffset - engineOffset) > 0.001) {
+        audioClipPtr->setOffset(te::TimeDuration::fromSeconds(engineOffset));
+    }
 }
 
 void AudioBridge::removeClipFromEngine(ClipId clipId) {

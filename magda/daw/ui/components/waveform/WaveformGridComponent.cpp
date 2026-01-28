@@ -44,14 +44,54 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
     int positionPixels = timeToPixel(displayStartTime);
     int widthPixels = static_cast<int>(source.length * horizontalZoom_);
 
-    // DBG removed - too expensive in hot path
-
     auto waveformRect =
         juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
 
-    // Draw waveform background (source block)
-    g.setColour(clip.colour.darker(0.4f));
-    g.fillRoundedRectangle(waveformRect.toFloat(), 3.0f);
+    // Calculate clip boundaries for highlighting out-of-bounds regions
+    int clipStartPixel = relativeMode_ ? timeToPixel(0.0) : timeToPixel(clipStartTime_);
+    int clipEndPixel =
+        relativeMode_ ? timeToPixel(clipLength_) : timeToPixel(clipStartTime_ + clipLength_);
+
+    // Draw out-of-bounds background (darker) for parts beyond clip boundaries
+    auto outOfBoundsColour = clip.colour.darker(0.7f);
+
+    // Left out-of-bounds region (source starts before clip start)
+    if (waveformRect.getX() < clipStartPixel) {
+        int outOfBoundsWidth =
+            juce::jmin(clipStartPixel - waveformRect.getX(), waveformRect.getWidth());
+        auto leftOutOfBounds = waveformRect.removeFromLeft(outOfBoundsWidth);
+        g.setColour(outOfBoundsColour);
+        g.fillRoundedRectangle(leftOutOfBounds.toFloat(), 3.0f);
+    }
+
+    // Right out-of-bounds region (source extends past clip end)
+    if (waveformRect.getRight() > clipEndPixel && !waveformRect.isEmpty()) {
+        int inBoundsWidth = juce::jmax(0, clipEndPixel - waveformRect.getX());
+        auto inBoundsRect = waveformRect.removeFromLeft(inBoundsWidth);
+
+        // Draw in-bounds background (normal)
+        g.setColour(clip.colour.darker(0.4f));
+        if (!inBoundsRect.isEmpty()) {
+            g.fillRoundedRectangle(inBoundsRect.toFloat(), 3.0f);
+        }
+
+        // Draw out-of-bounds background (darker) for remaining part
+        if (!waveformRect.isEmpty()) {
+            g.setColour(outOfBoundsColour);
+            g.fillRoundedRectangle(waveformRect.toFloat(), 3.0f);
+        }
+
+        // Restore waveformRect for waveform drawing
+        waveformRect = inBoundsRect.getUnion(waveformRect);
+    } else {
+        // All in bounds - draw normal background
+        g.setColour(clip.colour.darker(0.4f));
+        g.fillRoundedRectangle(waveformRect.toFloat(), 3.0f);
+    }
+
+    // Recalculate full waveform rect for drawing (we modified it above)
+    waveformRect =
+        juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
 
     // Draw real waveform from audio thumbnail
     if (source.filePath.isNotEmpty()) {
@@ -67,6 +107,12 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
     // Draw center line
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawHorizontalLine(waveformRect.getCentreY(), waveformRect.getX(), waveformRect.getRight());
+
+    // Draw clip boundary indicator line at clip end
+    if (clipEndPixel > waveformRect.getX() && clipEndPixel < waveformRect.getRight()) {
+        g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
+        g.fillRect(clipEndPixel - 1, waveformRect.getY(), 2, waveformRect.getHeight());
+    }
 
     // Clip info overlay
     g.setColour(clip.colour);
@@ -344,9 +390,15 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
             break;
     }
 
-    // Don't notify ClipManager on every drag event - causes expensive feedback loop
-    // Just repaint locally during drag, notify on mouseUp
+    // Repaint locally for immediate feedback
     repaint();
+
+    // Throttled notification to update arrangement view (every 50ms)
+    juce::int64 currentTime = juce::Time::currentTimeMillis();
+    if (currentTime - lastDragUpdateTime_ >= DRAG_UPDATE_INTERVAL_MS) {
+        lastDragUpdateTime_ = currentTime;
+        magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(editingClipId_);
+    }
 
     if (onWaveformChanged) {
         onWaveformChanged();

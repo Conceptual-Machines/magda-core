@@ -98,15 +98,31 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
         int sourceX = waveformArea.getX() + static_cast<int>(source.position * pixelsPerSecond);
         int sourceWidth = static_cast<int>(source.length * pixelsPerSecond);
 
-        // Clip the source rect to the waveform area bounds
-        auto sourceRect = juce::Rectangle<int>(sourceX, waveformArea.getY(), sourceWidth,
-                                               waveformArea.getHeight())
-                              .getIntersection(waveformArea);
+        // Calculate the full (uncropped) source rectangle
+        auto fullSourceRect = juce::Rectangle<int>(sourceX, waveformArea.getY(), sourceWidth,
+                                                   waveformArea.getHeight());
 
-        if (!sourceRect.isEmpty()) {
+        // Clip the source rect to the waveform area bounds
+        auto sourceRect = fullSourceRect.getIntersection(waveformArea);
+
+        if (!sourceRect.isEmpty() && sourceWidth > 0) {
             double fileWindow = source.length / source.stretchFactor;
             double displayStart = source.offset;
             double displayEnd = source.offset + fileWindow;
+
+            // Adjust display range if source was clipped to prevent stretching
+            if (sourceRect != fullSourceRect) {
+                // Calculate how much was clipped from left and right (in pixels)
+                int leftClip = sourceRect.getX() - fullSourceRect.getX();
+                int rightClip = fullSourceRect.getRight() - sourceRect.getRight();
+
+                // Convert pixel offsets to time offsets within the file
+                double leftClipTime = (leftClip / static_cast<double>(sourceWidth)) * fileWindow;
+                double rightClipTime = (rightClip / static_cast<double>(sourceWidth)) * fileWindow;
+
+                displayStart += leftClipTime;
+                displayEnd -= rightClipTime;
+            }
 
             thumbnailManager.drawWaveform(g, sourceRect, source.filePath, displayStart, displayEnd,
                                           clip.colour.brighter(0.2f));
