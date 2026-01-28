@@ -371,9 +371,14 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
 
     // 3. CREATE new clip if doesn't exist
     if (!audioClipPtr) {
-        juce::File audioFile(clip->audioFilePath);
+        if (clip->audioSources.empty()) {
+            DBG("AudioBridge: No audio sources for clip " << clipId);
+            return;
+        }
+        const auto& source = clip->audioSources[0];
+        juce::File audioFile(source.filePath);
         if (!audioFile.existsAsFile()) {
-            DBG("AudioBridge: Audio file not found: " << clip->audioFilePath);
+            DBG("AudioBridge: Audio file not found: " << source.filePath);
             return;
         }
 
@@ -415,9 +420,9 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
                              false);  // don't snap to beat
     }
 
-    // 5. UPDATE audio offset (trim point) if supported
-    if (clip->audioOffset > 0.0) {
-        audioClipPtr->setOffset(te::TimeDuration::fromSeconds(clip->audioOffset));
+    // 5. UPDATE audio offset (trim point)
+    if (!clip->audioSources.empty()) {
+        audioClipPtr->setOffset(te::TimeDuration::fromSeconds(clip->audioSources[0].offset));
     }
 
     DBG("AudioBridge: Synced audio clip " << clipId << " to engine");

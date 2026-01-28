@@ -69,20 +69,19 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     // Waveform area (below header)
     auto waveformArea = bounds.reduced(2, HEADER_HEIGHT + 2);
 
-    if (!clip.audioFilePath.isEmpty()) {
-        // Draw real waveform from audio file
+    if (!clip.audioSources.empty() && clip.audioSources[0].filePath.isNotEmpty()) {
+        const auto& source = clip.audioSources[0];
         auto& thumbnailManager = AudioThumbnailManager::getInstance();
 
-        // Calculate the time range to display
-        // audioOffset is the trim/start point in the audio file
-        double displayStart = clip.audioOffset;
-        double displayEnd = clip.audioOffset + clip.length;
+        // Calculate the time range to display from the audio file
+        double displayStart = source.offset;
+        double displayEnd = source.offset + source.length;
 
         // Draw waveform
-        thumbnailManager.drawWaveform(g, waveformArea, clip.audioFilePath, displayStart, displayEnd,
+        thumbnailManager.drawWaveform(g, waveformArea, source.filePath, displayStart, displayEnd,
                                       clip.colour.brighter(0.2f));
     } else {
-        // Fallback: draw placeholder if no audio file path
+        // Fallback: draw placeholder if no audio source
         g.setColour(clip.colour.brighter(0.2f).withAlpha(0.3f));
         g.drawText("No Audio", waveformArea, juce::Justification::centred);
     }

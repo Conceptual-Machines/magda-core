@@ -22,6 +22,21 @@ struct MidiNote {
 };
 
 /**
+ * @brief Audio source block within an audio clip
+ *
+ * An AudioSource is to an audio clip what a MidiNote is to a MIDI clip.
+ * It represents a block of audio that can be moved and resized independently
+ * of the outer clip container.
+ */
+struct AudioSource {
+    juce::String filePath;       // Path to audio file
+    double position = 0.0;       // Start position within clip (seconds, clip-relative)
+    double offset = 0.0;         // File start offset for trimming (seconds)
+    double length = 0.0;         // Visible/playable duration (seconds)
+    double stretchFactor = 1.0;  // Time stretch factor (future use)
+};
+
+/**
  * @brief Clip data structure containing all clip properties
  */
 struct ClipInfo {
@@ -40,8 +55,7 @@ struct ClipInfo {
     double internalLoopLength = 4.0;  // In beats
 
     // Audio-specific properties
-    juce::String audioFilePath;
-    double audioOffset = 0.0;  // Trim start offset (seconds)
+    std::vector<AudioSource> audioSources;
 
     // MIDI-specific properties
     std::vector<MidiNote> midiNotes;

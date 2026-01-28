@@ -908,27 +908,31 @@ void TrackContentPanel::rebuildClipComponents() {
         };
 
         clipComp->onClipDoubleClicked = [](ClipId id) {
-            // Open the appropriate editor in the bottom panel
+            // Toggle the appropriate editor in the bottom panel
             const auto* clip = ClipManager::getInstance().getClip(id);
             if (!clip)
                 return;
 
-            // Ensure clip is selected before opening editor
-            // (onClipSelected may have already been called, but this ensures it)
             ClipManager::getInstance().setSelectedClip(id);
 
             auto& panelController = daw::ui::PanelController::getInstance();
 
-            // Expand the bottom panel if collapsed
-            panelController.setCollapsed(daw::ui::PanelLocation::Bottom, false);
+            // Toggle: if bottom panel is already open, collapse it; otherwise expand
+            bool isCollapsed =
+                panelController.getPanelState(daw::ui::PanelLocation::Bottom).collapsed;
+            if (isCollapsed) {
+                panelController.setCollapsed(daw::ui::PanelLocation::Bottom, false);
 
-            // Switch to the appropriate editor based on clip type
-            if (clip->type == ClipType::MIDI) {
-                panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
-                                                   daw::ui::PanelContentType::PianoRoll);
+                // Switch to the appropriate editor based on clip type
+                if (clip->type == ClipType::MIDI) {
+                    panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
+                                                       daw::ui::PanelContentType::PianoRoll);
+                } else {
+                    panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
+                                                       daw::ui::PanelContentType::WaveformEditor);
+                }
             } else {
-                panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
-                                                   daw::ui::PanelContentType::WaveformEditor);
+                panelController.setCollapsed(daw::ui::PanelLocation::Bottom, true);
             }
         };
 

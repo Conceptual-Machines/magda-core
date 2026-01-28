@@ -2,6 +2,7 @@
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "audio/AudioThumbnailManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -89,64 +90,62 @@ void WaveformEditorContent::paintWaveform(juce::Graphics& g, juce::Rectangle<int
     g.setColour(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
     g.fillRoundedRectangle(area.toFloat(), 4.0f);
 
-    // Since we don't have actual audio data loaded, draw a placeholder waveform
-    // In a real implementation, this would read from an AudioThumbnail or similar
-
-    g.setColour(clip.colour);
-
-    float centerY = area.getCentreY();
-    int width = juce::jmin(area.getWidth(), static_cast<int>(clip.length * horizontalZoom_));
-
-    // Draw a simulated waveform using sine waves of varying frequencies
-    juce::Path waveform;
-    bool started = false;
-
-    for (int x = 0; x < width; x++) {
-        float time = static_cast<float>(x) / horizontalZoom_;
-        float amplitude = 0.0f;
-
-        // Combine multiple frequencies for a more realistic look
-        amplitude += std::sin(time * 5.0f) * 0.3f;
-        amplitude += std::sin(time * 13.0f) * 0.2f;
-        amplitude += std::sin(time * 27.0f) * 0.15f;
-        amplitude += std::sin(time * 53.0f) * 0.1f;
-
-        // Add some envelope variation
-        float envelope = 0.7f + 0.3f * std::sin(time * 0.5f);
-        amplitude *= envelope;
-
-        float y = centerY + amplitude * area.getHeight() * 0.4f;
-
-        if (!started) {
-            waveform.startNewSubPath(area.getX() + x, y);
-            started = true;
-        } else {
-            waveform.lineTo(area.getX() + x, y);
-        }
+    if (clip.audioSources.empty()) {
+        paintNoClipMessage(g, area);
+        return;
     }
 
-    g.strokePath(waveform, juce::PathStrokeType(1.5f));
+    const auto& source = clip.audioSources[0];
+
+    // Calculate waveform rectangle based on source position and length
+    int positionPixels = static_cast<int>(source.position * horizontalZoom_);
+    int widthPixels = static_cast<int>(source.length * horizontalZoom_);
+    widthPixels = juce::jmin(widthPixels, area.getWidth() - positionPixels);
+
+    auto waveformRect = juce::Rectangle<int>(area.getX() + positionPixels, area.getY(), widthPixels,
+                                             area.getHeight());
+
+    // Draw waveform background (source block)
+    g.setColour(clip.colour.darker(0.4f));
+    g.fillRoundedRectangle(waveformRect.toFloat(), 3.0f);
+
+    // Draw real waveform from audio thumbnail
+    if (source.filePath.isNotEmpty()) {
+        auto& thumbnailManager = magda::AudioThumbnailManager::getInstance();
+        double displayStart = source.offset;
+        double displayEnd = source.offset + source.length;
+
+        thumbnailManager.drawWaveform(g, waveformRect.reduced(0, 4), source.filePath, displayStart,
+                                      displayEnd, clip.colour.brighter(0.2f));
+    }
 
     // Draw center line
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawHorizontalLine(static_cast<int>(centerY), area.getX(), area.getX() + width);
+    g.drawHorizontalLine(waveformRect.getCentreY(), waveformRect.getX(), waveformRect.getRight());
 
     // Clip info overlay
     g.setColour(clip.colour);
     g.setFont(FontManager::getInstance().getUIFont(12.0f));
-    g.drawText(clip.name, area.reduced(8, 4), juce::Justification::topLeft, true);
+    g.drawText(clip.name, waveformRect.reduced(8, 4), juce::Justification::topLeft, true);
 
-    // File path (if available)
-    if (clip.audioFilePath.isNotEmpty()) {
+    // File path
+    if (source.filePath.isNotEmpty()) {
         g.setColour(DarkTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        g.drawText(clip.audioFilePath, area.reduced(8, 4).translated(0, 16),
+        g.drawText(source.filePath, waveformRect.reduced(8, 4).translated(0, 16),
                    juce::Justification::topLeft, true);
     }
 
-    // Border
+    // Border around source block
     g.setColour(clip.colour.withAlpha(0.5f));
-    g.drawRoundedRectangle(area.toFloat(), 4.0f, 1.0f);
+    g.drawRoundedRectangle(waveformRect.toFloat(), 3.0f, 1.0f);
+
+    // Draw trim handles when hovering
+    // Left edge handle
+    g.setColour(clip.colour.brighter(0.4f));
+    g.fillRect(waveformRect.getX(), waveformRect.getY(), 3, waveformRect.getHeight());
+    // Right edge handle
+    g.fillRect(waveformRect.getRight() - 3, waveformRect.getY(), 3, waveformRect.getHeight());
 }
 
 void WaveformEditorContent::paintNoClipMessage(juce::Graphics& g, juce::Rectangle<int> area) {
@@ -177,6 +176,107 @@ void WaveformEditorContent::onActivated() {
 
 void WaveformEditorContent::onDeactivated() {
     // Nothing to do
+}
+
+// ============================================================================
+// Mouse Interaction
+// ============================================================================
+
+void WaveformEditorContent::mouseDown(const juce::MouseEvent& event) {
+    if (editingClipId_ == magda::INVALID_CLIP_ID)
+        return;
+
+    auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    if (!clip || clip->type != magda::ClipType::Audio || clip->audioSources.empty())
+        return;
+
+    const auto& source = clip->audioSources[0];
+    int x = event.x;
+
+    if (isNearLeftEdge(x, source)) {
+        dragMode_ = DragMode::ResizeLeft;
+    } else if (isNearRightEdge(x, source)) {
+        dragMode_ = DragMode::ResizeRight;
+    } else if (isInsideWaveform(x, source)) {
+        dragMode_ = DragMode::Move;
+    } else {
+        dragMode_ = DragMode::None;
+        return;
+    }
+
+    dragStartX_ = x;
+    dragStartPosition_ = source.position;
+    dragStartAudioOffset_ = source.offset;
+    dragStartLength_ = source.length;
+}
+
+void WaveformEditorContent::mouseDrag(const juce::MouseEvent& event) {
+    if (dragMode_ == DragMode::None)
+        return;
+    if (editingClipId_ == magda::INVALID_CLIP_ID)
+        return;
+
+    auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    if (!clip || clip->audioSources.empty())
+        return;
+
+    auto& source = clip->audioSources[0];
+    double deltaSeconds = (event.x - dragStartX_) / horizontalZoom_;
+
+    switch (dragMode_) {
+        case DragMode::ResizeLeft: {
+            // Trim from left: advance both offset and position, decrease length
+            double newOffset = std::max(0.0, dragStartAudioOffset_ + deltaSeconds);
+            double offsetDelta = newOffset - dragStartAudioOffset_;
+            source.offset = newOffset;
+            source.position = std::max(0.0, dragStartPosition_ + offsetDelta);
+            source.length = std::max(0.1, dragStartLength_ - offsetDelta);
+            break;
+        }
+        case DragMode::ResizeRight: {
+            // Trim from right: only change length
+            source.length = std::max(0.1, dragStartLength_ + deltaSeconds);
+            break;
+        }
+        case DragMode::Move: {
+            // Move: only change position (slides block, same audio content)
+            source.position = std::max(0.0, dragStartPosition_ + deltaSeconds);
+            break;
+        }
+        default:
+            break;
+    }
+
+    magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(editingClipId_);
+    repaint();
+}
+
+void WaveformEditorContent::mouseUp(const juce::MouseEvent& /*event*/) {
+    dragMode_ = DragMode::None;
+}
+
+void WaveformEditorContent::mouseMove(const juce::MouseEvent& event) {
+    if (editingClipId_ == magda::INVALID_CLIP_ID) {
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+        return;
+    }
+
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    if (!clip || clip->audioSources.empty()) {
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+        return;
+    }
+
+    const auto& source = clip->audioSources[0];
+    int x = event.x;
+
+    if (isNearLeftEdge(x, source) || isNearRightEdge(x, source)) {
+        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+    } else if (isInsideWaveform(x, source)) {
+        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+    } else {
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+    }
 }
 
 // ============================================================================
@@ -220,6 +320,37 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
         editingClipId_ = clipId;
         repaint();
     }
+}
+
+// ============================================================================
+// Hit Testing Helpers
+// ============================================================================
+
+juce::Rectangle<int> WaveformEditorContent::getWaveformArea() const {
+    auto bounds = getLocalBounds();
+    bounds.removeFromTop(HEADER_HEIGHT);
+    return bounds.reduced(SIDE_MARGIN, 10);
+}
+
+bool WaveformEditorContent::isNearLeftEdge(int x, const magda::AudioSource& source) const {
+    auto area = getWaveformArea();
+    int leftEdgeX = area.getX() + static_cast<int>(source.position * horizontalZoom_);
+    return std::abs(x - leftEdgeX) <= EDGE_GRAB_DISTANCE;
+}
+
+bool WaveformEditorContent::isNearRightEdge(int x, const magda::AudioSource& source) const {
+    auto area = getWaveformArea();
+    int rightEdgeX =
+        area.getX() + static_cast<int>((source.position + source.length) * horizontalZoom_);
+    return std::abs(x - rightEdgeX) <= EDGE_GRAB_DISTANCE;
+}
+
+bool WaveformEditorContent::isInsideWaveform(int x, const magda::AudioSource& source) const {
+    auto area = getWaveformArea();
+    int leftEdgeX = area.getX() + static_cast<int>(source.position * horizontalZoom_);
+    int rightEdgeX =
+        area.getX() + static_cast<int>((source.position + source.length) * horizontalZoom_);
+    return x > leftEdgeX + EDGE_GRAB_DISTANCE && x < rightEdgeX - EDGE_GRAB_DISTANCE;
 }
 
 }  // namespace magda::daw::ui

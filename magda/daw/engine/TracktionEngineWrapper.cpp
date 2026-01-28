@@ -254,6 +254,12 @@ bool TracktionEngineWrapper::initialize() {
             std::cout << "Tracktion Engine initialized (no Edit created)" << std::endl;
         }
 
+        // Ensure devicesLoading_ is cleared so transport isn't blocked.
+        // The async changeListenerCallback may not fire if no MIDI devices are present.
+        if (devicesLoading_) {
+            devicesLoading_ = false;
+        }
+
         return currentEdit_ != nullptr;
 
     } catch (const std::exception& e) {
@@ -385,22 +391,20 @@ void TracktionEngineWrapper::changeListenerCallback(juce::ChangeBroadcaster* sou
             }
         }
 
-        // If we have MIDI devices and a playback context, reallocate to include them
-        if (hasMidiDevices && currentEdit_) {
+        // Reallocate playback context whenever devices change
+        // This is critical: the context may have been allocated before wave devices were ready
+        if (currentEdit_) {
             if (auto* ctx = currentEdit_->getCurrentPlaybackContext()) {
                 int inputsBefore = static_cast<int>(ctx->getAllInputs().size());
                 ctx->reallocate();
                 int inputsAfter = static_cast<int>(ctx->getAllInputs().size());
+                DBG("Device change: Reallocated playback context (inputs: "
+                    << inputsBefore << " -> " << inputsAfter << ")");
 
-                if (inputsAfter > inputsBefore) {
-                    DBG("Device change: Reallocated playback context");
-                    DBG("  Inputs: " << inputsBefore << " -> " << inputsAfter);
-
-                    // Notify AudioBridge that MIDI devices are now available
-                    // so it can apply any pending MIDI routes
-                    if (audioBridge_) {
-                        audioBridge_->onMidiDevicesAvailable();
-                    }
+                // Notify AudioBridge that MIDI devices are now available
+                // so it can apply any pending MIDI routes
+                if (hasMidiDevices && audioBridge_) {
+                    audioBridge_->onMidiDevicesAvailable();
                 }
             }
         }
@@ -492,10 +496,19 @@ void TracktionEngineWrapper::play() {
     if (currentEdit_) {
         auto& transport = currentEdit_->getTransport();
 
-        // Tracktion Engine handles PDC (Plugin Delay Compensation) internally
-        // by analyzing the playback graph and shifting audio streams accordingly.
-        // Notes are stored clip-relative, so they play at the correct absolute time
-        // regardless of PDC. No pre-roll needed!
+        // Detect stale audio device (e.g. CoreAudio daemon stuck after sleep)
+        auto& jdm = engine_->getDeviceManager().deviceManager;
+        auto* device = jdm.getCurrentAudioDevice();
+        if (device && device->isPlaying() && jdm.getCpuUsage() == 0.0) {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::MessageBoxIconType::WarningIcon, "Audio Device Not Responding",
+                "The audio device '" + device->getName() +
+                    "' is not processing audio.\n\n"
+                    "Try disconnecting and reconnecting your audio interface, "
+                    "or restarting the audio driver.",
+                "OK");
+        }
+
         transport.play(false);
         std::cout << "Playback started" << std::endl;
     }

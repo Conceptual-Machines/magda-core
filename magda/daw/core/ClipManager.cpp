@@ -25,7 +25,7 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     clip.colour = ClipInfo::getDefaultColor(static_cast<int>(clips_.size()));
     clip.startTime = startTime;
     clip.length = length;
-    clip.audioFilePath = audioFilePath;
+    clip.audioSources.push_back(AudioSource{audioFilePath, 0.0, 0.0, length});
 
     clips_.push_back(clip);
     notifyClipsChanged();
@@ -204,14 +204,18 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime) {
     rightClip.startTime = splitTime;
     rightClip.length = rightLength;
 
-    // Adjust audio offset for right clip
-    if (rightClip.type == ClipType::Audio) {
-        rightClip.audioOffset += leftLength;
+    // Adjust audio source offset for right clip
+    if (rightClip.type == ClipType::Audio && !rightClip.audioSources.empty()) {
+        rightClip.audioSources[0].offset += leftLength;
+        rightClip.audioSources[0].length = rightLength;
     }
 
     // Resize original clip to be left half
     clip->length = leftLength;
     clip->name = clip->name + " L";
+    if (clip->type == ClipType::Audio && !clip->audioSources.empty()) {
+        clip->audioSources[0].length = leftLength;
+    }
 
     clips_.push_back(rightClip);
     notifyClipsChanged();
@@ -260,10 +264,21 @@ void ClipManager::setClipLoopLength(ClipId clipId, double lengthBeats) {
     }
 }
 
-void ClipManager::setClipAudioOffset(ClipId clipId, double offset) {
+void ClipManager::setAudioSourcePosition(ClipId clipId, int sourceIndex, double position) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
-            clip->audioOffset = std::max(0.0, offset);
+        if (clip->type == ClipType::Audio && sourceIndex >= 0 &&
+            sourceIndex < static_cast<int>(clip->audioSources.size())) {
+            clip->audioSources[sourceIndex].position = std::max(0.0, position);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::setAudioSourceLength(ClipId clipId, int sourceIndex, double length) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio && sourceIndex >= 0 &&
+            sourceIndex < static_cast<int>(clip->audioSources.size())) {
+            clip->audioSources[sourceIndex].length = std::max(0.1, length);
             notifyClipPropertyChanged(clipId);
         }
     }

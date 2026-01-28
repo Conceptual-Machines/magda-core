@@ -155,7 +155,8 @@ class ClipManager {
     void setClipLoopLength(ClipId clipId, double lengthBeats);
 
     // Audio-specific
-    void setClipAudioOffset(ClipId clipId, double offset);
+    void setAudioSourcePosition(ClipId clipId, int sourceIndex, double position);
+    void setAudioSourceLength(ClipId clipId, int sourceIndex, double length);
 
     // MIDI-specific
     void addMidiNote(ClipId clipId, const MidiNote& note);
