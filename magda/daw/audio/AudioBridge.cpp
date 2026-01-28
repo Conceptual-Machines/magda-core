@@ -395,6 +395,9 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
 
         audioClipPtr = clipRef.get();
 
+        // Enable timestretching (required for speed ratio changes)
+        audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
+
         // Store bidirectional mapping
         std::string engineClipId = audioClipPtr->itemID.toString().toStdString();
         clipIdToEngineId_[clipId] = engineClipId;
