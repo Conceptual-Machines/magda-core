@@ -306,7 +306,6 @@ TEST_CASE("Audio Clip - Real-world scenario: Amen break trim", "[audio][clip][in
         source.stretchFactor = 1.0;
 
         // Initial state: First snare at timeline position 1.0s
-        double firstSnarePosition = 1.0;
 
         // Trim from left by 1.0 second (to bar 1.3, where first snare is)
         ClipManager::getInstance().resizeClip(clipId, 8.0, true);
@@ -342,7 +341,6 @@ TEST_CASE("Audio Clip - Real-world scenario: Amen break trim", "[audio][clip][in
         source.stretchFactor = 2.0;  // 2x slower, file window = 9.0s
 
         // First snare now at timeline position 2.0s (1.0s * 2)
-        double firstSnarePosition = 2.0;
 
         // Trim from left by 2.0 timeline seconds (to first snare)
         ClipManager::getInstance().resizeClip(clipId, 16.0, true);

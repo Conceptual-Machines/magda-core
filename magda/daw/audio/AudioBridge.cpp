@@ -415,6 +415,10 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
 
         audioClipPtr = clipRef.get();
 
+        // Enable timestretcher at creation time (before any speedRatio changes)
+        // Must be set before setSpeedRatio() to avoid assertion failures
+        audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
+
         // Store bidirectional mapping
         std::string engineClipId = audioClipPtr->itemID.toString().toStdString();
         clipIdToEngineId_[clipId] = engineClipId;
@@ -470,6 +474,28 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     auto currentOffset = audioClipPtr->getPosition().getOffset().inSeconds();
     if (std::abs(currentOffset - engineOffset) > 0.001) {
         audioClipPtr->setOffset(te::TimeDuration::fromSeconds(engineOffset));
+    }
+
+    // 6. UPDATE speed ratio for time-stretching
+    // TE speedRatio: 1.0 = normal, 2.0 = 2x faster, 0.5 = 2x slower
+    // Our stretchFactor: 1.0 = normal, 2.0 = 2x slower, 0.5 = 2x faster
+    // Mapping: TE speedRatio = 1.0 / stretchFactor
+    if (!clip->audioSources.empty()) {
+        const auto& source = clip->audioSources[0];
+        double teSpeedRatio = 1.0 / source.stretchFactor;
+        double currentSpeedRatio = audioClipPtr->getSpeedRatio();
+
+        if (std::abs(currentSpeedRatio - teSpeedRatio) > 0.001) {
+            // Ensure timestretcher is enabled (may not be set for pre-existing clips)
+            if (audioClipPtr->getTimeStretchMode() == te::TimeStretcher::disabled) {
+                audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
+            }
+            // Disable autoTempo which blocks setSpeedRatio in AudioClipBase
+            if (audioClipPtr->getAutoTempo()) {
+                audioClipPtr->setAutoTempo(false);
+            }
+            audioClipPtr->setSpeedRatio(teSpeedRatio);
+        }
     }
 }
 

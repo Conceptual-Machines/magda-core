@@ -58,8 +58,18 @@ class ClipOperations {
         // Compensate audio source positions so they stay at the same absolute
         // timeline position. source.position is relative to clip.startTime,
         // so when clip start moves, we adjust by the opposite amount.
+        // Then trim any audio that now falls before clip start.
         for (auto& source : clip.audioSources) {
             source.position -= actualStartDelta;
+
+            // Trim audio that extends before clip start (negative position)
+            if (source.position < 0.0) {
+                double trimAmount = -source.position;                // timeline seconds to trim
+                source.offset += trimAmount / source.stretchFactor;  // advance file offset
+                source.length -= trimAmount;                         // shorten visible duration
+                source.length = juce::jmax(MIN_SOURCE_LENGTH, source.length);
+                source.position = 0.0;
+            }
         }
     }
 
