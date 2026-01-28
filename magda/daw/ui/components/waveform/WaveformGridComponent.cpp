@@ -43,6 +43,11 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
     int positionPixels = timeToPixel(displayStartTime);
     int widthPixels = static_cast<int>(source.length * horizontalZoom_);
 
+    DBG("paintWaveform - mode=" << (relativeMode_ ? "REL" : "ABS") << ", clipStart="
+                                << clipStartTime_ << ", source.position=" << source.position
+                                << ", displayStartTime=" << displayStartTime
+                                << ", positionPixels=" << positionPixels);
+
     auto waveformRect =
         juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
 

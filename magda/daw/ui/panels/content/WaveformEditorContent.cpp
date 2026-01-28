@@ -235,6 +235,9 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
             timeRuler_->setTempo(bpm);
             timeRuler_->setTimeOffset(clip->startTime);
             timeRuler_->setClipLength(clip->length);
+
+            // Scroll viewport to show clip at new position
+            scrollToClipStart();
         }
 
         updateGridSize();
