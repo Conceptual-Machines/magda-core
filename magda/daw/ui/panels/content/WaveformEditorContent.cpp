@@ -88,7 +88,7 @@ void WaveformEditorContent::paintHeader(juce::Graphics& g, juce::Rectangle<int> 
 
         if (barX >= area.getRight() - SIDE_MARGIN)
             break;
-        if (barTime > lengthSeconds + secondsPerBar)
+        if (barTime > lengthSeconds)
             break;
 
         if (barX >= SIDE_MARGIN) {
@@ -294,13 +294,14 @@ void WaveformEditorContent::mouseDrag(const juce::MouseEvent& event) {
         }
         case DragMode::ResizeRight: {
             // Trim from right: change length, capped so file window stays within file
-            // fileWindow = length / stretchFactor, so maxLength = (fileDuration - offset) *
-            // stretchFactor
+            // and source doesn't extend past clip container
             double newLength = std::max(0.1, dragStartLength_ + deltaSeconds);
             if (dragStartFileDuration_ > 0.0) {
                 double maxLength = (dragStartFileDuration_ - source.offset) * source.stretchFactor;
                 newLength = std::min(newLength, maxLength);
             }
+            double clipMaxLength = clip->length - source.position;
+            newLength = std::min(newLength, clipMaxLength);
             source.length = newLength;
             break;
         }
@@ -311,29 +312,33 @@ void WaveformEditorContent::mouseDrag(const juce::MouseEvent& event) {
         }
         case DragMode::StretchRight: {
             // Stretch from right: anchor left edge, length changes, stretchFactor updates
+            // Capped to clip container length
+            double maxLength = clip->length - source.position;
             double newLength = std::max(0.1, dragStartLength_ + deltaSeconds);
+            newLength = std::min(newLength, maxLength);
             double stretchRatio = newLength / dragStartLength_;
             double newStretchFactor = dragStartStretchFactor_ * stretchRatio;
             newStretchFactor = juce::jlimit(0.25, 4.0, newStretchFactor);
-            // Back-compute length from clamped stretch factor
             newLength = dragStartLength_ * (newStretchFactor / dragStartStretchFactor_);
+            newLength = std::min(newLength, maxLength);
             source.length = newLength;
             source.stretchFactor = newStretchFactor;
-            // offset unchanged — same audio content, just time-stretched
             break;
         }
         case DragMode::StretchLeft: {
             // Stretch from left: anchor right edge, position shifts, length changes
+            // Capped so position doesn't go below 0 (i.e. past clip start)
             double rightEdge = dragStartPosition_ + dragStartLength_;
             double newLength = std::max(0.1, dragStartLength_ - deltaSeconds);
+            newLength = std::min(newLength, rightEdge);  // position >= 0
             double stretchRatio = newLength / dragStartLength_;
             double newStretchFactor = dragStartStretchFactor_ * stretchRatio;
             newStretchFactor = juce::jlimit(0.25, 4.0, newStretchFactor);
             newLength = dragStartLength_ * (newStretchFactor / dragStartStretchFactor_);
+            newLength = std::min(newLength, rightEdge);
             source.length = newLength;
             source.position = rightEdge - newLength;
             source.stretchFactor = newStretchFactor;
-            // offset unchanged
             break;
         }
         default:
