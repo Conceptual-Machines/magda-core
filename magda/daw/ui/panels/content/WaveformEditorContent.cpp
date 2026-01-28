@@ -335,6 +335,15 @@ void WaveformEditorContent::mouseUp(const juce::MouseEvent& /*event*/) {
     headerDragActive_ = false;
 }
 
+void WaveformEditorContent::mouseMove(const juce::MouseEvent& event) {
+    bool overHeader = event.y < (TOOLBAR_HEIGHT + TIME_RULER_HEIGHT);
+    if (overHeader) {
+        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+    } else {
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+    }
+}
+
 void WaveformEditorContent::mouseWheelMove(const juce::MouseEvent& event,
                                            const juce::MouseWheelDetails& wheel) {
     // Check if mouse is over the toolbar or time ruler area (header)

@@ -388,8 +388,8 @@ void TimelineComponent::mouseMove(const juce::MouseEvent& event) {
         int rulerMidpoint = layout.getRulerZoneSplitY();
 
         if (event.y < rulerMidpoint) {
-            // Upper ruler area - zoom cursor (vertical resize indicates drag up/down)
-            setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+            // Upper ruler area - zoom cursor (left/right drag to zoom)
+            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
         } else {
             // Lower ruler area (near tick labels) - time selection cursor
             setMouseCursor(juce::MouseCursor::IBeamCursor);
