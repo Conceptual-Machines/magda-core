@@ -1,7 +1,9 @@
 #include "WaveformEditorContent.hpp"
 
+#include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../../utils/TimelineUtils.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 
 namespace magda::daw::ui {
@@ -54,8 +56,6 @@ void WaveformEditorContent::paintHeader(juce::Graphics& g, juce::Rectangle<int> 
     g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
     g.fillRect(area);
 
-    // Draw time markers
-    g.setColour(DarkTheme::getSecondaryTextColour());
     g.setFont(FontManager::getInstance().getUIFont(9.0f));
 
     const auto* clip = editingClipId_ != magda::INVALID_CLIP_ID
@@ -64,18 +64,59 @@ void WaveformEditorContent::paintHeader(juce::Graphics& g, juce::Rectangle<int> 
 
     double lengthSeconds = clip ? clip->length : 10.0;
 
-    // Draw markers every second
-    for (int sec = 0; sec <= static_cast<int>(lengthSeconds) + 1; sec++) {
-        int x = SIDE_MARGIN + static_cast<int>(sec * horizontalZoom_);
-        if (x < area.getRight() - SIDE_MARGIN) {
-            g.drawVerticalLine(x, area.getY(), area.getBottom());
+    // Get tempo and time signature from TimelineController
+    double bpm = 120.0;
+    int timeSigNumerator = 4;
+    auto* controller = magda::TimelineController::getCurrent();
+    if (controller) {
+        const auto& tempoState = controller->getState().tempo;
+        bpm = tempoState.bpm;
+        timeSigNumerator = tempoState.timeSignatureNumerator;
+    }
 
-            // Format time as MM:SS
-            int minutes = sec / 60;
-            int seconds = sec % 60;
-            juce::String timeStr = juce::String::formatted("%d:%02d", minutes, seconds);
-            g.drawText(timeStr, x + 2, area.getY(), 40, area.getHeight(),
+    double secondsPerBeat = 60.0 / bpm;
+    double secondsPerBar = secondsPerBeat * timeSigNumerator;
+
+    // Determine whether to show beat subdivisions based on zoom
+    double pixelsPerBar = secondsPerBar * horizontalZoom_;
+    bool showBeats = pixelsPerBar > 60;
+
+    // Draw bar and beat lines
+    for (int bar = 1;; bar++) {
+        double barTime = (bar - 1) * secondsPerBar;
+        int barX = SIDE_MARGIN + static_cast<int>(barTime * horizontalZoom_);
+
+        if (barX >= area.getRight() - SIDE_MARGIN)
+            break;
+        if (barTime > lengthSeconds + secondsPerBar)
+            break;
+
+        if (barX >= SIDE_MARGIN) {
+            // Bar line (major)
+            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.drawVerticalLine(barX, static_cast<float>(area.getY()),
+                               static_cast<float>(area.getBottom()));
+
+            // Bar number label
+            juce::String label = juce::String(bar);
+            g.drawText(label, barX + 2, area.getY(), 30, area.getHeight(),
                        juce::Justification::centredLeft, false);
+        }
+
+        // Beat subdivisions within bar
+        if (showBeats) {
+            g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.4f));
+            for (int beat = 2; beat <= timeSigNumerator; beat++) {
+                double beatTime = barTime + (beat - 1) * secondsPerBeat;
+                int beatX = SIDE_MARGIN + static_cast<int>(beatTime * horizontalZoom_);
+
+                if (beatX >= SIDE_MARGIN && beatX < area.getRight() - SIDE_MARGIN &&
+                    beatTime <= lengthSeconds) {
+                    g.drawVerticalLine(beatX,
+                                       static_cast<float>(area.getY() + area.getHeight() / 2),
+                                       static_cast<float>(area.getBottom()));
+                }
+            }
         }
     }
 

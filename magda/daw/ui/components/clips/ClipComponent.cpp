@@ -73,13 +73,26 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
         const auto& source = clip.audioSources[0];
         auto& thumbnailManager = AudioThumbnailManager::getInstance();
 
-        // Calculate the time range to display from the audio file
-        double displayStart = source.offset;
-        double displayEnd = source.offset + source.length;
+        // Calculate the sub-rectangle for this audio source within the clip.
+        // The component's pixel width represents clip.length seconds, so we
+        // map source.position and source.length to pixel coordinates.
+        double pixelsPerSecond =
+            (clip.length > 0.0) ? static_cast<double>(waveformArea.getWidth()) / clip.length : 0.0;
+        int sourceX = waveformArea.getX() + static_cast<int>(source.position * pixelsPerSecond);
+        int sourceWidth = static_cast<int>(source.length * pixelsPerSecond);
 
-        // Draw waveform
-        thumbnailManager.drawWaveform(g, waveformArea, source.filePath, displayStart, displayEnd,
-                                      clip.colour.brighter(0.2f));
+        // Clip the source rect to the waveform area bounds
+        auto sourceRect = juce::Rectangle<int>(sourceX, waveformArea.getY(), sourceWidth,
+                                               waveformArea.getHeight())
+                              .getIntersection(waveformArea);
+
+        if (!sourceRect.isEmpty()) {
+            double displayStart = source.offset;
+            double displayEnd = source.offset + source.length;
+
+            thumbnailManager.drawWaveform(g, sourceRect, source.filePath, displayStart, displayEnd,
+                                          clip.colour.brighter(0.2f));
+        }
     } else {
         // Fallback: draw placeholder if no audio source
         g.setColour(clip.colour.brighter(0.2f).withAlpha(0.3f));
