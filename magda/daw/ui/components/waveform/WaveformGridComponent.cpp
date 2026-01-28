@@ -131,25 +131,23 @@ void WaveformGridComponent::resized() {
 // ============================================================================
 
 void WaveformGridComponent::setClip(magda::ClipId clipId) {
-    if (editingClipId_ != clipId) {
-        editingClipId_ = clipId;
+    editingClipId_ = clipId;
 
-        // Update clip info
-        const auto* clip = getClip();
-        if (clip) {
-            clipStartTime_ = clip->startTime;
-            clipLength_ = clip->length;
-            DBG("WaveformGrid::setClip - clipId=" << clipId << ", startTime=" << clipStartTime_
-                                                  << ", length=" << clipLength_);
-        } else {
-            clipStartTime_ = 0.0;
-            clipLength_ = 0.0;
-            DBG("WaveformGrid::setClip - no clip found for id=" << clipId);
-        }
-
-        updateGridSize();
-        repaint();
+    // Always update clip info (even if same clip, properties may have changed)
+    const auto* clip = getClip();
+    if (clip) {
+        clipStartTime_ = clip->startTime;
+        clipLength_ = clip->length;
+        DBG("WaveformGrid::setClip - clipId=" << clipId << ", startTime=" << clipStartTime_
+                                              << ", length=" << clipLength_);
+    } else {
+        clipStartTime_ = 0.0;
+        clipLength_ = 0.0;
+        DBG("WaveformGrid::setClip - no clip found for id=" << clipId);
     }
+
+    updateGridSize();
+    repaint();
 }
 
 void WaveformGridComponent::setRelativeMode(bool relative) {
