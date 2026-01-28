@@ -911,6 +911,7 @@ void MainWindow::setupMenuCallbacks() {
             // Import each file as a clip
             namespace te = tracktion;
             double currentTime = 0.0;  // Start at timeline beginning
+            int numImported = 0;
 
             for (const auto& file : files) {
                 // Validate audio file before importing
@@ -926,15 +927,23 @@ void MainWindow::setupMenuCallbacks() {
                                                         fileDuration, file.getFullPathName());
 
                 UndoManager::getInstance().executeCommand(std::move(cmd));
+                ++numImported;
 
                 // Space clips sequentially
                 currentTime += fileDuration + 0.5;  // 0.5s gap between clips
             }
 
-            juce::String message =
-                juce::String(files.size()) + " audio file(s) imported successfully.";
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Import Audio",
-                                                   message);
+            if (numImported > 0) {
+                juce::String message =
+                    juce::String(numImported) + " audio file(s) imported successfully.";
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Import Audio",
+                                                       message);
+            } else {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::WarningIcon, "Import Audio",
+                    "No valid audio files could be imported. The selected files may be "
+                    "unsupported or corrupt.");
+            }
 
             fileChooser_.reset();
         });
