@@ -291,10 +291,13 @@ TEST_CASE("Audio Clip - Real-world scenario: Amen break trim", "[audio][clip][in
     ClipManager::getInstance().shutdown();
 
     SECTION("Trim amen break from left preserves timeline positions") {
-        // Amen break: ~4.5 bars at 120 BPM = 9 seconds
+        // Amen break: ~4.5 bars at given BPM = 9 seconds
+        constexpr double kBPM = 120.0;
+        constexpr double kSecondsPerBeat = 60.0 / kBPM;  // 0.5s at 120 BPM
         // Beat structure: K K S K | K K S K | K K S K | K K S K | K (4.5 bars)
         // Snare hits at beats 2, 6, 10, 14 (bars 1.3, 2.3, 3.3, 4.3)
         // At 120 BPM, each beat = 0.5s, so snares at 1.0s, 3.0s, 5.0s, 7.0s
+        juce::ignoreUnused(kSecondsPerBeat);
 
         ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 9.0, "amen.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
@@ -491,7 +494,7 @@ TEST_CASE("ClipOperations - stretchSourceFromLeft right edge anchoring bug",
 
         // Simulate drag event 1: stretch to 6.0 seconds
         ClipOperations::stretchSourceFromLeft(source, 6.0, originalLength, originalPosition,
-                                              originalStretchFactor, 100.0);
+                                              originalStretchFactor);
 
         double rightEdge1 = source.position + source.length;
         REQUIRE(rightEdge1 == Catch::Approx(expectedRightEdge));
@@ -501,7 +504,7 @@ TEST_CASE("ClipOperations - stretchSourceFromLeft right edge anchoring bug",
 
         // Simulate drag event 2: stretch to 7.0 seconds (more stretching)
         ClipOperations::stretchSourceFromLeft(source, 7.0, originalLength, originalPosition,
-                                              originalStretchFactor, 100.0);
+                                              originalStretchFactor);
 
         double rightEdge2 = source.position + source.length;
         REQUIRE(rightEdge2 == Catch::Approx(expectedRightEdge));  // Still 15.0!
@@ -511,7 +514,7 @@ TEST_CASE("ClipOperations - stretchSourceFromLeft right edge anchoring bug",
 
         // Simulate drag event 3: compress to 4.0 seconds (user dragged right)
         ClipOperations::stretchSourceFromLeft(source, 4.0, originalLength, originalPosition,
-                                              originalStretchFactor, 100.0);
+                                              originalStretchFactor);
 
         double rightEdge3 = source.position + source.length;
         REQUIRE(rightEdge3 == Catch::Approx(expectedRightEdge));  // Still 15.0!
@@ -521,7 +524,7 @@ TEST_CASE("ClipOperations - stretchSourceFromLeft right edge anchoring bug",
 
         // Simulate drag event 4: back to original length
         ClipOperations::stretchSourceFromLeft(source, 5.0, originalLength, originalPosition,
-                                              originalStretchFactor, 100.0);
+                                              originalStretchFactor);
 
         double rightEdge4 = source.position + source.length;
         REQUIRE(rightEdge4 == Catch::Approx(expectedRightEdge));      // Still 15.0!
@@ -547,7 +550,7 @@ TEST_CASE("ClipOperations - stretchSourceFromLeft right edge anchoring bug",
         // But it's also constrained by rightEdge (can't exceed 7.0)
         // So final length will be 7.0 (limited by right edge), giving 3.5x stretch factor
         ClipOperations::stretchSourceFromLeft(source, 10.0, originalLength, originalPosition,
-                                              originalStretchFactor, 100.0);
+                                              originalStretchFactor);
 
         // Length constrained by right edge to 7.0
         REQUIRE(source.length == Catch::Approx(7.0));
@@ -576,7 +579,7 @@ TEST_CASE("ClipOperations - stretchSourceFromLeft right edge anchoring bug",
 
         // Stretch from 10.0 to 15.0 (1.5x stretch on top of existing 2.0x)
         ClipOperations::stretchSourceFromLeft(source, 15.0, originalLength, originalPosition,
-                                              originalStretchFactor, 100.0);
+                                              originalStretchFactor);
 
         // New stretch factor: 2.0 * (15.0 / 10.0) = 3.0
         REQUIRE(source.stretchFactor == Catch::Approx(3.0));

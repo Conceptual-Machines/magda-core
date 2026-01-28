@@ -1,5 +1,7 @@
 #include "TrackContentPanel.hpp"
 
+#include <juce_audio_formats/juce_audio_formats.h>
+
 #include <functional>
 
 #include "../../panels/state/PanelController.hpp"
@@ -2056,11 +2058,12 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
     }
 
     // Import audio files at drop position
-    // We need access to TracktionEngine to get audio file duration
-    // For now, use a default duration - this will be updated by AudioBridge sync
     auto& clipManager = ClipManager::getInstance();
     double currentTime = dropTime;
     int importedCount = 0;
+
+    juce::AudioFormatManager formatManager;
+    formatManager.registerBasicFormats();
 
     for (const auto& filePath : files) {
         // Filter audio files only
@@ -2074,9 +2077,12 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
         if (!audioFile.existsAsFile())
             continue;
 
-        // Use a default duration - will be corrected when synced to engine
-        // TODO: Get actual file duration from TracktionEngine
-        double fileDuration = 4.0;  // Default fallback
+        // Read actual file duration
+        double fileDuration = 4.0;  // fallback if reader fails
+        if (auto reader = std::unique_ptr<juce::AudioFormatReader>(
+                formatManager.createReaderFor(audioFile))) {
+            fileDuration = static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
+        }
 
         // Create clip via command
         auto cmd = std::make_unique<CreateClipCommand>(ClipType::Audio, targetTrackId, currentTime,

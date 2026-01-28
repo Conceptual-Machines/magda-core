@@ -860,6 +860,10 @@ void MainWindow::setupMenuCallbacks() {
         if (!mainComponent)
             return;
 
+        // Prevent re-entry while a file chooser is already open
+        if (fileChooser_ != nullptr)
+            return;
+
         // Create file chooser for audio files
         fileChooser_ = std::make_unique<juce::FileChooser>(
             "Select Audio Files to Import",
@@ -875,8 +879,10 @@ void MainWindow::setupMenuCallbacks() {
 
         fileChooser_->launchAsync(flags, [this](const juce::FileChooser& chooser) {
             auto files = chooser.getResults();
-            if (files.isEmpty())
+            if (files.isEmpty()) {
+                fileChooser_.reset();
                 return;  // User cancelled
+            }
 
             // Get selected track (or use first audio track)
             auto& trackManager = TrackManager::getInstance();
@@ -903,14 +909,16 @@ void MainWindow::setupMenuCallbacks() {
                 return;
 
             // Import each file as a clip
+            namespace te = tracktion;
             double currentTime = 0.0;  // Start at timeline beginning
 
             for (const auto& file : files) {
-                // Get audio file duration to space clips
-                namespace te = tracktion;
+                // Validate audio file before importing
                 te::AudioFile audioFile(*engine->getEngine(), file);
-                double fileDuration =
-                    audioFile.isValid() ? audioFile.getLength() : 4.0;  // fallback
+                if (!audioFile.isValid())
+                    continue;
+
+                double fileDuration = audioFile.getLength();
 
                 // Create audio clip via command (for undo support)
                 auto cmd =
@@ -927,6 +935,8 @@ void MainWindow::setupMenuCallbacks() {
                 juce::String(files.size()) + " audio file(s) imported successfully.";
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Import Audio",
                                                    message);
+
+            fileChooser_.reset();
         });
     };
 

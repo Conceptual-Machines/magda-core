@@ -282,13 +282,11 @@ void WaveformGridComponent::updateGridSize() {
 // ============================================================================
 
 int WaveformGridComponent::timeToPixel(double time) const {
-    double offsetTime = relativeMode_ ? time : time;  // In ABS mode, time is already absolute
-    return static_cast<int>(offsetTime * horizontalZoom_) + LEFT_PADDING;
+    return static_cast<int>(time * horizontalZoom_) + LEFT_PADDING;
 }
 
 double WaveformGridComponent::pixelToTime(int x) const {
-    double time = (x - LEFT_PADDING) / horizontalZoom_;
-    return relativeMode_ ? time : time;  // In ABS mode, return absolute time
+    return (x - LEFT_PADDING) / horizontalZoom_;
 }
 
 // ============================================================================
@@ -412,9 +410,8 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
         case DragMode::StretchLeft: {
             // Stretch operations already handle absolute values correctly
             double newLength = dragStartLength_ - deltaSeconds;
-            magda::ClipOperations::stretchSourceFromLeft(source, newLength, dragStartLength_,
-                                                         dragStartPosition_,
-                                                         dragStartStretchFactor_, clip->length);
+            magda::ClipOperations::stretchSourceFromLeft(
+                source, newLength, dragStartLength_, dragStartPosition_, dragStartStretchFactor_);
             break;
         }
         default:

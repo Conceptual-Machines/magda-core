@@ -293,27 +293,6 @@ void ClipManager::setAudioSourceStretchFactor(ClipId clipId, int sourceIndex,
     }
 }
 
-void ClipManager::trimAudioSourceFromStart(ClipId clipId, int sourceIndex, double trimAmount) {
-    if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio && sourceIndex >= 0 &&
-            sourceIndex < static_cast<int>(clip->audioSources.size())) {
-            // Note: fileDuration=0 means no file constraint checking
-            ClipOperations::trimSourceFromLeft(clip->audioSources[sourceIndex], trimAmount, 0.0);
-            notifyClipPropertyChanged(clipId);
-        }
-    }
-}
-
-void ClipManager::trimAudioSourceFromEnd(ClipId clipId, int sourceIndex, double trimAmount) {
-    if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio && sourceIndex >= 0 &&
-            sourceIndex < static_cast<int>(clip->audioSources.size())) {
-            ClipOperations::trimSourceFromRight(clip->audioSources[sourceIndex], trimAmount, 0.0);
-            notifyClipPropertyChanged(clipId);
-        }
-    }
-}
-
 // ============================================================================
 // Content-Level Operations (Editor Operations)
 // ============================================================================
@@ -350,7 +329,7 @@ void ClipManager::stretchAudioSourceLeft(ClipId clipId, int sourceIndex, double 
             sourceIndex < static_cast<int>(clip->audioSources.size())) {
             ClipOperations::stretchSourceFromLeft(clip->audioSources[sourceIndex], newLength,
                                                   oldLength, originalPosition,
-                                                  originalStretchFactor, clip->length);
+                                                  originalStretchFactor);
             notifyClipPropertyChanged(clipId);
         }
     }

@@ -51,19 +51,8 @@ juce::AudioThumbnail* AudioThumbnailManager::createThumbnail(const juce::String&
     }
 
     // Set the reader with hash code for caching
+    // Thumbnail loads asynchronously - drawWaveform handles the not-yet-loaded case
     thumbnail->setReader(reader, audioFile.hashCode64());
-
-    // Wait for thumbnail to be generated (or timeout after 5 seconds)
-    int timeout = 0;
-    while (!thumbnail->isFullyLoaded() && timeout < 50) {
-        juce::Thread::sleep(100);
-        timeout++;
-    }
-
-    if (!thumbnail->isFullyLoaded()) {
-        DBG("AudioThumbnailManager: Thumbnail generation timed out for: " << audioFilePath);
-        // Still usable, just not fully loaded yet
-    }
 
     // Store in cache
     auto* thumbnailPtr = thumbnail.get();

@@ -156,23 +156,12 @@ class ClipManager {
     void setClipLoopLength(ClipId clipId, double lengthBeats);
 
     // Audio-specific
+    /** @brief Set the position of an audio source within its clip container */
     void setAudioSourcePosition(ClipId clipId, int sourceIndex, double position);
+    /** @brief Set the timeline length of an audio source */
     void setAudioSourceLength(ClipId clipId, int sourceIndex, double length);
+    /** @brief Set the time-stretch factor of an audio source (1.0 = original speed) */
     void setAudioSourceStretchFactor(ClipId clipId, int sourceIndex, double stretchFactor);
-
-    /**
-     * @brief Trim audio source from start (advances offset, reduces length)
-     * Used by WaveformEditor for content trimming
-     * @deprecated Use trimAudioSourceLeft instead
-     */
-    void trimAudioSourceFromStart(ClipId clipId, int sourceIndex, double trimAmount);
-
-    /**
-     * @brief Trim audio source from end (reduces length only)
-     * Used by WaveformEditor for content trimming
-     * @deprecated Use trimAudioSourceRight instead
-     */
-    void trimAudioSourceFromEnd(ClipId clipId, int sourceIndex, double trimAmount);
 
     // ========================================================================
     // Content-Level Operations (Editor Operations)

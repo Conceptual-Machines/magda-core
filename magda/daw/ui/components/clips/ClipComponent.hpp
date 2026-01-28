@@ -102,13 +102,11 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     double previewStartTime_ = 0.0;
     double previewLength_ = 0.0;
     bool isDragging_ = false;
+    bool isCommitting_ = false;  // True during mouseUp commit phase
 
     // Stretch state
     double dragStartStretchFactor_ = 1.0;
     DragThrottle stretchThrottle_{50};
-
-    // Cache zoom level during resize to prevent waveform stretching (absolute mode)
-    double dragStartPixelsPerSecond_ = 0.0;
 
     // Alt+drag duplicate state
     bool isDuplicating_ = false;

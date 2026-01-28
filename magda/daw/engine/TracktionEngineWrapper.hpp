@@ -342,6 +342,9 @@ class TracktionEngineWrapper : public AudioEngine,
     bool justStarted_ = false;   // True for one frame after play starts
     bool justLooped_ = false;    // True for one frame after loop
 
+    // Device change tracking
+    int lastKnownDeviceCount_ = 0;
+
     // Helper methods
     tracktion::Track* findTrackById(const std::string& track_id) const;
     tracktion::Clip* findClipById(const std::string& clip_id) const;

@@ -178,13 +178,10 @@ class ClipOperations {
      * @param oldLength Original timeline length at drag start
      * @param originalPosition Original position at drag start
      * @param originalStretchFactor Original stretch factor at drag start
-     * @param clipLength Clip container length (for boundary constraint)
      */
     static inline void stretchSourceFromLeft(AudioSource& source, double newLength,
                                              double oldLength, double originalPosition,
-                                             double originalStretchFactor, double clipLength) {
-        juce::ignoreUnused(clipLength);
-
+                                             double originalStretchFactor) {
         // Right edge stays fixed (calculated from ORIGINAL position, not current)
         double rightEdge = originalPosition + oldLength;
 
@@ -248,7 +245,7 @@ class ClipOperations {
 
         // Stretch audio source proportionally (handles position, length, stretchFactor)
         stretchSourceFromLeft(clip.audioSources[0], newLength, oldLength, originalPosition,
-                              originalStretchFactor, newLength);
+                              originalStretchFactor);
     }
 
     /**

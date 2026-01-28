@@ -391,15 +391,24 @@ void TracktionEngineWrapper::changeListenerCallback(juce::ChangeBroadcaster* sou
             }
         }
 
-        // Reallocate playback context whenever devices change
-        // This is critical: the context may have been allocated before wave devices were ready
+        // Only reallocate playback context when devices are added
+        // (avoids unnecessary reallocation on device removal or property changes)
         if (currentEdit_) {
             if (auto* ctx = currentEdit_->getCurrentPlaybackContext()) {
                 int inputsBefore = static_cast<int>(ctx->getAllInputs().size());
-                ctx->reallocate();
-                int inputsAfter = static_cast<int>(ctx->getAllInputs().size());
-                DBG("Device change: Reallocated playback context (inputs: "
-                    << inputsBefore << " -> " << inputsAfter << ")");
+
+                // Count current available devices to detect additions
+                int totalDevices = static_cast<int>(dm.getMidiInDevices().size()) +
+                                   static_cast<int>(dm.getWaveInputDevices().size()) +
+                                   static_cast<int>(dm.getWaveOutputDevices().size());
+
+                if (totalDevices > lastKnownDeviceCount_) {
+                    ctx->reallocate();
+                    int inputsAfter = static_cast<int>(ctx->getAllInputs().size());
+                    DBG("Device change: Reallocated playback context (inputs: "
+                        << inputsBefore << " -> " << inputsAfter << ")");
+                }
+                lastKnownDeviceCount_ = totalDevices;
 
                 // Notify AudioBridge that MIDI devices are now available
                 // so it can apply any pending MIDI routes
@@ -497,16 +506,25 @@ void TracktionEngineWrapper::play() {
         auto& transport = currentEdit_->getTransport();
 
         // Detect stale audio device (e.g. CoreAudio daemon stuck after sleep)
+        // Check multiple times to avoid false positives from momentary zero readings
         auto& jdm = engine_->getDeviceManager().deviceManager;
         auto* device = jdm.getCurrentAudioDevice();
         if (device && device->isPlaying() && jdm.getCpuUsage() == 0.0) {
-            juce::AlertWindow::showMessageBoxAsync(
-                juce::MessageBoxIconType::WarningIcon, "Audio Device Not Responding",
-                "The audio device '" + device->getName() +
-                    "' is not processing audio.\n\n"
-                    "Try disconnecting and reconnecting your audio interface, "
-                    "or restarting the audio driver.",
-                "OK");
+            int zeroCount = 1;
+            for (int i = 0; i < 2; ++i) {
+                juce::Thread::sleep(50);
+                if (jdm.getCpuUsage() == 0.0)
+                    ++zeroCount;
+            }
+            if (zeroCount >= 3) {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::MessageBoxIconType::WarningIcon, "Audio Device Not Responding",
+                    "The audio device '" + device->getName() +
+                        "' is not processing audio.\n\n"
+                        "Try disconnecting and reconnecting your audio interface, "
+                        "or restarting the audio driver.",
+                    "OK");
+            }
         }
 
         transport.play(false);
@@ -1041,6 +1059,9 @@ std::string TracktionEngineWrapper::addAudioClip(const std::string& track_id, do
 
     if (!clipPtr) {
         DBG("TracktionEngineWrapper: Failed to create WaveAudioClip");
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::MessageBoxIconType::WarningIcon, "Audio Clip Error",
+            "Failed to create audio clip from:\n" + juce::String(audio_file_path));
         return "";
     }
 
