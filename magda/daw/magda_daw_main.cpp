@@ -6,6 +6,7 @@
 #include <iostream>
 #include <memory>
 
+#include "audio/AudioThumbnailManager.hpp"
 #include "core/ClipManager.hpp"
 #include "core/ModulatorEngine.hpp"
 #include "core/TrackManager.hpp"
@@ -80,6 +81,10 @@ class MagdaDAWApplication : public JUCEApplication {
         std::cout << "[3] ClipManager shutdown..." << std::endl;
         std::cout.flush();
         magda::ClipManager::getInstance().shutdown();  // Clear clips with JUCE objects
+
+        std::cout << "[3b] AudioThumbnailManager shutdown..." << std::endl;
+        std::cout.flush();
+        magda::AudioThumbnailManager::getInstance().shutdown();  // Clear thumbnails
 
         // Clear default LookAndFeel BEFORE destroying windows
         // This ensures components switch away from our custom L&F before we delete them

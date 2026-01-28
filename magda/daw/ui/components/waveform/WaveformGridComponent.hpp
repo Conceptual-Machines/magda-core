@@ -52,6 +52,12 @@ class WaveformGridComponent : public juce::Component {
     void setHorizontalZoom(double pixelsPerSecond);
 
     /**
+     * @brief Set vertical zoom level (amplitude scaling)
+     * @param zoom Multiplier for waveform height (1.0 = normal)
+     */
+    void setVerticalZoom(double zoom);
+
+    /**
      * @brief Set scroll offset for coordinate calculations
      */
     void setScrollOffset(int x, int y);
@@ -61,6 +67,12 @@ class WaveformGridComponent : public juce::Component {
      * Called when clip changes or zoom changes
      */
     void updateGridSize();
+
+    /**
+     * @brief Set the minimum height for the grid (typically the viewport height)
+     * The grid will be at least this tall so the waveform fills available space
+     */
+    void setMinimumHeight(int height);
 
     /**
      * @brief Update clip position and length without full reload
@@ -102,6 +114,7 @@ class WaveformGridComponent : public juce::Component {
 
     // Zoom and scroll
     double horizontalZoom_ = 100.0;  // pixels per second
+    double verticalZoom_ = 1.0;      // amplitude multiplier
     int scrollOffsetX_ = 0;
     int scrollOffsetY_ = 0;
 
@@ -111,6 +124,7 @@ class WaveformGridComponent : public juce::Component {
     static constexpr int TOP_PADDING = 10;
     static constexpr int BOTTOM_PADDING = 10;
     static constexpr int EDGE_GRAB_DISTANCE = 10;
+    int minimumHeight_ = 400;
 
     // Drag state
     enum class DragMode { None, ResizeLeft, ResizeRight, Move, StretchLeft, StretchRight };

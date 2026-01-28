@@ -104,7 +104,10 @@ juce::Rectangle<int> TabbedPanel::getContentBounds() {
     int tabBarHeight = PanelTabBar::BAR_HEIGHT;
 
     // Content above tab bar, with margin for collapse button
-    return bounds.withTrimmedBottom(tabBarHeight);
+    auto content = bounds.withTrimmedBottom(tabBarHeight);
+    if (content.getHeight() < 0)
+        content.setHeight(0);
+    return content;
 }
 
 juce::Rectangle<int> TabbedPanel::getTabBarBounds() {

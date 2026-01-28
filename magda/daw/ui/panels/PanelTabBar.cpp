@@ -100,6 +100,9 @@ void PanelTabBar::setActiveTab(int index) {
 
 void PanelTabBar::setupButton(size_t index, PanelContentType type) {
     auto svgData = getSvgForContentType(type);
+    if (svgData.data == nullptr || svgData.size <= 0)
+        return;
+
     auto name = getContentTypeName(type);
 
     tabButtons_[index] =

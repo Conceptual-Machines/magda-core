@@ -38,12 +38,18 @@ class AudioThumbnailManager {
      */
     void drawWaveform(juce::Graphics& g, const juce::Rectangle<int>& bounds,
                       const juce::String& audioFilePath, double startTime, double endTime,
-                      const juce::Colour& colour);
+                      const juce::Colour& colour, float verticalZoom = 1.0f);
 
     /**
      * @brief Clear the thumbnail cache (useful for freeing memory)
      */
     void clearCache();
+
+    /**
+     * @brief Shutdown and release all resources
+     * Call during app shutdown to prevent JUCE leak detection issues
+     */
+    void shutdown();
 
   private:
     AudioThumbnailManager();

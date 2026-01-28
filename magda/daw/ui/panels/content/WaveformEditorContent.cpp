@@ -1,5 +1,7 @@
 #include "WaveformEditorContent.hpp"
 
+#include <cmath>
+
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -70,6 +72,63 @@ class WaveformEditorContent::ButtonLookAndFeel : public juce::LookAndFeel_V4 {
 };
 
 // ============================================================================
+// PlayheadOverlay - Renders playhead over the waveform viewport
+// ============================================================================
+
+class WaveformEditorContent::PlayheadOverlay : public juce::Component {
+  public:
+    explicit PlayheadOverlay(WaveformEditorContent& owner) : owner_(owner) {
+        setInterceptsMouseClicks(false, false);
+    }
+
+    void paint(juce::Graphics& g) override {
+        if (getWidth() <= 0 || getHeight() <= 0)
+            return;
+        if (owner_.editingClipId_ == magda::INVALID_CLIP_ID)
+            return;
+
+        const auto* clip = magda::ClipManager::getInstance().getClip(owner_.editingClipId_);
+        if (!clip)
+            return;
+
+        int scrollX = owner_.viewport_->getViewPositionX();
+
+        // Helper to convert a timeline time to pixel X in our overlay coordinate space
+        auto timeToOverlayX = [&](double time) -> int {
+            double displayTime = owner_.relativeTimeMode_ ? (time - clip->startTime) : time;
+            return static_cast<int>(displayTime * owner_.horizontalZoom_) + GRID_LEFT_PADDING -
+                   scrollX;
+        };
+
+        // Draw edit cursor (triangle at top) - always visible
+        double editPos = owner_.cachedEditPosition_;
+        int editX = timeToOverlayX(editPos);
+        if (editX >= 0 && editX < getWidth()) {
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+            juce::Path triangle;
+            triangle.addTriangle(static_cast<float>(editX - 5), 0.0f, static_cast<float>(editX + 5),
+                                 0.0f, static_cast<float>(editX), 10.0f);
+            g.fillPath(triangle);
+        }
+
+        // Draw playback cursor (vertical line) - only during playback
+        if (owner_.cachedIsPlaying_) {
+            double playPos = owner_.cachedPlaybackPosition_;
+            int playX = timeToOverlayX(playPos);
+            if (playX >= 0 && playX < getWidth()) {
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
+                           static_cast<float>(getHeight()), 1.5f);
+            }
+        }
+    }
+
+  private:
+    WaveformEditorContent& owner_;
+    static constexpr int GRID_LEFT_PADDING = 10;
+};
+
+// ============================================================================
 // Constructor / Destructor
 // ============================================================================
 
@@ -114,7 +173,23 @@ WaveformEditorContent::WaveformEditorContent() {
     viewport_->onScrolled = [this](int x, int y) {
         timeRuler_->setScrollOffset(x);
         gridComponent_->setScrollOffset(x, y);
+        if (playheadOverlay_)
+            playheadOverlay_->repaint();
     };
+
+    // Create playhead overlay on top of viewport
+    playheadOverlay_ = std::make_unique<PlayheadOverlay>(*this);
+    addAndMakeVisible(playheadOverlay_.get());
+
+    // Register as TimelineStateListener
+    auto* controller = magda::TimelineController::getCurrent();
+    if (controller) {
+        controller->addListener(this);
+        const auto& state = controller->getState();
+        cachedEditPosition_ = state.playhead.editPosition;
+        cachedPlaybackPosition_ = state.playhead.playbackPosition;
+        cachedIsPlaying_ = state.playhead.isPlaying;
+    }
 
     // Callback when waveform is edited
     gridComponent_->onWaveformChanged = [this]() {
@@ -132,6 +207,11 @@ WaveformEditorContent::WaveformEditorContent() {
 }
 
 WaveformEditorContent::~WaveformEditorContent() {
+    auto* controller = magda::TimelineController::getCurrent();
+    if (controller) {
+        controller->removeListener(this);
+    }
+
     magda::ClipManager::getInstance().removeListener(this);
 
     // Clear look and feel before destruction
@@ -145,11 +225,25 @@ WaveformEditorContent::~WaveformEditorContent() {
 // ============================================================================
 
 void WaveformEditorContent::paint(juce::Graphics& g) {
+    if (getWidth() <= 0 || getHeight() <= 0)
+        return;
     g.fillAll(DarkTheme::getPanelBackgroundColour());
 }
 
 void WaveformEditorContent::resized() {
     auto bounds = getLocalBounds();
+
+    // Guard against too-small bounds (panel being resized very small)
+    int minHeight = TOOLBAR_HEIGHT + TIME_RULER_HEIGHT + 1;
+    if (bounds.getHeight() < minHeight || bounds.getWidth() <= 0) {
+        // Hide everything when too small to avoid zero-sized paint
+        timeModeButton_->setBounds(0, 0, 0, 0);
+        timeRuler_->setBounds(0, 0, 0, 0);
+        viewport_->setBounds(0, 0, 0, 0);
+        if (playheadOverlay_)
+            playheadOverlay_->setBounds(0, 0, 0, 0);
+        return;
+    }
 
     // Toolbar at top
     auto toolbarArea = bounds.removeFromTop(TOOLBAR_HEIGHT);
@@ -161,6 +255,16 @@ void WaveformEditorContent::resized() {
 
     // Viewport fills remaining space
     viewport_->setBounds(bounds);
+
+    // Playhead overlay covers the viewport area
+    if (playheadOverlay_) {
+        playheadOverlay_->setBounds(bounds);
+    }
+
+    // Set grid minimum height to match viewport's visible height so waveform fills the space
+    if (gridComponent_) {
+        gridComponent_->setMinimumHeight(viewport_->getMaximumVisibleHeight());
+    }
 
     // Update grid size
     updateGridSize();
@@ -189,15 +293,69 @@ void WaveformEditorContent::onDeactivated() {
 // Mouse Interaction
 // ============================================================================
 
+void WaveformEditorContent::mouseDown(const juce::MouseEvent& event) {
+    bool overHeader = event.y < (TOOLBAR_HEIGHT + TIME_RULER_HEIGHT);
+    if (overHeader) {
+        headerDragActive_ = true;
+        headerDragStartX_ = event.x;
+        headerDragStartZoom_ = horizontalZoom_;
+    }
+}
+
+void WaveformEditorContent::mouseDrag(const juce::MouseEvent& event) {
+    if (headerDragActive_) {
+        int deltaX = event.x - headerDragStartX_;
+        // Drag right = zoom in, drag left = zoom out
+        // ~200px drag = 2x zoom change
+        double zoomFactor = std::pow(2.0, deltaX / 200.0);
+        double newZoom = headerDragStartZoom_ * zoomFactor;
+        newZoom = juce::jlimit(MIN_ZOOM, MAX_ZOOM, newZoom);
+
+        if (newZoom != horizontalZoom_) {
+            horizontalZoom_ = newZoom;
+            gridComponent_->setHorizontalZoom(horizontalZoom_);
+
+            const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+            if (clip && timeRuler_) {
+                double bpm = 120.0;
+                auto* controller = magda::TimelineController::getCurrent();
+                if (controller) {
+                    bpm = controller->getState().tempo.bpm;
+                }
+                timeRuler_->setZoom(horizontalZoom_);
+                timeRuler_->setTempo(bpm);
+            }
+
+            updateGridSize();
+        }
+    }
+}
+
+void WaveformEditorContent::mouseUp(const juce::MouseEvent& /*event*/) {
+    headerDragActive_ = false;
+}
+
 void WaveformEditorContent::mouseWheelMove(const juce::MouseEvent& event,
                                            const juce::MouseWheelDetails& wheel) {
-    // Cmd/Ctrl + scroll = zoom
-    if (event.mods.isCommandDown()) {
+    // Check if mouse is over the toolbar or time ruler area (header)
+    bool overHeader = event.y < (TOOLBAR_HEIGHT + TIME_RULER_HEIGHT);
+
+    if (overHeader || event.mods.isCommandDown()) {
+        // Scroll on header OR Cmd+scroll anywhere = horizontal zoom
         double zoomFactor = 1.0 + (wheel.deltaY * 0.5);
         int anchorX = event.x - viewport_->getX();
         performAnchorPointZoom(zoomFactor, anchorX);
+    } else if (event.mods.isAltDown()) {
+        // Alt + scroll anywhere = vertical zoom
+        double zoomFactor = 1.0 + (wheel.deltaY * 0.5);
+        double newZoom = verticalZoom_ * zoomFactor;
+        newZoom = juce::jlimit(MIN_VERTICAL_ZOOM, MAX_VERTICAL_ZOOM, newZoom);
+        if (newZoom != verticalZoom_) {
+            verticalZoom_ = newZoom;
+            gridComponent_->setVerticalZoom(verticalZoom_);
+        }
     } else {
-        // Normal scroll - let viewport handle it
+        // Normal scroll over waveform area - let viewport handle it
         Component::mouseWheelMove(event, wheel);
     }
 }
@@ -253,6 +411,24 @@ void WaveformEditorContent::clipSelectionChanged(magda::ClipId clipId) {
         if (clip && clip->type == magda::ClipType::Audio) {
             setClip(clipId);
         }
+    }
+}
+
+// ============================================================================
+// TimelineStateListener
+// ============================================================================
+
+void WaveformEditorContent::timelineStateChanged(const TimelineState& /*state*/) {
+    // General state change - no specific action needed
+}
+
+void WaveformEditorContent::playheadStateChanged(const TimelineState& state) {
+    cachedEditPosition_ = state.playhead.editPosition;
+    cachedPlaybackPosition_ = state.playhead.playbackPosition;
+    cachedIsPlaying_ = state.playhead.isPlaying;
+
+    if (playheadOverlay_) {
+        playheadOverlay_->repaint();
     }
 }
 

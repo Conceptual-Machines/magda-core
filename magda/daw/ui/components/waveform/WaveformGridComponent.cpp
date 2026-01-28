@@ -13,6 +13,8 @@ WaveformGridComponent::WaveformGridComponent() {
 
 void WaveformGridComponent::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
+    if (bounds.getWidth() <= 0 || bounds.getHeight() <= 0)
+        return;
 
     // Background
     g.fillAll(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
@@ -33,6 +35,10 @@ void WaveformGridComponent::paint(juce::Graphics& g) {
 void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipInfo& clip) {
     auto bounds = getLocalBounds().reduced(LEFT_PADDING, TOP_PADDING);
 
+    if (bounds.getWidth() <= 0 || bounds.getHeight() <= 0) {
+        return;
+    }
+
     if (clip.audioSources.empty()) {
         return;
     }
@@ -43,6 +49,8 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
     double displayStartTime = relativeMode_ ? source.position : (clipStartTime_ + source.position);
     int positionPixels = timeToPixel(displayStartTime);
     int widthPixels = static_cast<int>(source.length * horizontalZoom_);
+    if (widthPixels <= 0)
+        return;
 
     auto waveformRect =
         juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
@@ -93,15 +101,21 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
     waveformRect =
         juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
 
-    // Draw real waveform from audio thumbnail
+    // Draw real waveform from audio thumbnail (scaled by vertical zoom)
     if (source.filePath.isNotEmpty()) {
         auto& thumbnailManager = magda::AudioThumbnailManager::getInstance();
         double fileWindow = source.length / source.stretchFactor;
         double displayStart = source.offset;
         double displayEnd = source.offset + fileWindow;
 
-        thumbnailManager.drawWaveform(g, waveformRect.reduced(0, 4), source.filePath, displayStart,
-                                      displayEnd, clip.colour.brighter(0.2f));
+        // Clip drawing to waveform bounds, pass verticalZoom as amplitude gain
+        auto waveDrawRect = waveformRect.reduced(0, 4);
+        g.saveState();
+        g.reduceClipRegion(waveformRect);
+        thumbnailManager.drawWaveform(g, waveDrawRect, source.filePath, displayStart, displayEnd,
+                                      clip.colour.brighter(0.2f),
+                                      static_cast<float>(verticalZoom_));
+        g.restoreState();
     }
 
     // Draw center line
@@ -207,6 +221,13 @@ void WaveformGridComponent::setHorizontalZoom(double pixelsPerSecond) {
     }
 }
 
+void WaveformGridComponent::setVerticalZoom(double zoom) {
+    if (verticalZoom_ != zoom) {
+        verticalZoom_ = zoom;
+        repaint();
+    }
+}
+
 void WaveformGridComponent::updateClipPosition(double startTime, double length) {
     clipStartTime_ = startTime;
     clipLength_ = length;
@@ -217,6 +238,13 @@ void WaveformGridComponent::updateClipPosition(double startTime, double length) 
 void WaveformGridComponent::setScrollOffset(int x, int y) {
     scrollOffsetX_ = x;
     scrollOffsetY_ = y;
+}
+
+void WaveformGridComponent::setMinimumHeight(int height) {
+    if (minimumHeight_ != height) {
+        minimumHeight_ = juce::jmax(100, height);
+        updateGridSize();
+    }
 }
 
 void WaveformGridComponent::updateGridSize() {
@@ -241,7 +269,7 @@ void WaveformGridComponent::updateGridSize() {
 
     int requiredWidth =
         static_cast<int>(totalTime * horizontalZoom_) + LEFT_PADDING + RIGHT_PADDING;
-    int requiredHeight = 400;  // Fixed height for now
+    int requiredHeight = minimumHeight_;
 
     setSize(requiredWidth, requiredHeight);
 }

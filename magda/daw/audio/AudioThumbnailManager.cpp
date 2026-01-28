@@ -78,7 +78,11 @@ juce::AudioThumbnail* AudioThumbnailManager::createThumbnail(const juce::String&
 
 void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangle<int>& bounds,
                                          const juce::String& audioFilePath, double startTime,
-                                         double endTime, const juce::Colour& colour) {
+                                         double endTime, const juce::Colour& colour,
+                                         float verticalZoom) {
+    if (bounds.getWidth() <= 0 || bounds.getHeight() <= 0)
+        return;
+
     auto* thumbnail = getThumbnail(audioFilePath);
     if (thumbnail == nullptr || !thumbnail->isFullyLoaded()) {
         // Draw placeholder if thumbnail not ready
@@ -96,14 +100,18 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
     g.setColour(colour);
 
     // Draw all channels (stereo files will show both channels mixed)
-    thumbnail->drawChannels(g, bounds, startTime, endTime,
-                            1.0f);  // vertical zoom factor
+    thumbnail->drawChannels(g, bounds, startTime, endTime, verticalZoom);
 }
 
 void AudioThumbnailManager::clearCache() {
     thumbnails_.clear();
     thumbnailCache_->clear();
     DBG("AudioThumbnailManager: Cache cleared");
+}
+
+void AudioThumbnailManager::shutdown() {
+    thumbnails_.clear();
+    thumbnailCache_.reset();
 }
 
 }  // namespace magda
