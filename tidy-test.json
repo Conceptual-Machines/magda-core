@@ -1,6 +1,0 @@
-{
-  "paths": [
-    "magda/daw/audio/AudioEngineOptimizer.cpp"
-  ],
-  "buildRoot": "./build"
-}

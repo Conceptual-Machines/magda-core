@@ -10,8 +10,9 @@
 </p>
 
 <p align="center">
-  An AI-native Digital Audio Workstation built to automate workflows, not replace creativity.
+  Multi-Agent Generative Digital Audio
 </p>
+<p align="center"><img src="assets/treaktion-engine-logo.png" alt="Powered by Traktion Engine" width="250" height="80"></p>
 
 ---
 
