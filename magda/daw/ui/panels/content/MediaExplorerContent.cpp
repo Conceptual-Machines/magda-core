@@ -234,10 +234,8 @@ MediaExplorerContent::MediaExplorerContent() {
     audioFilterButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     audioFilterButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     audioFilterButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    audioFilterButton_->setActive(true);  // Initially active
     audioFilterButton_->onClick = [this]() {
         audioFilterActive_ = audioFilterButton_->getToggleState();
-        audioFilterButton_->setActive(audioFilterActive_);
         updateMediaFilter();
     };
     addAndMakeVisible(*audioFilterButton_);
@@ -252,7 +250,6 @@ MediaExplorerContent::MediaExplorerContent() {
     midiFilterButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     midiFilterButton_->onClick = [this]() {
         midiFilterActive_ = midiFilterButton_->getToggleState();
-        midiFilterButton_->setActive(midiFilterActive_);
         updateMediaFilter();
     };
     addAndMakeVisible(*midiFilterButton_);
@@ -267,7 +264,6 @@ MediaExplorerContent::MediaExplorerContent() {
     presetFilterButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     presetFilterButton_->onClick = [this]() {
         presetFilterActive_ = presetFilterButton_->getToggleState();
-        presetFilterButton_->setActive(presetFilterActive_);
         updateMediaFilter();
     };
     addAndMakeVisible(*presetFilterButton_);
