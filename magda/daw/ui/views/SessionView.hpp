@@ -34,6 +34,7 @@ class SessionView : public juce::Component,
     ~SessionView() override;
 
     void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
 
     // TrackManagerListener

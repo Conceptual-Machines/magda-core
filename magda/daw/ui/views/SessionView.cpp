@@ -631,17 +631,20 @@ void SessionView::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
 
     g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+}
+
+void SessionView::paintOverChildren(juce::Graphics& g) {
+    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
 
     // Vertical separator on left edge of master strip
     if (masterStrip->isVisible()) {
         auto masterBounds = masterStrip->getBounds();
-        g.fillRect(masterBounds.getX(), masterBounds.getY(), 1, masterBounds.getHeight());
+        g.fillRect(masterBounds.getX() - 1, masterBounds.getY(), 1, masterBounds.getHeight());
     }
 
     // Horizontal separator on top of stop button row (full width)
     auto stopContainerBounds = stopButtonContainer->getBounds();
-    int stopRowY = stopContainerBounds.getY();
-    g.fillRect(0, stopRowY, getWidth(), 1);
+    g.fillRect(0, stopContainerBounds.getY(), getWidth(), 1);
 }
 
 void SessionView::resized() {
