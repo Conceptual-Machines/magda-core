@@ -3,10 +3,21 @@ name: CI
 on:
   push:
     branches: [ '**' ]
+  workflow_dispatch:
+    inputs:
+      skip-cpp-build:
+        description: 'Skip C++ build and test jobs'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build-and-test-linux:
     runs-on: ubuntu-latest
+    # Skip C++ build/test when explicitly requested or when only non-C++ files changed
+    if: |
+      github.event_name != 'workflow_dispatch' || 
+      inputs.skip-cpp-build != true
 
     steps:
     - uses: actions/checkout@v4
@@ -107,6 +118,10 @@ jobs:
 
   code-quality:
     runs-on: ubuntu-latest
+    # Skip code quality checks when explicitly requested
+    if: |
+      github.event_name != 'workflow_dispatch' || 
+      inputs.skip-cpp-build != true
 
     steps:
     - uses: actions/checkout@v4
