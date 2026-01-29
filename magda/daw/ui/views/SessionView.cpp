@@ -408,6 +408,16 @@ SessionView::SessionView() {
     addSceneButton->onClick = [this]() { addScene(); };
     addAndMakeVisible(*addSceneButton);
 
+    // Remove scene button (next to add button)
+    removeSceneButton = std::make_unique<juce::TextButton>();
+    removeSceneButton->setButtonText("-");
+    removeSceneButton->setColour(juce::TextButton::buttonColourId,
+                                 DarkTheme::getColour(DarkTheme::SURFACE));
+    removeSceneButton->setColour(juce::TextButton::textColourOffId,
+                                 DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    removeSceneButton->onClick = [this]() { removeScene(); };
+    addAndMakeVisible(*removeSceneButton);
+
     // Create master fader in the fader row (scene column area)
     masterFader_ =
         std::make_unique<juce::Slider>(juce::Slider::LinearVertical, juce::Slider::NoTextBox);
@@ -816,7 +826,10 @@ void SessionView::resized() {
     // Top row: "+" button in scene column corner, headers in tracks area
     auto topRow = bounds.removeFromTop(TRACK_HEADER_HEIGHT);
     auto cornerArea = topRow.removeFromRight(SCENE_BUTTON_WIDTH);
-    addSceneButton->setBounds(cornerArea.reduced(2));
+    auto cornerReduced = cornerArea.reduced(2);
+    auto removeBtnArea = cornerReduced.removeFromRight(cornerReduced.getWidth() / 2);
+    addSceneButton->setBounds(cornerReduced);
+    removeSceneButton->setBounds(removeBtnArea);
     headerContainer->setBounds(topRow);
     headerContainer->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
                                     trackHeaderScrollOffset);
@@ -979,6 +992,71 @@ void SessionView::addScene() {
         gridContent->addAndMakeVisible(*slot);
         clipSlots[track].push_back(std::move(slot));
     }
+
+    resized();
+    updateAllClipSlots();
+}
+
+void SessionView::removeScene() {
+    if (numScenes_ <= 1)
+        return;
+
+    int lastScene = numScenes_ - 1;
+
+    // Check if any clips exist in the last scene
+    auto& clipManager = ClipManager::getInstance();
+    bool hasClips = false;
+    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
+        ClipId clipId = clipManager.getClipInSlot(visibleTrackIds_[i], lastScene);
+        if (clipId != INVALID_CLIP_ID) {
+            hasClips = true;
+            break;
+        }
+    }
+
+    if (hasClips) {
+        // Show confirmation dialog before deleting a scene with clips
+        auto options = juce::MessageBoxOptions()
+                           .withIconType(juce::MessageBoxIconType::WarningIcon)
+                           .withTitle("Delete Scene")
+                           .withMessage("Scene " + juce::String(lastScene + 1) +
+                                        " contains clips. Are you sure you want to delete it?")
+                           .withButton("Delete")
+                           .withButton("Cancel");
+
+        juce::AlertWindow::showAsync(options, [this, lastScene](int result) {
+            if (result == 1) {
+                removeSceneAsync(lastScene);
+            }
+        });
+    } else {
+        removeSceneAsync(lastScene);
+    }
+}
+
+void SessionView::removeSceneAsync(int sceneIndex) {
+    // Stop and delete any clips in this scene
+    auto& clipManager = ClipManager::getInstance();
+    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
+        ClipId clipId = clipManager.getClipInSlot(visibleTrackIds_[i], sceneIndex);
+        if (clipId != INVALID_CLIP_ID) {
+            clipManager.stopClip(clipId);
+            clipManager.deleteClip(clipId);
+        }
+    }
+
+    // Remove the last scene button
+    sceneButtons.pop_back();
+
+    // Remove the last clip slot from each track
+    for (auto& trackSlots : clipSlots) {
+        if (!trackSlots.empty()) {
+            trackSlots.pop_back();
+        }
+    }
+
+    numScenes_--;
+    gridContent->setNumScenes(numScenes_);
 
     resized();
     updateAllClipSlots();

@@ -98,8 +98,9 @@ class SessionView : public juce::Component,
     // Scene launch buttons
     std::vector<std::unique_ptr<juce::TextButton>> sceneButtons;
 
-    // Add scene button and stop all button
+    // Add/remove scene buttons and stop all button
     std::unique_ptr<juce::TextButton> addSceneButton;
+    std::unique_ptr<juce::TextButton> removeSceneButton;
     std::unique_ptr<juce::TextButton> stopAllButton;
 
     // Custom grid content component that draws track separators
@@ -139,6 +140,8 @@ class SessionView : public juce::Component,
     void rebuildTracks();
     void setupSceneButtons();
     void addScene();
+    void removeScene();
+    void removeSceneAsync(int sceneIndex);
 
     void onClipSlotClicked(int trackIndex, int sceneIndex);
     void onPlayButtonClicked(int trackIndex, int sceneIndex);
