@@ -120,6 +120,9 @@ set(DAW_CORE_SOURCES
     audio/DeviceProcessor.cpp
     audio/MidiBridge.cpp
     # TODO: Custom synth library (SimpleSynthPlugin.cpp) - for future implementation
+    # Project serialization
+    project/ProjectSerializer.cpp
+    project/ProjectManager.cpp
     # UI components needed by tests
     ui/components/timeline/TimelineComponent.cpp
     # State management
@@ -377,6 +380,10 @@ set(DAW_HEADERS
     core/AutomationTypes.hpp
     core/AutomationInfo.hpp
     core/AutomationManager.hpp
+    # Project serialization
+    project/ProjectInfo.hpp
+    project/ProjectSerializer.hpp
+    project/ProjectManager.hpp
     # Components - Common Curve Editor
     ui/components/common/curve/CurveTypes.hpp
     ui/components/common/curve/CurveEditorBase.hpp
@@ -463,6 +470,7 @@ target_include_directories(magda_daw
     ${CMAKE_CURRENT_SOURCE_DIR}/interfaces
     ${CMAKE_CURRENT_SOURCE_DIR}/audio
     ${CMAKE_CURRENT_SOURCE_DIR}/engine
+    ${CMAKE_CURRENT_SOURCE_DIR}/project
     ${CMAKE_CURRENT_SOURCE_DIR}/profiling
     PRIVATE
     ${CMAKE_SOURCE_DIR}
