@@ -58,16 +58,19 @@ jobs:
         echo "" >> analysis-report.txt
         echo "=== Potential Code Smells ===" >> analysis-report.txt
         
-        # Find long functions (>100 lines between braces)
-        echo "Functions that might be too long:" >> analysis-report.txt
-        find magda/ tests/ -name "*.cpp" -exec grep -l "{" {} \; | while read file; do
-          awk '/^[a-zA-Z_].*\{/ {start=NR; name=$0} /^}/ {if (NR-start > 100) print FILENAME":"start": "name}' "$file" >> analysis-report.txt || true
-        done
+        # Find long functions (simplified heuristic - files with long blocks)
+        echo "Large implementation files (may contain long functions):" >> analysis-report.txt
+        find magda/ tests/ \( -name "*.cpp" -o -name "*.hpp" \) | while read -r file; do
+          LINES=$(wc -l < "$file" 2>/dev/null || echo "0")
+          if [ "$LINES" -gt 300 ]; then
+            echo "$file: $LINES lines" >> analysis-report.txt
+          fi
+        done || true
         
         # Find files with many includes (potential dependency issues)
         echo "" >> analysis-report.txt
         echo "Files with many includes (>15):" >> analysis-report.txt
-        find magda/ tests/ -name "*.cpp" -o -name "*.hpp" | while read file; do
+        find magda/ tests/ \( -name "*.cpp" -o -name "*.hpp" \) | while read -r file; do
           INCLUDE_COUNT=$(grep -c "^#include" "$file" || echo "0")
           if [ "$INCLUDE_COUNT" -gt 15 ]; then
             echo "$file: $INCLUDE_COUNT includes" >> analysis-report.txt

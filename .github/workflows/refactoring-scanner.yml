@@ -27,19 +27,19 @@ jobs:
     - name: Install Python and dependencies
       run: |
         python3 -m pip install --upgrade pip
-        pip3 install radon complexity lizard
+        pip3 install lizard
 
     - name: Analyze code complexity
       id: complexity
       run: |
         echo "Analyzing code complexity..."
         
-        # Use radon to find complex functions
+        # Use lizard to find complex functions (C++ compatible)
         echo "=== High Complexity Functions (Cyclomatic Complexity > 10) ===" > refactoring-report.txt
-        radon cc magda/ tests/ -s -a -nc | grep -A 2 "C\|D\|E\|F" >> refactoring-report.txt || echo "None found" >> refactoring-report.txt
+        lizard magda/ tests/ -l cpp -C 10 >> refactoring-report.txt || echo "None found" >> refactoring-report.txt
         
-        # Count high-complexity items
-        COMPLEX_COUNT=$(radon cc magda/ tests/ -s -a -nc | grep -c "C\|D\|E\|F" || echo "0")
+        # Count high-complexity items (CCN > 10)
+        COMPLEX_COUNT=$(lizard magda/ tests/ -l cpp -C 10 2>/dev/null | grep -c "^[[:space:]]*[0-9]" || echo "0")
         echo "complex_count=$COMPLEX_COUNT" >> $GITHUB_OUTPUT
         
         echo "" >> refactoring-report.txt
@@ -52,19 +52,21 @@ jobs:
         
         # Look for similar function names that might indicate duplication
         echo "Functions with similar names (potential duplication):" >> refactoring-report.txt
-        find magda/ tests/ -name "*.cpp" -exec grep -h "^[a-zA-Z_].*::" {} \; | \
+        find magda/ tests/ \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) -exec grep -h "^[a-zA-Z_].*::" {} \; | \
           sort | uniq -c | sort -rn | head -20 >> refactoring-report.txt || true
 
     - name: Find large files
       run: |
         echo "" >> refactoring-report.txt
         echo "=== Large Files (>500 lines, candidates for splitting) ===" >> refactoring-report.txt
-        find magda/ tests/ \( -name "*.cpp" -o -name "*.hpp" \) | while read -r file; do
-          LINES=$(wc -l < "$file")
-          if [ "$LINES" -gt 500 ]; then
-            echo "$file: $LINES lines" >> refactoring-report.txt
-          fi
-        done | sort -t: -k2 -rn
+        {
+          find magda/ tests/ \( -name "*.cpp" -o -name "*.hpp" \) | while read -r file; do
+            LINES=$(wc -l < "$file")
+            if [ "$LINES" -gt 500 ]; then
+              echo "$file: $LINES lines"
+            fi
+          done
+        } | sort -t: -k2 -rn >> refactoring-report.txt
 
     - name: Detect tight coupling
       run: |
@@ -73,21 +75,23 @@ jobs:
         
         # Files that include many other project headers
         echo "Files with many internal includes (>10):" >> refactoring-report.txt
-        find magda/ \( -name "*.cpp" -o -name "*.hpp" \) | while read -r file; do
-          INTERNAL_INCLUDES=$(grep -c "#include.*magda" "$file" 2>/dev/null || echo "0")
-          if [ "$INTERNAL_INCLUDES" -gt 10 ]; then
-            echo "$file: $INTERNAL_INCLUDES internal includes" >> refactoring-report.txt
-          fi
-        done | sort -t: -k2 -rn
+        {
+          find magda/ \( -name "*.cpp" -o -name "*.hpp" \) | while read -r file; do
+            INTERNAL_INCLUDES=$(grep -c "#include.*magda" "$file" 2>/dev/null || echo "0")
+            if [ "$INTERNAL_INCLUDES" -gt 10 ]; then
+              echo "$file: $INTERNAL_INCLUDES internal includes"
+            fi
+          done
+        } | sort -t: -k2 -rn >> refactoring-report.txt
 
     - name: Find unused includes
       run: |
         echo "" >> refactoring-report.txt
-        echo "=== Checking for Unused Includes ===" >> refactoring-report.txt
-        echo "Note: Run scripts/find-unused-includes.py for detailed analysis" >> refactoring-report.txt
+        echo "=== Include Statistics ===" >> refactoring-report.txt
+        echo "Note: Run scripts/find-unused-includes.py for detailed unused include analysis" >> refactoring-report.txt
         
         # Count total includes for reference
-        TOTAL_INCLUDES=$(find magda/ tests/ -name "*.cpp" -o -name "*.hpp" -o -name "*.h" | \
+        TOTAL_INCLUDES=$(find magda/ tests/ \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) | \
           xargs grep -c "#include" | awk -F: '{sum+=$2} END {print sum}')
         echo "Total #include statements: $TOTAL_INCLUDES" >> refactoring-report.txt
 
@@ -103,18 +107,21 @@ jobs:
     - name: Identify god objects
       run: |
         echo "" >> refactoring-report.txt
-        echo "=== Potential God Objects (classes with many methods) ===" >> refactoring-report.txt
+        echo "=== Potential God Objects (classes with many public methods) ===" >> refactoring-report.txt
         
-        # Count methods per class in header files
-        find magda/ -name "*.hpp" | while read -r file; do
-          CLASS_NAME=$(grep "^class\|^struct" "$file" | head -1 | awk '{print $2}' | sed 's/[:{]//g')
-          if [ -n "$CLASS_NAME" ]; then
-            METHOD_COUNT=$(grep -c "^\s*[a-zA-Z].*(" "$file" 2>/dev/null || echo "0")
-            if [ "$METHOD_COUNT" -gt 20 ]; then
-              echo "$file ($CLASS_NAME): $METHOD_COUNT methods" >> refactoring-report.txt
+        # Count public method declarations in header files (simplified heuristic)
+        {
+          find magda/ -name "*.hpp" | while read -r file; do
+            CLASS_NAME=$(grep "^class\|^struct" "$file" | head -1 | awk '{print $2}' | sed 's/[:{]//g')
+            if [ -n "$CLASS_NAME" ]; then
+              # Count lines that look like method declarations (public section)
+              METHOD_COUNT=$(awk '/^public:/,/^(private:|protected:)/ {if (/^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*\(/) count++} END {print count+0}' "$file")
+              if [ "$METHOD_COUNT" -gt 20 ]; then
+                echo "$file ($CLASS_NAME): ~$METHOD_COUNT public methods"
+              fi
             fi
-          fi
-        done | sort -t: -k2 -rn | head -10
+          done
+        } | sort -t: -k2 -rn | head -10 >> refactoring-report.txt
 
     - name: Upload refactoring report
       uses: actions/upload-artifact@v4
