@@ -120,11 +120,15 @@ class ClipSlotButton : public juce::TextButton {
     }
 };
 
-// Custom grid content that draws track separators
+// Custom grid content that draws track separators and empty cells
 class SessionView::GridContent : public juce::Component {
   public:
-    GridContent(int clipWidth, int separatorWidth)
-        : clipWidth_(clipWidth), separatorWidth_(separatorWidth) {}
+    GridContent(int clipWidth, int clipHeight, int separatorWidth, int clipMargin, int numScenes)
+        : clipWidth_(clipWidth),
+          clipHeight_(clipHeight),
+          separatorWidth_(separatorWidth),
+          clipMargin_(clipMargin),
+          numScenes_(numScenes) {}
 
     void setNumTracks(int numTracks) {
         numTracks_ = numTracks;
@@ -134,9 +138,27 @@ class SessionView::GridContent : public juce::Component {
     void paint(juce::Graphics& g) override {
         g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
 
+        int trackColumnWidth = clipWidth_ + separatorWidth_;
+        int sceneRowHeight = clipHeight_ + clipMargin_;
+
+        // Draw empty cells below the actual scene slots to fill the space
+        int firstEmptyRow = numScenes_;
+        int totalRows = getHeight() / sceneRowHeight + 1;
+
+        auto surfaceColour = DarkTheme::getColour(DarkTheme::SURFACE);
+        for (int row = firstEmptyRow; row < totalRows; ++row) {
+            int y = row * sceneRowHeight;
+            for (int col = 0; col < numTracks_; ++col) {
+                int x = col * trackColumnWidth;
+                g.setColour(surfaceColour);
+                g.fillRoundedRectangle(static_cast<float>(x + 1), static_cast<float>(y + 1),
+                                       static_cast<float>(clipWidth_ - 2),
+                                       static_cast<float>(clipHeight_ - 2), 2.0f);
+            }
+        }
+
         // Draw vertical separators between tracks (after each clip slot)
         g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
-        int trackColumnWidth = clipWidth_ + separatorWidth_;
         for (int i = 0; i < numTracks_; ++i) {
             int x = i * trackColumnWidth + clipWidth_;
             g.fillRect(x, 0, separatorWidth_, getHeight());
@@ -146,7 +168,10 @@ class SessionView::GridContent : public juce::Component {
   private:
     int numTracks_ = 0;
     int clipWidth_;
+    int clipHeight_;
     int separatorWidth_;
+    int clipMargin_;
+    int numScenes_;
 };
 
 // Container for track headers with clipping
@@ -201,7 +226,8 @@ SessionView::SessionView() {
     addAndMakeVisible(*sceneContainer);
 
     // Create viewport for scrollable grid with custom grid content
-    gridContent = std::make_unique<GridContent>(CLIP_SLOT_WIDTH, TRACK_SEPARATOR_WIDTH);
+    gridContent = std::make_unique<GridContent>(
+        CLIP_SLOT_WIDTH, CLIP_SLOT_HEIGHT, TRACK_SEPARATOR_WIDTH, CLIP_SLOT_MARGIN, NUM_SCENES);
     gridViewport = std::make_unique<juce::Viewport>();
     gridViewport->setViewedComponent(gridContent.get(), false);
     gridViewport->setScrollBarsShown(true, true);
