@@ -62,26 +62,45 @@ gh workflow run periodic-analysis.yml
 ### 3. Refactoring Opportunities Scanner (`.github/workflows/refactoring-scanner.yml`)
 
 **Triggers**:
+- Automatic: On every push to `main` branch
 - Scheduled: Bi-weekly (1st and 15th) at 10:00 AM UTC
 - Manual: Can be triggered on-demand
 
 **What it does**:
+- **Iterates over each file** in the repository individually (*.cpp, *.hpp, *.h)
 - Analyzes code complexity using lizard (C++ compatible complexity analyzer)
-- Finds duplicate code candidates
 - Identifies large files (>500 lines)
 - Detects tight coupling (files with many internal includes)
-- Provides include statistics (for manual unused include analysis)
 - Finds magic numbers (should be named constants)
 - Identifies potential god objects (classes with many public methods)
+- Finds duplicate code patterns across the codebase
+
+**Per-File Analysis**:
+Each file is processed separately with individual reports containing:
+- Complexity analysis (functions with cyclomatic complexity > 10)
+- File size metrics
+- Coupling analysis (internal includes count)
+- Magic numbers detection
+- Class structure analysis (for header files)
 
 **Outputs**:
-- Refactoring report as workflow artifact
-- GitHub issue (if high-complexity functions > 3) with prioritized recommendations
+- **Per-file reports**: Individual analysis reports for each source file in `results/` directory
+- **Summary report**: Aggregated findings with truncation for GitHub API limits (65KB)
+- **File index**: List of all per-file reports available
+- Workflow artifacts with 30-day retention
+- GitHub issue (if files with high-complexity > 3) with prioritized recommendations
 
 **Running manually**:
 ```bash
 gh workflow run refactoring-scanner.yml
 ```
+
+**Scalability**:
+The workflow is designed to handle large codebases by:
+- Processing files individually to avoid memory issues
+- Truncating summary reports to 65,000 characters for GitHub API compatibility
+- Storing detailed per-file results as downloadable artifacts
+- Providing a file index for easy navigation of results
 
 ## Benefits
 
@@ -138,8 +157,12 @@ if: steps.metrics.outputs.fixme_count > 5  # Create issue if more than 5 FIXMEs
 
 **In `refactoring-scanner.yml`**:
 ```yaml
-if: steps.complexity.outputs.complex_count > 3  # Create issue if >3 complex functions
+if: steps.analyze_files.outputs.complex_count > 3  # Create issue if >3 files with high complexity
 ```
+
+The workflow also tracks additional metrics:
+- `large_file_count`: Number of files exceeding 500 lines
+- `coupling_count`: Number of files with >10 internal includes
 
 ### Adding New Analysis
 
@@ -188,6 +211,41 @@ View workflow runs:
 View created issues:
 - Filter by labels: `label:automated-analysis` or `label:refactoring`
 - Use GitHub Projects to track automated findings
+
+### Accessing Per-File Analysis Reports
+
+For the Refactoring Scanner workflow:
+
+1. **Via GitHub Web UI**:
+   - Go to Actions → Refactoring Opportunities Scanner → Select a workflow run
+   - Scroll to "Artifacts" section
+   - Download `refactoring-results` artifact
+   - Extract the ZIP file to access individual per-file reports
+
+2. **Via GitHub CLI**:
+   ```bash
+   # List recent runs
+   gh run list --workflow=refactoring-scanner.yml
+   
+   # Download artifacts from a specific run
+   gh run download <run-id> -n refactoring-results
+   ```
+
+3. **Report Structure**:
+   ```
+   refactoring-results/
+   ├── summary-full.txt              # Complete summary (may be large)
+   ├── summary-truncated.txt         # Truncated summary (65KB limit)
+   ├── file-index.txt                # Index of all per-file reports
+   └── refactoring-report-*.txt      # Individual file analysis reports
+   ```
+
+Each per-file report includes:
+- Complexity analysis for that specific file
+- File size metrics
+- Coupling indicators (internal includes)
+- Magic numbers found
+- Class structure (for header files)
 
 ## Troubleshooting
 
