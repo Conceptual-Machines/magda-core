@@ -868,6 +868,14 @@ void MainWindow::setupMenuCallbacks() {
         });
     };
 
+    callbacks.onCloseProject = []() {
+        auto& projectManager = ProjectManager::getInstance();
+        if (!projectManager.closeProject()) {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Close Project",
+                                                   "Could not close project.");
+        }
+    };
+
     callbacks.onSaveProject = [this, &callbacks]() {
         auto& projectManager = ProjectManager::getInstance();
 

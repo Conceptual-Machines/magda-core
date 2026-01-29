@@ -52,6 +52,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addItem(NewProject, "New Project", true, false);
         menu.addSeparator();
         menu.addItem(OpenProject, "Open Project...", true, false);
+        menu.addItem(CloseProject, "Close Project", true, false);
         menu.addSeparator();
         menu.addItem(SaveProject, "Save Project", true, false);
         menu.addItem(SaveProjectAs, "Save Project As...", true, false);
@@ -182,6 +183,10 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case OpenProject:
             if (callbacks_.onOpenProject)
                 callbacks_.onOpenProject();
+            break;
+        case CloseProject:
+            if (callbacks_.onCloseProject)
+                callbacks_.onCloseProject();
             break;
         case SaveProject:
             if (callbacks_.onSaveProject)

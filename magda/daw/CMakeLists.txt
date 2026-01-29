@@ -123,6 +123,8 @@ set(DAW_CORE_SOURCES
     # Project serialization
     project/ProjectSerializer.cpp
     project/ProjectManager.cpp
+    # Preset management
+    core/PresetManager.cpp
     # UI components needed by tests
     ui/components/timeline/TimelineComponent.cpp
     # State management
@@ -384,6 +386,8 @@ set(DAW_HEADERS
     project/ProjectInfo.hpp
     project/ProjectSerializer.hpp
     project/ProjectManager.hpp
+    # Preset management
+    core/PresetManager.hpp
     # Components - Common Curve Editor
     ui/components/common/curve/CurveTypes.hpp
     ui/components/common/curve/CurveEditorBase.hpp
