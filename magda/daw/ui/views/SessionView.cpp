@@ -228,6 +228,16 @@ SessionView::SessionView() {
 
     setupSceneButtons();
 
+    // Add scene button (fixed position, top of scene column)
+    addSceneButton = std::make_unique<juce::TextButton>();
+    addSceneButton->setButtonText("+");
+    addSceneButton->setColour(juce::TextButton::buttonColourId,
+                              DarkTheme::getColour(DarkTheme::SURFACE));
+    addSceneButton->setColour(juce::TextButton::textColourOffId,
+                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    addSceneButton->onClick = [this]() { addScene(); };
+    addAndMakeVisible(*addSceneButton);
+
     // Create master channel strip (vertical orientation for Session view)
     // Hide VU meter to keep it compact - only show peak meter
     masterStrip = std::make_unique<MasterChannelStrip>(MasterChannelStrip::Orientation::Vertical);
@@ -500,9 +510,12 @@ void SessionView::resized() {
         masterStrip->setBounds(bounds.removeFromRight(MASTER_STRIP_WIDTH));
     }
 
-    // Scene container on the right (below header area)
+    // Scene column on the right
     auto sceneArea = bounds.removeFromRight(SCENE_BUTTON_WIDTH);
-    sceneArea.removeFromTop(TRACK_HEADER_HEIGHT);  // Corner area
+
+    // "+" button in the corner area (top of scene column)
+    auto cornerArea = sceneArea.removeFromTop(TRACK_HEADER_HEIGHT);
+    addSceneButton->setBounds(cornerArea.reduced(2));
 
     // Header container at the top (excluding scene column)
     auto headerArea = bounds.removeFromTop(TRACK_HEADER_HEIGHT);
@@ -537,10 +550,6 @@ void SessionView::resized() {
     // Stop all button at fixed position below visible scene area
     int stopY = numScenes_ * sceneRowHeight - sceneButtonScrollOffset;
     stopAllButton->setBounds(2, stopY, SCENE_BUTTON_WIDTH - 4, 30);
-
-    // Add scene button below stop
-    int addY = stopY + 34;
-    addSceneButton->setBounds(2, addY, SCENE_BUTTON_WIDTH - 4, ADD_SCENE_BUTTON_HEIGHT);
 
     // Grid viewport takes remaining space (below headers, above faders)
     gridViewport->setBounds(bounds);
@@ -590,8 +599,6 @@ void SessionView::scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStar
         }
         int stopY = numScenes_ * sceneRowHeight - sceneButtonScrollOffset;
         stopAllButton->setBounds(2, stopY, SCENE_BUTTON_WIDTH - 4, 30);
-        int addY = stopY + 34;
-        addSceneButton->setBounds(2, addY, SCENE_BUTTON_WIDTH - 4, ADD_SCENE_BUTTON_HEIGHT);
         sceneContainer->repaint();
     }
 }
@@ -620,16 +627,6 @@ void SessionView::setupSceneButtons() {
                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     stopAllButton->onClick = [this]() { onStopAllClicked(); };
     sceneContainer->addAndMakeVisible(*stopAllButton);
-
-    // Add scene button
-    addSceneButton = std::make_unique<juce::TextButton>();
-    addSceneButton->setButtonText("+");
-    addSceneButton->setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
-    addSceneButton->setColour(juce::TextButton::textColourOffId,
-                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    addSceneButton->onClick = [this]() { addScene(); };
-    sceneContainer->addAndMakeVisible(*addSceneButton);
 }
 
 void SessionView::addScene() {
