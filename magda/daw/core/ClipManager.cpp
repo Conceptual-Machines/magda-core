@@ -321,6 +321,20 @@ void ClipManager::setClipLoopLength(ClipId clipId, double lengthBeats) {
     }
 }
 
+void ClipManager::setClipLaunchMode(ClipId clipId, LaunchMode mode) {
+    if (auto* clip = getClip(clipId)) {
+        clip->launchMode = mode;
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
+void ClipManager::setClipLaunchQuantize(ClipId clipId, LaunchQuantize quantize) {
+    if (auto* clip = getClip(clipId)) {
+        clip->launchQuantize = quantize;
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
 void ClipManager::setAudioSourcePosition(ClipId clipId, int sourceIndex, double position) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio && sourceIndex >= 0 &&

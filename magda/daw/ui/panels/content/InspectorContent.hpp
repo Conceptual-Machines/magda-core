@@ -124,6 +124,12 @@ class InspectorContent : public PanelContent,
     juce::Label clipTypeLabel_;
     juce::Label clipTypeValue_;
 
+    // Session clip launch properties
+    juce::Label launchModeLabel_;
+    juce::ComboBox launchModeCombo_;
+    juce::Label launchQuantizeLabel_;
+    juce::ComboBox launchQuantizeCombo_;
+
     // Note properties section
     juce::Label noteCountLabel_;
     juce::Label notePitchLabel_;

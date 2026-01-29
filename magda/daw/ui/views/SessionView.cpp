@@ -9,11 +9,16 @@
 
 namespace magda {
 
-// Custom clip slot button that handles both clicks and double-clicks
+// Custom clip slot button that handles clicks, double-clicks, and play button area
 class ClipSlotButton : public juce::TextButton {
   public:
     std::function<void()> onSingleClick;
     std::function<void()> onDoubleClick;
+    std::function<void()> onPlayButtonClick;
+
+    bool hasClip = false;
+    bool clipIsPlaying = false;
+    bool isSelected = false;
 
     void mouseDoubleClick(const juce::MouseEvent& event) override {
         if (onDoubleClick) {
@@ -22,9 +27,57 @@ class ClipSlotButton : public juce::TextButton {
         juce::TextButton::mouseDoubleClick(event);
     }
 
+    void mouseUp(const juce::MouseEvent& event) override {
+        if (!event.mouseWasClicked())
+            return;
+
+        // Check if click is in the play button area (left 22px of the slot)
+        if (hasClip && event.getPosition().getX() < 22) {
+            if (onPlayButtonClick) {
+                onPlayButtonClick();
+            }
+        } else {
+            if (onSingleClick) {
+                onSingleClick();
+            }
+        }
+    }
+
     void clicked() override {
-        if (onSingleClick) {
-            onSingleClick();
+        // Handled by mouseUp instead
+    }
+
+    void paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted,
+                     bool shouldDrawButtonAsDown) override {
+        // Draw base button
+        juce::TextButton::paintButton(g, shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
+
+        // Draw selection highlight border
+        if (isSelected) {
+            g.setColour(juce::Colours::white.withAlpha(0.8f));
+            g.drawRect(getLocalBounds(), 2);
+        }
+
+        // Draw play/stop triangle indicator on the left side
+        if (hasClip) {
+            auto playArea = getLocalBounds().removeFromLeft(22);
+            auto centre = playArea.getCentre().toFloat();
+
+            if (clipIsPlaying) {
+                // Stop icon (square)
+                float size = 5.0f;
+                g.setColour(juce::Colours::white.withAlpha(0.9f));
+                g.fillRect(centre.getX() - size, centre.getY() - size, size * 2.0f, size * 2.0f);
+            } else {
+                // Play icon (triangle)
+                juce::Path triangle;
+                float size = 6.0f;
+                triangle.addTriangle(centre.getX() - size * 0.7f, centre.getY() - size,
+                                     centre.getX() - size * 0.7f, centre.getY() + size,
+                                     centre.getX() + size, centre.getY());
+                g.setColour(juce::Colours::white.withAlpha(0.7f));
+                g.fillPath(triangle);
+            }
         }
     }
 };
@@ -287,9 +340,14 @@ void SessionView::rebuildTracks() {
             int trackIndex = track;
             int sceneIndex = static_cast<int>(scene);
 
-            // Single click: trigger/stop playback
+            // Single click: select clip (no playback change)
             slot->onSingleClick = [this, trackIndex, sceneIndex]() {
                 onClipSlotClicked(trackIndex, sceneIndex);
+            };
+
+            // Play button click: trigger/stop playback
+            slot->onPlayButtonClick = [this, trackIndex, sceneIndex]() {
+                onPlayButtonClicked(trackIndex, sceneIndex);
             };
 
             // Double click: open clip editor
@@ -440,16 +498,43 @@ void SessionView::onClipSlotClicked(int trackIndex, int sceneIndex) {
     ClipId clipId = ClipManager::getInstance().getClipInSlot(trackId, sceneIndex);
 
     if (clipId != INVALID_CLIP_ID) {
-        // Toggle playback
-        const auto* clip = ClipManager::getInstance().getClip(clipId);
-        if (clip && clip->isPlaying) {
-            ClipManager::getInstance().stopClip(clipId);
-        } else {
-            ClipManager::getInstance().triggerClip(clipId);
-        }
+        // Select the clip (update inspector) - no playback change
+        SelectionManager::getInstance().selectClip(clipId);
+        ClipManager::getInstance().setSelectedClip(clipId);
     } else {
-        // Empty slot - could create new clip here
-        DBG("Empty clip slot clicked: Track " << trackIndex << ", Scene " << sceneIndex);
+        // Empty slot - select the track
+        selectTrack(trackId);
+    }
+}
+
+void SessionView::onPlayButtonClicked(int trackIndex, int sceneIndex) {
+    if (trackIndex < 0 || trackIndex >= static_cast<int>(visibleTrackIds_.size())) {
+        return;
+    }
+
+    TrackId trackId = visibleTrackIds_[trackIndex];
+    ClipId clipId = ClipManager::getInstance().getClipInSlot(trackId, sceneIndex);
+
+    if (clipId != INVALID_CLIP_ID) {
+        const auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (!clip)
+            return;
+
+        if (clip->launchMode == LaunchMode::Toggle) {
+            // Toggle mode: toggle between play/stop
+            if (clip->isPlaying) {
+                ClipManager::getInstance().stopClip(clipId);
+            } else {
+                ClipManager::getInstance().triggerClip(clipId);
+            }
+        } else {
+            // Trigger mode: play from start, stop if already playing
+            if (clip->isPlaying) {
+                ClipManager::getInstance().stopClip(clipId);
+            } else {
+                ClipManager::getInstance().triggerClip(clipId);
+            }
+        }
     }
 }
 
@@ -570,6 +655,11 @@ void SessionView::clipPropertyChanged(ClipId clipId) {
     }
 }
 
+void SessionView::clipSelectionChanged(ClipId /*clipId*/) {
+    // Refresh all slots to update selection highlight
+    updateAllClipSlots();
+}
+
 void SessionView::clipPlaybackStateChanged(ClipId clipId) {
     // Update slot appearance when playback state changes
     const auto* clip = ClipManager::getInstance().getClip(clipId);
@@ -596,38 +686,41 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
     if (sceneIndex < 0 || sceneIndex >= NUM_SCENES)
         return;
 
-    auto* slot = clipSlots[trackIndex][sceneIndex].get();
+    auto* slot = static_cast<ClipSlotButton*>(clipSlots[trackIndex][sceneIndex].get());
     if (!slot)
         return;
 
     TrackId trackId = visibleTrackIds_[trackIndex];
     ClipId clipId = ClipManager::getInstance().getClipInSlot(trackId, sceneIndex);
+    ClipId selectedClipId = ClipManager::getInstance().getSelectedClip();
 
     if (clipId != INVALID_CLIP_ID) {
         const auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip) {
+            // Update slot state for custom painting
+            slot->hasClip = true;
+            slot->clipIsPlaying = clip->isPlaying;
+            slot->isSelected = (clipId == selectedClipId);
+
             // Show clip name with loop indicator if enabled
-            juce::String displayText = clip->name;
+            juce::String displayText = "   " + clip->name;  // Indent for play button area
             if (clip->internalLoopEnabled) {
-                displayText += " [L]";  // Add loop indicator
+                displayText += " [L]";
             }
             slot->setButtonText(displayText);
 
             // Set color based on clip state
             if (clip->isPlaying) {
-                // Playing: bright green
                 slot->setColour(juce::TextButton::buttonColourId,
                                 DarkTheme::getColour(DarkTheme::STATUS_SUCCESS));
                 slot->setColour(juce::TextButton::textColourOffId,
                                 DarkTheme::getColour(DarkTheme::BACKGROUND));
             } else if (clip->isQueued) {
-                // Queued: orange/amber
                 slot->setColour(juce::TextButton::buttonColourId,
                                 DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
                 slot->setColour(juce::TextButton::textColourOffId,
                                 DarkTheme::getColour(DarkTheme::BACKGROUND));
             } else {
-                // Has clip but not playing: clip color
                 slot->setColour(juce::TextButton::buttonColourId, clip->colour.withAlpha(0.7f));
                 slot->setColour(juce::TextButton::textColourOffId,
                                 DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
@@ -635,6 +728,9 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
         }
     } else {
         // Empty slot
+        slot->hasClip = false;
+        slot->clipIsPlaying = false;
+        slot->isSelected = false;
         slot->setButtonText("");
         slot->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
         slot->setColour(juce::TextButton::textColourOffId,

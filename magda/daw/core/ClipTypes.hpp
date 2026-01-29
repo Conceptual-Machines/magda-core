@@ -41,6 +41,57 @@ inline const char* getClipTypeName(ClipType type) {
 }
 
 /**
+ * @brief Launch mode for session clips
+ */
+enum class LaunchMode {
+    Trigger,  // Play from start, stop on re-trigger or stop command
+    Toggle    // Click to start, click again to stop
+};
+
+/**
+ * @brief Launch quantization for session clips
+ */
+enum class LaunchQuantize {
+    None,        // Immediate
+    OneBar,      // Snap to next bar
+    HalfBar,     // Snap to next half bar
+    QuarterBar,  // Snap to next beat
+    EighthBar    // Snap to next eighth note
+};
+
+/**
+ * @brief Get display name for launch mode
+ */
+inline const char* getLaunchModeName(LaunchMode mode) {
+    switch (mode) {
+        case LaunchMode::Trigger:
+            return "Trigger";
+        case LaunchMode::Toggle:
+            return "Toggle";
+    }
+    return "Unknown";
+}
+
+/**
+ * @brief Get display name for launch quantize
+ */
+inline const char* getLaunchQuantizeName(LaunchQuantize q) {
+    switch (q) {
+        case LaunchQuantize::None:
+            return "None";
+        case LaunchQuantize::OneBar:
+            return "1 Bar";
+        case LaunchQuantize::HalfBar:
+            return "1/2";
+        case LaunchQuantize::QuarterBar:
+            return "1/4";
+        case LaunchQuantize::EighthBar:
+            return "1/8";
+    }
+    return "Unknown";
+}
+
+/**
  * @brief Check if clip type can be stretched without pitch change
  */
 inline bool supportsTimeStretch(ClipType type) {

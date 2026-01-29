@@ -66,6 +66,10 @@ struct ClipInfo {
     bool isPlaying = false;  // Currently playing in session
     bool isQueued = false;   // Queued to start
 
+    // Session launch properties
+    LaunchMode launchMode = LaunchMode::Trigger;
+    LaunchQuantize launchQuantize = LaunchQuantize::None;
+
     // Helpers
     double getEndTime() const {
         return startTime + length;

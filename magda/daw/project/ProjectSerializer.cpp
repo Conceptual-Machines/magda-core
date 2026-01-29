@@ -821,9 +821,12 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("type", static_cast<int>(clip.type));
     obj->setProperty("startTime", clip.startTime);
     obj->setProperty("length", clip.length);
+    obj->setProperty("view", static_cast<int>(clip.view));
     obj->setProperty("internalLoopEnabled", clip.internalLoopEnabled);
     obj->setProperty("internalLoopLength", clip.internalLoopLength);
     obj->setProperty("sceneIndex", clip.sceneIndex);
+    obj->setProperty("launchMode", static_cast<int>(clip.launchMode));
+    obj->setProperty("launchQuantize", static_cast<int>(clip.launchQuantize));
 
     // Audio sources
     juce::Array<juce::var> audioSourcesArray;
@@ -857,9 +860,24 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     outClip.type = static_cast<ClipType>(static_cast<int>(obj->getProperty("type")));
     outClip.startTime = obj->getProperty("startTime");
     outClip.length = obj->getProperty("length");
+    // View type (backward compatible - defaults to Arrangement if missing)
+    auto viewVar = obj->getProperty("view");
+    if (!viewVar.isVoid()) {
+        outClip.view = static_cast<ClipView>(static_cast<int>(viewVar));
+    }
     outClip.internalLoopEnabled = obj->getProperty("internalLoopEnabled");
     outClip.internalLoopLength = obj->getProperty("internalLoopLength");
     outClip.sceneIndex = obj->getProperty("sceneIndex");
+
+    // Launch properties (backward compatible - defaults apply if missing)
+    auto launchModeVar = obj->getProperty("launchMode");
+    if (!launchModeVar.isVoid()) {
+        outClip.launchMode = static_cast<LaunchMode>(static_cast<int>(launchModeVar));
+    }
+    auto launchQuantizeVar = obj->getProperty("launchQuantize");
+    if (!launchQuantizeVar.isVoid()) {
+        outClip.launchQuantize = static_cast<LaunchQuantize>(static_cast<int>(launchQuantizeVar));
+    }
 
     // Audio sources
     auto audioSourcesVar = obj->getProperty("audioSources");

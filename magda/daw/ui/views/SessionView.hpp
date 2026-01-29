@@ -44,6 +44,7 @@ class SessionView : public juce::Component,
     // ClipManagerListener
     void clipsChanged() override;
     void clipPropertyChanged(ClipId clipId) override;
+    void clipSelectionChanged(ClipId clipId) override;
     void clipPlaybackStateChanged(ClipId clipId) override;
 
     // ViewModeListener
@@ -102,6 +103,7 @@ class SessionView : public juce::Component,
     void setupSceneButtons();
 
     void onClipSlotClicked(int trackIndex, int sceneIndex);
+    void onPlayButtonClicked(int trackIndex, int sceneIndex);
     void onSceneLaunched(int sceneIndex);
     void onStopAllClicked();
     void openClipEditor(int trackIndex, int sceneIndex);

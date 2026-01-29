@@ -161,6 +161,8 @@ class ClipManager {
     void setClipColour(ClipId clipId, juce::Colour colour);
     void setClipLoopEnabled(ClipId clipId, bool enabled);
     void setClipLoopLength(ClipId clipId, double lengthBeats);
+    void setClipLaunchMode(ClipId clipId, LaunchMode mode);
+    void setClipLaunchQuantize(ClipId clipId, LaunchQuantize quantize);
 
     // Audio-specific
     /** @brief Set the position of an audio source within its clip container */
