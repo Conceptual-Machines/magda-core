@@ -33,6 +33,7 @@ This document defines code review guidelines for the Magda project, a JUCE/C++ a
 - **Modern C++20**: Encourage use of C++20 features where appropriate (concepts, ranges, coroutines if applicable)
 - **Error Handling**: Verify appropriate error handling strategies
 - **Documentation**: Check that complex algorithms or non-obvious code have explanatory comments
+- **TODO Comments**: Read and respect TODO comments in the code being reviewed. If a TODO indicates planned work or known limitations, consider this context when reviewing related changes. Don't request changes that conflict with or duplicate TODO items.
 
 ## What NOT to Focus On
 
@@ -79,6 +80,11 @@ This document defines code review guidelines for the Magda project, a JUCE/C++ a
 5. **Resolution**: Mark comments as resolved once addressed
 6. **Approval**: PR is approved when all critical issues are resolved
 
+### Context Awareness
+- **Previous Code Reviews**: Consider the context and feedback from previous code review iterations when providing new feedback. Don't repeat comments that have already been addressed or discussed.
+- **Review History**: If a developer has provided justification for a design decision in a previous review iteration, respect that context unless new information warrants revisiting the issue.
+- **Incremental Changes**: Recognize when changes are part of a larger refactoring or feature implementation. Consider the broader context and don't insist on perfection in intermediate states if the overall direction is sound.
+
 ### Comment Guidelines
 - **Be Specific**: Point to exact line numbers and provide clear explanations
 - **Be Constructive**: Suggest solutions, not just problems
@@ -91,6 +97,54 @@ This document defines code review guidelines for the Magda project, a JUCE/C++ a
 - **Performance Issues**: Should be addressed or explicitly deferred with justification
 - **Readability Issues**: Address if they significantly impact maintainability
 - **Minor Suggestions**: Can be deferred to follow-up PRs if they don't block the main goal
+
+### Preventing Infinite Review Loops
+
+To avoid unbounded iteration and ensure review convergence:
+
+#### 1. Demand Evidence for Critical Claims
+For any "CRITICAL" bug report, require one of:
+- **Minimal reproduction scenario**: Specific inputs and steps that trigger the issue
+- **Failing test**: A test that demonstrates the problem (write it, see it fail, then fix)
+- **Specific code path**: "Function A calls B with X, which makes Y null, causing Z to crash"
+
+**Rule**: No concrete evidence = downgrade to non-blocking suggestion. Critical bugs must be demonstrable, not speculative.
+
+#### 2. Convert Critical Issues to Tests
+The ultimate loop-killer is testable claims:
+- If a reviewer claims "state can be inconsistent", write a unit test for that state transition
+- Add assertions or invariants in code to guard against the claimed issue
+- If a test can't be written without inventing unrealistic conditions, the claim was likely speculative
+
+After adding tests/invariants for real edge cases, most speculative concerns are resolved.
+
+#### 3. Prefer Minimal Fixes Over Refactoring
+Refactors create new surface area for fresh concerns. Instead:
+- Apply **minimal fix** to address the witnessed issue
+- Add **targeted guard** (assertion, null check, bounds check)
+- Add **targeted test** to prevent regression
+- Merge and move on
+
+Save refactors for dedicated PRs with comprehensive test coverage already in place.
+
+#### 4. Establish a "Diff Freeze" Point
+Once you believe correctness is covered:
+- **Freeze changes** except for bug fixes with concrete evidence
+- **Ignore** further purely speculative "critical" comments
+- Document this decision in the PR
+
+Without a freeze point, you're in unbounded search space.
+
+#### 5. Clear Merge Criteria
+**Merge when**:
+- CI is green
+- Tests added for each critical claim with evidence
+- Developer provides short risk assessment note
+- No unreproduced crash/data-loss/security issues with evidence remain
+
+**Don't merge when**:
+- Reproducible crash, data loss, or security vulnerability exists with concrete evidence
+- Required tests are missing for witnessed critical issues
 
 ## Examples
 
