@@ -16,14 +16,14 @@ struct ProjectTestFixture {
         // Clear all singleton state before each test
         TrackManager::getInstance().clearAllTracks();
         ClipManager::getInstance().clearAllClips();
-        // Note: AutomationManager doesn't have clearAllLanes() yet
+        AutomationManager::getInstance().clearAll();
     }
 
     ~ProjectTestFixture() {
         // Clean up after test
         TrackManager::getInstance().clearAllTracks();
         ClipManager::getInstance().clearAllClips();
-        // Note: AutomationManager doesn't have clearAllLanes() yet
+        AutomationManager::getInstance().clearAll();
     }
 
     // Helper to create unique temp file
@@ -253,5 +253,130 @@ TEST_CASE("Error Handling", "[project][serialization][errors]") {
 
         bool saved = projectManager.saveProjectAs(invalidFile);
         REQUIRE(saved == false);
+    }
+}
+
+TEST_CASE("Comprehensive Project Serialization", "[project][serialization][comprehensive]") {
+    ProjectTestFixture fixture;
+
+    SECTION("Save and load project with clips and devices") {
+        auto& projectManager = ProjectManager::getInstance();
+        auto& trackManager = TrackManager::getInstance();
+        auto& clipManager = ClipManager::getInstance();
+
+        // Create a track
+        auto trackId = trackManager.createTrack("Test MIDI Track", TrackType::MIDI);
+        auto* track = trackManager.getTrack(trackId);
+        REQUIRE(track != nullptr);
+
+        // Add a device to the track
+        DeviceInfo device;
+        device.id = 1;
+        device.name = "Test Synth";
+        device.pluginId = "TestSynth";
+        device.manufacturer = "Test";
+        device.format = PluginFormat::VST3;
+        device.isInstrument = true;
+        device.bypassed = false;
+        trackManager.addDeviceToTrack(trackId, device);
+
+        // Add a MIDI clip to the track
+        auto clipId = clipManager.createMidiClip(trackId, 0.0, 4.0);
+
+        // Get the clip and add some MIDI notes directly
+        auto* clip = clipManager.getClip(clipId);
+        REQUIRE(clip != nullptr);
+
+        MidiNote note1;
+        note1.noteNumber = 60;
+        note1.velocity = 100;
+        note1.startBeat = 0.0;
+        note1.lengthBeats = 1.0;
+        clip->midiNotes.push_back(note1);
+
+        MidiNote note2;
+        note2.noteNumber = 64;
+        note2.velocity = 80;
+        note2.startBeat = 1.0;
+        note2.lengthBeats = 1.0;
+        clip->midiNotes.push_back(note2);
+
+        // Save the project
+        auto tempFile = fixture.createTempFile(".mgd");
+        bool saved = projectManager.saveProjectAs(tempFile);
+        REQUIRE(saved == true);
+
+        // Clear everything
+        trackManager.clearAllTracks();
+        clipManager.clearAllClips();
+
+        // Verify cleared
+        REQUIRE(trackManager.getTracks().empty() == true);
+        REQUIRE(clipManager.getClips().empty() == true);
+
+        // Load the project back
+        bool loaded = projectManager.loadProject(tempFile);
+        REQUIRE(loaded == true);
+
+        // Verify the track was restored
+        const auto& tracks = trackManager.getTracks();
+        REQUIRE(tracks.size() == 1);
+        REQUIRE(tracks[0].type == TrackType::MIDI);
+
+        // Verify the device was restored
+        REQUIRE(tracks[0].chainElements.size() == 1);
+        REQUIRE(isDevice(tracks[0].chainElements[0]) == true);
+        const auto& restoredDevice = getDevice(tracks[0].chainElements[0]);
+        REQUIRE(restoredDevice.name == "Test Synth");
+        REQUIRE(restoredDevice.isInstrument == true);
+
+        // Verify the clip was restored
+        const auto& clips = clipManager.getClips();
+        REQUIRE(clips.size() == 1);
+        REQUIRE(clips[0].name == "MIDI 1");  // Default name from createMidiClip
+        REQUIRE(clips[0].type == ClipType::MIDI);
+        REQUIRE(clips[0].midiNotes.size() == 2);
+        REQUIRE(clips[0].midiNotes[0].noteNumber == 60);
+        REQUIRE(clips[0].midiNotes[1].noteNumber == 64);
+
+        // Cleanup
+        tempFile.deleteFile();
+    }
+
+    SECTION("Save and load project with rack") {
+        auto& projectManager = ProjectManager::getInstance();
+        auto& trackManager = TrackManager::getInstance();
+
+        // Create a track
+        auto trackId = trackManager.createTrack("Test Audio Track", TrackType::Audio);
+
+        // Add a rack to the track
+        auto rackId = trackManager.addRackToTrack(trackId, "Test Rack");
+        REQUIRE(rackId != INVALID_RACK_ID);
+
+        // Save the project
+        auto tempFile = fixture.createTempFile(".mgd");
+        bool saved = projectManager.saveProjectAs(tempFile);
+        REQUIRE(saved == true);
+
+        // Clear everything
+        trackManager.clearAllTracks();
+
+        // Load the project back
+        bool loaded = projectManager.loadProject(tempFile);
+        REQUIRE(loaded == true);
+
+        // Verify the track was restored
+        const auto& tracks = trackManager.getTracks();
+        REQUIRE(tracks.size() == 1);
+
+        // Verify the rack was restored
+        REQUIRE(tracks[0].chainElements.size() == 1);
+        REQUIRE(isRack(tracks[0].chainElements[0]) == true);
+        const auto& restoredRack = getRack(tracks[0].chainElements[0]);
+        REQUIRE(restoredRack.name == "Test Rack");
+
+        // Cleanup
+        tempFile.deleteFile();
     }
 }

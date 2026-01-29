@@ -112,6 +112,7 @@ bool PresetManager::ensureDirectoryExists(const juce::File& directory) {
     if (!directory.exists()) {
         auto result = directory.createDirectory();
         if (!result.wasOk()) {
+            lastError_ = "Failed to create preset directory: " + directory.getFullPathName();
             DBG("Failed to create preset directory: " << directory.getFullPathName());
             return false;
         }

@@ -33,8 +33,7 @@ bool ProjectManager::newProject() {
     // Clear all project content from singleton managers
     TrackManager::getInstance().clearAllTracks();
     ClipManager::getInstance().clearAllClips();
-    // Note: AutomationManager doesn't have clearAllLanes() yet
-    // TODO: Add clearAllLanes() to AutomationManager and call it here
+    AutomationManager::getInstance().clearAll();
 
     // Reset project state
     currentProject_ = ProjectInfo();
@@ -100,6 +99,7 @@ bool ProjectManager::loadProject(const juce::File& file) {
 
     // Update state
     currentProject_ = loadedInfo;
+    currentProject_.filePath = file.getFullPathName();
     currentFile_ = file;
     isProjectOpen_ = true;
     clearDirty();
@@ -117,8 +117,7 @@ bool ProjectManager::closeProject() {
     // Clear all project content from singleton managers
     TrackManager::getInstance().clearAllTracks();
     ClipManager::getInstance().clearAllClips();
-    // Note: AutomationManager doesn't have clearAllLanes() yet
-    // TODO: Add clearAllLanes() to AutomationManager and call it here
+    AutomationManager::getInstance().clearAll();
 
     // Reset state
     currentProject_ = ProjectInfo();

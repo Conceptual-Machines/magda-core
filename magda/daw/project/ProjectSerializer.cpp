@@ -269,11 +269,8 @@ bool ProjectSerializer::deserializeClips(const juce::var& json) {
     auto* arr = json.getArray();
     auto& clipManager = ClipManager::getInstance();
 
-    // Clear existing clips by deleting them one by one
-    auto clips = clipManager.getClips();
-    for (const auto& clip : clips) {
-        clipManager.deleteClip(clip.id);
-    }
+    // Clear all existing clips efficiently before deserializing new ones
+    clipManager.clearAllClips();
 
     // Deserialize each clip using restoreClip
     for (const auto& clipVar : *arr) {
@@ -299,10 +296,16 @@ bool ProjectSerializer::deserializeAutomation(const juce::var& json) {
         return false;
     }
 
+    // Clear existing automation state before handling the new project's automation
+    // data. This prevents old automation lanes from persisting when loading a new
+    // project over an existing one, even though we currently do not restore lane
+    // data from JSON.
+    auto& automationManager = AutomationManager::getInstance();
+    automationManager.clearAll();
+
     // Automation restoration is not implemented yet. To avoid making projects
     // with automation impossible to reopen, we currently ignore any automation
-    // lane data that may be present. Existing in-memory automation state is left
-    // unchanged (typically empty in a freshly loaded project).
+    // lane data that may be present.
     if (!arr->isEmpty()) {
         juce::Logger::writeToLog("ProjectSerializer: ignoring automation lanes on load; "
                                  "automation deserialization is not implemented yet.");
