@@ -283,6 +283,9 @@ void SessionView::rebuildTracks() {
 
     resized();
     updateHeaderSelectionVisuals();
+
+    // Populate all clip slots with their current clip data
+    updateAllClipSlots();
 }
 
 void SessionView::paint(juce::Graphics& g) {
