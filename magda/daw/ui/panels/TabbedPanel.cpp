@@ -27,6 +27,14 @@ TabbedPanel::TabbedPanel(PanelLocation location) : location_(location) {
 
 TabbedPanel::~TabbedPanel() {
     PanelController::getInstance().removeListener(this);
+
+    // Remove cached content components from child list before unique_ptrs destroy them,
+    // to avoid corrupting the parent's child array during destruction.
+    for (auto& [type, content] : contentCache_) {
+        if (content)
+            removeChildComponent(content.get());
+    }
+    contentCache_.clear();
 }
 
 void TabbedPanel::setupCollapseButton() {
