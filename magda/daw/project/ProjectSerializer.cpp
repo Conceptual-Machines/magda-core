@@ -20,10 +20,16 @@ bool ProjectSerializer::saveToFile(const juce::File& file, const ProjectInfo& in
         // Convert to pretty-printed string
         juce::String jsonString = juce::JSON::toString(json, true);
 
-        // Write with gzip compression
-        juce::FileOutputStream outputStream(file);
+        // Use temporary file for atomic/crash-safe writing
+        // Write to temp file first, then atomically replace destination
+        juce::TemporaryFile tempFile(file);
+        auto tempFileHandle = tempFile.getFile();
+
+        // Write with gzip compression to temp file
+        juce::FileOutputStream outputStream(tempFileHandle);
         if (!outputStream.openedOk()) {
-            lastError_ = "Failed to open file for writing: " + file.getFullPathName();
+            lastError_ =
+                "Failed to open temporary file for writing: " + tempFileHandle.getFullPathName();
             return false;
         }
 
@@ -31,6 +37,14 @@ bool ProjectSerializer::saveToFile(const juce::File& file, const ProjectInfo& in
         // Write plain UTF-8 JSON text (no JUCE binary length prefix)
         gzipStream.writeText(jsonString, false, false, nullptr);
         gzipStream.flush();
+        outputStream.flush();
+
+        // Atomically replace destination with temp file
+        // This ensures the original file is only replaced if write succeeds completely
+        if (!tempFile.overwriteTargetFileWithTemporary()) {
+            lastError_ = "Failed to replace target file with temporary file";
+            return false;
+        }
 
         return true;
     } catch (const std::exception& e) {
@@ -354,19 +368,17 @@ bool ProjectSerializer::deserializeAutomationToStaging(const juce::var& json,
         return false;
     }
 
-    outLanes.clear();
-    outLanes.reserve(arr->size());
-
-    // Currently, automation lane deserialization is not implemented.
-    // To avoid making projects unloadable once they contain automation,
-    // we discard any automation data in the file and allow the project to load successfully.
+    // To avoid silently losing user automation data, we treat the presence of
+    // non-empty automation arrays as a hard load error until proper
+    // deserialization is implemented or a forward-compat mechanism is added.
     if (!arr->isEmpty()) {
-        juce::Logger::writeToLog(
-            "ProjectSerializer: project contains automation lanes, but automation "
-            "deserialization is not implemented yet; discarding automation data.");
+        lastError_ = "Project contains automation lanes, but automation deserialization "
+                     "is not yet implemented. Cannot load project without losing automation data.";
+        return false;
     }
 
-    // Staged lanes remain empty - will result in cleared automation state when committed
+    // Empty automation array is fine - no data to lose
+    outLanes.clear();
     return true;
 }
 
