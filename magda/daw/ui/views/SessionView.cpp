@@ -631,7 +631,9 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
     TrackId targetTrackId = visibleTrackIds_[trackIndex];
 
     // Create clips for each audio file dropped
+    auto& clipManager = ClipManager::getInstance();
     int currentSceneIndex = sceneIndex;
+
     for (const auto& filePath : files) {
         if (!isAudioFile(filePath))
             continue;
@@ -640,31 +642,17 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
         if (currentSceneIndex >= NUM_SCENES)
             break;
 
-        // Create audio clip in the slot
-        auto& clipManager = ClipManager::getInstance();
-        juce::File audioFile(filePath);
-
-        // Use file name (without extension) as clip name
-        juce::String clipName = audioFile.getFileNameWithoutExtension();
-
-        // Create audio clip with scene index
-        ClipId newClipId = clipManager.createAudioClip(targetTrackId, 0.0, 4.0);  // Default 4 beats
+        // Create audio clip with file path (createAudioClip handles the audio source)
+        ClipId newClipId = clipManager.createAudioClip(targetTrackId, 0.0, 4.0, filePath);
         if (newClipId != INVALID_CLIP_ID) {
             auto* clip = clipManager.getClip(newClipId);
             if (clip) {
-                // Set clip properties
-                clip->name = clipName;
+                // Use file name (without extension) as clip name
+                juce::File audioFile(filePath);
+                clip->name = audioFile.getFileNameWithoutExtension();
+
+                // Assign to session view slot
                 clip->sceneIndex = currentSceneIndex;
-
-                // Add audio source
-                AudioSource source;
-                source.filePath = filePath;
-                source.offset = 0.0;
-                source.stretchFactor = 1.0;
-                clip->audioSources.push_back(source);
-
-                // Notify that clip properties changed
-                clipManager.notifyClipPropertyChanged(newClipId);
             }
         }
 
@@ -674,7 +662,6 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
 
 void SessionView::updateDragHighlight(int x, int y) {
     // Convert to grid coordinates
-    auto gridBounds = gridViewport->getBounds();
     auto gridLocalPoint = gridViewport->getLocalPoint(this, juce::Point<int>(x, y));
     gridLocalPoint +=
         juce::Point<int>(gridViewport->getViewPositionX(), gridViewport->getViewPositionY());
