@@ -68,7 +68,7 @@ class SessionView : public juce::Component,
 
     // Grid configuration
     static constexpr int DEFAULT_NUM_SCENES = 8;
-    static constexpr int TRACK_HEADER_HEIGHT = 60;
+    static constexpr int TRACK_HEADER_HEIGHT = 40;
     static constexpr int SCENE_BUTTON_WIDTH = 80;
     static constexpr int DEFAULT_CLIP_SLOT_WIDTH = 80;
     static constexpr int MIN_TRACK_WIDTH = 40;
