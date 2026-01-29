@@ -16,8 +16,8 @@ TrackManager& TrackManager::getInstance() {
 }
 
 TrackManager::TrackManager() {
-    // Create one bare track by default
-    createDefaultTracks(1);
+    // Start with empty project - no default tracks
+    // User can create tracks manually or load from project file
 }
 
 // ============================================================================
