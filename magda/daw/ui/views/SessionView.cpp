@@ -545,9 +545,9 @@ void SessionView::resized() {
     // Grid viewport takes remaining space (below headers, above faders)
     gridViewport->setBounds(bounds);
 
-    // Size the grid content to fill the viewport (no gap)
-    int gridWidth = juce::jmax(numTracks * trackColumnWidth, bounds.getWidth());
-    int gridHeight = juce::jmax(numScenes_ * sceneRowHeight, bounds.getHeight());
+    // Size the grid content to fit the scenes
+    int gridWidth = numTracks * trackColumnWidth;
+    int gridHeight = numScenes_ * sceneRowHeight;
     gridContent->setSize(gridWidth, gridHeight);
 
     // Position clip slots within grid content
