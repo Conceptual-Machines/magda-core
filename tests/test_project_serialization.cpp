@@ -10,8 +10,10 @@
 
 using namespace magda;
 
-// Test fixture to ensure clean state between tests
+// Test fixture to ensure clean state and temp file cleanup between tests
 struct ProjectTestFixture {
+    std::vector<juce::File> tempFiles;
+
     ProjectTestFixture() {
         // Clear all singleton state before each test
         TrackManager::getInstance().clearAllTracks();
@@ -20,15 +22,24 @@ struct ProjectTestFixture {
     }
 
     ~ProjectTestFixture() {
-        // Clean up after test
+        // Clean up temp files (even if test fails)
+        for (auto& file : tempFiles) {
+            if (file.existsAsFile()) {
+                file.deleteFile();
+            }
+        }
+
+        // Clean up singleton state after test
         TrackManager::getInstance().clearAllTracks();
         ClipManager::getInstance().clearAllClips();
         AutomationManager::getInstance().clearAll();
     }
 
-    // Helper to create unique temp file
+    // Helper to create unique temp file with automatic cleanup
     juce::File createTempFile(const juce::String& basename) {
-        return juce::File::createTempFile(basename);
+        auto file = juce::File::createTempFile(basename);
+        tempFiles.push_back(file);
+        return file;
     }
 };
 
@@ -51,7 +62,6 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
         REQUIRE(loaded == true);
 
         // Cleanup
-        tempFile.deleteFile();
     }
 
     SECTION("Project info serialization roundtrip") {
@@ -121,7 +131,6 @@ TEST_CASE("Project with Tracks", "[project][serialization][tracks]") {
         REQUIRE(tracks[1].type == TrackType::MIDI);
 
         // Cleanup
-        tempFile.deleteFile();
         trackManager.clearAllTracks();
     }
 }
@@ -137,8 +146,6 @@ TEST_CASE("Project File Format", "[project][serialization][file]") {
         bool saved = projectManager.saveProjectAs(tempFile);
         REQUIRE(saved == true);
         REQUIRE(tempFile.hasFileExtension(".mgd") == true);
-
-        tempFile.deleteFile();
     }
 
     SECTION("File is not empty") {
@@ -149,8 +156,6 @@ TEST_CASE("Project File Format", "[project][serialization][file]") {
         bool saved = projectManager.saveProjectAs(tempFile);
         REQUIRE(saved == true);
         REQUIRE(tempFile.getSize() > 0);
-
-        tempFile.deleteFile();
     }
 }
 
@@ -178,7 +183,6 @@ TEST_CASE("Project Manager State", "[project][manager]") {
         REQUIRE(projectManager.hasUnsavedChanges() == false);
 
         // Cleanup
-        tempFile.deleteFile();
         trackManager.clearAllTracks();
     }
 
@@ -190,8 +194,6 @@ TEST_CASE("Project Manager State", "[project][manager]") {
 
         auto currentFile = projectManager.getCurrentProjectFile();
         REQUIRE(currentFile.getFullPathName() == tempFile.getFullPathName());
-
-        tempFile.deleteFile();
     }
 
     SECTION("hasOpenProject tracks project lifecycle correctly") {
@@ -220,7 +222,6 @@ TEST_CASE("Project Manager State", "[project][manager]") {
         REQUIRE(projectManager.hasOpenProject() == false);
 
         // Cleanup
-        tempFile.deleteFile();
     }
 }
 
@@ -340,7 +341,6 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         REQUIRE(clips[0].midiNotes[1].noteNumber == 64);
 
         // Cleanup
-        tempFile.deleteFile();
     }
 
     SECTION("Save and load project with rack") {
@@ -377,6 +377,5 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         REQUIRE(restoredRack.name == "Test Rack");
 
         // Cleanup
-        tempFile.deleteFile();
     }
 }

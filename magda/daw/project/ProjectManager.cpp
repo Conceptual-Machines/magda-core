@@ -59,18 +59,20 @@ bool ProjectManager::saveProject() {
 }
 
 bool ProjectManager::saveProjectAs(const juce::File& file) {
-    // Update project info
-    currentProject_.filePath = file.getFullPathName();
-    currentProject_.name = file.getFileNameWithoutExtension();
-    currentProject_.touch();
+    // Prepare updated project info without mutating currentProject_ yet
+    ProjectInfo newProject = currentProject_;
+    newProject.filePath = file.getFullPathName();
+    newProject.name = file.getFileNameWithoutExtension();
+    newProject.touch();
 
     // Save to file
-    if (!ProjectSerializer::saveToFile(file, currentProject_)) {
+    if (!ProjectSerializer::saveToFile(file, newProject)) {
         lastError_ = "Failed to save project: " + ProjectSerializer::getLastError();
         return false;
     }
 
-    // Update state
+    // Commit updated state only after successful save
+    currentProject_ = std::move(newProject);
     currentFile_ = file;
     clearDirty();
     notifyProjectSaved();
@@ -223,16 +225,18 @@ void ProjectManager::notifyDirtyStateChanged() {
 }
 
 bool ProjectManager::showUnsavedChangesDialog() {
-    // TODO: Show dialog asking user if they want to save changes
-    // For now, just return true (don't block)
-    // This should be implemented when we have UI integration
+    // TODO: Implement UI dialog to ask user if they want to save changes
+    // Until UI integration is complete, block operations that would discard
+    // unsaved changes to prevent silent data loss.
 
-    // Options should be:
-    // - Save: Save changes and continue
-    // - Don't Save: Discard changes and continue
-    // - Cancel: Don't continue with the operation
+    // When implemented, this dialog should offer:
+    // - Save: Save changes and continue (return true)
+    // - Don't Save: Discard changes and continue (return true)
+    // - Cancel: Don't continue with the operation (return false)
 
-    return true;  // For now, allow all operations
+    lastError_ = "Cannot proceed: project has unsaved changes. Please save or implement unsaved "
+                 "changes dialog.";
+    return false;  // Block operations until UI dialog is implemented
 }
 
 }  // namespace magda
