@@ -27,22 +27,25 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit) : engine_(engine), 
 AudioBridge::~AudioBridge() {
     std::cout << "AudioBridge::~AudioBridge - starting cleanup" << std::endl;
 
-    // Set shutdown flag FIRST to prevent timer callbacks and other operations
-    isShuttingDown_.store(true, std::memory_order_release);
-
-    // Stop timer immediately
-    stopTimer();
-
-    // Remove listeners to stop receiving notifications
-    TrackManager::getInstance().removeListener(this);
-    ClipManager::getInstance().removeListener(this);
-
-    // NOTE: Plugin windows are now closed by PluginWindowManager BEFORE AudioBridge
-    // is destroyed (in TracktionEngineWrapper::shutdown()). No window cleanup needed here.
-
-    // Remove all meter clients before clearing mappings
+    // CRITICAL: Acquire lock BEFORE stopping timer to ensure proper synchronization.
+    // This prevents race condition where timerCallback() could be running while
+    // we're destroying member variables. By holding the lock across stopTimer(),
+    // we guarantee that any running timer callback completes before destruction.
     {
         juce::ScopedLock lock(mappingLock_);
+
+        // Set shutdown flag while holding lock to prevent new timer operations
+        isShuttingDown_.store(true, std::memory_order_release);
+
+        // Stop timer while holding lock - ensures no callback is running when we proceed
+        stopTimer();
+
+        // Now safe to remove listeners as timer is stopped and shutdown flag is set
+        TrackManager::getInstance().removeListener(this);
+        ClipManager::getInstance().removeListener(this);
+
+        // NOTE: Plugin windows are now closed by PluginWindowManager BEFORE AudioBridge
+        // is destroyed (in TracktionEngineWrapper::shutdown()). No window cleanup needed here.
 
         // Unregister master meter client from playback context
         if (masterMeterRegistered_) {
@@ -64,6 +67,7 @@ AudioBridge::~AudioBridge() {
             }
         }
 
+        // Clear all mappings - safe now as timer is stopped and lock is held
         trackMapping_.clear();
         deviceToPlugin_.clear();
         pluginToDevice_.clear();
