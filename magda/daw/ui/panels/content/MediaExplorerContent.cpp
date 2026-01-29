@@ -104,6 +104,7 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         projectButton_ = std::make_unique<magda::SvgButton>("Project", BinaryData::project_home_svg,
                                                             BinaryData::project_home_svgSize);
         projectButton_->setToggleable(true);
+        projectButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG's gray fill
         projectButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         projectButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         projectButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
@@ -118,6 +119,7 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         diskButton_ = std::make_unique<magda::SvgButton>("Disk", BinaryData::harddrive_svg,
                                                          BinaryData::harddrive_svgSize);
         diskButton_->setToggleable(true);
+        diskButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG's gray fill
         diskButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         diskButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         diskButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
@@ -132,6 +134,7 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         libraryButton_ = std::make_unique<magda::SvgButton>("Library", BinaryData::library_svg,
                                                             BinaryData::library_svgSize);
         libraryButton_->setToggleable(true);
+        libraryButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG's gray fill
         libraryButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         libraryButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         libraryButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
@@ -144,7 +147,7 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         addAndMakeVisible(*libraryButton_);
 
         // Set Disk as initially selected
-        diskButton_->setToggleState(true, juce::dontSendNotification);
+        selectButton(diskButton_.get());
     }
 
     void paint(juce::Graphics& g) override {
@@ -182,14 +185,21 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
   private:
     void selectButton(magda::SvgButton* selected) {
         // Radio button behavior - only one selected at a time
-        if (projectButton_.get() != selected)
+        if (projectButton_.get() != selected) {
             projectButton_->setToggleState(false, juce::dontSendNotification);
-        if (diskButton_.get() != selected)
+            projectButton_->setActive(false);
+        }
+        if (diskButton_.get() != selected) {
             diskButton_->setToggleState(false, juce::dontSendNotification);
-        if (libraryButton_.get() != selected)
+            diskButton_->setActive(false);
+        }
+        if (libraryButton_.get() != selected) {
             libraryButton_->setToggleState(false, juce::dontSendNotification);
+            libraryButton_->setActive(false);
+        }
 
         selected->setToggleState(true, juce::dontSendNotification);
+        selected->setActive(true);
     }
 
     std::unique_ptr<magda::SvgButton> projectButton_;
@@ -220,11 +230,14 @@ MediaExplorerContent::MediaExplorerContent() {
                                                             BinaryData::sample_svgSize);
     audioFilterButton_->setToggleable(true);
     audioFilterButton_->setToggleState(true, juce::dontSendNotification);
+    audioFilterButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG's gray fill
     audioFilterButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     audioFilterButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     audioFilterButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    audioFilterButton_->setActive(true);  // Initially active
     audioFilterButton_->onClick = [this]() {
         audioFilterActive_ = audioFilterButton_->getToggleState();
+        audioFilterButton_->setActive(audioFilterActive_);
         updateMediaFilter();
     };
     addAndMakeVisible(*audioFilterButton_);
@@ -233,11 +246,13 @@ MediaExplorerContent::MediaExplorerContent() {
         std::make_unique<magda::SvgButton>("MIDI", BinaryData::midi_svg, BinaryData::midi_svgSize);
     midiFilterButton_->setToggleable(true);
     midiFilterButton_->setToggleState(false, juce::dontSendNotification);
+    midiFilterButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG's gray fill
     midiFilterButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     midiFilterButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     midiFilterButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     midiFilterButton_->onClick = [this]() {
         midiFilterActive_ = midiFilterButton_->getToggleState();
+        midiFilterButton_->setActive(midiFilterActive_);
         updateMediaFilter();
     };
     addAndMakeVisible(*midiFilterButton_);
@@ -246,11 +261,13 @@ MediaExplorerContent::MediaExplorerContent() {
                                                              BinaryData::preset_svgSize);
     presetFilterButton_->setToggleable(true);
     presetFilterButton_->setToggleState(false, juce::dontSendNotification);
+    presetFilterButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG's gray fill
     presetFilterButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     presetFilterButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     presetFilterButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     presetFilterButton_->onClick = [this]() {
         presetFilterActive_ = presetFilterButton_->getToggleState();
+        presetFilterButton_->setActive(presetFilterActive_);
         updateMediaFilter();
     };
     addAndMakeVisible(*presetFilterButton_);
