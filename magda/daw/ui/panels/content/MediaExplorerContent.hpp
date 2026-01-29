@@ -4,6 +4,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 
+#include "../../../engine/AudioEngine.hpp"
 #include "../../components/common/SvgButton.hpp"
 #include "PanelContent.hpp"
 
@@ -34,6 +35,12 @@ class MediaExplorerContent : public PanelContent,
 
     void onActivated() override;
     void onDeactivated() override;
+
+    /**
+     * @brief Set the audio engine reference for audio preview functionality
+     * Uses the shared device manager to avoid conflicts with main audio
+     */
+    void setAudioEngine(magda::AudioEngine* engine);
 
     // FileBrowserListener
     void selectionChanged() override;
@@ -92,8 +99,10 @@ class MediaExplorerContent : public PanelContent,
     bool midiFilterActive_ = false;
     bool presetFilterActive_ = false;
 
+    // Audio engine reference for shared device manager
+    magda::AudioEngine* audioEngine_ = nullptr;
+
     // Audio preview
-    juce::AudioDeviceManager audioDeviceManager_;
     juce::AudioFormatManager formatManager_;
     juce::AudioSourcePlayer audioSourcePlayer_;
     std::unique_ptr<juce::AudioTransportSource> transportSource_;
