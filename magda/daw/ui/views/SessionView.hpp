@@ -70,7 +70,9 @@ class SessionView : public juce::Component,
     static constexpr int DEFAULT_NUM_SCENES = 8;
     static constexpr int TRACK_HEADER_HEIGHT = 60;
     static constexpr int SCENE_BUTTON_WIDTH = 80;
-    static constexpr int CLIP_SLOT_WIDTH = 80;
+    static constexpr int DEFAULT_CLIP_SLOT_WIDTH = 80;
+    static constexpr int MIN_TRACK_WIDTH = 40;
+    static constexpr int MAX_TRACK_WIDTH = 300;
     static constexpr int CLIP_SLOT_HEIGHT = 40;
     static constexpr int CLIP_SLOT_MARGIN = 2;
     static constexpr int TRACK_SEPARATOR_WIDTH = 3;
@@ -80,6 +82,12 @@ class SessionView : public juce::Component,
     static constexpr int ADD_SCENE_BUTTON_HEIGHT = 24;
 
     int numScenes_ = DEFAULT_NUM_SCENES;
+
+    // Per-track column widths
+    std::vector<int> trackColumnWidths_;
+    int getTrackX(int trackIndex) const;
+    int getTotalTracksWidth() const;
+    int getTrackIndexAtX(int x) const;
 
     // Track headers (dynamic based on TrackManager) - TextButton for clickable groups
     std::vector<std::unique_ptr<juce::TextButton>> trackHeaders;
@@ -115,6 +123,9 @@ class SessionView : public juce::Component,
     // Resize handle between stop buttons and fader row
     class ResizeHandle;
     std::unique_ptr<ResizeHandle> faderResizeHandle_;
+
+    // Per-track column resize handles (positioned at right edge of each header)
+    std::vector<std::unique_ptr<ResizeHandle>> trackResizeHandles_;
 
     // Fader row at bottom of each track column
     class FaderContainer;
