@@ -59,7 +59,7 @@ jobs:
       run: |
         echo "" >> refactoring-report.txt
         echo "=== Large Files (>500 lines, candidates for splitting) ===" >> refactoring-report.txt
-        find magda/ tests/ -name "*.cpp" -o -name "*.hpp" | while read file; do
+        find magda/ tests/ \( -name "*.cpp" -o -name "*.hpp" \) | while read -r file; do
           LINES=$(wc -l < "$file")
           if [ "$LINES" -gt 500 ]; then
             echo "$file: $LINES lines" >> refactoring-report.txt
@@ -73,8 +73,8 @@ jobs:
         
         # Files that include many other project headers
         echo "Files with many internal includes (>10):" >> refactoring-report.txt
-        find magda/ -name "*.cpp" -o -name "*.hpp" | while read file; do
-          INTERNAL_INCLUDES=$(grep "#include.*magda" "$file" | wc -l || echo "0")
+        find magda/ \( -name "*.cpp" -o -name "*.hpp" \) | while read -r file; do
+          INTERNAL_INCLUDES=$(grep -c "#include.*magda" "$file" 2>/dev/null || echo "0")
           if [ "$INTERNAL_INCLUDES" -gt 10 ]; then
             echo "$file: $INTERNAL_INCLUDES internal includes" >> refactoring-report.txt
           fi
@@ -106,10 +106,10 @@ jobs:
         echo "=== Potential God Objects (classes with many methods) ===" >> refactoring-report.txt
         
         # Count methods per class in header files
-        find magda/ -name "*.hpp" | while read file; do
+        find magda/ -name "*.hpp" | while read -r file; do
           CLASS_NAME=$(grep "^class\|^struct" "$file" | head -1 | awk '{print $2}' | sed 's/[:{]//g')
           if [ -n "$CLASS_NAME" ]; then
-            METHOD_COUNT=$(grep -c "^\s*[a-zA-Z].*(" "$file" || echo "0")
+            METHOD_COUNT=$(grep -c "^\s*[a-zA-Z].*(" "$file" 2>/dev/null || echo "0")
             if [ "$METHOD_COUNT" -gt 20 ]; then
               echo "$file ($CLASS_NAME): $METHOD_COUNT methods" >> refactoring-report.txt
             fi
@@ -208,7 +208,8 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "Review the full report in workflow artifacts for detailed findings." >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        if [ "${{ steps.complexity.outputs.complex_count }}" -gt 3 ]; then
+        COMPLEX_COUNT="${{ steps.complexity.outputs.complex_count }}"
+        if [ "${COMPLEX_COUNT:-0}" -gt 3 ]; then
           echo "⚠️ **Action needed**: GitHub issue created for high-priority refactoring opportunities." >> $GITHUB_STEP_SUMMARY
         else
           echo "✅ Code complexity is within acceptable limits." >> $GITHUB_STEP_SUMMARY

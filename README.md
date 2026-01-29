@@ -51,8 +51,18 @@ make release    # Release build
 make test       # Run tests
 make clean      # Clean build artifacts
 make format     # Format code
-make quality    # Run all quality checks
+make lint       # Run clang-tidy analysis
 ```
+
+## Automated Workflows
+
+The project includes automated GitHub Actions workflows:
+
+- **CI Workflow**: Runs on every push to validate builds and code quality
+- **Periodic Code Analysis**: Weekly scans for TODOs, FIXMEs, and code smells
+- **Refactoring Scanner**: Bi-weekly analysis of code complexity and technical debt
+
+See [docs/AUTOMATED_WORKFLOWS.md](docs/AUTOMATED_WORKFLOWS.md) for details on automated analysis and periodic workflows.
 
 ## Architecture
 
