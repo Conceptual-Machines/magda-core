@@ -277,6 +277,43 @@ class SessionView::SceneContainer : public juce::Component {
     }
 };
 
+// ResizeHandle for dragging to resize areas
+class SessionView::ResizeHandle : public juce::Component {
+  public:
+    enum Direction { Horizontal, Vertical };
+
+    ResizeHandle(Direction dir) : direction(dir) {
+        setMouseCursor(direction == Horizontal ? juce::MouseCursor::LeftRightResizeCursor
+                                               : juce::MouseCursor::UpDownResizeCursor);
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.setColour(DarkTheme::getColour(DarkTheme::RESIZE_HANDLE));
+        g.fillAll();
+    }
+
+    void mouseDown(const juce::MouseEvent& event) override {
+        startDragPosition = direction == Horizontal ? event.x : event.y;
+    }
+
+    void mouseDrag(const juce::MouseEvent& event) override {
+        auto currentPos = direction == Horizontal ? event.x : event.y;
+        auto delta = currentPos - startDragPosition;
+
+        if (onResize) {
+            onResize(delta);
+        }
+    }
+
+    std::function<void(int)> onResize;
+
+  private:
+    Direction direction;
+    int startDragPosition = 0;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ResizeHandle)
+};
+
 // Container for track faders at the bottom
 class SessionView::FaderContainer : public juce::Component {
   public:
@@ -342,6 +379,15 @@ SessionView::SessionView() {
     // Create fader container at the bottom
     faderContainer = std::make_unique<FaderContainer>();
     addAndMakeVisible(*faderContainer);
+
+    // Create resize handle between stop button row and fader row
+    faderResizeHandle_ = std::make_unique<ResizeHandle>(ResizeHandle::Vertical);
+    faderResizeHandle_->onResize = [this](int delta) {
+        faderRowHeight_ =
+            juce::jlimit(MIN_FADER_ROW_HEIGHT, MAX_FADER_ROW_HEIGHT, faderRowHeight_ - delta);
+        resized();
+    };
+    addAndMakeVisible(*faderResizeHandle_);
 
     setupSceneButtons();
 
@@ -677,7 +723,7 @@ void SessionView::resized() {
     int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
 
     // Fader row at the bottom (tracks area + master fader in scene column)
-    auto faderRow = bounds.removeFromBottom(FADER_ROW_HEIGHT);
+    auto faderRow = bounds.removeFromBottom(faderRowHeight_);
     auto masterFaderArea = faderRow.removeFromRight(SCENE_BUTTON_WIDTH);
     masterFader_->setBounds(masterFaderArea.reduced(4));
     faderContainer->setBounds(faderRow);
@@ -687,8 +733,12 @@ void SessionView::resized() {
     // Position faders within fader container (synced with grid horizontal scroll)
     for (int i = 0; i < numTracks && i < static_cast<int>(trackFaders.size()); ++i) {
         int x = i * trackColumnWidth - trackHeaderScrollOffset;
-        trackFaders[i]->setBounds(x + 4, 4, CLIP_SLOT_WIDTH - 8, FADER_ROW_HEIGHT - 8);
+        trackFaders[i]->setBounds(x + 4, 4, CLIP_SLOT_WIDTH - 8, faderRowHeight_ - 8);
     }
+
+    // Resize handle between stop button row and fader row
+    auto resizeHandleRow = bounds.removeFromBottom(4);
+    faderResizeHandle_->setBounds(resizeHandleRow);
 
     // Stop button row (full width: per-track stops + Stop All in scene column)
     auto stopRow = bounds.removeFromBottom(STOP_BUTTON_ROW_HEIGHT);
@@ -765,7 +815,7 @@ void SessionView::scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStar
         // Reposition faders to sync with horizontal scroll
         for (int i = 0; i < numTracks && i < static_cast<int>(trackFaders.size()); ++i) {
             int x = i * trackColumnWidth - trackHeaderScrollOffset;
-            trackFaders[i]->setBounds(x + 4, 4, CLIP_SLOT_WIDTH - 8, FADER_ROW_HEIGHT - 8);
+            trackFaders[i]->setBounds(x + 4, 4, CLIP_SLOT_WIDTH - 8, faderRowHeight_ - 8);
         }
         faderContainer->setTrackLayout(numTracks, CLIP_SLOT_WIDTH, TRACK_SEPARATOR_WIDTH,
                                        trackHeaderScrollOffset);

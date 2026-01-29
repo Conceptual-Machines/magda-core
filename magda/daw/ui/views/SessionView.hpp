@@ -74,7 +74,9 @@ class SessionView : public juce::Component,
     static constexpr int CLIP_SLOT_HEIGHT = 40;
     static constexpr int CLIP_SLOT_MARGIN = 2;
     static constexpr int TRACK_SEPARATOR_WIDTH = 3;
-    static constexpr int FADER_ROW_HEIGHT = 100;
+    static constexpr int MIN_FADER_ROW_HEIGHT = 60;
+    static constexpr int MAX_FADER_ROW_HEIGHT = 300;
+    int faderRowHeight_ = 100;
     static constexpr int ADD_SCENE_BUTTON_HEIGHT = 24;
 
     int numScenes_ = DEFAULT_NUM_SCENES;
@@ -109,6 +111,10 @@ class SessionView : public juce::Component,
     std::unique_ptr<StopButtonContainer> stopButtonContainer;
     std::vector<std::unique_ptr<juce::TextButton>> trackStopButtons;
     static constexpr int STOP_BUTTON_ROW_HEIGHT = 28;
+
+    // Resize handle between stop buttons and fader row
+    class ResizeHandle;
+    std::unique_ptr<ResizeHandle> faderResizeHandle_;
 
     // Fader row at bottom of each track column
     class FaderContainer;
