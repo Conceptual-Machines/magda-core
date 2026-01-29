@@ -2,11 +2,11 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/core/AutomationManager.hpp"
-#include "../magda/daw/core/ClipManager.hpp"
-#include "../magda/daw/core/TrackManager.hpp"
-#include "../magda/daw/project/ProjectManager.hpp"
-#include "../magda/daw/project/ProjectSerializer.hpp"
+#include "magda/daw/core/AutomationManager.hpp"
+#include "magda/daw/core/ClipManager.hpp"
+#include "magda/daw/core/TrackManager.hpp"
+#include "magda/daw/project/ProjectManager.hpp"
+#include "magda/daw/project/ProjectSerializer.hpp"
 
 using namespace magda;
 
@@ -36,8 +36,9 @@ struct ProjectTestFixture {
     }
 
     // Helper to create unique temp file with automatic cleanup
-    juce::File createTempFile(const juce::String& basename) {
-        auto file = juce::File::createTempFile(basename);
+    // suffix: The file extension/suffix to append (e.g., ".mgd")
+    juce::File createTempFile(const juce::String& suffix) {
+        auto file = juce::File::createTempFile(suffix);
         tempFiles.push_back(file);
         return file;
     }

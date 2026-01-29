@@ -245,6 +245,10 @@ bool ProjectSerializer::deserializeTracks(const juce::var& json) {
     // Clear all existing tracks efficiently before deserializing new ones
     trackManager.clearAllTracks();
 
+    // TODO: Performance - restoreTrack() calls notifyTracksChanged() for each track,
+    // causing a notification storm for large projects. Consider adding batch restore
+    // API to TrackManager that suppresses notifications during load and emits once at end.
+
     // Deserialize each track using restoreTrack (used by undo system)
     for (const auto& trackVar : *arr) {
         TrackInfo track;
@@ -273,6 +277,10 @@ bool ProjectSerializer::deserializeClips(const juce::var& json) {
     // Clear all existing clips efficiently before deserializing new ones
     clipManager.clearAllClips();
 
+    // TODO: Performance - restoreClip() calls notifyClipsChanged() for each clip,
+    // causing a notification storm for large projects. Consider adding batch restore
+    // mode to ClipManager that suppresses notifications during load and emits once at end.
+
     // Deserialize each clip using restoreClip
     for (const auto& clipVar : *arr) {
         ClipInfo clip;
@@ -297,20 +305,23 @@ bool ProjectSerializer::deserializeAutomation(const juce::var& json) {
         return false;
     }
 
-    // Clear existing automation state before handling the new project's automation
-    // data. This prevents old automation lanes from persisting when loading a new
-    // project over an existing one, even though we currently do not restore lane
-    // data from JSON.
+    // If the project file contains automation lanes, we currently cannot
+    // restore them. Failing here avoids silently discarding automation data
+    // while claiming the project loaded successfully.
+    if (!arr->isEmpty()) {
+        lastError_ = "Project contains automation lanes, but automation "
+                     "deserialization is not implemented yet.";
+
+        juce::Logger::writeToLog("ProjectSerializer: refusing to load automation lanes; "
+                                 "automation deserialization is not implemented yet.");
+
+        return false;
+    }
+
+    // No automation lanes in the project file: clear any existing automation
+    // state so that loading this project yields a clean automation state.
     auto& automationManager = AutomationManager::getInstance();
     automationManager.clearAll();
-
-    // Automation restoration is not implemented yet. To avoid making projects
-    // with automation impossible to reopen, we currently ignore any automation
-    // lane data that may be present.
-    if (!arr->isEmpty()) {
-        juce::Logger::writeToLog("ProjectSerializer: ignoring automation lanes on load; "
-                                 "automation deserialization is not implemented yet.");
-    }
 
     return true;
 }
