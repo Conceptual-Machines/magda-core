@@ -2,6 +2,7 @@
 
 #include "../themes/DarkTheme.hpp"
 #include "content/InspectorContent.hpp"
+#include "content/MediaExplorerContent.hpp"
 
 namespace magda::daw::ui {
 
@@ -249,6 +250,12 @@ PanelContent* TabbedPanel::getOrCreateContent(PanelContentType type) {
             }
         }
 
+        if (auto* mediaExplorerContent = dynamic_cast<MediaExplorerContent*>(ptr)) {
+            if (audioEngine_) {
+                mediaExplorerContent->setAudioEngine(audioEngine_);
+            }
+        }
+
         contentCache_[type] = std::move(content);
         return ptr;
     }
@@ -263,6 +270,9 @@ void TabbedPanel::setAudioEngine(magda::AudioEngine* engine) {
     for (auto& [type, content] : contentCache_) {
         if (auto* inspectorContent = dynamic_cast<InspectorContent*>(content.get())) {
             inspectorContent->setAudioEngine(engine);
+        }
+        if (auto* mediaExplorerContent = dynamic_cast<MediaExplorerContent*>(content.get())) {
+            mediaExplorerContent->setAudioEngine(engine);
         }
     }
 }

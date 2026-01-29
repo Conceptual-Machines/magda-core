@@ -466,11 +466,34 @@ MediaExplorerContent::~MediaExplorerContent() {
 
     // CRITICAL: Remove audio callback before destroying player/transport
     // to prevent use-after-free from audio thread
-    audioDeviceManager_.removeAudioCallback(&audioSourcePlayer_);
+    if (audioEngine_ != nullptr) {
+        if (auto* deviceManager = audioEngine_->getDeviceManager()) {
+            deviceManager->removeAudioCallback(&audioSourcePlayer_);
+        }
+    }
 
     audioSourcePlayer_.setSource(nullptr);
     transportSource_.reset();
     readerSource_.reset();
+}
+
+void MediaExplorerContent::setAudioEngine(magda::AudioEngine* engine) {
+    // Remove callback from old device manager if it exists
+    if (audioEngine_ != nullptr) {
+        if (auto* oldDeviceManager = audioEngine_->getDeviceManager()) {
+            oldDeviceManager->removeAudioCallback(&audioSourcePlayer_);
+        }
+    }
+
+    audioEngine_ = engine;
+
+    // Add callback to new device manager if it exists
+    if (audioEngine_ != nullptr) {
+        if (auto* deviceManager = audioEngine_->getDeviceManager()) {
+            audioSourcePlayer_.setSource(transportSource_.get());
+            deviceManager->addAudioCallback(&audioSourcePlayer_);
+        }
+    }
 }
 
 void MediaExplorerContent::setupAudioPreview() {
@@ -482,14 +505,13 @@ void MediaExplorerContent::setupAudioPreview() {
     transportSource_->addChangeListener(this);
     transportSource_->setGain(static_cast<float>(volumeSlider_.getValue()));
 
-    // Setup audio device
-    // TODO: This creates a separate AudioDeviceManager which can conflict with the main
-    // AudioEngine. Should be refactored to use the shared device manager via setAudioEngine()
-    // pattern (similar to TabbedPanel). For now, this works for preview but may fail if main audio
-    // is active.
-    audioDeviceManager_.initialiseWithDefaultDevices(0, 2);
+    // Setup audio device using shared device manager
+    // The AudioEngine reference will be set by TabbedPanel via setAudioEngine()
+    // Once set, the audio callback will be registered with the shared device manager
     audioSourcePlayer_.setSource(transportSource_.get());
-    audioDeviceManager_.addAudioCallback(&audioSourcePlayer_);
+
+    // Note: Audio callback will be added when setAudioEngine() is called
+    // This avoids creating a separate AudioDeviceManager that conflicts with main audio
 
     // Don't call prepareToPlay() here - AudioSourcePlayer will call it
     // when a source is set and playback starts
