@@ -14,6 +14,7 @@ set(TEST_SOURCES
     test_device_parameter_pagination.cpp
     test_waveform_editor_absolute_mode.cpp
     test_clip_resize_operations.cpp
+    test_project_serialization.cpp
 )
 
 # Create test executable
