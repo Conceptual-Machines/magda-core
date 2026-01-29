@@ -104,6 +104,7 @@ class SessionView : public juce::Component,
     void onClipSlotClicked(int trackIndex, int sceneIndex);
     void onSceneLaunched(int sceneIndex);
     void onStopAllClicked();
+    void openClipEditor(int trackIndex, int sceneIndex);
 
     // View mode state
     ViewMode currentViewMode_ = ViewMode::Live;

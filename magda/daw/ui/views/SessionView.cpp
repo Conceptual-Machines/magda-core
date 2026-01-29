@@ -3,10 +3,31 @@
 #include <functional>
 
 #include "../themes/DarkTheme.hpp"
+#include "SessionClipEditor.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/ViewModeController.hpp"
 
 namespace magda {
+
+// Custom clip slot button that handles both clicks and double-clicks
+class ClipSlotButton : public juce::TextButton {
+  public:
+    std::function<void()> onSingleClick;
+    std::function<void()> onDoubleClick;
+
+    void mouseDoubleClick(const juce::MouseEvent& event) override {
+        if (onDoubleClick) {
+            onDoubleClick();
+        }
+        juce::TextButton::mouseDoubleClick(event);
+    }
+
+    void clicked() override {
+        if (onSingleClick) {
+            onSingleClick();
+        }
+    }
+};
 
 // Custom grid content that draws track separators
 class SessionView::GridContent : public juce::Component {
@@ -253,7 +274,7 @@ void SessionView::rebuildTracks() {
         std::array<std::unique_ptr<juce::TextButton>, NUM_SCENES> trackSlots;
 
         for (size_t scene = 0; scene < NUM_SCENES; ++scene) {
-            auto slot = std::make_unique<juce::TextButton>();
+            auto slot = std::make_unique<ClipSlotButton>();
 
             // Empty clip slot
             slot->setButtonText("");
@@ -265,8 +286,15 @@ void SessionView::rebuildTracks() {
 
             int trackIndex = track;
             int sceneIndex = static_cast<int>(scene);
-            slot->onClick = [this, trackIndex, sceneIndex]() {
+
+            // Single click: trigger/stop playback
+            slot->onSingleClick = [this, trackIndex, sceneIndex]() {
                 onClipSlotClicked(trackIndex, sceneIndex);
+            };
+
+            // Double click: open clip editor
+            slot->onDoubleClick = [this, trackIndex, sceneIndex]() {
+                openClipEditor(trackIndex, sceneIndex);
             };
 
             gridContent->addAndMakeVisible(*slot);
@@ -438,6 +466,24 @@ void SessionView::onSceneLaunched(int sceneIndex) {
 
 void SessionView::onStopAllClicked() {
     ClipManager::getInstance().stopAllClips();
+}
+
+void SessionView::openClipEditor(int trackIndex, int sceneIndex) {
+    if (trackIndex < 0 || trackIndex >= static_cast<int>(visibleTrackIds_.size())) {
+        return;
+    }
+
+    TrackId trackId = visibleTrackIds_[trackIndex];
+    ClipId clipId = ClipManager::getInstance().getClipInSlot(trackId, sceneIndex);
+
+    if (clipId != INVALID_CLIP_ID) {
+        const auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip) {
+            // Create modal editor window
+            // Note: Window deletes itself when closed
+            new SessionClipEditorWindow(clipId, clip->name);
+        }
+    }
 }
 
 void SessionView::trackSelectionChanged(TrackId trackId) {

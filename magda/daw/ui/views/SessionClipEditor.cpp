@@ -1,6 +1,6 @@
 #include "SessionClipEditor.hpp"
 
-#include "../components/waveform/WaveformCache.hpp"
+#include "../../audio/AudioThumbnailManager.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 
@@ -39,7 +39,7 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
         auto waveformBounds = bounds.reduced(MARGIN);
 
         // Get waveform from cache
-        auto* thumbnail = magda::WaveformCache::getInstance().getThumbnail(source.filePath);
+        auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(source.filePath);
         if (thumbnail && thumbnail->getTotalLength() > 0.0) {
             // Calculate visible time range based on clip length and offset
             double startTime = source.offset;
