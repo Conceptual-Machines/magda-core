@@ -196,36 +196,36 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
 // ============================================================================
 
 juce::var ProjectSerializer::serializeTracks() {
-    auto* tracksArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> tracksArray;
 
     auto& trackManager = TrackManager::getInstance();
     for (const auto& track : trackManager.getTracks()) {
-        tracksArray->add(serializeTrackInfo(track));
+        tracksArray.add(serializeTrackInfo(track));
     }
 
-    return juce::var(*tracksArray);
+    return juce::var(tracksArray);
 }
 
 juce::var ProjectSerializer::serializeClips() {
-    auto* clipsArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> clipsArray;
 
     auto& clipManager = ClipManager::getInstance();
     for (const auto& clip : clipManager.getClips()) {
-        clipsArray->add(serializeClipInfo(clip));
+        clipsArray.add(serializeClipInfo(clip));
     }
 
-    return juce::var(*clipsArray);
+    return juce::var(clipsArray);
 }
 
 juce::var ProjectSerializer::serializeAutomation() {
-    auto* lanesArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> lanesArray;
 
     auto& automationManager = AutomationManager::getInstance();
     for (const auto& lane : automationManager.getLanes()) {
-        lanesArray->add(serializeAutomationLaneInfo(lane));
+        lanesArray.add(serializeAutomationLaneInfo(lane));
     }
 
-    return juce::var(*lanesArray);
+    return juce::var(lanesArray);
 }
 
 // ============================================================================
@@ -241,11 +241,8 @@ bool ProjectSerializer::deserializeTracks(const juce::var& json) {
     auto* arr = json.getArray();
     auto& trackManager = TrackManager::getInstance();
 
-    // Clear existing tracks by deleting them one by one
-    auto tracks = trackManager.getTracks();
-    for (const auto& track : tracks) {
-        trackManager.deleteTrack(track.id);
-    }
+    // Clear all existing tracks efficiently before deserializing new ones
+    trackManager.clearAllTracks();
 
     // Deserialize each track using restoreTrack (used by undo system)
     for (const auto& trackVar : *arr) {
@@ -255,6 +252,10 @@ bool ProjectSerializer::deserializeTracks(const juce::var& json) {
         }
         trackManager.restoreTrack(track);
     }
+
+    // After all tracks are restored, ensure TrackManager ID counters
+    // (track/device/rack/chain) are updated to avoid ID collisions.
+    trackManager.refreshIdCountersFromTracks();
 
     return true;
 }
@@ -298,17 +299,16 @@ bool ProjectSerializer::deserializeAutomation(const juce::var& json) {
         return false;
     }
 
-    // Until AutomationManager supports full clear/restore of lanes, we cannot
-    // safely apply automation data. Allow empty automation arrays (no lanes to
-    // restore), but fail clearly if any lane data is present to avoid silently
-    // reporting success while leaving stale automation state.
-    if (arr->isEmpty()) {
-        return true;
+    // Automation restoration is not implemented yet. To avoid making projects
+    // with automation impossible to reopen, we currently ignore any automation
+    // lane data that may be present. Existing in-memory automation state is left
+    // unchanged (typically empty in a freshly loaded project).
+    if (!arr->isEmpty()) {
+        juce::Logger::writeToLog("ProjectSerializer: ignoring automation lanes on load; "
+                                 "automation deserialization is not implemented yet.");
     }
 
-    lastError_ =
-        "Automation deserialization is not implemented yet; cannot restore automation lanes";
-    return false;
+    return true;
 }
 
 // ============================================================================
@@ -325,11 +325,11 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
 
     // Hierarchy
     obj->setProperty("parentId", track.parentId);
-    auto* childIdsArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> childIdsArray;
     for (auto childId : track.childIds) {
-        childIdsArray->add(childId);
+        childIdsArray.add(childId);
     }
-    obj->setProperty("childIds", juce::var(*childIdsArray));
+    obj->setProperty("childIds", juce::var(childIdsArray));
 
     // Mixer state
     obj->setProperty("volume", track.volume);
@@ -345,11 +345,11 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
     obj->setProperty("audioOutputDevice", track.audioOutputDevice);
 
     // Chain elements
-    auto* chainArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> chainArray;
     for (const auto& element : track.chainElements) {
-        chainArray->add(serializeChainElement(element));
+        chainArray.add(serializeChainElement(element));
     }
-    obj->setProperty("chainElements", juce::var(*chainArray));
+    obj->setProperty("chainElements", juce::var(chainArray));
 
     return juce::var(obj);
 }
@@ -467,18 +467,18 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     obj->setProperty("paramPanelOpen", device.paramPanelOpen);
 
     // Parameters
-    auto* paramsArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> paramsArray;
     for (const auto& param : device.parameters) {
-        paramsArray->add(serializeParameterInfo(param));
+        paramsArray.add(serializeParameterInfo(param));
     }
-    obj->setProperty("parameters", juce::var(*paramsArray));
+    obj->setProperty("parameters", juce::var(paramsArray));
 
     // Visible parameters
-    auto* visibleParamsArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> visibleParamsArray;
     for (auto index : device.visibleParameters) {
-        visibleParamsArray->add(index);
+        visibleParamsArray.add(index);
     }
-    obj->setProperty("visibleParameters", juce::var(*visibleParamsArray));
+    obj->setProperty("visibleParameters", juce::var(visibleParamsArray));
 
     // Gain stage
     obj->setProperty("gainParameterIndex", device.gainParameterIndex);
@@ -486,18 +486,18 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     obj->setProperty("gainDb", device.gainDb);
 
     // Macros
-    auto* macrosArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> macrosArray;
     for (const auto& macro : device.macros) {
-        macrosArray->add(serializeMacroInfo(macro));
+        macrosArray.add(serializeMacroInfo(macro));
     }
-    obj->setProperty("macros", juce::var(*macrosArray));
+    obj->setProperty("macros", juce::var(macrosArray));
 
     // Mods
-    auto* modsArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> modsArray;
     for (const auto& mod : device.mods) {
-        modsArray->add(serializeModInfo(mod));
+        modsArray.add(serializeModInfo(mod));
     }
-    obj->setProperty("mods", juce::var(*modsArray));
+    obj->setProperty("mods", juce::var(modsArray));
 
     obj->setProperty("currentParameterPage", device.currentParameterPage);
 
@@ -597,25 +597,25 @@ juce::var ProjectSerializer::serializeRackInfo(const RackInfo& rack) {
     obj->setProperty("pan", rack.pan);
 
     // Chains
-    auto* chainsArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> chainsArray;
     for (const auto& chain : rack.chains) {
-        chainsArray->add(serializeChainInfo(chain));
+        chainsArray.add(serializeChainInfo(chain));
     }
-    obj->setProperty("chains", juce::var(*chainsArray));
+    obj->setProperty("chains", juce::var(chainsArray));
 
     // Macros
-    auto* macrosArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> macrosArray;
     for (const auto& macro : rack.macros) {
-        macrosArray->add(serializeMacroInfo(macro));
+        macrosArray.add(serializeMacroInfo(macro));
     }
-    obj->setProperty("macros", juce::var(*macrosArray));
+    obj->setProperty("macros", juce::var(macrosArray));
 
     // Mods
-    auto* modsArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> modsArray;
     for (const auto& mod : rack.mods) {
-        modsArray->add(serializeModInfo(mod));
+        modsArray.add(serializeModInfo(mod));
     }
-    obj->setProperty("mods", juce::var(*modsArray));
+    obj->setProperty("mods", juce::var(modsArray));
 
     return juce::var(obj);
 }
@@ -693,11 +693,11 @@ juce::var ProjectSerializer::serializeChainInfo(const ChainInfo& chain) {
     obj->setProperty("expanded", chain.expanded);
 
     // Elements
-    auto* elementsArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> elementsArray;
     for (const auto& element : chain.elements) {
-        elementsArray->add(serializeChainElement(element));
+        elementsArray.add(serializeChainElement(element));
     }
-    obj->setProperty("elements", juce::var(*elementsArray));
+    obj->setProperty("elements", juce::var(elementsArray));
 
     return juce::var(obj);
 }
@@ -755,18 +755,18 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("sceneIndex", clip.sceneIndex);
 
     // Audio sources
-    auto* audioSourcesArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> audioSourcesArray;
     for (const auto& source : clip.audioSources) {
-        audioSourcesArray->add(serializeAudioSource(source));
+        audioSourcesArray.add(serializeAudioSource(source));
     }
-    obj->setProperty("audioSources", juce::var(*audioSourcesArray));
+    obj->setProperty("audioSources", juce::var(audioSourcesArray));
 
     // MIDI notes
-    auto* midiNotesArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> midiNotesArray;
     for (const auto& note : clip.midiNotes) {
-        midiNotesArray->add(serializeMidiNote(note));
+        midiNotesArray.add(serializeMidiNote(note));
     }
-    obj->setProperty("midiNotes", juce::var(*midiNotesArray));
+    obj->setProperty("midiNotes", juce::var(midiNotesArray));
 
     return juce::var(obj);
 }
@@ -892,18 +892,18 @@ juce::var ProjectSerializer::serializeAutomationLaneInfo(const AutomationLaneInf
     obj->setProperty("height", lane.height);
 
     // Absolute points
-    auto* pointsArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> pointsArray;
     for (const auto& point : lane.absolutePoints) {
-        pointsArray->add(serializeAutomationPoint(point));
+        pointsArray.add(serializeAutomationPoint(point));
     }
-    obj->setProperty("absolutePoints", juce::var(*pointsArray));
+    obj->setProperty("absolutePoints", juce::var(pointsArray));
 
     // Clip IDs
-    auto* clipIdsArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> clipIdsArray;
     for (auto clipId : lane.clipIds) {
-        clipIdsArray->add(clipId);
+        clipIdsArray.add(clipId);
     }
-    obj->setProperty("clipIds", juce::var(*clipIdsArray));
+    obj->setProperty("clipIds", juce::var(clipIdsArray));
 
     return juce::var(obj);
 }
@@ -966,11 +966,11 @@ juce::var ProjectSerializer::serializeAutomationClipInfo(const AutomationClipInf
     obj->setProperty("loopLength", clip.loopLength);
 
     // Points
-    auto* pointsArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> pointsArray;
     for (const auto& point : clip.points) {
-        pointsArray->add(serializeAutomationPoint(point));
+        pointsArray.add(serializeAutomationPoint(point));
     }
-    obj->setProperty("points", juce::var(*pointsArray));
+    obj->setProperty("points", juce::var(pointsArray));
 
     return juce::var(obj);
 }
@@ -1116,14 +1116,14 @@ juce::var ProjectSerializer::serializeChainNodePath(const ChainNodePath& path) {
     obj->setProperty("trackId", path.trackId);
     obj->setProperty("topLevelDeviceId", path.topLevelDeviceId);
 
-    auto* stepsArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> stepsArray;
     for (const auto& step : path.steps) {
         auto* stepObj = new juce::DynamicObject();
         stepObj->setProperty("type", static_cast<int>(step.type));
         stepObj->setProperty("id", step.id);
-        stepsArray->add(juce::var(stepObj));
+        stepsArray.add(juce::var(stepObj));
     }
-    obj->setProperty("steps", juce::var(*stepsArray));
+    obj->setProperty("steps", juce::var(stepsArray));
 
     return juce::var(obj);
 }
@@ -1174,7 +1174,7 @@ juce::var ProjectSerializer::serializeMacroInfo(const MacroInfo& macro) {
     obj->setProperty("target", juce::var(targetObj));
 
     // Links
-    auto* linksArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> linksArray;
     for (const auto& link : macro.links) {
         auto* linkObj = new juce::DynamicObject();
         auto* linkTargetObj = new juce::DynamicObject();
@@ -1182,9 +1182,9 @@ juce::var ProjectSerializer::serializeMacroInfo(const MacroInfo& macro) {
         linkTargetObj->setProperty("paramIndex", link.target.paramIndex);
         linkObj->setProperty("target", juce::var(linkTargetObj));
         linkObj->setProperty("amount", link.amount);
-        linksArray->add(juce::var(linkObj));
+        linksArray.add(juce::var(linkObj));
     }
-    obj->setProperty("links", juce::var(*linksArray));
+    obj->setProperty("links", juce::var(linksArray));
 
     return juce::var(obj);
 }
@@ -1256,18 +1256,18 @@ juce::var ProjectSerializer::serializeModInfo(const ModInfo& mod) {
     obj->setProperty("curvePreset", static_cast<int>(mod.curvePreset));
 
     // Curve points
-    auto* curvePointsArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> curvePointsArray;
     for (const auto& point : mod.curvePoints) {
         auto* pointObj = new juce::DynamicObject();
         pointObj->setProperty("phase", point.phase);
         pointObj->setProperty("value", point.value);
         pointObj->setProperty("tension", point.tension);
-        curvePointsArray->add(juce::var(pointObj));
+        curvePointsArray.add(juce::var(pointObj));
     }
-    obj->setProperty("curvePoints", juce::var(*curvePointsArray));
+    obj->setProperty("curvePoints", juce::var(curvePointsArray));
 
     // Links
-    auto* linksArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> linksArray;
     for (const auto& link : mod.links) {
         auto* linkObj = new juce::DynamicObject();
         auto* linkTargetObj = new juce::DynamicObject();
@@ -1275,9 +1275,9 @@ juce::var ProjectSerializer::serializeModInfo(const ModInfo& mod) {
         linkTargetObj->setProperty("paramIndex", link.target.paramIndex);
         linkObj->setProperty("target", juce::var(linkTargetObj));
         linkObj->setProperty("amount", link.amount);
-        linksArray->add(juce::var(linkObj));
+        linksArray.add(juce::var(linkObj));
     }
-    obj->setProperty("links", juce::var(*linksArray));
+    obj->setProperty("links", juce::var(linksArray));
 
     // Legacy target/amount
     auto* targetObj = new juce::DynamicObject();
@@ -1384,11 +1384,11 @@ juce::var ProjectSerializer::serializeParameterInfo(const ParameterInfo& param) 
     obj->setProperty("bipolarModulation", param.bipolarModulation);
 
     // Choices
-    auto* choicesArray = new juce::Array<juce::var>();
+    juce::Array<juce::var> choicesArray;
     for (const auto& choice : param.choices) {
-        choicesArray->add(choice);
+        choicesArray.add(choice);
     }
-    obj->setProperty("choices", juce::var(*choicesArray));
+    obj->setProperty("choices", juce::var(choicesArray));
 
     return juce::var(obj);
 }

@@ -50,7 +50,8 @@ bool ProjectManager::newProject() {
 }
 
 bool ProjectManager::saveProject() {
-    if (!currentFile_.existsAsFile()) {
+    if (currentFile_.getFullPathName().isEmpty() ||
+        !currentFile_.getParentDirectory().isDirectory()) {
         lastError_ = "No file path set. Use Save As.";
         return false;
     }
@@ -186,7 +187,11 @@ void ProjectManager::clearDirty() {
 
 void ProjectManager::addListener(ProjectManagerListener* listener) {
     if (listener != nullptr) {
-        listeners_.push_back(listener);
+        // Avoid adding the same listener multiple times
+        auto it = std::find(listeners_.begin(), listeners_.end(), listener);
+        if (it == listeners_.end()) {
+            listeners_.push_back(listener);
+        }
     }
 }
 

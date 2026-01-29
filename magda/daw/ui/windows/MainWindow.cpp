@@ -879,8 +879,10 @@ void MainWindow::setupMenuCallbacks() {
     callbacks.onSaveProject = [this]() {
         auto& projectManager = ProjectManager::getInstance();
 
-        // If no file path set, use Save As flow
-        if (!projectManager.getCurrentProjectFile().existsAsFile()) {
+        const auto currentProjectFile = projectManager.getCurrentProjectFile();
+
+        // If no file path set (empty path), use Save As flow
+        if (currentProjectFile.getFullPathName().isEmpty()) {
             // Prevent re-entry while a file chooser is already open
             if (fileChooser_ != nullptr)
                 return;

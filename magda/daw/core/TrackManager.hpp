@@ -397,6 +397,14 @@ class TrackManager {
     void createDefaultTracks(int count = 8);
     void clearAllTracks();
 
+    /**
+     * @brief Scan all tracks and update ID counters to avoid collisions
+     *
+     * After restoring tracks from a file, call this to ensure device/rack/chain
+     * ID counters are updated to avoid reusing IDs that exist in loaded tracks.
+     */
+    void refreshIdCountersFromTracks();
+
   private:
     TrackManager();
     ~TrackManager() = default;
