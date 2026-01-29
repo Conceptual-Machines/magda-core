@@ -478,6 +478,16 @@ MediaExplorerContent::~MediaExplorerContent() {
 }
 
 void MediaExplorerContent::setAudioEngine(magda::AudioEngine* engine) {
+    // Early return if engine hasn't changed (prevents duplicate callback registration)
+    if (audioEngine_ == engine) {
+        return;
+    }
+
+    // Stop any active playback before changing audio engine to ensure clean state transition
+    if (transportSource_ && transportSource_->isPlaying()) {
+        stopPreview();
+    }
+
     // Remove callback from old device manager if it exists
     if (audioEngine_ != nullptr) {
         if (auto* oldDeviceManager = audioEngine_->getDeviceManager()) {
