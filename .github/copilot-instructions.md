@@ -1,0 +1,165 @@
+# GitHub Copilot Review Instructions for Magda
+
+This document defines code review guidelines for the Magda project, a JUCE/C++ audio DAW framework. Reviews should focus on critical bugs, performance improvements, and code readability to ensure high-quality, maintainable code.
+
+## Review Focus Areas
+
+### 1. Critical Bugs (Highest Priority)
+- **Memory Safety**: Check for memory leaks, use-after-free, buffer overflows, and dangling pointers
+- **Thread Safety**: Verify proper synchronization in audio processing code, especially in real-time contexts
+- **Audio Buffer Issues**: Look for buffer over/underruns, incorrect sample rate handling, and improper buffer management
+- **Resource Management**: Ensure proper RAII patterns, especially with JUCE objects and audio resources
+- **Null Pointer Dereferences**: Check for proper null checks before dereferencing pointers
+- **Integer Overflow/Underflow**: Verify arithmetic operations, especially in sample calculations and buffer indexing
+- **Plugin Lifecycle Issues**: Ensure proper plugin initialization, cleanup, and state management
+- **JUCE Message Thread Violations**: Verify UI operations happen on the message thread, audio code runs on audio thread
+
+### 2. Performance Improvements (High Priority)
+- **Real-time Audio Safety**: Flag allocations, locks, or blocking operations in audio processing callbacks
+- **Unnecessary Copies**: Identify opportunities to use move semantics, const references, or std::string_view
+- **Algorithm Efficiency**: Look for O(n²) or worse algorithms that could be optimized
+- **Cache Locality**: Suggest improvements to data structure layout for better cache performance
+- **SIMD Opportunities**: Identify vectorizable loops in DSP code
+- **Excessive Memory Allocations**: Flag unnecessary heap allocations, especially in hot paths
+- **Lock Contention**: Identify potential bottlenecks from lock contention in multi-threaded code
+- **Redundant Operations**: Point out redundant calculations or repeated work
+
+### 3. Code Readability & Clarity (Medium Priority)
+- **Naming Conventions**: Ensure consistency with project style (camelCase for functions/variables, CamelCase for classes)
+- **Function Complexity**: Flag functions exceeding 80 lines or with cognitive complexity > 15
+- **Magic Numbers**: Suggest named constants for literal values, except obvious cases (0, 1, 2)
+- **Clear Intent**: Ensure code is self-documenting; suggest refactoring when intent is unclear
+- **JUCE Idioms**: Verify proper use of JUCE patterns (e.g., MessageManager, ValueTree, listeners)
+- **Modern C++20**: Encourage use of C++20 features where appropriate (concepts, ranges, coroutines if applicable)
+- **Error Handling**: Verify appropriate error handling strategies
+- **Documentation**: Check that complex algorithms or non-obvious code have explanatory comments
+
+## What NOT to Focus On
+
+- **Style Issues Already Covered by clang-format**: Don't comment on formatting that will be auto-fixed
+- **Minor Optimizations**: Avoid nitpicking micro-optimizations that don't impact performance measurably
+- **Personal Preferences**: Don't suggest changes based solely on personal style preferences
+- **Trivial Issues**: Skip commenting on very minor issues that don't affect functionality or maintainability
+- **Pre-existing Issues**: Focus on the code being changed, not unrelated existing code
+
+## Project-Specific Context
+
+### Architecture
+- **DAW Core** (`magda/daw/`): Main application using JUCE and Tracktion Engine
+- **Agents System** (`magda/agents/`): Multi-agent generative audio system
+- **UI Components** (`magda/daw/ui/`): JUCE-based user interface
+- **Audio Engine** (`magda/daw/engine/`): Tracktion Engine wrapper and audio processing
+
+### Key Technologies
+- **JUCE**: Cross-platform C++ framework for audio applications
+- **Tracktion Engine**: Professional DAW audio engine
+- **C++20**: Modern C++ standard with all features enabled
+- **CMake**: Build system with Ninja generator
+- **Catch2**: Testing framework
+
+### Audio Processing Constraints
+- **Real-time Safety**: Audio callbacks must be lock-free, allocation-free, and deterministic
+- **Thread Context**: Audio code runs on audio thread, UI code on message thread
+- **Buffer Management**: Always validate buffer sizes and sample rates
+- **Plugin Hosting**: Proper lifecycle management critical for stability
+
+### Code Quality Standards
+- **clang-tidy**: Comprehensive static analysis enabled (see `.clang-tidy`)
+- **clang-format**: Automatic code formatting enforced
+- **Testing**: Use Catch2 for unit tests, test audio processing logic when possible
+- **Documentation**: Complex algorithms should have explanatory comments
+
+## Review Workflow
+
+### Iterative Resolution Process
+1. **Initial Review**: Copilot provides focused feedback on critical bugs, performance, and readability
+2. **Discussion**: Developer addresses comments, asks questions, or provides justification
+3. **Updates**: Developer makes changes based on valid feedback
+4. **Re-review**: For significant changes, request another review cycle
+5. **Resolution**: Mark comments as resolved once addressed
+6. **Approval**: PR is approved when all critical issues are resolved
+
+### Comment Guidelines
+- **Be Specific**: Point to exact line numbers and provide clear explanations
+- **Be Constructive**: Suggest solutions, not just problems
+- **Provide Context**: Explain why something is an issue (e.g., "causes memory leak" vs. "this looks wrong")
+- **Prioritize**: Use "CRITICAL", "Important", or "Suggestion" labels to indicate severity
+- **Link to Documentation**: Reference JUCE docs, C++ core guidelines, or project docs when relevant
+
+### Review Expectations
+- **Critical Bugs**: MUST be addressed before approval
+- **Performance Issues**: Should be addressed or explicitly deferred with justification
+- **Readability Issues**: Address if they significantly impact maintainability
+- **Minor Suggestions**: Can be deferred to follow-up PRs if they don't block the main goal
+
+## Examples
+
+### ❌ BAD: Audio Thread Allocation
+```cpp
+void processAudioBlock(AudioBuffer<float>& buffer) {
+    auto tempBuffer = std::make_unique<float[]>(buffer.getNumSamples()); // CRITICAL: Allocation in audio thread!
+    // ...
+}
+```
+**Review Comment**: "CRITICAL: `std::make_unique` allocates memory on the audio thread, which can cause dropouts. Pre-allocate in the constructor or use a fixed-size buffer."
+
+### ✅ GOOD: Pre-allocated Buffer
+```cpp
+class Processor {
+    std::vector<float> tempBuffer_;
+public:
+    void prepareToPlay(int samplesPerBlock) {
+        tempBuffer_.resize(samplesPerBlock);
+    }
+    void processAudioBlock(AudioBuffer<float>& buffer) {
+        // Use pre-allocated tempBuffer_ - safe for real-time
+    }
+}
+```
+
+### ❌ BAD: Thread Safety Issue
+```cpp
+void processAudioBlock(AudioBuffer<float>& buffer) {
+    for (int i = 0; i < sharedData_.size(); ++i) { // CRITICAL: Race condition!
+        // ...
+    }
+}
+void setSharedData(std::vector<float> data) {
+    sharedData_ = std::move(data); // Can be called from UI thread
+}
+```
+**Review Comment**: "CRITICAL: `sharedData_` accessed from both audio and UI threads without synchronization. Use `std::atomic` or lock-free structures, or ensure thread-safe communication via JUCE's message thread."
+
+### ❌ BAD: Unnecessary Copy
+```cpp
+void processClips(std::vector<Clip> clips) { // Important: Pass by value creates copy
+    for (const auto& clip : clips) {
+        // ...
+    }
+}
+```
+**Review Comment**: "Important: `clips` passed by value creates an unnecessary copy. Use `const std::vector<Clip>&` instead for better performance."
+
+### ✅ GOOD: Const Reference
+```cpp
+void processClips(const std::vector<Clip>& clips) {
+    for (const auto& clip : clips) {
+        // ...
+    }
+}
+```
+
+### ❌ BAD: Unclear Intent
+```cpp
+if (x > 0.5) return true; else return false;
+```
+**Review Comment**: "Suggestion: Can be simplified to `return x > 0.5;` for better readability."
+
+## Additional Resources
+- [JUCE Documentation](https://docs.juce.com/)
+- [JUCE Forum - Audio Thread Best Practices](https://forum.juce.com/)
+- [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/)
+- [Real-Time Audio Programming 101](http://www.rossbencina.com/code/real-time-audio-programming-101-time-waits-for-nothing)
+
+## Questions?
+If you're unsure about a review comment, discuss it in the PR. The goal is collaborative improvement, not just compliance.
