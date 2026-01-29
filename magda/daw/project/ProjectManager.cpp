@@ -72,10 +72,17 @@ bool ProjectManager::saveProjectAs(const juce::File& file) {
     }
 
     // Commit updated state only after successful save
+    const bool wasOpen = isProjectOpen_;
     currentProject_ = std::move(newProject);
     currentFile_ = file;
+    isProjectOpen_ = true;
     clearDirty();
-    notifyProjectSaved();
+
+    if (!wasOpen) {
+        notifyProjectOpened();
+    } else {
+        notifyProjectSaved();
+    }
 
     return true;
 }

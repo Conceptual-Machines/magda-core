@@ -835,8 +835,13 @@ void MainWindow::setupMenuCallbacks() {
     callbacks.onNewProject = [this]() {
         auto& projectManager = ProjectManager::getInstance();
         if (!projectManager.newProject()) {
+            auto message = juce::String("Could not create new project.");
+            const auto lastError = projectManager.getLastError();
+            if (lastError.isNotEmpty())
+                message += juce::String("\n\n") + lastError;
+
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "New Project",
-                                                   "Could not create new project.");
+                                                   message);
         }
     };
 
@@ -872,7 +877,8 @@ void MainWindow::setupMenuCallbacks() {
         auto& projectManager = ProjectManager::getInstance();
         if (!projectManager.closeProject()) {
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Close Project",
-                                                   "Could not close project.");
+                                                   "Failed to close project: " +
+                                                       projectManager.getLastError());
         }
     };
 
