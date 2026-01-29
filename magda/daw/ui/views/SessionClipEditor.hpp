@@ -14,11 +14,11 @@ namespace magda {
  * @brief Modal editor for session view clips
  *
  * Provides waveform viewing and editing for clips in session view.
- * - Always uses relative (beat-based) positioning
- * - Shows waveform with zoom/scroll controls
+ * - Shows waveform display
  * - Loop enable/disable toggle in header
- * - Trim start/end handles
  * - Audio offset adjustment
+ *
+ * TODO: Add waveform zoom/scroll controls and trim start/end handles.
  */
 class SessionClipEditor : public juce::Component, public ClipManagerListener {
   public:

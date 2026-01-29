@@ -493,6 +493,8 @@ const ClipInfo* ClipManager::getClip(ClipId clipId) const {
     return (it != sessionClips_.end()) ? &(*it) : nullptr;
 }
 
+// TODO: Returns clips by value, copying potentially large structures. Callers should
+// migrate to getArrangementClips() or getSessionClips() which return const references.
 std::vector<ClipInfo> ClipManager::getClips() const {
     std::vector<ClipInfo> result;
     result.reserve(arrangementClips_.size() + sessionClips_.size());

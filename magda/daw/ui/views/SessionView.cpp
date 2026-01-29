@@ -50,6 +50,8 @@ float meterPosToDb(float pos) {
 // Custom clip slot button that handles clicks, double-clicks, and play button area
 class ClipSlotButton : public juce::TextButton {
   public:
+    static constexpr int PLAY_BUTTON_WIDTH = 22;
+
     std::function<void()> onSingleClick;
     std::function<void()> onDoubleClick;
     std::function<void()> onPlayButtonClick;
@@ -69,8 +71,8 @@ class ClipSlotButton : public juce::TextButton {
         if (!event.mouseWasClicked())
             return;
 
-        // Check if click is in the play button area (left 22px of the slot)
-        if (hasClip && event.getPosition().getX() < 22) {
+        // Check if click is in the play button area
+        if (hasClip && event.getPosition().getX() < PLAY_BUTTON_WIDTH) {
             if (onPlayButtonClick) {
                 onPlayButtonClick();
             }
@@ -98,7 +100,7 @@ class ClipSlotButton : public juce::TextButton {
 
         // Draw play/stop triangle indicator on the left side
         if (hasClip) {
-            auto playArea = getLocalBounds().removeFromLeft(22);
+            auto playArea = getLocalBounds().removeFromLeft(PLAY_BUTTON_WIDTH);
             auto centre = playArea.getCentre().toFloat();
 
             if (clipIsPlaying) {
@@ -1101,12 +1103,8 @@ void SessionView::onPlayButtonClicked(int trackIndex, int sceneIndex) {
                 ClipManager::getInstance().triggerClip(clipId);
             }
         } else {
-            // Trigger mode: play from start, stop if already playing
-            if (clip->isPlaying) {
-                ClipManager::getInstance().stopClip(clipId);
-            } else {
-                ClipManager::getInstance().triggerClip(clipId);
-            }
+            // Trigger mode: always re-trigger (restart from beginning)
+            ClipManager::getInstance().triggerClip(clipId);
         }
     }
 }
@@ -1450,7 +1448,9 @@ void SessionView::updateDragHighlight(int x, int y) {
         dragHoverTrackIndex_ = trackIndex;
         dragHoverSceneIndex_ = sceneIndex;
 
-        if (dragHoverTrackIndex_ >= 0 && dragHoverSceneIndex_ >= 0) {
+        if (dragHoverTrackIndex_ >= 0 && dragHoverSceneIndex_ >= 0 &&
+            dragHoverTrackIndex_ < static_cast<int>(clipSlots.size()) &&
+            dragHoverSceneIndex_ < static_cast<int>(clipSlots[dragHoverTrackIndex_].size())) {
             auto* slot = clipSlots[dragHoverTrackIndex_][dragHoverSceneIndex_].get();
             if (slot) {
                 // Highlight with accent color

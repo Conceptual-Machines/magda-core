@@ -199,7 +199,8 @@ void SessionClipEditor::setupFooter() {
     offsetSlider_->setColour(juce::Slider::textBoxBackgroundColourId,
                              DarkTheme::getColour(DarkTheme::SURFACE));
     offsetSlider_->onValueChange = [this]() {
-        // Update audio source offset
+        // TODO: Use a ClipManager API method (e.g. setAudioSourceOffset) instead of
+        // modifying the clip directly, to ensure proper notifications are sent.
         auto* clip = ClipManager::getInstance().getClip(clipId_);
         if (clip && !clip->audioSources.empty()) {
             clip->audioSources[0].offset = offsetSlider_->getValue();
@@ -320,7 +321,10 @@ SessionClipEditorWindow::SessionClipEditorWindow(ClipId clipId, const juce::Stri
 SessionClipEditorWindow::~SessionClipEditorWindow() = default;
 
 void SessionClipEditorWindow::closeButtonPressed() {
-    delete this;  // Modal window deletes itself
+    if (isCurrentlyModal())
+        exitModalState(0);
+    else
+        setVisible(false);
 }
 
 }  // namespace magda
