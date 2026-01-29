@@ -104,6 +104,7 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         projectButton_ = std::make_unique<magda::SvgButton>("Project", BinaryData::project_home_svg,
                                                             BinaryData::project_home_svgSize);
         projectButton_->setToggleable(true);
+        projectButton_->setClickingTogglesState(true);               // Enable click-to-toggle
         projectButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG's gray fill
         projectButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         projectButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
@@ -119,6 +120,7 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         diskButton_ = std::make_unique<magda::SvgButton>("Disk", BinaryData::harddrive_svg,
                                                          BinaryData::harddrive_svgSize);
         diskButton_->setToggleable(true);
+        diskButton_->setClickingTogglesState(true);               // Enable click-to-toggle
         diskButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG's gray fill
         diskButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         diskButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
@@ -134,6 +136,7 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         libraryButton_ = std::make_unique<magda::SvgButton>("Library", BinaryData::library_svg,
                                                             BinaryData::library_svgSize);
         libraryButton_->setToggleable(true);
+        libraryButton_->setClickingTogglesState(true);               // Enable click-to-toggle
         libraryButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG's gray fill
         libraryButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         libraryButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
@@ -229,6 +232,7 @@ MediaExplorerContent::MediaExplorerContent() {
     audioFilterButton_ = std::make_unique<magda::SvgButton>("Audio", BinaryData::sample_svg,
                                                             BinaryData::sample_svgSize);
     audioFilterButton_->setToggleable(true);
+    audioFilterButton_->setClickingTogglesState(true);  // Enable click-to-toggle
     audioFilterButton_->setToggleState(true, juce::dontSendNotification);
     audioFilterButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG's gray fill
     audioFilterButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
@@ -243,6 +247,7 @@ MediaExplorerContent::MediaExplorerContent() {
     midiFilterButton_ =
         std::make_unique<magda::SvgButton>("MIDI", BinaryData::midi_svg, BinaryData::midi_svgSize);
     midiFilterButton_->setToggleable(true);
+    midiFilterButton_->setClickingTogglesState(true);  // Enable click-to-toggle
     midiFilterButton_->setToggleState(false, juce::dontSendNotification);
     midiFilterButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG's gray fill
     midiFilterButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
@@ -257,6 +262,7 @@ MediaExplorerContent::MediaExplorerContent() {
     presetFilterButton_ = std::make_unique<magda::SvgButton>("Presets", BinaryData::preset_svg,
                                                              BinaryData::preset_svgSize);
     presetFilterButton_->setToggleable(true);
+    presetFilterButton_->setClickingTogglesState(true);  // Enable click-to-toggle
     presetFilterButton_->setToggleState(false, juce::dontSendNotification);
     presetFilterButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG's gray fill
     presetFilterButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
