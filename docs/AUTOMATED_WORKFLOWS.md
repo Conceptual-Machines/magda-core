@@ -66,13 +66,13 @@ gh workflow run periodic-analysis.yml
 - Manual: Can be triggered on-demand
 
 **What it does**:
-- Analyzes code complexity (cyclomatic complexity)
+- Analyzes code complexity using lizard (C++ compatible complexity analyzer)
 - Finds duplicate code candidates
 - Identifies large files (>500 lines)
 - Detects tight coupling (files with many internal includes)
-- Suggests unused includes cleanup
+- Provides include statistics (for manual unused include analysis)
 - Finds magic numbers (should be named constants)
-- Identifies god objects (classes with 20+ methods)
+- Identifies potential god objects (classes with many public methods)
 
 **Outputs**:
 - Refactoring report as workflow artifact

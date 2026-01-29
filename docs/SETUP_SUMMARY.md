@@ -47,12 +47,12 @@ gh workflow run ci.yml -f skip-cpp-build=true
 - Execution time: ~2-3 minutes
 
 **What it analyzes:**
-- Code complexity (cyclomatic complexity)
+- Code complexity using lizard (C++ compatible)
 - Large files (>500 lines)
 - Tight coupling (files with many internal includes)
-- Unused includes (suggestions)
+- Include statistics (for manual unused include analysis)
 - Magic numbers (should be named constants)
-- God objects (classes with 20+ methods)
+- Potential god objects (classes with many public methods)
 
 **Outputs:**
 - Refactoring report artifact (30-day retention)
@@ -104,7 +104,7 @@ jobs:
   build-and-test-linux:
     if: |
       github.event_name != 'workflow_dispatch' || 
-      inputs.skip-cpp-build != true
+      github.event.inputs.skip-cpp-build != 'true'
 ```
 
 This means:
@@ -117,7 +117,7 @@ This means:
 Both periodic workflows use only text processing tools:
 - `grep`, `find`, `awk` for pattern matching
 - `cloc` for code metrics
-- `radon` for complexity analysis
+- `lizard` for C++ complexity analysis
 - Python scripts for custom analysis
 
 No C++ compilation or linking required!
