@@ -465,10 +465,16 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
         const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
         if (clip) {
             // Auto-switch time mode based on clip view
-            // Session clips use relative mode (no absolute timeline position)
-            bool shouldBeRelative = (clip->view == magda::ClipView::Session);
-            if (relativeTimeMode_ != shouldBeRelative) {
-                setRelativeTimeMode(shouldBeRelative);
+            // Session clips are locked to relative mode (no absolute timeline position)
+            bool isSessionClip = (clip->view == magda::ClipView::Session);
+            if (isSessionClip) {
+                setRelativeTimeMode(true);
+                timeModeButton_->setEnabled(false);
+                timeModeButton_->setTooltip("Session clips always use relative time");
+            } else {
+                timeModeButton_->setEnabled(true);
+                timeModeButton_->setTooltip(
+                    "Toggle between Absolute (timeline) and Relative (clip) mode");
             }
 
             // Get tempo from TimelineController
