@@ -99,10 +99,9 @@ struct AllPanelStates {
 inline AllPanelStates getDefaultPanelStates() {
     AllPanelStates states;
 
-    // Left Panel: Plugin, Sample, Preset browsers
+    // Left Panel: Plugin and Media Explorer browsers
     states.leftPanel.location = PanelLocation::Left;
-    states.leftPanel.tabs = {PanelContentType::PluginBrowser, PanelContentType::MediaExplorer,
-                             PanelContentType::PresetBrowser};
+    states.leftPanel.tabs = {PanelContentType::PluginBrowser, PanelContentType::MediaExplorer};
     states.leftPanel.activeTabIndex = 0;
     states.leftPanel.collapsed = false;
 

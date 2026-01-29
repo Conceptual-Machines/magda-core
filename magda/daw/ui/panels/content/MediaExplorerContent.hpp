@@ -4,6 +4,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 
+#include "../../components/common/SvgButton.hpp"
 #include "PanelContent.hpp"
 
 namespace magda::daw::ui {
@@ -49,14 +50,12 @@ class MediaExplorerContent : public PanelContent,
 
   private:
     // Top Bar Components
-    juce::ComboBox sourceSelector_;        // Left: Source dropdown (User, Library, etc.)
-    juce::TextEditor searchBox_;           // Center-left: Search
-    juce::TextButton audioFilterButton_;   // Center: Audio type filter
-    juce::TextButton midiFilterButton_;    // Center: MIDI type filter
-    juce::TextButton presetFilterButton_;  // Center: Preset type filter
-    juce::TextButton listViewButton_;      // Center-right: List view toggle
-    juce::TextButton gridViewButton_;      // Center-right: Grid view toggle
-    juce::ComboBox viewModeSelector_;      // Right: View mode dropdown
+    juce::ComboBox sourceSelector_;  // Left: Source dropdown (User, Library, etc.)
+    juce::TextEditor searchBox_;     // Center-left: Search
+    std::unique_ptr<magda::SvgButton> audioFilterButton_;   // Center: Audio type filter
+    std::unique_ptr<magda::SvgButton> midiFilterButton_;    // Center: MIDI type filter
+    std::unique_ptr<magda::SvgButton> presetFilterButton_;  // Center: Preset type filter
+    juce::ComboBox viewModeSelector_;                       // Right: View mode dropdown
 
     // Navigation buttons (may be moved to sidebar later)
     juce::TextButton homeButton_;
@@ -65,8 +64,8 @@ class MediaExplorerContent : public PanelContent,
     juce::TextButton browseButton_;
 
     // Preview controls
-    juce::TextButton playButton_;
-    juce::TextButton stopButton_;
+    std::unique_ptr<magda::SvgButton> playButton_;
+    std::unique_ptr<magda::SvgButton> stopButton_;
     juce::ToggleButton syncToTempoButton_;
     juce::Slider volumeSlider_;
 

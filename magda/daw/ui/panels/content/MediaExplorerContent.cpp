@@ -1,8 +1,10 @@
 #include "MediaExplorerContent.hpp"
 
+#include "../../components/common/SvgButton.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "AudioThumbnailManager.hpp"
+#include "BinaryData.h"
 
 namespace magda::daw::ui {
 
@@ -98,29 +100,42 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
 class MediaExplorerContent::SidebarComponent : public juce::Component {
   public:
     SidebarComponent() {
-        // Places section label
-        placesLabel_.setText("Places", juce::dontSendNotification);
-        placesLabel_.setFont(FontManager::getInstance().getUIFontBold(12.0f));
-        placesLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-        addAndMakeVisible(placesLabel_);
+        // Setup icon buttons
+        projectButton_ = std::make_unique<magda::SvgButton>("Project", BinaryData::project_home_svg,
+                                                            BinaryData::project_home_svgSize);
+        projectButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        projectButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        projectButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        projectButton_->onClick = [this]() {
+            // Placeholder: Hide file browser, show empty state
+            if (onLocationSelected)
+                onLocationSelected(juce::File());  // Empty file = hide browser
+        };
+        addAndMakeVisible(*projectButton_);
 
-        // Setup place buttons
-        setupPlaceButton(projectButton_, "Project");
-        setupPlaceButton(diskButton_, "Disk");
-        setupPlaceButton(libraryButton_, "Library");
+        diskButton_ = std::make_unique<magda::SvgButton>("Disk", BinaryData::harddrive_svg,
+                                                         BinaryData::harddrive_svgSize);
+        diskButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        diskButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        diskButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        diskButton_->onClick = [this]() {
+            // Navigate to user home directory
+            if (onLocationSelected)
+                onLocationSelected(juce::File::getSpecialLocation(juce::File::userHomeDirectory));
+        };
+        addAndMakeVisible(*diskButton_);
 
-        // Folders section label
-        foldersLabel_.setText("Folders", juce::dontSendNotification);
-        foldersLabel_.setFont(FontManager::getInstance().getUIFontBold(12.0f));
-        foldersLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-        addAndMakeVisible(foldersLabel_);
-
-        // TreeView for folder navigation (to be implemented with backend)
-        folderTree_.setColour(juce::TreeView::backgroundColourId,
-                              DarkTheme::getColour(DarkTheme::BACKGROUND));
-        folderTree_.setColour(juce::TreeView::linesColourId, DarkTheme::getBorderColour());
-        folderTree_.setDefaultOpenness(true);
-        addAndMakeVisible(folderTree_);
+        libraryButton_ = std::make_unique<magda::SvgButton>("Library", BinaryData::library_svg,
+                                                            BinaryData::library_svgSize);
+        libraryButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        libraryButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        libraryButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        libraryButton_->onClick = [this]() {
+            // Placeholder: Hide file browser, show empty state
+            if (onLocationSelected)
+                onLocationSelected(juce::File());  // Empty file = hide browser
+        };
+        addAndMakeVisible(*libraryButton_);
     }
 
     void paint(juce::Graphics& g) override {
@@ -133,68 +148,32 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
     }
 
     void resized() override {
-        auto bounds = getLocalBounds().reduced(8);
+        auto bounds = getLocalBounds();
 
-        // Places section
-        placesLabel_.setBounds(bounds.removeFromTop(20));
-        bounds.removeFromTop(4);
+        // Smaller icon buttons stacked vertically with padding
+        const int iconSize = 24;
+        const int padding = 6;
 
-        // Place buttons
-        projectButton_.setBounds(bounds.removeFromTop(24));
-        bounds.removeFromTop(2);
-        diskButton_.setBounds(bounds.removeFromTop(24));
-        bounds.removeFromTop(2);
-        libraryButton_.setBounds(bounds.removeFromTop(24));
+        bounds.removeFromTop(padding);
 
-        bounds.removeFromTop(12);
+        // Center icons horizontally
+        auto centerX = (getWidth() - iconSize) / 2;
 
-        // Folders section
-        foldersLabel_.setBounds(bounds.removeFromTop(20));
-        bounds.removeFromTop(4);
+        projectButton_->setBounds(centerX, bounds.getY(), iconSize, iconSize);
+        bounds.removeFromTop(iconSize + padding);
 
-        // Folder tree takes remaining space
-        folderTree_.setBounds(bounds);
+        diskButton_->setBounds(centerX, bounds.getY(), iconSize, iconSize);
+        bounds.removeFromTop(iconSize + padding);
+
+        libraryButton_->setBounds(centerX, bounds.getY(), iconSize, iconSize);
     }
 
     std::function<void(const juce::File&)> onLocationSelected;
 
   private:
-    void setupPlaceButton(juce::TextButton& button, const juce::String& name) {
-        button.setButtonText(name);
-        button.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-        button.setColour(juce::TextButton::buttonOnColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
-        button.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-        button.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
-        button.setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight);
-
-        // Set click handlers (backend logic to be implemented)
-        if (name == "Project") {
-            // Will navigate to current project media folder
-        } else if (name == "Disk") {
-            button.onClick = [this]() {
-                if (onLocationSelected)
-                    onLocationSelected(
-                        juce::File::getSpecialLocation(juce::File::userHomeDirectory));
-            };
-        } else if (name == "Library") {
-            button.onClick = [this]() {
-                if (onLocationSelected)
-                    onLocationSelected(
-                        juce::File::getSpecialLocation(juce::File::userMusicDirectory));
-            };
-        }
-
-        addAndMakeVisible(button);
-    }
-
-    juce::Label placesLabel_;
-    juce::TextButton projectButton_;
-    juce::TextButton diskButton_;
-    juce::TextButton libraryButton_;
-
-    juce::Label foldersLabel_;
-    juce::TreeView folderTree_;
+    std::unique_ptr<magda::SvgButton> projectButton_;
+    std::unique_ptr<magda::SvgButton> diskButton_;
+    std::unique_ptr<magda::SvgButton> libraryButton_;
 };
 
 //==============================================================================
@@ -205,18 +184,8 @@ MediaExplorerContent::MediaExplorerContent()
     : directoryThread_("Sample Browser"), audioReadThread_("Audio Preview Reader") {
     setName("Media Explorer");
 
-    // Setup source selector dropdown
-    sourceSelector_.addItem("User Library", 1);
-    sourceSelector_.addItem("System Library", 2);
-    sourceSelector_.addItem("Recent", 3);
-    sourceSelector_.addItem("Favorites", 4);
-    sourceSelector_.setSelectedId(1, juce::dontSendNotification);
-    sourceSelector_.setColour(juce::ComboBox::backgroundColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
-    sourceSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    sourceSelector_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getBorderColour());
-    sourceSelector_.setColour(juce::ComboBox::arrowColourId, DarkTheme::getTextColour());
-    addAndMakeVisible(sourceSelector_);
+    // Source selector removed - not needed for now
+    // Can be added back later if needed
 
     // Setup search box
     searchBox_.setTextToShowWhenEmpty("Search media...", DarkTheme::getSecondaryTextColour());
@@ -226,86 +195,48 @@ MediaExplorerContent::MediaExplorerContent()
     searchBox_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
     addAndMakeVisible(searchBox_);
 
-    // Setup type filter buttons
-    audioFilterButton_.setButtonText("Audio");
-    audioFilterButton_.setClickingTogglesState(true);
-    audioFilterButton_.setToggleState(true, juce::dontSendNotification);
-    audioFilterButton_.setColour(juce::TextButton::buttonColourId,
-                                 DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    audioFilterButton_.setColour(juce::TextButton::buttonOnColourId,
-                                 DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    audioFilterButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-    audioFilterButton_.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    audioFilterButton_.onClick = [this]() {
-        audioFilterActive_ = audioFilterButton_.getToggleState();
+    // Setup type filter buttons with icons
+    audioFilterButton_ = std::make_unique<magda::SvgButton>("Audio", BinaryData::sample_svg,
+                                                            BinaryData::sample_svgSize);
+    audioFilterButton_->setToggleable(true);
+    audioFilterButton_->setToggleState(true, juce::dontSendNotification);
+    audioFilterButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    audioFilterButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    audioFilterButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    audioFilterButton_->onClick = [this]() {
+        audioFilterActive_ = audioFilterButton_->getToggleState();
         updateMediaFilter();
     };
-    addAndMakeVisible(audioFilterButton_);
+    addAndMakeVisible(*audioFilterButton_);
 
-    midiFilterButton_.setButtonText("MIDI");
-    midiFilterButton_.setClickingTogglesState(true);
-    midiFilterButton_.setToggleState(false, juce::dontSendNotification);
-    midiFilterButton_.setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    midiFilterButton_.setColour(juce::TextButton::buttonOnColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    midiFilterButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-    midiFilterButton_.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    midiFilterButton_.onClick = [this]() {
-        midiFilterActive_ = midiFilterButton_.getToggleState();
+    midiFilterButton_ =
+        std::make_unique<magda::SvgButton>("MIDI", BinaryData::midi_svg, BinaryData::midi_svgSize);
+    midiFilterButton_->setToggleable(true);
+    midiFilterButton_->setToggleState(false, juce::dontSendNotification);
+    midiFilterButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    midiFilterButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    midiFilterButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    midiFilterButton_->onClick = [this]() {
+        midiFilterActive_ = midiFilterButton_->getToggleState();
         updateMediaFilter();
     };
-    addAndMakeVisible(midiFilterButton_);
+    addAndMakeVisible(*midiFilterButton_);
 
-    presetFilterButton_.setButtonText("Presets");
-    presetFilterButton_.setClickingTogglesState(true);
-    presetFilterButton_.setToggleState(false, juce::dontSendNotification);
-    presetFilterButton_.setColour(juce::TextButton::buttonColourId,
-                                  DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    presetFilterButton_.setColour(juce::TextButton::buttonOnColourId,
-                                  DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    presetFilterButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-    presetFilterButton_.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    presetFilterButton_.onClick = [this]() {
-        presetFilterActive_ = presetFilterButton_.getToggleState();
+    presetFilterButton_ = std::make_unique<magda::SvgButton>("Presets", BinaryData::preset_svg,
+                                                             BinaryData::preset_svgSize);
+    presetFilterButton_->setToggleable(true);
+    presetFilterButton_->setToggleState(false, juce::dontSendNotification);
+    presetFilterButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    presetFilterButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    presetFilterButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    presetFilterButton_->onClick = [this]() {
+        presetFilterActive_ = presetFilterButton_->getToggleState();
         updateMediaFilter();
     };
-    addAndMakeVisible(presetFilterButton_);
+    addAndMakeVisible(*presetFilterButton_);
 
-    // Setup view toggle buttons
-    listViewButton_.setButtonText("List");
-    listViewButton_.setClickingTogglesState(true);
-    listViewButton_.setToggleState(true, juce::dontSendNotification);
-    listViewButton_.setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    listViewButton_.setColour(juce::TextButton::buttonOnColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    listViewButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-    listViewButton_.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    addAndMakeVisible(listViewButton_);
-
-    gridViewButton_.setButtonText("Grid");
-    gridViewButton_.setClickingTogglesState(true);
-    gridViewButton_.setToggleState(false, juce::dontSendNotification);
-    gridViewButton_.setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    gridViewButton_.setColour(juce::TextButton::buttonOnColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    gridViewButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-    gridViewButton_.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    addAndMakeVisible(gridViewButton_);
-
-    // Setup view mode selector dropdown
-    viewModeSelector_.addItem("Details", 1);
-    viewModeSelector_.addItem("Compact", 2);
-    viewModeSelector_.addItem("Icons", 3);
-    viewModeSelector_.setSelectedId(1, juce::dontSendNotification);
-    viewModeSelector_.setColour(juce::ComboBox::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
-    viewModeSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    viewModeSelector_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getBorderColour());
-    viewModeSelector_.setColour(juce::ComboBox::arrowColourId, DarkTheme::getTextColour());
-    addAndMakeVisible(viewModeSelector_);
+    // View toggle buttons removed - not needed for now
+    // View mode selector dropdown removed - not needed for now
 
     // Setup navigation buttons
     homeButton_.setButtonText("Home");
@@ -354,22 +285,20 @@ MediaExplorerContent::MediaExplorerContent()
     };
     addAndMakeVisible(browseButton_);
 
-    // Setup preview controls
-    playButton_.setButtonText("Play");
-    playButton_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    playButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-    playButton_.onClick = [this]() { playPreview(); };
-    playButton_.setEnabled(false);
-    addAndMakeVisible(playButton_);
+    // Setup preview controls with icon buttons
+    playButton_ = std::make_unique<magda::SvgButton>(
+        "Play", BinaryData::play_off_svg, BinaryData::play_off_svgSize, BinaryData::play_on_svg,
+        BinaryData::play_on_svgSize);
+    playButton_->onClick = [this]() { playPreview(); };
+    playButton_->setEnabled(false);
+    addAndMakeVisible(*playButton_);
 
-    stopButton_.setButtonText("Stop");
-    stopButton_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    stopButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-    stopButton_.onClick = [this]() { stopPreview(); };
-    stopButton_.setEnabled(false);
-    addAndMakeVisible(stopButton_);
+    stopButton_ = std::make_unique<magda::SvgButton>(
+        "Stop", BinaryData::stop_off_svg, BinaryData::stop_off_svgSize, BinaryData::stop_on_svg,
+        BinaryData::stop_on_svgSize);
+    stopButton_->onClick = [this]() { stopPreview(); };
+    stopButton_->setEnabled(false);
+    addAndMakeVisible(*stopButton_);
 
     // Volume slider
     volumeSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -402,21 +331,21 @@ MediaExplorerContent::MediaExplorerContent()
     };
     addAndMakeVisible(syncToTempoButton_);
 
-    // Metadata labels
+    // Metadata labels (compact sizing)
     fileInfoLabel_.setText("No file selected", juce::dontSendNotification);
-    fileInfoLabel_.setFont(FontManager::getInstance().getUIFontBold(11.0f));
+    fileInfoLabel_.setFont(FontManager::getInstance().getUIFontBold(10.0f));
     fileInfoLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     fileInfoLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(fileInfoLabel_);
 
     formatLabel_.setText("", juce::dontSendNotification);
-    formatLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
+    formatLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     formatLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     formatLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(formatLabel_);
 
     propertiesLabel_.setText("", juce::dontSendNotification);
-    propertiesLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
+    propertiesLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     propertiesLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     propertiesLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(propertiesLabel_);
@@ -456,6 +385,30 @@ MediaExplorerContent::MediaExplorerContent()
     // Listen to mouse events on file browser (Component IS-A MouseListener)
     fileBrowser_->addMouseListener(this, true);
     addAndMakeVisible(*fileBrowser_);
+
+    // Fix the file browser component sizes
+    // After adding to parent, adjust child component heights
+    juce::MessageManager::callAsync([this]() {
+        if (fileBrowser_ != nullptr) {
+            // Hide the filename text box - we already show selection info at the bottom
+            for (int i = 0; i < fileBrowser_->getNumChildComponents(); ++i) {
+                auto* child = fileBrowser_->getChildComponent(i);
+
+                // First child is the path ComboBox - keep it compact
+                if (i == 0) {
+                    if (auto* pathBox = dynamic_cast<juce::ComboBox*>(child)) {
+                        pathBox->setBounds(pathBox->getBounds().withHeight(28));
+                    }
+                }
+
+                // Look for the filename editor at the bottom and hide it
+                if (auto* editor = dynamic_cast<juce::TextEditor*>(child)) {
+                    editor->setVisible(false);
+                }
+            }
+            resized();  // Trigger layout update
+        }
+    });
 
     // Setup sidebar navigation
     sidebarComponent_ = std::make_unique<SidebarComponent>();
@@ -519,7 +472,7 @@ void MediaExplorerContent::loadFileForPreview(const juce::File& file) {
         // For large files, there might be a brief load time, but no crashes
         transportSource_->setSource(readerSource_.get(), 0, nullptr, 0, 2);
 
-        playButton_.setEnabled(true);
+        playButton_->setEnabled(true);
         updateFileInfo(file);
 
         // Update thumbnail
@@ -527,7 +480,7 @@ void MediaExplorerContent::loadFileForPreview(const juce::File& file) {
             thumbnailComponent_->setFile(file);
         }
     } else {
-        playButton_.setEnabled(false);
+        playButton_->setEnabled(false);
         fileInfoLabel_.setText("Could not load: " + file.getFileName(), juce::dontSendNotification);
 
         // Clear thumbnail
@@ -542,8 +495,8 @@ void MediaExplorerContent::playPreview() {
         transportSource_->setPosition(0.0);
         transportSource_->start();
         isPlaying_ = true;
-        playButton_.setEnabled(false);
-        stopButton_.setEnabled(true);
+        playButton_->setEnabled(false);
+        stopButton_->setEnabled(true);
     }
 }
 
@@ -551,8 +504,8 @@ void MediaExplorerContent::stopPreview() {
     if (transportSource_ && isPlaying_) {
         transportSource_->stop();
         isPlaying_ = false;
-        playButton_.setEnabled(currentPreviewFile_.existsAsFile());
-        stopButton_.setEnabled(false);
+        playButton_->setEnabled(currentPreviewFile_.existsAsFile());
+        stopButton_->setEnabled(false);
     }
 }
 
@@ -597,9 +550,14 @@ void MediaExplorerContent::updateFileInfo(const juce::File& file) {
 }
 
 void MediaExplorerContent::navigateToDirectory(const juce::File& directory) {
-    if (directory.isDirectory()) {
+    if (directory == juce::File()) {
+        // Empty file = hide browser (placeholder state)
+        fileBrowser_->setVisible(false);
+    } else if (directory.isDirectory()) {
+        fileBrowser_->setVisible(true);
         fileBrowser_->setRoot(directory);
     }
+    resized();  // Ensure layout updates after visibility change
 }
 
 juce::String MediaExplorerContent::formatFileSize(int64_t bytes) {
@@ -703,33 +661,27 @@ void MediaExplorerContent::resized() {
     // Top bar with all controls
     auto topBar = bounds.removeFromTop(32);
 
-    // Left: Source selector
-    sourceSelector_.setBounds(topBar.removeFromLeft(120));
-    topBar.removeFromLeft(8);
-
-    // Center-left: Search box (flexible width, but leave room for right side)
-    const int rightSideWidth =
-        60 + 4 + 60 + 4 + 60 + 8 + 50 + 4 + 50 + 8 + 100;  // filters + views + mode
-    auto searchWidth = juce::jmax(150, topBar.getWidth() - rightSideWidth);
+    // Left: Search box (flexible width, but leave room for right side)
+    const int iconButtonSize = 24;  // Smaller square icon buttons
+    const int buttonSpacing = 6;
+    const int rightSideWidth = iconButtonSize * 3 + buttonSpacing * 2;  // 3 icons + spacing
+    auto searchWidth = juce::jmax(200, topBar.getWidth() - rightSideWidth - 8);
     searchBox_.setBounds(topBar.removeFromLeft(searchWidth));
     topBar.removeFromLeft(8);
 
-    // Center: Type filter buttons
-    audioFilterButton_.setBounds(topBar.removeFromLeft(60));
-    topBar.removeFromLeft(4);
-    midiFilterButton_.setBounds(topBar.removeFromLeft(60));
-    topBar.removeFromLeft(4);
-    presetFilterButton_.setBounds(topBar.removeFromLeft(60));
-    topBar.removeFromLeft(8);
-
-    // Center-right: View toggle buttons
-    listViewButton_.setBounds(topBar.removeFromLeft(50));
-    topBar.removeFromLeft(4);
-    gridViewButton_.setBounds(topBar.removeFromLeft(50));
-    topBar.removeFromLeft(8);
-
-    // Right: View mode selector
-    viewModeSelector_.setBounds(topBar.removeFromLeft(100));
+    // Right: Type filter icon buttons (square, vertically centered)
+    const int iconVerticalOffset = (topBar.getHeight() - iconButtonSize) / 2;
+    audioFilterButton_->setBounds(topBar.removeFromLeft(iconButtonSize)
+                                      .withTrimmedTop(iconVerticalOffset)
+                                      .withHeight(iconButtonSize));
+    topBar.removeFromLeft(buttonSpacing);
+    midiFilterButton_->setBounds(topBar.removeFromLeft(iconButtonSize)
+                                     .withTrimmedTop(iconVerticalOffset)
+                                     .withHeight(iconButtonSize));
+    topBar.removeFromLeft(buttonSpacing);
+    presetFilterButton_->setBounds(topBar.removeFromLeft(iconButtonSize)
+                                       .withTrimmedTop(iconVerticalOffset)
+                                       .withHeight(iconButtonSize));
 
     bounds.removeFromTop(8);
 
@@ -740,40 +692,39 @@ void MediaExplorerContent::resized() {
     desktopButton_.setVisible(false);
     browseButton_.setVisible(false);
 
-    // Reserve space for enhanced preview/inspector area at bottom (fixed size)
-    const int previewAreaHeight = 160;  // filename(18) + format(14) + properties(14) + spacing +
-                                        // thumbnail(60) + spacing + controls(32)
+    // Reserve space for preview/inspector area at bottom (compact size)
+    const int previewAreaHeight = 120;  // Reduced from 160px for more browser space
     auto previewArea = bounds.removeFromBottom(previewAreaHeight);
 
     // Main content area: sidebar + file browser
-    // Left: Sidebar with fixed width
-    const int sidebarWidth = 180;
+    // Left: Narrow sidebar with small icon buttons (fixed width)
+    const int sidebarWidth = 40;
     sidebarComponent_->setBounds(bounds.removeFromLeft(sidebarWidth));
     bounds.removeFromLeft(8);  // Spacing between sidebar and browser
 
     // Right: File browser takes all remaining space
     fileBrowser_->setBounds(bounds);
 
-    // Now layout enhanced preview/inspector area
-    previewArea.removeFromTop(8);
+    // Now layout compact preview/inspector area
+    previewArea.removeFromTop(4);
 
-    // Metadata section
-    fileInfoLabel_.setBounds(previewArea.removeFromTop(18));
-    previewArea.removeFromTop(2);
-    formatLabel_.setBounds(previewArea.removeFromTop(14));
-    previewArea.removeFromTop(2);
-    propertiesLabel_.setBounds(previewArea.removeFromTop(14));
-    previewArea.removeFromTop(6);
+    // Metadata section (smaller)
+    fileInfoLabel_.setBounds(previewArea.removeFromTop(14));
+    previewArea.removeFromTop(1);
+    formatLabel_.setBounds(previewArea.removeFromTop(12));
+    previewArea.removeFromTop(1);
+    propertiesLabel_.setBounds(previewArea.removeFromTop(12));
+    previewArea.removeFromTop(4);
 
-    // Waveform thumbnail
-    thumbnailComponent_->setBounds(previewArea.removeFromTop(60));
-    previewArea.removeFromTop(8);
+    // Waveform thumbnail (smaller)
+    thumbnailComponent_->setBounds(previewArea.removeFromTop(40));
+    previewArea.removeFromTop(4);
 
     // Preview controls row
-    auto previewRow = previewArea.removeFromTop(32);
-    playButton_.setBounds(previewRow.removeFromLeft(60));
+    auto previewRow = previewArea.removeFromTop(28);
+    playButton_->setBounds(previewRow.removeFromLeft(28));
     previewRow.removeFromLeft(4);
-    stopButton_.setBounds(previewRow.removeFromLeft(60));
+    stopButton_->setBounds(previewRow.removeFromLeft(28));
     previewRow.removeFromLeft(8);
     syncToTempoButton_.setBounds(previewRow.removeFromLeft(60));
     previewRow.removeFromLeft(12);
@@ -799,7 +750,7 @@ void MediaExplorerContent::selectionChanged() {
         stopPreview();
         transportSource_->setSource(nullptr);
         readerSource_.reset();
-        playButton_.setEnabled(false);
+        playButton_->setEnabled(false);
         fileInfoLabel_.setText("No file selected", juce::dontSendNotification);
         formatLabel_.setText("", juce::dontSendNotification);
         propertiesLabel_.setText("", juce::dontSendNotification);
@@ -816,7 +767,7 @@ void MediaExplorerContent::selectionChanged() {
     } else if (isMidiFile(selectedFile)) {
         // MIDI files: show info, preview placeholder
         stopPreview();
-        playButton_.setEnabled(false);
+        playButton_->setEnabled(false);
 
         fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
         formatLabel_.setText("MIDI File", juce::dontSendNotification);
@@ -830,7 +781,7 @@ void MediaExplorerContent::selectionChanged() {
     } else if (isMagdaClip(selectedFile)) {
         // Magda clips: show info, preview placeholder
         stopPreview();
-        playButton_.setEnabled(false);
+        playButton_->setEnabled(false);
 
         fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
         formatLabel_.setText("Magda Clip", juce::dontSendNotification);
@@ -844,7 +795,7 @@ void MediaExplorerContent::selectionChanged() {
     } else if (isPresetFile(selectedFile)) {
         // Presets: show info, no preview
         stopPreview();
-        playButton_.setEnabled(false);
+        playButton_->setEnabled(false);
 
         fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
         formatLabel_.setText("Preset", juce::dontSendNotification);
@@ -857,7 +808,7 @@ void MediaExplorerContent::selectionChanged() {
     } else {
         // Unknown file type
         stopPreview();
-        playButton_.setEnabled(false);
+        playButton_->setEnabled(false);
 
         fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
         formatLabel_.setText("Unknown format", juce::dontSendNotification);
