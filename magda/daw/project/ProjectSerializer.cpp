@@ -28,7 +28,8 @@ bool ProjectSerializer::saveToFile(const juce::File& file, const ProjectInfo& in
         }
 
         juce::GZIPCompressorOutputStream gzipStream(outputStream, 9);  // Max compression
-        gzipStream.writeString(jsonString);
+        // Write plain UTF-8 JSON text (no JUCE binary length prefix)
+        gzipStream.writeText(jsonString, false, false, nullptr);
         gzipStream.flush();
 
         return true;
