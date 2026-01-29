@@ -490,7 +490,8 @@ void MediaExplorerContent::setAudioEngine(magda::AudioEngine* engine) {
     // Add callback to new device manager if it exists
     if (audioEngine_ != nullptr) {
         if (auto* deviceManager = audioEngine_->getDeviceManager()) {
-            audioSourcePlayer_.setSource(transportSource_.get());
+            // Note: Source is already set in setupAudioPreview() during construction
+            // Just register the audio callback with the shared device manager
             deviceManager->addAudioCallback(&audioSourcePlayer_);
         }
     }
