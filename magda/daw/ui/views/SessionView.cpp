@@ -211,9 +211,13 @@ class SessionView::StopButtonContainer : public juce::Component {
     void paint(juce::Graphics& g) override {
         g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
 
+        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+
+        // Top border
+        g.fillRect(0, 0, getWidth(), 1);
+
         // Draw vertical separators between tracks
         int trackColumnWidth = clipWidth_ + separatorWidth_;
-        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
         for (int i = 0; i < numTracks_; ++i) {
             int x = i * trackColumnWidth + clipWidth_ - scrollOffset_;
             g.fillRect(x, 0, separatorWidth_, getHeight());
@@ -629,6 +633,18 @@ void SessionView::rebuildTracks() {
 
 void SessionView::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+
+    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+
+    // Vertical separator on left edge of master strip
+    if (masterStrip->isVisible()) {
+        auto masterBounds = masterStrip->getBounds();
+        g.fillRect(masterBounds.getX(), masterBounds.getY(), 1, masterBounds.getHeight());
+    }
+
+    // Horizontal separator on top of Stop All button
+    auto stopAllBounds = stopAllButton->getBounds();
+    g.fillRect(stopAllBounds.getX(), stopAllBounds.getY() - 2, stopAllBounds.getWidth(), 1);
 }
 
 void SessionView::resized() {
