@@ -120,8 +120,11 @@ class SessionView : public juce::Component,
     // Drag & drop state
     int dragHoverTrackIndex_ = -1;
     int dragHoverSceneIndex_ = -1;
+    std::unique_ptr<juce::Label> dragGhostLabel_;
     void updateDragHighlight(int x, int y);
     void clearDragHighlight();
+    void updateDragGhost(const juce::StringArray& files, int trackIndex, int sceneIndex);
+    void clearDragGhost();
     bool isAudioFile(const juce::String& filename) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SessionView)

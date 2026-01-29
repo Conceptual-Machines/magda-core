@@ -90,6 +90,18 @@ SessionView::SessionView() {
     masterStrip->setShowVuMeter(false);
     addAndMakeVisible(*masterStrip);
 
+    // Create drag ghost label for file drag preview (added to grid content)
+    dragGhostLabel_ = std::make_unique<juce::Label>();
+    dragGhostLabel_->setFont(juce::Font(11.0f, juce::Font::bold));
+    dragGhostLabel_->setJustificationType(juce::Justification::centred);
+    dragGhostLabel_->setColour(juce::Label::backgroundColourId,
+                               DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
+    dragGhostLabel_->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    dragGhostLabel_->setColour(juce::Label::outlineColourId,
+                               DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    dragGhostLabel_->setVisible(false);
+    gridContent->addAndMakeVisible(*dragGhostLabel_);
+
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
 
@@ -592,20 +604,39 @@ bool SessionView::isInterestedInFileDrag(const juce::StringArray& files) {
     return false;
 }
 
-void SessionView::fileDragEnter(const juce::StringArray& /*files*/, int x, int y) {
+void SessionView::fileDragEnter(const juce::StringArray& files, int x, int y) {
     updateDragHighlight(x, y);
+
+    // Show ghost preview if hovering over valid slot
+    if (dragHoverTrackIndex_ >= 0 && dragHoverSceneIndex_ >= 0) {
+        updateDragGhost(files, dragHoverTrackIndex_, dragHoverSceneIndex_);
+    }
 }
 
-void SessionView::fileDragMove(const juce::StringArray& /*files*/, int x, int y) {
+void SessionView::fileDragMove(const juce::StringArray& files, int x, int y) {
+    int oldTrackIndex = dragHoverTrackIndex_;
+    int oldSceneIndex = dragHoverSceneIndex_;
+
     updateDragHighlight(x, y);
+
+    // Update ghost if slot changed
+    if (dragHoverTrackIndex_ != oldTrackIndex || dragHoverSceneIndex_ != oldSceneIndex) {
+        if (dragHoverTrackIndex_ >= 0 && dragHoverSceneIndex_ >= 0) {
+            updateDragGhost(files, dragHoverTrackIndex_, dragHoverSceneIndex_);
+        } else {
+            clearDragGhost();
+        }
+    }
 }
 
 void SessionView::fileDragExit(const juce::StringArray& /*files*/) {
     clearDragHighlight();
+    clearDragGhost();
 }
 
 void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
     clearDragHighlight();
+    clearDragGhost();
 
     // Convert screen coordinates to grid viewport coordinates
     auto gridBounds = gridViewport->getBounds();
@@ -707,6 +738,61 @@ void SessionView::clearDragHighlight() {
         updateClipSlotAppearance(dragHoverTrackIndex_, dragHoverSceneIndex_);
         dragHoverTrackIndex_ = -1;
         dragHoverSceneIndex_ = -1;
+    }
+}
+
+void SessionView::updateDragGhost(const juce::StringArray& files, int trackIndex, int sceneIndex) {
+    if (files.isEmpty() || trackIndex < 0 || sceneIndex < 0) {
+        clearDragGhost();
+        return;
+    }
+
+    // Get first audio file from the list
+    juce::String firstAudioFile;
+    for (const auto& file : files) {
+        if (isAudioFile(file)) {
+            firstAudioFile = file;
+            break;
+        }
+    }
+
+    if (firstAudioFile.isEmpty()) {
+        clearDragGhost();
+        return;
+    }
+
+    // Extract filename without extension
+    juce::File audioFile(firstAudioFile);
+    juce::String filename = audioFile.getFileNameWithoutExtension();
+
+    // Add count indicator if multiple files
+    int audioFileCount = 0;
+    for (const auto& file : files) {
+        if (isAudioFile(file))
+            audioFileCount++;
+    }
+
+    if (audioFileCount > 1) {
+        filename += juce::String(" (+") + juce::String(audioFileCount - 1) + ")";
+    }
+
+    // Position ghost at the target slot (in grid coordinates)
+    int trackColumnWidth = CLIP_SLOT_SIZE + TRACK_SEPARATOR_WIDTH;
+    int sceneRowHeight = CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN;
+
+    int ghostX = trackIndex * trackColumnWidth;
+    int ghostY = sceneIndex * sceneRowHeight;
+
+    // Update ghost label
+    dragGhostLabel_->setText(filename, juce::dontSendNotification);
+    dragGhostLabel_->setBounds(ghostX, ghostY, CLIP_SLOT_SIZE, CLIP_SLOT_SIZE);
+    dragGhostLabel_->setVisible(true);
+    dragGhostLabel_->toFront(false);
+}
+
+void SessionView::clearDragGhost() {
+    if (dragGhostLabel_) {
+        dragGhostLabel_->setVisible(false);
     }
 }
 
