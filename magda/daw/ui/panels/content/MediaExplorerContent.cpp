@@ -103,10 +103,12 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         // Setup icon buttons
         projectButton_ = std::make_unique<magda::SvgButton>("Project", BinaryData::project_home_svg,
                                                             BinaryData::project_home_svgSize);
+        projectButton_->setToggleable(true);
         projectButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         projectButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         projectButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         projectButton_->onClick = [this]() {
+            selectButton(projectButton_.get());
             // Placeholder: Hide file browser, show empty state
             if (onLocationSelected)
                 onLocationSelected(juce::File());  // Empty file = hide browser
@@ -115,10 +117,12 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
 
         diskButton_ = std::make_unique<magda::SvgButton>("Disk", BinaryData::harddrive_svg,
                                                          BinaryData::harddrive_svgSize);
+        diskButton_->setToggleable(true);
         diskButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         diskButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         diskButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         diskButton_->onClick = [this]() {
+            selectButton(diskButton_.get());
             // Navigate to user home directory
             if (onLocationSelected)
                 onLocationSelected(juce::File::getSpecialLocation(juce::File::userHomeDirectory));
@@ -127,15 +131,20 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
 
         libraryButton_ = std::make_unique<magda::SvgButton>("Library", BinaryData::library_svg,
                                                             BinaryData::library_svgSize);
+        libraryButton_->setToggleable(true);
         libraryButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         libraryButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         libraryButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         libraryButton_->onClick = [this]() {
+            selectButton(libraryButton_.get());
             // Placeholder: Hide file browser, show empty state
             if (onLocationSelected)
                 onLocationSelected(juce::File());  // Empty file = hide browser
         };
         addAndMakeVisible(*libraryButton_);
+
+        // Set Disk as initially selected
+        diskButton_->setToggleState(true, juce::dontSendNotification);
     }
 
     void paint(juce::Graphics& g) override {
@@ -171,6 +180,18 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
     std::function<void(const juce::File&)> onLocationSelected;
 
   private:
+    void selectButton(magda::SvgButton* selected) {
+        // Radio button behavior - only one selected at a time
+        if (projectButton_.get() != selected)
+            projectButton_->setToggleState(false, juce::dontSendNotification);
+        if (diskButton_.get() != selected)
+            diskButton_->setToggleState(false, juce::dontSendNotification);
+        if (libraryButton_.get() != selected)
+            libraryButton_->setToggleState(false, juce::dontSendNotification);
+
+        selected->setToggleState(true, juce::dontSendNotification);
+    }
+
     std::unique_ptr<magda::SvgButton> projectButton_;
     std::unique_ptr<magda::SvgButton> diskButton_;
     std::unique_ptr<magda::SvgButton> libraryButton_;
