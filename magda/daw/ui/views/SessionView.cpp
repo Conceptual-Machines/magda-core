@@ -633,6 +633,12 @@ void SessionView::rebuildTracks() {
 
 void SessionView::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+
+    // Fill the scene column area at fader row height with the same panel background
+    auto faderBounds = faderContainer->getBounds();
+    g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillRect(faderBounds.getRight(), faderBounds.getY(), getWidth() - faderBounds.getRight(),
+               faderBounds.getHeight());
 }
 
 void SessionView::paintOverChildren(juce::Graphics& g) {
