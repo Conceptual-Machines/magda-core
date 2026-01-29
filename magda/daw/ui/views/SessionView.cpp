@@ -678,15 +678,12 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
         ClipId newClipId =
             clipManager.createAudioClip(targetTrackId, 0.0, 4.0, filePath, ClipView::Session);
         if (newClipId != INVALID_CLIP_ID) {
-            auto* clip = clipManager.getClip(newClipId);
-            if (clip) {
-                // Use file name (without extension) as clip name
-                juce::File audioFile(filePath);
-                clip->name = audioFile.getFileNameWithoutExtension();
+            // Set clip name
+            juce::File audioFile(filePath);
+            clipManager.setClipName(newClipId, audioFile.getFileNameWithoutExtension());
 
-                // Assign to session view slot
-                clip->sceneIndex = currentSceneIndex;
-            }
+            // Assign to session view slot (triggers proper notification)
+            clipManager.setClipSceneIndex(newClipId, currentSceneIndex);
         }
 
         currentSceneIndex++;  // Move to next scene for multi-file drop

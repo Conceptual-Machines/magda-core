@@ -876,8 +876,8 @@ void TrackContentPanel::rebuildClipComponents() {
     // Remove all existing clip components
     clipComponents_.clear();
 
-    // Get all clips
-    const auto& clips = ClipManager::getInstance().getClips();
+    // Get only arrangement clips (timeline-based)
+    const auto& clips = ClipManager::getInstance().getArrangementClips();
 
     // Create a component for each clip that belongs to a visible track
     for (const auto& clip : clips) {
@@ -1422,8 +1422,8 @@ void TrackContentPanel::captureClipsInTimeSelection() {
         return;
     }
 
-    // Get all clips and check if they overlap with the time selection
-    const auto& clips = ClipManager::getInstance().getClips();
+    // Get only arrangement clips and check if they overlap with the time selection
+    const auto& clips = ClipManager::getInstance().getArrangementClips();
 
     for (const auto& clip : clips) {
         // Check if clip's track is in the selection
@@ -1737,9 +1737,9 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
             }
         }
 
-        // If no selected clips at cursor, find ANY clip that contains the cursor
+        // If no selected clips at cursor, find ANY arrangement clip that contains the cursor
         if (clipsToSplit.empty()) {
-            const auto& allClips = ClipManager::getInstance().getClips();
+            const auto& allClips = ClipManager::getInstance().getArrangementClips();
             for (const auto& clip : allClips) {
                 if (clip.containsTime(splitTime)) {
                     clipsToSplit.push_back(clip.id);
