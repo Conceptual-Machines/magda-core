@@ -74,7 +74,7 @@ class SessionView : public juce::Component,
     static constexpr int CLIP_SLOT_HEIGHT = 40;
     static constexpr int CLIP_SLOT_MARGIN = 2;
     static constexpr int TRACK_SEPARATOR_WIDTH = 3;
-    static constexpr int FADER_ROW_HEIGHT = 60;
+    static constexpr int FADER_ROW_HEIGHT = 100;
 
     // Track headers (dynamic based on TrackManager) - TextButton for clickable groups
     std::vector<std::unique_ptr<juce::TextButton>> trackHeaders;
