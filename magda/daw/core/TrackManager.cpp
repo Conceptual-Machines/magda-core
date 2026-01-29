@@ -16,8 +16,8 @@ TrackManager& TrackManager::getInstance() {
 }
 
 TrackManager::TrackManager() {
-    // Create one bare track by default
-    createDefaultTracks(1);
+    // Start with empty project - no default tracks
+    // User can create tracks manually or load from project file
 }
 
 // ============================================================================
@@ -2449,7 +2449,56 @@ void TrackManager::createDefaultTracks(int count) {
 void TrackManager::clearAllTracks() {
     tracks_.clear();
     nextTrackId_ = 1;
+    nextDeviceId_ = 1;
+    nextRackId_ = 1;
+    nextChainId_ = 1;
     notifyTracksChanged();
+}
+
+void TrackManager::refreshIdCountersFromTracks() {
+    int maxTrackId = 0;
+    int maxDeviceId = 0;
+    int maxRackId = 0;
+    int maxChainId = 0;
+
+    // Helper lambda to scan a chain element (device or rack)
+    auto scanChainElement = [&](const ChainElement& element, auto& self) -> void {
+        if (std::holds_alternative<DeviceInfo>(element)) {
+            const auto& device = std::get<DeviceInfo>(element);
+            maxDeviceId = std::max(maxDeviceId, device.id);
+        } else if (std::holds_alternative<std::unique_ptr<RackInfo>>(element)) {
+            const auto& rackPtr = std::get<std::unique_ptr<RackInfo>>(element);
+            if (rackPtr) {
+                maxRackId = std::max(maxRackId, rackPtr->id);
+
+                // Scan all chains in the rack
+                for (const auto& chain : rackPtr->chains) {
+                    maxChainId = std::max(maxChainId, chain.id);
+
+                    // Recursively scan elements in this chain
+                    for (const auto& chainElement : chain.elements) {
+                        self(chainElement, self);
+                    }
+                }
+            }
+        }
+    };
+
+    // Scan all tracks
+    for (const auto& track : tracks_) {
+        maxTrackId = std::max(maxTrackId, track.id);
+
+        // Scan the track's chain elements
+        for (const auto& element : track.chainElements) {
+            scanChainElement(element, scanChainElement);
+        }
+    }
+
+    // Update counters to max + 1
+    nextTrackId_ = maxTrackId + 1;
+    nextDeviceId_ = maxDeviceId + 1;
+    nextRackId_ = maxRackId + 1;
+    nextChainId_ = maxChainId + 1;
 }
 
 // ============================================================================
