@@ -59,7 +59,8 @@ class ClipManager {
      * Call during app shutdown to prevent static cleanup issues
      */
     void shutdown() {
-        clips_.clear();  // Clear JUCE objects before JUCE cleanup
+        arrangementClips_.clear();  // Clear JUCE objects before JUCE cleanup
+        sessionClips_.clear();
     }
 
     // ========================================================================
@@ -235,9 +236,25 @@ class ClipManager {
     // Access
     // ========================================================================
 
-    const std::vector<ClipInfo>& getClips() const {
-        return clips_;
+    /**
+     * @brief Get all arrangement clips (timeline-based)
+     */
+    const std::vector<ClipInfo>& getArrangementClips() const {
+        return arrangementClips_;
     }
+
+    /**
+     * @brief Get all session clips (scene-based)
+     */
+    const std::vector<ClipInfo>& getSessionClips() const {
+        return sessionClips_;
+    }
+
+    /**
+     * @brief Get all clips (both arrangement and session)
+     * @deprecated Use getArrangementClips() or getSessionClips() instead
+     */
+    std::vector<ClipInfo> getClips() const;
 
     ClipInfo* getClip(ClipId clipId);
     const ClipInfo* getClip(ClipId clipId) const;
@@ -316,7 +333,10 @@ class ClipManager {
     ClipManager() = default;
     ~ClipManager() = default;
 
-    std::vector<ClipInfo> clips_;
+    // Separate storage for arrangement and session clips
+    std::vector<ClipInfo> arrangementClips_;
+    std::vector<ClipInfo> sessionClips_;
+
     std::vector<ClipManagerListener*> listeners_;
     int nextClipId_ = 1;
     ClipId selectedClipId_ = INVALID_CLIP_ID;
