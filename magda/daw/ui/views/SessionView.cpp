@@ -533,14 +533,24 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
     if (clipId != INVALID_CLIP_ID) {
         const auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip) {
-            // Show clip name
-            slot->setButtonText(clip->name);
+            // Show clip name with loop indicator if enabled
+            juce::String displayText = clip->name;
+            if (clip->internalLoopEnabled) {
+                displayText += " [L]";  // Add loop indicator
+            }
+            slot->setButtonText(displayText);
 
             // Set color based on clip state
             if (clip->isPlaying) {
                 // Playing: bright green
                 slot->setColour(juce::TextButton::buttonColourId,
                                 DarkTheme::getColour(DarkTheme::STATUS_SUCCESS));
+                slot->setColour(juce::TextButton::textColourOffId,
+                                DarkTheme::getColour(DarkTheme::BACKGROUND));
+            } else if (clip->isQueued) {
+                // Queued: orange/amber
+                slot->setColour(juce::TextButton::buttonColourId,
+                                DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
                 slot->setColour(juce::TextButton::textColourOffId,
                                 DarkTheme::getColour(DarkTheme::BACKGROUND));
             } else {
@@ -566,6 +576,163 @@ void SessionView::updateAllClipSlots() {
             updateClipSlotAppearance(trackIndex, sceneIndex);
         }
     }
+}
+
+// ============================================================================
+// File Drag & Drop
+// ============================================================================
+
+bool SessionView::isInterestedInFileDrag(const juce::StringArray& files) {
+    // Accept if at least one file is an audio file
+    for (const auto& file : files) {
+        if (isAudioFile(file)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void SessionView::fileDragEnter(const juce::StringArray& /*files*/, int x, int y) {
+    updateDragHighlight(x, y);
+}
+
+void SessionView::fileDragMove(const juce::StringArray& /*files*/, int x, int y) {
+    updateDragHighlight(x, y);
+}
+
+void SessionView::fileDragExit(const juce::StringArray& /*files*/) {
+    clearDragHighlight();
+}
+
+void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
+    clearDragHighlight();
+
+    // Convert screen coordinates to grid viewport coordinates
+    auto gridBounds = gridViewport->getBounds();
+    auto gridLocalPoint = gridViewport->getLocalPoint(this, juce::Point<int>(x, y));
+
+    // Add viewport scroll offset
+    gridLocalPoint +=
+        juce::Point<int>(gridViewport->getViewPositionX(), gridViewport->getViewPositionY());
+
+    // Calculate which slot was dropped on
+    int trackColumnWidth = CLIP_SLOT_SIZE + TRACK_SEPARATOR_WIDTH;
+    int sceneRowHeight = CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN;
+
+    int trackIndex = gridLocalPoint.getX() / trackColumnWidth;
+    int sceneIndex = gridLocalPoint.getY() / sceneRowHeight;
+
+    // Validate indices
+    if (trackIndex < 0 || trackIndex >= static_cast<int>(visibleTrackIds_.size()))
+        return;
+    if (sceneIndex < 0 || sceneIndex >= NUM_SCENES)
+        return;
+
+    TrackId targetTrackId = visibleTrackIds_[trackIndex];
+
+    // Create clips for each audio file dropped
+    int currentSceneIndex = sceneIndex;
+    for (const auto& filePath : files) {
+        if (!isAudioFile(filePath))
+            continue;
+
+        // Don't exceed scene bounds
+        if (currentSceneIndex >= NUM_SCENES)
+            break;
+
+        // Create audio clip in the slot
+        auto& clipManager = ClipManager::getInstance();
+        juce::File audioFile(filePath);
+
+        // Use file name (without extension) as clip name
+        juce::String clipName = audioFile.getFileNameWithoutExtension();
+
+        // Create audio clip with scene index
+        ClipId newClipId = clipManager.createAudioClip(targetTrackId, 0.0, 4.0);  // Default 4 beats
+        if (newClipId != INVALID_CLIP_ID) {
+            auto* clip = clipManager.getClip(newClipId);
+            if (clip) {
+                // Set clip properties
+                clip->name = clipName;
+                clip->sceneIndex = currentSceneIndex;
+
+                // Add audio source
+                AudioSource source;
+                source.filePath = filePath;
+                source.offset = 0.0;
+                source.stretchFactor = 1.0;
+                clip->audioSources.push_back(source);
+
+                // Notify that clip properties changed
+                clipManager.notifyClipPropertyChanged(newClipId);
+            }
+        }
+
+        currentSceneIndex++;  // Move to next scene for multi-file drop
+    }
+}
+
+void SessionView::updateDragHighlight(int x, int y) {
+    // Convert to grid coordinates
+    auto gridBounds = gridViewport->getBounds();
+    auto gridLocalPoint = gridViewport->getLocalPoint(this, juce::Point<int>(x, y));
+    gridLocalPoint +=
+        juce::Point<int>(gridViewport->getViewPositionX(), gridViewport->getViewPositionY());
+
+    int trackColumnWidth = CLIP_SLOT_SIZE + TRACK_SEPARATOR_WIDTH;
+    int sceneRowHeight = CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN;
+
+    int trackIndex = gridLocalPoint.getX() / trackColumnWidth;
+    int sceneIndex = gridLocalPoint.getY() / sceneRowHeight;
+
+    // Validate indices
+    if (trackIndex < 0 || trackIndex >= static_cast<int>(visibleTrackIds_.size())) {
+        trackIndex = -1;
+    }
+    if (sceneIndex < 0 || sceneIndex >= NUM_SCENES) {
+        sceneIndex = -1;
+    }
+
+    // Update highlight if slot changed
+    if (trackIndex != dragHoverTrackIndex_ || sceneIndex != dragHoverSceneIndex_) {
+        // Clear old highlight
+        if (dragHoverTrackIndex_ >= 0 && dragHoverSceneIndex_ >= 0) {
+            updateClipSlotAppearance(dragHoverTrackIndex_, dragHoverSceneIndex_);
+        }
+
+        // Set new highlight
+        dragHoverTrackIndex_ = trackIndex;
+        dragHoverSceneIndex_ = sceneIndex;
+
+        if (dragHoverTrackIndex_ >= 0 && dragHoverSceneIndex_ >= 0) {
+            auto* slot = clipSlots[dragHoverTrackIndex_][dragHoverSceneIndex_].get();
+            if (slot) {
+                // Highlight with accent color
+                slot->setColour(juce::TextButton::buttonColourId,
+                                DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.5f));
+            }
+        }
+    }
+}
+
+void SessionView::clearDragHighlight() {
+    if (dragHoverTrackIndex_ >= 0 && dragHoverSceneIndex_ >= 0) {
+        updateClipSlotAppearance(dragHoverTrackIndex_, dragHoverSceneIndex_);
+        dragHoverTrackIndex_ = -1;
+        dragHoverSceneIndex_ = -1;
+    }
+}
+
+bool SessionView::isAudioFile(const juce::String& filename) const {
+    static const juce::StringArray audioExtensions = {".wav",  ".aiff", ".aif", ".mp3", ".ogg",
+                                                      ".flac", ".m4a",  ".wma", ".opus"};
+
+    for (const auto& ext : audioExtensions) {
+        if (filename.endsWithIgnoreCase(ext)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace magda

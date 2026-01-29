@@ -24,6 +24,7 @@ namespace magda {
  */
 class SessionView : public juce::Component,
                     private juce::ScrollBar::Listener,
+                    public juce::FileDragAndDropTarget,
                     public TrackManagerListener,
                     public ClipManagerListener,
                     public ViewModeListener {
@@ -47,6 +48,13 @@ class SessionView : public juce::Component,
 
     // ViewModeListener
     void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
+
+    // FileDragAndDropTarget
+    bool isInterestedInFileDrag(const juce::StringArray& files) override;
+    void fileDragEnter(const juce::StringArray& files, int x, int y) override;
+    void fileDragMove(const juce::StringArray& files, int x, int y) override;
+    void fileDragExit(const juce::StringArray& files) override;
+    void filesDropped(const juce::StringArray& files, int x, int y) override;
 
   private:
     // ScrollBar::Listener
@@ -108,6 +116,13 @@ class SessionView : public juce::Component,
     // Clip slot display
     void updateClipSlotAppearance(int trackIndex, int sceneIndex);
     void updateAllClipSlots();
+
+    // Drag & drop state
+    int dragHoverTrackIndex_ = -1;
+    int dragHoverSceneIndex_ = -1;
+    void updateDragHighlight(int x, int y);
+    void clearDragHighlight();
+    bool isAudioFile(const juce::String& filename) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SessionView)
 };
