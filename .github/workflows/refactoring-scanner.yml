@@ -168,6 +168,33 @@ jobs:
         ls -1 results/refactoring-report-*.txt 2>/dev/null | while read -r report; do
           echo "  - $(basename "$report")" >> results/file-index.txt
         done || echo "No per-file reports generated" >> results/file-index.txt
+        
+        # Create a detailed findings report for GitHub issue (with size limit)
+        echo "=== Detailed Per-File Findings ===" > results/detailed-findings.txt
+        echo "" >> results/detailed-findings.txt
+        
+        # Only include files with issues (from the summary)
+        grep "⚠️" refactoring-results-summary.txt | while read -r line; do
+          # Extract filename from the warning line
+          FILE=$(echo "$line" | sed 's/⚠️  \([^:]*\):.*/\1/')
+          SAFE_FILENAME=$(echo "$FILE" | sed 's/[\/\.]/-/g')
+          REPORT_FILE="results/refactoring-report-${SAFE_FILENAME}.txt"
+          
+          if [ -f "$REPORT_FILE" ]; then
+            echo "<details>" >> results/detailed-findings.txt
+            echo "<summary>📄 $FILE</summary>" >> results/detailed-findings.txt
+            echo "" >> results/detailed-findings.txt
+            echo '```' >> results/detailed-findings.txt
+            cat "$REPORT_FILE" >> results/detailed-findings.txt
+            echo '```' >> results/detailed-findings.txt
+            echo "" >> results/detailed-findings.txt
+            echo "</details>" >> results/detailed-findings.txt
+            echo "" >> results/detailed-findings.txt
+          fi
+        done
+        
+        # Truncate detailed findings if too large (keep under 60KB for the issue body)
+        head -c 60000 results/detailed-findings.txt > results/detailed-findings-truncated.txt || true
 
     - name: Upload Refactoring Artifacts
       uses: actions/upload-artifact@v4
@@ -183,6 +210,14 @@ jobs:
         script: |
           const fs = require('fs');
           let report = fs.readFileSync('./results/summary-truncated.txt', 'utf8');
+          let detailedFindings = '';
+          
+          // Try to read detailed findings if available
+          try {
+            detailedFindings = fs.readFileSync('./results/detailed-findings-truncated.txt', 'utf8');
+          } catch (e) {
+            console.log('No detailed findings file available');
+          }
           
           const issueBody = `## Refactoring Opportunities Report
           
@@ -194,7 +229,7 @@ jobs:
           - **Files with tight coupling**: ${{ steps.analyze_files.outputs.coupling_count }}
           - **Analysis date**: ${new Date().toISOString().split('T')[0]}
           
-          ### Detailed Findings
+          ### Overview
           
           <details>
           <summary>Click to expand summary report</summary>
@@ -205,9 +240,9 @@ jobs:
           
           </details>
           
-          ### Per-File Reports
+          ### Detailed Per-File Findings
           
-          Detailed per-file analysis reports are available in the workflow artifacts. Download the \`refactoring-results\` artifact to review individual file reports.
+          ${detailedFindings || 'No detailed findings available. Check workflow artifacts for full reports.'}
           
           ### Recommended Actions
           
@@ -219,11 +254,11 @@ jobs:
           
           ### Next Steps
           
-          - Review high-priority items in the per-file reports
+          - Review the detailed findings above for each flagged file
           - Create separate issues for specific refactoring tasks
           - Schedule refactoring in upcoming sprints
           
-          **Note**: This is an automated report. Use your judgment to prioritize.
+          **Note**: Complete per-file reports are also available in workflow artifacts if needed.
           `;
           
           // Check if a recent refactoring issue exists

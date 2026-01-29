@@ -84,11 +84,14 @@ Each file is processed separately with individual reports containing:
 - Class structure analysis (for header files)
 
 **Outputs**:
-- **Per-file reports**: Individual analysis reports for each source file in `results/` directory
+- **GitHub Issue**: Automatically created with detailed per-file findings in collapsible sections
+  - Summary statistics at the top
+  - Individual file reports for each flagged file (high complexity, large size, tight coupling, etc.)
+  - No need to download artifacts for most use cases
+- **Per-file reports**: Individual analysis reports for each source file in `results/` directory (as backup)
 - **Summary report**: Aggregated findings with truncation for GitHub API limits (65,000 bytes)
 - **File index**: List of all per-file reports available
-- Workflow artifacts with 30-day retention
-- GitHub issue (if files with high-complexity > 3) with prioritized recommendations
+- Workflow artifacts with 30-day retention (for comprehensive analysis if needed)
 
 **Running manually**:
 ```bash
@@ -98,8 +101,9 @@ gh workflow run refactoring-scanner.yml
 **Scalability**:
 The workflow is designed to handle large codebases by:
 - Processing files individually to avoid memory issues
-- Truncating summary reports to 65,000 bytes for GitHub API compatibility
-- Storing detailed per-file results as downloadable artifacts
+- Including detailed per-file findings directly in GitHub issues (no artifact download needed)
+- Truncating reports to respect GitHub API limits (60KB for detailed findings, 65KB for summary)
+- Storing complete per-file results as downloadable artifacts as backup
 - Providing a file index for easy navigation of results
 
 ## Benefits
@@ -212,9 +216,32 @@ View created issues:
 - Filter by labels: `label:automated-analysis` or `label:refactoring`
 - Use GitHub Projects to track automated findings
 
-### Accessing Per-File Analysis Reports
+### Accessing Analysis Reports
 
 For the Refactoring Scanner workflow:
+
+#### Primary Access: GitHub Issue (Recommended)
+
+The workflow automatically creates or updates a GitHub issue with:
+- Summary statistics at the top
+- **Detailed per-file findings in collapsible sections** - click to expand each file's report
+- No download required - all information is immediately visible in the issue
+
+To find the issue:
+1. Go to the Issues tab in your repository
+2. Filter by labels: `refactoring`, `automated`, `technical-debt`
+3. Look for issues titled `[Automated] Refactoring Opportunities - YYYY-MM-DD`
+
+Each file section includes:
+- Complexity analysis (functions with high cyclomatic complexity)
+- File size metrics
+- Coupling indicators (internal includes count)
+- Magic numbers detected
+- Class structure analysis (for header files)
+
+#### Alternative: Workflow Artifacts (For Comprehensive Analysis)
+
+If you need the complete raw reports, you can download artifacts:
 
 1. **Via GitHub Web UI**:
    - Go to Actions → Refactoring Opportunities Scanner → Select a workflow run
@@ -236,16 +263,11 @@ For the Refactoring Scanner workflow:
    refactoring-results/
    ├── summary-full.txt              # Complete summary (may be large)
    ├── summary-truncated.txt         # Truncated summary (65,000 bytes max)
+   ├── detailed-findings.txt         # Formatted detailed findings for GitHub
+   ├── detailed-findings-truncated.txt  # Truncated version (60,000 bytes max)
    ├── file-index.txt                # Index of all per-file reports
    └── refactoring-report-*.txt      # Individual file analysis reports
    ```
-
-Each per-file report includes:
-- Complexity analysis for that specific file
-- File size metrics
-- Coupling indicators (internal includes)
-- Magic numbers found
-- Class structure (for header files)
 
 ## Troubleshooting
 
