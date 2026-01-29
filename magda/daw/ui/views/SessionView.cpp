@@ -673,8 +673,10 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
         if (currentSceneIndex >= NUM_SCENES)
             break;
 
-        // Create audio clip with file path (createAudioClip handles the audio source)
-        ClipId newClipId = clipManager.createAudioClip(targetTrackId, 0.0, 4.0, filePath);
+        // Create audio clip for session view (not arrangement)
+        // Note: startTime is ignored for session clips, but required by API
+        ClipId newClipId =
+            clipManager.createAudioClip(targetTrackId, 0.0, 4.0, filePath, ClipView::Session);
         if (newClipId != INVALID_CLIP_ID) {
             auto* clip = clipManager.getClip(newClipId);
             if (clip) {

@@ -135,7 +135,8 @@ class DeleteClipCommand : public UndoableCommand {
 class CreateClipCommand : public UndoableCommand {
   public:
     CreateClipCommand(ClipType type, TrackId trackId, double startTime, double length,
-                      const juce::String& audioFilePath = {});
+                      const juce::String& audioFilePath = {},
+                      ClipView view = ClipView::Arrangement);
 
     void execute() override;
     void undo() override;
@@ -153,6 +154,7 @@ class CreateClipCommand : public UndoableCommand {
     double startTime_;
     double length_;
     juce::String audioFilePath_;
+    ClipView view_;
     ClipId createdClipId_ = INVALID_CLIP_ID;
     bool executed_ = false;
 };

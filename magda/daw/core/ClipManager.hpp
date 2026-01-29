@@ -68,14 +68,20 @@ class ClipManager {
 
     /**
      * @brief Create an audio clip from a file
+     * @param view Which view the clip belongs to (Arrangement or Session)
+     * @param startTime Position on timeline - only used for Arrangement view
      */
     ClipId createAudioClip(TrackId trackId, double startTime, double length,
-                           const juce::String& audioFilePath);
+                           const juce::String& audioFilePath,
+                           ClipView view = ClipView::Arrangement);
 
     /**
      * @brief Create an empty MIDI clip
+     * @param view Which view the clip belongs to (Arrangement or Session)
+     * @param startTime Position on timeline - only used for Arrangement view
      */
-    ClipId createMidiClip(TrackId trackId, double startTime, double length);
+    ClipId createMidiClip(TrackId trackId, double startTime, double length,
+                          ClipView view = ClipView::Arrangement);
 
     /**
      * @brief Delete a clip

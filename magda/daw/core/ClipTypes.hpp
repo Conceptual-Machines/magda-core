@@ -17,6 +17,17 @@ enum class ClipType {
 };
 
 /**
+ * @brief Which view the clip belongs to
+ *
+ * Arrangement and session are completely independent with separate playbacks.
+ * A clip exists in EITHER arrangement OR session, never both.
+ */
+enum class ClipView {
+    Arrangement,  // Timeline-based arrangement view (absolute time positioning)
+    Session       // Scene-based session view (relative/beat-based positioning)
+};
+
+/**
  * @brief Get display name for clip type
  */
 inline const char* getClipTypeName(ClipType type) {

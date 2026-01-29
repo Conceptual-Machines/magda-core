@@ -245,20 +245,23 @@ void DeleteClipCommand::undo() {
 // ============================================================================
 
 CreateClipCommand::CreateClipCommand(ClipType type, TrackId trackId, double startTime,
-                                     double length, const juce::String& audioFilePath)
+                                     double length, const juce::String& audioFilePath,
+                                     ClipView view)
     : type_(type),
       trackId_(trackId),
       startTime_(startTime),
       length_(length),
-      audioFilePath_(audioFilePath) {}
+      audioFilePath_(audioFilePath),
+      view_(view) {}
 
 void CreateClipCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
 
     if (type_ == ClipType::Audio) {
-        createdClipId_ = clipManager.createAudioClip(trackId_, startTime_, length_, audioFilePath_);
+        createdClipId_ =
+            clipManager.createAudioClip(trackId_, startTime_, length_, audioFilePath_, view_);
     } else {
-        createdClipId_ = clipManager.createMidiClip(trackId_, startTime_, length_);
+        createdClipId_ = clipManager.createMidiClip(trackId_, startTime_, length_, view_);
     }
 
     executed_ = true;

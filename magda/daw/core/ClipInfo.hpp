@@ -45,9 +45,10 @@ struct ClipInfo {
     juce::String name;
     juce::Colour colour;
     ClipType type = ClipType::MIDI;
+    ClipView view = ClipView::Arrangement;  // Which view this clip belongs to
 
     // Timeline position
-    double startTime = 0.0;  // Position on timeline (seconds)
+    double startTime = 0.0;  // Position on timeline (seconds) - only for Arrangement view
     double length = 4.0;     // Duration (seconds)
 
     // Internal looping

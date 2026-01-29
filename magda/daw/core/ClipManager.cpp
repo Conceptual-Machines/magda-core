@@ -16,11 +16,12 @@ ClipManager& ClipManager::getInstance() {
 // ============================================================================
 
 ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double length,
-                                    const juce::String& audioFilePath) {
+                                    const juce::String& audioFilePath, ClipView view) {
     ClipInfo clip;
     clip.id = nextClipId_++;
     clip.trackId = trackId;
     clip.type = ClipType::Audio;
+    clip.view = view;
     clip.name = generateClipName(ClipType::Audio);
     clip.colour = ClipInfo::getDefaultColor(static_cast<int>(clips_.size()));
     clip.startTime = startTime;
@@ -30,15 +31,19 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     clips_.push_back(clip);
     notifyClipsChanged();
 
-    DBG("Created audio clip: " << clip.name << " (id=" << clip.id << ", track=" << trackId << ")");
+    const char* viewStr = (view == ClipView::Arrangement) ? "arrangement" : "session";
+    DBG("Created audio clip: " << clip.name << " (id=" << clip.id << ", track=" << trackId
+                               << ", view=" << viewStr << ")");
     return clip.id;
 }
 
-ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double length) {
+ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double length,
+                                   ClipView view) {
     ClipInfo clip;
     clip.id = nextClipId_++;
     clip.trackId = trackId;
     clip.type = ClipType::MIDI;
+    clip.view = view;
     clip.name = generateClipName(ClipType::MIDI);
     clip.colour = ClipInfo::getDefaultColor(static_cast<int>(clips_.size()));
     clip.startTime = startTime;
@@ -47,7 +52,9 @@ ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double len
     clips_.push_back(clip);
     notifyClipsChanged();
 
-    DBG("Created MIDI clip: " << clip.name << " (id=" << clip.id << ", track=" << trackId << ")");
+    const char* viewStr = (view == ClipView::Arrangement) ? "arrangement" : "session";
+    DBG("Created MIDI clip: " << clip.name << " (id=" << clip.id << ", track=" << trackId
+                              << ", view=" << viewStr << ")");
     return clip.id;
 }
 
@@ -404,7 +411,8 @@ const ClipInfo* ClipManager::getClip(ClipId clipId) const {
 std::vector<ClipId> ClipManager::getClipsOnTrack(TrackId trackId) const {
     std::vector<ClipId> result;
     for (const auto& clip : clips_) {
-        if (clip.trackId == trackId) {
+        // Only return arrangement clips (session clips use slot-based queries)
+        if (clip.trackId == trackId && clip.view == ClipView::Arrangement) {
             result.push_back(clip.id);
         }
     }
@@ -419,7 +427,9 @@ std::vector<ClipId> ClipManager::getClipsOnTrack(TrackId trackId) const {
 
 ClipId ClipManager::getClipAtPosition(TrackId trackId, double time) const {
     for (const auto& clip : clips_) {
-        if (clip.trackId == trackId && clip.containsTime(time)) {
+        // Only check arrangement clips (timeline-based positioning)
+        if (clip.trackId == trackId && clip.view == ClipView::Arrangement &&
+            clip.containsTime(time)) {
             return clip.id;
         }
     }
@@ -430,7 +440,9 @@ std::vector<ClipId> ClipManager::getClipsInRange(TrackId trackId, double startTi
                                                  double endTime) const {
     std::vector<ClipId> result;
     for (const auto& clip : clips_) {
-        if (clip.trackId == trackId && clip.overlaps(startTime, endTime)) {
+        // Only check arrangement clips (timeline-based positioning)
+        if (clip.trackId == trackId && clip.view == ClipView::Arrangement &&
+            clip.overlaps(startTime, endTime)) {
             result.push_back(clip.id);
         }
     }
@@ -461,7 +473,9 @@ void ClipManager::clearClipSelection() {
 
 ClipId ClipManager::getClipInSlot(TrackId trackId, int sceneIndex) const {
     for (const auto& clip : clips_) {
-        if (clip.trackId == trackId && clip.sceneIndex == sceneIndex) {
+        // Only check session clips (scene-based positioning)
+        if (clip.trackId == trackId && clip.view == ClipView::Session &&
+            clip.sceneIndex == sceneIndex) {
             return clip.id;
         }
     }
@@ -559,8 +573,8 @@ void ClipManager::createTestClips() {
             // Random clip length between 1 and 8 seconds
             double length = 1.0 + random.nextFloat() * 7.0;
 
-            // Create MIDI clip (works on all track types for testing)
-            createMidiClip(track.id, currentTime, length);
+            // Create MIDI clip in arrangement view (works on all track types for testing)
+            createMidiClip(track.id, currentTime, length, ClipView::Arrangement);
 
             // Gap between clips (0 to 2 seconds)
             currentTime += length + random.nextFloat() * 2.0;
