@@ -193,6 +193,35 @@ TEST_CASE("Project Manager State", "[project][manager]") {
 
         tempFile.deleteFile();
     }
+
+    SECTION("hasOpenProject tracks project lifecycle correctly") {
+        auto& projectManager = ProjectManager::getInstance();
+
+        // Create new project - should be open even though clean and unsaved
+        projectManager.newProject();
+        REQUIRE(projectManager.hasOpenProject() == true);
+        REQUIRE(projectManager.hasUnsavedChanges() == false);
+
+        // Save project - should still be open
+        auto tempFile = fixture.createTempFile(".mgd");
+        projectManager.saveProjectAs(tempFile);
+        REQUIRE(projectManager.hasOpenProject() == true);
+
+        // Close project - should not be open
+        projectManager.closeProject();
+        REQUIRE(projectManager.hasOpenProject() == false);
+
+        // Load project - should be open again
+        projectManager.loadProject(tempFile);
+        REQUIRE(projectManager.hasOpenProject() == true);
+
+        // Close again
+        projectManager.closeProject();
+        REQUIRE(projectManager.hasOpenProject() == false);
+
+        // Cleanup
+        tempFile.deleteFile();
+    }
 }
 
 TEST_CASE("Error Handling", "[project][serialization][errors]") {

@@ -41,6 +41,7 @@ bool ProjectManager::newProject() {
     currentProject_.name = "Untitled";
     currentProject_.version = "1.0.0";
     currentFile_ = juce::File();
+    isProjectOpen_ = true;
 
     clearDirty();
     notifyProjectOpened();
@@ -99,6 +100,7 @@ bool ProjectManager::loadProject(const juce::File& file) {
     // Update state
     currentProject_ = loadedInfo;
     currentFile_ = file;
+    isProjectOpen_ = true;
     clearDirty();
     notifyProjectOpened();
 
@@ -120,6 +122,7 @@ bool ProjectManager::closeProject() {
     // Reset state
     currentProject_ = ProjectInfo();
     currentFile_ = juce::File();
+    isProjectOpen_ = false;
     clearDirty();
     notifyProjectClosed();
 

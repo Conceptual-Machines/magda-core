@@ -121,7 +121,7 @@ class ProjectManager {
      * @brief Check if a project is currently open
      */
     bool hasOpenProject() const {
-        return currentFile_.existsAsFile() || isDirty_;
+        return isProjectOpen_;
     }
 
     /**
@@ -171,6 +171,7 @@ class ProjectManager {
     ProjectInfo currentProject_;
     juce::File currentFile_;
     bool isDirty_ = false;
+    bool isProjectOpen_ = false;
 
     std::vector<ProjectManagerListener*> listeners_;
     juce::String lastError_;
