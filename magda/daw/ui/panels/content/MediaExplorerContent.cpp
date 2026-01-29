@@ -180,8 +180,7 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
 // MediaExplorerContent
 //==============================================================================
 
-MediaExplorerContent::MediaExplorerContent()
-    : directoryThread_("Sample Browser"), audioReadThread_("Audio Preview Reader") {
+MediaExplorerContent::MediaExplorerContent() {
     setName("Media Explorer");
 
     // Source selector removed - not needed for now
@@ -271,16 +270,17 @@ MediaExplorerContent::MediaExplorerContent()
                             DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
     browseButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
     browseButton_.onClick = [this]() {
-        auto chooser = std::make_unique<juce::FileChooser>(
+        fileChooser_ = std::make_unique<juce::FileChooser>(
             "Choose a folder to browse",
             juce::File::getSpecialLocation(juce::File::userHomeDirectory));
         auto flags =
             juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories;
-        chooser->launchAsync(flags, [this](const juce::FileChooser& fc) {
+        fileChooser_->launchAsync(flags, [this](const juce::FileChooser& fc) {
             auto result = fc.getResult();
             if (result.exists()) {
                 navigateToDirectory(result);
             }
+            fileChooser_.reset();  // Clean up after callback completes
         });
     };
     addAndMakeVisible(browseButton_);
@@ -358,10 +358,6 @@ MediaExplorerContent::MediaExplorerContent()
     mediaFileFilter_ =
         std::make_unique<juce::WildcardFileFilter>(getMediaFilterPattern(), "*", "Media files");
 
-    // Start both threads
-    directoryThread_.startThread();
-    audioReadThread_.startThread();
-
     fileBrowser_ = std::make_unique<juce::FileBrowserComponent>(
         juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles |
             juce::FileBrowserComponent::canSelectMultipleItems |  // Enable multi-select
@@ -388,25 +384,29 @@ MediaExplorerContent::MediaExplorerContent()
 
     // Fix the file browser component sizes
     // After adding to parent, adjust child component heights
-    juce::MessageManager::callAsync([this]() {
-        if (fileBrowser_ != nullptr) {
-            // Hide the filename text box - we already show selection info at the bottom
-            for (int i = 0; i < fileBrowser_->getNumChildComponents(); ++i) {
-                auto* child = fileBrowser_->getChildComponent(i);
+    // Use SafePointer to prevent use-after-free if component is destroyed before callback runs
+    juce::Component::SafePointer<MediaExplorerContent> safeThis(this);
+    juce::MessageManager::callAsync([safeThis]() {
+        if (auto* self = safeThis.getComponent()) {
+            if (self->fileBrowser_ != nullptr) {
+                // Hide the filename text box - we already show selection info at the bottom
+                for (int i = 0; i < self->fileBrowser_->getNumChildComponents(); ++i) {
+                    auto* child = self->fileBrowser_->getChildComponent(i);
 
-                // First child is the path ComboBox - keep it compact
-                if (i == 0) {
-                    if (auto* pathBox = dynamic_cast<juce::ComboBox*>(child)) {
-                        pathBox->setBounds(pathBox->getBounds().withHeight(28));
+                    // First child is the path ComboBox - keep it compact
+                    if (i == 0) {
+                        if (auto* pathBox = dynamic_cast<juce::ComboBox*>(child)) {
+                            pathBox->setBounds(pathBox->getBounds().withHeight(28));
+                        }
+                    }
+
+                    // Look for the filename editor at the bottom and hide it
+                    if (auto* editor = dynamic_cast<juce::TextEditor*>(child)) {
+                        editor->setVisible(false);
                     }
                 }
-
-                // Look for the filename editor at the bottom and hide it
-                if (auto* editor = dynamic_cast<juce::TextEditor*>(child)) {
-                    editor->setVisible(false);
-                }
+                self->resized();  // Trigger layout update
             }
-            resized();  // Trigger layout update
         }
     });
 
@@ -423,11 +423,14 @@ MediaExplorerContent::MediaExplorerContent()
 
 MediaExplorerContent::~MediaExplorerContent() {
     stopPreview();
+
+    // CRITICAL: Remove audio callback before destroying player/transport
+    // to prevent use-after-free from audio thread
+    audioDeviceManager_.removeAudioCallback(&audioSourcePlayer_);
+
     audioSourcePlayer_.setSource(nullptr);
     transportSource_.reset();
     readerSource_.reset();
-    audioReadThread_.stopThread(1000);
-    directoryThread_.stopThread(1000);
 }
 
 void MediaExplorerContent::setupAudioPreview() {
@@ -440,6 +443,10 @@ void MediaExplorerContent::setupAudioPreview() {
     transportSource_->setGain(static_cast<float>(volumeSlider_.getValue()));
 
     // Setup audio device
+    // TODO: This creates a separate AudioDeviceManager which can conflict with the main
+    // AudioEngine. Should be refactored to use the shared device manager via setAudioEngine()
+    // pattern (similar to TabbedPanel). For now, this works for preview but may fail if main audio
+    // is active.
     audioDeviceManager_.initialiseWithDefaultDevices(0, 2);
     audioSourcePlayer_.setSource(transportSource_.get());
     audioDeviceManager_.addAudioCallback(&audioSourcePlayer_);

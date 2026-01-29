@@ -10,9 +10,9 @@
 namespace magda::daw::ui {
 
 /**
- * @brief Sample browser panel content
+ * @brief Media explorer panel content
  *
- * File browser for audio samples with preview functionality.
+ * File browser for media files (audio samples, MIDI, presets, clips) with preview functionality.
  */
 class MediaExplorerContent : public PanelContent,
                              public juce::FileBrowserListener,
@@ -83,10 +83,9 @@ class MediaExplorerContent : public PanelContent,
     std::unique_ptr<SidebarComponent> sidebarComponent_;
 
     // File browser
-    juce::TimeSliceThread directoryThread_{"Media Browser"};
-    juce::TimeSliceThread audioReadThread_{"Audio Preview Reader"};
     std::unique_ptr<juce::WildcardFileFilter> mediaFileFilter_;
     std::unique_ptr<juce::FileBrowserComponent> fileBrowser_;
+    std::unique_ptr<juce::FileChooser> fileChooser_;  // Persisted for async callbacks
 
     // Active media type filters
     bool audioFilterActive_ = true;
