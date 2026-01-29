@@ -135,29 +135,16 @@ class SessionView::GridContent : public juce::Component {
         repaint();
     }
 
+    void setNumScenes(int numScenes) {
+        numScenes_ = numScenes;
+        repaint();
+    }
+
     void paint(juce::Graphics& g) override {
         g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
 
-        int trackColumnWidth = clipWidth_ + separatorWidth_;
-        int sceneRowHeight = clipHeight_ + clipMargin_;
-
-        // Draw empty cells below the actual scene slots to fill the space
-        int firstEmptyRow = numScenes_;
-        int totalRows = getHeight() / sceneRowHeight + 1;
-
-        auto surfaceColour = DarkTheme::getColour(DarkTheme::SURFACE);
-        for (int row = firstEmptyRow; row < totalRows; ++row) {
-            int y = row * sceneRowHeight;
-            for (int col = 0; col < numTracks_; ++col) {
-                int x = col * trackColumnWidth;
-                g.setColour(surfaceColour);
-                g.fillRoundedRectangle(static_cast<float>(x + 1), static_cast<float>(y + 1),
-                                       static_cast<float>(clipWidth_ - 2),
-                                       static_cast<float>(clipHeight_ - 2), 2.0f);
-            }
-        }
-
         // Draw vertical separators between tracks (after each clip slot)
+        int trackColumnWidth = clipWidth_ + separatorWidth_;
         g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
         for (int i = 0; i < numTracks_; ++i) {
             int x = i * trackColumnWidth + clipWidth_;
@@ -227,7 +214,7 @@ SessionView::SessionView() {
 
     // Create viewport for scrollable grid with custom grid content
     gridContent = std::make_unique<GridContent>(
-        CLIP_SLOT_WIDTH, CLIP_SLOT_HEIGHT, TRACK_SEPARATOR_WIDTH, CLIP_SLOT_MARGIN, NUM_SCENES);
+        CLIP_SLOT_WIDTH, CLIP_SLOT_HEIGHT, TRACK_SEPARATOR_WIDTH, CLIP_SLOT_MARGIN, numScenes_);
     gridViewport = std::make_unique<juce::Viewport>();
     gridViewport->setViewedComponent(gridContent.get(), false);
     gridViewport->setScrollBarsShown(true, true);
@@ -421,39 +408,32 @@ void SessionView::rebuildTracks() {
 
     // Create clip slots for each visible track
     for (int track = 0; track < numTracks; ++track) {
-        std::array<std::unique_ptr<juce::TextButton>, NUM_SCENES> trackSlots;
+        std::vector<std::unique_ptr<juce::TextButton>> trackSlots;
 
-        for (size_t scene = 0; scene < NUM_SCENES; ++scene) {
+        for (int scene = 0; scene < numScenes_; ++scene) {
             auto slot = std::make_unique<ClipSlotButton>();
 
-            // Empty clip slot
             slot->setButtonText("");
             slot->setColour(juce::TextButton::buttonColourId,
                             DarkTheme::getColour(DarkTheme::SURFACE));
-
             slot->setColour(juce::TextButton::textColourOffId,
                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
 
             int trackIndex = track;
-            int sceneIndex = static_cast<int>(scene);
+            int sceneIndex = scene;
 
-            // Single click: select clip (no playback change)
             slot->onSingleClick = [this, trackIndex, sceneIndex]() {
                 onClipSlotClicked(trackIndex, sceneIndex);
             };
-
-            // Play button click: trigger/stop playback
             slot->onPlayButtonClick = [this, trackIndex, sceneIndex]() {
                 onPlayButtonClicked(trackIndex, sceneIndex);
             };
-
-            // Double click: open clip editor
             slot->onDoubleClick = [this, trackIndex, sceneIndex]() {
                 openClipEditor(trackIndex, sceneIndex);
             };
 
             gridContent->addAndMakeVisible(*slot);
-            trackSlots[scene] = std::move(slot);
+            trackSlots.push_back(std::move(slot));
         }
 
         clipSlots.push_back(std::move(trackSlots));
@@ -549,28 +529,33 @@ void SessionView::resized() {
     sceneContainer->setBounds(sceneArea);
 
     // Position scene buttons within scene container (synced with grid scroll)
-    for (size_t i = 0; i < NUM_SCENES; ++i) {
-        int y = static_cast<int>(i) * sceneRowHeight - sceneButtonScrollOffset;
+    for (int i = 0; i < static_cast<int>(sceneButtons.size()); ++i) {
+        int y = i * sceneRowHeight - sceneButtonScrollOffset;
         sceneButtons[i]->setBounds(2, y, SCENE_BUTTON_WIDTH - 4, CLIP_SLOT_HEIGHT);
     }
 
     // Stop all button at fixed position below visible scene area
-    int stopY = NUM_SCENES * sceneRowHeight - sceneButtonScrollOffset;
+    int stopY = numScenes_ * sceneRowHeight - sceneButtonScrollOffset;
     stopAllButton->setBounds(2, stopY, SCENE_BUTTON_WIDTH - 4, 30);
+
+    // Add scene button below stop
+    int addY = stopY + 34;
+    addSceneButton->setBounds(2, addY, SCENE_BUTTON_WIDTH - 4, ADD_SCENE_BUTTON_HEIGHT);
 
     // Grid viewport takes remaining space (below headers, above faders)
     gridViewport->setBounds(bounds);
 
     // Size the grid content to fill the viewport (no gap)
     int gridWidth = juce::jmax(numTracks * trackColumnWidth, bounds.getWidth());
-    int gridHeight = juce::jmax(NUM_SCENES * sceneRowHeight, bounds.getHeight());
+    int gridHeight = juce::jmax(numScenes_ * sceneRowHeight, bounds.getHeight());
     gridContent->setSize(gridWidth, gridHeight);
 
     // Position clip slots within grid content
     for (int track = 0; track < numTracks; ++track) {
-        for (size_t scene = 0; scene < NUM_SCENES; ++scene) {
+        int numSlotsForTrack = static_cast<int>(clipSlots[track].size());
+        for (int scene = 0; scene < numSlotsForTrack; ++scene) {
             int x = track * trackColumnWidth;
-            int y = static_cast<int>(scene) * sceneRowHeight;
+            int y = scene * sceneRowHeight;
             clipSlots[track][scene]->setBounds(x, y, CLIP_SLOT_WIDTH, CLIP_SLOT_HEIGHT);
         }
     }
@@ -599,28 +584,31 @@ void SessionView::scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStar
         sceneButtonScrollOffset = static_cast<int>(newRangeStart);
         // Reposition scene buttons
         int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
-        for (size_t i = 0; i < NUM_SCENES; ++i) {
-            int y = static_cast<int>(i) * sceneRowHeight - sceneButtonScrollOffset;
+        for (int i = 0; i < static_cast<int>(sceneButtons.size()); ++i) {
+            int y = i * sceneRowHeight - sceneButtonScrollOffset;
             sceneButtons[i]->setBounds(2, y, SCENE_BUTTON_WIDTH - 4, CLIP_SLOT_HEIGHT);
         }
-        int stopY = NUM_SCENES * sceneRowHeight - sceneButtonScrollOffset;
+        int stopY = numScenes_ * sceneRowHeight - sceneButtonScrollOffset;
         stopAllButton->setBounds(2, stopY, SCENE_BUTTON_WIDTH - 4, 30);
+        int addY = stopY + 34;
+        addSceneButton->setBounds(2, addY, SCENE_BUTTON_WIDTH - 4, ADD_SCENE_BUTTON_HEIGHT);
         sceneContainer->repaint();
     }
 }
 
 void SessionView::setupSceneButtons() {
-    for (size_t i = 0; i < NUM_SCENES; ++i) {
-        sceneButtons[i] = std::make_unique<juce::TextButton>();
-        sceneButtons[i]->setButtonText(">");
-        sceneButtons[i]->setColour(juce::TextButton::buttonColourId,
-                                   DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-        sceneButtons[i]->setColour(juce::TextButton::textColourOffId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    sceneButtons.clear();
 
-        sceneButtons[i]->onClick = [this, i]() { onSceneLaunched(static_cast<int>(i)); };
-
-        sceneContainer->addAndMakeVisible(*sceneButtons[i]);
+    for (int i = 0; i < numScenes_; ++i) {
+        auto btn = std::make_unique<juce::TextButton>();
+        btn->setButtonText(">");
+        btn->setColour(juce::TextButton::buttonColourId,
+                       DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        btn->setColour(juce::TextButton::textColourOffId,
+                       DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        btn->onClick = [this, i]() { onSceneLaunched(i); };
+        sceneContainer->addAndMakeVisible(*btn);
+        sceneButtons.push_back(std::move(btn));
     }
 
     // Stop all button
@@ -632,6 +620,60 @@ void SessionView::setupSceneButtons() {
                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     stopAllButton->onClick = [this]() { onStopAllClicked(); };
     sceneContainer->addAndMakeVisible(*stopAllButton);
+
+    // Add scene button
+    addSceneButton = std::make_unique<juce::TextButton>();
+    addSceneButton->setButtonText("+");
+    addSceneButton->setColour(juce::TextButton::buttonColourId,
+                              DarkTheme::getColour(DarkTheme::SURFACE));
+    addSceneButton->setColour(juce::TextButton::textColourOffId,
+                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    addSceneButton->onClick = [this]() { addScene(); };
+    sceneContainer->addAndMakeVisible(*addSceneButton);
+}
+
+void SessionView::addScene() {
+    numScenes_++;
+    gridContent->setNumScenes(numScenes_);
+
+    // Add a new scene button
+    int sceneIndex = numScenes_ - 1;
+    auto btn = std::make_unique<juce::TextButton>();
+    btn->setButtonText(">");
+    btn->setColour(juce::TextButton::buttonColourId,
+                   DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+    btn->setColour(juce::TextButton::textColourOffId,
+                   DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    btn->onClick = [this, sceneIndex]() { onSceneLaunched(sceneIndex); };
+    sceneContainer->addAndMakeVisible(*btn);
+    sceneButtons.push_back(std::move(btn));
+
+    // Add new clip slots for each track
+    int numTracks = static_cast<int>(visibleTrackIds_.size());
+    for (int track = 0; track < numTracks; ++track) {
+        auto slot = std::make_unique<ClipSlotButton>();
+        slot->setButtonText("");
+        slot->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+        slot->setColour(juce::TextButton::textColourOffId,
+                        DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+
+        int trackIndex = track;
+        slot->onSingleClick = [this, trackIndex, sceneIndex]() {
+            onClipSlotClicked(trackIndex, sceneIndex);
+        };
+        slot->onPlayButtonClick = [this, trackIndex, sceneIndex]() {
+            onPlayButtonClicked(trackIndex, sceneIndex);
+        };
+        slot->onDoubleClick = [this, trackIndex, sceneIndex]() {
+            openClipEditor(trackIndex, sceneIndex);
+        };
+
+        gridContent->addAndMakeVisible(*slot);
+        clipSlots[track].push_back(std::move(slot));
+    }
+
+    resized();
+    updateAllClipSlots();
 }
 
 void SessionView::onClipSlotClicked(int trackIndex, int sceneIndex) {
@@ -828,7 +870,7 @@ void SessionView::clipPlaybackStateChanged(ClipId clipId) {
 void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
     if (trackIndex < 0 || trackIndex >= static_cast<int>(clipSlots.size()))
         return;
-    if (sceneIndex < 0 || sceneIndex >= NUM_SCENES)
+    if (sceneIndex < 0 || sceneIndex >= static_cast<int>(clipSlots[trackIndex].size()))
         return;
 
     auto* slot = static_cast<ClipSlotButton*>(clipSlots[trackIndex][sceneIndex].get());
@@ -886,7 +928,8 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
 void SessionView::updateAllClipSlots() {
     int numTracks = static_cast<int>(visibleTrackIds_.size());
     for (int trackIndex = 0; trackIndex < numTracks; ++trackIndex) {
-        for (int sceneIndex = 0; sceneIndex < NUM_SCENES; ++sceneIndex) {
+        int numSlots = static_cast<int>(clipSlots[trackIndex].size());
+        for (int sceneIndex = 0; sceneIndex < numSlots; ++sceneIndex) {
             updateClipSlotAppearance(trackIndex, sceneIndex);
         }
     }
@@ -958,7 +1001,7 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
     // Validate indices
     if (trackIndex < 0 || trackIndex >= static_cast<int>(visibleTrackIds_.size()))
         return;
-    if (sceneIndex < 0 || sceneIndex >= NUM_SCENES)
+    if (sceneIndex < 0 || sceneIndex >= numScenes_)
         return;
 
     TrackId targetTrackId = visibleTrackIds_[trackIndex];
@@ -972,7 +1015,7 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
             continue;
 
         // Don't exceed scene bounds
-        if (currentSceneIndex >= NUM_SCENES)
+        if (currentSceneIndex >= numScenes_)
             break;
 
         // Create audio clip for session view (not arrangement)
@@ -1008,7 +1051,7 @@ void SessionView::updateDragHighlight(int x, int y) {
     if (trackIndex < 0 || trackIndex >= static_cast<int>(visibleTrackIds_.size())) {
         trackIndex = -1;
     }
-    if (sceneIndex < 0 || sceneIndex >= NUM_SCENES) {
+    if (sceneIndex < 0 || sceneIndex >= numScenes_) {
         sceneIndex = -1;
     }
 

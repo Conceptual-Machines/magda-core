@@ -67,7 +67,7 @@ class SessionView : public juce::Component,
     int sceneButtonScrollOffset = 0;
 
     // Grid configuration
-    static constexpr int NUM_SCENES = 8;
+    static constexpr int DEFAULT_NUM_SCENES = 8;
     static constexpr int TRACK_HEADER_HEIGHT = 60;
     static constexpr int SCENE_BUTTON_WIDTH = 80;
     static constexpr int CLIP_SLOT_WIDTH = 80;
@@ -75,17 +75,21 @@ class SessionView : public juce::Component,
     static constexpr int CLIP_SLOT_MARGIN = 2;
     static constexpr int TRACK_SEPARATOR_WIDTH = 3;
     static constexpr int FADER_ROW_HEIGHT = 100;
+    static constexpr int ADD_SCENE_BUTTON_HEIGHT = 24;
+
+    int numScenes_ = DEFAULT_NUM_SCENES;
 
     // Track headers (dynamic based on TrackManager) - TextButton for clickable groups
     std::vector<std::unique_ptr<juce::TextButton>> trackHeaders;
 
-    // Clip slots grid [track][scene] - dynamic number of tracks
-    std::vector<std::array<std::unique_ptr<juce::TextButton>, NUM_SCENES>> clipSlots;
+    // Clip slots grid [track][scene] - dynamic tracks and scenes
+    std::vector<std::vector<std::unique_ptr<juce::TextButton>>> clipSlots;
 
     // Scene launch buttons
-    std::array<std::unique_ptr<juce::TextButton>, NUM_SCENES> sceneButtons;
+    std::vector<std::unique_ptr<juce::TextButton>> sceneButtons;
 
-    // Master scene button
+    // Add scene button and stop all button
+    std::unique_ptr<juce::TextButton> addSceneButton;
     std::unique_ptr<juce::TextButton> stopAllButton;
 
     // Custom grid content component that draws track separators
@@ -110,6 +114,7 @@ class SessionView : public juce::Component,
 
     void rebuildTracks();
     void setupSceneButtons();
+    void addScene();
 
     void onClipSlotClicked(int trackIndex, int sceneIndex);
     void onPlayButtonClicked(int trackIndex, int sceneIndex);
