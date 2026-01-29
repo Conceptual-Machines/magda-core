@@ -28,6 +28,7 @@
 #include "core/UndoManager.hpp"
 #include "engine/PlaybackPositionTimer.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
+#include "project/ProjectManager.hpp"
 
 namespace magda {
 
@@ -832,28 +833,97 @@ void MainWindow::setupMenuCallbacks() {
 
     // File menu callbacks
     callbacks.onNewProject = [this]() {
-        // TODO: Implement new project
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "New Project",
-                                               "New project functionality not yet implemented.");
+        auto& projectManager = ProjectManager::getInstance();
+        if (!projectManager.newProject()) {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "New Project",
+                                                   "Could not create new project.");
+        }
     };
 
     callbacks.onOpenProject = [this]() {
-        // TODO: Implement open project
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Open Project",
-                                               "Open project functionality not yet implemented.");
+        // Prevent re-entry while a file chooser is already open
+        if (fileChooser_ != nullptr)
+            return;
+
+        fileChooser_ = std::make_unique<juce::FileChooser>(
+            "Open Project", juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
+            "*.mgd", true);
+
+        auto flags =
+            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+
+        fileChooser_->launchAsync(flags, [this](const juce::FileChooser& chooser) {
+            auto file = chooser.getResult();
+            fileChooser_.reset();
+
+            if (!file.existsAsFile())
+                return;  // User cancelled
+
+            auto& projectManager = ProjectManager::getInstance();
+            if (!projectManager.loadProject(file)) {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::WarningIcon, "Open Project",
+                    "Failed to load project: " + projectManager.getLastError());
+            }
+        });
     };
 
-    callbacks.onSaveProject = [this]() {
-        // TODO: Implement save project
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Save Project",
-                                               "Save project functionality not yet implemented.");
+    callbacks.onSaveProject = [this, &callbacks]() {
+        auto& projectManager = ProjectManager::getInstance();
+
+        // If no file path set, use Save As
+        if (!projectManager.getCurrentProjectFile().existsAsFile()) {
+            // Trigger Save As callback directly
+            if (callbacks.onSaveProjectAs) {
+                callbacks.onSaveProjectAs();
+            }
+            return;
+        }
+
+        if (!projectManager.saveProject()) {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Save Project",
+                                                   "Failed to save project: " +
+                                                       projectManager.getLastError());
+        }
     };
 
     callbacks.onSaveProjectAs = [this]() {
-        // TODO: Implement save project as
-        juce::AlertWindow::showMessageBoxAsync(
-            juce::AlertWindow::InfoIcon, "Save Project As",
-            "Save project as functionality not yet implemented.");
+        // Prevent re-entry while a file chooser is already open
+        if (fileChooser_ != nullptr)
+            return;
+
+        auto& projectManager = ProjectManager::getInstance();
+        auto currentFile = projectManager.getCurrentProjectFile();
+        auto initialDir = currentFile.existsAsFile()
+                              ? currentFile.getParentDirectory()
+                              : juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+
+        fileChooser_ =
+            std::make_unique<juce::FileChooser>("Save Project As", initialDir, "*.mgd", true);
+
+        auto flags = juce::FileBrowserComponent::saveMode |
+                     juce::FileBrowserComponent::canSelectFiles |
+                     juce::FileBrowserComponent::warnAboutOverwriting;
+
+        fileChooser_->launchAsync(flags, [this](const juce::FileChooser& chooser) {
+            auto file = chooser.getResult();
+            fileChooser_.reset();
+
+            if (!file.getFullPathName().isNotEmpty())
+                return;  // User cancelled
+
+            // Ensure .mgd extension
+            if (!file.hasFileExtension(".mgd")) {
+                file = file.withFileExtension(".mgd");
+            }
+
+            auto& projectManager = ProjectManager::getInstance();
+            if (!projectManager.saveProjectAs(file)) {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::WarningIcon, "Save Project As",
+                    "Failed to save project: " + projectManager.getLastError());
+            }
+        });
     };
 
     callbacks.onImportAudio = [this]() {
