@@ -176,20 +176,74 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
         outInfo.loopEnd = loopObj->getProperty("end");
     }
 
-    // Deserialize tracks, clips, and automation
-    if (!deserializeTracks(obj->getProperty("tracks"))) {
-        return false;
+    // ATOMIC DESERIALIZATION: Validate and stage ALL components before modifying any state.
+    // This ensures that if any component fails to deserialize, we don't leave the project
+    // in a partially-loaded, inconsistent state.
+
+    // Stage 1: Deserialize all components into temporary collections (validation phase)
+    std::vector<TrackInfo> stagedTracks;
+    std::vector<ClipInfo> stagedClips;
+    std::vector<AutomationLaneInfo> stagedAutomation;
+
+    if (!deserializeTracksToStaging(obj->getProperty("tracks"), stagedTracks)) {
+        return false;  // Failed - no state modified
     }
 
-    if (!deserializeClips(obj->getProperty("clips"))) {
-        return false;
+    if (!deserializeClipsToStaging(obj->getProperty("clips"), stagedClips)) {
+        return false;  // Failed - no state modified
     }
 
-    if (!deserializeAutomation(obj->getProperty("automation"))) {
-        return false;
+    if (!deserializeAutomationToStaging(obj->getProperty("automation"), stagedAutomation)) {
+        return false;  // Failed - no state modified
     }
+
+    // Stage 2: All components validated successfully - now commit to managers atomically
+    commitStagedData(stagedTracks, stagedClips, stagedAutomation);
 
     return true;
+}
+
+// ============================================================================
+// Atomic commit of staged deserialization data
+// ============================================================================
+
+void ProjectSerializer::commitStagedData(std::vector<TrackInfo>& stagedTracks,
+                                         std::vector<ClipInfo>& stagedClips,
+                                         std::vector<AutomationLaneInfo>& stagedAutomation) {
+    auto& trackManager = TrackManager::getInstance();
+    auto& clipManager = ClipManager::getInstance();
+    auto& automationManager = AutomationManager::getInstance();
+
+    // Clear all existing data from managers
+    trackManager.clearAllTracks();
+    clipManager.clearAllClips();
+    automationManager.clearAll();
+
+    // Restore tracks
+    // TODO: Performance - restoreTrack() calls notifyTracksChanged() for each track,
+    // causing a notification storm for large projects. Consider adding batch restore
+    // API to TrackManager that suppresses notifications during load and emits once at end.
+    for (auto& track : stagedTracks) {
+        trackManager.restoreTrack(track);
+    }
+
+    // After all tracks are restored, ensure TrackManager ID counters
+    // (track/device/rack/chain) are updated to avoid ID collisions.
+    trackManager.refreshIdCountersFromTracks();
+
+    // Restore clips
+    // TODO: Performance - restoreClip() calls notifyClipsChanged() for each clip,
+    // causing a notification storm for large projects. Consider adding batch restore
+    // mode to ClipManager that suppresses notifications during load and emits once at end.
+    for (auto& clip : stagedClips) {
+        clipManager.restoreClip(clip);
+    }
+
+    // Restore automation (currently always empty since deserialization is not implemented)
+    for (auto& lane : stagedAutomation) {
+        // TODO: Implement automation restoration when automation deserialization is implemented
+        juce::ignoreUnused(lane);
+    }
 }
 
 // ============================================================================
@@ -233,83 +287,62 @@ juce::var ProjectSerializer::serializeAutomation() {
 // Component-level deserialization
 // ============================================================================
 
-bool ProjectSerializer::deserializeTracks(const juce::var& json) {
+bool ProjectSerializer::deserializeTracksToStaging(const juce::var& json,
+                                                   std::vector<TrackInfo>& outTracks) {
     if (!json.isArray()) {
         lastError_ = "Tracks data is not an array";
         return false;
     }
 
     auto* arr = json.getArray();
-    auto& trackManager = TrackManager::getInstance();
+    outTracks.clear();
+    outTracks.reserve(arr->size());
 
-    // Stage deserialization into temporary collection to avoid data loss on failure
-    std::vector<TrackInfo> tracks;
-    tracks.reserve(arr->size());
-
-    // Deserialize all tracks first (validation phase)
+    // Deserialize all tracks into staging vector (validation phase)
     for (const auto& trackVar : *arr) {
         TrackInfo track;
         if (!deserializeTrackInfo(trackVar, track)) {
-            return false;  // Failed - original tracks remain intact
+            return false;  // Failed - staging vector discarded
         }
-        tracks.push_back(std::move(track));
+        outTracks.push_back(std::move(track));
     }
-
-    // All tracks validated successfully - now commit to manager
-    trackManager.clearAllTracks();
-
-    // TODO: Performance - restoreTrack() calls notifyTracksChanged() for each track,
-    // causing a notification storm for large projects. Consider adding batch restore
-    // API to TrackManager that suppresses notifications during load and emits once at end.
-
-    for (auto& track : tracks) {
-        trackManager.restoreTrack(track);
-    }
-
-    // After all tracks are restored, ensure TrackManager ID counters
-    // (track/device/rack/chain) are updated to avoid ID collisions.
-    trackManager.refreshIdCountersFromTracks();
 
     return true;
 }
 
-bool ProjectSerializer::deserializeClips(const juce::var& json) {
+bool ProjectSerializer::deserializeClipsToStaging(const juce::var& json,
+                                                  std::vector<ClipInfo>& outClips) {
     if (!json.isArray()) {
         lastError_ = "Clips data is not an array";
         return false;
     }
 
     auto* arr = json.getArray();
-    auto& clipManager = ClipManager::getInstance();
+    outClips.clear();
+    outClips.reserve(arr->size());
 
-    // Stage deserialization into temporary collection to avoid data loss on failure
-    std::vector<ClipInfo> clips;
-    clips.reserve(arr->size());
-
-    // Deserialize all clips first (validation phase)
+    // Deserialize all clips into staging vector (validation phase)
     for (const auto& clipVar : *arr) {
         ClipInfo clip;
         if (!deserializeClipInfo(clipVar, clip)) {
-            return false;  // Failed - original clips remain intact
+            return false;  // Failed - staging vector discarded
         }
-        clips.push_back(std::move(clip));
-    }
-
-    // All clips validated successfully - now commit to manager
-    clipManager.clearAllClips();
-
-    // TODO: Performance - restoreClip() calls notifyClipsChanged() for each clip,
-    // causing a notification storm for large projects. Consider adding batch restore
-    // mode to ClipManager that suppresses notifications during load and emits once at end.
-
-    for (auto& clip : clips) {
-        clipManager.restoreClip(clip);
+        outClips.push_back(std::move(clip));
     }
 
     return true;
 }
 
-bool ProjectSerializer::deserializeAutomation(const juce::var& json) {
+bool ProjectSerializer::deserializeAutomationToStaging(const juce::var& json,
+                                                       std::vector<AutomationLaneInfo>& outLanes) {
+    // Bug Fix: Handle missing automation key gracefully for backward compatibility.
+    // Older project files created before automation support won't have this key.
+    if (json.isVoid()) {
+        // No automation data present - treat as empty (backward compatible)
+        outLanes.clear();
+        return true;
+    }
+
     if (!json.isArray()) {
         lastError_ = "Automation data is not an array";
         return false;
@@ -321,21 +354,19 @@ bool ProjectSerializer::deserializeAutomation(const juce::var& json) {
         return false;
     }
 
+    outLanes.clear();
+    outLanes.reserve(arr->size());
+
     // Currently, automation lane deserialization is not implemented.
     // To avoid making projects unloadable once they contain automation,
-    // we discard any automation data in the file, clear the current
-    // automation state, and allow the project to load successfully.
+    // we discard any automation data in the file and allow the project to load successfully.
     if (!arr->isEmpty()) {
         juce::Logger::writeToLog(
             "ProjectSerializer: project contains automation lanes, but automation "
             "deserialization is not implemented yet; discarding automation data.");
     }
 
-    // Clear any existing automation state so that loading this project yields
-    // a clean automation state, regardless of what was stored in the file.
-    auto& automationManager = AutomationManager::getInstance();
-    automationManager.clearAll();
-
+    // Staged lanes remain empty - will result in cleared automation state when committed
     return true;
 }
 

@@ -75,31 +75,6 @@ class ProjectSerializer {
      */
     static juce::var serializeAutomation();
 
-    // ========================================================================
-    // Component-level deserialization
-    // ========================================================================
-
-    /**
-     * @brief Deserialize tracks from JSON array
-     * @param json JSON array containing track data
-     * @return true on success, false on error
-     */
-    static bool deserializeTracks(const juce::var& json);
-
-    /**
-     * @brief Deserialize clips from JSON array
-     * @param json JSON array containing clip data
-     * @return true on success, false on error
-     */
-    static bool deserializeClips(const juce::var& json);
-
-    /**
-     * @brief Deserialize automation lanes from JSON array
-     * @param json JSON array containing automation data
-     * @return true on success, false on error
-     */
-    static bool deserializeAutomation(const juce::var& json);
-
     /**
      * @brief Get last error message
      */
@@ -108,6 +83,51 @@ class ProjectSerializer {
     }
 
   private:
+    // ========================================================================
+    // Atomic deserialization helpers
+    // ========================================================================
+
+    /**
+     * @brief Deserialize tracks from JSON array to staging vector (validation phase)
+     * @param json JSON array containing track data
+     * @param outTracks Output staging vector for validated tracks
+     * @return true on success (all tracks valid), false on error (no state modified)
+     */
+    static bool deserializeTracksToStaging(const juce::var& json,
+                                           std::vector<TrackInfo>& outTracks);
+
+    /**
+     * @brief Deserialize clips from JSON array to staging vector (validation phase)
+     * @param json JSON array containing clip data
+     * @param outClips Output staging vector for validated clips
+     * @return true on success (all clips valid), false on error (no state modified)
+     */
+    static bool deserializeClipsToStaging(const juce::var& json, std::vector<ClipInfo>& outClips);
+
+    /**
+     * @brief Deserialize automation lanes from JSON array to staging vector (validation phase)
+     * @param json JSON array containing automation data (can be void for backward compatibility)
+     * @param outLanes Output staging vector for validated automation lanes
+     * @return true on success (all lanes valid), false on error (no state modified)
+     */
+    static bool deserializeAutomationToStaging(const juce::var& json,
+                                               std::vector<AutomationLaneInfo>& outLanes);
+
+    /**
+     * @brief Atomically commit staged deserialization data to singleton managers
+     *
+     * This function clears all existing data and restores from staged collections.
+     * It should only be called after all staging functions have succeeded to ensure
+     * atomic all-or-nothing deserialization.
+     *
+     * @param stagedTracks Validated tracks to restore
+     * @param stagedClips Validated clips to restore
+     * @param stagedAutomation Validated automation lanes to restore
+     */
+    static void commitStagedData(std::vector<TrackInfo>& stagedTracks,
+                                 std::vector<ClipInfo>& stagedClips,
+                                 std::vector<AutomationLaneInfo>& stagedAutomation);
+
     // ========================================================================
     // Track serialization helpers
     // ========================================================================
