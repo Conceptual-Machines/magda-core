@@ -168,9 +168,31 @@ class SessionView::HeaderContainer : public juce::Component {
         setInterceptsMouseClicks(false, true);
     }
 
+    void setTrackLayout(int numTracks, int clipWidth, int separatorWidth, int scrollOffset) {
+        numTracks_ = numTracks;
+        clipWidth_ = clipWidth;
+        separatorWidth_ = separatorWidth;
+        scrollOffset_ = scrollOffset;
+        repaint();
+    }
+
     void paint(juce::Graphics& g) override {
         g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+
+        // Draw vertical separators between tracks
+        int trackColumnWidth = clipWidth_ + separatorWidth_;
+        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        for (int i = 0; i < numTracks_; ++i) {
+            int x = i * trackColumnWidth + clipWidth_ - scrollOffset_;
+            g.fillRect(x, 0, separatorWidth_, getHeight());
+        }
     }
+
+  private:
+    int numTracks_ = 0;
+    int clipWidth_ = 80;
+    int separatorWidth_ = 3;
+    int scrollOffset_ = 0;
 };
 
 // Container for scene buttons with clipping
@@ -192,12 +214,33 @@ class SessionView::FaderContainer : public juce::Component {
         setInterceptsMouseClicks(false, true);
     }
 
+    void setTrackLayout(int numTracks, int clipWidth, int separatorWidth, int scrollOffset) {
+        numTracks_ = numTracks;
+        clipWidth_ = clipWidth;
+        separatorWidth_ = separatorWidth;
+        scrollOffset_ = scrollOffset;
+        repaint();
+    }
+
     void paint(juce::Graphics& g) override {
         g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
         // Top border
         g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
         g.fillRect(0, 0, getWidth(), 1);
+
+        // Draw vertical separators between tracks
+        int trackColumnWidth = clipWidth_ + separatorWidth_;
+        for (int i = 0; i < numTracks_; ++i) {
+            int x = i * trackColumnWidth + clipWidth_ - scrollOffset_;
+            g.fillRect(x, 1, separatorWidth_, getHeight() - 1);
+        }
     }
+
+  private:
+    int numTracks_ = 0;
+    int clipWidth_ = 80;
+    int separatorWidth_ = 3;
+    int scrollOffset_ = 0;
 };
 
 SessionView::SessionView() {
@@ -520,6 +563,8 @@ void SessionView::resized() {
     // Header container at the top (excluding scene column)
     auto headerArea = bounds.removeFromTop(TRACK_HEADER_HEIGHT);
     headerContainer->setBounds(headerArea);
+    headerContainer->setTrackLayout(numTracks, CLIP_SLOT_WIDTH, TRACK_SEPARATOR_WIDTH,
+                                    trackHeaderScrollOffset);
 
     // Position track headers within header container (synced with grid scroll)
     for (int i = 0; i < numTracks; ++i) {
@@ -530,6 +575,8 @@ void SessionView::resized() {
     // Fader row at the bottom
     auto faderArea = bounds.removeFromBottom(FADER_ROW_HEIGHT);
     faderContainer->setBounds(faderArea);
+    faderContainer->setTrackLayout(numTracks, CLIP_SLOT_WIDTH, TRACK_SEPARATOR_WIDTH,
+                                   trackHeaderScrollOffset);
 
     // Position faders within fader container (synced with grid horizontal scroll)
     for (int i = 0; i < numTracks && i < static_cast<int>(trackFaders.size()); ++i) {
@@ -581,14 +628,16 @@ void SessionView::scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStar
             int x = i * trackColumnWidth - trackHeaderScrollOffset;
             trackHeaders[i]->setBounds(x, 0, CLIP_SLOT_WIDTH, TRACK_HEADER_HEIGHT);
         }
-        headerContainer->repaint();
+        headerContainer->setTrackLayout(numTracks, CLIP_SLOT_WIDTH, TRACK_SEPARATOR_WIDTH,
+                                        trackHeaderScrollOffset);
 
         // Reposition faders to sync with horizontal scroll
         for (int i = 0; i < numTracks && i < static_cast<int>(trackFaders.size()); ++i) {
             int x = i * trackColumnWidth - trackHeaderScrollOffset;
             trackFaders[i]->setBounds(x + 4, 4, CLIP_SLOT_WIDTH - 8, FADER_ROW_HEIGHT - 8);
         }
-        faderContainer->repaint();
+        faderContainer->setTrackLayout(numTracks, CLIP_SLOT_WIDTH, TRACK_SEPARATOR_WIDTH,
+                                       trackHeaderScrollOffset);
     } else if (scrollBar == &gridViewport->getVerticalScrollBar()) {
         sceneButtonScrollOffset = static_cast<int>(newRangeStart);
         // Reposition scene buttons
