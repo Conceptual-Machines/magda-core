@@ -1,6 +1,8 @@
 # Test sources
 set(TEST_SOURCES
     test_audio_bridge.cpp
+    test_audiobridge_track_limit_bug.cpp
+    test_audiobridge_plugin_cleanup_bug.cpp
     test_audio_clip_stretch.cpp
     test_command.cpp
     test_interfaces.cpp
