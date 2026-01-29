@@ -242,19 +242,27 @@ bool ProjectSerializer::deserializeTracks(const juce::var& json) {
     auto* arr = json.getArray();
     auto& trackManager = TrackManager::getInstance();
 
-    // Clear all existing tracks efficiently before deserializing new ones
+    // Stage deserialization into temporary collection to avoid data loss on failure
+    std::vector<TrackInfo> tracks;
+    tracks.reserve(arr->size());
+
+    // Deserialize all tracks first (validation phase)
+    for (const auto& trackVar : *arr) {
+        TrackInfo track;
+        if (!deserializeTrackInfo(trackVar, track)) {
+            return false;  // Failed - original tracks remain intact
+        }
+        tracks.push_back(std::move(track));
+    }
+
+    // All tracks validated successfully - now commit to manager
     trackManager.clearAllTracks();
 
     // TODO: Performance - restoreTrack() calls notifyTracksChanged() for each track,
     // causing a notification storm for large projects. Consider adding batch restore
     // API to TrackManager that suppresses notifications during load and emits once at end.
 
-    // Deserialize each track using restoreTrack (used by undo system)
-    for (const auto& trackVar : *arr) {
-        TrackInfo track;
-        if (!deserializeTrackInfo(trackVar, track)) {
-            return false;
-        }
+    for (auto& track : tracks) {
         trackManager.restoreTrack(track);
     }
 
@@ -274,19 +282,27 @@ bool ProjectSerializer::deserializeClips(const juce::var& json) {
     auto* arr = json.getArray();
     auto& clipManager = ClipManager::getInstance();
 
-    // Clear all existing clips efficiently before deserializing new ones
+    // Stage deserialization into temporary collection to avoid data loss on failure
+    std::vector<ClipInfo> clips;
+    clips.reserve(arr->size());
+
+    // Deserialize all clips first (validation phase)
+    for (const auto& clipVar : *arr) {
+        ClipInfo clip;
+        if (!deserializeClipInfo(clipVar, clip)) {
+            return false;  // Failed - original clips remain intact
+        }
+        clips.push_back(std::move(clip));
+    }
+
+    // All clips validated successfully - now commit to manager
     clipManager.clearAllClips();
 
     // TODO: Performance - restoreClip() calls notifyClipsChanged() for each clip,
     // causing a notification storm for large projects. Consider adding batch restore
     // mode to ClipManager that suppresses notifications during load and emits once at end.
 
-    // Deserialize each clip using restoreClip
-    for (const auto& clipVar : *arr) {
-        ClipInfo clip;
-        if (!deserializeClipInfo(clipVar, clip)) {
-            return false;
-        }
+    for (auto& clip : clips) {
         clipManager.restoreClip(clip);
     }
 
