@@ -1,5 +1,6 @@
 #include "SessionView.hpp"
 
+#include <cmath>
 #include <functional>
 
 #include "../panels/state/PanelController.hpp"
@@ -8,6 +9,43 @@
 #include "core/ViewModeController.hpp"
 
 namespace magda {
+
+// dB conversion helpers for faders
+namespace {
+constexpr float MIN_DB = -60.0f;
+constexpr float MAX_DB = 6.0f;
+constexpr float METER_CURVE_EXPONENT = 2.0f;
+
+float gainToDb(float gain) {
+    if (gain <= 0.0f)
+        return MIN_DB;
+    return 20.0f * std::log10(gain);
+}
+
+float dbToGain(float db) {
+    if (db <= MIN_DB)
+        return 0.0f;
+    return std::pow(10.0f, db / 20.0f);
+}
+
+float dbToMeterPos(float db) {
+    if (db <= MIN_DB)
+        return 0.0f;
+    if (db >= MAX_DB)
+        return 1.0f;
+    float normalized = (db - MIN_DB) / (MAX_DB - MIN_DB);
+    return std::pow(normalized, METER_CURVE_EXPONENT);
+}
+
+float meterPosToDb(float pos) {
+    if (pos <= 0.0f)
+        return MIN_DB;
+    if (pos >= 1.0f)
+        return MAX_DB;
+    float normalized = std::pow(pos, 1.0f / METER_CURVE_EXPONENT);
+    return MIN_DB + normalized * (MAX_DB - MIN_DB);
+}
+}  // namespace
 
 // Custom clip slot button that handles clicks, double-clicks, and play button area
 class ClipSlotButton : public juce::TextButton {
@@ -209,6 +247,10 @@ SessionView::SessionView() {
 }
 
 SessionView::~SessionView() {
+    // Clear LookAndFeel references before faders are destroyed
+    for (auto& fader : trackFaders) {
+        fader->setLookAndFeel(nullptr);
+    }
     TrackManager::getInstance().removeListener(this);
     ClipManager::getInstance().removeListener(this);
     ViewModeController::getInstance().removeListener(this);
@@ -246,9 +288,10 @@ void SessionView::trackPropertyChanged(int trackId) {
         }
         trackHeaders[index]->setButtonText(headerText);
 
-        // Sync fader value
+        // Sync fader value (convert linear gain to fader position)
         if (index < static_cast<int>(trackFaders.size())) {
-            trackFaders[index]->setValue(track->volume, juce::dontSendNotification);
+            float db = gainToDb(track->volume);
+            trackFaders[index]->setValue(dbToMeterPos(db), juce::dontSendNotification);
         }
     }
 }
@@ -268,6 +311,9 @@ void SessionView::masterChannelChanged() {
 
 void SessionView::rebuildTracks() {
     // Clear existing track headers, clip slots, and faders
+    for (auto& fader : trackFaders) {
+        fader->setLookAndFeel(nullptr);
+    }
     trackHeaders.clear();
     clipSlots.clear();
     trackFaders.clear();
@@ -387,26 +433,30 @@ void SessionView::rebuildTracks() {
         clipSlots.push_back(std::move(trackSlots));
     }
 
-    // Create track faders
+    // Create track faders (same style as mixer channel strips)
     for (int i = 0; i < numTracks; ++i) {
         auto fader =
             std::make_unique<juce::Slider>(juce::Slider::LinearVertical, juce::Slider::NoTextBox);
-        fader->setRange(-60.0, 6.0, 0.1);
-        fader->setSkewFactorFromMidPoint(-12.0);
+        fader->setRange(0.0, 1.0, 0.001);
+        fader->setSliderSnapsToMousePosition(false);
+        fader->setLookAndFeel(&faderLookAndFeel_);
+        fader->setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::SURFACE));
         fader->setColour(juce::Slider::backgroundColourId,
                          DarkTheme::getColour(DarkTheme::SURFACE));
-        fader->setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        fader->setColour(juce::Slider::thumbColourId,
-                         DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        fader->setColour(juce::Slider::thumbColourId, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
 
         TrackId trackId = visibleTrackIds_[i];
         const auto* track = trackManager.getTrack(trackId);
         if (track) {
-            fader->setValue(track->volume, juce::dontSendNotification);
+            float db = gainToDb(track->volume);
+            fader->setValue(dbToMeterPos(db), juce::dontSendNotification);
         }
 
         fader->onValueChange = [this, trackId, i]() {
-            TrackManager::getInstance().setTrackVolume(trackId, trackFaders[i]->getValue());
+            float faderPos = static_cast<float>(trackFaders[i]->getValue());
+            float db = meterPosToDb(faderPos);
+            float gain = dbToGain(db);
+            TrackManager::getInstance().setTrackVolume(trackId, gain);
         };
 
         faderContainer->addAndMakeVisible(*fader);
@@ -485,9 +535,9 @@ void SessionView::resized() {
     // Grid viewport takes remaining space (below headers, above faders)
     gridViewport->setBounds(bounds);
 
-    // Size the grid content
-    int gridWidth = numTracks * trackColumnWidth;
-    int gridHeight = NUM_SCENES * sceneRowHeight;
+    // Size the grid content to fill the viewport (no gap)
+    int gridWidth = juce::jmax(numTracks * trackColumnWidth, bounds.getWidth());
+    int gridHeight = juce::jmax(NUM_SCENES * sceneRowHeight, bounds.getHeight());
     gridContent->setSize(gridWidth, gridHeight);
 
     // Position clip slots within grid content
