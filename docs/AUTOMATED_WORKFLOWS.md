@@ -85,7 +85,7 @@ Each file is processed separately with individual reports containing:
 
 **Outputs**:
 - **Per-file reports**: Individual analysis reports for each source file in `results/` directory
-- **Summary report**: Aggregated findings with truncation for GitHub API limits (65KB)
+- **Summary report**: Aggregated findings with truncation for GitHub API limits (65,000 bytes)
 - **File index**: List of all per-file reports available
 - Workflow artifacts with 30-day retention
 - GitHub issue (if files with high-complexity > 3) with prioritized recommendations
@@ -98,7 +98,7 @@ gh workflow run refactoring-scanner.yml
 **Scalability**:
 The workflow is designed to handle large codebases by:
 - Processing files individually to avoid memory issues
-- Truncating summary reports to 65,000 characters for GitHub API compatibility
+- Truncating summary reports to 65,000 bytes for GitHub API compatibility
 - Storing detailed per-file results as downloadable artifacts
 - Providing a file index for easy navigation of results
 
@@ -235,7 +235,7 @@ For the Refactoring Scanner workflow:
    ```
    refactoring-results/
    ├── summary-full.txt              # Complete summary (may be large)
-   ├── summary-truncated.txt         # Truncated summary (65KB limit)
+   ├── summary-truncated.txt         # Truncated summary (65,000 bytes max)
    ├── file-index.txt                # Index of all per-file reports
    └── refactoring-report-*.txt      # Individual file analysis reports
    ```

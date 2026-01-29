@@ -70,10 +70,11 @@ jobs:
           
           # 1. Analyze complexity with lizard
           echo "--- Complexity Analysis ---" >> "$RESULT_FILE"
-          lizard "$file" -l cpp -C 10 >> "$RESULT_FILE" 2>&1 || echo "No high complexity functions found" >> "$RESULT_FILE"
+          LIZARD_OUTPUT=$(lizard "$file" -l cpp -C 10 2>&1 || echo "No high complexity functions found")
+          echo "$LIZARD_OUTPUT" >> "$RESULT_FILE"
           
           # Check if file has high complexity
-          if lizard "$file" -l cpp -C 10 2>/dev/null | grep -q "^[[:space:]]*[0-9]"; then
+          if echo "$LIZARD_OUTPUT" | grep -q "^[[:space:]]*[0-9]"; then
             COMPLEX_COUNT=$((COMPLEX_COUNT + 1))
             echo "⚠️  $file: High complexity detected" >> refactoring-results-summary.txt
           fi
@@ -112,7 +113,7 @@ jobs:
           echo "" >> "$RESULT_FILE"
           
           # 5. For header files, check for god objects
-          if [[ "$file" == *.hpp ]]; then
+          if [[ "$file" == *.hpp || "$file" == *.h ]]; then
             echo "--- Class Analysis ---" >> "$RESULT_FILE"
             CLASS_NAME=$(grep "^class\|^struct" "$file" | head -1 | awk '{print $2}' | sed 's/[:{]//g')
             if [ -n "$CLASS_NAME" ]; then
@@ -154,7 +155,8 @@ jobs:
 
     - name: Summarize Results
       run: |
-        # Truncate summary to 65000 characters to avoid GitHub API limits
+        # Truncate summary to 65000 bytes to avoid GitHub API limits
+        # Note: This truncates by bytes, not characters, to ensure we stay under the limit
         head -c 65000 refactoring-results-summary.txt > results/summary-truncated.txt || true
         
         # Also copy full summary
@@ -163,9 +165,9 @@ jobs:
         # Create a summary of per-file results
         echo "=== Per-File Analysis Reports ===" > results/file-index.txt
         echo "Individual file reports available in artifacts:" >> results/file-index.txt
-        ls -1 results/refactoring-report-*.txt | while read -r report; do
+        ls -1 results/refactoring-report-*.txt 2>/dev/null | while read -r report; do
           echo "  - $(basename "$report")" >> results/file-index.txt
-        done
+        done || echo "No per-file reports generated" >> results/file-index.txt
 
     - name: Upload Refactoring Artifacts
       uses: actions/upload-artifact@v4
