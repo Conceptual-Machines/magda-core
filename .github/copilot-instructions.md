@@ -33,6 +33,7 @@ This document defines code review guidelines for the Magda project, a JUCE/C++ a
 - **Modern C++20**: Encourage use of C++20 features where appropriate (concepts, ranges, coroutines if applicable)
 - **Error Handling**: Verify appropriate error handling strategies
 - **Documentation**: Check that complex algorithms or non-obvious code have explanatory comments
+- **TODO Comments**: Read and respect TODO comments in the code being reviewed. If a TODO indicates planned work or known limitations, consider this context when reviewing related changes. Don't request changes that conflict with or duplicate TODO items.
 
 ## What NOT to Focus On
 
@@ -78,6 +79,11 @@ This document defines code review guidelines for the Magda project, a JUCE/C++ a
 4. **Re-review**: For significant changes, request another review cycle
 5. **Resolution**: Mark comments as resolved once addressed
 6. **Approval**: PR is approved when all critical issues are resolved
+
+### Context Awareness
+- **Previous Code Reviews**: Consider the context and feedback from previous code review iterations when providing new feedback. Don't repeat comments that have already been addressed or discussed.
+- **Review History**: If a developer has provided justification for a design decision in a previous review iteration, respect that context unless new information warrants revisiting the issue.
+- **Incremental Changes**: Recognize when changes are part of a larger refactoring or feature implementation. Consider the broader context and don't insist on perfection in intermediate states if the overall direction is sound.
 
 ### Comment Guidelines
 - **Be Specific**: Point to exact line numbers and provide clear explanations
