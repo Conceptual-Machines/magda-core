@@ -6,7 +6,6 @@
 #include <memory>
 #include <vector>
 
-#include "../components/mixer/MasterChannelStrip.hpp"
 #include "../themes/MixerLookAndFeel.hpp"
 #include "core/ClipManager.hpp"
 #include "core/TrackManager.hpp"
@@ -117,8 +116,8 @@ class SessionView : public juce::Component,
     std::vector<std::unique_ptr<juce::Slider>> trackFaders;
     MixerLookAndFeel faderLookAndFeel_;
 
-    // Master channel strip
-    std::unique_ptr<MasterChannelStrip> masterStrip;
+    // Master fader (in scene column area of fader row)
+    std::unique_ptr<juce::Slider> masterFader_;
 
     void rebuildTracks();
     void setupSceneButtons();

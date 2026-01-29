@@ -355,11 +355,30 @@ SessionView::SessionView() {
     addSceneButton->onClick = [this]() { addScene(); };
     addAndMakeVisible(*addSceneButton);
 
-    // Create master channel strip (vertical orientation for Session view)
-    // Hide VU meter to keep it compact - only show peak meter
-    masterStrip = std::make_unique<MasterChannelStrip>(MasterChannelStrip::Orientation::Vertical);
-    masterStrip->setShowVuMeter(false);
-    addAndMakeVisible(*masterStrip);
+    // Create master fader in the fader row (scene column area)
+    masterFader_ =
+        std::make_unique<juce::Slider>(juce::Slider::LinearVertical, juce::Slider::NoTextBox);
+    masterFader_->setRange(0.0, 1.0, 0.001);
+    masterFader_->setSliderSnapsToMousePosition(false);
+    masterFader_->setLookAndFeel(&faderLookAndFeel_);
+    masterFader_->setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+    masterFader_->setColour(juce::Slider::backgroundColourId,
+                            DarkTheme::getColour(DarkTheme::SURFACE));
+    masterFader_->setColour(juce::Slider::thumbColourId,
+                            DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+
+    const auto& master = TrackManager::getInstance().getMasterChannel();
+    float masterDb = gainToDb(master.volume);
+    masterFader_->setValue(dbToMeterPos(masterDb), juce::dontSendNotification);
+
+    masterFader_->onValueChange = [this]() {
+        float faderPos = static_cast<float>(masterFader_->getValue());
+        float db = meterPosToDb(faderPos);
+        float gain = dbToGain(db);
+        TrackManager::getInstance().setMasterVolume(gain);
+    };
+
+    addAndMakeVisible(*masterFader_);
 
     // Create drag ghost label for file drag preview (added to grid content)
     dragGhostLabel_ = std::make_unique<juce::Label>();
@@ -391,6 +410,7 @@ SessionView::~SessionView() {
     for (auto& fader : trackFaders) {
         fader->setLookAndFeel(nullptr);
     }
+    masterFader_->setLookAndFeel(nullptr);
     TrackManager::getInstance().removeListener(this);
     ClipManager::getInstance().removeListener(this);
     ViewModeController::getInstance().removeListener(this);
@@ -442,11 +462,10 @@ void SessionView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*pro
 }
 
 void SessionView::masterChannelChanged() {
-    // Update master strip visibility
+    // Update master fader from master channel state
     const auto& master = TrackManager::getInstance().getMasterChannel();
-    bool masterVisible = master.isVisibleIn(currentViewMode_);
-    masterStrip->setVisible(masterVisible);
-    resized();
+    float masterDb = gainToDb(master.volume);
+    masterFader_->setValue(dbToMeterPos(masterDb), juce::dontSendNotification);
 }
 
 void SessionView::rebuildTracks() {
@@ -619,11 +638,6 @@ void SessionView::rebuildTracks() {
         trackStopButtons.push_back(std::move(stopBtn));
     }
 
-    // Update master strip visibility
-    const auto& master = TrackManager::getInstance().getMasterChannel();
-    bool masterVisible = master.isVisibleIn(currentViewMode_);
-    masterStrip->setVisible(masterVisible);
-
     resized();
     updateHeaderSelectionVisuals();
 
@@ -634,7 +648,7 @@ void SessionView::rebuildTracks() {
 void SessionView::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
 
-    // Fill the scene column area at fader row height with the same panel background
+    // Fill the fader row background in the master fader area (scene column)
     auto faderBounds = faderContainer->getBounds();
     g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
     g.fillRect(faderBounds.getRight(), faderBounds.getY(), getWidth() - faderBounds.getRight(),
@@ -643,12 +657,6 @@ void SessionView::paint(juce::Graphics& g) {
 
 void SessionView::paintOverChildren(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
-
-    // Vertical separator on left edge of master strip
-    if (masterStrip->isVisible()) {
-        auto masterBounds = masterStrip->getBounds();
-        g.fillRect(masterBounds.getX() - 1, masterBounds.getY(), 1, masterBounds.getHeight());
-    }
 
     // Vertical separator on left edge of scene column
     auto sceneBounds = sceneContainer->getBounds();
@@ -668,16 +676,10 @@ void SessionView::resized() {
     int trackColumnWidth = CLIP_SLOT_WIDTH + TRACK_SEPARATOR_WIDTH;
     int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
 
-    // Master channel strip on the far right (only if visible)
-    static constexpr int MASTER_STRIP_WIDTH = 120;
-    if (masterStrip->isVisible()) {
-        masterStrip->setBounds(bounds.removeFromRight(MASTER_STRIP_WIDTH));
-    }
-
-    // Fader row at the bottom (tracks area only, no scene column)
+    // Fader row at the bottom (tracks area + master fader in scene column)
     auto faderRow = bounds.removeFromBottom(FADER_ROW_HEIGHT);
-    auto faderSceneGap = faderRow.removeFromRight(SCENE_BUTTON_WIDTH);  // empty gap for scene col
-    (void)faderSceneGap;
+    auto masterFaderArea = faderRow.removeFromRight(SCENE_BUTTON_WIDTH);
+    masterFader_->setBounds(masterFaderArea.reduced(4));
     faderContainer->setBounds(faderRow);
     faderContainer->setTrackLayout(numTracks, CLIP_SLOT_WIDTH, TRACK_SEPARATOR_WIDTH,
                                    trackHeaderScrollOffset);
