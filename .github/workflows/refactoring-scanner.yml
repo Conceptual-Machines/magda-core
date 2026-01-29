@@ -1,6 +1,9 @@
 name: Refactoring Opportunities Scanner
 
 on:
+  push:
+    branches:
+      - main
   # Run bi-weekly on the 1st and 15th at 10:00 AM UTC
   schedule:
     - cron: '0 10 1,15 * *'
@@ -20,7 +23,8 @@ jobs:
       contents: read
 
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout Code
+      uses: actions/checkout@v4
       with:
         submodules: false
 
@@ -29,127 +33,169 @@ jobs:
         python3 -m pip install --upgrade pip
         pip3 install lizard
 
-    - name: Analyze code complexity
-      id: complexity
+    - name: Create results directory
       run: |
-        echo "Analyzing code complexity..."
-        
-        # Use lizard to find complex functions (C++ compatible)
-        echo "=== High Complexity Functions (Cyclomatic Complexity > 10) ===" > refactoring-report.txt
-        lizard magda/ tests/ -l cpp -C 10 >> refactoring-report.txt || echo "None found" >> refactoring-report.txt
-        
-        # Count high-complexity items (CCN > 10)
-        COMPLEX_COUNT=$(lizard magda/ tests/ -l cpp -C 10 2>/dev/null | grep -c "^[[:space:]]*[0-9]" || echo "0")
-        echo "complex_count=$COMPLEX_COUNT" >> $GITHUB_OUTPUT
-        
-        echo "" >> refactoring-report.txt
-        echo "Total high-complexity functions/methods: $COMPLEX_COUNT" >> refactoring-report.txt
+        mkdir -p results
 
-    - name: Find duplicate code candidates
+    - name: List Code Files
       run: |
-        echo "" >> refactoring-report.txt
-        echo "=== Potential Code Duplication ===" >> refactoring-report.txt
-        
-        # Look for similar function names that might indicate duplication
-        echo "Functions with similar names (potential duplication):" >> refactoring-report.txt
-        find magda/ tests/ \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) -exec grep -h "^[a-zA-Z_].*::" {} \; | \
-          sort | uniq -c | sort -rn | head -20 >> refactoring-report.txt || true
+        find magda/ tests/ \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) > file_list.txt
+        echo "Found $(wc -l < file_list.txt) files to analyze"
 
-    - name: Find large files
+    - name: Process Each File
+      id: analyze_files
       run: |
-        echo "" >> refactoring-report.txt
-        echo "=== Large Files (>500 lines, candidates for splitting) ===" >> refactoring-report.txt
-        {
-          find magda/ tests/ \( -name "*.cpp" -o -name "*.hpp" \) | while read -r file; do
-            LINES=$(wc -l < "$file")
-            if [ "$LINES" -gt 500 ]; then
-              echo "$file: $LINES lines"
-            fi
-          done
-        } | sort -t: -k2 -rn >> refactoring-report.txt
-
-    - name: Detect tight coupling
-      run: |
-        echo "" >> refactoring-report.txt
-        echo "=== Tight Coupling Indicators ===" >> refactoring-report.txt
+        # Initialize summary file
+        echo "=== Refactoring Analysis Summary ===" > refactoring-results-summary.txt
+        echo "" >> refactoring-results-summary.txt
         
-        # Files that include many other project headers
-        echo "Files with many internal includes (>10):" >> refactoring-report.txt
-        {
-          find magda/ \( -name "*.cpp" -o -name "*.hpp" \) | while read -r file; do
-            INTERNAL_INCLUDES=$(grep -c "#include.*magda" "$file" 2>/dev/null || echo "0")
-            if [ "$INTERNAL_INCLUDES" -gt 10 ]; then
-              echo "$file: $INTERNAL_INCLUDES internal includes"
-            fi
-          done
-        } | sort -t: -k2 -rn >> refactoring-report.txt
-
-    - name: Find unused includes
-      run: |
-        echo "" >> refactoring-report.txt
-        echo "=== Include Statistics ===" >> refactoring-report.txt
-        echo "Note: Run scripts/find-unused-includes.py for detailed unused include analysis" >> refactoring-report.txt
+        TOTAL_FILES=$(wc -l < file_list.txt)
+        COMPLEX_COUNT=0
+        LARGE_FILE_COUNT=0
+        COUPLING_COUNT=0
         
-        # Count total includes for reference
-        TOTAL_INCLUDES=$(find magda/ tests/ \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) | \
-          xargs grep -c "#include" | awk -F: '{sum+=$2} END {print sum}')
-        echo "Total #include statements: $TOTAL_INCLUDES" >> refactoring-report.txt
-
-    - name: Check for magic numbers
-      run: |
-        echo "" >> refactoring-report.txt
-        echo "=== Magic Numbers (should be named constants) ===" >> refactoring-report.txt
+        echo "Processing $TOTAL_FILES files..." >> refactoring-results-summary.txt
+        echo "" >> refactoring-results-summary.txt
         
-        # Find numeric literals that aren't 0, 1, 2, -1
-        grep -r "[^a-zA-Z0-9_][0-9]\{2,\}[^a-zA-Z0-9_]" magda/ --include="*.cpp" -n | \
-          grep -v "\.0\|1000\|2000\|255" | head -30 >> refactoring-report.txt || echo "Sample found" >> refactoring-report.txt
-
-    - name: Identify god objects
-      run: |
-        echo "" >> refactoring-report.txt
-        echo "=== Potential God Objects (classes with many public methods) ===" >> refactoring-report.txt
-        
-        # Count public method declarations in header files (simplified heuristic)
-        {
-          find magda/ -name "*.hpp" | while read -r file; do
+        # Process each file
+        while IFS= read -r file; do
+          echo "Analyzing $file..."
+          
+          # Create sanitized filename for per-file results
+          SAFE_FILENAME=$(echo "$file" | sed 's/[\/\.]/-/g')
+          RESULT_FILE="results/refactoring-report-${SAFE_FILENAME}.txt"
+          
+          echo "=== Analysis Report for: $file ===" > "$RESULT_FILE"
+          echo "" >> "$RESULT_FILE"
+          
+          # 1. Analyze complexity with lizard
+          echo "--- Complexity Analysis ---" >> "$RESULT_FILE"
+          lizard "$file" -l cpp -C 10 >> "$RESULT_FILE" 2>&1 || echo "No high complexity functions found" >> "$RESULT_FILE"
+          
+          # Check if file has high complexity
+          if lizard "$file" -l cpp -C 10 2>/dev/null | grep -q "^[[:space:]]*[0-9]"; then
+            COMPLEX_COUNT=$((COMPLEX_COUNT + 1))
+            echo "⚠️  $file: High complexity detected" >> refactoring-results-summary.txt
+          fi
+          
+          echo "" >> "$RESULT_FILE"
+          
+          # 2. Check file size
+          LINES=$(wc -l < "$file")
+          echo "--- File Size ---" >> "$RESULT_FILE"
+          echo "Lines of code: $LINES" >> "$RESULT_FILE"
+          
+          if [ "$LINES" -gt 500 ]; then
+            LARGE_FILE_COUNT=$((LARGE_FILE_COUNT + 1))
+            echo "⚠️  $file: Large file ($LINES lines)" >> refactoring-results-summary.txt
+          fi
+          
+          echo "" >> "$RESULT_FILE"
+          
+          # 3. Check for tight coupling (internal includes)
+          echo "--- Coupling Analysis ---" >> "$RESULT_FILE"
+          INTERNAL_INCLUDES=$(grep -c "#include.*magda" "$file" 2>/dev/null || echo "0")
+          echo "Internal includes: $INTERNAL_INCLUDES" >> "$RESULT_FILE"
+          
+          if [ "$INTERNAL_INCLUDES" -gt 10 ]; then
+            COUPLING_COUNT=$((COUPLING_COUNT + 1))
+            echo "⚠️  $file: High coupling ($INTERNAL_INCLUDES internal includes)" >> refactoring-results-summary.txt
+          fi
+          
+          echo "" >> "$RESULT_FILE"
+          
+          # 4. Check for magic numbers
+          echo "--- Magic Numbers ---" >> "$RESULT_FILE"
+          grep -n "[^a-zA-Z0-9_][0-9]\{2,\}[^a-zA-Z0-9_]" "$file" | \
+            grep -v "\.0\|1000\|2000\|255" | head -10 >> "$RESULT_FILE" || echo "None found" >> "$RESULT_FILE"
+          
+          echo "" >> "$RESULT_FILE"
+          
+          # 5. For header files, check for god objects
+          if [[ "$file" == *.hpp ]]; then
+            echo "--- Class Analysis ---" >> "$RESULT_FILE"
             CLASS_NAME=$(grep "^class\|^struct" "$file" | head -1 | awk '{print $2}' | sed 's/[:{]//g')
             if [ -n "$CLASS_NAME" ]; then
-              # Count lines that look like method declarations (public section)
               METHOD_COUNT=$(awk '/^public:/,/^(private:|protected:)/ {if (/^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*\(/) count++} END {print count+0}' "$file")
+              echo "Class: $CLASS_NAME" >> "$RESULT_FILE"
+              echo "Public methods: ~$METHOD_COUNT" >> "$RESULT_FILE"
+              
               if [ "$METHOD_COUNT" -gt 20 ]; then
-                echo "$file ($CLASS_NAME): ~$METHOD_COUNT public methods"
+                echo "⚠️  $file ($CLASS_NAME): Potential god object (~$METHOD_COUNT public methods)" >> refactoring-results-summary.txt
               fi
             fi
-          done
-        } | sort -t: -k2 -rn | head -10 >> refactoring-report.txt
+          fi
+          
+          echo "" >> "$RESULT_FILE"
+          echo "File: $file processed" >> "$RESULT_FILE"
+          
+        done < file_list.txt
+        
+        # Add summary statistics
+        echo "" >> refactoring-results-summary.txt
+        echo "=== Summary Statistics ===" >> refactoring-results-summary.txt
+        echo "Total files analyzed: $TOTAL_FILES" >> refactoring-results-summary.txt
+        echo "Files with high complexity: $COMPLEX_COUNT" >> refactoring-results-summary.txt
+        echo "Large files (>500 lines): $LARGE_FILE_COUNT" >> refactoring-results-summary.txt
+        echo "Files with tight coupling (>10 includes): $COUPLING_COUNT" >> refactoring-results-summary.txt
+        
+        # Save metrics for later steps
+        echo "complex_count=$COMPLEX_COUNT" >> $GITHUB_OUTPUT
+        echo "large_file_count=$LARGE_FILE_COUNT" >> $GITHUB_OUTPUT
+        echo "coupling_count=$COUPLING_COUNT" >> $GITHUB_OUTPUT
 
-    - name: Upload refactoring report
+    - name: Find duplicate code patterns
+      run: |
+        echo "" >> refactoring-results-summary.txt
+        echo "=== Potential Code Duplication ===" >> refactoring-results-summary.txt
+        echo "Functions with similar names:" >> refactoring-results-summary.txt
+        find magda/ tests/ \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) -exec grep -h "^[a-zA-Z_].*::" {} \; | \
+          sort | uniq -c | sort -rn | head -20 >> refactoring-results-summary.txt || echo "None found" >> refactoring-results-summary.txt
+
+    - name: Summarize Results
+      run: |
+        # Truncate summary to 65000 characters to avoid GitHub API limits
+        head -c 65000 refactoring-results-summary.txt > results/summary-truncated.txt || true
+        
+        # Also copy full summary
+        cp refactoring-results-summary.txt results/summary-full.txt
+        
+        # Create a summary of per-file results
+        echo "=== Per-File Analysis Reports ===" > results/file-index.txt
+        echo "Individual file reports available in artifacts:" >> results/file-index.txt
+        ls -1 results/refactoring-report-*.txt | while read -r report; do
+          echo "  - $(basename "$report")" >> results/file-index.txt
+        done
+
+    - name: Upload Refactoring Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: refactoring-opportunities-report
-        path: refactoring-report.txt
+        name: refactoring-results
+        path: results/
         retention-days: 30
 
-    - name: Create refactoring issue
-      if: steps.complexity.outputs.complex_count > 3
+    - name: Post Results on GitHub Issues
+      if: steps.analyze_files.outputs.complex_count > 3
       uses: actions/github-script@v7
       with:
         script: |
           const fs = require('fs');
-          const report = fs.readFileSync('refactoring-report.txt', 'utf8');
+          let report = fs.readFileSync('./results/summary-truncated.txt', 'utf8');
           
           const issueBody = `## Refactoring Opportunities Report
           
           This issue was automatically created by the refactoring scanner workflow.
           
           ### Summary
-          - **High-complexity functions**: ${{ steps.complexity.outputs.complex_count }}
+          - **Files with high complexity**: ${{ steps.analyze_files.outputs.complex_count }}
+          - **Large files (>500 lines)**: ${{ steps.analyze_files.outputs.large_file_count }}
+          - **Files with tight coupling**: ${{ steps.analyze_files.outputs.coupling_count }}
           - **Analysis date**: ${new Date().toISOString().split('T')[0]}
           
           ### Detailed Findings
           
           <details>
-          <summary>Click to expand full report</summary>
+          <summary>Click to expand summary report</summary>
           
           \`\`\`
           ${report}
@@ -157,17 +203,21 @@ jobs:
           
           </details>
           
+          ### Per-File Reports
+          
+          Detailed per-file analysis reports are available in the workflow artifacts. Download the \`refactoring-results\` artifact to review individual file reports.
+          
           ### Recommended Actions
           
           1. **High Complexity**: Break down complex functions (cyclomatic complexity > 10)
           2. **Large Files**: Consider splitting files over 500 lines into smaller modules
-          3. **Tight Coupling**: Review files with many internal dependencies
+          3. **Tight Coupling**: Review files with many internal dependencies (>10 includes)
           4. **Magic Numbers**: Replace literal numbers with named constants
           5. **God Objects**: Consider splitting classes with 20+ methods
           
           ### Next Steps
           
-          - Review high-priority items
+          - Review high-priority items in the per-file reports
           - Create separate issues for specific refactoring tasks
           - Schedule refactoring in upcoming sprints
           
@@ -211,11 +261,14 @@ jobs:
       run: |
         echo "## Refactoring Analysis Complete 🔍" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "- **High-complexity functions**: ${{ steps.complexity.outputs.complex_count }}" >> $GITHUB_STEP_SUMMARY
+        echo "### Analysis Results" >> $GITHUB_STEP_SUMMARY
+        echo "- **Files with high complexity**: ${{ steps.analyze_files.outputs.complex_count }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Large files (>500 lines)**: ${{ steps.analyze_files.outputs.large_file_count }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Files with tight coupling**: ${{ steps.analyze_files.outputs.coupling_count }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "Review the full report in workflow artifacts for detailed findings." >> $GITHUB_STEP_SUMMARY
+        echo "Review the full report in workflow artifacts for detailed per-file findings." >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        COMPLEX_COUNT="${{ steps.complexity.outputs.complex_count }}"
+        COMPLEX_COUNT="${{ steps.analyze_files.outputs.complex_count }}"
         if [ "${COMPLEX_COUNT:-0}" -gt 3 ]; then
           echo "⚠️ **Action needed**: GitHub issue created for high-priority refactoring opportunities." >> $GITHUB_STEP_SUMMARY
         else
