@@ -4,10 +4,10 @@
 #include "AIChatConsoleContent.hpp"
 #include "EmptyContent.hpp"
 #include "InspectorContent.hpp"
+#include "MediaExplorerContent.hpp"
 #include "PianoRollContent.hpp"
 #include "PluginBrowserContent.hpp"
 #include "PresetBrowserContent.hpp"
-#include "SampleBrowserContent.hpp"
 #include "ScriptingConsoleContent.hpp"
 #include "TrackChainContent.hpp"
 #include "WaveformEditorContent.hpp"
@@ -30,8 +30,8 @@ void PanelContentFactory::registerBuiltinTypes() {
     registerContentType(PanelContentType::PluginBrowser,
                         []() { return std::make_unique<PluginBrowserContent>(); });
 
-    registerContentType(PanelContentType::SampleBrowser,
-                        []() { return std::make_unique<SampleBrowserContent>(); });
+    registerContentType(PanelContentType::MediaExplorer,
+                        []() { return std::make_unique<MediaExplorerContent>(); });
 
     registerContentType(PanelContentType::PresetBrowser,
                         []() { return std::make_unique<PresetBrowserContent>(); });

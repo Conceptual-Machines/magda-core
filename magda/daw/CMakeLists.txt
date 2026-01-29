@@ -77,6 +77,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/sidebar/info.svg
     ../../assets/icons/sidebar/console.svg
     ../../assets/icons/script.svg
+    ../../assets/icons/browser.svg
     # Mixer fader icons
     ../../assets/icons/fader/fader_thumb.svg
     ../../assets/icons/fader/fader_track.svg
@@ -154,7 +155,7 @@ set(DAW_UI_SOURCES
     # Panel Content
     ui/panels/content/PanelContentFactory.cpp
     ui/panels/content/PluginBrowserContent.cpp
-    ui/panels/content/SampleBrowserContent.cpp
+    ui/panels/content/MediaExplorerContent.cpp
     ui/panels/content/PresetBrowserContent.cpp
     ui/panels/content/EmptyContent.cpp
     ui/panels/content/InspectorContent.cpp
@@ -292,7 +293,7 @@ set(DAW_HEADERS
     ui/panels/content/PanelContent.hpp
     ui/panels/content/PanelContentFactory.hpp
     ui/panels/content/PluginBrowserContent.hpp
-    ui/panels/content/SampleBrowserContent.hpp
+    ui/panels/content/MediaExplorerContent.hpp
     ui/panels/content/PresetBrowserContent.hpp
     ui/panels/content/EmptyContent.hpp
     ui/panels/content/InspectorContent.hpp
@@ -403,6 +404,9 @@ target_link_libraries(magda_daw
     juce::juce_core
     juce::juce_data_structures
     juce::juce_audio_basics
+    juce::juce_audio_devices
+    juce::juce_audio_formats
+    juce::juce_audio_utils
     juce::juce_gui_basics
     tracktion::tracktion_engine
     MagdaAssets

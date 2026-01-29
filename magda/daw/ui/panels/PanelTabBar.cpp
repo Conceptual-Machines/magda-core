@@ -16,8 +16,8 @@ SvgIconData getSvgForContentType(PanelContentType type) {
     switch (type) {
         case PanelContentType::PluginBrowser:
             return {BinaryData::plug_svg, BinaryData::plug_svgSize};
-        case PanelContentType::SampleBrowser:
-            return {BinaryData::sample_svg, BinaryData::sample_svgSize};
+        case PanelContentType::MediaExplorer:
+            return {BinaryData::browser_svg, BinaryData::browser_svgSize};
         case PanelContentType::PresetBrowser:
             return {BinaryData::preset_svg, BinaryData::preset_svgSize};
         case PanelContentType::Inspector:

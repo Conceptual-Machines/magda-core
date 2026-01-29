@@ -101,7 +101,7 @@ inline AllPanelStates getDefaultPanelStates() {
 
     // Left Panel: Plugin, Sample, Preset browsers
     states.leftPanel.location = PanelLocation::Left;
-    states.leftPanel.tabs = {PanelContentType::PluginBrowser, PanelContentType::SampleBrowser,
+    states.leftPanel.tabs = {PanelContentType::PluginBrowser, PanelContentType::MediaExplorer,
                              PanelContentType::PresetBrowser};
     states.leftPanel.activeTabIndex = 0;
     states.leftPanel.collapsed = false;

@@ -10,7 +10,7 @@ namespace magda::daw::ui {
 enum class PanelContentType {
     Empty,  // No selection - shows nothing
     PluginBrowser,
-    SampleBrowser,
+    MediaExplorer,
     PresetBrowser,
     Inspector,
     AIChatConsole,
@@ -77,7 +77,7 @@ inline juce::String getContentTypeName(PanelContentType type) {
             return "";
         case PanelContentType::PluginBrowser:
             return "Plugins";
-        case PanelContentType::SampleBrowser:
+        case PanelContentType::MediaExplorer:
             return "Samples";
         case PanelContentType::PresetBrowser:
             return "Presets";
@@ -106,7 +106,7 @@ inline juce::String getContentTypeIcon(PanelContentType type) {
             return "";
         case PanelContentType::PluginBrowser:
             return "Plugin";
-        case PanelContentType::SampleBrowser:
+        case PanelContentType::MediaExplorer:
             return "Sample";
         case PanelContentType::PresetBrowser:
             return "Preset";
