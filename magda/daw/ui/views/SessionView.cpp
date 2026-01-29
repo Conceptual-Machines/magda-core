@@ -161,6 +161,72 @@ class SessionView::GridContent : public juce::Component {
     int numScenes_;
 };
 
+// Custom viewport that draws track separators in the background area
+class SessionView::GridViewport : public juce::Viewport {
+  public:
+    GridViewport() = default;
+
+    void setTrackLayout(int numTracks, int clipWidth, int separatorWidth) {
+        numTracks_ = numTracks;
+        clipWidth_ = clipWidth;
+        separatorWidth_ = separatorWidth;
+        repaint();
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+
+        // Draw vertical separators in the background (visible when content is shorter than
+        // viewport)
+        int trackColumnWidth = clipWidth_ + separatorWidth_;
+        int scrollX = getViewPositionX();
+        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        for (int i = 0; i < numTracks_; ++i) {
+            int x = i * trackColumnWidth + clipWidth_ - scrollX;
+            g.fillRect(x, 0, separatorWidth_, getHeight());
+        }
+    }
+
+  private:
+    int numTracks_ = 0;
+    int clipWidth_ = 80;
+    int separatorWidth_ = 3;
+};
+
+// Container for per-track stop buttons (pinned between grid and faders)
+class SessionView::StopButtonContainer : public juce::Component {
+  public:
+    StopButtonContainer() {
+        setInterceptsMouseClicks(false, true);
+    }
+
+    void setTrackLayout(int numTracks, int clipWidth, int separatorWidth, int scrollOffset) {
+        numTracks_ = numTracks;
+        clipWidth_ = clipWidth;
+        separatorWidth_ = separatorWidth;
+        scrollOffset_ = scrollOffset;
+        repaint();
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+
+        // Draw vertical separators between tracks
+        int trackColumnWidth = clipWidth_ + separatorWidth_;
+        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        for (int i = 0; i < numTracks_; ++i) {
+            int x = i * trackColumnWidth + clipWidth_ - scrollOffset_;
+            g.fillRect(x, 0, separatorWidth_, getHeight());
+        }
+    }
+
+  private:
+    int numTracks_ = 0;
+    int clipWidth_ = 80;
+    int separatorWidth_ = 3;
+    int scrollOffset_ = 0;
+};
+
 // Container for track headers with clipping
 class SessionView::HeaderContainer : public juce::Component {
   public:
@@ -258,12 +324,16 @@ SessionView::SessionView() {
     // Create viewport for scrollable grid with custom grid content
     gridContent = std::make_unique<GridContent>(
         CLIP_SLOT_WIDTH, CLIP_SLOT_HEIGHT, TRACK_SEPARATOR_WIDTH, CLIP_SLOT_MARGIN, numScenes_);
-    gridViewport = std::make_unique<juce::Viewport>();
+    gridViewport = std::make_unique<GridViewport>();
     gridViewport->setViewedComponent(gridContent.get(), false);
     gridViewport->setScrollBarsShown(true, true);
     gridViewport->getHorizontalScrollBar().addListener(this);
     gridViewport->getVerticalScrollBar().addListener(this);
     addAndMakeVisible(*gridViewport);
+
+    // Create per-track stop button container (pinned between grid and faders)
+    stopButtonContainer = std::make_unique<StopButtonContainer>();
+    addAndMakeVisible(*stopButtonContainer);
 
     // Create fader container at the bottom
     faderContainer = std::make_unique<FaderContainer>();
@@ -376,12 +446,13 @@ void SessionView::masterChannelChanged() {
 }
 
 void SessionView::rebuildTracks() {
-    // Clear existing track headers, clip slots, and faders
+    // Clear existing track headers, clip slots, stop buttons, and faders
     for (auto& fader : trackFaders) {
         fader->setLookAndFeel(nullptr);
     }
     trackHeaders.clear();
     clipSlots.clear();
+    trackStopButtons.clear();
     trackFaders.clear();
     visibleTrackIds_.clear();
 
@@ -522,6 +593,28 @@ void SessionView::rebuildTracks() {
         trackFaders.push_back(std::move(fader));
     }
 
+    // Create per-track stop buttons
+    for (int i = 0; i < numTracks; ++i) {
+        auto stopBtn = std::make_unique<juce::TextButton>();
+        stopBtn->setButtonText(juce::String(juce::CharPointer_UTF8("\xe2\x96\xa0")));  // ■
+        stopBtn->setColour(juce::TextButton::buttonColourId,
+                           DarkTheme::getColour(DarkTheme::SURFACE));
+        stopBtn->setColour(juce::TextButton::textColourOffId,
+                           DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+
+        TrackId trackId = visibleTrackIds_[i];
+        stopBtn->onClick = [trackId]() {
+            auto& clipManager = ClipManager::getInstance();
+            auto clips = clipManager.getClipsOnTrack(trackId);
+            for (auto clipId : clips) {
+                clipManager.stopClip(clipId);
+            }
+        };
+
+        stopButtonContainer->addAndMakeVisible(*stopBtn);
+        trackStopButtons.push_back(std::move(stopBtn));
+    }
+
     // Update master strip visibility
     const auto& master = TrackManager::getInstance().getMasterChannel();
     bool masterVisible = master.isVisibleIn(currentViewMode_);
@@ -553,28 +646,11 @@ void SessionView::resized() {
         masterStrip->setBounds(bounds.removeFromRight(MASTER_STRIP_WIDTH));
     }
 
-    // Scene column on the right
-    auto sceneArea = bounds.removeFromRight(SCENE_BUTTON_WIDTH);
-
-    // "+" button in the corner area (top of scene column)
-    auto cornerArea = sceneArea.removeFromTop(TRACK_HEADER_HEIGHT);
-    addSceneButton->setBounds(cornerArea.reduced(2));
-
-    // Header container at the top (excluding scene column)
-    auto headerArea = bounds.removeFromTop(TRACK_HEADER_HEIGHT);
-    headerContainer->setBounds(headerArea);
-    headerContainer->setTrackLayout(numTracks, CLIP_SLOT_WIDTH, TRACK_SEPARATOR_WIDTH,
-                                    trackHeaderScrollOffset);
-
-    // Position track headers within header container (synced with grid scroll)
-    for (int i = 0; i < numTracks; ++i) {
-        int x = i * trackColumnWidth - trackHeaderScrollOffset;
-        trackHeaders[i]->setBounds(x, 0, CLIP_SLOT_WIDTH, TRACK_HEADER_HEIGHT);
-    }
-
-    // Fader row at the bottom
-    auto faderArea = bounds.removeFromBottom(FADER_ROW_HEIGHT);
-    faderContainer->setBounds(faderArea);
+    // Fader row at the bottom (tracks area only, no scene column)
+    auto faderRow = bounds.removeFromBottom(FADER_ROW_HEIGHT);
+    auto faderSceneGap = faderRow.removeFromRight(SCENE_BUTTON_WIDTH);  // empty gap for scene col
+    (void)faderSceneGap;
+    faderContainer->setBounds(faderRow);
     faderContainer->setTrackLayout(numTracks, CLIP_SLOT_WIDTH, TRACK_SEPARATOR_WIDTH,
                                    trackHeaderScrollOffset);
 
@@ -584,8 +660,36 @@ void SessionView::resized() {
         trackFaders[i]->setBounds(x + 4, 4, CLIP_SLOT_WIDTH - 8, FADER_ROW_HEIGHT - 8);
     }
 
-    // Scene container (excluding fader row height from the bottom)
-    sceneArea.removeFromBottom(FADER_ROW_HEIGHT);
+    // Stop button row (full width: per-track stops + Stop All in scene column)
+    auto stopRow = bounds.removeFromBottom(STOP_BUTTON_ROW_HEIGHT);
+    auto stopAllArea = stopRow.removeFromRight(SCENE_BUTTON_WIDTH);
+    stopAllButton->setBounds(stopAllArea.reduced(2));
+    stopButtonContainer->setBounds(stopRow);
+    stopButtonContainer->setTrackLayout(numTracks, CLIP_SLOT_WIDTH, TRACK_SEPARATOR_WIDTH,
+                                        trackHeaderScrollOffset);
+
+    // Position per-track stop buttons (synced with grid horizontal scroll)
+    for (int i = 0; i < numTracks && i < static_cast<int>(trackStopButtons.size()); ++i) {
+        int x = i * trackColumnWidth - trackHeaderScrollOffset;
+        trackStopButtons[i]->setBounds(x + 2, 2, CLIP_SLOT_WIDTH - 4, STOP_BUTTON_ROW_HEIGHT - 4);
+    }
+
+    // Top row: "+" button in scene column corner, headers in tracks area
+    auto topRow = bounds.removeFromTop(TRACK_HEADER_HEIGHT);
+    auto cornerArea = topRow.removeFromRight(SCENE_BUTTON_WIDTH);
+    addSceneButton->setBounds(cornerArea.reduced(2));
+    headerContainer->setBounds(topRow);
+    headerContainer->setTrackLayout(numTracks, CLIP_SLOT_WIDTH, TRACK_SEPARATOR_WIDTH,
+                                    trackHeaderScrollOffset);
+
+    // Position track headers within header container (synced with grid scroll)
+    for (int i = 0; i < numTracks; ++i) {
+        int x = i * trackColumnWidth - trackHeaderScrollOffset;
+        trackHeaders[i]->setBounds(x, 0, CLIP_SLOT_WIDTH, TRACK_HEADER_HEIGHT);
+    }
+
+    // Scene container on the right of remaining area
+    auto sceneArea = bounds.removeFromRight(SCENE_BUTTON_WIDTH);
     sceneContainer->setBounds(sceneArea);
 
     // Position scene buttons within scene container (synced with grid scroll)
@@ -594,12 +698,9 @@ void SessionView::resized() {
         sceneButtons[i]->setBounds(2, y, SCENE_BUTTON_WIDTH - 4, CLIP_SLOT_HEIGHT);
     }
 
-    // Stop all button at fixed position below visible scene area
-    int stopY = numScenes_ * sceneRowHeight - sceneButtonScrollOffset;
-    stopAllButton->setBounds(2, stopY, SCENE_BUTTON_WIDTH - 4, 30);
-
-    // Grid viewport takes remaining space (below headers, above faders)
+    // Grid viewport takes remaining space (below headers, above stop buttons)
     gridViewport->setBounds(bounds);
+    gridViewport->setTrackLayout(numTracks, CLIP_SLOT_WIDTH, TRACK_SEPARATOR_WIDTH);
 
     // Size the grid content to fit the scenes
     int gridWidth = numTracks * trackColumnWidth;
@@ -638,6 +739,18 @@ void SessionView::scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStar
         }
         faderContainer->setTrackLayout(numTracks, CLIP_SLOT_WIDTH, TRACK_SEPARATOR_WIDTH,
                                        trackHeaderScrollOffset);
+
+        // Reposition stop buttons to sync with horizontal scroll
+        for (int i = 0; i < numTracks && i < static_cast<int>(trackStopButtons.size()); ++i) {
+            int x = i * trackColumnWidth - trackHeaderScrollOffset;
+            trackStopButtons[i]->setBounds(x + 2, 2, CLIP_SLOT_WIDTH - 4,
+                                           STOP_BUTTON_ROW_HEIGHT - 4);
+        }
+        stopButtonContainer->setTrackLayout(numTracks, CLIP_SLOT_WIDTH, TRACK_SEPARATOR_WIDTH,
+                                            trackHeaderScrollOffset);
+
+        // Update viewport background separators
+        gridViewport->setTrackLayout(numTracks, CLIP_SLOT_WIDTH, TRACK_SEPARATOR_WIDTH);
     } else if (scrollBar == &gridViewport->getVerticalScrollBar()) {
         sceneButtonScrollOffset = static_cast<int>(newRangeStart);
         // Reposition scene buttons
@@ -646,8 +759,6 @@ void SessionView::scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStar
             int y = i * sceneRowHeight - sceneButtonScrollOffset;
             sceneButtons[i]->setBounds(2, y, SCENE_BUTTON_WIDTH - 4, CLIP_SLOT_HEIGHT);
         }
-        int stopY = numScenes_ * sceneRowHeight - sceneButtonScrollOffset;
-        stopAllButton->setBounds(2, stopY, SCENE_BUTTON_WIDTH - 4, 30);
         sceneContainer->repaint();
     }
 }
@@ -667,15 +778,15 @@ void SessionView::setupSceneButtons() {
         sceneButtons.push_back(std::move(btn));
     }
 
-    // Stop all button
+    // Stop all button (pinned in stop button row, not in scene container)
     stopAllButton = std::make_unique<juce::TextButton>();
-    stopAllButton->setButtonText("Stop");
+    stopAllButton->setButtonText(juce::String(juce::CharPointer_UTF8("\xe2\x96\xa0")));  // ■
     stopAllButton->setColour(juce::TextButton::buttonColourId,
                              DarkTheme::getColour(DarkTheme::STATUS_ERROR));
     stopAllButton->setColour(juce::TextButton::textColourOffId,
                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     stopAllButton->onClick = [this]() { onStopAllClicked(); };
-    sceneContainer->addAndMakeVisible(*stopAllButton);
+    addAndMakeVisible(*stopAllButton);
 }
 
 void SessionView::addScene() {

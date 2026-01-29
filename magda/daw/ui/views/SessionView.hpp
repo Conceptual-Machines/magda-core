@@ -94,7 +94,8 @@ class SessionView : public juce::Component,
 
     // Custom grid content component that draws track separators
     class GridContent;
-    std::unique_ptr<juce::Viewport> gridViewport;
+    class GridViewport;
+    std::unique_ptr<GridViewport> gridViewport;
     std::unique_ptr<GridContent> gridContent;
 
     // Clipping containers for headers and scene buttons
@@ -102,6 +103,12 @@ class SessionView : public juce::Component,
     class SceneContainer;
     std::unique_ptr<HeaderContainer> headerContainer;
     std::unique_ptr<SceneContainer> sceneContainer;
+
+    // Per-track stop buttons row (pinned between grid and faders)
+    class StopButtonContainer;
+    std::unique_ptr<StopButtonContainer> stopButtonContainer;
+    std::vector<std::unique_ptr<juce::TextButton>> trackStopButtons;
+    static constexpr int STOP_BUTTON_ROW_HEIGHT = 28;
 
     // Fader row at bottom of each track column
     class FaderContainer;
