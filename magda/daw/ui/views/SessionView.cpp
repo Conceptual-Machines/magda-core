@@ -2,8 +2,8 @@
 
 #include <functional>
 
+#include "../panels/state/PanelController.hpp"
 #include "../themes/DarkTheme.hpp"
-#include "SessionClipEditor.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/ViewModeController.hpp"
 
@@ -479,9 +479,21 @@ void SessionView::openClipEditor(int trackIndex, int sceneIndex) {
     if (clipId != INVALID_CLIP_ID) {
         const auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip) {
-            // Create modal editor window
-            // Note: Window deletes itself when closed
-            new SessionClipEditorWindow(clipId, clip->name);
+            // Select the clip so the bottom panel picks it up
+            ClipManager::getInstance().setSelectedClip(clipId);
+
+            auto& panelController = daw::ui::PanelController::getInstance();
+
+            // Expand bottom panel if collapsed
+            bool isCollapsed =
+                panelController.getPanelState(daw::ui::PanelLocation::Bottom).collapsed;
+            if (isCollapsed) {
+                panelController.setCollapsed(daw::ui::PanelLocation::Bottom, false);
+            }
+
+            // Show the waveform editor tab
+            panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
+                                               daw::ui::PanelContentType::WaveformEditor);
         }
     }
 }

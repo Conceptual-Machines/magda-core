@@ -464,6 +464,13 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
         // Update time ruler with clip info
         const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
         if (clip) {
+            // Auto-switch time mode based on clip view
+            // Session clips use relative mode (no absolute timeline position)
+            bool shouldBeRelative = (clip->view == magda::ClipView::Session);
+            if (relativeTimeMode_ != shouldBeRelative) {
+                setRelativeTimeMode(shouldBeRelative);
+            }
+
             // Get tempo from TimelineController
             double bpm = 120.0;
             auto* controller = magda::TimelineController::getCurrent();
