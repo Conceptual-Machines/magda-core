@@ -80,7 +80,10 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
     // Determine the color based on button state
     juce::Colour iconColor = normalColor;
 
-    if (active) {
+    // Check both active flag and toggle state for toggleable buttons
+    bool isActive = active || (getToggleState() && isToggleable());
+
+    if (isActive) {
         iconColor = activeColor;
     } else if (shouldDrawButtonAsDown) {
         iconColor = pressedColor;
@@ -89,7 +92,7 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
     }
 
     // Draw background if pressed or active
-    if (active && hasActiveBackgroundColor) {
+    if (isActive && hasActiveBackgroundColor) {
         g.setColour(activeBackgroundColor);
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
     } else if (shouldDrawButtonAsDown) {
