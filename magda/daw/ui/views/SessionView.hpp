@@ -69,9 +69,11 @@ class SessionView : public juce::Component,
     static constexpr int NUM_SCENES = 8;
     static constexpr int TRACK_HEADER_HEIGHT = 60;
     static constexpr int SCENE_BUTTON_WIDTH = 80;
-    static constexpr int CLIP_SLOT_SIZE = 80;
+    static constexpr int CLIP_SLOT_WIDTH = 80;
+    static constexpr int CLIP_SLOT_HEIGHT = 40;
     static constexpr int CLIP_SLOT_MARGIN = 2;
     static constexpr int TRACK_SEPARATOR_WIDTH = 3;
+    static constexpr int FADER_ROW_HEIGHT = 60;
 
     // Track headers (dynamic based on TrackManager) - TextButton for clickable groups
     std::vector<std::unique_ptr<juce::TextButton>> trackHeaders;
@@ -95,6 +97,11 @@ class SessionView : public juce::Component,
     class SceneContainer;
     std::unique_ptr<HeaderContainer> headerContainer;
     std::unique_ptr<SceneContainer> sceneContainer;
+
+    // Fader row at bottom of each track column
+    class FaderContainer;
+    std::unique_ptr<FaderContainer> faderContainer;
+    std::vector<std::unique_ptr<juce::Slider>> trackFaders;
 
     // Master channel strip
     std::unique_ptr<MasterChannelStrip> masterStrip;

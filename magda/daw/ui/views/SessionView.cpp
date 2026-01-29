@@ -85,8 +85,8 @@ class ClipSlotButton : public juce::TextButton {
 // Custom grid content that draws track separators
 class SessionView::GridContent : public juce::Component {
   public:
-    GridContent(int clipSize, int separatorWidth)
-        : clipSize_(clipSize), separatorWidth_(separatorWidth) {}
+    GridContent(int clipWidth, int separatorWidth)
+        : clipWidth_(clipWidth), separatorWidth_(separatorWidth) {}
 
     void setNumTracks(int numTracks) {
         numTracks_ = numTracks;
@@ -98,16 +98,16 @@ class SessionView::GridContent : public juce::Component {
 
         // Draw vertical separators between tracks (after each clip slot)
         g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
-        int trackColumnWidth = clipSize_ + separatorWidth_;
+        int trackColumnWidth = clipWidth_ + separatorWidth_;
         for (int i = 0; i < numTracks_; ++i) {
-            int x = i * trackColumnWidth + clipSize_;
+            int x = i * trackColumnWidth + clipWidth_;
             g.fillRect(x, 0, separatorWidth_, getHeight());
         }
     }
 
   private:
     int numTracks_ = 0;
-    int clipSize_;
+    int clipWidth_;
     int separatorWidth_;
 };
 
@@ -135,6 +135,21 @@ class SessionView::SceneContainer : public juce::Component {
     }
 };
 
+// Container for track faders at the bottom
+class SessionView::FaderContainer : public juce::Component {
+  public:
+    FaderContainer() {
+        setInterceptsMouseClicks(false, true);
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        // Top border
+        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.fillRect(0, 0, getWidth(), 1);
+    }
+};
+
 SessionView::SessionView() {
     // Get current view mode
     currentViewMode_ = ViewModeController::getInstance().getViewMode();
@@ -148,13 +163,17 @@ SessionView::SessionView() {
     addAndMakeVisible(*sceneContainer);
 
     // Create viewport for scrollable grid with custom grid content
-    gridContent = std::make_unique<GridContent>(CLIP_SLOT_SIZE, TRACK_SEPARATOR_WIDTH);
+    gridContent = std::make_unique<GridContent>(CLIP_SLOT_WIDTH, TRACK_SEPARATOR_WIDTH);
     gridViewport = std::make_unique<juce::Viewport>();
     gridViewport->setViewedComponent(gridContent.get(), false);
     gridViewport->setScrollBarsShown(true, true);
     gridViewport->getHorizontalScrollBar().addListener(this);
     gridViewport->getVerticalScrollBar().addListener(this);
     addAndMakeVisible(*gridViewport);
+
+    // Create fader container at the bottom
+    faderContainer = std::make_unique<FaderContainer>();
+    addAndMakeVisible(*faderContainer);
 
     setupSceneButtons();
 
@@ -226,6 +245,11 @@ void SessionView::trackPropertyChanged(int trackId) {
                          track->name;
         }
         trackHeaders[index]->setButtonText(headerText);
+
+        // Sync fader value
+        if (index < static_cast<int>(trackFaders.size())) {
+            trackFaders[index]->setValue(track->volume, juce::dontSendNotification);
+        }
     }
 }
 
@@ -243,9 +267,10 @@ void SessionView::masterChannelChanged() {
 }
 
 void SessionView::rebuildTracks() {
-    // Clear existing track headers and clip slots
+    // Clear existing track headers, clip slots, and faders
     trackHeaders.clear();
     clipSlots.clear();
+    trackFaders.clear();
     visibleTrackIds_.clear();
 
     auto& trackManager = TrackManager::getInstance();
@@ -362,6 +387,32 @@ void SessionView::rebuildTracks() {
         clipSlots.push_back(std::move(trackSlots));
     }
 
+    // Create track faders
+    for (int i = 0; i < numTracks; ++i) {
+        auto fader =
+            std::make_unique<juce::Slider>(juce::Slider::LinearVertical, juce::Slider::NoTextBox);
+        fader->setRange(-60.0, 6.0, 0.1);
+        fader->setSkewFactorFromMidPoint(-12.0);
+        fader->setColour(juce::Slider::backgroundColourId,
+                         DarkTheme::getColour(DarkTheme::SURFACE));
+        fader->setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        fader->setColour(juce::Slider::thumbColourId,
+                         DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+
+        TrackId trackId = visibleTrackIds_[i];
+        const auto* track = trackManager.getTrack(trackId);
+        if (track) {
+            fader->setValue(track->volume, juce::dontSendNotification);
+        }
+
+        fader->onValueChange = [this, trackId, i]() {
+            TrackManager::getInstance().setTrackVolume(trackId, trackFaders[i]->getValue());
+        };
+
+        faderContainer->addAndMakeVisible(*fader);
+        trackFaders.push_back(std::move(fader));
+    }
+
     // Update master strip visibility
     const auto& master = TrackManager::getInstance().getMasterChannel();
     bool masterVisible = master.isVisibleIn(currentViewMode_);
@@ -384,11 +435,11 @@ void SessionView::resized() {
     int numTracks = static_cast<int>(trackHeaders.size());
 
     // Calculate track column width (clip + separator)
-    int trackColumnWidth = CLIP_SLOT_SIZE + TRACK_SEPARATOR_WIDTH;
-    int sceneRowHeight = CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN;
+    int trackColumnWidth = CLIP_SLOT_WIDTH + TRACK_SEPARATOR_WIDTH;
+    int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
 
     // Master channel strip on the far right (only if visible)
-    static constexpr int MASTER_STRIP_WIDTH = 120;  // Larger for better fader/meter visibility
+    static constexpr int MASTER_STRIP_WIDTH = 120;
     if (masterStrip->isVisible()) {
         masterStrip->setBounds(bounds.removeFromRight(MASTER_STRIP_WIDTH));
     }
@@ -404,23 +455,34 @@ void SessionView::resized() {
     // Position track headers within header container (synced with grid scroll)
     for (int i = 0; i < numTracks; ++i) {
         int x = i * trackColumnWidth - trackHeaderScrollOffset;
-        trackHeaders[i]->setBounds(x, 0, CLIP_SLOT_SIZE, TRACK_HEADER_HEIGHT);
+        trackHeaders[i]->setBounds(x, 0, CLIP_SLOT_WIDTH, TRACK_HEADER_HEIGHT);
     }
 
-    // Scene container for scene buttons (below the corner)
+    // Fader row at the bottom
+    auto faderArea = bounds.removeFromBottom(FADER_ROW_HEIGHT);
+    faderContainer->setBounds(faderArea);
+
+    // Position faders within fader container (synced with grid horizontal scroll)
+    for (int i = 0; i < numTracks && i < static_cast<int>(trackFaders.size()); ++i) {
+        int x = i * trackColumnWidth - trackHeaderScrollOffset;
+        trackFaders[i]->setBounds(x + 4, 4, CLIP_SLOT_WIDTH - 8, FADER_ROW_HEIGHT - 8);
+    }
+
+    // Scene container (excluding fader row height from the bottom)
+    sceneArea.removeFromBottom(FADER_ROW_HEIGHT);
     sceneContainer->setBounds(sceneArea);
 
     // Position scene buttons within scene container (synced with grid scroll)
     for (size_t i = 0; i < NUM_SCENES; ++i) {
         int y = static_cast<int>(i) * sceneRowHeight - sceneButtonScrollOffset;
-        sceneButtons[i]->setBounds(2, y, SCENE_BUTTON_WIDTH - 4, CLIP_SLOT_SIZE);
+        sceneButtons[i]->setBounds(2, y, SCENE_BUTTON_WIDTH - 4, CLIP_SLOT_HEIGHT);
     }
 
     // Stop all button at fixed position below visible scene area
     int stopY = NUM_SCENES * sceneRowHeight - sceneButtonScrollOffset;
     stopAllButton->setBounds(2, stopY, SCENE_BUTTON_WIDTH - 4, 30);
 
-    // Grid viewport takes remaining space (below headers, left of scene buttons)
+    // Grid viewport takes remaining space (below headers, above faders)
     gridViewport->setBounds(bounds);
 
     // Size the grid content
@@ -433,7 +495,7 @@ void SessionView::resized() {
         for (size_t scene = 0; scene < NUM_SCENES; ++scene) {
             int x = track * trackColumnWidth;
             int y = static_cast<int>(scene) * sceneRowHeight;
-            clipSlots[track][scene]->setBounds(x, y, CLIP_SLOT_SIZE, CLIP_SLOT_SIZE);
+            clipSlots[track][scene]->setBounds(x, y, CLIP_SLOT_WIDTH, CLIP_SLOT_HEIGHT);
         }
     }
 }
@@ -444,19 +506,26 @@ void SessionView::scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStar
     if (scrollBar == &gridViewport->getHorizontalScrollBar()) {
         trackHeaderScrollOffset = static_cast<int>(newRangeStart);
         // Reposition headers
-        int trackColumnWidth = CLIP_SLOT_SIZE + TRACK_SEPARATOR_WIDTH;
+        int trackColumnWidth = CLIP_SLOT_WIDTH + TRACK_SEPARATOR_WIDTH;
         for (int i = 0; i < numTracks; ++i) {
             int x = i * trackColumnWidth - trackHeaderScrollOffset;
-            trackHeaders[i]->setBounds(x, 0, CLIP_SLOT_SIZE, TRACK_HEADER_HEIGHT);
+            trackHeaders[i]->setBounds(x, 0, CLIP_SLOT_WIDTH, TRACK_HEADER_HEIGHT);
         }
         headerContainer->repaint();
+
+        // Reposition faders to sync with horizontal scroll
+        for (int i = 0; i < numTracks && i < static_cast<int>(trackFaders.size()); ++i) {
+            int x = i * trackColumnWidth - trackHeaderScrollOffset;
+            trackFaders[i]->setBounds(x + 4, 4, CLIP_SLOT_WIDTH - 8, FADER_ROW_HEIGHT - 8);
+        }
+        faderContainer->repaint();
     } else if (scrollBar == &gridViewport->getVerticalScrollBar()) {
         sceneButtonScrollOffset = static_cast<int>(newRangeStart);
         // Reposition scene buttons
-        int sceneRowHeight = CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN;
+        int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
         for (size_t i = 0; i < NUM_SCENES; ++i) {
             int y = static_cast<int>(i) * sceneRowHeight - sceneButtonScrollOffset;
-            sceneButtons[i]->setBounds(2, y, SCENE_BUTTON_WIDTH - 4, CLIP_SLOT_SIZE);
+            sceneButtons[i]->setBounds(2, y, SCENE_BUTTON_WIDTH - 4, CLIP_SLOT_HEIGHT);
         }
         int stopY = NUM_SCENES * sceneRowHeight - sceneButtonScrollOffset;
         stopAllButton->setBounds(2, stopY, SCENE_BUTTON_WIDTH - 4, 30);
@@ -804,8 +873,8 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
         juce::Point<int>(gridViewport->getViewPositionX(), gridViewport->getViewPositionY());
 
     // Calculate which slot was dropped on
-    int trackColumnWidth = CLIP_SLOT_SIZE + TRACK_SEPARATOR_WIDTH;
-    int sceneRowHeight = CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN;
+    int trackColumnWidth = CLIP_SLOT_WIDTH + TRACK_SEPARATOR_WIDTH;
+    int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
 
     int trackIndex = gridLocalPoint.getX() / trackColumnWidth;
     int sceneIndex = gridLocalPoint.getY() / sceneRowHeight;
@@ -853,8 +922,8 @@ void SessionView::updateDragHighlight(int x, int y) {
     gridLocalPoint +=
         juce::Point<int>(gridViewport->getViewPositionX(), gridViewport->getViewPositionY());
 
-    int trackColumnWidth = CLIP_SLOT_SIZE + TRACK_SEPARATOR_WIDTH;
-    int sceneRowHeight = CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN;
+    int trackColumnWidth = CLIP_SLOT_WIDTH + TRACK_SEPARATOR_WIDTH;
+    int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
 
     int trackIndex = gridLocalPoint.getX() / trackColumnWidth;
     int sceneIndex = gridLocalPoint.getY() / sceneRowHeight;
@@ -933,15 +1002,15 @@ void SessionView::updateDragGhost(const juce::StringArray& files, int trackIndex
     }
 
     // Position ghost at the target slot (in grid coordinates)
-    int trackColumnWidth = CLIP_SLOT_SIZE + TRACK_SEPARATOR_WIDTH;
-    int sceneRowHeight = CLIP_SLOT_SIZE + CLIP_SLOT_MARGIN;
+    int trackColumnWidth = CLIP_SLOT_WIDTH + TRACK_SEPARATOR_WIDTH;
+    int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
 
     int ghostX = trackIndex * trackColumnWidth;
     int ghostY = sceneIndex * sceneRowHeight;
 
     // Update ghost label
     dragGhostLabel_->setText(filename, juce::dontSendNotification);
-    dragGhostLabel_->setBounds(ghostX, ghostY, CLIP_SLOT_SIZE, CLIP_SLOT_SIZE);
+    dragGhostLabel_->setBounds(ghostX, ghostY, CLIP_SLOT_WIDTH, CLIP_SLOT_HEIGHT);
     dragGhostLabel_->setVisible(true);
     dragGhostLabel_->toFront(false);
 }
