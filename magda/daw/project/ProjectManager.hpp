@@ -182,8 +182,9 @@ class ProjectManager {
     void notifyDirtyStateChanged();
 
     /**
-     * @brief Show unsaved changes dialog
-     * @return true if user wants to save, false if cancel
+     * @brief Show unsaved changes dialog and ask whether to proceed
+     * @return true if the user chooses to proceed despite unsaved changes, false if the user
+     * cancels the operation
      */
     bool showUnsavedChangesDialog();
 };

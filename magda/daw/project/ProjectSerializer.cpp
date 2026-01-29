@@ -94,10 +94,10 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     projectObj->setProperty("name", info.name);
     projectObj->setProperty("tempo", info.tempo);
 
-    auto* timeSigArray = new juce::Array<juce::var>();
-    timeSigArray->add(info.timeSignatureNumerator);
-    timeSigArray->add(info.timeSignatureDenominator);
-    projectObj->setProperty("timeSignature", juce::var(*timeSigArray));
+    juce::Array<juce::var> timeSigArray;
+    timeSigArray.add(info.timeSignatureNumerator);
+    timeSigArray.add(info.timeSignatureDenominator);
+    projectObj->setProperty("timeSignature", juce::var(timeSigArray));
 
     projectObj->setProperty("projectLength", info.projectLength);
 
@@ -293,28 +293,22 @@ bool ProjectSerializer::deserializeAutomation(const juce::var& json) {
     }
 
     auto* arr = json.getArray();
-    auto& automationManager = AutomationManager::getInstance();
-
-    // For now, just collect the lanes - we'll need to add a restoreLane method
-    // or create lanes manually (this is a TODO that needs manager support)
-    // Clear existing lanes
-    auto lanes = automationManager.getLanes();
-    for (const auto& lane : lanes) {
-        // TODO: Need deleteLane method in AutomationManager
-        // For now, skip clearing - this will need to be addressed
+    if (arr == nullptr) {
+        lastError_ = "Automation data array is invalid";
+        return false;
     }
 
-    // Deserialize each lane
-    for (const auto& laneVar : *arr) {
-        AutomationLaneInfo lane;
-        if (!deserializeAutomationLaneInfo(laneVar, lane)) {
-            return false;
-        }
-        // TODO: Need restoreLane method in AutomationManager
-        // For now, create lane manually (this is incomplete)
+    // Until AutomationManager supports full clear/restore of lanes, we cannot
+    // safely apply automation data. Allow empty automation arrays (no lanes to
+    // restore), but fail clearly if any lane data is present to avoid silently
+    // reporting success while leaving stale automation state.
+    if (arr->isEmpty()) {
+        return true;
     }
 
-    return true;
+    lastError_ =
+        "Automation deserialization is not implemented yet; cannot restore automation lanes";
+    return false;
 }
 
 // ============================================================================

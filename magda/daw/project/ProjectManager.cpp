@@ -2,6 +2,9 @@
 
 #include <algorithm>
 
+#include "../core/AutomationManager.hpp"
+#include "../core/ClipManager.hpp"
+#include "../core/TrackManager.hpp"
 #include "ProjectSerializer.hpp"
 
 namespace magda {
@@ -26,6 +29,12 @@ bool ProjectManager::newProject() {
     if (isDirty_ && !showUnsavedChangesDialog()) {
         return false;
     }
+
+    // Clear all project content from singleton managers
+    TrackManager::getInstance().clearAllTracks();
+    ClipManager::getInstance().clearAllClips();
+    // Note: AutomationManager doesn't have clearAllLanes() yet
+    // TODO: Add clearAllLanes() to AutomationManager and call it here
 
     // Reset project state
     currentProject_ = ProjectInfo();
@@ -101,6 +110,12 @@ bool ProjectManager::closeProject() {
     if (isDirty_ && !showUnsavedChangesDialog()) {
         return false;
     }
+
+    // Clear all project content from singleton managers
+    TrackManager::getInstance().clearAllTracks();
+    ClipManager::getInstance().clearAllClips();
+    // Note: AutomationManager doesn't have clearAllLanes() yet
+    // TODO: Add clearAllLanes() to AutomationManager and call it here
 
     // Reset state
     currentProject_ = ProjectInfo();

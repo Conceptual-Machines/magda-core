@@ -10,18 +10,36 @@
 
 using namespace magda;
 
+// Test fixture to ensure clean state between tests
+struct ProjectTestFixture {
+    ProjectTestFixture() {
+        // Clear all singleton state before each test
+        TrackManager::getInstance().clearAllTracks();
+        ClipManager::getInstance().clearAllClips();
+        // Note: AutomationManager doesn't have clearAllLanes() yet
+    }
+
+    ~ProjectTestFixture() {
+        // Clean up after test
+        TrackManager::getInstance().clearAllTracks();
+        ClipManager::getInstance().clearAllClips();
+        // Note: AutomationManager doesn't have clearAllLanes() yet
+    }
+
+    // Helper to create unique temp file
+    juce::File createTempFile(const juce::String& basename) {
+        return juce::File::createTempFile(basename);
+    }
+};
+
 TEST_CASE("Project Serialization Basics", "[project][serialization]") {
+    ProjectTestFixture fixture;
+
     SECTION("Save and load empty project") {
         auto& projectManager = ProjectManager::getInstance();
 
-        // Create temp file for testing
-        auto tempFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                            .getChildFile("test_empty.mgd");
-
-        // Clean up if exists
-        if (tempFile.existsAsFile()) {
-            tempFile.deleteFile();
-        }
+        // Create unique temp file for testing
+        auto tempFile = fixture.createTempFile(".mgd");
 
         // Save empty project
         bool saved = projectManager.saveProjectAs(tempFile);
@@ -67,12 +85,11 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
 }
 
 TEST_CASE("Project with Tracks", "[project][serialization][tracks]") {
+    ProjectTestFixture fixture;
+
     SECTION("Save and load project with tracks") {
         auto& trackManager = TrackManager::getInstance();
         auto& projectManager = ProjectManager::getInstance();
-
-        // Clear any existing state
-        trackManager.clearAllTracks();
 
         // Create a couple tracks
         auto track1 = trackManager.createTrack("Audio 1", TrackType::Audio);
@@ -80,12 +97,8 @@ TEST_CASE("Project with Tracks", "[project][serialization][tracks]") {
 
         REQUIRE(trackManager.getTracks().size() == 2);
 
-        // Create temp file
-        auto tempFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                            .getChildFile("test_with_tracks.mgd");
-        if (tempFile.existsAsFile()) {
-            tempFile.deleteFile();
-        }
+        // Create unique temp file
+        auto tempFile = fixture.createTempFile(".mgd");
 
         // Save
         bool saved = projectManager.saveProjectAs(tempFile);
@@ -114,14 +127,12 @@ TEST_CASE("Project with Tracks", "[project][serialization][tracks]") {
 }
 
 TEST_CASE("Project File Format", "[project][serialization][file]") {
+    ProjectTestFixture fixture;
+
     SECTION("File has .mgd extension") {
         auto& projectManager = ProjectManager::getInstance();
 
-        auto tempFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                            .getChildFile("test_extension.mgd");
-        if (tempFile.existsAsFile()) {
-            tempFile.deleteFile();
-        }
+        auto tempFile = fixture.createTempFile(".mgd");
 
         bool saved = projectManager.saveProjectAs(tempFile);
         REQUIRE(saved == true);
@@ -133,11 +144,7 @@ TEST_CASE("Project File Format", "[project][serialization][file]") {
     SECTION("File is not empty") {
         auto& projectManager = ProjectManager::getInstance();
 
-        auto tempFile =
-            juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("test_size.mgd");
-        if (tempFile.existsAsFile()) {
-            tempFile.deleteFile();
-        }
+        auto tempFile = fixture.createTempFile(".mgd");
 
         bool saved = projectManager.saveProjectAs(tempFile);
         REQUIRE(saved == true);
@@ -148,6 +155,8 @@ TEST_CASE("Project File Format", "[project][serialization][file]") {
 }
 
 TEST_CASE("Project Manager State", "[project][manager]") {
+    ProjectTestFixture fixture;
+
     SECTION("hasUnsavedChanges tracks dirty state") {
         auto& projectManager = ProjectManager::getInstance();
         auto& trackManager = TrackManager::getInstance();
@@ -157,18 +166,13 @@ TEST_CASE("Project Manager State", "[project][manager]") {
         REQUIRE(projectManager.hasUnsavedChanges() == false);
 
         // Make a change
-        trackManager.clearAllTracks();
         trackManager.createTrack("Test", TrackType::Audio);
         projectManager.markDirty();
 
         REQUIRE(projectManager.hasUnsavedChanges() == true);
 
         // Save should clear dirty flag
-        auto tempFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                            .getChildFile("test_dirty.mgd");
-        if (tempFile.existsAsFile()) {
-            tempFile.deleteFile();
-        }
+        auto tempFile = fixture.createTempFile(".mgd");
 
         projectManager.saveProjectAs(tempFile);
         REQUIRE(projectManager.hasUnsavedChanges() == false);
@@ -181,12 +185,7 @@ TEST_CASE("Project Manager State", "[project][manager]") {
     SECTION("getCurrentProjectFile returns correct file") {
         auto& projectManager = ProjectManager::getInstance();
 
-        auto tempFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                            .getChildFile("test_current_file.mgd");
-        if (tempFile.existsAsFile()) {
-            tempFile.deleteFile();
-        }
-
+        auto tempFile = fixture.createTempFile(".mgd");
         projectManager.saveProjectAs(tempFile);
 
         auto currentFile = projectManager.getCurrentProjectFile();
@@ -197,11 +196,15 @@ TEST_CASE("Project Manager State", "[project][manager]") {
 }
 
 TEST_CASE("Error Handling", "[project][serialization][errors]") {
+    ProjectTestFixture fixture;
+
     SECTION("Load non-existent file fails gracefully") {
         auto& projectManager = ProjectManager::getInstance();
 
-        auto nonExistentFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                                   .getChildFile("this_does_not_exist.mgd");
+        auto nonExistentFile =
+            juce::File::getSpecialLocation(juce::File::tempDirectory)
+                .getChildFile("this_does_not_exist_" +
+                              juce::String(juce::Random::getSystemRandom().nextInt()) + ".mgd");
 
         bool loaded = projectManager.loadProject(nonExistentFile);
         REQUIRE(loaded == false);
@@ -211,8 +214,13 @@ TEST_CASE("Error Handling", "[project][serialization][errors]") {
     SECTION("Save to invalid path fails gracefully") {
         auto& projectManager = ProjectManager::getInstance();
 
-        // Try to save to a path that doesn't exist (invalid parent directory)
-        auto invalidFile = juce::File("/this/path/does/not/exist/at/all/test.mgd");
+        // Use platform-independent method to create invalid parent directory
+        auto tempDir = juce::File::getSpecialLocation(juce::File::tempDirectory);
+        auto invalidParentDir = tempDir.getChildFile("nonexistent_parent_dir_for_project_test");
+        if (invalidParentDir.exists()) {
+            invalidParentDir.deleteRecursively();
+        }
+        auto invalidFile = invalidParentDir.getChildFile("test.mgd");
 
         bool saved = projectManager.saveProjectAs(invalidFile);
         REQUIRE(saved == false);

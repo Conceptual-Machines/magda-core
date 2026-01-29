@@ -876,18 +876,47 @@ void MainWindow::setupMenuCallbacks() {
         }
     };
 
-    callbacks.onSaveProject = [this, &callbacks]() {
+    callbacks.onSaveProject = [this]() {
         auto& projectManager = ProjectManager::getInstance();
 
-        // If no file path set, use Save As
+        // If no file path set, use Save As flow
         if (!projectManager.getCurrentProjectFile().existsAsFile()) {
-            // Trigger Save As callback directly
-            if (callbacks.onSaveProjectAs) {
-                callbacks.onSaveProjectAs();
-            }
+            // Prevent re-entry while a file chooser is already open
+            if (fileChooser_ != nullptr)
+                return;
+
+            auto initialDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+
+            fileChooser_ =
+                std::make_unique<juce::FileChooser>("Save Project As", initialDir, "*.mgd", true);
+
+            auto flags = juce::FileBrowserComponent::saveMode |
+                         juce::FileBrowserComponent::canSelectFiles |
+                         juce::FileBrowserComponent::warnAboutOverwriting;
+
+            fileChooser_->launchAsync(flags, [this](const juce::FileChooser& chooser) {
+                auto file = chooser.getResult();
+                fileChooser_.reset();
+
+                if (!file.getFullPathName().isNotEmpty())
+                    return;  // User cancelled
+
+                // Ensure .mgd extension
+                if (!file.hasFileExtension(".mgd")) {
+                    file = file.withFileExtension(".mgd");
+                }
+
+                auto& projectManager = ProjectManager::getInstance();
+                if (!projectManager.saveProjectAs(file)) {
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon, "Save Project As",
+                        "Failed to save project: " + projectManager.getLastError());
+                }
+            });
             return;
         }
 
+        // File path exists, just save
         if (!projectManager.saveProject()) {
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Save Project",
                                                    "Failed to save project: " +
