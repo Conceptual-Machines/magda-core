@@ -299,14 +299,24 @@ InspectorContent::InspectorContent() {
             magda::ClipManager::getInstance().resizeClip(selectedClipId_, newLengthSeconds, false,
                                                          bpm);
 
-            // Clamp loop so it doesn't exceed the new clip end
-            double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+            // Clamp loop offset and length so loop stays within clip bounds
+            double loopOffset = clip->internalLoopOffset;
+            double loopLength = clip->internalLoopLength;
+
+            // If loop offset is past new clip end, pull it back
+            if (loopOffset >= newClipEndBeats) {
+                loopOffset = std::max(0.0, newClipEndBeats - loopLength);
+                if (loopOffset < 0.0)
+                    loopOffset = 0.0;
+                magda::ClipManager::getInstance().setClipLoopOffset(selectedClipId_, loopOffset);
+            }
+
+            // If loop end exceeds clip end, shrink loop length
+            double loopEnd = loopOffset + loopLength;
             if (loopEnd > newClipEndBeats) {
-                double clampedLength = newClipEndBeats - clip->internalLoopOffset;
-                if (clampedLength > 0.0) {
-                    magda::ClipManager::getInstance().setClipLoopLength(selectedClipId_,
-                                                                        clampedLength);
-                }
+                double clampedLength = std::max(magda::ClipOperations::MIN_LOOP_LENGTH_BEATS,
+                                                newClipEndBeats - loopOffset);
+                magda::ClipManager::getInstance().setClipLoopLength(selectedClipId_, clampedLength);
             }
         } else {
             // Arrangement clips: resize based on new end position
@@ -413,8 +423,8 @@ InspectorContent::InspectorContent() {
 
             double newLoopEnd = clip->internalLoopOffset + newLoopLength;
 
-            if (loopEndMatchedClipEnd) {
-                // Loop end was tracking clip end — grow/shrink clip to follow
+            if (loopEndMatchedClipEnd && newLoopEnd > clipEndBeats) {
+                // Loop end was aligned with clip end and is growing — extend clip to follow
                 double newClipLengthSeconds = magda::TimelineUtils::beatsToSeconds(newLoopEnd, bpm);
                 magda::ClipManager::getInstance().resizeClip(selectedClipId_, newClipLengthSeconds,
                                                              false, bpm);
