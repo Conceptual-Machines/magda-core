@@ -1,6 +1,26 @@
 version: 2
 updates:
+  # Git submodules (JUCE, Tracktion Engine, etc.)
   - package-ecosystem: "gitsubmodule"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+    # Security updates
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "security"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    # Keep GitHub Actions up to date for security
+    open-pull-requests-limit: 3
+
