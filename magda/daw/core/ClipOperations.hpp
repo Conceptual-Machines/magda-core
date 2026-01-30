@@ -25,6 +25,7 @@ class ClipOperations {
 
     static constexpr double MIN_CLIP_LENGTH = 0.1;
     static constexpr double MIN_SOURCE_LENGTH = 0.1;
+    static constexpr double MIN_LOOP_LENGTH_BEATS = 0.25;
     static constexpr double MIN_STRETCH_FACTOR = 0.25;
     static constexpr double MAX_STRETCH_FACTOR = 4.0;
 
