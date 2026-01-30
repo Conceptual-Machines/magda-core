@@ -662,3 +662,271 @@ TEST_CASE("Session clip end clamping constrains loop region", "[session][clip][l
         REQUIRE(maxLoopLength == Catch::Approx(6.0));
     }
 }
+
+// =============================================================================
+// Session clip: clip end / loop clamping logic
+// Mirrors the clamping done in InspectorContent callbacks.
+// =============================================================================
+
+namespace {
+
+constexpr double MIN_LOOP_LENGTH_BEATS = 0.25;
+
+/**
+ * Replicates InspectorContent End callback clamping for session clips.
+ * Given a clip with loop state, applies a new clip end and clamps loop.
+ */
+void applyClipEnd(ClipManager& cm, ClipId clipId, double newClipEndBeats, double bpm) {
+    const auto* clip = cm.getClip(clipId);
+    double secondsPerBeat = 60.0 / bpm;
+
+    // Resize the clip
+    cm.resizeClip(clipId, newClipEndBeats * secondsPerBeat, false, bpm);
+
+    double loopOffset = clip->internalLoopOffset;
+    double loopLength = clip->internalLoopLength;
+
+    // If loop offset is past new clip end, pull it back
+    if (loopOffset >= newClipEndBeats) {
+        loopOffset = std::max(0.0, newClipEndBeats - loopLength);
+        if (loopOffset < 0.0)
+            loopOffset = 0.0;
+        cm.setClipLoopOffset(clipId, loopOffset);
+    }
+
+    // If loop end exceeds clip end, shrink loop length
+    double loopEnd = loopOffset + loopLength;
+    if (loopEnd > newClipEndBeats) {
+        double clampedLength = std::max(MIN_LOOP_LENGTH_BEATS, newClipEndBeats - loopOffset);
+        cm.setClipLoopLength(clipId, clampedLength);
+    }
+}
+
+/**
+ * Replicates InspectorContent Loop Pos callback clamping for session clips.
+ */
+void applyLoopPos(ClipManager& cm, ClipId clipId, double newLoopPos, double bpm) {
+    const auto* clip = cm.getClip(clipId);
+    double clipEndBeats = clip->length / (60.0 / bpm);
+
+    if (newLoopPos + clip->internalLoopLength > clipEndBeats) {
+        newLoopPos = clipEndBeats - clip->internalLoopLength;
+    }
+    if (newLoopPos < 0.0)
+        newLoopPos = 0.0;
+
+    cm.setClipLoopOffset(clipId, newLoopPos);
+}
+
+/**
+ * Replicates InspectorContent Loop Length callback clamping for session clips.
+ */
+void applyLoopLength(ClipManager& cm, ClipId clipId, double newLoopLength, double bpm) {
+    auto* clip = cm.getClip(clipId);
+    double clipEndBeats = clip->length / (60.0 / bpm);
+    double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+
+    bool loopEndMatchedClipEnd = std::abs(loopEnd - clipEndBeats) < 0.001;
+    double newLoopEnd = clip->internalLoopOffset + newLoopLength;
+
+    if (loopEndMatchedClipEnd && newLoopEnd > clipEndBeats) {
+        // Grow clip to follow
+        cm.resizeClip(clipId, newLoopEnd * (60.0 / bpm), false, bpm);
+    } else {
+        if (newLoopEnd > clipEndBeats) {
+            newLoopLength = clipEndBeats - clip->internalLoopOffset;
+        }
+    }
+
+    cm.setClipLoopLength(clipId, newLoopLength);
+}
+
+}  // namespace
+
+TEST_CASE("Shrinking clip end clamps loop length", "[session][clip][clamp][end]") {
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+    constexpr double bpm = 120.0;
+    constexpr double spb = 60.0 / bpm;
+
+    // 8-beat clip, loop offset=0, loop length=8 (loop end == clip end)
+    ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
+    cm.setClipLoopOffset(id, 0.0);
+    cm.setClipLoopLength(id, 8.0);
+
+    SECTION("Shrink clip to 6 beats — loop length clamped to 6") {
+        applyClipEnd(cm, id, 6.0, bpm);
+        auto* clip = cm.getClip(id);
+        REQUIRE(clip->length == Catch::Approx(6.0 * spb));
+        REQUIRE(clip->internalLoopLength == Catch::Approx(6.0));
+        REQUIRE(clip->internalLoopOffset == Catch::Approx(0.0));
+    }
+
+    SECTION("Shrink clip to 4 beats — loop length clamped to 4") {
+        applyClipEnd(cm, id, 4.0, bpm);
+        auto* clip = cm.getClip(id);
+        REQUIRE(clip->length == Catch::Approx(4.0 * spb));
+        REQUIRE(clip->internalLoopLength == Catch::Approx(4.0));
+    }
+}
+
+TEST_CASE("Shrinking clip end clamps loop with offset", "[session][clip][clamp][end][offset]") {
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+    constexpr double bpm = 120.0;
+    constexpr double spb = 60.0 / bpm;
+
+    // 8-beat clip, loop offset=2, loop length=4 (loop end = 6)
+    ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
+    cm.setClipLoopOffset(id, 2.0);
+    cm.setClipLoopLength(id, 4.0);
+
+    SECTION("Shrink clip to 5 — loop end was 6, clamp length to 3") {
+        applyClipEnd(cm, id, 5.0, bpm);
+        auto* clip = cm.getClip(id);
+        REQUIRE(clip->internalLoopOffset == Catch::Approx(2.0));
+        REQUIRE(clip->internalLoopLength == Catch::Approx(3.0));
+        double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+        REQUIRE(loopEnd <= 5.0 + 0.001);
+    }
+
+    SECTION("Shrink clip to 3 — loop end was 6, clamp length to 1") {
+        applyClipEnd(cm, id, 3.0, bpm);
+        auto* clip = cm.getClip(id);
+        REQUIRE(clip->internalLoopOffset == Catch::Approx(2.0));
+        REQUIRE(clip->internalLoopLength == Catch::Approx(1.0));
+    }
+
+    SECTION("Shrink clip past loop offset — offset pulled back") {
+        applyClipEnd(cm, id, 1.0, bpm);
+        auto* clip = cm.getClip(id);
+        // Offset must be pulled back so loop fits
+        REQUIRE(clip->internalLoopOffset < 1.0);
+        double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+        REQUIRE(loopEnd <= 1.0 + 0.001);
+    }
+}
+
+TEST_CASE("Shrinking clip end does not affect loop when loop is inside",
+          "[session][clip][clamp][end][no-change]") {
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+    constexpr double bpm = 120.0;
+    constexpr double spb = 60.0 / bpm;
+
+    // 8-beat clip, loop offset=1, loop length=2 (loop end = 3)
+    ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
+    cm.setClipLoopOffset(id, 1.0);
+    cm.setClipLoopLength(id, 2.0);
+
+    // Shrink clip to 5 — loop end is 3, still within bounds
+    applyClipEnd(cm, id, 5.0, bpm);
+    auto* clip = cm.getClip(id);
+
+    REQUIRE(clip->internalLoopOffset == Catch::Approx(1.0));
+    REQUIRE(clip->internalLoopLength == Catch::Approx(2.0));
+}
+
+TEST_CASE("Loop pos clamped to keep loop within clip", "[session][clip][clamp][pos]") {
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+    constexpr double bpm = 120.0;
+    constexpr double spb = 60.0 / bpm;
+
+    // 8-beat clip, loop length=4
+    ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
+    cm.setClipLoopOffset(id, 0.0);
+    cm.setClipLoopLength(id, 4.0);
+
+    SECTION("Move loop pos to 4 — loop end 8 == clip end, allowed") {
+        applyLoopPos(cm, id, 4.0, bpm);
+        auto* clip = cm.getClip(id);
+        REQUIRE(clip->internalLoopOffset == Catch::Approx(4.0));
+    }
+
+    SECTION("Move loop pos to 6 — loop end would be 10, clamped to 4") {
+        applyLoopPos(cm, id, 6.0, bpm);
+        auto* clip = cm.getClip(id);
+        REQUIRE(clip->internalLoopOffset == Catch::Approx(4.0));
+        double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+        REQUIRE(loopEnd <= 8.0 + 0.001);
+    }
+
+    SECTION("Negative loop pos clamped to 0") {
+        applyLoopPos(cm, id, -2.0, bpm);
+        auto* clip = cm.getClip(id);
+        REQUIRE(clip->internalLoopOffset == Catch::Approx(0.0));
+    }
+}
+
+TEST_CASE("Shrinking loop length does not shrink clip", "[session][clip][clamp][loop-length]") {
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+    constexpr double bpm = 120.0;
+    constexpr double spb = 60.0 / bpm;
+
+    // 8-beat clip, loop offset=0, loop length=8 (aligned with clip end)
+    ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
+    cm.setClipLoopOffset(id, 0.0);
+    cm.setClipLoopLength(id, 8.0);
+
+    SECTION("Shrink loop to 4 — clip stays at 8") {
+        applyLoopLength(cm, id, 4.0, bpm);
+        auto* clip = cm.getClip(id);
+        REQUIRE(clip->internalLoopLength == Catch::Approx(4.0));
+        REQUIRE(clip->length == Catch::Approx(8.0 * spb));
+    }
+
+    SECTION("Shrink loop to 2 — clip stays at 8") {
+        applyLoopLength(cm, id, 2.0, bpm);
+        auto* clip = cm.getClip(id);
+        REQUIRE(clip->internalLoopLength == Catch::Approx(2.0));
+        REQUIRE(clip->length == Catch::Approx(8.0 * spb));
+    }
+}
+
+TEST_CASE("Growing loop length when aligned extends clip",
+          "[session][clip][clamp][loop-length][grow]") {
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+    constexpr double bpm = 120.0;
+    constexpr double spb = 60.0 / bpm;
+
+    // 8-beat clip, loop offset=0, loop length=8 (aligned with clip end)
+    ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
+    cm.setClipLoopOffset(id, 0.0);
+    cm.setClipLoopLength(id, 8.0);
+
+    applyLoopLength(cm, id, 12.0, bpm);
+    auto* clip = cm.getClip(id);
+
+    REQUIRE(clip->internalLoopLength == Catch::Approx(12.0));
+    REQUIRE(clip->length == Catch::Approx(12.0 * spb));
+}
+
+TEST_CASE("Growing loop length when NOT aligned clamps to clip end",
+          "[session][clip][clamp][loop-length][clamp-grow]") {
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+    constexpr double bpm = 120.0;
+    constexpr double spb = 60.0 / bpm;
+
+    // 8-beat clip, loop offset=0, loop length=4 (NOT aligned with clip end)
+    ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
+    cm.setClipLoopOffset(id, 0.0);
+    cm.setClipLoopLength(id, 4.0);
+
+    SECTION("Grow loop to 6 — within clip, allowed") {
+        applyLoopLength(cm, id, 6.0, bpm);
+        auto* clip = cm.getClip(id);
+        REQUIRE(clip->internalLoopLength == Catch::Approx(6.0));
+        REQUIRE(clip->length == Catch::Approx(8.0 * spb));
+    }
+
+    SECTION("Grow loop to 10 — exceeds clip, clamped to 8") {
+        applyLoopLength(cm, id, 10.0, bpm);
+        auto* clip = cm.getClip(id);
+        REQUIRE(clip->internalLoopLength == Catch::Approx(8.0));
+        REQUIRE(clip->length == Catch::Approx(8.0 * spb));
+    }
+}
