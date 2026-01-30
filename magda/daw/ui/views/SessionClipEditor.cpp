@@ -55,16 +55,12 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
                 double loopEndTime = startTime + loopLengthSeconds;
 
                 if (loopEndTime <= endTime) {
-                    // Calculate loop region bounds
-                    double loopStart = startTime;
-                    double loopEnd = loopEndTime;
+                    // Calculate loop region bounds (loop starts at clip beginning)
                     double visibleDuration = endTime - startTime;
 
-                    int loopStartX = waveformBounds.getX() +
-                                     static_cast<int>((loopStart - startTime) / visibleDuration *
-                                                      waveformBounds.getWidth());
+                    int loopStartX = waveformBounds.getX();
                     int loopEndX = waveformBounds.getX() +
-                                   static_cast<int>((loopEnd - startTime) / visibleDuration *
+                                   static_cast<int>(loopLengthSeconds / visibleDuration *
                                                     waveformBounds.getWidth());
 
                     // Draw loop region overlay
