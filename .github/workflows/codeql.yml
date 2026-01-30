@@ -3,8 +3,9 @@ name: "CodeQL Security Scan"
 on:
   push:
     branches: [ main, develop ]
-  pull_request:
-    branches: [ main, develop ]
+  # CodeQL takes ~1 hour to run - only run on schedule and manual triggers to avoid blocking PRs
+  # pull_request:
+  #   branches: [ main, develop ]
   schedule:
     # Run at 2:00 AM UTC every Monday
     - cron: '0 2 * * 1'
@@ -57,11 +58,18 @@ jobs:
 
     # Initializes the CodeQL tools for scanning
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
+      uses: github/codeql-action/init@v4
       with:
         languages: ${{ matrix.language }}
-        # Use default queries plus security-extended for additional checks
-        queries: security-extended
+        # Use default security queries (security-extended adds ~30% more time)
+        # queries: security-extended
+
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ${{ runner.os }}-codeql-ccache-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-codeql-ccache-
 
     # Build the project for CodeQL analysis
     - name: Configure CMake
@@ -69,14 +77,16 @@ jobs:
         cmake -B build -G Ninja \
           -DCMAKE_BUILD_TYPE=RelWithDebInfo \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-          -DMAGDA_BUILD_TESTS=OFF
+          -DMAGDA_BUILD_TESTS=OFF \
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
     - name: Build
       run: |
         cmake --build build --config RelWithDebInfo --parallel $(nproc)
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
+      uses: github/codeql-action/analyze@v4
       with:
         category: "/language:${{matrix.language}}"
 
