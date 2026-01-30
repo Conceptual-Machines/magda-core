@@ -197,7 +197,7 @@ void BarsBeatsTicksLabel::SegmentLabel::paint(juce::Graphics& g) {
 }
 
 void BarsBeatsTicksLabel::SegmentLabel::mouseDown(const juce::MouseEvent& e) {
-    if (isEditing_)
+    if (isEditing_ || !owner_.isEnabled())
         return;
 
     isDragging_ = true;
@@ -235,6 +235,8 @@ void BarsBeatsTicksLabel::SegmentLabel::mouseUp(const juce::MouseEvent&) {
 }
 
 void BarsBeatsTicksLabel::SegmentLabel::mouseDoubleClick(const juce::MouseEvent&) {
+    if (!owner_.isEnabled())
+        return;
     if (owner_.doubleClickResets_) {
         owner_.setValue(owner_.defaultValue_);
     } else {
