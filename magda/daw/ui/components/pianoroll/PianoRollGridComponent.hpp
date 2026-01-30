@@ -84,6 +84,9 @@ class PianoRollGridComponent : public juce::Component {
         return timelineLengthBeats_;
     }
 
+    // Loop region markers (shows loop boundaries on the grid)
+    void setLoopRegion(double offsetBeats, double lengthBeats, bool enabled);
+
     // Playhead position (for drawing playhead line during playback)
     void setPlayheadPosition(double positionSeconds);
     double getPlayheadPosition() const {
@@ -156,6 +159,11 @@ class PianoRollGridComponent : public juce::Component {
 
     // Playhead position (in seconds)
     double playheadPosition_ = -1.0;  // -1 = not playing, hide playhead
+
+    // Loop region (in beats)
+    double loopOffsetBeats_ = 0.0;
+    double loopLengthBeats_ = 0.0;
+    bool loopEnabled_ = false;
 
     // Note components
     std::vector<std::unique_ptr<NoteComponent>> noteComponents_;

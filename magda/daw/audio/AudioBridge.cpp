@@ -248,17 +248,10 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
     }
 
     if (clip->view == ClipView::Session) {
-        DBG("AudioBridge::clipPropertyChanged: SESSION clip "
-            << clipId << " | loopEnabled=" << (int)clip->internalLoopEnabled
-            << " loopLength=" << clip->internalLoopLength << " length=" << clip->length
-            << " launchQ=" << (int)clip->launchQuantize << " sceneIndex=" << clip->sceneIndex);
-
         // Session clip property changed (e.g. sceneIndex set after creation).
         // Try to sync it to a slot if not already synced.
         if (clip->sceneIndex >= 0) {
             bool synced = syncSessionClipToSlot(clipId);
-            DBG("  syncSessionClipToSlot returned "
-                << (synced ? "true (new sync)" : "false (already synced or error)"));
 
             if (synced) {
                 // New clip synced — rebuild graph so SlotControlNode is created
@@ -269,6 +262,9 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
                 // Clip already synced — propagate property changes to TE clip
                 auto* teClip = getSessionTeClip(clipId);
                 if (teClip) {
+                    // Update clip length
+                    teClip->setLength(te::TimeDuration::fromSeconds(clip->length), false);
+
                     // Update launch quantization
                     auto* lq = teClip->getLaunchQuantisation();
                     if (lq) {
@@ -278,12 +274,16 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
                     // Update clip's own loop state
                     if (clip->internalLoopEnabled) {
                         auto& tempoSeq = edit_.tempoSequence;
-                        auto loopEndBeat = te::BeatPosition::fromBeats(clip->internalLoopLength);
-                        auto loopEndTime = tempoSeq.beatsToTime(loopEndBeat);
+                        double loopStart = clip->internalLoopOffset;
+                        double loopEnd = loopStart + clip->internalLoopLength;
+                        auto loopStartTime =
+                            tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopStart));
+                        auto loopEndTime =
+                            tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEnd));
 
-                        teClip->setLoopRange(
-                            te::TimeRange(te::TimePosition::fromSeconds(0.0), loopEndTime));
-                        teClip->setLoopRangeBeats({te::BeatPosition::fromBeats(0.0), loopEndBeat});
+                        teClip->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
+                        teClip->setLoopRangeBeats({te::BeatPosition::fromBeats(loopStart),
+                                                   te::BeatPosition::fromBeats(loopEnd)});
                     } else {
                         teClip->disableLooping();
                     }
@@ -296,6 +296,34 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
                                 te::BeatDuration::fromBeats(clip->internalLoopLength));
                         } else {
                             launchHandle->setLooping(std::nullopt);
+                        }
+                    }
+
+                    // Re-sync MIDI notes from ClipManager to the TE MidiClip
+                    if (clip->type == ClipType::MIDI) {
+                        if (auto* midiClip = dynamic_cast<te::MidiClip*>(teClip)) {
+                            auto& sequence = midiClip->getSequence();
+                            sequence.clear(nullptr);
+
+                            double loopEndBeat =
+                                clip->internalLoopOffset + clip->internalLoopLength;
+                            for (const auto& note : clip->midiNotes) {
+                                double start = note.startBeat;
+                                double length = note.lengthBeats;
+
+                                // Skip or truncate notes at the loop boundary
+                                if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
+                                    if (start >= loopEndBeat)
+                                        continue;
+                                    double noteEnd = start + length;
+                                    if (noteEnd > loopEndBeat)
+                                        length = loopEndBeat - start;
+                                }
+
+                                sequence.addNote(
+                                    note.noteNumber, te::BeatPosition::fromBeats(start),
+                                    te::BeatDuration::fromBeats(length), note.velocity, 0, nullptr);
+                            }
                         }
                     }
                 }
@@ -347,8 +375,6 @@ void AudioBridge::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip) {
         return;
     }
 
-    DBG("syncClipToEngine: Found audio track for MAGDA track " << clip->trackId);
-
     namespace te = tracktion;
     te::MidiClip* midiClipPtr = nullptr;
 
@@ -367,13 +393,9 @@ void AudioBridge::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip) {
         }
 
         if (!midiClipPtr) {
-            DBG("syncClipToEngine: Clip " << clipId
-                                          << " mapping exists but clip not found in engine");
             // Clear stale mapping and recreate
             clipIdToEngineId_.erase(it);
             engineIdToClipId_.erase(engineId);
-        } else {
-            DBG("syncClipToEngine: Updating existing clip " << clipId);
         }
     }
 
@@ -395,8 +417,6 @@ void AudioBridge::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip) {
         std::string engineClipId = midiClipPtr->itemID.toString().toStdString();
         clipIdToEngineId_[clipId] = engineClipId;
         engineIdToClipId_[engineClipId] = clipId;
-
-        DBG("syncClipToEngine: Created new clip " << clipId);
     }
 
     // Update clip position/length
@@ -410,56 +430,12 @@ void AudioBridge::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip) {
 
     // Clear existing notes and add all notes from ClipManager
     auto& sequence = midiClipPtr->getSequence();
-    sequence.clear(nullptr);  // Clear all notes
-
-    // Get tempo info for conversion verification
-    auto& tempoSeq = midiClipPtr->edit.tempoSequence;
-    auto clipStartTime = te::TimePosition::fromSeconds(clip->startTime);
-    auto clipStartBeat = tempoSeq.timeToBeats(clipStartTime);
-
-    DBG("=== syncClipToEngine Debug ===");
-    DBG("Clip ID: " << clipId);
-    DBG("Clip startTime: " << clip->startTime << "s, length: " << clip->length << "s");
-    DBG("Clip END time: " << (clip->startTime + clip->length) << "s");
-    DBG("Clip startBeat on timeline: " << clipStartBeat.inBeats());
-    DBG("Current tempo: " << tempoSeq.getTempoAt(clipStartTime).getBpm());
-    DBG("Number of notes: " << clip->midiNotes.size());
-
-    // Calculate clip end beat for boundary checking
-    auto clipEndTime = te::TimePosition::fromSeconds(clip->startTime + clip->length);
-    auto clipEndBeat = tempoSeq.timeToBeats(clipEndTime);
-    double clipLengthInBeats = clipEndBeat.inBeats() - clipStartBeat.inBeats();
-    DBG("Clip length in beats: " << clipLengthInBeats);
+    sequence.clear(nullptr);
 
     for (const auto& note : clip->midiNotes) {
-        te::BeatPosition startBeat = te::BeatPosition::fromBeats(note.startBeat);
-        te::BeatDuration lengthBeats = te::BeatDuration::fromBeats(note.lengthBeats);
-
-        // Convert to absolute timeline time for verification
-        auto noteAbsoluteTime = tempoSeq.beatsToTime(
-            te::BeatPosition::fromBeats(clipStartBeat.inBeats() + note.startBeat));
-        auto noteEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(
-            clipStartBeat.inBeats() + note.startBeat + note.lengthBeats));
-
-        // Check if note is within clip boundary
-        bool noteStartWithinClip = note.startBeat < clipLengthInBeats;
-        bool noteEndWithinClip = (note.startBeat + note.lengthBeats) <= clipLengthInBeats;
-
-        DBG("  Note " << note.noteNumber << ": clip-relative beat=" << note.startBeat
-                      << ", length=" << note.lengthBeats << ", velocity=" << note.velocity);
-        DBG("    -> Absolute timeline: " << noteAbsoluteTime.inSeconds() << "s to "
-                                         << noteEndTime.inSeconds() << "s");
-        DBG("    -> Within clip boundary? start=" << (noteStartWithinClip ? "YES" : "NO")
-                                                  << ", end="
-                                                  << (noteEndWithinClip ? "YES" : "NO"));
-
-        sequence.addNote(note.noteNumber, startBeat, lengthBeats, note.velocity,
-                         0,         // colour index
-                         nullptr);  // undo manager
+        sequence.addNote(note.noteNumber, te::BeatPosition::fromBeats(note.startBeat),
+                         te::BeatDuration::fromBeats(note.lengthBeats), note.velocity, 0, nullptr);
     }
-
-    DBG("syncClipToEngine: Synced clip " << clipId << " with " << clip->midiNotes.size()
-                                         << " notes");
 }
 
 void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
@@ -727,16 +703,14 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
         // Set looping properties
         if (clip->internalLoopEnabled) {
             auto& tempoSeq = edit_.tempoSequence;
-            auto loopEndBeat = te::BeatPosition::fromBeats(clip->internalLoopLength);
-            auto loopEndTime = tempoSeq.beatsToTime(loopEndBeat);
-            double loopLengthSeconds = loopEndTime.inSeconds();
+            double loopStart = clip->internalLoopOffset;
+            double loopEnd = loopStart + clip->internalLoopLength;
+            auto loopStartTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopStart));
+            auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEnd));
 
-            audioClipPtr->setLoopRange(
-                te::TimeRange(te::TimePosition::fromSeconds(0.0),
-                              te::TimePosition::fromSeconds(loopLengthSeconds)));
+            audioClipPtr->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
             audioClipPtr->setLoopRangeBeats(
-                {te::BeatPosition::fromBeats(0.0),
-                 te::BeatPosition::fromBeats(clip->internalLoopLength)});
+                {te::BeatPosition::fromBeats(loopStart), te::BeatPosition::fromBeats(loopEnd)});
         }
 
         // Set per-clip launch quantization
@@ -762,18 +736,30 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
         // Force offset to 0
         midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
 
-        // Add MIDI notes
+        // Add MIDI notes (skip/truncate at loop boundary to prevent stuck notes)
         auto& sequence = midiClipPtr->getSequence();
+        double loopStart = clip->internalLoopOffset;
+        double loopEndBeat = loopStart + clip->internalLoopLength;
         for (const auto& note : clip->midiNotes) {
-            te::BeatPosition noteBeat = te::BeatPosition::fromBeats(note.startBeat);
-            te::BeatDuration noteLength = te::BeatDuration::fromBeats(note.lengthBeats);
-            sequence.addNote(note.noteNumber, noteBeat, noteLength, note.velocity, 0, nullptr);
+            double start = note.startBeat;
+            double length = note.lengthBeats;
+
+            if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
+                if (start >= loopEndBeat)
+                    continue;
+                double noteEnd = start + length;
+                if (noteEnd > loopEndBeat)
+                    length = loopEndBeat - start;
+            }
+
+            sequence.addNote(note.noteNumber, te::BeatPosition::fromBeats(start),
+                             te::BeatDuration::fromBeats(length), note.velocity, 0, nullptr);
         }
 
         // Set looping if enabled
         if (clip->internalLoopEnabled) {
-            midiClipPtr->setLoopRangeBeats({te::BeatPosition::fromBeats(0.0),
-                                            te::BeatPosition::fromBeats(clip->internalLoopLength)});
+            midiClipPtr->setLoopRangeBeats(
+                {te::BeatPosition::fromBeats(loopStart), te::BeatPosition::fromBeats(loopEndBeat)});
         }
 
         // Set per-clip launch quantization
@@ -813,10 +799,13 @@ void AudioBridge::launchSessionClip(ClipId clipId) {
         if (clip->internalLoopEnabled) {
             // Set clip's own loop range
             auto& tempoSeq = edit_.tempoSequence;
-            auto loopEndBeat = te::BeatPosition::fromBeats(clip->internalLoopLength);
-            auto loopEndTime = tempoSeq.beatsToTime(loopEndBeat);
-            teClip->setLoopRange(te::TimeRange(te::TimePosition::fromSeconds(0.0), loopEndTime));
-            teClip->setLoopRangeBeats({te::BeatPosition::fromBeats(0.0), loopEndBeat});
+            double loopStart = clip->internalLoopOffset;
+            double loopEnd = loopStart + clip->internalLoopLength;
+            auto loopStartTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopStart));
+            auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEnd));
+            teClip->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
+            teClip->setLoopRangeBeats(
+                {te::BeatPosition::fromBeats(loopStart), te::BeatPosition::fromBeats(loopEnd)});
 
             // Set launch handle looping
             launchHandle->setLooping(te::BeatDuration::fromBeats(clip->internalLoopLength));
@@ -839,6 +828,19 @@ void AudioBridge::stopSessionClip(ClipId clipId) {
         return;
 
     launchHandle->stop(std::nullopt);
+
+    // Reset synth plugins on the clip's track to prevent stuck notes
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (clip && clip->type == ClipType::MIDI) {
+        auto* audioTrack = getAudioTrack(clip->trackId);
+        if (audioTrack) {
+            for (auto* plugin : audioTrack->pluginList) {
+                if (plugin->isSynth()) {
+                    plugin->reset();
+                }
+            }
+        }
+    }
 }
 
 te::Clip* AudioBridge::getSessionTeClip(ClipId clipId) {

@@ -1,6 +1,7 @@
 #include "DraggableValueLabel.hpp"
 
 #include <cmath>
+#include <cstdio>
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -81,6 +82,21 @@ juce::String DraggableValueLabel::formatValue(double val) const {
 
         case Format::Beats: {
             return juce::String(val, 2) + " beats";
+        }
+
+        case Format::BarsBeats: {
+            constexpr int TICKS_PER_BEAT = 480;
+            int wholeBars = static_cast<int>(val / beatsPerBar_);
+            double remaining = std::fmod(val, static_cast<double>(beatsPerBar_));
+            if (remaining < 0.0)
+                remaining = 0.0;
+            int wholeBeats = static_cast<int>(remaining);
+            int ticks = static_cast<int>((remaining - wholeBeats) * TICKS_PER_BEAT);
+            int offset = barsBeatsIsPosition_ ? 1 : 0;
+            char buffer[32];
+            std::snprintf(buffer, sizeof(buffer), "%d.%d.%03d", wholeBars + offset,
+                          wholeBeats + offset, ticks);
+            return juce::String(buffer);
         }
 
         case Format::Raw:
@@ -184,6 +200,26 @@ double DraggableValueLabel::parseValue(const juce::String& text) const {
             return trimmed.getDoubleValue();
         }
 
+        case Format::BarsBeats: {
+            constexpr int TICKS_PER_BEAT = 480;
+            int offset = barsBeatsIsPosition_ ? 1 : 0;
+            auto parts = juce::StringArray::fromTokens(trimmed, ".", "");
+            int bar = 0, beat = 0, ticks = 0;
+            if (parts.size() >= 1)
+                bar = parts[0].getIntValue() - offset;
+            if (parts.size() >= 2)
+                beat = parts[1].getIntValue() - offset;
+            if (parts.size() >= 3)
+                ticks = parts[2].getIntValue();
+            if (bar < 0)
+                bar = 0;
+            if (beat < 0)
+                beat = 0;
+            if (ticks < 0)
+                ticks = 0;
+            return bar * beatsPerBar_ + beat + ticks / static_cast<double>(TICKS_PER_BEAT);
+        }
+
         case Format::Raw:
         default:
             // Remove suffix if present
@@ -264,12 +300,23 @@ void DraggableValueLabel::mouseDrag(const juce::MouseEvent& e) {
 
     // Calculate delta (dragging up increases value)
     int deltaY = dragStartY_ - e.y;
-    double range = maxValue_ - minValue_;
-    double deltaValue = (deltaY / dragSensitivity_) * range;
 
-    // Fine control with shift key
-    if (e.mods.isShiftDown()) {
-        deltaValue *= 0.1;
+    double deltaValue;
+    if (format_ == Format::BarsBeats) {
+        // BarsBeats: 1 beat per ~30px, shift = fine control (0.25 beats)
+        double beatsPerPixel = 1.0 / 30.0;
+        deltaValue = deltaY * beatsPerPixel;
+        if (e.mods.isShiftDown()) {
+            deltaValue *= 0.25;
+        }
+    } else {
+        double range = maxValue_ - minValue_;
+        deltaValue = (deltaY / dragSensitivity_) * range;
+
+        // Fine control with shift key
+        if (e.mods.isShiftDown()) {
+            deltaValue *= 0.1;
+        }
     }
 
     setValue(dragStartValue_ + deltaValue);
@@ -285,6 +332,51 @@ void DraggableValueLabel::mouseDoubleClick(const juce::MouseEvent& /*e*/) {
         setValue(defaultValue_);
     } else {
         startEditing();
+    }
+}
+
+void DraggableValueLabel::mouseWheelMove(const juce::MouseEvent& e,
+                                         const juce::MouseWheelDetails& wheel) {
+    if (isEditing_ || !isEnabled()) {
+        return;
+    }
+
+    if (format_ == Format::BarsBeats) {
+        // Determine which segment the mouse is over by measuring text
+        constexpr int TICKS_PER_BEAT = 480;
+        auto font = FontManager::getInstance().getUIFont(10.0f);
+        auto text = formatValue(value_);
+        float textWidth = font.getStringWidthFloat(text);
+        auto bounds = getLocalBounds().toFloat().reduced(2, 0);
+        float textStartX = bounds.getX() + (bounds.getWidth() - textWidth) * 0.5f;
+        float relativeX = static_cast<float>(e.x) - textStartX;
+
+        // Find dot positions in the rendered text
+        int firstDot = text.indexOfChar('.');
+        int secondDot = text.indexOfChar(firstDot + 1, '.');
+
+        float firstDotX = font.getStringWidthFloat(text.substring(0, firstDot));
+        float secondDotX =
+            (secondDot >= 0) ? font.getStringWidthFloat(text.substring(0, secondDot)) : textWidth;
+
+        // Determine increment based on segment
+        double increment = 0.0;
+        if (relativeX < firstDotX) {
+            // Bar segment
+            increment = static_cast<double>(beatsPerBar_);
+        } else if (relativeX < secondDotX) {
+            // Beat segment
+            increment = 1.0;
+        } else {
+            // Tick segment
+            increment = 1.0 / TICKS_PER_BEAT;
+        }
+
+        double direction = (wheel.deltaY > 0) ? 1.0 : -1.0;
+        setValue(value_ + increment * direction);
+    } else {
+        // Default: fall back to base class behavior
+        juce::Component::mouseWheelMove(e, wheel);
     }
 }
 
