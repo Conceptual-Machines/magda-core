@@ -180,6 +180,7 @@ set(DAW_UI_SOURCES
     # Views
     ui/views/MainView.cpp
     ui/views/SessionView.cpp
+    ui/views/SessionClipEditor.cpp
     ui/views/MixerView.cpp
     # Components - Common
     ui/components/common/SvgButton.cpp

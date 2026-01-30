@@ -287,6 +287,54 @@ InspectorContent::InspectorContent() {
     addChildComponent(clipLoopLengthSlider_);
 
     // ========================================================================
+    // Session clip launch properties
+    // ========================================================================
+
+    launchModeLabel_.setText("Launch Mode", juce::dontSendNotification);
+    launchModeLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    launchModeLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    addChildComponent(launchModeLabel_);
+
+    launchModeCombo_.addItem("Trigger", 1);
+    launchModeCombo_.addItem("Toggle", 2);
+    launchModeCombo_.setColour(juce::ComboBox::backgroundColourId,
+                               DarkTheme::getColour(DarkTheme::SURFACE));
+    launchModeCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    launchModeCombo_.setColour(juce::ComboBox::outlineColourId,
+                               DarkTheme::getColour(DarkTheme::SEPARATOR));
+    launchModeCombo_.onChange = [this]() {
+        if (selectedClipId_ != magda::INVALID_CLIP_ID) {
+            auto mode = static_cast<magda::LaunchMode>(launchModeCombo_.getSelectedId() - 1);
+            magda::ClipManager::getInstance().setClipLaunchMode(selectedClipId_, mode);
+        }
+    };
+    addChildComponent(launchModeCombo_);
+
+    launchQuantizeLabel_.setText("Launch Quantize", juce::dontSendNotification);
+    launchQuantizeLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    launchQuantizeLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    addChildComponent(launchQuantizeLabel_);
+
+    launchQuantizeCombo_.addItem("None", 1);
+    launchQuantizeCombo_.addItem("1 Bar", 2);
+    launchQuantizeCombo_.addItem("1/2", 3);
+    launchQuantizeCombo_.addItem("1/4", 4);
+    launchQuantizeCombo_.addItem("1/8", 5);
+    launchQuantizeCombo_.setColour(juce::ComboBox::backgroundColourId,
+                                   DarkTheme::getColour(DarkTheme::SURFACE));
+    launchQuantizeCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    launchQuantizeCombo_.setColour(juce::ComboBox::outlineColourId,
+                                   DarkTheme::getColour(DarkTheme::SEPARATOR));
+    launchQuantizeCombo_.onChange = [this]() {
+        if (selectedClipId_ != magda::INVALID_CLIP_ID) {
+            auto quantize =
+                static_cast<magda::LaunchQuantize>(launchQuantizeCombo_.getSelectedId() - 1);
+            magda::ClipManager::getInstance().setClipLaunchQuantize(selectedClipId_, quantize);
+        }
+    };
+    addChildComponent(launchQuantizeCombo_);
+
+    // ========================================================================
     // Note properties section
     // ========================================================================
 
@@ -532,6 +580,17 @@ void InspectorContent::resized() {
         // Loop length
         clipLoopLengthLabel_.setBounds(bounds.removeFromTop(16));
         clipLoopLengthSlider_.setBounds(bounds.removeFromTop(24));
+        bounds.removeFromTop(12);
+
+        // Session clip launch properties (only for session clips)
+        if (launchModeLabel_.isVisible()) {
+            launchModeLabel_.setBounds(bounds.removeFromTop(16));
+            launchModeCombo_.setBounds(bounds.removeFromTop(24));
+            bounds.removeFromTop(12);
+
+            launchQuantizeLabel_.setBounds(bounds.removeFromTop(16));
+            launchQuantizeCombo_.setBounds(bounds.removeFromTop(24));
+        }
     } else if (currentSelectionType_ == magda::SelectionType::Note) {
         // Note properties layout
         if (noteSelection_.getCount() > 1) {
@@ -1008,6 +1067,20 @@ void InspectorContent::updateFromSelectedClip() {
         clipLoopToggle_.setToggleState(clip->internalLoopEnabled, juce::dontSendNotification);
         clipLoopLengthSlider_.setValue(clip->internalLoopLength, juce::dontSendNotification);
 
+        // Session clip launch properties
+        bool isSessionClip = (clip->view == magda::ClipView::Session);
+        launchModeLabel_.setVisible(isSessionClip);
+        launchModeCombo_.setVisible(isSessionClip);
+        launchQuantizeLabel_.setVisible(isSessionClip);
+        launchQuantizeCombo_.setVisible(isSessionClip);
+
+        if (isSessionClip) {
+            launchModeCombo_.setSelectedId(static_cast<int>(clip->launchMode) + 1,
+                                           juce::dontSendNotification);
+            launchQuantizeCombo_.setSelectedId(static_cast<int>(clip->launchQuantize) + 1,
+                                               juce::dontSendNotification);
+        }
+
         showClipControls(true);
         noSelectionLabel_.setVisible(false);
     } else {
@@ -1057,6 +1130,14 @@ void InspectorContent::showClipControls(bool show) {
     clipLoopToggle_.setVisible(show);
     clipLoopLengthLabel_.setVisible(show);
     clipLoopLengthSlider_.setVisible(show);
+
+    // Session launch controls are conditionally shown in updateFromSelectedClip
+    if (!show) {
+        launchModeLabel_.setVisible(false);
+        launchModeCombo_.setVisible(false);
+        launchQuantizeLabel_.setVisible(false);
+        launchQuantizeCombo_.setVisible(false);
+    }
 }
 
 void InspectorContent::showNoteControls(bool show) {
