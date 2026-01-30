@@ -139,7 +139,7 @@ CheckOptions:
     value: 'true'
 
   # CERT rules
-  - key: cert-dcl16-c.NewSuffixes
+  - key: cert-dcl16-c.NewSuffixes # gitleaks:allow
     value: 'L;LL;LU;LLU'
   - key: cert-oop54-cpp.WarnOnlyIfThisHasSuspiciousField
     value: 'false'

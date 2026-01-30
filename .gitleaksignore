@@ -2,6 +2,9 @@
 # Add false positives here to prevent gitleaks from flagging them
 # Format: regex pattern or file path
 
+# False positive: clang-tidy configuration key detected as API key
+.clang-tidy:142
+
 # Example test files with dummy credentials for testing
 # tests/fixtures/sample_credentials.cpp:5
 
