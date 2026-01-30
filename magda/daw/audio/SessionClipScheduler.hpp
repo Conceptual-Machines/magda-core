@@ -2,7 +2,7 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
-#include <set>
+#include <unordered_set>
 
 #include "../core/ClipManager.hpp"
 
@@ -71,7 +71,7 @@ class SessionClipScheduler : public ClipManagerListener, private juce::Timer {
     te::Edit& edit_;
 
     // Clips we've launched via LaunchHandle (to detect natural end of one-shot clips)
-    std::set<ClipId> launchedClips_;
+    std::unordered_set<ClipId> launchedClips_;
 
     // Transport position at which the first session clip was launched
     double launchTransportPos_ = 0.0;

@@ -1437,6 +1437,10 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
     auto& clipManager = ClipManager::getInstance();
     int currentSceneIndex = sceneIndex;
 
+    // Create format manager once for all dropped files
+    juce::AudioFormatManager formatManager;
+    formatManager.registerBasicFormats();
+
     for (const auto& filePath : files) {
         if (!isAudioFile(filePath))
             continue;
@@ -1455,8 +1459,6 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
         juce::File audioFile(filePath);
         double fileDuration = 4.0;  // fallback
         {
-            juce::AudioFormatManager formatManager;
-            formatManager.registerBasicFormats();
             std::unique_ptr<juce::AudioFormatReader> reader(
                 formatManager.createReaderFor(audioFile));
             if (reader) {
