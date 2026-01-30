@@ -160,6 +160,7 @@ class ClipManager {
     void setClipName(ClipId clipId, const juce::String& name);
     void setClipColour(ClipId clipId, juce::Colour colour);
     void setClipLoopEnabled(ClipId clipId, bool enabled);
+    void setClipLoopOffset(ClipId clipId, double offsetBeats);
     void setClipLoopLength(ClipId clipId, double lengthBeats);
     void setClipLaunchMode(ClipId clipId, LaunchMode mode);
     void setClipLaunchQuantize(ClipId clipId, LaunchQuantize quantize);

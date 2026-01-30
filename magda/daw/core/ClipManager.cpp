@@ -33,6 +33,9 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     if (view == ClipView::Arrangement) {
         arrangementClips_.push_back(clip);
     } else {
+        // Session clips loop by default (internalLoopLength keeps its
+        // default value in beats — don't overwrite with length which is seconds)
+        clip.internalLoopEnabled = true;
         sessionClips_.push_back(clip);
     }
 
@@ -61,6 +64,9 @@ ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double len
     if (view == ClipView::Arrangement) {
         arrangementClips_.push_back(clip);
     } else {
+        // Session clips loop by default (internalLoopLength keeps its
+        // default value in beats — don't overwrite with length which is seconds)
+        clip.internalLoopEnabled = true;
         sessionClips_.push_back(clip);
     }
 
@@ -313,6 +319,13 @@ void ClipManager::setClipColour(ClipId clipId, juce::Colour colour) {
 void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled) {
     if (auto* clip = getClip(clipId)) {
         clip->internalLoopEnabled = enabled;
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
+void ClipManager::setClipLoopOffset(ClipId clipId, double offsetBeats) {
+    if (auto* clip = getClip(clipId)) {
+        clip->internalLoopOffset = juce::jmax(0.0, offsetBeats);
         notifyClipPropertyChanged(clipId);
     }
 }

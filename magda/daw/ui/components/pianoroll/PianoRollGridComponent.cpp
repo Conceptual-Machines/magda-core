@@ -19,7 +19,7 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
     paintGrid(g, bounds);
 
-    // Draw clip boundary lines in absolute mode
+    // Draw clip boundary lines and dim out-of-bounds area
     if (!relativeMode_ && clipLengthBeats_ > 0) {
         // Clip start boundary
         int clipStartX = beatToPixel(clipStartBeats_);
@@ -28,11 +28,24 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
             g.fillRect(clipStartX - 1, 0, 2, bounds.getHeight());
         }
 
+        // Dim area before clip start
+        if (clipStartX > bounds.getX()) {
+            g.setColour(juce::Colour(0x60000000));
+            g.fillRect(bounds.getX(), bounds.getY(), clipStartX - bounds.getX(),
+                       bounds.getHeight());
+        }
+
         // Clip end boundary
         int clipEndX = beatToPixel(clipStartBeats_ + clipLengthBeats_);
         if (clipEndX >= 0 && clipEndX <= bounds.getRight()) {
             g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
             g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
+        }
+
+        // Dim area after clip end
+        if (clipEndX < bounds.getRight()) {
+            g.setColour(juce::Colour(0x60000000));
+            g.fillRect(clipEndX, bounds.getY(), bounds.getRight() - clipEndX, bounds.getHeight());
         }
     } else if (clipLengthBeats_ > 0) {
         // In relative mode, just show end boundary at clip length
@@ -40,6 +53,34 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         if (clipEndX >= 0 && clipEndX <= bounds.getRight()) {
             g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
             g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
+        }
+
+        // Dim area after clip end
+        if (clipEndX < bounds.getRight()) {
+            g.setColour(juce::Colour(0x60000000));
+            g.fillRect(clipEndX, bounds.getY(), bounds.getRight() - clipEndX, bounds.getHeight());
+        }
+    }
+
+    // Draw loop region markers
+    if (loopEnabled_ && loopLengthBeats_ > 0.0) {
+        double loopStartBeat =
+            relativeMode_ ? loopOffsetBeats_ : (clipStartBeats_ + loopOffsetBeats_);
+        double loopEndBeat = loopStartBeat + loopLengthBeats_;
+
+        int loopStartX = beatToPixel(loopStartBeat);
+        int loopEndX = beatToPixel(loopEndBeat);
+
+        juce::Colour loopColour = DarkTheme::getColour(DarkTheme::LOOP_MARKER);
+
+        // Green vertical lines at loop boundaries (2px)
+        if (loopStartX >= 0 && loopStartX <= bounds.getRight()) {
+            g.setColour(loopColour);
+            g.fillRect(loopStartX - 1, 0, 2, bounds.getHeight());
+        }
+        if (loopEndX >= 0 && loopEndX <= bounds.getRight()) {
+            g.setColour(loopColour);
+            g.fillRect(loopEndX - 1, 0, 2, bounds.getHeight());
         }
     }
 
@@ -431,6 +472,13 @@ bool PianoRollGridComponent::isBlackKey(int noteNumber) const {
 juce::Colour PianoRollGridComponent::getClipColour() const {
     const auto* clip = ClipManager::getInstance().getClip(clipId_);
     return clip ? clip->colour : juce::Colour(0xFF6688CC);
+}
+
+void PianoRollGridComponent::setLoopRegion(double offsetBeats, double lengthBeats, bool enabled) {
+    loopOffsetBeats_ = offsetBeats;
+    loopLengthBeats_ = lengthBeats;
+    loopEnabled_ = enabled;
+    repaint();
 }
 
 void PianoRollGridComponent::setPlayheadPosition(double positionSeconds) {

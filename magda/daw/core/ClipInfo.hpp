@@ -53,6 +53,7 @@ struct ClipInfo {
 
     // Internal looping
     bool internalLoopEnabled = false;
+    double internalLoopOffset = 0.0;  // Loop start offset in beats
     double internalLoopLength = 4.0;  // In beats
 
     // Audio-specific properties
