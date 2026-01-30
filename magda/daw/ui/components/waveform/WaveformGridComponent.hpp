@@ -80,6 +80,13 @@ class WaveformGridComponent : public juce::Component {
      */
     void updateClipPosition(double startTime, double length);
 
+    /**
+     * @brief Set the loop end boundary in seconds (clip-relative)
+     * When set (> 0), audio past the loop point is dimmed.
+     * Pass 0 or negative to clear.
+     */
+    void setLoopEndSeconds(double loopEndSeconds);
+
     // ========================================================================
     // Coordinate Conversion
     // ========================================================================
@@ -109,8 +116,9 @@ class WaveformGridComponent : public juce::Component {
 
     // Timeline mode
     bool relativeMode_ = false;
-    double clipStartTime_ = 0.0;  // Clip start position on timeline (seconds)
-    double clipLength_ = 0.0;     // Clip length (seconds)
+    double clipStartTime_ = 0.0;   // Clip start position on timeline (seconds)
+    double clipLength_ = 0.0;      // Clip length (seconds)
+    double loopEndSeconds_ = 0.0;  // Loop end boundary in seconds (0 = no loop)
 
     // Zoom and scroll
     double horizontalZoom_ = 100.0;  // pixels per second
