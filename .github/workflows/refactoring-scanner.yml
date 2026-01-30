@@ -1,10 +1,6 @@
 name: Refactoring Opportunities Scanner
 
 on:
-  push:
-    branches:
-      - main
-  # Allow manual triggering
   workflow_dispatch:
 
 # Ensure only one scan runs at a time

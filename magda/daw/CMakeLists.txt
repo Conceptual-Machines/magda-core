@@ -227,6 +227,10 @@ set(DAW_UI_SOURCES
     ui/components/chain/DeviceSlotComponent.cpp
     ui/components/chain/ToneGeneratorUI.cpp
     ui/components/chain/ParamSlotComponent.cpp
+    ui/components/chain/ParamLinkResolver.cpp
+    ui/components/chain/ParamModulationPainter.cpp
+    ui/components/chain/ParamLinkMenu.cpp
+    ui/components/chain/ParamWidgetSetup.cpp
     ui/components/chain/PagedControlPanel.cpp
     ui/components/chain/MacroKnobComponent.cpp
     ui/components/chain/MacroPanelComponent.cpp
@@ -375,6 +379,10 @@ set(DAW_HEADERS
     ui/components/chain/ModulatorEditorPanel.hpp
     ui/components/chain/MacroEditorPanel.hpp
     ui/components/chain/LFOCurveEditor.hpp
+    ui/components/chain/ParamLinkResolver.hpp
+    ui/components/chain/ParamModulationPainter.hpp
+    ui/components/chain/ParamLinkMenu.hpp
+    ui/components/chain/ParamWidgetSetup.hpp
     # Core - Macro and Mod
     core/MacroInfo.hpp
     core/ModInfo.hpp
