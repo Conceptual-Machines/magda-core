@@ -1230,15 +1230,16 @@ void InspectorContent::updateFromSelectedClip() {
         clipLoopLengthValue_->setBeatsPerBar(beatsPerBar);
 
         if (isSessionClip) {
-            // Session clips: start is always 0, hide the field entirely
-            clipStartLabel_.setVisible(false);
-            clipStartValue_->setVisible(false);
+            // Session clips: start is always 0, greyed out and non-interactive
+            clipStartValue_->setValue(0.0, juce::dontSendNotification);
+            clipStartValue_->setEnabled(false);
+            clipStartValue_->setAlpha(0.4f);
             clipEndValue_->setValue(magda::TimelineUtils::secondsToBeats(clip->length, bpm),
                                     juce::dontSendNotification);
         } else {
             // Arrangement clips: start and end as positions in beats
-            clipStartLabel_.setVisible(true);
-            clipStartValue_->setVisible(true);
+            clipStartValue_->setEnabled(true);
+            clipStartValue_->setAlpha(1.0f);
             double startBeats = magda::TimelineUtils::secondsToBeats(clip->startTime, bpm);
             double endBeats = startBeats + magda::TimelineUtils::secondsToBeats(clip->length, bpm);
             clipStartValue_->setValue(startBeats, juce::dontSendNotification);
@@ -1312,11 +1313,8 @@ void InspectorContent::showClipControls(bool show) {
     clipTypeLabel_.setVisible(show);
     clipTypeValue_.setVisible(show);
     clipPositionIcon_->setVisible(show);
-    // Start visibility is managed by updateFromSelectedClip (hidden for session clips)
-    if (!show) {
-        clipStartLabel_.setVisible(false);
-        clipStartValue_->setVisible(false);
-    }
+    clipStartLabel_.setVisible(show);
+    clipStartValue_->setVisible(show);
     clipEndLabel_.setVisible(show);
     clipEndValue_->setVisible(show);
     clipLoopToggle_->setVisible(show);
