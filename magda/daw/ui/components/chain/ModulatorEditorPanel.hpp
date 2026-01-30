@@ -66,7 +66,7 @@ class WaveformDisplay : public juce::Component, private juce::Timer {
      * @brief Draw vertical dashed line showing phase offset position
      */
     void drawPhaseOffsetIndicator(juce::Graphics& g, const juce::Rectangle<float>& bounds,
-                                   float width, float /*height*/) {
+                                  float width, float /*height*/) {
         if (mod_->phaseOffset <= 0.001f) {
             return;
         }
@@ -76,8 +76,7 @@ class WaveformDisplay : public juce::Component, private juce::Timer {
 
         // Draw dashed line
         for (float y = bounds.getY(); y < bounds.getBottom(); y += DASH_LENGTH * 2) {
-            g.drawLine(offsetX, y, offsetX, juce::jmin(y + DASH_LENGTH, bounds.getBottom()),
-                       1.0f);
+            g.drawLine(offsetX, y, offsetX, juce::jmin(y + DASH_LENGTH, bounds.getBottom()), 1.0f);
         }
     }
 
@@ -114,7 +113,7 @@ class WaveformDisplay : public juce::Component, private juce::Timer {
      * @brief Draw dot showing current phase position on waveform
      */
     void drawCurrentPhaseIndicator(juce::Graphics& g, const juce::Rectangle<float>& bounds,
-                                    float width, float height, float centerY) {
+                                   float width, float height, float centerY) {
         float displayX = bounds.getX() + mod_->phase * width;
         float currentValue = mod_->value;
         float currentY = centerY + (0.5f - currentValue) * (height - WAVEFORM_MARGIN);
