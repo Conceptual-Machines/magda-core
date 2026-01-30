@@ -99,13 +99,24 @@ Each file is processed separately with individual reports containing:
 gh workflow run refactoring-scanner.yml
 ```
 
-**Scalability**:
+**Scalability & Reliability**:
 The workflow is designed to handle large codebases by:
 - Processing files individually to avoid memory issues
 - Including detailed per-file findings directly in GitHub issues (no artifact download needed)
 - Truncating reports to respect GitHub API limits (60KB for detailed findings, 65KB for summary)
 - Storing complete per-file results as downloadable artifacts as backup
 - Providing a file index for easy navigation of results
+- **Rate limiting**: 2.5 second delay between GitHub API requests to avoid hitting rate limits
+- **Retry logic**: Exponential backoff (2s, 4s, 8s, 16s, 32s) for transient failures
+- **Graceful error handling**: Continues processing even if individual issues fail
+- **Statistics tracking**: Reports success/failure counts at completion
+
+**Issue Creation Script** (`scripts/create_refactoring_issues.py`):
+The workflow uses a dedicated Python script for creating GitHub issues with robust error handling:
+- Configurable delay between requests (`--delay`, default: 2.5s)
+- Configurable retry attempts (`--max-retries`, default: 5)
+- Dry-run mode for testing (`--dry-run`)
+- Can be run locally for debugging and testing
 
 ## Benefits
 
@@ -281,6 +292,15 @@ If you need the complete raw reports, you can download artifacts:
 - Check that workflows are enabled for the repository
 - Verify cron syntax with https://crontab.guru/
 - Note: Scheduled workflows may be delayed up to 15 minutes
+
+**Issue: GitHub API rate limit errors**
+- The workflow includes built-in rate limiting (2.5s delay between requests)
+- Automatic retry with exponential backoff (up to 5 attempts)
+- If rate limits persist, consider:
+  - Running the workflow less frequently (adjust schedule)
+  - Increasing the `--delay` parameter in the workflow (currently 2.5s)
+  - Processing fewer files by adjusting the complexity threshold
+- Check workflow logs for detailed error messages and statistics
 
 **Issue: Too many automated issues**
 - Increase thresholds in workflow conditions
