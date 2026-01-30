@@ -210,6 +210,31 @@ jobs:
         script: |
           const fs = require('fs');
           
+          // Helper function to sleep/delay
+          const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+          
+          // Helper function to retry API calls with exponential backoff
+          async function retryWithBackoff(fn, maxRetries = 3, initialDelay = 2000) {
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+              try {
+                return await fn();
+              } catch (error) {
+                // Check if it's a rate limit error
+                const isRateLimit = error.status === 429 || 
+                                   error.message?.includes('rate limit') ||
+                                   error.message?.includes('secondary rate limit');
+                
+                if (isRateLimit && attempt < maxRetries) {
+                  const delay = initialDelay * Math.pow(2, attempt - 1);
+                  console.log(`⏳ Rate limit hit, retrying in ${delay}ms (attempt ${attempt}/${maxRetries})...`);
+                  await sleep(delay);
+                } else {
+                  throw error;
+                }
+              }
+            }
+          }
+          
           // Read the summary to get the list of files with issues
           const summary = fs.readFileSync('./refactoring-results-summary.txt', 'utf8');
           
@@ -218,127 +243,200 @@ jobs:
           
           console.log(`Found ${warningLines.length} files with refactoring opportunities`);
           
+          // Track statistics
+          let successCount = 0;
+          let failureCount = 0;
+          let skippedCount = 0;
+          const errors = [];
+          
           // Process each file with issues
-          for (const line of warningLines) {
-            // Extract filename from the warning line: "⚠️  path/to/file.cpp: issue description"
-            const match = line.match(/⚠️\s+([^:]+):\s*(.+)/);
-            if (!match) {
-              console.log(`Skipping malformed warning line: ${line}`);
-              continue;
-            }
+          for (let i = 0; i < warningLines.length; i++) {
+            const line = warningLines[i];
+          // Process each file with issues
+          for (let i = 0; i < warningLines.length; i++) {
+            const line = warningLines[i];
             
-            const filePath = match[1].trim();
-            const issueDescription = match[2].trim();
+            console.log(`\nProcessing file ${i + 1}/${warningLines.length}...`);
             
-            // Create sanitized filename for finding the report
-            // IMPORTANT: This must match the sanitization in the shell script at line 65
-            // Both replace '/' and '.' with '-'
-            const safeFilename = filePath.replace(/[\/\.]/g, '-');
-            const reportPath = `./results/refactoring-report-${safeFilename}.txt`;
-            
-            // Read the detailed report for this file
-            let fileReport = '';
             try {
-              fileReport = fs.readFileSync(reportPath, 'utf8');
-            } catch (e) {
-              console.log(`⚠️  Could not read report for ${filePath}: ${e.message}`);
-              console.log(`   Skipping issue creation to avoid creating unhelpful issue`);
-              continue;
-            }
-            
-            // Create issue title and body
-            const issueTitle = `[Refactoring] ${filePath}`;
-            const issueBody = `## Refactoring Opportunity: ${filePath}
-          
-          This issue was automatically created by the refactoring scanner workflow.
-          
-          ### Issue Detected
-          ${issueDescription}
-          
-          ### Analysis Date
-          ${new Date().toISOString().split('T')[0]}
-          
-          ### Detailed Analysis
-          
-          \`\`\`
-          ${fileReport}
-          \`\`\`
-          
-          ### Recommended Actions
-          
-          Based on the issue type:
-          - **High Complexity**: Break down complex functions (cyclomatic complexity > 10) into smaller, more focused functions
-          - **Large File**: Consider splitting file over 500 lines into smaller, focused modules
-          - **High Coupling**: Review and reduce files with many internal dependencies (>10 includes)
-          - **Magic Numbers**: Replace literal numbers with named constants
-          - **God Object**: Consider splitting classes with 20+ methods into smaller, more focused classes
-          
-          ### Next Steps
-          
-          1. Review the detailed analysis above
-          2. Plan refactoring approach
-          3. Create a branch for the refactoring work
-          4. Submit a PR with the improvements
-          5. Close this issue when complete
-          
-          **Note**: This is an automated issue. Feel free to add comments, assign it, or close it if not applicable.
-          `;
-            
-            // Check if an issue already exists for this file
-            // Search for issues with the exact file path in the title
-            const searchQuery = `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open label:refactoring label:automated in:title "${filePath}"`;
-            
-            let existingIssues;
-            try {
-              const searchResult = await github.rest.search.issuesAndPullRequests({
-                q: searchQuery
-              });
-              // Filter results to find exact title match (in case search returns partial matches)
-              existingIssues = searchResult.data.items.filter(issue => 
-                issue.title === issueTitle
-              );
-            } catch (e) {
-              console.log(`Search failed: ${e.message}, will create new issue`);
-              existingIssues = [];
-            }
-            
-            if (existingIssues.length > 0) {
-              // Issue already exists, add a comment with updated analysis
-              const existingIssue = existingIssues[0];
-              const commentBody = `## Updated Analysis - ${new Date().toISOString().split('T')[0]}
-          
-          ${issueDescription}
-          
-          <details>
-          <summary>Click to expand updated report</summary>
-          
-          \`\`\`
-          ${fileReport}
-          \`\`\`
-          
-          </details>`;
+              // Extract filename from the warning line: "⚠️  path/to/file.cpp: issue description"
+              const match = line.match(/⚠️\s+([^:]+):\s*(.+)/);
+              if (!match) {
+                console.log(`⚠️  Skipping malformed warning line: ${line}`);
+                skippedCount++;
+                continue;
+              }
               
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: existingIssue.number,
-                body: commentBody
-              });
-              console.log(`Updated existing issue #${existingIssue.number} for ${filePath}`);
-            } else {
-              // Create new issue
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: issueTitle,
-                body: issueBody,
-                labels: ['refactoring', 'automated', 'technical-debt']
-              });
-              console.log(`Created new issue for ${filePath}`);
+              const filePath = match[1].trim();
+              const issueDescription = match[2].trim();
+              
+              console.log(`📄 Processing: ${filePath}`);
+              
+              // Create sanitized filename for finding the report
+              // IMPORTANT: This must match the sanitization in the shell script at line 65
+              // Both replace '/' and '.' with '-'
+              const safeFilename = filePath.replace(/[\/\.]/g, '-');
+              const reportPath = `./results/refactoring-report-${safeFilename}.txt`;
+              
+              // Read the detailed report for this file
+              let fileReport = '';
+              try {
+                fileReport = fs.readFileSync(reportPath, 'utf8');
+              } catch (e) {
+                console.log(`⚠️  Could not read report for ${filePath}: ${e.message}`);
+                console.log(`   Skipping issue creation to avoid creating unhelpful issue`);
+                skippedCount++;
+                continue;
+              }
+              
+              // Create issue title and body
+              const issueTitle = `[Refactoring] ${filePath}`;
+              const issueBody = `## Refactoring Opportunity: ${filePath}
+            
+            This issue was automatically created by the refactoring scanner workflow.
+            
+            ### Issue Detected
+            ${issueDescription}
+            
+            ### Analysis Date
+            ${new Date().toISOString().split('T')[0]}
+            
+            ### Detailed Analysis
+            
+            \`\`\`
+            ${fileReport}
+            \`\`\`
+            
+            ### Recommended Actions
+            
+            Based on the issue type:
+            - **High Complexity**: Break down complex functions (cyclomatic complexity > 10) into smaller, more focused functions
+            - **Large File**: Consider splitting file over 500 lines into smaller, focused modules
+            - **High Coupling**: Review and reduce files with many internal dependencies (>10 includes)
+            - **Magic Numbers**: Replace literal numbers with named constants
+            - **God Object**: Consider splitting classes with 20+ methods into smaller, more focused classes
+            
+            ### Next Steps
+            
+            1. Review the detailed analysis above
+            2. Plan refactoring approach
+            3. Create a branch for the refactoring work
+            4. Submit a PR with the improvements
+            5. Close this issue when complete
+            
+            **Note**: This is an automated issue. Feel free to add comments, assign it, or close it if not applicable.
+            `;
+              
+              // Check if an issue already exists for this file
+              // Search for issues with the exact file path in the title
+              const searchQuery = `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open label:refactoring label:automated in:title "${filePath}"`;
+              
+              let existingIssues;
+              try {
+                const searchResult = await retryWithBackoff(async () => {
+                  return await github.rest.search.issuesAndPullRequests({
+                    q: searchQuery
+                  });
+                });
+                // Filter results to find exact title match (in case search returns partial matches)
+                existingIssues = searchResult.data.items.filter(issue => 
+                  issue.title === issueTitle
+                );
+              } catch (e) {
+                console.log(`⚠️  Search failed: ${e.message}, will attempt to create new issue`);
+                existingIssues = [];
+              }
+              
+              // Throttle API requests - wait before making the next API call
+              // This helps avoid hitting secondary rate limits
+              const delayMs = 2000; // 2 seconds between requests
+              
+              if (existingIssues.length > 0) {
+                // Issue already exists, add a comment with updated analysis
+                const existingIssue = existingIssues[0];
+                const commentBody = `## Updated Analysis - ${new Date().toISOString().split('T')[0]}
+            
+            ${issueDescription}
+            
+            <details>
+            <summary>Click to expand updated report</summary>
+            
+            \`\`\`
+            ${fileReport}
+            \`\`\`
+            
+            </details>`;
+                
+                await retryWithBackoff(async () => {
+                  return await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: existingIssue.number,
+                    body: commentBody
+                  });
+                });
+                console.log(`✅ Updated existing issue #${existingIssue.number} for ${filePath}`);
+                successCount++;
+              } else {
+                // Create new issue
+                await retryWithBackoff(async () => {
+                  return await github.rest.issues.create({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    title: issueTitle,
+                    body: issueBody,
+                    labels: ['refactoring', 'automated', 'technical-debt']
+                  });
+                });
+                console.log(`✅ Created new issue for ${filePath}`);
+                successCount++;
+              }
+              
+              // Wait before processing next file (throttling)
+              if (i < warningLines.length - 1) {
+                console.log(`⏳ Waiting ${delayMs}ms before next request...`);
+                await sleep(delayMs);
+              }
+              
+            } catch (error) {
+              // Log error but continue processing other files
+              console.error(`❌ Failed to process file: ${error.message}`);
+              if (error.status) {
+                console.error(`   HTTP Status: ${error.status}`);
+              }
+              failureCount++;
+              errors.push({ line, error: error.message });
+              
+              // If we hit a rate limit even with retries, wait longer before continuing
+              const isRateLimit = error.status === 429 || 
+                                 error.message?.includes('rate limit') ||
+                                 error.message?.includes('secondary rate limit');
+              if (isRateLimit) {
+                const longDelay = 30000; // 30 seconds
+                console.log(`⏳ Rate limit persists, waiting ${longDelay}ms before continuing...`);
+                await sleep(longDelay);
+              }
             }
           }
           
-          console.log('Finished processing all files with refactoring opportunities');
+          // Print summary
+          console.log('\n' + '='.repeat(60));
+          console.log('📊 SUMMARY');
+          console.log('='.repeat(60));
+          console.log(`✅ Successfully processed: ${successCount}`);
+          console.log(`❌ Failed: ${failureCount}`);
+          console.log(`⚠️  Skipped: ${skippedCount}`);
+          console.log(`📝 Total files: ${warningLines.length}`);
+          
+          if (errors.length > 0) {
+            console.log('\n❌ Errors encountered:');
+            errors.forEach(({ line, error }, idx) => {
+              console.log(`  ${idx + 1}. ${line}`);
+              console.log(`     Error: ${error}`);
+            });
+          }
+          
+          console.log('\n✨ Finished processing all files with refactoring opportunities');
 
     - name: Summary
       run: |
