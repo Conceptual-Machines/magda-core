@@ -541,9 +541,10 @@ void PianoRollContent::updateGridSize() {
     double clipLengthBeats = 0.0;
     if (clip) {
         if (clip->view == magda::ClipView::Session) {
-            // Session clips: startTime is always 0, length is derived from loop length (beats)
+            // Session clips: startTime is always 0, length is clip length (seconds) converted to
+            // beats
             clipStartBeats = 0.0;
-            clipLengthBeats = clip->internalLoopLength;
+            clipLengthBeats = clip->length / secondsPerBeat;
         } else {
             clipStartBeats = clip->startTime / secondsPerBeat;
             clipLengthBeats = clip->length / secondsPerBeat;
@@ -610,9 +611,9 @@ void PianoRollContent::updateTimeRuler() {
     // relativeMode controls whether bar numbers are offset
     if (clip) {
         if (clip->view == magda::ClipView::Session) {
-            // Session clips: no timeline offset, length from loop length in seconds
+            // Session clips: no timeline offset, length from clip length in seconds
             timeRuler_->setTimeOffset(0.0);
-            timeRuler_->setClipLength(clip->internalLoopLength * secondsPerBeat);
+            timeRuler_->setClipLength(clip->length);
         } else {
             timeRuler_->setTimeOffset(clip->startTime);
             timeRuler_->setClipLength(clip->length);
