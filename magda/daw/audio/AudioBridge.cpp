@@ -700,16 +700,14 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
         // Set looping properties
         if (clip->internalLoopEnabled) {
             auto& tempoSeq = edit_.tempoSequence;
-            auto loopEndBeat = te::BeatPosition::fromBeats(clip->internalLoopLength);
-            auto loopEndTime = tempoSeq.beatsToTime(loopEndBeat);
-            double loopLengthSeconds = loopEndTime.inSeconds();
+            double loopStart = clip->internalLoopOffset;
+            double loopEnd = loopStart + clip->internalLoopLength;
+            auto loopStartTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopStart));
+            auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEnd));
 
-            audioClipPtr->setLoopRange(
-                te::TimeRange(te::TimePosition::fromSeconds(0.0),
-                              te::TimePosition::fromSeconds(loopLengthSeconds)));
-            audioClipPtr->setLoopRangeBeats(
-                {te::BeatPosition::fromBeats(0.0),
-                 te::BeatPosition::fromBeats(clip->internalLoopLength)});
+            audioClipPtr->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
+            audioClipPtr->setLoopRangeBeats({te::BeatPosition::fromBeats(loopStart),
+                                             te::BeatPosition::fromBeats(loopEnd)});
         }
 
         // Set per-clip launch quantization
@@ -798,10 +796,13 @@ void AudioBridge::launchSessionClip(ClipId clipId) {
         if (clip->internalLoopEnabled) {
             // Set clip's own loop range
             auto& tempoSeq = edit_.tempoSequence;
-            auto loopEndBeat = te::BeatPosition::fromBeats(clip->internalLoopLength);
-            auto loopEndTime = tempoSeq.beatsToTime(loopEndBeat);
-            teClip->setLoopRange(te::TimeRange(te::TimePosition::fromSeconds(0.0), loopEndTime));
-            teClip->setLoopRangeBeats({te::BeatPosition::fromBeats(0.0), loopEndBeat});
+            double loopStart = clip->internalLoopOffset;
+            double loopEnd = loopStart + clip->internalLoopLength;
+            auto loopStartTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopStart));
+            auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEnd));
+            teClip->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
+            teClip->setLoopRangeBeats({te::BeatPosition::fromBeats(loopStart),
+                                       te::BeatPosition::fromBeats(loopEnd)});
 
             // Set launch handle looping
             launchHandle->setLooping(te::BeatDuration::fromBeats(clip->internalLoopLength));
