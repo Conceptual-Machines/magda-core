@@ -42,6 +42,13 @@ This document defines code review guidelines for the Magda project, a JUCE/C++ a
 - **Personal Preferences**: Don't suggest changes based solely on personal style preferences
 - **Trivial Issues**: Skip commenting on very minor issues that don't affect functionality or maintainability
 - **Pre-existing Issues**: Focus on the code being changed, not unrelated existing code
+- **Nitpicking**: Do not nitpick. Focus on substantive issues that genuinely affect correctness, performance, or maintainability. If a comment wouldn't block a merge, it's probably not worth making.
+
+## Resolving Previous Review Comments
+
+- **Mark resolved issues as resolved**: When a subsequent PR push addresses feedback from a previous review iteration, those comments MUST be marked as resolved. Do not leave stale unresolved comments hanging.
+- **Don't re-raise resolved issues**: If a concern from a previous review has been addressed in the current diff, do not re-raise it or raise a variation of it.
+- **Acknowledge progress**: When re-reviewing after changes, focus only on what's new or still unresolved. Don't repeat feedback that has already been acted upon.
 
 ## Refactoring Guidelines (for Copilot Coding Agent)
 
@@ -112,6 +119,13 @@ Files under 300 lines, header files with only declarations, and test files shoul
 - **Previous Code Reviews**: Consider the context and feedback from previous code review iterations when providing new feedback. Don't repeat comments that have already been addressed or discussed.
 - **Review History**: If a developer has provided justification for a design decision in a previous review iteration, respect that context unless new information warrants revisiting the issue.
 - **Incremental Changes**: Recognize when changes are part of a larger refactoring or feature implementation. Consider the broader context and don't insist on perfection in intermediate states if the overall direction is sound.
+
+### Review Memory (MCP)
+A memory MCP server (`@modelcontextprotocol/server-memory`) is configured to persist review context across PRs. The review agent should:
+- **Record decisions**: After a review, store key decisions, accepted patterns, and deferred items as entities in the knowledge graph (e.g., entity type `review_decision`, `accepted_pattern`, `deferred_item`).
+- **Query before reviewing**: Before starting a new review, search the memory for relevant past decisions about the files or components being changed.
+- **Avoid contradictions**: If a pattern or approach was previously accepted, don't flag it as an issue in a later PR unless there's a concrete new reason.
+- **Track deferred work**: When an issue is explicitly deferred to a follow-up PR, record it so it can be checked for completion later without re-raising it prematurely.
 
 ### Comment Guidelines
 - **Be Specific**: Point to exact line numbers and provide clear explanations
