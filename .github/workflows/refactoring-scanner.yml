@@ -231,6 +231,8 @@ jobs:
             const issueDescription = match[2].trim();
             
             // Create sanitized filename for finding the report
+            // IMPORTANT: This must match the sanitization in the shell script at line 65
+            // Both replace '/' and '.' with '-'
             const safeFilename = filePath.replace(/[\/\.]/g, '-');
             const reportPath = `./results/refactoring-report-${safeFilename}.txt`;
             
@@ -239,8 +241,9 @@ jobs:
             try {
               fileReport = fs.readFileSync(reportPath, 'utf8');
             } catch (e) {
-              console.log(`Could not read report for ${filePath}: ${e.message}`);
-              fileReport = 'Detailed report not available.';
+              console.log(`⚠️  Could not read report for ${filePath}: ${e.message}`);
+              console.log(`   Skipping issue creation to avoid creating unhelpful issue`);
+              continue;
             }
             
             // Create issue title and body
@@ -282,14 +285,18 @@ jobs:
           `;
             
             // Check if an issue already exists for this file
-            const searchQuery = `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open label:refactoring label:automated "${issueTitle}"`;
+            // Search for issues with the exact file path in the title
+            const searchQuery = `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open label:refactoring label:automated in:title "${filePath}"`;
             
             let existingIssues;
             try {
               const searchResult = await github.rest.search.issuesAndPullRequests({
                 q: searchQuery
               });
-              existingIssues = searchResult.data.items;
+              // Filter results to find exact title match (in case search returns partial matches)
+              existingIssues = searchResult.data.items.filter(issue => 
+                issue.title === issueTitle
+              );
             } catch (e) {
               console.log(`Search failed: ${e.message}, will create new issue`);
               existingIssues = [];
@@ -298,11 +305,24 @@ jobs:
             if (existingIssues.length > 0) {
               // Issue already exists, add a comment with updated analysis
               const existingIssue = existingIssues[0];
+              const commentBody = `## Updated Analysis - ${new Date().toISOString().split('T')[0]}
+          
+          ${issueDescription}
+          
+          <details>
+          <summary>Click to expand updated report</summary>
+          
+          \`\`\`
+          ${fileReport}
+          \`\`\`
+          
+          </details>`;
+              
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: existingIssue.number,
-                body: `## Updated Analysis - ${new Date().toISOString().split('T')[0]}\n\n${issueDescription}\n\n<details>\n<summary>Click to expand updated report</summary>\n\n\`\`\`\n${fileReport}\n\`\`\`\n\n</details>`
+                body: commentBody
               });
               console.log(`Updated existing issue #${existingIssue.number} for ${filePath}`);
             } else {

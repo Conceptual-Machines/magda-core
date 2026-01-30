@@ -119,7 +119,7 @@ The periodic analysis workflows are designed to be lightweight:
 
 This allows frequent automated analysis without the overhead of full CI builds.
 
-### Automated Issue Creation
+### 2. Automated Issue Creation
 
 High-priority findings automatically create GitHub issues with:
 - **Separate issue per file**: Each file with refactoring opportunities gets its own dedicated issue
