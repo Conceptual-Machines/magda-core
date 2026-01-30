@@ -309,6 +309,25 @@ InspectorContent::InspectorContent() {
     };
     addChildComponent(*clipLoopToggle_);
 
+    // Loop position
+    clipLoopPosLabel_.setText("Pos", juce::dontSendNotification);
+    clipLoopPosLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    clipLoopPosLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    addChildComponent(clipLoopPosLabel_);
+
+    clipLoopPosValue_ =
+        std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::BarsBeats);
+    clipLoopPosValue_->setRange(0.0, 10000.0, 0.0);
+    clipLoopPosValue_->setDoubleClickResetsValue(false);
+    clipLoopPosValue_->setBarsBeatsIsPosition(false);
+    clipLoopPosValue_->onValueChange = [this]() {
+        if (selectedClipId_ != magda::INVALID_CLIP_ID) {
+            magda::ClipManager::getInstance().setClipLoopOffset(selectedClipId_,
+                                                                clipLoopPosValue_->getValue());
+        }
+    };
+    addChildComponent(*clipLoopPosValue_);
+
     // Loop length
     clipLoopLengthLabel_.setText("Length", juce::dontSendNotification);
     clipLoopLengthLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
@@ -626,16 +645,22 @@ void InspectorContent::resized() {
             bounds.removeFromTop(8);
         }
 
-        // Loop: toggle + length on one row
+        // Loop: toggle + Pos / Length side by side
         if (clipLoopToggle_->isVisible()) {
             const int loopSize = 22;
             const int gap = 4;
+            int fieldWidth = (bounds.getWidth() - loopSize - gap * 2) / 2;
 
             auto labelRow = bounds.removeFromTop(16);
+            labelRow.removeFromLeft(loopSize + gap);  // space for toggle column
+            clipLoopPosLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
+            labelRow.removeFromLeft(gap);
             clipLoopLengthLabel_.setBounds(labelRow);
 
             auto valueRow = bounds.removeFromTop(loopSize);
             clipLoopToggle_->setBounds(valueRow.removeFromLeft(loopSize));
+            valueRow.removeFromLeft(gap);
+            clipLoopPosValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
             valueRow.removeFromLeft(gap);
             clipLoopLengthValue_->setBounds(valueRow);
             bounds.removeFromTop(8);
@@ -1114,6 +1139,7 @@ void InspectorContent::updateFromSelectedClip() {
         // Update beatsPerBar on all draggable labels
         clipStartValue_->setBeatsPerBar(beatsPerBar);
         clipEndValue_->setBeatsPerBar(beatsPerBar);
+        clipLoopPosValue_->setBeatsPerBar(beatsPerBar);
         clipLoopLengthValue_->setBeatsPerBar(beatsPerBar);
 
         if (isSessionClip) {
@@ -1128,20 +1154,24 @@ void InspectorContent::updateFromSelectedClip() {
             clipEndValue_->setValue(endBeats, juce::dontSendNotification);
         }
 
+        clipLoopPosValue_->setValue(clip->internalLoopOffset, juce::dontSendNotification);
         clipLoopLengthValue_->setValue(clip->internalLoopLength, juce::dontSendNotification);
 
         if (isSessionClip) {
             // Session clips: loop is always on, toggle shown but disabled
             clipLoopToggle_->setActive(true);
             clipLoopToggle_->setEnabled(false);
-            clipLoopLengthLabel_.setVisible(false);
-            clipLoopLengthValue_->setVisible(false);
         } else {
             clipLoopToggle_->setActive(clip->internalLoopEnabled);
             clipLoopToggle_->setEnabled(true);
-            clipLoopLengthLabel_.setVisible(clip->internalLoopEnabled);
-            clipLoopLengthValue_->setVisible(clip->internalLoopEnabled);
         }
+
+        // Show loop pos/length when loop is active
+        bool loopOn = isSessionClip || clip->internalLoopEnabled;
+        clipLoopPosLabel_.setVisible(loopOn);
+        clipLoopPosValue_->setVisible(loopOn);
+        clipLoopLengthLabel_.setVisible(loopOn);
+        clipLoopLengthValue_->setVisible(loopOn);
 
         // Session clip launch properties
         launchModeLabel_.setVisible(false);
@@ -1201,8 +1231,10 @@ void InspectorContent::showClipControls(bool show) {
     clipEndLabel_.setVisible(show);
     clipEndValue_->setVisible(show);
     clipLoopToggle_->setVisible(show);
-    // Loop length visibility is managed by updateFromSelectedClip
+    // Loop pos/length visibility is managed by updateFromSelectedClip
     if (!show) {
+        clipLoopPosLabel_.setVisible(false);
+        clipLoopPosValue_->setVisible(false);
         clipLoopLengthLabel_.setVisible(false);
         clipLoopLengthValue_->setVisible(false);
     }

@@ -317,6 +317,13 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled) {
     }
 }
 
+void ClipManager::setClipLoopOffset(ClipId clipId, double offsetBeats) {
+    if (auto* clip = getClip(clipId)) {
+        clip->internalLoopOffset = juce::jmax(0.0, offsetBeats);
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
 void ClipManager::setClipLoopLength(ClipId clipId, double lengthBeats) {
     if (auto* clip = getClip(clipId)) {
         clip->internalLoopLength = juce::jmax(0.25, lengthBeats);
