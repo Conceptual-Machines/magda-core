@@ -298,6 +298,20 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
                             launchHandle->setLooping(std::nullopt);
                         }
                     }
+
+                    // Re-sync MIDI notes from ClipManager to the TE MidiClip
+                    if (clip->type == ClipType::MIDI) {
+                        if (auto* midiClip = dynamic_cast<te::MidiClip*>(teClip)) {
+                            auto& sequence = midiClip->getSequence();
+                            sequence.clear(nullptr);
+                            for (const auto& note : clip->midiNotes) {
+                                sequence.addNote(note.noteNumber,
+                                                 te::BeatPosition::fromBeats(note.startBeat),
+                                                 te::BeatDuration::fromBeats(note.lengthBeats),
+                                                 note.velocity, 0, nullptr);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -839,6 +853,21 @@ void AudioBridge::stopSessionClip(ClipId clipId) {
         return;
 
     launchHandle->stop(std::nullopt);
+
+    // Send all-notes-off (CC 123) on all channels for MIDI clips to prevent stuck notes
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (clip && clip->type == ClipType::MIDI) {
+        auto& dm = engine_.getDeviceManager();
+        for (int i = 0; i < dm.getNumMidiOutDevices(); ++i) {
+            if (auto* midiOut = dm.getMidiOutDevice(i)) {
+                if (midiOut->isEnabled()) {
+                    for (int ch = 1; ch <= 16; ++ch) {
+                        midiOut->fireMessage(juce::MidiMessage::allNotesOff(ch));
+                    }
+                }
+            }
+        }
+    }
 }
 
 te::Clip* AudioBridge::getSessionTeClip(ClipId clipId) {

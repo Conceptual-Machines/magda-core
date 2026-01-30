@@ -299,3 +299,176 @@ TEST_CASE("Session clip trigger/stop state transitions", "[session][clip][state]
         REQUIRE(clip->isQueued == false);
     }
 }
+
+// =============================================================================
+// MIDI clip creation and management
+// =============================================================================
+
+TEST_CASE("CreateMidiClip — create via ClipManager and verify type", "[session][midi][create]") {
+    ClipManager::getInstance().shutdown();
+
+    ClipId clipId = ClipManager::getInstance().createMidiClip(1, 0.0, 4.0, ClipView::Session);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->type == ClipType::MIDI);
+    REQUIRE(clip->view == ClipView::Session);
+    REQUIRE(clip->trackId == 1);
+    REQUIRE(clip->length == Catch::Approx(4.0));
+    REQUIRE(clip->midiNotes.empty());
+}
+
+TEST_CASE("AddMidiNotes — add notes and verify storage", "[session][midi][notes]") {
+    ClipManager::getInstance().shutdown();
+
+    ClipId clipId = ClipManager::getInstance().createMidiClip(1, 0.0, 4.0, ClipView::Session);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+
+    // Add notes
+    MidiNote note1{60, 100, 0.0, 1.0};  // C4, beat 0, 1 beat
+    MidiNote note2{64, 80, 1.0, 0.5};   // E4, beat 1, half beat
+    MidiNote note3{67, 110, 2.0, 2.0};  // G4, beat 2, 2 beats
+
+    ClipManager::getInstance().addMidiNote(clipId, note1);
+    ClipManager::getInstance().addMidiNote(clipId, note2);
+    ClipManager::getInstance().addMidiNote(clipId, note3);
+
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->midiNotes.size() == 3);
+
+    REQUIRE(clip->midiNotes[0].noteNumber == 60);
+    REQUIRE(clip->midiNotes[0].velocity == 100);
+    REQUIRE(clip->midiNotes[0].startBeat == Catch::Approx(0.0));
+    REQUIRE(clip->midiNotes[0].lengthBeats == Catch::Approx(1.0));
+
+    REQUIRE(clip->midiNotes[1].noteNumber == 64);
+    REQUIRE(clip->midiNotes[1].velocity == 80);
+    REQUIRE(clip->midiNotes[1].startBeat == Catch::Approx(1.0));
+    REQUIRE(clip->midiNotes[1].lengthBeats == Catch::Approx(0.5));
+
+    REQUIRE(clip->midiNotes[2].noteNumber == 67);
+    REQUIRE(clip->midiNotes[2].velocity == 110);
+    REQUIRE(clip->midiNotes[2].startBeat == Catch::Approx(2.0));
+    REQUIRE(clip->midiNotes[2].lengthBeats == Catch::Approx(2.0));
+}
+
+TEST_CASE("SyncMidiClipToSlot — verify ClipManager state for MIDI session clip",
+          "[session][midi][sync]") {
+    // Note: Full TE sync requires a running engine. This test verifies the
+    // ClipManager side: creating a MIDI clip and assigning it to a session slot.
+    ClipManager::getInstance().shutdown();
+
+    ClipId clipId = ClipManager::getInstance().createMidiClip(1, 0.0, 4.0, ClipView::Session);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+
+    // Add some notes
+    ClipManager::getInstance().addMidiNote(clipId, {60, 100, 0.0, 1.0});
+    ClipManager::getInstance().addMidiNote(clipId, {64, 80, 1.0, 1.0});
+
+    // Assign to scene slot
+    ClipManager::getInstance().setClipSceneIndex(clipId, 0);
+
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->sceneIndex == 0);
+    REQUIRE(clip->type == ClipType::MIDI);
+    REQUIRE(clip->midiNotes.size() == 2);
+
+    // Verify the clip is retrievable by slot
+    ClipId slotClipId = ClipManager::getInstance().getClipInSlot(1, 0);
+    REQUIRE(slotClipId == clipId);
+}
+
+TEST_CASE("LaunchMidiClip — verify launch/stop cycle via ClipManager state",
+          "[session][midi][launch]") {
+    // Note: Actual audio playback requires TE. This test verifies the
+    // ClipManager state transitions for MIDI clips match audio clips.
+    ClipManager::getInstance().shutdown();
+
+    ClipId clipId = ClipManager::getInstance().createMidiClip(1, 0.0, 4.0, ClipView::Session);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+    ClipManager::getInstance().setClipSceneIndex(clipId, 0);
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    clip->view = ClipView::Session;
+
+    SECTION("Initial state is stopped") {
+        REQUIRE(clip->isPlaying == false);
+        REQUIRE(clip->isQueued == false);
+    }
+
+    SECTION("triggerClip queues the MIDI clip") {
+        ClipManager::getInstance().triggerClip(clipId);
+        clip = ClipManager::getInstance().getClip(clipId);
+        REQUIRE(clip->isQueued == true);
+    }
+
+    SECTION("setClipPlayingState marks MIDI clip as playing") {
+        ClipManager::getInstance().triggerClip(clipId);
+        ClipManager::getInstance().setClipPlayingState(clipId, true);
+        clip = ClipManager::getInstance().getClip(clipId);
+        REQUIRE(clip->isPlaying == true);
+    }
+
+    SECTION("stopClip resets MIDI clip state") {
+        ClipManager::getInstance().triggerClip(clipId);
+        ClipManager::getInstance().setClipPlayingState(clipId, true);
+        ClipManager::getInstance().stopClip(clipId);
+        clip = ClipManager::getInstance().getClip(clipId);
+        REQUIRE(clip->isPlaying == false);
+        REQUIRE(clip->isQueued == false);
+    }
+}
+
+TEST_CASE("StopMidiClipSendsAllNotesOff — verify MIDI clip type is detectable for all-notes-off",
+          "[session][midi][allnotesoff]") {
+    // Note: Actual MIDI message sending requires TE's DeviceManager.
+    // This test verifies the clip type detection that gates the all-notes-off logic.
+    ClipManager::getInstance().shutdown();
+
+    ClipId midiClipId = ClipManager::getInstance().createMidiClip(1, 0.0, 4.0, ClipView::Session);
+    ClipId audioClipId =
+        ClipManager::getInstance().createAudioClip(1, 0.0, 4.0, "test.wav", ClipView::Session);
+
+    const auto* midiClip = ClipManager::getInstance().getClip(midiClipId);
+    const auto* audioClip = ClipManager::getInstance().getClip(audioClipId);
+
+    REQUIRE(midiClip != nullptr);
+    REQUIRE(audioClip != nullptr);
+
+    // Only MIDI clips should trigger all-notes-off
+    REQUIRE(midiClip->type == ClipType::MIDI);
+    REQUIRE(audioClip->type == ClipType::Audio);
+
+    // Verify the type check used in AudioBridge::stopSessionClip
+    REQUIRE((midiClip->type == ClipType::MIDI) == true);
+    REQUIRE((audioClip->type == ClipType::MIDI) == false);
+}
+
+TEST_CASE("MidiClipSlotAppearance — clip slot shows as occupied after MIDI clip creation",
+          "[session][midi][appearance]") {
+    ClipManager::getInstance().shutdown();
+
+    TrackId trackId = 1;
+    int sceneIndex = 0;
+
+    // No clip in slot initially
+    REQUIRE(ClipManager::getInstance().getClipInSlot(trackId, sceneIndex) == INVALID_CLIP_ID);
+
+    // Create MIDI clip and assign to slot
+    ClipId clipId = ClipManager::getInstance().createMidiClip(trackId, 0.0, 4.0, ClipView::Session);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+    ClipManager::getInstance().setClipSceneIndex(clipId, sceneIndex);
+
+    // Slot should now be occupied
+    ClipId slotClipId = ClipManager::getInstance().getClipInSlot(trackId, sceneIndex);
+    REQUIRE(slotClipId == clipId);
+
+    // Clip should be identifiable as MIDI
+    const auto* clip = ClipManager::getInstance().getClip(slotClipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->type == ClipType::MIDI);
+}

@@ -540,8 +540,14 @@ void PianoRollContent::updateGridSize() {
     double clipStartBeats = 0.0;
     double clipLengthBeats = 0.0;
     if (clip) {
-        clipStartBeats = clip->startTime / secondsPerBeat;
-        clipLengthBeats = clip->length / secondsPerBeat;
+        if (clip->view == magda::ClipView::Session) {
+            // Session clips: startTime is always 0, length is derived from loop length (beats)
+            clipStartBeats = 0.0;
+            clipLengthBeats = clip->internalLoopLength;
+        } else {
+            clipStartBeats = clip->startTime / secondsPerBeat;
+            clipLengthBeats = clip->length / secondsPerBeat;
+        }
     }
 
     int gridWidth = juce::jmax(viewport_->getWidth(),
@@ -595,8 +601,14 @@ void PianoRollContent::updateTimeRuler() {
     // timeOffset is always the clip's start time (used for boundary markers)
     // relativeMode controls whether bar numbers are offset
     if (clip) {
-        timeRuler_->setTimeOffset(clip->startTime);
-        timeRuler_->setClipLength(clip->length);
+        if (clip->view == magda::ClipView::Session) {
+            // Session clips: no timeline offset, length from loop length in seconds
+            timeRuler_->setTimeOffset(0.0);
+            timeRuler_->setClipLength(clip->internalLoopLength * secondsPerBeat);
+        } else {
+            timeRuler_->setTimeOffset(clip->startTime);
+            timeRuler_->setClipLength(clip->length);
+        }
     } else {
         timeRuler_->setTimeOffset(0.0);
         timeRuler_->setClipLength(0.0);
@@ -645,6 +657,19 @@ void PianoRollContent::onActivated() {
         if (clip && clip->type == magda::ClipType::MIDI) {
             editingClipId_ = selectedClip;
             gridComponent_->setClip(selectedClip);
+
+            // Session clips are locked to relative mode
+            bool isSessionClip = (clip->view == magda::ClipView::Session);
+            if (isSessionClip) {
+                setRelativeTimeMode(true);
+                timeModeButton_->setEnabled(false);
+                timeModeButton_->setTooltip("Session clips always use relative time");
+            } else {
+                timeModeButton_->setEnabled(true);
+                timeModeButton_->setTooltip(
+                    "Toggle between Relative (clip) and Absolute (project) time");
+            }
+
             updateGridSize();
             updateTimeRuler();
             updateVelocityLane();
@@ -704,6 +729,19 @@ void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
         if (clip && clip->type == magda::ClipType::MIDI) {
             editingClipId_ = clipId;
             gridComponent_->setClip(clipId);
+
+            // Session clips are locked to relative mode
+            bool isSessionClip = (clip->view == magda::ClipView::Session);
+            if (isSessionClip) {
+                setRelativeTimeMode(true);
+                timeModeButton_->setEnabled(false);
+                timeModeButton_->setTooltip("Session clips always use relative time");
+            } else {
+                timeModeButton_->setEnabled(true);
+                timeModeButton_->setTooltip(
+                    "Toggle between Relative (clip) and Absolute (project) time");
+            }
+
             updateGridSize();
             updateTimeRuler();
             updateVelocityLane();
