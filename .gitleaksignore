@@ -1,0 +1,12 @@
+# Gitleaks ignore file
+# Add false positives here to prevent gitleaks from flagging them
+# Format: regex pattern or file path
+
+# Example test files with dummy credentials for testing
+# tests/fixtures/sample_credentials.cpp:5
+
+# Example: Ignore specific line in a file
+# magda/agents/example.cpp:42
+
+# Example: Ignore entire file
+# tests/test_auth.cpp
