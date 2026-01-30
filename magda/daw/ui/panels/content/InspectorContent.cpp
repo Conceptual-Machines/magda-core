@@ -316,10 +316,14 @@ InspectorContent::InspectorContent() {
     addChildComponent(launchQuantizeLabel_);
 
     launchQuantizeCombo_.addItem("None", 1);
-    launchQuantizeCombo_.addItem("1 Bar", 2);
-    launchQuantizeCombo_.addItem("1/2", 3);
-    launchQuantizeCombo_.addItem("1/4", 4);
-    launchQuantizeCombo_.addItem("1/8", 5);
+    launchQuantizeCombo_.addItem("8 Bars", 2);
+    launchQuantizeCombo_.addItem("4 Bars", 3);
+    launchQuantizeCombo_.addItem("2 Bars", 4);
+    launchQuantizeCombo_.addItem("1 Bar", 5);
+    launchQuantizeCombo_.addItem("1/2", 6);
+    launchQuantizeCombo_.addItem("1/4", 7);
+    launchQuantizeCombo_.addItem("1/8", 8);
+    launchQuantizeCombo_.addItem("1/16", 9);
     launchQuantizeCombo_.setColour(juce::ComboBox::backgroundColourId,
                                    DarkTheme::getColour(DarkTheme::SURFACE));
     launchQuantizeCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
@@ -583,11 +587,7 @@ void InspectorContent::resized() {
         bounds.removeFromTop(12);
 
         // Session clip launch properties (only for session clips)
-        if (launchModeLabel_.isVisible()) {
-            launchModeLabel_.setBounds(bounds.removeFromTop(16));
-            launchModeCombo_.setBounds(bounds.removeFromTop(24));
-            bounds.removeFromTop(12);
-
+        if (launchQuantizeLabel_.isVisible()) {
             launchQuantizeLabel_.setBounds(bounds.removeFromTop(16));
             launchQuantizeCombo_.setBounds(bounds.removeFromTop(24));
         }
@@ -1069,14 +1069,12 @@ void InspectorContent::updateFromSelectedClip() {
 
         // Session clip launch properties
         bool isSessionClip = (clip->view == magda::ClipView::Session);
-        launchModeLabel_.setVisible(isSessionClip);
-        launchModeCombo_.setVisible(isSessionClip);
+        launchModeLabel_.setVisible(false);
+        launchModeCombo_.setVisible(false);
         launchQuantizeLabel_.setVisible(isSessionClip);
         launchQuantizeCombo_.setVisible(isSessionClip);
 
         if (isSessionClip) {
-            launchModeCombo_.setSelectedId(static_cast<int>(clip->launchMode) + 1,
-                                           juce::dontSendNotification);
             launchQuantizeCombo_.setSelectedId(static_cast<int>(clip->launchQuantize) + 1,
                                                juce::dontSendNotification);
         }

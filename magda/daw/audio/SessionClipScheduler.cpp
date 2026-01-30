@@ -1,7 +1,5 @@
 #include "SessionClipScheduler.hpp"
 
-#include <cmath>
-
 #include "AudioBridge.hpp"
 
 namespace magda {
@@ -21,24 +19,33 @@ SessionClipScheduler::~SessionClipScheduler() {
 // =============================================================================
 
 void SessionClipScheduler::clipsChanged() {
-    // When clips are removed, clean up any active/queued session clips that no longer exist
+    // Clean up launchedClips_ for deleted clips
     auto& cm = ClipManager::getInstance();
 
-    // Clean up queued clips that were deleted
-    queuedClips_.erase(
-        std::remove_if(queuedClips_.begin(), queuedClips_.end(),
-                       [&cm](const QueuedClip& qc) { return cm.getClip(qc.clipId) == nullptr; }),
-        queuedClips_.end());
-
-    // Clean up active session clips that were deleted
     std::vector<ClipId> toRemove;
-    for (const auto& [clipId, engineId] : activeSessionClips_) {
+    for (auto clipId : launchedClips_) {
         if (cm.getClip(clipId) == nullptr) {
             toRemove.push_back(clipId);
         }
     }
     for (auto clipId : toRemove) {
-        deactivateSessionClip(clipId);
+        audioBridge_.stopSessionClip(clipId);
+        launchedClips_.erase(clipId);
+    }
+
+    if (launchedClips_.empty()) {
+        stopTimer();
+    }
+}
+
+void SessionClipScheduler::clipPropertyChanged(ClipId clipId) {
+    // Update cached loop state if the playing clip's properties changed
+    if (launchedClips_.count(clipId) > 0) {
+        const auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip) {
+            launchClipLooping_ = clip->internalLoopEnabled;
+            launchClipLength_ = clip->length;
+        }
     }
 }
 
@@ -50,238 +57,118 @@ void SessionClipScheduler::clipPlaybackStateChanged(ClipId clipId) {
     }
 
     if (clip->isQueued && !clip->isPlaying) {
-        // Clip was just queued for playback
-        if (clip->launchQuantize == LaunchQuantize::None) {
-            // Immediate: activate right away
-            activateSessionClip(clipId);
-            cm.setClipPlayingState(clipId, true);
-        } else {
-            // Quantized: calculate target beat and queue
-            double currentBeat = getCurrentBeatPosition();
-            double targetBeat = getNextQuantizeBoundary(clip->launchQuantize, currentBeat);
-
-            // Add to queue (replace if already queued)
-            queuedClips_.erase(
-                std::remove_if(queuedClips_.begin(), queuedClips_.end(),
-                               [clipId](const QueuedClip& qc) { return qc.clipId == clipId; }),
-                queuedClips_.end());
-
-            queuedClips_.push_back({clipId, targetBeat});
-
-            // Start timer if not already running
-            if (!isTimerRunning()) {
-                startTimerHz(60);
-            }
-
-            DBG("SessionClipScheduler: Queued clip " << clipId << " for beat " << targetBeat
-                                                     << " (current: " << currentBeat << ")");
+        // Clip was just queued for playback — launch it via LaunchHandle
+        auto& transport = edit_.getTransport();
+        if (!transport.isPlaying()) {
+            transport.play(false);
         }
+
+        // Record launch position and clip properties for playhead
+        if (launchedClips_.empty()) {
+            launchTransportPos_ = transport.getPosition().inSeconds();
+            launchClipLength_ = clip->length;
+            launchClipLooping_ = clip->internalLoopEnabled;
+        }
+
+        audioBridge_.launchSessionClip(clipId);
+        cm.setClipPlayingState(clipId, true);
+        launchedClips_.insert(clipId);
+
+        // Start timer to monitor for natural clip end (one-shot clips)
+        if (!isTimerRunning()) {
+            startTimerHz(30);
+        }
+
     } else if (!clip->isQueued && !clip->isPlaying) {
-        // Clip was stopped - deactivate if active
-        // Remove from queue if queued
-        queuedClips_.erase(
-            std::remove_if(queuedClips_.begin(), queuedClips_.end(),
-                           [clipId](const QueuedClip& qc) { return qc.clipId == clipId; }),
-            queuedClips_.end());
-
-        if (activeSessionClips_.count(clipId) > 0) {
-            deactivateSessionClip(clipId);
+        // Clip was stopped — stop it via LaunchHandle
+        if (launchedClips_.count(clipId) > 0) {
+            audioBridge_.stopSessionClip(clipId);
+            launchedClips_.erase(clipId);
         }
 
-        // Stop timer if nothing left to monitor
-        if (queuedClips_.empty() && activeSessionClips_.empty()) {
+        if (launchedClips_.empty()) {
             stopTimer();
         }
     }
 }
 
 // =============================================================================
-// Timer
+// Timer — monitor for natural one-shot clip end
 // =============================================================================
 
 void SessionClipScheduler::timerCallback() {
-    double currentBeat = getCurrentBeatPosition();
     auto& cm = ClipManager::getInstance();
 
-    // Check queued clips for activation
-    std::vector<ClipId> toActivate;
-    for (const auto& qc : queuedClips_) {
-        if (currentBeat >= qc.targetStartBeat) {
-            toActivate.push_back(qc.clipId);
-        }
-    }
-
-    for (auto clipId : toActivate) {
-        // Remove from queue
-        queuedClips_.erase(
-            std::remove_if(queuedClips_.begin(), queuedClips_.end(),
-                           [clipId](const QueuedClip& qc) { return qc.clipId == clipId; }),
-            queuedClips_.end());
-
-        // Verify clip still exists and is still queued
-        const auto* clip = cm.getClip(clipId);
-        if (clip && clip->isQueued) {
-            activateSessionClip(clipId);
-            cm.setClipPlayingState(clipId, true);
-            DBG("SessionClipScheduler: Activated queued clip " << clipId << " at beat "
-                                                               << currentBeat);
-        }
-    }
-
-    // Check active non-looping clips for natural end
-    std::vector<ClipId> toDeactivate;
-    for (const auto& [clipId, engineId] : activeSessionClips_) {
-        const auto* clip = cm.getClip(clipId);
-        if (!clip) {
-            toDeactivate.push_back(clipId);
+    std::vector<ClipId> toStop;
+    for (auto clipId : launchedClips_) {
+        auto* teClip = audioBridge_.getSessionTeClip(clipId);
+        if (!teClip) {
+            toStop.push_back(clipId);
             continue;
         }
 
-        // Non-looping clips: check if we've passed the clip's end
-        if (!clip->internalLoopEnabled) {
-            auto transportPos = edit_.getTransport().position.get();
+        auto launchHandle = teClip->getLaunchHandle();
+        if (!launchHandle) {
+            toStop.push_back(clipId);
+            continue;
+        }
 
-            // Find the TE clip's start time to calculate expected end
-            // We stored the engine clip at the transport position when activated,
-            // so we need to find the actual TE clip to get its end position
-            for (auto* track : te::getAudioTracks(edit_)) {
-                for (auto* teClip : track->getClips()) {
-                    if (teClip->itemID.toString().toStdString() == engineId) {
-                        auto clipEnd = teClip->getPosition().getEnd();
-                        if (transportPos >= clipEnd) {
-                            toDeactivate.push_back(clipId);
-                        }
-                        goto nextClip;  // Found the TE clip, check next active clip
-                    }
-                }
-            }
-        nextClip:;
+        // Check if a one-shot clip ended naturally
+        if (launchHandle->getPlayingStatus() == te::LaunchHandle::PlayState::stopped) {
+            toStop.push_back(clipId);
         }
     }
 
-    for (auto clipId : toDeactivate) {
-        deactivateSessionClip(clipId);
-        // Update ClipManager state
+    for (auto clipId : toStop) {
+        launchedClips_.erase(clipId);
+
+        // Update ClipManager state so UI reflects the stop
         auto* clip = cm.getClip(clipId);
         if (clip && (clip->isPlaying || clip->isQueued)) {
             cm.setClipPlayingState(clipId, false);
         }
     }
 
-    // Stop timer if nothing left to monitor
-    if (queuedClips_.empty() && activeSessionClips_.empty()) {
+    if (launchedClips_.empty()) {
         stopTimer();
     }
 }
 
 // =============================================================================
-// Quantization
+// Deactivate All
 // =============================================================================
-
-double SessionClipScheduler::getCurrentBeatPosition() const {
-    auto transportPos = edit_.getTransport().position.get();
-    auto beatPos = edit_.tempoSequence.timeToBeats(transportPos);
-    return beatPos.inBeats();
-}
-
-double SessionClipScheduler::getNextQuantizeBoundary(LaunchQuantize q, double currentBeat) const {
-    // Assumes 4/4 time signature
-    switch (q) {
-        case LaunchQuantize::None:
-            return currentBeat;
-        case LaunchQuantize::OneBar:
-            return std::ceil(currentBeat / 4.0) * 4.0;
-        case LaunchQuantize::HalfBar:
-            return std::ceil(currentBeat / 2.0) * 2.0;
-        case LaunchQuantize::QuarterBar:
-            return std::ceil(currentBeat / 1.0) * 1.0;
-        case LaunchQuantize::EighthBar:
-            return std::ceil(currentBeat / 0.5) * 0.5;
-    }
-    return currentBeat;
-}
-
-// =============================================================================
-// Clip Lifecycle
-// =============================================================================
-
-void SessionClipScheduler::activateSessionClip(ClipId clipId) {
-    // If already active, deactivate first (re-trigger)
-    if (activeSessionClips_.count(clipId) > 0) {
-        deactivateSessionClip(clipId);
-    }
-
-    // Ensure transport is playing — TE clips only produce audio during playback
-    auto& transport = edit_.getTransport();
-    if (!transport.isPlaying()) {
-        transport.play(false);
-        DBG("SessionClipScheduler: Started transport for session clip playback");
-    }
-
-    // Get current transport position as the start time for the session clip
-    double startTimeSeconds = transport.position.get().inSeconds();
-
-    auto& cm = ClipManager::getInstance();
-    const auto* clip = cm.getClip(clipId);
-    if (!clip) {
-        return;
-    }
-
-    std::string engineClipId;
-    if (clip->type == ClipType::Audio) {
-        engineClipId = audioBridge_.createSessionAudioClip(clipId, *clip, startTimeSeconds);
-    } else if (clip->type == ClipType::MIDI) {
-        engineClipId = audioBridge_.createSessionMidiClip(clipId, *clip, startTimeSeconds);
-    }
-
-    if (!engineClipId.empty()) {
-        activeSessionClips_[clipId] = engineClipId;
-        DBG("SessionClipScheduler: Activated clip " << clipId << " (engine: " << engineClipId
-                                                    << ") at " << startTimeSeconds << "s");
-
-        // Start timer to monitor for natural clip end
-        if (!isTimerRunning()) {
-            startTimerHz(60);
-        }
-    } else {
-        DBG("SessionClipScheduler: Failed to activate clip " << clipId);
-    }
-}
-
-void SessionClipScheduler::deactivateSessionClip(ClipId clipId) {
-    auto it = activeSessionClips_.find(clipId);
-    if (it == activeSessionClips_.end()) {
-        return;
-    }
-
-    std::string engineClipId = it->second;
-    activeSessionClips_.erase(it);
-
-    audioBridge_.removeSessionClip(engineClipId);
-
-    DBG("SessionClipScheduler: Deactivated clip " << clipId);
-}
 
 void SessionClipScheduler::deactivateAllSessionClips() {
     auto& cm = ClipManager::getInstance();
 
-    // Copy keys since we modify during iteration
-    std::vector<ClipId> clipIds;
-    clipIds.reserve(activeSessionClips_.size());
-    for (const auto& [clipId, engineId] : activeSessionClips_) {
-        clipIds.push_back(clipId);
-    }
+    for (auto clipId : launchedClips_) {
+        audioBridge_.stopSessionClip(clipId);
 
-    for (auto clipId : clipIds) {
-        deactivateSessionClip(clipId);
         auto* clip = cm.getClip(clipId);
         if (clip && (clip->isPlaying || clip->isQueued)) {
             cm.setClipPlayingState(clipId, false);
         }
     }
 
-    queuedClips_.clear();
+    launchedClips_.clear();
     stopTimer();
+}
+
+double SessionClipScheduler::getSessionPlayheadPosition() const {
+    if (launchedClips_.empty() || launchClipLength_ <= 0.0)
+        return -1.0;
+
+    auto& transport = edit_.getTransport();
+    double currentPos = transport.getPosition().inSeconds();
+    double elapsed = currentPos - launchTransportPos_;
+    if (elapsed < 0.0)
+        elapsed = 0.0;
+
+    if (launchClipLooping_)
+        return std::fmod(elapsed, launchClipLength_);
+
+    // Non-looping: clamp at the clip edge
+    return std::min(elapsed, launchClipLength_);
 }
 
 }  // namespace magda

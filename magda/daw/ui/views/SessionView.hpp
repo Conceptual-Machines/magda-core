@@ -58,6 +58,10 @@ class SessionView : public juce::Component,
     void fileDragExit(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
 
+    /** Set the session clip playhead position (looped, in seconds).
+        -1.0 means no session clips are playing. */
+    void setSessionPlayheadPosition(double position);
+
   private:
     // ScrollBar::Listener
     void scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStart) override;
@@ -172,6 +176,9 @@ class SessionView : public juce::Component,
     void updateDragGhost(const juce::StringArray& files, int trackIndex, int sceneIndex);
     void clearDragGhost();
     bool isAudioFile(const juce::String& filename) const;
+
+    // Session playhead position (looped, seconds). -1.0 = inactive.
+    double sessionPlayheadPos_ = -1.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SessionView)
 };

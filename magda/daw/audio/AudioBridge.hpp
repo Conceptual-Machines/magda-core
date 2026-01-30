@@ -99,33 +99,43 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     void removeClipFromEngine(ClipId clipId);
 
     // =========================================================================
-    // Session Clip Lifecycle (managed by SessionClipScheduler)
+    // Session Clip Lifecycle (slot-based, managed by SessionClipScheduler)
     // =========================================================================
 
     /**
-     * @brief Create a session audio clip at a dynamic position on the timeline
+     * @brief Sync a session clip to its corresponding ClipSlot in Tracktion Engine
+     *
+     * Creates the TE clip and moves it into the appropriate ClipSlot based on
+     * the clip's trackId and sceneIndex. Idempotent — skips if slot already has a clip.
      * @param clipId The MAGDA clip ID
-     * @param clip The clip info with audio sources
-     * @param startTimeSeconds Transport position where the clip should start
-     * @return Engine clip ID string, or empty on failure
+     * @return true if a new clip was created and moved into the slot
      */
-    std::string createSessionAudioClip(ClipId clipId, const ClipInfo& clip,
-                                       double startTimeSeconds);
+    bool syncSessionClipToSlot(ClipId clipId);
 
     /**
-     * @brief Create a session MIDI clip at a dynamic position on the timeline
+     * @brief Remove a session clip from its ClipSlot
      * @param clipId The MAGDA clip ID
-     * @param clip The clip info with MIDI notes
-     * @param startTimeSeconds Transport position where the clip should start
-     * @return Engine clip ID string, or empty on failure
      */
-    std::string createSessionMidiClip(ClipId clipId, const ClipInfo& clip, double startTimeSeconds);
+    void removeSessionClipFromSlot(ClipId clipId);
 
     /**
-     * @brief Remove a session clip from the engine
-     * @param engineClipId The Tracktion Engine clip ID to remove
+     * @brief Launch a session clip via its LaunchHandle (lock-free, no graph rebuild)
+     * @param clipId The MAGDA clip ID
      */
-    void removeSessionClip(const std::string& engineClipId);
+    void launchSessionClip(ClipId clipId);
+
+    /**
+     * @brief Stop a session clip via its LaunchHandle (lock-free, no graph rebuild)
+     * @param clipId The MAGDA clip ID
+     */
+    void stopSessionClip(ClipId clipId);
+
+    /**
+     * @brief Get the TE clip from a session clip's ClipSlot
+     * @param clipId The MAGDA clip ID
+     * @return The TE Clip pointer, or nullptr if not found
+     */
+    te::Clip* getSessionTeClip(ClipId clipId);
 
     // =========================================================================
     // Plugin Loading
@@ -544,9 +554,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     std::map<ClipId, std::string> clipIdToEngineId_;  // MAGDA → TE
     std::map<std::string, ClipId> engineIdToClipId_;  // TE → MAGDA
 
-    // Session clip ID mappings (separate from arrangement)
-    std::map<ClipId, std::string> sessionClipIdToEngineId_;
-    std::map<std::string, ClipId> sessionEngineIdToClipId_;
+    // (Session clips use ClipSlot-based mapping via trackId + sceneIndex — no ID maps needed)
 
     // Device processors (own the processing logic for each device)
     std::map<DeviceId, std::unique_ptr<DeviceProcessor>> deviceProcessors_;

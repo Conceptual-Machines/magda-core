@@ -397,6 +397,14 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     // Timer runs continuously and detects play/stop state changes
     positionTimer_ =
         std::make_unique<PlaybackPositionTimer>(*engine, mainView->getTimelineController());
+    positionTimer_->onPlayStateChanged = [this](bool playing) {
+        if (transportPanel)
+            transportPanel->setPlaybackState(playing);
+    };
+    positionTimer_->onSessionPlayheadUpdate = [this](double sessionPos) {
+        if (sessionView)
+            sessionView->setSessionPlayheadPosition(sessionPos);
+    };
     positionTimer_->start();  // Start once and keep running
 
     // Wire transport callbacks - just dispatch events, TimelineController notifies audio engine

@@ -618,6 +618,12 @@ bool TracktionEngineWrapper::isRecording() const {
     return false;
 }
 
+double TracktionEngineWrapper::getSessionPlayheadPosition() const {
+    if (sessionScheduler_)
+        return sessionScheduler_->getSessionPlayheadPosition();
+    return -1.0;
+}
+
 void TracktionEngineWrapper::setTempo(double bpm) {
     if (currentEdit_) {
         auto& tempoSeq = currentEdit_->tempoSequence;

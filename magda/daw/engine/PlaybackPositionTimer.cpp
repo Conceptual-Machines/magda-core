@@ -29,10 +29,28 @@ void PlaybackPositionTimer::timerCallback() {
     // Update trigger state for transport-synced devices (tone generator, etc.)
     engine_.updateTriggerState();
 
-    if (engine_.isPlaying()) {
-        double position = engine_.getCurrentPosition();
-        // Only update playback position (the moving cursor), not edit position
+    bool isPlaying = engine_.isPlaying();
+
+    // Detect engine play/stop transitions that happened outside the UI
+    // (e.g. SessionClipScheduler starting transport for clip playback)
+    if (isPlaying != wasPlaying_) {
+        timeline_.dispatch(SetPlaybackStateEvent{isPlaying});
+        if (onPlayStateChanged)
+            onPlayStateChanged(isPlaying);
+        wasPlaying_ = isPlaying;
+    }
+
+    if (isPlaying) {
+        double sessionPos = engine_.getSessionPlayheadPosition();
+
+        // When session clips are active, loop the editor playhead too
+        double position = (sessionPos >= 0.0) ? sessionPos : engine_.getCurrentPosition();
         timeline_.dispatch(SetPlaybackPositionEvent{position});
+
+        // Session clip playhead callback (for per-clip progress bars)
+        if (onSessionPlayheadUpdate) {
+            onSessionPlayheadUpdate(sessionPos);
+        }
     }
 }
 

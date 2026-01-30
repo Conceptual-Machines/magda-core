@@ -58,6 +58,7 @@ class TracktionEngineWrapper : public AudioEngine,
     void getCurrentMusicalPosition(int& bar, int& beat, int& tick) const override;
     bool isPlaying() const override;
     bool isRecording() const override;
+    double getSessionPlayheadPosition() const override;
     void setTempo(double bpm) override;
     double getTempo() const override;
     void setTimeSignature(int numerator, int denominator) override;
