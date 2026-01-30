@@ -271,12 +271,16 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
                     // Update clip's own loop state
                     if (clip->internalLoopEnabled) {
                         auto& tempoSeq = edit_.tempoSequence;
-                        auto loopEndBeat = te::BeatPosition::fromBeats(clip->internalLoopLength);
-                        auto loopEndTime = tempoSeq.beatsToTime(loopEndBeat);
+                        double loopStart = clip->internalLoopOffset;
+                        double loopEnd = loopStart + clip->internalLoopLength;
+                        auto loopStartTime =
+                            tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopStart));
+                        auto loopEndTime =
+                            tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEnd));
 
-                        teClip->setLoopRange(
-                            te::TimeRange(te::TimePosition::fromSeconds(0.0), loopEndTime));
-                        teClip->setLoopRangeBeats({te::BeatPosition::fromBeats(0.0), loopEndBeat});
+                        teClip->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
+                        teClip->setLoopRangeBeats({te::BeatPosition::fromBeats(loopStart),
+                                                   te::BeatPosition::fromBeats(loopEnd)});
                     } else {
                         teClip->disableLooping();
                     }
@@ -298,7 +302,8 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
                             auto& sequence = midiClip->getSequence();
                             sequence.clear(nullptr);
 
-                            double loopLen = clip->internalLoopLength;
+                            double loopEndBeat =
+                                clip->internalLoopOffset + clip->internalLoopLength;
                             for (const auto& note : clip->midiNotes) {
                                 double start = note.startBeat;
                                 double length = note.lengthBeats;
@@ -306,10 +311,10 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
                                 // Truncate notes that extend past the loop
                                 // boundary to prevent stuck notes from
                                 // floating-point edge cases in LoopingMidiNode
-                                if (clip->internalLoopEnabled && loopLen > 0.0) {
+                                if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
                                     double noteEnd = start + length;
-                                    if (noteEnd > loopLen) {
-                                        length = std::max(0.001, loopLen - start);
+                                    if (noteEnd > loopEndBeat) {
+                                        length = std::max(0.001, loopEndBeat - start);
                                     }
                                 }
 
@@ -733,15 +738,16 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
 
         // Add MIDI notes (truncate at loop boundary to prevent stuck notes)
         auto& sequence = midiClipPtr->getSequence();
-        double loopLen = clip->internalLoopLength;
+        double loopStart = clip->internalLoopOffset;
+        double loopEndBeat = loopStart + clip->internalLoopLength;
         for (const auto& note : clip->midiNotes) {
             double start = note.startBeat;
             double length = note.lengthBeats;
 
-            if (clip->internalLoopEnabled && loopLen > 0.0) {
+            if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
                 double noteEnd = start + length;
-                if (noteEnd > loopLen) {
-                    length = std::max(0.001, loopLen - start);
+                if (noteEnd > loopEndBeat) {
+                    length = std::max(0.001, loopEndBeat - start);
                 }
             }
 
@@ -751,8 +757,8 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
 
         // Set looping if enabled
         if (clip->internalLoopEnabled) {
-            midiClipPtr->setLoopRangeBeats({te::BeatPosition::fromBeats(0.0),
-                                            te::BeatPosition::fromBeats(clip->internalLoopLength)});
+            midiClipPtr->setLoopRangeBeats(
+                {te::BeatPosition::fromBeats(loopStart), te::BeatPosition::fromBeats(loopEndBeat)});
         }
 
         // Set per-clip launch quantization

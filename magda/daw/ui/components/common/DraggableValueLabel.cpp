@@ -2,8 +2,6 @@
 
 #include <cmath>
 #include <cstdio>
-#include <cstdlib>
-#include <cstring>
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
