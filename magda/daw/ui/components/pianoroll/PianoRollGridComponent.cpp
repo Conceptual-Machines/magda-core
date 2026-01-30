@@ -62,6 +62,28 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         }
     }
 
+    // Draw loop region markers
+    if (loopEnabled_ && loopLengthBeats_ > 0.0) {
+        double loopStartBeat =
+            relativeMode_ ? loopOffsetBeats_ : (clipStartBeats_ + loopOffsetBeats_);
+        double loopEndBeat = loopStartBeat + loopLengthBeats_;
+
+        int loopStartX = beatToPixel(loopStartBeat);
+        int loopEndX = beatToPixel(loopEndBeat);
+
+        juce::Colour loopColour = DarkTheme::getColour(DarkTheme::LOOP_MARKER);
+
+        // Green vertical lines at loop boundaries (2px)
+        if (loopStartX >= 0 && loopStartX <= bounds.getRight()) {
+            g.setColour(loopColour);
+            g.fillRect(loopStartX - 1, 0, 2, bounds.getHeight());
+        }
+        if (loopEndX >= 0 && loopEndX <= bounds.getRight()) {
+            g.setColour(loopColour);
+            g.fillRect(loopEndX - 1, 0, 2, bounds.getHeight());
+        }
+    }
+
     // Draw playhead line if playing
     if (playheadPosition_ >= 0.0) {
         // Convert seconds to beats
@@ -450,6 +472,13 @@ bool PianoRollGridComponent::isBlackKey(int noteNumber) const {
 juce::Colour PianoRollGridComponent::getClipColour() const {
     const auto* clip = ClipManager::getInstance().getClip(clipId_);
     return clip ? clip->colour : juce::Colour(0xFF6688CC);
+}
+
+void PianoRollGridComponent::setLoopRegion(double offsetBeats, double lengthBeats, bool enabled) {
+    loopOffsetBeats_ = offsetBeats;
+    loopLengthBeats_ = lengthBeats;
+    loopEnabled_ = enabled;
+    repaint();
 }
 
 void PianoRollGridComponent::setPlayheadPosition(double positionSeconds) {

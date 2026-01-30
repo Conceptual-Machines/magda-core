@@ -275,20 +275,28 @@ InspectorContent::InspectorContent() {
         if (selectedClipId_ == magda::INVALID_CLIP_ID)
             return;
         const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
-        if (!clip || clip->view == magda::ClipView::Session)
+        if (!clip)
             return;
 
-        double bpm = 120.0;
-        if (timelineController_) {
-            bpm = timelineController_->getState().tempo.bpm;
+        if (clip->view == magda::ClipView::Session) {
+            // Session clips: End field updates internalLoopLength
+            magda::ClipManager::getInstance().setClipLoopLength(selectedClipId_,
+                                                                clipEndValue_->getValue());
+        } else {
+            // Arrangement clips: resize based on new end position
+            double bpm = 120.0;
+            if (timelineController_) {
+                bpm = timelineController_->getState().tempo.bpm;
+            }
+            double endBeats = clipEndValue_->getValue();
+            double startBeats = magda::TimelineUtils::secondsToBeats(clip->startTime, bpm);
+            double newLengthBeats = endBeats - startBeats;
+            if (newLengthBeats < 0.0)
+                newLengthBeats = 0.0;
+            double newLengthSeconds = magda::TimelineUtils::beatsToSeconds(newLengthBeats, bpm);
+            magda::ClipManager::getInstance().resizeClip(selectedClipId_, newLengthSeconds, false,
+                                                         bpm);
         }
-        double endBeats = clipEndValue_->getValue();
-        double startBeats = magda::TimelineUtils::secondsToBeats(clip->startTime, bpm);
-        double newLengthBeats = endBeats - startBeats;
-        if (newLengthBeats < 0.0)
-            newLengthBeats = 0.0;
-        double newLengthSeconds = magda::TimelineUtils::beatsToSeconds(newLengthBeats, bpm);
-        magda::ClipManager::getInstance().resizeClip(selectedClipId_, newLengthSeconds, false, bpm);
     };
     addChildComponent(*clipEndValue_);
 

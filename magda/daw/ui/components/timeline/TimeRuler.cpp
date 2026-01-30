@@ -98,6 +98,13 @@ void TimeRuler::setLeftPadding(int padding) {
     repaint();
 }
 
+void TimeRuler::setLoopRegion(double offsetSeconds, double lengthSeconds, bool enabled) {
+    loopOffset = offsetSeconds;
+    loopLength = lengthSeconds;
+    loopEnabled = enabled;
+    repaint();
+}
+
 void TimeRuler::setLinkedViewport(juce::Viewport* viewport) {
     linkedViewport = viewport;
     if (linkedViewport) {
@@ -334,6 +341,49 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             if (clipEndX >= 0 && clipEndX <= width) {
                 g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
                 g.fillRect(clipEndX - 1, 0, 3, height);
+            }
+        }
+    }
+
+    // Draw loop region markers
+    if (loopEnabled && loopLength > 0.0) {
+        double loopStartTime = relativeMode ? loopOffset : (timeOffset + loopOffset);
+        double loopEndTime = loopStartTime + loopLength;
+
+        int loopStartX = timeToPixel(loopStartTime);
+        int loopEndX = timeToPixel(loopEndTime);
+
+        if (loopEndX >= 0 && loopStartX <= width) {
+            // Semi-transparent green stripe across ruler height
+            g.setColour(DarkTheme::getColour(DarkTheme::LOOP_MARKER).withAlpha(0.2f));
+            g.fillRect(loopStartX, 0, loopEndX - loopStartX, height);
+
+            // 2px vertical lines at boundaries
+            g.setColour(DarkTheme::getColour(DarkTheme::LOOP_MARKER));
+            if (loopStartX >= 0 && loopStartX <= width) {
+                g.fillRect(loopStartX - 1, 0, 2, height);
+            }
+            if (loopEndX >= 0 && loopEndX <= width) {
+                g.fillRect(loopEndX - 1, 0, 2, height);
+            }
+
+            // Small triangular flags at top
+            int flagTop = 2;
+            if (loopStartX >= 0 && loopStartX <= width) {
+                juce::Path startFlag;
+                startFlag.addTriangle(
+                    static_cast<float>(loopStartX), static_cast<float>(flagTop),
+                    static_cast<float>(loopStartX), static_cast<float>(flagTop + 10),
+                    static_cast<float>(loopStartX + 7), static_cast<float>(flagTop + 5));
+                g.fillPath(startFlag);
+            }
+            if (loopEndX >= 0 && loopEndX <= width) {
+                juce::Path endFlag;
+                endFlag.addTriangle(static_cast<float>(loopEndX), static_cast<float>(flagTop),
+                                    static_cast<float>(loopEndX), static_cast<float>(flagTop + 10),
+                                    static_cast<float>(loopEndX - 7),
+                                    static_cast<float>(flagTop + 5));
+                g.fillPath(endFlag);
             }
         }
     }

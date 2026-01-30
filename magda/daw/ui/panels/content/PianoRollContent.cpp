@@ -561,6 +561,14 @@ void PianoRollContent::updateGridSize() {
     gridComponent_->setClipStartBeats(clipStartBeats);
     gridComponent_->setClipLengthBeats(clipLengthBeats);
     gridComponent_->setTimelineLengthBeats(displayLengthBeats);
+
+    // Pass loop region data to grid
+    if (clip) {
+        gridComponent_->setLoopRegion(clip->internalLoopOffset, clip->internalLoopLength,
+                                      clip->internalLoopEnabled);
+    } else {
+        gridComponent_->setLoopRegion(0.0, 0.0, false);
+    }
 }
 
 void PianoRollContent::updateTimeRuler() {
@@ -609,9 +617,15 @@ void PianoRollContent::updateTimeRuler() {
             timeRuler_->setTimeOffset(clip->startTime);
             timeRuler_->setClipLength(clip->length);
         }
+
+        // Pass loop region data to time ruler (converted to seconds)
+        timeRuler_->setLoopRegion(clip->internalLoopOffset * secondsPerBeat,
+                                  clip->internalLoopLength * secondsPerBeat,
+                                  clip->internalLoopEnabled);
     } else {
         timeRuler_->setTimeOffset(0.0);
         timeRuler_->setClipLength(0.0);
+        timeRuler_->setLoopRegion(0.0, 0.0, false);
     }
 
     // Update relative mode
