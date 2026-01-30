@@ -825,16 +825,14 @@ void AudioBridge::stopSessionClip(ClipId clipId) {
 
     launchHandle->stop(std::nullopt);
 
-    // Send all-notes-off (CC 123) on all channels for MIDI clips to prevent stuck notes
+    // Reset synth plugins on the clip's track to prevent stuck notes
     const auto* clip = ClipManager::getInstance().getClip(clipId);
     if (clip && clip->type == ClipType::MIDI) {
-        auto& dm = engine_.getDeviceManager();
-        for (int i = 0; i < dm.getNumMidiOutDevices(); ++i) {
-            if (auto* midiOut = dm.getMidiOutDevice(i)) {
-                if (midiOut->isEnabled()) {
-                    for (int ch = 1; ch <= 16; ++ch) {
-                        midiOut->fireMessage(juce::MidiMessage::allNotesOff(ch));
-                    }
+        auto* audioTrack = getAudioTrack(clip->trackId);
+        if (audioTrack) {
+            for (auto* plugin : audioTrack->pluginList) {
+                if (plugin->isSynth()) {
+                    plugin->reset();
                 }
             }
         }

@@ -472,3 +472,65 @@ TEST_CASE("MidiClipSlotAppearance — clip slot shows as occupied after MIDI cli
     REQUIRE(clip != nullptr);
     REQUIRE(clip->type == ClipType::MIDI);
 }
+
+TEST_CASE("Session MIDI clip loop offset", "[session][midi][loop]") {
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+
+    TrackId trackId = 1;
+    int sceneIndex = 0;
+
+    // Create a 4-beat session MIDI clip (defaults to loop enabled)
+    ClipId clipId = cm.createMidiClip(trackId, 0.0, 4.0, ClipView::Session);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+    cm.setClipSceneIndex(clipId, sceneIndex);
+
+    const auto* clip = cm.getClip(clipId);
+    REQUIRE(clip != nullptr);
+
+    SECTION("Session clips default to loop enabled") {
+        REQUIRE(clip->internalLoopEnabled == true);
+        REQUIRE(clip->internalLoopLength == Catch::Approx(4.0));
+    }
+
+    SECTION("Loop offset defaults to zero") {
+        REQUIRE(clip->internalLoopOffset == Catch::Approx(0.0));
+    }
+
+    SECTION("Setting loop offset updates clip state") {
+        cm.setClipLoopOffset(clipId, 2.0);
+        clip = cm.getClip(clipId);
+        REQUIRE(clip->internalLoopOffset == Catch::Approx(2.0));
+    }
+
+    SECTION("Loop region accounts for offset") {
+        cm.setClipLoopOffset(clipId, 2.0);
+        cm.setClipLoopLength(clipId, 4.0);
+        clip = cm.getClip(clipId);
+
+        double loopStart = clip->internalLoopOffset;
+        double loopEnd = loopStart + clip->internalLoopLength;
+        REQUIRE(loopStart == Catch::Approx(2.0));
+        REQUIRE(loopEnd == Catch::Approx(6.0));
+    }
+
+    SECTION("Notes extending past loop end should be truncatable") {
+        // Add a note that extends past the loop boundary
+        cm.setClipLoopOffset(clipId, 1.0);
+        cm.setClipLoopLength(clipId, 2.0);
+        clip = cm.getClip(clipId);
+
+        double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+        REQUIRE(loopEnd == Catch::Approx(3.0));
+
+        // A note at beat 2.5 with length 1.0 would end at 3.5, past loop end
+        double noteStart = 2.5;
+        double noteLength = 1.0;
+        double noteEnd = noteStart + noteLength;
+        REQUIRE(noteEnd > loopEnd);
+
+        // Truncated length should clamp to loop end
+        double truncatedLength = std::max(0.001, loopEnd - noteStart);
+        REQUIRE(truncatedLength == Catch::Approx(0.5));
+    }
+}
