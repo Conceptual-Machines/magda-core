@@ -262,6 +262,9 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
                 // Clip already synced — propagate property changes to TE clip
                 auto* teClip = getSessionTeClip(clipId);
                 if (teClip) {
+                    // Update clip length
+                    teClip->setLength(te::TimeDuration::fromSeconds(clip->length), false);
+
                     // Update launch quantization
                     auto* lq = teClip->getLaunchQuantisation();
                     if (lq) {
@@ -706,8 +709,8 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
             auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEnd));
 
             audioClipPtr->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
-            audioClipPtr->setLoopRangeBeats({te::BeatPosition::fromBeats(loopStart),
-                                             te::BeatPosition::fromBeats(loopEnd)});
+            audioClipPtr->setLoopRangeBeats(
+                {te::BeatPosition::fromBeats(loopStart), te::BeatPosition::fromBeats(loopEnd)});
         }
 
         // Set per-clip launch quantization
@@ -801,8 +804,8 @@ void AudioBridge::launchSessionClip(ClipId clipId) {
             auto loopStartTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopStart));
             auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEnd));
             teClip->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
-            teClip->setLoopRangeBeats({te::BeatPosition::fromBeats(loopStart),
-                                       te::BeatPosition::fromBeats(loopEnd)});
+            teClip->setLoopRangeBeats(
+                {te::BeatPosition::fromBeats(loopStart), te::BeatPosition::fromBeats(loopEnd)});
 
             // Set launch handle looping
             launchHandle->setLooping(te::BeatDuration::fromBeats(clip->internalLoopLength));

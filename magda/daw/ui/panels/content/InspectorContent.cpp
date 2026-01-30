@@ -2,6 +2,8 @@
 
 #include <BinaryData.h>
 
+#include <cmath>
+
 #include "../../../audio/MidiBridge.hpp"
 #include "../../../engine/AudioEngine.hpp"
 #include "../../state/TimelineController.hpp"
@@ -285,9 +287,27 @@ InspectorContent::InspectorContent() {
             return;
 
         if (clip->view == magda::ClipView::Session) {
-            // Session clips: End field updates internalLoopLength
-            magda::ClipManager::getInstance().setClipLoopLength(selectedClipId_,
-                                                                clipEndValue_->getValue());
+            // Session clips: End field controls clip length in beats
+            double bpm = 120.0;
+            if (timelineController_) {
+                bpm = timelineController_->getState().tempo.bpm;
+            }
+            double newClipEndBeats = clipEndValue_->getValue();
+
+            // Resize the clip
+            double newLengthSeconds = magda::TimelineUtils::beatsToSeconds(newClipEndBeats, bpm);
+            magda::ClipManager::getInstance().resizeClip(selectedClipId_, newLengthSeconds, false,
+                                                         bpm);
+
+            // Clamp loop so it doesn't exceed the new clip end
+            double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+            if (loopEnd > newClipEndBeats) {
+                double clampedLength = newClipEndBeats - clip->internalLoopOffset;
+                if (clampedLength > 0.0) {
+                    magda::ClipManager::getInstance().setClipLoopLength(selectedClipId_,
+                                                                        clampedLength);
+                }
+            }
         } else {
             // Arrangement clips: resize based on new end position
             double bpm = 120.0;
@@ -334,10 +354,30 @@ InspectorContent::InspectorContent() {
     clipLoopPosValue_->setDoubleClickResetsValue(false);
     clipLoopPosValue_->setBarsBeatsIsPosition(true);
     clipLoopPosValue_->onValueChange = [this]() {
-        if (selectedClipId_ != magda::INVALID_CLIP_ID) {
-            magda::ClipManager::getInstance().setClipLoopOffset(selectedClipId_,
-                                                                clipLoopPosValue_->getValue());
+        if (selectedClipId_ == magda::INVALID_CLIP_ID)
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
+        if (!clip)
+            return;
+
+        double newLoopPos = clipLoopPosValue_->getValue();
+
+        if (clip->view == magda::ClipView::Session) {
+            double bpm = 120.0;
+            if (timelineController_) {
+                bpm = timelineController_->getState().tempo.bpm;
+            }
+            double clipEndBeats = magda::TimelineUtils::secondsToBeats(clip->length, bpm);
+
+            // Clamp so loop region stays within clip bounds
+            if (newLoopPos + clip->internalLoopLength > clipEndBeats) {
+                newLoopPos = clipEndBeats - clip->internalLoopLength;
+            }
+            if (newLoopPos < 0.0)
+                newLoopPos = 0.0;
         }
+
+        magda::ClipManager::getInstance().setClipLoopOffset(selectedClipId_, newLoopPos);
     };
     addChildComponent(*clipLoopPosValue_);
 
@@ -352,10 +392,41 @@ InspectorContent::InspectorContent() {
     clipLoopLengthValue_->setDoubleClickResetsValue(false);
     clipLoopLengthValue_->setBarsBeatsIsPosition(false);
     clipLoopLengthValue_->onValueChange = [this]() {
-        if (selectedClipId_ != magda::INVALID_CLIP_ID) {
-            magda::ClipManager::getInstance().setClipLoopLength(selectedClipId_,
-                                                                clipLoopLengthValue_->getValue());
+        if (selectedClipId_ == magda::INVALID_CLIP_ID)
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
+        if (!clip)
+            return;
+
+        double newLoopLength = clipLoopLengthValue_->getValue();
+
+        if (clip->view == magda::ClipView::Session) {
+            double bpm = 120.0;
+            if (timelineController_) {
+                bpm = timelineController_->getState().tempo.bpm;
+            }
+            double clipEndBeats = magda::TimelineUtils::secondsToBeats(clip->length, bpm);
+            double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+
+            // Check if loop end was aligned with clip end before the change
+            bool loopEndMatchedClipEnd = std::abs(loopEnd - clipEndBeats) < 0.001;
+
+            double newLoopEnd = clip->internalLoopOffset + newLoopLength;
+
+            if (loopEndMatchedClipEnd) {
+                // Loop end was tracking clip end — grow/shrink clip to follow
+                double newClipLengthSeconds = magda::TimelineUtils::beatsToSeconds(newLoopEnd, bpm);
+                magda::ClipManager::getInstance().resizeClip(selectedClipId_, newClipLengthSeconds,
+                                                             false, bpm);
+            } else {
+                // Clamp loop so it doesn't exceed clip end
+                if (newLoopEnd > clipEndBeats) {
+                    newLoopLength = clipEndBeats - clip->internalLoopOffset;
+                }
+            }
         }
+
+        magda::ClipManager::getInstance().setClipLoopLength(selectedClipId_, newLoopLength);
     };
     addChildComponent(*clipLoopLengthValue_);
 
@@ -1159,9 +1230,10 @@ void InspectorContent::updateFromSelectedClip() {
         clipLoopLengthValue_->setBeatsPerBar(beatsPerBar);
 
         if (isSessionClip) {
-            // Session clips: start/end represent clip markers
+            // Session clips: start is 0, end is clip length in beats
             clipStartValue_->setValue(0.0, juce::dontSendNotification);
-            clipEndValue_->setValue(clip->internalLoopLength, juce::dontSendNotification);
+            clipEndValue_->setValue(magda::TimelineUtils::secondsToBeats(clip->length, bpm),
+                                    juce::dontSendNotification);
         } else {
             // Arrangement clips: start and end as positions in beats
             double startBeats = magda::TimelineUtils::secondsToBeats(clip->startTime, bpm);
