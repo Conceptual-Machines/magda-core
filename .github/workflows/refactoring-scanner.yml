@@ -209,90 +209,116 @@ jobs:
       with:
         script: |
           const fs = require('fs');
-          let report = fs.readFileSync('./results/summary-truncated.txt', 'utf8');
-          let detailedFindings = '';
           
-          // Try to read detailed findings if available
-          try {
-            detailedFindings = fs.readFileSync('./results/detailed-findings-truncated.txt', 'utf8');
-          } catch (e) {
-            console.log('No detailed findings file available');
-          }
+          // Read the summary to get the list of files with issues
+          const summary = fs.readFileSync('./refactoring-results-summary.txt', 'utf8');
           
-          const issueBody = `## Refactoring Opportunities Report
+          // Extract files with warnings (lines starting with ⚠️)
+          const warningLines = summary.split('\n').filter(line => line.startsWith('⚠️'));
+          
+          console.log(`Found ${warningLines.length} files with refactoring opportunities`);
+          
+          // Process each file with issues
+          for (const line of warningLines) {
+            // Extract filename from the warning line: "⚠️  path/to/file.cpp: issue description"
+            const match = line.match(/⚠️\s+([^:]+):\s*(.+)/);
+            if (!match) {
+              console.log(`Skipping malformed warning line: ${line}`);
+              continue;
+            }
+            
+            const filePath = match[1].trim();
+            const issueDescription = match[2].trim();
+            
+            // Create sanitized filename for finding the report
+            const safeFilename = filePath.replace(/[\/\.]/g, '-');
+            const reportPath = `./results/refactoring-report-${safeFilename}.txt`;
+            
+            // Read the detailed report for this file
+            let fileReport = '';
+            try {
+              fileReport = fs.readFileSync(reportPath, 'utf8');
+            } catch (e) {
+              console.log(`Could not read report for ${filePath}: ${e.message}`);
+              fileReport = 'Detailed report not available.';
+            }
+            
+            // Create issue title and body
+            const issueTitle = `[Refactoring] ${filePath}`;
+            const issueBody = `## Refactoring Opportunity: ${filePath}
           
           This issue was automatically created by the refactoring scanner workflow.
           
-          ### Summary
-          - **Files with high complexity**: ${{ steps.analyze_files.outputs.complex_count }}
-          - **Large files (>500 lines)**: ${{ steps.analyze_files.outputs.large_file_count }}
-          - **Files with tight coupling**: ${{ steps.analyze_files.outputs.coupling_count }}
-          - **Analysis date**: ${new Date().toISOString().split('T')[0]}
+          ### Issue Detected
+          ${issueDescription}
           
-          ### Overview
+          ### Analysis Date
+          ${new Date().toISOString().split('T')[0]}
           
-          <details>
-          <summary>Click to expand summary report</summary>
+          ### Detailed Analysis
           
           \`\`\`
-          ${report}
+          ${fileReport}
           \`\`\`
-          
-          </details>
-          
-          ### Detailed Per-File Findings
-          
-          ${detailedFindings || 'No detailed findings available. Check workflow artifacts for full reports.'}
           
           ### Recommended Actions
           
-          1. **High Complexity**: Break down complex functions (cyclomatic complexity > 10)
-          2. **Large Files**: Consider splitting files over 500 lines into smaller modules
-          3. **Tight Coupling**: Review files with many internal dependencies (>10 includes)
-          4. **Magic Numbers**: Replace literal numbers with named constants
-          5. **God Objects**: Consider splitting classes with 20+ methods
+          Based on the issue type:
+          - **High Complexity**: Break down complex functions (cyclomatic complexity > 10) into smaller, more focused functions
+          - **Large File**: Consider splitting file over 500 lines into smaller, focused modules
+          - **High Coupling**: Review and reduce files with many internal dependencies (>10 includes)
+          - **Magic Numbers**: Replace literal numbers with named constants
+          - **God Object**: Consider splitting classes with 20+ methods into smaller, more focused classes
           
           ### Next Steps
           
-          - Review the detailed findings above for each flagged file
-          - Create separate issues for specific refactoring tasks
-          - Schedule refactoring in upcoming sprints
+          1. Review the detailed analysis above
+          2. Plan refactoring approach
+          3. Create a branch for the refactoring work
+          4. Submit a PR with the improvements
+          5. Close this issue when complete
           
-          **Note**: Complete per-file reports are also available in workflow artifacts if needed.
+          **Note**: This is an automated issue. Feel free to add comments, assign it, or close it if not applicable.
           `;
-          
-          // Check if a recent refactoring issue exists
-          const thirtyDaysAgo = new Date();
-          thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-          
-          const issues = await github.rest.issues.listForRepo({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            labels: ['refactoring', 'automated'],
-            state: 'open',
-            since: thirtyDaysAgo.toISOString()
-          });
-          
-          if (issues.data.length === 0) {
-            // Create new issue
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `[Automated] Refactoring Opportunities - ${new Date().toISOString().split('T')[0]}`,
-              body: issueBody,
-              labels: ['refactoring', 'automated', 'technical-debt']
-            });
-            console.log('Created new refactoring issue');
-          } else {
-            // Add comment to existing issue
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issues.data[0].number,
-              body: `## Updated Scan - ${new Date().toISOString()}\n\n${issueBody}`
-            });
-            console.log('Updated existing refactoring issue');
+            
+            // Check if an issue already exists for this file
+            const searchQuery = `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open label:refactoring label:automated "${issueTitle}"`;
+            
+            let existingIssues;
+            try {
+              const searchResult = await github.rest.search.issuesAndPullRequests({
+                q: searchQuery
+              });
+              existingIssues = searchResult.data.items;
+            } catch (e) {
+              console.log(`Search failed: ${e.message}, will create new issue`);
+              existingIssues = [];
+            }
+            
+            if (existingIssues.length > 0) {
+              // Issue already exists, add a comment with updated analysis
+              const existingIssue = existingIssues[0];
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existingIssue.number,
+                body: `## Updated Analysis - ${new Date().toISOString().split('T')[0]}\n\n${issueDescription}\n\n<details>\n<summary>Click to expand updated report</summary>\n\n\`\`\`\n${fileReport}\n\`\`\`\n\n</details>`
+              });
+              console.log(`Updated existing issue #${existingIssue.number} for ${filePath}`);
+            } else {
+              // Create new issue
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: issueTitle,
+                body: issueBody,
+                labels: ['refactoring', 'automated', 'technical-debt']
+              });
+              console.log(`Created new issue for ${filePath}`);
+            }
           }
+          
+          console.log('Finished processing all files with refactoring opportunities');
 
     - name: Summary
       run: |
@@ -307,7 +333,7 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         COMPLEX_COUNT="${{ steps.analyze_files.outputs.complex_count }}"
         if [ "${COMPLEX_COUNT:-0}" -gt 3 ]; then
-          echo "⚠️ **Action needed**: GitHub issue created for high-priority refactoring opportunities." >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **Action needed**: Separate GitHub issues created for each file with refactoring opportunities." >> $GITHUB_STEP_SUMMARY
         else
           echo "✅ Code complexity is within acceptable limits." >> $GITHUB_STEP_SUMMARY
         fi

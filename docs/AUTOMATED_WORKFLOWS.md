@@ -84,9 +84,10 @@ Each file is processed separately with individual reports containing:
 - Class structure analysis (for header files)
 
 **Outputs**:
-- **GitHub Issue**: Automatically created with detailed per-file findings in collapsible sections
-  - Summary statistics at the top
-  - Individual file reports for each flagged file (high complexity, large size, tight coupling, etc.)
+- **GitHub Issues**: Automatically created - **one issue per file** with refactoring opportunities
+  - Each issue contains the detailed analysis for a single file
+  - Issues are labeled with `refactoring`, `automated`, and `technical-debt`
+  - Duplicate detection: updates existing issues if they already exist for a file
   - No need to download artifacts for most use cases
 - **Per-file reports**: Individual analysis reports for each source file in `results/` directory (as backup)
 - **Summary report**: Aggregated findings with truncation for GitHub API limits (65,000 bytes)
@@ -118,13 +119,14 @@ The periodic analysis workflows are designed to be lightweight:
 
 This allows frequent automated analysis without the overhead of full CI builds.
 
-### 2. Automated Issue Creation
+### Automated Issue Creation
 
 High-priority findings automatically create GitHub issues with:
-- Detailed analysis report
-- Actionable recommendations
-- Appropriate labels for tracking
-- Smart de-duplication (updates existing issues if found)
+- **Separate issue per file**: Each file with refactoring opportunities gets its own dedicated issue
+- Detailed analysis report for that specific file
+- Actionable recommendations tailored to the issue type
+- Appropriate labels for tracking (`refactoring`, `automated`, `technical-debt`)
+- Smart de-duplication (updates existing file-specific issues if found)
 
 ### 3. Trend Tracking
 
@@ -220,24 +222,28 @@ View created issues:
 
 For the Refactoring Scanner workflow:
 
-#### Primary Access: GitHub Issue (Recommended)
+#### Primary Access: GitHub Issues (Recommended)
 
-The workflow automatically creates or updates a GitHub issue with:
-- Summary statistics at the top
-- **Detailed per-file findings in collapsible sections** - click to expand each file's report
+The workflow automatically creates **one GitHub issue per file** that has refactoring opportunities:
+- Each issue focuses on a single file with specific problems
+- Issue title format: `[Refactoring] path/to/file.cpp`
+- Contains detailed analysis specific to that file
 - No download required - all information is immediately visible in the issue
+- Issues are updated (not recreated) if the file still has problems on subsequent runs
 
-To find the issue:
+To find these issues:
 1. Go to the Issues tab in your repository
 2. Filter by labels: `refactoring`, `automated`, `technical-debt`
-3. Look for issues titled `[Automated] Refactoring Opportunities - YYYY-MM-DD`
+3. Look for issues titled `[Refactoring] <filename>`
 
-Each file section includes:
+Each issue includes:
+- Specific issue description (e.g., "High complexity detected", "Large file (800 lines)")
 - Complexity analysis (functions with high cyclomatic complexity)
 - File size metrics
 - Coupling indicators (internal includes count)
 - Magic numbers detected
 - Class structure analysis (for header files)
+- Actionable recommendations specific to the problem
 
 #### Alternative: Workflow Artifacts (For Comprehensive Analysis)
 
