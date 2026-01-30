@@ -238,9 +238,26 @@ InspectorContent::InspectorContent() {
     clipStartLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addChildComponent(clipStartLabel_);
 
-    clipStartValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    clipStartValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-    addChildComponent(clipStartValue_);
+    clipStartValue_ =
+        std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::BarsBeats);
+    clipStartValue_->setRange(0.0, 10000.0, 0.0);
+    clipStartValue_->setDoubleClickResetsValue(false);
+    clipStartValue_->onValueChange = [this]() {
+        if (selectedClipId_ == magda::INVALID_CLIP_ID)
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
+        if (!clip || clip->view == magda::ClipView::Session)
+            return;
+
+        double bpm = 120.0;
+        if (timelineController_) {
+            bpm = timelineController_->getState().tempo.bpm;
+        }
+        double newStartSeconds =
+            magda::TimelineUtils::beatsToSeconds(clipStartValue_->getValue(), bpm);
+        magda::ClipManager::getInstance().moveClip(selectedClipId_, newStartSeconds, bpm);
+    };
+    addChildComponent(*clipStartValue_);
 
     // Clip length
     clipLengthLabel_.setText("Length", juce::dontSendNotification);
@@ -248,9 +265,31 @@ InspectorContent::InspectorContent() {
     clipLengthLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addChildComponent(clipLengthLabel_);
 
-    clipLengthValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    clipLengthValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-    addChildComponent(clipLengthValue_);
+    clipLengthValue_ =
+        std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::BarsBeats);
+    clipLengthValue_->setRange(0.0, 10000.0, 4.0);
+    clipLengthValue_->setDoubleClickResetsValue(false);
+    clipLengthValue_->onValueChange = [this]() {
+        if (selectedClipId_ == magda::INVALID_CLIP_ID)
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
+        if (!clip)
+            return;
+
+        double newLengthBeats = clipLengthValue_->getValue();
+        if (clip->view == magda::ClipView::Session) {
+            magda::ClipManager::getInstance().setClipLoopLength(selectedClipId_, newLengthBeats);
+        } else {
+            double bpm = 120.0;
+            if (timelineController_) {
+                bpm = timelineController_->getState().tempo.bpm;
+            }
+            double newLengthSeconds = magda::TimelineUtils::beatsToSeconds(newLengthBeats, bpm);
+            magda::ClipManager::getInstance().resizeClip(selectedClipId_, newLengthSeconds, false,
+                                                         bpm);
+        }
+    };
+    addChildComponent(*clipLengthValue_);
 
     // Loop toggle
     clipLoopToggle_.setButtonText("Loop");
@@ -577,8 +616,8 @@ void InspectorContent::resized() {
 
             auto valueRow = bounds.removeFromTop(20);
             halfWidth = valueRow.getWidth() / 2;
-            clipStartValue_.setBounds(valueRow.removeFromLeft(halfWidth));
-            clipLengthValue_.setBounds(valueRow);
+            clipStartValue_->setBounds(valueRow.removeFromLeft(halfWidth));
+            clipLengthValue_->setBounds(valueRow);
             bounds.removeFromTop(12);
         }
 
@@ -1062,20 +1101,22 @@ void InspectorContent::updateFromSelectedClip() {
 
         bool isSessionClip = (clip->view == magda::ClipView::Session);
 
+        // Update beatsPerBar on the draggable labels
+        clipStartValue_->setBeatsPerBar(beatsPerBar);
+        clipLengthValue_->setBeatsPerBar(beatsPerBar);
+
         if (isSessionClip) {
-            // Session clips: start is always 1.1.000, length from loop length
-            clipStartValue_.setText("1.1.000", juce::dontSendNotification);
-            auto lengthStr =
-                magda::TimelineUtils::formatBeatsAsBarsBeats(clip->internalLoopLength, beatsPerBar);
-            clipLengthValue_.setText(juce::String(lengthStr), juce::dontSendNotification);
+            // Session clips: start is always 0 (displays as 1.1.000), length from loop length
+            clipStartValue_->setValue(0.0, juce::dontSendNotification);
+            clipStartValue_->setEnabled(false);
+            clipLengthValue_->setValue(clip->internalLoopLength, juce::dontSendNotification);
         } else {
-            // Arrangement clips: position and duration in bars.beats.ticks
-            auto startStr =
-                magda::TimelineUtils::formatTimeAsBarsBeats(clip->startTime, bpm, beatsPerBar);
-            clipStartValue_.setText(juce::String(startStr), juce::dontSendNotification);
+            // Arrangement clips: position and duration in beats
+            double startBeats = magda::TimelineUtils::secondsToBeats(clip->startTime, bpm);
+            clipStartValue_->setValue(startBeats, juce::dontSendNotification);
+            clipStartValue_->setEnabled(true);
             double lengthBeats = magda::TimelineUtils::secondsToBeats(clip->length, bpm);
-            auto lengthStr = magda::TimelineUtils::formatBeatsAsBarsBeats(lengthBeats, beatsPerBar);
-            clipLengthValue_.setText(juce::String(lengthStr), juce::dontSendNotification);
+            clipLengthValue_->setValue(lengthBeats, juce::dontSendNotification);
         }
 
         clipLoopToggle_.setToggleState(clip->internalLoopEnabled, juce::dontSendNotification);
@@ -1143,9 +1184,9 @@ void InspectorContent::showClipControls(bool show) {
     clipTypeLabel_.setVisible(show);
     clipTypeValue_.setVisible(show);
     clipStartLabel_.setVisible(show);
-    clipStartValue_.setVisible(show);
+    clipStartValue_->setVisible(show);
     clipLengthLabel_.setVisible(show);
-    clipLengthValue_.setVisible(show);
+    clipLengthValue_->setVisible(show);
     clipLoopToggle_.setVisible(show);
     clipLoopLengthLabel_.setVisible(show);
     clipLoopLengthSlider_.setVisible(show);

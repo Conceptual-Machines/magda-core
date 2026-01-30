@@ -22,7 +22,8 @@ class DraggableValueLabel : public juce::Component {
         Raw,         // Shows raw value with specified precision
         Integer,     // Shows integer value
         MidiNote,    // Shows MIDI note name (C4, D#5, etc.)
-        Beats        // Shows beats with decimal (1.00, 2.25, etc.)
+        Beats,       // Shows beats with decimal (1.00, 2.25, etc.)
+        BarsBeats    // Shows bars.beats.ticks (1.1.000, 2.3.240, etc.)
     };
 
     DraggableValueLabel(Format format = Format::Raw);
@@ -52,6 +53,12 @@ class DraggableValueLabel : public juce::Component {
     }
     Format getFormat() const {
         return format_;
+    }
+
+    // Beats per bar for BarsBeats format
+    void setBeatsPerBar(int beatsPerBar) {
+        beatsPerBar_ = beatsPerBar;
+        repaint();
     }
 
     // Suffix for Raw format
@@ -84,6 +91,7 @@ class DraggableValueLabel : public juce::Component {
     double defaultValue_ = 0.0;
     double dragSensitivity_ = 200.0;  // pixels for full range
     int decimalPlaces_ = 1;
+    int beatsPerBar_ = 4;
     juce::String suffix_;
     bool doubleClickResets_ = true;
 

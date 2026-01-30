@@ -1,6 +1,9 @@
 #include "DraggableValueLabel.hpp"
 
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -81,6 +84,21 @@ juce::String DraggableValueLabel::formatValue(double val) const {
 
         case Format::Beats: {
             return juce::String(val, 2) + " beats";
+        }
+
+        case Format::BarsBeats: {
+            constexpr int TICKS_PER_BEAT = 480;
+            int wholeBars = static_cast<int>(val / beatsPerBar_);
+            double remaining = std::fmod(val, static_cast<double>(beatsPerBar_));
+            if (remaining < 0.0)
+                remaining = 0.0;
+            int wholeBeats = static_cast<int>(remaining);
+            int ticks = static_cast<int>((remaining - wholeBeats) * TICKS_PER_BEAT);
+            // Display 1-indexed (bar 1, beat 1)
+            char buffer[32];
+            std::snprintf(buffer, sizeof(buffer), "%d.%d.%03d", wholeBars + 1, wholeBeats + 1,
+                          ticks);
+            return juce::String(buffer);
         }
 
         case Format::Raw:
@@ -184,6 +202,26 @@ double DraggableValueLabel::parseValue(const juce::String& text) const {
             return trimmed.getDoubleValue();
         }
 
+        case Format::BarsBeats: {
+            // Parse "bar.beat.ticks" format (1-indexed display)
+            constexpr int TICKS_PER_BEAT = 480;
+            auto parts = juce::StringArray::fromTokens(trimmed, ".", "");
+            int bar = 0, beat = 0, ticks = 0;
+            if (parts.size() >= 1)
+                bar = parts[0].getIntValue() - 1;  // convert from 1-indexed
+            if (parts.size() >= 2)
+                beat = parts[1].getIntValue() - 1;  // convert from 1-indexed
+            if (parts.size() >= 3)
+                ticks = parts[2].getIntValue();
+            if (bar < 0)
+                bar = 0;
+            if (beat < 0)
+                beat = 0;
+            if (ticks < 0)
+                ticks = 0;
+            return bar * beatsPerBar_ + beat + ticks / static_cast<double>(TICKS_PER_BEAT);
+        }
+
         case Format::Raw:
         default:
             // Remove suffix if present
@@ -264,12 +302,23 @@ void DraggableValueLabel::mouseDrag(const juce::MouseEvent& e) {
 
     // Calculate delta (dragging up increases value)
     int deltaY = dragStartY_ - e.y;
-    double range = maxValue_ - minValue_;
-    double deltaValue = (deltaY / dragSensitivity_) * range;
 
-    // Fine control with shift key
-    if (e.mods.isShiftDown()) {
-        deltaValue *= 0.1;
+    double deltaValue;
+    if (format_ == Format::BarsBeats) {
+        // BarsBeats: 1 beat per ~30px, shift = fine control (0.25 beats)
+        double beatsPerPixel = 1.0 / 30.0;
+        deltaValue = deltaY * beatsPerPixel;
+        if (e.mods.isShiftDown()) {
+            deltaValue *= 0.25;
+        }
+    } else {
+        double range = maxValue_ - minValue_;
+        deltaValue = (deltaY / dragSensitivity_) * range;
+
+        // Fine control with shift key
+        if (e.mods.isShiftDown()) {
+            deltaValue *= 0.1;
+        }
     }
 
     setValue(dragStartValue_ + deltaValue);

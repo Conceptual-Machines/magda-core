@@ -115,9 +115,9 @@ class InspectorContent : public PanelContent,
     juce::Label clipNameLabel_;
     juce::Label clipNameValue_;
     juce::Label clipStartLabel_;
-    juce::Label clipStartValue_;
+    std::unique_ptr<magda::DraggableValueLabel> clipStartValue_;
     juce::Label clipLengthLabel_;
-    juce::Label clipLengthValue_;
+    std::unique_ptr<magda::DraggableValueLabel> clipLengthValue_;
     juce::ToggleButton clipLoopToggle_;
     juce::Label clipLoopLengthLabel_;
     juce::Slider clipLoopLengthSlider_;
