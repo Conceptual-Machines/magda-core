@@ -51,11 +51,12 @@ void SessionClipScheduler::clipPropertyChanged(ClipId clipId) {
     // which makes TE stop the clip at the end of the current pass.
     // The timer will then detect PlayState::stopped and clean up.
     launchClipLooping_ = clip->internalLoopEnabled;
+    launchClipLength_ = clip->length;
 
-    // Convert loop length from beats to seconds for playhead
+    // Convert loop length from beats to seconds for playhead wrapping
     auto& tempoSeq = edit_.tempoSequence;
     auto loopTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(clip->internalLoopLength));
-    launchClipLength_ = loopTime.inSeconds();
+    launchLoopLength_ = loopTime.inSeconds();
 }
 
 void SessionClipScheduler::clipPlaybackStateChanged(ClipId clipId) {
@@ -81,12 +82,13 @@ void SessionClipScheduler::clipPlaybackStateChanged(ClipId clipId) {
         if (launchedClips_.empty()) {
             launchTransportPos_ = transport.getPosition().inSeconds();
             launchClipLooping_ = clip->internalLoopEnabled;
+            launchClipLength_ = clip->length;
 
-            // Convert loop length from beats to seconds for playhead
+            // Convert loop length from beats to seconds for playhead wrapping
             auto& tempoSeq = edit_.tempoSequence;
             auto loopTime =
                 tempoSeq.beatsToTime(te::BeatPosition::fromBeats(clip->internalLoopLength));
-            launchClipLength_ = loopTime.inSeconds();
+            launchLoopLength_ = loopTime.inSeconds();
         }
 
         audioBridge_.launchSessionClip(clipId);
@@ -192,11 +194,13 @@ double SessionClipScheduler::getSessionPlayheadPosition() const {
     if (elapsed < 0.0)
         elapsed = 0.0;
 
-    // Always use fmod to get position within the clip boundary.
-    // When looping, this wraps continuously.
-    // When not looping, this shows the position within the final pass
-    // until the TE LaunchHandle reports stopped.
-    return std::fmod(elapsed, launchClipLength_);
+    if (launchClipLooping_ && launchLoopLength_ > 0.0) {
+        // Looping: wrap playhead at loop boundary
+        return std::fmod(elapsed, launchLoopLength_);
+    }
+
+    // Non-looping: let playhead run to full clip duration, then clamp
+    return std::min(elapsed, launchClipLength_);
 }
 
 }  // namespace magda

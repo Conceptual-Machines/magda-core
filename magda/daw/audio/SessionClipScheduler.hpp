@@ -75,7 +75,9 @@ class SessionClipScheduler : public ClipManagerListener, private juce::Timer {
 
     // Transport position at which the first session clip was launched
     double launchTransportPos_ = 0.0;
-    // Duration of the primary launched clip (seconds) for playhead looping
+    // Loop length in seconds (for playhead wrapping when looping)
+    double launchLoopLength_ = 0.0;
+    // Full clip duration in seconds (for playhead when not looping)
     double launchClipLength_ = 0.0;
     // Whether the primary launched clip is looping
     bool launchClipLooping_ = false;
