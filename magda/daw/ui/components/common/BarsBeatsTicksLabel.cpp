@@ -1,6 +1,7 @@
 #include "BarsBeatsTicksLabel.hpp"
 
 #include <cmath>
+#include <cstdio>
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"

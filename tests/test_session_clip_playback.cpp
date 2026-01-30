@@ -677,12 +677,13 @@ constexpr double MIN_LOOP_LENGTH_BEATS = 0.25;
  * Given a clip with loop state, applies a new clip end and clamps loop.
  */
 void applyClipEnd(ClipManager& cm, ClipId clipId, double newClipEndBeats, double bpm) {
-    const auto* clip = cm.getClip(clipId);
     double secondsPerBeat = 60.0 / bpm;
 
     // Resize the clip
     cm.resizeClip(clipId, newClipEndBeats * secondsPerBeat, false, bpm);
 
+    // Re-fetch clip after mutation
+    const auto* clip = cm.getClip(clipId);
     double loopOffset = clip->internalLoopOffset;
     double loopLength = clip->internalLoopLength;
 
@@ -722,7 +723,7 @@ void applyLoopPos(ClipManager& cm, ClipId clipId, double newLoopPos, double bpm)
  * Replicates InspectorContent Loop Length callback clamping for session clips.
  */
 void applyLoopLength(ClipManager& cm, ClipId clipId, double newLoopLength, double bpm) {
-    auto* clip = cm.getClip(clipId);
+    const auto* clip = cm.getClip(clipId);
     double clipEndBeats = clip->length / (60.0 / bpm);
     double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
 
@@ -733,6 +734,9 @@ void applyLoopLength(ClipManager& cm, ClipId clipId, double newLoopLength, doubl
         // Grow clip to follow
         cm.resizeClip(clipId, newLoopEnd * (60.0 / bpm), false, bpm);
     } else {
+        // Re-fetch after potential mutation above
+        clip = cm.getClip(clipId);
+        clipEndBeats = clip->length / (60.0 / bpm);
         if (newLoopEnd > clipEndBeats) {
             newLoopLength = clipEndBeats - clip->internalLoopOffset;
         }
