@@ -219,14 +219,14 @@ jobs:
         
         # Unsafe C functions
         echo "Checking for unsafe C functions (strcpy, sprintf, gets)..."
-        if grep -r "\b(strcpy|sprintf|gets|scanf)\s*(" magda/ tests/ --include="*.cpp" --include="*.hpp" 2>/dev/null; then
+        if grep -rE "\b(strcpy|sprintf|gets|scanf)\s*\(" magda/ tests/ --include="*.cpp" --include="*.hpp" 2>/dev/null; then
           echo "⚠️  Found unsafe C functions - use safe alternatives"
           ISSUES_FOUND=1
         fi
         
         # Potential command injection
         echo "Checking for potential command injection (system calls)..."
-        if grep -r "\bsystem\s*(" magda/ tests/ --include="*.cpp" --include="*.hpp" 2>/dev/null | grep -v "// safe:" | grep -v "filesystem"; then
+        if grep -rE "\bsystem\s*\(" magda/ tests/ --include="*.cpp" --include="*.hpp" 2>/dev/null | grep -v "// safe:" | grep -v "filesystem"; then
           echo "⚠️  Found system() calls - verify they are safe"
           ISSUES_FOUND=1
         fi
