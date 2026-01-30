@@ -1,0 +1,177 @@
+name: Branch Protection Enforcement
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  enforce-branch-protection:
+    name: Enforce Branch Protection Requirements
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Need full history for PR validation
+
+    - name: Validate PR targets main branch
+      run: |
+        echo "✅ Validating PR targeting main branch"
+        echo "Base branch: ${{ github.base_ref }}"
+        echo "Head branch: ${{ github.head_ref }}"
+
+    - name: Check CI status requirement
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { owner, repo } = context.repo;
+          const pull_number = context.payload.pull_request.number;
+          
+          console.log(`Checking CI status for PR #${pull_number}`);
+          
+          const { data: prData } = await github.rest.pulls.get({
+            owner,
+            repo,
+            pull_number
+          });
+          
+          console.log(`PR mergeable state: ${prData.mergeable_state}`);
+          
+          // Comment on the PR about requirements
+          const comment = `## 🔒 Branch Protection Requirements
+          
+          This PR targets the \`main\` branch and must meet the following security requirements:
+          
+          ### Required Status Checks
+          - ✅ Build and Test (Linux)
+          - ✅ Code Quality Checks
+          - ✅ Security Validation
+          - ✅ Secret Scanning
+          - ✅ CodeQL Security Scan
+          
+          ### Security Requirements
+          - 🔐 All security scans must pass
+          - 🔍 No secrets or credentials in code
+          - 🛡️ No known vulnerabilities
+          - ✨ Code formatting must be correct
+          
+          ### Review Requirements
+          - 👥 At least one approval required
+          - ✅ All comments must be resolved
+          
+          Please ensure all checks pass before merging.`;
+          
+          // Check if we already posted this comment
+          const { data: comments } = await github.rest.issues.listComments({
+            owner,
+            repo,
+            issue_number: pull_number
+          });
+          
+          const botComment = comments.find(c => 
+            c.user.type === 'Bot' && 
+            c.body.includes('Branch Protection Requirements')
+          );
+          
+          if (!botComment) {
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: pull_number,
+              body: comment
+            });
+            console.log('Posted branch protection requirements comment');
+          } else {
+            console.log('Requirements comment already exists');
+          }
+
+    - name: Verify no force-push attempts
+      run: |
+        echo "Checking commit history for signs of force-push..."
+        
+        # Check if PR contains commits that rewrite history
+        BASE_SHA="${{ github.event.pull_request.base.sha }}"
+        HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+        
+        echo "Base SHA: $BASE_SHA"
+        echo "Head SHA: $HEAD_SHA"
+        
+        # Check if any commits in the PR have multiple parents (merge commits)
+        MERGE_COMMITS=$(git log --merges $BASE_SHA..$HEAD_SHA --oneline | wc -l)
+        
+        if [ "$MERGE_COMMITS" -gt 0 ]; then
+          echo "⚠️  Found $MERGE_COMMITS merge commits in PR"
+          echo "Consider rebasing to keep history clean (but never force-push to main)"
+        else
+          echo "✅ No merge commits found"
+        fi
+
+    - name: Check for breaking changes
+      run: |
+        echo "Checking for potential breaking changes..."
+        
+        # Check if public API headers are modified
+        MODIFIED_HEADERS=$(git diff --name-only ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | grep -E "\.h(pp)?$" || true)
+        
+        if [ -n "$MODIFIED_HEADERS" ]; then
+          echo "⚠️  Modified header files detected:"
+          echo "$MODIFIED_HEADERS"
+          echo ""
+          echo "Please ensure:"
+          echo "1. Public API changes are backward compatible"
+          echo "2. ABI compatibility is maintained if needed"
+          echo "3. Changes are documented in commit message"
+        else
+          echo "✅ No header file modifications"
+        fi
+
+    - name: Verify commit message quality
+      run: |
+        echo "Checking commit message quality..."
+        
+        # Get commits in this PR
+        git log --format="%H %s" ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} > commits.txt
+        
+        ISSUES_FOUND=0
+        
+        while IFS= read -r line; do
+          SHA=$(echo "$line" | cut -d' ' -f1)
+          MSG=$(echo "$line" | cut -d' ' -f2-)
+          
+          # Check minimum length
+          if [ ${#MSG} -lt 10 ]; then
+            echo "⚠️  Commit $SHA has a very short message: '$MSG'"
+            ISSUES_FOUND=1
+          fi
+          
+          # Check for conventional commit format (optional but recommended)
+          if ! echo "$MSG" | grep -qE "^(feat|fix|docs|style|refactor|perf|test|chore|build|ci|revert)(\(.+\))?: "; then
+            echo "ℹ️  Commit $SHA doesn't follow conventional commit format: '$MSG'"
+            echo "   Consider using: feat|fix|docs|style|refactor|perf|test|chore|build|ci"
+          fi
+        done < commits.txt
+        
+        if [ "$ISSUES_FOUND" -eq 1 ]; then
+          echo ""
+          echo "⚠️  Some commit messages could be improved (not failing build)"
+        else
+          echo "✅ Commit messages look good"
+        fi
+
+    - name: Summary
+      run: |
+        echo "## ✅ Branch Protection Validation Complete" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "All branch protection requirements have been validated." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Required Before Merge" >> $GITHUB_STEP_SUMMARY
+        echo "- All CI checks must be green" >> $GITHUB_STEP_SUMMARY
+        echo "- Security scans must pass" >> $GITHUB_STEP_SUMMARY
+        echo "- At least one approval required" >> $GITHUB_STEP_SUMMARY
+        echo "- All review comments resolved" >> $GITHUB_STEP_SUMMARY

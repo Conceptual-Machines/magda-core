@@ -59,10 +59,25 @@ make lint       # Run clang-tidy analysis
 The project includes automated GitHub Actions workflows:
 
 - **CI Workflow**: Runs on every push to validate builds and code quality
+- **Security Scanning**: CodeQL analysis, secret detection, and vulnerability scanning
 - **Periodic Code Analysis**: Weekly scans for TODOs, FIXMEs, and code smells
 - **Refactoring Scanner**: Bi-weekly analysis of code complexity and technical debt
 
 See [docs/AUTOMATED_WORKFLOWS.md](docs/AUTOMATED_WORKFLOWS.md) for details on automated analysis and periodic workflows.
+
+## Security
+
+MAGDA takes security seriously. The repository implements comprehensive security measures:
+
+- 🔒 **Branch Protection**: Main branch protected with required reviews and status checks
+- 🔍 **Automated Scanning**: CodeQL security analysis for C++ vulnerabilities
+- 🔐 **Secret Detection**: Automated scanning to prevent credential leaks
+- 🛡️ **Dependency Monitoring**: Dependabot for security updates
+- ⚡ **CI/CD Security**: All security checks must pass before merge
+
+**Found a security issue?** Please review our [Security Policy](SECURITY.md) for responsible disclosure.
+
+For detailed information about branch protection and security architecture, see [docs/BRANCH_PROTECTION.md](docs/BRANCH_PROTECTION.md).
 
 ## Architecture
 
