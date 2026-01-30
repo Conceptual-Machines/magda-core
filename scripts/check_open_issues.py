@@ -25,7 +25,6 @@ import argparse
 import subprocess
 import json
 import re
-import sys
 from pathlib import Path
 
 
