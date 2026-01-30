@@ -43,6 +43,34 @@ This document defines code review guidelines for the Magda project, a JUCE/C++ a
 - **Trivial Issues**: Skip commenting on very minor issues that don't affect functionality or maintainability
 - **Pre-existing Issues**: Focus on the code being changed, not unrelated existing code
 
+## Refactoring Guidelines (for Copilot Coding Agent)
+
+When assigned refactoring issues, follow these rules strictly:
+
+### Do NOT
+- **Extract constants from obvious values** — `0.0`, `0.5`, `1.0`, `2.0`, `60.0`, `PI`, pixel padding values (4, 8, 12, 20), font sizes, etc. are not magic numbers. They are clearer inline than as `FULL_RANGE`, `HALF_CYCLE`, `SECONDS_PER_MINUTE`, or `kOuterPadding`.
+- **Split functions under 50 NLOC** — Small functions don't need decomposition regardless of CCN.
+- **Create PRs that only rename magic numbers or extract constants** — This is busywork, not refactoring.
+- **Split one-liner expressions into separate functions** — `return 1.0f - phase;` does not need a `generateReverseSawWave()` wrapper.
+- **Add `using namespace` indirection** — Creating a constants namespace and then `using namespace` in every method adds complexity, not clarity.
+- **Make internal rendering constants public** — Paint parameters, timer intervals, and layout values are private implementation details.
+- **Couple unrelated timers or constants** — Independent components should not share constants just because the values happen to be the same.
+- **Redefine standard constants** — Use `juce::MathConstants<float>::pi`, not a custom `PI` constant.
+
+### DO
+- **Split God Objects** — Classes with 40+ methods or 1000+ lines need structural decomposition into smaller classes with distinct responsibilities.
+- **Extract state machines** — Complex mouse handlers (`mouseDrag`/`mouseUp` with CCN > 20) benefit from strategy/state pattern extraction.
+- **Break up monolithic constructors** — Constructors over 150 NLOC should be split into logical initialization helpers (e.g., `setupControls()`, `setupCallbacks()`, `setupLayout()`).
+- **Decompose functions over 100 NLOC with CCN > 15** — These have genuine structural problems. Split along logical boundaries, not arbitrary line counts.
+- **Focus on structural refactoring** — Move responsibilities to new classes, extract reusable components, simplify inheritance hierarchies.
+
+### Thresholds for Action
+Only refactor when a function meets **both** criteria:
+- CCN > 15 **AND** NLOC > 50
+- OR the file exceeds 1000 lines with clear God Object characteristics (40+ methods, mixed responsibilities)
+
+Files under 300 lines, header files with only declarations, and test files should **never** be refactored.
+
 ## Project-Specific Context
 
 ### Architecture
