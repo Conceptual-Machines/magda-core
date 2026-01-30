@@ -1230,12 +1230,15 @@ void InspectorContent::updateFromSelectedClip() {
         clipLoopLengthValue_->setBeatsPerBar(beatsPerBar);
 
         if (isSessionClip) {
-            // Session clips: start is 0, end is clip length in beats
-            clipStartValue_->setValue(0.0, juce::dontSendNotification);
+            // Session clips: start is always 0, hide the field entirely
+            clipStartLabel_.setVisible(false);
+            clipStartValue_->setVisible(false);
             clipEndValue_->setValue(magda::TimelineUtils::secondsToBeats(clip->length, bpm),
                                     juce::dontSendNotification);
         } else {
             // Arrangement clips: start and end as positions in beats
+            clipStartLabel_.setVisible(true);
+            clipStartValue_->setVisible(true);
             double startBeats = magda::TimelineUtils::secondsToBeats(clip->startTime, bpm);
             double endBeats = startBeats + magda::TimelineUtils::secondsToBeats(clip->length, bpm);
             clipStartValue_->setValue(startBeats, juce::dontSendNotification);

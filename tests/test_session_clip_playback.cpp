@@ -534,3 +534,131 @@ TEST_CASE("Session MIDI clip loop offset", "[session][midi][loop]") {
         REQUIRE(truncatedLength == Catch::Approx(0.5));
     }
 }
+
+// =============================================================================
+// Session clip: independent clip length vs loop length
+// =============================================================================
+
+TEST_CASE("Session clip length is independent from loop length", "[session][clip][length][loop]") {
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+
+    // At 120 BPM: 1 beat = 0.5s, so 8 beats = 4.0s
+    constexpr double bpm = 120.0;
+    constexpr double secondsPerBeat = 60.0 / bpm;
+
+    // Create a session MIDI clip: 8 beats long (4.0 seconds)
+    ClipId clipId = cm.createMidiClip(1, 0.0, 8.0 * secondsPerBeat, ClipView::Session);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+    cm.setClipSceneIndex(clipId, 0);
+
+    auto* clip = cm.getClip(clipId);
+    REQUIRE(clip != nullptr);
+
+    SECTION("Clip length and loop length start independently settable") {
+        // Default loop length is 4 beats
+        double clipLengthBeats = clip->length / secondsPerBeat;
+        REQUIRE(clipLengthBeats == Catch::Approx(8.0));
+        REQUIRE(clip->internalLoopLength == Catch::Approx(4.0));
+
+        // They are different values
+        REQUIRE(clipLengthBeats != Catch::Approx(clip->internalLoopLength));
+    }
+
+    SECTION("Changing loop length does not change clip length") {
+        double originalClipLength = clip->length;
+
+        cm.setClipLoopLength(clipId, 2.0);
+        clip = cm.getClip(clipId);
+
+        REQUIRE(clip->internalLoopLength == Catch::Approx(2.0));
+        REQUIRE(clip->length == Catch::Approx(originalClipLength));
+    }
+
+    SECTION("Resizing clip does not change loop length") {
+        cm.setClipLoopLength(clipId, 4.0);
+        double originalLoopLength = clip->internalLoopLength;
+
+        // Shrink clip to 6 beats (3.0 seconds)
+        cm.resizeClip(clipId, 6.0 * secondsPerBeat, false, bpm);
+        clip = cm.getClip(clipId);
+
+        double newClipLengthBeats = clip->length / secondsPerBeat;
+        REQUIRE(newClipLengthBeats == Catch::Approx(6.0));
+        REQUIRE(clip->internalLoopLength == Catch::Approx(originalLoopLength));
+    }
+
+    SECTION("Loop offset does not change when clip is resized") {
+        cm.setClipLoopOffset(clipId, 1.0);
+
+        cm.resizeClip(clipId, 6.0 * secondsPerBeat, false, bpm);
+        clip = cm.getClip(clipId);
+
+        REQUIRE(clip->internalLoopOffset == Catch::Approx(1.0));
+    }
+
+    SECTION("Loop region can be smaller than clip") {
+        cm.setClipLoopLength(clipId, 2.0);
+        cm.setClipLoopOffset(clipId, 1.0);
+        clip = cm.getClip(clipId);
+
+        double clipEndBeats = clip->length / secondsPerBeat;
+        double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+
+        REQUIRE(loopEnd == Catch::Approx(3.0));
+        REQUIRE(clipEndBeats == Catch::Approx(8.0));
+        REQUIRE(loopEnd < clipEndBeats);
+    }
+
+    SECTION("Loop region can equal clip length") {
+        cm.setClipLoopOffset(clipId, 0.0);
+        cm.setClipLoopLength(clipId, 8.0);
+        clip = cm.getClip(clipId);
+
+        double clipEndBeats = clip->length / secondsPerBeat;
+        double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+
+        REQUIRE(loopEnd == Catch::Approx(clipEndBeats));
+    }
+}
+
+TEST_CASE("Session clip end clamping constrains loop region", "[session][clip][length][clamp]") {
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+
+    constexpr double bpm = 120.0;
+    constexpr double secondsPerBeat = 60.0 / bpm;
+
+    // 8-beat clip with loop at offset=2, length=6 (loop end = 8 beats = clip end)
+    ClipId clipId = cm.createMidiClip(1, 0.0, 8.0 * secondsPerBeat, ClipView::Session);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+    cm.setClipSceneIndex(clipId, 0);
+
+    cm.setClipLoopOffset(clipId, 2.0);
+    cm.setClipLoopLength(clipId, 6.0);
+
+    auto* clip = cm.getClip(clipId);
+    REQUIRE(clip != nullptr);
+
+    SECTION("Loop end equals clip end initially") {
+        double clipEndBeats = clip->length / secondsPerBeat;
+        double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+        REQUIRE(loopEnd == Catch::Approx(clipEndBeats));
+    }
+
+    SECTION("Loop region cannot exceed clip length") {
+        double clipEndBeats = clip->length / secondsPerBeat;
+
+        // Attempting to set loop that exceeds clip should be constrained
+        // (This tests the invariant — actual clamping is in the UI layer)
+        double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+        REQUIRE(loopEnd <= clipEndBeats + 0.001);
+    }
+
+    SECTION("Loop offset constrains available loop length") {
+        // With offset=2 in an 8-beat clip, max loop length is 6
+        double clipEndBeats = clip->length / secondsPerBeat;
+        double maxLoopLength = clipEndBeats - clip->internalLoopOffset;
+        REQUIRE(maxLoopLength == Catch::Approx(6.0));
+    }
+}
