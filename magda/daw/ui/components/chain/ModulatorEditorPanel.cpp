@@ -12,7 +12,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     // Intercept mouse clicks to prevent propagation to parent
     setInterceptsMouseClicks(true, true);
 
-    startTimer(33);  // 30 FPS for waveform animation
+    startTimer(WaveformDisplay::TIMER_INTERVAL_MS);  // ~30 FPS for waveform animation
 
     // Name label at top
     nameLabel_.setFont(FontManager::getInstance().getUIFontBold(10.0f));

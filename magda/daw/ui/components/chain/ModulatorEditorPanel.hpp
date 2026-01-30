@@ -19,8 +19,17 @@ namespace magda::daw::ui {
  */
 class WaveformDisplay : public juce::Component, private juce::Timer {
   public:
+    // Animation and rendering constants
+    static constexpr int TIMER_INTERVAL_MS = 33;  // ~30 FPS animation
+    static constexpr int WAVEFORM_POINTS = 100;   // Number of points for waveform path
+    static constexpr float PHASE_INDICATOR_RADIUS = 4.0f;
+    static constexpr float TRIGGER_INDICATOR_RADIUS = 3.0f;
+    static constexpr float DASH_LENGTH = 3.0f;
+    static constexpr float WAVEFORM_STROKE_WIDTH = 1.5f;
+    static constexpr float WAVEFORM_MARGIN = 8.0f;  // Vertical margin for waveform
+
     WaveformDisplay() {
-        startTimer(33);  // 30 FPS animation
+        startTimer(TIMER_INTERVAL_MS);
     }
 
     ~WaveformDisplay() override {
@@ -42,30 +51,51 @@ class WaveformDisplay : public juce::Component, private juce::Timer {
         const float height = bounds.getHeight();
         const float centerY = height * 0.5f;
 
-        // Draw phase offset indicator line (vertical dashed line at offset position)
-        if (mod_->phaseOffset > 0.001f) {
-            float offsetX = bounds.getX() + mod_->phaseOffset * width;
-            g.setColour(juce::Colours::orange.withAlpha(0.3f));
-            // Draw dashed line
-            const float dashLength = 3.0f;
-            for (float y = bounds.getY(); y < bounds.getBottom(); y += dashLength * 2) {
-                g.drawLine(offsetX, y, offsetX, juce::jmin(y + dashLength, bounds.getBottom()),
-                           1.0f);
-            }
+        drawPhaseOffsetIndicator(g, bounds, width, height);
+        drawWaveformPath(g, bounds, width, height, centerY);
+        drawCurrentPhaseIndicator(g, bounds, width, height, centerY);
+        drawTriggerIndicator(g, bounds);
+    }
+
+  private:
+    void timerCallback() override {
+        repaint();
+    }
+
+    /**
+     * @brief Draw vertical dashed line showing phase offset position
+     */
+    void drawPhaseOffsetIndicator(juce::Graphics& g, const juce::Rectangle<float>& bounds,
+                                   float width, float /*height*/) {
+        if (mod_->phaseOffset <= 0.001f) {
+            return;
         }
 
-        // Draw waveform path (shifted by phase offset for visual representation)
-        juce::Path waveformPath;
-        const int numPoints = 100;
+        float offsetX = bounds.getX() + mod_->phaseOffset * width;
+        g.setColour(juce::Colours::orange.withAlpha(0.3f));
 
-        for (int i = 0; i < numPoints; ++i) {
-            float displayPhase = static_cast<float>(i) / static_cast<float>(numPoints - 1);
+        // Draw dashed line
+        for (float y = bounds.getY(); y < bounds.getBottom(); y += DASH_LENGTH * 2) {
+            g.drawLine(offsetX, y, offsetX, juce::jmin(y + DASH_LENGTH, bounds.getBottom()),
+                       1.0f);
+        }
+    }
+
+    /**
+     * @brief Draw the waveform curve path
+     */
+    void drawWaveformPath(juce::Graphics& g, const juce::Rectangle<float>& bounds, float width,
+                          float height, float centerY) {
+        juce::Path waveformPath;
+
+        for (int i = 0; i < WAVEFORM_POINTS; ++i) {
+            float displayPhase = static_cast<float>(i) / static_cast<float>(WAVEFORM_POINTS - 1);
             // Apply phase offset to show how waveform is shifted
             float effectivePhase = std::fmod(displayPhase + mod_->phaseOffset, 1.0f);
             float value = magda::ModulatorEngine::generateWaveformForMod(*mod_, effectivePhase);
 
             // Invert value so high values are at top
-            float y = centerY + (0.5f - value) * (height - 8.0f);
+            float y = centerY + (0.5f - value) * (height - WAVEFORM_MARGIN);
             float x = bounds.getX() + displayPhase * width;
 
             if (i == 0) {
@@ -77,21 +107,30 @@ class WaveformDisplay : public juce::Component, private juce::Timer {
 
         // Draw the waveform line
         g.setColour(juce::Colours::orange.withAlpha(0.7f));
-        g.strokePath(waveformPath, juce::PathStrokeType(1.5f));
+        g.strokePath(waveformPath, juce::PathStrokeType(WAVEFORM_STROKE_WIDTH));
+    }
 
-        // Draw current phase indicator (dot) - use actual phase position
+    /**
+     * @brief Draw dot showing current phase position on waveform
+     */
+    void drawCurrentPhaseIndicator(juce::Graphics& g, const juce::Rectangle<float>& bounds,
+                                    float width, float height, float centerY) {
         float displayX = bounds.getX() + mod_->phase * width;
         float currentValue = mod_->value;
-        float currentY = centerY + (0.5f - currentValue) * (height - 8.0f);
+        float currentY = centerY + (0.5f - currentValue) * (height - WAVEFORM_MARGIN);
 
         g.setColour(juce::Colours::orange);
-        g.fillEllipse(displayX - 4.0f, currentY - 4.0f, 8.0f, 8.0f);
+        g.fillEllipse(displayX - PHASE_INDICATOR_RADIUS, currentY - PHASE_INDICATOR_RADIUS,
+                      PHASE_INDICATOR_RADIUS * 2, PHASE_INDICATOR_RADIUS * 2);
+    }
 
-        // Draw trigger indicator dot in top-right corner
-        const float triggerDotRadius = 3.0f;
+    /**
+     * @brief Draw trigger indicator in top-right corner
+     */
+    void drawTriggerIndicator(juce::Graphics& g, const juce::Rectangle<float>& bounds) {
         auto triggerDotBounds = juce::Rectangle<float>(
-            bounds.getRight() - triggerDotRadius * 2 - 4.0f, bounds.getY() + 4.0f,
-            triggerDotRadius * 2, triggerDotRadius * 2);
+            bounds.getRight() - TRIGGER_INDICATOR_RADIUS * 2 - 4.0f, bounds.getY() + 4.0f,
+            TRIGGER_INDICATOR_RADIUS * 2, TRIGGER_INDICATOR_RADIUS * 2);
 
         if (mod_->triggered) {
             // Lit up when triggered
@@ -102,11 +141,6 @@ class WaveformDisplay : public juce::Component, private juce::Timer {
             g.setColour(juce::Colours::orange.withAlpha(0.3f));
             g.drawEllipse(triggerDotBounds, 1.0f);
         }
-    }
-
-  private:
-    void timerCallback() override {
-        repaint();
     }
 
     const magda::ModInfo* mod_ = nullptr;
