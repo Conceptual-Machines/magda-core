@@ -301,24 +301,26 @@ class SessionView::ResizeHandle : public juce::Component {
         g.fillAll();
     }
 
-    void mouseDown(const juce::MouseEvent& event) override {
-        startDragPosition = direction == Horizontal ? event.x : event.y;
+    void mouseDown(const juce::MouseEvent& /*event*/) override {
+        if (onResizeStart) {
+            onResizeStart();
+        }
     }
 
     void mouseDrag(const juce::MouseEvent& event) override {
-        auto currentPos = direction == Horizontal ? event.x : event.y;
-        auto delta = currentPos - startDragPosition;
+        auto delta = direction == Horizontal ? event.getDistanceFromDragStartX()
+                                             : event.getDistanceFromDragStartY();
 
         if (onResize) {
             onResize(delta);
         }
     }
 
+    std::function<void()> onResizeStart;
     std::function<void(int)> onResize;
 
   private:
     Direction direction;
-    int startDragPosition = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ResizeHandle)
 };
@@ -393,9 +395,10 @@ SessionView::SessionView() {
 
     // Create resize handle between stop button row and fader row
     faderResizeHandle_ = std::make_unique<ResizeHandle>(ResizeHandle::Vertical);
+    faderResizeHandle_->onResizeStart = [this]() { dragStartFaderHeight_ = faderRowHeight_; };
     faderResizeHandle_->onResize = [this](int delta) {
         faderRowHeight_ =
-            juce::jlimit(MIN_FADER_ROW_HEIGHT, MAX_FADER_ROW_HEIGHT, faderRowHeight_ - delta);
+            juce::jlimit(MIN_FADER_ROW_HEIGHT, MAX_FADER_ROW_HEIGHT, dragStartFaderHeight_ - delta);
         resized();
     };
     addAndMakeVisible(*faderResizeHandle_);
@@ -616,9 +619,12 @@ void SessionView::rebuildTracks() {
     for (int i = 0; i < numTracks; ++i) {
         auto handle = std::make_unique<ResizeHandle>(ResizeHandle::Horizontal);
         int trackIdx = i;
+        handle->onResizeStart = [this, trackIdx]() {
+            dragStartTrackWidth_ = trackColumnWidths_[trackIdx];
+        };
         handle->onResize = [this, trackIdx](int delta) {
-            trackColumnWidths_[trackIdx] = juce::jlimit(MIN_TRACK_WIDTH, MAX_TRACK_WIDTH,
-                                                        trackColumnWidths_[trackIdx] + delta);
+            trackColumnWidths_[trackIdx] =
+                juce::jlimit(MIN_TRACK_WIDTH, MAX_TRACK_WIDTH, dragStartTrackWidth_ + delta);
             resized();
         };
         headerContainer->addAndMakeVisible(*handle);
@@ -1031,9 +1037,9 @@ void SessionView::removeScene() {
                            .withButton("Delete")
                            .withButton("Cancel");
 
-        juce::AlertWindow::showAsync(options, [this, lastScene](int result) {
+        juce::AlertWindow::showAsync(options, [this](int result) {
             if (result == 1) {
-                removeSceneAsync(lastScene);
+                removeSceneAsync(numScenes_ - 1);
             }
         });
     } else {
@@ -1262,6 +1268,8 @@ void SessionView::clipPlaybackStateChanged(ClipId clipId) {
 
 void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
     if (trackIndex < 0 || trackIndex >= static_cast<int>(clipSlots.size()))
+        return;
+    if (trackIndex >= static_cast<int>(visibleTrackIds_.size()))
         return;
     if (sceneIndex < 0 || sceneIndex >= static_cast<int>(clipSlots[trackIndex].size()))
         return;

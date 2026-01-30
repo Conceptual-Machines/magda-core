@@ -79,6 +79,8 @@ class SessionView : public juce::Component,
     static constexpr int MIN_FADER_ROW_HEIGHT = 60;
     static constexpr int MAX_FADER_ROW_HEIGHT = 300;
     int faderRowHeight_ = 100;
+    int dragStartFaderHeight_ = 100;
+    int dragStartTrackWidth_ = 80;
     static constexpr int ADD_SCENE_BUTTON_HEIGHT = 24;
 
     int numScenes_ = DEFAULT_NUM_SCENES;

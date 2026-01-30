@@ -155,13 +155,14 @@ ClipId ClipManager::duplicateClip(ClipId clipId) {
     ClipInfo newClip = *original;
     newClip.id = nextClipId_++;
     newClip.name = original->name + " Copy";
-    // Offset the duplicate slightly to the right
-    newClip.startTime = original->startTime + original->length;
 
-    // Add to same array as original
     if (newClip.view == ClipView::Arrangement) {
+        // Offset the duplicate to the right on the timeline
+        newClip.startTime = original->startTime + original->length;
         arrangementClips_.push_back(newClip);
     } else {
+        // Session clips don't use timeline positioning
+        newClip.startTime = 0.0;
         sessionClips_.push_back(newClip);
     }
 
@@ -180,7 +181,6 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
     ClipInfo newClip = *original;
     newClip.id = nextClipId_++;
     newClip.name = original->name + " Copy";
-    newClip.startTime = startTime;
 
     // Use specified track or keep same track
     if (trackId != INVALID_TRACK_ID) {
@@ -189,8 +189,11 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
 
     // Add to same array as original
     if (newClip.view == ClipView::Arrangement) {
+        newClip.startTime = startTime;
         arrangementClips_.push_back(newClip);
     } else {
+        // Session clips don't use timeline positioning
+        newClip.startTime = 0.0;
         sessionClips_.push_back(newClip);
     }
 
