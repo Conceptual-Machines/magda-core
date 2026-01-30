@@ -58,12 +58,29 @@ class ClipSlotButton : public juce::TextButton {
     std::function<void()> onSingleClick;
     std::function<void()> onDoubleClick;
     std::function<void()> onPlayButtonClick;
+    std::function<void()> onCreateMidiClip;
 
     bool hasClip = false;
     bool clipIsPlaying = false;
     bool isSelected = false;
+    bool isMidiClip = false;
     double clipLength = 0.0;           // Clip duration in seconds (for progress bar)
     double sessionPlayheadPos = -1.0;  // Looped playhead position in seconds
+
+    void mouseDown(const juce::MouseEvent& event) override {
+        if (event.mods.isPopupMenu() && !hasClip) {
+            juce::PopupMenu menu;
+            menu.addItem(1, "Create MIDI Clip");
+            auto safeThis = juce::Component::SafePointer<ClipSlotButton>(this);
+            menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis](int result) {
+                if (safeThis && result == 1 && safeThis->onCreateMidiClip) {
+                    safeThis->onCreateMidiClip();
+                }
+            });
+            return;
+        }
+        juce::TextButton::mouseDown(event);
+    }
 
     void mouseUp(const juce::MouseEvent& event) override {
         if (!event.mouseWasClicked())
@@ -137,6 +154,14 @@ class ClipSlotButton : public juce::TextButton {
                 g.setColour(juce::Colours::white.withAlpha(0.6f));
                 g.drawVerticalLine(static_cast<int>(lineX), static_cast<float>(contentArea.getY()),
                                    static_cast<float>(contentArea.getBottom()));
+            }
+
+            // Draw "M" badge for MIDI clips
+            if (isMidiClip) {
+                auto badgeArea = getLocalBounds().removeFromRight(16).removeFromTop(14);
+                g.setColour(juce::Colours::white.withAlpha(0.8f));
+                g.setFont(juce::Font(10.0f, juce::Font::bold));
+                g.drawText("M", badgeArea, juce::Justification::centred, false);
             }
         }
     }
@@ -722,6 +747,9 @@ void SessionView::rebuildTracks() {
             slot->onDoubleClick = [this, trackIndex, sceneIndex]() {
                 openClipEditor(trackIndex, sceneIndex);
             };
+            slot->onCreateMidiClip = [this, trackIndex, sceneIndex]() {
+                onCreateMidiClipClicked(trackIndex, sceneIndex);
+            };
 
             gridContent->addAndMakeVisible(*slot);
             trackSlots.push_back(std::move(slot));
@@ -1019,6 +1047,9 @@ void SessionView::addScene() {
         slot->onDoubleClick = [this, trackIndex, sceneIndex]() {
             openClipEditor(trackIndex, sceneIndex);
         };
+        slot->onCreateMidiClip = [this, trackIndex, sceneIndex]() {
+            onCreateMidiClipClicked(trackIndex, sceneIndex);
+        };
 
         gridContent->addAndMakeVisible(*slot);
         clipSlots[track].push_back(std::move(slot));
@@ -1152,25 +1183,49 @@ void SessionView::openClipEditor(int trackIndex, int sceneIndex) {
     TrackId trackId = visibleTrackIds_[trackIndex];
     ClipId clipId = ClipManager::getInstance().getClipInSlot(trackId, sceneIndex);
 
-    if (clipId != INVALID_CLIP_ID) {
-        const auto* clip = ClipManager::getInstance().getClip(clipId);
-        if (clip) {
-            // Select the clip so the bottom panel picks it up
-            ClipManager::getInstance().setSelectedClip(clipId);
+    if (clipId == INVALID_CLIP_ID) {
+        // Empty slot — create a new MIDI clip
+        onCreateMidiClipClicked(trackIndex, sceneIndex);
+        return;
+    }
 
-            auto& panelController = daw::ui::PanelController::getInstance();
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (clip) {
+        // Select the clip so the bottom panel picks it up
+        ClipManager::getInstance().setSelectedClip(clipId);
 
-            // Expand bottom panel if collapsed
-            bool isCollapsed =
-                panelController.getPanelState(daw::ui::PanelLocation::Bottom).collapsed;
-            if (isCollapsed) {
-                panelController.setCollapsed(daw::ui::PanelLocation::Bottom, false);
-            }
+        auto& panelController = daw::ui::PanelController::getInstance();
 
-            // Show the waveform editor tab
-            panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
-                                               daw::ui::PanelContentType::WaveformEditor);
+        // Expand bottom panel if collapsed
+        bool isCollapsed = panelController.getPanelState(daw::ui::PanelLocation::Bottom).collapsed;
+        if (isCollapsed) {
+            panelController.setCollapsed(daw::ui::PanelLocation::Bottom, false);
         }
+
+        // Show the appropriate editor based on clip type
+        auto contentType = (clip->type == ClipType::MIDI)
+                               ? daw::ui::PanelContentType::PianoRoll
+                               : daw::ui::PanelContentType::WaveformEditor;
+        panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom, contentType);
+    }
+}
+
+void SessionView::onCreateMidiClipClicked(int trackIndex, int sceneIndex) {
+    if (trackIndex < 0 || trackIndex >= static_cast<int>(visibleTrackIds_.size()))
+        return;
+    if (sceneIndex < 0 || sceneIndex >= numScenes_)
+        return;
+
+    TrackId trackId = visibleTrackIds_[trackIndex];
+
+    // Don't create if slot already has a clip
+    if (ClipManager::getInstance().getClipInSlot(trackId, sceneIndex) != INVALID_CLIP_ID)
+        return;
+
+    ClipId clipId = ClipManager::getInstance().createMidiClip(trackId, 0.0, 4.0, ClipView::Session);
+    if (clipId != INVALID_CLIP_ID) {
+        ClipManager::getInstance().setClipSceneIndex(clipId, sceneIndex);
+        updateClipSlotAppearance(trackIndex, sceneIndex);
     }
 }
 
@@ -1294,6 +1349,7 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
             slot->hasClip = true;
             slot->clipIsPlaying = clip->isPlaying;
             slot->isSelected = (clipId == selectedClipId);
+            slot->isMidiClip = (clip->type == ClipType::MIDI);
             slot->clipLength = clip->length;
             slot->sessionPlayheadPos = clip->isPlaying ? sessionPlayheadPos_ : -1.0;
 
@@ -1326,6 +1382,7 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
         slot->hasClip = false;
         slot->clipIsPlaying = false;
         slot->isSelected = false;
+        slot->isMidiClip = false;
         slot->clipLength = 0.0;
         slot->sessionPlayheadPos = -1.0;
         slot->setButtonText("");
