@@ -33,6 +33,9 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     if (view == ClipView::Arrangement) {
         arrangementClips_.push_back(clip);
     } else {
+        // Session clips loop by default
+        clip.internalLoopEnabled = true;
+        clip.internalLoopLength = length;
         sessionClips_.push_back(clip);
     }
 
@@ -61,6 +64,9 @@ ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double len
     if (view == ClipView::Arrangement) {
         arrangementClips_.push_back(clip);
     } else {
+        // Session clips loop by default
+        clip.internalLoopEnabled = true;
+        clip.internalLoopLength = length;
         sessionClips_.push_back(clip);
     }
 
