@@ -4,6 +4,7 @@
 
 #include "../audio/AudioBridge.hpp"
 #include "../audio/MidiBridge.hpp"
+#include "../audio/SessionClipScheduler.hpp"
 #include "../core/Config.hpp"
 #include "../core/DeviceInfo.hpp"
 #include "../core/TrackManager.hpp"
@@ -229,6 +230,10 @@ bool TracktionEngineWrapper::initialize() {
             audioBridge_ = std::make_unique<AudioBridge>(*engine_, *currentEdit_);
             audioBridge_->syncAll();
 
+            // Create SessionClipScheduler for session view clip playback
+            sessionScheduler_ =
+                std::make_unique<SessionClipScheduler>(*audioBridge_, *currentEdit_);
+
             // Create PluginWindowManager for safe window lifecycle
             // Must be created AFTER AudioBridge, destroyed BEFORE AudioBridge
             pluginWindowManager_ = std::make_unique<PluginWindowManager>(*engine_, *currentEdit_);
@@ -285,6 +290,11 @@ void TracktionEngineWrapper::shutdown() {
         std::cout << "Closing all plugin windows..." << std::endl;
         pluginWindowManager_->closeAllWindows();
         pluginWindowManager_.reset();
+    }
+
+    // Destroy session scheduler before AudioBridge (it references both)
+    if (sessionScheduler_) {
+        sessionScheduler_.reset();
     }
 
     // Destroy bridges (they reference Edit and/or Engine)

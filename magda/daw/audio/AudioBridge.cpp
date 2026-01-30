@@ -171,15 +171,17 @@ void AudioBridge::clipsChanged() {
         return;
 
     auto& clipManager = ClipManager::getInstance();
-    const auto& clips = clipManager.getClips();
 
-    // Build set of current clip IDs for fast lookup
+    // Only sync arrangement clips - session clips are managed by SessionClipScheduler
+    const auto& arrangementClips = clipManager.getArrangementClips();
+
+    // Build set of current arrangement clip IDs for fast lookup
     std::unordered_set<ClipId> currentClipIds;
-    for (const auto& clip : clips) {
+    for (const auto& clip : arrangementClips) {
         currentClipIds.insert(clip.id);
     }
 
-    // Find clips that are in the engine but no longer in ClipManager (deleted)
+    // Find arrangement clips that are in the engine but no longer in ClipManager (deleted)
     std::vector<ClipId> clipsToRemove;
     for (const auto& [clipId, engineId] : clipIdToEngineId_) {
         if (currentClipIds.find(clipId) == currentClipIds.end()) {
@@ -189,20 +191,42 @@ void AudioBridge::clipsChanged() {
 
     // Remove deleted clips from engine
     for (ClipId clipId : clipsToRemove) {
-        DBG("AudioBridge::clipsChanged - removing deleted clip " << clipId);
+        DBG("AudioBridge::clipsChanged - removing deleted arrangement clip " << clipId);
         removeClipFromEngine(clipId);
     }
 
-    // Sync remaining clips to engine (add new ones, update existing)
-    for (const auto& clip : clips) {
+    // Sync remaining arrangement clips to engine (add new ones, update existing)
+    for (const auto& clip : arrangementClips) {
         syncClipToEngine(clip.id);
     }
 
-    DBG("AudioBridge::clipsChanged - synced " << clips.size() << " clips to engine");
+    // Also clean up session clip mappings for deleted session clips
+    const auto& sessionClips = clipManager.getSessionClips();
+    std::unordered_set<ClipId> currentSessionIds;
+    for (const auto& clip : sessionClips) {
+        currentSessionIds.insert(clip.id);
+    }
+
+    std::vector<std::string> sessionClipsToRemove;
+    for (const auto& [clipId, engineId] : sessionClipIdToEngineId_) {
+        if (currentSessionIds.find(clipId) == currentSessionIds.end()) {
+            sessionClipsToRemove.push_back(engineId);
+        }
+    }
+    for (const auto& engineId : sessionClipsToRemove) {
+        removeSessionClip(engineId);
+    }
+
+    DBG("AudioBridge::clipsChanged - synced " << arrangementClips.size()
+                                              << " arrangement clips to engine");
 }
 
 void AudioBridge::clipPropertyChanged(ClipId clipId) {
-    // A specific clip's properties changed - sync to engine
+    // Only sync arrangement clips - session clips are managed by SessionClipScheduler
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (!clip || clip->view == ClipView::Session) {
+        return;
+    }
     syncClipToEngine(clipId);
 }
 
@@ -220,6 +244,11 @@ void AudioBridge::syncClipToEngine(ClipId clipId) {
     auto* clip = ClipManager::getInstance().getClip(clipId);
     if (!clip) {
         DBG("syncClipToEngine: Clip not found: " << clipId);
+        return;
+    }
+
+    // Only sync arrangement clips - session clips are managed by SessionClipScheduler
+    if (clip->view == ClipView::Session) {
         return;
     }
 
@@ -532,6 +561,199 @@ void AudioBridge::removeClipFromEngine(ClipId clipId) {
     }
 
     DBG("removeClipFromEngine: Clip not found in Tracktion Engine: " << engineId);
+}
+
+// =============================================================================
+// Session Clip Lifecycle
+// =============================================================================
+
+std::string AudioBridge::createSessionAudioClip(ClipId clipId, const ClipInfo& clip,
+                                                double startTimeSeconds) {
+    namespace te = tracktion;
+
+    auto* audioTrack = getAudioTrack(clip.trackId);
+    if (!audioTrack) {
+        DBG("AudioBridge::createSessionAudioClip: Track not found for clip " << clipId);
+        return {};
+    }
+
+    if (clip.audioSources.empty()) {
+        DBG("AudioBridge::createSessionAudioClip: No audio sources for clip " << clipId);
+        return {};
+    }
+
+    const auto& source = clip.audioSources[0];
+    juce::File audioFile(source.filePath);
+    if (!audioFile.existsAsFile()) {
+        DBG("AudioBridge::createSessionAudioClip: Audio file not found: " << source.filePath);
+        return {};
+    }
+
+    // Calculate clip duration in seconds
+    double clipDurationSeconds = clip.length;
+
+    // For looping clips, make the TE clip very long (effectively infinite)
+    if (clip.internalLoopEnabled) {
+        // Use a very long duration (1 hour) so it loops until stopped
+        clipDurationSeconds = 3600.0;
+    }
+
+    double createEnd = startTimeSeconds + clipDurationSeconds;
+    auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(startTimeSeconds),
+                                   te::TimePosition::fromSeconds(createEnd));
+
+    auto clipRef = insertWaveClip(*audioTrack, audioFile.getFileNameWithoutExtension(), audioFile,
+                                  te::ClipPosition{timeRange}, te::DeleteExistingClips::no);
+
+    if (!clipRef) {
+        DBG("AudioBridge::createSessionAudioClip: Failed to create WaveAudioClip");
+        return {};
+    }
+
+    auto* audioClipPtr = clipRef.get();
+
+    // Enable timestretcher
+    audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
+
+    // Set file offset (trim point)
+    audioClipPtr->setOffset(te::TimeDuration::fromSeconds(source.offset));
+
+    // Set speed ratio from stretch factor
+    if (std::abs(source.stretchFactor - 1.0) > 0.001) {
+        double teSpeedRatio = 1.0 / source.stretchFactor;
+        if (audioClipPtr->getAutoTempo()) {
+            audioClipPtr->setAutoTempo(false);
+        }
+        audioClipPtr->setSpeedRatio(teSpeedRatio);
+    }
+
+    // Set looping properties on the TE clip
+    if (clip.internalLoopEnabled) {
+        // Convert loop length from beats to time
+        auto& tempoSeq = edit_.tempoSequence;
+        auto loopStartBeat = te::BeatPosition::fromBeats(0.0);
+        auto loopEndBeat = te::BeatPosition::fromBeats(clip.internalLoopLength);
+        auto loopStartTime = tempoSeq.beatsToTime(loopStartBeat);
+        auto loopEndTime = tempoSeq.beatsToTime(loopEndBeat);
+        double loopLengthSeconds = loopEndTime.inSeconds() - loopStartTime.inSeconds();
+
+        audioClipPtr->setLoopRange(te::TimeRange(te::TimePosition::fromSeconds(0.0),
+                                                 te::TimePosition::fromSeconds(loopLengthSeconds)));
+        audioClipPtr->setLoopRangeBeats({te::BeatPosition::fromBeats(0.0),
+                                         te::BeatPosition::fromBeats(clip.internalLoopLength)});
+    }
+
+    // Store in session clip mappings
+    std::string engineClipId = audioClipPtr->itemID.toString().toStdString();
+    {
+        juce::ScopedLock lock(mappingLock_);
+        sessionClipIdToEngineId_[clipId] = engineClipId;
+        sessionEngineIdToClipId_[engineClipId] = clipId;
+    }
+
+    DBG("AudioBridge::createSessionAudioClip: Created session clip (engine: " << engineClipId
+                                                                              << ")");
+    return engineClipId;
+}
+
+std::string AudioBridge::createSessionMidiClip(ClipId clipId, const ClipInfo& clip,
+                                               double startTimeSeconds) {
+    namespace te = tracktion;
+
+    auto* audioTrack = getAudioTrack(clip.trackId);
+    if (!audioTrack) {
+        DBG("AudioBridge::createSessionMidiClip: Track not found for clip " << clipId);
+        return {};
+    }
+
+    // Calculate clip duration in seconds
+    // Convert clip length from beats to seconds via tempo sequence
+    auto& tempoSeq = edit_.tempoSequence;
+    auto startBeat = tempoSeq.timeToBeats(te::TimePosition::fromSeconds(startTimeSeconds));
+
+    double clipDurationBeats = clip.length;  // ClipInfo.length is in beats for session clips
+    if (clip.internalLoopEnabled) {
+        // For looping clips, make it very long
+        clipDurationBeats = clip.internalLoopLength * 1000.0;  // ~1000 loops
+    }
+
+    auto endBeat = te::BeatPosition::fromBeats(startBeat.inBeats() + clipDurationBeats);
+    auto endTime = tempoSeq.beatsToTime(endBeat);
+
+    auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(startTimeSeconds), endTime);
+
+    auto clipRef = audioTrack->insertMIDIClip(timeRange, nullptr);
+    if (!clipRef) {
+        DBG("AudioBridge::createSessionMidiClip: Failed to create MIDI clip");
+        return {};
+    }
+
+    auto* midiClipPtr = clipRef.get();
+
+    // Force offset to 0 so notes play from clip start
+    midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
+
+    // Add MIDI notes
+    auto& sequence = midiClipPtr->getSequence();
+    for (const auto& note : clip.midiNotes) {
+        te::BeatPosition noteBeat = te::BeatPosition::fromBeats(note.startBeat);
+        te::BeatDuration noteLength = te::BeatDuration::fromBeats(note.lengthBeats);
+        sequence.addNote(note.noteNumber, noteBeat, noteLength, note.velocity, 0, nullptr);
+    }
+
+    // Set looping if enabled
+    if (clip.internalLoopEnabled) {
+        midiClipPtr->setLoopRangeBeats({te::BeatPosition::fromBeats(0.0),
+                                        te::BeatPosition::fromBeats(clip.internalLoopLength)});
+    }
+
+    // Store in session clip mappings
+    std::string engineClipId = midiClipPtr->itemID.toString().toStdString();
+    {
+        juce::ScopedLock lock(mappingLock_);
+        sessionClipIdToEngineId_[clipId] = engineClipId;
+        sessionEngineIdToClipId_[engineClipId] = clipId;
+    }
+
+    DBG("AudioBridge::createSessionMidiClip: Created session MIDI clip (engine: " << engineClipId
+                                                                                  << ")");
+    return engineClipId;
+}
+
+void AudioBridge::removeSessionClip(const std::string& engineClipId) {
+    // Find the clip in Tracktion Engine and remove it
+    for (auto* track : tracktion::getAudioTracks(edit_)) {
+        for (auto* clip : track->getClips()) {
+            if (clip->itemID.toString().toStdString() == engineClipId) {
+                clip->removeFromParent();
+
+                // Clean up session mappings
+                {
+                    juce::ScopedLock lock(mappingLock_);
+                    auto it = sessionEngineIdToClipId_.find(engineClipId);
+                    if (it != sessionEngineIdToClipId_.end()) {
+                        sessionClipIdToEngineId_.erase(it->second);
+                        sessionEngineIdToClipId_.erase(it);
+                    }
+                }
+
+                DBG("AudioBridge::removeSessionClip: Removed session clip " << engineClipId);
+                return;
+            }
+        }
+    }
+
+    // If not found in engine, still clean up mappings
+    {
+        juce::ScopedLock lock(mappingLock_);
+        auto it = sessionEngineIdToClipId_.find(engineClipId);
+        if (it != sessionEngineIdToClipId_.end()) {
+            sessionClipIdToEngineId_.erase(it->second);
+            sessionEngineIdToClipId_.erase(it);
+        }
+    }
+
+    DBG("AudioBridge::removeSessionClip: Clip not found in engine: " << engineClipId);
 }
 
 // =============================================================================

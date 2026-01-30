@@ -18,6 +18,7 @@ class AudioBridge;
 class MidiBridge;
 class PluginScanCoordinator;
 class PluginWindowManager;
+class SessionClipScheduler;
 
 /**
  * @brief Tracktion Engine implementation of AudioEngine
@@ -326,6 +327,9 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // Audio bridge for TrackManager synchronization
     std::unique_ptr<AudioBridge> audioBridge_;
+
+    // Session clip scheduler for session view clip playback
+    std::unique_ptr<SessionClipScheduler> sessionScheduler_;
 
     // MIDI bridge for MIDI device management and routing
     std::unique_ptr<MidiBridge> midiBridge_;

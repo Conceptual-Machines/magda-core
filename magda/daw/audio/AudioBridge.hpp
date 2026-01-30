@@ -83,20 +83,49 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     void clipSelectionChanged(ClipId clipId) override;
 
     // =========================================================================
-    // Clip Synchronization
+    // Clip Synchronization (Arrangement)
     // =========================================================================
 
     /**
-     * @brief Sync a single clip to Tracktion Engine
+     * @brief Sync a single arrangement clip to Tracktion Engine
      * @param clipId The MAGDA clip ID to sync
      */
     void syncClipToEngine(ClipId clipId);
 
     /**
-     * @brief Remove a clip from Tracktion Engine
+     * @brief Remove an arrangement clip from Tracktion Engine
      * @param clipId The MAGDA clip ID to remove
      */
     void removeClipFromEngine(ClipId clipId);
+
+    // =========================================================================
+    // Session Clip Lifecycle (managed by SessionClipScheduler)
+    // =========================================================================
+
+    /**
+     * @brief Create a session audio clip at a dynamic position on the timeline
+     * @param clipId The MAGDA clip ID
+     * @param clip The clip info with audio sources
+     * @param startTimeSeconds Transport position where the clip should start
+     * @return Engine clip ID string, or empty on failure
+     */
+    std::string createSessionAudioClip(ClipId clipId, const ClipInfo& clip,
+                                       double startTimeSeconds);
+
+    /**
+     * @brief Create a session MIDI clip at a dynamic position on the timeline
+     * @param clipId The MAGDA clip ID
+     * @param clip The clip info with MIDI notes
+     * @param startTimeSeconds Transport position where the clip should start
+     * @return Engine clip ID string, or empty on failure
+     */
+    std::string createSessionMidiClip(ClipId clipId, const ClipInfo& clip, double startTimeSeconds);
+
+    /**
+     * @brief Remove a session clip from the engine
+     * @param engineClipId The Tracktion Engine clip ID to remove
+     */
+    void removeSessionClip(const std::string& engineClipId);
 
     // =========================================================================
     // Plugin Loading
@@ -511,9 +540,13 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     std::map<DeviceId, te::Plugin::Ptr> deviceToPlugin_;
     std::map<te::Plugin*, DeviceId> pluginToDevice_;
 
-    // Clip ID mappings (MAGDA ClipId <-> Tracktion Engine clip ID)
+    // Arrangement clip ID mappings (MAGDA ClipId <-> Tracktion Engine clip ID)
     std::map<ClipId, std::string> clipIdToEngineId_;  // MAGDA → TE
     std::map<std::string, ClipId> engineIdToClipId_;  // TE → MAGDA
+
+    // Session clip ID mappings (separate from arrangement)
+    std::map<ClipId, std::string> sessionClipIdToEngineId_;
+    std::map<std::string, ClipId> sessionEngineIdToClipId_;
 
     // Device processors (own the processing logic for each device)
     std::map<DeviceId, std::unique_ptr<DeviceProcessor>> deviceProcessors_;
