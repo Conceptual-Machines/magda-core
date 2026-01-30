@@ -240,8 +240,7 @@ InspectorContent::InspectorContent() {
     clipStartLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addChildComponent(clipStartLabel_);
 
-    clipStartValue_ =
-        std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::BarsBeats);
+    clipStartValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
     clipStartValue_->setRange(0.0, 10000.0, 0.0);
     clipStartValue_->setDoubleClickResetsValue(false);
     clipStartValue_->onValueChange = [this]() {
@@ -267,8 +266,7 @@ InspectorContent::InspectorContent() {
     clipEndLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addChildComponent(clipEndLabel_);
 
-    clipEndValue_ =
-        std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::BarsBeats);
+    clipEndValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
     clipEndValue_->setRange(0.0, 10000.0, 4.0);
     clipEndValue_->setDoubleClickResetsValue(false);
     clipEndValue_->onValueChange = [this]() {
@@ -323,8 +321,7 @@ InspectorContent::InspectorContent() {
     clipLoopPosLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addChildComponent(clipLoopPosLabel_);
 
-    clipLoopPosValue_ =
-        std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::BarsBeats);
+    clipLoopPosValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
     clipLoopPosValue_->setRange(0.0, 10000.0, 0.0);
     clipLoopPosValue_->setDoubleClickResetsValue(false);
     clipLoopPosValue_->setBarsBeatsIsPosition(false);
@@ -342,8 +339,7 @@ InspectorContent::InspectorContent() {
     clipLoopLengthLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addChildComponent(clipLoopLengthLabel_);
 
-    clipLoopLengthValue_ =
-        std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::BarsBeats);
+    clipLoopLengthValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
     clipLoopLengthValue_->setRange(0.25, 10000.0, 4.0);
     clipLoopLengthValue_->setDoubleClickResetsValue(false);
     clipLoopLengthValue_->setBarsBeatsIsPosition(false);
