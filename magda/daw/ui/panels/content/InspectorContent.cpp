@@ -234,6 +234,14 @@ InspectorContent::InspectorContent() {
     clipTypeValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     addChildComponent(clipTypeValue_);
 
+    // Position icon (static, non-interactive)
+    clipPositionIcon_ = std::make_unique<magda::SvgButton>("Position", BinaryData::position_svg,
+                                                           BinaryData::position_svgSize);
+    clipPositionIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    clipPositionIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipPositionIcon_->setInterceptsMouseClicks(false, false);
+    addChildComponent(*clipPositionIcon_);
+
     // Clip start
     clipStartLabel_.setText("Start", juce::dontSendNotification);
     clipStartLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
@@ -324,7 +332,7 @@ InspectorContent::InspectorContent() {
     clipLoopPosValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
     clipLoopPosValue_->setRange(0.0, 10000.0, 0.0);
     clipLoopPosValue_->setDoubleClickResetsValue(false);
-    clipLoopPosValue_->setBarsBeatsIsPosition(false);
+    clipLoopPosValue_->setBarsBeatsIsPosition(true);
     clipLoopPosValue_->onValueChange = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID) {
             magda::ClipManager::getInstance().setClipLoopOffset(selectedClipId_,
@@ -632,18 +640,22 @@ void InspectorContent::resized() {
         clipTypeValue_.setBounds(bounds.removeFromTop(20));
         bounds.removeFromTop(12);
 
-        // Start / End — side by side
+        // Start / End — icon + two fields side by side (matches loop row)
         {
+            const int iconSize = 22;
             const int gap = 4;
-            int halfWidth = (bounds.getWidth() - gap) / 2;
+            int fieldWidth = (bounds.getWidth() - iconSize - gap * 2) / 2;
 
             auto labelRow = bounds.removeFromTop(16);
-            clipStartLabel_.setBounds(labelRow.removeFromLeft(halfWidth));
+            labelRow.removeFromLeft(iconSize + gap);  // space for icon column
+            clipStartLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
             labelRow.removeFromLeft(gap);
             clipEndLabel_.setBounds(labelRow);
 
-            auto valueRow = bounds.removeFromTop(22);
-            clipStartValue_->setBounds(valueRow.removeFromLeft(halfWidth));
+            auto valueRow = bounds.removeFromTop(iconSize);
+            clipPositionIcon_->setBounds(valueRow.removeFromLeft(iconSize));
+            valueRow.removeFromLeft(gap);
+            clipStartValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
             valueRow.removeFromLeft(gap);
             clipEndValue_->setBounds(valueRow);
             bounds.removeFromTop(8);
@@ -1161,14 +1173,8 @@ void InspectorContent::updateFromSelectedClip() {
         clipLoopPosValue_->setValue(clip->internalLoopOffset, juce::dontSendNotification);
         clipLoopLengthValue_->setValue(clip->internalLoopLength, juce::dontSendNotification);
 
-        if (isSessionClip) {
-            // Session clips: loop is always on, toggle shown but disabled
-            clipLoopToggle_->setActive(true);
-            clipLoopToggle_->setEnabled(false);
-        } else {
-            clipLoopToggle_->setActive(clip->internalLoopEnabled);
-            clipLoopToggle_->setEnabled(true);
-        }
+        clipLoopToggle_->setActive(clip->internalLoopEnabled);
+        clipLoopToggle_->setEnabled(true);
 
         // Show loop pos/length when loop is active
         bool loopOn = isSessionClip || clip->internalLoopEnabled;
@@ -1230,6 +1236,7 @@ void InspectorContent::showClipControls(bool show) {
     clipNameValue_.setVisible(show);
     clipTypeLabel_.setVisible(show);
     clipTypeValue_.setVisible(show);
+    clipPositionIcon_->setVisible(show);
     clipStartLabel_.setVisible(show);
     clipStartValue_->setVisible(show);
     clipEndLabel_.setVisible(show);

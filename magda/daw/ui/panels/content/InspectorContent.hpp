@@ -116,6 +116,7 @@ class InspectorContent : public PanelContent,
     // Clip properties section
     juce::Label clipNameLabel_;
     juce::Label clipNameValue_;
+    std::unique_ptr<magda::SvgButton> clipPositionIcon_;
     juce::Label clipStartLabel_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipStartValue_;
     juce::Label clipEndLabel_;
