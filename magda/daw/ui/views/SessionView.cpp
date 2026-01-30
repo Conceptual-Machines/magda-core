@@ -71,9 +71,10 @@ class ClipSlotButton : public juce::TextButton {
         if (event.mods.isPopupMenu() && !hasClip) {
             juce::PopupMenu menu;
             menu.addItem(1, "Create MIDI Clip");
-            menu.showMenuAsync(juce::PopupMenu::Options(), [this](int result) {
-                if (result == 1 && onCreateMidiClip) {
-                    onCreateMidiClip();
+            auto safeThis = juce::Component::SafePointer<ClipSlotButton>(this);
+            menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis](int result) {
+                if (safeThis && result == 1 && safeThis->onCreateMidiClip) {
+                    safeThis->onCreateMidiClip();
                 }
             });
             return;

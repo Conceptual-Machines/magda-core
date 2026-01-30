@@ -308,14 +308,13 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
                                 double start = note.startBeat;
                                 double length = note.lengthBeats;
 
-                                // Truncate notes that extend past the loop
-                                // boundary to prevent stuck notes from
-                                // floating-point edge cases in LoopingMidiNode
+                                // Skip or truncate notes at the loop boundary
                                 if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
+                                    if (start >= loopEndBeat)
+                                        continue;
                                     double noteEnd = start + length;
-                                    if (noteEnd > loopEndBeat) {
-                                        length = std::max(0.001, loopEndBeat - start);
-                                    }
+                                    if (noteEnd > loopEndBeat)
+                                        length = loopEndBeat - start;
                                 }
 
                                 sequence.addNote(
@@ -736,7 +735,7 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
         // Force offset to 0
         midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
 
-        // Add MIDI notes (truncate at loop boundary to prevent stuck notes)
+        // Add MIDI notes (skip/truncate at loop boundary to prevent stuck notes)
         auto& sequence = midiClipPtr->getSequence();
         double loopStart = clip->internalLoopOffset;
         double loopEndBeat = loopStart + clip->internalLoopLength;
@@ -745,10 +744,11 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
             double length = note.lengthBeats;
 
             if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
+                if (start >= loopEndBeat)
+                    continue;
                 double noteEnd = start + length;
-                if (noteEnd > loopEndBeat) {
-                    length = std::max(0.001, loopEndBeat - start);
-                }
+                if (noteEnd > loopEndBeat)
+                    length = loopEndBeat - start;
             }
 
             sequence.addNote(note.noteNumber, te::BeatPosition::fromBeats(start),
