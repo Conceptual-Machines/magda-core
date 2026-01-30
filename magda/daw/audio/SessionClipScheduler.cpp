@@ -211,8 +211,15 @@ void SessionClipScheduler::activateSessionClip(ClipId clipId) {
         deactivateSessionClip(clipId);
     }
 
+    // Ensure transport is playing — TE clips only produce audio during playback
+    auto& transport = edit_.getTransport();
+    if (!transport.isPlaying()) {
+        transport.play(false);
+        DBG("SessionClipScheduler: Started transport for session clip playback");
+    }
+
     // Get current transport position as the start time for the session clip
-    double startTimeSeconds = edit_.getTransport().position.get().inSeconds();
+    double startTimeSeconds = transport.position.get().inSeconds();
 
     auto& cm = ClipManager::getInstance();
     const auto* clip = cm.getClip(clipId);

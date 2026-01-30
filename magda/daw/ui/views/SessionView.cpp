@@ -1112,7 +1112,7 @@ void SessionView::onPlayButtonClicked(int trackIndex, int sceneIndex) {
 
         if (clip->launchMode == LaunchMode::Toggle) {
             // Toggle mode: toggle between play/stop
-            if (clip->isPlaying) {
+            if (clip->isPlaying || clip->isQueued) {
                 ClipManager::getInstance().stopClip(clipId);
             } else {
                 ClipManager::getInstance().triggerClip(clipId);
