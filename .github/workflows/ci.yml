@@ -160,3 +160,113 @@ jobs:
           echo "To fix these issues, run: make format"
           exit 1
         fi
+
+  security-checks:
+    name: Security Validation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: false  # Not needed for security checks
+
+    - name: Check for hardcoded secrets patterns
+      run: |
+        echo "Checking for common secret patterns..."
+        
+        # Check for common secret patterns
+        ISSUES_FOUND=0
+        
+        # API keys
+        if grep -r "api[_-]key\s*=\s*['\"][a-zA-Z0-9]\{20,\}" magda/ tests/ --include="*.cpp" --include="*.hpp" --include="*.h" 2>/dev/null; then
+          echo "⚠️  Found potential API key hardcoded"
+          ISSUES_FOUND=1
+        fi
+        
+        # Passwords
+        if grep -r "password\s*=\s*['\"][^'\"]\{8,\}" magda/ tests/ --include="*.cpp" --include="*.hpp" --include="*.h" 2>/dev/null; then
+          echo "⚠️  Found potential password hardcoded"
+          ISSUES_FOUND=1
+        fi
+        
+        # AWS keys
+        if grep -r "AKIA[0-9A-Z]\{16\}" magda/ tests/ --include="*.cpp" --include="*.hpp" --include="*.h" 2>/dev/null; then
+          echo "⚠️  Found potential AWS access key"
+          ISSUES_FOUND=1
+        fi
+        
+        # Private keys
+        if grep -r "BEGIN.*PRIVATE KEY" magda/ tests/ --include="*.cpp" --include="*.hpp" --include="*.h" 2>/dev/null; then
+          echo "⚠️  Found potential private key"
+          ISSUES_FOUND=1
+        fi
+        
+        if [ "$ISSUES_FOUND" -eq 1 ]; then
+          echo ""
+          echo "❌ Potential secrets detected! Please review and remove them."
+          exit 1
+        else
+          echo "✅ No obvious secret patterns detected"
+        fi
+
+    - name: Check for dangerous C++ patterns
+      run: |
+        echo "Checking for dangerous C++ patterns..."
+        
+        ISSUES_FOUND=0
+        
+        # Unsafe C functions
+        echo "Checking for unsafe C functions (strcpy, sprintf, gets)..."
+        if grep -rE "\b(strcpy|sprintf|gets|scanf)\s*\(" magda/ tests/ --include="*.cpp" --include="*.hpp" 2>/dev/null; then
+          echo "⚠️  Found unsafe C functions - use safe alternatives"
+          ISSUES_FOUND=1
+        fi
+        
+        # Potential command injection
+        echo "Checking for potential command injection (system calls)..."
+        if grep -rE "\bsystem\s*\(" magda/ tests/ --include="*.cpp" --include="*.hpp" 2>/dev/null | grep -v "// safe:" | grep -v "filesystem"; then
+          echo "⚠️  Found system() calls - verify they are safe"
+          ISSUES_FOUND=1
+        fi
+        
+        if [ "$ISSUES_FOUND" -eq 1 ]; then
+          echo ""
+          echo "⚠️  Security issues detected - please review"
+          echo "Note: These are warnings and won't fail the build, but should be reviewed"
+        else
+          echo "✅ No dangerous patterns detected"
+        fi
+
+    - name: Verify no binary files committed
+      run: |
+        echo "Checking for accidentally committed binary files..."
+        
+        # Check for common binary extensions that shouldn't be in source control
+        BINARIES=$(find magda/ tests/ -type f \( \
+          -name "*.exe" -o \
+          -name "*.dll" -o \
+          -name "*.so" -o \
+          -name "*.dylib" -o \
+          -name "*.a" -o \
+          -name "*.lib" -o \
+          -name "*.o" -o \
+          -name "*.obj" \
+        \) 2>/dev/null || true)
+        
+        if [ -n "$BINARIES" ]; then
+          echo "❌ Found binary files that shouldn't be committed:"
+          echo "$BINARIES"
+          exit 1
+        else
+          echo "✅ No unexpected binary files found"
+        fi
+
+    - name: Security check summary
+      run: |
+        echo "## 🔒 Security Checks Complete" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Secret pattern scan" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Dangerous pattern scan" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Binary file verification" >> $GITHUB_STEP_SUMMARY
