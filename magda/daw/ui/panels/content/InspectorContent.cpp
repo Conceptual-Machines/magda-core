@@ -1312,8 +1312,11 @@ void InspectorContent::showClipControls(bool show) {
     clipTypeLabel_.setVisible(show);
     clipTypeValue_.setVisible(show);
     clipPositionIcon_->setVisible(show);
-    clipStartLabel_.setVisible(show);
-    clipStartValue_->setVisible(show);
+    // Start visibility is managed by updateFromSelectedClip (hidden for session clips)
+    if (!show) {
+        clipStartLabel_.setVisible(false);
+        clipStartValue_->setVisible(false);
+    }
     clipEndLabel_.setVisible(show);
     clipEndValue_->setVisible(show);
     clipLoopToggle_->setVisible(show);
