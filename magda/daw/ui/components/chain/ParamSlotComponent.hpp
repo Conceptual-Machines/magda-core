@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "ParamLinkResolver.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
@@ -124,15 +125,15 @@ class ParamSlotComponent : public juce::Component,
     void itemDropped(const SourceDetails& details) override;
 
   private:
+    // Build a ParamLinkContext from current state
+    ParamLinkContext buildLinkContext() const;
+
     // LinkModeManagerListener implementation
     void modLinkModeChanged(bool active, const magda::ModSelection& selection) override;
     void macroLinkModeChanged(bool active, const magda::MacroSelection& selection) override;
 
     // Timer callback for animating LFO modulation bars
     void timerCallback() override;
-
-    // Check if this param has any active mod links
-    bool hasActiveModLinks() const;
 
     // Update timer state based on whether there are active mod links
     void updateModTimerState();
@@ -156,8 +157,6 @@ class ParamSlotComponent : public juce::Component,
 
     // Shift+drag state for mod amount editing
     bool isModAmountDrag_ = false;
-    float modAmountDragStart_ = 0.0f;
-    int modAmountDragY_ = 0;
     int modAmountDragModIndex_ = -1;
 
     // Amount label shown during Shift+drag
@@ -182,17 +181,6 @@ class ParamSlotComponent : public juce::Component,
     void showLinkModeSlider(bool isNewLink, float initialAmount);
     void hideLinkModeSlider();
     void handleLinkModeClick();
-
-    // Find mods/macros targeting this param (returns mod index + link pointer)
-    // If selectedModIndex_ >= 0, only returns that mod's link (if any)
-    std::vector<std::pair<int, const magda::ModLink*>> getLinkedMods() const;
-    std::vector<std::pair<int, const magda::MacroLink*>> getLinkedMacros() const;
-
-    // Check if this parameter is within the scope of a mod/macro parent
-    bool isInScopeOf(const magda::ChainNodePath& parentPath) const;
-
-    void showLinkMenu();
-    void paintModulationIndicators(juce::Graphics& g);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ParamSlotComponent)
 };
