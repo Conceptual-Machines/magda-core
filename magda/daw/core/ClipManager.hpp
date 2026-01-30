@@ -308,6 +308,14 @@ class ClipManager {
     void stopClip(ClipId clipId);
     void stopAllClips();
 
+    /**
+     * @brief Set the actual playing state of a session clip
+     *
+     * Called by SessionClipScheduler when a clip actually starts or stops producing audio.
+     * This updates isPlaying/isQueued and notifies listeners.
+     */
+    void setClipPlayingState(ClipId clipId, bool playing);
+
     // ========================================================================
     // Listener Management
     // ========================================================================

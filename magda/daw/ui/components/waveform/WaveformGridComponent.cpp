@@ -56,9 +56,12 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
         juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
 
     // Calculate clip boundaries for highlighting out-of-bounds regions
+    // When looping is active, treat the loop end as the effective boundary
+    double effectiveLength =
+        (loopEndSeconds_ > 0.0) ? std::min(clipLength_, loopEndSeconds_) : clipLength_;
     int clipStartPixel = relativeMode_ ? timeToPixel(0.0) : timeToPixel(clipStartTime_);
-    int clipEndPixel =
-        relativeMode_ ? timeToPixel(clipLength_) : timeToPixel(clipStartTime_ + clipLength_);
+    int clipEndPixel = relativeMode_ ? timeToPixel(effectiveLength)
+                                     : timeToPixel(clipStartTime_ + effectiveLength);
 
     // Draw out-of-bounds background (darker) for parts beyond clip boundaries
     auto outOfBoundsColour = clip.colour.darker(0.7f);
@@ -162,6 +165,16 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         int clipEndX = timeToPixel(clipStartTime_ + clipLength_);
         g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
         g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
+
+        // Loop boundary (distinct from clip end)
+        if (loopEndSeconds_ > 0.0 && loopEndSeconds_ < clipLength_) {
+            int loopEndX = timeToPixel(clipStartTime_ + loopEndSeconds_);
+            g.setColour(DarkTheme::getAccentColour().withAlpha(0.5f));
+            // Draw dashed-style loop marker: thinner line with label
+            g.fillRect(loopEndX - 1, 0, 2, bounds.getHeight());
+            g.setFont(FontManager::getInstance().getUIFont(10.0f));
+            g.drawText("L", loopEndX + 3, 2, 12, 12, juce::Justification::centredLeft, false);
+        }
     } else {
         // Relative mode: show both start (at 0) and end boundaries
         // Start boundary at time 0
@@ -173,6 +186,15 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         int clipEndX = timeToPixel(clipLength_);
         g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
         g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
+
+        // Loop boundary (distinct from clip end)
+        if (loopEndSeconds_ > 0.0 && loopEndSeconds_ < clipLength_) {
+            int loopEndX = timeToPixel(loopEndSeconds_);
+            g.setColour(DarkTheme::getAccentColour().withAlpha(0.5f));
+            g.fillRect(loopEndX - 1, 0, 2, bounds.getHeight());
+            g.setFont(FontManager::getInstance().getUIFont(10.0f));
+            g.drawText("L", loopEndX + 3, 2, 12, 12, juce::Justification::centredLeft, false);
+        }
     }
 }
 
@@ -236,6 +258,14 @@ void WaveformGridComponent::updateClipPosition(double startTime, double length) 
     clipLength_ = length;
     updateGridSize();
     repaint();
+}
+
+void WaveformGridComponent::setLoopEndSeconds(double loopEndSeconds) {
+    double val = loopEndSeconds > 0.0 ? loopEndSeconds : 0.0;
+    if (loopEndSeconds_ != val) {
+        loopEndSeconds_ = val;
+        repaint();
+    }
 }
 
 void WaveformGridComponent::setScrollOffset(int x, int y) {

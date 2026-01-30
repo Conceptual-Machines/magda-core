@@ -8,6 +8,31 @@
 
 namespace magda {
 
+// Map our LaunchQuantize enum to Tracktion Engine's LaunchQType
+static te::LaunchQType toTELaunchQType(LaunchQuantize q) {
+    switch (q) {
+        case LaunchQuantize::None:
+            return te::LaunchQType::none;
+        case LaunchQuantize::EightBars:
+            return te::LaunchQType::eightBars;
+        case LaunchQuantize::FourBars:
+            return te::LaunchQType::fourBars;
+        case LaunchQuantize::TwoBars:
+            return te::LaunchQType::twoBars;
+        case LaunchQuantize::OneBar:
+            return te::LaunchQType::bar;
+        case LaunchQuantize::HalfBar:
+            return te::LaunchQType::half;
+        case LaunchQuantize::QuarterBar:
+            return te::LaunchQType::quarter;
+        case LaunchQuantize::EighthBar:
+            return te::LaunchQType::eighth;
+        case LaunchQuantize::SixteenthBar:
+            return te::LaunchQType::sixteenth;
+    }
+    return te::LaunchQType::none;
+}
+
 AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit) : engine_(engine), edit_(edit) {
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
@@ -164,22 +189,22 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
 // =============================================================================
 
 void AudioBridge::clipsChanged() {
-    DBG("AudioBridge::clipsChanged - clips list changed");
-
     // If we're shutting down, don't attempt to modify the engine graph
     if (isShuttingDown_.load(std::memory_order_acquire))
         return;
 
     auto& clipManager = ClipManager::getInstance();
-    const auto& clips = clipManager.getClips();
 
-    // Build set of current clip IDs for fast lookup
+    // Only sync arrangement clips - session clips are managed by SessionClipScheduler
+    const auto& arrangementClips = clipManager.getArrangementClips();
+
+    // Build set of current arrangement clip IDs for fast lookup
     std::unordered_set<ClipId> currentClipIds;
-    for (const auto& clip : clips) {
+    for (const auto& clip : arrangementClips) {
         currentClipIds.insert(clip.id);
     }
 
-    // Find clips that are in the engine but no longer in ClipManager (deleted)
+    // Find arrangement clips that are in the engine but no longer in ClipManager (deleted)
     std::vector<ClipId> clipsToRemove;
     for (const auto& [clipId, engineId] : clipIdToEngineId_) {
         if (currentClipIds.find(clipId) == currentClipIds.end()) {
@@ -189,20 +214,96 @@ void AudioBridge::clipsChanged() {
 
     // Remove deleted clips from engine
     for (ClipId clipId : clipsToRemove) {
-        DBG("AudioBridge::clipsChanged - removing deleted clip " << clipId);
         removeClipFromEngine(clipId);
     }
 
-    // Sync remaining clips to engine (add new ones, update existing)
-    for (const auto& clip : clips) {
+    // Sync remaining arrangement clips to engine (add new ones, update existing)
+    for (const auto& clip : arrangementClips) {
         syncClipToEngine(clip.id);
     }
 
-    DBG("AudioBridge::clipsChanged - synced " << clips.size() << " clips to engine");
+    // Sync session clips to ClipSlots
+    const auto& sessionClips = clipManager.getSessionClips();
+    bool sessionClipsSynced = false;
+    for (const auto& clip : sessionClips) {
+        if (syncSessionClipToSlot(clip.id)) {
+            sessionClipsSynced = true;
+        }
+    }
+
+    // Force graph rebuild if new session clips were moved into slots,
+    // so SlotControlNode instances are created in the audio graph
+    if (sessionClipsSynced) {
+        if (auto* ctx = edit_.getCurrentPlaybackContext()) {
+            ctx->reallocate();
+        }
+    }
 }
 
 void AudioBridge::clipPropertyChanged(ClipId clipId) {
-    // A specific clip's properties changed - sync to engine
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (!clip) {
+        DBG("AudioBridge::clipPropertyChanged: clip " << clipId << " not found in ClipManager");
+        return;
+    }
+
+    if (clip->view == ClipView::Session) {
+        DBG("AudioBridge::clipPropertyChanged: SESSION clip "
+            << clipId << " | loopEnabled=" << (int)clip->internalLoopEnabled
+            << " loopLength=" << clip->internalLoopLength << " length=" << clip->length
+            << " launchQ=" << (int)clip->launchQuantize << " sceneIndex=" << clip->sceneIndex);
+
+        // Session clip property changed (e.g. sceneIndex set after creation).
+        // Try to sync it to a slot if not already synced.
+        if (clip->sceneIndex >= 0) {
+            bool synced = syncSessionClipToSlot(clipId);
+            DBG("  syncSessionClipToSlot returned "
+                << (synced ? "true (new sync)" : "false (already synced or error)"));
+
+            if (synced) {
+                // New clip synced — rebuild graph so SlotControlNode is created
+                if (auto* ctx = edit_.getCurrentPlaybackContext()) {
+                    ctx->reallocate();
+                }
+            } else {
+                // Clip already synced — propagate property changes to TE clip
+                auto* teClip = getSessionTeClip(clipId);
+                if (teClip) {
+                    // Update launch quantization
+                    auto* lq = teClip->getLaunchQuantisation();
+                    if (lq) {
+                        lq->type = toTELaunchQType(clip->launchQuantize);
+                    }
+
+                    // Update clip's own loop state
+                    if (clip->internalLoopEnabled) {
+                        auto& tempoSeq = edit_.tempoSequence;
+                        auto loopEndBeat = te::BeatPosition::fromBeats(clip->internalLoopLength);
+                        auto loopEndTime = tempoSeq.beatsToTime(loopEndBeat);
+
+                        teClip->setLoopRange(
+                            te::TimeRange(te::TimePosition::fromSeconds(0.0), loopEndTime));
+                        teClip->setLoopRangeBeats({te::BeatPosition::fromBeats(0.0), loopEndBeat});
+                    } else {
+                        teClip->disableLooping();
+                    }
+
+                    // Update looping on the launch handle
+                    auto launchHandle = teClip->getLaunchHandle();
+                    if (launchHandle) {
+                        if (clip->internalLoopEnabled) {
+                            launchHandle->setLooping(
+                                te::BeatDuration::fromBeats(clip->internalLoopLength));
+                        } else {
+                            launchHandle->setLooping(std::nullopt);
+                        }
+                    }
+                }
+            }
+        }
+        return;
+    }
+
     syncClipToEngine(clipId);
 }
 
@@ -220,6 +321,11 @@ void AudioBridge::syncClipToEngine(ClipId clipId) {
     auto* clip = ClipManager::getInstance().getClip(clipId);
     if (!clip) {
         DBG("syncClipToEngine: Clip not found: " << clipId);
+        return;
+    }
+
+    // Only sync arrangement clips - session clips are managed by SessionClipScheduler
+    if (clip->view == ClipView::Session) {
         return;
     }
 
@@ -532,6 +638,229 @@ void AudioBridge::removeClipFromEngine(ClipId clipId) {
     }
 
     DBG("removeClipFromEngine: Clip not found in Tracktion Engine: " << engineId);
+}
+
+// =============================================================================
+// Session Clip Lifecycle (slot-based)
+// =============================================================================
+
+bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
+    namespace te = tracktion;
+
+    auto& cm = ClipManager::getInstance();
+    const auto* clip = cm.getClip(clipId);
+    if (!clip) {
+        DBG("AudioBridge::syncSessionClipToSlot: Clip " << clipId << " not found in ClipManager");
+        return false;
+    }
+    if (clip->view != ClipView::Session || clip->sceneIndex < 0)
+        return false;
+
+    auto* audioTrack = getAudioTrack(clip->trackId);
+    if (!audioTrack) {
+        DBG("AudioBridge::syncSessionClipToSlot: Track " << clip->trackId << " not found for clip "
+                                                         << clipId);
+        return false;
+    }
+
+    // Ensure enough scenes (and slots on all tracks) exist
+    edit_.getSceneList().ensureNumberOfScenes(clip->sceneIndex + 1);
+
+    // Get the slot for this clip
+    auto slots = audioTrack->getClipSlotList().getClipSlots();
+
+    if (clip->sceneIndex >= static_cast<int>(slots.size())) {
+        DBG("AudioBridge::syncSessionClipToSlot: Slot index out of range for clip " << clipId);
+        return false;
+    }
+
+    auto* slot = slots[clip->sceneIndex];
+    if (!slot)
+        return false;
+
+    // If slot already has a clip, skip (already synced)
+    if (slot->getClip() != nullptr)
+        return false;
+
+    // Create the TE clip directly in the slot (NOT on the track then moved).
+    // TE's free functions insertWaveClip(ClipOwner&, ...) and insertMIDIClip(ClipOwner&, ...)
+    // accept ClipSlot as a ClipOwner, creating the clip's ValueTree directly in the slot.
+    if (clip->type == ClipType::Audio) {
+        if (clip->audioSources.empty())
+            return false;
+
+        const auto& source = clip->audioSources[0];
+        juce::File audioFile(source.filePath);
+        if (!audioFile.existsAsFile()) {
+            DBG("AudioBridge::syncSessionClipToSlot: Audio file not found: " << source.filePath);
+            return false;
+        }
+
+        // Create clip directly in the slot
+        double clipDuration = clip->length;
+        auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(0.0),
+                                       te::TimePosition::fromSeconds(clipDuration));
+
+        auto clipRef = te::insertWaveClip(*slot, audioFile.getFileNameWithoutExtension(), audioFile,
+                                          te::ClipPosition{timeRange}, te::DeleteExistingClips::no);
+
+        if (!clipRef)
+            return false;
+
+        auto* audioClipPtr = clipRef.get();
+
+        // Enable timestretcher
+        audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
+
+        // Set file offset (trim point)
+        audioClipPtr->setOffset(te::TimeDuration::fromSeconds(source.offset));
+
+        // Set speed ratio from stretch factor
+        if (std::abs(source.stretchFactor - 1.0) > 0.001) {
+            double teSpeedRatio = 1.0 / source.stretchFactor;
+            if (audioClipPtr->getAutoTempo()) {
+                audioClipPtr->setAutoTempo(false);
+            }
+            audioClipPtr->setSpeedRatio(teSpeedRatio);
+        }
+
+        // Set looping properties
+        if (clip->internalLoopEnabled) {
+            auto& tempoSeq = edit_.tempoSequence;
+            auto loopEndBeat = te::BeatPosition::fromBeats(clip->internalLoopLength);
+            auto loopEndTime = tempoSeq.beatsToTime(loopEndBeat);
+            double loopLengthSeconds = loopEndTime.inSeconds();
+
+            audioClipPtr->setLoopRange(
+                te::TimeRange(te::TimePosition::fromSeconds(0.0),
+                              te::TimePosition::fromSeconds(loopLengthSeconds)));
+            audioClipPtr->setLoopRangeBeats(
+                {te::BeatPosition::fromBeats(0.0),
+                 te::BeatPosition::fromBeats(clip->internalLoopLength)});
+        }
+
+        // Set per-clip launch quantization
+        audioClipPtr->setUsesGlobalLaunchQuatisation(false);
+        if (auto* lq = audioClipPtr->getLaunchQuantisation()) {
+            lq->type = toTELaunchQType(clip->launchQuantize);
+        }
+
+        return true;
+
+    } else if (clip->type == ClipType::MIDI) {
+        // Create MIDI clip directly in the slot
+        double clipDuration = clip->length;
+        auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(0.0),
+                                       te::TimePosition::fromSeconds(clipDuration));
+
+        auto clipRef = te::insertMIDIClip(*slot, timeRange);
+        if (!clipRef)
+            return false;
+
+        auto* midiClipPtr = clipRef.get();
+
+        // Force offset to 0
+        midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
+
+        // Add MIDI notes
+        auto& sequence = midiClipPtr->getSequence();
+        for (const auto& note : clip->midiNotes) {
+            te::BeatPosition noteBeat = te::BeatPosition::fromBeats(note.startBeat);
+            te::BeatDuration noteLength = te::BeatDuration::fromBeats(note.lengthBeats);
+            sequence.addNote(note.noteNumber, noteBeat, noteLength, note.velocity, 0, nullptr);
+        }
+
+        // Set looping if enabled
+        if (clip->internalLoopEnabled) {
+            midiClipPtr->setLoopRangeBeats({te::BeatPosition::fromBeats(0.0),
+                                            te::BeatPosition::fromBeats(clip->internalLoopLength)});
+        }
+
+        // Set per-clip launch quantization
+        midiClipPtr->setUsesGlobalLaunchQuatisation(false);
+        if (auto* lq = midiClipPtr->getLaunchQuantisation()) {
+            lq->type = toTELaunchQType(clip->launchQuantize);
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
+void AudioBridge::removeSessionClipFromSlot(ClipId clipId) {
+    auto* teClip = getSessionTeClip(clipId);
+    if (teClip)
+        teClip->removeFromParent();
+}
+
+void AudioBridge::launchSessionClip(ClipId clipId) {
+    auto* teClip = getSessionTeClip(clipId);
+    if (!teClip) {
+        DBG("AudioBridge::launchSessionClip: TE clip not found for clip " << clipId);
+        return;
+    }
+
+    auto launchHandle = teClip->getLaunchHandle();
+    if (!launchHandle) {
+        DBG("AudioBridge::launchSessionClip: No LaunchHandle for clip " << clipId);
+        return;
+    }
+
+    // Set looping before play
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (clip) {
+        if (clip->internalLoopEnabled) {
+            // Set clip's own loop range
+            auto& tempoSeq = edit_.tempoSequence;
+            auto loopEndBeat = te::BeatPosition::fromBeats(clip->internalLoopLength);
+            auto loopEndTime = tempoSeq.beatsToTime(loopEndBeat);
+            teClip->setLoopRange(te::TimeRange(te::TimePosition::fromSeconds(0.0), loopEndTime));
+            teClip->setLoopRangeBeats({te::BeatPosition::fromBeats(0.0), loopEndBeat});
+
+            // Set launch handle looping
+            launchHandle->setLooping(te::BeatDuration::fromBeats(clip->internalLoopLength));
+        } else {
+            teClip->disableLooping();
+            launchHandle->setLooping(std::nullopt);
+        }
+    }
+
+    launchHandle->play(std::nullopt);
+}
+
+void AudioBridge::stopSessionClip(ClipId clipId) {
+    auto* teClip = getSessionTeClip(clipId);
+    if (!teClip)
+        return;
+
+    auto launchHandle = teClip->getLaunchHandle();
+    if (!launchHandle)
+        return;
+
+    launchHandle->stop(std::nullopt);
+}
+
+te::Clip* AudioBridge::getSessionTeClip(ClipId clipId) {
+    auto& cm = ClipManager::getInstance();
+    const auto* clip = cm.getClip(clipId);
+    if (!clip || clip->view != ClipView::Session || clip->sceneIndex < 0) {
+        return nullptr;
+    }
+
+    auto* audioTrack = getAudioTrack(clip->trackId);
+    if (!audioTrack) {
+        return nullptr;
+    }
+
+    auto slots = audioTrack->getClipSlotList().getClipSlots();
+
+    if (clip->sceneIndex >= static_cast<int>(slots.size())) {
+        return nullptr;
+    }
+
+    auto* slot = slots[clip->sceneIndex];
+    return slot ? slot->getClip() : nullptr;
 }
 
 // =============================================================================

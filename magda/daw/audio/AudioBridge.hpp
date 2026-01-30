@@ -83,20 +83,59 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     void clipSelectionChanged(ClipId clipId) override;
 
     // =========================================================================
-    // Clip Synchronization
+    // Clip Synchronization (Arrangement)
     // =========================================================================
 
     /**
-     * @brief Sync a single clip to Tracktion Engine
+     * @brief Sync a single arrangement clip to Tracktion Engine
      * @param clipId The MAGDA clip ID to sync
      */
     void syncClipToEngine(ClipId clipId);
 
     /**
-     * @brief Remove a clip from Tracktion Engine
+     * @brief Remove an arrangement clip from Tracktion Engine
      * @param clipId The MAGDA clip ID to remove
      */
     void removeClipFromEngine(ClipId clipId);
+
+    // =========================================================================
+    // Session Clip Lifecycle (slot-based, managed by SessionClipScheduler)
+    // =========================================================================
+
+    /**
+     * @brief Sync a session clip to its corresponding ClipSlot in Tracktion Engine
+     *
+     * Creates the TE clip and moves it into the appropriate ClipSlot based on
+     * the clip's trackId and sceneIndex. Idempotent — skips if slot already has a clip.
+     * @param clipId The MAGDA clip ID
+     * @return true if a new clip was created and moved into the slot
+     */
+    bool syncSessionClipToSlot(ClipId clipId);
+
+    /**
+     * @brief Remove a session clip from its ClipSlot
+     * @param clipId The MAGDA clip ID
+     */
+    void removeSessionClipFromSlot(ClipId clipId);
+
+    /**
+     * @brief Launch a session clip via its LaunchHandle (lock-free, no graph rebuild)
+     * @param clipId The MAGDA clip ID
+     */
+    void launchSessionClip(ClipId clipId);
+
+    /**
+     * @brief Stop a session clip via its LaunchHandle (lock-free, no graph rebuild)
+     * @param clipId The MAGDA clip ID
+     */
+    void stopSessionClip(ClipId clipId);
+
+    /**
+     * @brief Get the TE clip from a session clip's ClipSlot
+     * @param clipId The MAGDA clip ID
+     * @return The TE Clip pointer, or nullptr if not found
+     */
+    te::Clip* getSessionTeClip(ClipId clipId);
 
     // =========================================================================
     // Plugin Loading
@@ -511,9 +550,11 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     std::map<DeviceId, te::Plugin::Ptr> deviceToPlugin_;
     std::map<te::Plugin*, DeviceId> pluginToDevice_;
 
-    // Clip ID mappings (MAGDA ClipId <-> Tracktion Engine clip ID)
+    // Arrangement clip ID mappings (MAGDA ClipId <-> Tracktion Engine clip ID)
     std::map<ClipId, std::string> clipIdToEngineId_;  // MAGDA → TE
     std::map<std::string, ClipId> engineIdToClipId_;  // TE → MAGDA
+
+    // (Session clips use ClipSlot-based mapping via trackId + sceneIndex — no ID maps needed)
 
     // Device processors (own the processing logic for each device)
     std::map<DeviceId, std::unique_ptr<DeviceProcessor>> deviceProcessors_;

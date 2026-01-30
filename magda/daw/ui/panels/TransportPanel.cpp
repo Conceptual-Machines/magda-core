@@ -553,6 +553,13 @@ void TransportPanel::setTempo(double bpm) {
     setLoopRegion(cachedLoopStart, cachedLoopEnd, cachedLoopEnabled);
 }
 
+void TransportPanel::setPlaybackState(bool playing) {
+    if (isPlaying != playing) {
+        isPlaying = playing;
+        playButton->setActive(isPlaying);
+    }
+}
+
 void TransportPanel::setSnapEnabled(bool enabled) {
     if (isSnapEnabled != enabled) {
         isSnapEnabled = enabled;
