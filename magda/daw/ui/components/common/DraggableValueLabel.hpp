@@ -61,6 +61,12 @@ class DraggableValueLabel : public juce::Component {
         repaint();
     }
 
+    // Whether BarsBeats displays as 1-indexed position (true) or 0-indexed duration (false)
+    void setBarsBeatsIsPosition(bool isPosition) {
+        barsBeatsIsPosition_ = isPosition;
+        repaint();
+    }
+
     // Suffix for Raw format
     void setSuffix(const juce::String& suffix) {
         suffix_ = suffix;
@@ -82,6 +88,7 @@ class DraggableValueLabel : public juce::Component {
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
   private:
     Format format_;
@@ -92,6 +99,7 @@ class DraggableValueLabel : public juce::Component {
     double dragSensitivity_ = 200.0;  // pixels for full range
     int decimalPlaces_ = 1;
     int beatsPerBar_ = 4;
+    bool barsBeatsIsPosition_ = true;
     juce::String suffix_;
     bool doubleClickResets_ = true;
 

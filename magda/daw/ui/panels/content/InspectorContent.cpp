@@ -1,5 +1,7 @@
 #include "InspectorContent.hpp"
 
+#include <BinaryData.h>
+
 #include "../../../audio/MidiBridge.hpp"
 #include "../../../engine/AudioEngine.hpp"
 #include "../../state/TimelineController.hpp"
@@ -259,72 +261,72 @@ InspectorContent::InspectorContent() {
     };
     addChildComponent(*clipStartValue_);
 
-    // Clip length
-    clipLengthLabel_.setText("Length", juce::dontSendNotification);
-    clipLengthLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipLengthLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    addChildComponent(clipLengthLabel_);
+    // Clip end
+    clipEndLabel_.setText("End", juce::dontSendNotification);
+    clipEndLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    clipEndLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    addChildComponent(clipEndLabel_);
 
-    clipLengthValue_ =
+    clipEndValue_ =
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::BarsBeats);
-    clipLengthValue_->setRange(0.0, 10000.0, 4.0);
-    clipLengthValue_->setDoubleClickResetsValue(false);
-    clipLengthValue_->onValueChange = [this]() {
+    clipEndValue_->setRange(0.0, 10000.0, 4.0);
+    clipEndValue_->setDoubleClickResetsValue(false);
+    clipEndValue_->onValueChange = [this]() {
         if (selectedClipId_ == magda::INVALID_CLIP_ID)
             return;
         const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
-        if (!clip)
+        if (!clip || clip->view == magda::ClipView::Session)
             return;
 
-        double newLengthBeats = clipLengthValue_->getValue();
-        if (clip->view == magda::ClipView::Session) {
-            magda::ClipManager::getInstance().setClipLoopLength(selectedClipId_, newLengthBeats);
-        } else {
-            double bpm = 120.0;
-            if (timelineController_) {
-                bpm = timelineController_->getState().tempo.bpm;
-            }
-            double newLengthSeconds = magda::TimelineUtils::beatsToSeconds(newLengthBeats, bpm);
-            magda::ClipManager::getInstance().resizeClip(selectedClipId_, newLengthSeconds, false,
-                                                         bpm);
+        double bpm = 120.0;
+        if (timelineController_) {
+            bpm = timelineController_->getState().tempo.bpm;
         }
+        double endBeats = clipEndValue_->getValue();
+        double startBeats = magda::TimelineUtils::secondsToBeats(clip->startTime, bpm);
+        double newLengthBeats = endBeats - startBeats;
+        if (newLengthBeats < 0.0)
+            newLengthBeats = 0.0;
+        double newLengthSeconds = magda::TimelineUtils::beatsToSeconds(newLengthBeats, bpm);
+        magda::ClipManager::getInstance().resizeClip(selectedClipId_, newLengthSeconds, false, bpm);
     };
-    addChildComponent(*clipLengthValue_);
+    addChildComponent(*clipEndValue_);
 
-    // Loop toggle
-    clipLoopToggle_.setButtonText("Loop");
-    clipLoopToggle_.setColour(juce::ToggleButton::textColourId, DarkTheme::getTextColour());
-    clipLoopToggle_.setColour(juce::ToggleButton::tickColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    clipLoopToggle_.onClick = [this]() {
+    // Loop toggle (infinito icon)
+    clipLoopToggle_ = std::make_unique<magda::SvgButton>("Loop", BinaryData::infinito_svg,
+                                                         BinaryData::infinito_svgSize);
+    clipLoopToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    clipLoopToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipLoopToggle_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    clipLoopToggle_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    clipLoopToggle_->setClickingTogglesState(false);
+    clipLoopToggle_->onClick = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID) {
-            magda::ClipManager::getInstance().setClipLoopEnabled(selectedClipId_,
-                                                                 clipLoopToggle_.getToggleState());
+            bool newState = !clipLoopToggle_->isActive();
+            clipLoopToggle_->setActive(newState);
+            magda::ClipManager::getInstance().setClipLoopEnabled(selectedClipId_, newState);
         }
     };
-    addChildComponent(clipLoopToggle_);
+    addChildComponent(*clipLoopToggle_);
 
     // Loop length
-    clipLoopLengthLabel_.setText("Loop Length", juce::dontSendNotification);
+    clipLoopLengthLabel_.setText("Length", juce::dontSendNotification);
     clipLoopLengthLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     clipLoopLengthLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addChildComponent(clipLoopLengthLabel_);
 
-    clipLoopLengthSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
-    clipLoopLengthSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
-    clipLoopLengthSlider_.setRange(0.25, 64.0, 0.25);
-    clipLoopLengthSlider_.setTextValueSuffix(" beats");
-    clipLoopLengthSlider_.setColour(juce::Slider::trackColourId,
-                                    DarkTheme::getColour(DarkTheme::SURFACE));
-    clipLoopLengthSlider_.setColour(juce::Slider::thumbColourId,
-                                    DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    clipLoopLengthSlider_.onValueChange = [this]() {
+    clipLoopLengthValue_ =
+        std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::BarsBeats);
+    clipLoopLengthValue_->setRange(0.25, 10000.0, 4.0);
+    clipLoopLengthValue_->setDoubleClickResetsValue(false);
+    clipLoopLengthValue_->setBarsBeatsIsPosition(false);
+    clipLoopLengthValue_->onValueChange = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID) {
             magda::ClipManager::getInstance().setClipLoopLength(selectedClipId_,
-                                                                clipLoopLengthSlider_.getValue());
+                                                                clipLoopLengthValue_->getValue());
         }
     };
-    addChildComponent(clipLoopLengthSlider_);
+    addChildComponent(*clipLoopLengthValue_);
 
     // ========================================================================
     // Session clip launch properties
@@ -607,28 +609,36 @@ void InspectorContent::resized() {
         clipTypeValue_.setBounds(bounds.removeFromTop(20));
         bounds.removeFromTop(12);
 
-        // Start and Length — side by side
+        // Start / End — side by side
         {
-            auto labelRow = bounds.removeFromTop(16);
-            auto halfWidth = labelRow.getWidth() / 2;
-            clipStartLabel_.setBounds(labelRow.removeFromLeft(halfWidth));
-            clipLengthLabel_.setBounds(labelRow);
+            const int gap = 4;
+            int halfWidth = (bounds.getWidth() - gap) / 2;
 
-            auto valueRow = bounds.removeFromTop(20);
-            halfWidth = valueRow.getWidth() / 2;
+            auto labelRow = bounds.removeFromTop(16);
+            clipStartLabel_.setBounds(labelRow.removeFromLeft(halfWidth));
+            labelRow.removeFromLeft(gap);
+            clipEndLabel_.setBounds(labelRow);
+
+            auto valueRow = bounds.removeFromTop(22);
             clipStartValue_->setBounds(valueRow.removeFromLeft(halfWidth));
-            clipLengthValue_->setBounds(valueRow);
-            bounds.removeFromTop(12);
+            valueRow.removeFromLeft(gap);
+            clipEndValue_->setBounds(valueRow);
+            bounds.removeFromTop(8);
         }
 
-        // Loop controls (hidden for session clips)
-        if (clipLoopToggle_.isVisible()) {
-            clipLoopToggle_.setBounds(bounds.removeFromTop(24));
-            bounds.removeFromTop(8);
+        // Loop: toggle + length on one row
+        if (clipLoopToggle_->isVisible()) {
+            const int loopSize = 22;
+            const int gap = 4;
 
-            clipLoopLengthLabel_.setBounds(bounds.removeFromTop(16));
-            clipLoopLengthSlider_.setBounds(bounds.removeFromTop(24));
-            bounds.removeFromTop(12);
+            auto labelRow = bounds.removeFromTop(16);
+            clipLoopLengthLabel_.setBounds(labelRow);
+
+            auto valueRow = bounds.removeFromTop(loopSize);
+            clipLoopToggle_->setBounds(valueRow.removeFromLeft(loopSize));
+            valueRow.removeFromLeft(gap);
+            clipLoopLengthValue_->setBounds(valueRow);
+            bounds.removeFromTop(8);
         }
 
         // Session clip launch properties (only for session clips)
@@ -1101,26 +1111,37 @@ void InspectorContent::updateFromSelectedClip() {
 
         bool isSessionClip = (clip->view == magda::ClipView::Session);
 
-        // Update beatsPerBar on the draggable labels
+        // Update beatsPerBar on all draggable labels
         clipStartValue_->setBeatsPerBar(beatsPerBar);
-        clipLengthValue_->setBeatsPerBar(beatsPerBar);
+        clipEndValue_->setBeatsPerBar(beatsPerBar);
+        clipLoopLengthValue_->setBeatsPerBar(beatsPerBar);
 
         if (isSessionClip) {
-            // Session clips: start is always 0 (displays as 1.1.000), length from loop length
+            // Session clips: start/end represent clip markers
             clipStartValue_->setValue(0.0, juce::dontSendNotification);
-            clipStartValue_->setEnabled(false);
-            clipLengthValue_->setValue(clip->internalLoopLength, juce::dontSendNotification);
+            clipEndValue_->setValue(clip->internalLoopLength, juce::dontSendNotification);
         } else {
-            // Arrangement clips: position and duration in beats
+            // Arrangement clips: start and end as positions in beats
             double startBeats = magda::TimelineUtils::secondsToBeats(clip->startTime, bpm);
+            double endBeats = startBeats + magda::TimelineUtils::secondsToBeats(clip->length, bpm);
             clipStartValue_->setValue(startBeats, juce::dontSendNotification);
-            clipStartValue_->setEnabled(true);
-            double lengthBeats = magda::TimelineUtils::secondsToBeats(clip->length, bpm);
-            clipLengthValue_->setValue(lengthBeats, juce::dontSendNotification);
+            clipEndValue_->setValue(endBeats, juce::dontSendNotification);
         }
 
-        clipLoopToggle_.setToggleState(clip->internalLoopEnabled, juce::dontSendNotification);
-        clipLoopLengthSlider_.setValue(clip->internalLoopLength, juce::dontSendNotification);
+        clipLoopLengthValue_->setValue(clip->internalLoopLength, juce::dontSendNotification);
+
+        if (isSessionClip) {
+            // Session clips: loop is always on, toggle shown but disabled
+            clipLoopToggle_->setActive(true);
+            clipLoopToggle_->setEnabled(false);
+            clipLoopLengthLabel_.setVisible(false);
+            clipLoopLengthValue_->setVisible(false);
+        } else {
+            clipLoopToggle_->setActive(clip->internalLoopEnabled);
+            clipLoopToggle_->setEnabled(true);
+            clipLoopLengthLabel_.setVisible(clip->internalLoopEnabled);
+            clipLoopLengthValue_->setVisible(clip->internalLoopEnabled);
+        }
 
         // Session clip launch properties
         launchModeLabel_.setVisible(false);
@@ -1135,14 +1156,6 @@ void InspectorContent::updateFromSelectedClip() {
 
         showClipControls(true);
         noSelectionLabel_.setVisible(false);
-
-        // Session clips: hide loop controls (length field replaces loop length),
-        // show start/length side by side
-        if (isSessionClip) {
-            clipLoopToggle_.setVisible(false);
-            clipLoopLengthLabel_.setVisible(false);
-            clipLoopLengthSlider_.setVisible(false);
-        }
     } else {
         showClipControls(false);
         noSelectionLabel_.setVisible(true);
@@ -1185,11 +1198,14 @@ void InspectorContent::showClipControls(bool show) {
     clipTypeValue_.setVisible(show);
     clipStartLabel_.setVisible(show);
     clipStartValue_->setVisible(show);
-    clipLengthLabel_.setVisible(show);
-    clipLengthValue_->setVisible(show);
-    clipLoopToggle_.setVisible(show);
-    clipLoopLengthLabel_.setVisible(show);
-    clipLoopLengthSlider_.setVisible(show);
+    clipEndLabel_.setVisible(show);
+    clipEndValue_->setVisible(show);
+    clipLoopToggle_->setVisible(show);
+    // Loop length visibility is managed by updateFromSelectedClip
+    if (!show) {
+        clipLoopLengthLabel_.setVisible(false);
+        clipLoopLengthValue_->setVisible(false);
+    }
 
     // Session launch controls are conditionally shown in updateFromSelectedClip
     if (!show) {

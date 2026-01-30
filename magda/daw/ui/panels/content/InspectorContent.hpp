@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../common/DraggableValueLabel.hpp"
+#include "../common/SvgButton.hpp"
 #include "../mixer/RoutingSelector.hpp"
 #include "PanelContent.hpp"
 #include "core/ClipManager.hpp"
@@ -116,11 +117,11 @@ class InspectorContent : public PanelContent,
     juce::Label clipNameValue_;
     juce::Label clipStartLabel_;
     std::unique_ptr<magda::DraggableValueLabel> clipStartValue_;
-    juce::Label clipLengthLabel_;
-    std::unique_ptr<magda::DraggableValueLabel> clipLengthValue_;
-    juce::ToggleButton clipLoopToggle_;
+    juce::Label clipEndLabel_;
+    std::unique_ptr<magda::DraggableValueLabel> clipEndValue_;
+    std::unique_ptr<magda::SvgButton> clipLoopToggle_;
     juce::Label clipLoopLengthLabel_;
-    juce::Slider clipLoopLengthSlider_;
+    std::unique_ptr<magda::DraggableValueLabel> clipLoopLengthValue_;
     juce::Label clipTypeLabel_;
     juce::Label clipTypeValue_;
 

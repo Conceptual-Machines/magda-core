@@ -94,10 +94,10 @@ juce::String DraggableValueLabel::formatValue(double val) const {
                 remaining = 0.0;
             int wholeBeats = static_cast<int>(remaining);
             int ticks = static_cast<int>((remaining - wholeBeats) * TICKS_PER_BEAT);
-            // Display 1-indexed (bar 1, beat 1)
+            int offset = barsBeatsIsPosition_ ? 1 : 0;
             char buffer[32];
-            std::snprintf(buffer, sizeof(buffer), "%d.%d.%03d", wholeBars + 1, wholeBeats + 1,
-                          ticks);
+            std::snprintf(buffer, sizeof(buffer), "%d.%d.%03d", wholeBars + offset,
+                          wholeBeats + offset, ticks);
             return juce::String(buffer);
         }
 
@@ -203,14 +203,14 @@ double DraggableValueLabel::parseValue(const juce::String& text) const {
         }
 
         case Format::BarsBeats: {
-            // Parse "bar.beat.ticks" format (1-indexed display)
             constexpr int TICKS_PER_BEAT = 480;
+            int offset = barsBeatsIsPosition_ ? 1 : 0;
             auto parts = juce::StringArray::fromTokens(trimmed, ".", "");
             int bar = 0, beat = 0, ticks = 0;
             if (parts.size() >= 1)
-                bar = parts[0].getIntValue() - 1;  // convert from 1-indexed
+                bar = parts[0].getIntValue() - offset;
             if (parts.size() >= 2)
-                beat = parts[1].getIntValue() - 1;  // convert from 1-indexed
+                beat = parts[1].getIntValue() - offset;
             if (parts.size() >= 3)
                 ticks = parts[2].getIntValue();
             if (bar < 0)
@@ -334,6 +334,51 @@ void DraggableValueLabel::mouseDoubleClick(const juce::MouseEvent& /*e*/) {
         setValue(defaultValue_);
     } else {
         startEditing();
+    }
+}
+
+void DraggableValueLabel::mouseWheelMove(const juce::MouseEvent& e,
+                                         const juce::MouseWheelDetails& wheel) {
+    if (isEditing_ || !isEnabled()) {
+        return;
+    }
+
+    if (format_ == Format::BarsBeats) {
+        // Determine which segment the mouse is over by measuring text
+        constexpr int TICKS_PER_BEAT = 480;
+        auto font = FontManager::getInstance().getUIFont(10.0f);
+        auto text = formatValue(value_);
+        float textWidth = font.getStringWidthFloat(text);
+        auto bounds = getLocalBounds().toFloat().reduced(2, 0);
+        float textStartX = bounds.getX() + (bounds.getWidth() - textWidth) * 0.5f;
+        float relativeX = static_cast<float>(e.x) - textStartX;
+
+        // Find dot positions in the rendered text
+        int firstDot = text.indexOfChar('.');
+        int secondDot = text.indexOfChar(firstDot + 1, '.');
+
+        float firstDotX = font.getStringWidthFloat(text.substring(0, firstDot));
+        float secondDotX =
+            (secondDot >= 0) ? font.getStringWidthFloat(text.substring(0, secondDot)) : textWidth;
+
+        // Determine increment based on segment
+        double increment = 0.0;
+        if (relativeX < firstDotX) {
+            // Bar segment
+            increment = static_cast<double>(beatsPerBar_);
+        } else if (relativeX < secondDotX) {
+            // Beat segment
+            increment = 1.0;
+        } else {
+            // Tick segment
+            increment = 1.0 / TICKS_PER_BEAT;
+        }
+
+        double direction = (wheel.deltaY > 0) ? 1.0 : -1.0;
+        setValue(value_ + increment * direction);
+    } else {
+        // Default: fall back to base class behavior
+        juce::Component::mouseWheelMove(e, wheel);
     }
 }
 
