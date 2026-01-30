@@ -52,11 +52,15 @@ enum class LaunchMode {
  * @brief Launch quantization for session clips
  */
 enum class LaunchQuantize {
-    None,        // Immediate
-    OneBar,      // Snap to next bar
-    HalfBar,     // Snap to next half bar
-    QuarterBar,  // Snap to next beat
-    EighthBar    // Snap to next eighth note
+    None,         // Immediate
+    EightBars,    // Snap to next 8-bar boundary
+    FourBars,     // Snap to next 4-bar boundary
+    TwoBars,      // Snap to next 2-bar boundary
+    OneBar,       // Snap to next bar
+    HalfBar,      // Snap to next half bar
+    QuarterBar,   // Snap to next beat
+    EighthBar,    // Snap to next eighth note
+    SixteenthBar  // Snap to next sixteenth note
 };
 
 /**
@@ -79,6 +83,12 @@ inline const char* getLaunchQuantizeName(LaunchQuantize q) {
     switch (q) {
         case LaunchQuantize::None:
             return "None";
+        case LaunchQuantize::EightBars:
+            return "8 Bars";
+        case LaunchQuantize::FourBars:
+            return "4 Bars";
+        case LaunchQuantize::TwoBars:
+            return "2 Bars";
         case LaunchQuantize::OneBar:
             return "1 Bar";
         case LaunchQuantize::HalfBar:
@@ -87,6 +97,8 @@ inline const char* getLaunchQuantizeName(LaunchQuantize q) {
             return "1/4";
         case LaunchQuantize::EighthBar:
             return "1/8";
+        case LaunchQuantize::SixteenthBar:
+            return "1/16";
     }
     return "Unknown";
 }

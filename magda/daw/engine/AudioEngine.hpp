@@ -37,6 +37,10 @@ class AudioEngine : public AudioEngineListener {
     virtual bool isPlaying() const = 0;
     virtual bool isRecording() const = 0;
 
+    /** Returns the looped playhead position within the active session clip (seconds).
+        Returns -1.0 if no session clips are playing. */
+    virtual double getSessionPlayheadPosition() const = 0;
+
     // ===== Tempo =====
     virtual void setTempo(double bpm) = 0;
     virtual double getTempo() const = 0;

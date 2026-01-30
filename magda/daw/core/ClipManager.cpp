@@ -586,6 +586,15 @@ void ClipManager::setClipSceneIndex(ClipId clipId, int sceneIndex) {
 
 void ClipManager::triggerClip(ClipId clipId) {
     if (auto* clip = getClip(clipId)) {
+        // Toggle mode: if clip is already playing, stop it instead
+        if (clip->launchMode == LaunchMode::Toggle && (clip->isPlaying || clip->isQueued)) {
+            stopClip(clipId);
+            return;
+        }
+
+        // Trigger mode: if clip is already playing, re-trigger from start
+        // The scheduler will handle deactivating the old TE clip and creating a new one
+
         // Stop other clips on same track (only check session clips since triggers are session-only)
         for (auto& otherClip : sessionClips_) {
             if (otherClip.trackId == clip->trackId && otherClip.id != clipId) {
@@ -597,8 +606,22 @@ void ClipManager::triggerClip(ClipId clipId) {
             }
         }
 
+        // Only set isQueued - the scheduler will set isPlaying when audio actually starts
         clip->isQueued = true;
-        clip->isPlaying = true;  // For now, immediate trigger
+        clip->isPlaying = false;
+        notifyClipPlaybackStateChanged(clipId);
+    }
+}
+
+void ClipManager::setClipPlayingState(ClipId clipId, bool playing) {
+    if (auto* clip = getClip(clipId)) {
+        if (playing) {
+            clip->isPlaying = true;
+            clip->isQueued = false;  // No longer queued, now actually playing
+        } else {
+            clip->isPlaying = false;
+            clip->isQueued = false;
+        }
         notifyClipPlaybackStateChanged(clipId);
     }
 }

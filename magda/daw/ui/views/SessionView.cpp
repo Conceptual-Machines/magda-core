@@ -1,9 +1,12 @@
 #include "SessionView.hpp"
 
+#include <juce_audio_formats/juce_audio_formats.h>
+
 #include <cmath>
 #include <functional>
 
 #include "../panels/state/PanelController.hpp"
+#include "../state/TimelineController.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/ViewModeController.hpp"
@@ -59,6 +62,8 @@ class ClipSlotButton : public juce::TextButton {
     bool hasClip = false;
     bool clipIsPlaying = false;
     bool isSelected = false;
+    double clipLength = 0.0;           // Clip duration in seconds (for progress bar)
+    double sessionPlayheadPos = -1.0;  // Looped playhead position in seconds
 
     void mouseUp(const juce::MouseEvent& event) override {
         if (!event.mouseWasClicked())
@@ -100,25 +105,38 @@ class ClipSlotButton : public juce::TextButton {
             g.drawRect(getLocalBounds(), 2);
         }
 
-        // Draw play/stop triangle indicator on the left side
+        // Draw play triangle indicator on the left side (click triggers or toggles depending on
+        // launch mode)
         if (hasClip) {
             auto playArea = getLocalBounds().removeFromLeft(PLAY_BUTTON_WIDTH);
             auto centre = playArea.getCentre().toFloat();
 
-            if (clipIsPlaying) {
-                // Stop icon (square)
-                float size = 5.0f;
-                g.setColour(juce::Colours::white.withAlpha(0.9f));
-                g.fillRect(centre.getX() - size, centre.getY() - size, size * 2.0f, size * 2.0f);
-            } else {
-                // Play icon (triangle)
-                juce::Path triangle;
-                float size = 6.0f;
-                triangle.addTriangle(centre.getX() - size * 0.7f, centre.getY() - size,
-                                     centre.getX() - size * 0.7f, centre.getY() + size,
-                                     centre.getX() + size, centre.getY());
-                g.setColour(juce::Colours::white.withAlpha(0.7f));
-                g.fillPath(triangle);
+            juce::Path triangle;
+            float size = 6.0f;
+            triangle.addTriangle(centre.getX() - size * 0.7f, centre.getY() - size,
+                                 centre.getX() - size * 0.7f, centre.getY() + size,
+                                 centre.getX() + size, centre.getY());
+            g.setColour(clipIsPlaying ? juce::Colours::green.withAlpha(0.9f)
+                                      : juce::Colours::white.withAlpha(0.7f));
+            g.fillPath(triangle);
+
+            // Draw progress bar for playing clips
+            if (clipIsPlaying && clipLength > 0.0 && sessionPlayheadPos >= 0.0) {
+                auto contentArea = getLocalBounds();
+                contentArea.removeFromLeft(PLAY_BUTTON_WIDTH);
+                float progress = static_cast<float>(sessionPlayheadPos / clipLength);
+                progress = juce::jlimit(0.0f, 1.0f, progress);
+
+                auto progressBar = contentArea.toFloat();
+                progressBar.setWidth(progressBar.getWidth() * progress);
+                g.setColour(juce::Colours::white.withAlpha(0.15f));
+                g.fillRect(progressBar);
+
+                // Draw playhead line at current position
+                float lineX = contentArea.getX() + contentArea.getWidth() * progress;
+                g.setColour(juce::Colours::white.withAlpha(0.6f));
+                g.drawVerticalLine(static_cast<int>(lineX), static_cast<float>(contentArea.getY()),
+                                   static_cast<float>(contentArea.getBottom()));
             }
         }
     }
@@ -1106,21 +1124,8 @@ void SessionView::onPlayButtonClicked(int trackIndex, int sceneIndex) {
     ClipId clipId = ClipManager::getInstance().getClipInSlot(trackId, sceneIndex);
 
     if (clipId != INVALID_CLIP_ID) {
-        const auto* clip = ClipManager::getInstance().getClip(clipId);
-        if (!clip)
-            return;
-
-        if (clip->launchMode == LaunchMode::Toggle) {
-            // Toggle mode: toggle between play/stop
-            if (clip->isPlaying) {
-                ClipManager::getInstance().stopClip(clipId);
-            } else {
-                ClipManager::getInstance().triggerClip(clipId);
-            }
-        } else {
-            // Trigger mode: always re-trigger (restart from beginning)
-            ClipManager::getInstance().triggerClip(clipId);
-        }
+        // Trigger or toggle the clip depending on its launch mode
+        ClipManager::getInstance().triggerClip(clipId);
     }
 }
 
@@ -1289,6 +1294,8 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
             slot->hasClip = true;
             slot->clipIsPlaying = clip->isPlaying;
             slot->isSelected = (clipId == selectedClipId);
+            slot->clipLength = clip->length;
+            slot->sessionPlayheadPos = clip->isPlaying ? sessionPlayheadPos_ : -1.0;
 
             // Show clip name with loop indicator if enabled
             juce::String displayText = "   " + clip->name;  // Indent for play button area
@@ -1319,6 +1326,8 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
         slot->hasClip = false;
         slot->clipIsPlaying = false;
         slot->isSelected = false;
+        slot->clipLength = 0.0;
+        slot->sessionPlayheadPos = -1.0;
         slot->setButtonText("");
         slot->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
         slot->setColour(juce::TextButton::textColourOffId,
@@ -1332,6 +1341,25 @@ void SessionView::updateAllClipSlots() {
         int numSlots = static_cast<int>(clipSlots[trackIndex].size());
         for (int sceneIndex = 0; sceneIndex < numSlots; ++sceneIndex) {
             updateClipSlotAppearance(trackIndex, sceneIndex);
+        }
+    }
+}
+
+// ============================================================================
+// Session Playhead
+// ============================================================================
+
+void SessionView::setSessionPlayheadPosition(double position) {
+    sessionPlayheadPos_ = position;
+
+    // Update all playing clip slot buttons with the new position
+    for (auto& trackSlots : clipSlots) {
+        for (auto& slotBtn : trackSlots) {
+            auto* slot = dynamic_cast<ClipSlotButton*>(slotBtn.get());
+            if (slot && slot->clipIsPlaying) {
+                slot->sessionPlayheadPos = position;
+                slot->repaint();
+            }
         }
     }
 }
@@ -1410,6 +1438,10 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
     auto& clipManager = ClipManager::getInstance();
     int currentSceneIndex = sceneIndex;
 
+    // Create format manager once for all dropped files
+    juce::AudioFormatManager formatManager;
+    formatManager.registerBasicFormats();
+
     for (const auto& filePath : files) {
         if (!isAudioFile(filePath))
             continue;
@@ -1424,14 +1456,31 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
         if (currentSceneIndex >= numScenes_)
             break;
 
+        // Get audio file duration
+        juce::File audioFile(filePath);
+        double fileDuration = 4.0;  // fallback
+        {
+            std::unique_ptr<juce::AudioFormatReader> reader(
+                formatManager.createReaderFor(audioFile));
+            if (reader) {
+                fileDuration = static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
+            }
+        }
+
         // Create audio clip for session view (not arrangement)
-        // Note: startTime is ignored for session clips, but required by API
-        ClipId newClipId =
-            clipManager.createAudioClip(targetTrackId, 0.0, 4.0, filePath, ClipView::Session);
+        ClipId newClipId = clipManager.createAudioClip(targetTrackId, 0.0, fileDuration, filePath,
+                                                       ClipView::Session);
         if (newClipId != INVALID_CLIP_ID) {
-            // Set clip name
-            juce::File audioFile(filePath);
             clipManager.setClipName(newClipId, audioFile.getFileNameWithoutExtension());
+
+            // Session clips default to looping, with loop length matching clip duration
+            double bpm = 120.0;
+            if (timelineController_) {
+                bpm = timelineController_->getState().tempo.bpm;
+            }
+            double durationInBeats = (fileDuration / 60.0) * bpm;
+            clipManager.setClipLoopEnabled(newClipId, true);
+            clipManager.setClipLoopLength(newClipId, durationInBeats);
 
             // Assign to session view slot (triggers proper notification)
             clipManager.setClipSceneIndex(newClipId, currentSceneIndex);

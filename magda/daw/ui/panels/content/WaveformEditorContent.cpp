@@ -415,6 +415,9 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
             timeRuler_->setTimeOffset(clip->startTime);
             timeRuler_->setClipLength(clip->length);
 
+            // Update loop boundary dimming
+            updateLoopBoundary(*clip);
+
             // Scroll viewport to show clip at new position
             scrollToClipStart();
         }
@@ -488,6 +491,8 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
             timeRuler_->setTempo(bpm);
             timeRuler_->setTimeOffset(clip->startTime);
             timeRuler_->setClipLength(clip->length);
+
+            updateLoopBoundary(*clip);
         }
 
         updateGridSize();
@@ -543,6 +548,20 @@ void WaveformEditorContent::scrollToClipStart() {
             int clipStartX = gridComponent_->timeToPixel(clip->startTime);
             viewport_->setViewPosition(clipStartX, viewport_->getViewPositionY());
         }
+    }
+}
+
+void WaveformEditorContent::updateLoopBoundary(const magda::ClipInfo& clip) {
+    if (clip.internalLoopEnabled && clip.internalLoopLength > 0.0) {
+        double bpm = 120.0;
+        auto* controller = magda::TimelineController::getCurrent();
+        if (controller) {
+            bpm = controller->getState().tempo.bpm;
+        }
+        double loopEndSec = (bpm > 0.0) ? (clip.internalLoopLength * 60.0 / bpm) : 0.0;
+        gridComponent_->setLoopEndSeconds(loopEndSec);
+    } else {
+        gridComponent_->setLoopEndSeconds(0.0);
     }
 }
 
