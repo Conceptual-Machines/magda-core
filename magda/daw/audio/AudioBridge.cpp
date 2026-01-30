@@ -268,15 +268,11 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
             } else {
                 // Clip already synced — propagate property changes to TE clip
                 auto* teClip = getSessionTeClip(clipId);
-                DBG("  getSessionTeClip returned " << (teClip ? "valid ptr" : "nullptr"));
-
                 if (teClip) {
                     // Update launch quantization
                     auto* lq = teClip->getLaunchQuantisation();
-                    DBG("  getLaunchQuantisation returned " << (lq ? "valid ptr" : "nullptr"));
                     if (lq) {
                         lq->type = toTELaunchQType(clip->launchQuantize);
-                        DBG("  Set launch quantize to " << (int)clip->launchQuantize);
                     }
 
                     // Update clip's own loop state
@@ -288,24 +284,18 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
                         teClip->setLoopRange(
                             te::TimeRange(te::TimePosition::fromSeconds(0.0), loopEndTime));
                         teClip->setLoopRangeBeats({te::BeatPosition::fromBeats(0.0), loopEndBeat});
-                        DBG("  Set clip loop range: " << clip->internalLoopLength << " beats");
                     } else {
                         teClip->disableLooping();
-                        DBG("  Disabled clip looping");
                     }
 
                     // Update looping on the launch handle
                     auto launchHandle = teClip->getLaunchHandle();
-                    DBG("  getLaunchHandle returned " << (launchHandle ? "valid ptr" : "nullptr"));
                     if (launchHandle) {
                         if (clip->internalLoopEnabled) {
                             launchHandle->setLooping(
                                 te::BeatDuration::fromBeats(clip->internalLoopLength));
-                            DBG("  LaunchHandle looping ON: " << clip->internalLoopLength
-                                                              << " beats");
                         } else {
                             launchHandle->setLooping(std::nullopt);
-                            DBG("  LaunchHandle looping OFF");
                         }
                     }
                 }
@@ -820,10 +810,6 @@ void AudioBridge::launchSessionClip(ClipId clipId) {
     // Set looping before play
     const auto* clip = ClipManager::getInstance().getClip(clipId);
     if (clip) {
-        DBG("AudioBridge::launchSessionClip: clip "
-            << clipId << " loopEnabled=" << (int)clip->internalLoopEnabled
-            << " loopLength=" << clip->internalLoopLength << " length=" << clip->length);
-
         if (clip->internalLoopEnabled) {
             // Set clip's own loop range
             auto& tempoSeq = edit_.tempoSequence;
@@ -834,16 +820,13 @@ void AudioBridge::launchSessionClip(ClipId clipId) {
 
             // Set launch handle looping
             launchHandle->setLooping(te::BeatDuration::fromBeats(clip->internalLoopLength));
-            DBG("  -> looping ON: " << clip->internalLoopLength << " beats");
         } else {
             teClip->disableLooping();
             launchHandle->setLooping(std::nullopt);
-            DBG("  -> looping OFF");
         }
     }
 
     launchHandle->play(std::nullopt);
-    DBG("AudioBridge::launchSessionClip: play() called for clip " << clipId);
 }
 
 void AudioBridge::stopSessionClip(ClipId clipId) {
@@ -862,33 +845,22 @@ te::Clip* AudioBridge::getSessionTeClip(ClipId clipId) {
     auto& cm = ClipManager::getInstance();
     const auto* clip = cm.getClip(clipId);
     if (!clip || clip->view != ClipView::Session || clip->sceneIndex < 0) {
-        DBG("getSessionTeClip: clip "
-            << clipId << " not found or not session (clip=" << (clip ? "exists" : "null")
-            << " view=" << (clip ? (int)clip->view : -1)
-            << " sceneIndex=" << (clip ? clip->sceneIndex : -1) << ")");
         return nullptr;
     }
 
     auto* audioTrack = getAudioTrack(clip->trackId);
     if (!audioTrack) {
-        DBG("getSessionTeClip: audioTrack not found for trackId " << clip->trackId);
         return nullptr;
     }
 
     auto slots = audioTrack->getClipSlotList().getClipSlots();
-    DBG("getSessionTeClip: clip " << clipId << " trackId=" << clip->trackId << " sceneIndex="
-                                  << clip->sceneIndex << " slotsCount=" << slots.size());
 
     if (clip->sceneIndex >= static_cast<int>(slots.size())) {
-        DBG("getSessionTeClip: sceneIndex out of range");
         return nullptr;
     }
 
     auto* slot = slots[clip->sceneIndex];
-    auto* teClip = slot ? slot->getClip() : nullptr;
-    DBG("getSessionTeClip: slot=" << (slot ? "exists" : "null")
-                                  << " teClip=" << (teClip ? "exists" : "null"));
-    return teClip;
+    return slot ? slot->getClip() : nullptr;
 }
 
 // =============================================================================

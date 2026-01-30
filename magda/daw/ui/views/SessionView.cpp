@@ -105,7 +105,8 @@ class ClipSlotButton : public juce::TextButton {
             g.drawRect(getLocalBounds(), 2);
         }
 
-        // Draw play triangle indicator on the left side (always play — stop is per-track)
+        // Draw play triangle indicator on the left side (click triggers or toggles depending on
+        // launch mode)
         if (hasClip) {
             auto playArea = getLocalBounds().removeFromLeft(PLAY_BUTTON_WIDTH);
             auto centre = playArea.getCentre().toFloat();
@@ -1123,7 +1124,7 @@ void SessionView::onPlayButtonClicked(int trackIndex, int sceneIndex) {
     ClipId clipId = ClipManager::getInstance().getClipInSlot(trackId, sceneIndex);
 
     if (clipId != INVALID_CLIP_ID) {
-        // Always (re-)trigger the clip — per-clip stop is handled by per-track stop buttons
+        // Trigger or toggle the clip depending on its launch mode
         ClipManager::getInstance().triggerClip(clipId);
     }
 }

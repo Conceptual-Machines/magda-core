@@ -750,11 +750,27 @@ juce::AudioDeviceManager* TracktionEngineWrapper::getDeviceManager() {
 // These methods are called by TimelineController when UI state changes
 
 void TracktionEngineWrapper::onTransportPlay(double position) {
+    // If a session clip is selected, trigger it via the clip launcher
+    auto& cm = ClipManager::getInstance();
+    ClipId selectedClip = cm.getSelectedClip();
+    if (selectedClip != INVALID_CLIP_ID) {
+        const auto* clip = cm.getClip(selectedClip);
+        if (clip && clip->view == ClipView::Session && !clip->isPlaying && !clip->isQueued) {
+            cm.triggerClip(selectedClip);
+            return;  // SessionClipScheduler will start transport
+        }
+    }
+
     locate(position);
     play();
 }
 
 void TracktionEngineWrapper::onTransportStop(double returnPosition) {
+    // Stop any playing session clips
+    if (sessionScheduler_) {
+        sessionScheduler_->deactivateAllSessionClips();
+    }
+
     stop();
     locate(returnPosition);
 }

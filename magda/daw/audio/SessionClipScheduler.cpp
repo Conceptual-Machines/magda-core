@@ -66,11 +66,6 @@ void SessionClipScheduler::clipPlaybackStateChanged(ClipId clipId) {
         return;
     }
 
-    DBG("SessionClipScheduler::clipPlaybackStateChanged: clip "
-        << clipId << " isQueued=" << (int)clip->isQueued << " isPlaying=" << (int)clip->isPlaying
-        << " loopEnabled=" << (int)clip->internalLoopEnabled
-        << " loopLength=" << clip->internalLoopLength << " length=" << clip->length);
-
     if (clip->isQueued && !clip->isPlaying) {
         // Clip was just queued for playback — launch it via LaunchHandle
         auto& transport = edit_.getTransport();
