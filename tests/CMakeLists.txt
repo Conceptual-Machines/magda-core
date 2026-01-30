@@ -17,6 +17,7 @@ set(TEST_SOURCES
     test_waveform_editor_absolute_mode.cpp
     test_clip_resize_operations.cpp
     test_project_serialization.cpp
+    test_session_clip_playback.cpp
 )
 
 # Create test executable

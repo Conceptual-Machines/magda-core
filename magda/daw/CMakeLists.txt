@@ -119,6 +119,7 @@ set(DAW_CORE_SOURCES
     audio/AudioThumbnailManager.cpp
     audio/DeviceProcessor.cpp
     audio/MidiBridge.cpp
+    audio/SessionClipScheduler.cpp
     # TODO: Custom synth library (SimpleSynthPlugin.cpp) - for future implementation
     # Project serialization
     project/ProjectSerializer.cpp
@@ -317,6 +318,7 @@ set(DAW_HEADERS
     # Audio
     audio/AudioEngineOptimizer.hpp
     audio/AudioBridge.hpp
+    audio/SessionClipScheduler.hpp
     audio/MeteringBuffer.hpp
     audio/ParameterQueue.hpp
     # Views

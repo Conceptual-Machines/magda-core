@@ -37,6 +37,9 @@ class TransportPanel : public juce::Component {
     // Enable/disable transport controls (e.g., during device loading)
     void setTransportEnabled(bool enabled);
 
+    // Sync play state from external sources (e.g., SessionClipScheduler starting transport)
+    void setPlaybackState(bool playing);
+
   private:
     // Transport controls (left section)
     std::unique_ptr<SvgButton> playButton;
