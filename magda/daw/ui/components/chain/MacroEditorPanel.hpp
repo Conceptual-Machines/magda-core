@@ -19,7 +19,7 @@ namespace magda::daw::ui {
  * +------------------+
  * |   MACRO NAME     |  <- Header with macro name (editable)
  * +------------------+
- * |   Value: 0.50    |  <- Value slider
+ * |   Value: <value> |  <- Value slider
  * +------------------+
  * | Target: Device   |  <- Target info
  * |   Param Name     |

@@ -5,12 +5,33 @@
 
 namespace magda::daw::ui {
 
+namespace {
+constexpr float kNameFontSize = 10.0f;
+constexpr float kValueFontSize = 9.0f;
+constexpr float kSecondaryFontSize = 8.0f;
+
+constexpr double kValueSliderMin = 0.0;
+constexpr double kValueSliderMax = 1.0;
+constexpr double kValueSliderStep = 0.01;
+constexpr double kValueSliderDefault = 0.5;
+
+constexpr float kBackgroundBrightnessDelta = 0.03f;
+
+constexpr int kOuterPadding = 4;
+constexpr int kNameLabelHeight = 20;
+constexpr int kNameLabelBottomGap = 4;
+constexpr int kValueLabelHeight = 12;
+constexpr int kValueSliderHeight = 20;
+constexpr int kValueBottomGap = 8;
+constexpr int kNameAreaHeight = kNameLabelHeight + kNameLabelBottomGap;
+}  // namespace
+
 MacroEditorPanel::MacroEditorPanel() {
     // Intercept mouse clicks to prevent propagation to parent
     setInterceptsMouseClicks(true, true);
 
     // Name label at top (editable)
-    nameLabel_.setFont(FontManager::getInstance().getUIFontBold(10.0f));
+    nameLabel_.setFont(FontManager::getInstance().getUIFontBold(kNameFontSize));
     nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     nameLabel_.setJustificationType(juce::Justification::centred);
     nameLabel_.setText("No Macro Selected", juce::dontSendNotification);
@@ -23,9 +44,9 @@ MacroEditorPanel::MacroEditorPanel() {
     addAndMakeVisible(nameLabel_);
 
     // Value slider
-    valueSlider_.setRange(0.0, 1.0, 0.01);
-    valueSlider_.setValue(0.5, juce::dontSendNotification);
-    valueSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    valueSlider_.setRange(kValueSliderMin, kValueSliderMax, kValueSliderStep);
+    valueSlider_.setValue(kValueSliderDefault, juce::dontSendNotification);
+    valueSlider_.setFont(FontManager::getInstance().getUIFont(kValueFontSize));
     valueSlider_.onValueChanged = [this](double value) {
         currentMacro_.value = static_cast<float>(value);
         if (onValueChanged) {
@@ -35,7 +56,7 @@ MacroEditorPanel::MacroEditorPanel() {
     addAndMakeVisible(valueSlider_);
 
     // Target label
-    targetLabel_.setFont(FontManager::getInstance().getUIFont(8.0f));
+    targetLabel_.setFont(FontManager::getInstance().getUIFont(kSecondaryFontSize));
     targetLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     targetLabel_.setJustificationType(juce::Justification::centred);
     targetLabel_.setText("No Target", juce::dontSendNotification);
@@ -75,7 +96,7 @@ void MacroEditorPanel::updateFromMacro() {
 
 void MacroEditorPanel::paint(juce::Graphics& g) {
     // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.03f));
+    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(kBackgroundBrightnessDelta));
     g.fillRect(getLocalBounds());
 
     // Border
@@ -83,26 +104,26 @@ void MacroEditorPanel::paint(juce::Graphics& g) {
     g.drawRect(getLocalBounds());
 
     // Section headers
-    auto bounds = getLocalBounds().reduced(4);
-    bounds.removeFromTop(24);  // Skip name label
+    auto bounds = getLocalBounds().reduced(kOuterPadding);
+    bounds.removeFromTop(kNameAreaHeight);  // Skip name label
 
     // "Value" label
     g.setColour(DarkTheme::getSecondaryTextColour());
-    g.setFont(FontManager::getInstance().getUIFont(8.0f));
-    g.drawText("Value", bounds.removeFromTop(12), juce::Justification::centredLeft);
+    g.setFont(FontManager::getInstance().getUIFont(kSecondaryFontSize));
+    g.drawText("Value", bounds.removeFromTop(kValueLabelHeight), juce::Justification::centredLeft);
 }
 
 void MacroEditorPanel::resized() {
-    auto bounds = getLocalBounds().reduced(4);
+    auto bounds = getLocalBounds().reduced(kOuterPadding);
 
     // Name label at top
-    nameLabel_.setBounds(bounds.removeFromTop(20));
-    bounds.removeFromTop(4);
+    nameLabel_.setBounds(bounds.removeFromTop(kNameLabelHeight));
+    bounds.removeFromTop(kNameLabelBottomGap);
 
     // Value label area (painted) + slider
-    bounds.removeFromTop(12);  // "Value" label
-    valueSlider_.setBounds(bounds.removeFromTop(20));
-    bounds.removeFromTop(8);
+    bounds.removeFromTop(kValueLabelHeight);  // "Value" label
+    valueSlider_.setBounds(bounds.removeFromTop(kValueSliderHeight));
+    bounds.removeFromTop(kValueBottomGap);
 
     // Target info at bottom
     targetLabel_.setBounds(bounds);
