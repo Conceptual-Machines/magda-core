@@ -60,19 +60,21 @@ class ClipSlotButton : public juce::TextButton {
     bool clipIsPlaying = false;
     bool isSelected = false;
 
-    void mouseDoubleClick(const juce::MouseEvent& event) override {
-        if (onDoubleClick) {
-            onDoubleClick();
-        }
-        juce::TextButton::mouseDoubleClick(event);
-    }
-
     void mouseUp(const juce::MouseEvent& event) override {
         if (!event.mouseWasClicked())
             return;
 
-        // Check if click is in the play button area
-        if (hasClip && event.getPosition().getX() < PLAY_BUTTON_WIDTH) {
+        const int clicks = event.getNumberOfClicks();
+        const bool inPlayArea = hasClip && event.getPosition().getX() < PLAY_BUTTON_WIDTH;
+
+        if (clicks >= 2) {
+            if (!inPlayArea && onDoubleClick) {
+                onDoubleClick();
+            }
+            return;
+        }
+
+        if (inPlayArea) {
             if (onPlayButtonClick) {
                 onPlayButtonClick();
             }
@@ -744,11 +746,14 @@ void SessionView::rebuildTracks() {
                            DarkTheme::getColour(DarkTheme::STATUS_ERROR));
 
         TrackId trackId = visibleTrackIds_[i];
-        stopBtn->onClick = [trackId]() {
+        stopBtn->onClick = [this, trackId]() {
             auto& clipManager = ClipManager::getInstance();
-            auto clips = clipManager.getClipsOnTrack(trackId);
-            for (auto clipId : clips) {
-                clipManager.stopClip(clipId);
+            // Stop all session clips on this track by iterating scene slots
+            for (int scene = 0; scene < numScenes_; ++scene) {
+                ClipId clipId = clipManager.getClipInSlot(trackId, scene);
+                if (clipId != INVALID_CLIP_ID) {
+                    clipManager.stopClip(clipId);
+                }
             }
         };
 
@@ -1037,6 +1042,10 @@ void SessionView::removeScene() {
 }
 
 void SessionView::removeSceneAsync(int sceneIndex) {
+    // Re-validate: the scene must still be the last one and within bounds
+    if (sceneIndex != numScenes_ - 1 || numScenes_ <= 1)
+        return;
+
     // Stop and delete any clips in this scene
     auto& clipManager = ClipManager::getInstance();
     for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
@@ -1396,6 +1405,12 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
     for (const auto& filePath : files) {
         if (!isAudioFile(filePath))
             continue;
+
+        // Skip to next empty slot
+        while (currentSceneIndex < numScenes_ &&
+               clipManager.getClipInSlot(targetTrackId, currentSceneIndex) != INVALID_CLIP_ID) {
+            currentSceneIndex++;
+        }
 
         // Don't exceed scene bounds
         if (currentSceneIndex >= numScenes_)

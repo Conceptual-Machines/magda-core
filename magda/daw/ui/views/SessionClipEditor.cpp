@@ -312,7 +312,7 @@ SessionClipEditorWindow::SessionClipEditorWindow(ClipId clipId, const juce::Stri
     editor_ = std::make_unique<SessionClipEditor>(clipId);
     editor_->onCloseRequested = [this]() { closeButtonPressed(); };
 
-    setContentOwned(editor_.release(), true);
+    setContentNonOwned(editor_.get(), true);
     setResizable(true, false);
     centreWithSize(600, 400);
     setVisible(true);
