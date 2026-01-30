@@ -61,6 +61,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/bezier.svg
     ../../assets/icons/curve.svg
     ../../assets/icons/save.svg
+    ../../assets/icons/infinito.svg
+    ../../assets/icons/position.svg
     # Mouse cursors
     ../../assets/icons/mouse_zoom/search.svg
     ../../assets/icons/mouse_zoom/zoom_in.svg
@@ -190,6 +192,7 @@ set(DAW_UI_SOURCES
     ui/components/common/MixerDebugPanel.cpp
     ui/components/common/GridOverlayComponent.cpp
     ui/components/common/DraggableValueLabel.cpp
+    ui/components/common/BarsBeatsTicksLabel.cpp
     # Components - Timeline
     ui/components/timeline/TimelineComponent.cpp
     ui/components/timeline/TimelineFiller.cpp
@@ -345,6 +348,7 @@ set(DAW_HEADERS
     ui/components/common/MixerDebugPanel.hpp
     ui/components/common/GridOverlayComponent.hpp
     ui/components/common/DraggableValueLabel.hpp
+    ui/components/common/BarsBeatsTicksLabel.hpp
     # Components - Timeline
     ui/components/timeline/TimelineComponent.hpp
     ui/components/timeline/TimelineFiller.hpp
