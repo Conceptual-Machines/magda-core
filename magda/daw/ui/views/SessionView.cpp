@@ -1,9 +1,12 @@
 #include "SessionView.hpp"
 
+#include <juce_audio_formats/juce_audio_formats.h>
+
 #include <cmath>
 #include <functional>
 
 #include "../panels/state/PanelController.hpp"
+#include "../state/TimelineController.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/ViewModeController.hpp"
@@ -1448,14 +1451,33 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
         if (currentSceneIndex >= numScenes_)
             break;
 
+        // Get audio file duration
+        juce::File audioFile(filePath);
+        double fileDuration = 4.0;  // fallback
+        {
+            juce::AudioFormatManager formatManager;
+            formatManager.registerBasicFormats();
+            std::unique_ptr<juce::AudioFormatReader> reader(
+                formatManager.createReaderFor(audioFile));
+            if (reader) {
+                fileDuration = static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
+            }
+        }
+
         // Create audio clip for session view (not arrangement)
-        // Note: startTime is ignored for session clips, but required by API
-        ClipId newClipId =
-            clipManager.createAudioClip(targetTrackId, 0.0, 4.0, filePath, ClipView::Session);
+        ClipId newClipId = clipManager.createAudioClip(targetTrackId, 0.0, fileDuration, filePath,
+                                                       ClipView::Session);
         if (newClipId != INVALID_CLIP_ID) {
-            // Set clip name
-            juce::File audioFile(filePath);
             clipManager.setClipName(newClipId, audioFile.getFileNameWithoutExtension());
+
+            // Session clips default to looping, with loop length matching clip duration
+            double bpm = 120.0;
+            if (timelineController_) {
+                bpm = timelineController_->getState().tempo.bpm;
+            }
+            double durationInBeats = (fileDuration / 60.0) * bpm;
+            clipManager.setClipLoopEnabled(newClipId, true);
+            clipManager.setClipLoopLength(newClipId, durationInBeats);
 
             // Assign to session view slot (triggers proper notification)
             clipManager.setClipSceneIndex(newClipId, currentSceneIndex);

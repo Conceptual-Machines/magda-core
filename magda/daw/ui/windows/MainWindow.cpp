@@ -288,6 +288,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     addAndMakeVisible(*mainView);
 
     sessionView = std::make_unique<SessionView>();
+    sessionView->setTimelineController(&mainView->getTimelineController());
     addChildComponent(*sessionView);
 
     mixerView = std::make_unique<MixerView>(externalEngine);

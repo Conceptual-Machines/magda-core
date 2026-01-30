@@ -39,14 +39,23 @@ void SessionClipScheduler::clipsChanged() {
 }
 
 void SessionClipScheduler::clipPropertyChanged(ClipId clipId) {
-    // Update cached loop state if the playing clip's properties changed
-    if (launchedClips_.count(clipId) > 0) {
-        const auto* clip = ClipManager::getInstance().getClip(clipId);
-        if (clip) {
-            launchClipLooping_ = clip->internalLoopEnabled;
-            launchClipLength_ = clip->length;
-        }
-    }
+    if (launchedClips_.count(clipId) == 0)
+        return;
+
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (!clip)
+        return;
+
+    // Update cached state — AudioBridge::clipPropertyChanged handles
+    // propagating loop changes to the LaunchHandle (setLooping nullopt),
+    // which makes TE stop the clip at the end of the current pass.
+    // The timer will then detect PlayState::stopped and clean up.
+    launchClipLooping_ = clip->internalLoopEnabled;
+
+    // Convert loop length from beats to seconds for playhead
+    auto& tempoSeq = edit_.tempoSequence;
+    auto loopTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(clip->internalLoopLength));
+    launchClipLength_ = loopTime.inSeconds();
 }
 
 void SessionClipScheduler::clipPlaybackStateChanged(ClipId clipId) {
@@ -55,6 +64,11 @@ void SessionClipScheduler::clipPlaybackStateChanged(ClipId clipId) {
     if (!clip || clip->view != ClipView::Session) {
         return;
     }
+
+    DBG("SessionClipScheduler::clipPlaybackStateChanged: clip "
+        << clipId << " isQueued=" << (int)clip->isQueued << " isPlaying=" << (int)clip->isPlaying
+        << " loopEnabled=" << (int)clip->internalLoopEnabled
+        << " loopLength=" << clip->internalLoopLength << " length=" << clip->length);
 
     if (clip->isQueued && !clip->isPlaying) {
         // Clip was just queued for playback — launch it via LaunchHandle
@@ -66,8 +80,13 @@ void SessionClipScheduler::clipPlaybackStateChanged(ClipId clipId) {
         // Record launch position and clip properties for playhead
         if (launchedClips_.empty()) {
             launchTransportPos_ = transport.getPosition().inSeconds();
-            launchClipLength_ = clip->length;
             launchClipLooping_ = clip->internalLoopEnabled;
+
+            // Convert loop length from beats to seconds for playhead
+            auto& tempoSeq = edit_.tempoSequence;
+            auto loopTime =
+                tempoSeq.beatsToTime(te::BeatPosition::fromBeats(clip->internalLoopLength));
+            launchClipLength_ = loopTime.inSeconds();
         }
 
         audioBridge_.launchSessionClip(clipId);
@@ -88,6 +107,10 @@ void SessionClipScheduler::clipPlaybackStateChanged(ClipId clipId) {
 
         if (launchedClips_.empty()) {
             stopTimer();
+            auto& transport = edit_.getTransport();
+            if (transport.isPlaying()) {
+                transport.stop(false, false);
+            }
         }
     }
 }
@@ -131,6 +154,11 @@ void SessionClipScheduler::timerCallback() {
 
     if (launchedClips_.empty()) {
         stopTimer();
+        // Stop transport when all session clips have ended
+        auto& transport = edit_.getTransport();
+        if (transport.isPlaying()) {
+            transport.stop(false, false);
+        }
     }
 }
 
@@ -164,11 +192,11 @@ double SessionClipScheduler::getSessionPlayheadPosition() const {
     if (elapsed < 0.0)
         elapsed = 0.0;
 
-    if (launchClipLooping_)
-        return std::fmod(elapsed, launchClipLength_);
-
-    // Non-looping: clamp at the clip edge
-    return std::min(elapsed, launchClipLength_);
+    // Always use fmod to get position within the clip boundary.
+    // When looping, this wraps continuously.
+    // When not looping, this shows the position within the final pass
+    // until the TE LaunchHandle reports stopped.
+    return std::fmod(elapsed, launchClipLength_);
 }
 
 }  // namespace magda

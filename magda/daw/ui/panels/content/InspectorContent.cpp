@@ -272,8 +272,9 @@ InspectorContent::InspectorContent() {
     addChildComponent(clipLoopLengthLabel_);
 
     clipLoopLengthSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
-    clipLoopLengthSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 50, 20);
+    clipLoopLengthSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
     clipLoopLengthSlider_.setRange(0.25, 64.0, 0.25);
+    clipLoopLengthSlider_.setTextValueSuffix(" beats");
     clipLoopLengthSlider_.setColour(juce::Slider::trackColourId,
                                     DarkTheme::getColour(DarkTheme::SURFACE));
     clipLoopLengthSlider_.setColour(juce::Slider::thumbColourId,
