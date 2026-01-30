@@ -302,20 +302,6 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
                     // Re-sync MIDI notes from ClipManager to the TE MidiClip
                     if (clip->type == ClipType::MIDI) {
                         if (auto* midiClip = dynamic_cast<te::MidiClip*>(teClip)) {
-                            // Send all-notes-off to prevent stuck notes when
-                            // editing notes during playback
-                            auto& dm = engine_.getDeviceManager();
-                            for (int i = 0; i < dm.getNumMidiOutDevices(); ++i) {
-                                if (auto* midiOut = dm.getMidiOutDevice(i)) {
-                                    if (midiOut->isEnabled()) {
-                                        for (int ch = 1; ch <= 16; ++ch) {
-                                            midiOut->fireMessage(
-                                                juce::MidiMessage::allNotesOff(ch));
-                                        }
-                                    }
-                                }
-                            }
-
                             auto& sequence = midiClip->getSequence();
                             sequence.clear(nullptr);
                             for (const auto& note : clip->midiNotes) {
@@ -435,18 +421,6 @@ void AudioBridge::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip) {
 
     // Force offset to 0 to ensure notes play from clip start
     midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
-
-    // Send all-notes-off to prevent stuck notes when editing during playback
-    auto& dm = engine_.getDeviceManager();
-    for (int i = 0; i < dm.getNumMidiOutDevices(); ++i) {
-        if (auto* midiOut = dm.getMidiOutDevice(i)) {
-            if (midiOut->isEnabled()) {
-                for (int ch = 1; ch <= 16; ++ch) {
-                    midiOut->fireMessage(juce::MidiMessage::allNotesOff(ch));
-                }
-            }
-        }
-    }
 
     // Clear existing notes and add all notes from ClipManager
     auto& sequence = midiClipPtr->getSequence();
