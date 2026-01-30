@@ -568,24 +568,29 @@ void InspectorContent::resized() {
         clipTypeValue_.setBounds(bounds.removeFromTop(20));
         bounds.removeFromTop(12);
 
-        // Start time (read-only for now)
-        clipStartLabel_.setBounds(bounds.removeFromTop(16));
-        clipStartValue_.setBounds(bounds.removeFromTop(20));
-        bounds.removeFromTop(12);
+        // Start and Length — side by side
+        {
+            auto labelRow = bounds.removeFromTop(16);
+            auto halfWidth = labelRow.getWidth() / 2;
+            clipStartLabel_.setBounds(labelRow.removeFromLeft(halfWidth));
+            clipLengthLabel_.setBounds(labelRow);
 
-        // Length (read-only for now)
-        clipLengthLabel_.setBounds(bounds.removeFromTop(16));
-        clipLengthValue_.setBounds(bounds.removeFromTop(20));
-        bounds.removeFromTop(12);
+            auto valueRow = bounds.removeFromTop(20);
+            halfWidth = valueRow.getWidth() / 2;
+            clipStartValue_.setBounds(valueRow.removeFromLeft(halfWidth));
+            clipLengthValue_.setBounds(valueRow);
+            bounds.removeFromTop(12);
+        }
 
-        // Loop toggle
-        clipLoopToggle_.setBounds(bounds.removeFromTop(24));
-        bounds.removeFromTop(8);
+        // Loop controls (hidden for session clips)
+        if (clipLoopToggle_.isVisible()) {
+            clipLoopToggle_.setBounds(bounds.removeFromTop(24));
+            bounds.removeFromTop(8);
 
-        // Loop length
-        clipLoopLengthLabel_.setBounds(bounds.removeFromTop(16));
-        clipLoopLengthSlider_.setBounds(bounds.removeFromTop(24));
-        bounds.removeFromTop(12);
+            clipLoopLengthLabel_.setBounds(bounds.removeFromTop(16));
+            clipLoopLengthSlider_.setBounds(bounds.removeFromTop(24));
+            bounds.removeFromTop(12);
+        }
 
         // Session clip launch properties (only for session clips)
         if (launchQuantizeLabel_.isVisible()) {
@@ -1055,21 +1060,28 @@ void InspectorContent::updateFromSelectedClip() {
             beatsPerBar = state.tempo.timeSignatureNumerator;
         }
 
-        // Format start time as bars.beats.ticks
-        auto startStr =
-            magda::TimelineUtils::formatTimeAsBarsBeats(clip->startTime, bpm, beatsPerBar);
-        clipStartValue_.setText(juce::String(startStr), juce::dontSendNotification);
+        bool isSessionClip = (clip->view == magda::ClipView::Session);
 
-        // Format length as bars and beats
-        auto lengthStr =
-            magda::TimelineUtils::formatDurationAsBarsBeats(clip->length, bpm, beatsPerBar);
-        clipLengthValue_.setText(juce::String(lengthStr), juce::dontSendNotification);
+        if (isSessionClip) {
+            // Session clips: start is always 1.1.000, length from loop length
+            clipStartValue_.setText("1.1.000", juce::dontSendNotification);
+            auto lengthStr =
+                magda::TimelineUtils::formatBeatsAsBarsBeats(clip->internalLoopLength, beatsPerBar);
+            clipLengthValue_.setText(juce::String(lengthStr), juce::dontSendNotification);
+        } else {
+            // Arrangement clips: position and duration in bars.beats.ticks
+            auto startStr =
+                magda::TimelineUtils::formatTimeAsBarsBeats(clip->startTime, bpm, beatsPerBar);
+            clipStartValue_.setText(juce::String(startStr), juce::dontSendNotification);
+            double lengthBeats = magda::TimelineUtils::secondsToBeats(clip->length, bpm);
+            auto lengthStr = magda::TimelineUtils::formatBeatsAsBarsBeats(lengthBeats, beatsPerBar);
+            clipLengthValue_.setText(juce::String(lengthStr), juce::dontSendNotification);
+        }
 
         clipLoopToggle_.setToggleState(clip->internalLoopEnabled, juce::dontSendNotification);
         clipLoopLengthSlider_.setValue(clip->internalLoopLength, juce::dontSendNotification);
 
         // Session clip launch properties
-        bool isSessionClip = (clip->view == magda::ClipView::Session);
         launchModeLabel_.setVisible(false);
         launchModeCombo_.setVisible(false);
         launchQuantizeLabel_.setVisible(isSessionClip);
@@ -1082,6 +1094,14 @@ void InspectorContent::updateFromSelectedClip() {
 
         showClipControls(true);
         noSelectionLabel_.setVisible(false);
+
+        // Session clips: hide loop controls (length field replaces loop length),
+        // show start/length side by side
+        if (isSessionClip) {
+            clipLoopToggle_.setVisible(false);
+            clipLoopLengthLabel_.setVisible(false);
+            clipLoopLengthSlider_.setVisible(false);
+        }
     } else {
         showClipControls(false);
         noSelectionLabel_.setVisible(true);

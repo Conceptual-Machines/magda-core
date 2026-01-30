@@ -249,6 +249,25 @@ inline std::string formatDurationCompact(double duration, double bpm, int beatsP
     return std::string(buffer);
 }
 
+/**
+ * Format a beat count as bars.beats.ticks duration string (e.g., "1.0.000", "2.3.240")
+ * Unlike formatTimeAsBarsBeats, this is 0-indexed for duration display.
+ * @param totalBeats Duration in beats
+ * @param beatsPerBar Time signature numerator
+ * @return Formatted string "bars.beats.ticks"
+ */
+inline std::string formatBeatsAsBarsBeats(double totalBeats, int beatsPerBar) {
+    constexpr int TICKS_PER_BEAT = 480;
+    int wholeBars = static_cast<int>(totalBeats / beatsPerBar);
+    double remaining = std::fmod(totalBeats, beatsPerBar);
+    int wholeBeats = static_cast<int>(remaining);
+    int ticks = static_cast<int>((remaining - wholeBeats) * TICKS_PER_BEAT);
+
+    char buffer[32];
+    std::snprintf(buffer, sizeof(buffer), "%d.%d.%03d", wholeBars, wholeBeats, ticks);
+    return std::string(buffer);
+}
+
 }  // namespace TimelineUtils
 
 }  // namespace magda

@@ -19,7 +19,7 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
     paintGrid(g, bounds);
 
-    // Draw clip boundary lines in absolute mode
+    // Draw clip boundary lines and dim out-of-bounds area
     if (!relativeMode_ && clipLengthBeats_ > 0) {
         // Clip start boundary
         int clipStartX = beatToPixel(clipStartBeats_);
@@ -28,11 +28,24 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
             g.fillRect(clipStartX - 1, 0, 2, bounds.getHeight());
         }
 
+        // Dim area before clip start
+        if (clipStartX > bounds.getX()) {
+            g.setColour(juce::Colour(0x60000000));
+            g.fillRect(bounds.getX(), bounds.getY(), clipStartX - bounds.getX(),
+                       bounds.getHeight());
+        }
+
         // Clip end boundary
         int clipEndX = beatToPixel(clipStartBeats_ + clipLengthBeats_);
         if (clipEndX >= 0 && clipEndX <= bounds.getRight()) {
             g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
             g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
+        }
+
+        // Dim area after clip end
+        if (clipEndX < bounds.getRight()) {
+            g.setColour(juce::Colour(0x60000000));
+            g.fillRect(clipEndX, bounds.getY(), bounds.getRight() - clipEndX, bounds.getHeight());
         }
     } else if (clipLengthBeats_ > 0) {
         // In relative mode, just show end boundary at clip length
@@ -40,6 +53,12 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         if (clipEndX >= 0 && clipEndX <= bounds.getRight()) {
             g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
             g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
+        }
+
+        // Dim area after clip end
+        if (clipEndX < bounds.getRight()) {
+            g.setColour(juce::Colour(0x60000000));
+            g.fillRect(clipEndX, bounds.getY(), bounds.getRight() - clipEndX, bounds.getHeight());
         }
     }
 
