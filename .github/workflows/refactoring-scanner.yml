@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - main
-  # Run bi-weekly on the 1st and 15th at 10:00 AM UTC
-  schedule:
-    - cron: '0 10 1,15 * *'
   # Allow manual triggering
   workflow_dispatch:
 

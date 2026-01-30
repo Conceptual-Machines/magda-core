@@ -63,8 +63,7 @@ gh workflow run periodic-analysis.yml
 
 **Triggers**:
 - Automatic: On every push to `main` branch
-- Scheduled: Bi-weekly (1st and 15th) at 10:00 AM UTC
-- Manual: Can be triggered on-demand
+- Manual: Can be triggered on-demand via GitHub Actions UI or CLI
 
 **What it does**:
 - **Iterates over each file** in the repository individually (*.cpp, *.hpp, *.h)
