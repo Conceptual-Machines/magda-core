@@ -22,9 +22,9 @@ class ExportAudioDialog : public juce::Component {
     struct Settings {
         juce::File outputFile;
         juce::String format;  // "WAV16", "WAV24", "WAV32", "FLAC"
-        double sampleRate;
-        bool normalize;
-        ExportRange exportRange;
+        double sampleRate = 48000.0;
+        bool normalize = false;
+        ExportRange exportRange = ExportRange::EntireSong;
     };
 
     explicit ExportAudioDialog();

@@ -27,10 +27,11 @@ TEST_CASE("ExportRange - Enum values exist", "[export][dialog]") {
 TEST_CASE("ExportAudioDialog::Settings - Default construction", "[export][dialog]") {
     ExportAudioDialog::Settings settings;
 
-    // Should have default/empty values
+    // Should have default values (now properly initialized)
     REQUIRE(settings.format.isEmpty());
-    // sampleRate will be uninitialized or 0 - not critical to test default
+    REQUIRE(settings.sampleRate == Catch::Approx(48000.0));
     REQUIRE(settings.normalize == false);
+    REQUIRE(settings.exportRange == ExportAudioDialog::ExportRange::EntireSong);
     REQUIRE(settings.outputFile == juce::File());
 }
 

@@ -1075,6 +1075,11 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onExportAudio = [this]() {
+        // Prevent multiple simultaneous exports
+        if (fileChooser_ != nullptr) {
+            return;  // Export already in progress
+        }
+
         auto* engine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
         if (!engine || !engine->getEdit()) {
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Export Audio",
@@ -1466,7 +1471,8 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
             }
 
             if (status == juce::ThreadPoolJob::jobNeedsRunningAgain) {
-                // Keep running - no sleep to maximize render speed
+                // Brief yield to avoid busy-waiting while keeping render fast
+                juce::Thread::sleep(1);
                 continue;
             }
 
@@ -1495,7 +1501,10 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
                 errorMessage_.isEmpty() ? "Unknown error occurred during export" : errorMessage_);
         }
 
-        // Delete this window after callback completes
+        // ExportProgressWindow uses self-owned lifecycle pattern:
+        // Created with 'new', manages itself, and deletes with 'delete this' in threadComplete().
+        // This is safe because: 1) threadComplete() is the final callback, 2) JUCE guarantees
+        // no further virtual method calls after this, 3) no external code retains ownership.
         delete this;
     }
 
@@ -1612,6 +1621,8 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
             switch (settings.exportRange) {
                 case ExportRange::TimeSelection:
                     // TODO: Get actual time selection from SelectionManager when implemented
+                    // For now, export entire song (TimeSelection option is disabled in UI until
+                    // implemented)
                     params.time = te::TimeRange(te::TimePosition::fromSeconds(0.0),
                                                 te::TimePosition() + edit->getLength());
                     break;
