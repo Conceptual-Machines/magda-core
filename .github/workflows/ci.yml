@@ -11,6 +11,11 @@ on:
         type: boolean
         default: false
 
+# Ensure only one CI run per branch at a time
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-test-linux:
     runs-on: ubuntu-latest

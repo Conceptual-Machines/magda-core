@@ -5,6 +5,11 @@ on:
     branches: [ main ]
     types: [opened, synchronize, reopened]
 
+# Ensure only one branch protection check runs per PR at a time
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   enforce-branch-protection:
     name: Enforce Branch Protection Requirements
