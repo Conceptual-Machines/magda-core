@@ -45,7 +45,7 @@
 TEST_CASE("AudioBridge - Plugin cleanup ordering", "[audiobridge][bug][plugin][cleanup]") {
     SECTION("Document the current pattern") {
         // Current code pattern (fragile but works):
-        // 
+        //
         // auto plugin = it->second;              // Plugin::Ptr holds reference
         // pluginToDevice_.erase(plugin.get());   // Uses raw pointer as key
         // deviceToPlugin_.erase(it);             // Removes plugin from map
@@ -53,10 +53,10 @@ TEST_CASE("AudioBridge - Plugin cleanup ordering", "[audiobridge][bug][plugin][c
         //
         // This works because `plugin` holds a reference count.
         // But it's fragile - if refactored to not use local variable, it breaks.
-        
+
         REQUIRE(true);  // Documentation test
     }
-    
+
     SECTION("Potential refactoring that would break") {
         // If someone refactors to this (seemingly equivalent):
         //
@@ -65,10 +65,10 @@ TEST_CASE("AudioBridge - Plugin cleanup ordering", "[audiobridge][bug][plugin][c
         // it->second->deleteFromParent();
         //
         // This would be BROKEN if reference count drops to zero between operations.
-        
+
         REQUIRE(true);  // Documentation test
     }
-    
+
     SECTION("Safer ordering: erase from deviceToPlugin_ first") {
         // Recommended pattern:
         //
@@ -78,10 +78,10 @@ TEST_CASE("AudioBridge - Plugin cleanup ordering", "[audiobridge][bug][plugin][c
         // plugin->deleteFromParent();            // Delete plugin
         //
         // This is safer because we erase from deviceToPlugin_ before using get()
-        
+
         REQUIRE(true);  // Documentation test
     }
-    
+
     SECTION("Alternative: store raw pointer explicitly") {
         // Another safe pattern:
         //
@@ -92,7 +92,7 @@ TEST_CASE("AudioBridge - Plugin cleanup ordering", "[audiobridge][bug][plugin][c
         // plugin->deleteFromParent();
         //
         // This makes it clear that we're holding the pointer before using it
-        
+
         REQUIRE(true);  // Documentation test
     }
 }
@@ -116,10 +116,10 @@ TEST_CASE("AudioBridge - Plugin cleanup code locations", "[audiobridge][bug][ref
         //
         // The issue is subtle: plugin.get() is used after deviceToPlugin_.erase(it)
         // could have been called. While currently safe, it's not future-proof.
-        
+
         REQUIRE(true);  // Documentation test
     }
-    
+
     SECTION("Why this is currently safe") {
         // The code is currently safe because:
         // 1. `plugin` variable holds a te::Plugin::Ptr (likely a reference-counted pointer)
@@ -130,10 +130,10 @@ TEST_CASE("AudioBridge - Plugin cleanup code locations", "[audiobridge][bug][ref
         // - Not obvious to future maintainers
         // - Easy to break during refactoring
         // - Uses raw pointer after potential map modifications
-        
+
         REQUIRE(true);  // Documentation test
     }
-    
+
     SECTION("Impact assessment") {
         // Current impact: LOW
         // - Code works correctly as written
@@ -145,7 +145,7 @@ TEST_CASE("AudioBridge - Plugin cleanup code locations", "[audiobridge][bug][ref
         // - May only manifest under specific timing conditions
         //
         // Recommendation: Fix proactively to improve code clarity
-        
+
         REQUIRE(true);  // Documentation test
     }
 }
@@ -159,10 +159,10 @@ TEST_CASE("AudioBridge - General plugin lifetime patterns", "[audiobridge][plugi
         // 3. Be explicit about lifetime - use local variables to hold references
         // 4. Erase from containers before calling deletion methods
         // 5. Document lifetime assumptions in comments
-        
+
         REQUIRE(true);  // Documentation test
     }
-    
+
     SECTION("Pattern: bidirectional maps with shared pointers") {
         // When you have bidirectional maps like:
         //   std::map<A, std::shared_ptr<B>> mapAtoB;
@@ -174,7 +174,7 @@ TEST_CASE("AudioBridge - General plugin lifetime patterns", "[audiobridge][plugi
         //   3. Erase from mapBtoA using stored pointer
         //
         // This ensures the raw pointer is valid when used as a key
-        
+
         REQUIRE(true);  // Documentation test
     }
 }

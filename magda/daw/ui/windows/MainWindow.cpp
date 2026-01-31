@@ -1451,9 +1451,17 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
             setProgress(progress.load());
 
             if (status == juce::ThreadPoolJob::jobHasFinished) {
-                success_ = true;
-                setStatusMessage("Export complete!");
-                setProgress(1.0);
+                // Verify the file was actually created
+                if (outputFile_.existsAsFile()) {
+                    success_ = true;
+                    setStatusMessage("Export complete!");
+                    setProgress(1.0);
+                } else {
+                    success_ = false;
+                    errorMessage_ = "Render completed but file was not created. The project may be "
+                                    "empty or contain no audio.";
+                    setStatusMessage("Export failed");
+                }
                 break;
             }
 
@@ -1560,6 +1568,17 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
             // returns (playbackContext != nullptr), so we must free it
             te::freePlaybackContextIfNotRecording(transport);
 
+            // CRITICAL: Enable all plugins for offline rendering
+            // When transport stops, AudioBridge bypasses generator plugins (like test tone)
+            // but we need them enabled for export to work properly
+            for (auto track : te::getAudioTracks(*edit)) {
+                for (auto plugin : track->pluginList) {
+                    if (!plugin->isEnabled()) {
+                        plugin->setEnabled(true);
+                    }
+                }
+            }
+
             // Create Renderer::Parameters
             te::Renderer::Parameters params(*edit);
             params.destFile = file;
@@ -1580,6 +1599,9 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
             params.normaliseToLevelDb = 0.0f;
             params.useMasterPlugins = true;
             params.usePlugins = true;
+
+            // Allow export even when there are no clips (generator devices can still produce audio)
+            params.checkNodesForAudio = false;
 
             // Optimize for faster-than-realtime offline rendering
             params.blockSizeForAudio = 8192;  // Much larger than default 512 for faster rendering

@@ -34,8 +34,8 @@ void TracktionEngineWrapper::initializePluginFormats() {
 
     // Log registered plugin formats
     auto& formatManager = pluginManager.pluginFormatManager;
-    std::cout << "Plugin formats registered by Tracktion Engine: "
-              << formatManager.getNumFormats() << std::endl;
+    std::cout << "Plugin formats registered by Tracktion Engine: " << formatManager.getNumFormats()
+              << std::endl;
     for (int i = 0; i < formatManager.getNumFormats(); ++i) {
         auto* format = formatManager.getFormat(i);
         if (format) {
@@ -141,8 +141,8 @@ void TracktionEngineWrapper::configureAudioDevices() {
     auto result = juceDeviceManager.setAudioDeviceSetup(setup, true);
     if (result.isEmpty()) {
         DBG("Successfully selected preferred devices - Input: "
-            << setup.inputDeviceName << " (" << preferredInputs << " ch), Output: "
-            << setup.outputDeviceName << " (" << preferredOutputs << " ch)");
+            << setup.inputDeviceName << " (" << preferredInputs
+            << " ch), Output: " << setup.outputDeviceName << " (" << preferredOutputs << " ch)");
     } else {
         DBG("Failed to select preferred devices: " << result);
     }
@@ -430,8 +430,8 @@ void TracktionEngineWrapper::handlePlaybackContextReallocation(tracktion::Device
     if (totalDevices > lastKnownDeviceCount_) {
         ctx->reallocate();
         int inputsAfter = static_cast<int>(ctx->getAllInputs().size());
-        DBG("Device change: Reallocated playback context (inputs: "
-            << inputsBefore << " -> " << inputsAfter << ")");
+        DBG("Device change: Reallocated playback context (inputs: " << inputsBefore << " -> "
+                                                                    << inputsAfter << ")");
     }
     lastKnownDeviceCount_ = totalDevices;
 }
