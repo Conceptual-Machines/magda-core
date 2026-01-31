@@ -522,6 +522,7 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
         // UPPER ZONE: Clip operations
         if (!onClip) {
             // Clicked empty space in upper zone - deselect clips (unless Cmd held)
+            // But DON'T clear selection if we might be setting edit cursor
             if (!event.mods.isCommandDown()) {
                 SelectionManager::getInstance().clearSelection();
             }
@@ -533,6 +534,10 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
             isMovingSelection = false;
         }
     } else {
+        // LOWER ZONE: Time selection / edit cursor operations
+        // Explicitly preserve clip selection when clicking in lower zone
+        // (User might be positioning edit cursor to split selected clips)
+
         // LOWER ZONE: Time selection operations
         bool isLeftEdge = false;
         if (isOnSelectionEdge(event.x, event.y, isLeftEdge)) {
@@ -1243,15 +1248,20 @@ void TrackContentPanel::finishMarqueeSelection(bool addToSelection) {
     // Get all clips in the marquee rectangle
     auto clipsInRect = getClipsInRect(marqueeRect_);
 
-    if (addToSelection) {
-        // Add to existing selection (Shift key held)
-        for (ClipId clipId : clipsInRect) {
-            SelectionManager::getInstance().addClipToSelection(clipId);
+    // Only update selection if we actually captured some clips
+    // This prevents accidental selection clearing from tiny marquee drags
+    if (!clipsInRect.empty() || marqueeRect_.getWidth() > 10 || marqueeRect_.getHeight() > 10) {
+        if (addToSelection) {
+            // Add to existing selection (Shift key held)
+            for (ClipId clipId : clipsInRect) {
+                SelectionManager::getInstance().addClipToSelection(clipId);
+            }
+        } else {
+            // Replace selection
+            SelectionManager::getInstance().selectClips(clipsInRect);
         }
-    } else {
-        // Replace selection
-        SelectionManager::getInstance().selectClips(clipsInRect);
     }
+    // If marquee was tiny and caught nothing, preserve existing selection
 
     // Clear marquee preview highlights
     for (auto& clipComp : clipComponents_) {
