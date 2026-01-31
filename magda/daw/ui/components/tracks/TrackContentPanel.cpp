@@ -548,7 +548,30 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
             moveSelectionOriginalTracks = selection.trackIndices;
 
             // Capture all clips within the time selection for trimming
-            captureClipsInTimeSelection();
+            originalClipsInSelection_.clear();
+            const auto& clips = ClipManager::getInstance().getArrangementClips();
+            for (const auto& clip : clips) {
+                // Check if clip's track is in the selection
+                auto it = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), clip.trackId);
+                if (it == visibleTrackIds_.end()) {
+                    continue;
+                }
+
+                int trackIndex = static_cast<int>(std::distance(visibleTrackIds_.begin(), it));
+                if (!selection.includesTrack(trackIndex)) {
+                    continue;
+                }
+
+                // Check if clip overlaps with selection time range
+                double clipEnd = clip.startTime + clip.length;
+                if (clip.startTime < selection.endTime && clipEnd > selection.startTime) {
+                    ClipOriginalData data;
+                    data.originalStartTime = clip.startTime;
+                    data.originalLength = clip.length;
+                    data.originalTrackId = clip.trackId;
+                    originalClipsInSelection_[clip.id] = data;
+                }
+            }
             return;
         } else if (isOnExistingSelection(event.x, event.y)) {
             // Clicked inside existing time selection - prepare to move it
