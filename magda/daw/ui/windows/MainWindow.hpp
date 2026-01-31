@@ -4,6 +4,7 @@
 
 #include <memory>
 
+#include "../../core/SelectionManager.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
 #include "../layout/LayoutConfig.hpp"
 #include "MenuManager.hpp"
@@ -56,7 +57,8 @@ class MainWindow : public juce::DocumentWindow {
 
 class MainWindow::MainComponent : public juce::Component,
                                   public juce::DragAndDropContainer,
-                                  public ViewModeListener {
+                                  public ViewModeListener,
+                                  public SelectionManagerListener {
   public:
     MainComponent(AudioEngine* externalEngine = nullptr);
     ~MainComponent() override;
@@ -69,6 +71,9 @@ class MainWindow::MainComponent : public juce::Component,
 
     // ViewModeListener
     void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
+
+    // SelectionManagerListener
+    void selectionTypeChanged(SelectionType newType) override;
 
     // Make these public so MainWindow can access them
     bool leftPanelVisible = true;

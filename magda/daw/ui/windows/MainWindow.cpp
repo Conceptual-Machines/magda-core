@@ -384,6 +384,9 @@ void MainWindow::MainComponent::setupViewModeListener() {
     ViewModeController::getInstance().addListener(this);
     currentViewMode = ViewModeController::getInstance().getViewMode();
     switchToView(currentViewMode);
+
+    // Also listen to selection changes to update menu state
+    SelectionManager::getInstance().addListener(this);
 }
 
 void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
@@ -525,6 +528,10 @@ MainWindow::MainComponent::~MainComponent() {
     std::cout << "    [5g] Removing ViewModeController listener..." << std::endl;
     std::cout.flush();
     ViewModeController::getInstance().removeListener(this);
+
+    std::cout << "    [5g.1] Removing SelectionManager listener..." << std::endl;
+    std::cout.flush();
+    SelectionManager::getInstance().removeListener(this);
 
     // Explicitly reset unique_ptrs in order to see which one crashes
     std::cout << "    [5h] Destroying loadingOverlay_..." << std::endl;
@@ -682,8 +689,9 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
-    // S: Toggle solo on selected track (without modifiers - Cmd+S is Save)
-    if (key == juce::KeyPress('s') && !key.getModifiers().isCommandDown()) {
+    // Shift+S: Toggle solo on selected track
+    if ((key == juce::KeyPress('s') || key == juce::KeyPress('S')) &&
+        key.getModifiers().isShiftDown() && !key.getModifiers().isCommandDown()) {
         if (mixerView && !mixerView->isSelectedMaster()) {
             int selectedIndex = mixerView->getSelectedChannel();
             if (selectedIndex >= 0) {
@@ -799,6 +807,30 @@ void MainWindow::MainComponent::viewModeChanged(ViewMode mode,
         currentViewMode = mode;
         switchToView(mode);
     }
+}
+
+void MainWindow::MainComponent::selectionTypeChanged(SelectionType newType) {
+    // Update menu state based on selection
+    auto& selectionManager = SelectionManager::getInstance();
+    bool hasSelection = (newType == SelectionType::Clip || newType == SelectionType::MultiClip) &&
+                        selectionManager.getSelectedClipCount() > 0;
+
+    // Get transport and edit cursor state (if available)
+    bool isPlaying = false;
+    bool isRecording = false;
+    bool isLooping = false;
+    bool hasEditCursor = false;
+    if (mainView) {
+        const auto& timelineState = mainView->getTimelineController().getState();
+        isPlaying = timelineState.playhead.isPlaying;
+        isRecording = timelineState.playhead.isRecording;
+        isLooping = timelineState.loop.enabled;
+        hasEditCursor = timelineState.editCursorPosition >= 0;
+    }
+
+    MenuManager::getInstance().updateMenuStates(
+        false, false, hasSelection, hasEditCursor, leftPanelVisible, rightPanelVisible,
+        bottomPanelVisible, isPlaying, isRecording, isLooping);
 }
 
 void MainWindow::MainComponent::switchToView(ViewMode mode) {
@@ -1187,20 +1219,44 @@ void MainWindow::setupMenuCallbacks() {
 
     callbacks.onSplit = [this]() {
         auto& clipManager = ClipManager::getInstance();
-        auto& selectionManager = SelectionManager::getInstance();
-        auto selectedClips = selectionManager.getSelectedClips();
-        if (mainComponent->mainView && !selectedClips.empty()) {
-            double splitTime =
-                mainComponent->mainView->getTimelineController().getState().editCursorPosition;
-            if (splitTime >= 0) {
-                for (auto clipId : selectedClips) {
-                    const auto* clip = clipManager.getClip(clipId);
-                    if (clip && splitTime > clip->startTime &&
-                        splitTime < clip->startTime + clip->length) {
-                        clipManager.splitClip(clipId, splitTime);
-                    }
-                }
+
+        if (!mainComponent->mainView) {
+            return;
+        }
+
+        double splitTime =
+            mainComponent->mainView->getTimelineController().getState().editCursorPosition;
+        if (splitTime < 0) {
+            return;  // No edit cursor set
+        }
+
+        // Split ALL clips that intersect with cursor (regardless of selection)
+        const auto& allClips = clipManager.getArrangementClips();
+
+        // Collect clips to split
+        std::vector<ClipId> clipsToSplit;
+        for (const auto& clip : allClips) {
+            if (splitTime > clip.startTime && splitTime < clip.startTime + clip.length) {
+                clipsToSplit.push_back(clip.id);
             }
+        }
+
+        if (clipsToSplit.empty()) {
+            return;  // No clips at cursor position
+        }
+
+        // Use compound operation if splitting multiple clips
+        if (clipsToSplit.size() > 1) {
+            UndoManager::getInstance().beginCompoundOperation("Split Clips");
+        }
+
+        for (auto clipId : clipsToSplit) {
+            auto cmd = std::make_unique<SplitClipCommand>(clipId, splitTime);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+        }
+
+        if (clipsToSplit.size() > 1) {
+            UndoManager::getInstance().endCompoundOperation();
         }
     };
 
@@ -1275,7 +1331,7 @@ void MainWindow::setupMenuCallbacks() {
             mainComponent->resized();
             // Update menu state
             MenuManager::getInstance().updateMenuStates(
-                false, false, false, mainComponent->leftPanelVisible,
+                false, false, false, false, mainComponent->leftPanelVisible,
                 mainComponent->rightPanelVisible, mainComponent->bottomPanelVisible, false, false,
                 false);
         }
@@ -1287,7 +1343,7 @@ void MainWindow::setupMenuCallbacks() {
             mainComponent->resized();
             // Update menu state
             MenuManager::getInstance().updateMenuStates(
-                false, false, false, mainComponent->leftPanelVisible,
+                false, false, false, false, mainComponent->leftPanelVisible,
                 mainComponent->rightPanelVisible, mainComponent->bottomPanelVisible, false, false,
                 false);
         }
@@ -1299,7 +1355,7 @@ void MainWindow::setupMenuCallbacks() {
             mainComponent->resized();
             // Update menu state
             MenuManager::getInstance().updateMenuStates(
-                false, false, false, mainComponent->leftPanelVisible,
+                false, false, false, false, mainComponent->leftPanelVisible,
                 mainComponent->rightPanelVisible, mainComponent->bottomPanelVisible, false, false,
                 false);
         }

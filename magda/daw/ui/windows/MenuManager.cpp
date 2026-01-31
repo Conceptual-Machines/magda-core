@@ -24,12 +24,13 @@ void MenuManager::initialize(const MenuCallbacks& callbacks) {
 }
 
 void MenuManager::updateMenuStates(bool canUndo, bool canRedo, bool hasSelection,
-                                   bool leftPanelVisible, bool rightPanelVisible,
-                                   bool bottomPanelVisible, bool isPlaying, bool isRecording,
-                                   bool isLooping) {
+                                   bool hasEditCursor, bool leftPanelVisible,
+                                   bool rightPanelVisible, bool bottomPanelVisible, bool isPlaying,
+                                   bool isRecording, bool isLooping) {
     canUndo_ = canUndo;
     canRedo_ = canRedo;
     hasSelection_ = hasSelection;
+    hasEditCursor_ = hasEditCursor;
     leftPanelVisible_ = leftPanelVisible;
     rightPanelVisible_ = rightPanelVisible;
     bottomPanelVisible_ = bottomPanelVisible;
@@ -103,7 +104,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addItem(Delete, juce::String("Delete") + juce::String::fromUTF8("\t\u232B"),
                      hasSelection_, false);
         menu.addSeparator();
-        menu.addItem(Split, "Split at Cursor\tS", hasSelection_, false);
+        menu.addItem(Split, "Split at Cursor\tS", hasEditCursor_, false);
         menu.addItem(Trim, "Trim to Selection\tT", hasSelection_, false);
         menu.addSeparator();
         menu.addItem(SelectAll, juce::String("Select All") + juce::String::fromUTF8("\t\u2318A"),
@@ -118,7 +119,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addItem(Duplicate, "Duplicate\tCtrl+D", hasSelection_, false);
         menu.addItem(Delete, "Delete\tDelete", hasSelection_, false);
         menu.addSeparator();
-        menu.addItem(Split, "Split at Cursor\tS", hasSelection_, false);
+        menu.addItem(Split, "Split at Cursor\tS", hasEditCursor_, false);
         menu.addItem(Trim, "Trim to Selection\tT", hasSelection_, false);
         menu.addSeparator();
         menu.addItem(SelectAll, "Select All\tCtrl+A", true, false);

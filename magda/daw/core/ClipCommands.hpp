@@ -2,35 +2,36 @@
 
 #include "ClipInfo.hpp"
 #include "ClipManager.hpp"
-#include "UndoManager.hpp"
+#include "CommandPattern.hpp"
 
 namespace magda {
 
 /**
  * @brief Command for splitting a clip at a given time
  *
+ * Uses SnapshotCommand for complete state capture and reliable undo.
  * Creates a new clip (right half) and modifies the original (left half).
- * Undo restores the original clip to its full length and removes the new clip.
  */
-class SplitClipCommand : public UndoableCommand {
+class SplitClipCommand : public SnapshotCommand<ClipInfo> {
   public:
     SplitClipCommand(ClipId clipId, double splitTime);
 
-    void execute() override;
-    void undo() override;
     juce::String getDescription() const override {
         return "Split Clip";
     }
 
-  private:
-    ClipId originalClipId_;
-    double splitTime_;
+    bool canExecute() const override;
 
-    // Stored state for undo
-    juce::String originalName_;
-    double originalLength_;
-    ClipId createdClipId_ = INVALID_CLIP_ID;
-    bool executed_ = false;
+  protected:
+    ClipInfo captureState() override;
+    void restoreState(const ClipInfo& state) override;
+    void performAction() override;
+    bool validateState() const override;
+
+  private:
+    ClipId clipId_;
+    double splitTime_;
+    ClipId rightClipId_ = INVALID_CLIP_ID;
 };
 
 /**
@@ -38,12 +39,10 @@ class SplitClipCommand : public UndoableCommand {
  *
  * Supports merging consecutive small moves into a single undo step.
  */
-class MoveClipCommand : public UndoableCommand {
+class MoveClipCommand : public SnapshotCommand<ClipInfo> {
   public:
     MoveClipCommand(ClipId clipId, double newStartTime);
 
-    void execute() override;
-    void undo() override;
     juce::String getDescription() const override {
         return "Move Clip";
     }
@@ -51,31 +50,38 @@ class MoveClipCommand : public UndoableCommand {
     bool canMergeWith(const UndoableCommand* other) const override;
     void mergeWith(const UndoableCommand* other) override;
 
+  protected:
+    ClipInfo captureState() override;
+    void restoreState(const ClipInfo& state) override;
+    void performAction() override;
+
   private:
     ClipId clipId_;
-    double oldStartTime_;
     double newStartTime_;
-    bool executed_ = false;
 };
 
 /**
  * @brief Command for moving a clip to a different track
  */
-class MoveClipToTrackCommand : public UndoableCommand {
+class MoveClipToTrackCommand : public SnapshotCommand<ClipInfo> {
   public:
     MoveClipToTrackCommand(ClipId clipId, TrackId newTrackId);
 
-    void execute() override;
-    void undo() override;
     juce::String getDescription() const override {
         return "Move Clip to Track";
     }
 
+    bool canExecute() const override;
+
+  protected:
+    ClipInfo captureState() override;
+    void restoreState(const ClipInfo& state) override;
+    void performAction() override;
+    bool validateState() const override;
+
   private:
     ClipId clipId_;
-    TrackId oldTrackId_;
     TrackId newTrackId_;
-    bool executed_ = false;
 };
 
 /**
@@ -83,12 +89,10 @@ class MoveClipToTrackCommand : public UndoableCommand {
  *
  * Supports merging consecutive resize operations.
  */
-class ResizeClipCommand : public UndoableCommand {
+class ResizeClipCommand : public SnapshotCommand<ClipInfo> {
   public:
     ResizeClipCommand(ClipId clipId, double newLength, bool fromStart = false);
 
-    void execute() override;
-    void undo() override;
     juce::String getDescription() const override {
         return "Resize Clip";
     }
@@ -96,14 +100,15 @@ class ResizeClipCommand : public UndoableCommand {
     bool canMergeWith(const UndoableCommand* other) const override;
     void mergeWith(const UndoableCommand* other) override;
 
+  protected:
+    ClipInfo captureState() override;
+    void restoreState(const ClipInfo& state) override;
+    void performAction() override;
+
   private:
     ClipId clipId_;
-    double oldStartTime_;
-    double oldLength_;
-    double newStartTime_;
     double newLength_;
     bool fromStart_;
-    bool executed_ = false;
 };
 
 /**
@@ -111,42 +116,58 @@ class ResizeClipCommand : public UndoableCommand {
  *
  * Stores the full clip info for restoration on undo.
  */
-class DeleteClipCommand : public UndoableCommand {
+class DeleteClipCommand : public SnapshotCommand<ClipInfo> {
   public:
     explicit DeleteClipCommand(ClipId clipId);
 
-    void execute() override;
-    void undo() override;
     juce::String getDescription() const override {
         return "Delete Clip";
     }
 
+  protected:
+    ClipInfo captureState() override;
+    void restoreState(const ClipInfo& state) override;
+    void performAction() override;
+    bool validateState() const override;
+
   private:
     ClipId clipId_;
-    ClipInfo storedClip_;
-    bool executed_ = false;
+};
+
+/**
+ * @brief State for CreateClipCommand - stores creation parameters
+ */
+struct CreateClipState {
+    ClipId createdClipId = INVALID_CLIP_ID;
+    bool wasCreated = false;
 };
 
 /**
  * @brief Command for creating a new clip
  *
- * For undo, simply deletes the created clip.
+ * For undo, deletes the created clip.
  */
-class CreateClipCommand : public UndoableCommand {
+class CreateClipCommand : public SnapshotCommand<CreateClipState> {
   public:
     CreateClipCommand(ClipType type, TrackId trackId, double startTime, double length,
                       const juce::String& audioFilePath = {},
                       ClipView view = ClipView::Arrangement);
 
-    void execute() override;
-    void undo() override;
     juce::String getDescription() const override {
         return type_ == ClipType::Audio ? "Create Audio Clip" : "Create MIDI Clip";
     }
 
+    bool canExecute() const override;
+
     ClipId getCreatedClipId() const {
         return createdClipId_;
     }
+
+  protected:
+    CreateClipState captureState() override;
+    void restoreState(const CreateClipState& state) override;
+    void performAction() override;
+    bool validateState() const override;
 
   private:
     ClipType type_;
@@ -156,33 +177,45 @@ class CreateClipCommand : public UndoableCommand {
     juce::String audioFilePath_;
     ClipView view_;
     ClipId createdClipId_ = INVALID_CLIP_ID;
-    bool executed_ = false;
+};
+
+/**
+ * @brief State for DuplicateClipCommand
+ */
+struct DuplicateClipState {
+    ClipId duplicatedClipId = INVALID_CLIP_ID;
+    bool wasDuplicated = false;
 };
 
 /**
  * @brief Command for duplicating a clip
  */
-class DuplicateClipCommand : public UndoableCommand {
+class DuplicateClipCommand : public SnapshotCommand<DuplicateClipState> {
   public:
     DuplicateClipCommand(ClipId sourceClipId, double startTime = -1.0,
                          TrackId targetTrackId = INVALID_TRACK_ID);
 
-    void execute() override;
-    void undo() override;
     juce::String getDescription() const override {
         return "Duplicate Clip";
     }
 
+    bool canExecute() const override;
+
     ClipId getDuplicatedClipId() const {
         return duplicatedClipId_;
     }
+
+  protected:
+    DuplicateClipState captureState() override;
+    void restoreState(const DuplicateClipState& state) override;
+    void performAction() override;
+    bool validateState() const override;
 
   private:
     ClipId sourceClipId_;
     double startTime_;       // -1 = use default (after source)
     TrackId targetTrackId_;  // INVALID = same track
     ClipId duplicatedClipId_ = INVALID_CLIP_ID;
-    bool executed_ = false;
 };
 
 }  // namespace magda

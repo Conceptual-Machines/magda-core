@@ -9,52 +9,76 @@ namespace magda {
 // ============================================================================
 
 SplitClipCommand::SplitClipCommand(ClipId clipId, double splitTime)
-    : originalClipId_(clipId), splitTime_(splitTime), originalLength_(0.0) {}
+    : clipId_(clipId), splitTime_(splitTime) {}
 
-void SplitClipCommand::execute() {
-    auto& clipManager = ClipManager::getInstance();
-    const auto* clip = clipManager.getClip(originalClipId_);
-
-    if (!clip) {
-        std::cout << "📝 UNDO: SplitClipCommand::execute - clip not found" << std::endl;
-        return;
-    }
-
-    // Store state for undo (only on first execute)
-    if (!executed_) {
-        originalName_ = clip->name;
-        originalLength_ = clip->length;
-    }
-
-    // Perform the split
-    createdClipId_ = clipManager.splitClip(originalClipId_, splitTime_);
-    executed_ = true;
-
-    std::cout << "📝 UNDO: Split clip " << originalClipId_ << " at " << splitTime_
-              << " -> new clip " << createdClipId_ << std::endl;
+bool SplitClipCommand::canExecute() const {
+    auto* clip = ClipManager::getInstance().getClip(clipId_);
+    return clip && splitTime_ > clip->startTime && splitTime_ < clip->getEndTime();
 }
 
-void SplitClipCommand::undo() {
-    if (!executed_ || createdClipId_ == INVALID_CLIP_ID) {
-        return;
-    }
+ClipInfo SplitClipCommand::captureState() {
+    auto* clip = ClipManager::getInstance().getClip(clipId_);
+    return clip ? *clip : ClipInfo{};
+}
 
+void SplitClipCommand::restoreState(const ClipInfo& state) {
     auto& clipManager = ClipManager::getInstance();
 
-    // Delete the created right clip
-    clipManager.deleteClip(createdClipId_);
-
-    // Restore original clip's properties
-    if (auto* clip = clipManager.getClip(originalClipId_)) {
-        clip->name = originalName_;
-        clip->length = originalLength_;
+    // Delete the right clip if it exists
+    if (rightClipId_ != INVALID_CLIP_ID) {
+        clipManager.deleteClip(rightClipId_);
+        rightClipId_ = INVALID_CLIP_ID;
     }
 
-    // Force UI refresh after direct property modification
-    clipManager.forceNotifyClipsChanged();
+    // Restore original clip completely
+    if (auto* clip = clipManager.getClip(clipId_)) {
+        *clip = state;  // Full restoration - no missing fields!
+        clipManager.forceNotifyClipsChanged();
+    }
+}
 
-    std::cout << "📝 UNDO: Undid split - deleted clip " << createdClipId_ << ", restored clip "
-              << originalClipId_ << std::endl;
+void SplitClipCommand::performAction() {
+    rightClipId_ = ClipManager::getInstance().splitClip(clipId_, splitTime_);
+
+    std::cout << "📝 UNDO: Split clip " << clipId_ << " at " << splitTime_ << " -> new clip "
+              << rightClipId_ << std::endl;
+}
+
+bool SplitClipCommand::validateState() const {
+    auto& clipManager = ClipManager::getInstance();
+
+    // Validate left clip exists and has correct track
+    auto* leftClip = clipManager.getClip(clipId_);
+    if (!leftClip) {
+        return false;
+    }
+
+    // Validate clip has a valid track
+    if (leftClip->trackId == INVALID_TRACK_ID) {
+        std::cerr << "ERROR: Clip " << clipId_ << " has invalid track!" << std::endl;
+        return false;
+    }
+
+    // If executed, validate right clip exists
+    if (executed_ && rightClipId_ != INVALID_CLIP_ID) {
+        auto* rightClip = clipManager.getClip(rightClipId_);
+        if (!rightClip) {
+            return false;
+        }
+
+        // Validate right clip has valid track
+        if (rightClip->trackId == INVALID_TRACK_ID) {
+            std::cerr << "ERROR: Right clip " << rightClipId_ << " has invalid track!" << std::endl;
+            return false;
+        }
+
+        // Validate clips are adjacent and continuous
+        if (std::abs(leftClip->getEndTime() - rightClip->startTime) > 0.001) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 // ============================================================================
@@ -62,35 +86,26 @@ void SplitClipCommand::undo() {
 // ============================================================================
 
 MoveClipCommand::MoveClipCommand(ClipId clipId, double newStartTime)
-    : clipId_(clipId), oldStartTime_(0.0), newStartTime_(newStartTime) {}
+    : clipId_(clipId), newStartTime_(newStartTime) {}
 
-void MoveClipCommand::execute() {
-    auto& clipManager = ClipManager::getInstance();
-    const auto* clip = clipManager.getClip(clipId_);
-
-    if (!clip) {
-        return;
-    }
-
-    // Store old position (only on first execute)
-    if (!executed_) {
-        oldStartTime_ = clip->startTime;
-    }
-
-    clipManager.moveClip(clipId_, newStartTime_);
-    executed_ = true;
+ClipInfo MoveClipCommand::captureState() {
+    auto* clip = ClipManager::getInstance().getClip(clipId_);
+    return clip ? *clip : ClipInfo{};
 }
 
-void MoveClipCommand::undo() {
-    if (!executed_) {
-        return;
+void MoveClipCommand::restoreState(const ClipInfo& state) {
+    auto& clipManager = ClipManager::getInstance();
+    if (auto* clip = clipManager.getClip(clipId_)) {
+        *clip = state;
+        clipManager.forceNotifyClipsChanged();
     }
+}
 
-    ClipManager::getInstance().moveClip(clipId_, oldStartTime_);
+void MoveClipCommand::performAction() {
+    ClipManager::getInstance().moveClip(clipId_, newStartTime_);
 }
 
 bool MoveClipCommand::canMergeWith(const UndoableCommand* other) const {
-    // Merge with subsequent moves of the same clip
     auto* otherMove = dynamic_cast<const MoveClipCommand*>(other);
     return otherMove != nullptr && otherMove->clipId_ == clipId_;
 }
@@ -98,7 +113,7 @@ bool MoveClipCommand::canMergeWith(const UndoableCommand* other) const {
 void MoveClipCommand::mergeWith(const UndoableCommand* other) {
     auto* otherMove = dynamic_cast<const MoveClipCommand*>(other);
     if (otherMove) {
-        // Keep our oldStartTime, update to their newStartTime
+        // Update to their new position
         newStartTime_ = otherMove->newStartTime_;
     }
 }
@@ -108,31 +123,43 @@ void MoveClipCommand::mergeWith(const UndoableCommand* other) {
 // ============================================================================
 
 MoveClipToTrackCommand::MoveClipToTrackCommand(ClipId clipId, TrackId newTrackId)
-    : clipId_(clipId), oldTrackId_(INVALID_TRACK_ID), newTrackId_(newTrackId) {}
+    : clipId_(clipId), newTrackId_(newTrackId) {}
 
-void MoveClipToTrackCommand::execute() {
-    auto& clipManager = ClipManager::getInstance();
-    const auto* clip = clipManager.getClip(clipId_);
-
-    if (!clip) {
-        return;
-    }
-
-    // Store old track (only on first execute)
-    if (!executed_) {
-        oldTrackId_ = clip->trackId;
-    }
-
-    clipManager.moveClipToTrack(clipId_, newTrackId_);
-    executed_ = true;
+bool MoveClipToTrackCommand::canExecute() const {
+    auto* clip = ClipManager::getInstance().getClip(clipId_);
+    return clip && newTrackId_ != INVALID_TRACK_ID;
 }
 
-void MoveClipToTrackCommand::undo() {
-    if (!executed_) {
-        return;
+ClipInfo MoveClipToTrackCommand::captureState() {
+    auto* clip = ClipManager::getInstance().getClip(clipId_);
+    return clip ? *clip : ClipInfo{};
+}
+
+void MoveClipToTrackCommand::restoreState(const ClipInfo& state) {
+    auto& clipManager = ClipManager::getInstance();
+    if (auto* clip = clipManager.getClip(clipId_)) {
+        *clip = state;
+        clipManager.forceNotifyClipsChanged();
+    }
+}
+
+void MoveClipToTrackCommand::performAction() {
+    ClipManager::getInstance().moveClipToTrack(clipId_, newTrackId_);
+}
+
+bool MoveClipToTrackCommand::validateState() const {
+    auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (!clip) {
+        return false;
     }
 
-    ClipManager::getInstance().moveClipToTrack(clipId_, oldTrackId_);
+    // Critical: ensure clip has valid track
+    if (clip->trackId == INVALID_TRACK_ID) {
+        std::cerr << "ERROR: Clip " << clipId_ << " has invalid track after move!" << std::endl;
+        return false;
+    }
+
+    return true;
 }
 
 // ============================================================================
@@ -140,57 +167,26 @@ void MoveClipToTrackCommand::undo() {
 // ============================================================================
 
 ResizeClipCommand::ResizeClipCommand(ClipId clipId, double newLength, bool fromStart)
-    : clipId_(clipId),
-      oldStartTime_(0.0),
-      oldLength_(0.0),
-      newStartTime_(0.0),
-      newLength_(newLength),
-      fromStart_(fromStart) {}
+    : clipId_(clipId), newLength_(newLength), fromStart_(fromStart) {}
 
-void ResizeClipCommand::execute() {
-    auto& clipManager = ClipManager::getInstance();
-    const auto* clip = clipManager.getClip(clipId_);
-
-    if (!clip) {
-        return;
-    }
-
-    // Store old state (only on first execute)
-    if (!executed_) {
-        oldStartTime_ = clip->startTime;
-        oldLength_ = clip->length;
-    }
-
-    // Calculate the new start time if resizing from start
-    if (fromStart_) {
-        newStartTime_ = oldStartTime_ + (oldLength_ - newLength_);
-    } else {
-        newStartTime_ = clip->startTime;
-    }
-
-    clipManager.resizeClip(clipId_, newLength_, fromStart_);
-    executed_ = true;
+ClipInfo ResizeClipCommand::captureState() {
+    auto* clip = ClipManager::getInstance().getClip(clipId_);
+    return clip ? *clip : ClipInfo{};
 }
 
-void ResizeClipCommand::undo() {
-    if (!executed_) {
-        return;
-    }
-
+void ResizeClipCommand::restoreState(const ClipInfo& state) {
     auto& clipManager = ClipManager::getInstance();
-
-    // Restore both start time and length
     if (auto* clip = clipManager.getClip(clipId_)) {
-        clip->startTime = oldStartTime_;
-        clip->length = oldLength_;
+        *clip = state;
+        clipManager.forceNotifyClipsChanged();
     }
+}
 
-    // Force UI refresh after direct property modification
-    clipManager.forceNotifyClipsChanged();
+void ResizeClipCommand::performAction() {
+    ClipManager::getInstance().resizeClip(clipId_, newLength_, fromStart_);
 }
 
 bool ResizeClipCommand::canMergeWith(const UndoableCommand* other) const {
-    // Merge with subsequent resizes of the same clip with same direction
     auto* otherResize = dynamic_cast<const ResizeClipCommand*>(other);
     return otherResize != nullptr && otherResize->clipId_ == clipId_ &&
            otherResize->fromStart_ == fromStart_;
@@ -199,9 +195,8 @@ bool ResizeClipCommand::canMergeWith(const UndoableCommand* other) const {
 void ResizeClipCommand::mergeWith(const UndoableCommand* other) {
     auto* otherResize = dynamic_cast<const ResizeClipCommand*>(other);
     if (otherResize) {
-        // Keep our old state, update to their new state
+        // Update to their new length
         newLength_ = otherResize->newLength_;
-        newStartTime_ = otherResize->newStartTime_;
     }
 }
 
@@ -211,33 +206,40 @@ void ResizeClipCommand::mergeWith(const UndoableCommand* other) {
 
 DeleteClipCommand::DeleteClipCommand(ClipId clipId) : clipId_(clipId) {}
 
-void DeleteClipCommand::execute() {
-    auto& clipManager = ClipManager::getInstance();
-    const auto* clip = clipManager.getClip(clipId_);
+ClipInfo DeleteClipCommand::captureState() {
+    auto* clip = ClipManager::getInstance().getClip(clipId_);
+    return clip ? *clip : ClipInfo{};
+}
 
-    if (!clip) {
-        return;
-    }
+void DeleteClipCommand::restoreState(const ClipInfo& state) {
+    ClipManager::getInstance().restoreClip(state);
+    std::cout << "📝 UNDO: Restored clip " << clipId_ << std::endl;
+}
 
-    // Store full clip info for undo (only on first execute)
-    if (!executed_) {
-        storedClip_ = *clip;
-    }
-
-    clipManager.deleteClip(clipId_);
-    executed_ = true;
-
+void DeleteClipCommand::performAction() {
+    ClipManager::getInstance().deleteClip(clipId_);
     std::cout << "📝 UNDO: Deleted clip " << clipId_ << std::endl;
 }
 
-void DeleteClipCommand::undo() {
-    if (!executed_) {
-        return;
+bool DeleteClipCommand::validateState() const {
+    auto& clipManager = ClipManager::getInstance();
+
+    if (executed_) {
+        // After deletion, clip should not exist
+        auto* clip = clipManager.getClip(clipId_);
+        if (clip) {
+            std::cerr << "ERROR: Clip " << clipId_ << " still exists after deletion!" << std::endl;
+            return false;
+        }
+    } else {
+        // Before deletion, clip should exist
+        auto* clip = clipManager.getClip(clipId_);
+        if (!clip) {
+            return false;
+        }
     }
 
-    ClipManager::getInstance().restoreClip(storedClip_);
-
-    std::cout << "📝 UNDO: Restored clip " << clipId_ << std::endl;
+    return true;
 }
 
 // ============================================================================
@@ -254,7 +256,31 @@ CreateClipCommand::CreateClipCommand(ClipType type, TrackId trackId, double star
       audioFilePath_(audioFilePath),
       view_(view) {}
 
-void CreateClipCommand::execute() {
+bool CreateClipCommand::canExecute() const {
+    return trackId_ != INVALID_TRACK_ID && length_ > 0.0;
+}
+
+CreateClipState CreateClipCommand::captureState() {
+    CreateClipState state;
+    state.createdClipId = createdClipId_;
+    state.wasCreated = (createdClipId_ != INVALID_CLIP_ID);
+    return state;
+}
+
+void CreateClipCommand::restoreState(const CreateClipState& state) {
+    auto& clipManager = ClipManager::getInstance();
+
+    if (state.wasCreated && state.createdClipId != INVALID_CLIP_ID) {
+        // Undo: clip was created, so delete it
+        clipManager.deleteClip(state.createdClipId);
+        createdClipId_ = INVALID_CLIP_ID;
+    } else if (!state.wasCreated && createdClipId_ != INVALID_CLIP_ID) {
+        // Redo: clip wasn't created before, but it is now - this shouldn't happen in normal flow
+        // but handle it for safety
+    }
+}
+
+void CreateClipCommand::performAction() {
     auto& clipManager = ClipManager::getInstance();
 
     if (type_ == ClipType::Audio) {
@@ -263,16 +289,28 @@ void CreateClipCommand::execute() {
     } else {
         createdClipId_ = clipManager.createMidiClip(trackId_, startTime_, length_, view_);
     }
-
-    executed_ = true;
 }
 
-void CreateClipCommand::undo() {
-    if (!executed_ || createdClipId_ == INVALID_CLIP_ID) {
-        return;
+bool CreateClipCommand::validateState() const {
+    auto& clipManager = ClipManager::getInstance();
+
+    if (executed_ && createdClipId_ != INVALID_CLIP_ID) {
+        auto* clip = clipManager.getClip(createdClipId_);
+        if (!clip) {
+            std::cerr << "ERROR: Created clip " << createdClipId_ << " does not exist!"
+                      << std::endl;
+            return false;
+        }
+
+        // Validate clip has valid track
+        if (clip->trackId == INVALID_TRACK_ID) {
+            std::cerr << "ERROR: Created clip " << createdClipId_ << " has invalid track!"
+                      << std::endl;
+            return false;
+        }
     }
 
-    ClipManager::getInstance().deleteClip(createdClipId_);
+    return true;
 }
 
 // ============================================================================
@@ -283,25 +321,57 @@ DuplicateClipCommand::DuplicateClipCommand(ClipId sourceClipId, double startTime
                                            TrackId targetTrackId)
     : sourceClipId_(sourceClipId), startTime_(startTime), targetTrackId_(targetTrackId) {}
 
-void DuplicateClipCommand::execute() {
+bool DuplicateClipCommand::canExecute() const {
+    return ClipManager::getInstance().getClip(sourceClipId_) != nullptr;
+}
+
+DuplicateClipState DuplicateClipCommand::captureState() {
+    DuplicateClipState state;
+    state.duplicatedClipId = duplicatedClipId_;
+    state.wasDuplicated = (duplicatedClipId_ != INVALID_CLIP_ID);
+    return state;
+}
+
+void DuplicateClipCommand::restoreState(const DuplicateClipState& state) {
+    auto& clipManager = ClipManager::getInstance();
+
+    if (state.wasDuplicated && state.duplicatedClipId != INVALID_CLIP_ID) {
+        // Undo: clip was duplicated, so delete it
+        clipManager.deleteClip(state.duplicatedClipId);
+        duplicatedClipId_ = INVALID_CLIP_ID;
+    }
+}
+
+void DuplicateClipCommand::performAction() {
     auto& clipManager = ClipManager::getInstance();
 
     if (startTime_ < 0) {
-        // Use default position (right after source)
         duplicatedClipId_ = clipManager.duplicateClip(sourceClipId_);
     } else {
         duplicatedClipId_ = clipManager.duplicateClipAt(sourceClipId_, startTime_, targetTrackId_);
     }
-
-    executed_ = true;
 }
 
-void DuplicateClipCommand::undo() {
-    if (!executed_ || duplicatedClipId_ == INVALID_CLIP_ID) {
-        return;
+bool DuplicateClipCommand::validateState() const {
+    auto& clipManager = ClipManager::getInstance();
+
+    if (executed_ && duplicatedClipId_ != INVALID_CLIP_ID) {
+        auto* clip = clipManager.getClip(duplicatedClipId_);
+        if (!clip) {
+            std::cerr << "ERROR: Duplicated clip " << duplicatedClipId_ << " does not exist!"
+                      << std::endl;
+            return false;
+        }
+
+        // Validate clip has valid track
+        if (clip->trackId == INVALID_TRACK_ID) {
+            std::cerr << "ERROR: Duplicated clip " << duplicatedClipId_ << " has invalid track!"
+                      << std::endl;
+            return false;
+        }
     }
 
-    ClipManager::getInstance().deleteClip(duplicatedClipId_);
+    return true;
 }
 
 }  // namespace magda

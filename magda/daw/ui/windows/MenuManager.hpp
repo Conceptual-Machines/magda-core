@@ -86,9 +86,9 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
     void initialize(const MenuCallbacks& callbacks);
 
     // Update menu item states
-    void updateMenuStates(bool canUndo, bool canRedo, bool hasSelection, bool leftPanelVisible,
-                          bool rightPanelVisible, bool bottomPanelVisible, bool isPlaying,
-                          bool isRecording, bool isLooping);
+    void updateMenuStates(bool canUndo, bool canRedo, bool hasSelection, bool hasEditCursor,
+                          bool leftPanelVisible, bool rightPanelVisible, bool bottomPanelVisible,
+                          bool isPlaying, bool isRecording, bool isLooping);
 
     // Get the menu bar model
     juce::MenuBarModel* getMenuBarModel() {
@@ -188,6 +188,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
     bool canUndo_ = false;
     bool canRedo_ = false;
     bool hasSelection_ = false;
+    bool hasEditCursor_ = false;  // For Split operation
     bool leftPanelVisible_ = true;
     bool rightPanelVisible_ = true;
     bool bottomPanelVisible_ = true;
