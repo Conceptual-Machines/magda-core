@@ -11,9 +11,11 @@
 #include "../themes/FontManager.hpp"
 #include "Config.hpp"
 #include "audio/AudioBridge.hpp"
+#include "core/ClipCommands.hpp"
 #include "core/ClipManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
+#include "core/UndoManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda {
@@ -806,7 +808,7 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
         }
     }
 
-    // S: Split selected clips at edit cursor
+    // S: Split clips at edit cursor (regardless of selection)
     if (key == juce::KeyPress('s') || key == juce::KeyPress('S')) {
         // Check if Shift is held - that's for Solo
         if (key.getModifiers().isShiftDown()) {
@@ -814,36 +816,48 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
             return false;  // Let it fall through for now
         }
 
-        auto selectedClips = selectionManager.getSelectedClips();
-        if (!selectedClips.empty()) {
-            // Get edit cursor position from timeline
-            double splitTime = timelineController->getState().editCursorPosition;
+        // Get edit cursor position from timeline
+        double splitTime = timelineController->getState().editCursorPosition;
 
-            // Can't split if edit cursor is not set
-            if (splitTime < 0) {
-                std::cout << "⚠️ CLIP: Cannot split - no edit cursor position" << std::endl;
-                return true;
-            }
-
-            // Split each selected clip at edit cursor
-            int splitCount = 0;
-            for (auto clipId : selectedClips) {
-                const auto* clip = clipManager.getClip(clipId);
-                if (clip && splitTime > clip->startTime &&
-                    splitTime < clip->startTime + clip->length) {
-                    ClipId newClipId = clipManager.splitClip(clipId, splitTime);
-                    if (newClipId != INVALID_CLIP_ID) {
-                        splitCount++;
-                    }
-                }
-            }
-
-            if (splitCount > 0) {
-                std::cout << "🎵 CLIP: Split " << splitCount << " clip(s) at " << splitTime << "s"
-                          << std::endl;
-            }
+        // Can't split if edit cursor is not set
+        if (splitTime < 0) {
+            std::cout << "⚠️ CLIP: Cannot split - no edit cursor position" << std::endl;
             return true;
         }
+
+        // Split ALL clips that intersect with cursor (regardless of selection)
+        const auto& allClips = clipManager.getArrangementClips();
+
+        // Collect clips to split
+        std::vector<ClipId> clipsToSplit;
+        for (const auto& clip : allClips) {
+            if (splitTime > clip.startTime && splitTime < clip.startTime + clip.length) {
+                clipsToSplit.push_back(clip.id);
+            }
+        }
+
+        if (clipsToSplit.empty()) {
+            std::cout << "⚠️ CLIP: No clips at cursor position" << std::endl;
+            return true;
+        }
+
+        // Use compound operation if splitting multiple clips
+        if (clipsToSplit.size() > 1) {
+            UndoManager::getInstance().beginCompoundOperation("Split Clips");
+        }
+
+        for (auto clipId : clipsToSplit) {
+            auto cmd = std::make_unique<SplitClipCommand>(clipId, splitTime);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+        }
+
+        if (clipsToSplit.size() > 1) {
+            UndoManager::getInstance().endCompoundOperation();
+        }
+
+        std::cout << "🎵 CLIP: Split " << clipsToSplit.size() << " clip(s) at " << splitTime << "s"
+                  << std::endl;
+        return true;
     }
 
     // T: Trim selected clips to time selection
