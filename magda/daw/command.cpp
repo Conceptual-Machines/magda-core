@@ -23,6 +23,8 @@ Command::Command(const juce::var& json) {
             ParamValue parsed_value;
             if (parseParameterValue(prop.value, parsed_value)) {
                 parameters_[key] = std::move(parsed_value);
+            } else {
+                DBG("Warning: Unsupported parameter type for key '" << key << "'");
             }
         }
     }
@@ -47,11 +49,19 @@ bool Command::parseParameterValue(const juce::var& value, ParamValue& output) {
     }
     if (value.isArray()) {
         auto* arr = value.getArray();
-        if (arr && arr->size() > 0 && (*arr)[0].isDouble()) {
+        if (arr) {
             std::vector<double> vec;
             vec.reserve(arr->size());
+            // Validate and convert all elements
             for (int i = 0; i < arr->size(); ++i) {
-                vec.push_back(static_cast<double>((*arr)[i]));
+                const auto& element = (*arr)[i];
+                if (element.isDouble() || element.isInt()) {
+                    vec.push_back(static_cast<double>(element));
+                } else {
+                    // Non-numeric element found - reject entire array
+                    DBG("Warning: Array contains non-numeric element at index " << i);
+                    return false;
+                }
             }
             output = std::move(vec);
             return true;
