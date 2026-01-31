@@ -270,13 +270,16 @@ CreateClipState CreateClipCommand::captureState() {
 void CreateClipCommand::restoreState(const CreateClipState& state) {
     auto& clipManager = ClipManager::getInstance();
 
-    if (state.wasCreated && state.createdClipId != INVALID_CLIP_ID) {
-        // Undo: clip was created, so delete it
-        clipManager.deleteClip(state.createdClipId);
+    // If we're restoring to a state where clip didn't exist, delete current clip
+    if (!state.wasCreated && createdClipId_ != INVALID_CLIP_ID) {
+        clipManager.deleteClip(createdClipId_);
         createdClipId_ = INVALID_CLIP_ID;
-    } else if (!state.wasCreated && createdClipId_ != INVALID_CLIP_ID) {
-        // Redo: clip wasn't created before, but it is now - this shouldn't happen in normal flow
-        // but handle it for safety
+    }
+    // If restoring to a state where it did exist, recreate it (redo)
+    else if (state.wasCreated && state.createdClipId != INVALID_CLIP_ID &&
+             createdClipId_ == INVALID_CLIP_ID) {
+        // Redo: recreate the clip
+        performAction();
     }
 }
 
@@ -335,10 +338,15 @@ DuplicateClipState DuplicateClipCommand::captureState() {
 void DuplicateClipCommand::restoreState(const DuplicateClipState& state) {
     auto& clipManager = ClipManager::getInstance();
 
-    if (state.wasDuplicated && state.duplicatedClipId != INVALID_CLIP_ID) {
-        // Undo: clip was duplicated, so delete it
-        clipManager.deleteClip(state.duplicatedClipId);
+    // If restoring to state where clip didn't exist, delete current duplicate
+    if (!state.wasDuplicated && duplicatedClipId_ != INVALID_CLIP_ID) {
+        clipManager.deleteClip(duplicatedClipId_);
         duplicatedClipId_ = INVALID_CLIP_ID;
+    }
+    // If restoring to state where it did exist, recreate it (redo)
+    else if (state.wasDuplicated && state.duplicatedClipId != INVALID_CLIP_ID &&
+             duplicatedClipId_ == INVALID_CLIP_ID) {
+        performAction();
     }
 }
 
