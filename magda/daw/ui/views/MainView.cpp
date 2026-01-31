@@ -765,74 +765,8 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
         }
     }
 
-    // Cmd+C: Copy selected clips
-    if (key == juce::KeyPress('c', juce::ModifierKeys::commandModifier, 0)) {
-        auto selectedClips = selectionManager.getSelectedClips();
-        if (!selectedClips.empty()) {
-            clipManager.copyToClipboard(selectedClips);
-            return true;
-        }
-    }
-
-    // Cmd+V: Paste clips
-    if (key == juce::KeyPress('v', juce::ModifierKeys::commandModifier, 0)) {
-        if (clipManager.hasClipsInClipboard()) {
-            // Paste at playhead position
-            auto newClips = clipManager.pasteFromClipboard(playheadPosition);
-            if (!newClips.empty()) {
-                // Select the pasted clips
-                std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
-                selectionManager.selectClips(newSelection);
-            }
-            return true;
-        }
-    }
-
-    // Cmd+X: Cut selected clips
-    if (key == juce::KeyPress('x', juce::ModifierKeys::commandModifier, 0)) {
-        auto selectedClips = selectionManager.getSelectedClips();
-        if (!selectedClips.empty()) {
-            clipManager.cutToClipboard(selectedClips);
-            selectionManager.clearSelection();
-            return true;
-        }
-    }
-
-    // Cmd+D: Duplicate selected clips
-    if (key == juce::KeyPress('d', juce::ModifierKeys::commandModifier, 0)) {
-        auto selectedClips = selectionManager.getSelectedClips();
-        if (!selectedClips.empty()) {
-            std::vector<ClipId> newClips;
-
-            // Use compound operation for multiple duplicates
-            if (selectedClips.size() > 1) {
-                UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
-            }
-
-            for (auto clipId : selectedClips) {
-                auto cmd = std::make_unique<DuplicateClipCommand>(clipId);
-                auto* cmdPtr = cmd.get();
-                UndoManager::getInstance().executeCommand(std::move(cmd));
-
-                ClipId newClipId = cmdPtr->getDuplicatedClipId();
-                if (newClipId != INVALID_CLIP_ID) {
-                    newClips.push_back(newClipId);
-                }
-            }
-
-            if (selectedClips.size() > 1) {
-                UndoManager::getInstance().endCompoundOperation();
-            }
-
-            // Select the new duplicates
-            if (!newClips.empty()) {
-                std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
-                selectionManager.selectClips(newSelection);
-                std::cout << "🎵 CLIP: Duplicated " << newClips.size() << " clip(s)" << std::endl;
-            }
-            return true;
-        }
-    }
+    // NOTE: Cmd+C, Cmd+V, Cmd+X, Cmd+D are now handled by ApplicationCommandManager in MainWindow
+    // These old handlers have been removed to prevent double-handling
 
     // S: Split clips at edit cursor (regardless of selection)
     if (key == juce::KeyPress('s') || key == juce::KeyPress('S')) {
@@ -1259,6 +1193,9 @@ void MainView::PlayheadComponent::mouseMove(const juce::MouseEvent& event) {
 }
 
 void MainView::mouseDown(const juce::MouseEvent& event) {
+    // Always grab keyboard focus so shortcuts work
+    grabKeyboardFocus();
+
     if (getResizeHandleArea().contains(event.getPosition())) {
         isResizingHeaders = true;
         lastMouseX = event.x;

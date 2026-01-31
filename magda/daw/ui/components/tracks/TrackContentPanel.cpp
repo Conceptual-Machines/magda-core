@@ -535,6 +535,9 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
             isCreatingSelection = true;
             isMovingSelection = false;
         }
+        // Ensure we keep keyboard focus after upper zone operations
+        // (selectTrack or selection changes might have shifted focus)
+        grabKeyboardFocus();
     } else {
         // LOWER ZONE: Time selection / edit cursor operations
         // Explicitly preserve clip selection when clicking in lower zone
@@ -846,6 +849,40 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
         return;
     }
 
+    // Check if this was a simple click (not drag) in upper zone - set edit cursor
+    // This handles clicks that didn't become marquee or time selection
+    int deltaX = std::abs(event.x - mouseDownX);
+    int deltaY = std::abs(event.y - mouseDownY);
+    bool wasClick = (deltaX <= DRAG_THRESHOLD && deltaY <= DRAG_THRESHOLD);
+    bool wasInUpperZone = isInUpperTrackZone(mouseDownY);
+    bool clickedOnClip = getClipComponentAt(mouseDownX, mouseDownY) != nullptr;
+
+    std::cout << "📍 mouseUp: wasClick=" << wasClick << ", wasInUpperZone=" << wasInUpperZone
+              << ", clickedOnClip=" << clickedOnClip
+              << ", isSelectable=" << isInSelectableArea(mouseDownX, mouseDownY) << std::endl;
+
+    if (wasClick && wasInUpperZone && !clickedOnClip &&
+        isInSelectableArea(mouseDownX, mouseDownY)) {
+        // Simple click in upper zone empty space - set edit cursor
+        double clickTime = juce::jmax(0.0, juce::jmin(timelineLength, pixelToTime(event.x)));
+
+        std::cout << "✅ Setting edit cursor from UPPER zone click at time: " << clickTime
+                  << std::endl;
+
+        // Apply snap to grid if callback is set
+        if (snapTimeToGrid) {
+            clickTime = snapTimeToGrid(clickTime);
+        }
+
+        // Dispatch edit cursor change through controller
+        if (timelineController) {
+            timelineController->dispatch(SetEditCursorEvent{clickTime});
+        }
+
+        // Prevent lower zone logic from also running
+        isCreatingSelection = false;
+    }
+
     if (isCreatingSelection) {
         isCreatingSelection = false;
 
@@ -860,6 +897,9 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
             if (!isOnExistingSelection(event.x, event.y)) {
                 double clickTime =
                     juce::jmax(0.0, juce::jmin(timelineLength, pixelToTime(event.x)));
+
+                std::cout << "✅ Setting edit cursor from LOWER zone click at time: " << clickTime
+                          << std::endl;
 
                 // Apply snap to grid if callback is set
                 if (snapTimeToGrid) {
@@ -1027,6 +1067,9 @@ void TrackContentPanel::clipPropertyChanged(ClipId clipId) {
 }
 
 void TrackContentPanel::clipSelectionChanged(ClipId /*clipId*/) {
+    // Grab keyboard focus to ensure shortcuts work after selection changes
+    grabKeyboardFocus();
+
     // Repaint to update selection visuals
     repaint();
 }
@@ -1767,6 +1810,11 @@ void TrackContentPanel::paintClipGhosts(juce::Graphics& g) {
 bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
     auto& selectionManager = SelectionManager::getInstance();
 
+    // Debug: Log all key presses to understand focus issues
+    auto selectedClips = selectionManager.getSelectedClips();
+    std::cout << "🔑 TrackContentPanel::keyPressed - key: " << key.getTextDescription()
+              << " | Selected clips: " << selectedClips.size() << std::endl;
+
     // Cmd/Ctrl+Z: Undo
     if (key == juce::KeyPress('z', juce::ModifierKeys::commandModifier, 0)) {
         if (UndoManager::getInstance().canUndo()) {
@@ -1818,6 +1866,9 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
     if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {
         const auto& selectedClips = selectionManager.getSelectedClips();
         if (!selectedClips.empty()) {
+            std::cout << "🗑️  Deleting " << selectedClips.size() << " selected clip(s)..."
+                      << std::endl;
+
             // Copy to vector since we're modifying during iteration
             std::vector<ClipId> clipsToDelete(selectedClips.begin(), selectedClips.end());
 
@@ -1827,6 +1878,7 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
             }
 
             for (ClipId clipId : clipsToDelete) {
+                std::cout << "🗑️  Deleting clip " << clipId << std::endl;
                 auto cmd = std::make_unique<DeleteClipCommand>(clipId);
                 UndoManager::getInstance().executeCommand(std::move(cmd));
             }
@@ -1836,6 +1888,8 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
             }
 
             selectionManager.clearSelection();
+            std::cout << "🗑️  Delete complete" << std::endl;
+            grabKeyboardFocus();  // Keep focus for subsequent operations
             return true;
         }
     }
@@ -1874,9 +1928,13 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
             if (!newClipIds.empty()) {
                 selectionManager.selectClips(newClipIds);
             }
+            grabKeyboardFocus();  // Keep focus for subsequent operations
             return true;
         }
     }
+
+    // NOTE: Cmd+C, Cmd+V, Cmd+X are now handled by ApplicationCommandManager in MainWindow
+    // These old handlers have been removed to prevent double-handling
 
     // B: Blade - Split clips at edit cursor position
     // Works on selected clips if they contain the cursor, otherwise splits any clip under cursor

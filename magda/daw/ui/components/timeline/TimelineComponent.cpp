@@ -257,6 +257,17 @@ juce::String TimelineComponent::formatTimePosition(double timeInSeconds) const {
 }
 
 void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
+    // Give keyboard focus to viewport so shortcuts work after clicking timeline
+    // Timeline is inside a viewport, so we need to go up to find a focusable parent
+    auto* parent = getParentComponent();
+    while (parent != nullptr) {
+        if (parent->getWantsKeyboardFocus()) {
+            parent->grabKeyboardFocus();
+            break;
+        }
+        parent = parent->getParentComponent();
+    }
+
     // Store initial mouse position for drag detection
     mouseDownX = event.x;
     mouseDownY = event.y;

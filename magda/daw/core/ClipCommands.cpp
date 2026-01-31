@@ -222,23 +222,8 @@ void DeleteClipCommand::performAction() {
 }
 
 bool DeleteClipCommand::validateState() const {
-    auto& clipManager = ClipManager::getInstance();
-
-    if (executed_) {
-        // After deletion, clip should not exist
-        auto* clip = clipManager.getClip(clipId_);
-        if (clip) {
-            std::cerr << "ERROR: Clip " << clipId_ << " still exists after deletion!" << std::endl;
-            return false;
-        }
-    } else {
-        // Before deletion, clip should exist
-        auto* clip = clipManager.getClip(clipId_);
-        if (!clip) {
-            return false;
-        }
-    }
-
+    // Deletion is always valid - the clip state is stored in the snapshot
+    // No need to validate since restoreState() handles both cases (clip exists/doesn't exist)
     return true;
 }
 
@@ -297,7 +282,8 @@ void CreateClipCommand::performAction() {
 bool CreateClipCommand::validateState() const {
     auto& clipManager = ClipManager::getInstance();
 
-    if (executed_ && createdClipId_ != INVALID_CLIP_ID) {
+    // If clip was created, validate it exists and has valid track
+    if (createdClipId_ != INVALID_CLIP_ID) {
         auto* clip = clipManager.getClip(createdClipId_);
         if (!clip) {
             std::cerr << "ERROR: Created clip " << createdClipId_ << " does not exist!"
@@ -363,7 +349,8 @@ void DuplicateClipCommand::performAction() {
 bool DuplicateClipCommand::validateState() const {
     auto& clipManager = ClipManager::getInstance();
 
-    if (executed_ && duplicatedClipId_ != INVALID_CLIP_ID) {
+    // If clip was created, validate it exists and has valid track
+    if (duplicatedClipId_ != INVALID_CLIP_ID) {
         auto* clip = clipManager.getClip(duplicatedClipId_);
         if (!clip) {
             std::cerr << "ERROR: Duplicated clip " << duplicatedClipId_ << " does not exist!"

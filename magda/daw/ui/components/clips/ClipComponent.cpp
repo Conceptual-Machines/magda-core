@@ -279,6 +279,11 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
+    // Ensure parent panel has keyboard focus so shortcuts work
+    if (parentPanel_) {
+        parentPanel_->grabKeyboardFocus();
+    }
+
     auto& selectionManager = SelectionManager::getInstance();
     bool isAlreadySelected = selectionManager.isClipSelected(clipId_);
 
