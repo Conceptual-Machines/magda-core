@@ -1547,12 +1547,18 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
                 file = file.withFileExtension(extension);
             }
 
-            // CRITICAL: Stop transport before offline rendering
-            // Tracktion Engine asserts that transport is not active during export
+            // CRITICAL: Stop transport AND free playback context before offline rendering
+            // Tracktion Engine asserts that play context is not active during export
+            // (assertion in tracktion_NodeRenderContext.cpp:182)
             auto& transport = edit->getTransport();
             if (transport.isPlaying()) {
                 transport.stop(false, false);  // Stop immediately without fading
             }
+
+            // Free the playback context if not recording
+            // This is essential - the assertion checks isPlayContextActive() which
+            // returns (playbackContext != nullptr), so we must free it
+            te::freePlaybackContextIfNotRecording(transport);
 
             // Create Renderer::Parameters
             te::Renderer::Parameters params(*edit);
