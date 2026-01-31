@@ -1547,6 +1547,13 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
                 file = file.withFileExtension(extension);
             }
 
+            // CRITICAL: Stop transport before offline rendering
+            // Tracktion Engine asserts that transport is not active during export
+            auto& transport = edit->getTransport();
+            if (transport.isPlaying()) {
+                transport.stop(false, false);  // Stop immediately without fading
+            }
+
             // Create Renderer::Parameters
             te::Renderer::Parameters params(*edit);
             params.destFile = file;
