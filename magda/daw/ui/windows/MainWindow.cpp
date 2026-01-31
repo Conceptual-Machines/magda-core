@@ -776,6 +776,93 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             }
             return true;
 
+        case split:
+            // Split clips at edit cursor position
+            if (mainView) {
+                const auto& state = mainView->getTimelineController().getState();
+                double splitTime = state.editCursorPosition;
+                if (splitTime >= 0) {
+                    // TODO: Implement split at cursor
+                    std::cout << "⚠️  Split not yet implemented" << std::endl;
+                }
+            }
+            return true;
+
+        case trim:
+            // Split clips at selection boundaries (keep all pieces)
+            if (mainView) {
+                const auto& state = mainView->getTimelineController().getState();
+                if (!state.selection.visuallyHidden) {
+                    double trimStart = state.selection.startTime;
+                    double trimEnd = state.selection.endTime;
+
+                    // Get all clips that intersect the time selection
+                    std::vector<ClipId> clipsToTrim;
+                    for (const auto& clip : clipManager.getArrangementClips()) {
+                        double clipEnd = clip.startTime + clip.length;
+                        if (clip.startTime < trimEnd && clipEnd > trimStart) {
+                            clipsToTrim.push_back(clip.id);
+                        }
+                    }
+
+                    if (clipsToTrim.empty()) {
+                        return true;
+                    }
+
+                    std::cout << "✂️  Splitting " << clipsToTrim.size()
+                              << " clip(s) at selection boundaries [" << trimStart << ", "
+                              << trimEnd << "]" << std::endl;
+
+                    if (clipsToTrim.size() > 1) {
+                        UndoManager::getInstance().beginCompoundOperation("Split at Selection");
+                    }
+
+                    for (auto clipId : clipsToTrim) {
+                        const auto* clip = clipManager.getClip(clipId);
+                        if (!clip)
+                            continue;
+
+                        double clipEnd = clip->startTime + clip->length;
+
+                        // Skip clips that don't overlap with selection
+                        if (clip->startTime >= trimEnd || clipEnd <= trimStart) {
+                            continue;
+                        }
+
+                        ClipId currentClipId = clipId;
+
+                        // Split at left edge if clip extends before selection
+                        if (clip->startTime < trimStart && trimStart < clipEnd) {
+                            auto splitCmd =
+                                std::make_unique<SplitClipCommand>(currentClipId, trimStart);
+                            auto* cmdPtr = splitCmd.get();
+                            UndoManager::getInstance().executeCommand(std::move(splitCmd));
+                            // Continue with the right part (new clip)
+                            currentClipId = cmdPtr->getRightClipId();
+
+                            // Update clip pointer after split
+                            clip = clipManager.getClip(currentClipId);
+                            if (!clip)
+                                continue;
+                            clipEnd = clip->startTime + clip->length;
+                        }
+
+                        // Split at right edge if clip extends after selection
+                        if (trimEnd < clipEnd) {
+                            auto splitCmd =
+                                std::make_unique<SplitClipCommand>(currentClipId, trimEnd);
+                            UndoManager::getInstance().executeCommand(std::move(splitCmd));
+                            // Both left and right parts are kept
+                        }
+                    }
+
+                    if (clipsToTrim.size() > 1) {
+                        UndoManager::getInstance().endCompoundOperation();
+                    }
+                }
+            }
+            return true;
+
         default:
             return false;
     }

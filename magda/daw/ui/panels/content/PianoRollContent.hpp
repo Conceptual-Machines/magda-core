@@ -108,7 +108,7 @@ class PianoRollContent : public PanelContent,
     int noteHeight_ = DEFAULT_NOTE_HEIGHT;
 
     // Timeline mode (absolute vs relative)
-    bool relativeTimeMode_ = true;  // Default to relative (1, 2, 3...)
+    bool relativeTimeMode_ = false;  // Default to absolute (timeline position)
 
     // Chord row visibility
     bool showChordRow_ = true;  // Default to visible

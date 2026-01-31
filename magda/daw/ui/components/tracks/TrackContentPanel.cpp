@@ -874,6 +874,12 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
             clickTime = snapTimeToGrid(clickTime);
         }
 
+        // Select the track that was clicked on so cursor is visible
+        int trackIndex = getTrackIndexAtY(mouseDownY);
+        if (trackIndex >= 0) {
+            selectTrack(trackIndex);
+        }
+
         // Dispatch edit cursor change through controller
         if (timelineController) {
             timelineController->dispatch(SetEditCursorEvent{clickTime});
@@ -904,6 +910,12 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
                 // Apply snap to grid if callback is set
                 if (snapTimeToGrid) {
                     clickTime = snapTimeToGrid(clickTime);
+                }
+
+                // Select the track that was clicked on so cursor is visible
+                int trackIndex = getTrackIndexAtY(event.y);
+                if (trackIndex >= 0) {
+                    selectTrack(trackIndex);
                 }
 
                 // Dispatch edit cursor change through controller (separate from playhead)

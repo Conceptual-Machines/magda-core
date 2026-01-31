@@ -820,49 +820,8 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
-    // T: Trim selected clips to time selection
-    if (key == juce::KeyPress('t') || key == juce::KeyPress('T')) {
-        auto selectedClips = selectionManager.getSelectedClips();
-        const auto& selection = timelineController->getState().selection;
-
-        if (!selectedClips.empty() && selection.isActive()) {
-            double selectionStart = selection.startTime;
-            double selectionEnd = selection.endTime;
-
-            int trimCount = 0;
-            for (auto clipId : selectedClips) {
-                const auto* clip = clipManager.getClip(clipId);
-                if (!clip)
-                    continue;
-
-                // Check if clip overlaps with time selection
-                if (clip->startTime < selectionEnd && clip->getEndTime() > selectionStart) {
-                    // Calculate new clip bounds (intersection of clip and selection)
-                    double newStart = std::max(clip->startTime, selectionStart);
-                    double newEnd = std::min(clip->getEndTime(), selectionEnd);
-                    double newLength = newEnd - newStart;
-
-                    if (newLength > 0.01) {  // At least 10ms
-                        // Trim from left if needed
-                        if (newStart > clip->startTime) {
-                            clipManager.resizeClip(clipId, newLength, true);
-                        }
-                        // Trim from right if needed
-                        else if (newEnd < clip->getEndTime()) {
-                            clipManager.resizeClip(clipId, newLength, false);
-                        }
-                        trimCount++;
-                    }
-                }
-            }
-
-            if (trimCount > 0) {
-                std::cout << "✂️ CLIP: Trimmed " << trimCount << " clip(s) to time selection"
-                          << std::endl;
-            }
-            return true;
-        }
-    }
+    // NOTE: Trim is now handled by ApplicationCommandManager in MainWindow
+    // Old trim handler removed to prevent double-handling
 
     return false;
 }

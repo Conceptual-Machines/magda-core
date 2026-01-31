@@ -22,6 +22,11 @@ class SplitClipCommand : public SnapshotCommand<ClipInfo> {
 
     bool canExecute() const override;
 
+    // Get the ID of the right (new) clip created by the split
+    ClipId getRightClipId() const {
+        return rightClipId_;
+    }
+
   protected:
     ClipInfo captureState() override;
     void restoreState(const ClipInfo& state) override;

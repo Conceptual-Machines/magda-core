@@ -102,6 +102,9 @@ class TrackContentPanel : public juce::Component,
     // Time display mode and tempo (for grid drawing)
     void setTimeDisplayMode(TimeDisplayMode mode);
     void setTempo(double bpm);
+    double getTempo() const {
+        return tempoBPM;
+    }
     void setTimeSignature(int numerator, int denominator);
 
     // Get total height of all tracks

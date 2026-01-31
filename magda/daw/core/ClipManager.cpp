@@ -270,6 +270,20 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime) {
         rightClip.audioSources[0].length = rightLength;
     }
 
+    // Handle MIDI clip splitting (non-destructive - preserve all notes)
+    if (rightClip.type == ClipType::MIDI && !rightClip.midiNotes.empty()) {
+        // TODO: Get actual tempo from project settings (assuming 120 BPM for now)
+        const double beatsPerSecond = 2.0;  // 120 BPM = 2 beats/second
+        double splitBeat = leftLength * beatsPerSecond;
+
+        // Non-destructive split: both clips keep ALL notes
+        // Right clip uses offset to hide notes before split point
+        rightClip.midiOffset = clip->midiOffset + splitBeat;
+
+        // Left clip keeps its existing offset (no change needed)
+        // Notes will be filtered during playback based on midiOffset and clip length
+    }
+
     // Resize original clip to be left half
     clip->length = leftLength;
     clip->name = clip->name + " L";
