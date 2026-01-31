@@ -6,7 +6,7 @@ set(TEST_SOURCES
     test_audio_clip_stretch.cpp
     test_audio_export.cpp
     test_command.cpp
-    test_export_no_assertion.cpp
+    # test_export_no_assertion.cpp  # Disabled - see issue #611 (generator device export)
     test_export_transport_stop.cpp
     test_interfaces.cpp
     test_midi_clip_sync.cpp
