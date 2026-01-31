@@ -6,6 +6,7 @@
 #include "../debug/DebugDialog.hpp"
 #include "../debug/DebugSettings.hpp"
 #include "../dialogs/AudioSettingsDialog.hpp"
+#include "../dialogs/ExportAudioDialog.hpp"
 #include "../dialogs/PreferencesDialog.hpp"
 #include "../dialogs/TrackManagerDialog.hpp"
 #include "../panels/BottomPanel.hpp"
@@ -1074,9 +1075,26 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onExportAudio = [this]() {
-        // TODO: Implement export audio
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Export Audio",
-                                               "Export audio functionality not yet implemented.");
+        auto* engine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
+        if (!engine || !engine->getEdit()) {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Export Audio",
+                                                   "Cannot export: no Edit loaded");
+            return;
+        }
+
+        // Check if loop region is enabled
+        bool hasLoopRegion = engine->isLooping();
+
+        // TODO: Check if time selection exists (will need to implement selection manager)
+        bool hasTimeSelection = false;
+
+        // Show export dialog
+        ExportAudioDialog::showDialog(
+            this,
+            [this, engine](const ExportAudioDialog::Settings& settings) {
+                performExport(settings, engine);
+            },
+            hasTimeSelection, hasLoopRegion);
     };
 
     callbacks.onQuit = [this]() { closeButtonPressed(); };
@@ -1398,6 +1416,150 @@ void MainWindow::setupMenuCallbacks() {
 
     // Initialize the menu manager with callbacks
     MenuManager::getInstance().initialize(callbacks);
+}
+
+// ============================================================================
+// Export Audio Implementation
+// ============================================================================
+
+void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
+                               TracktionEngineWrapper* engine) {
+    namespace te = tracktion;
+
+    if (!engine || !engine->getEdit()) {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Export Audio",
+                                               "Cannot export: no Edit loaded");
+        return;
+    }
+
+    auto* edit = engine->getEdit();
+
+    // Determine file extension
+    juce::String extension = getFileExtensionForFormat(settings.format);
+
+    // Launch file chooser
+    fileChooser_ = std::make_unique<juce::FileChooser>(
+        "Export Audio", juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
+        "*" + extension, true);
+
+    auto flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |
+                 juce::FileBrowserComponent::warnAboutOverwriting;
+
+    fileChooser_->launchAsync(flags, [this, settings, engine, edit,
+                                      extension](const juce::FileChooser& chooser) {
+        auto file = chooser.getResult();
+        if (file == juce::File()) {
+            fileChooser_.reset();
+            return;
+        }
+
+        // Ensure correct extension
+        if (!file.hasFileExtension(extension)) {
+            file = file.withFileExtension(extension);
+        }
+
+        // Create Renderer::Parameters
+        te::Renderer::Parameters params(*edit);
+        params.destFile = file;
+
+        // Set audio format
+        auto& formatManager = engine->getEngine()->getAudioFileFormatManager();
+        if (settings.format.startsWith("WAV")) {
+            params.audioFormat = formatManager.getWavFormat();
+        } else if (settings.format == "FLAC") {
+            params.audioFormat = formatManager.getFlacFormat();
+        } else {
+            params.audioFormat = formatManager.getWavFormat();  // Default
+        }
+
+        params.bitDepth = getBitDepthForFormat(settings.format);
+        params.sampleRateForAudio = settings.sampleRate;
+        params.shouldNormalise = settings.normalize;
+        params.normaliseToLevelDb = 0.0f;
+        params.useMasterPlugins = true;
+        params.usePlugins = true;
+
+        // Set time range based on export range setting
+        using ExportRange = ExportAudioDialog::ExportRange;
+        switch (settings.exportRange) {
+            case ExportRange::TimeSelection:
+                // TODO: Get actual time selection from SelectionManager when implemented
+                params.time = te::TimeRange(te::TimePosition::fromSeconds(0.0),
+                                            te::TimePosition() + edit->getLength());
+                break;
+
+            case ExportRange::LoopRegion:
+                params.time = edit->getTransport().getLoopRange();
+                break;
+
+            case ExportRange::EntireSong:
+            default:
+                // Export entire arrangement
+                params.time = te::TimeRange(te::TimePosition::fromSeconds(0.0),
+                                            te::TimePosition() + edit->getLength());
+                break;
+        }
+
+        // Perform render synchronously (in future, could add progress window)
+        std::atomic<float> progress{0.0f};
+        auto renderTask =
+            std::make_unique<te::Renderer::RenderTask>("Export", params, &progress, nullptr);
+
+        bool success = false;
+        juce::String errorMessage;
+
+        // Run render job until complete
+        while (true) {
+            auto status = renderTask->runJob();
+
+            if (status == juce::ThreadPoolJob::jobHasFinished) {
+                success = true;
+                break;
+            }
+
+            if (status == juce::ThreadPoolJob::jobNeedsRunningAgain) {
+                // Keep running
+                juce::Thread::sleep(10);
+                continue;
+            }
+
+            // Error occurred
+            errorMessage = "Render job failed";
+            break;
+        }
+
+        if (success) {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Export Complete",
+                                                   "Audio exported successfully to:\n" +
+                                                       file.getFullPathName());
+        } else {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon, "Export Failed",
+                errorMessage.isEmpty() ? "Unknown error occurred during export" : errorMessage);
+        }
+
+        fileChooser_.reset();
+    });
+}
+
+juce::String MainWindow::getFileExtensionForFormat(const juce::String& format) const {
+    if (format.startsWith("WAV"))
+        return ".wav";
+    else if (format == "FLAC")
+        return ".flac";
+    return ".wav";  // Default
+}
+
+int MainWindow::getBitDepthForFormat(const juce::String& format) const {
+    if (format == "WAV16")
+        return 16;
+    if (format == "WAV24")
+        return 24;
+    if (format == "WAV32")
+        return 32;
+    if (format == "FLAC")
+        return 24;  // FLAC default
+    return 16;      // Default
 }
 
 }  // namespace magda
