@@ -653,10 +653,12 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
                 if (selectedIndex < static_cast<int>(tracks.size())) {
                     auto cmd = std::make_unique<DeleteTrackCommand>(tracks[selectedIndex].id);
                     UndoManager::getInstance().executeCommand(std::move(cmd));
+                    return true;  // Consumed - deleted a track
                 }
             }
         }
-        return true;
+        // Don't consume - let clips handle delete if no track action
+        return false;
     }
 
     // Cmd/Ctrl+D: Duplicate selected track (through undo system)
