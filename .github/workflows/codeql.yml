@@ -11,6 +11,11 @@ on:
     - cron: '0 2 * * 1'
   workflow_dispatch:
 
+# Ensure only one CodeQL scan runs at a time per branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analyze:
     name: Analyze C++ Code
