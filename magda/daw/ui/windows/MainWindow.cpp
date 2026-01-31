@@ -1188,17 +1188,31 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onDuplicate = [this]() {
-        auto& clipManager = ClipManager::getInstance();
         auto& selectionManager = SelectionManager::getInstance();
         auto selectedClips = selectionManager.getSelectedClips();
         if (!selectedClips.empty()) {
             std::vector<ClipId> newClips;
+
+            // Use compound operation for multiple duplicates
+            if (selectedClips.size() > 1) {
+                UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
+            }
+
             for (auto clipId : selectedClips) {
-                ClipId newClipId = clipManager.duplicateClip(clipId);
+                auto cmd = std::make_unique<DuplicateClipCommand>(clipId);
+                auto* cmdPtr = cmd.get();
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                ClipId newClipId = cmdPtr->getDuplicatedClipId();
                 if (newClipId != INVALID_CLIP_ID) {
                     newClips.push_back(newClipId);
                 }
             }
+
+            if (selectedClips.size() > 1) {
+                UndoManager::getInstance().endCompoundOperation();
+            }
+
             // Select the new duplicates
             if (!newClips.empty()) {
                 std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
@@ -1208,13 +1222,23 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onDelete = [this]() {
-        auto& clipManager = ClipManager::getInstance();
         auto& selectionManager = SelectionManager::getInstance();
         auto selectedClips = selectionManager.getSelectedClips();
         if (!selectedClips.empty()) {
-            for (auto clipId : selectedClips) {
-                clipManager.deleteClip(clipId);
+            // Use compound operation for multiple deletes
+            if (selectedClips.size() > 1) {
+                UndoManager::getInstance().beginCompoundOperation("Delete Clips");
             }
+
+            for (auto clipId : selectedClips) {
+                auto cmd = std::make_unique<DeleteClipCommand>(clipId);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+            }
+
+            if (selectedClips.size() > 1) {
+                UndoManager::getInstance().endCompoundOperation();
+            }
+
             selectionManager.clearSelection();
         }
     };
@@ -1272,6 +1296,13 @@ void MainWindow::setupMenuCallbacks() {
             if (selection.isActive()) {
                 double selectionStart = selection.startTime;
                 double selectionEnd = selection.endTime;
+
+                // Use compound operation for multiple trims
+                bool needsCompound = selectedClips.size() > 1;
+                if (needsCompound) {
+                    UndoManager::getInstance().beginCompoundOperation("Trim Clips");
+                }
+
                 for (auto clipId : selectedClips) {
                     const auto* clip = clipManager.getClip(clipId);
                     if (!clip)
@@ -1282,12 +1313,20 @@ void MainWindow::setupMenuCallbacks() {
                         double newLength = newEnd - newStart;
                         if (newLength > 0.01) {
                             if (newStart > clip->startTime) {
-                                clipManager.resizeClip(clipId, newLength, true);
+                                auto cmd =
+                                    std::make_unique<ResizeClipCommand>(clipId, newLength, true);
+                                UndoManager::getInstance().executeCommand(std::move(cmd));
                             } else if (newEnd < clip->getEndTime()) {
-                                clipManager.resizeClip(clipId, newLength, false);
+                                auto cmd =
+                                    std::make_unique<ResizeClipCommand>(clipId, newLength, false);
+                                UndoManager::getInstance().executeCommand(std::move(cmd));
                             }
                         }
                     }
+                }
+
+                if (needsCompound) {
+                    UndoManager::getInstance().endCompoundOperation();
                 }
             }
         }
