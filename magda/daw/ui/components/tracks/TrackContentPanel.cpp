@@ -504,25 +504,27 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
     // Reset drag type
     currentDragType_ = DragType::None;
 
-    // Select track based on click position
-    for (size_t i = 0; i < trackLanes.size(); ++i) {
-        if (getTrackLaneArea(static_cast<int>(i)).contains(event.getPosition())) {
-            selectTrack(static_cast<int>(i));
-            break;
-        }
-    }
-
     // Zone-based behavior:
     // Upper half of track = clip operations
     // Lower half of track = time selection operations
     bool inUpperZone = isInUpperTrackZone(event.y);
     bool onClip = getClipComponentAt(event.x, event.y) != nullptr;
 
+    // Select track based on click position - but ONLY in upper zone
+    // (Lower zone is for timeline operations, shouldn't affect track selection)
+    if (inUpperZone) {
+        for (size_t i = 0; i < trackLanes.size(); ++i) {
+            if (getTrackLaneArea(static_cast<int>(i)).contains(event.getPosition())) {
+                selectTrack(static_cast<int>(i));
+                break;
+            }
+        }
+    }
+
     if (inUpperZone) {
         // UPPER ZONE: Clip operations
         if (!onClip) {
             // Clicked empty space in upper zone - deselect clips (unless Cmd held)
-            // But DON'T clear selection if we might be setting edit cursor
             if (!event.mods.isCommandDown()) {
                 SelectionManager::getInstance().clearSelection();
             }
