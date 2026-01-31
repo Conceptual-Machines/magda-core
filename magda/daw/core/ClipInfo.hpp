@@ -61,6 +61,7 @@ struct ClipInfo {
 
     // MIDI-specific properties
     std::vector<MidiNote> midiNotes;
+    double midiOffset = 0.0;  // Start offset in beats (for non-destructive trim)
 
     // Session view properties
     int sceneIndex = -1;     // -1 = not in session view (arrangement only)

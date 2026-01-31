@@ -148,27 +148,55 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
     if (!clip.midiNotes.empty() && noteArea.getHeight() > 5) {
         g.setColour(clip.colour.brighter(0.3f));
 
-        // Find note range
+        // Calculate clip length in beats using actual tempo
+        double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+        double beatsPerSecond = tempo / 60.0;
+        double clipLengthInBeats = clip.length * beatsPerSecond;
+        double midiOffset = clip.midiOffset;
+        double visibleEnd = midiOffset + clipLengthInBeats;
+
+        // Find note range (only considering visible notes)
         int minNote = 127, maxNote = 0;
-        double maxBeat = 0;
         for (const auto& note : clip.midiNotes) {
+            // Skip notes outside visible range
+            double noteEnd = note.startBeat + note.lengthBeats;
+            if (note.startBeat >= visibleEnd || noteEnd <= midiOffset)
+                continue;
+
             minNote = juce::jmin(minNote, note.noteNumber);
             maxNote = juce::jmax(maxNote, note.noteNumber);
-            maxBeat = juce::jmax(maxBeat, note.startBeat + note.lengthBeats);
         }
 
         int noteRange = juce::jmax(1, maxNote - minNote);
-        double beatRange = juce::jmax(1.0, maxBeat);
+        double beatRange = juce::jmax(1.0, clipLengthInBeats);
 
         // Draw each note as a small rectangle
         for (const auto& note : clip.midiNotes) {
+            // Skip notes outside visible range
+            double noteEnd = note.startBeat + note.lengthBeats;
+            if (note.startBeat >= visibleEnd || noteEnd <= midiOffset)
+                continue;
+
+            // Adjust note position relative to offset
+            double relativeStart = note.startBeat - midiOffset;
+            double relativeLength = note.lengthBeats;
+
+            // Clip note to visible range
+            if (relativeStart < 0) {
+                relativeLength += relativeStart;  // Reduce length by hidden amount
+                relativeStart = 0;
+            }
+            if (relativeStart + relativeLength > clipLengthInBeats) {
+                relativeLength = clipLengthInBeats - relativeStart;
+            }
+
             float noteY = noteArea.getY() +
                           (maxNote - note.noteNumber) * noteArea.getHeight() / (noteRange + 1);
             float noteHeight =
                 juce::jmax(2.0f, static_cast<float>(noteArea.getHeight()) / (noteRange + 1) - 1.0f);
             float noteX = noteArea.getX() +
-                          static_cast<float>(note.startBeat / beatRange) * noteArea.getWidth();
-            float noteWidth = juce::jmax(2.0f, static_cast<float>(note.lengthBeats / beatRange) *
+                          static_cast<float>(relativeStart / beatRange) * noteArea.getWidth();
+            float noteWidth = juce::jmax(2.0f, static_cast<float>(relativeLength / beatRange) *
                                                    noteArea.getWidth());
 
             g.fillRoundedRectangle(noteX, noteY, noteWidth, noteHeight, 1.0f);
@@ -277,6 +305,11 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     const auto* clip = getClipInfo();
     if (!clip) {
         return;
+    }
+
+    // Ensure parent panel has keyboard focus so shortcuts work
+    if (parentPanel_) {
+        parentPanel_->grabKeyboardFocus();
     }
 
     auto& selectionManager = SelectionManager::getInstance();
@@ -630,6 +663,12 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void ClipComponent::mouseUp(const juce::MouseEvent& e) {
+    // Handle right-click for context menu
+    if (e.mods.isPopupMenu()) {
+        showContextMenu();
+        return;
+    }
+
     // Check if we were doing a multi-clip drag
     auto& selectionManager = SelectionManager::getInstance();
     if (isDragging_ && parentPanel_ && selectionManager.getSelectedClipCount() > 1 &&
@@ -950,6 +989,134 @@ void ClipComponent::updateCursor(bool isAltDown, bool isShiftDown) {
 
 const ClipInfo* ClipComponent::getClipInfo() const {
     return ClipManager::getInstance().getClip(clipId_);
+}
+
+void ClipComponent::showContextMenu() {
+    auto& clipManager = ClipManager::getInstance();
+    auto& selectionManager = SelectionManager::getInstance();
+
+    // Get selection state
+    bool hasSelection = selectionManager.getSelectedClipCount() > 0;
+    bool isMultiSelection = selectionManager.getSelectedClipCount() > 1;
+    bool isThisClipSelected = selectionManager.isClipSelected(clipId_);
+
+    // If right-clicking on an unselected clip, select it first
+    if (!isThisClipSelected) {
+        selectionManager.selectClip(clipId_);
+        hasSelection = true;
+        isMultiSelection = false;
+    }
+
+    juce::PopupMenu menu;
+
+    // Copy/Cut/Paste
+    menu.addItem(1, "Copy", hasSelection);
+    menu.addItem(2, "Cut", hasSelection);
+    menu.addItem(3, "Paste");  // Always available (will check clipboard when clicked)
+    menu.addSeparator();
+
+    // Duplicate
+    menu.addItem(4, "Duplicate", hasSelection);
+    menu.addSeparator();
+
+    // Split
+    if (!isMultiSelection) {
+        menu.addItem(5, "Split at Playhead");
+    }
+    menu.addSeparator();
+
+    // Delete
+    menu.addItem(6, "Delete", hasSelection);
+    menu.addSeparator();
+
+    // Loop Settings (only for single clip)
+    if (!isMultiSelection) {
+        menu.addItem(7, "Loop Settings...");
+    }
+
+    // Show menu
+    menu.showMenuAsync(juce::PopupMenu::Options(), [this, &clipManager,
+                                                    &selectionManager](int result) {
+        if (result == 0)
+            return;  // Cancelled
+
+        switch (result) {
+            case 1: {  // Copy
+                auto selectedClips = selectionManager.getSelectedClips();
+                if (!selectedClips.empty()) {
+                    clipManager.copyToClipboard(selectedClips);
+                }
+                break;
+            }
+
+            case 2: {  // Cut
+                auto selectedClips = selectionManager.getSelectedClips();
+                if (!selectedClips.empty()) {
+                    clipManager.cutToClipboard(selectedClips);
+                    selectionManager.clearSelection();
+                }
+                break;
+            }
+
+            case 3: {  // Paste
+                if (clipManager.hasClipsInClipboard()) {
+                    // Paste at playhead position (need to get from transport/timeline)
+                    // For now, paste at clicked position
+                    auto selectedClips = selectionManager.getSelectedClips();
+                    double pasteTime = 0.0;
+                    if (!selectedClips.empty()) {
+                        // Paste after last selected clip
+                        for (auto clipId : selectedClips) {
+                            const auto* clip = clipManager.getClip(clipId);
+                            if (clip) {
+                                pasteTime = std::max(pasteTime, clip->startTime + clip->length);
+                            }
+                        }
+                    }
+                    auto newClips = clipManager.pasteFromClipboard(pasteTime);
+                    if (!newClips.empty()) {
+                        // Select the pasted clips
+                        std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
+                        selectionManager.selectClips(newSelection);
+                    }
+                }
+                break;
+            }
+
+            case 4: {  // Duplicate
+                auto selectedClips = selectionManager.getSelectedClips();
+                for (auto clipId : selectedClips) {
+                    clipManager.duplicateClip(clipId);
+                }
+                break;
+            }
+
+            case 5:  // Split at Playhead
+                // TODO: Get playhead position from transport/timeline
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
+                                                       "Split at Playhead",
+                                                       "Split at playhead not yet implemented");
+                break;
+
+            case 6: {  // Delete
+                auto selectedClips = selectionManager.getSelectedClips();
+                for (auto clipId : selectedClips) {
+                    clipManager.deleteClip(clipId);
+                }
+                selectionManager.clearSelection();
+                break;
+            }
+
+            case 7:  // Loop Settings
+                // TODO: Show loop settings dialog
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Loop Settings",
+                                                       "Loop settings dialog not yet implemented");
+                break;
+
+            default:
+                break;
+        }
+    });
 }
 
 }  // namespace magda

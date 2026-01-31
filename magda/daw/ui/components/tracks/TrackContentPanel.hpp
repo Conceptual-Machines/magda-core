@@ -102,6 +102,9 @@ class TrackContentPanel : public juce::Component,
     // Time display mode and tempo (for grid drawing)
     void setTimeDisplayMode(TimeDisplayMode mode);
     void setTempo(double bpm);
+    double getTempo() const {
+        return tempoBPM;
+    }
     void setTimeSignature(int numerator, int denominator);
 
     // Get total height of all tracks
@@ -218,6 +221,14 @@ class TrackContentPanel : public juce::Component,
     void moveClipsWithTimeSelection(double deltaTime);
     void commitClipsInTimeSelection(double deltaTime);
 
+    // Clips captured during time selection resize (for trim-on-drag)
+    struct ClipOriginalData {
+        double originalStartTime = 0.0;
+        double originalLength = 0.0;
+        TrackId originalTrackId = INVALID_TRACK_ID;
+    };
+    std::unordered_map<ClipId, ClipOriginalData> originalClipsInSelection_;
+
     // Edit cursor blink state
     bool editCursorBlinkVisible_ = true;
     static constexpr int EDIT_CURSOR_BLINK_MS = 500;  // Blink interval
@@ -228,6 +239,7 @@ class TrackContentPanel : public juce::Component,
     // Helper to check if a position is in a selectable area
     bool isInSelectableArea(int x, int y) const;
     bool isOnExistingSelection(int x, int y) const;
+    bool isOnSelectionEdge(int x, int y, bool& isLeftEdge) const;
 
     // Clip management
     std::vector<std::unique_ptr<ClipComponent>> clipComponents_;
@@ -253,7 +265,14 @@ class TrackContentPanel : public juce::Component,
     // ========================================================================
     // Marquee Selection State
     // ========================================================================
-    enum class DragType { None, TimeSelection, Marquee, MoveSelection };
+    enum class DragType {
+        None,
+        TimeSelection,
+        Marquee,
+        MoveSelection,
+        ResizeSelectionLeft,
+        ResizeSelectionRight
+    };
     DragType currentDragType_ = DragType::None;
     bool isMarqueeActive_ = false;
     juce::Rectangle<int> marqueeRect_;

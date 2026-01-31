@@ -10,6 +10,7 @@ set(TEST_SOURCES
     test_export_transport_stop.cpp
     test_interfaces.cpp
     test_midi_clip_sync.cpp
+    test_midi_clip_split.cpp
     test_nested_racks.cpp
     test_modulation.cpp
     test_parameter_utils.cpp

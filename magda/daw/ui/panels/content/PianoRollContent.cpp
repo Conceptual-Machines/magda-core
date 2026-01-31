@@ -80,7 +80,7 @@ PianoRollContent::PianoRollContent() {
     buttonLookAndFeel_ = std::make_unique<ButtonLookAndFeel>();
 
     // Create time mode toggle button
-    timeModeButton_ = std::make_unique<juce::TextButton>("REL");
+    timeModeButton_ = std::make_unique<juce::TextButton>("ABS");
     timeModeButton_->setTooltip("Toggle between Relative (clip) and Absolute (project) time");
     timeModeButton_->setClickingTogglesState(true);
     timeModeButton_->setToggleState(relativeTimeMode_, juce::dontSendNotification);

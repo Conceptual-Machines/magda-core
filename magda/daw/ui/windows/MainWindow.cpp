@@ -2,6 +2,7 @@
 
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
+#include "../../core/SelectionManager.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
 #include "../debug/DebugDialog.hpp"
 #include "../debug/DebugSettings.hpp"
@@ -220,6 +221,10 @@ void MainWindow::closeButtonPressed() {
 MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     setWantsKeyboardFocus(true);
 
+    // Register this component as a command target for keyboard shortcuts
+    commandManager.registerAllCommandsForTarget(this);
+    addKeyListener(commandManager.getKeyMappings());
+
     // Use external engine if provided, otherwise create our own
     if (externalEngine) {
         externalAudioEngine_ = externalEngine;  // Store external engine pointer
@@ -383,6 +388,9 @@ void MainWindow::MainComponent::setupViewModeListener() {
     ViewModeController::getInstance().addListener(this);
     currentViewMode = ViewModeController::getInstance().getViewMode();
     switchToView(currentViewMode);
+
+    // Also listen to selection changes to update menu state
+    SelectionManager::getInstance().addListener(this);
 }
 
 void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
@@ -525,6 +533,10 @@ MainWindow::MainComponent::~MainComponent() {
     std::cout.flush();
     ViewModeController::getInstance().removeListener(this);
 
+    std::cout << "    [5g.1] Removing SelectionManager listener..." << std::endl;
+    std::cout.flush();
+    SelectionManager::getInstance().removeListener(this);
+
     // Explicitly reset unique_ptrs in order to see which one crashes
     std::cout << "    [5h] Destroying loadingOverlay_..." << std::endl;
     std::cout.flush();
@@ -565,7 +577,304 @@ MainWindow::MainComponent::~MainComponent() {
     std::cout.flush();
 }
 
+// ============================================================================
+// ApplicationCommandTarget Implementation
+// ============================================================================
+
+juce::ApplicationCommandTarget* MainWindow::MainComponent::getNextCommandTarget() {
+    // We're the top-level command target
+    return nullptr;
+}
+
+void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& commands) {
+    using namespace CommandIDs;
+
+    const juce::CommandID allCommands[] = {
+        // Edit menu
+        undo, redo, cut, copy, paste, duplicate, deleteCmd, selectAll, split, trim,
+        // File menu
+        newProject, openProject, saveProject, saveProjectAs, exportAudio,
+        // Transport
+        play, stop, record, goToStart, goToEnd,
+        // Track
+        newAudioTrack, newMidiTrack, deleteTrack,
+        // View
+        zoom, toggleArrangeSession,
+        // Help
+        showHelp, about};
+
+    commands.addArray(allCommands, juce::numElementsInArray(allCommands));
+}
+
+void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
+                                               juce::ApplicationCommandInfo& result) {
+    using namespace CommandIDs;
+
+    switch (commandID) {
+        case undo:
+            result.setInfo("Undo", "Undo the last action", "Edit", 0);
+            result.addDefaultKeypress('z', juce::ModifierKeys::commandModifier);
+            break;
+
+        case redo:
+            result.setInfo("Redo", "Redo the last undone action", "Edit", 0);
+            result.addDefaultKeypress('z', juce::ModifierKeys::commandModifier |
+                                               juce::ModifierKeys::shiftModifier);
+            break;
+
+        case cut:
+            result.setInfo("Cut", "Cut selected clips to clipboard", "Edit", 0);
+            result.addDefaultKeypress('x', juce::ModifierKeys::commandModifier);
+            break;
+
+        case copy:
+            result.setInfo("Copy", "Copy selected clips to clipboard", "Edit", 0);
+            result.addDefaultKeypress('c', juce::ModifierKeys::commandModifier);
+            break;
+
+        case paste:
+            result.setInfo("Paste", "Paste clips from clipboard", "Edit", 0);
+            result.addDefaultKeypress('v', juce::ModifierKeys::commandModifier);
+            break;
+
+        case duplicate:
+            result.setInfo("Duplicate", "Duplicate selected clips", "Edit", 0);
+            result.addDefaultKeypress('d', juce::ModifierKeys::commandModifier);
+            break;
+
+        case deleteCmd:
+            result.setInfo("Delete", "Delete selected clips", "Edit", 0);
+            result.addDefaultKeypress(juce::KeyPress::deleteKey, 0);
+            break;
+
+        case selectAll:
+            result.setInfo("Select All", "Select all clips", "Edit", 0);
+            result.addDefaultKeypress('a', juce::ModifierKeys::commandModifier);
+            break;
+
+        case split:
+            result.setInfo("Split at Cursor", "Split clips at edit cursor", "Edit", 0);
+            result.addDefaultKeypress('s', 0);
+            break;
+
+        case trim:
+            result.setInfo("Trim to Selection", "Trim clips to time selection", "Edit", 0);
+            result.addDefaultKeypress('t', 0);
+            break;
+
+        // Add other commands as needed...
+        default:
+            break;
+    }
+}
+
+bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
+    using namespace CommandIDs;
+
+    auto& clipManager = ClipManager::getInstance();
+    auto& selectionManager = SelectionManager::getInstance();
+    auto selectedClips = selectionManager.getSelectedClips();
+
+    switch (info.commandID) {
+        case undo:
+            UndoManager::getInstance().undo();
+            return true;
+
+        case redo:
+            UndoManager::getInstance().redo();
+            return true;
+
+        case cut:
+            if (!selectedClips.empty()) {
+                clipManager.cutToClipboard(selectedClips);
+                selectionManager.clearSelection();
+            }
+            return true;
+
+        case copy:
+            if (!selectedClips.empty()) {
+                clipManager.copyToClipboard(selectedClips);
+            }
+            return true;
+
+        case paste:
+            if (clipManager.hasClipsInClipboard()) {
+                double pasteTime = 0.0;
+                if (mainView) {
+                    const auto& state = mainView->getTimelineController().getState();
+                    std::cout << "📍 Paste - editCursor: " << state.editCursorPosition
+                              << ", playhead: " << state.playhead.editPosition << std::endl;
+                    pasteTime = state.editCursorPosition;
+                    if (pasteTime < 0) {
+                        pasteTime = state.playhead.editPosition;
+                        std::cout << "📍 Using playhead: " << pasteTime << std::endl;
+                    } else {
+                        std::cout << "📍 Using edit cursor: " << pasteTime << std::endl;
+                    }
+                    if (pasteTime < 0) {
+                        pasteTime = 0.0;
+                        std::cout << "📍 Defaulting to 0.0" << std::endl;
+                    }
+                }
+                auto newClips = clipManager.pasteFromClipboard(pasteTime);
+                if (!newClips.empty()) {
+                    std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
+                    selectionManager.selectClips(newSelection);
+                }
+            }
+            return true;
+
+        case duplicate:
+            if (!selectedClips.empty()) {
+                std::vector<ClipId> newClips;
+                if (selectedClips.size() > 1) {
+                    UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
+                }
+                for (auto clipId : selectedClips) {
+                    auto cmd = std::make_unique<DuplicateClipCommand>(clipId);
+                    auto* cmdPtr = cmd.get();
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+                    ClipId newId = cmdPtr->getDuplicatedClipId();
+                    if (newId != INVALID_CLIP_ID) {
+                        newClips.push_back(newId);
+                    }
+                }
+                if (selectedClips.size() > 1) {
+                    UndoManager::getInstance().endCompoundOperation();
+                }
+                if (!newClips.empty()) {
+                    std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
+                    selectionManager.selectClips(newSelection);
+                }
+            }
+            return true;
+
+        case deleteCmd:
+            if (!selectedClips.empty()) {
+                if (selectedClips.size() > 1) {
+                    UndoManager::getInstance().beginCompoundOperation("Delete Clips");
+                }
+                for (auto clipId : selectedClips) {
+                    auto cmd = std::make_unique<DeleteClipCommand>(clipId);
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+                }
+                if (selectedClips.size() > 1) {
+                    UndoManager::getInstance().endCompoundOperation();
+                }
+                selectionManager.clearSelection();
+            }
+            return true;
+
+        case selectAll:
+            if (true) {
+                const auto& allClips = clipManager.getArrangementClips();
+                std::unordered_set<ClipId> allClipIds;
+                for (const auto& clip : allClips) {
+                    allClipIds.insert(clip.id);
+                }
+                selectionManager.selectClips(allClipIds);
+            }
+            return true;
+
+        case split:
+            // Split clips at edit cursor position
+            if (mainView) {
+                const auto& state = mainView->getTimelineController().getState();
+                double splitTime = state.editCursorPosition;
+                if (splitTime >= 0) {
+                    // TODO: Implement split at cursor
+                    std::cout << "⚠️  Split not yet implemented" << std::endl;
+                }
+            }
+            return true;
+
+        case trim:
+            // Split clips at selection boundaries (keep all pieces)
+            if (mainView) {
+                const auto& state = mainView->getTimelineController().getState();
+                if (!state.selection.visuallyHidden) {
+                    double trimStart = state.selection.startTime;
+                    double trimEnd = state.selection.endTime;
+
+                    // Get all clips that intersect the time selection
+                    std::vector<ClipId> clipsToTrim;
+                    for (const auto& clip : clipManager.getArrangementClips()) {
+                        double clipEnd = clip.startTime + clip.length;
+                        if (clip.startTime < trimEnd && clipEnd > trimStart) {
+                            clipsToTrim.push_back(clip.id);
+                        }
+                    }
+
+                    if (clipsToTrim.empty()) {
+                        return true;
+                    }
+
+                    std::cout << "✂️  Splitting " << clipsToTrim.size()
+                              << " clip(s) at selection boundaries [" << trimStart << ", "
+                              << trimEnd << "]" << std::endl;
+
+                    if (clipsToTrim.size() > 1) {
+                        UndoManager::getInstance().beginCompoundOperation("Split at Selection");
+                    }
+
+                    for (auto clipId : clipsToTrim) {
+                        const auto* clip = clipManager.getClip(clipId);
+                        if (!clip)
+                            continue;
+
+                        double clipEnd = clip->startTime + clip->length;
+
+                        // Skip clips that don't overlap with selection
+                        if (clip->startTime >= trimEnd || clipEnd <= trimStart) {
+                            continue;
+                        }
+
+                        ClipId currentClipId = clipId;
+
+                        // Split at left edge if clip extends before selection
+                        if (clip->startTime < trimStart && trimStart < clipEnd) {
+                            auto splitCmd =
+                                std::make_unique<SplitClipCommand>(currentClipId, trimStart);
+                            auto* cmdPtr = splitCmd.get();
+                            UndoManager::getInstance().executeCommand(std::move(splitCmd));
+                            // Continue with the right part (new clip)
+                            currentClipId = cmdPtr->getRightClipId();
+
+                            // Update clip pointer after split
+                            clip = clipManager.getClip(currentClipId);
+                            if (!clip)
+                                continue;
+                            clipEnd = clip->startTime + clip->length;
+                        }
+
+                        // Split at right edge if clip extends after selection
+                        if (trimEnd < clipEnd) {
+                            auto splitCmd =
+                                std::make_unique<SplitClipCommand>(currentClipId, trimEnd);
+                            UndoManager::getInstance().executeCommand(std::move(splitCmd));
+                            // Both left and right parts are kept
+                        }
+                    }
+
+                    if (clipsToTrim.size() > 1) {
+                        UndoManager::getInstance().endCompoundOperation();
+                    }
+                }
+            }
+            return true;
+
+        default:
+            return false;
+    }
+}
+
 bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
+    // Let command manager handle registered shortcuts first
+    auto commandID = commandManager.getKeyMappings()->findCommandForKeyPress(key);
+    if (commandID != 0) {
+        return commandManager.invokeDirectly(commandID, false);
+    }
+
     // ESC: Exit link mode
     if (key == juce::KeyPress::escapeKey) {
         LinkModeManager::getInstance().exitAllLinkModes();
@@ -645,10 +954,12 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
                 if (selectedIndex < static_cast<int>(tracks.size())) {
                     auto cmd = std::make_unique<DeleteTrackCommand>(tracks[selectedIndex].id);
                     UndoManager::getInstance().executeCommand(std::move(cmd));
+                    return true;  // Consumed - deleted a track
                 }
             }
         }
-        return true;
+        // Don't consume - let clips handle delete if no track action
+        return false;
     }
 
     // Cmd/Ctrl+D: Duplicate selected track (through undo system)
@@ -660,10 +971,12 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
                 if (selectedIndex < static_cast<int>(tracks.size())) {
                     auto cmd = std::make_unique<DuplicateTrackCommand>(tracks[selectedIndex].id);
                     UndoManager::getInstance().executeCommand(std::move(cmd));
+                    return true;  // Track was duplicated, consume the key press
                 }
             }
         }
-        return true;
+        // No track was duplicated, let the key press fall through to duplicate clips
+        return false;
     }
 
     // M: Toggle mute on selected track
@@ -681,8 +994,9 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
-    // S: Toggle solo on selected track (without modifiers - Cmd+S is Save)
-    if (key == juce::KeyPress('s') && !key.getModifiers().isCommandDown()) {
+    // Shift+S: Toggle solo on selected track
+    if ((key == juce::KeyPress('s') || key == juce::KeyPress('S')) &&
+        key.getModifiers().isShiftDown() && !key.getModifiers().isCommandDown()) {
         if (mixerView && !mixerView->isSelectedMaster()) {
             int selectedIndex = mixerView->getSelectedChannel();
             if (selectedIndex >= 0) {
@@ -798,6 +1112,30 @@ void MainWindow::MainComponent::viewModeChanged(ViewMode mode,
         currentViewMode = mode;
         switchToView(mode);
     }
+}
+
+void MainWindow::MainComponent::selectionTypeChanged(SelectionType newType) {
+    // Update menu state based on selection
+    auto& selectionManager = SelectionManager::getInstance();
+    bool hasSelection = (newType == SelectionType::Clip || newType == SelectionType::MultiClip) &&
+                        selectionManager.getSelectedClipCount() > 0;
+
+    // Get transport and edit cursor state (if available)
+    bool isPlaying = false;
+    bool isRecording = false;
+    bool isLooping = false;
+    bool hasEditCursor = false;
+    if (mainView) {
+        const auto& timelineState = mainView->getTimelineController().getState();
+        isPlaying = timelineState.playhead.isPlaying;
+        isRecording = timelineState.playhead.isRecording;
+        isLooping = timelineState.loop.enabled;
+        hasEditCursor = timelineState.editCursorPosition >= 0;
+    }
+
+    MenuManager::getInstance().updateMenuStates(
+        false, false, hasSelection, hasEditCursor, leftPanelVisible, rightPanelVisible,
+        bottomPanelVisible, isPlaying, isRecording, isLooping);
 }
 
 void MainWindow::MainComponent::switchToView(ViewMode mode) {
@@ -1110,27 +1448,194 @@ void MainWindow::setupMenuCallbacks() {
     callbacks.onRedo = []() { UndoManager::getInstance().redo(); };
 
     callbacks.onCut = [this]() {
-        // TODO: Implement cut
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Cut",
-                                               "Cut functionality not yet implemented.");
+        auto& clipManager = ClipManager::getInstance();
+        auto& selectionManager = SelectionManager::getInstance();
+        auto selectedClips = selectionManager.getSelectedClips();
+        if (!selectedClips.empty()) {
+            clipManager.cutToClipboard(selectedClips);
+            selectionManager.clearSelection();
+        }
     };
 
     callbacks.onCopy = [this]() {
-        // TODO: Implement copy
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Copy",
-                                               "Copy functionality not yet implemented.");
+        std::cout << "📋 MainWindow::onCopy callback called" << std::endl;
+        auto& clipManager = ClipManager::getInstance();
+        auto& selectionManager = SelectionManager::getInstance();
+        auto selectedClips = selectionManager.getSelectedClips();
+        if (!selectedClips.empty()) {
+            clipManager.copyToClipboard(selectedClips);
+        }
     };
 
     callbacks.onPaste = [this]() {
-        // TODO: Implement paste
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Paste",
-                                               "Paste functionality not yet implemented.");
+        std::cout << "📋 MainWindow::onPaste callback called" << std::endl;
+        auto& clipManager = ClipManager::getInstance();
+        auto& selectionManager = SelectionManager::getInstance();
+        if (clipManager.hasClipsInClipboard()) {
+            std::cout << "📋 Clipboard has clips, proceeding with paste..." << std::endl;
+            // Paste at edit cursor position from MainView
+            double pasteTime =
+                mainComponent->mainView
+                    ? mainComponent->mainView->getTimelineController().getState().editCursorPosition
+                    : 0.0;
+            // If edit cursor not set, use playback position
+            if (pasteTime < 0 && mainComponent->mainView) {
+                pasteTime = mainComponent->mainView->getTimelineController()
+                                .getState()
+                                .playhead.editPosition;
+            }
+            auto newClips = clipManager.pasteFromClipboard(pasteTime);
+            if (!newClips.empty()) {
+                // Select the pasted clips
+                std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
+                selectionManager.selectClips(newSelection);
+            }
+        }
+    };
+
+    callbacks.onDuplicate = [this]() {
+        auto& selectionManager = SelectionManager::getInstance();
+        auto selectedClips = selectionManager.getSelectedClips();
+        if (!selectedClips.empty()) {
+            std::vector<ClipId> newClips;
+
+            // Use compound operation for multiple duplicates
+            if (selectedClips.size() > 1) {
+                UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
+            }
+
+            for (auto clipId : selectedClips) {
+                auto cmd = std::make_unique<DuplicateClipCommand>(clipId);
+                auto* cmdPtr = cmd.get();
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                ClipId newClipId = cmdPtr->getDuplicatedClipId();
+                if (newClipId != INVALID_CLIP_ID) {
+                    newClips.push_back(newClipId);
+                }
+            }
+
+            if (selectedClips.size() > 1) {
+                UndoManager::getInstance().endCompoundOperation();
+            }
+
+            // Select the new duplicates
+            if (!newClips.empty()) {
+                std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
+                selectionManager.selectClips(newSelection);
+            }
+        }
     };
 
     callbacks.onDelete = [this]() {
-        // TODO: Implement delete
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Delete",
-                                               "Delete functionality not yet implemented.");
+        auto& selectionManager = SelectionManager::getInstance();
+        auto selectedClips = selectionManager.getSelectedClips();
+        if (!selectedClips.empty()) {
+            // Use compound operation for multiple deletes
+            if (selectedClips.size() > 1) {
+                UndoManager::getInstance().beginCompoundOperation("Delete Clips");
+            }
+
+            for (auto clipId : selectedClips) {
+                auto cmd = std::make_unique<DeleteClipCommand>(clipId);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+            }
+
+            if (selectedClips.size() > 1) {
+                UndoManager::getInstance().endCompoundOperation();
+            }
+
+            selectionManager.clearSelection();
+        }
+    };
+
+    callbacks.onSplit = [this]() {
+        auto& clipManager = ClipManager::getInstance();
+
+        if (!mainComponent->mainView) {
+            return;
+        }
+
+        double splitTime =
+            mainComponent->mainView->getTimelineController().getState().editCursorPosition;
+        if (splitTime < 0) {
+            return;  // No edit cursor set
+        }
+
+        // Split ALL clips that intersect with cursor (regardless of selection)
+        const auto& allClips = clipManager.getArrangementClips();
+
+        // Collect clips to split
+        std::vector<ClipId> clipsToSplit;
+        for (const auto& clip : allClips) {
+            if (splitTime > clip.startTime && splitTime < clip.startTime + clip.length) {
+                clipsToSplit.push_back(clip.id);
+            }
+        }
+
+        if (clipsToSplit.empty()) {
+            return;  // No clips at cursor position
+        }
+
+        // Use compound operation if splitting multiple clips
+        if (clipsToSplit.size() > 1) {
+            UndoManager::getInstance().beginCompoundOperation("Split Clips");
+        }
+
+        for (auto clipId : clipsToSplit) {
+            auto cmd = std::make_unique<SplitClipCommand>(clipId, splitTime);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+        }
+
+        if (clipsToSplit.size() > 1) {
+            UndoManager::getInstance().endCompoundOperation();
+        }
+    };
+
+    callbacks.onTrim = [this]() {
+        auto& clipManager = ClipManager::getInstance();
+        auto& selectionManager = SelectionManager::getInstance();
+        auto selectedClips = selectionManager.getSelectedClips();
+        if (mainComponent->mainView && !selectedClips.empty()) {
+            const auto& selection =
+                mainComponent->mainView->getTimelineController().getState().selection;
+            if (selection.isActive()) {
+                double selectionStart = selection.startTime;
+                double selectionEnd = selection.endTime;
+
+                // Use compound operation for multiple trims
+                bool needsCompound = selectedClips.size() > 1;
+                if (needsCompound) {
+                    UndoManager::getInstance().beginCompoundOperation("Trim Clips");
+                }
+
+                for (auto clipId : selectedClips) {
+                    const auto* clip = clipManager.getClip(clipId);
+                    if (!clip)
+                        continue;
+                    if (clip->startTime < selectionEnd && clip->getEndTime() > selectionStart) {
+                        double newStart = std::max(clip->startTime, selectionStart);
+                        double newEnd = std::min(clip->getEndTime(), selectionEnd);
+                        double newLength = newEnd - newStart;
+                        if (newLength > 0.01) {
+                            if (newStart > clip->startTime) {
+                                auto cmd =
+                                    std::make_unique<ResizeClipCommand>(clipId, newLength, true);
+                                UndoManager::getInstance().executeCommand(std::move(cmd));
+                            } else if (newEnd < clip->getEndTime()) {
+                                auto cmd =
+                                    std::make_unique<ResizeClipCommand>(clipId, newLength, false);
+                                UndoManager::getInstance().executeCommand(std::move(cmd));
+                            }
+                        }
+                    }
+                }
+
+                if (needsCompound) {
+                    UndoManager::getInstance().endCompoundOperation();
+                }
+            }
+        }
     };
 
     callbacks.onSelectAll = [this]() {
@@ -1173,7 +1678,7 @@ void MainWindow::setupMenuCallbacks() {
             mainComponent->resized();
             // Update menu state
             MenuManager::getInstance().updateMenuStates(
-                false, false, false, mainComponent->leftPanelVisible,
+                false, false, false, false, mainComponent->leftPanelVisible,
                 mainComponent->rightPanelVisible, mainComponent->bottomPanelVisible, false, false,
                 false);
         }
@@ -1185,7 +1690,7 @@ void MainWindow::setupMenuCallbacks() {
             mainComponent->resized();
             // Update menu state
             MenuManager::getInstance().updateMenuStates(
-                false, false, false, mainComponent->leftPanelVisible,
+                false, false, false, false, mainComponent->leftPanelVisible,
                 mainComponent->rightPanelVisible, mainComponent->bottomPanelVisible, false, false,
                 false);
         }
@@ -1197,7 +1702,7 @@ void MainWindow::setupMenuCallbacks() {
             mainComponent->resized();
             // Update menu state
             MenuManager::getInstance().updateMenuStates(
-                false, false, false, mainComponent->leftPanelVisible,
+                false, false, false, false, mainComponent->leftPanelVisible,
                 mainComponent->rightPanelVisible, mainComponent->bottomPanelVisible, false, false,
                 false);
         }
