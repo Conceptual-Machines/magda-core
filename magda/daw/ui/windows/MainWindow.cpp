@@ -1458,8 +1458,7 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
             }
 
             if (status == juce::ThreadPoolJob::jobNeedsRunningAgain) {
-                // Keep running
-                juce::Thread::sleep(10);
+                // Keep running - no sleep to maximize render speed
                 continue;
             }
 
@@ -1568,6 +1567,10 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
             params.normaliseToLevelDb = 0.0f;
             params.useMasterPlugins = true;
             params.usePlugins = true;
+
+            // Optimize for faster-than-realtime offline rendering
+            params.blockSizeForAudio = 8192;  // Much larger than default 512 for faster rendering
+            params.realTimeRender = false;  // Disable real-time simulation (default, but explicit)
 
             // Set time range based on export range setting
             using ExportRange = ExportAudioDialog::ExportRange;
