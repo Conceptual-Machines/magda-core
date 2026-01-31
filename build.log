@@ -1,0 +1,1833 @@
+🔨 Building MAGDA DAW (Debug)...
+📝 Configuring project...
+-- The C compiler identification is Clang 18.1.3
+-- The CXX compiler identification is Clang 18.1.3
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE  
+-- Found PkgConfig: /usr/bin/pkg-config (found version "1.8.1") 
+-- Checking for module 'alsa'
+--   Found alsa, version 1.2.11
+-- Checking for modules 'freetype2;fontconfig'
+--   Found freetype2, version 26.1.20
+--   Found fontconfig, version 2.15.0
+-- Checking for module 'gl'
+--   Found gl, version 1.2
+-- Checking for module 'libcurl'
+--   Found libcurl, version 8.5.0
+-- Checking for modules 'webkit2gtk-4.1;gtk+-x11-3.0'
+--   Found webkit2gtk-4.1, version 2.50.4
+--   Found gtk+-x11-3.0, version 3.24.41
+-- Configuring juceaide
+-- Building juceaide
+-- Exporting juceaide
+-- Testing juceaide
+-- Finished setting up juceaide
+-- Performing Test HAVE_FLAG__ffile_prefix_map__workspace_cmake_build_debug__deps_catch2_src__
+-- Performing Test HAVE_FLAG__ffile_prefix_map__workspace_cmake_build_debug__deps_catch2_src__ - Success
+-- Examples directory - placeholder for future examples
+-- Configuring done (20.2s)
+-- Generating done (0.0s)
+-- Build files have been written to: /workspace/cmake-build-debug
+cd cmake-build-debug && ninja
+[0/2] Re-checking globbed directories...
+[1/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/generators/catch_generator_exception.cpp.o
+[2/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/benchmark/detail/catch_stats.cpp.o
+[3/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/benchmark/catch_chronometer.cpp.o
+[4/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/generators/catch_generators.cpp.o
+[5/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/benchmark/detail/catch_run_for_at_least.cpp.o
+[6/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/benchmark/detail/catch_benchmark_function.cpp.o
+[7/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_automake.cpp.o
+[8/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/generators/catch_generators_random.cpp.o
+[9/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_compact.cpp.o
+[10/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_console.cpp.o
+[11/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_event_listener.cpp.o
+[12/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_common_base.cpp.o
+[13/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_helpers.cpp.o
+[14/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_registrars.cpp.o
+[15/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_cumulative_base.cpp.o
+[16/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_junit.cpp.o
+[17/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_multi.cpp.o
+[18/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_streaming_base.cpp.o
+[19/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_sonarqube.cpp.o
+[20/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_tap.cpp.o
+[21/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_exception.cpp.o
+[22/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_teamcity.cpp.o
+[23/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_generatortracker.cpp.o
+[24/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_registry_hub.cpp.o
+[25/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_capture.cpp.o
+[26/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_xml.cpp.o
+[27/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_reporter_factory.cpp.o
+[28/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_config.cpp.o
+[29/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_testcase.cpp.o
+[30/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_assertion_result.cpp.o
+[31/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_reporter.cpp.o
+[32/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_message.cpp.o
+[33/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_tag_alias_autoregistrar.cpp.o
+[34/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_get_random_seed.cpp.o
+[35/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_approx.cpp.o
+[36/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_config.cpp.o
+[37/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_test_case_info.cpp.o
+[38/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_totals.cpp.o
+[39/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_registry_hub.cpp.o
+[40/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_translate_exception.cpp.o
+[41/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_tostring.cpp.o
+[42/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_version.cpp.o
+[43/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_timer.cpp.o
+[44/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_session.cpp.o
+[45/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_test_spec.cpp.o
+[46/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_case_insensitive_comparisons.cpp.o
+[47/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_context.cpp.o
+[48/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_debugger.cpp.o
+[49/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_debug_console.cpp.o
+[50/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_assertion_handler.cpp.o
+[51/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_enforce.cpp.o
+[52/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_errno_guard.cpp.o
+[53/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_enum_values_registry.cpp.o
+[54/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_console_colour.cpp.o
+[55/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_clara.cpp.o
+[56/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_getenv.cpp.o
+[57/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_floating_point_helpers.cpp.o
+[58/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_exception_translator_registry.cpp.o
+[59/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_decomposer.cpp.o
+[60/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_istream.cpp.o
+[61/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_leak_detector.cpp.o
+[62/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_commandline.cpp.o
+[63/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_message_info.cpp.o
+[64/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_output_redirect.cpp.o
+[65/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_random_number_generator.cpp.o
+[66/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_lazy_expr.cpp.o
+[67/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_polyfills.cpp.o
+[68/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_parse_numbers.cpp.o
+[69/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_result_type.cpp.o
+[70/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_fatal_condition_handler.cpp.o
+[71/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_random_seed_generation.cpp.o
+[72/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_reusable_string_stream.cpp.o
+[73/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_list.cpp.o
+[74/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_singletons.cpp.o
+[75/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_startup_exception_registry.cpp.o
+[76/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_reporter_spec_parser.cpp.o
+[77/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_source_line_info.cpp.o
+[78/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_stdstreams.cpp.o
+[79/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_reporter_registry.cpp.o
+[80/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_string_manip.cpp.o
+[81/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_case_info_hasher.cpp.o
+[82/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_tag_alias_registry.cpp.o
+[83/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_section.cpp.o
+[84/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_stringref.cpp.o
+[85/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_run_context.cpp.o
+[86/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_failure_exception.cpp.o
+[87/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_registry.cpp.o
+[88/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_spec_parser.cpp.o
+[89/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_uncaught_exceptions.cpp.o
+[90/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_textflow.cpp.o
+[91/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_case_tracker.cpp.o
+[92/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_wildcard_pattern.cpp.o
+[93/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_case_registry_impl.cpp.o
+[94/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_xmlwriter.cpp.o
+[95/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers.cpp.o
+[96/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_exception.cpp.o
+[97/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_container_properties.cpp.o
+[98/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_floating_point.cpp.o
+[99/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_predicate.cpp.o
+[100/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_quantifiers.cpp.o
+[101/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_templated.cpp.o
+[102/470] Building CXX object magda/daw/CMakeFiles/magda_plugin_scanner.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_core/juce_core_CompilationTime.cpp.o
+[103/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/internal/catch_matchers_impl.cpp.o
+[104/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2WithMain.dir/catch2/internal/catch_main.cpp.o
+[105/470] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_string.cpp.o
+[106/470] Linking CXX static library _deps/catch2-build/src/libCatch2d.a
+[107/470] Linking CXX static library _deps/catch2-build/src/libCatch2Maind.a
+[108/470] Building CXX object magda/daw/CMakeFiles/magda_plugin_scanner.dir/engine/plugin_scanner_main.cpp.o
+[109/470] Building CXX object magda/daw/CMakeFiles/magda_plugin_scanner.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_events/juce_events.cpp.o
+[110/470] Building CXX object magda/daw/CMakeFiles/magda_plugin_scanner.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_core/juce_core.cpp.o
+[111/470] Building CXX object magda/daw/CMakeFiles/magda_plugin_scanner.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_basics/juce_audio_basics.cpp.o
+[112/470] Building C object magda/daw/CMakeFiles/magda_plugin_scanner.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_graphics/juce_graphics_Sheenbidi.c.o
+[113/470] Building CXX object magda/daw/CMakeFiles/magda_plugin_scanner.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_gui_extra/juce_gui_extra.cpp.o
+[114/470] Building CXX object magda/daw/CMakeFiles/magda_plugin_scanner.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_data_structures/juce_data_structures.cpp.o
+[115/470] Building CXX object magda/daw/CMakeFiles/magda_plugin_scanner.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors_headless/juce_audio_processors_headless_ara.cpp.o
+[116/470] Building CXX object magda/daw/CMakeFiles/magda_plugin_scanner.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors_headless/juce_audio_processors_headless_lv2_libs.cpp.o
+[117/470] Generating juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData1.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData2.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData3.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData4.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData5.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData6.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData7.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData8.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData9.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData10.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData11.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData12.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData13.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData14.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData15.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData16.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData17.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData18.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData19.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData20.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData21.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData22.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData23.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData24.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData25.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData26.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData27.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData28.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData29.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData30.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData31.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData32.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData33.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData34.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData35.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData36.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData37.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData38.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData39.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData40.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData41.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData42.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData43.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData44.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData45.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData46.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData47.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData48.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData49.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData50.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData51.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData52.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData53.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData54.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData55.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData56.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData57.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData58.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData59.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData60.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData61.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData62.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData63.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData64.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData65.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData66.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData67.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData68.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData69.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData70.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData71.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData72.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData73.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData74.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData75.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData76.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData77.cpp, juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData.h
+[118/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData1.cpp.o
+[119/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData2.cpp.o
+[120/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData3.cpp.o
+[121/470] Building CXX object magda/daw/CMakeFiles/magda_plugin_scanner.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors/juce_audio_processors.cpp.o
+[122/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData5.cpp.o
+[123/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData6.cpp.o
+[124/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData7.cpp.o
+[125/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData8.cpp.o
+[126/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData9.cpp.o
+[127/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData10.cpp.o
+[128/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData11.cpp.o
+[129/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData12.cpp.o
+[130/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData4.cpp.o
+[131/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData13.cpp.o
+[132/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData14.cpp.o
+[133/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData15.cpp.o
+[134/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData16.cpp.o
+[135/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData17.cpp.o
+[136/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData18.cpp.o
+[137/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData19.cpp.o
+[138/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData20.cpp.o
+[139/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData21.cpp.o
+[140/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData22.cpp.o
+[141/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData23.cpp.o
+[142/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData24.cpp.o
+[143/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData25.cpp.o
+[144/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData26.cpp.o
+[145/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData27.cpp.o
+[146/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData28.cpp.o
+[147/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData29.cpp.o
+[148/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData30.cpp.o
+[149/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData31.cpp.o
+[150/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData33.cpp.o
+[151/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData32.cpp.o
+[152/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData34.cpp.o
+[153/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData35.cpp.o
+[154/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData36.cpp.o
+[155/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData37.cpp.o
+[156/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData38.cpp.o
+[157/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData39.cpp.o
+[158/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData40.cpp.o
+[159/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData41.cpp.o
+[160/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData42.cpp.o
+[161/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData43.cpp.o
+[162/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData44.cpp.o
+[163/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData45.cpp.o
+[164/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData46.cpp.o
+[165/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData47.cpp.o
+[166/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData48.cpp.o
+[167/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData49.cpp.o
+[168/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData50.cpp.o
+[169/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData51.cpp.o
+[170/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData52.cpp.o
+[171/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData53.cpp.o
+[172/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData54.cpp.o
+[173/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData55.cpp.o
+[174/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData56.cpp.o
+[175/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData57.cpp.o
+[176/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData58.cpp.o
+[177/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData59.cpp.o
+[178/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData60.cpp.o
+[179/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData61.cpp.o
+[180/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData62.cpp.o
+[181/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData63.cpp.o
+[182/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData64.cpp.o
+[183/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData65.cpp.o
+[184/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData66.cpp.o
+[185/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData67.cpp.o
+[186/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData68.cpp.o
+[187/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData69.cpp.o
+[188/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData71.cpp.o
+[189/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData70.cpp.o
+[190/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData72.cpp.o
+[191/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData73.cpp.o
+[192/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData74.cpp.o
+[193/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData76.cpp.o
+[194/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData75.cpp.o
+[195/470] Building CXX object magda/daw/CMakeFiles/MagdaAssets.dir/juce_binarydata_MagdaAssets/JuceLibraryCode/BinaryData77.cpp.o
+[196/470] Linking CXX static library magda/daw/libMagdaAssets.a
+[197/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/command.cpp.o
+[198/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/core/Config.cpp.o
+[199/470] Building CXX object magda/daw/CMakeFiles/magda_plugin_scanner.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_graphics/juce_graphics.cpp.o
+[200/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/core/ViewModeController.cpp.o
+[201/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/core/ModulatorEngine.cpp.o
+[202/470] Building CXX object magda/daw/CMakeFiles/magda_plugin_scanner.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors_headless/juce_audio_processors_headless.cpp.o
+[203/470] Building CXX object magda/daw/CMakeFiles/magda_plugin_scanner.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_graphics/juce_graphics_Harfbuzz.cpp.o
+[204/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/core/ClipManager.cpp.o
+[205/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/core/SelectionManager.cpp.o
+[206/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/core/AutomationManager.cpp.o
+[207/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/magda.cpp.o
+In file included from /workspace/magda/daw/magda.cpp:6:
+In file included from /workspace/magda/daw/engine/TracktionEngineWrapper.hpp:3:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[208/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/core/LinkModeManager.cpp.o
+[209/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/core/UndoManager.cpp.o
+[210/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/core/ClipCommands.cpp.o
+[211/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/core/ParameterUtils.cpp.o
+[212/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/core/TrackCommands.cpp.o
+[213/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/core/MidiNoteCommands.cpp.o
+[214/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/core/TrackManager.cpp.o
+In file included from /workspace/magda/daw/core/TrackManager.cpp:5:
+In file included from /workspace/magda/daw/core/../audio/AudioBridge.hpp:3:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[215/470] Building CXX object magda/daw/CMakeFiles/magda_plugin_scanner.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_gui_basics/juce_gui_basics.cpp.o
+[216/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/engine/PluginScanner.cpp.o
+[217/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/engine/PluginScanCoordinator.cpp.o
+[218/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/audio/AudioThumbnailManager.cpp.o
+[219/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/engine/MagdaUIBehaviour.cpp.o
+In file included from /workspace/magda/daw/engine/MagdaUIBehaviour.cpp:1:
+In file included from /workspace/magda/daw/engine/MagdaUIBehaviour.hpp:3:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[220/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/engine/TracktionEngineWrapper.cpp.o
+In file included from /workspace/magda/daw/engine/TracktionEngineWrapper.cpp:1:
+In file included from /workspace/magda/daw/engine/TracktionEngineWrapper.hpp:3:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+/workspace/magda/daw/engine/TracktionEngineWrapper.cpp:608:43: warning: 'beatsToTime' is deprecated: Use new overload set above [-Wdeprecated-declarations]
+  608 |         auto timePosition = tempoSequence.beatsToTime(beatPosition);
+      |                                           ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/model/edit/tracktion_TempoSequence.h:204:8: note: 'beatsToTime' has been explicitly marked deprecated here
+  204 |     [[ deprecated ("Use new overload set above") ]] TimePosition beatsToTime (BeatPosition beats) const;
+      |        ^
+/workspace/magda/daw/engine/TracktionEngineWrapper.cpp:624:43: warning: 'timeToBeats' is deprecated: Use new overload set above [-Wdeprecated-declarations]
+  624 |         auto beatPosition = tempoSequence.timeToBeats(position);
+      |                                           ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/model/edit/tracktion_TempoSequence.h:202:8: note: 'timeToBeats' has been explicitly marked deprecated here
+  202 |     [[ deprecated ("Use new overload set above") ]] BeatPosition timeToBeats (TimePosition time) const;
+      |        ^
+/workspace/magda/daw/engine/TracktionEngineWrapper.cpp:1048:12: warning: unused variable 'tempo' [-Wunused-variable]
+ 1048 |     double tempo = getTempo();
+      |            ^~~~~
+/workspace/magda/daw/engine/TracktionEngineWrapper.cpp:1427:70: warning: unused parameter 'effect_id' [-Wunused-parameter]
+ 1427 | double TracktionEngineWrapper::getEffectParameter(const std::string& effect_id,
+      |                                                                      ^
+/workspace/magda/daw/engine/TracktionEngineWrapper.cpp:1428:70: warning: unused parameter 'parameter_name' [-Wunused-parameter]
+ 1428 |                                                   const std::string& parameter_name) const {
+      |                                                                      ^
+/workspace/magda/daw/engine/TracktionEngineWrapper.cpp:1438:65: warning: unused parameter 'effect_id' [-Wunused-parameter]
+ 1438 | bool TracktionEngineWrapper::isEffectEnabled(const std::string& effect_id) const {
+      |                                                                 ^
+/workspace/magda/daw/engine/TracktionEngineWrapper.cpp:1449:24: warning: unused parameter 'track_id' [-Wunused-parameter]
+ 1449 |     const std::string& track_id) const {
+      |                        ^
+/workspace/magda/daw/engine/TracktionEngineWrapper.cpp:1514:10: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+ 1514 |         [this, progressCallback](float progress, const juce::String& currentPlugin) {
+      |          ^~~~~
+/workspace/magda/daw/engine/TracktionEngineWrapper.cpp:1012:15: warning: unused function 'beatsToSeconds' [-Wunused-function]
+ 1012 | static double beatsToSeconds(double beats, double tempo) {
+      |               ^~~~~~~~~~~~~~
+/workspace/magda/daw/engine/TracktionEngineWrapper.cpp:1017:15: warning: unused function 'secondsToBeats' [-Wunused-function]
+ 1017 | static double secondsToBeats(double seconds, double tempo) {
+      |               ^~~~~~~~~~~~~~
+11 warnings generated.
+[221/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/engine/PluginWindowManager.cpp.o
+In file included from /workspace/magda/daw/engine/PluginWindowManager.cpp:1:
+In file included from /workspace/magda/daw/engine/PluginWindowManager.hpp:4:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[222/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/audio/AudioBridge.cpp.o
+In file included from /workspace/magda/daw/audio/AudioBridge.cpp:1:
+In file included from /workspace/magda/daw/audio/AudioBridge.hpp:3:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+/workspace/magda/daw/audio/AudioBridge.cpp:280:38: warning: 'beatsToTime' is deprecated: Use new overload set above [-Wdeprecated-declarations]
+  280 |                             tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopStart));
+      |                                      ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/model/edit/tracktion_TempoSequence.h:204:8: note: 'beatsToTime' has been explicitly marked deprecated here
+  204 |     [[ deprecated ("Use new overload set above") ]] TimePosition beatsToTime (BeatPosition beats) const;
+      |        ^
+/workspace/magda/daw/audio/AudioBridge.cpp:282:38: warning: 'beatsToTime' is deprecated: Use new overload set above [-Wdeprecated-declarations]
+  282 |                             tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEnd));
+      |                                      ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/model/edit/tracktion_TempoSequence.h:204:8: note: 'beatsToTime' has been explicitly marked deprecated here
+  204 |     [[ deprecated ("Use new overload set above") ]] TimePosition beatsToTime (BeatPosition beats) const;
+      |        ^
+/workspace/magda/daw/audio/AudioBridge.cpp:708:43: warning: 'beatsToTime' is deprecated: Use new overload set above [-Wdeprecated-declarations]
+  708 |             auto loopStartTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopStart));
+      |                                           ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/model/edit/tracktion_TempoSequence.h:204:8: note: 'beatsToTime' has been explicitly marked deprecated here
+  204 |     [[ deprecated ("Use new overload set above") ]] TimePosition beatsToTime (BeatPosition beats) const;
+      |        ^
+/workspace/magda/daw/audio/AudioBridge.cpp:709:41: warning: 'beatsToTime' is deprecated: Use new overload set above [-Wdeprecated-declarations]
+  709 |             auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEnd));
+      |                                         ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/model/edit/tracktion_TempoSequence.h:204:8: note: 'beatsToTime' has been explicitly marked deprecated here
+  204 |     [[ deprecated ("Use new overload set above") ]] TimePosition beatsToTime (BeatPosition beats) const;
+      |        ^
+/workspace/magda/daw/audio/AudioBridge.cpp:804:43: warning: 'beatsToTime' is deprecated: Use new overload set above [-Wdeprecated-declarations]
+  804 |             auto loopStartTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopStart));
+      |                                           ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/model/edit/tracktion_TempoSequence.h:204:8: note: 'beatsToTime' has been explicitly marked deprecated here
+  204 |     [[ deprecated ("Use new overload set above") ]] TimePosition beatsToTime (BeatPosition beats) const;
+      |        ^
+/workspace/magda/daw/audio/AudioBridge.cpp:805:41: warning: 'beatsToTime' is deprecated: Use new overload set above [-Wdeprecated-declarations]
+  805 |             auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEnd));
+      |                                         ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/model/edit/tracktion_TempoSequence.h:204:8: note: 'beatsToTime' has been explicitly marked deprecated here
+  204 |     [[ deprecated ("Use new overload set above") ]] TimePosition beatsToTime (BeatPosition beats) const;
+      |        ^
+7 warnings generated.
+[223/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/project/ProjectSerializer.cpp.o
+[224/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/audio/DeviceProcessor.cpp.o
+In file included from /workspace/magda/daw/audio/DeviceProcessor.cpp:1:
+In file included from /workspace/magda/daw/audio/DeviceProcessor.hpp:3:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[225/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/project/ProjectManager.cpp.o
+[226/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/core/PresetManager.cpp.o
+[227/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_core/juce_core_CompilationTime.cpp.o
+[228/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/ui/components/timeline/TimelineComponent.cpp.o
+/workspace/magda/daw/ui/components/timeline/TimelineComponent.cpp:709:64: warning: unused parameter 'event' [-Wunused-parameter]
+  709 | void TimelineComponent::mouseWheelMove(const juce::MouseEvent& event,
+      |                                                                ^
+/workspace/magda/daw/ui/components/timeline/TimelineComponent.cpp:1247:51: warning: unused parameter 'y' [-Wunused-parameter]
+ 1247 | bool TimelineComponent::isOnLoopMarker(int x, int y, bool& isStartMarker) const {
+      |                                                   ^
+2 warnings generated.
+[229/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/audio/MidiBridge.cpp.o
+In file included from /workspace/magda/daw/audio/MidiBridge.cpp:1:
+In file included from /workspace/magda/daw/audio/MidiBridge.hpp:3:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[230/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/ui/state/TimelineController.cpp.o
+[231/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_data_structures/juce_data_structures.cpp.o
+[232/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_events/juce_events.cpp.o
+[233/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_core/juce_core.cpp.o
+[234/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/audio/SessionClipScheduler.cpp.o
+In file included from /workspace/magda/daw/audio/SessionClipScheduler.cpp:1:
+In file included from /workspace/magda/daw/audio/SessionClipScheduler.hpp:3:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+/workspace/magda/daw/audio/SessionClipScheduler.cpp:58:30: warning: 'beatsToTime' is deprecated: Use new overload set above [-Wdeprecated-declarations]
+   58 |     auto loopTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(clip->internalLoopLength));
+      |                              ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/model/edit/tracktion_TempoSequence.h:204:8: note: 'beatsToTime' has been explicitly marked deprecated here
+  204 |     [[ deprecated ("Use new overload set above") ]] TimePosition beatsToTime (BeatPosition beats) const;
+      |        ^
+/workspace/magda/daw/audio/SessionClipScheduler.cpp:85:26: warning: 'beatsToTime' is deprecated: Use new overload set above [-Wdeprecated-declarations]
+   85 |                 tempoSeq.beatsToTime(te::BeatPosition::fromBeats(clip->internalLoopLength));
+      |                          ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/model/edit/tracktion_TempoSequence.h:204:8: note: 'beatsToTime' has been explicitly marked deprecated here
+  204 |     [[ deprecated ("Use new overload set above") ]] TimePosition beatsToTime (BeatPosition beats) const;
+      |        ^
+3 warnings generated.
+[235/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_basics/juce_audio_basics.cpp.o
+[236/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_devices/juce_audio_devices.cpp.o
+[237/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_formats/juce_audio_formats.cpp.o
+[238/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_utils/juce_audio_utils.cpp.o
+[239/470] Building C object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_graphics/juce_graphics_Sheenbidi.c.o
+[240/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors/juce_audio_processors.cpp.o
+[241/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors_headless/juce_audio_processors_headless_ara.cpp.o
+[242/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors_headless/juce_audio_processors_headless_lv2_libs.cpp.o
+[243/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_gui_extra/juce_gui_extra.cpp.o
+[244/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_graphics/juce_graphics.cpp.o
+[245/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors_headless/juce_audio_processors_headless.cpp.o
+[246/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_graphics/juce_graphics_Harfbuzz.cpp.o
+[247/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_1.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_1.cpp:18:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[248/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_2.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_2.cpp:18:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[249/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_3.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_3.cpp:18:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[250/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_gui_basics/juce_gui_basics.cpp.o
+[251/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_audio_files.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_audio_files.cpp:27:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_audio_files.cpp:51:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/audio_files/tracktion_AudioFileCache.cpp:944:107: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+  944 |                         juce::FloatVectorOperations::convertFixedToFloat (chan, (const int*) chan, 1.0f / 0x7fffffff, numSamples);
+      |                                                                                                         ~ ^~~~~~~~~~
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/audio_files/tracktion_AudioFileCache.cpp:1001:107: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+ 1001 |                         juce::FloatVectorOperations::convertFixedToFloat (chan, (const int*) chan, 1.0f / 0x7fffffff, numSamples);
+      |                                                                                                         ~ ^~~~~~~~~~
+3 warnings generated.
+[252/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_timestretch.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_timestretch.cpp:13:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[253/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_2.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_2.cpp:23:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_2.cpp:77:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/model/export/tracktion_RenderOptions.cpp:975:59: warning: unused parameter 'canPromptToOverwriteExisting' [-Wunused-parameter]
+  975 | void RenderOptions::setFilename (juce::String value, bool canPromptToOverwriteExisting)
+      |                                                           ^
+2 warnings generated.
+[254/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_dsp/juce_dsp.cpp.o
+[255/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_plugins.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_plugins.cpp:39:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[256/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_osc/juce_osc.cpp.o
+[257/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_1.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_1.cpp:29:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[258/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/tracktion_graph/tracktion_graph.cpp.o
+[259/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/engine/PlaybackPositionTimer.cpp.o
+[260/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_utils.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_utils.cpp:38:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_utils.cpp:73:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_AudioUtilities.cpp:311:85: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+  311 |         juce::FloatVectorOperations::convertFixedToFloat (d, (const int*) d, 1.0f / 0x7fffffff, buffer.getNumSamples());
+      |                                                                                   ~ ^~~~~~~~~~
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_utils.cpp:83:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:37:61: warning: unused parameter 'title' [-Wunused-parameter]
+   37 | bool UIBehaviour::showOkCancelAlertBox (const juce::String& title, const juce::String& message,
+      |                                                             ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:37:88: warning: unused parameter 'message' [-Wunused-parameter]
+   37 | bool UIBehaviour::showOkCancelAlertBox (const juce::String& title, const juce::String& message,
+      |                                                                                        ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:38:61: warning: unused parameter 'ok' [-Wunused-parameter]
+   38 |                                         const juce::String& ok, const juce::String& cancel)
+      |                                                             ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:38:85: warning: unused parameter 'cancel' [-Wunused-parameter]
+   38 |                                         const juce::String& ok, const juce::String& cancel)
+      |                                                                                     ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:48:63: warning: unused parameter 'title' [-Wunused-parameter]
+   48 | int UIBehaviour::showYesNoCancelAlertBox (const juce::String& title, const juce::String& message,
+      |                                                               ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:48:90: warning: unused parameter 'message' [-Wunused-parameter]
+   48 | int UIBehaviour::showYesNoCancelAlertBox (const juce::String& title, const juce::String& message,
+      |                                                                                          ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:49:63: warning: unused parameter 'yes' [-Wunused-parameter]
+   49 |                                           const juce::String& yes, const juce::String& no, const juce::String& cancel)
+      |                                                               ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:49:88: warning: unused parameter 'no' [-Wunused-parameter]
+   49 |                                           const juce::String& yes, const juce::String& no, const juce::String& cancel)
+      |                                                                                        ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:49:112: warning: unused parameter 'cancel' [-Wunused-parameter]
+   49 |                                           const juce::String& yes, const juce::String& no, const juce::String& cancel)
+      |                                                                                                                ^
+11 warnings generated.
+[261/470] Building CXX object magda/daw/CMakeFiles/magda_daw.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_playback.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_playback.cpp:119:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[262/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/themes/DarkTheme.cpp.o
+[263/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/themes/FontManager.cpp.o
+/workspace/magda/daw/ui/themes/FontManager.cpp:90:16: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+   90 |         return juce::Font(typeface).withHeight(size);
+      |                ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:101:7: note: 'Font' has been explicitly marked deprecated here
+  101 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+/workspace/magda/daw/ui/themes/FontManager.cpp:104:12: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+  104 |     return juce::Font(FALLBACK_FONT, size, style);
+      |            ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:88:7: note: 'Font' has been explicitly marked deprecated here
+   88 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+/workspace/magda/daw/ui/themes/FontManager.cpp:104:12: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+  104 |     return juce::Font(FALLBACK_FONT, size, style);
+      |            ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:88:7: note: 'Font' has been explicitly marked deprecated here
+   88 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+3 warnings generated.
+[264/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/themes/CursorManager.cpp.o
+[265/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/themes/MixerLookAndFeel.cpp.o
+/workspace/magda/daw/ui/themes/MixerLookAndFeel.cpp:183:10: warning: unused variable 'lineStartRadius' [-Wunused-variable]
+  183 |     auto lineStartRadius = radius * 0.2f;
+      |          ^~~~~~~~~~~~~~~
+1 warning generated.
+[266/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/magda_daw_main.cpp.o
+In file included from /workspace/magda/daw/magda_daw_main.cpp:4:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[267/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/windows/MenuManager.cpp.o
+/workspace/magda/daw/ui/windows/MenuManager.cpp:48:50: warning: unused parameter 'topLevelMenuIndex' [-Wunused-parameter]
+   48 | juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::String& menuName) {
+      |                                                  ^
+/workspace/magda/daw/ui/windows/MenuManager.cpp:176:56: warning: unused parameter 'topLevelMenuIndex' [-Wunused-parameter]
+  176 | void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
+      |                                                        ^
+2 warnings generated.
+[268/470] Linking CXX static library magda/daw/libmagda_daw.a
+[269/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/dialogs/PreferencesDialog.cpp.o
+/workspace/magda/daw/ui/dialogs/PreferencesDialog.cpp:290:53: warning: unused parameter 'parent' [-Wunused-parameter]
+  290 | void PreferencesDialog::showDialog(juce::Component* parent) {
+      |                                                     ^
+/workspace/magda/daw/ui/dialogs/PreferencesDialog.cpp:342:20: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+  342 |     header.setFont(juce::Font(14.0f, juce::Font::bold));
+      |                    ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:76:7: note: 'Font' has been explicitly marked deprecated here
+   76 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+/workspace/magda/daw/ui/dialogs/PreferencesDialog.cpp:342:20: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+  342 |     header.setFont(juce::Font(14.0f, juce::Font::bold));
+      |                    ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:76:7: note: 'Font' has been explicitly marked deprecated here
+   76 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+3 warnings generated.
+[270/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/dialogs/ChainTreeDialog.cpp.o
+[271/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/dialogs/AudioSettingsDialog.cpp.o
+/workspace/magda/daw/ui/dialogs/AudioSettingsDialog.cpp:15:25: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+   15 |     titleLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+      |                         ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:76:7: note: 'Font' has been explicitly marked deprecated here
+   76 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+/workspace/magda/daw/ui/dialogs/AudioSettingsDialog.cpp:15:25: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+   15 |     titleLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+      |                         ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:76:7: note: 'Font' has been explicitly marked deprecated here
+   76 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+/workspace/magda/daw/ui/dialogs/AudioSettingsDialog.cpp:242:31: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+  242 |     inputDeviceLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+      |                               ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:76:7: note: 'Font' has been explicitly marked deprecated here
+   76 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+/workspace/magda/daw/ui/dialogs/AudioSettingsDialog.cpp:242:31: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+  242 |     inputDeviceLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+      |                               ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:76:7: note: 'Font' has been explicitly marked deprecated here
+   76 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+/workspace/magda/daw/ui/dialogs/AudioSettingsDialog.cpp:250:32: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+  250 |     outputDeviceLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+      |                                ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:76:7: note: 'Font' has been explicitly marked deprecated here
+   76 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+/workspace/magda/daw/ui/dialogs/AudioSettingsDialog.cpp:250:32: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+  250 |     outputDeviceLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+      |                                ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:76:7: note: 'Font' has been explicitly marked deprecated here
+   76 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+/workspace/magda/daw/ui/dialogs/AudioSettingsDialog.cpp:292:30: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+  292 |     deviceNameLabel_.setFont(juce::Font(16.0f, juce::Font::bold));
+      |                              ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:76:7: note: 'Font' has been explicitly marked deprecated here
+   76 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+/workspace/magda/daw/ui/dialogs/AudioSettingsDialog.cpp:292:30: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+  292 |     deviceNameLabel_.setFont(juce::Font(16.0f, juce::Font::bold));
+      |                              ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:76:7: note: 'Font' has been explicitly marked deprecated here
+   76 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+/workspace/magda/daw/ui/dialogs/AudioSettingsDialog.cpp:506:55: warning: unused parameter 'parent' [-Wunused-parameter]
+  506 | void AudioSettingsDialog::showDialog(juce::Component* parent,
+      |                                                       ^
+9 warnings generated.
+[272/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/dialogs/TrackManagerDialog.cpp.o
+[273/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/debug/DebugDialog.cpp.o
+[274/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/TransportPanel.cpp.o
+/workspace/magda/daw/ui/panels/TransportPanel.cpp:220:51: warning: unused parameter 'isPrimary' [-Wunused-parameter]
+  220 |                              float fontSize, bool isPrimary) {
+      |                                                   ^
+1 warning generated.
+[275/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/LeftPanel.cpp.o
+[276/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/TimelineHeaderPanel.cpp.o
+[277/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/RightPanel.cpp.o
+[278/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/windows/MainWindow.cpp.o
+In file included from /workspace/magda/daw/ui/windows/MainWindow.cpp:5:
+In file included from /workspace/magda/daw/ui/windows/../../profiling/PerformanceProfiler.hpp:3:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+In file included from /workspace/magda/daw/ui/windows/MainWindow.cpp:19:
+In file included from /workspace/magda/daw/ui/windows/../views/MainView.hpp:8:
+/workspace/magda/daw/ui/windows/../views/../components/common/GridOverlayComponent.hpp:31:22: warning: unused parameter 'x' [-Wunused-parameter]
+   31 |     bool hitTest(int x, int y) override {
+      |                      ^
+/workspace/magda/daw/ui/windows/../views/../components/common/GridOverlayComponent.hpp:31:29: warning: unused parameter 'y' [-Wunused-parameter]
+   31 |     bool hitTest(int x, int y) override {
+      |                             ^
+In file included from /workspace/magda/daw/ui/windows/MainWindow.cpp:19:
+/workspace/magda/daw/ui/windows/../views/MainView.hpp:274:22: warning: unused parameter 'x' [-Wunused-parameter]
+  274 |     bool hitTest(int x, int y) override {
+      |                      ^
+/workspace/magda/daw/ui/windows/../views/MainView.hpp:274:29: warning: unused parameter 'y' [-Wunused-parameter]
+  274 |     bool hitTest(int x, int y) override {
+      |                             ^
+/workspace/magda/daw/ui/windows/MainWindow.cpp:844:31: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+  844 |     callbacks.onNewProject = [this]() {
+      |                               ^~~~
+/workspace/magda/daw/ui/windows/MainWindow.cpp:1076:32: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+ 1076 |     callbacks.onExportAudio = [this]() {
+      |                                ^~~~
+/workspace/magda/daw/ui/windows/MainWindow.cpp:1089:24: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+ 1089 |     callbacks.onCut = [this]() {
+      |                        ^~~~
+/workspace/magda/daw/ui/windows/MainWindow.cpp:1095:25: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+ 1095 |     callbacks.onCopy = [this]() {
+      |                         ^~~~
+/workspace/magda/daw/ui/windows/MainWindow.cpp:1101:26: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+ 1101 |     callbacks.onPaste = [this]() {
+      |                          ^~~~
+/workspace/magda/daw/ui/windows/MainWindow.cpp:1107:27: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+ 1107 |     callbacks.onDelete = [this]() {
+      |                           ^~~~
+/workspace/magda/daw/ui/windows/MainWindow.cpp:1113:30: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+ 1113 |     callbacks.onSelectAll = [this]() {
+      |                              ^~~~
+/workspace/magda/daw/ui/windows/MainWindow.cpp:1243:30: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+ 1243 |     callbacks.onGoToStart = [this]() {
+      |                              ^~~~
+/workspace/magda/daw/ui/windows/MainWindow.cpp:1249:28: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+ 1249 |     callbacks.onGoToEnd = [this]() {
+      |                            ^~~~
+/workspace/magda/daw/ui/windows/MainWindow.cpp:1327:25: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+ 1327 |     callbacks.onZoom = [this]() {
+      |                         ^~~~
+/workspace/magda/daw/ui/windows/MainWindow.cpp:1337:29: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+ 1337 |     callbacks.onShowHelp = [this]() {
+      |                             ^~~~
+/workspace/magda/daw/ui/windows/MainWindow.cpp:1343:26: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+ 1343 |     callbacks.onAbout = [this]() {
+      |                          ^~~~
+17 warnings generated.
+[279/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/BottomPanel.cpp.o
+[280/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/dialogs/ParameterConfigDialog.cpp.o
+In file included from /workspace/magda/daw/ui/dialogs/ParameterConfigDialog.cpp:8:
+In file included from /workspace/magda/daw/engine/TracktionEngineWrapper.hpp:3:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[281/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/FooterBar.cpp.o
+[282/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/PanelTabBar.cpp.o
+[283/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/state/PanelController.cpp.o
+[284/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/TabbedPanel.cpp.o
+/workspace/magda/daw/ui/panels/TabbedPanel.cpp:84:10: warning: unused variable 'bounds' [-Wunused-variable]
+   84 |     auto bounds = getLocalBounds();
+      |          ^~~~~~
+1 warning generated.
+[285/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/content/PresetBrowserContent.cpp.o
+[286/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/content/EmptyContent.cpp.o
+[287/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/content/PanelContentFactory.cpp.o
+[288/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/content/MediaExplorerContent.cpp.o
+/workspace/magda/daw/ui/panels/content/MediaExplorerContent.cpp:369:35: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+  369 |     syncToTempoButton_.onClick = [this]() {
+      |                                   ^~~~
+1 warning generated.
+[289/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/content/ScriptingConsoleContent.cpp.o
+/workspace/magda/daw/ui/panels/content/ScriptingConsoleContent.cpp:21:9: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+   21 |         juce::Font(juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain));
+      |         ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:88:7: note: 'Font' has been explicitly marked deprecated here
+   88 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+/workspace/magda/daw/ui/panels/content/ScriptingConsoleContent.cpp:21:9: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+   21 |         juce::Font(juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain));
+      |         ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:88:7: note: 'Font' has been explicitly marked deprecated here
+   88 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+/workspace/magda/daw/ui/panels/content/ScriptingConsoleContent.cpp:32:9: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+   32 |         juce::Font(juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain));
+      |         ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:88:7: note: 'Font' has been explicitly marked deprecated here
+   88 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+/workspace/magda/daw/ui/panels/content/ScriptingConsoleContent.cpp:32:9: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+   32 |         juce::Font(juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain));
+      |         ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:88:7: note: 'Font' has been explicitly marked deprecated here
+   88 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+4 warnings generated.
+[290/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/content/AIChatConsoleContent.cpp.o
+[291/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/audio/AudioEngineOptimizer.cpp.o
+[292/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/content/TrackChainContent.cpp.o
+[293/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/content/WaveformEditorContent.cpp.o
+/workspace/magda/daw/ui/panels/content/WaveformEditorContent.cpp:206:42: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+  206 |     gridComponent_->onWaveformChanged = [this]() {
+      |                                          ^~~~
+1 warning generated.
+[294/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/content/PluginBrowserContent.cpp.o
+In file included from /workspace/magda/daw/ui/panels/content/PluginBrowserContent.cpp:8:
+In file included from /workspace/magda/daw/engine/TracktionEngineWrapper.hpp:3:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[295/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/content/PianoRollContent.cpp.o
+/workspace/magda/daw/ui/panels/content/PianoRollContent.cpp:800:73: warning: unused parameter 'state' [-Wunused-parameter]
+  800 | void PianoRollContent::timelineStateChanged(const magda::TimelineState& state) {
+      |                                                                         ^
+1 warning generated.
+[296/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/panels/content/InspectorContent.cpp.o
+In file included from /workspace/magda/daw/ui/panels/content/InspectorContent.cpp:7:
+In file included from /workspace/magda/daw/ui/panels/content/../../../audio/MidiBridge.hpp:3:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+/workspace/magda/daw/ui/panels/content/InspectorContent.cpp:1048:13: warning: enumeration values 'AutomationLane', 'AutomationClip', and 'AutomationPoint' not handled in switch [-Wswitch]
+ 1048 |     switch (currentSelectionType_) {
+      |             ^~~~~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/panels/content/InspectorContent.cpp:1500:12: warning: variable 'bpm' set but not used [-Wunused-but-set-variable]
+ 1500 |     double bpm = 120.0;
+      |            ^
+3 warnings generated.
+[297/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/common/SvgButton.cpp.o
+[298/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/views/SessionView.cpp.o
+/workspace/magda/daw/ui/views/SessionView.cpp:163:27: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+  163 |                 g.setFont(juce::Font(10.0f, juce::Font::bold));
+      |                           ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:76:7: note: 'Font' has been explicitly marked deprecated here
+   76 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+/workspace/magda/daw/ui/views/SessionView.cpp:163:27: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+  163 |                 g.setFont(juce::Font(10.0f, juce::Font::bold));
+      |                           ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:76:7: note: 'Font' has been explicitly marked deprecated here
+   76 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+/workspace/magda/daw/ui/views/SessionView.cpp:498:30: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+  498 |     dragGhostLabel_->setFont(juce::Font(11.0f, juce::Font::bold));
+      |                              ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:76:7: note: 'Font' has been explicitly marked deprecated here
+   76 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+/workspace/magda/daw/ui/views/SessionView.cpp:498:30: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+  498 |     dragGhostLabel_->setFont(juce::Font(11.0f, juce::Font::bold));
+      |                              ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:76:7: note: 'Font' has been explicitly marked deprecated here
+   76 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+/workspace/magda/daw/ui/views/SessionView.cpp:1473:10: warning: unused variable 'gridBounds' [-Wunused-variable]
+ 1473 |     auto gridBounds = gridViewport->getBounds();
+      |          ^~~~~~~~~~
+5 warnings generated.
+[299/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/views/SessionClipEditor.cpp.o
+[300/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/common/LayoutDebugPanel.cpp.o
+/workspace/magda/daw/ui/components/common/LayoutDebugPanel.cpp:65:24: warning: 'Font' is deprecated: Use the constructor that takes a FontOptions argument [-Wdeprecated-declarations]
+   65 |     row.label->setFont(11.0f);
+      |                        ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:76:7: note: 'Font' has been explicitly marked deprecated here
+   76 |     [[deprecated ("Use the constructor that takes a FontOptions argument")]]
+      |       ^
+1 warning generated.
+[301/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/common/MixerDebugPanel.cpp.o
+[302/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/common/ZoomControls.cpp.o
+[303/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/common/GridOverlayComponent.cpp.o
+In file included from /workspace/magda/daw/ui/components/common/GridOverlayComponent.cpp:1:
+/workspace/magda/daw/ui/components/common/GridOverlayComponent.hpp:31:22: warning: unused parameter 'x' [-Wunused-parameter]
+   31 |     bool hitTest(int x, int y) override {
+      |                      ^
+/workspace/magda/daw/ui/components/common/GridOverlayComponent.hpp:31:29: warning: unused parameter 'y' [-Wunused-parameter]
+   31 |     bool hitTest(int x, int y) override {
+      |                             ^
+2 warnings generated.
+[304/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/views/MainView.cpp.o
+In file included from /workspace/magda/daw/ui/views/MainView.cpp:1:
+In file included from /workspace/magda/daw/ui/views/MainView.hpp:8:
+/workspace/magda/daw/ui/views/../components/common/GridOverlayComponent.hpp:31:22: warning: unused parameter 'x' [-Wunused-parameter]
+   31 |     bool hitTest(int x, int y) override {
+      |                      ^
+/workspace/magda/daw/ui/views/../components/common/GridOverlayComponent.hpp:31:29: warning: unused parameter 'y' [-Wunused-parameter]
+   31 |     bool hitTest(int x, int y) override {
+      |                             ^
+In file included from /workspace/magda/daw/ui/views/MainView.cpp:1:
+/workspace/magda/daw/ui/views/MainView.hpp:274:22: warning: unused parameter 'x' [-Wunused-parameter]
+  274 |     bool hitTest(int x, int y) override {
+      |                      ^
+/workspace/magda/daw/ui/views/MainView.hpp:274:29: warning: unused parameter 'y' [-Wunused-parameter]
+  274 |     bool hitTest(int x, int y) override {
+      |                             ^
+In file included from /workspace/magda/daw/ui/views/MainView.cpp:13:
+In file included from /workspace/magda/daw/audio/AudioBridge.hpp:3:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+/workspace/magda/daw/ui/views/MainView.cpp:57:7: warning: initializer order does not match the declaration order [-Wreorder-ctor]
+   57 |     : audioEngine_(audioEngine),
+      |       ^~~~~~~~~~~~~~~~~~~~~~~~~
+      |       horizontalZoom(20.0)
+   58 |       playheadPosition(0.0),
+   59 |       horizontalZoom(20.0),
+      |       ~~~~~~~~~~~~~~~~~~~~
+      |       initialZoomSet(false)
+   60 |       initialZoomSet(false) {
+      |       ~~~~~~~~~~~~~~~~~~~~~
+      |       audioEngine_(audioEngine)
+/workspace/magda/daw/ui/views/MainView.cpp:57:7: note: field 'audioEngine_' will be initialized after field 'playheadPosition'
+   57 |     : audioEngine_(audioEngine),
+      |       ^~~~~~~~~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/views/MainView.cpp:58:7: note: field 'playheadPosition' will be initialized after field 'horizontalZoom'
+   58 |       playheadPosition(0.0),
+      |       ^~~~~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/views/MainView.cpp:268:74: warning: missing field 'trackIndices' initializer [-Wmissing-field-initializers]
+  268 |             timelineController->dispatch(SetTimeSelectionEvent{start, end});
+      |                                                                          ^
+/workspace/magda/daw/ui/views/MainView.cpp:320:58: warning: unused parameter 'state' [-Wunused-parameter]
+  320 | void MainView::timelineStateChanged(const TimelineState& state) {
+      |                                                          ^
+8 warnings generated.
+[305/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/views/MixerView.cpp.o
+In file included from /workspace/magda/daw/ui/views/MixerView.cpp:5:
+In file included from /workspace/magda/daw/ui/views/../../audio/AudioBridge.hpp:3:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[306/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/common/DraggableValueLabel.cpp.o
+/workspace/magda/daw/ui/components/common/DraggableValueLabel.cpp:349:32: warning: 'getStringWidthFloat' is deprecated: Use GlyphArrangement or TextLayout to compute text layouts [-Wdeprecated-declarations]
+  349 |         float textWidth = font.getStringWidthFloat(text);
+      |                                ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:564:7: note: 'getStringWidthFloat' has been explicitly marked deprecated here
+  564 |     [[deprecated ("Use GlyphArrangement or TextLayout to compute text layouts")]]
+      |       ^
+/workspace/magda/daw/ui/components/common/DraggableValueLabel.cpp:358:32: warning: 'getStringWidthFloat' is deprecated: Use GlyphArrangement or TextLayout to compute text layouts [-Wdeprecated-declarations]
+  358 |         float firstDotX = font.getStringWidthFloat(text.substring(0, firstDot));
+      |                                ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:564:7: note: 'getStringWidthFloat' has been explicitly marked deprecated here
+  564 |     [[deprecated ("Use GlyphArrangement or TextLayout to compute text layouts")]]
+      |       ^
+/workspace/magda/daw/ui/components/common/DraggableValueLabel.cpp:360:37: warning: 'getStringWidthFloat' is deprecated: Use GlyphArrangement or TextLayout to compute text layouts [-Wdeprecated-declarations]
+  360 |             (secondDot >= 0) ? font.getStringWidthFloat(text.substring(0, secondDot)) : textWidth;
+      |                                     ^
+/workspace/third_party/tracktion_engine/modules/juce/modules/juce_graphics/fonts/juce_Font.h:564:7: note: 'getStringWidthFloat' has been explicitly marked deprecated here
+  564 |     [[deprecated ("Use GlyphArrangement or TextLayout to compute text layouts")]]
+      |       ^
+3 warnings generated.
+[307/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/common/BarsBeatsTicksLabel.cpp.o
+[308/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/timeline/TimelineComponent.cpp.o
+/workspace/magda/daw/ui/components/timeline/TimelineComponent.cpp:709:64: warning: unused parameter 'event' [-Wunused-parameter]
+  709 | void TimelineComponent::mouseWheelMove(const juce::MouseEvent& event,
+      |                                                                ^
+/workspace/magda/daw/ui/components/timeline/TimelineComponent.cpp:1247:51: warning: unused parameter 'y' [-Wunused-parameter]
+ 1247 | bool TimelineComponent::isOnLoopMarker(int x, int y, bool& isStartMarker) const {
+      |                                                   ^
+2 warnings generated.
+[309/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/timeline/TimelineFiller.cpp.o
+[310/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/timeline/TimeRuler.cpp.o
+[311/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/timeline/ZoomScrollBar.cpp.o
+[312/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/pianoroll/NoteComponent.cpp.o
+[313/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/pianoroll/PianoRollKeyboard.cpp.o
+[314/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/pianoroll/PianoRollGridComponent.cpp.o
+[315/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/tracks/TrackContentPanel.cpp.o
+/workspace/magda/daw/ui/components/tracks/TrackContentPanel.cpp:230:29: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+  230 |     if (index >= 0 && index < trackLanes.size()) {
+      |                       ~~~~~ ^ ~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackContentPanel.cpp:245:29: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+  245 |     if (index >= 0 && index < trackLanes.size()) {
+      |                       ~~~~~ ^ ~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackContentPanel.cpp:261:39: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+  261 |     if (trackIndex >= 0 && trackIndex < trackLanes.size()) {
+      |                            ~~~~~~~~~~ ^ ~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackContentPanel.cpp:275:39: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+  275 |     if (trackIndex >= 0 && trackIndex < trackLanes.size()) {
+      |                            ~~~~~~~~~~ ^ ~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackContentPanel.cpp:333:76: warning: unused parameter 'lane' [-Wunused-parameter]
+  333 | void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& lane,
+      |                                                                            ^
+/workspace/magda/daw/ui/components/tracks/TrackContentPanel.cpp:334:88: warning: unused parameter 'trackIndex' [-Wunused-parameter]
+  334 |                                        juce::Rectangle<int> area, bool isSelected, int trackIndex) {
+      |                                                                                        ^
+/workspace/magda/daw/ui/components/tracks/TrackContentPanel.cpp:389:38: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+  389 |     if (trackIndex < 0 || trackIndex >= trackLanes.size()) {
+      |                           ~~~~~~~~~~ ^  ~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackContentPanel.cpp:2014:64: warning: unused parameter 'files' [-Wunused-parameter]
+ 2014 | void TrackContentPanel::fileDragEnter(const juce::StringArray& files, int x, int y) {
+      |                                                                ^
+/workspace/magda/daw/ui/components/tracks/TrackContentPanel.cpp:2021:63: warning: unused parameter 'files' [-Wunused-parameter]
+ 2021 | void TrackContentPanel::fileDragMove(const juce::StringArray& files, int x, int y) {
+      |                                                               ^
+/workspace/magda/daw/ui/components/tracks/TrackContentPanel.cpp:2027:63: warning: unused parameter 'files' [-Wunused-parameter]
+ 2027 | void TrackContentPanel::fileDragExit(const juce::StringArray& files) {
+      |                                                               ^
+/workspace/magda/daw/ui/components/tracks/TrackContentPanel.cpp:2061:11: warning: unused variable 'clipManager' [-Wunused-variable]
+ 2061 |     auto& clipManager = ClipManager::getInstance();
+      |           ^~~~~~~~~~~
+11 warnings generated.
+[316/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/clips/ClipComponent.cpp.o
+[317/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/pianoroll/VelocityLaneComponent.cpp.o
+[318/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/common/curve/CurvePointComponent.cpp.o
+[319/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/common/curve/CurveTensionHandle.cpp.o
+[320/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/common/curve/CurveEditorBase.cpp.o
+[321/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/tracks/TrackHeadersPanel.cpp.o
+In file included from /workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:7:
+In file included from /workspace/magda/daw/ui/components/tracks/../../../audio/AudioBridge.hpp:3:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:300:84: warning: unused parameter 'event' [-Wunused-parameter]
+  300 |             midiBridge->onNoteEvent = [this](TrackId trackId, const MidiNoteEvent& event) {
+      |                                                                                    ^
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:614:50: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+  614 |     header.midiInSelector->onSelectionChanged = [this, trackId, midiBridge](int selectedId) {
+      |                                                  ^~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:641:48: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+  641 |     header.midiInSelector->onEnabledChanged = [this, trackId, midiBridge, &header](bool enabled) {
+      |                                                ^~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:675:51: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+  675 |     header.midiOutSelector->onSelectionChanged = [this, trackId, midiBridge](int selectedId) {
+      |                                                   ^~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:696:49: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+  696 |     header.midiOutSelector->onEnabledChanged = [this, trackId, midiBridge, &header](bool enabled) {
+      |                                                 ^~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:726:49: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+  726 |     header.audioInSelector->onEnabledChanged = [this, trackId, &header](bool enabled) {
+      |                                                 ^~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:726:65: warning: lambda capture 'header' is not used [-Wunused-lambda-capture]
+  726 |     header.audioInSelector->onEnabledChanged = [this, trackId, &header](bool enabled) {
+      |                                                              ~~~^~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:739:50: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+  739 |     header.audioOutSelector->onEnabledChanged = [this, trackId, &header](bool enabled) {
+      |                                                  ^~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:739:66: warning: lambda capture 'header' is not used [-Wunused-lambda-capture]
+  739 |     header.audioOutSelector->onEnabledChanged = [this, trackId, &header](bool enabled) {
+      |                                                               ~~~^~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:1040:29: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+ 1040 |     if (index >= 0 && index < trackHeaders.size()) {
+      |                       ~~~~~ ^ ~~~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:1075:39: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+ 1075 |     if (trackIndex >= 0 && trackIndex < trackHeaders.size()) {
+      |                            ~~~~~~~~~~ ^ ~~~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:1089:39: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+ 1089 |     if (trackIndex >= 0 && trackIndex < trackHeaders.size()) {
+      |                            ~~~~~~~~~~ ^ ~~~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:1187:24: warning: comparison of integers of different signs: 'const int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+ 1187 |         if (trackIndex < trackHeaders.size()) {
+      |             ~~~~~~~~~~ ^ ~~~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:1199:24: warning: comparison of integers of different signs: 'const int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+ 1199 |         if (trackIndex < trackHeaders.size()) {
+      |             ~~~~~~~~~~ ^ ~~~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:1211:24: warning: comparison of integers of different signs: 'const int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+ 1211 |         if (trackIndex < trackHeaders.size()) {
+      |             ~~~~~~~~~~ ^ ~~~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:1223:24: warning: comparison of integers of different signs: 'const int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+ 1223 |         if (trackIndex < trackHeaders.size()) {
+      |             ~~~~~~~~~~ ^ ~~~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:1236:24: warning: comparison of integers of different signs: 'const int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+ 1236 |         if (trackIndex < trackHeaders.size()) {
+      |             ~~~~~~~~~~ ^ ~~~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:1375:38: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+ 1375 |     if (trackIndex < 0 || trackIndex >= trackHeaders.size()) {
+      |                           ~~~~~~~~~~ ^  ~~~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:1386:38: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+ 1386 |     if (trackIndex < 0 || trackIndex >= trackHeaders.size()) {
+      |                           ~~~~~~~~~~ ^  ~~~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:1398:23: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+ 1398 |     for (int i = 0; i < trackHeaders.size(); ++i) {
+      |                     ~ ^ ~~~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:1698:39: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+ 1698 |     if (trackIndex >= 0 && trackIndex < trackHeaders.size()) {
+      |                            ~~~~~~~~~~ ^ ~~~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:1705:39: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+ 1705 |     if (trackIndex >= 0 && trackIndex < trackHeaders.size()) {
+      |                            ~~~~~~~~~~ ^ ~~~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:1712:39: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+ 1712 |     if (trackIndex >= 0 && trackIndex < trackHeaders.size()) {
+      |                            ~~~~~~~~~~ ^ ~~~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:1719:39: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+ 1719 |     if (trackIndex >= 0 && trackIndex < trackHeaders.size()) {
+      |                            ~~~~~~~~~~ ^ ~~~~~~~~~~~~~~~~~~~
+/workspace/magda/daw/ui/components/tracks/TrackHeadersPanel.cpp:1728:39: warning: comparison of integers of different signs: 'int' and 'size_type' (aka 'unsigned long') [-Wsign-compare]
+ 1728 |     if (trackIndex >= 0 && trackIndex < trackHeaders.size()) {
+      |                            ~~~~~~~~~~ ^ ~~~~~~~~~~~~~~~~~~~
+26 warnings generated.
+[322/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/waveform/WaveformGridComponent.cpp.o
+[323/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/common/curve/CurveBezierHandle.cpp.o
+[324/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/automation/AutomationCurveEditor.cpp.o
+/workspace/magda/daw/ui/components/automation/AutomationCurveEditor.cpp:64:30: warning: comparison of integers of different signs: 'uint32_t' (aka 'unsigned int') and 'AutomationPointId' (aka 'int') [-Wsign-compare]
+   64 |         if (pc->getPointId() == pointId) {
+      |             ~~~~~~~~~~~~~~~~ ^  ~~~~~~~
+1 warning generated.
+[325/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/automation/AutomationLaneComponent.cpp.o
+[326/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/mixer/RoutingSelector.cpp.o
+[327/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/mixer/MasterChannelStrip.cpp.o
+[328/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/automation/AutomationClipComponent.cpp.o
+In file included from /workspace/magda/daw/ui/components/automation/AutomationClipComponent.cpp:1:
+/workspace/magda/daw/ui/components/automation/AutomationClipComponent.hpp:79:30: warning: private field 'parentLane_' is not used [-Wunused-private-field]
+   79 |     AutomationLaneComponent* parentLane_;
+      |                              ^
+1 warning generated.
+[329/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/NodeComponent.cpp.o
+/workspace/magda/daw/ui/components/chain/NodeComponent.cpp:789:72: warning: unused parameter 'selection' [-Wunused-parameter]
+  789 | void NodeComponent::paramSelectionChanged(const magda::ParamSelection& selection) {}
+      |                                                                        ^
+1 warning generated.
+[330/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/RackComponent.cpp.o
+/workspace/magda/daw/ui/components/chain/RackComponent.cpp:84:37: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+   84 |     volumeSlider_.onValueChanged = [this](double db) {
+      |                                     ^~~~
+1 warning generated.
+[331/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/ChainRowComponent.cpp.o
+[332/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/ToneGeneratorUI.cpp.o
+[333/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/ChainPanel.cpp.o
+[334/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/ParamLinkResolver.cpp.o
+[335/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/ParamSlotComponent.cpp.o
+[336/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/ParamModulationPainter.cpp.o
+[337/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/ParamLinkMenu.cpp.o
+[338/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/ParamWidgetSetup.cpp.o
+[339/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/PagedControlPanel.cpp.o
+[340/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/MacroKnobComponent.cpp.o
+[341/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/DeviceSlotComponent.cpp.o
+In file included from /workspace/magda/daw/ui/components/chain/DeviceSlotComponent.cpp:8:
+In file included from /workspace/magda/daw/audio/AudioBridge.hpp:3:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[342/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/MacroPanelComponent.cpp.o
+[343/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/ModKnobComponent.cpp.o
+[344/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/ModsPanelComponent.cpp.o
+[345/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/ModulatorEditorPanel.cpp.o
+[346/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_core/juce_core_CompilationTime.cpp.o
+[347/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/MacroEditorPanel.cpp.o
+[348/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/LFOCurveEditor.cpp.o
+[349/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/LFOCurveEditorWindow.cpp.o
+/workspace/magda/daw/ui/components/chain/LFOCurveEditorWindow.cpp:174:35: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]
+  174 |     savePresetButton_->onClick = [this]() {
+      |                                   ^~~~
+1 warning generated.
+[350/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_data_structures/juce_data_structures.cpp.o
+[351/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_events/juce_events.cpp.o
+[352/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/ui/components/chain/LFOPhaseOverlay.cpp.o
+[353/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_basics/juce_audio_basics.cpp.o
+[354/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_core/juce_core.cpp.o
+[355/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_formats/juce_audio_formats.cpp.o
+[356/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_devices/juce_audio_devices.cpp.o
+[357/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_utils/juce_audio_utils.cpp.o
+[358/470] Building C object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_graphics/juce_graphics_Sheenbidi.c.o
+[359/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors/juce_audio_processors.cpp.o
+[360/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors_headless/juce_audio_processors_headless_ara.cpp.o
+[361/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors_headless/juce_audio_processors_headless_lv2_libs.cpp.o
+[362/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_gui_extra/juce_gui_extra.cpp.o
+[363/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_graphics/juce_graphics.cpp.o
+[364/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_1.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_1.cpp:18:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[365/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_graphics/juce_graphics_Harfbuzz.cpp.o
+[366/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors_headless/juce_audio_processors_headless.cpp.o
+[367/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_2.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_2.cpp:18:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[368/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_3.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_3.cpp:18:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[369/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_gui_basics/juce_gui_basics.cpp.o
+[370/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_audio_files.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_audio_files.cpp:27:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_audio_files.cpp:51:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/audio_files/tracktion_AudioFileCache.cpp:944:107: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+  944 |                         juce::FloatVectorOperations::convertFixedToFloat (chan, (const int*) chan, 1.0f / 0x7fffffff, numSamples);
+      |                                                                                                         ~ ^~~~~~~~~~
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/audio_files/tracktion_AudioFileCache.cpp:1001:107: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+ 1001 |                         juce::FloatVectorOperations::convertFixedToFloat (chan, (const int*) chan, 1.0f / 0x7fffffff, numSamples);
+      |                                                                                                         ~ ^~~~~~~~~~
+3 warnings generated.
+[371/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_2.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_2.cpp:23:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_2.cpp:77:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/model/export/tracktion_RenderOptions.cpp:975:59: warning: unused parameter 'canPromptToOverwriteExisting' [-Wunused-parameter]
+  975 | void RenderOptions::setFilename (juce::String value, bool canPromptToOverwriteExisting)
+      |                                                           ^
+2 warnings generated.
+[372/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_timestretch.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_timestretch.cpp:13:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[373/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_osc/juce_osc.cpp.o
+[374/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_dsp/juce_dsp.cpp.o
+[375/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_plugins.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_plugins.cpp:39:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[376/470] Linking CXX executable magda/daw/magda_plugin_scanner_artefacts/Debug/magda_plugin_scanner
+[377/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/agent_interface.cpp.o
+[378/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/agent_manager.cpp.o
+[379/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_1.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_1.cpp:29:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[380/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_core/juce_core_CompilationTime.cpp.o
+[381/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/simple_agent.cpp.o
+[382/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_playback.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_playback.cpp:119:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[383/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/tracktion_graph/tracktion_graph.cpp.o
+[384/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_data_structures/juce_data_structures.cpp.o
+[385/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_events/juce_events.cpp.o
+[386/470] Building CXX object magda/daw/CMakeFiles/magda_daw_app.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_utils.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_utils.cpp:38:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_utils.cpp:73:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_AudioUtilities.cpp:311:85: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+  311 |         juce::FloatVectorOperations::convertFixedToFloat (d, (const int*) d, 1.0f / 0x7fffffff, buffer.getNumSamples());
+      |                                                                                   ~ ^~~~~~~~~~
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_utils.cpp:83:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:37:61: warning: unused parameter 'title' [-Wunused-parameter]
+   37 | bool UIBehaviour::showOkCancelAlertBox (const juce::String& title, const juce::String& message,
+      |                                                             ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:37:88: warning: unused parameter 'message' [-Wunused-parameter]
+   37 | bool UIBehaviour::showOkCancelAlertBox (const juce::String& title, const juce::String& message,
+      |                                                                                        ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:38:61: warning: unused parameter 'ok' [-Wunused-parameter]
+   38 |                                         const juce::String& ok, const juce::String& cancel)
+      |                                                             ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:38:85: warning: unused parameter 'cancel' [-Wunused-parameter]
+   38 |                                         const juce::String& ok, const juce::String& cancel)
+      |                                                                                     ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:48:63: warning: unused parameter 'title' [-Wunused-parameter]
+   48 | int UIBehaviour::showYesNoCancelAlertBox (const juce::String& title, const juce::String& message,
+      |                                                               ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:48:90: warning: unused parameter 'message' [-Wunused-parameter]
+   48 | int UIBehaviour::showYesNoCancelAlertBox (const juce::String& title, const juce::String& message,
+      |                                                                                          ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:49:63: warning: unused parameter 'yes' [-Wunused-parameter]
+   49 |                                           const juce::String& yes, const juce::String& no, const juce::String& cancel)
+      |                                                               ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:49:88: warning: unused parameter 'no' [-Wunused-parameter]
+   49 |                                           const juce::String& yes, const juce::String& no, const juce::String& cancel)
+      |                                                                                        ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:49:112: warning: unused parameter 'cancel' [-Wunused-parameter]
+   49 |                                           const juce::String& yes, const juce::String& no, const juce::String& cancel)
+      |                                                                                                                ^
+11 warnings generated.
+[387/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_core/juce_core.cpp.o
+[388/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_basics/juce_audio_basics.cpp.o
+[389/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_formats/juce_audio_formats.cpp.o
+[390/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_devices/juce_audio_devices.cpp.o
+[391/470] Linking CXX executable magda/daw/magda_daw_app_artefacts/Debug/MAGDA
+[392/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_utils/juce_audio_utils.cpp.o
+[393/470] Building C object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_graphics/juce_graphics_Sheenbidi.c.o
+[394/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors/juce_audio_processors.cpp.o
+[395/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors_headless/juce_audio_processors_headless_ara.cpp.o
+[396/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors_headless/juce_audio_processors_headless_lv2_libs.cpp.o
+[397/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_gui_extra/juce_gui_extra.cpp.o
+[398/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors_headless/juce_audio_processors_headless.cpp.o
+[399/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_graphics/juce_graphics.cpp.o
+[400/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_graphics/juce_graphics_Harfbuzz.cpp.o
+[401/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_1.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_1.cpp:18:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[402/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_2.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_2.cpp:18:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[403/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_3.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_3.cpp:18:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[404/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_gui_basics/juce_gui_basics.cpp.o
+[405/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_audio_files.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_audio_files.cpp:27:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_audio_files.cpp:51:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/audio_files/tracktion_AudioFileCache.cpp:944:107: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+  944 |                         juce::FloatVectorOperations::convertFixedToFloat (chan, (const int*) chan, 1.0f / 0x7fffffff, numSamples);
+      |                                                                                                         ~ ^~~~~~~~~~
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/audio_files/tracktion_AudioFileCache.cpp:1001:107: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+ 1001 |                         juce::FloatVectorOperations::convertFixedToFloat (chan, (const int*) chan, 1.0f / 0x7fffffff, numSamples);
+      |                                                                                                         ~ ^~~~~~~~~~
+3 warnings generated.
+[406/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_2.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_2.cpp:23:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_2.cpp:77:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/model/export/tracktion_RenderOptions.cpp:975:59: warning: unused parameter 'canPromptToOverwriteExisting' [-Wunused-parameter]
+  975 | void RenderOptions::setFilename (juce::String value, bool canPromptToOverwriteExisting)
+      |                                                           ^
+2 warnings generated.
+[407/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_timestretch.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_timestretch.cpp:13:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[408/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_dsp/juce_dsp.cpp.o
+[409/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/juce/modules/juce_osc/juce_osc.cpp.o
+[410/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_plugins.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_plugins.cpp:39:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[411/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_1.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_1.cpp:29:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[412/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/tracktion_graph/tracktion_graph.cpp.o
+[413/470] Building CXX object tests/CMakeFiles/magda_tests.dir/test_audiobridge_plugin_cleanup_bug.cpp.o
+[414/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_utils.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_utils.cpp:38:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_utils.cpp:73:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_AudioUtilities.cpp:311:85: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+  311 |         juce::FloatVectorOperations::convertFixedToFloat (d, (const int*) d, 1.0f / 0x7fffffff, buffer.getNumSamples());
+      |                                                                                   ~ ^~~~~~~~~~
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_utils.cpp:83:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:37:61: warning: unused parameter 'title' [-Wunused-parameter]
+   37 | bool UIBehaviour::showOkCancelAlertBox (const juce::String& title, const juce::String& message,
+      |                                                             ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:37:88: warning: unused parameter 'message' [-Wunused-parameter]
+   37 | bool UIBehaviour::showOkCancelAlertBox (const juce::String& title, const juce::String& message,
+      |                                                                                        ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:38:61: warning: unused parameter 'ok' [-Wunused-parameter]
+   38 |                                         const juce::String& ok, const juce::String& cancel)
+      |                                                             ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:38:85: warning: unused parameter 'cancel' [-Wunused-parameter]
+   38 |                                         const juce::String& ok, const juce::String& cancel)
+      |                                                                                     ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:48:63: warning: unused parameter 'title' [-Wunused-parameter]
+   48 | int UIBehaviour::showYesNoCancelAlertBox (const juce::String& title, const juce::String& message,
+      |                                                               ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:48:90: warning: unused parameter 'message' [-Wunused-parameter]
+   48 | int UIBehaviour::showYesNoCancelAlertBox (const juce::String& title, const juce::String& message,
+      |                                                                                          ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:49:63: warning: unused parameter 'yes' [-Wunused-parameter]
+   49 |                                           const juce::String& yes, const juce::String& no, const juce::String& cancel)
+      |                                                               ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:49:88: warning: unused parameter 'no' [-Wunused-parameter]
+   49 |                                           const juce::String& yes, const juce::String& no, const juce::String& cancel)
+      |                                                                                        ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:49:112: warning: unused parameter 'cancel' [-Wunused-parameter]
+   49 |                                           const juce::String& yes, const juce::String& no, const juce::String& cancel)
+      |                                                                                                                ^
+11 warnings generated.
+[415/470] Building CXX object magda/agents/CMakeFiles/magda_agents.dir/__/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_playback.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_playback.cpp:119:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[416/470] Building CXX object tests/CMakeFiles/magda_tests.dir/test_command.cpp.o
+[417/470] Building CXX object tests/CMakeFiles/magda_tests.dir/test_audio_clip_stretch.cpp.o
+[418/470] Building CXX object tests/CMakeFiles/magda_tests.dir/test_interfaces.cpp.o
+/workspace/tests/test_interfaces.cpp:82:31: warning: unused parameter 'start_seconds' [-Wunused-parameter]
+   82 |     void setLoopRegion(double start_seconds, double end_seconds) override {
+      |                               ^
+/workspace/tests/test_interfaces.cpp:82:53: warning: unused parameter 'end_seconds' [-Wunused-parameter]
+   82 |     void setLoopRegion(double start_seconds, double end_seconds) override {
+      |                                                     ^
+2 warnings generated.
+[419/470] Linking CXX static library magda/agents/libmagda_agents.a
+[420/470] Building CXX object tests/CMakeFiles/magda_tests.dir/test_parameter_utils.cpp.o
+[421/470] Building CXX object tests/CMakeFiles/magda_tests.dir/test_audio_bridge.cpp.o
+In file included from /workspace/tests/test_audio_bridge.cpp:4:
+In file included from /workspace/magda/daw/audio/AudioBridge.hpp:3:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[422/470] Building CXX object tests/CMakeFiles/magda_tests.dir/test_audiobridge_track_limit_bug.cpp.o
+In file included from /workspace/tests/test_audiobridge_track_limit_bug.cpp:3:
+In file included from /workspace/magda/daw/audio/AudioBridge.hpp:3:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+/workspace/tests/test_audiobridge_track_limit_bug.cpp:108:13: warning: unused variable 'deletedTracks' [-Wunused-variable]
+  108 |         int deletedTracks = 90;   // Delete 90 tracks
+      |             ^~~~~~~~~~~~~
+2 warnings generated.
+[423/470] Building CXX object tests/CMakeFiles/magda_tests.dir/test_midi_clip_sync.cpp.o
+[424/470] Building CXX object tests/CMakeFiles/magda_tests.dir/test_modulation.cpp.o
+[425/470] Building CXX object tests/CMakeFiles/magda_tests.dir/test_plugin_format.cpp.o
+[426/470] Building CXX object tests/CMakeFiles/magda_tests.dir/test_nested_racks.cpp.o
+[427/470] Building CXX object tests/CMakeFiles/magda_tests.dir/test_device_parameter_pagination.cpp.o
+[428/470] Building CXX object tests/CMakeFiles/magda_tests.dir/test_plugin_loading.cpp.o
+[429/470] Building CXX object tests/CMakeFiles/magda_tests.dir/test_plugin_window_manager.cpp.o
+[430/470] Building CXX object tests/CMakeFiles/magda_tests.dir/test_clip_resize_operations.cpp.o
+[431/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_core/juce_core_CompilationTime.cpp.o
+[432/470] Building CXX object tests/CMakeFiles/magda_tests.dir/test_waveform_editor_absolute_mode.cpp.o
+[433/470] Building CXX object tests/CMakeFiles/magda_tests.dir/test_project_serialization.cpp.o
+/workspace/tests/test_project_serialization.cpp:106:14: warning: unused variable 'track1' [-Wunused-variable]
+  106 |         auto track1 = trackManager.createTrack("Audio 1", TrackType::Audio);
+      |              ^~~~~~
+/workspace/tests/test_project_serialization.cpp:107:14: warning: unused variable 'track2' [-Wunused-variable]
+  107 |         auto track2 = trackManager.createTrack("MIDI 1", TrackType::MIDI);
+      |              ^~~~~~
+2 warnings generated.
+[434/470] Building CXX object tests/CMakeFiles/magda_tests.dir/test_session_clip_playback.cpp.o
+[435/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_data_structures/juce_data_structures.cpp.o
+[436/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_events/juce_events.cpp.o
+[437/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_basics/juce_audio_basics.cpp.o
+[438/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_core/juce_core.cpp.o
+[439/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_formats/juce_audio_formats.cpp.o
+[440/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_devices/juce_audio_devices.cpp.o
+[441/470] Building CXX object tests/CMakeFiles/magda_tests.dir/test_tracktion_engine_wrapper_refactoring.cpp.o
+In file included from /workspace/tests/test_tracktion_engine_wrapper_refactoring.cpp:4:
+In file included from /workspace/magda/daw/engine/TracktionEngineWrapper.hpp:3:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+/workspace/tests/test_tracktion_engine_wrapper_refactoring.cpp:131:52: warning: unused parameter 'loading' [-Wunused-parameter]
+  131 |         wrapper.onDevicesLoadingChanged = [&](bool loading, const juce::String& message) {
+      |                                                    ^
+/workspace/tests/test_tracktion_engine_wrapper_refactoring.cpp:131:81: warning: unused parameter 'message' [-Wunused-parameter]
+  131 |         wrapper.onDevicesLoadingChanged = [&](bool loading, const juce::String& message) {
+      |                                                                                 ^
+/workspace/tests/test_tracktion_engine_wrapper_refactoring.cpp:159:14: warning: unused variable 'initialStarted' [-Wunused-variable]
+  159 |         bool initialStarted = wrapper.justStarted();
+      |              ^~~~~~~~~~~~~~
+/workspace/tests/test_tracktion_engine_wrapper_refactoring.cpp:186:15: warning: unused variable 'bridge' [-Wunused-variable]
+  186 |         auto* bridge = wrapper.getAudioBridge();
+      |               ^~~~~~
+/workspace/tests/test_tracktion_engine_wrapper_refactoring.cpp:221:14: warning: variable 'initialized' set but not used [-Wunused-but-set-variable]
+  221 |         bool initialized = false;
+      |              ^
+/workspace/tests/test_tracktion_engine_wrapper_refactoring.cpp:268:14: warning: variable 'result' set but not used [-Wunused-but-set-variable]
+  268 |         bool result = false;
+      |              ^
+/workspace/tests/test_tracktion_engine_wrapper_refactoring.cpp:281:15: warning: unused variable 'dm' [-Wunused-variable]
+  281 |         auto* dm = wrapper.getDeviceManager();
+      |               ^~
+/workspace/tests/test_tracktion_engine_wrapper_refactoring.cpp:298:14: warning: unused variable 'initResult' [-Wunused-variable]
+  298 |         bool initResult = wrapper.initialize();
+      |              ^~~~~~~~~~
+/workspace/tests/test_tracktion_engine_wrapper_refactoring.cpp:302:16: warning: unused variable 'tempo' [-Wunused-variable]
+  302 |         double tempo = wrapper.getTempo();
+      |                ^~~~~
+/workspace/tests/test_tracktion_engine_wrapper_refactoring.cpp:305:14: warning: unused variable 'playing' [-Wunused-variable]
+  305 |         bool playing = wrapper.isPlaying();
+      |              ^~~~~~~
+/workspace/tests/test_tracktion_engine_wrapper_refactoring.cpp:308:14: warning: unused variable 'stopped' [-Wunused-variable]
+  308 |         bool stopped = !wrapper.isPlaying();
+      |              ^~~~~~~
+12 warnings generated.
+[442/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_utils/juce_audio_utils.cpp.o
+[443/470] Building C object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_graphics/juce_graphics_Sheenbidi.c.o
+[444/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors/juce_audio_processors.cpp.o
+[445/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors_headless/juce_audio_processors_headless_ara.cpp.o
+[446/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors_headless/juce_audio_processors_headless_lv2_libs.cpp.o
+[447/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_gui_extra/juce_gui_extra.cpp.o
+[448/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_audio_processors_headless/juce_audio_processors_headless.cpp.o
+[449/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_graphics/juce_graphics_Harfbuzz.cpp.o
+[450/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_graphics/juce_graphics.cpp.o
+[451/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_1.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_1.cpp:18:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[452/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_2.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_2.cpp:18:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[453/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_3.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_airwindows_3.cpp:18:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[454/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_gui_basics/juce_gui_basics.cpp.o
+[455/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_audio_files.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_audio_files.cpp:27:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_audio_files.cpp:51:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/audio_files/tracktion_AudioFileCache.cpp:944:107: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+  944 |                         juce::FloatVectorOperations::convertFixedToFloat (chan, (const int*) chan, 1.0f / 0x7fffffff, numSamples);
+      |                                                                                                         ~ ^~~~~~~~~~
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/audio_files/tracktion_AudioFileCache.cpp:1001:107: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+ 1001 |                         juce::FloatVectorOperations::convertFixedToFloat (chan, (const int*) chan, 1.0f / 0x7fffffff, numSamples);
+      |                                                                                                         ~ ^~~~~~~~~~
+3 warnings generated.
+[456/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_timestretch.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_timestretch.cpp:13:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[457/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_2.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_2.cpp:23:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_2.cpp:77:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/model/export/tracktion_RenderOptions.cpp:975:59: warning: unused parameter 'canPromptToOverwriteExisting' [-Wunused-parameter]
+  975 | void RenderOptions::setFilename (juce::String value, bool canPromptToOverwriteExisting)
+      |                                                           ^
+2 warnings generated.
+[458/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_osc/juce_osc.cpp.o
+[459/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_dsp/juce_dsp.cpp.o
+[460/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_plugins.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_plugins.cpp:39:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[461/470] Building CXX object tests/CMakeFiles/magda_juce_tests.dir/test_zoom_simple.cpp.o
+[462/470] Building CXX object tests/CMakeFiles/magda_juce_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_core/juce_core_CompilationTime.cpp.o
+[463/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_1.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_model_1.cpp:29:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[464/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/tracktion_graph/tracktion_graph.cpp.o
+[465/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_utils.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_utils.cpp:38:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_utils.cpp:73:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_AudioUtilities.cpp:311:85: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+  311 |         juce::FloatVectorOperations::convertFixedToFloat (d, (const int*) d, 1.0f / 0x7fffffff, buffer.getNumSamples());
+      |                                                                                   ~ ^~~~~~~~~~
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_utils.cpp:83:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:37:61: warning: unused parameter 'title' [-Wunused-parameter]
+   37 | bool UIBehaviour::showOkCancelAlertBox (const juce::String& title, const juce::String& message,
+      |                                                             ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:37:88: warning: unused parameter 'message' [-Wunused-parameter]
+   37 | bool UIBehaviour::showOkCancelAlertBox (const juce::String& title, const juce::String& message,
+      |                                                                                        ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:38:61: warning: unused parameter 'ok' [-Wunused-parameter]
+   38 |                                         const juce::String& ok, const juce::String& cancel)
+      |                                                             ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:38:85: warning: unused parameter 'cancel' [-Wunused-parameter]
+   38 |                                         const juce::String& ok, const juce::String& cancel)
+      |                                                                                     ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:48:63: warning: unused parameter 'title' [-Wunused-parameter]
+   48 | int UIBehaviour::showYesNoCancelAlertBox (const juce::String& title, const juce::String& message,
+      |                                                               ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:48:90: warning: unused parameter 'message' [-Wunused-parameter]
+   48 | int UIBehaviour::showYesNoCancelAlertBox (const juce::String& title, const juce::String& message,
+      |                                                                                          ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:49:63: warning: unused parameter 'yes' [-Wunused-parameter]
+   49 |                                           const juce::String& yes, const juce::String& no, const juce::String& cancel)
+      |                                                               ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:49:88: warning: unused parameter 'no' [-Wunused-parameter]
+   49 |                                           const juce::String& yes, const juce::String& no, const juce::String& cancel)
+      |                                                                                        ^
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_UIBehaviour.cpp:49:112: warning: unused parameter 'cancel' [-Wunused-parameter]
+   49 |                                           const juce::String& yes, const juce::String& no, const juce::String& cancel)
+      |                                                                                                                ^
+11 warnings generated.
+[466/470] Building CXX object tests/CMakeFiles/magda_juce_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_events/juce_events.cpp.o
+[467/470] Building CXX object tests/CMakeFiles/magda_juce_tests.dir/__/third_party/tracktion_engine/modules/juce/modules/juce_core/juce_core.cpp.o
+[468/470] Linking CXX executable tests/magda_juce_tests_artefacts/Debug/magda_juce_tests
+[469/470] Building CXX object tests/CMakeFiles/magda_tests.dir/__/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_playback.cpp.o
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_playback.cpp:119:
+In file included from /workspace/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine.h:408:
+/workspace/third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_Ditherer.h:24:28: warning: implicit conversion from 'int' to 'float' changes value from 2147483647 to 2147483648 [-Wimplicit-const-int-float-conversion]
+   24 |         amp = invWordLen / RAND_MAX;
+      |                          ~ ^~~~~~~~
+/usr/include/stdlib.h:87:18: note: expanded from macro 'RAND_MAX'
+   87 | #define RAND_MAX        2147483647
+      |                         ^~~~~~~~~~
+1 warning generated.
+[470/470] Linking CXX executable tests/magda_tests
+JUCE v8.0.10
