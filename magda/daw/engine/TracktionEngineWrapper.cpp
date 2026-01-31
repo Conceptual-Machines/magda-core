@@ -229,11 +229,10 @@ void TracktionEngineWrapper::createEditAndBridges() {
     audioBridge_ = std::make_unique<AudioBridge>(*engine_, *currentEdit_);
     audioBridge_->syncAll();
 
-    // Create SessionClipScheduler
-    sessionScheduler_ = std::make_unique<SessionClipScheduler>(*audioBridge_, *currentEdit_);
-
-    // Create PluginWindowManager only if GUI is available (not in headless tests)
+    // Create SessionClipScheduler and PluginWindowManager only if GUI is available (not in headless
+    // tests) Both extend juce::Timer which creates GUI infrastructure
     if (juce::MessageManager::getInstanceWithoutCreating() != nullptr) {
+        sessionScheduler_ = std::make_unique<SessionClipScheduler>(*audioBridge_, *currentEdit_);
         pluginWindowManager_ = std::make_unique<PluginWindowManager>(*engine_, *currentEdit_);
         audioBridge_->setPluginWindowManager(pluginWindowManager_.get());
     }
