@@ -4,6 +4,7 @@
 
 #include <memory>
 
+#include "../dialogs/ExportAudioDialog.hpp"
 #include "../layout/LayoutConfig.hpp"
 #include "MenuManager.hpp"
 #include "core/ViewModeController.hpp"
@@ -11,6 +12,7 @@
 
 namespace magda {
 
+class TracktionEngineWrapper;
 class TransportPanel;
 
 class LeftPanel;
@@ -43,6 +45,11 @@ class MainWindow : public juce::DocumentWindow {
 
     void setupMenuBar();
     void setupMenuCallbacks();
+
+    // Export audio helper methods
+    void performExport(const ExportAudioDialog::Settings& settings, TracktionEngineWrapper* engine);
+    juce::String getFileExtensionForFormat(const juce::String& format) const;
+    int getBitDepthForFormat(const juce::String& format) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainWindow)
 };
