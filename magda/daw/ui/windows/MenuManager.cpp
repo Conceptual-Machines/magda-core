@@ -88,15 +88,41 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
             }
         }
 
-        menu.addItem(Undo, undoText, canUndo, false);
-        menu.addItem(Redo, redoText, canRedo, false);
+#if JUCE_MAC
+        menu.addItem(Undo, undoText + juce::String::fromUTF8("\t\u2318Z"), canUndo, false);
+        menu.addItem(Redo, redoText + juce::String::fromUTF8("\t\u21E7\u2318Z"), canRedo, false);
         menu.addSeparator();
-        menu.addItem(Cut, "Cut", hasSelection_, false);
-        menu.addItem(Copy, "Copy", hasSelection_, false);
-        menu.addItem(Paste, "Paste", true, false);
-        menu.addItem(Delete, "Delete", hasSelection_, false);
+        menu.addItem(Cut, juce::String("Cut") + juce::String::fromUTF8("\t\u2318X"), hasSelection_,
+                     false);
+        menu.addItem(Copy, juce::String("Copy") + juce::String::fromUTF8("\t\u2318C"),
+                     hasSelection_, false);
+        menu.addItem(Paste, juce::String("Paste") + juce::String::fromUTF8("\t\u2318V"), true,
+                     false);
+        menu.addItem(Duplicate, juce::String("Duplicate") + juce::String::fromUTF8("\t\u2318D"),
+                     hasSelection_, false);
+        menu.addItem(Delete, juce::String("Delete") + juce::String::fromUTF8("\t\u232B"),
+                     hasSelection_, false);
         menu.addSeparator();
-        menu.addItem(SelectAll, "Select All", true, false);
+        menu.addItem(Split, "Split at Cursor\tS", hasSelection_, false);
+        menu.addItem(Trim, "Trim to Selection\tT", hasSelection_, false);
+        menu.addSeparator();
+        menu.addItem(SelectAll, juce::String("Select All") + juce::String::fromUTF8("\t\u2318A"),
+                     true, false);
+#else
+        menu.addItem(Undo, undoText + "\tCtrl+Z", canUndo, false);
+        menu.addItem(Redo, redoText + "\tCtrl+Shift+Z", canRedo, false);
+        menu.addSeparator();
+        menu.addItem(Cut, "Cut\tCtrl+X", hasSelection_, false);
+        menu.addItem(Copy, "Copy\tCtrl+C", hasSelection_, false);
+        menu.addItem(Paste, "Paste\tCtrl+V", true, false);
+        menu.addItem(Duplicate, "Duplicate\tCtrl+D", hasSelection_, false);
+        menu.addItem(Delete, "Delete\tDelete", hasSelection_, false);
+        menu.addSeparator();
+        menu.addItem(Split, "Split at Cursor\tS", hasSelection_, false);
+        menu.addItem(Trim, "Trim to Selection\tT", hasSelection_, false);
+        menu.addSeparator();
+        menu.addItem(SelectAll, "Select All\tCtrl+A", true, false);
+#endif
 #if !JUCE_MAC
         menu.addSeparator();
         menu.addItem(Preferences, "Preferences...", true, false);
@@ -230,9 +256,21 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
             if (callbacks_.onPaste)
                 callbacks_.onPaste();
             break;
+        case Duplicate:
+            if (callbacks_.onDuplicate)
+                callbacks_.onDuplicate();
+            break;
         case Delete:
             if (callbacks_.onDelete)
                 callbacks_.onDelete();
+            break;
+        case Split:
+            if (callbacks_.onSplit)
+                callbacks_.onSplit();
+            break;
+        case Trim:
+            if (callbacks_.onTrim)
+                callbacks_.onTrim();
             break;
         case SelectAll:
             if (callbacks_.onSelectAll)

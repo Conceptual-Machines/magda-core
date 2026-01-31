@@ -139,6 +139,9 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     // Helper to get current clip info
     const ClipInfo* getClipInfo() const;
 
+    // Context menu
+    void showContextMenu();
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipComponent)
 };
 

@@ -28,7 +28,10 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         std::function<void()> onCut;
         std::function<void()> onCopy;
         std::function<void()> onPaste;
+        std::function<void()> onDuplicate;
         std::function<void()> onDelete;
+        std::function<void()> onSplit;
+        std::function<void()> onTrim;
         std::function<void()> onSelectAll;
         std::function<void()> onPreferences;
 
@@ -129,7 +132,10 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         Cut = 210,
         Copy,
         Paste,
+        Duplicate,
         Delete,
+        Split = 218,
+        Trim,
         SelectAll = 220,
         Preferences = 299,
 

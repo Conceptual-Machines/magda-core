@@ -630,6 +630,12 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void ClipComponent::mouseUp(const juce::MouseEvent& e) {
+    // Handle right-click for context menu
+    if (e.mods.isPopupMenu()) {
+        showContextMenu();
+        return;
+    }
+
     // Check if we were doing a multi-clip drag
     auto& selectionManager = SelectionManager::getInstance();
     if (isDragging_ && parentPanel_ && selectionManager.getSelectedClipCount() > 1 &&
@@ -950,6 +956,134 @@ void ClipComponent::updateCursor(bool isAltDown, bool isShiftDown) {
 
 const ClipInfo* ClipComponent::getClipInfo() const {
     return ClipManager::getInstance().getClip(clipId_);
+}
+
+void ClipComponent::showContextMenu() {
+    auto& clipManager = ClipManager::getInstance();
+    auto& selectionManager = SelectionManager::getInstance();
+
+    // Get selection state
+    bool hasSelection = selectionManager.getSelectedClipCount() > 0;
+    bool isMultiSelection = selectionManager.getSelectedClipCount() > 1;
+    bool isThisClipSelected = selectionManager.isClipSelected(clipId_);
+
+    // If right-clicking on an unselected clip, select it first
+    if (!isThisClipSelected) {
+        selectionManager.selectClip(clipId_);
+        hasSelection = true;
+        isMultiSelection = false;
+    }
+
+    juce::PopupMenu menu;
+
+    // Copy/Cut/Paste
+    menu.addItem(1, "Copy", hasSelection);
+    menu.addItem(2, "Cut", hasSelection);
+    menu.addItem(3, "Paste");  // Always available (will check clipboard when clicked)
+    menu.addSeparator();
+
+    // Duplicate
+    menu.addItem(4, "Duplicate", hasSelection);
+    menu.addSeparator();
+
+    // Split
+    if (!isMultiSelection) {
+        menu.addItem(5, "Split at Playhead");
+    }
+    menu.addSeparator();
+
+    // Delete
+    menu.addItem(6, "Delete", hasSelection);
+    menu.addSeparator();
+
+    // Loop Settings (only for single clip)
+    if (!isMultiSelection) {
+        menu.addItem(7, "Loop Settings...");
+    }
+
+    // Show menu
+    menu.showMenuAsync(juce::PopupMenu::Options(), [this, &clipManager,
+                                                    &selectionManager](int result) {
+        if (result == 0)
+            return;  // Cancelled
+
+        switch (result) {
+            case 1: {  // Copy
+                auto selectedClips = selectionManager.getSelectedClips();
+                if (!selectedClips.empty()) {
+                    clipManager.copyToClipboard(selectedClips);
+                }
+                break;
+            }
+
+            case 2: {  // Cut
+                auto selectedClips = selectionManager.getSelectedClips();
+                if (!selectedClips.empty()) {
+                    clipManager.cutToClipboard(selectedClips);
+                    selectionManager.clearSelection();
+                }
+                break;
+            }
+
+            case 3: {  // Paste
+                if (clipManager.hasClipsInClipboard()) {
+                    // Paste at playhead position (need to get from transport/timeline)
+                    // For now, paste at clicked position
+                    auto selectedClips = selectionManager.getSelectedClips();
+                    double pasteTime = 0.0;
+                    if (!selectedClips.empty()) {
+                        // Paste after last selected clip
+                        for (auto clipId : selectedClips) {
+                            const auto* clip = clipManager.getClip(clipId);
+                            if (clip) {
+                                pasteTime = std::max(pasteTime, clip->startTime + clip->length);
+                            }
+                        }
+                    }
+                    auto newClips = clipManager.pasteFromClipboard(pasteTime);
+                    if (!newClips.empty()) {
+                        // Select the pasted clips
+                        std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
+                        selectionManager.selectClips(newSelection);
+                    }
+                }
+                break;
+            }
+
+            case 4: {  // Duplicate
+                auto selectedClips = selectionManager.getSelectedClips();
+                for (auto clipId : selectedClips) {
+                    clipManager.duplicateClip(clipId);
+                }
+                break;
+            }
+
+            case 5:  // Split at Playhead
+                // TODO: Get playhead position from transport/timeline
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
+                                                       "Split at Playhead",
+                                                       "Split at playhead not yet implemented");
+                break;
+
+            case 6: {  // Delete
+                auto selectedClips = selectionManager.getSelectedClips();
+                for (auto clipId : selectedClips) {
+                    clipManager.deleteClip(clipId);
+                }
+                selectionManager.clearSelection();
+                break;
+            }
+
+            case 7:  // Loop Settings
+                // TODO: Show loop settings dialog
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Loop Settings",
+                                                       "Loop settings dialog not yet implemented");
+                break;
+
+            default:
+                break;
+        }
+    });
 }
 
 }  // namespace magda

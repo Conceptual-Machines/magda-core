@@ -2,6 +2,7 @@
 
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
+#include "../../core/SelectionManager.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
 #include "../debug/DebugDialog.hpp"
 #include "../debug/DebugSettings.hpp"
@@ -1110,27 +1111,128 @@ void MainWindow::setupMenuCallbacks() {
     callbacks.onRedo = []() { UndoManager::getInstance().redo(); };
 
     callbacks.onCut = [this]() {
-        // TODO: Implement cut
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Cut",
-                                               "Cut functionality not yet implemented.");
+        auto& clipManager = ClipManager::getInstance();
+        auto& selectionManager = SelectionManager::getInstance();
+        auto selectedClips = selectionManager.getSelectedClips();
+        if (!selectedClips.empty()) {
+            clipManager.cutToClipboard(selectedClips);
+            selectionManager.clearSelection();
+        }
     };
 
     callbacks.onCopy = [this]() {
-        // TODO: Implement copy
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Copy",
-                                               "Copy functionality not yet implemented.");
+        auto& clipManager = ClipManager::getInstance();
+        auto& selectionManager = SelectionManager::getInstance();
+        auto selectedClips = selectionManager.getSelectedClips();
+        if (!selectedClips.empty()) {
+            clipManager.copyToClipboard(selectedClips);
+        }
     };
 
     callbacks.onPaste = [this]() {
-        // TODO: Implement paste
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Paste",
-                                               "Paste functionality not yet implemented.");
+        auto& clipManager = ClipManager::getInstance();
+        auto& selectionManager = SelectionManager::getInstance();
+        if (clipManager.hasClipsInClipboard()) {
+            // Paste at edit cursor position from MainView
+            double pasteTime =
+                mainComponent->mainView
+                    ? mainComponent->mainView->getTimelineController().getState().editCursorPosition
+                    : 0.0;
+            // If edit cursor not set, use playback position
+            if (pasteTime < 0 && mainComponent->mainView) {
+                pasteTime = mainComponent->mainView->getTimelineController()
+                                .getState()
+                                .playhead.editPosition;
+            }
+            auto newClips = clipManager.pasteFromClipboard(pasteTime);
+            if (!newClips.empty()) {
+                // Select the pasted clips
+                std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
+                selectionManager.selectClips(newSelection);
+            }
+        }
+    };
+
+    callbacks.onDuplicate = [this]() {
+        auto& clipManager = ClipManager::getInstance();
+        auto& selectionManager = SelectionManager::getInstance();
+        auto selectedClips = selectionManager.getSelectedClips();
+        if (!selectedClips.empty()) {
+            std::vector<ClipId> newClips;
+            for (auto clipId : selectedClips) {
+                ClipId newClipId = clipManager.duplicateClip(clipId);
+                if (newClipId != INVALID_CLIP_ID) {
+                    newClips.push_back(newClipId);
+                }
+            }
+            // Select the new duplicates
+            if (!newClips.empty()) {
+                std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
+                selectionManager.selectClips(newSelection);
+            }
+        }
     };
 
     callbacks.onDelete = [this]() {
-        // TODO: Implement delete
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Delete",
-                                               "Delete functionality not yet implemented.");
+        auto& clipManager = ClipManager::getInstance();
+        auto& selectionManager = SelectionManager::getInstance();
+        auto selectedClips = selectionManager.getSelectedClips();
+        if (!selectedClips.empty()) {
+            for (auto clipId : selectedClips) {
+                clipManager.deleteClip(clipId);
+            }
+            selectionManager.clearSelection();
+        }
+    };
+
+    callbacks.onSplit = [this]() {
+        auto& clipManager = ClipManager::getInstance();
+        auto& selectionManager = SelectionManager::getInstance();
+        auto selectedClips = selectionManager.getSelectedClips();
+        if (mainComponent->mainView && !selectedClips.empty()) {
+            double splitTime =
+                mainComponent->mainView->getTimelineController().getState().editCursorPosition;
+            if (splitTime >= 0) {
+                for (auto clipId : selectedClips) {
+                    const auto* clip = clipManager.getClip(clipId);
+                    if (clip && splitTime > clip->startTime &&
+                        splitTime < clip->startTime + clip->length) {
+                        clipManager.splitClip(clipId, splitTime);
+                    }
+                }
+            }
+        }
+    };
+
+    callbacks.onTrim = [this]() {
+        auto& clipManager = ClipManager::getInstance();
+        auto& selectionManager = SelectionManager::getInstance();
+        auto selectedClips = selectionManager.getSelectedClips();
+        if (mainComponent->mainView && !selectedClips.empty()) {
+            const auto& selection =
+                mainComponent->mainView->getTimelineController().getState().selection;
+            if (selection.isActive()) {
+                double selectionStart = selection.startTime;
+                double selectionEnd = selection.endTime;
+                for (auto clipId : selectedClips) {
+                    const auto* clip = clipManager.getClip(clipId);
+                    if (!clip)
+                        continue;
+                    if (clip->startTime < selectionEnd && clip->getEndTime() > selectionStart) {
+                        double newStart = std::max(clip->startTime, selectionStart);
+                        double newEnd = std::min(clip->getEndTime(), selectionEnd);
+                        double newLength = newEnd - newStart;
+                        if (newLength > 0.01) {
+                            if (newStart > clip->startTime) {
+                                clipManager.resizeClip(clipId, newLength, true);
+                            } else if (newEnd < clip->getEndTime()) {
+                                clipManager.resizeClip(clipId, newLength, false);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     };
 
     callbacks.onSelectAll = [this]() {

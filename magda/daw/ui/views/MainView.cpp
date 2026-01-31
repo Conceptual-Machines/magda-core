@@ -736,45 +736,157 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
 
     // ===== Clip Shortcuts =====
 
-    // Delete/Backspace: Delete selected clip
+    auto& clipManager = ClipManager::getInstance();
+    auto& selectionManager = SelectionManager::getInstance();
+
+    // Delete/Backspace: Delete selected clips
     if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {
-        ClipId selectedClip = ClipManager::getInstance().getSelectedClip();
-        if (selectedClip != INVALID_CLIP_ID) {
-            ClipManager::getInstance().deleteClip(selectedClip);
-            std::cout << "🎵 CLIP: Deleted clip " << selectedClip << std::endl;
+        auto selectedClips = selectionManager.getSelectedClips();
+        if (!selectedClips.empty()) {
+            for (auto clipId : selectedClips) {
+                clipManager.deleteClip(clipId);
+            }
+            selectionManager.clearSelection();
+            std::cout << "🎵 CLIP: Deleted " << selectedClips.size() << " clip(s)" << std::endl;
             return true;
         }
     }
 
-    // Cmd+D: Duplicate selected clip
+    // Cmd+C: Copy selected clips
+    if (key == juce::KeyPress('c', juce::ModifierKeys::commandModifier, 0)) {
+        auto selectedClips = selectionManager.getSelectedClips();
+        if (!selectedClips.empty()) {
+            clipManager.copyToClipboard(selectedClips);
+            return true;
+        }
+    }
+
+    // Cmd+V: Paste clips
+    if (key == juce::KeyPress('v', juce::ModifierKeys::commandModifier, 0)) {
+        if (clipManager.hasClipsInClipboard()) {
+            // Paste at playhead position
+            auto newClips = clipManager.pasteFromClipboard(playheadPosition);
+            if (!newClips.empty()) {
+                // Select the pasted clips
+                std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
+                selectionManager.selectClips(newSelection);
+            }
+            return true;
+        }
+    }
+
+    // Cmd+X: Cut selected clips
+    if (key == juce::KeyPress('x', juce::ModifierKeys::commandModifier, 0)) {
+        auto selectedClips = selectionManager.getSelectedClips();
+        if (!selectedClips.empty()) {
+            clipManager.cutToClipboard(selectedClips);
+            selectionManager.clearSelection();
+            return true;
+        }
+    }
+
+    // Cmd+D: Duplicate selected clips
     if (key == juce::KeyPress('d', juce::ModifierKeys::commandModifier, 0)) {
-        ClipId selectedClip = ClipManager::getInstance().getSelectedClip();
-        if (selectedClip != INVALID_CLIP_ID) {
-            ClipId newClipId = ClipManager::getInstance().duplicateClip(selectedClip);
-            if (newClipId != INVALID_CLIP_ID) {
-                // Select the new clip
-                ClipManager::getInstance().setSelectedClip(newClipId);
-                std::cout << "🎵 CLIP: Duplicated clip " << selectedClip << " -> " << newClipId
+        auto selectedClips = selectionManager.getSelectedClips();
+        if (!selectedClips.empty()) {
+            std::vector<ClipId> newClips;
+            for (auto clipId : selectedClips) {
+                ClipId newClipId = clipManager.duplicateClip(clipId);
+                if (newClipId != INVALID_CLIP_ID) {
+                    newClips.push_back(newClipId);
+                }
+            }
+            // Select the new duplicates
+            if (!newClips.empty()) {
+                std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
+                selectionManager.selectClips(newSelection);
+                std::cout << "🎵 CLIP: Duplicated " << newClips.size() << " clip(s)" << std::endl;
+            }
+            return true;
+        }
+    }
+
+    // S: Split selected clips at edit cursor
+    if (key == juce::KeyPress('s') || key == juce::KeyPress('S')) {
+        // Check if Shift is held - that's for Solo
+        if (key.getModifiers().isShiftDown()) {
+            // TODO: Implement solo toggle
+            return false;  // Let it fall through for now
+        }
+
+        auto selectedClips = selectionManager.getSelectedClips();
+        if (!selectedClips.empty()) {
+            // Get edit cursor position from timeline
+            double splitTime = timelineController->getState().editCursorPosition;
+
+            // Can't split if edit cursor is not set
+            if (splitTime < 0) {
+                std::cout << "⚠️ CLIP: Cannot split - no edit cursor position" << std::endl;
+                return true;
+            }
+
+            // Split each selected clip at edit cursor
+            int splitCount = 0;
+            for (auto clipId : selectedClips) {
+                const auto* clip = clipManager.getClip(clipId);
+                if (clip && splitTime > clip->startTime &&
+                    splitTime < clip->startTime + clip->length) {
+                    ClipId newClipId = clipManager.splitClip(clipId, splitTime);
+                    if (newClipId != INVALID_CLIP_ID) {
+                        splitCount++;
+                    }
+                }
+            }
+
+            if (splitCount > 0) {
+                std::cout << "🎵 CLIP: Split " << splitCount << " clip(s) at " << splitTime << "s"
                           << std::endl;
             }
             return true;
         }
     }
 
-    // X: Split clip at playhead
-    if (key == juce::KeyPress('x') || key == juce::KeyPress('X')) {
-        ClipId selectedClip = ClipManager::getInstance().getSelectedClip();
-        if (selectedClip != INVALID_CLIP_ID) {
-            double splitTime = playheadPosition;
-            const auto* clip = ClipManager::getInstance().getClip(selectedClip);
-            if (clip && splitTime > clip->startTime && splitTime < clip->startTime + clip->length) {
-                ClipId newClipId = ClipManager::getInstance().splitClip(selectedClip, splitTime);
-                if (newClipId != INVALID_CLIP_ID) {
-                    std::cout << "🎵 CLIP: Split clip " << selectedClip << " at " << splitTime
-                              << "s, created clip " << newClipId << std::endl;
+    // T: Trim selected clips to time selection
+    if (key == juce::KeyPress('t') || key == juce::KeyPress('T')) {
+        auto selectedClips = selectionManager.getSelectedClips();
+        const auto& selection = timelineController->getState().selection;
+
+        if (!selectedClips.empty() && selection.isActive()) {
+            double selectionStart = selection.startTime;
+            double selectionEnd = selection.endTime;
+
+            int trimCount = 0;
+            for (auto clipId : selectedClips) {
+                const auto* clip = clipManager.getClip(clipId);
+                if (!clip)
+                    continue;
+
+                // Check if clip overlaps with time selection
+                if (clip->startTime < selectionEnd && clip->getEndTime() > selectionStart) {
+                    // Calculate new clip bounds (intersection of clip and selection)
+                    double newStart = std::max(clip->startTime, selectionStart);
+                    double newEnd = std::min(clip->getEndTime(), selectionEnd);
+                    double newLength = newEnd - newStart;
+
+                    if (newLength > 0.01) {  // At least 10ms
+                        // Trim from left if needed
+                        if (newStart > clip->startTime) {
+                            clipManager.resizeClip(clipId, newLength, true);
+                        }
+                        // Trim from right if needed
+                        else if (newEnd < clip->getEndTime()) {
+                            clipManager.resizeClip(clipId, newLength, false);
+                        }
+                        trimCount++;
+                    }
                 }
-                return true;
             }
+
+            if (trimCount > 0) {
+                std::cout << "✂️ CLIP: Trimmed " << trimCount << " clip(s) to time selection"
+                          << std::endl;
+            }
+            return true;
         }
     }
 
