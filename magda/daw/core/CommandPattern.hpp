@@ -95,6 +95,7 @@ template <typename StateT> class SnapshotCommand : public ValidatedCommand {
         if (!validateState()) {
             // Rollback on validation failure
             restoreState(beforeState_);
+            executed_ = false;  // Mark as not executed since we rolled back
             return;
         }
 

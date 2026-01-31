@@ -971,10 +971,12 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
                 if (selectedIndex < static_cast<int>(tracks.size())) {
                     auto cmd = std::make_unique<DuplicateTrackCommand>(tracks[selectedIndex].id);
                     UndoManager::getInstance().executeCommand(std::move(cmd));
+                    return true;  // Track was duplicated, consume the key press
                 }
             }
         }
-        return true;
+        // No track was duplicated, let the key press fall through to duplicate clips
+        return false;
     }
 
     // M: Toggle mute on selected track

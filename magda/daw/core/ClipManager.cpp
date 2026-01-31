@@ -887,6 +887,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                 // Copy MIDI notes if MIDI clip
                 if (clipData.type == ClipType::MIDI) {
                     newClip->midiNotes = clipData.midiNotes;
+                    newClip->midiOffset = clipData.midiOffset;  // Preserve offset for split clips
                 }
 
                 // Copy additional audio sources (skip first, already set)
