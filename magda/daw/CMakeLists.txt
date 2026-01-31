@@ -150,6 +150,7 @@ set(DAW_UI_SOURCES
     # Dialogs
     ui/dialogs/AudioSettingsDialog.cpp
     ui/dialogs/ChainTreeDialog.cpp
+    ui/dialogs/ExportAudioDialog.cpp
     ui/dialogs/ParameterConfigDialog.cpp
     ui/dialogs/PreferencesDialog.cpp
     ui/dialogs/TrackManagerDialog.cpp
@@ -293,6 +294,7 @@ set(DAW_HEADERS
     # Dialogs
     ui/dialogs/AudioSettingsDialog.hpp
     ui/dialogs/ChainTreeDialog.hpp
+    ui/dialogs/ExportAudioDialog.hpp
     ui/dialogs/ParameterConfigDialog.hpp
     ui/dialogs/PreferencesDialog.hpp
     ui/dialogs/TrackManagerDialog.hpp

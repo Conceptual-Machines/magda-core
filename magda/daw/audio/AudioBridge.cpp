@@ -1334,9 +1334,6 @@ void AudioBridge::updateTransportState(bool isPlaying, bool justStarted, bool ju
             // Test Tone is always transport-synced
             // Simply bypass when stopped, enable when playing
             toneProc->setBypassed(!isPlaying);
-            DBG("AudioBridge::updateTransportState - Tone generator device "
-                << deviceId << " bypassed=" << (!isPlaying ? "YES" : "NO")
-                << " (isPlaying=" << (isPlaying ? "YES" : "NO") << ")");
         }
     }
 }

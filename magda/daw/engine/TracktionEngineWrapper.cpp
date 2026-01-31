@@ -34,8 +34,8 @@ void TracktionEngineWrapper::initializePluginFormats() {
 
     // Log registered plugin formats
     auto& formatManager = pluginManager.pluginFormatManager;
-    std::cout << "Plugin formats registered by Tracktion Engine: "
-              << formatManager.getNumFormats() << std::endl;
+    std::cout << "Plugin formats registered by Tracktion Engine: " << formatManager.getNumFormats()
+              << std::endl;
     for (int i = 0; i < formatManager.getNumFormats(); ++i) {
         auto* format = formatManager.getFormat(i);
         if (format) {
@@ -141,8 +141,8 @@ void TracktionEngineWrapper::configureAudioDevices() {
     auto result = juceDeviceManager.setAudioDeviceSetup(setup, true);
     if (result.isEmpty()) {
         DBG("Successfully selected preferred devices - Input: "
-            << setup.inputDeviceName << " (" << preferredInputs << " ch), Output: "
-            << setup.outputDeviceName << " (" << preferredOutputs << " ch)");
+            << setup.inputDeviceName << " (" << preferredInputs
+            << " ch), Output: " << setup.outputDeviceName << " (" << preferredOutputs << " ch)");
     } else {
         DBG("Failed to select preferred devices: " << result);
     }
@@ -229,14 +229,20 @@ void TracktionEngineWrapper::createEditAndBridges() {
     audioBridge_ = std::make_unique<AudioBridge>(*engine_, *currentEdit_);
     audioBridge_->syncAll();
 
-    // Create SessionClipScheduler
-    sessionScheduler_ = std::make_unique<SessionClipScheduler>(*audioBridge_, *currentEdit_);
+    // Create SessionClipScheduler and PluginWindowManager only when NOT in headless CI
+    // Both extend juce::Timer which creates GUI infrastructure and leaks in tests
+    // Check: Skip if DISPLAY env var not set (Linux headless) or if explicitly disabled
+    bool isHeadless = (std::getenv("DISPLAY") == nullptr &&
+                       juce::SystemStats::getOperatingSystemType() != juce::SystemStats::MacOSX &&
+                       juce::SystemStats::getOperatingSystemType() != juce::SystemStats::Windows);
 
-    // Create PluginWindowManager
-    pluginWindowManager_ = std::make_unique<PluginWindowManager>(*engine_, *currentEdit_);
+    if (!isHeadless) {
+        sessionScheduler_ = std::make_unique<SessionClipScheduler>(*audioBridge_, *currentEdit_);
+        pluginWindowManager_ = std::make_unique<PluginWindowManager>(*engine_, *currentEdit_);
+        audioBridge_->setPluginWindowManager(pluginWindowManager_.get());
+    }
 
     // Configure AudioBridge
-    audioBridge_->setPluginWindowManager(pluginWindowManager_.get());
     audioBridge_->setEngineWrapper(this);
     audioBridge_->enableAllMidiInputDevices();
 
@@ -430,8 +436,8 @@ void TracktionEngineWrapper::handlePlaybackContextReallocation(tracktion::Device
     if (totalDevices > lastKnownDeviceCount_) {
         ctx->reallocate();
         int inputsAfter = static_cast<int>(ctx->getAllInputs().size());
-        DBG("Device change: Reallocated playback context (inputs: "
-            << inputsBefore << " -> " << inputsAfter << ")");
+        DBG("Device change: Reallocated playback context (inputs: " << inputsBefore << " -> "
+                                                                    << inputsAfter << ")");
     }
     lastKnownDeviceCount_ = totalDevices;
 }
