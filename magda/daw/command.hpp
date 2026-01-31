@@ -76,6 +76,12 @@ class Command {
   private:
     std::string type_;
     Parameters parameters_;
+
+    /**
+     * @brief Parse a juce::var value into a ParamValue
+     * @return true if parsing was successful, false otherwise
+     */
+    static bool parseParameterValue(const juce::var& value, ParamValue& output);
 };
 
 /**

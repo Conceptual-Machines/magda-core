@@ -20,27 +20,44 @@ Command::Command(const juce::var& json) {
             if (key == "command")
                 continue;
 
-            auto value = prop.value;
-            if (value.isString()) {
-                parameters_[key] = value.toString().toStdString();
-            } else if (value.isInt()) {
-                parameters_[key] = (int)value;
-            } else if (value.isDouble()) {
-                parameters_[key] = (double)value;
-            } else if (value.isBool()) {
-                parameters_[key] = (bool)value;
-            } else if (value.isArray()) {
-                auto* arr = value.getArray();
-                if (arr && arr->size() > 0 && (*arr)[0].isDouble()) {
-                    std::vector<double> vec;
-                    for (int i = 0; i < arr->size(); ++i) {
-                        vec.push_back((double)(*arr)[i]);
-                    }
-                    parameters_[key] = vec;
-                }
+            ParamValue parsed_value;
+            if (parseParameterValue(prop.value, parsed_value)) {
+                parameters_[key] = std::move(parsed_value);
             }
         }
     }
+}
+
+bool Command::parseParameterValue(const juce::var& value, ParamValue& output) {
+    if (value.isString()) {
+        output = value.toString().toStdString();
+        return true;
+    }
+    if (value.isInt()) {
+        output = static_cast<int>(value);
+        return true;
+    }
+    if (value.isDouble()) {
+        output = static_cast<double>(value);
+        return true;
+    }
+    if (value.isBool()) {
+        output = static_cast<bool>(value);
+        return true;
+    }
+    if (value.isArray()) {
+        auto* arr = value.getArray();
+        if (arr && arr->size() > 0 && (*arr)[0].isDouble()) {
+            std::vector<double> vec;
+            vec.reserve(arr->size());
+            for (int i = 0; i < arr->size(); ++i) {
+                vec.push_back(static_cast<double>((*arr)[i]));
+            }
+            output = std::move(vec);
+            return true;
+        }
+    }
+    return false;
 }
 
 bool Command::hasParameter(const std::string& key) const {
