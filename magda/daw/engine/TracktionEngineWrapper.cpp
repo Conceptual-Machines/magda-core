@@ -232,11 +232,13 @@ void TracktionEngineWrapper::createEditAndBridges() {
     // Create SessionClipScheduler
     sessionScheduler_ = std::make_unique<SessionClipScheduler>(*audioBridge_, *currentEdit_);
 
-    // Create PluginWindowManager
-    pluginWindowManager_ = std::make_unique<PluginWindowManager>(*engine_, *currentEdit_);
+    // Create PluginWindowManager only if GUI is available (not in headless tests)
+    if (juce::MessageManager::getInstanceWithoutCreating() != nullptr) {
+        pluginWindowManager_ = std::make_unique<PluginWindowManager>(*engine_, *currentEdit_);
+        audioBridge_->setPluginWindowManager(pluginWindowManager_.get());
+    }
 
     // Configure AudioBridge
-    audioBridge_->setPluginWindowManager(pluginWindowManager_.get());
     audioBridge_->setEngineWrapper(this);
     audioBridge_->enableAllMidiInputDevices();
 
