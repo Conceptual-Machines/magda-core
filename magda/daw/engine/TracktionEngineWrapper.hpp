@@ -37,6 +37,11 @@ class TracktionEngineWrapper : public AudioEngine,
                                public MixerInterface,
                                private juce::ChangeListener {
   public:
+    // Constants for audio device health checking
+    static constexpr int AUDIO_DEVICE_CHECK_SLEEP_MS = 50;
+    static constexpr int AUDIO_DEVICE_CHECK_RETRIES = 2;
+    static constexpr int AUDIO_DEVICE_CHECK_THRESHOLD = 3;
+
     TracktionEngineWrapper();
     ~TracktionEngineWrapper();
 
@@ -322,6 +327,19 @@ class TracktionEngineWrapper : public AudioEngine,
   private:
     // juce::ChangeListener implementation
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
+
+    // Initialization helper methods
+    void initializePluginFormats();
+    void initializeDeviceManager();
+    void configureAudioDevices();
+    void setupMidiDevices();
+    void createEditAndBridges();
+
+    // Change listener helper methods
+    void handleMidiDeviceChanges(tracktion::DeviceManager& dm);
+    void handlePlaybackContextReallocation(tracktion::DeviceManager& dm);
+    void notifyDeviceLoadingComplete(const juce::String& message);
+
     // Tracktion Engine components
     std::unique_ptr<tracktion::Engine> engine_;
     std::unique_ptr<tracktion::Edit> currentEdit_;
