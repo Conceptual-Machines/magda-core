@@ -1422,6 +1422,96 @@ void MainWindow::setupMenuCallbacks() {
 // Export Audio Implementation
 // ============================================================================
 
+namespace {
+
+/**
+ * Progress window for audio export that runs Tracktion Renderer in background thread
+ */
+class ExportProgressWindow : public juce::ThreadWithProgressWindow {
+  public:
+    ExportProgressWindow(const tracktion::Renderer::Parameters& params,
+                         const juce::File& outputFile)
+        : ThreadWithProgressWindow("Exporting Audio...", true, true),
+          params_(params),
+          outputFile_(outputFile) {
+        setStatusMessage("Preparing to export...");
+    }
+
+    void run() override {
+        std::atomic<float> progress{0.0f};
+        renderTask_ = std::make_unique<tracktion::Renderer::RenderTask>("Export", params_,
+                                                                        &progress, nullptr);
+
+        setStatusMessage("Rendering: " + outputFile_.getFileName());
+
+        while (!threadShouldExit()) {
+            auto status = renderTask_->runJob();
+
+            // Update progress bar (0.0 to 1.0)
+            setProgress(progress.load());
+
+            if (status == juce::ThreadPoolJob::jobHasFinished) {
+                success_ = true;
+                setStatusMessage("Export complete!");
+                setProgress(1.0);
+                break;
+            }
+
+            if (status == juce::ThreadPoolJob::jobNeedsRunningAgain) {
+                // Keep running
+                juce::Thread::sleep(10);
+                continue;
+            }
+
+            // Error occurred
+            errorMessage_ = "Render job failed";
+            setStatusMessage("Export failed");
+            break;
+        }
+
+        if (threadShouldExit() && !success_) {
+            errorMessage_ = "Export cancelled by user";
+        }
+    }
+
+    void threadComplete(bool userPressedCancel) override {
+        if (userPressedCancel) {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Export Cancelled",
+                                                   "Export was cancelled.");
+        } else if (success_) {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Export Complete",
+                                                   "Audio exported successfully to:\n" +
+                                                       outputFile_.getFullPathName());
+        } else {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon, "Export Failed",
+                errorMessage_.isEmpty() ? "Unknown error occurred during export" : errorMessage_);
+        }
+
+        // Delete this window after callback completes
+        delete this;
+    }
+
+    bool wasSuccessful() const {
+        return success_;
+    }
+    juce::String getErrorMessage() const {
+        return errorMessage_;
+    }
+    juce::File getOutputFile() const {
+        return outputFile_;
+    }
+
+  private:
+    tracktion::Renderer::Parameters params_;
+    juce::File outputFile_;
+    std::unique_ptr<tracktion::Renderer::RenderTask> renderTask_;
+    bool success_ = false;
+    juce::String errorMessage_;
+};
+
+}  // namespace
+
 void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
                                TracktionEngineWrapper* engine) {
     namespace te = tracktion;
@@ -1445,101 +1535,68 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
     auto flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |
                  juce::FileBrowserComponent::warnAboutOverwriting;
 
-    fileChooser_->launchAsync(flags, [this, settings, engine, edit,
-                                      extension](const juce::FileChooser& chooser) {
-        auto file = chooser.getResult();
-        if (file == juce::File()) {
+    fileChooser_->launchAsync(
+        flags, [this, settings, engine, edit, extension](const juce::FileChooser& chooser) {
+            auto file = chooser.getResult();
+            if (file == juce::File()) {
+                fileChooser_.reset();
+                return;
+            }
+
+            // Ensure correct extension
+            if (!file.hasFileExtension(extension)) {
+                file = file.withFileExtension(extension);
+            }
+
+            // Create Renderer::Parameters
+            te::Renderer::Parameters params(*edit);
+            params.destFile = file;
+
+            // Set audio format
+            auto& formatManager = engine->getEngine()->getAudioFileFormatManager();
+            if (settings.format.startsWith("WAV")) {
+                params.audioFormat = formatManager.getWavFormat();
+            } else if (settings.format == "FLAC") {
+                params.audioFormat = formatManager.getFlacFormat();
+            } else {
+                params.audioFormat = formatManager.getWavFormat();  // Default
+            }
+
+            params.bitDepth = getBitDepthForFormat(settings.format);
+            params.sampleRateForAudio = settings.sampleRate;
+            params.shouldNormalise = settings.normalize;
+            params.normaliseToLevelDb = 0.0f;
+            params.useMasterPlugins = true;
+            params.usePlugins = true;
+
+            // Set time range based on export range setting
+            using ExportRange = ExportAudioDialog::ExportRange;
+            switch (settings.exportRange) {
+                case ExportRange::TimeSelection:
+                    // TODO: Get actual time selection from SelectionManager when implemented
+                    params.time = te::TimeRange(te::TimePosition::fromSeconds(0.0),
+                                                te::TimePosition() + edit->getLength());
+                    break;
+
+                case ExportRange::LoopRegion:
+                    params.time = edit->getTransport().getLoopRange();
+                    break;
+
+                case ExportRange::EntireSong:
+                default:
+                    // Export entire arrangement
+                    params.time = te::TimeRange(te::TimePosition::fromSeconds(0.0),
+                                                te::TimePosition() + edit->getLength());
+                    break;
+            }
+
+            // Launch progress window with background rendering (non-blocking)
+            // The window will delete itself via threadComplete() callback
+            auto* progressWindow = new ExportProgressWindow(params, file);
+            progressWindow->launchThread();
+
             fileChooser_.reset();
-            return;
-        }
-
-        // Ensure correct extension
-        if (!file.hasFileExtension(extension)) {
-            file = file.withFileExtension(extension);
-        }
-
-        // Create Renderer::Parameters
-        te::Renderer::Parameters params(*edit);
-        params.destFile = file;
-
-        // Set audio format
-        auto& formatManager = engine->getEngine()->getAudioFileFormatManager();
-        if (settings.format.startsWith("WAV")) {
-            params.audioFormat = formatManager.getWavFormat();
-        } else if (settings.format == "FLAC") {
-            params.audioFormat = formatManager.getFlacFormat();
-        } else {
-            params.audioFormat = formatManager.getWavFormat();  // Default
-        }
-
-        params.bitDepth = getBitDepthForFormat(settings.format);
-        params.sampleRateForAudio = settings.sampleRate;
-        params.shouldNormalise = settings.normalize;
-        params.normaliseToLevelDb = 0.0f;
-        params.useMasterPlugins = true;
-        params.usePlugins = true;
-
-        // Set time range based on export range setting
-        using ExportRange = ExportAudioDialog::ExportRange;
-        switch (settings.exportRange) {
-            case ExportRange::TimeSelection:
-                // TODO: Get actual time selection from SelectionManager when implemented
-                params.time = te::TimeRange(te::TimePosition::fromSeconds(0.0),
-                                            te::TimePosition() + edit->getLength());
-                break;
-
-            case ExportRange::LoopRegion:
-                params.time = edit->getTransport().getLoopRange();
-                break;
-
-            case ExportRange::EntireSong:
-            default:
-                // Export entire arrangement
-                params.time = te::TimeRange(te::TimePosition::fromSeconds(0.0),
-                                            te::TimePosition() + edit->getLength());
-                break;
-        }
-
-        // Perform render synchronously (in future, could add progress window)
-        std::atomic<float> progress{0.0f};
-        auto renderTask =
-            std::make_unique<te::Renderer::RenderTask>("Export", params, &progress, nullptr);
-
-        bool success = false;
-        juce::String errorMessage;
-
-        // Run render job until complete
-        while (true) {
-            auto status = renderTask->runJob();
-
-            if (status == juce::ThreadPoolJob::jobHasFinished) {
-                success = true;
-                break;
-            }
-
-            if (status == juce::ThreadPoolJob::jobNeedsRunningAgain) {
-                // Keep running
-                juce::Thread::sleep(10);
-                continue;
-            }
-
-            // Error occurred
-            errorMessage = "Render job failed";
-            break;
-        }
-
-        if (success) {
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Export Complete",
-                                                   "Audio exported successfully to:\n" +
-                                                       file.getFullPathName());
-        } else {
-            juce::AlertWindow::showMessageBoxAsync(
-                juce::AlertWindow::WarningIcon, "Export Failed",
-                errorMessage.isEmpty() ? "Unknown error occurred during export" : errorMessage);
-        }
-
-        fileChooser_.reset();
-    });
+        });
 }
 
 juce::String MainWindow::getFileExtensionForFormat(const juce::String& format) const {
