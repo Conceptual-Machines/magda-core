@@ -84,10 +84,10 @@ TEST_CASE("MidiOffset - Basic offset behavior", "[midi][offset]") {
     }
 }
 
-TEST_CASE("MidiOffset - Split operation sets offset", "[midi][offset][split]") {
+TEST_CASE("MidiOffset - Split operation (destructive)", "[midi][offset][split]") {
     using namespace magda;
 
-    SECTION("Right clip gets increased offset after split") {
+    SECTION("Destructive split partitions notes between clips") {
         // Reset ClipManager state
         ClipManager::getInstance().shutdown();
 
@@ -121,17 +121,17 @@ TEST_CASE("MidiOffset - Split operation sets offset", "[midi][offset][split]") {
         REQUIRE(leftClip != nullptr);
         REQUIRE(rightClip != nullptr);
 
-        // Left clip: offset unchanged (0)
-        REQUIRE(leftClip->midiOffset == 0.0);
+        // Left clip: notes before beat 4 (beats 0, 2)
         REQUIRE(leftClip->length == 2.0);
+        REQUIRE(leftClip->midiNotes.size() == 2);
+        REQUIRE(leftClip->midiNotes[0].startBeat == Catch::Approx(0.0));
+        REQUIRE(leftClip->midiNotes[1].startBeat == Catch::Approx(2.0));
 
-        // Right clip: offset increased by split amount (4 beats = 2 seconds * 2)
-        REQUIRE(rightClip->midiOffset == 4.0);
+        // Right clip: notes at/after beat 4 (beats 4, 6) adjusted by -4 -> (0, 2)
         REQUIRE(rightClip->length == 2.0);
-
-        // Both clips should have all notes (non-destructive)
-        REQUIRE(leftClip->midiNotes.size() == 4);
-        REQUIRE(rightClip->midiNotes.size() == 4);
+        REQUIRE(rightClip->midiNotes.size() == 2);
+        REQUIRE(rightClip->midiNotes[0].startBeat == Catch::Approx(0.0));
+        REQUIRE(rightClip->midiNotes[1].startBeat == Catch::Approx(2.0));
     }
 }
 
