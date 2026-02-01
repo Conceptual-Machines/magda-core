@@ -259,4 +259,87 @@ void SetMidiNoteVelocityCommand::mergeWith(const UndoableCommand* other) {
     }
 }
 
+// ============================================================================
+// MoveMidiNoteBetweenClipsCommand
+// ============================================================================
+
+MoveMidiNoteBetweenClipsCommand::MoveMidiNoteBetweenClipsCommand(ClipId sourceClipId,
+                                                                 size_t noteIndex,
+                                                                 ClipId destClipId,
+                                                                 double newStartBeat,
+                                                                 int newNoteNumber)
+    : sourceClipId_(sourceClipId),
+      destClipId_(destClipId),
+      sourceNoteIndex_(noteIndex),
+      newStartBeat_(newStartBeat),
+      newNoteNumber_(newNoteNumber) {
+    // Capture the note being moved
+    const auto* sourceClip = ClipManager::getInstance().getClip(sourceClipId_);
+    if (sourceClip && sourceNoteIndex_ < sourceClip->midiNotes.size()) {
+        movedNote_ = sourceClip->midiNotes[sourceNoteIndex_];
+    }
+}
+
+void MoveMidiNoteBetweenClipsCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+
+    // Get source clip
+    auto* sourceClip = clipManager.getClip(sourceClipId_);
+    if (!sourceClip || sourceClip->type != ClipType::MIDI ||
+        sourceNoteIndex_ >= sourceClip->midiNotes.size()) {
+        DBG("MoveMidiNoteBetweenClipsCommand::execute() - validation failed");
+        return;
+    }
+
+    // Get destination clip
+    auto* destClip = clipManager.getClip(destClipId_);
+    if (!destClip || destClip->type != ClipType::MIDI) {
+        DBG("MoveMidiNoteBetweenClipsCommand::execute() - dest clip validation failed");
+        return;
+    }
+
+    DBG("MoveMidiNoteBetweenClipsCommand::execute() - moving note from clip "
+        << sourceClipId_ << " (index " << sourceNoteIndex_ << ") to clip " << destClipId_);
+    DBG("  Source clip has " << sourceClip->midiNotes.size() << " notes before removal");
+
+    // Create new note for destination clip
+    MidiNote newNote = movedNote_;
+    newNote.startBeat = newStartBeat_;
+    newNote.noteNumber = newNoteNumber_;
+
+    // Remove from source clip
+    clipManager.removeMidiNote(sourceClipId_, static_cast<int>(sourceNoteIndex_));
+    DBG("  Source clip has " << sourceClip->midiNotes.size() << " notes after removal");
+
+    // Add to destination clip
+    clipManager.addMidiNote(destClipId_, newNote);
+    destNoteIndex_ = destClip->midiNotes.size() - 1;
+    DBG("  Dest clip now has " << destClip->midiNotes.size() << " notes");
+
+    executed_ = true;
+}
+
+void MoveMidiNoteBetweenClipsCommand::undo() {
+    if (!executed_) {
+        return;
+    }
+
+    auto& clipManager = ClipManager::getInstance();
+
+    // Remove from destination clip
+    clipManager.removeMidiNote(destClipId_, static_cast<int>(destNoteIndex_));
+
+    // Re-add to source clip at original position
+    auto* sourceClip = clipManager.getClip(sourceClipId_);
+    if (!sourceClip || sourceClip->type != ClipType::MIDI) {
+        return;
+    }
+
+    size_t insertPos = std::min(sourceNoteIndex_, sourceClip->midiNotes.size());
+    sourceClip->midiNotes.insert(
+        sourceClip->midiNotes.begin() + static_cast<std::ptrdiff_t>(insertPos), movedNote_);
+
+    clipManager.forceNotifyClipPropertyChanged(sourceClipId_);
+}
+
 }  // namespace magda

@@ -121,4 +121,30 @@ class SetMidiNoteVelocityCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+/**
+ * @brief Command for moving a MIDI note between clips
+ * Removes note from source clip and adds it to destination clip
+ */
+class MoveMidiNoteBetweenClipsCommand : public UndoableCommand {
+  public:
+    MoveMidiNoteBetweenClipsCommand(ClipId sourceClipId, size_t noteIndex, ClipId destClipId,
+                                    double newStartBeat, int newNoteNumber);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Move Note Between Clips";
+    }
+
+  private:
+    ClipId sourceClipId_;
+    ClipId destClipId_;
+    size_t sourceNoteIndex_;
+    size_t destNoteIndex_ = 0;  // Where it was inserted in dest clip
+    MidiNote movedNote_;
+    double newStartBeat_;
+    int newNoteNumber_;
+    bool executed_ = false;
+};
+
 }  // namespace magda
