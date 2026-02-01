@@ -788,15 +788,16 @@ void InspectorContent::resized() {
             bounds.removeFromTop(8);
         }
 
-        // Content Offset — icon + single value field (underneath loop)
+        // Content Offset — icon + half-width value field (underneath loop)
         if (clipContentOffsetIcon_->isVisible()) {
             const int iconSize = 22;
             const int gap = 4;
+            int fieldWidth = (bounds.getWidth() - iconSize - gap * 2) / 2;
 
             auto valueRow = bounds.removeFromTop(iconSize);
             clipContentOffsetIcon_->setBounds(valueRow.removeFromLeft(iconSize));
             valueRow.removeFromLeft(gap);
-            clipContentOffsetValue_->setBounds(valueRow);
+            clipContentOffsetValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
             bounds.removeFromTop(8);
         }
 
@@ -1311,12 +1312,18 @@ void InspectorContent::updateFromSelectedClip() {
         clipLoopToggle_->setActive(clip->internalLoopEnabled);
         clipLoopToggle_->setEnabled(true);
 
-        // Show loop pos/length when loop is active
+        // Always show loop pos/length, but grey out when loop is off
         bool loopOn = isSessionClip || clip->internalLoopEnabled;
-        clipLoopPosLabel_.setVisible(loopOn);
-        clipLoopPosValue_->setVisible(loopOn);
-        clipLoopLengthLabel_.setVisible(loopOn);
-        clipLoopLengthValue_->setVisible(loopOn);
+        clipLoopPosLabel_.setVisible(true);
+        clipLoopPosValue_->setVisible(true);
+        clipLoopLengthLabel_.setVisible(true);
+        clipLoopLengthValue_->setVisible(true);
+        clipLoopPosValue_->setEnabled(loopOn);
+        clipLoopPosValue_->setAlpha(loopOn ? 1.0f : 0.4f);
+        clipLoopLengthValue_->setEnabled(loopOn);
+        clipLoopLengthValue_->setAlpha(loopOn ? 1.0f : 0.4f);
+        clipLoopPosLabel_.setAlpha(loopOn ? 1.0f : 0.4f);
+        clipLoopLengthLabel_.setAlpha(loopOn ? 1.0f : 0.4f);
 
         // Session clip launch properties
         launchModeLabel_.setVisible(false);
