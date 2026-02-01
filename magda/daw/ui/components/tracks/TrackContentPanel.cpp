@@ -1097,7 +1097,12 @@ void TrackContentPanel::timerCallback() {
 }
 
 void TrackContentPanel::mouseMove(const juce::MouseEvent& event) {
-    updateCursorForPosition(event.x, event.y);
+    updateCursorForPosition(event.x, event.y, event.mods.isShiftDown());
+}
+
+void TrackContentPanel::modifierKeysChanged(const juce::ModifierKeys& modifiers) {
+    auto mousePos = getMouseXYRelative();
+    updateCursorForPosition(mousePos.x, mousePos.y, modifiers.isShiftDown());
 }
 
 bool TrackContentPanel::isInUpperTrackZone(int y) const {
@@ -1112,7 +1117,7 @@ bool TrackContentPanel::isInUpperTrackZone(int y) const {
     return y < trackMidY;
 }
 
-void TrackContentPanel::updateCursorForPosition(int x, int y) {
+void TrackContentPanel::updateCursorForPosition(int x, int y, bool shiftHeld) {
     // Check track zone first
     bool inUpperZone = isInUpperTrackZone(y);
 
@@ -1137,8 +1142,13 @@ void TrackContentPanel::updateCursorForPosition(int x, int y) {
                 // Over edge of time selection - show resize cursor
                 setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
             } else if (isOnExistingSelection(x, y)) {
-                // Over existing time selection - show grab cursor
-                setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+                // Over existing time selection
+                // Shift = closed fist (split at boundaries), otherwise open hand
+                if (shiftHeld) {
+                    setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+                } else {
+                    setMouseCursor(juce::MouseCursor::PointingHandCursor);
+                }
             } else {
                 // Empty space - I-beam for creating time selection
                 setMouseCursor(juce::MouseCursor::IBeamCursor);
