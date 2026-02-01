@@ -1094,15 +1094,20 @@ void TrackContentPanel::timerCallback() {
     // Toggle edit cursor blink state
     editCursorBlinkVisible_ = !editCursorBlinkVisible_;
     repaint();
+
+    // Update cursor when modifier keys change (e.g. shift for split mode)
+    if (isMouseOver(true)) {
+        auto mousePos = getMouseXYRelative();
+        bool shiftNow = juce::ModifierKeys::currentModifiers.isShiftDown();
+        if (shiftNow != lastShiftState_) {
+            lastShiftState_ = shiftNow;
+            updateCursorForPosition(mousePos.x, mousePos.y, shiftNow);
+        }
+    }
 }
 
 void TrackContentPanel::mouseMove(const juce::MouseEvent& event) {
     updateCursorForPosition(event.x, event.y, event.mods.isShiftDown());
-}
-
-void TrackContentPanel::modifierKeysChanged(const juce::ModifierKeys& modifiers) {
-    auto mousePos = getMouseXYRelative();
-    updateCursorForPosition(mousePos.x, mousePos.y, modifiers.isShiftDown());
 }
 
 bool TrackContentPanel::isInUpperTrackZone(int y) const {
@@ -1143,11 +1148,12 @@ void TrackContentPanel::updateCursorForPosition(int x, int y, bool shiftHeld) {
                 setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
             } else if (isOnExistingSelection(x, y)) {
                 // Over existing time selection
-                // Shift = closed fist (split at boundaries), otherwise open hand
+                // Shift = split at boundaries cursor, otherwise grab hand
+                // TODO: Replace CrosshairCursor with a custom closed-fist icon
                 if (shiftHeld) {
-                    setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+                    setMouseCursor(juce::MouseCursor::CrosshairCursor);
                 } else {
-                    setMouseCursor(juce::MouseCursor::PointingHandCursor);
+                    setMouseCursor(juce::MouseCursor::DraggingHandCursor);
                 }
             } else {
                 // Empty space - I-beam for creating time selection

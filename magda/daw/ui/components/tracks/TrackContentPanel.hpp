@@ -287,7 +287,7 @@ class TrackContentPanel : public juce::Component,
     // Track zone detection - upper half = marquee, lower half = time selection
     bool isInUpperTrackZone(int y) const;
     void updateCursorForPosition(int x, int y, bool shiftHeld = false);
-    void modifierKeysChanged(const juce::ModifierKeys& modifiers) override;
+    bool lastShiftState_ = false;
 
     // Marquee methods
     void startMarqueeSelection(const juce::Point<int>& startPoint);
