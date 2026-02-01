@@ -223,4 +223,41 @@ class DuplicateClipCommand : public SnapshotCommand<DuplicateClipState> {
     ClipId duplicatedClipId_ = INVALID_CLIP_ID;
 };
 
+/**
+ * @brief State for PasteClipCommand
+ */
+struct PasteClipState {
+    std::vector<ClipId> pastedClipIds;
+    bool wasPasted = false;
+};
+
+/**
+ * @brief Command for pasting clips from clipboard
+ */
+class PasteClipCommand : public SnapshotCommand<PasteClipState> {
+  public:
+    PasteClipCommand(double pasteTime, TrackId targetTrackId = INVALID_TRACK_ID);
+
+    juce::String getDescription() const override {
+        return "Paste Clip";
+    }
+
+    bool canExecute() const override;
+
+    const std::vector<ClipId>& getPastedClipIds() const {
+        return pastedClipIds_;
+    }
+
+  protected:
+    PasteClipState captureState() override;
+    void restoreState(const PasteClipState& state) override;
+    void performAction() override;
+    bool validateState() const override;
+
+  private:
+    double pasteTime_;
+    TrackId targetTrackId_;
+    std::vector<ClipId> pastedClipIds_;
+};
+
 }  // namespace magda

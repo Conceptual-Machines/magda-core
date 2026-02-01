@@ -369,4 +369,64 @@ bool DuplicateClipCommand::validateState() const {
     return true;
 }
 
+// ============================================================================
+// PasteClipCommand Implementation
+// ============================================================================
+
+PasteClipCommand::PasteClipCommand(double pasteTime, TrackId targetTrackId)
+    : pasteTime_(pasteTime), targetTrackId_(targetTrackId) {}
+
+bool PasteClipCommand::canExecute() const {
+    return ClipManager::getInstance().hasClipsInClipboard();
+}
+
+PasteClipState PasteClipCommand::captureState() {
+    PasteClipState state;
+    state.pastedClipIds = pastedClipIds_;
+    state.wasPasted = !pastedClipIds_.empty();
+    return state;
+}
+
+void PasteClipCommand::restoreState(const PasteClipState& state) {
+    auto& clipManager = ClipManager::getInstance();
+
+    // If restoring to state where clips didn't exist, delete all pasted clips
+    if (!state.wasPasted && !pastedClipIds_.empty()) {
+        for (ClipId clipId : pastedClipIds_) {
+            clipManager.deleteClip(clipId);
+        }
+        pastedClipIds_.clear();
+    }
+    // If restoring to state where clips existed, recreate them (redo)
+    else if (state.wasPasted && !state.pastedClipIds.empty() && pastedClipIds_.empty()) {
+        performAction();
+    }
+}
+
+void PasteClipCommand::performAction() {
+    auto& clipManager = ClipManager::getInstance();
+    pastedClipIds_ = clipManager.pasteFromClipboard(pasteTime_, targetTrackId_);
+}
+
+bool PasteClipCommand::validateState() const {
+    auto& clipManager = ClipManager::getInstance();
+
+    // If clips were created, validate they all exist and have valid tracks
+    for (ClipId clipId : pastedClipIds_) {
+        auto* clip = clipManager.getClip(clipId);
+        if (!clip) {
+            std::cerr << "ERROR: Pasted clip " << clipId << " does not exist!" << std::endl;
+            return false;
+        }
+
+        // Validate clip has valid track
+        if (clip->trackId == INVALID_TRACK_ID) {
+            std::cerr << "ERROR: Pasted clip " << clipId << " has invalid track!" << std::endl;
+            return false;
+        }
+    }
+
+    return true;
+}
+
 }  // namespace magda

@@ -885,6 +885,10 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
             timelineController->dispatch(SetEditCursorEvent{clickTime});
         }
 
+        // Re-grab keyboard focus after track selection (which may trigger callbacks that steal
+        // focus)
+        grabKeyboardFocus();
+
         // Prevent lower zone logic from also running
         isCreatingSelection = false;
     }
@@ -922,6 +926,10 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
                 if (timelineController) {
                     timelineController->dispatch(SetEditCursorEvent{clickTime});
                 }
+
+                // Re-grab keyboard focus after track selection (which may trigger callbacks that
+                // steal focus)
+                grabKeyboardFocus();
             }
         } else {
             // It was a drag - finalize time selection
@@ -1822,11 +1830,6 @@ void TrackContentPanel::paintClipGhosts(juce::Graphics& g) {
 bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
     auto& selectionManager = SelectionManager::getInstance();
 
-    // Debug: Log all key presses to understand focus issues
-    auto selectedClips = selectionManager.getSelectedClips();
-    std::cout << "🔑 TrackContentPanel::keyPressed - key: " << key.getTextDescription()
-              << " | Selected clips: " << selectedClips.size() << std::endl;
-
     // Cmd/Ctrl+Z: Undo
     if (key == juce::KeyPress('z', juce::ModifierKeys::commandModifier, 0)) {
         if (UndoManager::getInstance().canUndo()) {
@@ -2006,6 +2009,17 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
         }
 
         return true;
+    }
+
+    // Forward unhandled keys up the parent chain for command manager processing
+    // Walk up past the Viewport to reach MainView/MainComponent where ApplicationCommandManager
+    // lives
+    auto* parent = getParentComponent();
+    while (parent != nullptr) {
+        if (parent->keyPressed(key)) {
+            return true;
+        }
+        parent = parent->getParentComponent();
     }
 
     return false;  // Key not handled

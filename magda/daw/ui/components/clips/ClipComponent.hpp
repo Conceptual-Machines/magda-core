@@ -43,6 +43,9 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     void mouseExit(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
 
+    // Keyboard handling
+    bool keyPressed(const juce::KeyPress& key) override;
+
     // ClipManagerListener
     void clipsChanged() override;
     void clipPropertyChanged(ClipId clipId) override;

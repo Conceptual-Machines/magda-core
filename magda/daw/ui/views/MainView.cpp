@@ -145,6 +145,8 @@ void MainView::setupComponents() {
 
     // Create track content viewport
     trackContentViewport = std::make_unique<juce::Viewport>();
+    trackContentViewport->setWantsKeyboardFocus(
+        false);  // Let TrackContentPanel handle keyboard focus
     trackContentPanel = std::make_unique<TrackContentPanel>();
     trackContentPanel->setController(timelineController.get());  // Connect to centralized state
     trackContentViewport->setViewedComponent(trackContentPanel.get(), false);
@@ -822,6 +824,11 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
 
     // NOTE: Trim is now handled by ApplicationCommandManager in MainWindow
     // Old trim handler removed to prevent double-handling
+
+    // Forward unhandled keys to parent for command manager processing
+    if (auto* parent = getParentComponent()) {
+        return parent->keyPressed(key);
+    }
 
     return false;
 }

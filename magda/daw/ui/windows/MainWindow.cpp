@@ -223,7 +223,10 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
 
     // Register this component as a command target for keyboard shortcuts
     commandManager.registerAllCommandsForTarget(this);
-    addKeyListener(commandManager.getKeyMappings());
+
+    // Note: We don't use addKeyListener because it only works when this component has focus.
+    // Instead, we rely on keyPressed() override which manually checks the command manager
+    // and receives bubbled events from child components.
 
     // Use external engine if provided, otherwise create our own
     if (externalEngine) {
@@ -716,9 +719,16 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                         std::cout << "📍 Defaulting to 0.0" << std::endl;
                     }
                 }
-                auto newClips = clipManager.pasteFromClipboard(pasteTime);
-                if (!newClips.empty()) {
-                    std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
+
+                // Use command pattern for undoable paste
+                auto cmd = std::make_unique<PasteClipCommand>(pasteTime);
+                auto* cmdPtr = cmd.get();
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                // Select the pasted clips
+                const auto& pastedClips = cmdPtr->getPastedClipIds();
+                if (!pastedClips.empty()) {
+                    std::unordered_set<ClipId> newSelection(pastedClips.begin(), pastedClips.end());
                     selectionManager.selectClips(newSelection);
                 }
             }

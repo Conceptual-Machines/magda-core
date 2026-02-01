@@ -43,6 +43,9 @@ class TrackContentPanel : public juce::Component,
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
 
+    // Keyboard handling
+    bool keyPressed(const juce::KeyPress& key) override;
+
     // TimelineStateListener implementation
     void timelineStateChanged(const TimelineState& state) override;
     void zoomStateChanged(const TimelineState& state) override;
@@ -323,11 +326,6 @@ class TrackContentPanel : public juce::Component,
 
     // Multi-clip drag methods (private helper)
     void cancelMultiClipDrag();
-
-    // ========================================================================
-    // Keyboard handling
-    // ========================================================================
-    bool keyPressed(const juce::KeyPress& key) override;
 
     // ========================================================================
     // File Drag-and-Drop State

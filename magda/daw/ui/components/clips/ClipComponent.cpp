@@ -1119,4 +1119,14 @@ void ClipComponent::showContextMenu() {
     });
 }
 
+bool ClipComponent::keyPressed(const juce::KeyPress& key) {
+    // ClipComponent doesn't handle any keys itself
+    // Forward all keys to parent panel which will handle them or forward up the chain
+    if (parentPanel_) {
+        return parentPanel_->keyPressed(key);
+    }
+
+    return false;
+}
+
 }  // namespace magda
