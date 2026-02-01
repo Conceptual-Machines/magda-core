@@ -1179,7 +1179,15 @@ void ClipComponent::showContextMenu() {
             case 2: {  // Cut
                 auto selectedClips = selectionManager.getSelectedClips();
                 if (!selectedClips.empty()) {
-                    clipManager.cutToClipboard(selectedClips);
+                    clipManager.copyToClipboard(selectedClips);
+                    if (selectedClips.size() > 1)
+                        UndoManager::getInstance().beginCompoundOperation("Cut Clips");
+                    for (auto clipId : selectedClips) {
+                        auto cmd = std::make_unique<DeleteClipCommand>(clipId);
+                        UndoManager::getInstance().executeCommand(std::move(cmd));
+                    }
+                    if (selectedClips.size() > 1)
+                        UndoManager::getInstance().endCompoundOperation();
                     selectionManager.clearSelection();
                 }
                 break;
@@ -1187,12 +1195,9 @@ void ClipComponent::showContextMenu() {
 
             case 3: {  // Paste
                 if (clipManager.hasClipsInClipboard()) {
-                    // Paste at playhead position (need to get from transport/timeline)
-                    // For now, paste at clicked position
                     auto selectedClips = selectionManager.getSelectedClips();
                     double pasteTime = 0.0;
                     if (!selectedClips.empty()) {
-                        // Paste after last selected clip
                         for (auto clipId : selectedClips) {
                             const auto* clip = clipManager.getClip(clipId);
                             if (clip) {
@@ -1200,10 +1205,12 @@ void ClipComponent::showContextMenu() {
                             }
                         }
                     }
-                    auto newClips = clipManager.pasteFromClipboard(pasteTime);
-                    if (!newClips.empty()) {
-                        // Select the pasted clips
-                        std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
+                    auto cmd = std::make_unique<PasteClipCommand>(pasteTime);
+                    auto* cmdPtr = cmd.get();
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+                    const auto& pastedIds = cmdPtr->getPastedClipIds();
+                    if (!pastedIds.empty()) {
+                        std::unordered_set<ClipId> newSelection(pastedIds.begin(), pastedIds.end());
                         selectionManager.selectClips(newSelection);
                     }
                 }
@@ -1212,8 +1219,15 @@ void ClipComponent::showContextMenu() {
 
             case 4: {  // Duplicate
                 auto selectedClips = selectionManager.getSelectedClips();
-                for (auto clipId : selectedClips) {
-                    clipManager.duplicateClip(clipId);
+                if (!selectedClips.empty()) {
+                    if (selectedClips.size() > 1)
+                        UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
+                    for (auto clipId : selectedClips) {
+                        auto cmd = std::make_unique<DuplicateClipCommand>(clipId);
+                        UndoManager::getInstance().executeCommand(std::move(cmd));
+                    }
+                    if (selectedClips.size() > 1)
+                        UndoManager::getInstance().endCompoundOperation();
                 }
                 break;
             }
