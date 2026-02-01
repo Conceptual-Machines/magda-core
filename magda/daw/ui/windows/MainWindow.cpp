@@ -788,25 +788,40 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             return true;
 
         case joinClips:
-            if (selectedClips.size() == 2) {
-                auto it = selectedClips.begin();
-                ClipId id1 = *it++;
-                ClipId id2 = *it;
+            if (selectedClips.size() >= 2) {
+                // Sort clips by start time
+                std::vector<ClipId> sortedClips(selectedClips.begin(), selectedClips.end());
+                std::sort(sortedClips.begin(), sortedClips.end(), [&](ClipId a, ClipId b) {
+                    auto* ca = clipManager.getClip(a);
+                    auto* cb = clipManager.getClip(b);
+                    if (!ca || !cb)
+                        return false;
+                    return ca->startTime < cb->startTime;
+                });
 
-                auto* clip1 = clipManager.getClip(id1);
-                auto* clip2 = clipManager.getClip(id2);
+                // Join sequentially: left absorbs right, then result absorbs next, etc.
+                if (sortedClips.size() > 2) {
+                    UndoManager::getInstance().beginCompoundOperation("Join Clips");
+                }
 
-                if (clip1 && clip2) {
-                    // Determine left/right by start time
-                    ClipId leftId = clip1->startTime <= clip2->startTime ? id1 : id2;
-                    ClipId rightId = clip1->startTime <= clip2->startTime ? id2 : id1;
-
-                    auto cmd = std::make_unique<JoinClipsCommand>(leftId, rightId);
+                ClipId leftId = sortedClips[0];
+                bool allJoined = true;
+                for (size_t i = 1; i < sortedClips.size(); ++i) {
+                    auto cmd = std::make_unique<JoinClipsCommand>(leftId, sortedClips[i]);
                     if (cmd->canExecute()) {
                         UndoManager::getInstance().executeCommand(std::move(cmd));
-                        // Select the joined clip
-                        selectionManager.selectClips({leftId});
+                    } else {
+                        allJoined = false;
+                        break;
                     }
+                }
+
+                if (sortedClips.size() > 2) {
+                    UndoManager::getInstance().endCompoundOperation();
+                }
+
+                if (allJoined) {
+                    selectionManager.selectClips({leftId});
                 }
             }
             return true;

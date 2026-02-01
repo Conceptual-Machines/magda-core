@@ -150,6 +150,10 @@ class TrackContentPanel : public juce::Component,
     void clearClipGhost(ClipId clipId);
     void clearAllClipGhosts();
 
+    TimelineController* getTimelineController() const {
+        return timelineController;
+    }
+
   private:
     // Controller reference (not owned)
     TimelineController* timelineController = nullptr;

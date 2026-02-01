@@ -7,7 +7,9 @@
 #include "../../themes/FontManager.hpp"
 #include "../tracks/TrackContentPanel.hpp"
 #include "audio/AudioThumbnailManager.hpp"
+#include "core/ClipCommands.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/UndoManager.hpp"
 
 namespace magda {
 
@@ -812,11 +814,13 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                         parentPanel_->clearClipGhost(clipId_);
                     }
 
-                    // Alt+drag duplicate: create duplicate at final position
-                    ClipId newClipId = ClipManager::getInstance().duplicateClipAt(
-                        clipId_, finalStartTime, targetTrackId);
+                    // Shift+drag duplicate: create duplicate at final position via undo command
+                    auto cmd = std::make_unique<DuplicateClipCommand>(clipId_, finalStartTime,
+                                                                      targetTrackId);
+                    auto* cmdPtr = cmd.get();
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+                    ClipId newClipId = cmdPtr->getDuplicatedClipId();
                     if (newClipId != INVALID_CLIP_ID) {
-                        // Select the new duplicate
                         SelectionManager::getInstance().selectClip(newClipId);
                     }
                     // Reset duplication state
@@ -1123,10 +1127,29 @@ void ClipComponent::showContextMenu() {
     menu.addItem(4, "Duplicate", hasSelection);
     menu.addSeparator();
 
-    // Split
-    if (!isMultiSelection) {
-        menu.addItem(5, "Split at Playhead");
+    // Split / Trim
+    menu.addItem(5, "Split / Trim", hasSelection);
+    menu.addSeparator();
+
+    // Join Clips (need 2+ adjacent clips on same track)
+    bool canJoin = false;
+    if (selectionManager.getSelectedClipCount() >= 2) {
+        auto selected = selectionManager.getSelectedClips();
+        std::vector<ClipId> sorted(selected.begin(), selected.end());
+        std::sort(sorted.begin(), sorted.end(), [&](ClipId a, ClipId b) {
+            auto* ca = clipManager.getClip(a);
+            auto* cb = clipManager.getClip(b);
+            if (!ca || !cb)
+                return false;
+            return ca->startTime < cb->startTime;
+        });
+        canJoin = true;
+        for (size_t i = 1; i < sorted.size() && canJoin; ++i) {
+            JoinClipsCommand testCmd(sorted[i - 1], sorted[i]);
+            canJoin = testCmd.canExecute();
+        }
     }
+    menu.addItem(8, "Join Clips", canJoin);
     menu.addSeparator();
 
     // Delete
@@ -1195,12 +1218,35 @@ void ClipComponent::showContextMenu() {
                 break;
             }
 
-            case 5:  // Split at Playhead
-                // TODO: Get playhead position from transport/timeline
-                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
-                                                       "Split at Playhead",
-                                                       "Split at playhead not yet implemented");
+            case 5: {  // Split / Trim
+                // Split selected clips at edit cursor
+                if (parentPanel_ && parentPanel_->getTimelineController()) {
+                    double splitTime =
+                        parentPanel_->getTimelineController()->getState().editCursorPosition;
+                    if (splitTime >= 0) {
+                        auto selectedClips = selectionManager.getSelectedClips();
+                        std::vector<ClipId> toSplit;
+                        for (auto cid : selectedClips) {
+                            const auto* c = clipManager.getClip(cid);
+                            if (c && splitTime > c->startTime &&
+                                splitTime < c->startTime + c->length) {
+                                toSplit.push_back(cid);
+                            }
+                        }
+                        if (!toSplit.empty()) {
+                            if (toSplit.size() > 1)
+                                UndoManager::getInstance().beginCompoundOperation("Split Clips");
+                            for (auto cid : toSplit) {
+                                auto cmd = std::make_unique<SplitClipCommand>(cid, splitTime);
+                                UndoManager::getInstance().executeCommand(std::move(cmd));
+                            }
+                            if (toSplit.size() > 1)
+                                UndoManager::getInstance().endCompoundOperation();
+                        }
+                    }
+                }
                 break;
+            }
 
             case 6: {  // Delete
                 auto selectedClips = selectionManager.getSelectedClips();
@@ -1216,6 +1262,37 @@ void ClipComponent::showContextMenu() {
                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Loop Settings",
                                                        "Loop settings dialog not yet implemented");
                 break;
+
+            case 8: {  // Join Clips
+                auto selectedClips = selectionManager.getSelectedClips();
+                if (selectedClips.size() >= 2) {
+                    std::vector<ClipId> sorted(selectedClips.begin(), selectedClips.end());
+                    std::sort(sorted.begin(), sorted.end(), [&](ClipId a, ClipId b) {
+                        auto* ca = clipManager.getClip(a);
+                        auto* cb = clipManager.getClip(b);
+                        if (!ca || !cb)
+                            return false;
+                        return ca->startTime < cb->startTime;
+                    });
+
+                    if (sorted.size() > 2)
+                        UndoManager::getInstance().beginCompoundOperation("Join Clips");
+
+                    ClipId leftId = sorted[0];
+                    for (size_t i = 1; i < sorted.size(); ++i) {
+                        auto cmd = std::make_unique<JoinClipsCommand>(leftId, sorted[i]);
+                        if (cmd->canExecute()) {
+                            UndoManager::getInstance().executeCommand(std::move(cmd));
+                        }
+                    }
+
+                    if (sorted.size() > 2)
+                        UndoManager::getInstance().endCompoundOperation();
+
+                    selectionManager.selectClips({leftId});
+                }
+                break;
+            }
 
             default:
                 break;
