@@ -104,8 +104,11 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addItem(Delete, juce::String("Delete") + juce::String::fromUTF8("\t\u232B"),
                      hasSelection_, false);
         menu.addSeparator();
-        menu.addItem(Split, "Split at Cursor\tS", hasEditCursor_, false);
-        menu.addItem(Trim, "Trim to Selection\tT", hasSelection_, false);
+        menu.addItem(SplitOrTrim,
+                     juce::String("Split / Trim") + juce::String::fromUTF8("\t\u2318E"), true,
+                     false);
+        menu.addItem(JoinClips, juce::String("Join Clips") + juce::String::fromUTF8("\t\u2318J"),
+                     hasSelection_, false);
         menu.addSeparator();
         menu.addItem(SelectAll, juce::String("Select All") + juce::String::fromUTF8("\t\u2318A"),
                      true, false);
@@ -119,8 +122,8 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addItem(Duplicate, "Duplicate\tCtrl+D", hasSelection_, false);
         menu.addItem(Delete, "Delete\tDelete", hasSelection_, false);
         menu.addSeparator();
-        menu.addItem(Split, "Split at Cursor\tS", hasEditCursor_, false);
-        menu.addItem(Trim, "Trim to Selection\tT", hasSelection_, false);
+        menu.addItem(SplitOrTrim, "Split / Trim\tCtrl+E", true, false);
+        menu.addItem(JoinClips, "Join Clips\tCtrl+J", hasSelection_, false);
         menu.addSeparator();
         menu.addItem(SelectAll, "Select All\tCtrl+A", true, false);
 #endif
@@ -267,13 +270,13 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
             if (callbacks_.onDelete)
                 callbacks_.onDelete();
             break;
-        case Split:
-            if (callbacks_.onSplit)
-                callbacks_.onSplit();
+        case SplitOrTrim:
+            if (callbacks_.onSplitOrTrim)
+                callbacks_.onSplitOrTrim();
             break;
-        case Trim:
-            if (callbacks_.onTrim)
-                callbacks_.onTrim();
+        case JoinClips:
+            if (callbacks_.onJoinClips)
+                callbacks_.onJoinClips();
             break;
         case SelectAll:
             if (callbacks_.onSelectAll)

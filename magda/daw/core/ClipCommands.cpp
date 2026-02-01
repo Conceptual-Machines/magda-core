@@ -429,4 +429,122 @@ bool PasteClipCommand::validateState() const {
     return true;
 }
 
+// ============================================================================
+// JoinClipsCommand
+// ============================================================================
+
+JoinClipsCommand::JoinClipsCommand(ClipId leftClipId, ClipId rightClipId)
+    : leftClipId_(leftClipId), rightClipId_(rightClipId) {}
+
+bool JoinClipsCommand::canExecute() const {
+    auto& clipManager = ClipManager::getInstance();
+    auto* left = clipManager.getClip(leftClipId_);
+    auto* right = clipManager.getClip(rightClipId_);
+
+    if (!left || !right)
+        return false;
+
+    // Must be same track, same type
+    if (left->trackId != right->trackId)
+        return false;
+    if (left->type != right->type)
+        return false;
+
+    // Must be adjacent (left ends where right starts)
+    if (std::abs(left->getEndTime() - right->startTime) > 0.001)
+        return false;
+
+    return true;
+}
+
+JoinClipsState JoinClipsCommand::captureState() {
+    auto& clipManager = ClipManager::getInstance();
+    JoinClipsState state;
+
+    auto* left = clipManager.getClip(leftClipId_);
+    auto* right = clipManager.getClip(rightClipId_);
+
+    state.leftClip = left ? *left : ClipInfo{};
+    state.rightClip = right ? *right : ClipInfo{};
+
+    return state;
+}
+
+void JoinClipsCommand::restoreState(const JoinClipsState& state) {
+    auto& clipManager = ClipManager::getInstance();
+
+    // Restore left clip from snapshot
+    if (auto* left = clipManager.getClip(leftClipId_)) {
+        *left = state.leftClip;
+    }
+
+    // Restore right clip (may have been deleted)
+    if (!clipManager.getClip(rightClipId_)) {
+        clipManager.restoreClip(state.rightClip);
+    } else {
+        *clipManager.getClip(rightClipId_) = state.rightClip;
+    }
+
+    clipManager.forceNotifyClipsChanged();
+}
+
+void JoinClipsCommand::performAction() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* left = clipManager.getClip(leftClipId_);
+    auto* right = clipManager.getClip(rightClipId_);
+
+    if (!left || !right)
+        return;
+
+    if (left->type == ClipType::MIDI) {
+        // MIDI join: copy right clip's notes into left, adjusting beat positions
+        const double beatsPerSecond = 2.0;  // 120 BPM (matches splitClip)
+        double beatOffset = (right->startTime - left->startTime) * beatsPerSecond;
+
+        for (const auto& note : right->midiNotes) {
+            MidiNote adjustedNote = note;
+            adjustedNote.startBeat += beatOffset;
+            left->midiNotes.push_back(adjustedNote);
+        }
+    } else if (left->type == ClipType::Audio) {
+        // Audio join: extend left clip's audio source to cover both clips
+        if (!right->audioSources.empty()) {
+            if (!left->audioSources.empty()) {
+                // Extend the first audio source length to cover the right clip
+                left->audioSources[0].length = left->length + right->length;
+            }
+            // If right has additional audio sources, add them with adjusted positions
+            for (size_t i = 0; i < right->audioSources.size(); ++i) {
+                if (i == 0 && !left->audioSources.empty())
+                    continue;  // Already handled by extending
+                AudioSource src = right->audioSources[i];
+                src.position += left->length;
+                left->audioSources.push_back(src);
+            }
+        }
+    }
+
+    // Extend left clip length
+    left->length += right->length;
+
+    // Delete right clip
+    clipManager.deleteClip(rightClipId_);
+
+    std::cout << "📝 Join clips " << leftClipId_ << " + " << rightClipId_ << " -> " << leftClipId_
+              << std::endl;
+}
+
+bool JoinClipsCommand::validateState() const {
+    auto& clipManager = ClipManager::getInstance();
+
+    auto* left = clipManager.getClip(leftClipId_);
+    if (!left)
+        return false;
+
+    if (left->trackId == INVALID_TRACK_ID)
+        return false;
+
+    return true;
+}
+
 }  // namespace magda

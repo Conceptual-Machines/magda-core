@@ -594,7 +594,7 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
 
     const juce::CommandID allCommands[] = {
         // Edit menu
-        undo, redo, cut, copy, paste, duplicate, deleteCmd, selectAll, splitOrTrim,
+        undo, redo, cut, copy, paste, duplicate, deleteCmd, selectAll, splitOrTrim, joinClips,
         // File menu
         newProject, openProject, saveProject, saveProjectAs, exportAudio,
         // Transport
@@ -659,6 +659,11 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             result.setInfo("Split / Trim", "Split clips at cursor, or trim to time selection",
                            "Edit", 0);
             result.addDefaultKeypress('e', juce::ModifierKeys::commandModifier);
+            break;
+
+        case joinClips:
+            result.setInfo("Join Clips", "Join two adjacent clips into one", "Edit", 0);
+            result.addDefaultKeypress('j', juce::ModifierKeys::commandModifier);
             break;
 
         // Add other commands as needed...
@@ -779,6 +784,30 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     allClipIds.insert(clip.id);
                 }
                 selectionManager.selectClips(allClipIds);
+            }
+            return true;
+
+        case joinClips:
+            if (selectedClips.size() == 2) {
+                auto it = selectedClips.begin();
+                ClipId id1 = *it++;
+                ClipId id2 = *it;
+
+                auto* clip1 = clipManager.getClip(id1);
+                auto* clip2 = clipManager.getClip(id2);
+
+                if (clip1 && clip2) {
+                    // Determine left/right by start time
+                    ClipId leftId = clip1->startTime <= clip2->startTime ? id1 : id2;
+                    ClipId rightId = clip1->startTime <= clip2->startTime ? id2 : id1;
+
+                    auto cmd = std::make_unique<JoinClipsCommand>(leftId, rightId);
+                    if (cmd->canExecute()) {
+                        UndoManager::getInstance().executeCommand(std::move(cmd));
+                        // Select the joined clip
+                        selectionManager.selectClips({leftId});
+                    }
+                }
             }
             return true;
 
@@ -1574,138 +1603,12 @@ void MainWindow::setupMenuCallbacks() {
         }
     };
 
-    callbacks.onSplit = [this]() {
-        auto& clipManager = ClipManager::getInstance();
-
-        if (!mainComponent->mainView) {
-            return;
-        }
-
-        double splitTime =
-            mainComponent->mainView->getTimelineController().getState().editCursorPosition;
-        if (splitTime < 0) {
-            return;  // No edit cursor set
-        }
-
-        // Split ALL clips that intersect with cursor (regardless of selection)
-        const auto& allClips = clipManager.getArrangementClips();
-
-        // Collect clips to split
-        std::vector<ClipId> clipsToSplit;
-        for (const auto& clip : allClips) {
-            if (splitTime > clip.startTime && splitTime < clip.startTime + clip.length) {
-                clipsToSplit.push_back(clip.id);
-            }
-        }
-
-        if (clipsToSplit.empty()) {
-            return;  // No clips at cursor position
-        }
-
-        // Use compound operation if splitting multiple clips
-        if (clipsToSplit.size() > 1) {
-            UndoManager::getInstance().beginCompoundOperation("Split Clips");
-        }
-
-        for (auto clipId : clipsToSplit) {
-            auto cmd = std::make_unique<SplitClipCommand>(clipId, splitTime);
-            UndoManager::getInstance().executeCommand(std::move(cmd));
-        }
-
-        if (clipsToSplit.size() > 1) {
-            UndoManager::getInstance().endCompoundOperation();
-        }
+    callbacks.onSplitOrTrim = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::splitOrTrim, false);
     };
 
-    callbacks.onTrim = [this]() {
-        auto& clipManager = ClipManager::getInstance();
-        auto& selectionManager = SelectionManager::getInstance();
-        auto selectedClips = selectionManager.getSelectedClips();
-        if (mainComponent->mainView && !selectedClips.empty()) {
-            const auto& selection =
-                mainComponent->mainView->getTimelineController().getState().selection;
-            if (selection.isActive()) {
-                double selectionStart = selection.startTime;
-                double selectionEnd = selection.endTime;
-
-                std::cout << "========================================" << std::endl;
-                std::cout << "TRIM COMMAND ('T' pressed)" << std::endl;
-                std::cout << "  Selection: " << selectionStart << " - " << selectionEnd
-                          << std::endl;
-                std::cout << "  Selected clips: " << selectedClips.size() << std::endl;
-
-                // Collect all trim operations needed
-                std::vector<std::unique_ptr<ResizeClipCommand>> trimCommands;
-
-                for (auto clipId : selectedClips) {
-                    const auto* clip = clipManager.getClip(clipId);
-                    if (!clip) {
-                        std::cout << "  ❌ Clip " << clipId << " not found" << std::endl;
-                        continue;
-                    }
-
-                    std::cout << "  Clip " << clipId << ": " << clip->startTime << "-"
-                              << clip->getEndTime() << std::endl;
-
-                    if (clip->startTime < selectionEnd && clip->getEndTime() > selectionStart) {
-                        double newStart = std::max(clip->startTime, selectionStart);
-                        double newEnd = std::min(clip->getEndTime(), selectionEnd);
-                        double finalLength = newEnd - newStart;
-
-                        if (finalLength > 0.01) {
-                            bool needTrimLeft = (newStart > clip->startTime);
-                            bool needTrimRight = (newEnd < clip->getEndTime());
-
-                            // IMPORTANT: Order matters! Trim RIGHT first, then LEFT
-                            // This is because resizeContainerFromLeft keeps the right edge fixed
-
-                            // Step 1: Trim from right if needed (sets endTime to selectionEnd)
-                            if (needTrimRight) {
-                                double rightTrimLength = newEnd - clip->startTime;
-                                std::cout << "    -> Will trim RIGHT to length " << rightTrimLength
-                                          << " (endTime: " << clip->startTime + rightTrimLength
-                                          << ")" << std::endl;
-                                trimCommands.push_back(std::make_unique<ResizeClipCommand>(
-                                    clipId, rightTrimLength, false));
-                            }
-
-                            // Step 2: Trim from left if needed (sets startTime to selectionStart)
-                            if (needTrimLeft) {
-                                std::cout << "    -> Will trim LEFT to length " << finalLength
-                                          << " (startTime: " << newStart << ")" << std::endl;
-                                trimCommands.push_back(
-                                    std::make_unique<ResizeClipCommand>(clipId, finalLength, true));
-                            }
-                        }
-                    }
-                }
-
-                std::cout << "  Total trim operations: " << trimCommands.size() << std::endl;
-
-                // Always use compound operation for trim command (even for single operations)
-                // to ensure it's a single undo entry
-                if (!trimCommands.empty()) {
-                    std::cout << "  ✓ Starting compound operation" << std::endl;
-                    UndoManager::getInstance().beginCompoundOperation("Trim Clips");
-
-                    for (size_t i = 0; i < trimCommands.size(); i++) {
-                        std::cout << "  Executing trim " << (i + 1) << "/" << trimCommands.size()
-                                  << std::endl;
-                        UndoManager::getInstance().executeCommand(std::move(trimCommands[i]));
-                    }
-
-                    UndoManager::getInstance().endCompoundOperation();
-                    std::cout << "  ✓ Compound operation complete" << std::endl;
-                }
-
-                // Move cursor to end of selection after trim
-                auto& timelineController = mainComponent->mainView->getTimelineController();
-                std::cout << "  Setting cursor to end of selection: " << selectionEnd << std::endl;
-                timelineController.dispatch(SetEditCursorEvent{selectionEnd});
-
-                std::cout << "========================================" << std::endl;
-            }
-        }
+    callbacks.onJoinClips = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::joinClips, false);
     };
 
     callbacks.onSelectAll = [this]() {

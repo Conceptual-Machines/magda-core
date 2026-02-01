@@ -260,4 +260,39 @@ class PasteClipCommand : public SnapshotCommand<PasteClipState> {
     std::vector<ClipId> pastedClipIds_;
 };
 
+/**
+ * @brief State for JoinClipsCommand - stores both clip snapshots
+ */
+struct JoinClipsState {
+    ClipInfo leftClip;
+    ClipInfo rightClip;
+};
+
+/**
+ * @brief Command for joining two adjacent clips into one
+ *
+ * Merges the right clip into the left clip and deletes the right clip.
+ * This is the inverse of split.
+ */
+class JoinClipsCommand : public SnapshotCommand<JoinClipsState> {
+  public:
+    JoinClipsCommand(ClipId leftClipId, ClipId rightClipId);
+
+    juce::String getDescription() const override {
+        return "Join Clips";
+    }
+
+    bool canExecute() const override;
+
+  protected:
+    JoinClipsState captureState() override;
+    void restoreState(const JoinClipsState& state) override;
+    void performAction() override;
+    bool validateState() const override;
+
+  private:
+    ClipId leftClipId_;
+    ClipId rightClipId_;
+};
+
 }  // namespace magda

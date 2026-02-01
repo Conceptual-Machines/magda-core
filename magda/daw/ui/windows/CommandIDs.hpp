@@ -21,6 +21,7 @@ enum {
     deleteCmd = 0x1006,  // 'delete' is a keyword
     selectAll = 0x1007,
     splitOrTrim = 0x1008,  // Cmd+E: split at cursor, or trim to selection if time selection exists
+    joinClips = 0x1009,    // Cmd+J: join two adjacent clips into one
 
     // Transport menu
     play = 0x2000,
