@@ -111,7 +111,11 @@ void NoteComponent::mouseDrag(const juce::MouseEvent& e) {
     }
 
     // Calculate delta in parent coordinates
-    auto parentPos = e.getEventRelativeTo(parentGrid_).getPosition();
+    // Use getScreenPosition() to allow dragging beyond grid bounds
+    auto screenPos = e.getScreenPosition();
+    auto gridScreenPos = parentGrid_->localPointToGlobal(juce::Point<int>());
+    auto parentPos = screenPos - gridScreenPos;
+
     int deltaX = parentPos.x - dragStartPos_.x;
     int deltaY = parentPos.y - dragStartPos_.y;
 
@@ -123,9 +127,14 @@ void NoteComponent::mouseDrag(const juce::MouseEvent& e) {
             double rawStartBeat = juce::jmax(0.0, dragStartBeat_ + deltaBeat);
             int rawNoteNumber = juce::jlimit(0, 127, dragStartNoteNumber_ + deltaNote);
 
+            DBG("NOTE DRAG: dragStartBeat=" << dragStartBeat_ << ", deltaBeat=" << deltaBeat
+                                            << ", rawStartBeat=" << rawStartBeat);
+
             // Apply grid snap if available
             if (snapBeatToGrid) {
-                rawStartBeat = snapBeatToGrid(rawStartBeat);
+                double snappedBeat = snapBeatToGrid(rawStartBeat);
+                DBG("  Grid snap: " << rawStartBeat << " -> " << snappedBeat);
+                rawStartBeat = snappedBeat;
             }
 
             previewStartBeat_ = rawStartBeat;
