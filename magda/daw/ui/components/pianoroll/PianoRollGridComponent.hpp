@@ -38,10 +38,21 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
     // Keyboard handling
     bool keyPressed(const juce::KeyPress& key) override;
 
-    // Set the clip to display/edit
-    void setClip(ClipId clipId);
+    // Set the clip(s) to display/edit
+    void setClip(ClipId clipId);  // Single clip (backward compatibility)
+    void setClips(TrackId trackId, const std::vector<ClipId>& selectedClipIds,
+                  const std::vector<ClipId>& allClipIds);  // Multi-clip mode
     ClipId getClipId() const {
         return clipId_;
+    }
+    const std::vector<ClipId>& getClipIds() const {
+        return clipIds_;
+    }
+    const std::vector<ClipId>& getSelectedClipIds() const {
+        return selectedClipIds_;
+    }
+    TrackId getTrackId() const {
+        return trackId_;
     }
 
     // Zoom settings
@@ -140,7 +151,10 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
         onNoteDragging;  // clipId, index, previewBeat, isDragging
 
   private:
-    ClipId clipId_ = INVALID_CLIP_ID;
+    ClipId clipId_ = INVALID_CLIP_ID;      // Primary selected clip (for backward compatibility)
+    std::vector<ClipId> selectedClipIds_;  // All selected clips (editable)
+    std::vector<ClipId> clipIds_;          // All clips being displayed
+    TrackId trackId_ = INVALID_TRACK_ID;
 
     // Note range
     static constexpr int MIN_NOTE = 21;   // A0
@@ -195,6 +209,8 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
     // Helpers
     bool isBlackKey(int noteNumber) const;
     juce::Colour getClipColour() const;
+    juce::Colour getColourForClip(ClipId clipId) const;
+    bool isClipSelected(ClipId clipId) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PianoRollGridComponent)
 };

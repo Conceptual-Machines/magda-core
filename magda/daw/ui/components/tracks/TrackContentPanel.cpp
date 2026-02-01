@@ -1207,25 +1207,37 @@ void TrackContentPanel::rebuildClipComponents() {
 
         clipComp->onClipSelected = [](ClipId id) {
             SelectionManager::getInstance().selectClip(id);
-        };
 
-        clipComp->onClipDoubleClicked = [](ClipId id) {
-            // Toggle the appropriate editor in the bottom panel
+            // Auto-open the appropriate editor when a clip is selected
             const auto* clip = ClipManager::getInstance().getClip(id);
             if (!clip)
                 return;
 
-            ClipManager::getInstance().setSelectedClip(id);
-
             auto& panelController = daw::ui::PanelController::getInstance();
 
-            // Toggle: if bottom panel is already open, collapse it; otherwise expand
+            // Open bottom panel and switch to the right editor
+            panelController.setCollapsed(daw::ui::PanelLocation::Bottom, false);
+            if (clip->type == ClipType::MIDI) {
+                panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
+                                                   daw::ui::PanelContentType::PianoRoll);
+            } else {
+                panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
+                                                   daw::ui::PanelContentType::WaveformEditor);
+            }
+        };
+
+        clipComp->onClipDoubleClicked = [](ClipId id) {
+            // Double-click toggles the bottom panel closed (single click already opened it)
+            const auto* clip = ClipManager::getInstance().getClip(id);
+            if (!clip)
+                return;
+
+            auto& panelController = daw::ui::PanelController::getInstance();
             bool isCollapsed =
                 panelController.getPanelState(daw::ui::PanelLocation::Bottom).collapsed;
             if (isCollapsed) {
+                // If somehow collapsed, open it
                 panelController.setCollapsed(daw::ui::PanelLocation::Bottom, false);
-
-                // Switch to the appropriate editor based on clip type
                 if (clip->type == ClipType::MIDI) {
                     panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
                                                        daw::ui::PanelContentType::PianoRoll);
@@ -1234,6 +1246,7 @@ void TrackContentPanel::rebuildClipComponents() {
                                                        daw::ui::PanelContentType::WaveformEditor);
                 }
             } else {
+                // Already open - double-click closes it
                 panelController.setCollapsed(daw::ui::PanelLocation::Bottom, true);
             }
         };

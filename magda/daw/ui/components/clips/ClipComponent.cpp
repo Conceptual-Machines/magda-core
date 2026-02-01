@@ -1,5 +1,6 @@
 #include "ClipComponent.hpp"
 
+#include "../../panels/state/PanelController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../tracks/TrackContentPanel.hpp"
@@ -301,11 +302,30 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     auto& selectionManager = SelectionManager::getInstance();
     bool isAlreadySelected = selectionManager.isClipSelected(clipId_);
 
+    // Helper: ensure editor panel is open for the current clip type
+    auto ensureEditorOpen = [](ClipId id) {
+        const auto* c = ClipManager::getInstance().getClip(id);
+        if (!c)
+            return;
+        auto& pc = daw::ui::PanelController::getInstance();
+        pc.setCollapsed(daw::ui::PanelLocation::Bottom, false);
+        if (c->type == ClipType::MIDI) {
+            pc.setActiveTabByType(daw::ui::PanelLocation::Bottom,
+                                  daw::ui::PanelContentType::PianoRoll);
+        } else {
+            pc.setActiveTabByType(daw::ui::PanelLocation::Bottom,
+                                  daw::ui::PanelContentType::WaveformEditor);
+        }
+    };
+
     // Handle Cmd/Ctrl+click for toggle selection
     if (e.mods.isCommandDown()) {
         selectionManager.toggleClipSelection(clipId_);
         // Update local state
         isSelected_ = selectionManager.isClipSelected(clipId_);
+
+        // Open editor panel for updated selection
+        ensureEditorOpen(clipId_);
 
         // Don't start dragging on Cmd+click - it's just for selection
         dragMode_ = DragMode::None;
@@ -320,6 +340,10 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         } else {
             selectionManager.extendSelectionTo(clipId_);
             isSelected_ = selectionManager.isClipSelected(clipId_);
+
+            // Open editor panel for updated selection
+            ensureEditorOpen(clipId_);
+
             dragMode_ = DragMode::None;
             repaint();
             return;
@@ -351,17 +375,28 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
 
     // If clicking on a clip that's already part of a multi-selection,
     // keep the selection and prepare for potential multi-drag
-    if (isAlreadySelected && selectionManager.getSelectedClipCount() > 1) {
-        // Keep existing multi-selection, prepare for multi-drag
+    size_t selectedCount = selectionManager.getSelectedClipCount();
+    DBG("ClipComponent::mouseDown - clipId=" << clipId_ << ", isAlreadySelected="
+                                             << (isAlreadySelected ? "YES" : "NO")
+                                             << ", selectedCount=" << selectedCount);
+
+    if (isAlreadySelected && selectedCount > 1) {
+        // Clicking on a clip that's already selected in a multi-selection
+        // Keep the multi-selection on mouseDown (user might be about to drag all of them)
+        // but flag for deselection on mouseUp if no drag occurs
+        DBG("  -> Keeping multi-selection (already selected), will deselect on mouseUp if no drag");
         isSelected_ = true;
+        shouldDeselectOnMouseUp_ = true;
     } else {
-        // Single click on unselected clip - select only this one
+        // Clicking on unselected clip - select only this one
+        DBG("  -> Selecting only this clip");
         selectionManager.selectClip(clipId_);
         isSelected_ = true;
-    }
 
-    if (onClipSelected) {
-        onClipSelected(clipId_);
+        // Notify parent to update piano roll
+        if (onClipSelected) {
+            onClipSelected(clipId_);
+        }
     }
 
     // Store drag start info - use parent's coordinate space so position
@@ -663,6 +698,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
         parentPanel_->finishMultiClipDrag();
         dragMode_ = DragMode::None;
         isDragging_ = false;
+        shouldDeselectOnMouseUp_ = false;
         return;
     }
 
@@ -834,9 +870,23 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
         }
         isCommitting_ = false;
     } else {
+        // No drag occurred — if this was a plain click on a multi-selected clip,
+        // reduce to single selection (standard DAW behavior)
+        if (shouldDeselectOnMouseUp_) {
+            auto& sm = SelectionManager::getInstance();
+            sm.selectClip(clipId_);
+            isSelected_ = true;
+
+            if (onClipSelected) {
+                onClipSelected(clipId_);
+            }
+        }
+
         dragMode_ = DragMode::None;
         isDragging_ = false;
     }
+
+    shouldDeselectOnMouseUp_ = false;
 }
 
 void ClipComponent::mouseMove(const juce::MouseEvent& e) {

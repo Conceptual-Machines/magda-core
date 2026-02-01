@@ -105,7 +105,8 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     double previewStartTime_ = 0.0;
     double previewLength_ = 0.0;
     bool isDragging_ = false;
-    bool isCommitting_ = false;  // True during mouseUp commit phase
+    bool isCommitting_ = false;             // True during mouseUp commit phase
+    bool shouldDeselectOnMouseUp_ = false;  // Delayed deselection for multi-selection
 
     // Stretch state
     double dragStartStretchFactor_ = 1.0;

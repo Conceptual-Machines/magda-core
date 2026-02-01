@@ -589,9 +589,9 @@ void PianoRollContent::mouseWheelMove(const juce::MouseEvent& e,
 }
 
 void PianoRollContent::updateGridSize() {
-    const auto* clip = editingClipId_ != magda::INVALID_CLIP_ID
-                           ? magda::ClipManager::getInstance().getClip(editingClipId_)
-                           : nullptr;
+    auto& clipManager = magda::ClipManager::getInstance();
+    const auto* clip =
+        editingClipId_ != magda::INVALID_CLIP_ID ? clipManager.getClip(editingClipId_) : nullptr;
 
     // Get tempo to convert between seconds and beats
     double tempo = 120.0;
@@ -609,10 +609,23 @@ void PianoRollContent::updateGridSize() {
     // Calculate clip position and length in beats
     double clipStartBeats = 0.0;
     double clipLengthBeats = 0.0;
-    if (clip) {
+
+    // When multiple clips are selected, compute the combined range
+    const auto& selectedClipIds = gridComponent_->getSelectedClipIds();
+    if (selectedClipIds.size() > 1) {
+        double earliestStart = std::numeric_limits<double>::max();
+        double latestEnd = 0.0;
+        for (magda::ClipId id : selectedClipIds) {
+            const auto* c = clipManager.getClip(id);
+            if (!c)
+                continue;
+            earliestStart = juce::jmin(earliestStart, c->startTime);
+            latestEnd = juce::jmax(latestEnd, c->startTime + c->length);
+        }
+        clipStartBeats = earliestStart / secondsPerBeat;
+        clipLengthBeats = (latestEnd - earliestStart) / secondsPerBeat;
+    } else if (clip) {
         if (clip->view == magda::ClipView::Session) {
-            // Session clips: startTime is always 0, length is clip length (seconds) converted to
-            // beats
             clipStartBeats = 0.0;
             clipLengthBeats = clip->length / secondsPerBeat;
         } else {
@@ -627,14 +640,15 @@ void PianoRollContent::updateGridSize() {
 
     gridComponent_->setSize(gridWidth, gridHeight);
 
-    // Update grid's display mode and clip boundaries
-    gridComponent_->setRelativeMode(relativeTimeMode_);
+    // For multi-clip, force absolute mode; otherwise respect the setting
+    bool useRelativeMode = relativeTimeMode_ && selectedClipIds.size() <= 1;
+    gridComponent_->setRelativeMode(useRelativeMode);
     gridComponent_->setClipStartBeats(clipStartBeats);
     gridComponent_->setClipLengthBeats(clipLengthBeats);
     gridComponent_->setTimelineLengthBeats(displayLengthBeats);
 
     // Pass loop region data to grid
-    if (clip) {
+    if (clip && selectedClipIds.size() <= 1) {
         gridComponent_->setLoopRegion(clip->internalLoopOffset, clip->internalLoopLength,
                                       clip->internalLoopEnabled);
     } else {
@@ -708,6 +722,54 @@ void PianoRollContent::setRelativeTimeMode(bool relative) {
         relativeTimeMode_ = relative;
         timeModeButton_->setButtonText(relative ? "REL" : "ABS");
         timeModeButton_->setToggleState(relative, juce::dontSendNotification);
+
+        // Reload clips based on new mode
+        if (editingClipId_ != magda::INVALID_CLIP_ID) {
+            auto& clipManager = magda::ClipManager::getInstance();
+            auto& selectionManager = magda::SelectionManager::getInstance();
+            const auto* clip = clipManager.getClip(editingClipId_);
+            if (clip && clip->type == magda::ClipType::MIDI) {
+                magda::TrackId trackId = clip->trackId;
+
+                // Get all selected clips
+                const auto& selectedClipsSet = selectionManager.getSelectedClips();
+                std::vector<magda::ClipId> selectedMidiClips;
+
+                // Filter selected clips to only MIDI clips on this track
+                for (magda::ClipId id : selectedClipsSet) {
+                    auto* c = clipManager.getClip(id);
+                    if (c && c->type == magda::ClipType::MIDI && c->trackId == trackId) {
+                        selectedMidiClips.push_back(id);
+                    }
+                }
+
+                // If no selected clips or selected clips are on different track, use just the
+                // primary
+                if (selectedMidiClips.empty()) {
+                    selectedMidiClips.push_back(editingClipId_);
+                }
+
+                if (relative) {
+                    // Relative mode: show only selected clips
+                    gridComponent_->setClips(trackId, selectedMidiClips, selectedMidiClips);
+                } else {
+                    // Absolute mode: show ALL MIDI clips on this track
+                    auto allClipsOnTrack = clipManager.getClipsOnTrack(trackId);
+
+                    // Filter to MIDI clips only
+                    std::vector<magda::ClipId> allMidiClips;
+                    for (magda::ClipId id : allClipsOnTrack) {
+                        auto* c = clipManager.getClip(id);
+                        if (c && c->type == magda::ClipType::MIDI) {
+                            allMidiClips.push_back(id);
+                        }
+                    }
+
+                    gridComponent_->setClips(trackId, selectedMidiClips, allMidiClips);
+                }
+            }
+        }
+
         updateGridSize();  // Grid size changes between modes
         updateTimeRuler();
         updateVelocityLane();
@@ -787,33 +849,92 @@ void PianoRollContent::clipsChanged() {
 }
 
 void PianoRollContent::clipPropertyChanged(magda::ClipId clipId) {
-    if (clipId == editingClipId_) {
+    // Check if this clip is one of the displayed clips
+    const auto& displayedClips = gridComponent_->getClipIds();
+    bool isDisplayed = false;
+    for (magda::ClipId id : displayedClips) {
+        if (id == clipId) {
+            isDisplayed = true;
+            break;
+        }
+    }
+
+    if (isDisplayed) {
         // Defer UI refresh asynchronously to prevent deleting components during event handling
-        // This is the core of the Observer pattern - data changes notify listeners,
-        // and listeners schedule their own UI updates safely
-        // Use SafePointer to avoid use-after-free if component is destroyed before callback runs
         juce::Component::SafePointer<PianoRollContent> safeThis(this);
-        juce::MessageManager::callAsync([safeThis, clipId]() {
+        juce::MessageManager::callAsync([safeThis]() {
             if (auto* self = safeThis.getComponent()) {
-                // Verify clip is still being edited (could have changed during async delay)
-                if (clipId == self->editingClipId_) {
-                    self->gridComponent_->refreshNotes();
-                    self->updateGridSize();
-                    self->updateTimeRuler();
-                    self->updateVelocityLane();
-                    self->repaint();
-                }
+                self->updateGridSize();
+                self->updateVelocityLane();
+                self->repaint();
             }
         });
     }
 }
 
 void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
+    if (clipId == magda::INVALID_CLIP_ID) {
+        // Selection cleared - clear the piano roll
+        editingClipId_ = magda::INVALID_CLIP_ID;
+        gridComponent_->setClip(magda::INVALID_CLIP_ID);
+        updateGridSize();
+        updateTimeRuler();
+        updateVelocityLane();
+        repaint();
+        return;
+    }
+
     if (clipId != magda::INVALID_CLIP_ID) {
-        const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+        auto& clipManager = magda::ClipManager::getInstance();
+        auto& selectionManager = magda::SelectionManager::getInstance();
+        const auto* clip = clipManager.getClip(clipId);
         if (clip && clip->type == magda::ClipType::MIDI) {
             editingClipId_ = clipId;
-            gridComponent_->setClip(clipId);
+
+            magda::TrackId trackId = clip->trackId;
+
+            // Get all selected clips
+            const auto& selectedClipsSet = selectionManager.getSelectedClips();
+            DBG("PianoRoll: Total selected clips: " << selectedClipsSet.size());
+
+            std::vector<magda::ClipId> selectedMidiClips;
+
+            // Filter selected clips to only MIDI clips on this track
+            for (magda::ClipId id : selectedClipsSet) {
+                auto* c = clipManager.getClip(id);
+                if (c && c->type == magda::ClipType::MIDI && c->trackId == trackId) {
+                    selectedMidiClips.push_back(id);
+                    DBG("  - Selected MIDI clip on track: " << id);
+                }
+            }
+
+            // If no selected clips or selected clips are on different track, use just the primary
+            if (selectedMidiClips.empty()) {
+                selectedMidiClips.push_back(clipId);
+                DBG("  - No multi-selection, using primary clip: " << clipId);
+            }
+
+            DBG("PianoRoll: Selected MIDI clips count: " << selectedMidiClips.size());
+
+            if (relativeTimeMode_) {
+                // Relative mode: show only selected clips
+                gridComponent_->setClips(trackId, selectedMidiClips, selectedMidiClips);
+            } else {
+                // Absolute mode: show ALL MIDI clips on this track
+                auto allClipsOnTrack = clipManager.getClipsOnTrack(trackId);
+
+                // Filter to MIDI clips only
+                std::vector<magda::ClipId> allMidiClips;
+                for (magda::ClipId id : allClipsOnTrack) {
+                    auto* c = clipManager.getClip(id);
+                    if (c && c->type == magda::ClipType::MIDI) {
+                        allMidiClips.push_back(id);
+                    }
+                }
+
+                DBG("PianoRoll: Total MIDI clips on track: " << allMidiClips.size());
+                gridComponent_->setClips(trackId, selectedMidiClips, allMidiClips);
+            }
 
             // Session clips are locked to relative mode
             bool isSessionClip = (clip->view == magda::ClipView::Session);
@@ -893,11 +1014,47 @@ void PianoRollContent::selectionTypeChanged(magda::SelectionType /*newType*/) {
     repaint();
 }
 
-void PianoRollContent::multiClipSelectionChanged(
-    const std::unordered_set<magda::ClipId>& /*clipIds*/) {
-    // Multi-clip selection changed
-    // In absolute mode, we show all clips on the track regardless of selection
-    // In relative mode, we could show selected clips, but for now just update the view
+void PianoRollContent::multiClipSelectionChanged(const std::unordered_set<magda::ClipId>& clipIds) {
+    // Multi-clip selection changed - update piano roll to show selected clips
+    if (clipIds.empty()) {
+        return;
+    }
+
+    auto& clipManager = magda::ClipManager::getInstance();
+
+    // Get the first clip to determine the track
+    magda::ClipId firstClipId = *clipIds.begin();
+    const auto* firstClip = clipManager.getClip(firstClipId);
+    if (!firstClip || firstClip->type != magda::ClipType::MIDI) {
+        return;
+    }
+
+    magda::TrackId trackId = firstClip->trackId;
+
+    // Filter selected clips to only MIDI clips on this track
+    std::vector<magda::ClipId> selectedMidiClips;
+    for (magda::ClipId id : clipIds) {
+        auto* c = clipManager.getClip(id);
+        if (c && c->type == magda::ClipType::MIDI && c->trackId == trackId) {
+            selectedMidiClips.push_back(id);
+        }
+    }
+
+    if (selectedMidiClips.empty()) {
+        return;
+    }
+
+    // Update editing clip ID to the first selected clip
+    editingClipId_ = selectedMidiClips[0];
+
+    // Multi-clip: always use absolute positioning so clips appear
+    // as one continuous extended view on the timeline
+    gridComponent_->setRelativeMode(false);
+    gridComponent_->setClips(trackId, selectedMidiClips, selectedMidiClips);
+
+    updateGridSize();
+    updateTimeRuler();
+    updateVelocityLane();
     repaint();
 }
 

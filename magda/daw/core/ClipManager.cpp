@@ -615,10 +615,10 @@ void ClipManager::setSelectedClip(ClipId clipId) {
 }
 
 void ClipManager::clearClipSelection() {
-    if (selectedClipId_ != INVALID_CLIP_ID) {
-        selectedClipId_ = INVALID_CLIP_ID;
-        notifyClipSelectionChanged(INVALID_CLIP_ID);
-    }
+    selectedClipId_ = INVALID_CLIP_ID;
+    // Always notify so listeners can clear stale visual state
+    // (e.g. ClipComponents still showing selected after multi-clip deselection)
+    notifyClipSelectionChanged(INVALID_CLIP_ID);
 }
 
 // ============================================================================

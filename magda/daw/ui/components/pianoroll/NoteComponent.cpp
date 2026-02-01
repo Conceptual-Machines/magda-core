@@ -4,8 +4,8 @@
 
 namespace magda {
 
-NoteComponent::NoteComponent(size_t noteIndex, PianoRollGridComponent* parent)
-    : noteIndex_(noteIndex), parentGrid_(parent) {
+NoteComponent::NoteComponent(size_t noteIndex, PianoRollGridComponent* parent, ClipId sourceClipId)
+    : noteIndex_(noteIndex), sourceClipId_(sourceClipId), parentGrid_(parent) {
     setName("NoteComponent");
 }
 
@@ -128,7 +128,7 @@ void NoteComponent::mouseDrag(const juce::MouseEvent& e) {
 
     switch (dragMode_) {
         case DragMode::Move: {
-            double rawStartBeat = juce::jmax(0.0, dragStartBeat_ + deltaBeat);
+            double rawStartBeat = dragStartBeat_ + deltaBeat;
             int rawNoteNumber = juce::jlimit(0, 127, dragStartNoteNumber_ + deltaNote);
 
             DBG("NOTE DRAG: dragStartBeat=" << dragStartBeat_ << ", deltaBeat=" << deltaBeat
