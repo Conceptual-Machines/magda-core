@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ClipInfo.hpp"
 #include "TrackManager.hpp"
 #include "UndoManager.hpp"
 
@@ -42,6 +43,7 @@ class DeleteTrackCommand : public UndoableCommand {
   private:
     TrackId trackId_;
     TrackInfo storedTrack_;
+    std::vector<ClipInfo> storedClips_;
     bool executed_ = false;
 };
 

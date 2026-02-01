@@ -2,6 +2,8 @@
 
 #include <iostream>
 
+#include "ClipManager.hpp"
+
 namespace magda {
 
 // ============================================================================
@@ -26,6 +28,13 @@ void CreateTrackCommand::execute() {
 void CreateTrackCommand::undo() {
     if (!executed_ || createdTrackId_ == INVALID_TRACK_ID) {
         return;
+    }
+
+    // Delete all clips on this track before deleting the track
+    auto& clipManager = ClipManager::getInstance();
+    auto clipIds = clipManager.getClipsOnTrack(createdTrackId_);
+    for (auto clipId : clipIds) {
+        clipManager.deleteClip(clipId);
     }
 
     TrackManager::getInstance().deleteTrack(createdTrackId_);
@@ -63,9 +72,21 @@ void DeleteTrackCommand::execute() {
         return;
     }
 
-    // Store full track info for undo (only on first execute)
+    // Store full track info and clips for undo (only on first execute)
     if (!executed_) {
         storedTrack_ = *track;
+    }
+
+    // Store and remove all clips on this track
+    auto& clipManager = ClipManager::getInstance();
+    auto clipIds = clipManager.getClipsOnTrack(trackId_);
+    storedClips_.clear();
+    for (auto clipId : clipIds) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (clip) {
+            storedClips_.push_back(*clip);
+        }
+        clipManager.deleteClip(clipId);
     }
 
     trackManager.deleteTrack(trackId_);
@@ -80,6 +101,13 @@ void DeleteTrackCommand::undo() {
     }
 
     TrackManager::getInstance().restoreTrack(storedTrack_);
+
+    // Restore clips that were on this track
+    auto& clipManager = ClipManager::getInstance();
+    for (const auto& clip : storedClips_) {
+        clipManager.restoreClip(clip);
+    }
+
     std::cout << "📝 UNDO: Restored track " << trackId_ << std::endl;
 }
 
@@ -118,6 +146,13 @@ void DuplicateTrackCommand::execute() {
 void DuplicateTrackCommand::undo() {
     if (!executed_ || duplicatedTrackId_ == INVALID_TRACK_ID) {
         return;
+    }
+
+    // Delete all clips on the duplicated track before deleting the track
+    auto& clipManager = ClipManager::getInstance();
+    auto clipIds = clipManager.getClipsOnTrack(duplicatedTrackId_);
+    for (auto clipId : clipIds) {
+        clipManager.deleteClip(clipId);
     }
 
     TrackManager::getInstance().deleteTrack(duplicatedTrackId_);

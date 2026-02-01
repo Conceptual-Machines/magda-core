@@ -523,6 +523,14 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
 
     if (inUpperZone) {
         // UPPER ZONE: Clip operations
+        // Clear time selection when clicking in upper zone outside the selection area
+        if (timelineController && timelineController->getState().selection.isActive()) {
+            if (!isOnExistingSelection(event.x, event.y)) {
+                if (onTimeSelectionChanged) {
+                    onTimeSelectionChanged(-1.0, -1.0, {});
+                }
+            }
+        }
         if (!onClip) {
             // Clicked empty space in upper zone - deselect clips (unless Cmd held)
             if (!event.mods.isCommandDown()) {
@@ -1059,16 +1067,10 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
 }
 
 void TrackContentPanel::mouseDoubleClick(const juce::MouseEvent& event) {
-    // Check if double-clicking on an existing time selection -> create clip
-    if (isOnExistingSelection(event.x, event.y)) {
+    // Double-clicking on an existing time selection creates a clip (only if no clip underneath)
+    if (isOnExistingSelection(event.x, event.y) &&
+        getClipComponentAt(event.x, event.y) == nullptr) {
         createClipFromTimeSelection();
-        // Keep the time selection visible after creating clip
-        // (allows creating multiple clips or using selection for reference)
-    } else {
-        // Double-click on empty area - clear time selection
-        if (onTimeSelectionChanged) {
-            onTimeSelectionChanged(-1.0, -1.0, {});
-        }
     }
 }
 
