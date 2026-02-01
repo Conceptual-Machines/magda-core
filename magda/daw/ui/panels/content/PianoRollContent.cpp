@@ -1010,8 +1010,17 @@ void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
             updateTimeRuler();
             updateVelocityLane();
 
-            // Reset scroll to bar 1 when selecting a new clip
-            viewport_->setViewPosition(0, viewport_->getViewPositionY());
+            // Scroll to clip start position
+            int scrollX = 0;
+            if (!relativeTimeMode_ && clip->view != magda::ClipView::Session) {
+                double tempo = 120.0;
+                if (auto* controller = magda::TimelineController::getCurrent()) {
+                    tempo = controller->getState().tempo.bpm;
+                }
+                double clipStartBeats = clip->startTime * (tempo / 60.0);
+                scrollX = static_cast<int>(clipStartBeats * horizontalZoom_);
+            }
+            viewport_->setViewPosition(scrollX, viewport_->getViewPositionY());
 
             repaint();
         }
@@ -1136,8 +1145,20 @@ void PianoRollContent::setClip(magda::ClipId clipId) {
         updateTimeRuler();
         updateVelocityLane();
 
-        // Reset scroll to bar 1 when setting a new clip
-        viewport_->setViewPosition(0, viewport_->getViewPositionY());
+        // Scroll to clip start position
+        int scrollX = 0;
+        if (!relativeTimeMode_) {
+            const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+            if (clip && clip->view != magda::ClipView::Session) {
+                double tempo = 120.0;
+                if (auto* controller = magda::TimelineController::getCurrent()) {
+                    tempo = controller->getState().tempo.bpm;
+                }
+                double clipStartBeats = clip->startTime * (tempo / 60.0);
+                scrollX = static_cast<int>(clipStartBeats * horizontalZoom_);
+            }
+        }
+        viewport_->setViewPosition(scrollX, viewport_->getViewPositionY());
 
         repaint();
     }
