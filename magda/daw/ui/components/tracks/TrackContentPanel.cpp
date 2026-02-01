@@ -1412,6 +1412,23 @@ void TrackContentPanel::finishMarqueeSelection(bool addToSelection) {
             // Replace selection
             SelectionManager::getInstance().selectClips(clipsInRect);
         }
+
+        // Auto-open the appropriate editor panel for the selected clips
+        if (!clipsInRect.empty()) {
+            ClipId firstId = *clipsInRect.begin();
+            const auto* clip = ClipManager::getInstance().getClip(firstId);
+            if (clip) {
+                auto& panelController = daw::ui::PanelController::getInstance();
+                panelController.setCollapsed(daw::ui::PanelLocation::Bottom, false);
+                if (clip->type == ClipType::MIDI) {
+                    panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
+                                                       daw::ui::PanelContentType::PianoRoll);
+                } else {
+                    panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
+                                                       daw::ui::PanelContentType::WaveformEditor);
+                }
+            }
+        }
     }
     // If marquee was tiny and caught nothing, preserve existing selection
 
