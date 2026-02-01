@@ -835,14 +835,45 @@ void PianoRollContent::onDeactivated() {
 
 void PianoRollContent::clipsChanged() {
     if (editingClipId_ != magda::INVALID_CLIP_ID) {
-        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        auto& clipManager = magda::ClipManager::getInstance();
+        const auto* clip = clipManager.getClip(editingClipId_);
         if (!clip) {
             editingClipId_ = magda::INVALID_CLIP_ID;
             gridComponent_->setClip(magda::INVALID_CLIP_ID);
             velocityLane_->setClip(magda::INVALID_CLIP_ID);
+        } else {
+            // Re-fetch all clips on this track (a split/delete may have changed the list)
+            magda::TrackId trackId = clip->trackId;
+            auto& selectionManager = magda::SelectionManager::getInstance();
+            const auto& selectedClipsSet = selectionManager.getSelectedClips();
+
+            std::vector<magda::ClipId> selectedMidiClips;
+            for (magda::ClipId id : selectedClipsSet) {
+                auto* c = clipManager.getClip(id);
+                if (c && c->type == magda::ClipType::MIDI && c->trackId == trackId) {
+                    selectedMidiClips.push_back(id);
+                }
+            }
+            if (selectedMidiClips.empty()) {
+                selectedMidiClips.push_back(editingClipId_);
+            }
+
+            if (relativeTimeMode_) {
+                gridComponent_->setClips(trackId, selectedMidiClips, selectedMidiClips);
+            } else {
+                auto allClipsOnTrack = clipManager.getClipsOnTrack(trackId);
+                std::vector<magda::ClipId> allMidiClips;
+                for (magda::ClipId id : allClipsOnTrack) {
+                    auto* c = clipManager.getClip(id);
+                    if (c && c->type == magda::ClipType::MIDI) {
+                        allMidiClips.push_back(id);
+                    }
+                }
+                gridComponent_->setClips(trackId, selectedMidiClips, allMidiClips);
+            }
         }
     }
-    gridComponent_->refreshNotes();
+    updateGridSize();
     updateTimeRuler();
     updateVelocityLane();
     repaint();

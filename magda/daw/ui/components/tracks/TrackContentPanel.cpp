@@ -998,10 +998,13 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
                     clickTime = snapTimeToGrid(clickTime);
                 }
 
-                // Select the track that was clicked on so cursor is visible
-                int trackIndex = getTrackIndexAtY(event.y);
-                if (trackIndex >= 0) {
-                    selectTrack(trackIndex);
+                // Only select track if no clips are currently selected
+                // (selectTrack triggers SelectionManager which clears clip selection)
+                if (SelectionManager::getInstance().getSelectedClipCount() == 0) {
+                    int trackIndex = getTrackIndexAtY(event.y);
+                    if (trackIndex >= 0) {
+                        selectTrack(trackIndex);
+                    }
                 }
 
                 // Dispatch edit cursor change through controller (separate from playhead)
