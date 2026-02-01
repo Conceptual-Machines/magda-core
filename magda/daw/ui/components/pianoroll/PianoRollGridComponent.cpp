@@ -524,72 +524,58 @@ void PianoRollGridComponent::createNoteComponents() {
             continue;
         }
 
-        // Check if this clip is in the selected set
-        bool isEditable = isClipSelected(clipId);
         juce::Colour noteColour = getColourForClip(clipId);
 
-        // If not editable, make notes semi-transparent to show they're read-only
-        if (!isEditable) {
-            noteColour = noteColour.withAlpha(0.5f);
-        }
-
-        DBG("  Creating notes for clip " << clipId << ": " << clip->midiNotes.size()
-                                         << " notes, editable=" << (isEditable ? "YES" : "NO"));
+        DBG("  Creating notes for clip " << clipId << ": " << clip->midiNotes.size() << " notes");
 
         // Create note component for each note in this clip
         for (size_t i = 0; i < clip->midiNotes.size(); i++) {
             auto noteComp = std::make_unique<NoteComponent>(i, this, clipId);
 
-            // Only setup callbacks for editable (selected) clips
-            if (isEditable) {
-                noteComp->onNoteSelected = [this, clipId](size_t index) {
-                    // Deselect other notes
-                    for (auto& nc : noteComponents_) {
-                        if (nc->getSourceClipId() != clipId || nc->getNoteIndex() != index) {
-                            nc->setSelected(false);
-                        }
+            noteComp->onNoteSelected = [this, clipId](size_t index) {
+                // Deselect other notes
+                for (auto& nc : noteComponents_) {
+                    if (nc->getSourceClipId() != clipId || nc->getNoteIndex() != index) {
+                        nc->setSelected(false);
                     }
-                    selectedNoteIndex_ = static_cast<int>(index);
+                }
+                selectedNoteIndex_ = static_cast<int>(index);
 
-                    if (onNoteSelected) {
-                        onNoteSelected(clipId, index);
-                    }
-                };
+                if (onNoteSelected) {
+                    onNoteSelected(clipId, index);
+                }
+            };
 
-                noteComp->onNoteMoved = [this, clipId](size_t index, double newBeat,
-                                                       int newNoteNumber) {
-                    if (onNoteMoved) {
-                        onNoteMoved(clipId, index, newBeat, newNoteNumber);
-                    }
-                };
+            noteComp->onNoteMoved = [this, clipId](size_t index, double newBeat,
+                                                   int newNoteNumber) {
+                if (onNoteMoved) {
+                    onNoteMoved(clipId, index, newBeat, newNoteNumber);
+                }
+            };
 
-                noteComp->onNoteResized = [this, clipId](size_t index, double newLength,
-                                                         bool fromStart) {
-                    (void)fromStart;  // Length change is already computed
-                    if (onNoteResized) {
-                        onNoteResized(clipId, index, newLength);
-                    }
-                };
+            noteComp->onNoteResized = [this, clipId](size_t index, double newLength,
+                                                     bool fromStart) {
+                (void)fromStart;  // Length change is already computed
+                if (onNoteResized) {
+                    onNoteResized(clipId, index, newLength);
+                }
+            };
 
-                noteComp->onNoteDeleted = [this, clipId](size_t index) {
-                    if (onNoteDeleted) {
-                        onNoteDeleted(clipId, index);
-                        selectedNoteIndex_ = -1;
-                    }
-                };
+            noteComp->onNoteDeleted = [this, clipId](size_t index) {
+                if (onNoteDeleted) {
+                    onNoteDeleted(clipId, index);
+                    selectedNoteIndex_ = -1;
+                }
+            };
 
-                noteComp->onNoteDragging = [this, clipId](size_t index, double previewBeat,
-                                                          bool isDragging) {
-                    if (onNoteDragging) {
-                        onNoteDragging(clipId, index, previewBeat, isDragging);
-                    }
-                };
+            noteComp->onNoteDragging = [this, clipId](size_t index, double previewBeat,
+                                                      bool isDragging) {
+                if (onNoteDragging) {
+                    onNoteDragging(clipId, index, previewBeat, isDragging);
+                }
+            };
 
-                noteComp->snapBeatToGrid = [this](double beat) { return snapBeatToGrid(beat); };
-            } else {
-                // Non-editable notes: disable all interaction
-                noteComp->setInterceptsMouseClicks(false, false);
-            }
+            noteComp->snapBeatToGrid = [this](double beat) { return snapBeatToGrid(beat); };
 
             noteComp->updateFromNote(clip->midiNotes[i], noteColour);
             addAndMakeVisible(noteComp.get());
@@ -645,12 +631,6 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
 
         // Determine note colour based on editability and state
         juce::Colour noteColour = getColourForClip(clipId);
-
-        // Non-selected clips are semi-transparent (read-only)
-        bool isEditable = isClipSelected(clipId);
-        if (!isEditable) {
-            noteColour = noteColour.withAlpha(0.5f);
-        }
 
         // Notes before offset are greyed out
         bool isBeforeOffset = !relativeMode_ && (note.startBeat < clip->midiOffset);

@@ -188,13 +188,6 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
 
             g.fillRoundedRectangle(noteX, noteY, noteWidth, noteHeight, 1.0f);
         }
-    } else {
-        // Draw placeholder pattern for empty MIDI clip
-        g.setColour(clip.colour.withAlpha(0.3f));
-        for (int i = 0; i < 4; i++) {
-            int y = noteArea.getY() + i * (noteArea.getHeight() / 4);
-            g.drawHorizontalLine(y, noteArea.getX(), noteArea.getRight());
-        }
     }
 
     // Border
