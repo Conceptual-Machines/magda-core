@@ -772,6 +772,33 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
 
         // Trim all captured clips to the new selection bounds
         auto& clipManager = ClipManager::getInstance();
+
+        // Count how many clips will be trimmed
+        int clipsToTrim = 0;
+        for (const auto& [clipId, originalData] : originalClipsInSelection_) {
+            const auto* clip = clipManager.getClip(clipId);
+            if (!clip)
+                continue;
+
+            // Check if clip overlaps with new selection
+            if (clip->startTime < newEnd && clip->getEndTime() > newStart) {
+                double clipNewStart = std::max(clip->startTime, newStart);
+                double clipNewEnd = std::min(clip->getEndTime(), newEnd);
+                double newLength = clipNewEnd - clipNewStart;
+
+                if (newLength > 0.01) {  // At least 10ms
+                    if (clipNewStart > clip->startTime || clipNewEnd < clip->getEndTime()) {
+                        clipsToTrim++;
+                    }
+                }
+            }
+        }
+
+        // Use compound operation if trimming multiple clips
+        if (clipsToTrim > 1) {
+            UndoManager::getInstance().beginCompoundOperation("Trim Clips");
+        }
+
         for (const auto& [clipId, originalData] : originalClipsInSelection_) {
             const auto* clip = clipManager.getClip(clipId);
             if (!clip)
@@ -795,6 +822,10 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
                     }
                 }
             }
+        }
+
+        if (clipsToTrim > 1) {
+            UndoManager::getInstance().endCompoundOperation();
         }
 
         // Clear drag state
