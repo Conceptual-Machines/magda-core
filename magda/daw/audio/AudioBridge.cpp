@@ -428,6 +428,21 @@ void AudioBridge::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip) {
     // Force offset to 0 to ensure notes play from clip start
     midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
 
+    // Set up internal looping on the TE clip
+    if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
+        auto& tempoSeq = edit_.tempoSequence;
+        double loopStart = clip->internalLoopOffset;
+        double loopEnd = loopStart + clip->internalLoopLength;
+        auto loopStartTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopStart));
+        auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEnd));
+
+        midiClipPtr->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
+        midiClipPtr->setLoopRangeBeats(
+            {te::BeatPosition::fromBeats(loopStart), te::BeatPosition::fromBeats(loopEnd)});
+    } else {
+        midiClipPtr->disableLooping();
+    }
+
     // Clear existing notes and rebuild from ClipManager
     auto& sequence = midiClipPtr->getSequence();
     sequence.clear(nullptr);
@@ -443,11 +458,16 @@ void AudioBridge::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip) {
 
     DBG("MIDI SYNC clip " << clipId << ":");
     DBG("  midiOffset=" << clip->midiOffset << ", clipLength=" << clipLengthBeats << " beats");
+    DBG("  loopEnabled=" << (int)clip->internalLoopEnabled
+                         << ", loopOffset=" << clip->internalLoopOffset
+                         << ", loopLength=" << clip->internalLoopLength);
     DBG("  Visible range: [" << visibleStart << ", " << visibleEnd << ")");
     DBG("  Total notes: " << clip->midiNotes.size());
 
     // Only add notes that overlap with the visible range
     int addedCount = 0;
+    double loopEndBeat = clip->internalLoopOffset + clip->internalLoopLength;
+
     for (const auto& note : clip->midiNotes) {
         double noteStart = note.startBeat;
         double noteEnd = noteStart + note.lengthBeats;
@@ -457,9 +477,17 @@ void AudioBridge::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip) {
             continue;
         }
 
+        // When looping, truncate notes at loop boundary to prevent stuck notes
+        double adjustedLength = note.lengthBeats;
+        if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
+            if (noteStart >= loopEndBeat)
+                continue;
+            if (noteEnd > loopEndBeat)
+                adjustedLength = loopEndBeat - noteStart;
+        }
+
         // Calculate position relative to clip start (subtract midiOffset for session clips only)
         double adjustedStart = noteStart - effectiveOffset;
-        double adjustedLength = note.lengthBeats;
 
         // Truncate note if it starts before the visible range
         if (adjustedStart < 0.0) {

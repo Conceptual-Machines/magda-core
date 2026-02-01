@@ -336,12 +336,14 @@ InspectorContent::InspectorContent() {
     };
     addChildComponent(*clipEndValue_);
 
-    // Content offset (MIDI only - for non-destructive trim)
-    clipContentOffsetLabel_.setText("Content Offset", juce::dontSendNotification);
-    clipContentOffsetLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipContentOffsetLabel_.setColour(juce::Label::textColourId,
-                                      DarkTheme::getSecondaryTextColour());
-    addChildComponent(clipContentOffsetLabel_);
+    // Content offset icon (MIDI only - for non-destructive trim)
+    clipContentOffsetIcon_ = std::make_unique<magda::SvgButton>("Offset", BinaryData::Offset_svg,
+                                                                BinaryData::Offset_svgSize);
+    clipContentOffsetIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    clipContentOffsetIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipContentOffsetIcon_->setInterceptsMouseClicks(false, false);
+    clipContentOffsetIcon_->setTooltip("Content offset");
+    addChildComponent(*clipContentOffsetIcon_);
 
     clipContentOffsetValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
     clipContentOffsetValue_->setRange(0.0, 10000.0, 0.0);
@@ -765,13 +767,6 @@ void InspectorContent::resized() {
             bounds.removeFromTop(8);
         }
 
-        // Content Offset (MIDI only)
-        if (clipContentOffsetLabel_.isVisible()) {
-            clipContentOffsetLabel_.setBounds(bounds.removeFromTop(16));
-            clipContentOffsetValue_->setBounds(bounds.removeFromTop(22));
-            bounds.removeFromTop(8);
-        }
-
         // Loop: toggle + Pos / Length side by side
         if (clipLoopToggle_->isVisible()) {
             const int loopSize = 22;
@@ -790,6 +785,18 @@ void InspectorContent::resized() {
             clipLoopPosValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
             valueRow.removeFromLeft(gap);
             clipLoopLengthValue_->setBounds(valueRow);
+            bounds.removeFromTop(8);
+        }
+
+        // Content Offset — icon + single value field (underneath loop)
+        if (clipContentOffsetIcon_->isVisible()) {
+            const int iconSize = 22;
+            const int gap = 4;
+
+            auto valueRow = bounds.removeFromTop(iconSize);
+            clipContentOffsetIcon_->setBounds(valueRow.removeFromLeft(iconSize));
+            valueRow.removeFromLeft(gap);
+            clipContentOffsetValue_->setBounds(valueRow);
             bounds.removeFromTop(8);
         }
 
@@ -1291,10 +1298,10 @@ void InspectorContent::updateFromSelectedClip() {
         if (clip->type == magda::ClipType::MIDI &&
             (clip->view == magda::ClipView::Session || clip->internalLoopEnabled)) {
             clipContentOffsetValue_->setValue(clip->midiOffset, juce::dontSendNotification);
-            clipContentOffsetLabel_.setVisible(true);
+            clipContentOffsetIcon_->setVisible(true);
             clipContentOffsetValue_->setVisible(true);
         } else {
-            clipContentOffsetLabel_.setVisible(false);
+            clipContentOffsetIcon_->setVisible(false);
             clipContentOffsetValue_->setVisible(false);
         }
 
@@ -1371,7 +1378,7 @@ void InspectorContent::showClipControls(bool show) {
     clipEndValue_->setVisible(show);
     // Content offset visibility is managed by updateFromSelectedClip (MIDI clips only)
     if (!show) {
-        clipContentOffsetLabel_.setVisible(false);
+        clipContentOffsetIcon_->setVisible(false);
         clipContentOffsetValue_->setVisible(false);
     }
     clipLoopToggle_->setVisible(show);

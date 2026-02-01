@@ -147,6 +147,20 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         }
     }
 
+    // Draw content offset marker (yellow vertical line)
+    if (clipIds_.size() <= 1 && clipId_ != INVALID_CLIP_ID) {
+        const auto* offsetClip = ClipManager::getInstance().getClip(clipId_);
+        if (offsetClip && offsetClip->midiOffset > 0.0) {
+            double offsetBeat =
+                relativeMode_ ? offsetClip->midiOffset : (clipStartBeats_ + offsetClip->midiOffset);
+            int offsetX = beatToPixel(offsetBeat);
+            if (offsetX >= 0 && offsetX <= bounds.getRight()) {
+                g.setColour(DarkTheme::getColour(DarkTheme::OFFSET_MARKER));
+                g.fillRect(offsetX - 1, 0, 2, bounds.getHeight());
+            }
+        }
+    }
+
     // Draw ghost loop-repeating notes (paint-only, non-interactive)
     if (loopEnabled_ && loopLengthBeats_ > 0.0 && clipIds_.size() <= 1) {
         auto& clipManager = ClipManager::getInstance();
