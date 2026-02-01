@@ -1250,8 +1250,15 @@ void ClipComponent::showContextMenu() {
 
             case 6: {  // Delete
                 auto selectedClips = selectionManager.getSelectedClips();
-                for (auto clipId : selectedClips) {
-                    clipManager.deleteClip(clipId);
+                if (!selectedClips.empty()) {
+                    if (selectedClips.size() > 1)
+                        UndoManager::getInstance().beginCompoundOperation("Delete Clips");
+                    for (auto clipId : selectedClips) {
+                        auto cmd = std::make_unique<DeleteClipCommand>(clipId);
+                        UndoManager::getInstance().executeCommand(std::move(cmd));
+                    }
+                    if (selectedClips.size() > 1)
+                        UndoManager::getInstance().endCompoundOperation();
                 }
                 selectionManager.clearSelection();
                 break;
