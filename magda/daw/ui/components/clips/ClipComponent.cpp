@@ -410,21 +410,12 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Handle Shift+click on edges for stretch, otherwise range selection
+    // Handle Shift+click on edges for stretch; Shift+body falls through to drag for duplicate
     if (e.mods.isShiftDown()) {
         if (isOnLeftEdge(e.x) || isOnRightEdge(e.x)) {
             // Shift+edge = stretch mode — fall through to drag setup below
-        } else {
-            selectionManager.extendSelectionTo(clipId_);
-            isSelected_ = selectionManager.isClipSelected(clipId_);
-
-            // Open editor panel for updated selection
-            ensureEditorOpen(clipId_);
-
-            dragMode_ = DragMode::None;
-            repaint();
-            return;
         }
+        // Shift+body = fall through to normal selection + drag setup (duplicate on drag)
     }
 
     // Handle Alt+click for blade/split
@@ -548,8 +539,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
     // Single clip drag logic
     isDragging_ = true;
 
-    // Alt+drag to duplicate: mark for duplication (created in mouseUp to avoid re-entrancy)
-    if (dragMode_ == DragMode::Move && e.mods.isAltDown() && !isDuplicating_) {
+    // Shift+drag to duplicate: mark for duplication (created in mouseUp to avoid re-entrancy)
+    if (dragMode_ == DragMode::Move && e.mods.isShiftDown() && !isDuplicating_) {
         isDuplicating_ = true;
     }
 

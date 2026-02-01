@@ -594,6 +594,9 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
         } else if (isOnExistingSelection(event.x, event.y)) {
             // Clicked inside existing time selection - prepare to move it
             const auto& selection = timelineController->getState().selection;
+            std::cout << "GRAB SELECTION: active=" << selection.isActive()
+                      << " start=" << selection.startTime << " end=" << selection.endTime
+                      << " tracks=" << selection.trackIndices.size() << std::endl;
             isMovingSelection = true;
             isCreatingSelection = false;
             currentDragType_ = DragType::MoveSelection;
@@ -602,7 +605,12 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
             moveSelectionOriginalEnd = selection.endTime;
             moveSelectionOriginalTracks = selection.trackIndices;
 
-            // Capture all clips within the time selection
+            // Shift+grab: split clips at selection boundaries before moving
+            if (event.mods.isShiftDown()) {
+                splitClipsAtSelectionBoundaries();
+            }
+
+            // Capture all clips within the time selection (after splits)
             captureClipsInTimeSelection();
             return;
         } else {
@@ -1056,6 +1064,11 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
 
                 if (onTimeSelectionChanged) {
                     onTimeSelectionChanged(start, end, trackIndices);
+                }
+
+                // Shift+drag: split clips at selection boundaries
+                if (isShiftHeld) {
+                    splitClipsAtSelectionBoundaries();
                 }
             }
         }
@@ -1749,6 +1762,81 @@ void TrackContentPanel::cancelMultiClipDrag() {
 // ============================================================================
 // Time Selection with Clips
 // ============================================================================
+
+void TrackContentPanel::splitClipsAtSelectionBoundaries() {
+    if (!timelineController)
+        return;
+
+    const auto& selection = timelineController->getState().selection;
+    if (!selection.isActive())
+        return;
+
+    double start = selection.startTime;
+    double end = selection.endTime;
+
+    const auto& clips = ClipManager::getInstance().getArrangementClips();
+
+    // For each clip, determine if it needs splitting at left, right, or both boundaries
+    struct SplitInfo {
+        ClipId clipId;
+        bool needsLeftSplit;
+        bool needsRightSplit;
+    };
+    std::vector<SplitInfo> clipsToSplit;
+
+    for (const auto& clip : clips) {
+        auto it = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), clip.trackId);
+        if (it == visibleTrackIds_.end())
+            continue;
+
+        int trackIndex = static_cast<int>(std::distance(visibleTrackIds_.begin(), it));
+        if (!selection.includesTrack(trackIndex))
+            continue;
+
+        double clipEnd = clip.startTime + clip.length;
+        bool needsLeft = (clip.startTime < start && clipEnd > start);
+        bool needsRight = (clip.startTime < end && clipEnd > end);
+
+        if (needsLeft || needsRight) {
+            clipsToSplit.push_back({clip.id, needsLeft, needsRight});
+        }
+    }
+
+    if (clipsToSplit.empty())
+        return;
+
+    int totalOps = 0;
+    for (const auto& s : clipsToSplit)
+        totalOps += (s.needsLeftSplit ? 1 : 0) + (s.needsRightSplit ? 1 : 0);
+
+    if (totalOps > 1)
+        UndoManager::getInstance().beginCompoundOperation("Split Clips at Selection");
+
+    for (const auto& info : clipsToSplit) {
+        ClipId rightSideId = info.clipId;
+
+        // Split at left boundary first — the right piece gets a new ID
+        if (info.needsLeftSplit) {
+            auto cmd = std::make_unique<SplitClipCommand>(info.clipId, start);
+            auto* cmdPtr = cmd.get();
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            // The right piece (from start onward) is the one that may need a right split
+            rightSideId = cmdPtr->getRightClipId();
+        }
+
+        // Split at right boundary — use the right piece from the left split if applicable
+        if (info.needsRightSplit) {
+            const auto* clip = ClipManager::getInstance().getClip(rightSideId);
+            if (clip && end > clip->startTime && end < clip->startTime + clip->length) {
+                auto cmd = std::make_unique<SplitClipCommand>(rightSideId, end);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+            }
+        }
+    }
+
+    if (totalOps > 1)
+        UndoManager::getInstance().endCompoundOperation();
+}
 
 void TrackContentPanel::captureClipsInTimeSelection() {
     clipsInTimeSelection_.clear();
