@@ -1,5 +1,6 @@
 #include "PianoRollContent.hpp"
 
+#include "../../core/SelectionManager.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -252,6 +253,9 @@ PianoRollContent::PianoRollContent() {
     // Register as ClipManager listener
     magda::ClipManager::getInstance().addListener(this);
 
+    // Register as SelectionManager listener
+    magda::SelectionManager::getInstance().addListener(this);
+
     // Register as TimelineController listener for playhead updates
     if (auto* controller = magda::TimelineController::getCurrent()) {
         controller->addListener(this);
@@ -272,6 +276,7 @@ PianoRollContent::PianoRollContent() {
 PianoRollContent::~PianoRollContent() {
     timeModeButton_->setLookAndFeel(nullptr);
     magda::ClipManager::getInstance().removeListener(this);
+    magda::SelectionManager::getInstance().removeListener(this);
 
     // Unregister from TimelineController
     if (auto* controller = magda::TimelineController::getCurrent()) {
@@ -291,8 +296,8 @@ void PianoRollContent::setupGridCallbacks() {
     };
 
     // Handle note movement
-    gridComponent_->onNoteMoved = [this](magda::ClipId clipId, size_t noteIndex, double newBeat,
-                                         int newNoteNumber) {
+    gridComponent_->onNoteMoved = [](magda::ClipId clipId, size_t noteIndex, double newBeat,
+                                     int newNoteNumber) {
         // Get source clip and note
         auto* sourceClip = magda::ClipManager::getInstance().getClip(clipId);
         if (!sourceClip || noteIndex >= sourceClip->midiNotes.size())
@@ -301,117 +306,9 @@ void PianoRollContent::setupGridCallbacks() {
         double oldBeat = sourceClip->midiNotes[noteIndex].startBeat;
 
         DBG("=== NOTE MOVE ===");
-        DBG("  Clip " << clipId << " (offset=" << sourceClip->midiOffset << ")");
+        DBG("  Clip " << clipId);
         DBG("  FROM content-beat " << oldBeat << " TO content-beat " << newBeat);
         DBG("  Note index: " << noteIndex);
-
-        // Check if note moved to a different clip (only in absolute mode)
-        if (!gridComponent_->isRelativeMode()) {
-            // Calculate tempo
-            double tempo = 120.0;  // Default
-            if (auto* controller = magda::TimelineController::getCurrent()) {
-                tempo = controller->getState().tempo.bpm;
-            }
-            double beatsPerSecond = tempo / 60.0;
-
-            // Convert to absolute timeline positions
-            double sourceClipStartBeats = sourceClip->startTime * beatsPerSecond;
-            double oldAbsoluteBeat = sourceClipStartBeats + oldBeat - sourceClip->midiOffset;
-            double newAbsoluteBeat = sourceClipStartBeats + newBeat - sourceClip->midiOffset;
-            double sourceClipEndBeats =
-                (sourceClip->startTime + sourceClip->length) * beatsPerSecond;
-
-            DBG("  Absolute timeline: " << oldAbsoluteBeat << " -> " << newAbsoluteBeat);
-            DBG("  Clip timeline range: [" << sourceClipStartBeats << ", " << sourceClipEndBeats
-                                           << "]");
-
-            // Check if we're moving between clip regions
-            bool oldOutsideClip =
-                (oldAbsoluteBeat < sourceClipStartBeats || oldAbsoluteBeat >= sourceClipEndBeats);
-            bool newOutsideClip =
-                (newAbsoluteBeat < sourceClipStartBeats || newAbsoluteBeat >= sourceClipEndBeats);
-
-            DBG("  Old position " << (oldOutsideClip ? "OUTSIDE" : "INSIDE") << " clip range");
-            DBG("  New position " << (newOutsideClip ? "OUTSIDE" : "INSIDE") << " clip range");
-
-            // If moving between visible regions, handle cross-clip transfer
-            if (oldOutsideClip || newOutsideClip) {
-                // Find which clip would show the note at OLD position
-                double oldBeatSeconds = oldAbsoluteBeat / beatsPerSecond;
-                magda::ClipId oldVisibleClipId =
-                    magda::ClipManager::getInstance().getClipAtPosition(sourceClip->trackId,
-                                                                        oldBeatSeconds);
-
-                // Find which clip would show the note at NEW position
-                double newBeatSeconds = newAbsoluteBeat / beatsPerSecond;
-                magda::ClipId newVisibleClipId =
-                    magda::ClipManager::getInstance().getClipAtPosition(sourceClip->trackId,
-                                                                        newBeatSeconds);
-
-                DBG("  Old position would be visible in clip: " << oldVisibleClipId);
-                DBG("  New position would be visible in clip: " << newVisibleClipId);
-
-                // If the note should change clips, transfer it
-                if (oldVisibleClipId != newVisibleClipId &&
-                    newVisibleClipId != magda::INVALID_CLIP_ID && newVisibleClipId != clipId) {
-                    DBG("  -> CROSS-CLIP MOVE: transferring to clip " << newVisibleClipId);
-                    auto* destClip = magda::ClipManager::getInstance().getClip(newVisibleClipId);
-                    if (destClip && destClip->type == magda::ClipType::MIDI) {
-                        // Convert absolute position to destination clip's content coordinates
-                        double destClipStartBeats = destClip->startTime * beatsPerSecond;
-                        double relativeNewBeat =
-                            newAbsoluteBeat - destClipStartBeats + destClip->midiOffset;
-
-                        DBG("  -> Content-beat in dest clip: " << relativeNewBeat);
-
-                        // Use cross-clip move command
-                        auto cmd = std::make_unique<magda::MoveMidiNoteBetweenClipsCommand>(
-                            clipId, noteIndex, newVisibleClipId, relativeNewBeat, newNoteNumber);
-                        magda::UndoManager::getInstance().executeCommand(std::move(cmd));
-                        return;
-                    }
-                } else if (oldVisibleClipId != clipId &&
-                           oldVisibleClipId != magda::INVALID_CLIP_ID) {
-                    // Moving FROM a different clip's visible region INTO this clip's region
-                    // Need to remove the duplicate note from the other clip
-                    DBG("  -> Note was visible in clip " << oldVisibleClipId
-                                                         << ", removing duplicate from there");
-
-                    auto* otherClip = magda::ClipManager::getInstance().getClip(oldVisibleClipId);
-                    if (otherClip && otherClip->type == magda::ClipType::MIDI) {
-                        // Find the note at the old content-beat in the other clip
-                        // All clips from split have same note at same content-beat
-                        size_t otherNoteIndex = static_cast<size_t>(-1);
-                        for (size_t i = 0; i < otherClip->midiNotes.size(); ++i) {
-                            if (std::abs(otherClip->midiNotes[i].startBeat - oldBeat) < 0.01) {
-                                otherNoteIndex = i;
-                                break;
-                            }
-                        }
-
-                        if (otherNoteIndex != static_cast<size_t>(-1)) {
-                            DBG("  -> Found duplicate at index " << otherNoteIndex << " in clip "
-                                                                 << oldVisibleClipId);
-
-                            // Execute both move and delete as a single compound operation
-                            magda::CompoundOperationScope scope("Move Note Between Clips");
-
-                            // 1. Move the note in the current clip
-                            auto moveCmd = std::make_unique<magda::MoveMidiNoteCommand>(
-                                clipId, noteIndex, newBeat, newNoteNumber);
-                            magda::UndoManager::getInstance().executeCommand(std::move(moveCmd));
-
-                            // 2. Delete the duplicate from the other clip
-                            auto deleteCmd = std::make_unique<magda::DeleteMidiNoteCommand>(
-                                oldVisibleClipId, otherNoteIndex);
-                            magda::UndoManager::getInstance().executeCommand(std::move(deleteCmd));
-
-                            return;  // Skip the normal move below
-                        }
-                    }
-                }
-            }
-        }
 
         // Normal movement within same clip (only executed if no cross-clip transfer occurred)
         auto cmd =
@@ -985,6 +882,23 @@ void PianoRollContent::playheadStateChanged(const magda::TimelineState& state) {
     if (timeRuler_) {
         timeRuler_->setPlayheadPosition(state.playhead.playbackPosition);
     }
+}
+
+// ============================================================================
+// SelectionManagerListener
+// ============================================================================
+
+void PianoRollContent::selectionTypeChanged(magda::SelectionType /*newType*/) {
+    // Selection type changed - refresh the view
+    repaint();
+}
+
+void PianoRollContent::multiClipSelectionChanged(
+    const std::unordered_set<magda::ClipId>& /*clipIds*/) {
+    // Multi-clip selection changed
+    // In absolute mode, we show all clips on the track regardless of selection
+    // In relative mode, we could show selected clips, but for now just update the view
+    repaint();
 }
 
 // ============================================================================

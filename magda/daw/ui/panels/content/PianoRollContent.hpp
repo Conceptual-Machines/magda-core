@@ -4,6 +4,7 @@
 
 #include "PanelContent.hpp"
 #include "core/ClipManager.hpp"
+#include "core/SelectionManager.hpp"
 #include "ui/state/TimelineController.hpp"
 
 namespace magda {
@@ -26,6 +27,7 @@ namespace magda::daw::ui {
  */
 class PianoRollContent : public PanelContent,
                          public magda::ClipManagerListener,
+                         public magda::SelectionManagerListener,
                          public magda::TimelineStateListener {
   public:
     PianoRollContent();
@@ -52,6 +54,10 @@ class PianoRollContent : public PanelContent,
     void clipSelectionChanged(magda::ClipId clipId) override;
     void clipDragPreview(magda::ClipId clipId, double previewStartTime,
                          double previewLength) override;
+
+    // SelectionManagerListener
+    void selectionTypeChanged(magda::SelectionType newType) override;
+    void multiClipSelectionChanged(const std::unordered_set<magda::ClipId>& clipIds) override;
 
     // TimelineStateListener
     void timelineStateChanged(const magda::TimelineState& state) override;

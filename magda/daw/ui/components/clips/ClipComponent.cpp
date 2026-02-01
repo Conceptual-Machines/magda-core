@@ -154,21 +154,15 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
         double clipLengthInBeats = clip.length * beatsPerSecond;
         double midiOffset = clip.midiOffset;
 
-        // Find note range using ALL notes (not just visible ones)
-        // This ensures consistent vertical scaling across split clips
-        int minNote = 127, maxNote = 0;
-        for (const auto& note : clip.midiNotes) {
-            minNote = juce::jmin(minNote, note.noteNumber);
-            maxNote = juce::jmax(maxNote, note.noteNumber);
-        }
-
-        int noteRange = juce::jmax(1, maxNote - minNote);
+        // Use absolute MIDI range (0-127) for consistent vertical positioning across all clips
+        const int MIDI_MIN = 0;
+        const int MIDI_MAX = 127;
+        const int MIDI_RANGE = MIDI_MAX - MIDI_MIN;
         double beatRange = juce::jmax(1.0, clipLengthInBeats);
 
         // Draw each note as a small rectangle
         for (const auto& note : clip.midiNotes) {
             // Notes are stored relative to clip start
-            // Shift by offset to get display position
             double displayStart = note.startBeat - midiOffset;
             double displayEnd = displayStart + note.lengthBeats;
 
@@ -181,10 +175,11 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
             double visibleEnd = juce::jmin(clipLengthInBeats, displayEnd);
             double visibleLength = visibleEnd - visibleStart;
 
+            // Absolute vertical position based on MIDI note number (0-127)
             float noteY = noteArea.getY() +
-                          (maxNote - note.noteNumber) * noteArea.getHeight() / (noteRange + 1);
+                          (MIDI_MAX - note.noteNumber) * noteArea.getHeight() / (MIDI_RANGE + 1);
             float noteHeight =
-                juce::jmax(2.0f, static_cast<float>(noteArea.getHeight()) / (noteRange + 1) - 1.0f);
+                juce::jmax(1.5f, static_cast<float>(noteArea.getHeight()) / (MIDI_RANGE + 1));
             float noteX = noteArea.getX() +
                           static_cast<float>(visibleStart / beatRange) * noteArea.getWidth();
             float noteWidth = juce::jmax(2.0f, static_cast<float>(visibleLength / beatRange) *

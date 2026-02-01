@@ -270,26 +270,37 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime) {
         rightClip.audioSources[0].length = rightLength;
     }
 
-    // Handle MIDI clip splitting - keep ALL notes but adjust midiOffset (non-destructive)
+    // Handle MIDI clip splitting - DESTRUCTIVE (each clip owns its notes)
     if (rightClip.type == ClipType::MIDI && !rightClip.midiNotes.empty()) {
         // TODO: Get actual tempo from project settings (assuming 120 BPM for now)
         const double beatsPerSecond = 2.0;  // 120 BPM = 2 beats/second
         double splitBeat = leftLength * beatsPerSecond;
 
-        DBG("MIDI SPLIT (non-destructive):");
-        DBG("  Original midiOffset: " << clip->midiOffset);
+        DBG("MIDI SPLIT (destructive):");
         DBG("  Split at beat: " << splitBeat);
 
-        // Right clip: keep ALL notes, but increase offset to show content from split point
-        // midiOffset defines where the "playback window" starts in the note sequence
-        rightClip.midiOffset = clip->midiOffset + splitBeat;
+        // Partition notes between left and right clips
+        std::vector<MidiNote> leftNotes;
+        std::vector<MidiNote> rightNotes;
 
-        // Left clip: keep ALL notes, offset unchanged
-        // (no changes needed)
+        for (const auto& note : clip->midiNotes) {
+            if (note.startBeat < splitBeat) {
+                // Note belongs to left clip
+                leftNotes.push_back(note);
+            } else {
+                // Note belongs to right clip - adjust position relative to right clip start
+                MidiNote adjustedNote = note;
+                adjustedNote.startBeat -= splitBeat;
+                rightNotes.push_back(adjustedNote);
+            }
+        }
 
-        DBG("  Left clip: " << clip->midiNotes.size() << " notes, offset=" << clip->midiOffset);
-        DBG("  Right clip: " << rightClip.midiNotes.size()
-                             << " notes, offset=" << rightClip.midiOffset);
+        // Update both clips with their respective notes
+        clip->midiNotes = leftNotes;
+        rightClip.midiNotes = rightNotes;
+
+        DBG("  Left clip: " << leftNotes.size() << " notes");
+        DBG("  Right clip: " << rightNotes.size() << " notes");
     }
 
     // Resize original clip to be left half
