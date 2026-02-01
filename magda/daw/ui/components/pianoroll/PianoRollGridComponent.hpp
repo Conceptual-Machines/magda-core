@@ -7,6 +7,7 @@
 
 #include "NoteComponent.hpp"
 #include "core/ClipInfo.hpp"
+#include "core/ClipManager.hpp"
 #include "core/ClipTypes.hpp"
 
 namespace magda {
@@ -21,7 +22,7 @@ namespace magda {
  * - Grid snap settings
  * - Coordinate conversion (beat <-> pixel, noteNumber <-> y)
  */
-class PianoRollGridComponent : public juce::Component {
+class PianoRollGridComponent : public juce::Component, public ClipManagerListener {
   public:
     PianoRollGridComponent();
     ~PianoRollGridComponent() override;
@@ -119,6 +120,11 @@ class PianoRollGridComponent : public juce::Component {
 
     // Refresh note components from clip data
     void refreshNotes();
+
+    // ClipManagerListener
+    void clipsChanged() override {}
+    void clipPropertyChanged(ClipId clipId) override;
+    void clipSelectionChanged(ClipId clipId) override {}
 
     // Callbacks for parent to handle undo/redo
     std::function<void(ClipId, double, int, int)>

@@ -153,16 +153,11 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
         double beatsPerSecond = tempo / 60.0;
         double clipLengthInBeats = clip.length * beatsPerSecond;
         double midiOffset = clip.midiOffset;
-        double visibleEnd = midiOffset + clipLengthInBeats;
 
-        // Find note range (only considering visible notes)
+        // Find note range using ALL notes (not just visible ones)
+        // This ensures consistent vertical scaling across split clips
         int minNote = 127, maxNote = 0;
         for (const auto& note : clip.midiNotes) {
-            // Skip notes outside visible range
-            double noteEnd = note.startBeat + note.lengthBeats;
-            if (note.startBeat >= visibleEnd || noteEnd <= midiOffset)
-                continue;
-
             minNote = juce::jmin(minNote, note.noteNumber);
             maxNote = juce::jmax(maxNote, note.noteNumber);
         }
@@ -172,31 +167,27 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
 
         // Draw each note as a small rectangle
         for (const auto& note : clip.midiNotes) {
-            // Skip notes outside visible range
-            double noteEnd = note.startBeat + note.lengthBeats;
-            if (note.startBeat >= visibleEnd || noteEnd <= midiOffset)
+            // Notes are stored relative to clip start
+            // Shift by offset to get display position
+            double displayStart = note.startBeat - midiOffset;
+            double displayEnd = displayStart + note.lengthBeats;
+
+            // Skip notes completely outside visible range
+            if (displayEnd <= 0 || displayStart >= clipLengthInBeats)
                 continue;
 
-            // Adjust note position relative to offset
-            double relativeStart = note.startBeat - midiOffset;
-            double relativeLength = note.lengthBeats;
-
-            // Clip note to visible range
-            if (relativeStart < 0) {
-                relativeLength += relativeStart;  // Reduce length by hidden amount
-                relativeStart = 0;
-            }
-            if (relativeStart + relativeLength > clipLengthInBeats) {
-                relativeLength = clipLengthInBeats - relativeStart;
-            }
+            // Clip note to visible range [0, clipLengthInBeats]
+            double visibleStart = juce::jmax(0.0, displayStart);
+            double visibleEnd = juce::jmin(clipLengthInBeats, displayEnd);
+            double visibleLength = visibleEnd - visibleStart;
 
             float noteY = noteArea.getY() +
                           (maxNote - note.noteNumber) * noteArea.getHeight() / (noteRange + 1);
             float noteHeight =
                 juce::jmax(2.0f, static_cast<float>(noteArea.getHeight()) / (noteRange + 1) - 1.0f);
             float noteX = noteArea.getX() +
-                          static_cast<float>(relativeStart / beatRange) * noteArea.getWidth();
-            float noteWidth = juce::jmax(2.0f, static_cast<float>(relativeLength / beatRange) *
+                          static_cast<float>(visibleStart / beatRange) * noteArea.getWidth();
+            float noteWidth = juce::jmax(2.0f, static_cast<float>(visibleLength / beatRange) *
                                                    noteArea.getWidth());
 
             g.fillRoundedRectangle(noteX, noteY, noteWidth, noteHeight, 1.0f);

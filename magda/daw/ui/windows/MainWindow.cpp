@@ -806,11 +806,45 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     double trimStart = state.selection.startTime;
                     double trimEnd = state.selection.endTime;
 
-                    if (selectedClips.empty()) {
+                    // Get clips to split: use selected clips if any, otherwise all clips in
+                    // selection
+                    std::vector<ClipId> clipsToSplit;
+                    if (!selectedClips.empty()) {
+                        std::cout << "📋 Using selected clips: " << selectedClips.size()
+                                  << std::endl;
+                        clipsToSplit.assign(selectedClips.begin(), selectedClips.end());
+                        // Debug: show which tracks these clips are on
+                        std::unordered_set<TrackId> tracksWithSelectedClips;
+                        for (auto clipId : selectedClips) {
+                            const auto* clip = clipManager.getClip(clipId);
+                            if (clip) {
+                                tracksWithSelectedClips.insert(clip->trackId);
+                                std::cout << "  Clip " << clipId << " on track " << clip->trackId
+                                          << std::endl;
+                            }
+                        }
+                        std::cout << "  Selected clips span " << tracksWithSelectedClips.size()
+                                  << " track(s)" << std::endl;
+                    } else {
+                        std::cout << "📋 No clips selected, using all clips in time selection"
+                                  << std::endl;
+                        // Get all clips that intersect with the time selection
+                        for (const auto& clip : clipManager.getArrangementClips()) {
+                            double clipEnd = clip.startTime + clip.length;
+                            if (clip.startTime < trimEnd && clipEnd > trimStart) {
+                                clipsToSplit.push_back(clip.id);
+                                std::cout << "  Found clip " << clip.id << " on track "
+                                          << clip.trackId << std::endl;
+                            }
+                        }
+                    }
+
+                    if (clipsToSplit.empty()) {
+                        std::cout << "⚠️  No clips to split" << std::endl;
                         return true;
                     }
 
-                    std::cout << "✂️  Splitting " << selectedClips.size()
+                    std::cout << "✂️  Splitting " << clipsToSplit.size()
                               << " clip(s) at selection boundaries [" << trimStart << ", "
                               << trimEnd << "]" << std::endl;
 
@@ -819,7 +853,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
                     std::vector<ClipId> centerClips;  // Track the center clips to select
 
-                    for (auto clipId : selectedClips) {
+                    for (auto clipId : clipsToSplit) {
                         const auto* clip = clipManager.getClip(clipId);
                         if (!clip)
                             continue;

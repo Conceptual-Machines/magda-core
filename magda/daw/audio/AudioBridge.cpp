@@ -428,14 +428,57 @@ void AudioBridge::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip) {
     // Force offset to 0 to ensure notes play from clip start
     midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
 
-    // Clear existing notes and add all notes from ClipManager
+    // Clear existing notes and rebuild from ClipManager
     auto& sequence = midiClipPtr->getSequence();
     sequence.clear(nullptr);
 
+    // Calculate the beat range visible in this clip based on midiOffset
+    const double beatsPerSecond = 2.0;  // TODO: Get from tempo
+    double clipLengthBeats = clip->length * beatsPerSecond;
+    double visibleStart = clip->midiOffset;  // Where the clip's "view window" starts
+    double visibleEnd = clip->midiOffset + clipLengthBeats;
+
+    DBG("MIDI SYNC clip " << clipId << ":");
+    DBG("  midiOffset=" << clip->midiOffset << ", clipLength=" << clipLengthBeats << " beats");
+    DBG("  Visible range: [" << visibleStart << ", " << visibleEnd << ")");
+    DBG("  Total notes: " << clip->midiNotes.size());
+
+    // Only add notes that overlap with the visible range
+    int addedCount = 0;
     for (const auto& note : clip->midiNotes) {
-        sequence.addNote(note.noteNumber, te::BeatPosition::fromBeats(note.startBeat),
-                         te::BeatDuration::fromBeats(note.lengthBeats), note.velocity, 0, nullptr);
+        double noteStart = note.startBeat;
+        double noteEnd = noteStart + note.lengthBeats;
+
+        // Skip notes completely outside the visible range
+        if (noteEnd <= visibleStart || noteStart >= visibleEnd) {
+            continue;
+        }
+
+        // Calculate position relative to clip start (subtract midiOffset)
+        double adjustedStart = noteStart - clip->midiOffset;
+        double adjustedLength = note.lengthBeats;
+
+        // Truncate note if it starts before the visible range
+        if (adjustedStart < 0.0) {
+            adjustedLength = noteEnd - visibleStart;
+            adjustedStart = 0.0;
+        }
+
+        // Truncate note if it extends past the visible range
+        if (adjustedStart + adjustedLength > clipLengthBeats) {
+            adjustedLength = clipLengthBeats - adjustedStart;
+        }
+
+        // Add note to Tracktion (all positions are now non-negative)
+        if (adjustedLength > 0.0) {
+            sequence.addNote(note.noteNumber, te::BeatPosition::fromBeats(adjustedStart),
+                             te::BeatDuration::fromBeats(adjustedLength), note.velocity, 0,
+                             nullptr);
+            addedCount++;
+        }
     }
+
+    DBG("  Added " << addedCount << " notes to Tracktion");
 }
 
 void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {

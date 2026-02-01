@@ -162,6 +162,7 @@ class ClipManager {
     void setClipLoopEnabled(ClipId clipId, bool enabled);
     void setClipLoopOffset(ClipId clipId, double offsetBeats);
     void setClipLoopLength(ClipId clipId, double lengthBeats);
+    void setClipMidiOffset(ClipId clipId, double offsetBeats);
     void setClipLaunchMode(ClipId clipId, LaunchMode mode);
     void setClipLaunchQuantize(ClipId clipId, LaunchQuantize quantize);
 

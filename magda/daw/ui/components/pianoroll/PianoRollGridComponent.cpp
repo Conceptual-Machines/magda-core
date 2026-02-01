@@ -9,9 +9,11 @@ namespace magda {
 PianoRollGridComponent::PianoRollGridComponent() {
     setName("PianoRollGrid");
     setWantsKeyboardFocus(true);
+    ClipManager::getInstance().addListener(this);
 }
 
 PianoRollGridComponent::~PianoRollGridComponent() {
+    ClipManager::getInstance().removeListener(this);
     clearNoteComponents();
 }
 
@@ -349,6 +351,14 @@ void PianoRollGridComponent::refreshNotes() {
     repaint();
 }
 
+void PianoRollGridComponent::clipPropertyChanged(ClipId clipId) {
+    // Only update if this is our clip
+    if (clipId == clipId_) {
+        updateNoteComponentBounds();
+        repaint();
+    }
+}
+
 double PianoRollGridComponent::snapBeatToGrid(double beat) const {
     double resolution = getGridResolutionBeats();
     if (resolution <= 0 || gridResolution_ == GridResolution::Off) {
@@ -452,15 +462,24 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
     for (size_t i = 0; i < noteComponents_.size() && i < clip->midiNotes.size(); i++) {
         const auto& note = clip->midiNotes[i];
 
-        // In absolute mode, offset notes by clip start position
-        double displayBeat = relativeMode_ ? note.startBeat : (clipStartBeats_ + note.startBeat);
+        // Notes are stored relative to clip start
+        // In absolute mode, shift notes by offset so offset point appears at clip start
+        double displayBeat =
+            relativeMode_ ? note.startBeat : (clipStartBeats_ + note.startBeat - clip->midiOffset);
+
         int x = beatToPixel(displayBeat);
         int y = noteNumberToY(note.noteNumber);
         int width = juce::jmax(8, static_cast<int>(note.lengthBeats * pixelsPerBeat_));
         int height = noteHeight_ - 2;
 
         noteComponents_[i]->setBounds(x, y + 1, width, height);
-        noteComponents_[i]->updateFromNote(note, clip->colour);
+
+        // Notes before offset are greyed out
+        bool isBeforeOffset = !relativeMode_ && (note.startBeat < clip->midiOffset);
+        juce::Colour noteColour = isBeforeOffset ? clip->colour.withAlpha(0.3f) : clip->colour;
+
+        noteComponents_[i]->updateFromNote(note, noteColour);
+        noteComponents_[i]->setVisible(true);
     }
 }
 

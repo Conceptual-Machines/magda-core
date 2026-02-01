@@ -270,27 +270,26 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime) {
         rightClip.audioSources[0].length = rightLength;
     }
 
-    // Handle MIDI clip splitting (non-destructive - preserve all notes but adjust positions)
+    // Handle MIDI clip splitting - keep ALL notes but adjust midiOffset (non-destructive)
     if (rightClip.type == ClipType::MIDI && !rightClip.midiNotes.empty()) {
         // TODO: Get actual tempo from project settings (assuming 120 BPM for now)
         const double beatsPerSecond = 2.0;  // 120 BPM = 2 beats/second
         double splitBeat = leftLength * beatsPerSecond;
 
-        // Calculate the absolute split point in beats (accounting for existing offset)
-        double absoluteSplitBeat = clip->midiOffset + splitBeat;
+        DBG("MIDI SPLIT (non-destructive):");
+        DBG("  Original midiOffset: " << clip->midiOffset);
+        DBG("  Split at beat: " << splitBeat);
 
-        // Adjust note positions for right clip: shift all notes back by the split amount
-        // This makes notes relative to the right clip's start, while preserving notes
-        // that came before (they'll have negative positions and be hidden)
-        for (auto& note : rightClip.midiNotes) {
-            note.startBeat -= absoluteSplitBeat;
-        }
+        // Right clip: keep ALL notes, but increase offset to show content from split point
+        // midiOffset defines where the "playback window" starts in the note sequence
+        rightClip.midiOffset = clip->midiOffset + splitBeat;
 
-        // Right clip starts fresh with offset 0 (notes already adjusted)
-        rightClip.midiOffset = 0.0;
+        // Left clip: keep ALL notes, offset unchanged
+        // (no changes needed)
 
-        // Left clip keeps its existing offset and notes unchanged
-        // Notes extending past the clip end will be clipped during playback
+        DBG("  Left clip: " << clip->midiNotes.size() << " notes, offset=" << clip->midiOffset);
+        DBG("  Right clip: " << rightClip.midiNotes.size()
+                             << " notes, offset=" << rightClip.midiOffset);
     }
 
     // Resize original clip to be left half
@@ -357,6 +356,18 @@ void ClipManager::setClipLoopLength(ClipId clipId, double lengthBeats) {
     if (auto* clip = getClip(clipId)) {
         clip->internalLoopLength = juce::jmax(ClipOperations::MIN_LOOP_LENGTH_BEATS, lengthBeats);
         notifyClipPropertyChanged(clipId);
+    }
+}
+
+void ClipManager::setClipMidiOffset(ClipId clipId, double offsetBeats) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type != ClipType::MIDI) {
+            DBG("setClipMidiOffset: Clip " << clipId << " is not a MIDI clip");
+            return;
+        }
+        clip->midiOffset = juce::jmax(0.0, offsetBeats);
+        notifyClipPropertyChanged(clipId);
+        DBG("setClipMidiOffset: clip " << clipId << " offset=" << clip->midiOffset);
     }
 }
 
