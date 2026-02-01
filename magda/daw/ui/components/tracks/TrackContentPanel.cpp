@@ -828,6 +828,18 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
             UndoManager::getInstance().endCompoundOperation();
         }
 
+        // Move edit cursor to the trimmed edge position
+        if (timelineController) {
+            double cursorPosition =
+                currentDragType_ == DragType::ResizeSelectionLeft ? newStart : newEnd;
+            timelineController->dispatch(SetEditCursorEvent{cursorPosition});
+        }
+
+        // Update time selection to reflect new bounds
+        if (onTimeSelectionChanged) {
+            onTimeSelectionChanged(newStart, newEnd, moveSelectionOriginalTracks);
+        }
+
         // Clear drag state
         currentDragType_ = DragType::None;
         moveDragStartTime = -1.0;
