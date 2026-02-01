@@ -98,6 +98,15 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
 
     // Loop region markers (shows loop boundaries on the grid)
     void setLoopRegion(double offsetBeats, double lengthBeats, bool enabled);
+    double getLoopOffsetBeats() const {
+        return loopOffsetBeats_;
+    }
+    double getLoopLengthBeats() const {
+        return loopLengthBeats_;
+    }
+    bool isLoopEnabled() const {
+        return loopEnabled_;
+    }
 
     // Playhead position (for drawing playhead line during playback)
     void setPlayheadPosition(double positionSeconds);

@@ -59,6 +59,20 @@ void VelocityLaneComponent::setClipStartBeats(double startBeats) {
     }
 }
 
+void VelocityLaneComponent::setClipLengthBeats(double lengthBeats) {
+    if (clipLengthBeats_ != lengthBeats) {
+        clipLengthBeats_ = lengthBeats;
+        repaint();
+    }
+}
+
+void VelocityLaneComponent::setLoopRegion(double offsetBeats, double lengthBeats, bool enabled) {
+    loopOffsetBeats_ = offsetBeats;
+    loopLengthBeats_ = lengthBeats;
+    loopEnabled_ = enabled;
+    repaint();
+}
+
 void VelocityLaneComponent::refreshNotes() {
     repaint();
 }
@@ -236,6 +250,51 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
             if (isDragging_ && isPrimaryClip && i == draggingNoteIndex_) {
                 g.setColour(juce::Colours::white.withAlpha(0.3f));
                 g.fillRect(barBounds);
+            }
+        }
+    }
+
+    // Draw ghost loop-repeating velocity bars
+    if (loopEnabled_ && loopLengthBeats_ > 0.0 && clipIds_.size() <= 1 && clipLengthBeats_ > 0.0) {
+        const auto* loopClip = clipManager.getClip(clipId_);
+        if (loopClip && loopClip->type == ClipType::MIDI) {
+            int numRepetitions = static_cast<int>(std::ceil(clipLengthBeats_ / loopLengthBeats_));
+
+            for (int rep = 1; rep < numRepetitions; ++rep) {
+                for (const auto& note : loopClip->midiNotes) {
+                    // Only notes within the loop region
+                    if (note.startBeat < loopOffsetBeats_ ||
+                        note.startBeat >= loopOffsetBeats_ + loopLengthBeats_) {
+                        continue;
+                    }
+
+                    double relStart = (note.startBeat - loopOffsetBeats_) + rep * loopLengthBeats_;
+                    if (relStart >= clipLengthBeats_) {
+                        continue;
+                    }
+
+                    double displayStart = relativeMode_ ? relStart : (clipStartBeats_ + relStart);
+
+                    int x = beatToPixel(displayStart);
+                    int barWidth = juce::jmax(minBarWidth,
+                                              static_cast<int>(note.lengthBeats * pixelsPerBeat_));
+
+                    if (x + barWidth < 0 || x > bounds.getWidth()) {
+                        continue;
+                    }
+
+                    int barHeight = note.velocity * usableHeight / 127;
+                    int barY = margin + usableHeight - barHeight;
+                    auto barBounds = juce::Rectangle<int>(x, barY, barWidth - 1, barHeight);
+
+                    // Ghost fill at reduced alpha
+                    g.setColour(loopClip->colour.withAlpha(0.3f));
+                    g.fillRect(barBounds);
+
+                    // Ghost border
+                    g.setColour(loopClip->colour.withAlpha(0.4f));
+                    g.drawRect(barBounds, 1);
+                }
             }
         }
     }

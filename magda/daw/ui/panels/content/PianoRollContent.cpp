@@ -994,15 +994,12 @@ void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
                 gridComponent_->setClips(trackId, selectedMidiClips, allMidiClips);
             }
 
-            // Session clips and looping arrangement clips are locked to relative mode
-            bool forceRelative =
-                (clip->view == magda::ClipView::Session) || clip->internalLoopEnabled;
+            // Session clips are locked to relative mode
+            bool forceRelative = (clip->view == magda::ClipView::Session);
             if (forceRelative) {
                 setRelativeTimeMode(true);
                 timeModeButton_->setEnabled(false);
-                timeModeButton_->setTooltip(clip->internalLoopEnabled
-                                                ? "Looping clips use relative time"
-                                                : "Session clips always use relative time");
+                timeModeButton_->setTooltip("Session clips always use relative time");
             } else {
                 timeModeButton_->setEnabled(true);
                 timeModeButton_->setTooltip(
@@ -1108,15 +1105,12 @@ void PianoRollContent::multiClipSelectionChanged(const std::unordered_set<magda:
     // Update editing clip ID to the first selected clip
     editingClipId_ = selectedMidiClips[0];
 
-    // Check if session/looping clips should force relative mode
-    bool forceRelative =
-        (firstClip->view == magda::ClipView::Session) || firstClip->internalLoopEnabled;
+    // Session clips are locked to relative mode
+    bool forceRelative = (firstClip->view == magda::ClipView::Session);
     if (forceRelative) {
         setRelativeTimeMode(true);
         timeModeButton_->setEnabled(false);
-        timeModeButton_->setTooltip(firstClip->internalLoopEnabled
-                                        ? "Looping clips use relative time"
-                                        : "Session clips always use relative time");
+        timeModeButton_->setTooltip("Session clips always use relative time");
     } else {
         timeModeButton_->setEnabled(true);
         timeModeButton_->setTooltip("Toggle between Relative (clip) and Absolute (project) time");
@@ -1290,6 +1284,14 @@ void PianoRollContent::updateVelocityLane() {
         } else {
             velocityLane_->setClipStartBeats(0.0);
         }
+    }
+
+    // Sync loop region and clip length
+    if (gridComponent_) {
+        velocityLane_->setClipLengthBeats(gridComponent_->getClipLengthBeats());
+        velocityLane_->setLoopRegion(gridComponent_->getLoopOffsetBeats(),
+                                     gridComponent_->getLoopLengthBeats(),
+                                     gridComponent_->isLoopEnabled());
     }
 
     // Sync scroll offset

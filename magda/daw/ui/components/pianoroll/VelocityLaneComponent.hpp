@@ -36,6 +36,10 @@ class VelocityLaneComponent : public juce::Component {
     // Display mode
     void setRelativeMode(bool relative);
     void setClipStartBeats(double startBeats);
+    void setClipLengthBeats(double lengthBeats);
+
+    // Loop region
+    void setLoopRegion(double offsetBeats, double lengthBeats, bool enabled);
 
     // Refresh from clip data
     void refreshNotes();
@@ -60,6 +64,12 @@ class VelocityLaneComponent : public juce::Component {
     int leftPadding_ = 2;
     bool relativeMode_ = true;
     double clipStartBeats_ = 0.0;
+    double clipLengthBeats_ = 0.0;
+
+    // Loop region
+    double loopOffsetBeats_ = 0.0;
+    double loopLengthBeats_ = 0.0;
+    bool loopEnabled_ = false;
 
     // Drag state
     size_t draggingNoteIndex_ = SIZE_MAX;
