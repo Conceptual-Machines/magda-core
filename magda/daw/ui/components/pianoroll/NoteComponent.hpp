@@ -54,6 +54,7 @@ class NoteComponent : public juce::Component {
         return isSelected_;
     }
     void setSelected(bool selected);
+    void setGhost(bool ghost);
 
     // Update note data from clip
     void updateFromNote(const MidiNote& note, juce::Colour colour);
@@ -81,6 +82,7 @@ class NoteComponent : public juce::Component {
     double lengthBeats_ = 1.0;
     int velocity_ = 100;
     juce::Colour colour_;
+    bool ghost_ = false;
 
     // Interaction state
     enum class DragMode { None, Move, ResizeLeft, ResizeRight };

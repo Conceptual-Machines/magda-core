@@ -31,6 +31,12 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
             tempo = controller->getState().tempo.bpm;
         }
 
+        // Collect selected clip regions to exclude from dimming
+        struct ClipRegion {
+            int startX, endX;
+        };
+        std::vector<ClipRegion> selectedRegions;
+
         for (ClipId clipId : clipIds_) {
             const auto* clip = clipManager.getClip(clipId);
             if (!clip) {
@@ -43,10 +49,32 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
             int startX = beatToPixel(clipStartBeats);
             int endX = beatToPixel(clipEndBeats);
 
+            if (isClipSelected(clipId)) {
+                selectedRegions.push_back({startX, endX});
+            }
+
             // Draw subtle boundary markers
             g.setColour(clip->colour.withAlpha(0.3f));
             g.fillRect(startX, 0, 2, getHeight());
             g.fillRect(endX - 2, 0, 2, getHeight());
+        }
+
+        // Dim everything outside selected clip regions
+        if (!selectedRegions.empty()) {
+            g.setColour(juce::Colour(0x20000000));
+            int prevEnd = bounds.getX();
+            // Sort by startX
+            std::sort(selectedRegions.begin(), selectedRegions.end(),
+                      [](const ClipRegion& a, const ClipRegion& b) { return a.startX < b.startX; });
+            for (const auto& region : selectedRegions) {
+                if (region.startX > prevEnd) {
+                    g.fillRect(prevEnd, 0, region.startX - prevEnd, getHeight());
+                }
+                prevEnd = juce::jmax(prevEnd, region.endX);
+            }
+            if (prevEnd < bounds.getRight()) {
+                g.fillRect(prevEnd, 0, bounds.getRight() - prevEnd, getHeight());
+            }
         }
     } else if (!relativeMode_ && clipLengthBeats_ > 0) {
         // Single clip in absolute mode - original behavior
@@ -577,6 +605,7 @@ void PianoRollGridComponent::createNoteComponents() {
 
             noteComp->snapBeatToGrid = [this](double beat) { return snapBeatToGrid(beat); };
 
+            noteComp->setGhost(!isClipSelected(clipId));
             noteComp->updateFromNote(clip->midiNotes[i], noteColour);
             addAndMakeVisible(noteComp.get());
             noteComponents_.push_back(std::move(noteComp));
@@ -638,6 +667,7 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
             noteColour = noteColour.withAlpha(0.3f);
         }
 
+        noteComp->setGhost(!isClipSelected(clipId));
         noteComp->updateFromNote(note, noteColour);
         noteComp->setVisible(true);
     }

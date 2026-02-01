@@ -12,6 +12,15 @@ NoteComponent::NoteComponent(size_t noteIndex, PianoRollGridComponent* parent, C
 void NoteComponent::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
 
+    if (ghost_) {
+        // Ghost note: slightly dimmed fill with subtle border
+        g.setColour(colour_.withAlpha(0.35f));
+        g.fillRoundedRectangle(bounds, CORNER_RADIUS);
+        g.setColour(colour_.withAlpha(0.5f));
+        g.drawRoundedRectangle(bounds.reduced(0.5f), CORNER_RADIUS, 1.0f);
+        return;
+    }
+
     // Background fill
     auto fillColour = isSelected_ ? colour_.brighter(0.3f) : colour_;
     g.setColour(fillColour);
@@ -272,6 +281,13 @@ void NoteComponent::mouseDoubleClick(const juce::MouseEvent& /*e*/) {
 void NoteComponent::setSelected(bool selected) {
     if (isSelected_ != selected) {
         isSelected_ = selected;
+        repaint();
+    }
+}
+
+void NoteComponent::setGhost(bool ghost) {
+    if (ghost_ != ghost) {
+        ghost_ = ghost;
         repaint();
     }
 }
