@@ -647,9 +647,7 @@ void PianoRollContent::updateGridSize() {
 
     gridComponent_->setSize(gridWidth, gridHeight);
 
-    // For multi-clip, force absolute mode; otherwise respect the setting
-    bool useRelativeMode = relativeTimeMode_ && selectedClipIds.size() <= 1;
-    gridComponent_->setRelativeMode(useRelativeMode);
+    gridComponent_->setRelativeMode(relativeTimeMode_);
     gridComponent_->setClipStartBeats(clipStartBeats);
     gridComponent_->setClipLengthBeats(clipLengthBeats);
     gridComponent_->setTimelineLengthBeats(displayLengthBeats);
@@ -1110,9 +1108,20 @@ void PianoRollContent::multiClipSelectionChanged(const std::unordered_set<magda:
     // Update editing clip ID to the first selected clip
     editingClipId_ = selectedMidiClips[0];
 
-    // Multi-clip: always use absolute positioning so clips appear
-    // as one continuous extended view on the timeline
-    gridComponent_->setRelativeMode(false);
+    // Check if session/looping clips should force relative mode
+    bool forceRelative =
+        (firstClip->view == magda::ClipView::Session) || firstClip->internalLoopEnabled;
+    if (forceRelative) {
+        setRelativeTimeMode(true);
+        timeModeButton_->setEnabled(false);
+        timeModeButton_->setTooltip(firstClip->internalLoopEnabled
+                                        ? "Looping clips use relative time"
+                                        : "Session clips always use relative time");
+    } else {
+        timeModeButton_->setEnabled(true);
+        timeModeButton_->setTooltip("Toggle between Relative (clip) and Absolute (project) time");
+    }
+
     gridComponent_->setClips(trackId, selectedMidiClips, selectedMidiClips);
 
     updateGridSize();
@@ -1234,25 +1243,53 @@ void PianoRollContent::updateVelocityLane() {
     // Update clip reference
     velocityLane_->setClip(editingClipId_);
 
+    // Pass multi-clip IDs for multi-clip velocity display
+    if (gridComponent_) {
+        velocityLane_->setClipIds(gridComponent_->getSelectedClipIds());
+    }
+
     // Update zoom and mode settings
     velocityLane_->setPixelsPerBeat(horizontalZoom_);
     velocityLane_->setRelativeMode(relativeTimeMode_);
 
-    // Get clip start beats for absolute mode
-    const auto* clip = editingClipId_ != magda::INVALID_CLIP_ID
-                           ? magda::ClipManager::getInstance().getClip(editingClipId_)
-                           : nullptr;
-
-    if (clip) {
+    // Get clip start beats
+    const auto& selectedClipIds =
+        gridComponent_ ? gridComponent_->getSelectedClipIds() : std::vector<magda::ClipId>{};
+    if (selectedClipIds.size() > 1) {
+        // Multi-clip: use earliest clip start (same as grid)
         double tempo = 120.0;
         if (auto* controller = magda::TimelineController::getCurrent()) {
             tempo = controller->getState().tempo.bpm;
         }
-        double secondsPerBeat = 60.0 / tempo;
-        double clipStartBeats = clip->startTime / secondsPerBeat;
-        velocityLane_->setClipStartBeats(clipStartBeats);
+        double earliestStart = std::numeric_limits<double>::max();
+        auto& clipManager = magda::ClipManager::getInstance();
+        for (magda::ClipId id : selectedClipIds) {
+            const auto* c = clipManager.getClip(id);
+            if (c) {
+                earliestStart = juce::jmin(earliestStart, c->startTime);
+            }
+        }
+        if (earliestStart < std::numeric_limits<double>::max()) {
+            velocityLane_->setClipStartBeats(earliestStart * (tempo / 60.0));
+        } else {
+            velocityLane_->setClipStartBeats(0.0);
+        }
     } else {
-        velocityLane_->setClipStartBeats(0.0);
+        const auto* clip = editingClipId_ != magda::INVALID_CLIP_ID
+                               ? magda::ClipManager::getInstance().getClip(editingClipId_)
+                               : nullptr;
+
+        if (clip) {
+            double tempo = 120.0;
+            if (auto* controller = magda::TimelineController::getCurrent()) {
+                tempo = controller->getState().tempo.bpm;
+            }
+            double secondsPerBeat = 60.0 / tempo;
+            double clipStartBeats = clip->startTime / secondsPerBeat;
+            velocityLane_->setClipStartBeats(clipStartBeats);
+        } else {
+            velocityLane_->setClipStartBeats(0.0);
+        }
     }
 
     // Sync scroll offset

@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <unordered_map>
+#include <vector>
 
 #include "core/ClipTypes.hpp"
 
@@ -22,6 +23,7 @@ class VelocityLaneComponent : public juce::Component {
 
     // Set the clip to display/edit
     void setClip(ClipId clipId);
+    void setClipIds(const std::vector<ClipId>& clipIds);
     ClipId getClipId() const {
         return clipId_;
     }
@@ -52,6 +54,7 @@ class VelocityLaneComponent : public juce::Component {
 
   private:
     ClipId clipId_ = INVALID_CLIP_ID;
+    std::vector<ClipId> clipIds_;
     double pixelsPerBeat_ = 50.0;
     int scrollOffsetX_ = 0;
     int leftPadding_ = 2;

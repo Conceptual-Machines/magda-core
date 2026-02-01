@@ -21,8 +21,8 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
     paintGrid(g, bounds);
 
-    // Draw clip boundaries in absolute mode for multi-clip view
-    if (!relativeMode_ && clipIds_.size() > 1) {
+    // Draw clip boundaries for multi-clip view
+    if (clipIds_.size() > 1) {
         auto& clipManager = ClipManager::getInstance();
 
         // Get tempo for beat conversion
@@ -45,6 +45,12 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
 
             double clipStartBeats = clip->startTime * (tempo / 60.0);
             double clipEndBeats = (clip->startTime + clip->length) * (tempo / 60.0);
+
+            // In relative mode, offset from the earliest clip start
+            if (relativeMode_) {
+                clipStartBeats -= clipStartBeats_;
+                clipEndBeats -= clipStartBeats_;
+            }
 
             int startX = beatToPixel(clipStartBeats);
             int endX = beatToPixel(clipEndBeats);
@@ -267,9 +273,37 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
 
     ClipId targetClipId = INVALID_CLIP_ID;
 
-    if (relativeMode_) {
-        // Relative mode: add to the primary selected clip
+    if (relativeMode_ && selectedClipIds_.size() <= 1) {
+        // Single clip relative mode: add to the primary selected clip
         targetClipId = clipId_;
+    } else if (relativeMode_ && selectedClipIds_.size() > 1) {
+        // Multi-clip relative mode: find which clip region the click falls in
+        double tempo = 120.0;
+        if (auto* controller = TimelineController::getCurrent()) {
+            tempo = controller->getState().tempo.bpm;
+        }
+
+        auto& clipManager = ClipManager::getInstance();
+
+        for (ClipId selectedClipId : selectedClipIds_) {
+            const auto* clip = clipManager.getClip(selectedClipId);
+            if (!clip)
+                continue;
+
+            double clipOffsetBeats = clip->startTime * (tempo / 60.0) - clipStartBeats_;
+            double clipEndRelBeats = clipOffsetBeats + clip->length * (tempo / 60.0);
+
+            if (beat >= clipOffsetBeats && beat < clipEndRelBeats) {
+                targetClipId = selectedClipId;
+                // Convert to clip-relative beat
+                beat = beat - clipOffsetBeats;
+                break;
+            }
+        }
+
+        if (targetClipId == INVALID_CLIP_ID) {
+            targetClipId = clipId_;
+        }
     } else {
         // Absolute mode: find which selected clip contains this beat
         // Get tempo for beat conversion
@@ -452,7 +486,23 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
 
     double displayBeat;
     if (relativeMode_) {
-        displayBeat = beat;
+        // For multi-clip, offset by the clip's distance from the earliest clip
+        if (clipIds_.size() > 1) {
+            ClipId clipId = note->getSourceClipId();
+            const auto* clip = ClipManager::getInstance().getClip(clipId);
+            if (clip) {
+                double tempo = 120.0;
+                if (auto* controller = TimelineController::getCurrent()) {
+                    tempo = controller->getState().tempo.bpm;
+                }
+                double clipOffsetBeats = clip->startTime * (tempo / 60.0) - clipStartBeats_;
+                displayBeat = clipOffsetBeats + beat;
+            } else {
+                displayBeat = beat;
+            }
+        } else {
+            displayBeat = beat;
+        }
     } else {
         // In ABS mode, use the note's own clip start position (not the grid-wide clipStartBeats_)
         ClipId clipId = note->getSourceClipId();
@@ -642,7 +692,17 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
         double displayBeat;
         if (relativeMode_) {
             // Relative: note at its clip-relative position
-            displayBeat = note.startBeat;
+            // For multi-clip, offset by the clip's distance from the earliest clip
+            if (clipIds_.size() > 1) {
+                double tempo = 120.0;
+                if (auto* controller = TimelineController::getCurrent()) {
+                    tempo = controller->getState().tempo.bpm;
+                }
+                double clipOffsetBeats = clip->startTime * (tempo / 60.0) - clipStartBeats_;
+                displayBeat = clipOffsetBeats + note.startBeat;
+            } else {
+                displayBeat = note.startBeat;
+            }
         } else {
             // Absolute: convert to timeline position
             // Get tempo from TimelineController
