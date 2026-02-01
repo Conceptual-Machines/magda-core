@@ -463,7 +463,10 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
                 tempo = controller->getState().tempo.bpm;
             }
             double clipStartBeats = clip->startTime * (tempo / 60.0);
-            displayBeat = clipStartBeats + beat - clip->midiOffset;
+            double offset = (clip->view == ClipView::Session || clip->internalLoopEnabled)
+                                ? clip->midiOffset
+                                : 0.0;
+            displayBeat = clipStartBeats + beat - offset;
         } else {
             displayBeat = clipStartBeats_ + beat;
         }
@@ -648,7 +651,10 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
                 tempo = controller->getState().tempo.bpm;
             }
             double clipStartBeats = clip->startTime * (tempo / 60.0);
-            displayBeat = clipStartBeats + note.startBeat - clip->midiOffset;
+            double offset = (clip->view == ClipView::Session || clip->internalLoopEnabled)
+                                ? clip->midiOffset
+                                : 0.0;
+            displayBeat = clipStartBeats + note.startBeat - offset;
         }
 
         int x = beatToPixel(displayBeat);
@@ -660,12 +666,6 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
 
         // Determine note colour based on editability and state
         juce::Colour noteColour = getColourForClip(clipId);
-
-        // Notes before offset are greyed out
-        bool isBeforeOffset = !relativeMode_ && (note.startBeat < clip->midiOffset);
-        if (isBeforeOffset) {
-            noteColour = noteColour.withAlpha(0.3f);
-        }
 
         noteComp->setGhost(!isClipSelected(clipId));
         noteComp->updateFromNote(note, noteColour);

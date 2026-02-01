@@ -1287,8 +1287,9 @@ void InspectorContent::updateFromSelectedClip() {
             clipEndValue_->setValue(endBeats, juce::dontSendNotification);
         }
 
-        // Content offset (MIDI clips only)
-        if (clip->type == magda::ClipType::MIDI) {
+        // Content offset (session MIDI clips and looping arrangement MIDI clips)
+        if (clip->type == magda::ClipType::MIDI &&
+            (clip->view == magda::ClipView::Session || clip->internalLoopEnabled)) {
             clipContentOffsetValue_->setValue(clip->midiOffset, juce::dontSendNotification);
             clipContentOffsetLabel_.setVisible(true);
             clipContentOffsetValue_->setVisible(true);

@@ -153,7 +153,8 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
         double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
         double beatsPerSecond = tempo / 60.0;
         double clipLengthInBeats = clip.length * beatsPerSecond;
-        double midiOffset = clip.midiOffset;
+        double midiOffset =
+            (clip.view == ClipView::Session || clip.internalLoopEnabled) ? clip.midiOffset : 0.0;
 
         // Use absolute MIDI range (0-127) for consistent vertical positioning across all clips
         const int MIDI_MIN = 0;

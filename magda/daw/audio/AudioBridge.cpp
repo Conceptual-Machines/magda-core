@@ -435,8 +435,11 @@ void AudioBridge::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip) {
     // Calculate the beat range visible in this clip based on midiOffset
     const double beatsPerSecond = 2.0;  // TODO: Get from tempo
     double clipLengthBeats = clip->length * beatsPerSecond;
-    double visibleStart = clip->midiOffset;  // Where the clip's "view window" starts
-    double visibleEnd = clip->midiOffset + clipLengthBeats;
+    // Only session clips use midiOffset; arrangement clips play all their notes
+    double effectiveOffset =
+        (clip->view == ClipView::Session || clip->internalLoopEnabled) ? clip->midiOffset : 0.0;
+    double visibleStart = effectiveOffset;  // Where the clip's "view window" starts
+    double visibleEnd = effectiveOffset + clipLengthBeats;
 
     DBG("MIDI SYNC clip " << clipId << ":");
     DBG("  midiOffset=" << clip->midiOffset << ", clipLength=" << clipLengthBeats << " beats");
@@ -454,8 +457,8 @@ void AudioBridge::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip) {
             continue;
         }
 
-        // Calculate position relative to clip start (subtract midiOffset)
-        double adjustedStart = noteStart - clip->midiOffset;
+        // Calculate position relative to clip start (subtract midiOffset for session clips only)
+        double adjustedStart = noteStart - effectiveOffset;
         double adjustedLength = note.lengthBeats;
 
         // Truncate note if it starts before the visible range

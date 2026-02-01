@@ -327,8 +327,12 @@ void PianoRollContent::setupGridCallbacks() {
             double clipLengthBeats = clip->length * beatsPerSecond;
 
             // Check if note is outside visible range [offset, offset + length]
-            if (note.startBeat < clip->midiOffset ||
-                note.startBeat >= clip->midiOffset + clipLengthBeats) {
+            double effectiveOffset =
+                (clip->view == magda::ClipView::Session || clip->internalLoopEnabled)
+                    ? clip->midiOffset
+                    : 0.0;
+            if (note.startBeat < effectiveOffset ||
+                note.startBeat >= effectiveOffset + clipLengthBeats) {
                 DBG("Note is no longer visible in clip "
                     << clipId << " (offset=" << clip->midiOffset << ", note at " << note.startBeat
                     << ")");
@@ -337,7 +341,7 @@ void PianoRollContent::setupGridCallbacks() {
                 // Note: startBeat is in content coordinates, so subtract offset to get timeline
                 // position
                 double clipStartBeats = clip->startTime * beatsPerSecond;
-                double absoluteBeat = clipStartBeats + note.startBeat - clip->midiOffset;
+                double absoluteBeat = clipStartBeats + note.startBeat - effectiveOffset;
                 double absoluteSeconds = absoluteBeat / beatsPerSecond;
 
                 magda::ClipId destClipId = magda::ClipManager::getInstance().getClipAtPosition(
@@ -350,8 +354,11 @@ void PianoRollContent::setupGridCallbacks() {
                         // Calculate position in destination clip's content coordinates
                         // absoluteBeat is timeline position, convert to content position
                         double destClipStartBeats = destClip->startTime * beatsPerSecond;
-                        double relativeNewBeat =
-                            absoluteBeat - destClipStartBeats + destClip->midiOffset;
+                        double destOffset = (destClip->view == magda::ClipView::Session ||
+                                             destClip->internalLoopEnabled)
+                                                ? destClip->midiOffset
+                                                : 0.0;
+                        double relativeNewBeat = absoluteBeat - destClipStartBeats + destOffset;
 
                         DBG("  -> Transfer: absoluteBeat="
                             << absoluteBeat << ", destClipStart=" << destClipStartBeats
@@ -805,12 +812,15 @@ void PianoRollContent::onActivated() {
             editingClipId_ = selectedClip;
             gridComponent_->setClip(selectedClip);
 
-            // Session clips are locked to relative mode
-            bool isSessionClip = (clip->view == magda::ClipView::Session);
-            if (isSessionClip) {
+            // Session clips and looping arrangement clips are locked to relative mode
+            bool forceRelative =
+                (clip->view == magda::ClipView::Session) || clip->internalLoopEnabled;
+            if (forceRelative) {
                 setRelativeTimeMode(true);
                 timeModeButton_->setEnabled(false);
-                timeModeButton_->setTooltip("Session clips always use relative time");
+                timeModeButton_->setTooltip(clip->internalLoopEnabled
+                                                ? "Looping clips use relative time"
+                                                : "Session clips always use relative time");
             } else {
                 timeModeButton_->setEnabled(true);
                 timeModeButton_->setTooltip(
@@ -893,9 +903,28 @@ void PianoRollContent::clipPropertyChanged(magda::ClipId clipId) {
     if (isDisplayed) {
         // Defer UI refresh asynchronously to prevent deleting components during event handling
         juce::Component::SafePointer<PianoRollContent> safeThis(this);
-        juce::MessageManager::callAsync([safeThis]() {
+        juce::MessageManager::callAsync([safeThis, clipId]() {
             if (auto* self = safeThis.getComponent()) {
+                // Re-evaluate force-relative mode (loop may have been toggled)
+                const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+                if (clip && clip->type == magda::ClipType::MIDI) {
+                    bool forceRelative =
+                        (clip->view == magda::ClipView::Session) || clip->internalLoopEnabled;
+                    if (forceRelative) {
+                        self->setRelativeTimeMode(true);
+                        self->timeModeButton_->setEnabled(false);
+                        self->timeModeButton_->setTooltip(
+                            clip->internalLoopEnabled ? "Looping clips use relative time"
+                                                      : "Session clips always use relative time");
+                    } else {
+                        self->timeModeButton_->setEnabled(true);
+                        self->timeModeButton_->setTooltip(
+                            "Toggle between Relative (clip) and Absolute (project) time");
+                    }
+                }
+
                 self->updateGridSize();
+                self->updateTimeRuler();
                 self->updateVelocityLane();
                 self->repaint();
             }
@@ -967,12 +996,15 @@ void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
                 gridComponent_->setClips(trackId, selectedMidiClips, allMidiClips);
             }
 
-            // Session clips are locked to relative mode
-            bool isSessionClip = (clip->view == magda::ClipView::Session);
-            if (isSessionClip) {
+            // Session clips and looping arrangement clips are locked to relative mode
+            bool forceRelative =
+                (clip->view == magda::ClipView::Session) || clip->internalLoopEnabled;
+            if (forceRelative) {
                 setRelativeTimeMode(true);
                 timeModeButton_->setEnabled(false);
-                timeModeButton_->setTooltip("Session clips always use relative time");
+                timeModeButton_->setTooltip(clip->internalLoopEnabled
+                                                ? "Looping clips use relative time"
+                                                : "Session clips always use relative time");
             } else {
                 timeModeButton_->setEnabled(true);
                 timeModeButton_->setTooltip(
