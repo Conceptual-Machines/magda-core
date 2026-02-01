@@ -594,7 +594,7 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
 
     const juce::CommandID allCommands[] = {
         // Edit menu
-        undo, redo, cut, copy, paste, duplicate, deleteCmd, selectAll, split, trim,
+        undo, redo, cut, copy, paste, duplicate, deleteCmd, selectAll, splitOrTrim,
         // File menu
         newProject, openProject, saveProject, saveProjectAs, exportAudio,
         // Transport
@@ -655,14 +655,10 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             result.addDefaultKeypress('a', juce::ModifierKeys::commandModifier);
             break;
 
-        case split:
-            result.setInfo("Split at Cursor", "Split clips at edit cursor", "Edit", 0);
-            result.addDefaultKeypress('s', 0);
-            break;
-
-        case trim:
-            result.setInfo("Trim to Selection", "Trim clips to time selection", "Edit", 0);
-            result.addDefaultKeypress('t', 0);
+        case splitOrTrim:
+            result.setInfo("Split / Trim", "Split clips at cursor, or trim to time selection",
+                           "Edit", 0);
+            result.addDefaultKeypress('e', juce::ModifierKeys::commandModifier);
             break;
 
         // Add other commands as needed...
@@ -786,127 +782,91 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             }
             return true;
 
-        case split:
-            // Split clips at edit cursor position
+        case splitOrTrim:
+            // Cmd+E: If time selection exists → trim clips to selection
+            //        Otherwise → split clips at edit cursor
             if (mainView) {
                 const auto& state = mainView->getTimelineController().getState();
-                double splitTime = state.editCursorPosition;
-                if (splitTime >= 0) {
-                    // TODO: Implement split at cursor
-                    std::cout << "⚠️  Split not yet implemented" << std::endl;
-                }
-            }
-            return true;
 
-        case trim:
-            // Split clips at selection boundaries (keep all three pieces: L-C-R)
-            if (mainView) {
-                const auto& state = mainView->getTimelineController().getState();
-                if (!state.selection.visuallyHidden) {
+                if (!state.selection.visuallyHidden && state.selection.isActive()) {
+                    // TIME SELECTION EXISTS → Trim clips to selection boundaries
                     double trimStart = state.selection.startTime;
                     double trimEnd = state.selection.endTime;
 
-                    // Get clips to split: use selected clips if any, otherwise all clips in
-                    // selection
-                    std::vector<ClipId> clipsToSplit;
+                    std::vector<ClipId> clipsToTrim;
                     if (!selectedClips.empty()) {
-                        std::cout << "📋 Using selected clips: " << selectedClips.size()
-                                  << std::endl;
-                        clipsToSplit.assign(selectedClips.begin(), selectedClips.end());
-                        // Debug: show which tracks these clips are on
-                        std::unordered_set<TrackId> tracksWithSelectedClips;
-                        for (auto clipId : selectedClips) {
-                            const auto* clip = clipManager.getClip(clipId);
-                            if (clip) {
-                                tracksWithSelectedClips.insert(clip->trackId);
-                                std::cout << "  Clip " << clipId << " on track " << clip->trackId
-                                          << std::endl;
-                            }
-                        }
-                        std::cout << "  Selected clips span " << tracksWithSelectedClips.size()
-                                  << " track(s)" << std::endl;
+                        clipsToTrim.assign(selectedClips.begin(), selectedClips.end());
                     } else {
-                        std::cout << "📋 No clips selected, using all clips in time selection"
-                                  << std::endl;
-                        // Get all clips that intersect with the time selection
                         for (const auto& clip : clipManager.getArrangementClips()) {
                             double clipEnd = clip.startTime + clip.length;
                             if (clip.startTime < trimEnd && clipEnd > trimStart) {
-                                clipsToSplit.push_back(clip.id);
-                                std::cout << "  Found clip " << clip.id << " on track "
-                                          << clip.trackId << std::endl;
+                                clipsToTrim.push_back(clip.id);
                             }
                         }
                     }
 
-                    if (clipsToSplit.empty()) {
-                        std::cout << "⚠️  No clips to split" << std::endl;
-                        return true;
-                    }
-
-                    std::cout << "✂️  Splitting " << clipsToSplit.size()
-                              << " clip(s) at selection boundaries [" << trimStart << ", "
-                              << trimEnd << "]" << std::endl;
-
-                    // ALWAYS use compound operation to ensure single undo entry
-                    UndoManager::getInstance().beginCompoundOperation("Split at Selection");
-
-                    std::vector<ClipId> centerClips;  // Track the center clips to select
-
-                    for (auto clipId : clipsToSplit) {
-                        const auto* clip = clipManager.getClip(clipId);
-                        if (!clip)
-                            continue;
-
-                        double clipEnd = clip->startTime + clip->length;
-
-                        // Skip clips that don't overlap with selection
-                        if (clip->startTime >= trimEnd || clipEnd <= trimStart) {
-                            continue;
-                        }
-
-                        ClipId currentClipId = clipId;
-
-                        // Split at left edge if clip extends before selection
-                        if (clip->startTime < trimStart && trimStart < clipEnd) {
-                            auto splitCmd =
-                                std::make_unique<SplitClipCommand>(currentClipId, trimStart);
-                            auto* cmdPtr = splitCmd.get();
-                            UndoManager::getInstance().executeCommand(std::move(splitCmd));
-                            // Continue with the right part (new clip) - this is the center
-                            currentClipId = cmdPtr->getRightClipId();
-
-                            // Update clip pointer after split
-                            clip = clipManager.getClip(currentClipId);
+                    if (!clipsToTrim.empty()) {
+                        std::vector<std::unique_ptr<ResizeClipCommand>> trimCommands;
+                        for (auto cid : clipsToTrim) {
+                            const auto* clip = clipManager.getClip(cid);
                             if (!clip)
                                 continue;
-                            clipEnd = clip->startTime + clip->length;
+                            if (clip->startTime >= trimEnd || clip->getEndTime() <= trimStart)
+                                continue;
+
+                            double newStart = std::max(clip->startTime, trimStart);
+                            double newEnd = std::min(clip->getEndTime(), trimEnd);
+                            double finalLength = newEnd - newStart;
+                            if (finalLength <= 0.01)
+                                continue;
+
+                            bool needTrimRight = (newEnd < clip->getEndTime());
+                            bool needTrimLeft = (newStart > clip->startTime);
+
+                            if (needTrimRight) {
+                                trimCommands.push_back(std::make_unique<ResizeClipCommand>(
+                                    cid, newEnd - clip->startTime, false));
+                            }
+                            if (needTrimLeft) {
+                                trimCommands.push_back(
+                                    std::make_unique<ResizeClipCommand>(cid, finalLength, true));
+                            }
                         }
 
-                        // Split at right edge if clip extends after selection
-                        if (trimEnd < clipEnd) {
-                            auto splitCmd =
-                                std::make_unique<SplitClipCommand>(currentClipId, trimEnd);
-                            UndoManager::getInstance().executeCommand(std::move(splitCmd));
-                            // currentClipId is now the left part (center clip)
+                        if (!trimCommands.empty()) {
+                            UndoManager::getInstance().beginCompoundOperation("Trim Clips");
+                            for (auto& cmd : trimCommands) {
+                                UndoManager::getInstance().executeCommand(std::move(cmd));
+                            }
+                            UndoManager::getInstance().endCompoundOperation();
+                        }
+                    }
+                } else {
+                    // NO TIME SELECTION → Split at edit cursor
+                    double splitTime = state.editCursorPosition;
+                    if (splitTime >= 0) {
+                        const auto& allClips = clipManager.getArrangementClips();
+                        std::vector<ClipId> clipsToSplit;
+                        for (const auto& clip : allClips) {
+                            if (splitTime > clip.startTime &&
+                                splitTime < clip.startTime + clip.length) {
+                                clipsToSplit.push_back(clip.id);
+                            }
                         }
 
-                        // Track the center clip for selection
-                        centerClips.push_back(currentClipId);
+                        if (!clipsToSplit.empty()) {
+                            if (clipsToSplit.size() > 1) {
+                                UndoManager::getInstance().beginCompoundOperation("Split Clips");
+                            }
+                            for (auto cid : clipsToSplit) {
+                                auto cmd = std::make_unique<SplitClipCommand>(cid, splitTime);
+                                UndoManager::getInstance().executeCommand(std::move(cmd));
+                            }
+                            if (clipsToSplit.size() > 1) {
+                                UndoManager::getInstance().endCompoundOperation();
+                            }
+                        }
                     }
-
-                    UndoManager::getInstance().endCompoundOperation();
-
-                    // Select the center clips
-                    if (!centerClips.empty()) {
-                        std::unordered_set<ClipId> newSelection(centerClips.begin(),
-                                                                centerClips.end());
-                        selectionManager.selectClips(newSelection);
-                    }
-
-                    // Move cursor to end of selection
-                    auto& timelineController = mainView->getTimelineController();
-                    timelineController.dispatch(SetEditCursorEvent{trimEnd});
                 }
             }
             return true;

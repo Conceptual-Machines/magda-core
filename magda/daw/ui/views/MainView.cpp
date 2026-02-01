@@ -770,60 +770,8 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
     // NOTE: Cmd+C, Cmd+V, Cmd+X, Cmd+D are now handled by ApplicationCommandManager in MainWindow
     // These old handlers have been removed to prevent double-handling
 
-    // S: Split clips at edit cursor (regardless of selection)
-    if (key == juce::KeyPress('s') || key == juce::KeyPress('S')) {
-        // Check if Shift is held - that's for Solo
-        if (key.getModifiers().isShiftDown()) {
-            // TODO: Implement solo toggle
-            return false;  // Let it fall through for now
-        }
-
-        // Get edit cursor position from timeline
-        double splitTime = timelineController->getState().editCursorPosition;
-
-        // Can't split if edit cursor is not set
-        if (splitTime < 0) {
-            std::cout << "⚠️ CLIP: Cannot split - no edit cursor position" << std::endl;
-            return true;
-        }
-
-        // Split ALL clips that intersect with cursor (regardless of selection)
-        const auto& allClips = clipManager.getArrangementClips();
-
-        // Collect clips to split
-        std::vector<ClipId> clipsToSplit;
-        for (const auto& clip : allClips) {
-            if (splitTime > clip.startTime && splitTime < clip.startTime + clip.length) {
-                clipsToSplit.push_back(clip.id);
-            }
-        }
-
-        if (clipsToSplit.empty()) {
-            std::cout << "⚠️ CLIP: No clips at cursor position" << std::endl;
-            return true;
-        }
-
-        // Use compound operation if splitting multiple clips
-        if (clipsToSplit.size() > 1) {
-            UndoManager::getInstance().beginCompoundOperation("Split Clips");
-        }
-
-        for (auto clipId : clipsToSplit) {
-            auto cmd = std::make_unique<SplitClipCommand>(clipId, splitTime);
-            UndoManager::getInstance().executeCommand(std::move(cmd));
-        }
-
-        if (clipsToSplit.size() > 1) {
-            UndoManager::getInstance().endCompoundOperation();
-        }
-
-        std::cout << "🎵 CLIP: Split " << clipsToSplit.size() << " clip(s) at " << splitTime << "s"
-                  << std::endl;
-        return true;
-    }
-
-    // NOTE: Trim is now handled by ApplicationCommandManager in MainWindow
-    // Old trim handler removed to prevent double-handling
+    // NOTE: Split (Cmd+E) and Trim (Cmd+E with time selection) are handled by
+    // ApplicationCommandManager in MainWindow
 
     // Forward unhandled keys to parent for command manager processing
     if (auto* parent = getParentComponent()) {
