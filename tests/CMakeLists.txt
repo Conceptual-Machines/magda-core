@@ -11,6 +11,7 @@ set(TEST_SOURCES
     test_interfaces.cpp
     test_midi_clip_sync.cpp
     test_midi_clip_split.cpp
+    test_midi_offset.cpp
     test_nested_racks.cpp
     test_modulation.cpp
     test_parameter_utils.cpp
