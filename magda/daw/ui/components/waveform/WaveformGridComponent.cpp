@@ -832,6 +832,16 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
             break;
     }
 
+    // Rebuild displayInfo_ immediately so paint uses consistent values
+    // (the throttled notification from WaveformEditorContent would otherwise
+    // leave displayInfo_ stale relative to the clip we just modified).
+    {
+        double bpm = timeRuler_ ? timeRuler_->getTempo() : 120.0;
+        displayInfo_ = magda::ClipDisplayInfo::from(*clip, bpm);
+        clipLength_ = clip->length;
+        clipStartTime_ = clip->startTime;
+    }
+
     // Repaint locally for immediate feedback
     repaint();
 

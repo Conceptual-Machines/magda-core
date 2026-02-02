@@ -126,6 +126,78 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         // loopEndPositionSeconds (2.0) >= length (1.0) → not looped
         REQUIRE_FALSE(di.isLooped());
     }
+
+    SECTION("Clip shorter than loop cycle: source range clamped to clip length") {
+        ClipInfo clip;
+        clip.startTime = 0.0;
+        clip.length = 1.0;  // 1s clip, shorter than 2s loop cycle
+        clip.audioOffset = 0.5;
+        clip.audioStretchFactor = 1.0;
+        clip.internalLoopEnabled = true;
+        clip.internalLoopOffset = 0.0;
+        clip.internalLoopLength = 4.0;  // 4 beats = 2s at 120 BPM
+
+        auto di = ClipDisplayInfo::from(clip, 120.0);
+
+        // sourceFileEnd must be clamped: audioOffset + clip.length / stretch = 0.5 + 1.0 = 1.5
+        // NOT the full loop cycle end of 0.5 + 2.0 = 2.5
+        REQUIRE(di.sourceFileStart == Catch::Approx(0.5));
+        REQUIRE(di.sourceFileEnd == Catch::Approx(1.5));
+    }
+
+    SECTION("Clip shorter than loop cycle with stretch: source range clamped") {
+        ClipInfo clip;
+        clip.startTime = 0.0;
+        clip.length = 1.0;  // 1s on timeline
+        clip.audioOffset = 0.0;
+        clip.audioStretchFactor = 2.0;  // 2x slower
+        clip.internalLoopEnabled = true;
+        clip.internalLoopOffset = 0.0;
+        clip.internalLoopLength = 4.0;  // 4 beats = 2s at 120 BPM
+
+        auto di = ClipDisplayInfo::from(clip, 120.0);
+
+        // Full loop source range would be 0 + 2.0/2.0 = 1.0s of source
+        // But clip is only 1.0s on timeline = 0.5s of source
+        // sourceFileEnd = min(1.0, 0.0 + 1.0/2.0) = 0.5
+        REQUIRE(di.sourceFileStart == Catch::Approx(0.0));
+        REQUIRE(di.sourceFileEnd == Catch::Approx(0.5));
+    }
+
+    SECTION("Clip equal to loop cycle: source range not clamped") {
+        ClipInfo clip;
+        clip.startTime = 0.0;
+        clip.length = 2.0;  // exactly one loop cycle
+        clip.audioOffset = 0.0;
+        clip.audioStretchFactor = 1.0;
+        clip.internalLoopEnabled = true;
+        clip.internalLoopOffset = 0.0;
+        clip.internalLoopLength = 4.0;  // 4 beats = 2s at 120 BPM
+
+        auto di = ClipDisplayInfo::from(clip, 120.0);
+
+        // Clip length == loop cycle, no clamping needed
+        REQUIRE(di.sourceFileStart == Catch::Approx(0.0));
+        REQUIRE(di.sourceFileEnd == Catch::Approx(2.0));
+    }
+
+    SECTION("Clip longer than loop cycle: source range not clamped") {
+        ClipInfo clip;
+        clip.startTime = 0.0;
+        clip.length = 6.0;  // 3x the loop cycle
+        clip.audioOffset = 0.0;
+        clip.audioStretchFactor = 1.0;
+        clip.internalLoopEnabled = true;
+        clip.internalLoopOffset = 0.0;
+        clip.internalLoopLength = 4.0;  // 4 beats = 2s at 120 BPM
+
+        auto di = ClipDisplayInfo::from(clip, 120.0);
+
+        // Full loop cycle source range, no clamping
+        REQUIRE(di.sourceFileStart == Catch::Approx(0.0));
+        REQUIRE(di.sourceFileEnd == Catch::Approx(2.0));
+        REQUIRE(di.isLooped());
+    }
 }
 
 // ============================================================================

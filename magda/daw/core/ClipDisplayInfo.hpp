@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include "ClipInfo.hpp"
 #include "ui/utils/TimelineUtils.hpp"
 
@@ -68,6 +70,9 @@ struct ClipDisplayInfo {
         if (d.loopEnabled && d.loopLengthSeconds > 0.0) {
             d.sourceFileStart = clip.audioOffset + d.loopOffsetSeconds / d.stretchFactor;
             d.sourceFileEnd = d.sourceFileStart + d.loopLengthSeconds / d.stretchFactor;
+            // When clip is shorter than one loop cycle, only show what fits
+            double maxSourceEnd = d.sourceFileStart + (clip.length / d.stretchFactor);
+            d.sourceFileEnd = std::min(d.sourceFileEnd, maxSourceEnd);
         } else {
             d.sourceFileStart = clip.audioOffset;
             d.sourceFileEnd = clip.audioOffset + clip.length / d.stretchFactor;
