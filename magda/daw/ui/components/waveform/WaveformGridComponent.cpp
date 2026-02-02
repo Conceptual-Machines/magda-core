@@ -98,7 +98,8 @@ void WaveformGridComponent::paintWaveformBackground(juce::Graphics& g, const mag
             g.fillRoundedRectangle(inBoundsRect.toFloat(), 3.0f);
         }
 
-        if (!waveformRect.isEmpty()) {
+        // Only draw the ghost region beyond loop end when enabled
+        if (showLoopGhost_ && !waveformRect.isEmpty()) {
             g.setColour(outOfBoundsColour);
             g.fillRoundedRectangle(waveformRect.toFloat(), 3.0f);
         }
@@ -138,9 +139,12 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
             double actualDisplayCycle =
                 fileClamped ? (fileEnd - fileStart) * clip.audioStretchFactor : loopCycle;
 
+            // When loop ghost is hidden, only tile up to the first loop cycle
+            double tileLimit = showLoopGhost_ ? clip.length : displayInfo_.loopEndPositionSeconds;
+
             double timePos = 0.0;
-            while (timePos < clip.length) {
-                double cycleEnd = std::min(timePos + actualDisplayCycle, clip.length);
+            while (timePos < tileLimit) {
+                double cycleEnd = std::min(timePos + actualDisplayCycle, tileLimit);
                 int drawX = waveformRect.getX() + static_cast<int>(timePos * horizontalZoom_);
                 int drawRight = waveformRect.getX() + static_cast<int>(cycleEnd * horizontalZoom_);
                 auto cycleRect = juce::Rectangle<int>(drawX, waveformRect.getY(), drawRight - drawX,
@@ -450,8 +454,9 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
         double fileStart = displayInfo_.sourceFileStart;
         double fileEnd = displayInfo_.sourceFileEnd;
 
+        double markerLimit = showLoopGhost_ ? clip.length : displayInfo_.loopEndPositionSeconds;
         double timePos = 0.0;
-        while (timePos < clip.length) {
+        while (timePos < markerLimit) {
             drawMarkersForCycle(timePos, fileStart, fileEnd);
             timePos += loopCycle;
         }
@@ -584,6 +589,14 @@ double WaveformGridComponent::snapTimeToGrid(double time) const {
     return std::round(time / secondsPerGrid) * secondsPerGrid;
 }
 
+void WaveformGridComponent::setShowLoopGhost(bool show) {
+    if (showLoopGhost_ != show) {
+        showLoopGhost_ = show;
+        updateGridSize();
+        repaint();
+    }
+}
+
 void WaveformGridComponent::setWarpMode(bool enabled) {
     if (warpMode_ != enabled) {
         warpMode_ = enabled;
@@ -621,17 +634,22 @@ void WaveformGridComponent::updateGridSize() {
         return;
     }
 
+    // When loop ghost is hidden, use the effective (loop end) length
+    double displayClipLength = clipLength_;
+    if (!showLoopGhost_ && displayInfo_.isLooped())
+        displayClipLength = std::min(clipLength_, displayInfo_.loopEndPositionSeconds);
+
     // Calculate required width based on mode
     double totalTime = 0.0;
     if (relativeMode_) {
         // In relative mode, show clip length + right padding
-        totalTime = clipLength_ + 10.0;  // 10 seconds right padding
+        totalTime = displayClipLength + 10.0;  // 10 seconds right padding
     } else {
         // In absolute mode, show from 0 to clip end + both left and right padding
         // Add left padding so we can scroll before clip start
         double leftPaddingTime =
             std::max(10.0, clipStartTime_ * 0.5);  // At least 10s or half the clip start time
-        totalTime = clipStartTime_ + clipLength_ + 10.0 + leftPaddingTime;
+        totalTime = clipStartTime_ + displayClipLength + 10.0 + leftPaddingTime;
     }
 
     int requiredWidth =
@@ -930,14 +948,20 @@ bool WaveformGridComponent::isNearLeftEdge(int x, const magda::ClipInfo& clip) c
 
 bool WaveformGridComponent::isNearRightEdge(int x, const magda::ClipInfo& clip) const {
     double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
-    int rightEdgeX = timeToPixel(displayStartTime + clip.length);
+    double rightEdgeTime = (!showLoopGhost_ && displayInfo_.isLooped())
+                               ? displayInfo_.loopEndPositionSeconds
+                               : clip.length;
+    int rightEdgeX = timeToPixel(displayStartTime + rightEdgeTime);
     return std::abs(x - rightEdgeX) <= EDGE_GRAB_DISTANCE;
 }
 
 bool WaveformGridComponent::isInsideWaveform(int x, const magda::ClipInfo& clip) const {
     double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
     int leftEdgeX = timeToPixel(displayStartTime);
-    int rightEdgeX = timeToPixel(displayStartTime + clip.length);
+    double rightEdgeTime = (!showLoopGhost_ && displayInfo_.isLooped())
+                               ? displayInfo_.loopEndPositionSeconds
+                               : clip.length;
+    int rightEdgeX = timeToPixel(displayStartTime + rightEdgeTime);
     return x > leftEdgeX + EDGE_GRAB_DISTANCE && x < rightEdgeX - EDGE_GRAB_DISTANCE;
 }
 

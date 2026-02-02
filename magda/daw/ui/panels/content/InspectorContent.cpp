@@ -419,6 +419,16 @@ InspectorContent::InspectorContent() {
     };
     addChildComponent(clipWarpToggle_);
 
+    clipStretchValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
+    clipStretchValue_->setRange(0.25, 4.0, 1.0);
+    clipStretchValue_->setSuffix("x");
+    clipStretchValue_->onValueChange = [this]() {
+        if (selectedClipId_ != magda::INVALID_CLIP_ID)
+            magda::ClipManager::getInstance().setAudioStretchFactor(selectedClipId_,
+                                                                    clipStretchValue_->getValue());
+    };
+    addChildComponent(*clipStretchValue_);
+
     // Loop position
     clipLoopPosLabel_.setText("Pos", juce::dontSendNotification);
     clipLoopPosLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
@@ -852,6 +862,11 @@ void InspectorContent::resized() {
         // Warp toggle (audio clips only)
         if (clipWarpToggle_.isVisible()) {
             clipWarpToggle_.setBounds(bounds.removeFromTop(22).reduced(0, 1));
+            bounds.removeFromTop(8);
+        }
+
+        if (clipStretchValue_ && clipStretchValue_->isVisible()) {
+            clipStretchValue_->setBounds(bounds.removeFromTop(22).reduced(0, 1));
             bounds.removeFromTop(8);
         }
 
@@ -1385,6 +1400,11 @@ void InspectorContent::updateFromSelectedClip() {
             clipWarpToggle_.setToggleState(clip->warpEnabled, juce::dontSendNotification);
         }
 
+        clipStretchValue_->setVisible(isAudioClip);
+        if (isAudioClip) {
+            clipStretchValue_->setValue(clip->audioStretchFactor, juce::dontSendNotification);
+        }
+
         // Always show loop pos/length, but grey out when loop is off
         bool loopOn = isSessionClip || clip->internalLoopEnabled;
         clipLoopPosLabel_.setVisible(true);
@@ -1467,6 +1487,8 @@ void InspectorContent::showClipControls(bool show) {
     clipLoopToggle_->setVisible(show);
     if (!show) {
         clipWarpToggle_.setVisible(false);
+        if (clipStretchValue_)
+            clipStretchValue_->setVisible(false);
     }
     // Loop pos/length visibility is managed by updateFromSelectedClip
     if (!show) {
