@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "PanelContent.hpp"
+#include "core/ClipDisplayInfo.hpp"
 #include "core/ClipManager.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
 #include "ui/components/waveform/WaveformGridComponent.hpp"
@@ -123,7 +124,7 @@ class WaveformEditorContent : public PanelContent,
     void performAnchorPointZoom(double zoomFactor, int anchorX);
 
     // Update the grid's loop boundary from clip info
-    void updateLoopBoundary(const magda::ClipInfo& clip);
+    void updateDisplayInfo(const magda::ClipInfo& clip);
 
     // Warp marker helpers
     void refreshWarpMarkers();

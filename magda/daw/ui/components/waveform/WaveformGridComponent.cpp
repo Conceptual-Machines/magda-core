@@ -56,8 +56,9 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
 
     // Calculate clip boundaries for highlighting out-of-bounds regions
     // When looping is active, treat the loop end as the effective boundary
-    double effectiveLength =
-        (loopEndSeconds_ > 0.0) ? std::min(clipLength_, loopEndSeconds_) : clipLength_;
+    double effectiveLength = (displayInfo_.isLooped())
+                                 ? std::min(clipLength_, displayInfo_.loopEndPositionSeconds)
+                                 : clipLength_;
     int clipStartPixel = relativeMode_ ? timeToPixel(0.0) : timeToPixel(clipStartTime_);
     int clipEndPixel = relativeMode_ ? timeToPixel(effectiveLength)
                                      : timeToPixel(clipStartTime_ + effectiveLength);
@@ -110,7 +111,7 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
     auto waveColour = clip.colour.brighter(0.2f);
     auto vertZoom = static_cast<float>(verticalZoom_);
 
-    bool isLooped = loopEndSeconds_ > 0.0 && loopEndSeconds_ < clip.length;
+    bool isLooped = displayInfo_.isLooped();
 
     g.saveState();
     if (g.reduceClipRegion(waveformRect)) {
@@ -119,9 +120,11 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
             paintWarpedWaveform(g, clip, waveformRect, waveColour, vertZoom);
         } else if (isLooped) {
             // Looped: tile waveform across the full clip length
-            double loopCycle = loopEndSeconds_;
-            double fileStart = clip.audioOffset;
-            double fileEnd = clip.audioOffset + loopCycle / clip.audioStretchFactor;
+            // Use cycle DURATION (not end position) for tiling step
+            double loopCycle = displayInfo_.loopLengthSeconds;
+            // File range per cycle from pre-computed display info
+            double fileStart = displayInfo_.sourceFileStart;
+            double fileEnd = displayInfo_.sourceFileEnd;
             bool fileClamped = false;
             if (fileDuration > 0.0 && fileEnd > fileDuration) {
                 fileEnd = fileDuration;
@@ -149,8 +152,8 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
             }
         } else {
             // Non-looped: single draw, clamped to file duration
-            double displayStart = clip.audioOffset;
-            double displayEnd = clip.audioOffset + clip.length / clip.audioStretchFactor;
+            double displayStart = displayInfo_.sourceFileStart;
+            double displayEnd = displayInfo_.sourceFileEnd;
             if (fileDuration > 0.0 && displayEnd > fileDuration)
                 displayEnd = fileDuration;
 
@@ -350,8 +353,8 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
 
         // Loop boundary (distinct from clip end)
-        if (loopEndSeconds_ > 0.0 && loopEndSeconds_ < clipLength_) {
-            int loopEndX = timeToPixel(clipStartTime_ + loopEndSeconds_);
+        if (displayInfo_.loopEndPositionSeconds > 0.0) {
+            int loopEndX = timeToPixel(clipStartTime_ + displayInfo_.loopEndPositionSeconds);
             g.setColour(DarkTheme::getAccentColour().withAlpha(0.5f));
             // Draw dashed-style loop marker: thinner line with label
             g.fillRect(loopEndX - 1, 0, 2, bounds.getHeight());
@@ -371,8 +374,8 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
 
         // Loop boundary (distinct from clip end)
-        if (loopEndSeconds_ > 0.0 && loopEndSeconds_ < clipLength_) {
-            int loopEndX = timeToPixel(loopEndSeconds_);
+        if (displayInfo_.loopEndPositionSeconds > 0.0) {
+            int loopEndX = timeToPixel(displayInfo_.loopEndPositionSeconds);
             g.setColour(DarkTheme::getAccentColour().withAlpha(0.5f));
             g.fillRect(loopEndX - 1, 0, 2, bounds.getHeight());
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
@@ -397,7 +400,7 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
 
     g.setColour(juce::Colours::white.withAlpha(0.25f));
 
-    bool isLooped = loopEndSeconds_ > 0.0 && loopEndSeconds_ < clip.length;
+    bool isLooped = displayInfo_.isLooped();
 
     // Visible pixel range for culling
     int visibleLeft = 0;
@@ -427,9 +430,9 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
     };
 
     if (isLooped) {
-        double loopCycle = loopEndSeconds_;
-        double fileStart = clip.audioOffset;
-        double fileEnd = clip.audioOffset + loopCycle / clip.audioStretchFactor;
+        double loopCycle = displayInfo_.loopLengthSeconds;
+        double fileStart = displayInfo_.sourceFileStart;
+        double fileEnd = displayInfo_.sourceFileEnd;
 
         double timePos = 0.0;
         while (timePos < clip.length) {
@@ -437,8 +440,8 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
             timePos += loopCycle;
         }
     } else {
-        double sourceStart = clip.audioOffset;
-        double sourceEnd = clip.audioOffset + clip.length / clip.audioStretchFactor;
+        double sourceStart = displayInfo_.sourceFileStart;
+        double sourceEnd = displayInfo_.sourceFileEnd;
         drawMarkersForCycle(0.0, sourceStart, sourceEnd);
     }
 }
@@ -512,12 +515,9 @@ void WaveformGridComponent::updateClipPosition(double startTime, double length) 
     repaint();
 }
 
-void WaveformGridComponent::setLoopEndSeconds(double loopEndSeconds) {
-    double val = loopEndSeconds > 0.0 ? loopEndSeconds : 0.0;
-    if (loopEndSeconds_ != val) {
-        loopEndSeconds_ = val;
-        repaint();
-    }
+void WaveformGridComponent::setDisplayInfo(const magda::ClipDisplayInfo& info) {
+    displayInfo_ = info;
+    repaint();
 }
 
 void WaveformGridComponent::setTransientTimes(const juce::Array<double>& times) {

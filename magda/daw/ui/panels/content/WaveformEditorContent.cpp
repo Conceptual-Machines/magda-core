@@ -7,6 +7,7 @@
 #include "../../themes/FontManager.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
+#include "core/ClipDisplayInfo.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
 
@@ -132,19 +133,18 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
 
             // Wrap playhead inside loop region when looping is enabled
             if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
-                // Get loop length in seconds using project tempo
                 double bpm = 120.0;
                 auto* controller = magda::TimelineController::getCurrent();
                 if (controller) {
                     bpm = controller->getState().tempo.bpm;
                 }
-                double loopLengthSec = (bpm > 0.0) ? (clip->internalLoopLength * 60.0 / bpm) : 0.0;
+                auto di = magda::ClipDisplayInfo::from(*clip, bpm);
 
-                if (loopLengthSec > 0.0) {
-                    // Position relative to clip start
+                if (di.loopLengthSeconds > 0.0) {
+                    // Position relative to clip start, offset by loop start
                     double relPos = playPos - clip->startTime;
                     if (relPos >= 0.0) {
-                        relPos = std::fmod(relPos, loopLengthSec);
+                        relPos = std::fmod(relPos, di.loopLengthSeconds) + di.loopOffsetSeconds;
                         playPos = clip->startTime + relPos;
                     }
                 }
@@ -544,7 +544,7 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
             timeRuler_->setClipLength(clip->length);
 
             // Update loop boundary dimming
-            updateLoopBoundary(*clip);
+            updateDisplayInfo(*clip);
 
             // Update warp mode state
             bool warpEnabled = clip->warpEnabled;
@@ -664,7 +664,7 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
             timeRuler_->setTimeOffset(clip->startTime);
             timeRuler_->setClipLength(clip->length);
 
-            updateLoopBoundary(*clip);
+            updateDisplayInfo(*clip);
 
             // Update BPM label
             if (clip->detectedBPM > 0.0) {
@@ -765,18 +765,14 @@ void WaveformEditorContent::scrollToClipStart() {
     }
 }
 
-void WaveformEditorContent::updateLoopBoundary(const magda::ClipInfo& clip) {
-    if (clip.internalLoopEnabled && clip.internalLoopLength > 0.0) {
-        double bpm = 120.0;
-        auto* controller = magda::TimelineController::getCurrent();
-        if (controller) {
-            bpm = controller->getState().tempo.bpm;
-        }
-        double loopEndSec = (bpm > 0.0) ? (clip.internalLoopLength * 60.0 / bpm) : 0.0;
-        gridComponent_->setLoopEndSeconds(loopEndSec);
-    } else {
-        gridComponent_->setLoopEndSeconds(0.0);
+void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
+    double bpm = 120.0;
+    auto* controller = magda::TimelineController::getCurrent();
+    if (controller) {
+        bpm = controller->getState().tempo.bpm;
     }
+    auto info = magda::ClipDisplayInfo::from(clip, bpm);
+    gridComponent_->setDisplayInfo(info);
 }
 
 void WaveformEditorContent::performAnchorPointZoom(double zoomFactor, int anchorX) {

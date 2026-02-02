@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "audio/AudioBridge.hpp"
+#include "core/ClipDisplayInfo.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
 
@@ -92,11 +93,10 @@ class WaveformGridComponent : public juce::Component {
     void updateClipPosition(double startTime, double length);
 
     /**
-     * @brief Set the loop end boundary in seconds (clip-relative)
-     * When set (> 0), audio past the loop point is dimmed.
-     * Pass 0 or negative to clear.
+     * @brief Set pre-computed display info (loop boundaries, source-file ranges, etc.)
+     * @param info ClipDisplayInfo built from ClipInfo + BPM
      */
-    void setLoopEndSeconds(double loopEndSeconds);
+    void setDisplayInfo(const magda::ClipDisplayInfo& info);
 
     /**
      * @brief Set detected transient times (in source file seconds)
@@ -167,9 +167,9 @@ class WaveformGridComponent : public juce::Component {
 
     // Timeline mode
     bool relativeMode_ = false;
-    double clipStartTime_ = 0.0;   // Clip start position on timeline (seconds)
-    double clipLength_ = 0.0;      // Clip length (seconds)
-    double loopEndSeconds_ = 0.0;  // Loop end boundary in seconds (0 = no loop)
+    double clipStartTime_ = 0.0;            // Clip start position on timeline (seconds)
+    double clipLength_ = 0.0;               // Clip length (seconds)
+    magda::ClipDisplayInfo displayInfo_{};  // Pre-computed display values
 
     // Zoom and scroll
     double horizontalZoom_ = 100.0;  // pixels per second

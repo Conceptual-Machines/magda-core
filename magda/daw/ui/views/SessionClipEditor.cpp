@@ -4,6 +4,7 @@
 #include "../state/TimelineController.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
+#include "core/ClipDisplayInfo.hpp"
 
 namespace magda {
 
@@ -41,18 +42,25 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
         auto* thumbnail =
             magda::AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
         if (thumbnail && thumbnail->getTotalLength() > 0.0) {
+            // Build display info using project BPM
+            double bpm = 120.0;
+            if (auto* controller = TimelineController::getCurrent()) {
+                bpm = controller->getState().tempo.bpm;
+            }
+            auto di = ClipDisplayInfo::from(*clip, bpm);
+
             // Calculate visible time range based on clip length and offset
-            double startTime = clip->audioOffset;
-            double endTime = startTime + (clip->length / clip->audioStretchFactor);
+            double startTime = di.sourceFileStart;
+            double endTime = di.sourceFileEnd;
 
             // Draw waveform
             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
             thumbnail->drawChannels(g, waveformBounds, startTime, endTime, 1.0f);
 
             // Draw loop region if enabled
-            if (clip->internalLoopEnabled) {
-                double loopLengthSeconds = clip->internalLoopLength / clip->audioStretchFactor;
-                double loopEndTime = startTime + loopLengthSeconds;
+            if (di.isLooped()) {
+                double loopSourceLength = di.loopLengthSeconds / di.stretchFactor;
+                double loopEndTime = startTime + loopSourceLength;
 
                 if (loopEndTime <= endTime) {
                     // Calculate loop region bounds (loop starts at clip beginning)
@@ -60,7 +68,7 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
 
                     int loopStartX = waveformBounds.getX();
                     int loopEndX = waveformBounds.getX() +
-                                   static_cast<int>(loopLengthSeconds / visibleDuration *
+                                   static_cast<int>(loopSourceLength / visibleDuration *
                                                     waveformBounds.getWidth());
 
                     // Draw loop region overlay
