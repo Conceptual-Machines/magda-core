@@ -1,7 +1,9 @@
 #include "AudioThumbnailManager.hpp"
 
-#include <tracktion_engine/timestretch/tracktion_TempoDetect.h>
+// clang-format off
 #include <tracktion_engine/tracktion_engine.h>
+#include <tracktion_engine/timestretch/tracktion_TempoDetect.h>
+// clang-format on
 
 namespace magda {
 

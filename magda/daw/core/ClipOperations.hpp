@@ -51,16 +51,12 @@ class ClipOperations {
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
         double lengthDelta = clip.length - newLength;
         double newStartTime = juce::jmax(0.0, clip.startTime + lengthDelta);
-        double actualStartDelta = newStartTime - clip.startTime;
 
-        // For audio clips, adjust the file offset to compensate
-        if (clip.type == ClipType::Audio && actualStartDelta > 0.0) {
-            // Clip moved right — advance file offset
-            clip.audioOffset += actualStartDelta / clip.audioStretchFactor;
-        } else if (clip.type == ClipType::Audio && actualStartDelta < 0.0) {
-            // Clip moved left — reveal earlier audio (reduce offset, clamped to 0)
-            double revealAmount = -actualStartDelta / clip.audioStretchFactor;
-            clip.audioOffset = juce::jmax(0.0, clip.audioOffset - revealAmount);
+        // For audio clips, adjust offset so the audible content stays aligned
+        if (clip.type == ClipType::Audio && !clip.audioFilePath.isEmpty()) {
+            double actualDelta = newStartTime - clip.startTime;
+            double fileDelta = actualDelta / clip.audioStretchFactor;
+            clip.audioOffset = juce::jmax(0.0, clip.audioOffset + fileDelta);
         }
 
         clip.startTime = newStartTime;

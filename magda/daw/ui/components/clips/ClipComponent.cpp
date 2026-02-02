@@ -667,6 +667,16 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             previewStartTime_ = finalStartTime;
             previewLength_ = finalLength;
 
+            // Throttled update so waveform editor stays in sync during drag
+            if (resizeThrottle_.check()) {
+                auto& cm = magda::ClipManager::getInstance();
+                if (auto* mutableClip = cm.getClip(clipId_)) {
+                    mutableClip->startTime = finalStartTime;
+                    mutableClip->length = finalLength;
+                    cm.forceNotifyClipPropertyChanged(clipId_);
+                }
+            }
+
             // Convert to pixels (using parent's method to account for padding)
             int newX = parentPanel_->timeToPixel(finalStartTime);
             int newWidth = static_cast<int>(finalLength * pixelsPerSecond);
@@ -699,6 +709,15 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             }
 
             previewLength_ = finalLength;
+
+            // Throttled update so waveform editor stays in sync during drag
+            if (resizeThrottle_.check()) {
+                auto& cm = magda::ClipManager::getInstance();
+                if (auto* mutableClip = cm.getClip(clipId_)) {
+                    mutableClip->length = finalLength;
+                    cm.forceNotifyClipPropertyChanged(clipId_);
+                }
+            }
 
             // Convert to pixels (using parent's method to account for padding)
             int newX = parentPanel_->timeToPixel(dragStartTime_);
@@ -890,6 +909,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
             }
 
             case DragMode::ResizeLeft: {
+                resizeThrottle_.reset();
                 double finalStartTime = previewStartTime_;
                 double finalLength = previewLength_;
 
@@ -910,6 +930,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
             }
 
             case DragMode::ResizeRight: {
+                resizeThrottle_.reset();
                 double finalLength = previewLength_;
 
                 if (snapTimeToGrid) {

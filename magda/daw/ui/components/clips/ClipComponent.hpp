@@ -113,6 +113,7 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     double dragStartAudioOffset_ = 0.0;
     double dragStartFileDuration_ = 0.0;
     DragThrottle stretchThrottle_{50};
+    DragThrottle resizeThrottle_{50};
 
     // Alt+drag duplicate state
     bool isDuplicating_ = false;
