@@ -632,6 +632,21 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
             audioClipPtr->setSpeedRatio(teSpeedRatio);
         }
     }
+
+    // 7. UPDATE loop properties
+    if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
+        auto& tempoSeq = edit_.tempoSequence;
+        double loopStart = clip->internalLoopOffset;
+        double loopEnd = loopStart + clip->internalLoopLength;
+        auto loopStartTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopStart));
+        auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEnd));
+
+        audioClipPtr->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
+        audioClipPtr->setLoopRangeBeats(
+            {te::BeatPosition::fromBeats(loopStart), te::BeatPosition::fromBeats(loopEnd)});
+    } else {
+        audioClipPtr->disableLooping();
+    }
 }
 
 void AudioBridge::removeClipFromEngine(ClipId clipId) {

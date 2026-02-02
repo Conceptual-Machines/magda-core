@@ -104,21 +104,57 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
 
     // Draw real waveform from audio thumbnail (scaled by vertical zoom)
     auto& thumbnailManager = magda::AudioThumbnailManager::getInstance();
-    double fileWindow = clip.length / clip.audioStretchFactor;
-    double displayStart = clip.audioOffset;
-    double displayEnd = clip.audioOffset + fileWindow;
+    auto* thumbnail = thumbnailManager.getThumbnail(clip.audioFilePath);
+    double fileDuration = thumbnail ? thumbnail->getTotalLength() : 0.0;
+    auto waveColour = clip.colour.brighter(0.2f);
+    auto vertZoom = static_cast<float>(verticalZoom_);
 
-    // Clip drawing to waveform bounds, pass verticalZoom as amplitude gain
-    auto waveDrawRect = waveformRect.reduced(0, 4);
-    if (waveDrawRect.getWidth() > 0 && waveDrawRect.getHeight() > 0) {
-        g.saveState();
-        if (g.reduceClipRegion(waveformRect)) {
-            thumbnailManager.drawWaveform(g, waveDrawRect, clip.audioFilePath, displayStart,
-                                          displayEnd, clip.colour.brighter(0.2f),
-                                          static_cast<float>(verticalZoom_));
+    bool isLooped = loopEndSeconds_ > 0.0 && loopEndSeconds_ < clip.length;
+
+    g.saveState();
+    if (g.reduceClipRegion(waveformRect)) {
+        if (isLooped) {
+            // Looped: tile waveform across the full clip length
+            double loopCycle = loopEndSeconds_;
+            double fileStart = clip.audioOffset;
+            double fileEnd = clip.audioOffset + loopCycle / clip.audioStretchFactor;
+            if (fileDuration > 0.0 && fileEnd > fileDuration)
+                fileEnd = fileDuration;
+
+            double timePos = 0.0;
+            while (timePos < clip.length) {
+                double cycleEnd = std::min(timePos + loopCycle, clip.length);
+                int drawX = waveformRect.getX() + static_cast<int>(timePos * horizontalZoom_);
+                int drawRight = waveformRect.getX() + static_cast<int>(cycleEnd * horizontalZoom_);
+                auto cycleRect = juce::Rectangle<int>(drawX, waveformRect.getY(), drawRight - drawX,
+                                                      waveformRect.getHeight());
+                auto drawRect = cycleRect.reduced(0, 4);
+                if (drawRect.getWidth() > 0 && drawRect.getHeight() > 0) {
+                    thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, fileStart,
+                                                  fileEnd, waveColour, vertZoom);
+                }
+                timePos += loopCycle;
+            }
+        } else {
+            // Non-looped: single draw, clamped to file duration
+            double displayStart = clip.audioOffset;
+            double displayEnd = clip.audioOffset + clip.length / clip.audioStretchFactor;
+            if (fileDuration > 0.0 && displayEnd > fileDuration)
+                displayEnd = fileDuration;
+
+            double clampedDuration = (displayEnd - displayStart) * clip.audioStretchFactor;
+            int audioWidthPixels = static_cast<int>(clampedDuration * horizontalZoom_);
+            auto audioRect = juce::Rectangle<int>(
+                waveformRect.getX(), waveformRect.getY(),
+                juce::jmin(audioWidthPixels, waveformRect.getWidth()), waveformRect.getHeight());
+            auto drawRect = audioRect.reduced(0, 4);
+            if (drawRect.getWidth() > 0 && drawRect.getHeight() > 0) {
+                thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, displayStart,
+                                              displayEnd, waveColour, vertZoom);
+            }
         }
-        g.restoreState();
     }
+    g.restoreState();
 
     // Draw center line
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
@@ -250,6 +286,12 @@ void WaveformGridComponent::setVerticalZoom(double zoom) {
 }
 
 void WaveformGridComponent::updateClipPosition(double startTime, double length) {
+    // Don't update cached values during a drag — they serve as the stable
+    // reference for delta calculations.  Updating mid-drag causes a feedback
+    // loop where each drag step compounds on the previous one.
+    if (dragMode_ != DragMode::None)
+        return;
+
     clipStartTime_ = startTime;
     clipLength_ = length;
     updateGridSize();
@@ -348,6 +390,7 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
     dragStartX_ = x;
     dragStartAudioOffset_ = clip->audioOffset;
     dragStartLength_ = clip->length;
+    dragStartStartTime_ = clip->startTime;
     dragStartStretchFactor_ = clip->audioStretchFactor;
 
     // Cache file duration for trim clamping
@@ -376,7 +419,8 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
     // Calculate absolute values from original drag start values
     switch (dragMode_) {
         case DragMode::ResizeLeft: {
-            // Calculate absolute new offset from original values
+            // Content-level trim: only change audioOffset (file start point).
+            // The clip stays at the same position/length on the timeline.
             double fileDelta = deltaSeconds / dragStartStretchFactor_;
             double newOffset = dragStartAudioOffset_ + fileDelta;
 
@@ -386,23 +430,15 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
             }
             newOffset = juce::jmax(0.0, newOffset);
 
-            // Calculate actual timeline delta achieved
-            double actualFileDelta = newOffset - dragStartAudioOffset_;
-            double timelineDelta = actualFileDelta * dragStartStretchFactor_;
-
-            // Set absolute values on clip
             clip->audioOffset = newOffset;
-            clip->startTime = juce::jmax(0.0, clipStartTime_ + timelineDelta);
-            clip->length = juce::jmax(magda::ClipOperations::MIN_CLIP_LENGTH,
-                                      dragStartLength_ - timelineDelta);
             break;
         }
         case DragMode::ResizeRight: {
             // Calculate absolute new length from original
             double newLength = dragStartLength_ + deltaSeconds;
 
-            // Constrain to file bounds
-            if (dragStartFileDuration_ > 0.0) {
+            // Constrain to file bounds (only for non-looped clips)
+            if (dragStartFileDuration_ > 0.0 && !clip->internalLoopEnabled) {
                 double maxLength =
                     (dragStartFileDuration_ - dragStartAudioOffset_) * dragStartStretchFactor_;
                 newLength = juce::jmin(newLength, maxLength);
@@ -444,11 +480,14 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
 }
 
 void WaveformGridComponent::mouseUp(const juce::MouseEvent& /*event*/) {
-    // Notify ClipManager once at the end of the drag operation
     if (dragMode_ != DragMode::None && editingClipId_ != magda::INVALID_CLIP_ID) {
+        // Clear drag mode BEFORE notifying so that updateClipPosition() can
+        // update the cached values with the final clip state.
+        dragMode_ = DragMode::None;
         magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(editingClipId_);
+    } else {
+        dragMode_ = DragMode::None;
     }
-    dragMode_ = DragMode::None;
 }
 
 void WaveformGridComponent::mouseMove(const juce::MouseEvent& event) {

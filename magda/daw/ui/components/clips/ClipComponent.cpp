@@ -134,18 +134,6 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                 : 0.0;
 
         if (pixelsPerSecond > 0.0) {
-            // Audio always starts at clip start (position = 0)
-            double visibleStart = 0.0;
-            double visibleEnd = clipDisplayLength;
-
-            // Convert visible region to pixels
-            int drawX =
-                waveformArea.getX() + static_cast<int>(visibleStart * pixelsPerSecond + 0.5);
-            int drawRight =
-                waveformArea.getX() + static_cast<int>(visibleEnd * pixelsPerSecond + 0.5);
-            auto drawRect = juce::Rectangle<int>(drawX, waveformArea.getY(), drawRight - drawX,
-                                                 waveformArea.getHeight());
-
             // Compute file time range
             // During left resize drag, the offset hasn't been committed yet,
             // so simulate the offset adjustment
@@ -155,11 +143,58 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                 displayOffset += trimDelta / clip.audioStretchFactor;
             }
 
-            double fileStart = displayOffset;
-            double fileEnd = displayOffset + clipDisplayLength / clip.audioStretchFactor;
+            auto waveColour = clip.colour.brighter(0.2f);
 
-            thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, fileStart, fileEnd,
-                                          clip.colour.brighter(0.2f));
+            // Get actual file duration
+            double fileDuration = 0.0;
+            auto* thumbnail = thumbnailManager.getThumbnail(clip.audioFilePath);
+            if (thumbnail)
+                fileDuration = thumbnail->getTotalLength();
+
+            if (clip.internalLoopEnabled && clip.internalLoopLength > 0.0) {
+                // Looped: tile the waveform for each loop cycle
+                double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+                double loopCycleDuration = clip.internalLoopLength * 60.0 / tempo;
+                double fileWindow = loopCycleDuration / clip.audioStretchFactor;
+
+                // Clamp file window to actual file duration
+                double fileEnd = displayOffset + fileWindow;
+                if (fileDuration > 0.0 && fileEnd > fileDuration)
+                    fileEnd = fileDuration;
+
+                double timePos = 0.0;
+                while (timePos < clipDisplayLength) {
+                    double cycleEnd = juce::jmin(timePos + loopCycleDuration, clipDisplayLength);
+
+                    int drawX =
+                        waveformArea.getX() + static_cast<int>(timePos * pixelsPerSecond + 0.5);
+                    int drawRight =
+                        waveformArea.getX() + static_cast<int>(cycleEnd * pixelsPerSecond + 0.5);
+                    auto drawRect = juce::Rectangle<int>(
+                        drawX, waveformArea.getY(), drawRight - drawX, waveformArea.getHeight());
+
+                    thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, displayOffset,
+                                                  fileEnd, waveColour);
+                    timePos += loopCycleDuration;
+                }
+            } else {
+                // Non-looped: single draw, clamped to file duration
+                double fileStart = displayOffset;
+                double fileEnd = displayOffset + clipDisplayLength / clip.audioStretchFactor;
+
+                if (fileDuration > 0.0 && fileEnd > fileDuration)
+                    fileEnd = fileDuration;
+
+                double clampedTimelineDuration = (fileEnd - fileStart) * clip.audioStretchFactor;
+                int drawWidth = static_cast<int>(clampedTimelineDuration * pixelsPerSecond + 0.5);
+                drawWidth = juce::jmin(drawWidth, waveformArea.getWidth());
+
+                auto drawRect = juce::Rectangle<int>(waveformArea.getX(), waveformArea.getY(),
+                                                     drawWidth, waveformArea.getHeight());
+
+                thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, fileStart, fileEnd,
+                                              waveColour);
+            }
         }
     } else {
         // Fallback: draw placeholder if no audio source
@@ -474,6 +509,15 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     dragStartTime_ = clip->startTime;
     dragStartLength_ = clip->length;
     dragStartTrackId_ = clip->trackId;
+    dragStartAudioOffset_ = clip->audioOffset;
+
+    // Cache file duration for resize clamping
+    dragStartFileDuration_ = 0.0;
+    if (clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty()) {
+        auto* thumbnail = AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
+        if (thumbnail)
+            dragStartFileDuration_ = thumbnail->getTotalLength();
+    }
 
     // Initialize preview state
     previewStartTime_ = clip->startTime;
@@ -610,6 +654,16 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             finalStartTime = juce::jmin(finalStartTime, endTime - 0.1);
             double finalLength = endTime - finalStartTime;
 
+            // Clamp to file duration for non-looped audio clips (can't reveal past file start)
+            if (dragStartFileDuration_ > 0.0 && !clip->internalLoopEnabled) {
+                double maxLength =
+                    dragStartLength_ + dragStartAudioOffset_ * dragStartStretchFactor_;
+                if (finalLength > maxLength) {
+                    finalLength = maxLength;
+                    finalStartTime = endTime - finalLength;
+                }
+            }
+
             previewStartTime_ = finalStartTime;
             previewLength_ = finalLength;
 
@@ -636,6 +690,14 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 
             // Ensure minimum length
             double finalLength = juce::jmax(0.1, finalEndTime - dragStartTime_);
+
+            // Clamp to file duration for non-looped audio clips (can't resize past file end)
+            if (dragStartFileDuration_ > 0.0 && !clip->internalLoopEnabled) {
+                double maxLength =
+                    (dragStartFileDuration_ - dragStartAudioOffset_) * dragStartStretchFactor_;
+                finalLength = juce::jmin(finalLength, maxLength);
+            }
+
             previewLength_ = finalLength;
 
             // Convert to pixels (using parent's method to account for padding)

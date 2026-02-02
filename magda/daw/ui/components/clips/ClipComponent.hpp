@@ -108,8 +108,10 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     bool isCommitting_ = false;             // True during mouseUp commit phase
     bool shouldDeselectOnMouseUp_ = false;  // Delayed deselection for multi-selection
 
-    // Stretch state
+    // Audio clip drag state
     double dragStartStretchFactor_ = 1.0;
+    double dragStartAudioOffset_ = 0.0;
+    double dragStartFileDuration_ = 0.0;
     DragThrottle stretchThrottle_{50};
 
     // Alt+drag duplicate state

@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "TrackManager.hpp"
+#include "audio/AudioThumbnailManager.hpp"
 
 namespace magda {
 
@@ -350,6 +351,23 @@ void ClipManager::setClipColour(ClipId clipId, juce::Colour colour) {
 void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled) {
     if (auto* clip = getClip(clipId)) {
         clip->internalLoopEnabled = enabled;
+
+        // When disabling loop on audio clips, clamp length to actual file content
+        if (!enabled && clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty()) {
+            auto* thumbnail =
+                AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
+            if (thumbnail) {
+                double fileDuration = thumbnail->getTotalLength();
+                if (fileDuration > 0.0) {
+                    double maxLength =
+                        (fileDuration - clip->audioOffset) * clip->audioStretchFactor;
+                    if (clip->length > maxLength) {
+                        clip->length = juce::jmax(ClipOperations::MIN_CLIP_LENGTH, maxLength);
+                    }
+                }
+            }
+        }
+
         notifyClipPropertyChanged(clipId);
     }
 }
