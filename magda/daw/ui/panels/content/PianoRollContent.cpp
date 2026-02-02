@@ -1,5 +1,6 @@
 #include "PianoRollContent.hpp"
 
+#include "../../core/SelectionManager.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -80,7 +81,7 @@ PianoRollContent::PianoRollContent() {
     buttonLookAndFeel_ = std::make_unique<ButtonLookAndFeel>();
 
     // Create time mode toggle button
-    timeModeButton_ = std::make_unique<juce::TextButton>("REL");
+    timeModeButton_ = std::make_unique<juce::TextButton>("ABS");
     timeModeButton_->setTooltip("Toggle between Relative (clip) and Absolute (project) time");
     timeModeButton_->setClickingTogglesState(true);
     timeModeButton_->setToggleState(relativeTimeMode_, juce::dontSendNotification);
@@ -252,6 +253,9 @@ PianoRollContent::PianoRollContent() {
     // Register as ClipManager listener
     magda::ClipManager::getInstance().addListener(this);
 
+    // Register as SelectionManager listener
+    magda::SelectionManager::getInstance().addListener(this);
+
     // Register as TimelineController listener for playhead updates
     if (auto* controller = magda::TimelineController::getCurrent()) {
         controller->addListener(this);
@@ -272,6 +276,7 @@ PianoRollContent::PianoRollContent() {
 PianoRollContent::~PianoRollContent() {
     timeModeButton_->setLookAndFeel(nullptr);
     magda::ClipManager::getInstance().removeListener(this);
+    magda::SelectionManager::getInstance().removeListener(this);
 
     // Unregister from TimelineController
     if (auto* controller = magda::TimelineController::getCurrent()) {
@@ -293,9 +298,81 @@ void PianoRollContent::setupGridCallbacks() {
     // Handle note movement
     gridComponent_->onNoteMoved = [](magda::ClipId clipId, size_t noteIndex, double newBeat,
                                      int newNoteNumber) {
+        // Get source clip and note
+        auto* sourceClip = magda::ClipManager::getInstance().getClip(clipId);
+        if (!sourceClip || noteIndex >= sourceClip->midiNotes.size())
+            return;
+
+        double oldBeat = sourceClip->midiNotes[noteIndex].startBeat;
+
+        DBG("=== NOTE MOVE ===");
+        DBG("  Clip " << clipId);
+        DBG("  FROM content-beat " << oldBeat << " TO content-beat " << newBeat);
+        DBG("  Note index: " << noteIndex);
+
+        // Normal movement within same clip (only executed if no cross-clip transfer occurred)
         auto cmd =
             std::make_unique<magda::MoveMidiNoteCommand>(clipId, noteIndex, newBeat, newNoteNumber);
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+
+        // After moving, check if note is still visible in this clip (considering offset)
+        auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+        if (clip && clip->type == magda::ClipType::MIDI && noteIndex < clip->midiNotes.size()) {
+            const auto& note = clip->midiNotes[noteIndex];
+            double tempo = 120.0;
+            if (auto* controller = magda::TimelineController::getCurrent()) {
+                tempo = controller->getState().tempo.bpm;
+            }
+            double beatsPerSecond = tempo / 60.0;
+            double clipLengthBeats = clip->length * beatsPerSecond;
+
+            // Check if note is outside visible range [offset, offset + length]
+            double effectiveOffset =
+                (clip->view == magda::ClipView::Session || clip->internalLoopEnabled)
+                    ? clip->midiOffset
+                    : 0.0;
+            if (note.startBeat < effectiveOffset ||
+                note.startBeat >= effectiveOffset + clipLengthBeats) {
+                DBG("Note is no longer visible in clip "
+                    << clipId << " (offset=" << clip->midiOffset << ", note at " << note.startBeat
+                    << ")");
+
+                // Find which clip would show this note
+                // Note: startBeat is in content coordinates, so subtract offset to get timeline
+                // position
+                double clipStartBeats = clip->startTime * beatsPerSecond;
+                double absoluteBeat = clipStartBeats + note.startBeat - effectiveOffset;
+                double absoluteSeconds = absoluteBeat / beatsPerSecond;
+
+                magda::ClipId destClipId = magda::ClipManager::getInstance().getClipAtPosition(
+                    clip->trackId, absoluteSeconds);
+
+                if (destClipId != magda::INVALID_CLIP_ID && destClipId != clipId) {
+                    DBG("  -> Would be visible in clip " << destClipId << ", moving it there");
+                    auto* destClip = magda::ClipManager::getInstance().getClip(destClipId);
+                    if (destClip && destClip->type == magda::ClipType::MIDI) {
+                        // Calculate position in destination clip's content coordinates
+                        // absoluteBeat is timeline position, convert to content position
+                        double destClipStartBeats = destClip->startTime * beatsPerSecond;
+                        double destOffset = (destClip->view == magda::ClipView::Session ||
+                                             destClip->internalLoopEnabled)
+                                                ? destClip->midiOffset
+                                                : 0.0;
+                        double relativeNewBeat = absoluteBeat - destClipStartBeats + destOffset;
+
+                        DBG("  -> Transfer: absoluteBeat="
+                            << absoluteBeat << ", destClipStart=" << destClipStartBeats
+                            << ", destOffset=" << destClip->midiOffset
+                            << ", contentBeat=" << relativeNewBeat);
+
+                        // Move to destination clip
+                        auto moveCmd = std::make_unique<magda::MoveMidiNoteBetweenClipsCommand>(
+                            clipId, noteIndex, destClipId, relativeNewBeat, note.noteNumber);
+                        magda::UndoManager::getInstance().executeCommand(std::move(moveCmd));
+                    }
+                }
+            }
+        }
         // Note: UI refresh handled via ClipManagerListener::clipPropertyChanged()
     };
 
@@ -519,9 +596,9 @@ void PianoRollContent::mouseWheelMove(const juce::MouseEvent& e,
 }
 
 void PianoRollContent::updateGridSize() {
-    const auto* clip = editingClipId_ != magda::INVALID_CLIP_ID
-                           ? magda::ClipManager::getInstance().getClip(editingClipId_)
-                           : nullptr;
+    auto& clipManager = magda::ClipManager::getInstance();
+    const auto* clip =
+        editingClipId_ != magda::INVALID_CLIP_ID ? clipManager.getClip(editingClipId_) : nullptr;
 
     // Get tempo to convert between seconds and beats
     double tempo = 120.0;
@@ -539,10 +616,23 @@ void PianoRollContent::updateGridSize() {
     // Calculate clip position and length in beats
     double clipStartBeats = 0.0;
     double clipLengthBeats = 0.0;
-    if (clip) {
+
+    // When multiple clips are selected, compute the combined range
+    const auto& selectedClipIds = gridComponent_->getSelectedClipIds();
+    if (selectedClipIds.size() > 1) {
+        double earliestStart = std::numeric_limits<double>::max();
+        double latestEnd = 0.0;
+        for (magda::ClipId id : selectedClipIds) {
+            const auto* c = clipManager.getClip(id);
+            if (!c)
+                continue;
+            earliestStart = juce::jmin(earliestStart, c->startTime);
+            latestEnd = juce::jmax(latestEnd, c->startTime + c->length);
+        }
+        clipStartBeats = earliestStart / secondsPerBeat;
+        clipLengthBeats = (latestEnd - earliestStart) / secondsPerBeat;
+    } else if (clip) {
         if (clip->view == magda::ClipView::Session) {
-            // Session clips: startTime is always 0, length is clip length (seconds) converted to
-            // beats
             clipStartBeats = 0.0;
             clipLengthBeats = clip->length / secondsPerBeat;
         } else {
@@ -557,14 +647,13 @@ void PianoRollContent::updateGridSize() {
 
     gridComponent_->setSize(gridWidth, gridHeight);
 
-    // Update grid's display mode and clip boundaries
     gridComponent_->setRelativeMode(relativeTimeMode_);
     gridComponent_->setClipStartBeats(clipStartBeats);
     gridComponent_->setClipLengthBeats(clipLengthBeats);
     gridComponent_->setTimelineLengthBeats(displayLengthBeats);
 
     // Pass loop region data to grid
-    if (clip) {
+    if (clip && selectedClipIds.size() <= 1) {
         gridComponent_->setLoopRegion(clip->internalLoopOffset, clip->internalLoopLength,
                                       clip->internalLoopEnabled);
     } else {
@@ -638,6 +727,54 @@ void PianoRollContent::setRelativeTimeMode(bool relative) {
         relativeTimeMode_ = relative;
         timeModeButton_->setButtonText(relative ? "REL" : "ABS");
         timeModeButton_->setToggleState(relative, juce::dontSendNotification);
+
+        // Reload clips based on new mode
+        if (editingClipId_ != magda::INVALID_CLIP_ID) {
+            auto& clipManager = magda::ClipManager::getInstance();
+            auto& selectionManager = magda::SelectionManager::getInstance();
+            const auto* clip = clipManager.getClip(editingClipId_);
+            if (clip && clip->type == magda::ClipType::MIDI) {
+                magda::TrackId trackId = clip->trackId;
+
+                // Get all selected clips
+                const auto& selectedClipsSet = selectionManager.getSelectedClips();
+                std::vector<magda::ClipId> selectedMidiClips;
+
+                // Filter selected clips to only MIDI clips on this track
+                for (magda::ClipId id : selectedClipsSet) {
+                    auto* c = clipManager.getClip(id);
+                    if (c && c->type == magda::ClipType::MIDI && c->trackId == trackId) {
+                        selectedMidiClips.push_back(id);
+                    }
+                }
+
+                // If no selected clips or selected clips are on different track, use just the
+                // primary
+                if (selectedMidiClips.empty()) {
+                    selectedMidiClips.push_back(editingClipId_);
+                }
+
+                if (relative) {
+                    // Relative mode: show only selected clips
+                    gridComponent_->setClips(trackId, selectedMidiClips, selectedMidiClips);
+                } else {
+                    // Absolute mode: show ALL MIDI clips on this track
+                    auto allClipsOnTrack = clipManager.getClipsOnTrack(trackId);
+
+                    // Filter to MIDI clips only
+                    std::vector<magda::ClipId> allMidiClips;
+                    for (magda::ClipId id : allClipsOnTrack) {
+                        auto* c = clipManager.getClip(id);
+                        if (c && c->type == magda::ClipType::MIDI) {
+                            allMidiClips.push_back(id);
+                        }
+                    }
+
+                    gridComponent_->setClips(trackId, selectedMidiClips, allMidiClips);
+                }
+            }
+        }
+
         updateGridSize();  // Grid size changes between modes
         updateTimeRuler();
         updateVelocityLane();
@@ -673,12 +810,15 @@ void PianoRollContent::onActivated() {
             editingClipId_ = selectedClip;
             gridComponent_->setClip(selectedClip);
 
-            // Session clips are locked to relative mode
-            bool isSessionClip = (clip->view == magda::ClipView::Session);
-            if (isSessionClip) {
+            // Session clips and looping arrangement clips are locked to relative mode
+            bool forceRelative =
+                (clip->view == magda::ClipView::Session) || clip->internalLoopEnabled;
+            if (forceRelative) {
                 setRelativeTimeMode(true);
                 timeModeButton_->setEnabled(false);
-                timeModeButton_->setTooltip("Session clips always use relative time");
+                timeModeButton_->setTooltip(clip->internalLoopEnabled
+                                                ? "Looping clips use relative time"
+                                                : "Session clips always use relative time");
             } else {
                 timeModeButton_->setEnabled(true);
                 timeModeButton_->setTooltip(
@@ -703,51 +843,160 @@ void PianoRollContent::onDeactivated() {
 
 void PianoRollContent::clipsChanged() {
     if (editingClipId_ != magda::INVALID_CLIP_ID) {
-        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        auto& clipManager = magda::ClipManager::getInstance();
+        const auto* clip = clipManager.getClip(editingClipId_);
         if (!clip) {
             editingClipId_ = magda::INVALID_CLIP_ID;
             gridComponent_->setClip(magda::INVALID_CLIP_ID);
             velocityLane_->setClip(magda::INVALID_CLIP_ID);
+        } else {
+            // Re-fetch all clips on this track (a split/delete may have changed the list)
+            magda::TrackId trackId = clip->trackId;
+            auto& selectionManager = magda::SelectionManager::getInstance();
+            const auto& selectedClipsSet = selectionManager.getSelectedClips();
+
+            std::vector<magda::ClipId> selectedMidiClips;
+            for (magda::ClipId id : selectedClipsSet) {
+                auto* c = clipManager.getClip(id);
+                if (c && c->type == magda::ClipType::MIDI && c->trackId == trackId) {
+                    selectedMidiClips.push_back(id);
+                }
+            }
+            if (selectedMidiClips.empty()) {
+                selectedMidiClips.push_back(editingClipId_);
+            }
+
+            if (relativeTimeMode_) {
+                gridComponent_->setClips(trackId, selectedMidiClips, selectedMidiClips);
+            } else {
+                auto allClipsOnTrack = clipManager.getClipsOnTrack(trackId);
+                std::vector<magda::ClipId> allMidiClips;
+                for (magda::ClipId id : allClipsOnTrack) {
+                    auto* c = clipManager.getClip(id);
+                    if (c && c->type == magda::ClipType::MIDI) {
+                        allMidiClips.push_back(id);
+                    }
+                }
+                gridComponent_->setClips(trackId, selectedMidiClips, allMidiClips);
+            }
         }
     }
-    gridComponent_->refreshNotes();
+    updateGridSize();
     updateTimeRuler();
     updateVelocityLane();
     repaint();
 }
 
 void PianoRollContent::clipPropertyChanged(magda::ClipId clipId) {
-    if (clipId == editingClipId_) {
+    // Check if this clip is one of the displayed clips
+    const auto& displayedClips = gridComponent_->getClipIds();
+    bool isDisplayed = false;
+    for (magda::ClipId id : displayedClips) {
+        if (id == clipId) {
+            isDisplayed = true;
+            break;
+        }
+    }
+
+    if (isDisplayed) {
         // Defer UI refresh asynchronously to prevent deleting components during event handling
-        // This is the core of the Observer pattern - data changes notify listeners,
-        // and listeners schedule their own UI updates safely
-        // Use SafePointer to avoid use-after-free if component is destroyed before callback runs
         juce::Component::SafePointer<PianoRollContent> safeThis(this);
         juce::MessageManager::callAsync([safeThis, clipId]() {
             if (auto* self = safeThis.getComponent()) {
-                // Verify clip is still being edited (could have changed during async delay)
-                if (clipId == self->editingClipId_) {
-                    self->gridComponent_->refreshNotes();
-                    self->updateGridSize();
-                    self->updateTimeRuler();
-                    self->updateVelocityLane();
-                    self->repaint();
+                // Re-evaluate force-relative mode (loop may have been toggled)
+                const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+                if (clip && clip->type == magda::ClipType::MIDI) {
+                    bool forceRelative =
+                        (clip->view == magda::ClipView::Session) || clip->internalLoopEnabled;
+                    if (forceRelative) {
+                        self->setRelativeTimeMode(true);
+                        self->timeModeButton_->setEnabled(false);
+                        self->timeModeButton_->setTooltip(
+                            clip->internalLoopEnabled ? "Looping clips use relative time"
+                                                      : "Session clips always use relative time");
+                    } else {
+                        self->timeModeButton_->setEnabled(true);
+                        self->timeModeButton_->setTooltip(
+                            "Toggle between Relative (clip) and Absolute (project) time");
+                    }
                 }
+
+                self->updateGridSize();
+                self->updateTimeRuler();
+                self->updateVelocityLane();
+                self->repaint();
             }
         });
     }
 }
 
 void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
+    if (clipId == magda::INVALID_CLIP_ID) {
+        // Selection cleared - clear the piano roll
+        editingClipId_ = magda::INVALID_CLIP_ID;
+        gridComponent_->setClip(magda::INVALID_CLIP_ID);
+        updateGridSize();
+        updateTimeRuler();
+        updateVelocityLane();
+        repaint();
+        return;
+    }
+
     if (clipId != magda::INVALID_CLIP_ID) {
-        const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+        auto& clipManager = magda::ClipManager::getInstance();
+        auto& selectionManager = magda::SelectionManager::getInstance();
+        const auto* clip = clipManager.getClip(clipId);
         if (clip && clip->type == magda::ClipType::MIDI) {
             editingClipId_ = clipId;
-            gridComponent_->setClip(clipId);
+
+            magda::TrackId trackId = clip->trackId;
+
+            // Get all selected clips
+            const auto& selectedClipsSet = selectionManager.getSelectedClips();
+            DBG("PianoRoll: Total selected clips: " << selectedClipsSet.size());
+
+            std::vector<magda::ClipId> selectedMidiClips;
+
+            // Filter selected clips to only MIDI clips on this track
+            for (magda::ClipId id : selectedClipsSet) {
+                auto* c = clipManager.getClip(id);
+                if (c && c->type == magda::ClipType::MIDI && c->trackId == trackId) {
+                    selectedMidiClips.push_back(id);
+                    DBG("  - Selected MIDI clip on track: " << id);
+                }
+            }
+
+            // If no selected clips or selected clips are on different track, use just the primary
+            if (selectedMidiClips.empty()) {
+                selectedMidiClips.push_back(clipId);
+                DBG("  - No multi-selection, using primary clip: " << clipId);
+            }
+
+            DBG("PianoRoll: Selected MIDI clips count: " << selectedMidiClips.size());
+
+            if (relativeTimeMode_) {
+                // Relative mode: show only selected clips
+                gridComponent_->setClips(trackId, selectedMidiClips, selectedMidiClips);
+            } else {
+                // Absolute mode: show ALL MIDI clips on this track
+                auto allClipsOnTrack = clipManager.getClipsOnTrack(trackId);
+
+                // Filter to MIDI clips only
+                std::vector<magda::ClipId> allMidiClips;
+                for (magda::ClipId id : allClipsOnTrack) {
+                    auto* c = clipManager.getClip(id);
+                    if (c && c->type == magda::ClipType::MIDI) {
+                        allMidiClips.push_back(id);
+                    }
+                }
+
+                DBG("PianoRoll: Total MIDI clips on track: " << allMidiClips.size());
+                gridComponent_->setClips(trackId, selectedMidiClips, allMidiClips);
+            }
 
             // Session clips are locked to relative mode
-            bool isSessionClip = (clip->view == magda::ClipView::Session);
-            if (isSessionClip) {
+            bool forceRelative = (clip->view == magda::ClipView::Session);
+            if (forceRelative) {
                 setRelativeTimeMode(true);
                 timeModeButton_->setEnabled(false);
                 timeModeButton_->setTooltip("Session clips always use relative time");
@@ -761,8 +1010,17 @@ void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
             updateTimeRuler();
             updateVelocityLane();
 
-            // Reset scroll to bar 1 when selecting a new clip
-            viewport_->setViewPosition(0, viewport_->getViewPositionY());
+            // Scroll to clip start position
+            int scrollX = 0;
+            if (!relativeTimeMode_ && clip->view != magda::ClipView::Session) {
+                double tempo = 120.0;
+                if (auto* controller = magda::TimelineController::getCurrent()) {
+                    tempo = controller->getState().tempo.bpm;
+                }
+                double clipStartBeats = clip->startTime * (tempo / 60.0);
+                scrollX = static_cast<int>(clipStartBeats * horizontalZoom_);
+            }
+            viewport_->setViewPosition(scrollX, viewport_->getViewPositionY());
 
             repaint();
         }
@@ -815,6 +1073,67 @@ void PianoRollContent::playheadStateChanged(const magda::TimelineState& state) {
 }
 
 // ============================================================================
+// SelectionManagerListener
+// ============================================================================
+
+void PianoRollContent::selectionTypeChanged(magda::SelectionType /*newType*/) {
+    // Selection type changed - refresh the view
+    repaint();
+}
+
+void PianoRollContent::multiClipSelectionChanged(const std::unordered_set<magda::ClipId>& clipIds) {
+    // Multi-clip selection changed - update piano roll to show selected clips
+    if (clipIds.empty()) {
+        return;
+    }
+
+    auto& clipManager = magda::ClipManager::getInstance();
+
+    // Get the first clip to determine the track
+    magda::ClipId firstClipId = *clipIds.begin();
+    const auto* firstClip = clipManager.getClip(firstClipId);
+    if (!firstClip || firstClip->type != magda::ClipType::MIDI) {
+        return;
+    }
+
+    magda::TrackId trackId = firstClip->trackId;
+
+    // Filter selected clips to only MIDI clips on this track
+    std::vector<magda::ClipId> selectedMidiClips;
+    for (magda::ClipId id : clipIds) {
+        auto* c = clipManager.getClip(id);
+        if (c && c->type == magda::ClipType::MIDI && c->trackId == trackId) {
+            selectedMidiClips.push_back(id);
+        }
+    }
+
+    if (selectedMidiClips.empty()) {
+        return;
+    }
+
+    // Update editing clip ID to the first selected clip
+    editingClipId_ = selectedMidiClips[0];
+
+    // Session clips are locked to relative mode
+    bool forceRelative = (firstClip->view == magda::ClipView::Session);
+    if (forceRelative) {
+        setRelativeTimeMode(true);
+        timeModeButton_->setEnabled(false);
+        timeModeButton_->setTooltip("Session clips always use relative time");
+    } else {
+        timeModeButton_->setEnabled(true);
+        timeModeButton_->setTooltip("Toggle between Relative (clip) and Absolute (project) time");
+    }
+
+    gridComponent_->setClips(trackId, selectedMidiClips, selectedMidiClips);
+
+    updateGridSize();
+    updateTimeRuler();
+    updateVelocityLane();
+    repaint();
+}
+
+// ============================================================================
 // Public Methods
 // ============================================================================
 
@@ -826,8 +1145,20 @@ void PianoRollContent::setClip(magda::ClipId clipId) {
         updateTimeRuler();
         updateVelocityLane();
 
-        // Reset scroll to bar 1 when setting a new clip
-        viewport_->setViewPosition(0, viewport_->getViewPositionY());
+        // Scroll to clip start position
+        int scrollX = 0;
+        if (!relativeTimeMode_) {
+            const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+            if (clip && clip->view != magda::ClipView::Session) {
+                double tempo = 120.0;
+                if (auto* controller = magda::TimelineController::getCurrent()) {
+                    tempo = controller->getState().tempo.bpm;
+                }
+                double clipStartBeats = clip->startTime * (tempo / 60.0);
+                scrollX = static_cast<int>(clipStartBeats * horizontalZoom_);
+            }
+        }
+        viewport_->setViewPosition(scrollX, viewport_->getViewPositionY());
 
         repaint();
     }
@@ -927,25 +1258,61 @@ void PianoRollContent::updateVelocityLane() {
     // Update clip reference
     velocityLane_->setClip(editingClipId_);
 
+    // Pass multi-clip IDs for multi-clip velocity display
+    if (gridComponent_) {
+        velocityLane_->setClipIds(gridComponent_->getSelectedClipIds());
+    }
+
     // Update zoom and mode settings
     velocityLane_->setPixelsPerBeat(horizontalZoom_);
     velocityLane_->setRelativeMode(relativeTimeMode_);
 
-    // Get clip start beats for absolute mode
-    const auto* clip = editingClipId_ != magda::INVALID_CLIP_ID
-                           ? magda::ClipManager::getInstance().getClip(editingClipId_)
-                           : nullptr;
-
-    if (clip) {
+    // Get clip start beats
+    const auto& selectedClipIds =
+        gridComponent_ ? gridComponent_->getSelectedClipIds() : std::vector<magda::ClipId>{};
+    if (selectedClipIds.size() > 1) {
+        // Multi-clip: use earliest clip start (same as grid)
         double tempo = 120.0;
         if (auto* controller = magda::TimelineController::getCurrent()) {
             tempo = controller->getState().tempo.bpm;
         }
-        double secondsPerBeat = 60.0 / tempo;
-        double clipStartBeats = clip->startTime / secondsPerBeat;
-        velocityLane_->setClipStartBeats(clipStartBeats);
+        double earliestStart = std::numeric_limits<double>::max();
+        auto& clipManager = magda::ClipManager::getInstance();
+        for (magda::ClipId id : selectedClipIds) {
+            const auto* c = clipManager.getClip(id);
+            if (c) {
+                earliestStart = juce::jmin(earliestStart, c->startTime);
+            }
+        }
+        if (earliestStart < std::numeric_limits<double>::max()) {
+            velocityLane_->setClipStartBeats(earliestStart * (tempo / 60.0));
+        } else {
+            velocityLane_->setClipStartBeats(0.0);
+        }
     } else {
-        velocityLane_->setClipStartBeats(0.0);
+        const auto* clip = editingClipId_ != magda::INVALID_CLIP_ID
+                               ? magda::ClipManager::getInstance().getClip(editingClipId_)
+                               : nullptr;
+
+        if (clip) {
+            double tempo = 120.0;
+            if (auto* controller = magda::TimelineController::getCurrent()) {
+                tempo = controller->getState().tempo.bpm;
+            }
+            double secondsPerBeat = 60.0 / tempo;
+            double clipStartBeats = clip->startTime / secondsPerBeat;
+            velocityLane_->setClipStartBeats(clipStartBeats);
+        } else {
+            velocityLane_->setClipStartBeats(0.0);
+        }
+    }
+
+    // Sync loop region and clip length
+    if (gridComponent_) {
+        velocityLane_->setClipLengthBeats(gridComponent_->getClipLengthBeats());
+        velocityLane_->setLoopRegion(gridComponent_->getLoopOffsetBeats(),
+                                     gridComponent_->getLoopLengthBeats(),
+                                     gridComponent_->isLoopEnabled());
     }
 
     // Sync scroll offset

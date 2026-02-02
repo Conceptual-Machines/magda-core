@@ -10,6 +10,8 @@ set(TEST_SOURCES
     test_export_transport_stop.cpp
     test_interfaces.cpp
     test_midi_clip_sync.cpp
+    test_midi_clip_split.cpp
+    test_midi_offset.cpp
     test_nested_racks.cpp
     test_modulation.cpp
     test_parameter_utils.cpp
@@ -18,6 +20,7 @@ set(TEST_SOURCES
     test_plugin_window_manager.cpp
     test_device_parameter_pagination.cpp
     test_waveform_editor_absolute_mode.cpp
+    test_clip_commands.cpp
     test_clip_resize_operations.cpp
     test_project_serialization.cpp
     test_session_clip_playback.cpp

@@ -270,6 +270,39 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime) {
         rightClip.audioSources[0].length = rightLength;
     }
 
+    // Handle MIDI clip splitting - DESTRUCTIVE (each clip owns its notes)
+    if (rightClip.type == ClipType::MIDI && !rightClip.midiNotes.empty()) {
+        // TODO: Get actual tempo from project settings (assuming 120 BPM for now)
+        const double beatsPerSecond = 2.0;  // 120 BPM = 2 beats/second
+        double splitBeat = leftLength * beatsPerSecond;
+
+        DBG("MIDI SPLIT (destructive):");
+        DBG("  Split at beat: " << splitBeat);
+
+        // Partition notes between left and right clips
+        std::vector<MidiNote> leftNotes;
+        std::vector<MidiNote> rightNotes;
+
+        for (const auto& note : clip->midiNotes) {
+            if (note.startBeat < splitBeat) {
+                // Note belongs to left clip
+                leftNotes.push_back(note);
+            } else {
+                // Note belongs to right clip - adjust position relative to right clip start
+                MidiNote adjustedNote = note;
+                adjustedNote.startBeat -= splitBeat;
+                rightNotes.push_back(adjustedNote);
+            }
+        }
+
+        // Update both clips with their respective notes
+        clip->midiNotes = leftNotes;
+        rightClip.midiNotes = rightNotes;
+
+        DBG("  Left clip: " << leftNotes.size() << " notes");
+        DBG("  Right clip: " << rightNotes.size() << " notes");
+    }
+
     // Resize original clip to be left half
     clip->length = leftLength;
     clip->name = clip->name + " L";
@@ -334,6 +367,18 @@ void ClipManager::setClipLoopLength(ClipId clipId, double lengthBeats) {
     if (auto* clip = getClip(clipId)) {
         clip->internalLoopLength = juce::jmax(ClipOperations::MIN_LOOP_LENGTH_BEATS, lengthBeats);
         notifyClipPropertyChanged(clipId);
+    }
+}
+
+void ClipManager::setClipMidiOffset(ClipId clipId, double offsetBeats) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type != ClipType::MIDI) {
+            DBG("setClipMidiOffset: Clip " << clipId << " is not a MIDI clip");
+            return;
+        }
+        clip->midiOffset = juce::jmax(0.0, offsetBeats);
+        notifyClipPropertyChanged(clipId);
+        DBG("setClipMidiOffset: clip " << clipId << " offset=" << clip->midiOffset);
     }
 }
 
@@ -570,10 +615,10 @@ void ClipManager::setSelectedClip(ClipId clipId) {
 }
 
 void ClipManager::clearClipSelection() {
-    if (selectedClipId_ != INVALID_CLIP_ID) {
-        selectedClipId_ = INVALID_CLIP_ID;
-        notifyClipSelectionChanged(INVALID_CLIP_ID);
-    }
+    selectedClipId_ = INVALID_CLIP_ID;
+    // Always notify so listeners can clear stale visual state
+    // (e.g. ClipComponents still showing selected after multi-clip deselection)
+    notifyClipSelectionChanged(INVALID_CLIP_ID);
 }
 
 // ============================================================================
@@ -788,6 +833,124 @@ juce::String ClipManager::generateClipName(ClipType type) const {
     } else {
         return "MIDI " + juce::String(count);
     }
+}
+
+// ============================================================================
+// Clipboard Operations
+// ============================================================================
+
+void ClipManager::copyToClipboard(const std::unordered_set<ClipId>& clipIds) {
+    clipboard_.clear();
+
+    if (clipIds.empty()) {
+        return;
+    }
+
+    // Find the earliest start time to use as reference
+    clipboardReferenceTime_ = std::numeric_limits<double>::max();
+    for (auto clipId : clipIds) {
+        const auto* clip = getClip(clipId);
+        if (clip) {
+            clipboardReferenceTime_ = std::min(clipboardReferenceTime_, clip->startTime);
+        }
+    }
+
+    // Copy clips maintaining relative positions
+    for (auto clipId : clipIds) {
+        const auto* clip = getClip(clipId);
+        if (clip) {
+            clipboard_.push_back(*clip);
+        }
+    }
+
+    std::cout << "📋 CLIPBOARD: Copied " << clipboard_.size() << " clip(s)" << std::endl;
+}
+
+std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId targetTrackId) {
+    std::vector<ClipId> newClips;
+
+    if (clipboard_.empty()) {
+        return newClips;
+    }
+
+    // Calculate offset from reference time to paste time
+    double timeOffset = pasteTime - clipboardReferenceTime_;
+
+    for (const auto& clipData : clipboard_) {
+        // Calculate new start time maintaining relative position
+        double newStartTime = clipData.startTime + timeOffset;
+
+        // Determine target track
+        TrackId newTrackId = (targetTrackId != INVALID_TRACK_ID) ? targetTrackId : clipData.trackId;
+
+        // Create new clip based on type
+        ClipId newClipId = INVALID_CLIP_ID;
+        if (clipData.type == ClipType::Audio) {
+            // For audio clips, create with first audio source if available
+            if (!clipData.audioSources.empty()) {
+                newClipId = createAudioClip(newTrackId, newStartTime, clipData.length,
+                                            clipData.audioSources[0].filePath, clipData.view);
+            }
+        } else {
+            // For MIDI clips, create empty then copy notes
+            newClipId = createMidiClip(newTrackId, newStartTime, clipData.length, clipData.view);
+        }
+
+        if (newClipId != INVALID_CLIP_ID) {
+            // Copy properties
+            auto* newClip = getClip(newClipId);
+            if (newClip) {
+                newClip->name = clipData.name + " (copy)";
+                newClip->colour = clipData.colour;
+                newClip->internalLoopEnabled = clipData.internalLoopEnabled;
+                newClip->internalLoopOffset = clipData.internalLoopOffset;
+                newClip->internalLoopLength = clipData.internalLoopLength;
+
+                // Copy MIDI notes if MIDI clip
+                if (clipData.type == ClipType::MIDI) {
+                    newClip->midiNotes = clipData.midiNotes;
+                    newClip->midiOffset = clipData.midiOffset;  // Preserve offset for split clips
+                }
+
+                // Copy additional audio sources (skip first, already set)
+                if (clipData.type == ClipType::Audio && clipData.audioSources.size() > 1) {
+                    for (size_t i = 1; i < clipData.audioSources.size(); ++i) {
+                        newClip->audioSources.push_back(clipData.audioSources[i]);
+                    }
+                }
+
+                forceNotifyClipPropertyChanged(newClipId);
+            }
+
+            newClips.push_back(newClipId);
+        }
+    }
+
+    std::cout << "📋 CLIPBOARD: Pasted " << newClips.size() << " clip(s) at " << pasteTime << "s"
+              << std::endl;
+
+    return newClips;
+}
+
+void ClipManager::cutToClipboard(const std::unordered_set<ClipId>& clipIds) {
+    // Copy to clipboard
+    copyToClipboard(clipIds);
+
+    // Delete original clips
+    for (auto clipId : clipIds) {
+        deleteClip(clipId);
+    }
+
+    std::cout << "📋 CLIPBOARD: Cut " << clipIds.size() << " clip(s)" << std::endl;
+}
+
+bool ClipManager::hasClipsInClipboard() const {
+    return !clipboard_.empty();
+}
+
+void ClipManager::clearClipboard() {
+    clipboard_.clear();
+    clipboardReferenceTime_ = 0.0;
 }
 
 }  // namespace magda

@@ -4,6 +4,7 @@
 
 #include "PanelContent.hpp"
 #include "core/ClipManager.hpp"
+#include "core/SelectionManager.hpp"
 #include "ui/state/TimelineController.hpp"
 
 namespace magda {
@@ -26,6 +27,7 @@ namespace magda::daw::ui {
  */
 class PianoRollContent : public PanelContent,
                          public magda::ClipManagerListener,
+                         public magda::SelectionManagerListener,
                          public magda::TimelineStateListener {
   public:
     PianoRollContent();
@@ -52,6 +54,10 @@ class PianoRollContent : public PanelContent,
     void clipSelectionChanged(magda::ClipId clipId) override;
     void clipDragPreview(magda::ClipId clipId, double previewStartTime,
                          double previewLength) override;
+
+    // SelectionManagerListener
+    void selectionTypeChanged(magda::SelectionType newType) override;
+    void multiClipSelectionChanged(const std::unordered_set<magda::ClipId>& clipIds) override;
 
     // TimelineStateListener
     void timelineStateChanged(const magda::TimelineState& state) override;
@@ -108,7 +114,7 @@ class PianoRollContent : public PanelContent,
     int noteHeight_ = DEFAULT_NOTE_HEIGHT;
 
     // Timeline mode (absolute vs relative)
-    bool relativeTimeMode_ = true;  // Default to relative (1, 2, 3...)
+    bool relativeTimeMode_ = false;  // Default to absolute (timeline position)
 
     // Chord row visibility
     bool showChordRow_ = true;  // Default to visible

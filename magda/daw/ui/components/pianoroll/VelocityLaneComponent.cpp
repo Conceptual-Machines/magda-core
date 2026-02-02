@@ -1,5 +1,6 @@
 #include "VelocityLaneComponent.hpp"
 
+#include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
@@ -16,6 +17,11 @@ void VelocityLaneComponent::setClip(ClipId clipId) {
         clipId_ = clipId;
         repaint();
     }
+}
+
+void VelocityLaneComponent::setClipIds(const std::vector<ClipId>& clipIds) {
+    clipIds_ = clipIds;
+    repaint();
 }
 
 void VelocityLaneComponent::setPixelsPerBeat(double ppb) {
@@ -51,6 +57,20 @@ void VelocityLaneComponent::setClipStartBeats(double startBeats) {
         clipStartBeats_ = startBeats;
         repaint();
     }
+}
+
+void VelocityLaneComponent::setClipLengthBeats(double lengthBeats) {
+    if (clipLengthBeats_ != lengthBeats) {
+        clipLengthBeats_ = lengthBeats;
+        repaint();
+    }
+}
+
+void VelocityLaneComponent::setLoopRegion(double offsetBeats, double lengthBeats, bool enabled) {
+    loopOffsetBeats_ = offsetBeats;
+    loopLengthBeats_ = lengthBeats;
+    loopEnabled_ = enabled;
+    repaint();
 }
 
 void VelocityLaneComponent::refreshNotes() {
@@ -139,61 +159,143 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
         g.drawHorizontalLine(y, 0.0f, static_cast<float>(bounds.getWidth()));
     }
 
-    // Get clip data
-    const auto* clip = ClipManager::getInstance().getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI) {
+    // Build list of clips to draw
+    std::vector<ClipId> clipsToRender;
+    if (clipIds_.size() > 1) {
+        clipsToRender = clipIds_;
+    } else if (clipId_ != INVALID_CLIP_ID) {
+        clipsToRender.push_back(clipId_);
+    }
+
+    if (clipsToRender.empty()) {
         return;
     }
 
-    juce::Colour noteColour = clip->colour;
+    auto& clipManager = ClipManager::getInstance();
+
+    // Get tempo for multi-clip relative offset
+    double tempo = 120.0;
+    if (auto* controller = TimelineController::getCurrent()) {
+        tempo = controller->getState().tempo.bpm;
+    }
+    double beatsPerSecond = tempo / 60.0;
+
     int minBarWidth = 4;
 
-    // Draw velocity bars for each note
-    for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
-        const auto& note = clip->midiNotes[i];
-
-        // Calculate x position - use preview position if available
-        double noteStart = note.startBeat;
-        auto previewIt = notePreviewPositions_.find(i);
-        if (previewIt != notePreviewPositions_.end()) {
-            noteStart = previewIt->second;
-        }
-        if (!relativeMode_) {
-            noteStart += clipStartBeats_;
-        }
-        int x = beatToPixel(noteStart);
-        int barWidth = juce::jmax(minBarWidth, static_cast<int>(note.lengthBeats * pixelsPerBeat_));
-
-        // Skip if out of view
-        if (x + barWidth < 0 || x > bounds.getWidth()) {
+    for (ClipId renderClipId : clipsToRender) {
+        const auto* clip = clipManager.getClip(renderClipId);
+        if (!clip || clip->type != ClipType::MIDI) {
             continue;
         }
 
-        // Use drag velocity if this is the note being dragged
-        int velocity = note.velocity;
-        if (isDragging_ && i == draggingNoteIndex_) {
-            velocity = currentDragVelocity_;
+        // Compute per-clip offset for multi-clip relative mode
+        double clipOffsetBeats = 0.0;
+        if (relativeMode_ && clipIds_.size() > 1) {
+            clipOffsetBeats = clip->startTime * beatsPerSecond - clipStartBeats_;
         }
 
-        // Calculate bar height from velocity
-        int barHeight = velocity * usableHeight / 127;
-        int barY = margin + usableHeight - barHeight;
+        juce::Colour noteColour = clip->colour;
+        bool isPrimaryClip = (renderClipId == clipId_);
 
-        // Draw the bar
-        auto barBounds = juce::Rectangle<int>(x, barY, barWidth - 1, barHeight);
+        for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
+            const auto& note = clip->midiNotes[i];
 
-        // Fill
-        g.setColour(noteColour.withAlpha(0.8f));
-        g.fillRect(barBounds);
+            // Calculate x position - use preview position if available (primary clip only)
+            double noteStart = note.startBeat;
+            if (isPrimaryClip) {
+                auto previewIt = notePreviewPositions_.find(i);
+                if (previewIt != notePreviewPositions_.end()) {
+                    noteStart = previewIt->second;
+                }
+            }
 
-        // Border
-        g.setColour(noteColour.brighter(0.2f));
-        g.drawRect(barBounds, 1);
+            if (relativeMode_) {
+                noteStart += clipOffsetBeats;
+            } else {
+                double clipAbsStartBeats = clip->startTime * beatsPerSecond;
+                noteStart += clipAbsStartBeats;
+            }
 
-        // Highlight if being dragged
-        if (isDragging_ && i == draggingNoteIndex_) {
-            g.setColour(juce::Colours::white.withAlpha(0.3f));
+            int x = beatToPixel(noteStart);
+            int barWidth =
+                juce::jmax(minBarWidth, static_cast<int>(note.lengthBeats * pixelsPerBeat_));
+
+            // Skip if out of view
+            if (x + barWidth < 0 || x > bounds.getWidth()) {
+                continue;
+            }
+
+            // Use drag velocity if this is the note being dragged (primary clip only)
+            int velocity = note.velocity;
+            if (isDragging_ && isPrimaryClip && i == draggingNoteIndex_) {
+                velocity = currentDragVelocity_;
+            }
+
+            // Calculate bar height from velocity
+            int barHeight = velocity * usableHeight / 127;
+            int barY = margin + usableHeight - barHeight;
+
+            // Draw the bar
+            auto barBounds = juce::Rectangle<int>(x, barY, barWidth - 1, barHeight);
+
+            // Fill
+            g.setColour(noteColour.withAlpha(0.8f));
             g.fillRect(barBounds);
+
+            // Border
+            g.setColour(noteColour.brighter(0.2f));
+            g.drawRect(barBounds, 1);
+
+            // Highlight if being dragged
+            if (isDragging_ && isPrimaryClip && i == draggingNoteIndex_) {
+                g.setColour(juce::Colours::white.withAlpha(0.3f));
+                g.fillRect(barBounds);
+            }
+        }
+    }
+
+    // Draw ghost loop-repeating velocity bars
+    if (loopEnabled_ && loopLengthBeats_ > 0.0 && clipIds_.size() <= 1 && clipLengthBeats_ > 0.0) {
+        const auto* loopClip = clipManager.getClip(clipId_);
+        if (loopClip && loopClip->type == ClipType::MIDI) {
+            int numRepetitions = static_cast<int>(std::ceil(clipLengthBeats_ / loopLengthBeats_));
+
+            for (int rep = 1; rep < numRepetitions; ++rep) {
+                for (const auto& note : loopClip->midiNotes) {
+                    // Only notes within the loop region
+                    if (note.startBeat < loopOffsetBeats_ ||
+                        note.startBeat >= loopOffsetBeats_ + loopLengthBeats_) {
+                        continue;
+                    }
+
+                    double relStart = (note.startBeat - loopOffsetBeats_) + rep * loopLengthBeats_;
+                    if (relStart >= clipLengthBeats_) {
+                        continue;
+                    }
+
+                    double displayStart = relativeMode_ ? relStart : (clipStartBeats_ + relStart);
+
+                    int x = beatToPixel(displayStart);
+                    int barWidth = juce::jmax(minBarWidth,
+                                              static_cast<int>(note.lengthBeats * pixelsPerBeat_));
+
+                    if (x + barWidth < 0 || x > bounds.getWidth()) {
+                        continue;
+                    }
+
+                    int barHeight = note.velocity * usableHeight / 127;
+                    int barY = margin + usableHeight - barHeight;
+                    auto barBounds = juce::Rectangle<int>(x, barY, barWidth - 1, barHeight);
+
+                    // Ghost fill at reduced alpha
+                    g.setColour(loopClip->colour.withAlpha(0.3f));
+                    g.fillRect(barBounds);
+
+                    // Ghost border
+                    g.setColour(loopClip->colour.withAlpha(0.4f));
+                    g.drawRect(barBounds, 1);
+                }
+            }
         }
     }
 

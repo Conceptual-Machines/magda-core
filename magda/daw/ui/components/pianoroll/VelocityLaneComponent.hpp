@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <unordered_map>
+#include <vector>
 
 #include "core/ClipTypes.hpp"
 
@@ -22,6 +23,7 @@ class VelocityLaneComponent : public juce::Component {
 
     // Set the clip to display/edit
     void setClip(ClipId clipId);
+    void setClipIds(const std::vector<ClipId>& clipIds);
     ClipId getClipId() const {
         return clipId_;
     }
@@ -34,6 +36,10 @@ class VelocityLaneComponent : public juce::Component {
     // Display mode
     void setRelativeMode(bool relative);
     void setClipStartBeats(double startBeats);
+    void setClipLengthBeats(double lengthBeats);
+
+    // Loop region
+    void setLoopRegion(double offsetBeats, double lengthBeats, bool enabled);
 
     // Refresh from clip data
     void refreshNotes();
@@ -52,11 +58,18 @@ class VelocityLaneComponent : public juce::Component {
 
   private:
     ClipId clipId_ = INVALID_CLIP_ID;
+    std::vector<ClipId> clipIds_;
     double pixelsPerBeat_ = 50.0;
     int scrollOffsetX_ = 0;
     int leftPadding_ = 2;
     bool relativeMode_ = true;
     double clipStartBeats_ = 0.0;
+    double clipLengthBeats_ = 0.0;
+
+    // Loop region
+    double loopOffsetBeats_ = 0.0;
+    double loopLengthBeats_ = 0.0;
+    bool loopEnabled_ = false;
 
     // Drag state
     size_t draggingNoteIndex_ = SIZE_MAX;

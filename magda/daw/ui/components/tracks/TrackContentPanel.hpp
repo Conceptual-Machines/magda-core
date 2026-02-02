@@ -43,6 +43,9 @@ class TrackContentPanel : public juce::Component,
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
 
+    // Keyboard handling
+    bool keyPressed(const juce::KeyPress& key) override;
+
     // TimelineStateListener implementation
     void timelineStateChanged(const TimelineState& state) override;
     void zoomStateChanged(const TimelineState& state) override;
@@ -102,6 +105,9 @@ class TrackContentPanel : public juce::Component,
     // Time display mode and tempo (for grid drawing)
     void setTimeDisplayMode(TimeDisplayMode mode);
     void setTempo(double bpm);
+    double getTempo() const {
+        return tempoBPM;
+    }
     void setTimeSignature(int numerator, int denominator);
 
     // Get total height of all tracks
@@ -143,6 +149,10 @@ class TrackContentPanel : public juce::Component,
                       const juce::Colour& colour);
     void clearClipGhost(ClipId clipId);
     void clearAllClipGhosts();
+
+    TimelineController* getTimelineController() const {
+        return timelineController;
+    }
 
   private:
     // Controller reference (not owned)
@@ -214,9 +224,18 @@ class TrackContentPanel : public juce::Component,
         double originalStartTime = 0.0;
     };
     std::vector<TimeSelectionClipInfo> clipsInTimeSelection_;
+    void splitClipsAtSelectionBoundaries();
     void captureClipsInTimeSelection();
     void moveClipsWithTimeSelection(double deltaTime);
     void commitClipsInTimeSelection(double deltaTime);
+
+    // Clips captured during time selection resize (for trim-on-drag)
+    struct ClipOriginalData {
+        double originalStartTime = 0.0;
+        double originalLength = 0.0;
+        TrackId originalTrackId = INVALID_TRACK_ID;
+    };
+    std::unordered_map<ClipId, ClipOriginalData> originalClipsInSelection_;
 
     // Edit cursor blink state
     bool editCursorBlinkVisible_ = true;
@@ -228,6 +247,7 @@ class TrackContentPanel : public juce::Component,
     // Helper to check if a position is in a selectable area
     bool isInSelectableArea(int x, int y) const;
     bool isOnExistingSelection(int x, int y) const;
+    bool isOnSelectionEdge(int x, int y, bool& isLeftEdge) const;
 
     // Clip management
     std::vector<std::unique_ptr<ClipComponent>> clipComponents_;
@@ -253,7 +273,14 @@ class TrackContentPanel : public juce::Component,
     // ========================================================================
     // Marquee Selection State
     // ========================================================================
-    enum class DragType { None, TimeSelection, Marquee, MoveSelection };
+    enum class DragType {
+        None,
+        TimeSelection,
+        Marquee,
+        MoveSelection,
+        ResizeSelectionLeft,
+        ResizeSelectionRight
+    };
     DragType currentDragType_ = DragType::None;
     bool isMarqueeActive_ = false;
     juce::Rectangle<int> marqueeRect_;
@@ -263,7 +290,8 @@ class TrackContentPanel : public juce::Component,
 
     // Track zone detection - upper half = marquee, lower half = time selection
     bool isInUpperTrackZone(int y) const;
-    void updateCursorForPosition(int x, int y);
+    void updateCursorForPosition(int x, int y, bool shiftHeld = false);
+    bool lastShiftState_ = false;
 
     // Marquee methods
     void startMarqueeSelection(const juce::Point<int>& startPoint);
@@ -304,11 +332,6 @@ class TrackContentPanel : public juce::Component,
 
     // Multi-clip drag methods (private helper)
     void cancelMultiClipDrag();
-
-    // ========================================================================
-    // Keyboard handling
-    // ========================================================================
-    bool keyPressed(const juce::KeyPress& key) override;
 
     // ========================================================================
     // File Drag-and-Drop State

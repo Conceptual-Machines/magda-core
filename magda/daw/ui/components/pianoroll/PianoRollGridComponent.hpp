@@ -7,6 +7,7 @@
 
 #include "NoteComponent.hpp"
 #include "core/ClipInfo.hpp"
+#include "core/ClipManager.hpp"
 #include "core/ClipTypes.hpp"
 
 namespace magda {
@@ -21,7 +22,7 @@ namespace magda {
  * - Grid snap settings
  * - Coordinate conversion (beat <-> pixel, noteNumber <-> y)
  */
-class PianoRollGridComponent : public juce::Component {
+class PianoRollGridComponent : public juce::Component, public ClipManagerListener {
   public:
     PianoRollGridComponent();
     ~PianoRollGridComponent() override;
@@ -37,10 +38,21 @@ class PianoRollGridComponent : public juce::Component {
     // Keyboard handling
     bool keyPressed(const juce::KeyPress& key) override;
 
-    // Set the clip to display/edit
-    void setClip(ClipId clipId);
+    // Set the clip(s) to display/edit
+    void setClip(ClipId clipId);  // Single clip (backward compatibility)
+    void setClips(TrackId trackId, const std::vector<ClipId>& selectedClipIds,
+                  const std::vector<ClipId>& allClipIds);  // Multi-clip mode
     ClipId getClipId() const {
         return clipId_;
+    }
+    const std::vector<ClipId>& getClipIds() const {
+        return clipIds_;
+    }
+    const std::vector<ClipId>& getSelectedClipIds() const {
+        return selectedClipIds_;
+    }
+    TrackId getTrackId() const {
+        return trackId_;
     }
 
     // Zoom settings
@@ -86,6 +98,15 @@ class PianoRollGridComponent : public juce::Component {
 
     // Loop region markers (shows loop boundaries on the grid)
     void setLoopRegion(double offsetBeats, double lengthBeats, bool enabled);
+    double getLoopOffsetBeats() const {
+        return loopOffsetBeats_;
+    }
+    double getLoopLengthBeats() const {
+        return loopLengthBeats_;
+    }
+    bool isLoopEnabled() const {
+        return loopEnabled_;
+    }
 
     // Playhead position (for drawing playhead line during playback)
     void setPlayheadPosition(double positionSeconds);
@@ -120,6 +141,11 @@ class PianoRollGridComponent : public juce::Component {
     // Refresh note components from clip data
     void refreshNotes();
 
+    // ClipManagerListener
+    void clipsChanged() override {}
+    void clipPropertyChanged(ClipId clipId) override;
+    void clipSelectionChanged(ClipId clipId) override {}
+
     // Callbacks for parent to handle undo/redo
     std::function<void(ClipId, double, int, int)>
         onNoteAdded;  // clipId, beat, noteNumber, velocity
@@ -134,7 +160,10 @@ class PianoRollGridComponent : public juce::Component {
         onNoteDragging;  // clipId, index, previewBeat, isDragging
 
   private:
-    ClipId clipId_ = INVALID_CLIP_ID;
+    ClipId clipId_ = INVALID_CLIP_ID;      // Primary selected clip (for backward compatibility)
+    std::vector<ClipId> selectedClipIds_;  // All selected clips (editable)
+    std::vector<ClipId> clipIds_;          // All clips being displayed
+    TrackId trackId_ = INVALID_TRACK_ID;
 
     // Note range
     static constexpr int MIN_NOTE = 21;   // A0
@@ -189,6 +218,8 @@ class PianoRollGridComponent : public juce::Component {
     // Helpers
     bool isBlackKey(int noteNumber) const;
     juce::Colour getClipColour() const;
+    juce::Colour getColourForClip(ClipId clipId) const;
+    bool isClipSelected(ClipId clipId) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PianoRollGridComponent)
 };

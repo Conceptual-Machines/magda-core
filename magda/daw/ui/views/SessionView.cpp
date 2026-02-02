@@ -8,7 +8,9 @@
 #include "../panels/state/PanelController.hpp"
 #include "../state/TimelineController.hpp"
 #include "../themes/DarkTheme.hpp"
+#include "core/ClipCommands.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/UndoManager.hpp"
 #include "core/ViewModeController.hpp"
 
 namespace magda {
@@ -1222,7 +1224,16 @@ void SessionView::onCreateMidiClipClicked(int trackIndex, int sceneIndex) {
     if (ClipManager::getInstance().getClipInSlot(trackId, sceneIndex) != INVALID_CLIP_ID)
         return;
 
-    ClipId clipId = ClipManager::getInstance().createMidiClip(trackId, 0.0, 4.0, ClipView::Session);
+    // Create clip through command system for proper undo support
+    auto cmd = std::make_unique<CreateClipCommand>(ClipType::MIDI, trackId, 0.0, 4.0, "",
+                                                   ClipView::Session);
+
+    // Get raw pointer before moving to UndoManager
+    auto* cmdPtr = cmd.get();
+    UndoManager::getInstance().executeCommand(std::move(cmd));
+
+    // Get the created clip ID and set its scene index
+    ClipId clipId = cmdPtr->getCreatedClipId();
     if (clipId != INVALID_CLIP_ID) {
         ClipManager::getInstance().setClipSceneIndex(clipId, sceneIndex);
         updateClipSlotAppearance(trackIndex, sceneIndex);

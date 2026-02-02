@@ -4,8 +4,10 @@
 
 #include <memory>
 
+#include "../../core/SelectionManager.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
 #include "../layout/LayoutConfig.hpp"
+#include "CommandIDs.hpp"
 #include "MenuManager.hpp"
 #include "core/ViewModeController.hpp"
 #include "core/ViewModeState.hpp"
@@ -56,7 +58,9 @@ class MainWindow : public juce::DocumentWindow {
 
 class MainWindow::MainComponent : public juce::Component,
                                   public juce::DragAndDropContainer,
-                                  public ViewModeListener {
+                                  public juce::ApplicationCommandTarget,
+                                  public ViewModeListener,
+                                  public SelectionManagerListener {
   public:
     MainComponent(AudioEngine* externalEngine = nullptr);
     ~MainComponent() override;
@@ -67,8 +71,22 @@ class MainWindow::MainComponent : public juce::Component,
     // Keyboard handling
     bool keyPressed(const juce::KeyPress& key) override;
 
+    // ApplicationCommandTarget
+    ApplicationCommandTarget* getNextCommandTarget() override;
+    void getAllCommands(juce::Array<juce::CommandID>& commands) override;
+    void getCommandInfo(juce::CommandID commandID, juce::ApplicationCommandInfo& result) override;
+    bool perform(const InvocationInfo& info) override;
+
     // ViewModeListener
     void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
+
+    // SelectionManagerListener
+    void selectionTypeChanged(SelectionType newType) override;
+
+    // Command manager access
+    juce::ApplicationCommandManager& getCommandManager() {
+        return commandManager;
+    }
 
     // Make these public so MainWindow can access them
     bool leftPanelVisible = true;
@@ -92,6 +110,9 @@ class MainWindow::MainComponent : public juce::Component,
     }
 
   private:
+    // Command manager for keyboard shortcuts and menu commands
+    juce::ApplicationCommandManager commandManager;
+
     // Current view mode
     ViewMode currentViewMode = ViewMode::Arrange;
 

@@ -4,13 +4,22 @@
 
 namespace magda {
 
-NoteComponent::NoteComponent(size_t noteIndex, PianoRollGridComponent* parent)
-    : noteIndex_(noteIndex), parentGrid_(parent) {
+NoteComponent::NoteComponent(size_t noteIndex, PianoRollGridComponent* parent, ClipId sourceClipId)
+    : noteIndex_(noteIndex), sourceClipId_(sourceClipId), parentGrid_(parent) {
     setName("NoteComponent");
 }
 
 void NoteComponent::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
+
+    if (ghost_) {
+        // Ghost note: slightly dimmed fill with subtle border
+        g.setColour(colour_.withAlpha(0.35f));
+        g.fillRoundedRectangle(bounds, CORNER_RADIUS);
+        g.setColour(colour_.withAlpha(0.5f));
+        g.drawRoundedRectangle(bounds.reduced(0.5f), CORNER_RADIUS, 1.0f);
+        return;
+    }
 
     // Background fill
     auto fillColour = isSelected_ ? colour_.brighter(0.3f) : colour_;
@@ -111,7 +120,15 @@ void NoteComponent::mouseDrag(const juce::MouseEvent& e) {
     }
 
     // Calculate delta in parent coordinates
-    auto parentPos = e.getEventRelativeTo(parentGrid_).getPosition();
+    // Use Desktop mouse position to avoid component-relative constraints
+    auto& desktop = juce::Desktop::getInstance();
+    auto absoluteMousePos = desktop.getMainMouseSource().getScreenPosition();
+    auto gridScreenPos = parentGrid_->localPointToGlobal(juce::Point<int>());
+    auto parentPos = absoluteMousePos.toInt() - gridScreenPos;
+
+    DBG("DESKTOP: mouse=" << absoluteMousePos.toInt().toString() << " grid="
+                          << gridScreenPos.toString() << " parent=" << parentPos.toString());
+
     int deltaX = parentPos.x - dragStartPos_.x;
     int deltaY = parentPos.y - dragStartPos_.y;
 
@@ -120,12 +137,17 @@ void NoteComponent::mouseDrag(const juce::MouseEvent& e) {
 
     switch (dragMode_) {
         case DragMode::Move: {
-            double rawStartBeat = juce::jmax(0.0, dragStartBeat_ + deltaBeat);
+            double rawStartBeat = dragStartBeat_ + deltaBeat;
             int rawNoteNumber = juce::jlimit(0, 127, dragStartNoteNumber_ + deltaNote);
+
+            DBG("NOTE DRAG: dragStartBeat=" << dragStartBeat_ << ", deltaBeat=" << deltaBeat
+                                            << ", rawStartBeat=" << rawStartBeat);
 
             // Apply grid snap if available
             if (snapBeatToGrid) {
-                rawStartBeat = snapBeatToGrid(rawStartBeat);
+                double snappedBeat = snapBeatToGrid(rawStartBeat);
+                DBG("  Grid snap: " << rawStartBeat << " -> " << snappedBeat);
+                rawStartBeat = snappedBeat;
             }
 
             previewStartBeat_ = rawStartBeat;
@@ -259,6 +281,13 @@ void NoteComponent::mouseDoubleClick(const juce::MouseEvent& /*e*/) {
 void NoteComponent::setSelected(bool selected) {
     if (isSelected_ != selected) {
         isSelected_ = selected;
+        repaint();
+    }
+}
+
+void NoteComponent::setGhost(bool ghost) {
+    if (ghost_ != ghost) {
+        ghost_ = ghost;
         repaint();
     }
 }

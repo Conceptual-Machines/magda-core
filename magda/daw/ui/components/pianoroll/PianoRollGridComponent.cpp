@@ -9,9 +9,11 @@ namespace magda {
 PianoRollGridComponent::PianoRollGridComponent() {
     setName("PianoRollGrid");
     setWantsKeyboardFocus(true);
+    ClipManager::getInstance().addListener(this);
 }
 
 PianoRollGridComponent::~PianoRollGridComponent() {
+    ClipManager::getInstance().removeListener(this);
     clearNoteComponents();
 }
 
@@ -19,8 +21,69 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
     paintGrid(g, bounds);
 
-    // Draw clip boundary lines and dim out-of-bounds area
-    if (!relativeMode_ && clipLengthBeats_ > 0) {
+    // Draw clip boundaries for multi-clip view
+    if (clipIds_.size() > 1) {
+        auto& clipManager = ClipManager::getInstance();
+
+        // Get tempo for beat conversion
+        double tempo = 120.0;
+        if (auto* controller = TimelineController::getCurrent()) {
+            tempo = controller->getState().tempo.bpm;
+        }
+
+        // Collect selected clip regions to exclude from dimming
+        struct ClipRegion {
+            int startX, endX;
+        };
+        std::vector<ClipRegion> selectedRegions;
+
+        for (ClipId clipId : clipIds_) {
+            const auto* clip = clipManager.getClip(clipId);
+            if (!clip) {
+                continue;
+            }
+
+            double clipStartBeats = clip->startTime * (tempo / 60.0);
+            double clipEndBeats = (clip->startTime + clip->length) * (tempo / 60.0);
+
+            // In relative mode, offset from the earliest clip start
+            if (relativeMode_) {
+                clipStartBeats -= clipStartBeats_;
+                clipEndBeats -= clipStartBeats_;
+            }
+
+            int startX = beatToPixel(clipStartBeats);
+            int endX = beatToPixel(clipEndBeats);
+
+            if (isClipSelected(clipId)) {
+                selectedRegions.push_back({startX, endX});
+            }
+
+            // Draw subtle boundary markers
+            g.setColour(clip->colour.withAlpha(0.3f));
+            g.fillRect(startX, 0, 2, getHeight());
+            g.fillRect(endX - 2, 0, 2, getHeight());
+        }
+
+        // Dim everything outside selected clip regions
+        if (!selectedRegions.empty()) {
+            g.setColour(juce::Colour(0x20000000));
+            int prevEnd = bounds.getX();
+            // Sort by startX
+            std::sort(selectedRegions.begin(), selectedRegions.end(),
+                      [](const ClipRegion& a, const ClipRegion& b) { return a.startX < b.startX; });
+            for (const auto& region : selectedRegions) {
+                if (region.startX > prevEnd) {
+                    g.fillRect(prevEnd, 0, region.startX - prevEnd, getHeight());
+                }
+                prevEnd = juce::jmax(prevEnd, region.endX);
+            }
+            if (prevEnd < bounds.getRight()) {
+                g.fillRect(prevEnd, 0, bounds.getRight() - prevEnd, getHeight());
+            }
+        }
+    } else if (!relativeMode_ && clipLengthBeats_ > 0) {
+        // Single clip in absolute mode - original behavior
         // Clip start boundary
         int clipStartX = beatToPixel(clipStartBeats_);
         if (clipStartX >= 0 && clipStartX <= bounds.getRight()) {
@@ -81,6 +144,68 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         if (loopEndX >= 0 && loopEndX <= bounds.getRight()) {
             g.setColour(loopColour);
             g.fillRect(loopEndX - 1, 0, 2, bounds.getHeight());
+        }
+    }
+
+    // Draw content offset marker (yellow vertical line)
+    if (clipIds_.size() <= 1 && clipId_ != INVALID_CLIP_ID) {
+        const auto* offsetClip = ClipManager::getInstance().getClip(clipId_);
+        if (offsetClip && offsetClip->midiOffset > 0.0) {
+            double offsetBeat =
+                relativeMode_ ? offsetClip->midiOffset : (clipStartBeats_ + offsetClip->midiOffset);
+            int offsetX = beatToPixel(offsetBeat);
+            if (offsetX >= 0 && offsetX <= bounds.getRight()) {
+                g.setColour(DarkTheme::getColour(DarkTheme::OFFSET_MARKER));
+                g.fillRect(offsetX - 1, 0, 2, bounds.getHeight());
+            }
+        }
+    }
+
+    // Draw ghost loop-repeating notes (paint-only, non-interactive)
+    if (loopEnabled_ && loopLengthBeats_ > 0.0 && clipIds_.size() <= 1) {
+        auto& clipManager = ClipManager::getInstance();
+        const auto* clip = clipManager.getClip(clipId_);
+        if (clip && clip->type == ClipType::MIDI && clipLengthBeats_ > 0.0) {
+            int numRepetitions = static_cast<int>(std::ceil(clipLengthBeats_ / loopLengthBeats_));
+
+            for (int rep = 1; rep < numRepetitions; ++rep) {
+                for (const auto& note : clip->midiNotes) {
+                    // Only draw notes within the loop region
+                    if (note.startBeat < loopOffsetBeats_ ||
+                        note.startBeat >= loopOffsetBeats_ + loopLengthBeats_) {
+                        continue;
+                    }
+
+                    double relStart = (note.startBeat - loopOffsetBeats_) + rep * loopLengthBeats_;
+
+                    // Clamp note end to repetition boundary and clip length
+                    double noteEnd = relStart + note.lengthBeats;
+                    double repEnd = (rep + 1) * loopLengthBeats_;
+                    noteEnd = juce::jmin(noteEnd, repEnd);
+                    noteEnd = juce::jmin(noteEnd, clipLengthBeats_);
+                    if (relStart >= clipLengthBeats_) {
+                        continue;
+                    }
+                    double displayLength = noteEnd - relStart;
+                    if (displayLength <= 0.0) {
+                        continue;
+                    }
+
+                    // Convert to display coordinates
+                    double displayBeat = relativeMode_ ? relStart : (clipStartBeats_ + relStart);
+
+                    int x = beatToPixel(displayBeat);
+                    int y = noteNumberToY(note.noteNumber);
+                    int width = juce::jmax(8, static_cast<int>(displayLength * pixelsPerBeat_));
+                    int height = noteHeight_ - 2;
+
+                    // Draw as ghost rectangle
+                    g.setColour(clip->colour.withAlpha(0.35f));
+                    g.fillRoundedRectangle(static_cast<float>(x), static_cast<float>(y + 1),
+                                           static_cast<float>(width), static_cast<float>(height),
+                                           2.0f);
+                }
+            }
         }
     }
 
@@ -201,12 +326,83 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
 
 void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
     // Double-click to add a new note
+    if (selectedClipIds_.empty()) {
+        return;
+    }
+
     double beat = pixelToBeat(e.x);
     int noteNumber = yToNoteNumber(e.y);
 
-    // In ABS mode, convert absolute beat to clip-relative beat
-    if (!relativeMode_) {
-        beat = beat - clipStartBeats_;
+    ClipId targetClipId = INVALID_CLIP_ID;
+
+    if (relativeMode_ && selectedClipIds_.size() <= 1) {
+        // Single clip relative mode: add to the primary selected clip
+        targetClipId = clipId_;
+    } else if (relativeMode_ && selectedClipIds_.size() > 1) {
+        // Multi-clip relative mode: find which clip region the click falls in
+        double tempo = 120.0;
+        if (auto* controller = TimelineController::getCurrent()) {
+            tempo = controller->getState().tempo.bpm;
+        }
+
+        auto& clipManager = ClipManager::getInstance();
+
+        for (ClipId selectedClipId : selectedClipIds_) {
+            const auto* clip = clipManager.getClip(selectedClipId);
+            if (!clip)
+                continue;
+
+            double clipOffsetBeats = clip->startTime * (tempo / 60.0) - clipStartBeats_;
+            double clipEndRelBeats = clipOffsetBeats + clip->length * (tempo / 60.0);
+
+            if (beat >= clipOffsetBeats && beat < clipEndRelBeats) {
+                targetClipId = selectedClipId;
+                // Convert to clip-relative beat
+                beat = beat - clipOffsetBeats;
+                break;
+            }
+        }
+
+        if (targetClipId == INVALID_CLIP_ID) {
+            targetClipId = clipId_;
+        }
+    } else {
+        // Absolute mode: find which selected clip contains this beat
+        // Get tempo for beat conversion
+        double tempo = 120.0;
+        if (auto* controller = TimelineController::getCurrent()) {
+            tempo = controller->getState().tempo.bpm;
+        }
+
+        double timeSeconds = beat / (tempo / 60.0);
+        auto& clipManager = ClipManager::getInstance();
+
+        // Find selected clip at this position
+        for (ClipId selectedClipId : selectedClipIds_) {
+            const auto* clip = clipManager.getClip(selectedClipId);
+            if (!clip) {
+                continue;
+            }
+
+            if (timeSeconds >= clip->startTime && timeSeconds < (clip->startTime + clip->length)) {
+                targetClipId = selectedClipId;
+                break;
+            }
+        }
+
+        // If no selected clip at this position, use the primary selected clip
+        if (targetClipId == INVALID_CLIP_ID) {
+            targetClipId = clipId_;
+        }
+
+        // Convert absolute beat to clip-relative beat
+        const auto* clip = clipManager.getClip(targetClipId);
+        if (!clip) {
+            return;
+        }
+
+        double clipStartBeats = clip->startTime * (tempo / 60.0);
+        beat = beat - clipStartBeats;
     }
 
     // Snap to grid
@@ -218,9 +414,9 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
     // Clamp note number
     noteNumber = juce::jlimit(MIN_NOTE, MAX_NOTE, noteNumber);
 
-    if (onNoteAdded && clipId_ != INVALID_CLIP_ID) {
+    if (onNoteAdded && targetClipId != INVALID_CLIP_ID) {
         int defaultVelocity = 100;
-        onNoteAdded(clipId_, beat, noteNumber, defaultVelocity);
+        onNoteAdded(targetClipId, beat, noteNumber, defaultVelocity);
     }
 }
 
@@ -240,6 +436,31 @@ bool PianoRollGridComponent::keyPressed(const juce::KeyPress& key) {
 void PianoRollGridComponent::setClip(ClipId clipId) {
     if (clipId_ != clipId) {
         clipId_ = clipId;
+        selectedClipIds_ = {clipId};
+        clipIds_ = {clipId};
+
+        // Get track ID from clip
+        const auto* clip = ClipManager::getInstance().getClip(clipId);
+        trackId_ = clip ? clip->trackId : INVALID_TRACK_ID;
+
+        refreshNotes();
+    }
+}
+
+void PianoRollGridComponent::setClips(TrackId trackId, const std::vector<ClipId>& selectedClipIds,
+                                      const std::vector<ClipId>& allClipIds) {
+    bool needsRefresh =
+        (trackId_ != trackId || selectedClipIds_ != selectedClipIds || clipIds_ != allClipIds);
+
+    trackId_ = trackId;
+    selectedClipIds_ = selectedClipIds;  // Clips selected for editing
+    clipId_ = selectedClipIds.empty() ? INVALID_CLIP_ID : selectedClipIds[0];  // Primary selection
+    clipIds_ = allClipIds;  // All clips to display
+
+    DBG("PianoRollGrid::setClips - Selected: " << selectedClipIds.size()
+                                               << ", All: " << allClipIds.size());
+
+    if (needsRefresh) {
         refreshNotes();
     }
 }
@@ -325,8 +546,43 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
     if (!note)
         return;
 
-    // In ABS mode, offset by clip start position for display
-    double displayBeat = relativeMode_ ? beat : (clipStartBeats_ + beat);
+    double displayBeat;
+    if (relativeMode_) {
+        // For multi-clip, offset by the clip's distance from the earliest clip
+        if (clipIds_.size() > 1) {
+            ClipId clipId = note->getSourceClipId();
+            const auto* clip = ClipManager::getInstance().getClip(clipId);
+            if (clip) {
+                double tempo = 120.0;
+                if (auto* controller = TimelineController::getCurrent()) {
+                    tempo = controller->getState().tempo.bpm;
+                }
+                double clipOffsetBeats = clip->startTime * (tempo / 60.0) - clipStartBeats_;
+                displayBeat = clipOffsetBeats + beat;
+            } else {
+                displayBeat = beat;
+            }
+        } else {
+            displayBeat = beat;
+        }
+    } else {
+        // In ABS mode, use the note's own clip start position (not the grid-wide clipStartBeats_)
+        ClipId clipId = note->getSourceClipId();
+        const auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip) {
+            double tempo = 120.0;
+            if (auto* controller = TimelineController::getCurrent()) {
+                tempo = controller->getState().tempo.bpm;
+            }
+            double clipStartBeats = clip->startTime * (tempo / 60.0);
+            double offset = (clip->view == ClipView::Session || clip->internalLoopEnabled)
+                                ? clip->midiOffset
+                                : 0.0;
+            displayBeat = clipStartBeats + beat - offset;
+        } else {
+            displayBeat = clipStartBeats_ + beat;
+        }
+    }
 
     int x = beatToPixel(displayBeat);
     int y = noteNumberToY(noteNumber);
@@ -347,6 +603,28 @@ void PianoRollGridComponent::refreshNotes() {
     createNoteComponents();
     updateNoteComponentBounds();
     repaint();
+}
+
+void PianoRollGridComponent::clipPropertyChanged(ClipId clipId) {
+    // Update if this is one of our clips
+    bool isOurClip = false;
+    for (ClipId id : clipIds_) {
+        if (id == clipId) {
+            isOurClip = true;
+            break;
+        }
+    }
+
+    if (isOurClip) {
+        // Defer refresh asynchronously to avoid destroying NoteComponents
+        // while their mouse handlers are still executing (use-after-free crash)
+        juce::Component::SafePointer<PianoRollGridComponent> safeThis(this);
+        juce::MessageManager::callAsync([safeThis]() {
+            if (auto* self = safeThis.getComponent()) {
+                self->refreshNotes();
+            }
+        });
+    }
 }
 
 double PianoRollGridComponent::snapBeatToGrid(double beat) const {
@@ -376,62 +654,77 @@ double PianoRollGridComponent::getGridResolutionBeats() const {
 }
 
 void PianoRollGridComponent::createNoteComponents() {
-    const auto* clip = ClipManager::getInstance().getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI) {
-        return;
-    }
+    auto& clipManager = ClipManager::getInstance();
 
-    juce::Colour noteColour = clip->colour;
+    DBG("createNoteComponents: clipIds_.size()=" << clipIds_.size() << ", selectedClipIds_.size()="
+                                                 << selectedClipIds_.size());
 
-    for (size_t i = 0; i < clip->midiNotes.size(); i++) {
-        auto noteComp = std::make_unique<NoteComponent>(i, this);
+    // Iterate through all clips
+    for (ClipId clipId : clipIds_) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (!clip || clip->type != ClipType::MIDI) {
+            DBG("  Skipping clip " << clipId << " (null or not MIDI)");
+            continue;
+        }
 
-        // Set up callbacks
-        noteComp->onNoteSelected = [this](size_t index) {
-            // Deselect other notes
-            for (auto& nc : noteComponents_) {
-                if (nc->getNoteIndex() != index) {
-                    nc->setSelected(false);
+        juce::Colour noteColour = getColourForClip(clipId);
+
+        DBG("  Creating notes for clip " << clipId << ": " << clip->midiNotes.size() << " notes");
+
+        // Create note component for each note in this clip
+        for (size_t i = 0; i < clip->midiNotes.size(); i++) {
+            auto noteComp = std::make_unique<NoteComponent>(i, this, clipId);
+
+            noteComp->onNoteSelected = [this, clipId](size_t index) {
+                // Deselect other notes
+                for (auto& nc : noteComponents_) {
+                    if (nc->getSourceClipId() != clipId || nc->getNoteIndex() != index) {
+                        nc->setSelected(false);
+                    }
                 }
-            }
-            selectedNoteIndex_ = static_cast<int>(index);
+                selectedNoteIndex_ = static_cast<int>(index);
 
-            if (onNoteSelected && clipId_ != INVALID_CLIP_ID) {
-                onNoteSelected(clipId_, index);
-            }
-        };
+                if (onNoteSelected) {
+                    onNoteSelected(clipId, index);
+                }
+            };
 
-        noteComp->onNoteMoved = [this](size_t index, double newBeat, int newNoteNumber) {
-            if (onNoteMoved && clipId_ != INVALID_CLIP_ID) {
-                onNoteMoved(clipId_, index, newBeat, newNoteNumber);
-            }
-        };
+            noteComp->onNoteMoved = [this, clipId](size_t index, double newBeat,
+                                                   int newNoteNumber) {
+                if (onNoteMoved) {
+                    onNoteMoved(clipId, index, newBeat, newNoteNumber);
+                }
+            };
 
-        noteComp->onNoteResized = [this](size_t index, double newLength, bool fromStart) {
-            (void)fromStart;  // Length change is already computed
-            if (onNoteResized && clipId_ != INVALID_CLIP_ID) {
-                onNoteResized(clipId_, index, newLength);
-            }
-        };
+            noteComp->onNoteResized = [this, clipId](size_t index, double newLength,
+                                                     bool fromStart) {
+                (void)fromStart;  // Length change is already computed
+                if (onNoteResized) {
+                    onNoteResized(clipId, index, newLength);
+                }
+            };
 
-        noteComp->onNoteDeleted = [this](size_t index) {
-            if (onNoteDeleted && clipId_ != INVALID_CLIP_ID) {
-                onNoteDeleted(clipId_, index);
-                selectedNoteIndex_ = -1;
-            }
-        };
+            noteComp->onNoteDeleted = [this, clipId](size_t index) {
+                if (onNoteDeleted) {
+                    onNoteDeleted(clipId, index);
+                    selectedNoteIndex_ = -1;
+                }
+            };
 
-        noteComp->onNoteDragging = [this](size_t index, double previewBeat, bool isDragging) {
-            if (onNoteDragging && clipId_ != INVALID_CLIP_ID) {
-                onNoteDragging(clipId_, index, previewBeat, isDragging);
-            }
-        };
+            noteComp->onNoteDragging = [this, clipId](size_t index, double previewBeat,
+                                                      bool isDragging) {
+                if (onNoteDragging) {
+                    onNoteDragging(clipId, index, previewBeat, isDragging);
+                }
+            };
 
-        noteComp->snapBeatToGrid = [this](double beat) { return snapBeatToGrid(beat); };
+            noteComp->snapBeatToGrid = [this](double beat) { return snapBeatToGrid(beat); };
 
-        noteComp->updateFromNote(clip->midiNotes[i], noteColour);
-        addAndMakeVisible(noteComp.get());
-        noteComponents_.push_back(std::move(noteComp));
+            noteComp->setGhost(!isClipSelected(clipId));
+            noteComp->updateFromNote(clip->midiNotes[i], noteColour);
+            addAndMakeVisible(noteComp.get());
+            noteComponents_.push_back(std::move(noteComp));
+        }
     }
 }
 
@@ -444,23 +737,61 @@ void PianoRollGridComponent::clearNoteComponents() {
 }
 
 void PianoRollGridComponent::updateNoteComponentBounds() {
-    const auto* clip = ClipManager::getInstance().getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI) {
-        return;
-    }
+    auto& clipManager = ClipManager::getInstance();
 
-    for (size_t i = 0; i < noteComponents_.size() && i < clip->midiNotes.size(); i++) {
-        const auto& note = clip->midiNotes[i];
+    for (auto& noteComp : noteComponents_) {
+        ClipId clipId = noteComp->getSourceClipId();
+        size_t noteIndex = noteComp->getNoteIndex();
 
-        // In absolute mode, offset notes by clip start position
-        double displayBeat = relativeMode_ ? note.startBeat : (clipStartBeats_ + note.startBeat);
+        const auto* clip = clipManager.getClip(clipId);
+        if (!clip || noteIndex >= clip->midiNotes.size()) {
+            continue;
+        }
+
+        const auto& note = clip->midiNotes[noteIndex];
+
+        // Calculate display position
+        double displayBeat;
+        if (relativeMode_) {
+            // Relative: note at its clip-relative position
+            // For multi-clip, offset by the clip's distance from the earliest clip
+            if (clipIds_.size() > 1) {
+                double tempo = 120.0;
+                if (auto* controller = TimelineController::getCurrent()) {
+                    tempo = controller->getState().tempo.bpm;
+                }
+                double clipOffsetBeats = clip->startTime * (tempo / 60.0) - clipStartBeats_;
+                displayBeat = clipOffsetBeats + note.startBeat;
+            } else {
+                displayBeat = note.startBeat;
+            }
+        } else {
+            // Absolute: convert to timeline position
+            // Get tempo from TimelineController
+            double tempo = 120.0;
+            if (auto* controller = TimelineController::getCurrent()) {
+                tempo = controller->getState().tempo.bpm;
+            }
+            double clipStartBeats = clip->startTime * (tempo / 60.0);
+            double offset = (clip->view == ClipView::Session || clip->internalLoopEnabled)
+                                ? clip->midiOffset
+                                : 0.0;
+            displayBeat = clipStartBeats + note.startBeat - offset;
+        }
+
         int x = beatToPixel(displayBeat);
         int y = noteNumberToY(note.noteNumber);
         int width = juce::jmax(8, static_cast<int>(note.lengthBeats * pixelsPerBeat_));
         int height = noteHeight_ - 2;
 
-        noteComponents_[i]->setBounds(x, y + 1, width, height);
-        noteComponents_[i]->updateFromNote(note, clip->colour);
+        noteComp->setBounds(x, y + 1, width, height);
+
+        // Determine note colour based on editability and state
+        juce::Colour noteColour = getColourForClip(clipId);
+
+        noteComp->setGhost(!isClipSelected(clipId));
+        noteComp->updateFromNote(note, noteColour);
+        noteComp->setVisible(true);
     }
 }
 
@@ -472,6 +803,25 @@ bool PianoRollGridComponent::isBlackKey(int noteNumber) const {
 juce::Colour PianoRollGridComponent::getClipColour() const {
     const auto* clip = ClipManager::getInstance().getClip(clipId_);
     return clip ? clip->colour : juce::Colour(0xFF6688CC);
+}
+
+juce::Colour PianoRollGridComponent::getColourForClip(ClipId clipId) const {
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (!clip) {
+        return juce::Colours::grey;
+    }
+
+    // Use clip's color, but slightly desaturated for multi-clip view
+    if (clipIds_.size() == 1) {
+        return clip->colour;
+    } else {
+        return clip->colour.withSaturation(0.7f);
+    }
+}
+
+bool PianoRollGridComponent::isClipSelected(ClipId clipId) const {
+    return std::find(selectedClipIds_.begin(), selectedClipIds_.end(), clipId) !=
+           selectedClipIds_.end();
 }
 
 void PianoRollGridComponent::setLoopRegion(double offsetBeats, double lengthBeats, bool enabled) {

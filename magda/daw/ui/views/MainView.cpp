@@ -11,9 +11,11 @@
 #include "../themes/FontManager.hpp"
 #include "Config.hpp"
 #include "audio/AudioBridge.hpp"
+#include "core/ClipCommands.hpp"
 #include "core/ClipManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
+#include "core/UndoManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda {
@@ -143,6 +145,8 @@ void MainView::setupComponents() {
 
     // Create track content viewport
     trackContentViewport = std::make_unique<juce::Viewport>();
+    trackContentViewport->setWantsKeyboardFocus(
+        false);  // Let TrackContentPanel handle keyboard focus
     trackContentPanel = std::make_unique<TrackContentPanel>();
     trackContentPanel->setController(timelineController.get());  // Connect to centralized state
     trackContentViewport->setViewedComponent(trackContentPanel.get(), false);
@@ -736,46 +740,42 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
 
     // ===== Clip Shortcuts =====
 
-    // Delete/Backspace: Delete selected clip
+    auto& clipManager = ClipManager::getInstance();
+    auto& selectionManager = SelectionManager::getInstance();
+
+    // Delete/Backspace: Delete selected clips
     if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {
-        ClipId selectedClip = ClipManager::getInstance().getSelectedClip();
-        if (selectedClip != INVALID_CLIP_ID) {
-            ClipManager::getInstance().deleteClip(selectedClip);
-            std::cout << "🎵 CLIP: Deleted clip " << selectedClip << std::endl;
+        auto selectedClips = selectionManager.getSelectedClips();
+        if (!selectedClips.empty()) {
+            // Use compound operation for multiple deletes
+            if (selectedClips.size() > 1) {
+                UndoManager::getInstance().beginCompoundOperation("Delete Clips");
+            }
+
+            for (auto clipId : selectedClips) {
+                auto cmd = std::make_unique<DeleteClipCommand>(clipId);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+            }
+
+            if (selectedClips.size() > 1) {
+                UndoManager::getInstance().endCompoundOperation();
+            }
+
+            selectionManager.clearSelection();
+            std::cout << "🎵 CLIP: Deleted " << selectedClips.size() << " clip(s)" << std::endl;
             return true;
         }
     }
 
-    // Cmd+D: Duplicate selected clip
-    if (key == juce::KeyPress('d', juce::ModifierKeys::commandModifier, 0)) {
-        ClipId selectedClip = ClipManager::getInstance().getSelectedClip();
-        if (selectedClip != INVALID_CLIP_ID) {
-            ClipId newClipId = ClipManager::getInstance().duplicateClip(selectedClip);
-            if (newClipId != INVALID_CLIP_ID) {
-                // Select the new clip
-                ClipManager::getInstance().setSelectedClip(newClipId);
-                std::cout << "🎵 CLIP: Duplicated clip " << selectedClip << " -> " << newClipId
-                          << std::endl;
-            }
-            return true;
-        }
-    }
+    // NOTE: Cmd+C, Cmd+V, Cmd+X, Cmd+D are now handled by ApplicationCommandManager in MainWindow
+    // These old handlers have been removed to prevent double-handling
 
-    // X: Split clip at playhead
-    if (key == juce::KeyPress('x') || key == juce::KeyPress('X')) {
-        ClipId selectedClip = ClipManager::getInstance().getSelectedClip();
-        if (selectedClip != INVALID_CLIP_ID) {
-            double splitTime = playheadPosition;
-            const auto* clip = ClipManager::getInstance().getClip(selectedClip);
-            if (clip && splitTime > clip->startTime && splitTime < clip->startTime + clip->length) {
-                ClipId newClipId = ClipManager::getInstance().splitClip(selectedClip, splitTime);
-                if (newClipId != INVALID_CLIP_ID) {
-                    std::cout << "🎵 CLIP: Split clip " << selectedClip << " at " << splitTime
-                              << "s, created clip " << newClipId << std::endl;
-                }
-                return true;
-            }
-        }
+    // NOTE: Split (Cmd+E) and Trim (Cmd+E with time selection) are handled by
+    // ApplicationCommandManager in MainWindow
+
+    // Forward unhandled keys to parent for command manager processing
+    if (auto* parent = getParentComponent()) {
+        return parent->keyPressed(key);
     }
 
     return false;
@@ -1107,6 +1107,9 @@ void MainView::PlayheadComponent::mouseMove(const juce::MouseEvent& event) {
 }
 
 void MainView::mouseDown(const juce::MouseEvent& event) {
+    // Always grab keyboard focus so shortcuts work
+    grabKeyboardFocus();
+
     if (getResizeHandleArea().contains(event.getPosition())) {
         isResizingHeaders = true;
         lastMouseX = event.x;

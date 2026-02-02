@@ -162,6 +162,7 @@ class ClipManager {
     void setClipLoopEnabled(ClipId clipId, bool enabled);
     void setClipLoopOffset(ClipId clipId, double offsetBeats);
     void setClipLoopLength(ClipId clipId, double lengthBeats);
+    void setClipMidiOffset(ClipId clipId, double offsetBeats);
     void setClipLaunchMode(ClipId clipId, LaunchMode mode);
     void setClipLaunchQuantize(ClipId clipId, LaunchQuantize quantize);
 
@@ -289,6 +290,41 @@ class ClipManager {
     void clearClipSelection();
 
     // ========================================================================
+    // Clipboard Operations
+    // ========================================================================
+
+    /**
+     * @brief Copy selected clips to clipboard
+     * @param clipIds The clips to copy
+     */
+    void copyToClipboard(const std::unordered_set<ClipId>& clipIds);
+
+    /**
+     * @brief Paste clips from clipboard
+     * @param pasteTime Timeline position to paste at
+     * @param targetTrackId Track to paste on (INVALID_TRACK_ID = use original tracks)
+     * @return IDs of the newly created clips
+     */
+    std::vector<ClipId> pasteFromClipboard(double pasteTime,
+                                           TrackId targetTrackId = INVALID_TRACK_ID);
+
+    /**
+     * @brief Cut selected clips to clipboard (copy + delete)
+     * @param clipIds The clips to cut
+     */
+    void cutToClipboard(const std::unordered_set<ClipId>& clipIds);
+
+    /**
+     * @brief Check if clipboard has clips
+     */
+    bool hasClipsInClipboard() const;
+
+    /**
+     * @brief Clear clipboard
+     */
+    void clearClipboard();
+
+    // ========================================================================
     // Session View (Clip Launcher)
     // ========================================================================
 
@@ -347,6 +383,10 @@ class ClipManager {
     // Separate storage for arrangement and session clips
     std::vector<ClipInfo> arrangementClips_;
     std::vector<ClipInfo> sessionClips_;
+
+    // Clipboard storage
+    std::vector<ClipInfo> clipboard_;
+    double clipboardReferenceTime_ = 0.0;  // For maintaining relative positions
 
     std::vector<ClipManagerListener*> listeners_;
     int nextClipId_ = 1;

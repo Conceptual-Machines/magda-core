@@ -24,12 +24,17 @@ class NoteComponent : public juce::Component {
      * @brief Construct a note component
      * @param noteIndex Index into the clip's midiNotes vector
      * @param parent The parent grid component
+     * @param sourceClipId The ID of the clip this note belongs to
      */
-    NoteComponent(size_t noteIndex, PianoRollGridComponent* parent);
+    NoteComponent(size_t noteIndex, PianoRollGridComponent* parent, ClipId sourceClipId);
     ~NoteComponent() override = default;
 
     size_t getNoteIndex() const {
         return noteIndex_;
+    }
+
+    ClipId getSourceClipId() const {
+        return sourceClipId_;
     }
 
     // Component overrides
@@ -49,6 +54,7 @@ class NoteComponent : public juce::Component {
         return isSelected_;
     }
     void setSelected(bool selected);
+    void setGhost(bool ghost);
 
     // Update note data from clip
     void updateFromNote(const MidiNote& note, juce::Colour colour);
@@ -66,6 +72,7 @@ class NoteComponent : public juce::Component {
 
   private:
     size_t noteIndex_;
+    ClipId sourceClipId_;
     PianoRollGridComponent* parentGrid_;
     bool isSelected_ = false;
 
@@ -75,6 +82,7 @@ class NoteComponent : public juce::Component {
     double lengthBeats_ = 1.0;
     int velocity_ = 100;
     juce::Colour colour_;
+    bool ghost_ = false;
 
     // Interaction state
     enum class DragMode { None, Move, ResizeLeft, ResizeRight };

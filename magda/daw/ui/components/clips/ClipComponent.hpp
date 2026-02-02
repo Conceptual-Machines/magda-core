@@ -43,6 +43,9 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     void mouseExit(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
 
+    // Keyboard handling
+    bool keyPressed(const juce::KeyPress& key) override;
+
     // ClipManagerListener
     void clipsChanged() override;
     void clipPropertyChanged(ClipId clipId) override;
@@ -102,7 +105,8 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     double previewStartTime_ = 0.0;
     double previewLength_ = 0.0;
     bool isDragging_ = false;
-    bool isCommitting_ = false;  // True during mouseUp commit phase
+    bool isCommitting_ = false;             // True during mouseUp commit phase
+    bool shouldDeselectOnMouseUp_ = false;  // Delayed deselection for multi-selection
 
     // Stretch state
     double dragStartStretchFactor_ = 1.0;
@@ -138,6 +142,9 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
 
     // Helper to get current clip info
     const ClipInfo* getClipInfo() const;
+
+    // Context menu
+    void showContextMenu();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipComponent)
 };

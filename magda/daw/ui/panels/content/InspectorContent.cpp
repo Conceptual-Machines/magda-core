@@ -336,6 +336,31 @@ InspectorContent::InspectorContent() {
     };
     addChildComponent(*clipEndValue_);
 
+    // Content offset icon (MIDI only - for non-destructive trim)
+    clipContentOffsetIcon_ = std::make_unique<magda::SvgButton>("Offset", BinaryData::Offset_svg,
+                                                                BinaryData::Offset_svgSize);
+    clipContentOffsetIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    clipContentOffsetIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipContentOffsetIcon_->setInterceptsMouseClicks(false, false);
+    clipContentOffsetIcon_->setTooltip("Content offset");
+    addChildComponent(*clipContentOffsetIcon_);
+
+    clipContentOffsetValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
+    clipContentOffsetValue_->setRange(0.0, 10000.0, 0.0);
+    clipContentOffsetValue_->setDoubleClickResetsValue(true);  // Double-click resets to 0
+    clipContentOffsetValue_->onValueChange = [this]() {
+        if (selectedClipId_ == magda::INVALID_CLIP_ID)
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
+        if (!clip || clip->type != magda::ClipType::MIDI)
+            return;
+
+        // Set the new midiOffset value
+        double newOffsetBeats = clipContentOffsetValue_->getValue();
+        magda::ClipManager::getInstance().setClipMidiOffset(selectedClipId_, newOffsetBeats);
+    };
+    addChildComponent(*clipContentOffsetValue_);
+
     // Loop toggle (infinito icon)
     clipLoopToggle_ = std::make_unique<magda::SvgButton>("Loop", BinaryData::infinito_svg,
                                                          BinaryData::infinito_svgSize);
@@ -760,6 +785,19 @@ void InspectorContent::resized() {
             clipLoopPosValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
             valueRow.removeFromLeft(gap);
             clipLoopLengthValue_->setBounds(valueRow);
+            bounds.removeFromTop(8);
+        }
+
+        // Content Offset — icon + half-width value field (underneath loop)
+        if (clipContentOffsetIcon_->isVisible()) {
+            const int iconSize = 22;
+            const int gap = 4;
+            int fieldWidth = (bounds.getWidth() - iconSize - gap * 2) / 2;
+
+            auto valueRow = bounds.removeFromTop(iconSize);
+            clipContentOffsetIcon_->setBounds(valueRow.removeFromLeft(iconSize));
+            valueRow.removeFromLeft(gap);
+            clipContentOffsetValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
             bounds.removeFromTop(8);
         }
 
@@ -1236,6 +1274,7 @@ void InspectorContent::updateFromSelectedClip() {
         // Update beatsPerBar on all draggable labels
         clipStartValue_->setBeatsPerBar(beatsPerBar);
         clipEndValue_->setBeatsPerBar(beatsPerBar);
+        clipContentOffsetValue_->setBeatsPerBar(beatsPerBar);
         clipLoopPosValue_->setBeatsPerBar(beatsPerBar);
         clipLoopLengthValue_->setBeatsPerBar(beatsPerBar);
 
@@ -1256,18 +1295,35 @@ void InspectorContent::updateFromSelectedClip() {
             clipEndValue_->setValue(endBeats, juce::dontSendNotification);
         }
 
+        // Content offset (session MIDI clips and looping arrangement MIDI clips)
+        if (clip->type == magda::ClipType::MIDI &&
+            (clip->view == magda::ClipView::Session || clip->internalLoopEnabled)) {
+            clipContentOffsetValue_->setValue(clip->midiOffset, juce::dontSendNotification);
+            clipContentOffsetIcon_->setVisible(true);
+            clipContentOffsetValue_->setVisible(true);
+        } else {
+            clipContentOffsetIcon_->setVisible(false);
+            clipContentOffsetValue_->setVisible(false);
+        }
+
         clipLoopPosValue_->setValue(clip->internalLoopOffset, juce::dontSendNotification);
         clipLoopLengthValue_->setValue(clip->internalLoopLength, juce::dontSendNotification);
 
         clipLoopToggle_->setActive(clip->internalLoopEnabled);
         clipLoopToggle_->setEnabled(true);
 
-        // Show loop pos/length when loop is active
+        // Always show loop pos/length, but grey out when loop is off
         bool loopOn = isSessionClip || clip->internalLoopEnabled;
-        clipLoopPosLabel_.setVisible(loopOn);
-        clipLoopPosValue_->setVisible(loopOn);
-        clipLoopLengthLabel_.setVisible(loopOn);
-        clipLoopLengthValue_->setVisible(loopOn);
+        clipLoopPosLabel_.setVisible(true);
+        clipLoopPosValue_->setVisible(true);
+        clipLoopLengthLabel_.setVisible(true);
+        clipLoopLengthValue_->setVisible(true);
+        clipLoopPosValue_->setEnabled(loopOn);
+        clipLoopPosValue_->setAlpha(loopOn ? 1.0f : 0.4f);
+        clipLoopLengthValue_->setEnabled(loopOn);
+        clipLoopLengthValue_->setAlpha(loopOn ? 1.0f : 0.4f);
+        clipLoopPosLabel_.setAlpha(loopOn ? 1.0f : 0.4f);
+        clipLoopLengthLabel_.setAlpha(loopOn ? 1.0f : 0.4f);
 
         // Session clip launch properties
         launchModeLabel_.setVisible(false);
@@ -1327,6 +1383,11 @@ void InspectorContent::showClipControls(bool show) {
     clipStartValue_->setVisible(show);
     clipEndLabel_.setVisible(show);
     clipEndValue_->setVisible(show);
+    // Content offset visibility is managed by updateFromSelectedClip (MIDI clips only)
+    if (!show) {
+        clipContentOffsetIcon_->setVisible(false);
+        clipContentOffsetValue_->setVisible(false);
+    }
     clipLoopToggle_->setVisible(show);
     // Loop pos/length visibility is managed by updateFromSelectedClip
     if (!show) {

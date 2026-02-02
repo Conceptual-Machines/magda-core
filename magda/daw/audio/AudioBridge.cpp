@@ -428,14 +428,88 @@ void AudioBridge::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip) {
     // Force offset to 0 to ensure notes play from clip start
     midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
 
-    // Clear existing notes and add all notes from ClipManager
+    // Set up internal looping on the TE clip
+    if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
+        auto& tempoSeq = edit_.tempoSequence;
+        double loopStart = clip->internalLoopOffset;
+        double loopEnd = loopStart + clip->internalLoopLength;
+        auto loopStartTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopStart));
+        auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEnd));
+
+        midiClipPtr->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
+        midiClipPtr->setLoopRangeBeats(
+            {te::BeatPosition::fromBeats(loopStart), te::BeatPosition::fromBeats(loopEnd)});
+    } else {
+        midiClipPtr->disableLooping();
+    }
+
+    // Clear existing notes and rebuild from ClipManager
     auto& sequence = midiClipPtr->getSequence();
     sequence.clear(nullptr);
 
+    // Calculate the beat range visible in this clip based on midiOffset
+    const double beatsPerSecond = 2.0;  // TODO: Get from tempo
+    double clipLengthBeats = clip->length * beatsPerSecond;
+    // Only session clips use midiOffset; arrangement clips play all their notes
+    double effectiveOffset =
+        (clip->view == ClipView::Session || clip->internalLoopEnabled) ? clip->midiOffset : 0.0;
+    double visibleStart = effectiveOffset;  // Where the clip's "view window" starts
+    double visibleEnd = effectiveOffset + clipLengthBeats;
+
+    DBG("MIDI SYNC clip " << clipId << ":");
+    DBG("  midiOffset=" << clip->midiOffset << ", clipLength=" << clipLengthBeats << " beats");
+    DBG("  loopEnabled=" << (int)clip->internalLoopEnabled
+                         << ", loopOffset=" << clip->internalLoopOffset
+                         << ", loopLength=" << clip->internalLoopLength);
+    DBG("  Visible range: [" << visibleStart << ", " << visibleEnd << ")");
+    DBG("  Total notes: " << clip->midiNotes.size());
+
+    // Only add notes that overlap with the visible range
+    int addedCount = 0;
+    double loopEndBeat = clip->internalLoopOffset + clip->internalLoopLength;
+
     for (const auto& note : clip->midiNotes) {
-        sequence.addNote(note.noteNumber, te::BeatPosition::fromBeats(note.startBeat),
-                         te::BeatDuration::fromBeats(note.lengthBeats), note.velocity, 0, nullptr);
+        double noteStart = note.startBeat;
+        double noteEnd = noteStart + note.lengthBeats;
+
+        // Skip notes completely outside the visible range
+        if (noteEnd <= visibleStart || noteStart >= visibleEnd) {
+            continue;
+        }
+
+        // When looping, truncate notes at loop boundary to prevent stuck notes
+        double adjustedLength = note.lengthBeats;
+        if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
+            if (noteStart >= loopEndBeat)
+                continue;
+            if (noteEnd > loopEndBeat)
+                adjustedLength = loopEndBeat - noteStart;
+        }
+
+        // Calculate position relative to clip start (subtract midiOffset for session clips only)
+        double adjustedStart = noteStart - effectiveOffset;
+
+        // Truncate note if it starts before the visible range
+        if (adjustedStart < 0.0) {
+            adjustedLength = noteEnd - visibleStart;
+            adjustedStart = 0.0;
+        }
+
+        // Truncate note if it extends past the visible range
+        if (adjustedStart + adjustedLength > clipLengthBeats) {
+            adjustedLength = clipLengthBeats - adjustedStart;
+        }
+
+        // Add note to Tracktion (all positions are now non-negative)
+        if (adjustedLength > 0.0) {
+            sequence.addNote(note.noteNumber, te::BeatPosition::fromBeats(adjustedStart),
+                             te::BeatDuration::fromBeats(adjustedLength), note.velocity, 0,
+                             nullptr);
+            addedCount++;
+        }
     }
+
+    DBG("  Added " << addedCount << " notes to Tracktion");
 }
 
 void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
