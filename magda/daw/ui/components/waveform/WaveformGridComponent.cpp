@@ -39,16 +39,14 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
         return;
     }
 
-    if (clip.audioSources.empty()) {
+    if (clip.audioFilePath.isEmpty()) {
         return;
     }
 
-    const auto& source = clip.audioSources[0];
-
-    // Calculate display position accounting for mode
-    double displayStartTime = relativeMode_ ? source.position : (clipStartTime_ + source.position);
+    // Flat model: audio always starts at clip start (position = 0)
+    double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
     int positionPixels = timeToPixel(displayStartTime);
-    int widthPixels = static_cast<int>(source.length * horizontalZoom_);
+    int widthPixels = static_cast<int>(clip.length * horizontalZoom_);
     if (widthPixels <= 0)
         return;
 
@@ -66,7 +64,7 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
     // Draw out-of-bounds background (darker) for parts beyond clip boundaries
     auto outOfBoundsColour = clip.colour.darker(0.7f);
 
-    // Left out-of-bounds region (source starts before clip start)
+    // Left out-of-bounds region
     if (waveformRect.getX() < clipStartPixel) {
         int outOfBoundsWidth =
             juce::jmin(clipStartPixel - waveformRect.getX(), waveformRect.getWidth());
@@ -75,7 +73,7 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
         g.fillRoundedRectangle(leftOutOfBounds.toFloat(), 3.0f);
     }
 
-    // Right out-of-bounds region (source extends past clip end)
+    // Right out-of-bounds region
     if (waveformRect.getRight() > clipEndPixel && !waveformRect.isEmpty()) {
         int inBoundsWidth = juce::jmax(0, clipEndPixel - waveformRect.getX());
         auto inBoundsRect = waveformRect.removeFromLeft(inBoundsWidth);
@@ -105,23 +103,21 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
         juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
 
     // Draw real waveform from audio thumbnail (scaled by vertical zoom)
-    if (source.filePath.isNotEmpty()) {
-        auto& thumbnailManager = magda::AudioThumbnailManager::getInstance();
-        double fileWindow = source.length / source.stretchFactor;
-        double displayStart = source.offset;
-        double displayEnd = source.offset + fileWindow;
+    auto& thumbnailManager = magda::AudioThumbnailManager::getInstance();
+    double fileWindow = clip.length / clip.audioStretchFactor;
+    double displayStart = clip.audioOffset;
+    double displayEnd = clip.audioOffset + fileWindow;
 
-        // Clip drawing to waveform bounds, pass verticalZoom as amplitude gain
-        auto waveDrawRect = waveformRect.reduced(0, 4);
-        if (waveDrawRect.getWidth() > 0 && waveDrawRect.getHeight() > 0) {
-            g.saveState();
-            if (g.reduceClipRegion(waveformRect)) {
-                thumbnailManager.drawWaveform(g, waveDrawRect, source.filePath, displayStart,
-                                              displayEnd, clip.colour.brighter(0.2f),
-                                              static_cast<float>(verticalZoom_));
-            }
-            g.restoreState();
+    // Clip drawing to waveform bounds, pass verticalZoom as amplitude gain
+    auto waveDrawRect = waveformRect.reduced(0, 4);
+    if (waveDrawRect.getWidth() > 0 && waveDrawRect.getHeight() > 0) {
+        g.saveState();
+        if (g.reduceClipRegion(waveformRect)) {
+            thumbnailManager.drawWaveform(g, waveDrawRect, clip.audioFilePath, displayStart,
+                                          displayEnd, clip.colour.brighter(0.2f),
+                                          static_cast<float>(verticalZoom_));
         }
+        g.restoreState();
     }
 
     // Draw center line
@@ -329,34 +325,34 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
     }
 
     auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-    if (!clip || clip->type != magda::ClipType::Audio || clip->audioSources.empty()) {
+    if (!clip || clip->type != magda::ClipType::Audio || clip->audioFilePath.isEmpty()) {
         return;
     }
 
-    const auto& source = clip->audioSources[0];
     int x = event.x;
     bool shiftHeld = event.mods.isShiftDown();
 
-    if (isNearLeftEdge(x, source)) {
+    if (isNearLeftEdge(x, *clip)) {
         dragMode_ = shiftHeld ? DragMode::StretchLeft : DragMode::ResizeLeft;
-    } else if (isNearRightEdge(x, source)) {
+    } else if (isNearRightEdge(x, *clip)) {
         dragMode_ = shiftHeld ? DragMode::StretchRight : DragMode::ResizeRight;
-    } else if (isInsideWaveform(x, source)) {
-        dragMode_ = DragMode::Move;
+    } else if (isInsideWaveform(x, *clip)) {
+        // Inside waveform but not near edges — no drag (removed Move mode)
+        dragMode_ = DragMode::None;
+        return;
     } else {
         dragMode_ = DragMode::None;
         return;
     }
 
     dragStartX_ = x;
-    dragStartPosition_ = source.position;
-    dragStartAudioOffset_ = source.offset;
-    dragStartLength_ = source.length;
-    dragStartStretchFactor_ = source.stretchFactor;
+    dragStartAudioOffset_ = clip->audioOffset;
+    dragStartLength_ = clip->length;
+    dragStartStretchFactor_ = clip->audioStretchFactor;
 
     // Cache file duration for trim clamping
     dragStartFileDuration_ = 0.0;
-    auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(source.filePath);
+    auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
     if (thumbnail) {
         dragStartFileDuration_ = thumbnail->getTotalLength();
     }
@@ -370,21 +366,17 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
         return;
     }
 
-    // DBG removed - too expensive in hot path (called 60+ times/sec)
-
-    // Get clip and source for direct modification during drag (performance optimization)
+    // Get clip for direct modification during drag (performance optimization)
     auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-    if (!clip || clip->audioSources.empty())
+    if (!clip || clip->audioFilePath.isEmpty())
         return;
 
-    auto& source = clip->audioSources[0];
     double deltaSeconds = (event.x - dragStartX_) / horizontalZoom_;
 
     // Calculate absolute values from original drag start values
-    // (ClipOperations trim functions are incremental, so we calculate absolute here)
     switch (dragMode_) {
         case DragMode::ResizeLeft: {
-            // Calculate absolute new offset and position from original values
+            // Calculate absolute new offset from original values
             double fileDelta = deltaSeconds / dragStartStretchFactor_;
             double newOffset = dragStartAudioOffset_ + fileDelta;
 
@@ -398,11 +390,11 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
             double actualFileDelta = newOffset - dragStartAudioOffset_;
             double timelineDelta = actualFileDelta * dragStartStretchFactor_;
 
-            // Set absolute values
-            source.offset = newOffset;
-            source.position = juce::jmax(0.0, dragStartPosition_ + timelineDelta);
-            source.length = juce::jmax(magda::ClipOperations::MIN_SOURCE_LENGTH,
-                                       dragStartLength_ - timelineDelta);
+            // Set absolute values on clip
+            clip->audioOffset = newOffset;
+            clip->startTime = juce::jmax(0.0, clipStartTime_ + timelineDelta);
+            clip->length = juce::jmax(magda::ClipOperations::MIN_CLIP_LENGTH,
+                                      dragStartLength_ - timelineDelta);
             break;
         }
         case DragMode::ResizeRight: {
@@ -416,32 +408,20 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
                 newLength = juce::jmin(newLength, maxLength);
             }
 
-            // Constrain to clip bounds
-            double clipMaxLength = clip->length - dragStartPosition_;
-            newLength = juce::jmin(newLength, clipMaxLength);
-
             // Set absolute value
-            source.length = juce::jmax(magda::ClipOperations::MIN_SOURCE_LENGTH, newLength);
-            break;
-        }
-        case DragMode::Move: {
-            // Calculate absolute position from original
-            double newPosition = dragStartPosition_ + deltaSeconds;
-            source.position = juce::jmax(0.0, newPosition);
+            clip->length = juce::jmax(magda::ClipOperations::MIN_CLIP_LENGTH, newLength);
             break;
         }
         case DragMode::StretchRight: {
-            // Stretch operations already handle absolute values correctly
             double newLength = dragStartLength_ + deltaSeconds;
-            magda::ClipOperations::stretchSourceFromRight(source, newLength, dragStartLength_,
-                                                          dragStartStretchFactor_, clip->length);
+            magda::ClipOperations::stretchAudioFromRight(*clip, newLength, dragStartLength_,
+                                                         dragStartStretchFactor_);
             break;
         }
         case DragMode::StretchLeft: {
-            // Stretch operations already handle absolute values correctly
             double newLength = dragStartLength_ - deltaSeconds;
-            magda::ClipOperations::stretchSourceFromLeft(
-                source, newLength, dragStartLength_, dragStartPosition_, dragStartStretchFactor_);
+            magda::ClipOperations::stretchAudioFromLeft(*clip, newLength, dragStartLength_,
+                                                        dragStartStretchFactor_);
             break;
         }
         default:
@@ -478,22 +458,19 @@ void WaveformGridComponent::mouseMove(const juce::MouseEvent& event) {
     }
 
     const auto* clip = getClip();
-    if (!clip || clip->audioSources.empty()) {
+    if (!clip || clip->audioFilePath.isEmpty()) {
         setMouseCursor(juce::MouseCursor::NormalCursor);
         return;
     }
 
-    const auto& source = clip->audioSources[0];
     int x = event.x;
 
-    if (isNearLeftEdge(x, source) || isNearRightEdge(x, source)) {
+    if (isNearLeftEdge(x, *clip) || isNearRightEdge(x, *clip)) {
         if (event.mods.isShiftDown()) {
             setMouseCursor(juce::MouseCursor::UpDownLeftRightResizeCursor);
         } else {
             setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
         }
-    } else if (isInsideWaveform(x, source)) {
-        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
     } else {
         setMouseCursor(juce::MouseCursor::NormalCursor);
     }
@@ -503,22 +480,23 @@ void WaveformGridComponent::mouseMove(const juce::MouseEvent& event) {
 // Hit Testing Helpers
 // ============================================================================
 
-bool WaveformGridComponent::isNearLeftEdge(int x, const magda::AudioSource& source) const {
-    double displayStartTime = relativeMode_ ? source.position : (clipStartTime_ + source.position);
+bool WaveformGridComponent::isNearLeftEdge(int x, const magda::ClipInfo& clip) const {
+    double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
     int leftEdgeX = timeToPixel(displayStartTime);
+    juce::ignoreUnused(clip);
     return std::abs(x - leftEdgeX) <= EDGE_GRAB_DISTANCE;
 }
 
-bool WaveformGridComponent::isNearRightEdge(int x, const magda::AudioSource& source) const {
-    double displayStartTime = relativeMode_ ? source.position : (clipStartTime_ + source.position);
-    int rightEdgeX = timeToPixel(displayStartTime + source.length);
+bool WaveformGridComponent::isNearRightEdge(int x, const magda::ClipInfo& clip) const {
+    double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
+    int rightEdgeX = timeToPixel(displayStartTime + clip.length);
     return std::abs(x - rightEdgeX) <= EDGE_GRAB_DISTANCE;
 }
 
-bool WaveformGridComponent::isInsideWaveform(int x, const magda::AudioSource& source) const {
-    double displayStartTime = relativeMode_ ? source.position : (clipStartTime_ + source.position);
+bool WaveformGridComponent::isInsideWaveform(int x, const magda::ClipInfo& clip) const {
+    double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
     int leftEdgeX = timeToPixel(displayStartTime);
-    int rightEdgeX = timeToPixel(displayStartTime + source.length);
+    int rightEdgeX = timeToPixel(displayStartTime + clip.length);
     return x > leftEdgeX + EDGE_GRAB_DISTANCE && x < rightEdgeX - EDGE_GRAB_DISTANCE;
 }
 

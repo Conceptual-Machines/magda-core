@@ -548,19 +548,18 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
 
     // 3. CREATE new clip if doesn't exist
     if (!audioClipPtr) {
-        if (clip->audioSources.empty()) {
-            DBG("AudioBridge: No audio sources for clip " << clipId);
+        if (clip->audioFilePath.isEmpty()) {
+            DBG("AudioBridge: No audio file for clip " << clipId);
             return;
         }
-        const auto& source = clip->audioSources[0];
-        juce::File audioFile(source.filePath);
+        juce::File audioFile(clip->audioFilePath);
         if (!audioFile.existsAsFile()) {
-            DBG("AudioBridge: Audio file not found: " << source.filePath);
+            DBG("AudioBridge: Audio file not found: " << clip->audioFilePath);
             return;
         }
 
-        double createStart = clip->startTime + source.position;
-        double createEnd = createStart + source.length;
+        double createStart = clip->startTime;
+        double createEnd = createStart + clip->length;
         auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(createStart),
                                        te::TimePosition::fromSeconds(createEnd));
 
@@ -587,34 +586,11 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
         DBG("AudioBridge: Created WaveAudioClip (engine ID: " << engineClipId << ")");
     }
 
-    // 4. UPDATE clip position/length using audio source position within clip
-    // The engine clip plays audio starting at clip->startTime + source.position,
-    // for source.length duration, reading from source.offset in the file.
-    // IMPORTANT: Clamp to clip boundaries so audio stops at visual clip end.
-    double clipStart = clip->startTime;
-    double clipEnd = clip->startTime + clip->length;
-    double engineStart = clipStart;
-    double engineEnd = clipEnd;
-    double engineOffset = 0.0;
-
-    if (!clip->audioSources.empty()) {
-        const auto& source = clip->audioSources[0];
-        double sourceStart = clip->startTime + source.position;
-        double sourceEnd = sourceStart + source.length;
-
-        // Clamp engine boundaries to clip boundaries
-        // Audio should only play within the visible clip region
-        engineStart = std::max(sourceStart, clipStart);
-        engineEnd = std::min(sourceEnd, clipEnd);
-
-        // Adjust offset if source starts before clip (left side clipped)
-        if (sourceStart < clipStart) {
-            double clippedTime = clipStart - sourceStart;
-            engineOffset = source.offset + (clippedTime / source.stretchFactor);
-        } else {
-            engineOffset = source.offset;
-        }
-    }
+    // 4. UPDATE clip position/length
+    // Flat model: clip.startTime IS where audio starts, clip.length IS the duration.
+    double engineStart = clip->startTime;
+    double engineEnd = clip->startTime + clip->length;
+    double engineOffset = clip->audioOffset;
 
     auto currentPos = audioClipPtr->getPosition();
     auto currentStart = currentPos.getStart().inSeconds();
@@ -640,9 +616,8 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     // TE speedRatio: 1.0 = normal, 2.0 = 2x faster, 0.5 = 2x slower
     // Our stretchFactor: 1.0 = normal, 2.0 = 2x slower, 0.5 = 2x faster
     // Mapping: TE speedRatio = 1.0 / stretchFactor
-    if (!clip->audioSources.empty()) {
-        const auto& source = clip->audioSources[0];
-        double teSpeedRatio = 1.0 / source.stretchFactor;
+    {
+        double teSpeedRatio = 1.0 / clip->audioStretchFactor;
         double currentSpeedRatio = audioClipPtr->getSpeedRatio();
 
         if (std::abs(currentSpeedRatio - teSpeedRatio) > 0.001) {
@@ -736,13 +711,13 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
     // TE's free functions insertWaveClip(ClipOwner&, ...) and insertMIDIClip(ClipOwner&, ...)
     // accept ClipSlot as a ClipOwner, creating the clip's ValueTree directly in the slot.
     if (clip->type == ClipType::Audio) {
-        if (clip->audioSources.empty())
+        if (clip->audioFilePath.isEmpty())
             return false;
 
-        const auto& source = clip->audioSources[0];
-        juce::File audioFile(source.filePath);
+        juce::File audioFile(clip->audioFilePath);
         if (!audioFile.existsAsFile()) {
-            DBG("AudioBridge::syncSessionClipToSlot: Audio file not found: " << source.filePath);
+            DBG("AudioBridge::syncSessionClipToSlot: Audio file not found: "
+                << clip->audioFilePath);
             return false;
         }
 
@@ -763,11 +738,11 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
         audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
 
         // Set file offset (trim point)
-        audioClipPtr->setOffset(te::TimeDuration::fromSeconds(source.offset));
+        audioClipPtr->setOffset(te::TimeDuration::fromSeconds(clip->audioOffset));
 
         // Set speed ratio from stretch factor
-        if (std::abs(source.stretchFactor - 1.0) > 0.001) {
-            double teSpeedRatio = 1.0 / source.stretchFactor;
+        if (std::abs(clip->audioStretchFactor - 1.0) > 0.001) {
+            double teSpeedRatio = 1.0 / clip->audioStretchFactor;
             if (audioClipPtr->getAutoTempo()) {
                 audioClipPtr->setAutoTempo(false);
             }

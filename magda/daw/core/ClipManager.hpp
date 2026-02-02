@@ -167,12 +167,10 @@ class ClipManager {
     void setClipLaunchQuantize(ClipId clipId, LaunchQuantize quantize);
 
     // Audio-specific
-    /** @brief Set the position of an audio source within its clip container */
-    void setAudioSourcePosition(ClipId clipId, int sourceIndex, double position);
-    /** @brief Set the timeline length of an audio source */
-    void setAudioSourceLength(ClipId clipId, int sourceIndex, double length);
-    /** @brief Set the time-stretch factor of an audio source (1.0 = original speed) */
-    void setAudioSourceStretchFactor(ClipId clipId, int sourceIndex, double stretchFactor);
+    /** @brief Set the file offset for audio trimming */
+    void setAudioOffset(ClipId clipId, double offset);
+    /** @brief Set the time-stretch factor of an audio clip (1.0 = original speed) */
+    void setAudioStretchFactor(ClipId clipId, double stretchFactor);
 
     // ========================================================================
     // Content-Level Operations (Editor Operations)
@@ -191,45 +189,36 @@ class ClipManager {
     // ========================================================================
 
     /**
-     * @brief Trim/extend audio source from left edge
+     * @brief Trim/extend audio from left edge
      * @param trimAmount Amount to trim in timeline seconds (positive=trim, negative=extend)
      * @param fileDuration Total file duration for constraint checking (0 = no constraint)
      */
-    void trimAudioSourceLeft(ClipId clipId, int sourceIndex, double trimAmount,
-                             double fileDuration = 0.0);
+    void trimAudioLeft(ClipId clipId, double trimAmount, double fileDuration = 0.0);
 
     /**
-     * @brief Trim/extend audio source from right edge
+     * @brief Trim/extend audio from right edge
      * @param trimAmount Amount to trim in timeline seconds (positive=trim, negative=extend)
      * @param fileDuration Total file duration for constraint checking (0 = no constraint)
      */
-    void trimAudioSourceRight(ClipId clipId, int sourceIndex, double trimAmount,
-                              double fileDuration = 0.0);
+    void trimAudioRight(ClipId clipId, double trimAmount, double fileDuration = 0.0);
 
     /**
-     * @brief Stretch audio source from left edge (editor operation)
-     * @param newLength New timeline length
-     * @param oldLength Original timeline length at drag start
-     * @param originalPosition Original position at drag start
-     * @param originalStretchFactor Original stretch factor at drag start
-     */
-    void stretchAudioSourceLeft(ClipId clipId, int sourceIndex, double newLength, double oldLength,
-                                double originalPosition, double originalStretchFactor);
-
-    /**
-     * @brief Stretch audio source from right edge (editor operation)
+     * @brief Stretch audio from left edge (editor operation)
      * @param newLength New timeline length
      * @param oldLength Original timeline length at drag start
      * @param originalStretchFactor Original stretch factor at drag start
      */
-    void stretchAudioSourceRight(ClipId clipId, int sourceIndex, double newLength, double oldLength,
-                                 double originalStretchFactor);
+    void stretchAudioLeft(ClipId clipId, double newLength, double oldLength,
+                          double originalStretchFactor);
 
     /**
-     * @brief Move audio source within clip container (editor operation)
-     * @param newPosition New position within clip (clamped to >= 0.0)
+     * @brief Stretch audio from right edge (editor operation)
+     * @param newLength New timeline length
+     * @param oldLength Original timeline length at drag start
+     * @param originalStretchFactor Original stretch factor at drag start
      */
-    void moveAudioSource(ClipId clipId, int sourceIndex, double newPosition);
+    void stretchAudioRight(ClipId clipId, double newLength, double oldLength,
+                           double originalStretchFactor);
 
     // MIDI-specific
     void addMidiNote(ClipId clipId, const MidiNote& note);

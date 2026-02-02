@@ -828,12 +828,12 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("launchMode", static_cast<int>(clip.launchMode));
     obj->setProperty("launchQuantize", static_cast<int>(clip.launchQuantize));
 
-    // Audio sources
-    juce::Array<juce::var> audioSourcesArray;
-    for (const auto& source : clip.audioSources) {
-        audioSourcesArray.add(serializeAudioSource(source));
+    // Audio properties (flat model)
+    if (clip.audioFilePath.isNotEmpty()) {
+        obj->setProperty("audioFilePath", clip.audioFilePath);
+        obj->setProperty("audioOffset", clip.audioOffset);
+        obj->setProperty("audioStretchFactor", clip.audioStretchFactor);
     }
-    obj->setProperty("audioSources", juce::var(audioSourcesArray));
 
     // MIDI notes
     juce::Array<juce::var> midiNotesArray;
@@ -879,16 +879,31 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
         outClip.launchQuantize = static_cast<LaunchQuantize>(static_cast<int>(launchQuantizeVar));
     }
 
-    // Audio sources
-    auto audioSourcesVar = obj->getProperty("audioSources");
-    if (audioSourcesVar.isArray()) {
-        auto* arr = audioSourcesVar.getArray();
-        for (const auto& sourceVar : *arr) {
-            AudioSource source;
-            if (!deserializeAudioSource(sourceVar, source)) {
-                return false;
+    // Audio properties (flat model)
+    auto audioFilePathVar = obj->getProperty("audioFilePath");
+    if (!audioFilePathVar.isVoid()) {
+        // New flat format
+        outClip.audioFilePath = audioFilePathVar.toString();
+        outClip.audioOffset = obj->getProperty("audioOffset");
+        outClip.audioStretchFactor = obj->getProperty("audioStretchFactor");
+        if (outClip.audioStretchFactor <= 0.0)
+            outClip.audioStretchFactor = 1.0;
+    } else {
+        // Migration from old audioSources format
+        auto audioSourcesVar = obj->getProperty("audioSources");
+        if (audioSourcesVar.isArray()) {
+            auto* arr = audioSourcesVar.getArray();
+            if (arr && !arr->isEmpty()) {
+                auto firstSourceVar = (*arr)[0];
+                if (firstSourceVar.isObject()) {
+                    auto* srcObj = firstSourceVar.getDynamicObject();
+                    outClip.audioFilePath = srcObj->getProperty("filePath").toString();
+                    outClip.audioOffset = srcObj->getProperty("offset");
+                    outClip.audioStretchFactor = srcObj->getProperty("stretchFactor");
+                    if (outClip.audioStretchFactor <= 0.0)
+                        outClip.audioStretchFactor = 1.0;
+                }
             }
-            outClip.audioSources.push_back(source);
         }
     }
 
@@ -904,35 +919,6 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
             outClip.midiNotes.push_back(note);
         }
     }
-
-    return true;
-}
-
-juce::var ProjectSerializer::serializeAudioSource(const AudioSource& source) {
-    auto* obj = new juce::DynamicObject();
-
-    obj->setProperty("filePath", source.filePath);
-    obj->setProperty("position", source.position);
-    obj->setProperty("offset", source.offset);
-    obj->setProperty("length", source.length);
-    obj->setProperty("stretchFactor", source.stretchFactor);
-
-    return juce::var(obj);
-}
-
-bool ProjectSerializer::deserializeAudioSource(const juce::var& json, AudioSource& outSource) {
-    if (!json.isObject()) {
-        lastError_ = "Audio source is not an object";
-        return false;
-    }
-
-    auto* obj = json.getDynamicObject();
-
-    outSource.filePath = obj->getProperty("filePath").toString();
-    outSource.position = obj->getProperty("position");
-    outSource.offset = obj->getProperty("offset");
-    outSource.length = obj->getProperty("length");
-    outSource.stretchFactor = obj->getProperty("stretchFactor");
 
     return true;
 }

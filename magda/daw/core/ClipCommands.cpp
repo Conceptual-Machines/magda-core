@@ -502,21 +502,8 @@ void JoinClipsCommand::performAction() {
             left->midiNotes.push_back(adjustedNote);
         }
     } else if (left->type == ClipType::Audio) {
-        // Audio join: extend left clip's audio source to cover both clips
-        if (!right->audioSources.empty()) {
-            if (!left->audioSources.empty()) {
-                // Extend the first audio source length to cover the right clip
-                left->audioSources[0].length = left->length + right->length;
-            }
-            // If right has additional audio sources, add them with adjusted positions
-            for (size_t i = 0; i < right->audioSources.size(); ++i) {
-                if (i == 0 && !left->audioSources.empty())
-                    continue;  // Already handled by extending
-                AudioSource src = right->audioSources[i];
-                src.position += left->length;
-                left->audioSources.push_back(src);
-            }
-        }
+        // Audio join: extend left clip length to cover both clips
+        // (audioOffset and audioStretchFactor remain from left clip)
     }
 
     // Extend left clip length

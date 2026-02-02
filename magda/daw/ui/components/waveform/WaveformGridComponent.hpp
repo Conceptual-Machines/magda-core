@@ -10,7 +10,7 @@ namespace magda::daw::ui {
 /**
  * @brief Scrollable waveform grid component
  *
- * Handles waveform drawing and interaction (trim, move, stretch).
+ * Handles waveform drawing and interaction (trim, stretch).
  * Designed to be placed inside a Viewport for scrolling.
  * Similar to PianoRollGridComponent architecture.
  */
@@ -135,9 +135,8 @@ class WaveformGridComponent : public juce::Component {
     int minimumHeight_ = 400;
 
     // Drag state
-    enum class DragMode { None, ResizeLeft, ResizeRight, Move, StretchLeft, StretchRight };
+    enum class DragMode { None, ResizeLeft, ResizeRight, StretchLeft, StretchRight };
     DragMode dragMode_ = DragMode::None;
-    double dragStartPosition_ = 0.0;
     double dragStartAudioOffset_ = 0.0;
     double dragStartLength_ = 0.0;
     int dragStartX_ = 0;
@@ -154,9 +153,9 @@ class WaveformGridComponent : public juce::Component {
     void paintNoClipMessage(juce::Graphics& g);
 
     // Hit testing helpers
-    bool isNearLeftEdge(int x, const magda::AudioSource& source) const;
-    bool isNearRightEdge(int x, const magda::AudioSource& source) const;
-    bool isInsideWaveform(int x, const magda::AudioSource& source) const;
+    bool isNearLeftEdge(int x, const magda::ClipInfo& clip) const;
+    bool isNearRightEdge(int x, const magda::ClipInfo& clip) const;
+    bool isInsideWaveform(int x, const magda::ClipInfo& clip) const;
 
     // Get current clip
     const magda::ClipInfo* getClip() const;

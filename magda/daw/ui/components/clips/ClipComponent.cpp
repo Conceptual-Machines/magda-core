@@ -113,8 +113,7 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     // Waveform area (below header)
     auto waveformArea = bounds.reduced(2, HEADER_HEIGHT + 2);
 
-    if (!clip.audioSources.empty() && clip.audioSources[0].filePath.isNotEmpty()) {
-        const auto& source = clip.audioSources[0];
+    if (clip.audioFilePath.isNotEmpty()) {
         auto& thumbnailManager = AudioThumbnailManager::getInstance();
 
         // Calculate visible region and file times directly in time domain
@@ -135,37 +134,32 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                 : 0.0;
 
         if (pixelsPerSecond > 0.0) {
-            // During left resize drag, simulate the source position adjustment
-            // that will happen on commit. The clip start moves, so source.position
-            // must shift by (previewLength - dragStartLength) to stay anchored.
-            double adjustedSourcePosition = source.position;
+            // Audio always starts at clip start (position = 0)
+            double visibleStart = 0.0;
+            double visibleEnd = clipDisplayLength;
+
+            // Convert visible region to pixels
+            int drawX =
+                waveformArea.getX() + static_cast<int>(visibleStart * pixelsPerSecond + 0.5);
+            int drawRight =
+                waveformArea.getX() + static_cast<int>(visibleEnd * pixelsPerSecond + 0.5);
+            auto drawRect = juce::Rectangle<int>(drawX, waveformArea.getY(), drawRight - drawX,
+                                                 waveformArea.getHeight());
+
+            // Compute file time range
+            // During left resize drag, the offset hasn't been committed yet,
+            // so simulate the offset adjustment
+            double displayOffset = clip.audioOffset;
             if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
-                adjustedSourcePosition += (previewLength_ - dragStartLength_);
+                double trimDelta = dragStartLength_ - previewLength_;
+                displayOffset += trimDelta / clip.audioStretchFactor;
             }
 
-            // Compute visible time region (clip-relative) by clamping source to clip bounds
-            double visibleStart = juce::jmax(adjustedSourcePosition, 0.0);
-            double visibleEnd =
-                juce::jmin(adjustedSourcePosition + source.length, clipDisplayLength);
+            double fileStart = displayOffset;
+            double fileEnd = displayOffset + clipDisplayLength / clip.audioStretchFactor;
 
-            if (visibleEnd > visibleStart) {
-                // Convert visible region to pixels
-                int drawX =
-                    waveformArea.getX() + static_cast<int>(visibleStart * pixelsPerSecond + 0.5);
-                int drawRight =
-                    waveformArea.getX() + static_cast<int>(visibleEnd * pixelsPerSecond + 0.5);
-                auto drawRect = juce::Rectangle<int>(drawX, waveformArea.getY(), drawRight - drawX,
-                                                     waveformArea.getHeight());
-
-                // Compute file time range directly from visible time region
-                double fileStart =
-                    source.offset + (visibleStart - adjustedSourcePosition) / source.stretchFactor;
-                double fileEnd =
-                    source.offset + (visibleEnd - adjustedSourcePosition) / source.stretchFactor;
-
-                thumbnailManager.drawWaveform(g, drawRect, source.filePath, fileStart, fileEnd,
-                                              clip.colour.brighter(0.2f));
-            }
+            thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, fileStart, fileEnd,
+                                          clip.colour.brighter(0.2f));
         }
     } else {
         // Fallback: draw placeholder if no audio source
@@ -489,16 +483,18 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     // Determine drag mode based on click position
     // Shift+edge = stretch mode (time-stretches audio source along with clip)
     if (isOnLeftEdge(e.x)) {
-        if (e.mods.isShiftDown() && clip->type == ClipType::Audio && !clip->audioSources.empty()) {
+        if (e.mods.isShiftDown() && clip->type == ClipType::Audio &&
+            clip->audioFilePath.isNotEmpty()) {
             dragMode_ = DragMode::StretchLeft;
-            dragStartStretchFactor_ = clip->audioSources[0].stretchFactor;
+            dragStartStretchFactor_ = clip->audioStretchFactor;
         } else {
             dragMode_ = DragMode::ResizeLeft;
         }
     } else if (isOnRightEdge(e.x)) {
-        if (e.mods.isShiftDown() && clip->type == ClipType::Audio && !clip->audioSources.empty()) {
+        if (e.mods.isShiftDown() && clip->type == ClipType::Audio &&
+            clip->audioFilePath.isNotEmpty()) {
             dragMode_ = DragMode::StretchRight;
-            dragStartStretchFactor_ = clip->audioSources[0].stretchFactor;
+            dragStartStretchFactor_ = clip->audioStretchFactor;
         } else {
             dragMode_ = DragMode::ResizeRight;
         }
@@ -682,10 +678,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 auto& cm = ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
                     mutableClip->length = finalLength;
-                    if (!mutableClip->audioSources.empty()) {
-                        mutableClip->audioSources[0].length = finalLength;
-                        mutableClip->audioSources[0].stretchFactor = newStretchFactor;
-                    }
+                    mutableClip->audioStretchFactor = newStretchFactor;
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
             }
@@ -729,11 +722,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 if (auto* mutableClip = cm.getClip(clipId_)) {
                     mutableClip->startTime = finalStartTime;
                     mutableClip->length = finalLength;
-                    if (!mutableClip->audioSources.empty()) {
-                        mutableClip->audioSources[0].position = 0.0;
-                        mutableClip->audioSources[0].length = finalLength;
-                        mutableClip->audioSources[0].stretchFactor = newStretchFactor;
-                    }
+                    mutableClip->audioStretchFactor = newStretchFactor;
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
             }
@@ -894,10 +883,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 auto& cm = ClipManager::getInstance();
                 if (auto* clip = cm.getClip(clipId_)) {
                     clip->length = finalLength;
-                    if (!clip->audioSources.empty()) {
-                        clip->audioSources[0].length = finalLength;
-                        clip->audioSources[0].stretchFactor = newStretchFactor;
-                    }
+                    clip->audioStretchFactor = newStretchFactor;
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
                 break;
@@ -927,11 +913,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 if (auto* clip = cm.getClip(clipId_)) {
                     clip->startTime = finalStartTime;
                     clip->length = finalLength;
-                    if (!clip->audioSources.empty()) {
-                        clip->audioSources[0].position = 0.0;
-                        clip->audioSources[0].length = finalLength;
-                        clip->audioSources[0].stretchFactor = newStretchFactor;
-                    }
+                    clip->audioStretchFactor = newStretchFactor;
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
                 break;

@@ -26,7 +26,7 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
 
         // Get clip info
         const auto* clip = ClipManager::getInstance().getClip(clipId_);
-        if (!clip || clip->type != ClipType::Audio || clip->audioSources.empty()) {
+        if (!clip || clip->type != ClipType::Audio || clip->audioFilePath.isEmpty()) {
             // No waveform to show
             g.setColour(DarkTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(14.0f));
@@ -34,16 +34,15 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
             return;
         }
 
-        // Draw waveform for first audio source
-        const auto& source = clip->audioSources[0];
         auto waveformBounds = bounds.reduced(MARGIN);
 
         // Get waveform from cache
-        auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(source.filePath);
+        auto* thumbnail =
+            magda::AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
         if (thumbnail && thumbnail->getTotalLength() > 0.0) {
             // Calculate visible time range based on clip length and offset
-            double startTime = source.offset;
-            double endTime = startTime + (clip->length / source.stretchFactor);
+            double startTime = clip->audioOffset;
+            double endTime = startTime + (clip->length / clip->audioStretchFactor);
 
             // Draw waveform
             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
@@ -51,7 +50,7 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
 
             // Draw loop region if enabled
             if (clip->internalLoopEnabled) {
-                double loopLengthSeconds = clip->internalLoopLength / source.stretchFactor;
+                double loopLengthSeconds = clip->internalLoopLength / clip->audioStretchFactor;
                 double loopEndTime = startTime + loopLengthSeconds;
 
                 if (loopEndTime <= endTime) {
@@ -195,13 +194,8 @@ void SessionClipEditor::setupFooter() {
     offsetSlider_->setColour(juce::Slider::textBoxBackgroundColourId,
                              DarkTheme::getColour(DarkTheme::SURFACE));
     offsetSlider_->onValueChange = [this]() {
-        // TODO: Use a ClipManager API method (e.g. setAudioSourceOffset) instead of
-        // modifying the clip directly, to ensure proper notifications are sent.
-        auto* clip = ClipManager::getInstance().getClip(clipId_);
-        if (clip && !clip->audioSources.empty()) {
-            clip->audioSources[0].offset = offsetSlider_->getValue();
-            waveformDisplay_->repaint();
-        }
+        ClipManager::getInstance().setAudioOffset(clipId_, offsetSlider_->getValue());
+        waveformDisplay_->repaint();
     };
     addAndMakeVisible(*offsetSlider_);
 }
@@ -291,8 +285,8 @@ void SessionClipEditor::updateControls() {
     lengthLabel_->setText(juce::String(clip->length, 2) + " beats", juce::dontSendNotification);
 
     // Update offset slider
-    if (!clip->audioSources.empty()) {
-        offsetSlider_->setValue(clip->audioSources[0].offset, juce::dontSendNotification);
+    if (clip->audioFilePath.isNotEmpty()) {
+        offsetSlider_->setValue(clip->audioOffset, juce::dontSendNotification);
     }
 }
 
