@@ -215,10 +215,49 @@ WaveformEditorContent::WaveformEditorContent() {
     bpmLabel_->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(bpmLabel_.get());
 
+    // Create grid resolution combo box
+    gridResolutionCombo_ = std::make_unique<juce::ComboBox>("gridResolution");
+    gridResolutionCombo_->addItem("Off", 1);
+    gridResolutionCombo_->addItem("Bar", 2);
+    gridResolutionCombo_->addItem("Beat", 3);
+    gridResolutionCombo_->addItem("1/8", 4);
+    gridResolutionCombo_->addItem("1/16", 5);
+    gridResolutionCombo_->addItem("1/32", 6);
+    gridResolutionCombo_->setSelectedId(1, juce::dontSendNotification);
+    gridResolutionCombo_->setTooltip("Beat grid resolution for snap and display");
+    gridResolutionCombo_->setLookAndFeel(buttonLookAndFeel_.get());
+    gridResolutionCombo_->onChange = [this]() {
+        auto id = gridResolutionCombo_->getSelectedId();
+        GridResolution res = GridResolution::Off;
+        switch (id) {
+            case 2:
+                res = GridResolution::Bar;
+                break;
+            case 3:
+                res = GridResolution::Beat;
+                break;
+            case 4:
+                res = GridResolution::Eighth;
+                break;
+            case 5:
+                res = GridResolution::Sixteenth;
+                break;
+            case 6:
+                res = GridResolution::ThirtySecond;
+                break;
+            default:
+                res = GridResolution::Off;
+                break;
+        }
+        gridComponent_->setGridResolution(res);
+    };
+    addAndMakeVisible(gridResolutionCombo_.get());
+
     // Create waveform grid component
     gridComponent_ = std::make_unique<WaveformGridComponent>();
     gridComponent_->setRelativeMode(relativeTimeMode_);
     gridComponent_->setHorizontalZoom(horizontalZoom_);
+    gridComponent_->setTimeRuler(timeRuler_.get());
 
     // Create viewport and add grid
     viewport_ = std::make_unique<ScrollNotifyingViewport>();
@@ -306,6 +345,9 @@ WaveformEditorContent::~WaveformEditorContent() {
     if (warpModeButton_) {
         warpModeButton_->setLookAndFeel(nullptr);
     }
+    if (gridResolutionCombo_) {
+        gridResolutionCombo_->setLookAndFeel(nullptr);
+    }
 }
 
 // ============================================================================
@@ -327,6 +369,7 @@ void WaveformEditorContent::resized() {
         // Hide everything when too small to avoid zero-sized paint
         timeModeButton_->setBounds(0, 0, 0, 0);
         warpModeButton_->setBounds(0, 0, 0, 0);
+        gridResolutionCombo_->setBounds(0, 0, 0, 0);
         bpmLabel_->setBounds(0, 0, 0, 0);
         timeRuler_->setBounds(0, 0, 0, 0);
         viewport_->setBounds(0, 0, 0, 0);
@@ -340,6 +383,8 @@ void WaveformEditorContent::resized() {
     timeModeButton_->setBounds(toolbarArea.removeFromLeft(60).reduced(2));
     toolbarArea.removeFromLeft(4);
     warpModeButton_->setBounds(toolbarArea.removeFromLeft(60).reduced(2));
+    toolbarArea.removeFromLeft(4);
+    gridResolutionCombo_->setBounds(toolbarArea.removeFromLeft(70).reduced(2));
     toolbarArea.removeFromLeft(4);
     bpmLabel_->setBounds(toolbarArea.removeFromLeft(80).reduced(2));
 
@@ -562,8 +607,12 @@ void WaveformEditorContent::clipSelectionChanged(magda::ClipId clipId) {
 // TimelineStateListener
 // ============================================================================
 
-void WaveformEditorContent::timelineStateChanged(const TimelineState& /*state*/) {
-    // General state change - no specific action needed
+void WaveformEditorContent::timelineStateChanged(const TimelineState& state) {
+    // Sync tempo to the TimeRuler so beat grid and snap stay in sync
+    timeRuler_->setTempo(state.tempo.bpm);
+    timeRuler_->setTimeSignature(state.tempo.timeSignatureNumerator,
+                                 state.tempo.timeSignatureDenominator);
+    gridComponent_->repaint();
 }
 
 void WaveformEditorContent::playheadStateChanged(const TimelineState& state) {

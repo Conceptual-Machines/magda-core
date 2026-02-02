@@ -381,7 +381,11 @@ void MainWindow::MainComponent::setupResizeHandles() {
     // Bottom panel resizer
     bottomResizer = std::make_unique<ResizeHandle>(ResizeHandle::Vertical);
     bottomResizer->onResize = [this, &layout](int delta) {
-        bottomPanelHeight = juce::jmax(layout.minBottomPanelHeight, bottomPanelHeight - delta);
+        // Cap max height so at least 100px remains for the main content area
+        int maxHeight = getHeight() - 100;
+        bottomPanelHeight = juce::jlimit(layout.minBottomPanelHeight,
+                                         juce::jmax(layout.minBottomPanelHeight, maxHeight),
+                                         bottomPanelHeight - delta);
         resized();
     };
     addAndMakeVisible(*bottomResizer);

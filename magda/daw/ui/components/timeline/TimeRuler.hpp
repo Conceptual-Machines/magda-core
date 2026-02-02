@@ -28,7 +28,13 @@ class TimeRuler : public juce::Component, private juce::Timer {
 
     // For bars/beats mode
     void setTempo(double bpm);
+    double getTempo() const {
+        return tempo;
+    }
     void setTimeSignature(int numerator, int denominator);
+    int getTimeSigNumerator() const {
+        return timeSigNumerator;
+    }
 
     // Time offset for piano roll (absolute vs relative mode)
     // When set, displayed times are offset by this amount (e.g., clip starts at bar 5)

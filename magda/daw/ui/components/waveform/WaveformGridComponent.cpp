@@ -2,6 +2,7 @@
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../timeline/TimeRuler.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/ClipOperations.hpp"
 
@@ -113,7 +114,10 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
 
     g.saveState();
     if (g.reduceClipRegion(waveformRect)) {
-        if (isLooped) {
+        if (warpMode_ && !warpMarkers_.empty()) {
+            // Warped: draw segments between warp markers
+            paintWarpedWaveform(g, clip, waveformRect, waveColour, vertZoom);
+        } else if (isLooped) {
             // Looped: tile waveform across the full clip length
             double loopCycle = loopEndSeconds_;
             double fileStart = clip.audioOffset;
@@ -164,6 +168,9 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
     }
     g.restoreState();
 
+    // Draw beat grid overlay (after waveform, before markers)
+    paintBeatGrid(g, clip);
+
     // Draw transient or warp markers
     if (warpMode_ && !warpMarkers_.empty()) {
         paintWarpMarkers(g, clip);
@@ -194,6 +201,135 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
     g.setColour(clip.colour.brighter(0.4f));
     g.fillRect(waveformRect.getX(), waveformRect.getY(), 3, waveformRect.getHeight());
     g.fillRect(waveformRect.getRight() - 3, waveformRect.getY(), 3, waveformRect.getHeight());
+}
+
+void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipInfo& clip) {
+    if (gridResolution_ == GridResolution::Off || !timeRuler_)
+        return;
+
+    auto bounds = getLocalBounds().reduced(LEFT_PADDING, TOP_PADDING);
+    if (bounds.getWidth() <= 0 || bounds.getHeight() <= 0)
+        return;
+
+    double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
+    int positionPixels = timeToPixel(displayStartTime);
+    int widthPixels = static_cast<int>(clip.length * horizontalZoom_);
+    if (widthPixels <= 0)
+        return;
+
+    auto waveformRect =
+        juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
+
+    double gridBeats = getGridResolutionBeats();
+    if (gridBeats <= 0.0)
+        return;
+
+    double bpm = timeRuler_->getTempo();
+    if (bpm <= 0.0)
+        return;
+    double secondsPerBeat = 60.0 / bpm;
+    double secondsPerGrid = gridBeats * secondsPerBeat;
+    double beatsPerBar = static_cast<double>(timeRuler_->getTimeSigNumerator());
+
+    // Iterate grid lines across the clip length
+    int visibleLeft = 0;
+    int visibleRight = getWidth();
+
+    for (double t = 0.0; t < clip.length + secondsPerGrid; t += secondsPerGrid) {
+        double displayTime = t + displayStartTime;
+        int px = timeToPixel(displayTime);
+
+        if (px < visibleLeft || px > visibleRight)
+            continue;
+        if (px < waveformRect.getX() || px > waveformRect.getRight())
+            continue;
+
+        // Determine line type based on beat position
+        double beatPos = t / secondsPerBeat;
+        bool isBar = (std::fmod(beatPos, beatsPerBar) < 0.001);
+        bool isBeat = (std::fmod(beatPos, 1.0) < 0.001);
+
+        if (isBar) {
+            g.setColour(juce::Colour(0xFF707070));
+        } else if (isBeat) {
+            g.setColour(juce::Colour(0xFF585858));
+        } else {
+            g.setColour(juce::Colour(0xFF454545));
+        }
+
+        g.drawVerticalLine(px, static_cast<float>(waveformRect.getY()),
+                           static_cast<float>(waveformRect.getBottom()));
+    }
+}
+
+void WaveformGridComponent::paintWarpedWaveform(juce::Graphics& g, const magda::ClipInfo& clip,
+                                                juce::Rectangle<int> waveformRect,
+                                                juce::Colour waveColour, float vertZoom) {
+    auto& thumbnailManager = magda::AudioThumbnailManager::getInstance();
+    auto* thumbnail = thumbnailManager.getThumbnail(clip.audioFilePath);
+    double fileDuration = thumbnail ? thumbnail->getTotalLength() : 0.0;
+
+    double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
+
+    // Build a sorted list of all warp points: boundaries + user markers.
+    // Each point maps sourceTime → warpTime (both in absolute source-file seconds).
+    struct WarpPoint {
+        double sourceTime;
+        double warpTime;
+    };
+    std::vector<WarpPoint> points;
+    points.reserve(warpMarkers_.size() + 2);
+
+    // Start boundary: source file at audioOffset maps to audioOffset (identity)
+    points.push_back({clip.audioOffset, clip.audioOffset});
+
+    for (const auto& m : warpMarkers_) {
+        points.push_back({m.sourceTime, m.warpTime});
+    }
+
+    // End boundary: source end maps to source end (identity)
+    double sourceEnd = fileDuration > 0.0 ? fileDuration : clip.audioOffset + clip.length;
+    points.push_back({sourceEnd, sourceEnd});
+
+    // Sort by warpTime for left-to-right drawing
+    std::sort(points.begin(), points.end(),
+              [](const WarpPoint& a, const WarpPoint& b) { return a.warpTime < b.warpTime; });
+
+    // Draw each segment between consecutive warp points
+    for (size_t i = 0; i + 1 < points.size(); ++i) {
+        double srcStart = points[i].sourceTime;
+        double srcEnd = points[i + 1].sourceTime;
+        double warpStart = points[i].warpTime;
+        double warpEnd = points[i + 1].warpTime;
+
+        // Convert warp times to clip-relative display times
+        double dispStart = (warpStart - clip.audioOffset) + displayStartTime;
+        double dispEnd = (warpEnd - clip.audioOffset) + displayStartTime;
+
+        int pixStart = timeToPixel(dispStart);
+        int pixEnd = timeToPixel(dispEnd);
+        int segWidth = pixEnd - pixStart;
+        if (segWidth <= 0)
+            continue;
+
+        auto segRect =
+            juce::Rectangle<int>(pixStart, waveformRect.getY(), segWidth, waveformRect.getHeight());
+        // Clip to waveform bounds
+        segRect = segRect.getIntersection(waveformRect);
+        if (segRect.isEmpty())
+            continue;
+
+        auto drawRect = segRect.reduced(0, 4);
+        if (drawRect.getWidth() > 0 && drawRect.getHeight() > 0) {
+            // Clamp source range to file duration
+            double clampedSrcStart = juce::jmax(0.0, srcStart);
+            double clampedSrcEnd = fileDuration > 0.0 ? juce::jmin(srcEnd, fileDuration) : srcEnd;
+            if (clampedSrcEnd > clampedSrcStart) {
+                thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, clampedSrcStart,
+                                              clampedSrcEnd, waveColour, vertZoom);
+            }
+        }
+    }
 }
 
 void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
@@ -389,6 +525,49 @@ void WaveformGridComponent::setTransientTimes(const juce::Array<double>& times) 
     repaint();
 }
 
+void WaveformGridComponent::setGridResolution(GridResolution resolution) {
+    if (gridResolution_ != resolution) {
+        gridResolution_ = resolution;
+        repaint();
+    }
+}
+
+GridResolution WaveformGridComponent::getGridResolution() const {
+    return gridResolution_;
+}
+
+void WaveformGridComponent::setTimeRuler(magda::TimeRuler* ruler) {
+    timeRuler_ = ruler;
+    repaint();
+}
+
+double WaveformGridComponent::getGridResolutionBeats() const {
+    switch (gridResolution_) {
+        case GridResolution::Bar:
+            return timeRuler_ ? static_cast<double>(timeRuler_->getTimeSigNumerator()) : 4.0;
+        case GridResolution::Beat:
+            return 1.0;
+        case GridResolution::Eighth:
+            return 0.5;
+        case GridResolution::Sixteenth:
+            return 0.25;
+        case GridResolution::ThirtySecond:
+            return 0.125;
+        case GridResolution::Off:
+        default:
+            return 0.0;
+    }
+}
+
+double WaveformGridComponent::snapTimeToGrid(double time) const {
+    double beatsPerGrid = getGridResolutionBeats();
+    double bpm = timeRuler_ ? timeRuler_->getTempo() : 0.0;
+    if (beatsPerGrid <= 0.0 || bpm <= 0.0)
+        return time;
+    double secondsPerGrid = beatsPerGrid * 60.0 / bpm;
+    return std::round(time / secondsPerGrid) * secondsPerGrid;
+}
+
 void WaveformGridComponent::setWarpMode(bool enabled) {
     if (warpMode_ != enabled) {
         warpMode_ = enabled;
@@ -506,9 +685,13 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
             // Convert clip-relative display time to source-file time
             double sourceTime = clipRelativeTime / clip->audioStretchFactor + clip->audioOffset;
 
-            // Snap to nearest transient (in source-file time) unless Alt is held
+            // Snap to grid or transient (in source-file time) unless Alt is held
             if (!event.mods.isAltDown()) {
-                sourceTime = snapToNearestTransient(sourceTime);
+                if (gridResolution_ != GridResolution::Off) {
+                    sourceTime = snapTimeToGrid(sourceTime);
+                } else {
+                    sourceTime = snapToNearestTransient(sourceTime);
+                }
             }
 
             if (onWarpMarkerAdd) {
@@ -561,12 +744,16 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
         if (!clip)
             return;
 
-        // Pixel delta → display-time delta → source-file-time delta
-        double displayDelta = (event.x - dragStartX_) / horizontalZoom_;
-        double sourceDelta = displayDelta / clip->audioStretchFactor;
-        double newWarpTime = dragStartWarpTime_ + sourceDelta;
+        // Pixel delta → warp-time delta (no stretchFactor — warp owns the timing)
+        double timeDelta = (event.x - dragStartX_) / horizontalZoom_;
+        double newWarpTime = dragStartWarpTime_ + timeDelta;
         if (newWarpTime < 0.0)
             newWarpTime = 0.0;
+
+        // Snap to grid unless Alt is held
+        if (!event.mods.isAltDown() && gridResolution_ != GridResolution::Off) {
+            newWarpTime = snapTimeToGrid(newWarpTime);
+        }
 
         if (draggingMarkerIndex_ >= 0 && onWarpMarkerMove) {
             onWarpMarkerMove(draggingMarkerIndex_, newWarpTime);
@@ -760,10 +947,10 @@ void WaveformGridComponent::paintWarpMarkers(juce::Graphics& g, const magda::Cli
     for (int i = 0; i < static_cast<int>(warpMarkers_.size()); ++i) {
         const auto& marker = warpMarkers_[static_cast<size_t>(i)];
 
-        // Convert warp time (source-file seconds) to clip-relative display time
-        // Same conversion as transient markers: account for audioOffset and stretchFactor
-        double clipRelativeTime = (marker.warpTime - clip.audioOffset) * clip.audioStretchFactor;
-        if (clipRelativeTime < 0.0 || clipRelativeTime > clip.length)
+        // Warp time is in the playback coordinate space — no stretchFactor needed.
+        // Subtract audioOffset to get clip-relative time.
+        double clipRelativeTime = marker.warpTime - clip.audioOffset;
+        if (clipRelativeTime < 0.0 || clipRelativeTime > clip.length * 2.0)
             continue;
 
         double displayTime = clipRelativeTime + displayStartTime;
@@ -814,7 +1001,7 @@ int WaveformGridComponent::findMarkerAtPixel(int x) const {
 
     for (int i = 0; i < static_cast<int>(warpMarkers_.size()); ++i) {
         const auto& marker = warpMarkers_[static_cast<size_t>(i)];
-        double clipRelativeTime = (marker.warpTime - clip->audioOffset) * clip->audioStretchFactor;
+        double clipRelativeTime = marker.warpTime - clip->audioOffset;
         double displayTime = clipRelativeTime + displayStartTime;
         int px = timeToPixel(displayTime);
         if (std::abs(x - px) <= WARP_MARKER_HIT_DISTANCE)

@@ -2496,6 +2496,12 @@ void AudioBridge::enableWarp(ClipId clipId) {
     auto sourceLen = warpManager.getSourceLength();
     warpManager.setWarpEndMarkerTime(te::TimePosition::fromSeconds(0.0) + sourceLen);
 
+    // NOTE: setWarpTime(true) triggers TE's offline proxy render pipeline which
+    // crashes during graph rebuild (AudioFileCache::createReader SIGBUS). The visual
+    // warp marker system works without it. Enabling TE warp playback requires
+    // investigating the proxy render lifecycle and thread safety.
+    // audioClipPtr->setWarpTime(true);
+
     DBG("AudioBridge::enableWarp clip " << clipId << " -> " << warpManager.getMarkers().size()
                                         << " markers");
 }

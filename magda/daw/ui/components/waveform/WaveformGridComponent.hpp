@@ -8,7 +8,14 @@
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
 
+namespace magda {
+class TimeRuler;  // Forward declaration
+}
+
 namespace magda::daw::ui {
+
+/** Beat grid resolution for waveform overlay */
+enum class GridResolution { Off, Bar, Beat, Eighth, Sixteenth, ThirtySecond };
 
 /**
  * @brief Scrollable waveform grid component
@@ -96,6 +103,25 @@ class WaveformGridComponent : public juce::Component {
      * @param times Array of transient times in source-file seconds
      */
     void setTransientTimes(const juce::Array<double>& times);
+
+    // ========================================================================
+    // Beat Grid
+    // ========================================================================
+
+    /** Set the beat grid resolution (Off disables the grid) */
+    void setGridResolution(GridResolution resolution);
+
+    /** Get current grid resolution */
+    GridResolution getGridResolution() const;
+
+    /** Set the TimeRuler to read tempo/time-signature from (not owned) */
+    void setTimeRuler(magda::TimeRuler* ruler);
+
+    /** Get grid interval in beats for the current resolution */
+    double getGridResolutionBeats() const;
+
+    /** Snap a source-file time to the nearest grid line */
+    double snapTimeToGrid(double time) const;
 
     // ========================================================================
     // Warp Mode
@@ -190,8 +216,16 @@ class WaveformGridComponent : public juce::Component {
     int draggingMarkerIndex_ = -1;
     double dragStartWarpTime_ = 0.0;
 
+    // Beat grid state
+    GridResolution gridResolution_ = GridResolution::Off;
+    magda::TimeRuler* timeRuler_ = nullptr;  // not owned — reads tempo/timeSig
+
     // Painting helpers
     void paintWaveform(juce::Graphics& g, const magda::ClipInfo& clip);
+    void paintBeatGrid(juce::Graphics& g, const magda::ClipInfo& clip);
+    void paintWarpedWaveform(juce::Graphics& g, const magda::ClipInfo& clip,
+                             juce::Rectangle<int> waveformRect, juce::Colour waveColour,
+                             float vertZoom);
     void paintTransientMarkers(juce::Graphics& g, const magda::ClipInfo& clip);
     void paintWarpMarkers(juce::Graphics& g, const magda::ClipInfo& clip);
     void paintClipBoundaries(juce::Graphics& g);
