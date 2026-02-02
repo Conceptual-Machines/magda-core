@@ -220,8 +220,21 @@ class WaveformGridComponent : public juce::Component {
     GridResolution gridResolution_ = GridResolution::Off;
     magda::TimeRuler* timeRuler_ = nullptr;  // not owned — reads tempo/timeSig
 
+    // Layout info shared between paint helpers
+    struct WaveformLayout {
+        juce::Rectangle<int> rect;  // full waveform rect (position + size)
+        int clipEndPixel;           // pixel X of the effective clip/loop end
+    };
+
     // Painting helpers
     void paintWaveform(juce::Graphics& g, const magda::ClipInfo& clip);
+    WaveformLayout computeWaveformLayout(const magda::ClipInfo& clip) const;
+    void paintWaveformBackground(juce::Graphics& g, const magda::ClipInfo& clip,
+                                 const WaveformLayout& layout);
+    void paintWaveformThumbnail(juce::Graphics& g, const magda::ClipInfo& clip,
+                                const WaveformLayout& layout);
+    void paintWaveformOverlays(juce::Graphics& g, const magda::ClipInfo& clip,
+                               const WaveformLayout& layout);
     void paintBeatGrid(juce::Graphics& g, const magda::ClipInfo& clip);
     void paintWarpedWaveform(juce::Graphics& g, const magda::ClipInfo& clip,
                              juce::Rectangle<int> waveformRect, juce::Colour waveColour,

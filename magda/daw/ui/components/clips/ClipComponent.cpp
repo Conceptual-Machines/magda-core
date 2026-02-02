@@ -176,8 +176,18 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                     auto drawRect = juce::Rectangle<int>(
                         drawX, waveformArea.getY(), drawRight - drawX, waveformArea.getHeight());
 
+                    // For partial tiles (last tile cut off by clip end), reduce
+                    // the source range proportionally to avoid compressing the
+                    // full loop cycle's audio into a shorter pixel rect.
+                    double tileDuration = cycleEnd - timePos;
+                    double tileFileEnd = fileEnd;
+                    if (tileDuration < loopCycle - 0.0001) {
+                        double fraction = tileDuration / loopCycle;
+                        tileFileEnd = fileStart + (fileEnd - fileStart) * fraction;
+                    }
+
                     thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, fileStart,
-                                                  fileEnd, waveColour);
+                                                  tileFileEnd, waveColour);
                     timePos += loopCycle;
                 }
             } else {

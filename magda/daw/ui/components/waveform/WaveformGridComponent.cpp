@@ -34,36 +34,49 @@ void WaveformGridComponent::paint(juce::Graphics& g) {
 }
 
 void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipInfo& clip) {
+    if (clip.audioFilePath.isEmpty())
+        return;
+
+    auto layout = computeWaveformLayout(clip);
+    if (layout.rect.isEmpty())
+        return;
+
+    paintWaveformBackground(g, clip, layout);
+    paintWaveformThumbnail(g, clip, layout);
+    paintWaveformOverlays(g, clip, layout);
+}
+
+WaveformGridComponent::WaveformLayout WaveformGridComponent::computeWaveformLayout(
+    const magda::ClipInfo& clip) const {
     auto bounds = getLocalBounds().reduced(LEFT_PADDING, TOP_PADDING);
+    if (bounds.getWidth() <= 0 || bounds.getHeight() <= 0)
+        return {};
 
-    if (bounds.getWidth() <= 0 || bounds.getHeight() <= 0) {
-        return;
-    }
-
-    if (clip.audioFilePath.isEmpty()) {
-        return;
-    }
-
-    // Flat model: audio always starts at clip start (position = 0)
     double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
     int positionPixels = timeToPixel(displayStartTime);
     int widthPixels = static_cast<int>(clip.length * horizontalZoom_);
     if (widthPixels <= 0)
-        return;
+        return {};
 
-    auto waveformRect =
+    auto rect =
         juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
 
-    // Calculate clip boundaries for highlighting out-of-bounds regions
-    // When looping is active, treat the loop end as the effective boundary
+    // Effective end accounts for loop boundary
     double effectiveLength = (displayInfo_.isLooped())
                                  ? std::min(clipLength_, displayInfo_.loopEndPositionSeconds)
                                  : clipLength_;
-    int clipStartPixel = relativeMode_ ? timeToPixel(0.0) : timeToPixel(clipStartTime_);
     int clipEndPixel = relativeMode_ ? timeToPixel(effectiveLength)
                                      : timeToPixel(clipStartTime_ + effectiveLength);
 
-    // Draw out-of-bounds background (darker) for parts beyond clip boundaries
+    return {rect, clipEndPixel};
+}
+
+void WaveformGridComponent::paintWaveformBackground(juce::Graphics& g, const magda::ClipInfo& clip,
+                                                    const WaveformLayout& layout) {
+    auto waveformRect = layout.rect;
+    int clipStartPixel = relativeMode_ ? timeToPixel(0.0) : timeToPixel(clipStartTime_);
+    int clipEndPixel = layout.clipEndPixel;
+
     auto outOfBoundsColour = clip.colour.darker(0.7f);
 
     // Left out-of-bounds region
@@ -80,49 +93,38 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
         int inBoundsWidth = juce::jmax(0, clipEndPixel - waveformRect.getX());
         auto inBoundsRect = waveformRect.removeFromLeft(inBoundsWidth);
 
-        // Draw in-bounds background (normal)
         g.setColour(clip.colour.darker(0.4f));
         if (!inBoundsRect.isEmpty()) {
             g.fillRoundedRectangle(inBoundsRect.toFloat(), 3.0f);
         }
 
-        // Draw out-of-bounds background (darker) for remaining part
         if (!waveformRect.isEmpty()) {
             g.setColour(outOfBoundsColour);
             g.fillRoundedRectangle(waveformRect.toFloat(), 3.0f);
         }
-
-        // Restore waveformRect for waveform drawing
-        waveformRect = inBoundsRect.getUnion(waveformRect);
     } else {
-        // All in bounds - draw normal background
+        // All in bounds
         g.setColour(clip.colour.darker(0.4f));
         g.fillRoundedRectangle(waveformRect.toFloat(), 3.0f);
     }
+}
 
-    // Recalculate full waveform rect for drawing (we modified it above)
-    waveformRect =
-        juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
+void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magda::ClipInfo& clip,
+                                                   const WaveformLayout& layout) {
+    auto waveformRect = layout.rect;
 
-    // Draw real waveform from audio thumbnail (scaled by vertical zoom)
     auto& thumbnailManager = magda::AudioThumbnailManager::getInstance();
     auto* thumbnail = thumbnailManager.getThumbnail(clip.audioFilePath);
     double fileDuration = thumbnail ? thumbnail->getTotalLength() : 0.0;
     auto waveColour = clip.colour.brighter(0.2f);
     auto vertZoom = static_cast<float>(verticalZoom_);
 
-    bool isLooped = displayInfo_.isLooped();
-
     g.saveState();
     if (g.reduceClipRegion(waveformRect)) {
         if (warpMode_ && !warpMarkers_.empty()) {
-            // Warped: draw segments between warp markers
             paintWarpedWaveform(g, clip, waveformRect, waveColour, vertZoom);
-        } else if (isLooped) {
-            // Looped: tile waveform across the full clip length
-            // Use cycle DURATION (not end position) for tiling step
+        } else if (displayInfo_.isLooped()) {
             double loopCycle = displayInfo_.loopLengthSeconds;
-            // File range per cycle from pre-computed display info
             double fileStart = displayInfo_.sourceFileStart;
             double fileEnd = displayInfo_.sourceFileEnd;
             bool fileClamped = false;
@@ -145,13 +147,21 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
                                                       waveformRect.getHeight());
                 auto drawRect = cycleRect.reduced(0, 4);
                 if (drawRect.getWidth() > 0 && drawRect.getHeight() > 0) {
+                    // For partial tiles (last tile cut off by clip end), reduce
+                    // the source range proportionally to avoid compressing the
+                    // full loop cycle's audio into a shorter pixel rect.
+                    double tileDuration = cycleEnd - timePos;
+                    double tileFileEnd = fileEnd;
+                    if (tileDuration < actualDisplayCycle - 0.0001) {
+                        double fraction = tileDuration / actualDisplayCycle;
+                        tileFileEnd = fileStart + (fileEnd - fileStart) * fraction;
+                    }
                     thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, fileStart,
-                                                  fileEnd, waveColour, vertZoom);
+                                                  tileFileEnd, waveColour, vertZoom);
                 }
                 timePos += loopCycle;
             }
         } else {
-            // Non-looped: single draw, clamped to file duration
             double displayStart = displayInfo_.sourceFileStart;
             double displayEnd = displayInfo_.sourceFileEnd;
             if (fileDuration > 0.0 && displayEnd > fileDuration)
@@ -170,25 +180,31 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
         }
     }
     g.restoreState();
+}
 
-    // Draw beat grid overlay (after waveform, before markers)
+void WaveformGridComponent::paintWaveformOverlays(juce::Graphics& g, const magda::ClipInfo& clip,
+                                                  const WaveformLayout& layout) {
+    auto waveformRect = layout.rect;
+
+    // Beat grid overlay (after waveform, before markers)
     paintBeatGrid(g, clip);
 
-    // Draw transient or warp markers
+    // Transient or warp markers
     if (warpMode_ && !warpMarkers_.empty()) {
         paintWarpMarkers(g, clip);
     } else if (!warpMode_ && !transientTimes_.isEmpty()) {
         paintTransientMarkers(g, clip);
     }
 
-    // Draw center line
+    // Center line
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawHorizontalLine(waveformRect.getCentreY(), waveformRect.getX(), waveformRect.getRight());
 
-    // Draw clip boundary indicator line at clip end
-    if (clipEndPixel > waveformRect.getX() && clipEndPixel < waveformRect.getRight()) {
+    // Clip boundary indicator line at clip end
+    if (layout.clipEndPixel > waveformRect.getX() &&
+        layout.clipEndPixel < waveformRect.getRight()) {
         g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
-        g.fillRect(clipEndPixel - 1, waveformRect.getY(), 2, waveformRect.getHeight());
+        g.fillRect(layout.clipEndPixel - 1, waveformRect.getY(), 2, waveformRect.getHeight());
     }
 
     // Clip info overlay
@@ -200,7 +216,7 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
     g.setColour(clip.colour.withAlpha(0.5f));
     g.drawRoundedRectangle(waveformRect.toFloat(), 3.0f, 1.0f);
 
-    // Draw trim handles
+    // Trim handles
     g.setColour(clip.colour.brighter(0.4f));
     g.fillRect(waveformRect.getX(), waveformRect.getY(), 3, waveformRect.getHeight());
     g.fillRect(waveformRect.getRight() - 3, waveformRect.getY(), 3, waveformRect.getHeight());
