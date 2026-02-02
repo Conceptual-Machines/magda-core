@@ -836,6 +836,9 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
         if (clip.detectedBPM > 0.0) {
             obj->setProperty("detectedBPM", clip.detectedBPM);
         }
+        if (clip.warpEnabled) {
+            obj->setProperty("warpEnabled", clip.warpEnabled);
+        }
     }
 
     // MIDI notes
@@ -894,6 +897,10 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
         auto detectedBPMVar = obj->getProperty("detectedBPM");
         if (!detectedBPMVar.isVoid()) {
             outClip.detectedBPM = static_cast<double>(detectedBPMVar);
+        }
+        auto warpEnabledVar = obj->getProperty("warpEnabled");
+        if (!warpEnabledVar.isVoid()) {
+            outClip.warpEnabled = static_cast<bool>(warpEnabledVar);
         }
     } else {
         // Migration from old audioSources format

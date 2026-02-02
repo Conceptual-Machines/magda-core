@@ -138,6 +138,48 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     te::Clip* getSessionTeClip(ClipId clipId);
 
     // =========================================================================
+    // Transient Detection
+    // =========================================================================
+
+    /**
+     * @brief Detect transient times for an audio clip's source file
+     *
+     * On first call, kicks off async transient detection via TE's WarpTimeManager.
+     * Subsequent calls poll for completion. Results are cached per file path.
+     *
+     * @param clipId The MAGDA clip ID (must be an audio clip)
+     * @return true if transients are ready (cached), false if still detecting
+     */
+    bool getTransientTimes(ClipId clipId);
+
+    // =========================================================================
+    // Warp Markers
+    // =========================================================================
+
+    struct WarpMarkerInfo {
+        double sourceTime;
+        double warpTime;
+    };
+
+    /** Enable warping: populate WarpTimeManager with markers at detected transients */
+    void enableWarp(ClipId clipId);
+
+    /** Disable warping: remove all warp markers */
+    void disableWarp(ClipId clipId);
+
+    /** Get current warp marker positions for display */
+    std::vector<WarpMarkerInfo> getWarpMarkers(ClipId clipId);
+
+    /** Add a warp marker. Returns index of inserted marker. */
+    int addWarpMarker(ClipId clipId, double sourceTime, double warpTime);
+
+    /** Move a warp marker's warp time. Returns actual position (clamped by TE). */
+    double moveWarpMarker(ClipId clipId, int index, double newWarpTime);
+
+    /** Remove a warp marker at index. */
+    void removeWarpMarker(ClipId clipId, int index);
+
+    // =========================================================================
     // Plugin Loading
     // =========================================================================
 

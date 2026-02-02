@@ -5,6 +5,10 @@
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "audio/AudioBridge.hpp"
+#include "audio/AudioThumbnailManager.hpp"
+#include "core/TrackManager.hpp"
+#include "engine/AudioEngine.hpp"
 
 namespace magda::daw::ui {
 
@@ -189,6 +193,20 @@ WaveformEditorContent::WaveformEditorContent() {
     timeModeButton_->onClick = [this]() { setRelativeTimeMode(timeModeButton_->getToggleState()); };
     addAndMakeVisible(timeModeButton_.get());
 
+    // Create WARP mode toggle button
+    warpModeButton_ = std::make_unique<juce::TextButton>("WARP");
+    warpModeButton_->setTooltip("Toggle warp mode (add/move warp markers)");
+    warpModeButton_->setClickingTogglesState(true);
+    warpModeButton_->setToggleState(false, juce::dontSendNotification);
+    warpModeButton_->setLookAndFeel(buttonLookAndFeel_.get());
+    warpModeButton_->onClick = [this]() {
+        if (editingClipId_ != magda::INVALID_CLIP_ID) {
+            bool newState = warpModeButton_->getToggleState();
+            magda::ClipManager::getInstance().setClipWarpEnabled(editingClipId_, newState);
+        }
+    };
+    addAndMakeVisible(warpModeButton_.get());
+
     // Create BPM label for toolbar
     bpmLabel_ =
         std::make_unique<juce::Label>("bpmLabel", juce::String::fromUTF8("\xe2\x80\x94 BPM"));
@@ -236,6 +254,31 @@ WaveformEditorContent::WaveformEditorContent() {
         // Could add logic here if needed
     };
 
+    // Warp marker callbacks
+    gridComponent_->onWarpMarkerAdd = [this](double sourceTime, double warpTime) {
+        auto* bridge = getBridge();
+        if (bridge) {
+            bridge->addWarpMarker(editingClipId_, sourceTime, warpTime);
+            refreshWarpMarkers();
+        }
+    };
+
+    gridComponent_->onWarpMarkerMove = [this](int index, double newWarpTime) {
+        auto* bridge = getBridge();
+        if (bridge) {
+            bridge->moveWarpMarker(editingClipId_, index, newWarpTime);
+            refreshWarpMarkers();
+        }
+    };
+
+    gridComponent_->onWarpMarkerRemove = [this](int index) {
+        auto* bridge = getBridge();
+        if (bridge) {
+            bridge->removeWarpMarker(editingClipId_, index);
+            refreshWarpMarkers();
+        }
+    };
+
     // Check if there's already a selected audio clip
     magda::ClipId selectedClip = magda::ClipManager::getInstance().getSelectedClip();
     if (selectedClip != magda::INVALID_CLIP_ID) {
@@ -247,6 +290,8 @@ WaveformEditorContent::WaveformEditorContent() {
 }
 
 WaveformEditorContent::~WaveformEditorContent() {
+    stopTimer();
+
     auto* controller = magda::TimelineController::getCurrent();
     if (controller) {
         controller->removeListener(this);
@@ -257,6 +302,9 @@ WaveformEditorContent::~WaveformEditorContent() {
     // Clear look and feel before destruction
     if (timeModeButton_) {
         timeModeButton_->setLookAndFeel(nullptr);
+    }
+    if (warpModeButton_) {
+        warpModeButton_->setLookAndFeel(nullptr);
     }
 }
 
@@ -278,6 +326,7 @@ void WaveformEditorContent::resized() {
     if (bounds.getHeight() < minHeight || bounds.getWidth() <= 0) {
         // Hide everything when too small to avoid zero-sized paint
         timeModeButton_->setBounds(0, 0, 0, 0);
+        warpModeButton_->setBounds(0, 0, 0, 0);
         bpmLabel_->setBounds(0, 0, 0, 0);
         timeRuler_->setBounds(0, 0, 0, 0);
         viewport_->setBounds(0, 0, 0, 0);
@@ -289,6 +338,8 @@ void WaveformEditorContent::resized() {
     // Toolbar at top
     auto toolbarArea = bounds.removeFromTop(TOOLBAR_HEIGHT);
     timeModeButton_->setBounds(toolbarArea.removeFromLeft(60).reduced(2));
+    toolbarArea.removeFromLeft(4);
+    warpModeButton_->setBounds(toolbarArea.removeFromLeft(60).reduced(2));
     toolbarArea.removeFromLeft(4);
     bpmLabel_->setBounds(toolbarArea.removeFromLeft(80).reduced(2));
 
@@ -450,6 +501,32 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
             // Update loop boundary dimming
             updateLoopBoundary(*clip);
 
+            // Update warp mode state
+            bool warpEnabled = clip->warpEnabled;
+            warpModeButton_->setToggleState(warpEnabled, juce::dontSendNotification);
+            gridComponent_->setWarpMode(warpEnabled);
+
+            if (warpEnabled) {
+                auto* bridge = getBridge();
+                if (bridge) {
+                    // Always call enableWarp when transitioning to warp mode
+                    // (TE's WarpTimeManager has default start/end markers even
+                    //  when warp is "off", so we can't rely on markers.empty())
+                    if (!wasWarpEnabled_) {
+                        bridge->enableWarp(editingClipId_);
+                    }
+                    auto markers = bridge->getWarpMarkers(editingClipId_);
+                    gridComponent_->setWarpMarkers(markers);
+                }
+            } else if (wasWarpEnabled_) {
+                // Only disable if warp was previously on
+                auto* bridge = getBridge();
+                if (bridge) {
+                    bridge->disableWarp(editingClipId_);
+                }
+            }
+            wasWarpEnabled_ = warpEnabled;
+
             // Update BPM label
             if (clip->detectedBPM > 0.0) {
                 bpmLabel_->setText(juce::String(clip->detectedBPM, 1) + " BPM",
@@ -506,6 +583,8 @@ void WaveformEditorContent::playheadStateChanged(const TimelineState& state) {
 void WaveformEditorContent::setClip(magda::ClipId clipId) {
     if (editingClipId_ != clipId) {
         editingClipId_ = clipId;
+        transientsCached_ = false;
+        stopTimer();
         gridComponent_->setClip(clipId);
 
         // Update time ruler with clip info
@@ -548,6 +627,36 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
                                    juce::dontSendNotification);
                 bpmLabel_->setColour(juce::Label::textColourId,
                                      DarkTheme::getSecondaryTextColour());
+            }
+        }
+
+        // Update warp mode state
+        if (clip) {
+            bool warpEnabled = clip->warpEnabled;
+            warpModeButton_->setToggleState(warpEnabled, juce::dontSendNotification);
+            gridComponent_->setWarpMode(warpEnabled);
+            wasWarpEnabled_ = warpEnabled;
+
+            if (warpEnabled) {
+                auto* bridge = getBridge();
+                if (bridge) {
+                    // Always populate markers when opening a clip with warp enabled
+                    bridge->enableWarp(editingClipId_);
+                    auto markers = bridge->getWarpMarkers(editingClipId_);
+                    gridComponent_->setWarpMarkers(markers);
+                }
+            }
+        }
+
+        // Check for cached transients or start polling
+        if (clip && clip->type == magda::ClipType::Audio && !clip->audioFilePath.isEmpty()) {
+            auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
+                clip->audioFilePath);
+            if (cached) {
+                gridComponent_->setTransientTimes(*cached);
+                transientsCached_ = true;
+            } else {
+                startTimer(250);
             }
         }
 
@@ -659,6 +768,57 @@ void WaveformEditorContent::performAnchorPointZoom(double zoomFactor, int anchor
             int newScrollX = newAnchorX - anchorX;
             viewport_->setViewPosition(newScrollX, viewport_->getViewPositionY());
         }
+    }
+}
+
+// ============================================================================
+// Warp Helpers
+// ============================================================================
+
+void WaveformEditorContent::refreshWarpMarkers() {
+    auto* bridge = getBridge();
+    if (bridge && editingClipId_ != magda::INVALID_CLIP_ID) {
+        auto markers = bridge->getWarpMarkers(editingClipId_);
+        gridComponent_->setWarpMarkers(markers);
+    }
+}
+
+magda::AudioBridge* WaveformEditorContent::getBridge() {
+    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+    if (!audioEngine)
+        return nullptr;
+    return audioEngine->getAudioBridge();
+}
+
+// ============================================================================
+// Timer (Transient Detection Polling)
+// ============================================================================
+
+void WaveformEditorContent::timerCallback() {
+    if (transientsCached_ || editingClipId_ == magda::INVALID_CLIP_ID) {
+        stopTimer();
+        return;
+    }
+
+    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+    if (!audioEngine)
+        return;
+
+    auto* bridge = audioEngine->getAudioBridge();
+    if (!bridge)
+        return;
+
+    if (bridge->getTransientTimes(editingClipId_)) {
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (clip && !clip->audioFilePath.isEmpty()) {
+            auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
+                clip->audioFilePath);
+            if (cached) {
+                gridComponent_->setTransientTimes(*cached);
+            }
+        }
+        transientsCached_ = true;
+        stopTimer();
     }
 }
 

@@ -135,10 +135,25 @@ double AudioThumbnailManager::detectBPM(const juce::String& filePath) {
     return result;
 }
 
+const juce::Array<double>* AudioThumbnailManager::getCachedTransients(
+    const juce::String& filePath) const {
+    auto it = transientCache_.find(filePath);
+    if (it != transientCache_.end()) {
+        return &it->second;
+    }
+    return nullptr;
+}
+
+void AudioThumbnailManager::cacheTransients(const juce::String& filePath,
+                                            const juce::Array<double>& times) {
+    transientCache_[filePath] = times;
+}
+
 void AudioThumbnailManager::clearCache() {
     thumbnails_.clear();
     thumbnailCache_->clear();
     bpmCache_.clear();
+    transientCache_.clear();
     DBG("AudioThumbnailManager: Cache cleared");
 }
 
@@ -146,6 +161,7 @@ void AudioThumbnailManager::shutdown() {
     thumbnails_.clear();
     thumbnailCache_.reset();
     bpmCache_.clear();
+    transientCache_.clear();
 }
 
 }  // namespace magda

@@ -401,6 +401,24 @@ InspectorContent::InspectorContent() {
     };
     addChildComponent(*clipLoopToggle_);
 
+    // Warp toggle button
+    clipWarpToggle_.setButtonText("WARP");
+    clipWarpToggle_.setColour(juce::TextButton::buttonColourId,
+                              DarkTheme::getColour(DarkTheme::SURFACE));
+    clipWarpToggle_.setColour(juce::TextButton::buttonOnColourId,
+                              DarkTheme::getAccentColour().withAlpha(0.3f));
+    clipWarpToggle_.setColour(juce::TextButton::textColourOffId,
+                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipWarpToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+    clipWarpToggle_.setClickingTogglesState(true);
+    clipWarpToggle_.onClick = [this]() {
+        if (selectedClipId_ != magda::INVALID_CLIP_ID) {
+            bool newState = clipWarpToggle_.getToggleState();
+            magda::ClipManager::getInstance().setClipWarpEnabled(selectedClipId_, newState);
+        }
+    };
+    addChildComponent(clipWarpToggle_);
+
     // Loop position
     clipLoopPosLabel_.setText("Pos", juce::dontSendNotification);
     clipLoopPosLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
@@ -828,6 +846,12 @@ void InspectorContent::resized() {
             clipContentOffsetIcon_->setBounds(valueRow.removeFromLeft(iconSize));
             valueRow.removeFromLeft(gap);
             clipContentOffsetValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
+            bounds.removeFromTop(8);
+        }
+
+        // Warp toggle (audio clips only)
+        if (clipWarpToggle_.isVisible()) {
+            clipWarpToggle_.setBounds(bounds.removeFromTop(22).reduced(0, 1));
             bounds.removeFromTop(8);
         }
 
@@ -1354,6 +1378,13 @@ void InspectorContent::updateFromSelectedClip() {
         clipLoopToggle_->setActive(clip->internalLoopEnabled);
         clipLoopToggle_->setEnabled(true);
 
+        // Warp toggle (only for audio clips)
+        bool isAudioClip = (clip->type == magda::ClipType::Audio);
+        clipWarpToggle_.setVisible(isAudioClip);
+        if (isAudioClip) {
+            clipWarpToggle_.setToggleState(clip->warpEnabled, juce::dontSendNotification);
+        }
+
         // Always show loop pos/length, but grey out when loop is off
         bool loopOn = isSessionClip || clip->internalLoopEnabled;
         clipLoopPosLabel_.setVisible(true);
@@ -1434,6 +1465,9 @@ void InspectorContent::showClipControls(bool show) {
     clipContentOffsetIcon_->setVisible(show);
     clipContentOffsetValue_->setVisible(show);
     clipLoopToggle_->setVisible(show);
+    if (!show) {
+        clipWarpToggle_.setVisible(false);
+    }
     // Loop pos/length visibility is managed by updateFromSelectedClip
     if (!show) {
         clipLoopPosLabel_.setVisible(false);

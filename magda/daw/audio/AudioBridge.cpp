@@ -5,6 +5,7 @@
 
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
+#include "AudioThumbnailManager.hpp"
 
 namespace magda {
 
@@ -2369,6 +2370,207 @@ bool AudioBridge::togglePluginWindow(DeviceId deviceId) {
         }
     }
     return false;
+}
+
+// ============================================================================
+// Transient Detection
+// ============================================================================
+
+bool AudioBridge::getTransientTimes(ClipId clipId) {
+    namespace te = tracktion;
+
+    // Get clip info for file path
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (!clip || clip->type != ClipType::Audio || clip->audioFilePath.isEmpty()) {
+        return false;
+    }
+
+    // Check cache first
+    auto& thumbnailManager = AudioThumbnailManager::getInstance();
+    if (thumbnailManager.getCachedTransients(clip->audioFilePath) != nullptr) {
+        return true;
+    }
+
+    // Find TE WaveAudioClip via clipIdToEngineId_
+    auto it = clipIdToEngineId_.find(clipId);
+    if (it == clipIdToEngineId_.end()) {
+        return false;
+    }
+
+    std::string engineId = it->second;
+    te::WaveAudioClip* audioClipPtr = nullptr;
+
+    for (auto* track : te::getAudioTracks(edit_)) {
+        for (auto* teClip : track->getClips()) {
+            if (teClip->itemID.toString().toStdString() == engineId) {
+                audioClipPtr = dynamic_cast<te::WaveAudioClip*>(teClip);
+                break;
+            }
+        }
+        if (audioClipPtr)
+            break;
+    }
+
+    if (!audioClipPtr) {
+        return false;
+    }
+
+    // Get WarpTimeManager from the clip
+    auto& warpManager = audioClipPtr->getWarpTimeManager();
+
+    // Trigger detection if not started
+    warpManager.editFinishedLoading();
+
+    // Poll for completion
+    auto [complete, transientPositions] = warpManager.getTransientTimes();
+
+    if (complete) {
+        // Convert TimePosition array to double array
+        juce::Array<double> times;
+        times.ensureStorageAllocated(transientPositions.size());
+        for (const auto& tp : transientPositions) {
+            times.add(tp.inSeconds());
+        }
+
+        thumbnailManager.cacheTransients(clip->audioFilePath, times);
+        DBG("AudioBridge: Cached " << times.size() << " transients for " << clip->audioFilePath);
+        return true;
+    }
+
+    return false;
+}
+
+// =============================================================================
+// Warp Markers
+// =============================================================================
+
+namespace {
+te::WaveAudioClip* findWaveAudioClip(te::Edit& edit,
+                                     const std::map<ClipId, std::string>& clipIdToEngineId,
+                                     ClipId clipId) {
+    auto it = clipIdToEngineId.find(clipId);
+    if (it == clipIdToEngineId.end())
+        return nullptr;
+
+    const auto& engineId = it->second;
+    for (auto* track : te::getAudioTracks(edit)) {
+        for (auto* teClip : track->getClips()) {
+            if (teClip->itemID.toString().toStdString() == engineId) {
+                return dynamic_cast<te::WaveAudioClip*>(teClip);
+            }
+        }
+    }
+    return nullptr;
+}
+}  // namespace
+
+void AudioBridge::enableWarp(ClipId clipId) {
+    auto* audioClipPtr = findWaveAudioClip(edit_, clipIdToEngineId_, clipId);
+    if (!audioClipPtr)
+        return;
+
+    auto& warpManager = audioClipPtr->getWarpTimeManager();
+
+    // Remove any existing markers
+    warpManager.removeAllMarkers();
+
+    // Get cached transients from AudioThumbnailManager
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (!clip)
+        return;
+
+    auto* cachedTransients =
+        AudioThumbnailManager::getInstance().getCachedTransients(clip->audioFilePath);
+    DBG("AudioBridge::enableWarp cachedTransients="
+        << (cachedTransients ? juce::String(cachedTransients->size()) : "null")
+        << " file=" << clip->audioFilePath);
+    if (cachedTransients) {
+        // Insert identity-mapped markers at each transient position
+        for (double t : *cachedTransients) {
+            auto pos = te::TimePosition::fromSeconds(t);
+            warpManager.insertMarker(te::WarpMarker(pos, pos));
+        }
+    }
+
+    // Set end marker to source length
+    auto sourceLen = warpManager.getSourceLength();
+    warpManager.setWarpEndMarkerTime(te::TimePosition::fromSeconds(0.0) + sourceLen);
+
+    DBG("AudioBridge::enableWarp clip " << clipId << " -> " << warpManager.getMarkers().size()
+                                        << " markers");
+}
+
+void AudioBridge::disableWarp(ClipId clipId) {
+    auto* audioClipPtr = findWaveAudioClip(edit_, clipIdToEngineId_, clipId);
+    if (!audioClipPtr)
+        return;
+
+    auto& warpManager = audioClipPtr->getWarpTimeManager();
+    warpManager.removeAllMarkers();
+
+    DBG("AudioBridge::disableWarp clip " << clipId);
+}
+
+std::vector<AudioBridge::WarpMarkerInfo> AudioBridge::getWarpMarkers(ClipId clipId) {
+    std::vector<WarpMarkerInfo> result;
+
+    auto* audioClipPtr = findWaveAudioClip(edit_, clipIdToEngineId_, clipId);
+    if (!audioClipPtr) {
+        DBG("AudioBridge::getWarpMarkers clip " << clipId << " -> no TE clip found");
+        return result;
+    }
+
+    auto& warpManager = audioClipPtr->getWarpTimeManager();
+    const auto& markers = warpManager.getMarkers();
+
+    // Skip the first and last markers — they are TE's internal boundary markers
+    // (start at 0,0 and end at sourceLen,sourceLen) created by removeAllMarkers().
+    int count = markers.size();
+    if (count <= 2) {
+        // Only boundary markers, no user-visible warp markers
+        return result;
+    }
+    result.reserve(static_cast<size_t>(count - 2));
+    for (int i = 1; i < count - 1; ++i) {
+        auto* marker = markers.getUnchecked(i);
+        result.push_back({marker->sourceTime.inSeconds(), marker->warpTime.inSeconds()});
+    }
+
+    DBG("AudioBridge::getWarpMarkers clip " << clipId << " -> " << result.size() << " markers");
+    return result;
+}
+
+int AudioBridge::addWarpMarker(ClipId clipId, double sourceTime, double warpTime) {
+    auto* audioClipPtr = findWaveAudioClip(edit_, clipIdToEngineId_, clipId);
+    if (!audioClipPtr)
+        return -1;
+
+    auto& warpManager = audioClipPtr->getWarpTimeManager();
+    int teIndex = warpManager.insertMarker(te::WarpMarker(te::TimePosition::fromSeconds(sourceTime),
+                                                          te::TimePosition::fromSeconds(warpTime)));
+    // Convert TE index to UI index (skip first boundary marker)
+    return teIndex - 1;
+}
+
+double AudioBridge::moveWarpMarker(ClipId clipId, int index, double newWarpTime) {
+    auto* audioClipPtr = findWaveAudioClip(edit_, clipIdToEngineId_, clipId);
+    if (!audioClipPtr)
+        return newWarpTime;
+
+    // Convert UI index to TE index (skip first boundary marker)
+    auto& warpManager = audioClipPtr->getWarpTimeManager();
+    auto result = warpManager.moveMarker(index + 1, te::TimePosition::fromSeconds(newWarpTime));
+    return result.inSeconds();
+}
+
+void AudioBridge::removeWarpMarker(ClipId clipId, int index) {
+    auto* audioClipPtr = findWaveAudioClip(edit_, clipIdToEngineId_, clipId);
+    if (!audioClipPtr)
+        return;
+
+    // Convert UI index to TE index (skip first boundary marker)
+    auto& warpManager = audioClipPtr->getWarpTimeManager();
+    warpManager.removeMarker(index + 1);
 }
 
 }  // namespace magda

@@ -124,6 +124,7 @@ class InspectorContent : public PanelContent,
     std::unique_ptr<magda::SvgButton> clipContentOffsetIcon_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipContentOffsetValue_;
     std::unique_ptr<magda::SvgButton> clipLoopToggle_;
+    juce::TextButton clipWarpToggle_;
     juce::Label clipLoopPosLabel_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopPosValue_;
     juce::Label clipLoopLengthLabel_;

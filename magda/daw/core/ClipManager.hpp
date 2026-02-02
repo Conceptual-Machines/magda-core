@@ -166,6 +166,10 @@ class ClipManager {
     void setClipLaunchMode(ClipId clipId, LaunchMode mode);
     void setClipLaunchQuantize(ClipId clipId, LaunchQuantize quantize);
 
+    // Warp
+    /** @brief Enable or disable warp markers on an audio clip */
+    void setClipWarpEnabled(ClipId clipId, bool enabled);
+
     // Audio-specific
     /** @brief Set the file offset for audio trimming */
     void setAudioOffset(ClipId clipId, double offset);

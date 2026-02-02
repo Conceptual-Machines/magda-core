@@ -24,7 +24,8 @@ namespace magda::daw::ui {
  */
 class WaveformEditorContent : public PanelContent,
                               public magda::ClipManagerListener,
-                              public TimelineStateListener {
+                              public TimelineStateListener,
+                              public juce::Timer {
   public:
     WaveformEditorContent();
     ~WaveformEditorContent() override;
@@ -97,6 +98,7 @@ class WaveformEditorContent : public PanelContent,
     std::unique_ptr<WaveformGridComponent> gridComponent_;
     std::unique_ptr<magda::TimeRuler> timeRuler_;
     std::unique_ptr<juce::TextButton> timeModeButton_;
+    std::unique_ptr<juce::TextButton> warpModeButton_;
     std::unique_ptr<juce::Label> bpmLabel_;
 
     // Playhead overlay
@@ -121,6 +123,17 @@ class WaveformEditorContent : public PanelContent,
 
     // Update the grid's loop boundary from clip info
     void updateLoopBoundary(const magda::ClipInfo& clip);
+
+    // Warp marker helpers
+    void refreshWarpMarkers();
+    magda::AudioBridge* getBridge();
+
+    // Warp state tracking
+    bool wasWarpEnabled_ = false;
+
+    // Transient detection polling
+    bool transientsCached_ = false;
+    void timerCallback() override;
 
     // Header drag-zoom state
     bool headerDragActive_ = false;

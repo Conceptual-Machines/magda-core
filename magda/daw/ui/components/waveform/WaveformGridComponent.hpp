@@ -2,6 +2,9 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <vector>
+
+#include "audio/AudioBridge.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
 
@@ -28,6 +31,7 @@ class WaveformGridComponent : public juce::Component {
     void mouseDrag(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
+    void mouseDoubleClick(const juce::MouseEvent& event) override;
 
     // ========================================================================
     // Configuration
@@ -87,6 +91,22 @@ class WaveformGridComponent : public juce::Component {
      */
     void setLoopEndSeconds(double loopEndSeconds);
 
+    /**
+     * @brief Set detected transient times (in source file seconds)
+     * @param times Array of transient times in source-file seconds
+     */
+    void setTransientTimes(const juce::Array<double>& times);
+
+    // ========================================================================
+    // Warp Mode
+    // ========================================================================
+
+    /** Enable/disable warp marker display and interaction */
+    void setWarpMode(bool enabled);
+
+    /** Update warp markers for display */
+    void setWarpMarkers(const std::vector<magda::AudioBridge::WarpMarkerInfo>& markers);
+
     // ========================================================================
     // Coordinate Conversion
     // ========================================================================
@@ -110,6 +130,11 @@ class WaveformGridComponent : public juce::Component {
     // ========================================================================
 
     std::function<void()> onWaveformChanged;
+
+    // Warp marker callbacks
+    std::function<void(double sourceTime, double warpTime)> onWarpMarkerAdd;
+    std::function<void(int index, double newWarpTime)> onWarpMarkerMove;
+    std::function<void(int index)> onWarpMarkerRemove;
 
   private:
     magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
@@ -135,7 +160,14 @@ class WaveformGridComponent : public juce::Component {
     int minimumHeight_ = 400;
 
     // Drag state
-    enum class DragMode { None, ResizeLeft, ResizeRight, StretchLeft, StretchRight };
+    enum class DragMode {
+        None,
+        ResizeLeft,
+        ResizeRight,
+        StretchLeft,
+        StretchRight,
+        MoveWarpMarker
+    };
     DragMode dragMode_ = DragMode::None;
     double dragStartAudioOffset_ = 0.0;
     double dragStartLength_ = 0.0;
@@ -148,8 +180,20 @@ class WaveformGridComponent : public juce::Component {
     static constexpr int DRAG_UPDATE_INTERVAL_MS = 50;  // Update arrangement view every 50ms
     juce::int64 lastDragUpdateTime_ = 0;
 
+    // Transient markers (source file seconds)
+    juce::Array<double> transientTimes_;
+
+    // Warp mode state
+    bool warpMode_ = false;
+    std::vector<magda::AudioBridge::WarpMarkerInfo> warpMarkers_;
+    int hoveredMarkerIndex_ = -1;
+    int draggingMarkerIndex_ = -1;
+    double dragStartWarpTime_ = 0.0;
+
     // Painting helpers
     void paintWaveform(juce::Graphics& g, const magda::ClipInfo& clip);
+    void paintTransientMarkers(juce::Graphics& g, const magda::ClipInfo& clip);
+    void paintWarpMarkers(juce::Graphics& g, const magda::ClipInfo& clip);
     void paintClipBoundaries(juce::Graphics& g);
     void paintNoClipMessage(juce::Graphics& g);
 
@@ -157,6 +201,11 @@ class WaveformGridComponent : public juce::Component {
     bool isNearLeftEdge(int x, const magda::ClipInfo& clip) const;
     bool isNearRightEdge(int x, const magda::ClipInfo& clip) const;
     bool isInsideWaveform(int x, const magda::ClipInfo& clip) const;
+
+    // Warp marker helpers
+    int findMarkerAtPixel(int x) const;
+    double snapToNearestTransient(double time) const;
+    static constexpr int WARP_MARKER_HIT_DISTANCE = 5;
 
     // Get current clip
     const magda::ClipInfo* getClip() const;

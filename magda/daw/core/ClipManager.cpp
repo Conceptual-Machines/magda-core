@@ -439,6 +439,15 @@ void ClipManager::setClipLaunchQuantize(ClipId clipId, LaunchQuantize quantize) 
     }
 }
 
+void ClipManager::setClipWarpEnabled(ClipId clipId, bool enabled) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio && clip->warpEnabled != enabled) {
+            clip->warpEnabled = enabled;
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
 void ClipManager::setAudioOffset(ClipId clipId, double offset) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {

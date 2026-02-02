@@ -118,12 +118,20 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
             double loopCycle = loopEndSeconds_;
             double fileStart = clip.audioOffset;
             double fileEnd = clip.audioOffset + loopCycle / clip.audioStretchFactor;
-            if (fileDuration > 0.0 && fileEnd > fileDuration)
+            bool fileClamped = false;
+            if (fileDuration > 0.0 && fileEnd > fileDuration) {
                 fileEnd = fileDuration;
+                fileClamped = true;
+            }
+
+            // If the source audio is shorter than the loop cycle, reduce the
+            // draw width to match so the thumbnail isn't stretched beyond the file.
+            double actualDisplayCycle =
+                fileClamped ? (fileEnd - fileStart) * clip.audioStretchFactor : loopCycle;
 
             double timePos = 0.0;
             while (timePos < clip.length) {
-                double cycleEnd = std::min(timePos + loopCycle, clip.length);
+                double cycleEnd = std::min(timePos + actualDisplayCycle, clip.length);
                 int drawX = waveformRect.getX() + static_cast<int>(timePos * horizontalZoom_);
                 int drawRight = waveformRect.getX() + static_cast<int>(cycleEnd * horizontalZoom_);
                 auto cycleRect = juce::Rectangle<int>(drawX, waveformRect.getY(), drawRight - drawX,
@@ -155,6 +163,13 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
         }
     }
     g.restoreState();
+
+    // Draw transient or warp markers
+    if (warpMode_ && !warpMarkers_.empty()) {
+        paintWarpMarkers(g, clip);
+    } else if (!warpMode_ && !transientTimes_.isEmpty()) {
+        paintTransientMarkers(g, clip);
+    }
 
     // Draw center line
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
@@ -230,6 +245,68 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     }
 }
 
+void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda::ClipInfo& clip) {
+    auto bounds = getLocalBounds().reduced(LEFT_PADDING, TOP_PADDING);
+    if (bounds.getWidth() <= 0 || bounds.getHeight() <= 0)
+        return;
+
+    double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
+    int positionPixels = timeToPixel(displayStartTime);
+    int widthPixels = static_cast<int>(clip.length * horizontalZoom_);
+    if (widthPixels <= 0)
+        return;
+
+    auto waveformRect =
+        juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
+
+    g.setColour(juce::Colours::white.withAlpha(0.25f));
+
+    bool isLooped = loopEndSeconds_ > 0.0 && loopEndSeconds_ < clip.length;
+
+    // Visible pixel range for culling
+    int visibleLeft = 0;
+    int visibleRight = getWidth();
+
+    auto drawMarkersForCycle = [&](double cycleOffset, double sourceStart, double sourceEnd) {
+        for (double t : transientTimes_) {
+            if (t < sourceStart || t >= sourceEnd)
+                continue;
+
+            // Convert source time to display time
+            double displayTime = (t - sourceStart) * clip.audioStretchFactor + cycleOffset;
+            double absDisplayTime = displayTime + displayStartTime;
+            int px = timeToPixel(absDisplayTime);
+
+            // Cull outside visible bounds
+            if (px < visibleLeft || px > visibleRight)
+                continue;
+
+            // Cull outside waveform rect
+            if (px < waveformRect.getX() || px > waveformRect.getRight())
+                continue;
+
+            g.drawVerticalLine(px, static_cast<float>(waveformRect.getY()),
+                               static_cast<float>(waveformRect.getBottom()));
+        }
+    };
+
+    if (isLooped) {
+        double loopCycle = loopEndSeconds_;
+        double fileStart = clip.audioOffset;
+        double fileEnd = clip.audioOffset + loopCycle / clip.audioStretchFactor;
+
+        double timePos = 0.0;
+        while (timePos < clip.length) {
+            drawMarkersForCycle(timePos, fileStart, fileEnd);
+            timePos += loopCycle;
+        }
+    } else {
+        double sourceStart = clip.audioOffset;
+        double sourceEnd = clip.audioOffset + clip.length / clip.audioStretchFactor;
+        drawMarkersForCycle(0.0, sourceStart, sourceEnd);
+    }
+}
+
 void WaveformGridComponent::paintNoClipMessage(juce::Graphics& g) {
     auto bounds = getLocalBounds();
     g.setColour(DarkTheme::getSecondaryTextColour());
@@ -247,6 +324,7 @@ void WaveformGridComponent::resized() {
 
 void WaveformGridComponent::setClip(magda::ClipId clipId) {
     editingClipId_ = clipId;
+    transientTimes_.clear();
 
     // Always update clip info (even if same clip, properties may have changed)
     const auto* clip = getClip();
@@ -304,6 +382,29 @@ void WaveformGridComponent::setLoopEndSeconds(double loopEndSeconds) {
         loopEndSeconds_ = val;
         repaint();
     }
+}
+
+void WaveformGridComponent::setTransientTimes(const juce::Array<double>& times) {
+    transientTimes_ = times;
+    repaint();
+}
+
+void WaveformGridComponent::setWarpMode(bool enabled) {
+    if (warpMode_ != enabled) {
+        warpMode_ = enabled;
+        hoveredMarkerIndex_ = -1;
+        draggingMarkerIndex_ = -1;
+        if (!enabled) {
+            warpMarkers_.clear();
+        }
+        repaint();
+    }
+}
+
+void WaveformGridComponent::setWarpMarkers(
+    const std::vector<magda::AudioBridge::WarpMarkerInfo>& markers) {
+    warpMarkers_ = markers;
+    repaint();
 }
 
 void WaveformGridComponent::setScrollOffset(int x, int y) {
@@ -374,6 +475,51 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
     int x = event.x;
     bool shiftHeld = event.mods.isShiftDown();
 
+    // Warp mode interaction
+    if (warpMode_) {
+        // Right-click on marker: remove it
+        if (event.mods.isPopupMenu()) {
+            int markerIndex = findMarkerAtPixel(x);
+            if (markerIndex >= 0 && onWarpMarkerRemove) {
+                onWarpMarkerRemove(markerIndex);
+            }
+            return;
+        }
+
+        // Check if clicking on an existing marker to drag it
+        int markerIndex = findMarkerAtPixel(x);
+        if (markerIndex >= 0) {
+            dragMode_ = DragMode::MoveWarpMarker;
+            draggingMarkerIndex_ = markerIndex;
+            dragStartWarpTime_ = warpMarkers_[static_cast<size_t>(markerIndex)].warpTime;
+            dragStartX_ = x;
+            return;
+        }
+
+        // Click on waveform in warp mode: add new marker
+        if (isInsideWaveform(x, *clip)) {
+            double clickTime = pixelToTime(x);
+            // Convert from display time to clip-relative time
+            double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
+            double clipRelativeTime = clickTime - displayStartTime;
+
+            // Convert clip-relative display time to source-file time
+            double sourceTime = clipRelativeTime / clip->audioStretchFactor + clip->audioOffset;
+
+            // Snap to nearest transient (in source-file time) unless Alt is held
+            if (!event.mods.isAltDown()) {
+                sourceTime = snapToNearestTransient(sourceTime);
+            }
+
+            if (onWarpMarkerAdd) {
+                // Identity mapping: sourceTime == warpTime for a new marker
+                onWarpMarkerAdd(sourceTime, sourceTime);
+            }
+        }
+        return;
+    }
+
+    // Non-warp mode: standard trim/stretch interaction
     if (isNearLeftEdge(x, *clip)) {
         dragMode_ = shiftHeld ? DragMode::StretchLeft : DragMode::ResizeLeft;
     } else if (isNearRightEdge(x, *clip)) {
@@ -406,6 +552,25 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
         return;
     }
     if (editingClipId_ == magda::INVALID_CLIP_ID) {
+        return;
+    }
+
+    // Warp marker drag
+    if (dragMode_ == DragMode::MoveWarpMarker) {
+        auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (!clip)
+            return;
+
+        // Pixel delta → display-time delta → source-file-time delta
+        double displayDelta = (event.x - dragStartX_) / horizontalZoom_;
+        double sourceDelta = displayDelta / clip->audioStretchFactor;
+        double newWarpTime = dragStartWarpTime_ + sourceDelta;
+        if (newWarpTime < 0.0)
+            newWarpTime = 0.0;
+
+        if (draggingMarkerIndex_ >= 0 && onWarpMarkerMove) {
+            onWarpMarkerMove(draggingMarkerIndex_, newWarpTime);
+        }
         return;
     }
 
@@ -480,6 +645,12 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
 }
 
 void WaveformGridComponent::mouseUp(const juce::MouseEvent& /*event*/) {
+    if (dragMode_ == DragMode::MoveWarpMarker) {
+        draggingMarkerIndex_ = -1;
+        dragMode_ = DragMode::None;
+        return;
+    }
+
     if (dragMode_ != DragMode::None && editingClipId_ != magda::INVALID_CLIP_ID) {
         // Clear drag mode BEFORE notifying so that updateClipPosition() can
         // update the cached values with the final clip state.
@@ -503,6 +674,24 @@ void WaveformGridComponent::mouseMove(const juce::MouseEvent& event) {
     }
 
     int x = event.x;
+
+    // Warp mode: update hover state
+    if (warpMode_) {
+        int newHovered = findMarkerAtPixel(x);
+        if (newHovered != hoveredMarkerIndex_) {
+            hoveredMarkerIndex_ = newHovered;
+            repaint();
+        }
+
+        if (newHovered >= 0) {
+            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+        } else if (isInsideWaveform(x, *clip)) {
+            setMouseCursor(juce::MouseCursor::CrosshairCursor);
+        } else {
+            setMouseCursor(juce::MouseCursor::NormalCursor);
+        }
+        return;
+    }
 
     if (isNearLeftEdge(x, *clip) || isNearRightEdge(x, *clip)) {
         if (event.mods.isShiftDown()) {
@@ -545,6 +734,118 @@ bool WaveformGridComponent::isInsideWaveform(int x, const magda::ClipInfo& clip)
 
 const magda::ClipInfo* WaveformGridComponent::getClip() const {
     return magda::ClipManager::getInstance().getClip(editingClipId_);
+}
+
+// ============================================================================
+// Warp Marker Painting
+// ============================================================================
+
+void WaveformGridComponent::paintWarpMarkers(juce::Graphics& g, const magda::ClipInfo& clip) {
+    auto bounds = getLocalBounds().reduced(LEFT_PADDING, TOP_PADDING);
+    if (bounds.getWidth() <= 0 || bounds.getHeight() <= 0)
+        return;
+
+    double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
+    int positionPixels = timeToPixel(displayStartTime);
+    int widthPixels = static_cast<int>(clip.length * horizontalZoom_);
+    if (widthPixels <= 0)
+        return;
+
+    auto waveformRect =
+        juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
+
+    int visibleLeft = 0;
+    int visibleRight = getWidth();
+
+    for (int i = 0; i < static_cast<int>(warpMarkers_.size()); ++i) {
+        const auto& marker = warpMarkers_[static_cast<size_t>(i)];
+
+        // Convert warp time (source-file seconds) to clip-relative display time
+        // Same conversion as transient markers: account for audioOffset and stretchFactor
+        double clipRelativeTime = (marker.warpTime - clip.audioOffset) * clip.audioStretchFactor;
+        if (clipRelativeTime < 0.0 || clipRelativeTime > clip.length)
+            continue;
+
+        double displayTime = clipRelativeTime + displayStartTime;
+        int px = timeToPixel(displayTime);
+
+        // Cull outside visible bounds and waveform rect
+        if (px < visibleLeft || px > visibleRight)
+            continue;
+        if (px < waveformRect.getX() || px > waveformRect.getRight())
+            continue;
+
+        // Determine colour: hovered marker is brighter
+        bool isHovered = (i == hoveredMarkerIndex_);
+        bool isDragging = (i == draggingMarkerIndex_);
+        auto markerColour = juce::Colours::yellow;
+
+        if (isDragging) {
+            markerColour = markerColour.brighter(0.3f);
+        } else if (isHovered) {
+            markerColour = markerColour.brighter(0.15f);
+        } else {
+            markerColour = markerColour.withAlpha(0.7f);
+        }
+
+        // Draw vertical line (2px wide)
+        g.setColour(markerColour);
+        g.fillRect(px - 1, waveformRect.getY(), 2, waveformRect.getHeight());
+
+        // Draw small triangle handle at top
+        juce::Path triangle;
+        float fx = static_cast<float>(px);
+        float fy = static_cast<float>(waveformRect.getY());
+        triangle.addTriangle(fx - 4.0f, fy, fx + 4.0f, fy, fx, fy + 6.0f);
+        g.fillPath(triangle);
+    }
+}
+
+// ============================================================================
+// Warp Marker Helpers
+// ============================================================================
+
+int WaveformGridComponent::findMarkerAtPixel(int x) const {
+    const auto* clip = getClip();
+    if (!clip)
+        return -1;
+
+    double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
+
+    for (int i = 0; i < static_cast<int>(warpMarkers_.size()); ++i) {
+        const auto& marker = warpMarkers_[static_cast<size_t>(i)];
+        double clipRelativeTime = (marker.warpTime - clip->audioOffset) * clip->audioStretchFactor;
+        double displayTime = clipRelativeTime + displayStartTime;
+        int px = timeToPixel(displayTime);
+        if (std::abs(x - px) <= WARP_MARKER_HIT_DISTANCE)
+            return i;
+    }
+    return -1;
+}
+
+double WaveformGridComponent::snapToNearestTransient(double time) const {
+    static constexpr double SNAP_THRESHOLD = 0.05;  // 50ms snap distance
+    double closest = time;
+    double closestDist = SNAP_THRESHOLD;
+
+    for (double t : transientTimes_) {
+        double dist = std::abs(t - time);
+        if (dist < closestDist) {
+            closestDist = dist;
+            closest = t;
+        }
+    }
+    return closest;
+}
+
+void WaveformGridComponent::mouseDoubleClick(const juce::MouseEvent& event) {
+    if (!warpMode_ || editingClipId_ == magda::INVALID_CLIP_ID)
+        return;
+
+    int markerIndex = findMarkerAtPixel(event.x);
+    if (markerIndex >= 0 && onWarpMarkerRemove) {
+        onWarpMarkerRemove(markerIndex);
+    }
 }
 
 }  // namespace magda::daw::ui
