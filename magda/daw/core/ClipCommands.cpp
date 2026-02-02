@@ -39,9 +39,6 @@ void SplitClipCommand::restoreState(const ClipInfo& state) {
 
 void SplitClipCommand::performAction() {
     rightClipId_ = ClipManager::getInstance().splitClip(clipId_, splitTime_);
-
-    std::cout << "📝 UNDO: Split clip " << clipId_ << " at " << splitTime_ << " -> new clip "
-              << rightClipId_ << std::endl;
 }
 
 bool SplitClipCommand::validateState() const {
@@ -213,12 +210,10 @@ ClipInfo DeleteClipCommand::captureState() {
 
 void DeleteClipCommand::restoreState(const ClipInfo& state) {
     ClipManager::getInstance().restoreClip(state);
-    std::cout << "📝 UNDO: Restored clip " << clipId_ << std::endl;
 }
 
 void DeleteClipCommand::performAction() {
     ClipManager::getInstance().deleteClip(clipId_);
-    std::cout << "📝 UNDO: Deleted clip " << clipId_ << std::endl;
 }
 
 bool DeleteClipCommand::validateState() const {
@@ -529,9 +524,6 @@ void JoinClipsCommand::performAction() {
 
     // Delete right clip
     clipManager.deleteClip(rightClipId_);
-
-    std::cout << "📝 Join clips " << leftClipId_ << " + " << rightClipId_ << " -> " << leftClipId_
-              << std::endl;
 }
 
 bool JoinClipsCommand::validateState() const {

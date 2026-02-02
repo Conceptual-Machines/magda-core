@@ -690,7 +690,15 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
         case cut:
             if (!selectedClips.empty()) {
-                clipManager.cutToClipboard(selectedClips);
+                clipManager.copyToClipboard(selectedClips);
+                if (selectedClips.size() > 1)
+                    UndoManager::getInstance().beginCompoundOperation("Cut Clips");
+                for (auto clipId : selectedClips) {
+                    auto cmd = std::make_unique<DeleteClipCommand>(clipId);
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+                }
+                if (selectedClips.size() > 1)
+                    UndoManager::getInstance().endCompoundOperation();
                 selectionManager.clearSelection();
             }
             return true;
@@ -776,15 +784,14 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             }
             return true;
 
-        case selectAll:
-            if (true) {
-                const auto& allClips = clipManager.getArrangementClips();
-                std::unordered_set<ClipId> allClipIds;
-                for (const auto& clip : allClips) {
-                    allClipIds.insert(clip.id);
-                }
-                selectionManager.selectClips(allClipIds);
+        case selectAll: {
+            const auto& allClips = clipManager.getArrangementClips();
+            std::unordered_set<ClipId> allClipIds;
+            for (const auto& clip : allClips) {
+                allClipIds.insert(clip.id);
             }
+            selectionManager.selectClips(allClipIds);
+        }
             return true;
 
         case joinClips:
@@ -1521,13 +1528,20 @@ void MainWindow::setupMenuCallbacks() {
         auto& selectionManager = SelectionManager::getInstance();
         auto selectedClips = selectionManager.getSelectedClips();
         if (!selectedClips.empty()) {
-            clipManager.cutToClipboard(selectedClips);
+            clipManager.copyToClipboard(selectedClips);
+            if (selectedClips.size() > 1)
+                UndoManager::getInstance().beginCompoundOperation("Cut Clips");
+            for (auto clipId : selectedClips) {
+                auto cmd = std::make_unique<DeleteClipCommand>(clipId);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+            }
+            if (selectedClips.size() > 1)
+                UndoManager::getInstance().endCompoundOperation();
             selectionManager.clearSelection();
         }
     };
 
     callbacks.onCopy = [this]() {
-        std::cout << "📋 MainWindow::onCopy callback called" << std::endl;
         auto& clipManager = ClipManager::getInstance();
         auto& selectionManager = SelectionManager::getInstance();
         auto selectedClips = selectionManager.getSelectedClips();
@@ -1537,11 +1551,9 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onPaste = [this]() {
-        std::cout << "📋 MainWindow::onPaste callback called" << std::endl;
         auto& clipManager = ClipManager::getInstance();
         auto& selectionManager = SelectionManager::getInstance();
         if (clipManager.hasClipsInClipboard()) {
-            std::cout << "📋 Clipboard has clips, proceeding with paste..." << std::endl;
             // Paste at edit cursor position from MainView
             double pasteTime =
                 mainComponent->mainView

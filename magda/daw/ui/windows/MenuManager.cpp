@@ -253,12 +253,10 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
                 callbacks_.onCut();
             break;
         case Copy:
-            std::cout << "📋 MenuManager::menuItemSelected - Copy" << std::endl;
             if (callbacks_.onCopy)
                 callbacks_.onCopy();
             break;
         case Paste:
-            std::cout << "📋 MenuManager::menuItemSelected - Paste" << std::endl;
             if (callbacks_.onPaste)
                 callbacks_.onPaste();
             break;

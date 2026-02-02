@@ -110,8 +110,9 @@ template <typename StateT> class SnapshotCommand : public ValidatedCommand {
         restoreState(beforeState_);
 
         if (!validateState()) {
-            // State corrupted - try to restore after state
-            restoreState(afterState_);
+            std::cerr << "SnapshotCommand::undo: validation failed after restoring beforeState_. "
+                         "Undo may have left the system in an inconsistent state."
+                      << std::endl;
         }
     }
 

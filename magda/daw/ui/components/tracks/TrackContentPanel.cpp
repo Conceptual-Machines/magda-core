@@ -594,9 +594,6 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
         } else if (isOnExistingSelection(event.x, event.y)) {
             // Clicked inside existing time selection - prepare to move it
             const auto& selection = timelineController->getState().selection;
-            std::cout << "GRAB SELECTION: active=" << selection.isActive()
-                      << " start=" << selection.startTime << " end=" << selection.endTime
-                      << " tracks=" << selection.trackIndices.size() << std::endl;
             isMovingSelection = true;
             isCreatingSelection = false;
             currentDragType_ = DragType::MoveSelection;
@@ -789,24 +786,13 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
         // Trim all captured clips to the new selection bounds using undo commands
         auto& clipManager = ClipManager::getInstance();
 
-        std::cout << "========================================" << std::endl;
-        std::cout << "TRIM OPERATION DEBUG" << std::endl;
-        std::cout << "  Selection moved from " << moveSelectionOriginalStart << "-"
-                  << moveSelectionOriginalEnd << " to " << newStart << "-" << newEnd << std::endl;
-        std::cout << "  Captured clips: " << originalClipsInSelection_.size() << std::endl;
-
         // Collect all trim operations
         std::vector<std::pair<ClipId, std::pair<double, bool>>> trimOperations;
 
         for (const auto& [clipId, originalData] : originalClipsInSelection_) {
             const auto* clip = clipManager.getClip(clipId);
-            if (!clip) {
-                std::cout << "  ❌ Clip " << clipId << " not found" << std::endl;
+            if (!clip)
                 continue;
-            }
-
-            std::cout << "  Clip " << clipId << ": " << clip->startTime << "-" << clip->getEndTime()
-                      << " (len=" << clip->length << ")" << std::endl;
 
             // Check if clip overlaps with new selection
             if (clip->startTime < newEnd && clip->getEndTime() > newStart) {
@@ -815,76 +801,41 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
                 double clipNewEnd = std::min(clip->getEndTime(), newEnd);
                 double newLength = clipNewEnd - clipNewStart;
 
-                std::cout << "    -> Will trim to: " << clipNewStart << "-" << clipNewEnd
-                          << " (newLen=" << newLength << ")" << std::endl;
-
                 if (newLength > 0.01) {  // At least 10ms
                     // Trim from left if needed
                     if (clipNewStart > clip->startTime) {
-                        std::cout << "    -> ADD: Trim LEFT to length " << newLength << std::endl;
                         trimOperations.push_back({clipId, {newLength, true}});
                     }
                     // Trim from right if needed
                     else if (clipNewEnd < clip->getEndTime()) {
-                        std::cout << "    -> ADD: Trim RIGHT to length " << newLength << std::endl;
                         trimOperations.push_back({clipId, {newLength, false}});
                     }
                 }
             }
         }
 
-        std::cout << "  Total trim operations: " << trimOperations.size() << std::endl;
-
         // Use compound operation if trimming multiple clips
-        if (trimOperations.size() > 1) {
-            std::cout << "  ✓ Starting compound operation" << std::endl;
+        if (trimOperations.size() > 1)
             UndoManager::getInstance().beginCompoundOperation("Trim Clips");
-        } else {
-            std::cout << "  ℹ Single operation, no compound needed" << std::endl;
-        }
 
-        // Execute all trim commands
-        for (size_t i = 0; i < trimOperations.size(); i++) {
-            const auto& [clipId, params] = trimOperations[i];
-            std::cout << "  Executing trim " << (i + 1) << "/" << trimOperations.size()
-                      << ": clip=" << clipId << " newLen=" << params.first
-                      << " fromStart=" << (params.second ? "YES" : "NO") << std::endl;
+        for (const auto& [clipId, params] : trimOperations) {
             auto cmd = std::make_unique<ResizeClipCommand>(clipId, params.first, params.second);
             UndoManager::getInstance().executeCommand(std::move(cmd));
         }
 
-        if (trimOperations.size() > 1) {
-            std::cout << "  ✓ Ending compound operation" << std::endl;
+        if (trimOperations.size() > 1)
             UndoManager::getInstance().endCompoundOperation();
-        }
-
-        std::cout << "========================================" << std::endl;
 
         // Move edit cursor to the trimmed edge position
-        std::cout << "🔧 TRIM COMPLETE:" << std::endl;
-        std::cout << "  Original selection: " << moveSelectionOriginalStart << " - "
-                  << moveSelectionOriginalEnd << std::endl;
-        std::cout << "  New selection: " << newStart << " - " << newEnd << std::endl;
-        std::cout << "  Drag type: "
-                  << (currentDragType_ == DragType::ResizeSelectionLeft ? "LEFT" : "RIGHT")
-                  << std::endl;
-
         if (timelineController) {
             double cursorPosition =
                 currentDragType_ == DragType::ResizeSelectionLeft ? newStart : newEnd;
-            std::cout << "  Setting edit cursor to: " << cursorPosition << std::endl;
             timelineController->dispatch(SetEditCursorEvent{cursorPosition});
-            std::cout << "  Edit cursor dispatched!" << std::endl;
-        } else {
-            std::cout << "  ❌ No timelineController!" << std::endl;
         }
 
         // Update time selection to reflect new bounds
         if (onTimeSelectionChanged) {
-            std::cout << "  Updating time selection visuals" << std::endl;
             onTimeSelectionChanged(newStart, newEnd, moveSelectionOriginalTracks);
-        } else {
-            std::cout << "  ❌ No onTimeSelectionChanged callback!" << std::endl;
         }
 
         // Clear drag state
@@ -947,17 +898,10 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
     bool wasInUpperZone = isInUpperTrackZone(mouseDownY);
     bool clickedOnClip = getClipComponentAt(mouseDownX, mouseDownY) != nullptr;
 
-    std::cout << "📍 mouseUp: wasClick=" << wasClick << ", wasInUpperZone=" << wasInUpperZone
-              << ", clickedOnClip=" << clickedOnClip
-              << ", isSelectable=" << isInSelectableArea(mouseDownX, mouseDownY) << std::endl;
-
     if (wasClick && wasInUpperZone && !clickedOnClip &&
         isInSelectableArea(mouseDownX, mouseDownY)) {
         // Simple click in upper zone empty space - set edit cursor
         double clickTime = juce::jmax(0.0, juce::jmin(timelineLength, pixelToTime(event.x)));
-
-        std::cout << "✅ Setting edit cursor from UPPER zone click at time: " << clickTime
-                  << std::endl;
 
         // Apply snap to grid if callback is set
         if (snapTimeToGrid) {
@@ -997,9 +941,6 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
             if (!isOnExistingSelection(event.x, event.y)) {
                 double clickTime =
                     juce::jmax(0.0, juce::jmin(timelineLength, pixelToTime(event.x)));
-
-                std::cout << "✅ Setting edit cursor from LOWER zone click at time: " << clickTime
-                          << std::endl;
 
                 // Apply snap to grid if callback is set
                 if (snapTimeToGrid) {
@@ -2094,9 +2035,6 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
     if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {
         const auto& selectedClips = selectionManager.getSelectedClips();
         if (!selectedClips.empty()) {
-            std::cout << "🗑️  Deleting " << selectedClips.size() << " selected clip(s)..."
-                      << std::endl;
-
             // Copy to vector since we're modifying during iteration
             std::vector<ClipId> clipsToDelete(selectedClips.begin(), selectedClips.end());
 
@@ -2106,7 +2044,6 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
             }
 
             for (ClipId clipId : clipsToDelete) {
-                std::cout << "🗑️  Deleting clip " << clipId << std::endl;
                 auto cmd = std::make_unique<DeleteClipCommand>(clipId);
                 UndoManager::getInstance().executeCommand(std::move(cmd));
             }
@@ -2116,7 +2053,6 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
             }
 
             selectionManager.clearSelection();
-            std::cout << "🗑️  Delete complete" << std::endl;
             grabKeyboardFocus();  // Keep focus for subsequent operations
             return true;
         }
