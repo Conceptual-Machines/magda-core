@@ -526,4 +526,36 @@ bool JoinClipsCommand::validateState() const {
     return true;
 }
 
+// ============================================================================
+// StretchClipCommand
+// ============================================================================
+
+StretchClipCommand::StretchClipCommand(ClipId clipId, const ClipInfo& beforeState)
+    : clipId_(clipId), beforeState_(beforeState) {}
+
+void StretchClipCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip)
+        return;
+
+    if (afterState_.id == INVALID_CLIP_ID) {
+        // First execution: clip is already in final state from drag updates.
+        // Just capture it for redo.
+        afterState_ = *clip;
+    } else {
+        // Redo: restore the after-state
+        *clip = afterState_;
+        clipManager.forceNotifyClipsChanged();
+    }
+}
+
+void StretchClipCommand::undo() {
+    auto& clipManager = ClipManager::getInstance();
+    if (auto* clip = clipManager.getClip(clipId_)) {
+        *clip = beforeState_;
+        clipManager.forceNotifyClipsChanged();
+    }
+}
+
 }  // namespace magda

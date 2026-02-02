@@ -531,6 +531,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             clip->audioFilePath.isNotEmpty()) {
             dragMode_ = DragMode::StretchLeft;
             dragStartStretchFactor_ = clip->audioStretchFactor;
+            dragStartClipSnapshot_ = *clip;
         } else {
             dragMode_ = DragMode::ResizeLeft;
         }
@@ -539,6 +540,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             clip->audioFilePath.isNotEmpty()) {
             dragMode_ = DragMode::StretchRight;
             dragStartStretchFactor_ = clip->audioStretchFactor;
+            dragStartClipSnapshot_ = *clip;
         } else {
             dragMode_ = DragMode::ResizeRight;
         }
@@ -962,13 +964,17 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 newStretchFactor = juce::jlimit(0.25, 4.0, newStretchFactor);
                 finalLength = dragStartLength_ * (newStretchFactor / dragStartStretchFactor_);
 
-                // Apply directly (clip state may have been modified by throttled updates)
+                // Apply final values
                 auto& cm = ClipManager::getInstance();
                 if (auto* clip = cm.getClip(clipId_)) {
                     clip->length = finalLength;
                     clip->audioStretchFactor = newStretchFactor;
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
+
+                // Register with undo system (beforeState saved at mouseDown)
+                auto cmd = std::make_unique<StretchClipCommand>(clipId_, dragStartClipSnapshot_);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
                 break;
             }
 
@@ -991,7 +997,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 finalLength = dragStartLength_ * (newStretchFactor / dragStartStretchFactor_);
                 finalStartTime = endTime - finalLength;
 
-                // Apply directly (clip state may have been modified by throttled updates)
+                // Apply final values
                 auto& cm = ClipManager::getInstance();
                 if (auto* clip = cm.getClip(clipId_)) {
                     clip->startTime = finalStartTime;
@@ -999,6 +1005,10 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                     clip->audioStretchFactor = newStretchFactor;
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
+
+                // Register with undo system (beforeState saved at mouseDown)
+                auto cmd = std::make_unique<StretchClipCommand>(clipId_, dragStartClipSnapshot_);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
                 break;
             }
 

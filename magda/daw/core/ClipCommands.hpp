@@ -295,4 +295,29 @@ class JoinClipsCommand : public SnapshotCommand<JoinClipsState> {
     ClipId rightClipId_;
 };
 
+/**
+ * @brief Command for stretching a clip (time-stretch)
+ *
+ * Since stretch operations modify the clip directly during drag (for live preview),
+ * this command takes the before-state saved at drag start. The clip is already in
+ * its final state when execute() is called, so performAction is a no-op.
+ * Undo restores the full ClipInfo snapshot from before the stretch began.
+ */
+class StretchClipCommand : public UndoableCommand {
+  public:
+    StretchClipCommand(ClipId clipId, const ClipInfo& beforeState);
+
+    juce::String getDescription() const override {
+        return "Stretch Clip";
+    }
+
+    void execute() override;
+    void undo() override;
+
+  private:
+    ClipId clipId_;
+    ClipInfo beforeState_;
+    ClipInfo afterState_;
+};
+
 }  // namespace magda
