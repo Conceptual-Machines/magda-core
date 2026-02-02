@@ -22,6 +22,7 @@ set(TEST_SOURCES
     test_waveform_editor_absolute_mode.cpp
     test_clip_commands.cpp
     test_clip_resize_operations.cpp
+    test_looped_waveform_tile.cpp
     test_project_serialization.cpp
     test_session_clip_playback.cpp
     test_tracktion_engine_wrapper_refactoring.cpp
