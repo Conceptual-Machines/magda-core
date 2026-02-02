@@ -73,8 +73,8 @@ class ClipManager {
      * @param startTime Position on timeline - only used for Arrangement view
      */
     ClipId createAudioClip(TrackId trackId, double startTime, double length,
-                           const juce::String& audioFilePath,
-                           ClipView view = ClipView::Arrangement);
+                           const juce::String& audioFilePath, ClipView view = ClipView::Arrangement,
+                           double projectBPM = 120.0);
 
     /**
      * @brief Create an empty MIDI clip
@@ -159,7 +159,7 @@ class ClipManager {
 
     void setClipName(ClipId clipId, const juce::String& name);
     void setClipColour(ClipId clipId, juce::Colour colour);
-    void setClipLoopEnabled(ClipId clipId, bool enabled);
+    void setClipLoopEnabled(ClipId clipId, bool enabled, double projectBPM = 120.0);
     void setClipLoopOffset(ClipId clipId, double offsetBeats);
     void setClipLoopLength(ClipId clipId, double lengthBeats);
     void setClipMidiOffset(ClipId clipId, double offsetBeats);

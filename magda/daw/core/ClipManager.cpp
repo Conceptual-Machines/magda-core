@@ -18,7 +18,8 @@ ClipManager& ClipManager::getInstance() {
 // ============================================================================
 
 ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double length,
-                                    const juce::String& audioFilePath, ClipView view) {
+                                    const juce::String& audioFilePath, ClipView view,
+                                    double projectBPM) {
     ClipInfo clip;
     clip.id = nextClipId_++;
     clip.trackId = trackId;
@@ -36,17 +37,15 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     // Detect BPM from audio file
     clip.detectedBPM = AudioThumbnailManager::getInstance().detectBPM(audioFilePath);
 
-    // Compute loop length in beats from file duration
+    // Compute loop length in project beats from file duration.
+    // internalLoopLength is in project beats (converted via tempoSeq.beatsToTime
+    // in AudioBridge), so we use project BPM here.
     auto* thumbnail = AudioThumbnailManager::getInstance().getThumbnail(audioFilePath);
     if (thumbnail) {
         double fileDuration = thumbnail->getTotalLength();
         if (fileDuration > 0.0) {
-            double bpmForCalc = clip.detectedBPM > 0.0 ? clip.detectedBPM : 120.0;
-            double rawBeats = fileDuration * bpmForCalc / 60.0;
-            // Snap to nearest beat for clean loops
-            clip.internalLoopLength = std::round(rawBeats);
-            if (clip.internalLoopLength < 1.0)
-                clip.internalLoopLength = 1.0;
+            double rawBeats = fileDuration * projectBPM / 60.0;
+            clip.internalLoopLength = std::max(1.0, std::round(rawBeats));
         }
     }
 
@@ -367,23 +366,17 @@ void ClipManager::setClipColour(ClipId clipId, juce::Colour colour) {
     }
 }
 
-void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled) {
+void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double projectBPM) {
     if (auto* clip = getClip(clipId)) {
         clip->internalLoopEnabled = enabled;
 
-        // When enabling loop on audio clips with default loop length, set to file duration
-        if (enabled && clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty() &&
-            std::abs(clip->internalLoopLength - 4.0) < 0.001) {
-            auto* thumbnail =
-                AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
-            if (thumbnail) {
-                double fileDuration = thumbnail->getTotalLength();
-                if (fileDuration > 0.0) {
-                    double bpmForCalc = clip->detectedBPM > 0.0 ? clip->detectedBPM : 120.0;
-                    double rawBeats = fileDuration * bpmForCalc / 60.0;
-                    clip->internalLoopLength = std::max(1.0, std::round(rawBeats));
-                }
-            }
+        // When enabling loop on audio clips, set loop length from clip's
+        // current timeline length converted to project beats.
+        // internalLoopLength is in project beats (converted via tempoSeq.beatsToTime
+        // in AudioBridge), so we must use project BPM here.
+        if (enabled && clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty()) {
+            double rawBeats = clip->length * projectBPM / 60.0;
+            clip->internalLoopLength = std::max(1.0, std::round(rawBeats));
         }
 
         // When disabling loop on audio clips, clamp length to actual file content

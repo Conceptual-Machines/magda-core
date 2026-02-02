@@ -392,7 +392,11 @@ InspectorContent::InspectorContent() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID) {
             bool newState = !clipLoopToggle_->isActive();
             clipLoopToggle_->setActive(newState);
-            magda::ClipManager::getInstance().setClipLoopEnabled(selectedClipId_, newState);
+            double bpm = 120.0;
+            if (timelineController_) {
+                bpm = timelineController_->getState().tempo.bpm;
+            }
+            magda::ClipManager::getInstance().setClipLoopEnabled(selectedClipId_, newState, bpm);
         }
     };
     addChildComponent(*clipLoopToggle_);

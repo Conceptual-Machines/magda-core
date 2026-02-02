@@ -1,6 +1,7 @@
 #include "SessionClipEditor.hpp"
 
 #include "../../audio/AudioThumbnailManager.hpp"
+#include "../state/TimelineController.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 
@@ -143,7 +144,11 @@ void SessionClipEditor::setupHeader() {
                            DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     loopToggle_->onClick = [this]() {
         auto& clipManager = ClipManager::getInstance();
-        clipManager.setClipLoopEnabled(clipId_, loopToggle_->getToggleState());
+        double bpm = 120.0;
+        if (auto* controller = TimelineController::getCurrent()) {
+            bpm = controller->getState().tempo.bpm;
+        }
+        clipManager.setClipLoopEnabled(clipId_, loopToggle_->getToggleState(), bpm);
     };
     addAndMakeVisible(*loopToggle_);
 

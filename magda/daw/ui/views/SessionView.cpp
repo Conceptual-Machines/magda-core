@@ -1536,18 +1536,18 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
         }
 
         // Create audio clip for session view (not arrangement)
+        double bpm = 120.0;
+        if (timelineController_) {
+            bpm = timelineController_->getState().tempo.bpm;
+        }
         ClipId newClipId = clipManager.createAudioClip(targetTrackId, 0.0, fileDuration, filePath,
-                                                       ClipView::Session);
+                                                       ClipView::Session, bpm);
         if (newClipId != INVALID_CLIP_ID) {
             clipManager.setClipName(newClipId, audioFile.getFileNameWithoutExtension());
 
             // Session clips default to looping, with loop length matching clip duration
-            double bpm = 120.0;
-            if (timelineController_) {
-                bpm = timelineController_->getState().tempo.bpm;
-            }
             double durationInBeats = (fileDuration / 60.0) * bpm;
-            clipManager.setClipLoopEnabled(newClipId, true);
+            clipManager.setClipLoopEnabled(newClipId, true, bpm);
             clipManager.setClipLoopLength(newClipId, durationInBeats);
 
             // Assign to session view slot (triggers proper notification)
