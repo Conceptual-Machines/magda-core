@@ -41,6 +41,13 @@ class AudioThumbnailManager {
                       const juce::Colour& colour, float verticalZoom = 1.0f);
 
     /**
+     * @brief Detect BPM of an audio file using Tracktion's TempoDetect
+     * @param filePath Absolute path to the audio file
+     * @return Detected BPM, or 0.0 if detection fails or result is not sensible
+     */
+    double detectBPM(const juce::String& filePath);
+
+    /**
      * @brief Clear the thumbnail cache (useful for freeing memory)
      */
     void clearCache();
@@ -66,6 +73,9 @@ class AudioThumbnailManager {
 
     // Create a new thumbnail for a file
     juce::AudioThumbnail* createThumbnail(const juce::String& audioFilePath);
+
+    // BPM detection cache (file path -> detected BPM)
+    std::map<juce::String, double> bpmCache_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioThumbnailManager)
 };

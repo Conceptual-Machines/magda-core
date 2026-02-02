@@ -634,6 +634,8 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     }
 
     // 7. UPDATE loop properties
+    // Only use setLoopRange (time-based), NOT setLoopRangeBeats which forces
+    // autoTempo=true and speedRatio=1.0, breaking time-stretch.
     if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
         auto& tempoSeq = edit_.tempoSequence;
         double loopStart = clip->internalLoopOffset;
@@ -642,10 +644,6 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
         auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEnd));
 
         audioClipPtr->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
-        audioClipPtr->setLoopRangeBeats(
-            {te::BeatPosition::fromBeats(loopStart), te::BeatPosition::fromBeats(loopEnd)});
-    } else {
-        audioClipPtr->disableLooping();
     }
 }
 

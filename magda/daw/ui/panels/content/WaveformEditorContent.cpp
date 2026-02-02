@@ -168,6 +168,14 @@ WaveformEditorContent::WaveformEditorContent() {
     timeModeButton_->onClick = [this]() { setRelativeTimeMode(timeModeButton_->getToggleState()); };
     addAndMakeVisible(timeModeButton_.get());
 
+    // Create BPM label for toolbar
+    bpmLabel_ =
+        std::make_unique<juce::Label>("bpmLabel", juce::String::fromUTF8("\xe2\x80\x94 BPM"));
+    bpmLabel_->setFont(magda::FontManager::getInstance().getUIFont(11.0f));
+    bpmLabel_->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    bpmLabel_->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(bpmLabel_.get());
+
     // Create waveform grid component
     gridComponent_ = std::make_unique<WaveformGridComponent>();
     gridComponent_->setRelativeMode(relativeTimeMode_);
@@ -249,6 +257,7 @@ void WaveformEditorContent::resized() {
     if (bounds.getHeight() < minHeight || bounds.getWidth() <= 0) {
         // Hide everything when too small to avoid zero-sized paint
         timeModeButton_->setBounds(0, 0, 0, 0);
+        bpmLabel_->setBounds(0, 0, 0, 0);
         timeRuler_->setBounds(0, 0, 0, 0);
         viewport_->setBounds(0, 0, 0, 0);
         if (playheadOverlay_)
@@ -259,6 +268,8 @@ void WaveformEditorContent::resized() {
     // Toolbar at top
     auto toolbarArea = bounds.removeFromTop(TOOLBAR_HEIGHT);
     timeModeButton_->setBounds(toolbarArea.removeFromLeft(60).reduced(2));
+    toolbarArea.removeFromLeft(4);
+    bpmLabel_->setBounds(toolbarArea.removeFromLeft(80).reduced(2));
 
     // Time ruler below toolbar
     auto rulerArea = bounds.removeFromTop(TIME_RULER_HEIGHT);
@@ -418,6 +429,18 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
             // Update loop boundary dimming
             updateLoopBoundary(*clip);
 
+            // Update BPM label
+            if (clip->detectedBPM > 0.0) {
+                bpmLabel_->setText(juce::String(clip->detectedBPM, 1) + " BPM",
+                                   juce::dontSendNotification);
+                bpmLabel_->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+            } else {
+                bpmLabel_->setText(juce::String::fromUTF8("\xe2\x80\x94 BPM"),
+                                   juce::dontSendNotification);
+                bpmLabel_->setColour(juce::Label::textColourId,
+                                     DarkTheme::getSecondaryTextColour());
+            }
+
             // Scroll viewport to show clip at new position
             scrollToClipStart();
         }
@@ -493,6 +516,18 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
             timeRuler_->setClipLength(clip->length);
 
             updateLoopBoundary(*clip);
+
+            // Update BPM label
+            if (clip->detectedBPM > 0.0) {
+                bpmLabel_->setText(juce::String(clip->detectedBPM, 1) + " BPM",
+                                   juce::dontSendNotification);
+                bpmLabel_->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+            } else {
+                bpmLabel_->setText(juce::String::fromUTF8("\xe2\x80\x94 BPM"),
+                                   juce::dontSendNotification);
+                bpmLabel_->setColour(juce::Label::textColourId,
+                                     DarkTheme::getSecondaryTextColour());
+            }
         }
 
         updateGridSize();

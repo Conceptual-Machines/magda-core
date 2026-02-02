@@ -45,6 +45,7 @@ struct ClipInfo {
     juce::String audioFilePath;       // Path to audio file
     double audioOffset = 0.0;         // File start offset for trimming (seconds)
     double audioStretchFactor = 1.0;  // Time stretch factor (1.0 = original speed)
+    double detectedBPM = 0.0;         // Detected BPM from audio analysis (0 = not detected)
 
     // MIDI-specific properties
     std::vector<MidiNote> midiNotes;

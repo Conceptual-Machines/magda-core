@@ -1,6 +1,7 @@
 #include "ClipManager.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include "TrackManager.hpp"
 #include "audio/AudioThumbnailManager.hpp"
@@ -32,13 +33,31 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     clip.audioOffset = 0.0;
     clip.audioStretchFactor = 1.0;
 
+    // Detect BPM from audio file
+    clip.detectedBPM = AudioThumbnailManager::getInstance().detectBPM(audioFilePath);
+
+    // Compute loop length in beats from file duration
+    auto* thumbnail = AudioThumbnailManager::getInstance().getThumbnail(audioFilePath);
+    if (thumbnail) {
+        double fileDuration = thumbnail->getTotalLength();
+        if (fileDuration > 0.0) {
+            double bpmForCalc = clip.detectedBPM > 0.0 ? clip.detectedBPM : 120.0;
+            double rawBeats = fileDuration * bpmForCalc / 60.0;
+            // Snap to nearest beat for clean loops
+            clip.internalLoopLength = std::round(rawBeats);
+            if (clip.internalLoopLength < 1.0)
+                clip.internalLoopLength = 1.0;
+        }
+    }
+
     // Add to appropriate array based on view
     if (view == ClipView::Arrangement) {
         arrangementClips_.push_back(clip);
     } else {
-        // Session clips loop by default (internalLoopLength keeps its
-        // default value in beats — don't overwrite with length which is seconds)
+        // Session clips loop by default
         clip.internalLoopEnabled = true;
+        // Set session clip length to match file duration in beats
+        clip.length = length;
         sessionClips_.push_back(clip);
     }
 
@@ -351,6 +370,21 @@ void ClipManager::setClipColour(ClipId clipId, juce::Colour colour) {
 void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled) {
     if (auto* clip = getClip(clipId)) {
         clip->internalLoopEnabled = enabled;
+
+        // When enabling loop on audio clips with default loop length, set to file duration
+        if (enabled && clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty() &&
+            std::abs(clip->internalLoopLength - 4.0) < 0.001) {
+            auto* thumbnail =
+                AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
+            if (thumbnail) {
+                double fileDuration = thumbnail->getTotalLength();
+                if (fileDuration > 0.0) {
+                    double bpmForCalc = clip->detectedBPM > 0.0 ? clip->detectedBPM : 120.0;
+                    double rawBeats = fileDuration * bpmForCalc / 60.0;
+                    clip->internalLoopLength = std::max(1.0, std::round(rawBeats));
+                }
+            }
+        }
 
         // When disabling loop on audio clips, clamp length to actual file content
         if (!enabled && clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty()) {

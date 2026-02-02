@@ -130,6 +130,8 @@ class InspectorContent : public PanelContent,
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopLengthValue_;
     juce::Label clipTypeLabel_;
     juce::Label clipTypeValue_;
+    juce::Label clipBpmLabel_;
+    juce::Label clipBpmValue_;
 
     // Session clip launch properties
     juce::Label launchModeLabel_;

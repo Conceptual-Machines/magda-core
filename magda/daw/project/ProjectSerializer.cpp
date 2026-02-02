@@ -833,6 +833,9 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
         obj->setProperty("audioFilePath", clip.audioFilePath);
         obj->setProperty("audioOffset", clip.audioOffset);
         obj->setProperty("audioStretchFactor", clip.audioStretchFactor);
+        if (clip.detectedBPM > 0.0) {
+            obj->setProperty("detectedBPM", clip.detectedBPM);
+        }
     }
 
     // MIDI notes
@@ -888,6 +891,10 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
         outClip.audioStretchFactor = obj->getProperty("audioStretchFactor");
         if (outClip.audioStretchFactor <= 0.0)
             outClip.audioStretchFactor = 1.0;
+        auto detectedBPMVar = obj->getProperty("detectedBPM");
+        if (!detectedBPMVar.isVoid()) {
+            outClip.detectedBPM = static_cast<double>(detectedBPMVar);
+        }
     } else {
         // Migration from old audioSources format
         auto audioSourcesVar = obj->getProperty("audioSources");

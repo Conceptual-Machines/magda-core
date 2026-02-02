@@ -236,6 +236,16 @@ InspectorContent::InspectorContent() {
     clipTypeValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     addChildComponent(clipTypeValue_);
 
+    // Detected BPM (read-only, audio clips only)
+    clipBpmLabel_.setText("BPM", juce::dontSendNotification);
+    clipBpmLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    clipBpmLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    addChildComponent(clipBpmLabel_);
+
+    clipBpmValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
+    clipBpmValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    addChildComponent(clipBpmValue_);
+
     // Position icon (static, non-interactive)
     clipPositionIcon_ = std::make_unique<magda::SvgButton>("Position", BinaryData::position_svg,
                                                            BinaryData::position_svgSize);
@@ -745,6 +755,13 @@ void InspectorContent::resized() {
         clipTypeLabel_.setBounds(bounds.removeFromTop(16));
         clipTypeValue_.setBounds(bounds.removeFromTop(20));
         bounds.removeFromTop(12);
+
+        // BPM (read-only, audio clips only)
+        if (clipBpmLabel_.isVisible()) {
+            clipBpmLabel_.setBounds(bounds.removeFromTop(16));
+            clipBpmValue_.setBounds(bounds.removeFromTop(20));
+            bounds.removeFromTop(12);
+        }
 
         // Start / End — icon + two fields side by side (matches loop row)
         {
@@ -1260,6 +1277,19 @@ void InspectorContent::updateFromSelectedClip() {
         clipNameValue_.setText(clip->name, juce::dontSendNotification);
         clipTypeValue_.setText(magda::getClipTypeName(clip->type), juce::dontSendNotification);
 
+        // Show BPM for audio clips
+        if (clip->type == magda::ClipType::Audio && clip->detectedBPM > 0.0) {
+            clipBpmLabel_.setVisible(true);
+            clipBpmValue_.setVisible(true);
+            clipBpmValue_.setText(juce::String(clip->detectedBPM, 1) + " BPM",
+                                  juce::dontSendNotification);
+        } else {
+            clipBpmLabel_.setVisible(clip->type == magda::ClipType::Audio);
+            clipBpmValue_.setVisible(clip->type == magda::ClipType::Audio);
+            clipBpmValue_.setText(juce::String::fromUTF8("\xe2\x80\x94"),
+                                  juce::dontSendNotification);
+        }
+
         // Get tempo from TimelineController, fallback to 120 BPM if not available
         double bpm = 120.0;
         int beatsPerBar = 4;
@@ -1378,6 +1408,11 @@ void InspectorContent::showClipControls(bool show) {
     clipNameValue_.setVisible(show);
     clipTypeLabel_.setVisible(show);
     clipTypeValue_.setVisible(show);
+    // BPM visibility is managed by updateFromSelectedClip (audio clips only)
+    if (!show) {
+        clipBpmLabel_.setVisible(false);
+        clipBpmValue_.setVisible(false);
+    }
     clipPositionIcon_->setVisible(show);
     clipStartLabel_.setVisible(show);
     clipStartValue_->setVisible(show);
