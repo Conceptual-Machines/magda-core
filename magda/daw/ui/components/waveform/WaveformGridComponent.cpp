@@ -166,6 +166,17 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
         g.fillRect(clipEndPixel - 1, waveformRect.getY(), 2, waveformRect.getHeight());
     }
 
+    // Draw audio offset marker (yellow vertical line) when offset > 0
+    if (clip.audioOffset > 0.0) {
+        double offsetSeconds = clip.audioOffset * clip.audioStretchFactor;
+        double offsetDisplayTime = relativeMode_ ? offsetSeconds : (clipStartTime_ + offsetSeconds);
+        int offsetX = timeToPixel(offsetDisplayTime);
+        if (offsetX > waveformRect.getX() && offsetX < waveformRect.getRight()) {
+            g.setColour(DarkTheme::getColour(DarkTheme::OFFSET_MARKER));
+            g.fillRect(offsetX - 1, waveformRect.getY(), 2, waveformRect.getHeight());
+        }
+    }
+
     // Clip info overlay
     g.setColour(clip.colour);
     g.setFont(FontManager::getInstance().getUIFont(12.0f));

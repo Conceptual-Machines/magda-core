@@ -125,6 +125,27 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
         // Draw playback cursor (vertical line) - only during playback
         if (owner_.cachedIsPlaying_) {
             double playPos = owner_.cachedPlaybackPosition_;
+
+            // Wrap playhead inside loop region when looping is enabled
+            if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
+                // Get loop length in seconds using project tempo
+                double bpm = 120.0;
+                auto* controller = magda::TimelineController::getCurrent();
+                if (controller) {
+                    bpm = controller->getState().tempo.bpm;
+                }
+                double loopLengthSec = (bpm > 0.0) ? (clip->internalLoopLength * 60.0 / bpm) : 0.0;
+
+                if (loopLengthSec > 0.0) {
+                    // Position relative to clip start
+                    double relPos = playPos - clip->startTime;
+                    if (relPos >= 0.0) {
+                        relPos = std::fmod(relPos, loopLengthSec);
+                        playPos = clip->startTime + relPos;
+                    }
+                }
+            }
+
             int playX = timeToOverlayX(playPos);
             if (playX >= 0 && playX < getWidth()) {
                 g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));

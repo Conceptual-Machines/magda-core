@@ -362,12 +362,21 @@ InspectorContent::InspectorContent() {
         if (selectedClipId_ == magda::INVALID_CLIP_ID)
             return;
         const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
-        if (!clip || clip->type != magda::ClipType::MIDI)
+        if (!clip)
             return;
 
-        // Set the new midiOffset value
-        double newOffsetBeats = clipContentOffsetValue_->getValue();
-        magda::ClipManager::getInstance().setClipMidiOffset(selectedClipId_, newOffsetBeats);
+        if (clip->type == magda::ClipType::MIDI) {
+            double newOffsetBeats = clipContentOffsetValue_->getValue();
+            magda::ClipManager::getInstance().setClipMidiOffset(selectedClipId_, newOffsetBeats);
+        } else if (clip->type == magda::ClipType::Audio) {
+            double bpm = 120.0;
+            if (timelineController_) {
+                bpm = timelineController_->getState().tempo.bpm;
+            }
+            double newOffsetBeats = clipContentOffsetValue_->getValue();
+            double newOffsetSeconds = magda::TimelineUtils::beatsToSeconds(newOffsetBeats, bpm);
+            magda::ClipManager::getInstance().setAudioOffset(selectedClipId_, newOffsetSeconds);
+        }
     };
     addChildComponent(*clipContentOffsetValue_);
 
@@ -1325,16 +1334,15 @@ void InspectorContent::updateFromSelectedClip() {
             clipEndValue_->setValue(endBeats, juce::dontSendNotification);
         }
 
-        // Content offset (session MIDI clips and looping arrangement MIDI clips)
-        if (clip->type == magda::ClipType::MIDI &&
-            (clip->view == magda::ClipView::Session || clip->internalLoopEnabled)) {
+        // Content offset (always visible)
+        if (clip->type == magda::ClipType::MIDI) {
             clipContentOffsetValue_->setValue(clip->midiOffset, juce::dontSendNotification);
-            clipContentOffsetIcon_->setVisible(true);
-            clipContentOffsetValue_->setVisible(true);
-        } else {
-            clipContentOffsetIcon_->setVisible(false);
-            clipContentOffsetValue_->setVisible(false);
+        } else if (clip->type == magda::ClipType::Audio) {
+            double offsetBeats = magda::TimelineUtils::secondsToBeats(clip->audioOffset, bpm);
+            clipContentOffsetValue_->setValue(offsetBeats, juce::dontSendNotification);
         }
+        clipContentOffsetIcon_->setVisible(true);
+        clipContentOffsetValue_->setVisible(true);
 
         clipLoopPosValue_->setValue(clip->internalLoopOffset, juce::dontSendNotification);
         clipLoopLengthValue_->setValue(clip->internalLoopLength, juce::dontSendNotification);
@@ -1418,11 +1426,9 @@ void InspectorContent::showClipControls(bool show) {
     clipStartValue_->setVisible(show);
     clipEndLabel_.setVisible(show);
     clipEndValue_->setVisible(show);
-    // Content offset visibility is managed by updateFromSelectedClip (MIDI clips only)
-    if (!show) {
-        clipContentOffsetIcon_->setVisible(false);
-        clipContentOffsetValue_->setVisible(false);
-    }
+    // Content offset: always shown when clip controls are visible
+    clipContentOffsetIcon_->setVisible(show);
+    clipContentOffsetValue_->setVisible(show);
     clipLoopToggle_->setVisible(show);
     // Loop pos/length visibility is managed by updateFromSelectedClip
     if (!show) {
