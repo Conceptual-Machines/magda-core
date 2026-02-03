@@ -128,6 +128,11 @@ class InspectorContent : public PanelContent,
     juce::TextButton clipWarpToggle_;
     std::unique_ptr<magda::DraggableValueLabel> clipStretchValue_;
     juce::ComboBox stretchModeCombo_;  // Time stretch algorithm selector
+    std::unique_ptr<magda::SvgButton> clipSourceIcon_;
+    juce::Label clipSourceStartLabel_;
+    std::unique_ptr<magda::BarsBeatsTicksLabel> clipSourceStartValue_;
+    juce::Label clipSourceEndLabel_;
+    std::unique_ptr<magda::BarsBeatsTicksLabel> clipSourceEndValue_;
     juce::Label clipLoopPosLabel_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopPosValue_;
     juce::Label clipLoopLengthLabel_;

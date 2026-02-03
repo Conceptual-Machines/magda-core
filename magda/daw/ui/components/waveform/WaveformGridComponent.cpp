@@ -55,23 +55,27 @@ WaveformGridComponent::WaveformLayout WaveformGridComponent::computeWaveformLayo
     double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
     int positionPixels = timeToPixel(displayStartTime);
 
-    // In loop mode with ghost disabled, limit visible area to loop region
-    // This hides the clip extent beyond the loop end
-    double visibleLength = clip.length;
-    if (displayInfo_.loopEnabled && !showLoopGhost_) {
-        visibleLength = std::min(clip.length, displayInfo_.loopEndPositionSeconds);
+    // Use source extent as the visual boundary (user's selection of source audio).
+    // In loop mode with ghost disabled, show only up to the loop end within that extent.
+    double sourceExtent = displayInfo_.sourceExtentSeconds;
+    if (sourceExtent <= 0.0) {
+        sourceExtent = clip.length;  // Fallback if not computed
     }
 
-    int widthPixels = static_cast<int>(visibleLength * horizontalZoom_);
+    double displayLength = (displayInfo_.loopEnabled && !showLoopGhost_)
+                               ? std::min(sourceExtent, displayInfo_.loopEndPositionSeconds)
+                               : sourceExtent;
+
+    int widthPixels = static_cast<int>(displayLength * horizontalZoom_);
     if (widthPixels <= 0)
         return {};
 
     auto rect =
         juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
 
-    // clipEndPixel marks where the loop ends (same as rect end in loop mode)
+    // clipEndPixel marks where the active content ends (same as rect end in this simplified model)
     int clipEndPixel =
-        relativeMode_ ? timeToPixel(visibleLength) : timeToPixel(clipStartTime_ + visibleLength);
+        relativeMode_ ? timeToPixel(displayLength) : timeToPixel(clipStartTime_ + displayLength);
 
     return {rect, clipEndPixel};
 }
@@ -103,9 +107,16 @@ void WaveformGridComponent::paintWaveformBackground(juce::Graphics& g, const mag
             g.fillRoundedRectangle(inBoundsRect.toFloat(), 3.0f);
         }
 
-        // Only draw the ghost region beyond loop end when enabled
-        if (showLoopGhost_ && !waveformRect.isEmpty()) {
-            g.setColour(outOfBoundsColour);
+        // Draw the region beyond loop end:
+        // - If ghost is enabled: show darker background (waveform drawn later)
+        // - If ghost is disabled: show very dark background (no waveform)
+        if (!waveformRect.isEmpty()) {
+            if (showLoopGhost_) {
+                g.setColour(outOfBoundsColour);
+            } else {
+                // Even darker for "inactive" region beyond loop end
+                g.setColour(clip.colour.darker(0.85f));
+            }
             g.fillRoundedRectangle(waveformRect.toFloat(), 3.0f);
         }
     } else {
@@ -170,6 +181,7 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
                 }
                 timePos += loopCycle;
             }
+
         } else {
             double displayStart = displayInfo_.sourceFileStart;
             double displayEnd = displayInfo_.sourceFileEnd;
@@ -189,6 +201,32 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
         }
     }
     g.restoreState();
+
+    // When ghost is off (waveform editor) and looped, draw the remaining source audio
+    // beyond the loop end so user can see and extend the loop range.
+    // This must be OUTSIDE the clipped region above.
+    if (displayInfo_.isLooped() && !showLoopGhost_ &&
+        displayInfo_.sourceExtentSeconds > displayInfo_.loopEndPositionSeconds) {
+        double remainingStart = displayInfo_.loopEndPositionSeconds;
+        double remainingEnd = displayInfo_.sourceExtentSeconds;
+        // Source file range for the remaining audio
+        double remainingFileStart = clip.audioOffset + remainingStart / clip.audioStretchFactor;
+        double remainingFileEnd = clip.audioOffset + remainingEnd / clip.audioStretchFactor;
+        if (fileDuration > 0.0 && remainingFileEnd > fileDuration)
+            remainingFileEnd = fileDuration;
+
+        int startX = waveformRect.getX() + static_cast<int>(remainingStart * horizontalZoom_);
+        int endX = waveformRect.getX() + static_cast<int>(remainingEnd * horizontalZoom_);
+        auto remainingRect = juce::Rectangle<int>(startX, waveformRect.getY(), endX - startX,
+                                                  waveformRect.getHeight());
+        auto drawRect = remainingRect.reduced(0, 4);
+        if (drawRect.getWidth() > 0 && drawRect.getHeight() > 0) {
+            // Draw dimmer to indicate it's outside the loop
+            auto dimColour = waveColour.withAlpha(0.4f);
+            thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, remainingFileStart,
+                                          remainingFileEnd, dimColour, vertZoom);
+        }
+    }
 }
 
 void WaveformGridComponent::paintWaveformOverlays(juce::Graphics& g, const magda::ClipInfo& clip,
@@ -751,11 +789,16 @@ void WaveformGridComponent::updateGridSize() {
         return;
     }
 
-    // In loop mode with ghost disabled, limit to loop region
-    double displayClipLength = clipLength_;
-    if (displayInfo_.loopEnabled && !showLoopGhost_) {
-        displayClipLength = std::min(clipLength_, displayInfo_.loopEndPositionSeconds);
+    // Use source extent as the visual boundary (user's selection of source audio).
+    // In loop mode with ghost disabled, show only up to the loop end within that extent.
+    double sourceExtent = displayInfo_.sourceExtentSeconds;
+    if (sourceExtent <= 0.0) {
+        sourceExtent = clipLength_;  // Fallback if not computed
     }
+
+    double displayClipLength = (displayInfo_.loopEnabled && !showLoopGhost_)
+                                   ? std::min(sourceExtent, displayInfo_.loopEndPositionSeconds)
+                                   : sourceExtent;
 
     // Calculate required width based on mode
     double totalTime = 0.0;
@@ -891,9 +934,15 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
 
     dragStartX_ = x;
     dragStartAudioOffset_ = clip->audioOffset;
-    dragStartLength_ = clip->length;
     dragStartStartTime_ = clip->startTime;
     dragStartStretchFactor_ = clip->audioStretchFactor;
+
+    // Use source extent for resize operations (visual boundary in waveform editor)
+    // This may differ from clip.length in loop mode
+    dragStartLength_ = displayInfo_.sourceExtentSeconds;
+    if (dragStartLength_ <= 0.0) {
+        dragStartLength_ = clip->length;  // Fallback
+    }
 
     // Cache file duration for trim clamping
     dragStartFileDuration_ = 0.0;
@@ -970,18 +1019,24 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
             break;
         }
         case DragMode::ResizeRight: {
-            // Calculate absolute new length from original
-            double newLength = dragStartLength_ + deltaSeconds;
+            // Calculate new source extent (in timeline seconds)
+            double newExtent = dragStartLength_ + deltaSeconds;
+            newExtent = juce::jmax(magda::ClipOperations::MIN_CLIP_LENGTH, newExtent);
 
-            // Constrain to file bounds (only for non-looped clips)
-            if (dragStartFileDuration_ > 0.0 && !clip->internalLoopEnabled) {
-                double maxLength =
+            // Constrain to file bounds
+            if (dragStartFileDuration_ > 0.0) {
+                double maxExtent =
                     (dragStartFileDuration_ - dragStartAudioOffset_) * dragStartStretchFactor_;
-                newLength = juce::jmin(newLength, maxLength);
+                newExtent = juce::jmin(newExtent, maxExtent);
             }
 
-            // Set absolute value
-            clip->length = juce::jmax(magda::ClipOperations::MIN_CLIP_LENGTH, newLength);
+            // Set audioSourceLength (in source-file seconds, not timeline seconds)
+            clip->audioSourceLength = newExtent / clip->audioStretchFactor;
+
+            // For non-looped clips, also update clip.length to match
+            if (!clip->internalLoopEnabled) {
+                clip->length = newExtent;
+            }
             break;
         }
         case DragMode::StretchRight: {
@@ -1097,11 +1152,19 @@ bool WaveformGridComponent::isNearLeftEdge(int x, const magda::ClipInfo& clip) c
 }
 
 bool WaveformGridComponent::isNearRightEdge(int x, const magda::ClipInfo& clip) const {
+    juce::ignoreUnused(clip);
     double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
-    // In loop mode with ghost disabled, use loop end; otherwise full clip length
+
+    // Use source extent as the visual boundary
+    double sourceExtent = displayInfo_.sourceExtentSeconds;
+    if (sourceExtent <= 0.0) {
+        sourceExtent = clip.length;  // Fallback
+    }
+
+    // In loop mode with ghost disabled, use loop end; otherwise source extent
     double rightEdgeTime = (displayInfo_.loopEnabled && !showLoopGhost_)
-                               ? std::min(clip.length, displayInfo_.loopEndPositionSeconds)
-                               : clip.length;
+                               ? std::min(sourceExtent, displayInfo_.loopEndPositionSeconds)
+                               : sourceExtent;
     int rightEdgeX = timeToPixel(displayStartTime + rightEdgeTime);
     return std::abs(x - rightEdgeX) <= EDGE_GRAB_DISTANCE;
 }
@@ -1109,10 +1172,17 @@ bool WaveformGridComponent::isNearRightEdge(int x, const magda::ClipInfo& clip) 
 bool WaveformGridComponent::isInsideWaveform(int x, const magda::ClipInfo& clip) const {
     double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
     int leftEdgeX = timeToPixel(displayStartTime);
-    // In loop mode with ghost disabled, use loop end; otherwise full clip length
+
+    // Use source extent as the visual boundary
+    double sourceExtent = displayInfo_.sourceExtentSeconds;
+    if (sourceExtent <= 0.0) {
+        sourceExtent = clip.length;  // Fallback
+    }
+
+    // In loop mode with ghost disabled, use loop end; otherwise source extent
     double rightEdgeTime = (displayInfo_.loopEnabled && !showLoopGhost_)
-                               ? std::min(clip.length, displayInfo_.loopEndPositionSeconds)
-                               : clip.length;
+                               ? std::min(sourceExtent, displayInfo_.loopEndPositionSeconds)
+                               : sourceExtent;
     int rightEdgeX = timeToPixel(displayStartTime + rightEdgeTime);
     return x > leftEdgeX + EDGE_GRAB_DISTANCE && x < rightEdgeX - EDGE_GRAB_DISTANCE;
 }

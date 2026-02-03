@@ -4,6 +4,7 @@ set(TEST_SOURCES
     test_audiobridge_track_limit_bug.cpp
     test_audiobridge_plugin_cleanup_bug.cpp
     test_audio_clip_stretch.cpp
+    test_audio_source_length.cpp
     test_audio_export.cpp
     test_command.cpp
     # test_export_no_assertion.cpp  # Disabled - see issue #611 (generator device export)

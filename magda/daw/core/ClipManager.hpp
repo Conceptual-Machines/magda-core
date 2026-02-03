@@ -177,6 +177,8 @@ class ClipManager {
     void setAudioStretchFactor(ClipId clipId, double stretchFactor);
     /** @brief Set the time-stretch algorithm mode for an audio clip */
     void setTimeStretchMode(ClipId clipId, int mode);
+    /** @brief Set the source audio length (how much of the source file to use, in seconds) */
+    void setAudioSourceLength(ClipId clipId, double sourceLength);
 
     // ========================================================================
     // Content-Level Operations (Editor Operations)

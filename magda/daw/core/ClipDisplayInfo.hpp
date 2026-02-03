@@ -24,6 +24,10 @@ struct ClipDisplayInfo {
     // Pre-computed display values
     double endTime;  // startTime + length
 
+    // Source extent (the user's selection of how much source audio to use)
+    double sourceLength;         // source audio length in source-file seconds
+    double sourceExtentSeconds;  // sourceLength * stretchFactor (visual extent on timeline)
+
     // Loop (all in seconds, 0 = no loop)
     bool loopEnabled;
     double loopOffsetSeconds;       // internalLoopOffset converted to seconds
@@ -54,13 +58,29 @@ struct ClipDisplayInfo {
     }
 
     // Factory
-    static ClipDisplayInfo from(const ClipInfo& clip, double bpm) {
+    // fileDuration is optional - pass 0 if unknown, sourceLength will use audioSourceLength or
+    // length
+    static ClipDisplayInfo from(const ClipInfo& clip, double bpm, double fileDuration = 0.0) {
         ClipDisplayInfo d;
         d.startTime = clip.startTime;
         d.length = clip.length;
         d.audioOffset = clip.audioOffset;
         d.stretchFactor = clip.audioStretchFactor;
         d.endTime = clip.startTime + clip.length;
+
+        // Compute source length (in source-file seconds)
+        // In loop mode: use audioSourceLength if set (decoupled from clip.length)
+        // In non-loop mode: always derive from clip.length (End controls everything)
+        if (clip.internalLoopEnabled && clip.audioSourceLength > 0.0) {
+            d.sourceLength = clip.audioSourceLength;
+        } else if (fileDuration > 0.0 && fileDuration > clip.audioOffset) {
+            d.sourceLength =
+                std::min(fileDuration - clip.audioOffset, clip.length / d.stretchFactor);
+        } else {
+            // Fallback: derive from clip length
+            d.sourceLength = clip.length / d.stretchFactor;
+        }
+        d.sourceExtentSeconds = d.sourceLength * d.stretchFactor;
 
         d.loopEnabled = clip.internalLoopEnabled;
         d.loopOffsetSeconds = TimelineUtils::beatsToSeconds(clip.internalLoopOffset, bpm);
@@ -75,7 +95,9 @@ struct ClipDisplayInfo {
             d.sourceFileEnd = std::min(d.sourceFileEnd, maxSourceEnd);
         } else {
             d.sourceFileStart = clip.audioOffset;
-            d.sourceFileEnd = clip.audioOffset + clip.length / d.stretchFactor;
+            // Use sourceLength (not clip.length) so changing audioSourceLength
+            // resizes the drawn audio rather than stretching it
+            d.sourceFileEnd = clip.audioOffset + d.sourceLength;
         }
         return d;
     }

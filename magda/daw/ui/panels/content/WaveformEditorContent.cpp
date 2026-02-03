@@ -788,7 +788,18 @@ void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
     if (controller) {
         bpm = controller->getState().tempo.bpm;
     }
-    auto info = magda::ClipDisplayInfo::from(clip, bpm);
+
+    // Get file duration for source extent calculation
+    double fileDuration = 0.0;
+    if (clip.audioFilePath.isNotEmpty()) {
+        auto* thumbnail =
+            magda::AudioThumbnailManager::getInstance().getThumbnail(clip.audioFilePath);
+        if (thumbnail) {
+            fileDuration = thumbnail->getTotalLength();
+        }
+    }
+
+    auto info = magda::ClipDisplayInfo::from(clip, bpm, fileDuration);
     gridComponent_->setDisplayInfo(info);
 
     // Update time ruler loop region (green markers with triangles)

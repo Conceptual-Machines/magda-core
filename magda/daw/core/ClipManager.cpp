@@ -376,6 +376,14 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
         // internalLoopLength is in project beats (converted via tempoSeq.beatsToTime
         // in AudioBridge), so we must use project BPM here.
         if (enabled && clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty()) {
+            // Preserve the current source extent before enabling loop.
+            // This ensures the waveform editor shows the original audio source,
+            // not the (potentially much longer) looped clip length.
+            if (clip->audioSourceLength <= 0.0) {
+                // Convert timeline length to source-file seconds
+                clip->audioSourceLength = clip->length / clip->audioStretchFactor;
+            }
+
             double rawBeats = clip->length * projectBPM / 60.0;
             clip->internalLoopLength = std::max(1.0, std::round(rawBeats));
         }
@@ -488,6 +496,15 @@ void ClipManager::setTimeStretchMode(ClipId clipId, int mode) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
             clip->timeStretchMode = mode;
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::setAudioSourceLength(ClipId clipId, double sourceLength) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->audioSourceLength = juce::jmax(0.0, sourceLength);
             notifyClipPropertyChanged(clipId);
         }
     }
