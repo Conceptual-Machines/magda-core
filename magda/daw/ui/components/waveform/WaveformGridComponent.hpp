@@ -223,7 +223,7 @@ class WaveformGridComponent : public juce::Component {
     double dragStartWarpTime_ = 0.0;
 
     // Loop ghost (show waveform tiles beyond loop boundary)
-    bool showLoopGhost_ = true;
+    bool showLoopGhost_ = false;
 
     // Beat grid state
     GridResolution gridResolution_ = GridResolution::Off;

@@ -54,7 +54,14 @@ WaveformGridComponent::WaveformLayout WaveformGridComponent::computeWaveformLayo
 
     double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
     int positionPixels = timeToPixel(displayStartTime);
-    int widthPixels = static_cast<int>(clip.length * horizontalZoom_);
+
+    // In loop mode with ghost disabled, limit the visible area to the loop region
+    double visibleLength = clip.length;
+    if (displayInfo_.isLooped() && !showLoopGhost_) {
+        visibleLength = std::min(clip.length, displayInfo_.loopEndPositionSeconds);
+    }
+
+    int widthPixels = static_cast<int>(visibleLength * horizontalZoom_);
     if (widthPixels <= 0)
         return {};
 
@@ -184,6 +191,49 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
         }
     }
     g.restoreState();
+
+    // In loop mode with ghost disabled, draw the continuation of the source audio
+    // beyond the loop end with a faded appearance (visual reference for what's cut off)
+    if (displayInfo_.isLooped() && !showLoopGhost_ && !warpMode_) {
+        double loopEndDisplay = displayInfo_.loopEndPositionSeconds;
+        double sourceAfterLoop = displayInfo_.sourceFileEnd;  // Where loop ends in source file
+
+        // Only draw if there's more source audio after the loop end
+        if (fileDuration > 0.0 && sourceAfterLoop < fileDuration) {
+            double remainingSourceDuration = fileDuration - sourceAfterLoop;
+            double remainingDisplayDuration = remainingSourceDuration * clip.audioStretchFactor;
+
+            // Limit to what fits in the clip length
+            double displayEnd = std::min(loopEndDisplay + remainingDisplayDuration, clip.length);
+
+            if (displayEnd > loopEndDisplay) {
+                int contStartX =
+                    waveformRect.getX() + static_cast<int>(loopEndDisplay * horizontalZoom_);
+                int contEndX = waveformRect.getX() + static_cast<int>(displayEnd * horizontalZoom_);
+                int contWidth = contEndX - contStartX;
+
+                if (contWidth > 0) {
+                    auto contRect = juce::Rectangle<int>(contStartX, waveformRect.getY(), contWidth,
+                                                         waveformRect.getHeight());
+                    auto contDrawRect = contRect.reduced(0, 4);
+
+                    if (contDrawRect.getWidth() > 0 && contDrawRect.getHeight() > 0) {
+                        // Calculate the source range for the continuation
+                        double contSourceStart = sourceAfterLoop;
+                        double contSourceEnd = sourceAfterLoop + (displayEnd - loopEndDisplay) /
+                                                                     clip.audioStretchFactor;
+                        contSourceEnd = std::min(contSourceEnd, fileDuration);
+
+                        // Draw with a faded/dimmed colour
+                        auto fadedColour = waveColour.withAlpha(0.35f);
+                        thumbnailManager.drawWaveform(g, contDrawRect, clip.audioFilePath,
+                                                      contSourceStart, contSourceEnd, fadedColour,
+                                                      vertZoom);
+                    }
+                }
+            }
+        }
+    }
 }
 
 void WaveformGridComponent::paintWaveformOverlays(juce::Graphics& g, const magda::ClipInfo& clip,
@@ -452,43 +502,62 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     }
 
     auto bounds = getLocalBounds();
+    bool isLooped = displayInfo_.isLooped();
+
+    // Use theme's loop marker colour (green)
+    auto loopColour = DarkTheme::getColour(DarkTheme::LOOP_MARKER);
 
     if (!relativeMode_) {
-        // Absolute mode: show both start and end boundaries at absolute timeline positions
-        int clipStartX = timeToPixel(clipStartTime_);
-        g.setColour(DarkTheme::getAccentColour().withAlpha(0.6f));
-        g.fillRect(clipStartX - 1, 0, 2, bounds.getHeight());
+        // Absolute mode
+        // Only show clip boundaries if NOT in loop mode
+        if (!isLooped) {
+            int clipStartX = timeToPixel(clipStartTime_);
+            g.setColour(DarkTheme::getAccentColour().withAlpha(0.6f));
+            g.fillRect(clipStartX - 1, 0, 2, bounds.getHeight());
 
-        int clipEndX = timeToPixel(clipStartTime_ + clipLength_);
-        g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
-        g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
+            int clipEndX = timeToPixel(clipStartTime_ + clipLength_);
+            g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
+            g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
+        }
 
-        // Loop boundary (distinct from clip end)
-        if (displayInfo_.loopEndPositionSeconds > 0.0) {
+        // Loop boundaries (green) - show loop start and end
+        if (isLooped) {
+            // Loop start marker at display position 0 (where loop begins)
+            int loopStartX = timeToPixel(clipStartTime_);
+            g.setColour(loopColour.withAlpha(0.8f));
+            g.fillRect(loopStartX - 1, 0, 2, bounds.getHeight());
+
+            // Loop end marker
             int loopEndX = timeToPixel(clipStartTime_ + displayInfo_.loopEndPositionSeconds);
-            g.setColour(DarkTheme::getAccentColour().withAlpha(0.5f));
-            // Draw dashed-style loop marker: thinner line with label
-            g.fillRect(loopEndX - 1, 0, 2, bounds.getHeight());
+            g.setColour(loopColour.withAlpha(0.8f));
+            g.fillRect(loopEndX - 1, 0, 3, bounds.getHeight());
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
             g.drawText("L", loopEndX + 3, 2, 12, 12, juce::Justification::centredLeft, false);
         }
     } else {
-        // Relative mode: show both start (at 0) and end boundaries
-        // Start boundary at time 0
-        int clipStartX = timeToPixel(0.0);
-        g.setColour(DarkTheme::getAccentColour().withAlpha(0.6f));
-        g.fillRect(clipStartX - 1, 0, 2, bounds.getHeight());
+        // Relative mode
+        // Only show clip boundaries if NOT in loop mode
+        if (!isLooped) {
+            int clipStartX = timeToPixel(0.0);
+            g.setColour(DarkTheme::getAccentColour().withAlpha(0.6f));
+            g.fillRect(clipStartX - 1, 0, 2, bounds.getHeight());
 
-        // End boundary at clip length
-        int clipEndX = timeToPixel(clipLength_);
-        g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
-        g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
+            int clipEndX = timeToPixel(clipLength_);
+            g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
+            g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
+        }
 
-        // Loop boundary (distinct from clip end)
-        if (displayInfo_.loopEndPositionSeconds > 0.0) {
+        // Loop boundaries (green) - show loop start and end
+        if (isLooped) {
+            // Loop start marker at 0
+            int loopStartX = timeToPixel(0.0);
+            g.setColour(loopColour.withAlpha(0.8f));
+            g.fillRect(loopStartX - 1, 0, 2, bounds.getHeight());
+
+            // Loop end marker
             int loopEndX = timeToPixel(displayInfo_.loopEndPositionSeconds);
-            g.setColour(DarkTheme::getAccentColour().withAlpha(0.5f));
-            g.fillRect(loopEndX - 1, 0, 2, bounds.getHeight());
+            g.setColour(loopColour.withAlpha(0.8f));
+            g.fillRect(loopEndX - 1, 0, 3, bounds.getHeight());
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
             g.drawText("L", loopEndX + 3, 2, 12, 12, juce::Justification::centredLeft, false);
         }
@@ -803,19 +872,15 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
         }
 
         // Click on waveform in warp mode: add new marker
+        // Markers are placed exactly where clicked (at transient positions).
+        // Grid snapping only applies when MOVING markers, not when placing them.
         if (isInsideWaveform(x, *clip)) {
             double clickTime = pixelToTime(x);
             // Convert from display time to clip-relative time
             double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
             double clipRelativeTime = clickTime - displayStartTime;
 
-            // Snap the DISPLAY position to grid (so markers align with visual grid lines)
-            // Hold Alt to bypass snapping
-            if (!event.mods.isAltDown() && gridResolution_ != GridResolution::Off) {
-                clipRelativeTime = snapTimeToGrid(clipRelativeTime);
-            }
-
-            // Convert snapped display time to absolute warp time
+            // Convert to absolute warp time (no snapping on placement)
             double warpTime = clipRelativeTime + clip->audioOffset;
 
             // Find the corresponding sourceTime by interpolating from existing markers.
@@ -899,12 +964,15 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
         // Pixel delta → warp-time delta (no stretchFactor — warp owns the timing)
         double timeDelta = (event.x - dragStartX_) / horizontalZoom_;
         double newWarpTime = dragStartWarpTime_ + timeDelta;
-        if (newWarpTime < 0.0)
-            newWarpTime = 0.0;
+        if (newWarpTime < clip->audioOffset)
+            newWarpTime = clip->audioOffset;
 
         // Snap to grid unless Alt is held
+        // Must snap in clip-relative coordinates to align with visual grid lines
         if (!event.mods.isAltDown() && gridResolution_ != GridResolution::Off) {
-            newWarpTime = snapTimeToGrid(newWarpTime);
+            double clipRelTime = newWarpTime - clip->audioOffset;
+            clipRelTime = snapTimeToGrid(clipRelTime);
+            newWarpTime = clipRelTime + clip->audioOffset;
         }
 
         if (draggingMarkerIndex_ >= 0 && onWarpMarkerMove) {

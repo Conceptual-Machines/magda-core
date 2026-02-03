@@ -257,7 +257,7 @@ WaveformEditorContent::WaveformEditorContent() {
     loopGhostButton_ = std::make_unique<juce::TextButton>("GHOST");
     loopGhostButton_->setTooltip("Show loop repetitions beyond the loop boundary");
     loopGhostButton_->setClickingTogglesState(true);
-    loopGhostButton_->setToggleState(true, juce::dontSendNotification);
+    loopGhostButton_->setToggleState(false, juce::dontSendNotification);
     loopGhostButton_->setLookAndFeel(buttonLookAndFeel_.get());
     loopGhostButton_->onClick = [this]() {
         if (gridComponent_)
@@ -790,6 +790,11 @@ void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
     }
     auto info = magda::ClipDisplayInfo::from(clip, bpm);
     gridComponent_->setDisplayInfo(info);
+
+    // Update time ruler loop region (green markers with triangles)
+    if (timeRuler_) {
+        timeRuler_->setLoopRegion(info.loopOffsetSeconds, info.loopLengthSeconds, info.isLooped());
+    }
 }
 
 void WaveformEditorContent::performAnchorPointZoom(double zoomFactor, int anchorX) {
