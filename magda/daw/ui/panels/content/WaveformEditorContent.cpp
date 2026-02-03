@@ -572,14 +572,13 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
             if (warpEnabled) {
                 auto* bridge = getBridge();
                 if (bridge) {
-                    // Always call enableWarp when transitioning to warp mode
-                    // (TE's WarpTimeManager has default start/end markers even
-                    //  when warp is "off", so we can't rely on markers.empty())
+                    // Only refresh markers when transitioning to warp mode
+                    // (not on every clip property change to avoid performance issues)
                     if (!wasWarpEnabled_) {
                         bridge->enableWarp(editingClipId_);
+                        auto markers = bridge->getWarpMarkers(editingClipId_);
+                        gridComponent_->setWarpMarkers(markers);
                     }
-                    auto markers = bridge->getWarpMarkers(editingClipId_);
-                    gridComponent_->setWarpMarkers(markers);
                 }
             } else if (wasWarpEnabled_) {
                 // Only disable if warp was previously on

@@ -578,6 +578,7 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
         // Enable timestretcher at creation time (before any speedRatio changes)
         // Must be set before setSpeedRatio() to avoid assertion failures
         audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
+        audioClipPtr->setUsesProxy(false);
 
         // Store bidirectional mapping
         std::string engineClipId = audioClipPtr->itemID.toString().toStdString();
@@ -624,11 +625,17 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
             if (audioClipPtr->getTimeStretchMode() == te::TimeStretcher::disabled) {
                 audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
             }
+            audioClipPtr->setUsesProxy(false);
             // Disable autoTempo which blocks setSpeedRatio in AudioClipBase
             if (audioClipPtr->getAutoTempo()) {
                 audioClipPtr->setAutoTempo(false);
             }
             audioClipPtr->setSpeedRatio(teSpeedRatio);
+
+            // Sync warp state to engine
+            if (clip->warpEnabled != audioClipPtr->getWarpTime()) {
+                audioClipPtr->setWarpTime(clip->warpEnabled);
+            }
 
             // Log TE state after setSpeedRatio (which internally calls setLoopRange)
             auto posAfterSpeed = audioClipPtr->getPosition();
@@ -2471,24 +2478,32 @@ void AudioBridge::enableWarp(ClipId clipId) {
 
     auto& warpManager = audioClipPtr->getWarpTimeManager();
 
-    // Remove any existing markers
+    // Remove any existing markers (creates default boundaries at 0 and sourceLen)
     warpManager.removeAllMarkers();
 
-    // Get cached transients from AudioThumbnailManager
+    // Get clip info
     const auto* clip = ClipManager::getInstance().getClip(clipId);
     if (!clip)
         return;
 
+    // Get the clip's offset - this is where playback starts in the source file
+    double offset = clip->audioOffset;
+
+    // Get cached transients from AudioThumbnailManager
     auto* cachedTransients =
         AudioThumbnailManager::getInstance().getCachedTransients(clip->audioFilePath);
     DBG("AudioBridge::enableWarp cachedTransients="
         << (cachedTransients ? juce::String(cachedTransients->size()) : "null")
-        << " file=" << clip->audioFilePath);
+        << " file=" << clip->audioFilePath << " offset=" << offset);
     if (cachedTransients) {
-        // Insert identity-mapped markers at each transient position
+        // Insert identity-mapped markers at each transient position within the visible range
+        double visibleEnd = offset + clip->length / clip->audioStretchFactor;
         for (double t : *cachedTransients) {
-            auto pos = te::TimePosition::fromSeconds(t);
-            warpManager.insertMarker(te::WarpMarker(pos, pos));
+            // Only include transients within the visible portion of the clip
+            if (t >= offset && t <= visibleEnd) {
+                auto pos = te::TimePosition::fromSeconds(t);
+                warpManager.insertMarker(te::WarpMarker(pos, pos));
+            }
         }
     }
 
@@ -2496,11 +2511,7 @@ void AudioBridge::enableWarp(ClipId clipId) {
     auto sourceLen = warpManager.getSourceLength();
     warpManager.setWarpEndMarkerTime(te::TimePosition::fromSeconds(0.0) + sourceLen);
 
-    // NOTE: setWarpTime(true) triggers TE's offline proxy render pipeline which
-    // crashes during graph rebuild (AudioFileCache::createReader SIGBUS). The visual
-    // warp marker system works without it. Enabling TE warp playback requires
-    // investigating the proxy render lifecycle and thread safety.
-    // audioClipPtr->setWarpTime(true);
+    audioClipPtr->setWarpTime(true);
 
     DBG("AudioBridge::enableWarp clip " << clipId << " -> " << warpManager.getMarkers().size()
                                         << " markers");
@@ -2513,6 +2524,7 @@ void AudioBridge::disableWarp(ClipId clipId) {
 
     auto& warpManager = audioClipPtr->getWarpTimeManager();
     warpManager.removeAllMarkers();
+    audioClipPtr->setWarpTime(false);
 
     DBG("AudioBridge::disableWarp clip " << clipId);
 }
@@ -2529,33 +2541,38 @@ std::vector<AudioBridge::WarpMarkerInfo> AudioBridge::getWarpMarkers(ClipId clip
     auto& warpManager = audioClipPtr->getWarpTimeManager();
     const auto& markers = warpManager.getMarkers();
 
-    // Skip the first and last markers — they are TE's internal boundary markers
-    // (start at 0,0 and end at sourceLen,sourceLen) created by removeAllMarkers().
+    // Return ALL markers including TE's boundary markers at (0,0) and (sourceLen,sourceLen).
+    // The visual renderer needs the same boundaries as the audio engine for correct interpolation.
     int count = markers.size();
-    if (count <= 2) {
-        // Only boundary markers, no user-visible warp markers
-        return result;
-    }
-    result.reserve(static_cast<size_t>(count - 2));
-    for (int i = 1; i < count - 1; ++i) {
+    result.reserve(static_cast<size_t>(count));
+    for (int i = 0; i < count; ++i) {
         auto* marker = markers.getUnchecked(i);
         result.push_back({marker->sourceTime.inSeconds(), marker->warpTime.inSeconds()});
     }
 
-    DBG("AudioBridge::getWarpMarkers clip " << clipId << " -> " << result.size() << " markers");
     return result;
 }
 
 int AudioBridge::addWarpMarker(ClipId clipId, double sourceTime, double warpTime) {
     auto* audioClipPtr = findWaveAudioClip(edit_, clipIdToEngineId_, clipId);
-    if (!audioClipPtr)
+    if (!audioClipPtr) {
+        DBG("AudioBridge::addWarpMarker - clip not found");
         return -1;
+    }
 
     auto& warpManager = audioClipPtr->getWarpTimeManager();
+    int markerCountBefore = warpManager.getMarkers().size();
+
     int teIndex = warpManager.insertMarker(te::WarpMarker(te::TimePosition::fromSeconds(sourceTime),
                                                           te::TimePosition::fromSeconds(warpTime)));
-    // Convert TE index to UI index (skip first boundary marker)
-    return teIndex - 1;
+
+    int markerCountAfter = warpManager.getMarkers().size();
+    DBG("AudioBridge::addWarpMarker clip "
+        << clipId << " src=" << sourceTime << " warp=" << warpTime << " -> teIndex=" << teIndex
+        << " (markers: " << markerCountBefore << " -> " << markerCountAfter << ")");
+
+    // Return TE index directly - UI now uses the same index space
+    return teIndex;
 }
 
 double AudioBridge::moveWarpMarker(ClipId clipId, int index, double newWarpTime) {
@@ -2563,9 +2580,9 @@ double AudioBridge::moveWarpMarker(ClipId clipId, int index, double newWarpTime)
     if (!audioClipPtr)
         return newWarpTime;
 
-    // Convert UI index to TE index (skip first boundary marker)
+    // Use TE index directly - UI now uses the same index space
     auto& warpManager = audioClipPtr->getWarpTimeManager();
-    auto result = warpManager.moveMarker(index + 1, te::TimePosition::fromSeconds(newWarpTime));
+    auto result = warpManager.moveMarker(index, te::TimePosition::fromSeconds(newWarpTime));
     return result.inSeconds();
 }
 
@@ -2574,9 +2591,9 @@ void AudioBridge::removeWarpMarker(ClipId clipId, int index) {
     if (!audioClipPtr)
         return;
 
-    // Convert UI index to TE index (skip first boundary marker)
+    // Use TE index directly - UI now uses the same index space
     auto& warpManager = audioClipPtr->getWarpTimeManager();
-    warpManager.removeMarker(index + 1);
+    warpManager.removeMarker(index);
 }
 
 }  // namespace magda

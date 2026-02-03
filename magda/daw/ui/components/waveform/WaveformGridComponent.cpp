@@ -674,10 +674,12 @@ double WaveformGridComponent::getGridResolutionBeats() const {
 double WaveformGridComponent::snapTimeToGrid(double time) const {
     double beatsPerGrid = getGridResolutionBeats();
     double bpm = timeRuler_ ? timeRuler_->getTempo() : 0.0;
-    if (beatsPerGrid <= 0.0 || bpm <= 0.0)
+    if (beatsPerGrid <= 0.0 || bpm <= 0.0) {
         return time;
+    }
     double secondsPerGrid = beatsPerGrid * 60.0 / bpm;
-    return std::round(time / secondsPerGrid) * secondsPerGrid;
+    double snapped = std::round(time / secondsPerGrid) * secondsPerGrid;
+    return snapped;
 }
 
 void WaveformGridComponent::setShowLoopGhost(bool show) {
@@ -807,23 +809,46 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
             double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
             double clipRelativeTime = clickTime - displayStartTime;
 
-            // Convert to source-file coordinates
-            double sourceFileTime = clipRelativeTime + clip->audioOffset;
+            // Snap the DISPLAY position to grid (so markers align with visual grid lines)
+            // Hold Alt to bypass snapping
+            if (!event.mods.isAltDown() && gridResolution_ != GridResolution::Off) {
+                clipRelativeTime = snapTimeToGrid(clipRelativeTime);
+            }
 
-            // Snap to grid or transient (in source-file time) unless Alt is held
-            if (!event.mods.isAltDown()) {
-                if (gridResolution_ != GridResolution::Off) {
-                    sourceFileTime = snapTimeToGrid(sourceFileTime);
-                } else {
-                    sourceFileTime = snapToNearestTransient(sourceFileTime);
+            // Convert snapped display time to absolute warp time
+            double warpTime = clipRelativeTime + clip->audioOffset;
+
+            // Find the corresponding sourceTime by interpolating from existing markers.
+            // The warp curve maps warpTime -> sourceTime, so we need to find what
+            // source position is currently playing at this warp time.
+            double sourceTime = warpTime;  // Default to identity if no markers
+
+            if (warpMarkers_.size() >= 2) {
+                // Sort markers by warpTime to find the segment containing our click
+                std::vector<std::pair<double, double>> sorted;  // (warpTime, sourceTime)
+                for (const auto& m : warpMarkers_) {
+                    sorted.push_back({m.warpTime, m.sourceTime});
+                }
+                std::sort(sorted.begin(), sorted.end());
+
+                // Find the two markers that span our warpTime
+                for (size_t i = 0; i + 1 < sorted.size(); ++i) {
+                    if (sorted[i].first <= warpTime && sorted[i + 1].first >= warpTime) {
+                        double warpDuration = sorted[i + 1].first - sorted[i].first;
+                        if (warpDuration > 0.0) {
+                            double ratio = (warpTime - sorted[i].first) / warpDuration;
+                            sourceTime = sorted[i].second +
+                                         ratio * (sorted[i + 1].second - sorted[i].second);
+                        } else {
+                            sourceTime = sorted[i].second;
+                        }
+                        break;
+                    }
                 }
             }
 
             if (onWarpMarkerAdd) {
-                // Add identity marker: sourceTime == warpTime
-                // The marker pins this source position at this warp time
-                // User can then drag the marker to create warp effect
-                onWarpMarkerAdd(sourceFileTime, sourceFileTime);
+                onWarpMarkerAdd(sourceTime, warpTime);
             }
         }
         return;
