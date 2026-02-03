@@ -191,49 +191,6 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
         }
     }
     g.restoreState();
-
-    // In loop mode with ghost disabled, draw the continuation of the source audio
-    // beyond the loop end with a faded appearance (visual reference for what's cut off)
-    if (displayInfo_.isLooped() && !showLoopGhost_ && !warpMode_) {
-        double loopEndDisplay = displayInfo_.loopEndPositionSeconds;
-        double sourceAfterLoop = displayInfo_.sourceFileEnd;  // Where loop ends in source file
-
-        // Only draw if there's more source audio after the loop end
-        if (fileDuration > 0.0 && sourceAfterLoop < fileDuration) {
-            double remainingSourceDuration = fileDuration - sourceAfterLoop;
-            double remainingDisplayDuration = remainingSourceDuration * clip.audioStretchFactor;
-
-            // Limit to what fits in the clip length
-            double displayEnd = std::min(loopEndDisplay + remainingDisplayDuration, clip.length);
-
-            if (displayEnd > loopEndDisplay) {
-                int contStartX =
-                    waveformRect.getX() + static_cast<int>(loopEndDisplay * horizontalZoom_);
-                int contEndX = waveformRect.getX() + static_cast<int>(displayEnd * horizontalZoom_);
-                int contWidth = contEndX - contStartX;
-
-                if (contWidth > 0) {
-                    auto contRect = juce::Rectangle<int>(contStartX, waveformRect.getY(), contWidth,
-                                                         waveformRect.getHeight());
-                    auto contDrawRect = contRect.reduced(0, 4);
-
-                    if (contDrawRect.getWidth() > 0 && contDrawRect.getHeight() > 0) {
-                        // Calculate the source range for the continuation
-                        double contSourceStart = sourceAfterLoop;
-                        double contSourceEnd = sourceAfterLoop + (displayEnd - loopEndDisplay) /
-                                                                     clip.audioStretchFactor;
-                        contSourceEnd = std::min(contSourceEnd, fileDuration);
-
-                        // Draw with a faded/dimmed colour
-                        auto fadedColour = waveColour.withAlpha(0.35f);
-                        thumbnailManager.drawWaveform(g, contDrawRect, clip.audioFilePath,
-                                                      contSourceStart, contSourceEnd, fadedColour,
-                                                      vertZoom);
-                    }
-                }
-            }
-        }
-    }
 }
 
 void WaveformGridComponent::paintWaveformOverlays(juce::Graphics& g, const magda::ClipInfo& clip,

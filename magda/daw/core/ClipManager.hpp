@@ -175,6 +175,8 @@ class ClipManager {
     void setAudioOffset(ClipId clipId, double offset);
     /** @brief Set the time-stretch factor of an audio clip (1.0 = original speed) */
     void setAudioStretchFactor(ClipId clipId, double stretchFactor);
+    /** @brief Set the time-stretch algorithm mode for an audio clip */
+    void setTimeStretchMode(ClipId clipId, int mode);
 
     // ========================================================================
     // Content-Level Operations (Editor Operations)

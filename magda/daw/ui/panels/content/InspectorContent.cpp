@@ -421,6 +421,30 @@ InspectorContent::InspectorContent() {
     };
     addChildComponent(*clipStretchValue_);
 
+    // Stretch mode selector (algorithm)
+    stretchModeCombo_.setColour(juce::ComboBox::backgroundColourId,
+                                DarkTheme::getColour(DarkTheme::SURFACE));
+    stretchModeCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    stretchModeCombo_.setColour(juce::ComboBox::outlineColourId,
+                                DarkTheme::getColour(DarkTheme::BORDER));
+    // Mode values match TimeStretcher::Mode enum
+    stretchModeCombo_.addItem("Default", 1);                 // 0 -> use defaultMode
+    stretchModeCombo_.addItem("SoundTouch", 4);              // soundtouchNormal = 3
+    stretchModeCombo_.addItem("SoundTouch HQ", 5);           // soundtouchBetter = 4
+    stretchModeCombo_.addItem("Elastique Pro", 7);           // elastiquePro = 6
+    stretchModeCombo_.addItem("Elastique Mono", 10);         // elastiqueMonophonic = 9
+    stretchModeCombo_.addItem("RubberBand Melodic", 11);     // rubberbandMelodic = 10
+    stretchModeCombo_.addItem("RubberBand Percussive", 12);  // rubberbandPercussive = 11
+    stretchModeCombo_.setSelectedId(1, juce::dontSendNotification);
+    stretchModeCombo_.onChange = [this]() {
+        if (selectedClipId_ != magda::INVALID_CLIP_ID) {
+            // ComboBox ID is mode+1, so subtract 1 to get actual mode
+            int mode = stretchModeCombo_.getSelectedId() - 1;
+            magda::ClipManager::getInstance().setTimeStretchMode(selectedClipId_, mode);
+        }
+    };
+    addChildComponent(stretchModeCombo_);
+
     // Loop position
     clipLoopPosLabel_.setText("Pos", juce::dontSendNotification);
     clipLoopPosLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
@@ -878,9 +902,14 @@ void InspectorContent::resized() {
             bounds.removeFromTop(8);
         }
 
-        // Stretch factor (below BPM/WARP row)
+        // Stretch factor and mode (below BPM/WARP row)
         if (clipStretchValue_ && clipStretchValue_->isVisible()) {
-            clipStretchValue_->setBounds(bounds.removeFromTop(22).reduced(0, 1));
+            auto stretchRow = bounds.removeFromTop(22);
+            clipStretchValue_->setBounds(stretchRow.removeFromLeft(60).reduced(0, 1));
+            stretchRow.removeFromLeft(8);
+            if (stretchModeCombo_.isVisible()) {
+                stretchModeCombo_.setBounds(stretchRow.reduced(0, 1));
+            }
         }
     } else if (currentSelectionType_ == magda::SelectionType::Note) {
         // Note properties layout
@@ -1416,8 +1445,11 @@ void InspectorContent::updateFromSelectedClip() {
         }
 
         clipStretchValue_->setVisible(isAudioClip);
+        stretchModeCombo_.setVisible(isAudioClip);
         if (isAudioClip) {
             clipStretchValue_->setValue(clip->audioStretchFactor, juce::dontSendNotification);
+            // Set stretch mode combo: mode+1 because ComboBox IDs start at 1
+            stretchModeCombo_.setSelectedId(clip->timeStretchMode + 1, juce::dontSendNotification);
         }
 
         // Always show loop pos/length, but grey out when loop is off
@@ -1501,6 +1533,7 @@ void InspectorContent::showClipControls(bool show) {
         clipWarpToggle_.setVisible(false);
         if (clipStretchValue_)
             clipStretchValue_->setVisible(false);
+        stretchModeCombo_.setVisible(false);
     }
     // Loop pos/length visibility is managed by updateFromSelectedClip
     if (!show) {

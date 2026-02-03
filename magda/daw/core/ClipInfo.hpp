@@ -47,6 +47,7 @@ struct ClipInfo {
     double audioStretchFactor = 1.0;  // Time stretch factor (1.0 = original speed)
     double detectedBPM = 0.0;         // Detected BPM from audio analysis (0 = not detected)
     bool warpEnabled = false;         // Whether warp markers are active on this clip
+    int timeStretchMode = 0;          // TimeStretcher::Mode (0 = default/auto)
 
     // MIDI-specific properties
     std::vector<MidiNote> midiNotes;

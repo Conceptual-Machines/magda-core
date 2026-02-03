@@ -577,7 +577,11 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
 
         // Enable timestretcher at creation time (before any speedRatio changes)
         // Must be set before setSpeedRatio() to avoid assertion failures
-        audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
+        // Use clip's timeStretchMode, or default if 0
+        auto stretchMode = clip->timeStretchMode == 0
+                               ? te::TimeStretcher::defaultMode
+                               : static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+        audioClipPtr->setTimeStretchMode(stretchMode);
         audioClipPtr->setUsesProxy(false);
 
         // Store bidirectional mapping
@@ -621,9 +625,12 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
             DBG("syncAudioClip [" << clipId << "] setSpeedRatio: " << teSpeedRatio << " (was "
                                   << currentSpeedRatio
                                   << ", stretchFactor=" << clip->audioStretchFactor << ")");
-            // Ensure timestretcher is enabled (may not be set for pre-existing clips)
-            if (audioClipPtr->getTimeStretchMode() == te::TimeStretcher::disabled) {
-                audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
+            // Ensure timestretcher is enabled with correct mode
+            auto desiredMode = clip->timeStretchMode == 0
+                                   ? te::TimeStretcher::defaultMode
+                                   : static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+            if (audioClipPtr->getTimeStretchMode() != desiredMode) {
+                audioClipPtr->setTimeStretchMode(desiredMode);
             }
             audioClipPtr->setUsesProxy(false);
             // Disable autoTempo which blocks setSpeedRatio in AudioClipBase
@@ -838,8 +845,11 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
 
         auto* audioClipPtr = clipRef.get();
 
-        // Enable timestretcher
-        audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
+        // Enable timestretcher with clip's mode (or default if 0)
+        auto stretchMode = clip->timeStretchMode == 0
+                               ? te::TimeStretcher::defaultMode
+                               : static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+        audioClipPtr->setTimeStretchMode(stretchMode);
 
         // Set speed ratio from stretch factor (BEFORE offset, since TE offset
         // is in stretched time and must be set after speed ratio)

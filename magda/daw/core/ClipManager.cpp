@@ -484,6 +484,15 @@ void ClipManager::setAudioStretchFactor(ClipId clipId, double stretchFactor) {
     }
 }
 
+void ClipManager::setTimeStretchMode(ClipId clipId, int mode) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->timeStretchMode = mode;
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
 // ============================================================================
 // Content-Level Operations (Editor Operations)
 // ============================================================================
