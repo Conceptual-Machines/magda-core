@@ -294,31 +294,103 @@ void WaveformGridComponent::paintWarpedWaveform(juce::Graphics& g, const magda::
 
     double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
 
-    // Build a sorted list of all warp points: boundaries + user markers.
-    // Each point maps sourceTime → warpTime (both in absolute source-file seconds).
+    // TE's warp markers include boundary markers at (0,0) and (sourceLen,sourceLen) in source
+    // file coordinates. But when a clip has audioOffset (trimmed start), the visible region
+    // starts at audioOffset, not 0. We must clamp warp points to the visible source range
+    // BEFORE converting to display coordinates to avoid negative display positions.
+
     struct WarpPoint {
         double sourceTime;
         double warpTime;
     };
-    std::vector<WarpPoint> points;
-    points.reserve(warpMarkers_.size() + 2);
 
-    // Start boundary: source file at audioOffset maps to audioOffset (identity)
-    points.push_back({clip.audioOffset, clip.audioOffset});
+    // Use pre-computed visible source range from ClipDisplayInfo
+    double visibleStart = displayInfo_.audioOffset;
+    double visibleEnd = displayInfo_.sourceFileEnd;
 
+    // First, collect and sort all markers by warpTime
+    std::vector<WarpPoint> allMarkers;
+    allMarkers.reserve(warpMarkers_.size());
     for (const auto& m : warpMarkers_) {
-        points.push_back({m.sourceTime, m.warpTime});
+        allMarkers.push_back({m.sourceTime, m.warpTime});
     }
 
-    // End boundary: source end maps to source end (identity)
-    double sourceEnd = fileDuration > 0.0 ? fileDuration : clip.audioOffset + clip.length;
-    points.push_back({sourceEnd, sourceEnd});
+    if (allMarkers.size() < 2) {
+        return;
+    }
 
-    // Sort by warpTime for left-to-right drawing
-    std::sort(points.begin(), points.end(),
+    std::sort(allMarkers.begin(), allMarkers.end(),
               [](const WarpPoint& a, const WarpPoint& b) { return a.warpTime < b.warpTime; });
 
+    // Build points list clamped to visible range, with interpolated boundaries
+    std::vector<WarpPoint> points;
+    points.reserve(allMarkers.size() + 2);
+
+    // Helper lambda to interpolate a point at a given warpTime between two markers
+    auto interpolateAt = [](const WarpPoint& before, const WarpPoint& after,
+                            double targetWarpTime) -> WarpPoint {
+        double warpDuration = after.warpTime - before.warpTime;
+        if (warpDuration <= 0.0) {
+            return {before.sourceTime, targetWarpTime};
+        }
+        double ratio = (targetWarpTime - before.warpTime) / warpDuration;
+        double interpSource = before.sourceTime + ratio * (after.sourceTime - before.sourceTime);
+        return {interpSource, targetWarpTime};
+    };
+
+    // Check if we need to interpolate a start boundary
+    if (allMarkers.front().warpTime < visibleStart) {
+        // Find the two markers that span visibleStart
+        for (size_t i = 0; i + 1 < allMarkers.size(); ++i) {
+            if (allMarkers[i].warpTime <= visibleStart &&
+                allMarkers[i + 1].warpTime >= visibleStart) {
+                if (allMarkers[i].warpTime == visibleStart) {
+                    points.push_back(allMarkers[i]);
+                } else {
+                    points.push_back(interpolateAt(allMarkers[i], allMarkers[i + 1], visibleStart));
+                }
+                break;
+            }
+        }
+    }
+
+    // Add all markers within the visible range
+    for (const auto& m : allMarkers) {
+        if (m.warpTime >= visibleStart && m.warpTime <= visibleEnd) {
+            // Avoid duplicating the start boundary if we just added it
+            if (points.empty() || m.warpTime > points.back().warpTime) {
+                points.push_back(m);
+            }
+        }
+    }
+
+    // Check if we need to interpolate an end boundary
+    if (allMarkers.back().warpTime > visibleEnd) {
+        // Find the two markers that span visibleEnd
+        for (size_t i = 0; i + 1 < allMarkers.size(); ++i) {
+            if (allMarkers[i].warpTime <= visibleEnd && allMarkers[i + 1].warpTime >= visibleEnd) {
+                if (allMarkers[i + 1].warpTime == visibleEnd) {
+                    if (points.empty() || points.back().warpTime < visibleEnd) {
+                        points.push_back(allMarkers[i + 1]);
+                    }
+                } else {
+                    auto interpPoint = interpolateAt(allMarkers[i], allMarkers[i + 1], visibleEnd);
+                    if (points.empty() || points.back().warpTime < visibleEnd) {
+                        points.push_back(interpPoint);
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    // Need at least 2 points to draw segments
+    if (points.size() < 2) {
+        return;
+    }
+
     // Draw each segment between consecutive warp points
+    // Now all warpTimes are within [visibleStart, visibleEnd], so display coords will be valid
     for (size_t i = 0; i + 1 < points.size(); ++i) {
         double srcStart = points[i].sourceTime;
         double srcEnd = points[i + 1].sourceTime;
@@ -326,6 +398,7 @@ void WaveformGridComponent::paintWarpedWaveform(juce::Graphics& g, const magda::
         double warpEnd = points[i + 1].warpTime;
 
         // Convert warp times to clip-relative display times
+        // Since warpTimes are now >= audioOffset, dispStart will be >= displayStartTime
         double dispStart = (warpStart - clip.audioOffset) + displayStartTime;
         double dispEnd = (warpEnd - clip.audioOffset) + displayStartTime;
 
@@ -337,19 +410,37 @@ void WaveformGridComponent::paintWarpedWaveform(juce::Graphics& g, const magda::
 
         auto segRect =
             juce::Rectangle<int>(pixStart, waveformRect.getY(), segWidth, waveformRect.getHeight());
-        // Clip to waveform bounds
-        segRect = segRect.getIntersection(waveformRect);
-        if (segRect.isEmpty())
+
+        // Clip to waveform bounds (for edge cases at display boundaries)
+        auto clippedRect = segRect.getIntersection(waveformRect);
+        if (clippedRect.isEmpty())
             continue;
 
-        auto drawRect = segRect.reduced(0, 4);
+        // Adjust source range if clipping occurred
+        double srcDuration = srcEnd - srcStart;
+        double clippedSrcStart = srcStart;
+        double clippedSrcEnd = srcEnd;
+
+        if (clippedRect != segRect && segWidth > 0 && srcDuration > 0.0) {
+            int clippedFromLeft = clippedRect.getX() - segRect.getX();
+            int clippedFromRight = segRect.getRight() - clippedRect.getRight();
+
+            double leftRatio = static_cast<double>(clippedFromLeft) / segWidth;
+            double rightRatio = static_cast<double>(clippedFromRight) / segWidth;
+
+            clippedSrcStart = srcStart + srcDuration * leftRatio;
+            clippedSrcEnd = srcEnd - srcDuration * rightRatio;
+        }
+
+        auto drawRect = clippedRect.reduced(0, 4);
         if (drawRect.getWidth() > 0 && drawRect.getHeight() > 0) {
             // Clamp source range to file duration
-            double clampedSrcStart = juce::jmax(0.0, srcStart);
-            double clampedSrcEnd = fileDuration > 0.0 ? juce::jmin(srcEnd, fileDuration) : srcEnd;
-            if (clampedSrcEnd > clampedSrcStart) {
-                thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, clampedSrcStart,
-                                              clampedSrcEnd, waveColour, vertZoom);
+            double finalSrcStart = juce::jmax(0.0, clippedSrcStart);
+            double finalSrcEnd =
+                fileDuration > 0.0 ? juce::jmin(clippedSrcEnd, fileDuration) : clippedSrcEnd;
+            if (finalSrcEnd > finalSrcStart) {
+                thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, finalSrcStart,
+                                              finalSrcEnd, waveColour, vertZoom);
             }
         }
     }
@@ -716,21 +807,23 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
             double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
             double clipRelativeTime = clickTime - displayStartTime;
 
-            // Convert clip-relative display time to source-file time
-            double sourceTime = clipRelativeTime / clip->audioStretchFactor + clip->audioOffset;
+            // Convert to source-file coordinates
+            double sourceFileTime = clipRelativeTime + clip->audioOffset;
 
             // Snap to grid or transient (in source-file time) unless Alt is held
             if (!event.mods.isAltDown()) {
                 if (gridResolution_ != GridResolution::Off) {
-                    sourceTime = snapTimeToGrid(sourceTime);
+                    sourceFileTime = snapTimeToGrid(sourceFileTime);
                 } else {
-                    sourceTime = snapToNearestTransient(sourceTime);
+                    sourceFileTime = snapToNearestTransient(sourceFileTime);
                 }
             }
 
             if (onWarpMarkerAdd) {
-                // Identity mapping: sourceTime == warpTime for a new marker
-                onWarpMarkerAdd(sourceTime, sourceTime);
+                // Add identity marker: sourceTime == warpTime
+                // The marker pins this source position at this warp time
+                // User can then drag the marker to create warp effect
+                onWarpMarkerAdd(sourceFileTime, sourceFileTime);
             }
         }
         return;
@@ -994,7 +1087,10 @@ void WaveformGridComponent::paintWarpMarkers(juce::Graphics& g, const magda::Cli
     int visibleLeft = 0;
     int visibleRight = getWidth();
 
-    for (int i = 0; i < static_cast<int>(warpMarkers_.size()); ++i) {
+    // Skip first and last markers (TE's boundary markers at 0 and sourceLen)
+    // Only draw user-created markers
+    int numMarkers = static_cast<int>(warpMarkers_.size());
+    for (int i = 1; i < numMarkers - 1; ++i) {
         const auto& marker = warpMarkers_[static_cast<size_t>(i)];
 
         // Warp time is in the playback coordinate space — no stretchFactor needed.
@@ -1049,7 +1145,10 @@ int WaveformGridComponent::findMarkerAtPixel(int x) const {
 
     double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
 
-    for (int i = 0; i < static_cast<int>(warpMarkers_.size()); ++i) {
+    // Skip first and last markers (TE's boundary markers)
+    // Only allow interaction with user-created markers
+    int numMarkers = static_cast<int>(warpMarkers_.size());
+    for (int i = 1; i < numMarkers - 1; ++i) {
         const auto& marker = warpMarkers_[static_cast<size_t>(i)];
         double clipRelativeTime = marker.warpTime - clip->audioOffset;
         double displayTime = clipRelativeTime + displayStartTime;
