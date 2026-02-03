@@ -500,7 +500,15 @@ InspectorContent::InspectorContent() {
             magda::TimelineUtils::beatsToSeconds(clipSourceEndValue_->getValue(), bpm);
         double endSourceSeconds = endTimelineSeconds / clip->audioStretchFactor;
         double sourceLength = endSourceSeconds - clip->audioOffset;
-        magda::ClipManager::getInstance().setAudioSourceLength(selectedClipId_, sourceLength);
+
+        if (clip->internalLoopEnabled) {
+            // Loop mode: change source extent (decoupled from clip length)
+            magda::ClipManager::getInstance().setAudioSourceLength(selectedClipId_, sourceLength);
+        } else {
+            // Non-loop mode: change clip length (source end and clip end are linked)
+            double newClipLength = sourceLength * clip->audioStretchFactor;
+            magda::ClipManager::getInstance().resizeClip(selectedClipId_, newClipLength, false);
+        }
     };
     addChildComponent(*clipSourceEndValue_);
 
