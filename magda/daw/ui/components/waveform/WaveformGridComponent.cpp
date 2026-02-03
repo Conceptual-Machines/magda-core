@@ -55,9 +55,10 @@ WaveformGridComponent::WaveformLayout WaveformGridComponent::computeWaveformLayo
     double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
     int positionPixels = timeToPixel(displayStartTime);
 
-    // In loop mode with ghost disabled, limit the visible area to the loop region
+    // In loop mode with ghost disabled, limit visible area to loop region
+    // This hides the clip extent beyond the loop end
     double visibleLength = clip.length;
-    if (displayInfo_.isLooped() && !showLoopGhost_) {
+    if (displayInfo_.loopEnabled && !showLoopGhost_) {
         visibleLength = std::min(clip.length, displayInfo_.loopEndPositionSeconds);
     }
 
@@ -68,12 +69,9 @@ WaveformGridComponent::WaveformLayout WaveformGridComponent::computeWaveformLayo
     auto rect =
         juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
 
-    // Effective end accounts for loop boundary
-    double effectiveLength = (displayInfo_.isLooped())
-                                 ? std::min(clipLength_, displayInfo_.loopEndPositionSeconds)
-                                 : clipLength_;
-    int clipEndPixel = relativeMode_ ? timeToPixel(effectiveLength)
-                                     : timeToPixel(clipStartTime_ + effectiveLength);
+    // clipEndPixel marks where the loop ends (same as rect end in loop mode)
+    int clipEndPixel =
+        relativeMode_ ? timeToPixel(visibleLength) : timeToPixel(clipStartTime_ + visibleLength);
 
     return {rect, clipEndPixel};
 }
@@ -753,10 +751,11 @@ void WaveformGridComponent::updateGridSize() {
         return;
     }
 
-    // When loop ghost is hidden, use the effective (loop end) length
+    // In loop mode with ghost disabled, limit to loop region
     double displayClipLength = clipLength_;
-    if (!showLoopGhost_ && displayInfo_.isLooped())
+    if (displayInfo_.loopEnabled && !showLoopGhost_) {
         displayClipLength = std::min(clipLength_, displayInfo_.loopEndPositionSeconds);
+    }
 
     // Calculate required width based on mode
     double totalTime = 0.0;
@@ -1099,8 +1098,9 @@ bool WaveformGridComponent::isNearLeftEdge(int x, const magda::ClipInfo& clip) c
 
 bool WaveformGridComponent::isNearRightEdge(int x, const magda::ClipInfo& clip) const {
     double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
-    double rightEdgeTime = (!showLoopGhost_ && displayInfo_.isLooped())
-                               ? displayInfo_.loopEndPositionSeconds
+    // In loop mode with ghost disabled, use loop end; otherwise full clip length
+    double rightEdgeTime = (displayInfo_.loopEnabled && !showLoopGhost_)
+                               ? std::min(clip.length, displayInfo_.loopEndPositionSeconds)
                                : clip.length;
     int rightEdgeX = timeToPixel(displayStartTime + rightEdgeTime);
     return std::abs(x - rightEdgeX) <= EDGE_GRAB_DISTANCE;
@@ -1109,8 +1109,9 @@ bool WaveformGridComponent::isNearRightEdge(int x, const magda::ClipInfo& clip) 
 bool WaveformGridComponent::isInsideWaveform(int x, const magda::ClipInfo& clip) const {
     double displayStartTime = relativeMode_ ? 0.0 : clipStartTime_;
     int leftEdgeX = timeToPixel(displayStartTime);
-    double rightEdgeTime = (!showLoopGhost_ && displayInfo_.isLooped())
-                               ? displayInfo_.loopEndPositionSeconds
+    // In loop mode with ghost disabled, use loop end; otherwise full clip length
+    double rightEdgeTime = (displayInfo_.loopEnabled && !showLoopGhost_)
+                               ? std::min(clip.length, displayInfo_.loopEndPositionSeconds)
                                : clip.length;
     int rightEdgeX = timeToPixel(displayStartTime + rightEdgeTime);
     return x > leftEdgeX + EDGE_GRAB_DISTANCE && x < rightEdgeX - EDGE_GRAB_DISTANCE;
