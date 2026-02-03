@@ -923,8 +923,8 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
     // Calculate absolute values from original drag start values
     switch (dragMode_) {
         case DragMode::ResizeLeft: {
-            // Content-level trim: only change audioOffset (file start point).
-            // The clip stays at the same position/length on the timeline.
+            // Content-level trim: change audioOffset (file start point) and clamp length
+            // to available audio content.
             double fileDelta = deltaSeconds / dragStartStretchFactor_;
             double newOffset = dragStartAudioOffset_ + fileDelta;
 
@@ -935,6 +935,14 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
             newOffset = juce::jmax(0.0, newOffset);
 
             clip->audioOffset = newOffset;
+
+            // Clamp clip length to available audio (for non-looped clips)
+            if (dragStartFileDuration_ > 0.0 && !clip->internalLoopEnabled) {
+                double maxLength = (dragStartFileDuration_ - newOffset) * clip->audioStretchFactor;
+                if (clip->length > maxLength) {
+                    clip->length = juce::jmax(magda::ClipOperations::MIN_CLIP_LENGTH, maxLength);
+                }
+            }
             break;
         }
         case DragMode::ResizeRight: {

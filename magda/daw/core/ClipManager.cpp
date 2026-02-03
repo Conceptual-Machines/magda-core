@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "ClipOperations.hpp"
 #include "TrackManager.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 
@@ -452,6 +453,21 @@ void ClipManager::setAudioOffset(ClipId clipId, double offset) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
             clip->audioOffset = juce::jmax(0.0, offset);
+
+            // Clamp clip length to available audio (for non-looped clips)
+            if (!clip->internalLoopEnabled && !clip->audioFilePath.isEmpty()) {
+                auto* thumbnail =
+                    AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
+                if (thumbnail) {
+                    double fileDuration = thumbnail->getTotalLength();
+                    double maxLength =
+                        (fileDuration - clip->audioOffset) * clip->audioStretchFactor;
+                    if (clip->length > maxLength) {
+                        clip->length = juce::jmax(ClipOperations::MIN_CLIP_LENGTH, maxLength);
+                    }
+                }
+            }
+
             notifyClipPropertyChanged(clipId);
         }
     }
