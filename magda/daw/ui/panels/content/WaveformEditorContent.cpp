@@ -792,8 +792,9 @@ void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
     gridComponent_->setDisplayInfo(info);
 
     // Update time ruler loop region (green markers with triangles)
+    // Use loopEnabled directly instead of isLooped() which has additional constraints
     if (timeRuler_) {
-        timeRuler_->setLoopRegion(info.loopOffsetSeconds, info.loopLengthSeconds, info.isLooped());
+        timeRuler_->setLoopRegion(info.loopOffsetSeconds, info.loopLengthSeconds, info.loopEnabled);
     }
 }
 

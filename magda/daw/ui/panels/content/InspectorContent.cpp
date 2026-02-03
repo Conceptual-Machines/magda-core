@@ -207,13 +207,10 @@ InspectorContent::InspectorContent() {
     // Clip properties section
     // ========================================================================
 
-    // Clip name
-    clipNameLabel_.setText("Name", juce::dontSendNotification);
-    clipNameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    addChildComponent(clipNameLabel_);
+    // Clip name (used as header - no "Name" label needed)
+    clipNameLabel_.setVisible(false);  // Not used anymore
 
-    clipNameValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
+    clipNameValue_.setFont(FontManager::getInstance().getUIFont(14.0f));  // Larger for header
     clipNameValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     clipNameValue_.setColour(juce::Label::backgroundColourId,
                              DarkTheme::getColour(DarkTheme::SURFACE));
@@ -226,24 +223,19 @@ InspectorContent::InspectorContent() {
     };
     addChildComponent(clipNameValue_);
 
-    // Clip type
-    clipTypeLabel_.setText("Type", juce::dontSendNotification);
-    clipTypeLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipTypeLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    addChildComponent(clipTypeLabel_);
+    // Clip type icon (sinewave for audio, midi for MIDI)
+    clipTypeIcon_ = std::make_unique<magda::SvgButton>("Type", BinaryData::sinewave_svg,
+                                                       BinaryData::sinewave_svgSize);
+    clipTypeIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    clipTypeIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipTypeIcon_->setInterceptsMouseClicks(false, false);
+    clipTypeIcon_->setTooltip("Audio clip");
+    addChildComponent(*clipTypeIcon_);
 
-    clipTypeValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    clipTypeValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-    addChildComponent(clipTypeValue_);
-
-    // Detected BPM (read-only, audio clips only)
-    clipBpmLabel_.setText("BPM", juce::dontSendNotification);
-    clipBpmLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipBpmLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    addChildComponent(clipBpmLabel_);
-
-    clipBpmValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    clipBpmValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    // Detected BPM (shown at bottom with WARP button)
+    clipBpmValue_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    clipBpmValue_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipBpmValue_.setJustificationType(juce::Justification::centredLeft);
     addChildComponent(clipBpmValue_);
 
     // Position icon (static, non-interactive)
@@ -721,8 +713,15 @@ void InspectorContent::paint(juce::Graphics& g) {
 void InspectorContent::resized() {
     auto bounds = getLocalBounds().reduced(10);
 
-    titleLabel_.setBounds(bounds.removeFromTop(24));
-    bounds.removeFromTop(8);  // Spacing
+    // Show "Inspector" title for non-clip selections
+    if (currentSelectionType_ != magda::SelectionType::Clip) {
+        titleLabel_.setVisible(true);
+        titleLabel_.setBounds(bounds.removeFromTop(24));
+        bounds.removeFromTop(8);  // Spacing
+    } else {
+        // For clip selection, hide title - clip name is the header
+        titleLabel_.setVisible(false);
+    }
 
     if (currentSelectionType_ == magda::SelectionType::None) {
         // Center the no-selection label
@@ -787,22 +786,17 @@ void InspectorContent::resized() {
         bounds.removeFromTop(4);
         clipCountLabel_.setBounds(bounds.removeFromTop(20));
     } else if (currentSelectionType_ == magda::SelectionType::Clip) {
-        // Clip properties layout
-        clipNameLabel_.setBounds(bounds.removeFromTop(16));
-        clipNameValue_.setBounds(bounds.removeFromTop(24));
-        bounds.removeFromTop(12);
-
-        // Type (read-only)
-        clipTypeLabel_.setBounds(bounds.removeFromTop(16));
-        clipTypeValue_.setBounds(bounds.removeFromTop(20));
-        bounds.removeFromTop(12);
-
-        // BPM (read-only, audio clips only)
-        if (clipBpmLabel_.isVisible()) {
-            clipBpmLabel_.setBounds(bounds.removeFromTop(16));
-            clipBpmValue_.setBounds(bounds.removeFromTop(20));
-            bounds.removeFromTop(12);
+        // Clip properties layout - clip name as header with type icon
+        {
+            const int iconSize = 18;
+            const int gap = 6;
+            auto headerRow = bounds.removeFromTop(24);
+            clipTypeIcon_->setBounds(
+                headerRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+            headerRow.removeFromLeft(gap);
+            clipNameValue_.setBounds(headerRow);
         }
+        bounds.removeFromTop(12);
 
         // Start / End — icon + two fields side by side (matches loop row)
         {
@@ -859,21 +853,34 @@ void InspectorContent::resized() {
             bounds.removeFromTop(8);
         }
 
-        // Warp toggle (audio clips only)
-        if (clipWarpToggle_.isVisible()) {
-            clipWarpToggle_.setBounds(bounds.removeFromTop(22).reduced(0, 1));
-            bounds.removeFromTop(8);
-        }
-
-        if (clipStretchValue_ && clipStretchValue_->isVisible()) {
-            clipStretchValue_->setBounds(bounds.removeFromTop(22).reduced(0, 1));
-            bounds.removeFromTop(8);
-        }
-
         // Session clip launch properties (only for session clips)
         if (launchQuantizeLabel_.isVisible()) {
             launchQuantizeLabel_.setBounds(bounds.removeFromTop(16));
             launchQuantizeCombo_.setBounds(bounds.removeFromTop(24));
+            bounds.removeFromTop(8);
+        }
+
+        // BPM and WARP on the same row at the bottom (audio clips only)
+        if (clipWarpToggle_.isVisible() || clipBpmValue_.isVisible()) {
+            const int gap = 8;
+            auto bottomRow = bounds.removeFromTop(24);
+
+            // BPM value on the left (e.g., "120.0 BPM")
+            if (clipBpmValue_.isVisible()) {
+                clipBpmValue_.setBounds(bottomRow.removeFromLeft(70));
+                bottomRow.removeFromLeft(gap);
+            }
+
+            // WARP button
+            if (clipWarpToggle_.isVisible()) {
+                clipWarpToggle_.setBounds(bottomRow.removeFromLeft(60).reduced(0, 1));
+            }
+            bounds.removeFromTop(8);
+        }
+
+        // Stretch factor (below BPM/WARP row)
+        if (clipStretchValue_ && clipStretchValue_->isVisible()) {
+            clipStretchValue_->setBounds(bounds.removeFromTop(22).reduced(0, 1));
         }
     } else if (currentSelectionType_ == magda::SelectionType::Note) {
         // Note properties layout
@@ -1327,19 +1334,28 @@ void InspectorContent::updateFromSelectedClip() {
     const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
     if (clip) {
         clipNameValue_.setText(clip->name, juce::dontSendNotification);
-        clipTypeValue_.setText(magda::getClipTypeName(clip->type), juce::dontSendNotification);
 
-        // Show BPM for audio clips
-        if (clip->type == magda::ClipType::Audio && clip->detectedBPM > 0.0) {
-            clipBpmLabel_.setVisible(true);
+        // Update type icon based on clip type
+        bool isAudioClip = (clip->type == magda::ClipType::Audio);
+        if (isAudioClip) {
+            clipTypeIcon_->updateSvgData(BinaryData::sinewave_svg, BinaryData::sinewave_svgSize);
+            clipTypeIcon_->setTooltip("Audio clip");
+        } else {
+            clipTypeIcon_->updateSvgData(BinaryData::midi_svg, BinaryData::midi_svgSize);
+            clipTypeIcon_->setTooltip("MIDI clip");
+        }
+
+        // Show BPM for audio clips (at bottom with WARP)
+        if (isAudioClip && clip->detectedBPM > 0.0) {
             clipBpmValue_.setVisible(true);
             clipBpmValue_.setText(juce::String(clip->detectedBPM, 1) + " BPM",
                                   juce::dontSendNotification);
-        } else {
-            clipBpmLabel_.setVisible(clip->type == magda::ClipType::Audio);
-            clipBpmValue_.setVisible(clip->type == magda::ClipType::Audio);
-            clipBpmValue_.setText(juce::String::fromUTF8("\xe2\x80\x94"),
+        } else if (isAudioClip) {
+            clipBpmValue_.setVisible(true);
+            clipBpmValue_.setText(juce::String::fromUTF8("\xe2\x80\x94"),  // em dash
                                   juce::dontSendNotification);
+        } else {
+            clipBpmValue_.setVisible(false);
         }
 
         // Get tempo from TimelineController, fallback to 120 BPM if not available
@@ -1393,8 +1409,7 @@ void InspectorContent::updateFromSelectedClip() {
         clipLoopToggle_->setActive(clip->internalLoopEnabled);
         clipLoopToggle_->setEnabled(true);
 
-        // Warp toggle (only for audio clips)
-        bool isAudioClip = (clip->type == magda::ClipType::Audio);
+        // Warp toggle (only for audio clips) - isAudioClip already defined above
         clipWarpToggle_.setVisible(isAudioClip);
         if (isAudioClip) {
             clipWarpToggle_.setToggleState(clip->warpEnabled, juce::dontSendNotification);
@@ -1467,13 +1482,10 @@ void InspectorContent::showTrackControls(bool show) {
 }
 
 void InspectorContent::showClipControls(bool show) {
-    clipNameLabel_.setVisible(show);
     clipNameValue_.setVisible(show);
-    clipTypeLabel_.setVisible(show);
-    clipTypeValue_.setVisible(show);
+    clipTypeIcon_->setVisible(show);
     // BPM visibility is managed by updateFromSelectedClip (audio clips only)
     if (!show) {
-        clipBpmLabel_.setVisible(false);
         clipBpmValue_.setVisible(false);
     }
     clipPositionIcon_->setVisible(show);

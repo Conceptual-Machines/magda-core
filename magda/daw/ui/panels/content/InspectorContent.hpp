@@ -116,6 +116,7 @@ class InspectorContent : public PanelContent,
     // Clip properties section
     juce::Label clipNameLabel_;
     juce::Label clipNameValue_;
+    std::unique_ptr<magda::SvgButton> clipTypeIcon_;  // Audio (sinewave) or MIDI icon
     std::unique_ptr<magda::SvgButton> clipPositionIcon_;
     juce::Label clipStartLabel_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipStartValue_;
@@ -130,10 +131,7 @@ class InspectorContent : public PanelContent,
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopPosValue_;
     juce::Label clipLoopLengthLabel_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopLengthValue_;
-    juce::Label clipTypeLabel_;
-    juce::Label clipTypeValue_;
-    juce::Label clipBpmLabel_;
-    juce::Label clipBpmValue_;
+    juce::Label clipBpmValue_;  // BPM value only (no label)
 
     // Session clip launch properties
     juce::Label launchModeLabel_;
