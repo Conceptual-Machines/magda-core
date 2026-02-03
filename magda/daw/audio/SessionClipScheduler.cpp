@@ -50,13 +50,12 @@ void SessionClipScheduler::clipPropertyChanged(ClipId clipId) {
     // propagating loop changes to the LaunchHandle (setLooping nullopt),
     // which makes TE stop the clip at the end of the current pass.
     // The timer will then detect PlayState::stopped and clean up.
-    launchClipLooping_ = clip->internalLoopEnabled;
+    launchClipLooping_ = clip->loopEnabled;
     launchClipLength_ = clip->length;
 
-    // Convert loop length from beats to seconds for playhead wrapping
-    auto& tempoSeq = edit_.tempoSequence;
-    auto loopTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(clip->internalLoopLength));
-    launchLoopLength_ = loopTime.inSeconds();
+    // Source length is in seconds, convert to stretched time
+    double srcLength = clip->loopLength > 0.0 ? clip->loopLength : clip->length * clip->speedRatio;
+    launchLoopLength_ = srcLength / clip->speedRatio;
 }
 
 void SessionClipScheduler::clipPlaybackStateChanged(ClipId clipId) {
@@ -76,14 +75,13 @@ void SessionClipScheduler::clipPlaybackStateChanged(ClipId clipId) {
         // Record launch position and clip properties for playhead
         if (launchedClips_.empty()) {
             launchTransportPos_ = transport.getPosition().inSeconds();
-            launchClipLooping_ = clip->internalLoopEnabled;
+            launchClipLooping_ = clip->loopEnabled;
             launchClipLength_ = clip->length;
 
-            // Convert loop length from beats to seconds for playhead wrapping
-            auto& tempoSeq = edit_.tempoSequence;
-            auto loopTime =
-                tempoSeq.beatsToTime(te::BeatPosition::fromBeats(clip->internalLoopLength));
-            launchLoopLength_ = loopTime.inSeconds();
+            // Source length is in seconds, convert to stretched time
+            double srcLen =
+                clip->loopLength > 0.0 ? clip->loopLength : clip->length * clip->speedRatio;
+            launchLoopLength_ = srcLen / clip->speedRatio;
         }
 
         audioBridge_.launchSessionClip(clipId);

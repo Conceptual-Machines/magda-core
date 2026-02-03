@@ -1366,7 +1366,7 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
 
             // Show clip name with loop indicator if enabled
             juce::String displayText = "   " + clip->name;  // Indent for play button area
-            if (clip->internalLoopEnabled) {
+            if (clip->loopEnabled) {
                 displayText += " [L]";
             }
             slot->setButtonText(displayText);
@@ -1545,10 +1545,10 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
         if (newClipId != INVALID_CLIP_ID) {
             clipManager.setClipName(newClipId, audioFile.getFileNameWithoutExtension());
 
-            // Session clips default to looping, with loop length matching clip duration
-            double durationInBeats = (fileDuration / 60.0) * bpm;
+            // Session clips default to looping, with source end matching clip duration
             clipManager.setClipLoopEnabled(newClipId, true, bpm);
-            clipManager.setClipLoopLength(newClipId, durationInBeats);
+            // Set loopLength to match file duration (source region = entire file)
+            clipManager.setLoopLength(newClipId, fileDuration);
 
             // Assign to session view slot (triggers proper notification)
             clipManager.setClipSceneIndex(newClipId, currentSceneIndex);

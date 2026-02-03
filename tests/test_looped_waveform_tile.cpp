@@ -16,6 +16,13 @@
  * Fix: partial tiles scale the source range proportionally, i.e.
  *   fraction = tileDuration / loopCycle
  *   tileFileEnd = fileStart + (fileEnd - fileStart) * fraction
+ *
+ * TE-aligned Model:
+ * - offset: start position in source file (seconds)
+ * - loopStart/loopLength: loop region in source file (seconds)
+ * - speedRatio: playback speed ratio (1.0 = normal, 2.0 = 2x faster)
+ * - loopEnabled: whether to loop
+ * - loopPhase: phase offset within loop cycle (seconds)
  */
 
 namespace {
@@ -55,11 +62,12 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 4.0;
-        clip.audioOffset = 1.0;
-        clip.audioStretchFactor = 1.0;
-        clip.internalLoopEnabled = false;
-        clip.internalLoopOffset = 0.0;
-        clip.internalLoopLength = 0.0;
+        clip.offset = 1.0;
+        clip.speedRatio = 1.0;
+        clip.loopEnabled = false;
+        clip.loopPhase = 0.0;
+        clip.loopStart = 0.0;
+        clip.loopLength = 0.0;  // Not set, derived from clip length
 
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
@@ -72,75 +80,81 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 8.0;  // clip is 8s long
-        clip.audioOffset = 0.5;
-        clip.audioStretchFactor = 1.0;
-        clip.internalLoopEnabled = true;
-        clip.internalLoopOffset = 0.0;
-        clip.internalLoopLength = 4.0;  // 4 beats loop
+        clip.offset = 0.5;
+        clip.speedRatio = 1.0;
+        clip.loopEnabled = true;
+        clip.loopPhase = 0.0;
+        clip.loopStart = 0.5;   // loop starts at 0.5s in source
+        clip.loopLength = 2.0;  // 2s of source audio (loop cycle)
 
-        double bpm = 120.0;  // 4 beats = 2 seconds
+        double bpm = 120.0;
         auto di = ClipDisplayInfo::from(clip, bpm);
 
-        REQUIRE(di.loopLengthSeconds == Catch::Approx(2.0));
+        REQUIRE(di.loopLengthSeconds == Catch::Approx(2.0));  // sourceLength * speedRatio
         REQUIRE(di.loopEndPositionSeconds == Catch::Approx(2.0));
         REQUIRE(di.isLooped());
 
         // Source file range for one cycle
-        REQUIRE(di.sourceFileStart == Catch::Approx(0.5));  // audioOffset + 0
-        REQUIRE(di.sourceFileEnd == Catch::Approx(2.5));    // 0.5 + 2.0 / 1.0
+        REQUIRE(di.sourceFileStart == Catch::Approx(0.5));  // loopStart
+        REQUIRE(di.sourceFileEnd == Catch::Approx(2.5));    // loopStart + loopLength
     }
 
     SECTION("Looped clip with stretch: source range accounts for stretch") {
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 16.0;  // stretched clip
-        clip.audioOffset = 1.0;
-        clip.audioStretchFactor = 2.0;  // 2x slower
-        clip.internalLoopEnabled = true;
-        clip.internalLoopOffset = 0.0;
-        clip.internalLoopLength = 4.0;  // 4 beats
+        clip.offset = 1.0;
+        clip.speedRatio = 2.0;  // 2x faster
+        clip.loopEnabled = true;
+        clip.loopPhase = 0.0;
+        clip.loopStart = 1.0;   // loop starts at 1.0s in source
+        clip.loopLength = 1.0;  // 1s of source audio
 
-        double bpm = 120.0;  // 4 beats = 2 seconds
+        double bpm = 120.0;
         auto di = ClipDisplayInfo::from(clip, bpm);
 
-        REQUIRE(di.loopLengthSeconds == Catch::Approx(2.0));
+        REQUIRE(di.loopLengthSeconds ==
+                Catch::Approx(2.0));  // 1s source * 2.0 speedRatio = 2s on timeline
         REQUIRE(di.isLooped());
 
-        // Source file range: one cycle is 2s on timeline = 1s of source audio
-        REQUIRE(di.sourceFileStart == Catch::Approx(1.0));  // audioOffset + 0
-        REQUIRE(di.sourceFileEnd == Catch::Approx(2.0));    // 1.0 + 2.0 / 2.0
+        // Source file range for one cycle
+        REQUIRE(di.sourceFileStart == Catch::Approx(1.0));  // loopStart
+        REQUIRE(di.sourceFileEnd == Catch::Approx(2.0));    // loopStart + loopLength
     }
 
-    SECTION("Loop not active when loop end exceeds clip length") {
+    SECTION("Loop active when loopLength is zero but loopEnabled is true") {
         ClipInfo clip;
         clip.startTime = 0.0;
-        clip.length = 1.0;  // clip shorter than loop
-        clip.audioOffset = 0.0;
-        clip.audioStretchFactor = 1.0;
-        clip.internalLoopEnabled = true;
-        clip.internalLoopOffset = 0.0;
-        clip.internalLoopLength = 4.0;  // 4 beats = 2s at 120 BPM
+        clip.length = 1.0;
+        clip.offset = 0.0;
+        clip.speedRatio = 1.0;
+        clip.loopEnabled = true;
+        clip.loopPhase = 0.0;
+        clip.loopStart = 0.0;
+        clip.loopLength = 0.0;  // No source region defined
 
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
-        // loopEndPositionSeconds (2.0) >= length (1.0) → not looped
-        REQUIRE_FALSE(di.isLooped());
+        // With loopLength=0, sourceLength falls back to clip.length / speedRatio
+        // So it will be looped since sourceLength > 0
+        REQUIRE(di.isLooped());
     }
 
     SECTION("Clip shorter than loop cycle: source range clamped to clip length") {
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 1.0;  // 1s clip, shorter than 2s loop cycle
-        clip.audioOffset = 0.5;
-        clip.audioStretchFactor = 1.0;
-        clip.internalLoopEnabled = true;
-        clip.internalLoopOffset = 0.0;
-        clip.internalLoopLength = 4.0;  // 4 beats = 2s at 120 BPM
+        clip.offset = 0.5;
+        clip.speedRatio = 1.0;
+        clip.loopEnabled = true;
+        clip.loopPhase = 0.0;
+        clip.loopStart = 0.5;   // loop starts at 0.5s
+        clip.loopLength = 2.0;  // 2s source region
 
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
-        // sourceFileEnd must be clamped: audioOffset + clip.length / stretch = 0.5 + 1.0 = 1.5
-        // NOT the full loop cycle end of 0.5 + 2.0 = 2.5
+        // sourceFileEnd must be clamped: loopStart + clip.length / speedRatio = 0.5 + 1.0 = 1.5
+        // NOT the full loop cycle end of 2.5
         REQUIRE(di.sourceFileStart == Catch::Approx(0.5));
         REQUIRE(di.sourceFileEnd == Catch::Approx(1.5));
     }
@@ -149,17 +163,18 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 1.0;  // 1s on timeline
-        clip.audioOffset = 0.0;
-        clip.audioStretchFactor = 2.0;  // 2x slower
-        clip.internalLoopEnabled = true;
-        clip.internalLoopOffset = 0.0;
-        clip.internalLoopLength = 4.0;  // 4 beats = 2s at 120 BPM
+        clip.offset = 0.0;
+        clip.speedRatio = 2.0;  // 2x faster
+        clip.loopEnabled = true;
+        clip.loopPhase = 0.0;
+        clip.loopStart = 0.0;
+        clip.loopLength = 1.0;  // 1s source region → 2s on timeline
 
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
-        // Full loop source range would be 0 + 2.0/2.0 = 1.0s of source
-        // But clip is only 1.0s on timeline = 0.5s of source
-        // sourceFileEnd = min(1.0, 0.0 + 1.0/2.0) = 0.5
+        // Full loop source range would be 1.0s of source
+        // But clip is only 1.0s on timeline = 0.5s of source (at 2x speed)
+        // sourceFileEnd = loopStart + 1.0/2.0 = 0.5
         REQUIRE(di.sourceFileStart == Catch::Approx(0.0));
         REQUIRE(di.sourceFileEnd == Catch::Approx(0.5));
     }
@@ -167,12 +182,13 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
     SECTION("Clip equal to loop cycle: source range not clamped") {
         ClipInfo clip;
         clip.startTime = 0.0;
-        clip.length = 2.0;  // exactly one loop cycle
-        clip.audioOffset = 0.0;
-        clip.audioStretchFactor = 1.0;
-        clip.internalLoopEnabled = true;
-        clip.internalLoopOffset = 0.0;
-        clip.internalLoopLength = 4.0;  // 4 beats = 2s at 120 BPM
+        clip.length = 2.0;  // exactly one loop cycle on timeline
+        clip.offset = 0.0;
+        clip.speedRatio = 1.0;
+        clip.loopEnabled = true;
+        clip.loopPhase = 0.0;
+        clip.loopStart = 0.0;
+        clip.loopLength = 2.0;  // 2s source = 2s on timeline
 
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
@@ -185,11 +201,12 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 6.0;  // 3x the loop cycle
-        clip.audioOffset = 0.0;
-        clip.audioStretchFactor = 1.0;
-        clip.internalLoopEnabled = true;
-        clip.internalLoopOffset = 0.0;
-        clip.internalLoopLength = 4.0;  // 4 beats = 2s at 120 BPM
+        clip.offset = 0.0;
+        clip.speedRatio = 1.0;
+        clip.loopEnabled = true;
+        clip.loopPhase = 0.0;
+        clip.loopStart = 0.0;
+        clip.loopLength = 2.0;  // 2s source = 2s loop on timeline
 
         auto di = ClipDisplayInfo::from(clip, 120.0);
 

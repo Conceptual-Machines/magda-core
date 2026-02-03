@@ -36,19 +36,56 @@ struct ClipInfo {
     double startTime = 0.0;  // Position on timeline (seconds) - only for Arrangement view
     double length = 4.0;     // Duration (seconds)
 
-    // Internal looping
-    bool internalLoopEnabled = false;
-    double internalLoopOffset = 0.0;  // Loop start offset in beats
-    double internalLoopLength = 4.0;  // In beats
-
     // Audio-specific properties (flat model: one clip = one file reference)
-    juce::String audioFilePath;       // Path to audio file
-    double audioOffset = 0.0;         // File start offset for trimming (seconds)
-    double audioSourceLength = 0.0;   // Source length to use (seconds, 0 = use file duration)
-    double audioStretchFactor = 1.0;  // Time stretch factor (1.0 = original speed)
-    double detectedBPM = 0.0;         // Detected BPM from audio analysis (0 = not detected)
-    bool warpEnabled = false;         // Whether warp markers are active on this clip
-    int timeStretchMode = 0;          // TimeStretcher::Mode (0 = default/auto)
+    juce::String audioFilePath;  // Path to audio file
+
+    // =========================================================================
+    // Audio playback parameters (TE-aligned terminology)
+    // =========================================================================
+
+    // Source offset - where to start reading from source file
+    // TE: Clip::offset (but TE stores in stretched time, we use source time)
+    double offset = 0.0;  // Start position in source file (source-time seconds)
+
+    // Looping - defines the region that loops
+    // TE: AudioClipBase::loopStart, loopLength, isLooping()
+    bool loopEnabled = false;  // Whether to loop the source region
+    double loopStart = 0.0;    // Where loop region starts in source file (source-time seconds)
+    double loopLength = 0.0;   // Length of loop region (source-time seconds, 0 = use clip length)
+
+    // Time stretch
+    // TE: Clip::speedRatio
+    double speedRatio = 1.0;  // Playback speed ratio (1.0 = original, 2.0 = 2x speed/half duration)
+
+    // Content anchoring - MAGDA extension (no TE equivalent)
+    // Used to keep content anchored when resizing looped clips from the left
+    double loopPhase = 0.0;  // Phase offset within loop cycle (source-time seconds)
+
+    // =========================================================================
+    // Analysis/metadata
+    // =========================================================================
+    double detectedBPM = 0.0;  // Detected BPM from audio analysis (0 = not detected)
+    bool warpEnabled = false;  // Whether warp markers are active on this clip
+    int timeStretchMode = 0;   // TimeStretcher::Mode (0 = default/auto)
+
+    // =========================================================================
+    // Computed helpers
+    // =========================================================================
+
+    // Returns the loop length, or derives it from clip length if not set
+    double getLoopLength() const {
+        return loopLength > 0.0 ? loopLength : 0.0;
+    }
+
+    // Returns the effective source length being used
+    // When looping: loopLength (if set)
+    // When not looping: derived from clip length / speedRatio
+    double getSourceLength() const {
+        if (loopEnabled && loopLength > 0.0) {
+            return loopLength;
+        }
+        return 0.0;  // Caller should derive from clip length if needed
+    }
 
     // MIDI-specific properties
     std::vector<MidiNote> midiNotes;

@@ -819,7 +819,8 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
             UndoManager::getInstance().beginCompoundOperation("Trim Clips");
 
         for (const auto& [clipId, params] : trimOperations) {
-            auto cmd = std::make_unique<ResizeClipCommand>(clipId, params.first, params.second);
+            auto cmd = std::make_unique<ResizeClipCommand>(clipId, params.first, params.second,
+                                                           getTempo());
             UndoManager::getInstance().executeCommand(std::move(cmd));
         }
 
@@ -1175,8 +1176,8 @@ void TrackContentPanel::rebuildClipComponents() {
             UndoManager::getInstance().executeCommand(std::move(cmd));
         };
 
-        clipComp->onClipResized = [](ClipId id, double newLength, bool fromStart) {
-            auto cmd = std::make_unique<ResizeClipCommand>(id, newLength, fromStart);
+        clipComp->onClipResized = [this](ClipId id, double newLength, bool fromStart) {
+            auto cmd = std::make_unique<ResizeClipCommand>(id, newLength, fromStart, getTempo());
             UndoManager::getInstance().executeCommand(std::move(cmd));
         };
 

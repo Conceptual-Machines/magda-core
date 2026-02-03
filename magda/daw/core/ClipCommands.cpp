@@ -163,8 +163,8 @@ bool MoveClipToTrackCommand::validateState() const {
 // ResizeClipCommand
 // ============================================================================
 
-ResizeClipCommand::ResizeClipCommand(ClipId clipId, double newLength, bool fromStart)
-    : clipId_(clipId), newLength_(newLength), fromStart_(fromStart) {}
+ResizeClipCommand::ResizeClipCommand(ClipId clipId, double newLength, bool fromStart, double tempo)
+    : clipId_(clipId), newLength_(newLength), fromStart_(fromStart), tempo_(tempo) {}
 
 ClipInfo ResizeClipCommand::captureState() {
     auto* clip = ClipManager::getInstance().getClip(clipId_);
@@ -180,7 +180,7 @@ void ResizeClipCommand::restoreState(const ClipInfo& state) {
 }
 
 void ResizeClipCommand::performAction() {
-    ClipManager::getInstance().resizeClip(clipId_, newLength_, fromStart_);
+    ClipManager::getInstance().resizeClip(clipId_, newLength_, fromStart_, tempo_);
 }
 
 bool ResizeClipCommand::canMergeWith(const UndoableCommand* other) const {
@@ -503,7 +503,7 @@ void JoinClipsCommand::performAction() {
         }
     } else if (left->type == ClipType::Audio) {
         // Audio join: extend left clip length to cover both clips
-        // (audioOffset and audioStretchFactor remain from left clip)
+        // (offset and speedRatio remain from left clip)
     }
 
     // Extend left clip length

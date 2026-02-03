@@ -96,7 +96,8 @@ class MoveClipToTrackCommand : public SnapshotCommand<ClipInfo> {
  */
 class ResizeClipCommand : public SnapshotCommand<ClipInfo> {
   public:
-    ResizeClipCommand(ClipId clipId, double newLength, bool fromStart = false);
+    ResizeClipCommand(ClipId clipId, double newLength, bool fromStart = false,
+                      double tempo = 120.0);
 
     juce::String getDescription() const override {
         return "Resize Clip";
@@ -114,6 +115,7 @@ class ResizeClipCommand : public SnapshotCommand<ClipInfo> {
     ClipId clipId_;
     double newLength_;
     bool fromStart_;
+    double tempo_;
 };
 
 /**

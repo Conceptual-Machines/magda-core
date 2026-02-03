@@ -205,7 +205,7 @@ class WaveformGridComponent : public juce::Component {
     double dragStartLength_ = 0.0;
     double dragStartStartTime_ = 0.0;
     int dragStartX_ = 0;
-    double dragStartStretchFactor_ = 1.0;
+    double dragStartSpeedRatio_ = 1.0;
     double dragStartFileDuration_ = 0.0;
 
     // Throttled update for live preview

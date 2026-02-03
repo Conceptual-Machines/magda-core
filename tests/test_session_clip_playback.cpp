@@ -99,7 +99,7 @@ TEST_CASE("Session playhead runs to clip end when loop is off",
      * REGRESSION TEST
      *
      * Bug: playhead kept wrapping even with loop disabled because
-     * launchClipLength_ was set from internalLoopLength instead of
+     * launchClipLength_ was set from loopLength instead of
      * the full clip duration, and fmod was used unconditionally.
      *
      * Fix: separated loopLength from clipLength; when not looping the
@@ -188,27 +188,27 @@ TEST_CASE("ClipManager persists loop enabled and loop length", "[session][clip][
     REQUIRE(clip != nullptr);
 
     SECTION("Default loop state") {
-        REQUIRE(clip->internalLoopEnabled == false);
-        REQUIRE(clip->internalLoopLength == Catch::Approx(4.0));
+        REQUIRE(clip->loopEnabled == false);
+        REQUIRE(clip->loopLength == Catch::Approx(4.0));
     }
 
     SECTION("Enable loop") {
         ClipManager::getInstance().setClipLoopEnabled(clipId, true);
         clip = ClipManager::getInstance().getClip(clipId);
-        REQUIRE(clip->internalLoopEnabled == true);
+        REQUIRE(clip->loopEnabled == true);
     }
 
     SECTION("Set loop length") {
-        ClipManager::getInstance().setClipLoopLength(clipId, 8.0);
+        ClipManager::getInstance().setLoopLength(clipId, 8.0);
         clip = ClipManager::getInstance().getClip(clipId);
-        REQUIRE(clip->internalLoopLength == Catch::Approx(8.0));
+        REQUIRE(clip->loopLength == Catch::Approx(8.0));
     }
 
     SECTION("Disable loop") {
         ClipManager::getInstance().setClipLoopEnabled(clipId, true);
         ClipManager::getInstance().setClipLoopEnabled(clipId, false);
         clip = ClipManager::getInstance().getClip(clipId);
-        REQUIRE(clip->internalLoopEnabled == false);
+        REQUIRE(clip->loopEnabled == false);
     }
 }
 
@@ -245,9 +245,9 @@ TEST_CASE("ClipManager notifies listeners on loop property change",
         REQUIRE(listener.lastChangedClipId == clipId);
     }
 
-    SECTION("setClipLoopLength notifies") {
+    SECTION("setLoopLength notifies") {
         listener.propertyChangedCount = 0;
-        ClipManager::getInstance().setClipLoopLength(clipId, 2.0);
+        ClipManager::getInstance().setLoopLength(clipId, 2.0);
         REQUIRE(listener.propertyChangedCount >= 1);
         REQUIRE(listener.lastChangedClipId == clipId);
     }
@@ -489,38 +489,38 @@ TEST_CASE("Session MIDI clip loop offset", "[session][midi][loop]") {
     REQUIRE(clip != nullptr);
 
     SECTION("Session clips default to loop enabled") {
-        REQUIRE(clip->internalLoopEnabled == true);
-        REQUIRE(clip->internalLoopLength == Catch::Approx(4.0));
+        REQUIRE(clip->loopEnabled == true);
+        REQUIRE(clip->loopLength == Catch::Approx(4.0));
     }
 
     SECTION("Loop offset defaults to zero") {
-        REQUIRE(clip->internalLoopOffset == Catch::Approx(0.0));
+        REQUIRE(clip->loopStart == Catch::Approx(0.0));
     }
 
     SECTION("Setting loop offset updates clip state") {
-        cm.setClipLoopOffset(clipId, 2.0);
+        cm.setLoopStart(clipId, 2.0);
         clip = cm.getClip(clipId);
-        REQUIRE(clip->internalLoopOffset == Catch::Approx(2.0));
+        REQUIRE(clip->loopStart == Catch::Approx(2.0));
     }
 
     SECTION("Loop region accounts for offset") {
-        cm.setClipLoopOffset(clipId, 2.0);
-        cm.setClipLoopLength(clipId, 4.0);
+        cm.setLoopStart(clipId, 2.0);
+        cm.setLoopLength(clipId, 4.0);
         clip = cm.getClip(clipId);
 
-        double loopStart = clip->internalLoopOffset;
-        double loopEnd = loopStart + clip->internalLoopLength;
+        double loopStart = clip->loopStart;
+        double loopEnd = loopStart + clip->loopLength;
         REQUIRE(loopStart == Catch::Approx(2.0));
         REQUIRE(loopEnd == Catch::Approx(6.0));
     }
 
     SECTION("Notes extending past loop end should be truncatable") {
         // Add a note that extends past the loop boundary
-        cm.setClipLoopOffset(clipId, 1.0);
-        cm.setClipLoopLength(clipId, 2.0);
+        cm.setLoopStart(clipId, 1.0);
+        cm.setLoopLength(clipId, 2.0);
         clip = cm.getClip(clipId);
 
-        double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+        double loopEnd = clip->loopStart + clip->loopLength;
         REQUIRE(loopEnd == Catch::Approx(3.0));
 
         // A note at beat 2.5 with length 1.0 would end at 3.5, past loop end
@@ -559,25 +559,25 @@ TEST_CASE("Session clip length is independent from loop length", "[session][clip
         // Default loop length is 4 beats
         double clipLengthBeats = clip->length / secondsPerBeat;
         REQUIRE(clipLengthBeats == Catch::Approx(8.0));
-        REQUIRE(clip->internalLoopLength == Catch::Approx(4.0));
+        REQUIRE(clip->loopLength == Catch::Approx(4.0));
 
         // They are different values
-        REQUIRE(clipLengthBeats != Catch::Approx(clip->internalLoopLength));
+        REQUIRE(clipLengthBeats != Catch::Approx(clip->loopLength));
     }
 
     SECTION("Changing loop length does not change clip length") {
         double originalClipLength = clip->length;
 
-        cm.setClipLoopLength(clipId, 2.0);
+        cm.setLoopLength(clipId, 2.0);
         clip = cm.getClip(clipId);
 
-        REQUIRE(clip->internalLoopLength == Catch::Approx(2.0));
+        REQUIRE(clip->loopLength == Catch::Approx(2.0));
         REQUIRE(clip->length == Catch::Approx(originalClipLength));
     }
 
     SECTION("Resizing clip does not change loop length") {
-        cm.setClipLoopLength(clipId, 4.0);
-        double originalLoopLength = clip->internalLoopLength;
+        cm.setLoopLength(clipId, 4.0);
+        double originalLoopLength = clip->loopLength;
 
         // Shrink clip to 6 beats (3.0 seconds)
         cm.resizeClip(clipId, 6.0 * secondsPerBeat, false, bpm);
@@ -585,25 +585,25 @@ TEST_CASE("Session clip length is independent from loop length", "[session][clip
 
         double newClipLengthBeats = clip->length / secondsPerBeat;
         REQUIRE(newClipLengthBeats == Catch::Approx(6.0));
-        REQUIRE(clip->internalLoopLength == Catch::Approx(originalLoopLength));
+        REQUIRE(clip->loopLength == Catch::Approx(originalLoopLength));
     }
 
     SECTION("Loop offset does not change when clip is resized") {
-        cm.setClipLoopOffset(clipId, 1.0);
+        cm.setLoopStart(clipId, 1.0);
 
         cm.resizeClip(clipId, 6.0 * secondsPerBeat, false, bpm);
         clip = cm.getClip(clipId);
 
-        REQUIRE(clip->internalLoopOffset == Catch::Approx(1.0));
+        REQUIRE(clip->loopStart == Catch::Approx(1.0));
     }
 
     SECTION("Loop region can be smaller than clip") {
-        cm.setClipLoopLength(clipId, 2.0);
-        cm.setClipLoopOffset(clipId, 1.0);
+        cm.setLoopLength(clipId, 2.0);
+        cm.setLoopStart(clipId, 1.0);
         clip = cm.getClip(clipId);
 
         double clipEndBeats = clip->length / secondsPerBeat;
-        double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+        double loopEnd = clip->loopStart + clip->loopLength;
 
         REQUIRE(loopEnd == Catch::Approx(3.0));
         REQUIRE(clipEndBeats == Catch::Approx(8.0));
@@ -611,12 +611,12 @@ TEST_CASE("Session clip length is independent from loop length", "[session][clip
     }
 
     SECTION("Loop region can equal clip length") {
-        cm.setClipLoopOffset(clipId, 0.0);
-        cm.setClipLoopLength(clipId, 8.0);
+        cm.setLoopStart(clipId, 0.0);
+        cm.setLoopLength(clipId, 8.0);
         clip = cm.getClip(clipId);
 
         double clipEndBeats = clip->length / secondsPerBeat;
-        double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+        double loopEnd = clip->loopStart + clip->loopLength;
 
         REQUIRE(loopEnd == Catch::Approx(clipEndBeats));
     }
@@ -634,15 +634,15 @@ TEST_CASE("Session clip end clamping constrains loop region", "[session][clip][l
     REQUIRE(clipId != INVALID_CLIP_ID);
     cm.setClipSceneIndex(clipId, 0);
 
-    cm.setClipLoopOffset(clipId, 2.0);
-    cm.setClipLoopLength(clipId, 6.0);
+    cm.setLoopStart(clipId, 2.0);
+    cm.setLoopLength(clipId, 6.0);
 
     auto* clip = cm.getClip(clipId);
     REQUIRE(clip != nullptr);
 
     SECTION("Loop end equals clip end initially") {
         double clipEndBeats = clip->length / secondsPerBeat;
-        double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+        double loopEnd = clip->loopStart + clip->loopLength;
         REQUIRE(loopEnd == Catch::Approx(clipEndBeats));
     }
 
@@ -651,14 +651,14 @@ TEST_CASE("Session clip end clamping constrains loop region", "[session][clip][l
 
         // Attempting to set loop that exceeds clip should be constrained
         // (This tests the invariant — actual clamping is in the UI layer)
-        double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+        double loopEnd = clip->loopStart + clip->loopLength;
         REQUIRE(loopEnd <= clipEndBeats + 0.001);
     }
 
     SECTION("Loop offset constrains available loop length") {
         // With offset=2 in an 8-beat clip, max loop length is 6
         double clipEndBeats = clip->length / secondsPerBeat;
-        double maxLoopLength = clipEndBeats - clip->internalLoopOffset;
+        double maxLoopLength = clipEndBeats - clip->loopStart;
         REQUIRE(maxLoopLength == Catch::Approx(6.0));
     }
 }
@@ -684,22 +684,22 @@ void applyClipEnd(ClipManager& cm, ClipId clipId, double newClipEndBeats, double
 
     // Re-fetch clip after mutation
     const auto* clip = cm.getClip(clipId);
-    double loopOffset = clip->internalLoopOffset;
-    double loopLength = clip->internalLoopLength;
+    double loopOffset = clip->loopStart;
+    double loopLength = clip->loopLength;
 
     // If loop offset is past new clip end, pull it back
     if (loopOffset >= newClipEndBeats) {
         loopOffset = std::max(0.0, newClipEndBeats - loopLength);
         if (loopOffset < 0.0)
             loopOffset = 0.0;
-        cm.setClipLoopOffset(clipId, loopOffset);
+        cm.setLoopStart(clipId, loopOffset);
     }
 
     // If loop end exceeds clip end, shrink loop length
     double loopEnd = loopOffset + loopLength;
     if (loopEnd > newClipEndBeats) {
         double clampedLength = std::max(MIN_LOOP_LENGTH_BEATS, newClipEndBeats - loopOffset);
-        cm.setClipLoopLength(clipId, clampedLength);
+        cm.setLoopLength(clipId, clampedLength);
     }
 }
 
@@ -710,13 +710,13 @@ void applyLoopPos(ClipManager& cm, ClipId clipId, double newLoopPos, double bpm)
     const auto* clip = cm.getClip(clipId);
     double clipEndBeats = clip->length / (60.0 / bpm);
 
-    if (newLoopPos + clip->internalLoopLength > clipEndBeats) {
-        newLoopPos = clipEndBeats - clip->internalLoopLength;
+    if (newLoopPos + clip->loopLength > clipEndBeats) {
+        newLoopPos = clipEndBeats - clip->loopLength;
     }
     if (newLoopPos < 0.0)
         newLoopPos = 0.0;
 
-    cm.setClipLoopOffset(clipId, newLoopPos);
+    cm.setLoopStart(clipId, newLoopPos);
 }
 
 /**
@@ -725,10 +725,10 @@ void applyLoopPos(ClipManager& cm, ClipId clipId, double newLoopPos, double bpm)
 void applyLoopLength(ClipManager& cm, ClipId clipId, double newLoopLength, double bpm) {
     const auto* clip = cm.getClip(clipId);
     double clipEndBeats = clip->length / (60.0 / bpm);
-    double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+    double loopEnd = clip->loopStart + clip->loopLength;
 
     bool loopEndMatchedClipEnd = std::abs(loopEnd - clipEndBeats) < 0.001;
-    double newLoopEnd = clip->internalLoopOffset + newLoopLength;
+    double newLoopEnd = clip->loopStart + newLoopLength;
 
     if (loopEndMatchedClipEnd && newLoopEnd > clipEndBeats) {
         // Grow clip to follow
@@ -738,11 +738,11 @@ void applyLoopLength(ClipManager& cm, ClipId clipId, double newLoopLength, doubl
         clip = cm.getClip(clipId);
         clipEndBeats = clip->length / (60.0 / bpm);
         if (newLoopEnd > clipEndBeats) {
-            newLoopLength = clipEndBeats - clip->internalLoopOffset;
+            newLoopLength = clipEndBeats - clip->loopStart;
         }
     }
 
-    cm.setClipLoopLength(clipId, newLoopLength);
+    cm.setLoopLength(clipId, newLoopLength);
 }
 
 }  // namespace
@@ -755,22 +755,22 @@ TEST_CASE("Shrinking clip end clamps loop length", "[session][clip][clamp][end]"
 
     // 8-beat clip, loop offset=0, loop length=8 (loop end == clip end)
     ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
-    cm.setClipLoopOffset(id, 0.0);
-    cm.setClipLoopLength(id, 8.0);
+    cm.setLoopStart(id, 0.0);
+    cm.setLoopLength(id, 8.0);
 
     SECTION("Shrink clip to 6 beats — loop length clamped to 6") {
         applyClipEnd(cm, id, 6.0, bpm);
         auto* clip = cm.getClip(id);
         REQUIRE(clip->length == Catch::Approx(6.0 * spb));
-        REQUIRE(clip->internalLoopLength == Catch::Approx(6.0));
-        REQUIRE(clip->internalLoopOffset == Catch::Approx(0.0));
+        REQUIRE(clip->loopLength == Catch::Approx(6.0));
+        REQUIRE(clip->loopStart == Catch::Approx(0.0));
     }
 
     SECTION("Shrink clip to 4 beats — loop length clamped to 4") {
         applyClipEnd(cm, id, 4.0, bpm);
         auto* clip = cm.getClip(id);
         REQUIRE(clip->length == Catch::Approx(4.0 * spb));
-        REQUIRE(clip->internalLoopLength == Catch::Approx(4.0));
+        REQUIRE(clip->loopLength == Catch::Approx(4.0));
     }
 }
 
@@ -782,31 +782,31 @@ TEST_CASE("Shrinking clip end clamps loop with offset", "[session][clip][clamp][
 
     // 8-beat clip, loop offset=2, loop length=4 (loop end = 6)
     ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
-    cm.setClipLoopOffset(id, 2.0);
-    cm.setClipLoopLength(id, 4.0);
+    cm.setLoopStart(id, 2.0);
+    cm.setLoopLength(id, 4.0);
 
     SECTION("Shrink clip to 5 — loop end was 6, clamp length to 3") {
         applyClipEnd(cm, id, 5.0, bpm);
         auto* clip = cm.getClip(id);
-        REQUIRE(clip->internalLoopOffset == Catch::Approx(2.0));
-        REQUIRE(clip->internalLoopLength == Catch::Approx(3.0));
-        double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+        REQUIRE(clip->loopStart == Catch::Approx(2.0));
+        REQUIRE(clip->loopLength == Catch::Approx(3.0));
+        double loopEnd = clip->loopStart + clip->loopLength;
         REQUIRE(loopEnd <= 5.0 + 0.001);
     }
 
     SECTION("Shrink clip to 3 — loop end was 6, clamp length to 1") {
         applyClipEnd(cm, id, 3.0, bpm);
         auto* clip = cm.getClip(id);
-        REQUIRE(clip->internalLoopOffset == Catch::Approx(2.0));
-        REQUIRE(clip->internalLoopLength == Catch::Approx(1.0));
+        REQUIRE(clip->loopStart == Catch::Approx(2.0));
+        REQUIRE(clip->loopLength == Catch::Approx(1.0));
     }
 
     SECTION("Shrink clip past loop offset — offset pulled back") {
         applyClipEnd(cm, id, 1.0, bpm);
         auto* clip = cm.getClip(id);
         // Offset must be pulled back so loop fits
-        REQUIRE(clip->internalLoopOffset < 1.0);
-        double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+        REQUIRE(clip->loopStart < 1.0);
+        double loopEnd = clip->loopStart + clip->loopLength;
         REQUIRE(loopEnd <= 1.0 + 0.001);
     }
 }
@@ -820,15 +820,15 @@ TEST_CASE("Shrinking clip end does not affect loop when loop is inside",
 
     // 8-beat clip, loop offset=1, loop length=2 (loop end = 3)
     ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
-    cm.setClipLoopOffset(id, 1.0);
-    cm.setClipLoopLength(id, 2.0);
+    cm.setLoopStart(id, 1.0);
+    cm.setLoopLength(id, 2.0);
 
     // Shrink clip to 5 — loop end is 3, still within bounds
     applyClipEnd(cm, id, 5.0, bpm);
     auto* clip = cm.getClip(id);
 
-    REQUIRE(clip->internalLoopOffset == Catch::Approx(1.0));
-    REQUIRE(clip->internalLoopLength == Catch::Approx(2.0));
+    REQUIRE(clip->loopStart == Catch::Approx(1.0));
+    REQUIRE(clip->loopLength == Catch::Approx(2.0));
 }
 
 TEST_CASE("Loop pos clamped to keep loop within clip", "[session][clip][clamp][pos]") {
@@ -839,27 +839,27 @@ TEST_CASE("Loop pos clamped to keep loop within clip", "[session][clip][clamp][p
 
     // 8-beat clip, loop length=4
     ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
-    cm.setClipLoopOffset(id, 0.0);
-    cm.setClipLoopLength(id, 4.0);
+    cm.setLoopStart(id, 0.0);
+    cm.setLoopLength(id, 4.0);
 
     SECTION("Move loop pos to 4 — loop end 8 == clip end, allowed") {
         applyLoopPos(cm, id, 4.0, bpm);
         auto* clip = cm.getClip(id);
-        REQUIRE(clip->internalLoopOffset == Catch::Approx(4.0));
+        REQUIRE(clip->loopStart == Catch::Approx(4.0));
     }
 
     SECTION("Move loop pos to 6 — loop end would be 10, clamped to 4") {
         applyLoopPos(cm, id, 6.0, bpm);
         auto* clip = cm.getClip(id);
-        REQUIRE(clip->internalLoopOffset == Catch::Approx(4.0));
-        double loopEnd = clip->internalLoopOffset + clip->internalLoopLength;
+        REQUIRE(clip->loopStart == Catch::Approx(4.0));
+        double loopEnd = clip->loopStart + clip->loopLength;
         REQUIRE(loopEnd <= 8.0 + 0.001);
     }
 
     SECTION("Negative loop pos clamped to 0") {
         applyLoopPos(cm, id, -2.0, bpm);
         auto* clip = cm.getClip(id);
-        REQUIRE(clip->internalLoopOffset == Catch::Approx(0.0));
+        REQUIRE(clip->loopStart == Catch::Approx(0.0));
     }
 }
 
@@ -871,20 +871,20 @@ TEST_CASE("Shrinking loop length does not shrink clip", "[session][clip][clamp][
 
     // 8-beat clip, loop offset=0, loop length=8 (aligned with clip end)
     ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
-    cm.setClipLoopOffset(id, 0.0);
-    cm.setClipLoopLength(id, 8.0);
+    cm.setLoopStart(id, 0.0);
+    cm.setLoopLength(id, 8.0);
 
     SECTION("Shrink loop to 4 — clip stays at 8") {
         applyLoopLength(cm, id, 4.0, bpm);
         auto* clip = cm.getClip(id);
-        REQUIRE(clip->internalLoopLength == Catch::Approx(4.0));
+        REQUIRE(clip->loopLength == Catch::Approx(4.0));
         REQUIRE(clip->length == Catch::Approx(8.0 * spb));
     }
 
     SECTION("Shrink loop to 2 — clip stays at 8") {
         applyLoopLength(cm, id, 2.0, bpm);
         auto* clip = cm.getClip(id);
-        REQUIRE(clip->internalLoopLength == Catch::Approx(2.0));
+        REQUIRE(clip->loopLength == Catch::Approx(2.0));
         REQUIRE(clip->length == Catch::Approx(8.0 * spb));
     }
 }
@@ -898,13 +898,13 @@ TEST_CASE("Growing loop length when aligned extends clip",
 
     // 8-beat clip, loop offset=0, loop length=8 (aligned with clip end)
     ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
-    cm.setClipLoopOffset(id, 0.0);
-    cm.setClipLoopLength(id, 8.0);
+    cm.setLoopStart(id, 0.0);
+    cm.setLoopLength(id, 8.0);
 
     applyLoopLength(cm, id, 12.0, bpm);
     auto* clip = cm.getClip(id);
 
-    REQUIRE(clip->internalLoopLength == Catch::Approx(12.0));
+    REQUIRE(clip->loopLength == Catch::Approx(12.0));
     REQUIRE(clip->length == Catch::Approx(12.0 * spb));
 }
 
@@ -917,20 +917,20 @@ TEST_CASE("Growing loop length when NOT aligned clamps to clip end",
 
     // 8-beat clip, loop offset=0, loop length=4 (NOT aligned with clip end)
     ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
-    cm.setClipLoopOffset(id, 0.0);
-    cm.setClipLoopLength(id, 4.0);
+    cm.setLoopStart(id, 0.0);
+    cm.setLoopLength(id, 4.0);
 
     SECTION("Grow loop to 6 — within clip, allowed") {
         applyLoopLength(cm, id, 6.0, bpm);
         auto* clip = cm.getClip(id);
-        REQUIRE(clip->internalLoopLength == Catch::Approx(6.0));
+        REQUIRE(clip->loopLength == Catch::Approx(6.0));
         REQUIRE(clip->length == Catch::Approx(8.0 * spb));
     }
 
     SECTION("Grow loop to 10 — exceeds clip, clamped to 8") {
         applyLoopLength(cm, id, 10.0, bpm);
         auto* clip = cm.getClip(id);
-        REQUIRE(clip->internalLoopLength == Catch::Approx(8.0));
+        REQUIRE(clip->loopLength == Catch::Approx(8.0));
         REQUIRE(clip->length == Catch::Approx(8.0 * spb));
     }
 }

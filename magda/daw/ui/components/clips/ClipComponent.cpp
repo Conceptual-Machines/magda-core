@@ -6,11 +6,14 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../tracks/TrackContentPanel.hpp"
+#include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "engine/AudioEngine.hpp"
 
 namespace magda {
 
@@ -48,7 +51,8 @@ void ClipComponent::paint(juce::Graphics& g) {
     paintClipHeader(g, *clip, bounds);
 
     // Draw loop boundary corner cuts (after header so they cut through everything)
-    if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
+    double srcLength = clip->getSourceLength();
+    if (clip->loopEnabled && srcLength > 0.0) {
         auto clipBounds = getLocalBounds();
         double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
         double beatsPerSecond = tempo / 60.0;
@@ -56,7 +60,8 @@ void ClipComponent::paint(juce::Graphics& g) {
         double displayLength =
             (isDragging_ && previewLength_ > 0.0) ? previewLength_ : clip->length;
         double clipLengthInBeats = displayLength * beatsPerSecond;
-        double loopLengthBeats = clip->internalLoopLength;
+        // Loop length in beats: source length (seconds) / speedRatio * beatsPerSecond
+        double loopLengthBeats = srcLength / clip->speedRatio * beatsPerSecond;
         double beatRange = juce::jmax(1.0, clipLengthInBeats);
         int numBoundaries = static_cast<int>(clipLengthInBeats / loopLengthBeats);
         auto markerColour = juce::Colours::lightgrey;
@@ -141,7 +146,7 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
 
             // During left resize drag, the offset hasn't been committed yet,
             // so simulate the offset adjustment
-            double displayOffset = clip.audioOffset;
+            double displayOffset = clip.offset;
             if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
                 double trimDelta = dragStartLength_ - previewLength_;
                 displayOffset += di.timelineToSource(trimDelta);
@@ -155,13 +160,81 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
             if (thumbnail)
                 fileDuration = thumbnail->getTotalLength();
 
-            if (di.isLooped()) {
+            // Check for warp mode and draw warped waveform if enabled
+            bool useWarpedDraw = false;
+            std::vector<AudioBridge::WarpMarkerInfo> warpMarkers;
+
+            if (clip.warpEnabled) {
+                auto* audioEngine = TrackManager::getInstance().getAudioEngine();
+                if (audioEngine) {
+                    auto* bridge = audioEngine->getAudioBridge();
+                    if (bridge) {
+                        warpMarkers = bridge->getWarpMarkers(clipId_);
+                        useWarpedDraw = warpMarkers.size() >= 2;
+                    }
+                }
+            }
+
+            if (useWarpedDraw) {
+                // Warped waveform: draw segments between warp markers
+                // Sort markers by warpTime
+                std::sort(warpMarkers.begin(), warpMarkers.end(),
+                          [](const auto& a, const auto& b) { return a.warpTime < b.warpTime; });
+
+                // Draw each segment between consecutive markers
+                for (size_t i = 0; i + 1 < warpMarkers.size(); ++i) {
+                    double srcStart = warpMarkers[i].sourceTime;
+                    double srcEnd = warpMarkers[i + 1].sourceTime;
+                    double warpStart = warpMarkers[i].warpTime;
+                    double warpEnd = warpMarkers[i + 1].warpTime;
+
+                    // Convert warp times to clip-relative display times
+                    double dispStart = warpStart - displayOffset;
+                    double dispEnd = warpEnd - displayOffset;
+
+                    // Skip segments outside clip bounds
+                    if (dispEnd <= 0.0 || dispStart >= clipDisplayLength)
+                        continue;
+
+                    // Clamp to clip bounds
+                    if (dispStart < 0.0) {
+                        double ratio = -dispStart / (dispEnd - dispStart);
+                        srcStart += ratio * (srcEnd - srcStart);
+                        dispStart = 0.0;
+                    }
+                    if (dispEnd > clipDisplayLength) {
+                        double ratio = (clipDisplayLength - dispStart) / (dispEnd - dispStart);
+                        srcEnd = srcStart + ratio * (srcEnd - srcStart);
+                        dispEnd = clipDisplayLength;
+                    }
+
+                    int pixStart =
+                        waveformArea.getX() + static_cast<int>(dispStart * pixelsPerSecond + 0.5);
+                    int pixEnd =
+                        waveformArea.getX() + static_cast<int>(dispEnd * pixelsPerSecond + 0.5);
+                    int segWidth = pixEnd - pixStart;
+                    if (segWidth <= 0)
+                        continue;
+
+                    auto drawRect = juce::Rectangle<int>(pixStart, waveformArea.getY(), segWidth,
+                                                         waveformArea.getHeight());
+
+                    // Clamp source range to file duration
+                    double finalSrcStart = juce::jmax(0.0, srcStart);
+                    double finalSrcEnd =
+                        fileDuration > 0.0 ? juce::jmin(srcEnd, fileDuration) : srcEnd;
+                    if (finalSrcEnd > finalSrcStart) {
+                        thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath,
+                                                      finalSrcStart, finalSrcEnd, waveColour);
+                    }
+                }
+            } else if (di.isLooped()) {
                 // Looped: tile the waveform for each loop cycle
                 double loopCycle = di.loopLengthSeconds;
 
                 // File range per cycle from display info (adjusted for drag offset)
-                double fileStart = displayOffset + di.loopOffsetSeconds / di.stretchFactor;
-                double fileEnd = fileStart + loopCycle / di.stretchFactor;
+                double fileStart = displayOffset + di.loopPhase / di.speedRatio;
+                double fileEnd = fileStart + loopCycle / di.speedRatio;
                 if (fileDuration > 0.0 && fileEnd > fileDuration)
                     fileEnd = fileDuration;
 
@@ -237,7 +310,7 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
     double displayLength = (isDragging_ && previewLength_ > 0.0) ? previewLength_ : clip.length;
     double clipLengthInBeats = displayLength * beatsPerSecond;
     double midiOffset =
-        (clip.view == ClipView::Session || clip.internalLoopEnabled) ? clip.midiOffset : 0.0;
+        (clip.view == ClipView::Session || clip.loopEnabled) ? clip.midiOffset : 0.0;
 
     // Draw MIDI notes if we have them
     if (!clip.midiNotes.empty() && noteArea.getHeight() > 5) {
@@ -248,11 +321,15 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
         const int MIDI_RANGE = 127;
         double beatRange = juce::jmax(1.0, clipLengthInBeats);
 
-        if (clip.internalLoopEnabled && clip.internalLoopLength > 0.0) {
+        // For MIDI clips, convert source region to beats
+        double midiSrcLength =
+            clip.loopLength > 0.0 ? clip.loopLength : clip.length * clip.speedRatio;
+        double loopLengthBeats =
+            midiSrcLength > 0 ? midiSrcLength * beatsPerSecond : clipLengthInBeats;
+        if (clip.loopEnabled && loopLengthBeats > 0.0) {
             // Looping: draw notes repeating across the full clip length
-            double loopStart = clip.internalLoopOffset;
-            double loopEnd = loopStart + clip.internalLoopLength;
-            double loopLengthBeats = clip.internalLoopLength;
+            double loopStart = clip.loopStart * beatsPerSecond;
+            double loopEnd = loopStart + loopLengthBeats;
             int numRepetitions = static_cast<int>(std::ceil(clipLengthInBeats / loopLengthBeats));
 
             for (int rep = 0; rep < numRepetitions; ++rep) {
@@ -340,7 +417,7 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     }
 
     // Loop indicator
-    if (clip.internalLoopEnabled) {
+    if (clip.loopEnabled) {
         auto loopArea = headerArea.removeFromRight(14).reduced(2);
         g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
         g.drawText("L", loopArea, juce::Justification::centred, false);
@@ -522,7 +599,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     dragStartTime_ = clip->startTime;
     dragStartLength_ = clip->length;
     dragStartTrackId_ = clip->trackId;
-    dragStartAudioOffset_ = clip->audioOffset;
+    dragStartAudioOffset_ = clip->offset;
 
     // Cache file duration for resize clamping
     dragStartFileDuration_ = 0.0;
@@ -543,7 +620,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         if (e.mods.isShiftDown() && clip->type == ClipType::Audio &&
             clip->audioFilePath.isNotEmpty()) {
             dragMode_ = DragMode::StretchLeft;
-            dragStartStretchFactor_ = clip->audioStretchFactor;
+            dragStartSpeedRatio_ = clip->speedRatio;
             dragStartClipSnapshot_ = *clip;
         } else {
             dragMode_ = DragMode::ResizeLeft;
@@ -552,7 +629,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         if (e.mods.isShiftDown() && clip->type == ClipType::Audio &&
             clip->audioFilePath.isNotEmpty()) {
             dragMode_ = DragMode::StretchRight;
-            dragStartStretchFactor_ = clip->audioStretchFactor;
+            dragStartSpeedRatio_ = clip->speedRatio;
             dragStartClipSnapshot_ = *clip;
         } else {
             dragMode_ = DragMode::ResizeRight;
@@ -670,9 +747,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             double finalLength = endTime - finalStartTime;
 
             // Clamp to file duration for non-looped audio clips (can't reveal past file start)
-            if (dragStartFileDuration_ > 0.0 && !clip->internalLoopEnabled) {
-                double maxLength =
-                    dragStartLength_ + dragStartAudioOffset_ * dragStartStretchFactor_;
+            if (dragStartFileDuration_ > 0.0 && !clip->loopEnabled) {
+                double maxLength = dragStartLength_ + dragStartAudioOffset_ * dragStartSpeedRatio_;
                 if (finalLength > maxLength) {
                     finalLength = maxLength;
                     finalStartTime = endTime - finalLength;
@@ -717,9 +793,9 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             double finalLength = juce::jmax(0.1, finalEndTime - dragStartTime_);
 
             // Clamp to file duration for non-looped audio clips (can't resize past file end)
-            if (dragStartFileDuration_ > 0.0 && !clip->internalLoopEnabled) {
+            if (dragStartFileDuration_ > 0.0 && !clip->loopEnabled) {
                 double maxLength =
-                    (dragStartFileDuration_ - dragStartAudioOffset_) * dragStartStretchFactor_;
+                    (dragStartFileDuration_ - dragStartAudioOffset_) * dragStartSpeedRatio_;
                 finalLength = juce::jmin(finalLength, maxLength);
             }
 
@@ -758,10 +834,10 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 
             // Clamp by stretch factor limits [0.25, 4.0]
             double stretchRatio = finalLength / dragStartLength_;
-            double newStretchFactor = dragStartStretchFactor_ * stretchRatio;
-            newStretchFactor = juce::jlimit(0.25, 4.0, newStretchFactor);
+            double newSpeedRatio = dragStartSpeedRatio_ * stretchRatio;
+            newSpeedRatio = juce::jlimit(0.25, 4.0, newSpeedRatio);
             // Back-compute the allowed length from the clamped stretch factor
-            finalLength = dragStartLength_ * (newStretchFactor / dragStartStretchFactor_);
+            finalLength = dragStartLength_ * (newSpeedRatio / dragStartSpeedRatio_);
 
             previewLength_ = finalLength;
 
@@ -774,7 +850,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 auto& cm = ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
                     mutableClip->length = finalLength;
-                    mutableClip->audioStretchFactor = newStretchFactor;
+                    mutableClip->speedRatio = newSpeedRatio;
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
             }
@@ -800,9 +876,9 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 
             // Clamp by stretch factor limits
             double stretchRatio = finalLength / dragStartLength_;
-            double newStretchFactor = dragStartStretchFactor_ * stretchRatio;
-            newStretchFactor = juce::jlimit(0.25, 4.0, newStretchFactor);
-            finalLength = dragStartLength_ * (newStretchFactor / dragStartStretchFactor_);
+            double newSpeedRatio = dragStartSpeedRatio_ * stretchRatio;
+            newSpeedRatio = juce::jlimit(0.25, 4.0, newSpeedRatio);
+            finalLength = dragStartLength_ * (newSpeedRatio / dragStartSpeedRatio_);
             finalStartTime = endTime - finalLength;
 
             previewStartTime_ = finalStartTime;
@@ -818,7 +894,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 if (auto* mutableClip = cm.getClip(clipId_)) {
                     mutableClip->startTime = finalStartTime;
                     mutableClip->length = finalLength;
-                    mutableClip->audioStretchFactor = newStretchFactor;
+                    mutableClip->speedRatio = newSpeedRatio;
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
             }
@@ -973,15 +1049,17 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
 
                 // Compute final stretch factor from drag-start values
                 double stretchRatio = finalLength / dragStartLength_;
-                double newStretchFactor = dragStartStretchFactor_ * stretchRatio;
-                newStretchFactor = juce::jlimit(0.25, 4.0, newStretchFactor);
-                finalLength = dragStartLength_ * (newStretchFactor / dragStartStretchFactor_);
+                // speedRatio is inverse of stretchFactor: speedRatio = 1/stretchFactor
+                // So newSpeedRatio = dragStartSpeedRatio / stretchRatio
+                double newSpeedRatio = dragStartSpeedRatio_ / stretchRatio;
+                newSpeedRatio = juce::jlimit(0.25, 4.0, newSpeedRatio);
+                finalLength = dragStartLength_ * (dragStartSpeedRatio_ / newSpeedRatio);
 
                 // Apply final values
                 auto& cm = ClipManager::getInstance();
                 if (auto* clip = cm.getClip(clipId_)) {
                     clip->length = finalLength;
-                    clip->audioStretchFactor = newStretchFactor;
+                    clip->speedRatio = newSpeedRatio;
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
 
@@ -1003,11 +1081,12 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                     finalLength = endTime - finalStartTime;
                 }
 
-                // Compute final stretch factor from drag-start values
+                // Compute final speed ratio from drag-start values
+                // speedRatio is inverse of stretchFactor: speedRatio = 1/stretchFactor
                 double stretchRatio = finalLength / dragStartLength_;
-                double newStretchFactor = dragStartStretchFactor_ * stretchRatio;
-                newStretchFactor = juce::jlimit(0.25, 4.0, newStretchFactor);
-                finalLength = dragStartLength_ * (newStretchFactor / dragStartStretchFactor_);
+                double newSpeedRatio = dragStartSpeedRatio_ / stretchRatio;
+                newSpeedRatio = juce::jlimit(0.25, 4.0, newSpeedRatio);
+                finalLength = dragStartLength_ * (dragStartSpeedRatio_ / newSpeedRatio);
                 finalStartTime = endTime - finalLength;
 
                 // Apply final values
@@ -1015,7 +1094,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 if (auto* clip = cm.getClip(clipId_)) {
                     clip->startTime = finalStartTime;
                     clip->length = finalLength;
-                    clip->audioStretchFactor = newStretchFactor;
+                    clip->speedRatio = newSpeedRatio;
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
 

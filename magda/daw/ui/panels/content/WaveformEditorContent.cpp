@@ -132,7 +132,8 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
             double playPos = owner_.cachedPlaybackPosition_;
 
             // Wrap playhead inside loop region when looping is enabled
-            if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
+            double srcLength = clip->getSourceLength();
+            if (clip->loopEnabled && srcLength > 0.0) {
                 double bpm = 120.0;
                 auto* controller = magda::TimelineController::getCurrent();
                 if (controller) {
@@ -141,10 +142,10 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
                 auto di = magda::ClipDisplayInfo::from(*clip, bpm);
 
                 if (di.loopLengthSeconds > 0.0) {
-                    // Position relative to clip start, offset by loop start
+                    // Position relative to clip start, offset by loop phase
                     double relPos = playPos - clip->startTime;
                     if (relPos >= 0.0) {
-                        relPos = std::fmod(relPos, di.loopLengthSeconds) + di.loopOffsetSeconds;
+                        relPos = std::fmod(relPos, di.loopLengthSeconds) + di.loopPhase;
                         playPos = clip->startTime + relPos;
                     }
                 }
@@ -805,7 +806,7 @@ void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
     // Update time ruler loop region (green markers with triangles)
     // Use loopEnabled directly instead of isLooped() which has additional constraints
     if (timeRuler_) {
-        timeRuler_->setLoopRegion(info.loopOffsetSeconds, info.loopLengthSeconds, info.loopEnabled);
+        timeRuler_->setLoopRegion(info.loopPhase, info.loopLengthSeconds, info.loopEnabled);
     }
 }
 

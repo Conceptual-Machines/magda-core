@@ -21,6 +21,7 @@ ClipManager& ClipManager::getInstance() {
 ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double length,
                                     const juce::String& audioFilePath, ClipView view,
                                     double projectBPM) {
+    juce::ignoreUnused(projectBPM);
     ClipInfo clip;
     clip.id = nextClipId_++;
     clip.trackId = trackId;
@@ -32,21 +33,19 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     clip.startTime = startTime;
     clip.length = length;
     clip.audioFilePath = audioFilePath;
-    clip.audioOffset = 0.0;
-    clip.audioStretchFactor = 1.0;
+    clip.offset = 0.0;
+    clip.speedRatio = 1.0;
 
     // Detect BPM from audio file
     clip.detectedBPM = AudioThumbnailManager::getInstance().detectBPM(audioFilePath);
 
-    // Compute loop length in project beats from file duration.
-    // internalLoopLength is in project beats (converted via tempoSeq.beatsToTime
-    // in AudioBridge), so we use project BPM here.
+    // Set loopStart/loopLength from file duration
     auto* thumbnail = AudioThumbnailManager::getInstance().getThumbnail(audioFilePath);
     if (thumbnail) {
         double fileDuration = thumbnail->getTotalLength();
         if (fileDuration > 0.0) {
-            double rawBeats = fileDuration * projectBPM / 60.0;
-            clip.internalLoopLength = std::max(1.0, std::round(rawBeats));
+            clip.loopStart = 0.0;
+            clip.loopLength = fileDuration;
         }
     }
 
@@ -55,8 +54,7 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
         arrangementClips_.push_back(clip);
     } else {
         // Session clips loop by default
-        clip.internalLoopEnabled = true;
-        // Set session clip length to match file duration in beats
+        clip.loopEnabled = true;
         clip.length = length;
         sessionClips_.push_back(clip);
     }
@@ -86,9 +84,8 @@ ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double len
     if (view == ClipView::Arrangement) {
         arrangementClips_.push_back(clip);
     } else {
-        // Session clips loop by default (internalLoopLength keeps its
-        // default value in beats — don't overwrite with length which is seconds)
-        clip.internalLoopEnabled = true;
+        // Session clips loop by default
+        clip.loopEnabled = true;
         sessionClips_.push_back(clip);
     }
 
@@ -253,10 +250,10 @@ void ClipManager::moveClipToTrack(ClipId clipId, TrackId newTrackId) {
     }
 }
 
-void ClipManager::resizeClip(ClipId clipId, double newLength, bool fromStart, double /*tempo*/) {
+void ClipManager::resizeClip(ClipId clipId, double newLength, bool fromStart, double tempo) {
     if (auto* clip = getClip(clipId)) {
         if (fromStart) {
-            ClipOperations::resizeContainerFromLeft(*clip, newLength);
+            ClipOperations::resizeContainerFromLeft(*clip, newLength, tempo);
         } else {
             ClipOperations::resizeContainerFromRight(*clip, newLength);
         }
@@ -286,9 +283,10 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime) {
     rightClip.startTime = splitTime;
     rightClip.length = rightLength;
 
-    // Adjust audio offset for right clip
+    // Adjust offset for right clip (TE-aligned: offset is start position in source)
     if (rightClip.type == ClipType::Audio) {
-        rightClip.audioOffset += leftLength / clip->audioStretchFactor;
+        rightClip.offset += leftLength / clip->speedRatio;
+        rightClip.loopStart = rightClip.offset;
     }
 
     // Handle MIDI clip splitting - DESTRUCTIVE (each clip owns its notes)
@@ -368,24 +366,17 @@ void ClipManager::setClipColour(ClipId clipId, juce::Colour colour) {
 }
 
 void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double projectBPM) {
+    juce::ignoreUnused(projectBPM);
     if (auto* clip = getClip(clipId)) {
-        clip->internalLoopEnabled = enabled;
+        clip->loopEnabled = enabled;
 
-        // When enabling loop on audio clips, set loop length from clip's
-        // current timeline length converted to project beats.
-        // internalLoopLength is in project beats (converted via tempoSeq.beatsToTime
-        // in AudioBridge), so we must use project BPM here.
+        // When enabling loop on audio clips, preserve the source region
         if (enabled && clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty()) {
-            // Preserve the current source extent before enabling loop.
-            // This ensures the waveform editor shows the original audio source,
-            // not the (potentially much longer) looped clip length.
-            if (clip->audioSourceLength <= 0.0) {
-                // Convert timeline length to source-file seconds
-                clip->audioSourceLength = clip->length / clip->audioStretchFactor;
+            // Ensure loopLength is set (preserves source extent in loop mode)
+            if (clip->loopLength <= 0.0) {
+                clip->loopStart = clip->offset;
+                clip->loopLength = clip->length / clip->speedRatio;
             }
-
-            double rawBeats = clip->length * projectBPM / 60.0;
-            clip->internalLoopLength = std::max(1.0, std::round(rawBeats));
         }
 
         // When disabling loop on audio clips, clamp length to actual file content
@@ -395,11 +386,13 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
             if (thumbnail) {
                 double fileDuration = thumbnail->getTotalLength();
                 if (fileDuration > 0.0) {
-                    double maxLength =
-                        (fileDuration - clip->audioOffset) * clip->audioStretchFactor;
+                    double maxLength = (fileDuration - clip->offset) * clip->speedRatio;
                     if (clip->length > maxLength) {
                         clip->length = juce::jmax(ClipOperations::MIN_CLIP_LENGTH, maxLength);
                     }
+                    // Update loopLength to track with clip extent
+                    clip->loopStart = clip->offset;
+                    clip->loopLength = clip->length / clip->speedRatio;
                 }
             }
         }
@@ -408,16 +401,9 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
     }
 }
 
-void ClipManager::setClipLoopOffset(ClipId clipId, double offsetBeats) {
+void ClipManager::setClipLoopPhase(ClipId clipId, double phase) {
     if (auto* clip = getClip(clipId)) {
-        clip->internalLoopOffset = juce::jmax(0.0, offsetBeats);
-        notifyClipPropertyChanged(clipId);
-    }
-}
-
-void ClipManager::setClipLoopLength(ClipId clipId, double lengthBeats) {
-    if (auto* clip = getClip(clipId)) {
-        clip->internalLoopLength = juce::jmax(ClipOperations::MIN_LOOP_LENGTH_BEATS, lengthBeats);
+        clip->loopPhase = juce::jmax(0.0, phase);
         notifyClipPropertyChanged(clipId);
     }
 }
@@ -457,19 +443,19 @@ void ClipManager::setClipWarpEnabled(ClipId clipId, bool enabled) {
     }
 }
 
-void ClipManager::setAudioOffset(ClipId clipId, double offset) {
+void ClipManager::setOffset(ClipId clipId, double offset) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
-            clip->audioOffset = juce::jmax(0.0, offset);
+            clip->offset = juce::jmax(0.0, offset);
+            clip->loopStart = clip->offset;  // Keep in sync
 
             // Clamp clip length to available audio (for non-looped clips)
-            if (!clip->internalLoopEnabled && !clip->audioFilePath.isEmpty()) {
+            if (!clip->loopEnabled && !clip->audioFilePath.isEmpty()) {
                 auto* thumbnail =
                     AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
                 if (thumbnail) {
                     double fileDuration = thumbnail->getTotalLength();
-                    double maxLength =
-                        (fileDuration - clip->audioOffset) * clip->audioStretchFactor;
+                    double maxLength = (fileDuration - clip->offset) * clip->speedRatio;
                     if (clip->length > maxLength) {
                         clip->length = juce::jmax(ClipOperations::MIN_CLIP_LENGTH, maxLength);
                     }
@@ -481,12 +467,29 @@ void ClipManager::setAudioOffset(ClipId clipId, double offset) {
     }
 }
 
-void ClipManager::setAudioStretchFactor(ClipId clipId, double stretchFactor) {
+void ClipManager::setLoopStart(ClipId clipId, double loopStart) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
-            clip->audioStretchFactor =
-                juce::jlimit(ClipOperations::MIN_STRETCH_FACTOR, ClipOperations::MAX_STRETCH_FACTOR,
-                             stretchFactor);
+            clip->loopStart = juce::jmax(0.0, loopStart);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::setLoopLength(ClipId clipId, double loopLength) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->loopLength = juce::jmax(0.0, loopLength);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::setSpeedRatio(ClipId clipId, double speedRatio) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->speedRatio = juce::jlimit(ClipOperations::MIN_SPEED_RATIO,
+                                            ClipOperations::MAX_SPEED_RATIO, speedRatio);
             notifyClipPropertyChanged(clipId);
         }
     }
@@ -496,15 +499,6 @@ void ClipManager::setTimeStretchMode(ClipId clipId, int mode) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
             clip->timeStretchMode = mode;
-            notifyClipPropertyChanged(clipId);
-        }
-    }
-}
-
-void ClipManager::setAudioSourceLength(ClipId clipId, double sourceLength) {
-    if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
-            clip->audioSourceLength = juce::jmax(0.0, sourceLength);
             notifyClipPropertyChanged(clipId);
         }
     }
@@ -533,22 +527,20 @@ void ClipManager::trimAudioRight(ClipId clipId, double trimAmount, double fileDu
 }
 
 void ClipManager::stretchAudioLeft(ClipId clipId, double newLength, double oldLength,
-                                   double originalStretchFactor) {
+                                   double originalSpeedRatio) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
-            ClipOperations::stretchAudioFromLeft(*clip, newLength, oldLength,
-                                                 originalStretchFactor);
+            ClipOperations::stretchAudioFromLeft(*clip, newLength, oldLength, originalSpeedRatio);
             notifyClipPropertyChanged(clipId);
         }
     }
 }
 
 void ClipManager::stretchAudioRight(ClipId clipId, double newLength, double oldLength,
-                                    double originalStretchFactor) {
+                                    double originalSpeedRatio) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
-            ClipOperations::stretchAudioFromRight(*clip, newLength, oldLength,
-                                                  originalStretchFactor);
+            ClipOperations::stretchAudioFromRight(*clip, newLength, oldLength, originalSpeedRatio);
             notifyClipPropertyChanged(clipId);
         }
     }
@@ -923,7 +915,7 @@ void ClipManager::copyToClipboard(const std::unordered_set<ClipId>& clipIds) {
         }
     }
 
-    std::cout << "📋 CLIPBOARD: Copied " << clipboard_.size() << " clip(s)" << std::endl;
+    std::cout << "CLIPBOARD: Copied " << clipboard_.size() << " clip(s)" << std::endl;
 }
 
 std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId targetTrackId) {
@@ -961,9 +953,8 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
             if (newClip) {
                 newClip->name = clipData.name + " (copy)";
                 newClip->colour = clipData.colour;
-                newClip->internalLoopEnabled = clipData.internalLoopEnabled;
-                newClip->internalLoopOffset = clipData.internalLoopOffset;
-                newClip->internalLoopLength = clipData.internalLoopLength;
+                newClip->loopEnabled = clipData.loopEnabled;
+                newClip->loopPhase = clipData.loopPhase;
 
                 // Copy MIDI notes if MIDI clip
                 if (clipData.type == ClipType::MIDI) {
@@ -971,10 +962,12 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                     newClip->midiOffset = clipData.midiOffset;  // Preserve offset for split clips
                 }
 
-                // Copy audio properties
+                // Copy audio properties (TE-aligned)
                 if (clipData.type == ClipType::Audio) {
-                    newClip->audioOffset = clipData.audioOffset;
-                    newClip->audioStretchFactor = clipData.audioStretchFactor;
+                    newClip->offset = clipData.offset;
+                    newClip->loopStart = clipData.loopStart;
+                    newClip->loopLength = clipData.loopLength;
+                    newClip->speedRatio = clipData.speedRatio;
                 }
 
                 forceNotifyClipPropertyChanged(newClipId);
@@ -984,7 +977,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
         }
     }
 
-    std::cout << "📋 CLIPBOARD: Pasted " << newClips.size() << " clip(s) at " << pasteTime << "s"
+    std::cout << "CLIPBOARD: Pasted " << newClips.size() << " clip(s) at " << pasteTime << "s"
               << std::endl;
 
     return newClips;
@@ -999,7 +992,7 @@ void ClipManager::cutToClipboard(const std::unordered_set<ClipId>& clipIds) {
         deleteClip(clipId);
     }
 
-    std::cout << "📋 CLIPBOARD: Cut " << clipIds.size() << " clip(s)" << std::endl;
+    std::cout << "CLIPBOARD: Cut " << clipIds.size() << " clip(s)" << std::endl;
 }
 
 bool ClipManager::hasClipsInClipboard() const {

@@ -160,8 +160,7 @@ class ClipManager {
     void setClipName(ClipId clipId, const juce::String& name);
     void setClipColour(ClipId clipId, juce::Colour colour);
     void setClipLoopEnabled(ClipId clipId, bool enabled, double projectBPM = 120.0);
-    void setClipLoopOffset(ClipId clipId, double offsetBeats);
-    void setClipLoopLength(ClipId clipId, double lengthBeats);
+    void setClipLoopPhase(ClipId clipId, double phase);
     void setClipMidiOffset(ClipId clipId, double offsetBeats);
     void setClipLaunchMode(ClipId clipId, LaunchMode mode);
     void setClipLaunchQuantize(ClipId clipId, LaunchQuantize quantize);
@@ -170,15 +169,20 @@ class ClipManager {
     /** @brief Enable or disable warp markers on an audio clip */
     void setClipWarpEnabled(ClipId clipId, bool enabled);
 
-    // Audio-specific
-    /** @brief Set the file offset for audio trimming */
-    void setAudioOffset(ClipId clipId, double offset);
-    /** @brief Set the time-stretch factor of an audio clip (1.0 = original speed) */
-    void setAudioStretchFactor(ClipId clipId, double stretchFactor);
+    // Audio-specific (TE-aligned model)
+    /** @brief Set the offset (start position) in the audio file (source-time seconds) - TE:
+     * Clip::offset */
+    void setOffset(ClipId clipId, double offset);
+    /** @brief Set the loop region start in the audio file (source-time seconds) - TE:
+     * AudioClipBase::loopStart */
+    void setLoopStart(ClipId clipId, double loopStart);
+    /** @brief Set the loop region length (source-time seconds) - TE: AudioClipBase::loopLength */
+    void setLoopLength(ClipId clipId, double loopLength);
+    /** @brief Set the playback speed ratio (1.0 = original, 2.0 = double speed) - TE:
+     * Clip::speedRatio */
+    void setSpeedRatio(ClipId clipId, double speedRatio);
     /** @brief Set the time-stretch algorithm mode for an audio clip */
     void setTimeStretchMode(ClipId clipId, int mode);
-    /** @brief Set the source audio length (how much of the source file to use, in seconds) */
-    void setAudioSourceLength(ClipId clipId, double sourceLength);
 
     // ========================================================================
     // Content-Level Operations (Editor Operations)
@@ -214,19 +218,19 @@ class ClipManager {
      * @brief Stretch audio from left edge (editor operation)
      * @param newLength New timeline length
      * @param oldLength Original timeline length at drag start
-     * @param originalStretchFactor Original stretch factor at drag start
+     * @param originalSpeedRatio Original speed ratio at drag start
      */
     void stretchAudioLeft(ClipId clipId, double newLength, double oldLength,
-                          double originalStretchFactor);
+                          double originalSpeedRatio);
 
     /**
      * @brief Stretch audio from right edge (editor operation)
      * @param newLength New timeline length
      * @param oldLength Original timeline length at drag start
-     * @param originalStretchFactor Original stretch factor at drag start
+     * @param originalSpeedRatio Original speed ratio at drag start
      */
     void stretchAudioRight(ClipId clipId, double newLength, double oldLength,
-                           double originalStretchFactor);
+                           double originalSpeedRatio);
 
     // MIDI-specific
     void addMidiNote(ClipId clipId, const MidiNote& note);

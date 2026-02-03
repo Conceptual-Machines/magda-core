@@ -59,7 +59,7 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
 
             // Draw loop region if enabled
             if (di.isLooped()) {
-                double loopSourceLength = di.loopLengthSeconds / di.stretchFactor;
+                double loopSourceLength = di.loopLengthSeconds / di.speedRatio;
                 double loopEndTime = startTime + loopSourceLength;
 
                 if (loopEndTime <= endTime) {
@@ -207,7 +207,7 @@ void SessionClipEditor::setupFooter() {
     offsetSlider_->setColour(juce::Slider::textBoxBackgroundColourId,
                              DarkTheme::getColour(DarkTheme::SURFACE));
     offsetSlider_->onValueChange = [this]() {
-        ClipManager::getInstance().setAudioOffset(clipId_, offsetSlider_->getValue());
+        ClipManager::getInstance().setOffset(clipId_, offsetSlider_->getValue());
         waveformDisplay_->repaint();
     };
     addAndMakeVisible(*offsetSlider_);
@@ -292,14 +292,14 @@ void SessionClipEditor::updateControls() {
     clipNameLabel_->setText(clip->name, juce::dontSendNotification);
 
     // Update loop toggle
-    loopToggle_->setToggleState(clip->internalLoopEnabled, juce::dontSendNotification);
+    loopToggle_->setToggleState(clip->loopEnabled, juce::dontSendNotification);
 
     // Update length label
     lengthLabel_->setText(juce::String(clip->length, 2) + " beats", juce::dontSendNotification);
 
     // Update offset slider
     if (clip->audioFilePath.isNotEmpty()) {
-        offsetSlider_->setValue(clip->audioOffset, juce::dontSendNotification);
+        offsetSlider_->setValue(clip->offset, juce::dontSendNotification);
     }
 }
 
