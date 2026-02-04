@@ -806,13 +806,14 @@ void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
     auto info = magda::ClipDisplayInfo::from(clip, bpm, fileDuration);
     gridComponent_->setDisplayInfo(info);
 
-    // Update time ruler loop region (green markers with triangles)
+    // Update time ruler loop region (green when active, grey when disabled)
     // In loop mode, display is anchored at loopStart, so loop starts at position 0
     if (timeRuler_) {
         bool showMarkers = clip.loopLength > 0.0;
+        bool loopIsActive = clip.loopEnabled;
         double loopStartPos = info.loopStartPositionSeconds;
         double loopLen = info.loopLengthSeconds;
-        timeRuler_->setLoopRegion(loopStartPos, loopLen, showMarkers);
+        timeRuler_->setLoopRegion(loopStartPos, loopLen, showMarkers, loopIsActive);
 
         // Show offset/phase marker when offset differs from loopStart
         bool showPhase = info.loopEnabled && std::abs(info.offsetPositionSeconds) > 0.001;

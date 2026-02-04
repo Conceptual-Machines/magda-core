@@ -98,10 +98,12 @@ void TimeRuler::setLeftPadding(int padding) {
     repaint();
 }
 
-void TimeRuler::setLoopRegion(double offsetSeconds, double lengthSeconds, bool enabled) {
+void TimeRuler::setLoopRegion(double offsetSeconds, double lengthSeconds, bool enabled,
+                              bool active) {
     loopOffset = offsetSeconds;
     loopLength = lengthSeconds;
     loopEnabled = enabled;
+    loopActive = active;
     repaint();
 }
 
@@ -348,7 +350,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         }
     }
 
-    // Draw loop region markers
+    // Draw loop region markers (green when active, grey when disabled)
     if (loopEnabled && loopLength > 0.0) {
         double loopStartTime = relativeMode ? loopOffset : (timeOffset + loopOffset);
         double loopEndTime = loopStartTime + loopLength;
@@ -356,13 +358,17 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         int loopStartX = timeToPixel(loopStartTime);
         int loopEndX = timeToPixel(loopEndTime);
 
+        auto markerColour = loopActive ? DarkTheme::getColour(DarkTheme::LOOP_MARKER)
+                                       : DarkTheme::getColour(DarkTheme::TEXT_DISABLED);
+        float stripeAlpha = loopActive ? 0.2f : 0.1f;
+
         if (loopEndX >= 0 && loopStartX <= width) {
-            // Semi-transparent green stripe across ruler height
-            g.setColour(DarkTheme::getColour(DarkTheme::LOOP_MARKER).withAlpha(0.2f));
+            // Semi-transparent stripe across ruler height
+            g.setColour(markerColour.withAlpha(stripeAlpha));
             g.fillRect(loopStartX, 0, loopEndX - loopStartX, height);
 
             // 2px vertical lines at boundaries
-            g.setColour(DarkTheme::getColour(DarkTheme::LOOP_MARKER));
+            g.setColour(markerColour.withAlpha(loopActive ? 1.0f : 0.5f));
             if (loopStartX >= 0 && loopStartX <= width) {
                 g.fillRect(loopStartX - 1, 0, 2, height);
             }

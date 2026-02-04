@@ -457,9 +457,11 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
     }
 
-    // Loop boundaries (green) - always show when loop region is defined
+    // Loop boundaries - green when enabled, grey when disabled
     if (displayInfo_.loopLengthSeconds > 0.0) {
-        float alpha = isLooped ? 0.8f : 0.4f;
+        auto markerColour =
+            isLooped ? loopColour : juce::Colour(DarkTheme::getColour(DarkTheme::TEXT_DISABLED));
+        float alpha = isLooped ? 0.8f : 0.35f;
 
         // Loop markers from ClipDisplayInfo (anchored at loopStart)
         double loopStartPos = displayInfo_.loopStartPositionSeconds;
@@ -467,12 +469,12 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
 
         // Loop start marker
         int loopStartX = timeToPixel(baseTime + loopStartPos);
-        g.setColour(loopColour.withAlpha(alpha));
+        g.setColour(markerColour.withAlpha(alpha));
         g.fillRect(loopStartX - 1, 0, 2, bounds.getHeight());
 
         // Loop end marker
         int loopEndX = timeToPixel(baseTime + loopEndPos);
-        g.setColour(loopColour.withAlpha(alpha));
+        g.setColour(markerColour.withAlpha(alpha));
         g.fillRect(loopEndX - 1, 0, 3, bounds.getHeight());
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.drawText("L", loopEndX + 3, 2, 12, 12, juce::Justification::centredLeft, false);
@@ -486,6 +488,18 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         g.fillRect(offsetX - 1, 0, 2, bounds.getHeight());
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.drawText("O", offsetX + 3, 2, 12, 12, juce::Justification::centredLeft, false);
+    }
+
+    // Ghost overlay past clip end — dim everything beyond the clip's timeline length
+    {
+        int clipEndX = timeToPixel(baseTime + clipLength_);
+        int rightEdge = bounds.getRight();
+        if (clipEndX < rightEdge) {
+            auto ghostRect = juce::Rectangle<int>(clipEndX, bounds.getY(), rightEdge - clipEndX,
+                                                  bounds.getHeight());
+            g.setColour(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND).withAlpha(0.7f));
+            g.fillRect(ghostRect);
+        }
     }
 }
 

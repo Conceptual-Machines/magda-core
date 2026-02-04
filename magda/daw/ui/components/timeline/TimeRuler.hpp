@@ -56,7 +56,9 @@ class TimeRuler : public juce::Component, private juce::Timer {
     }
 
     // Loop region markers (shows loop boundaries on the ruler)
-    void setLoopRegion(double offsetSeconds, double lengthSeconds, bool enabled);
+    // enabled: show markers at all; active: loop is actually on (green vs grey)
+    void setLoopRegion(double offsetSeconds, double lengthSeconds, bool enabled,
+                       bool active = true);
 
     // Loop phase marker (shows where playback phase is within the loop)
     void setLoopPhaseMarker(double positionSeconds, bool visible);
@@ -115,7 +117,8 @@ class TimeRuler : public juce::Component, private juce::Timer {
     // Loop region
     double loopOffset = 0.0;   // seconds - loop start offset within clip
     double loopLength = 0.0;   // seconds - loop length
-    bool loopEnabled = false;  // whether loop region is active
+    bool loopEnabled = false;  // whether loop markers are visible
+    bool loopActive = false;   // whether loop is actually enabled (green vs grey)
 
     // Loop phase marker
     double loopPhasePosition = 0.0;  // phase marker position in timeline seconds
