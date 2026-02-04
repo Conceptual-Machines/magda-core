@@ -40,13 +40,12 @@ struct ClipDisplayInfo {
     double loopStart;          // where loop starts in source file
     double loopOffset;         // phase within loop region, derived from offset - loopStart
     double loopLengthSeconds;  // loop duration in timeline seconds (from clip's actual loopLength)
-    double loopStartPositionSeconds;  // loop start position in editor (0 when looped, relative to
-                                      // offset otherwise)
+    double loopStartPositionSeconds;  // loop start position (absolute source position in timeline
+                                      // seconds)
     double loopEndPositionSeconds;    // loopStartPositionSeconds + loopLengthSeconds
-    double offsetPositionSeconds;  // playback start position relative to display anchor (loopStart
-                                   // when looped)
+    double offsetPositionSeconds;     // offset position in timeline seconds (from file start)
 
-    // Full source extent (from display anchor to file end, for waveform editor)
+    // Full source extent (from file start to file end, for waveform editor)
     double fullSourceExtentSeconds;
 
     // Source-file ranges for waveform drawing
@@ -93,10 +92,10 @@ struct ClipDisplayInfo {
         return loopEnabled && sourceLength > 0.0;
     }
 
-    // Convert a timeline position (relative to display anchor) to absolute source file time
+    // Convert a timeline position (relative to display anchor = file start) to absolute source file
+    // time
     double displayPositionToSourceTime(double timelinePos) const {
-        double anchor = isLooped() ? loopStart : offset;
-        return anchor + timelineToSource(timelinePos);
+        return timelineToSource(timelinePos);
     }
 
     // Wrap a value within [0, period)
@@ -168,48 +167,26 @@ struct ClipDisplayInfo {
 
         d.loopLengthSeconds = (clip.loopLength > 0.0) ? srcToTimeline(clip.loopLength) : 0.0;
 
-        if (clip.loopEnabled && clip.loopLength > 0.0) {
-            // In loop mode, anchor display at loopStart.
-            // Loop starts at position 0, offset is shown as a phase marker.
-            d.loopStartPositionSeconds = 0.0;
-            d.loopEndPositionSeconds = d.loopLengthSeconds;
-            d.offsetPositionSeconds = srcToTimeline(clip.offset - clip.loopStart);
+        // Anchor display at source file start (position 0 = file start).
+        // All positions are absolute source positions converted to timeline seconds.
+        d.loopStartPositionSeconds = srcToTimeline(clip.loopStart);
+        d.loopEndPositionSeconds = d.loopStartPositionSeconds + d.loopLengthSeconds;
+        d.offsetPositionSeconds = srcToTimeline(clip.offset);
 
-            // Full source extent from loopStart to file end
-            if (fileDuration > 0.0 && fileDuration > clip.loopStart) {
-                d.fullSourceExtentSeconds = srcToTimeline(fileDuration - clip.loopStart);
-            } else {
-                d.fullSourceExtentSeconds = d.sourceExtentSeconds;
-            }
+        // Full source extent from file start to file end
+        if (fileDuration > 0.0) {
+            d.fullSourceExtentSeconds = srcToTimeline(fileDuration);
         } else {
-            // Non-loop: anchor at offset
-            d.loopStartPositionSeconds = std::max(0.0, srcToTimeline(clip.loopStart - clip.offset));
-            d.loopEndPositionSeconds = d.loopStartPositionSeconds + d.loopLengthSeconds;
-            d.offsetPositionSeconds = 0.0;  // offset IS position 0
-
-            // Full source extent from offset to file end
-            if (fileDuration > 0.0 && fileDuration > clip.offset) {
-                d.fullSourceExtentSeconds = srcToTimeline(fileDuration - clip.offset);
-            } else {
-                d.fullSourceExtentSeconds = d.sourceExtentSeconds;
-            }
+            d.fullSourceExtentSeconds = d.sourceExtentSeconds;
         }
 
-        if (d.loopEnabled && d.sourceLength > 0.0) {
-            // In loop mode, show the full loop region from loopStart.
-            // Phase (offset - loopStart) only affects playback position,
-            // not the displayed source range.
-            d.sourceFileStart = d.loopStart;
-            d.sourceFileEnd = d.loopStart + d.sourceLength;
+        // Source file range: start from file start, extend to loop/offset end
+        d.sourceFileStart = 0.0;
+        d.sourceFileEnd = clip.offset + d.sourceLength;
 
-            // Clamp to file bounds
-            if (fileDuration > 0.0 && d.sourceFileEnd > fileDuration) {
-                d.sourceFileEnd = fileDuration;
-            }
-        } else {
-            // Non-looped: simple linear mapping from offset
-            d.sourceFileStart = clip.offset;
-            d.sourceFileEnd = clip.offset + d.sourceLength;
+        // Clamp to file bounds
+        if (fileDuration > 0.0 && d.sourceFileEnd > fileDuration) {
+            d.sourceFileEnd = fileDuration;
         }
 
         // Effective source extent: visual boundary with fallback chain
@@ -219,9 +196,9 @@ struct ClipDisplayInfo {
         if (d.effectiveSourceExtentSeconds <= 0.0)
             d.effectiveSourceExtentSeconds = clip.length;
 
-        // Full drawable source-file range (extends to file end in loop mode)
-        d.fullDrawStartSeconds = d.sourceFileStart;
-        if (d.isLooped() && fileDuration > 0.0) {
+        // Full drawable source-file range: always from file start
+        d.fullDrawStartSeconds = 0.0;
+        if (fileDuration > 0.0) {
             d.fullDrawEndSeconds = fileDuration;
         } else {
             d.fullDrawEndSeconds = d.sourceFileEnd;

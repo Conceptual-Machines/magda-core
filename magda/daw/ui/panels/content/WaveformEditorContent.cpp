@@ -109,9 +109,18 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
 
         int scrollX = owner_.viewport_->getViewPositionX();
 
-        // Helper to convert a timeline time to pixel X in our overlay coordinate space
+        const auto& di = owner_.cachedDisplayInfo_;
+
+        // Convert an arrangement-timeline position to pixel X in overlay space.
+        // The display is anchored at source file start, so arrangement positions
+        // need the offset added (TE plays from offset in the source file).
         auto timeToOverlayX = [&](double time) -> int {
-            double displayTime = owner_.relativeTimeMode_ ? (time - clip->startTime) : time;
+            double displayTime;
+            if (owner_.relativeTimeMode_) {
+                displayTime = (time - clip->startTime) + di.offsetPositionSeconds;
+            } else {
+                displayTime = time + di.offsetPositionSeconds;
+            }
             return static_cast<int>(displayTime * owner_.horizontalZoom_) + GRID_LEFT_PADDING -
                    scrollX;
         };
@@ -132,22 +141,24 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
             double playPos = owner_.cachedPlaybackPosition_;
 
             // Wrap playhead inside loop region when looping is enabled
-            double srcLength = clip->loopLength;
-            if (clip->loopEnabled && srcLength > 0.0) {
-                double bpm = 120.0;
-                auto* controller = magda::TimelineController::getCurrent();
-                if (controller) {
-                    bpm = controller->getState().tempo.bpm;
-                }
-                auto di = magda::ClipDisplayInfo::from(*clip, bpm);
-
-                if (di.loopLengthSeconds > 0.0) {
-                    // Position relative to clip start, wrapped within loop cycle
-                    double relPos = playPos - clip->startTime;
-                    if (relPos >= 0.0) {
-                        relPos = std::fmod(relPos, di.loopLengthSeconds);
-                        playPos = clip->startTime + relPos;
+            if (clip->loopEnabled && di.loopLengthSeconds > 0.0) {
+                double relPos = playPos - clip->startTime;
+                if (relPos >= 0.0) {
+                    // Wrap within loop cycle, accounting for loop offset
+                    // (offset may not equal loopStart — playback starts mid-loop)
+                    double phaseShift = di.offsetPositionSeconds - di.loopStartPositionSeconds;
+                    double wrapped = std::fmod(phaseShift + relPos, di.loopLengthSeconds);
+                    if (wrapped < 0.0)
+                        wrapped += di.loopLengthSeconds;
+                    double displayPos = di.loopStartPositionSeconds + wrapped;
+                    int playX = static_cast<int>(displayPos * owner_.horizontalZoom_) +
+                                GRID_LEFT_PADDING - scrollX;
+                    if (playX >= 0 && playX < getWidth()) {
+                        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                        g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
+                                   static_cast<float>(getHeight()), 1.5f);
                     }
+                    return;
                 }
             }
 
@@ -541,7 +552,7 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
 
             timeRuler_->setZoom(horizontalZoom_ * 60.0 / bpm);
             timeRuler_->setTempo(bpm);
-            timeRuler_->setTimeOffset(clip->startTime);
+            timeRuler_->setTimeOffset(relativeTimeMode_ ? 0.0 : clip->startTime);
             timeRuler_->setClipLength(clip->length);
 
             // Update loop boundary dimming
@@ -678,7 +689,9 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
 
             timeRuler_->setZoom(horizontalZoom_ * 60.0 / bpm);
             timeRuler_->setTempo(bpm);
-            timeRuler_->setTimeOffset(clip->startTime);
+            // In relative mode, anchor at source file start (position 0 = beat 1)
+            // In absolute mode, anchor at clip's timeline position
+            timeRuler_->setTimeOffset(relativeTimeMode_ ? 0.0 : clip->startTime);
             timeRuler_->setClipLength(clip->length);
 
             updateDisplayInfo(*clip);
@@ -748,6 +761,12 @@ void WaveformEditorContent::setRelativeTimeMode(bool relative) {
         gridComponent_->setRelativeMode(relative);
         timeRuler_->setRelativeMode(relative);
 
+        // Update time ruler offset for the new mode
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (clip && timeRuler_) {
+            timeRuler_->setTimeOffset(relative ? 0.0 : clip->startTime);
+        }
+
         // Update grid size and scroll
         updateGridSize();
         scrollToClipStart();
@@ -766,7 +785,24 @@ void WaveformEditorContent::updateGridSize() {
         // Update time ruler length
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
         if (clip && timeRuler_) {
-            double totalTime = relativeTimeMode_ ? clip->length : (clip->startTime + clip->length);
+            double totalTime;
+            if (relativeTimeMode_) {
+                // In relative mode, ruler spans the full source file duration
+                double fileDuration = 0.0;
+                if (clip->audioFilePath.isNotEmpty()) {
+                    auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
+                        clip->audioFilePath);
+                    if (thumbnail) {
+                        fileDuration = thumbnail->getTotalLength();
+                    }
+                }
+                // Convert file duration to timeline seconds (accounting for speed/tempo)
+                double bpm = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
+                auto info = magda::ClipDisplayInfo::from(*clip, bpm, fileDuration);
+                totalTime = info.fullSourceExtentSeconds;
+            } else {
+                totalTime = clip->startTime + clip->length;
+            }
             timeRuler_->setTimelineLength(totalTime + 10.0);  // Add padding
         }
     }
@@ -774,8 +810,27 @@ void WaveformEditorContent::updateGridSize() {
 
 void WaveformEditorContent::scrollToClipStart() {
     if (relativeTimeMode_) {
-        // In relative mode, scroll to beginning
-        viewport_->setViewPosition(0, viewport_->getViewPositionY());
+        // In relative mode, scroll to the offset position so user sees the relevant audio
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (clip && gridComponent_) {
+            double bpm = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
+            double fileDuration = 0.0;
+            if (clip->audioFilePath.isNotEmpty()) {
+                auto* thumbnail =
+                    magda::AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
+                if (thumbnail) {
+                    fileDuration = thumbnail->getTotalLength();
+                }
+            }
+            auto info = magda::ClipDisplayInfo::from(*clip, bpm, fileDuration);
+            int offsetX = gridComponent_->timeToPixel(info.offsetPositionSeconds);
+            // Center the offset in the viewport
+            int viewportWidth = viewport_->getWidth();
+            int scrollX = juce::jmax(0, offsetX - viewportWidth / 4);
+            viewport_->setViewPosition(scrollX, viewport_->getViewPositionY());
+        } else {
+            viewport_->setViewPosition(0, viewport_->getViewPositionY());
+        }
     } else {
         // In absolute mode, scroll to clip start position
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
@@ -804,10 +859,11 @@ void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
     }
 
     auto info = magda::ClipDisplayInfo::from(clip, bpm, fileDuration);
+    cachedDisplayInfo_ = info;
     gridComponent_->setDisplayInfo(info);
 
     // Update time ruler loop region (green when active, grey when disabled)
-    // In loop mode, display is anchored at loopStart, so loop starts at position 0
+    // Display anchored at file start — loop markers at real source positions
     if (timeRuler_) {
         bool showMarkers = clip.loopLength > 0.0;
         bool loopIsActive = clip.loopEnabled;
@@ -815,9 +871,8 @@ void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
         double loopLen = info.loopLengthSeconds;
         timeRuler_->setLoopRegion(loopStartPos, loopLen, showMarkers, loopIsActive);
 
-        // Show offset/phase marker when offset differs from loopStart
-        bool showPhase = info.loopEnabled && std::abs(info.offsetPositionSeconds) > 0.001;
-        timeRuler_->setLoopPhaseMarker(info.offsetPositionSeconds, showPhase);
+        // Offset marker is shown on the waveform grid; no separate ruler marker needed
+        timeRuler_->setLoopPhaseMarker(0.0, false);
     }
 }
 

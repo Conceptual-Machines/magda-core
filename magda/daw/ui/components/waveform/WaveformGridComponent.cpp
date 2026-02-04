@@ -214,6 +214,7 @@ void WaveformGridComponent::paintWaveformOverlays(juce::Graphics& g, const magda
 }
 
 void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipInfo& clip) {
+    juce::ignoreUnused(clip);
     if (gridResolution_ == GridResolution::Off || !timeRuler_)
         return;
 
@@ -222,8 +223,9 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
         return;
 
     double displayStartTime = getDisplayStartTime();
+    double fileExtent = displayInfo_.fullSourceExtentSeconds;
     int positionPixels = timeToPixel(displayStartTime);
-    int widthPixels = static_cast<int>(clip.length * horizontalZoom_);
+    int widthPixels = static_cast<int>(fileExtent * horizontalZoom_);
     if (widthPixels <= 0)
         return;
 
@@ -241,11 +243,11 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
     double secondsPerGrid = gridBeats * secondsPerBeat;
     double beatsPerBar = static_cast<double>(timeRuler_->getTimeSigNumerator());
 
-    // Iterate grid lines across the clip length
+    // Iterate grid lines across the full file extent
     int visibleLeft = 0;
     int visibleRight = getWidth();
 
-    for (double t = 0.0; t < clip.length + secondsPerGrid; t += secondsPerGrid) {
+    for (double t = 0.0; t < fileExtent + secondsPerGrid; t += secondsPerGrid) {
         double displayTime = t + displayStartTime;
         int px = timeToPixel(displayTime);
 
@@ -384,10 +386,10 @@ void WaveformGridComponent::paintWarpedWaveform(juce::Graphics& g, const magda::
         double warpStart = points[i].warpTime;
         double warpEnd = points[i + 1].warpTime;
 
-        // Convert warp times to clip-relative display times
-        // Since warpTimes are now >= offset, dispStart will be >= displayStartTime
-        double dispStart = (warpStart - clip.offset) + displayStartTime;
-        double dispEnd = (warpEnd - clip.offset) + displayStartTime;
+        // Convert warp times to display times
+        // Position 0 = file start, warp times are in source file seconds
+        double dispStart = displayInfo_.sourceToTimeline(warpStart) + displayStartTime;
+        double dispEnd = displayInfo_.sourceToTimeline(warpEnd) + displayStartTime;
 
         int pixStart = timeToPixel(dispStart);
         int pixEnd = timeToPixel(dispEnd);
@@ -446,13 +448,13 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
 
     double baseTime = getDisplayStartTime();
 
-    // Clip boundaries (always visible)
+    // Clip boundaries — clip starts at offset, ends at offset + clipLength (in timeline seconds)
     {
-        int clipStartX = timeToPixel(baseTime);
+        int clipStartX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds);
         g.setColour(DarkTheme::getAccentColour().withAlpha(0.6f));
         g.fillRect(clipStartX - 1, 0, 2, bounds.getHeight());
 
-        int clipEndX = timeToPixel(baseTime + clipLength_);
+        int clipEndX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds + clipLength_);
         g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
         g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
     }
@@ -463,7 +465,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
             isLooped ? loopColour : juce::Colour(DarkTheme::getColour(DarkTheme::TEXT_DISABLED));
         float alpha = isLooped ? 0.8f : 0.35f;
 
-        // Loop markers from ClipDisplayInfo (anchored at loopStart)
+        // Loop markers from ClipDisplayInfo (at real source positions)
         double loopStartPos = displayInfo_.loopStartPositionSeconds;
         double loopEndPos = displayInfo_.loopEndPositionSeconds;
 
@@ -480,8 +482,8 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         g.drawText("L", loopEndX + 3, 2, 12, 12, juce::Justification::centredLeft, false);
     }
 
-    // Offset/phase marker (orange) - shows playback start position within loop
-    if (isLooped && std::abs(displayInfo_.offsetPositionSeconds) > 0.001) {
+    // Offset marker (orange) — always visible, shows playback start position in source file
+    {
         int offsetX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds);
         auto offsetColour = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
         g.setColour(offsetColour.withAlpha(0.8f));
@@ -492,7 +494,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
 
     // Ghost overlay past clip end — dim everything beyond the clip's timeline length
     {
-        int clipEndX = timeToPixel(baseTime + clipLength_);
+        int clipEndX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds + clipLength_);
         int rightEdge = bounds.getRight();
         if (clipEndX < rightEdge) {
             auto ghostRect = juce::Rectangle<int>(clipEndX, bounds.getY(), rightEdge - clipEndX,
@@ -504,13 +506,14 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
 }
 
 void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda::ClipInfo& clip) {
+    juce::ignoreUnused(clip);
     auto bounds = getLocalBounds().reduced(LEFT_PADDING, TOP_PADDING);
     if (bounds.getWidth() <= 0 || bounds.getHeight() <= 0)
         return;
 
     double displayStartTime = getDisplayStartTime();
     int positionPixels = timeToPixel(displayStartTime);
-    int widthPixels = static_cast<int>(clip.length * horizontalZoom_);
+    int widthPixels = static_cast<int>(displayInfo_.fullSourceExtentSeconds * horizontalZoom_);
     if (widthPixels <= 0)
         return;
 
@@ -713,16 +716,14 @@ void WaveformGridComponent::updateGridSize() {
         return;
     }
 
-    double displayClipLength = displayInfo_.effectiveSourceExtentSeconds;
-
     // Calculate required width based on mode
     double totalTime = 0.0;
     if (relativeMode_) {
-        // In relative mode, show clip length + right padding
-        totalTime = displayClipLength + 10.0;  // 10 seconds right padding
+        // In relative mode, show full file duration + right padding
+        totalTime = displayInfo_.fullSourceExtentSeconds + 10.0;
     } else {
         // In absolute mode, show from 0 to clip end + both left and right padding
-        // Add left padding so we can scroll before clip start
+        double displayClipLength = displayInfo_.effectiveSourceExtentSeconds;
         double leftPaddingTime =
             std::max(10.0, clipStartTime_ * 0.5);  // At least 10s or half the clip start time
         totalTime = clipStartTime_ + displayClipLength + 10.0 + leftPaddingTime;
@@ -790,11 +791,11 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
         // Grid snapping only applies when MOVING markers, not when placing them.
         if (isInsideWaveform(x, *clip)) {
             double clickTime = pixelToTime(x);
-            // Convert from display time to clip-relative time
-            double clipRelativeTime = clickTime - getDisplayStartTime();
+            // Convert from display time to file-relative time
+            double fileRelativeTime = clickTime - getDisplayStartTime();
 
-            // Convert to absolute warp time (no snapping on placement)
-            double warpTime = clipRelativeTime + clip->offset;
+            // Convert timeline position to source file time (absolute warp time)
+            double warpTime = displayInfo_.timelineToSource(fileRelativeTime);
 
             // Find the corresponding sourceTime by interpolating from existing markers.
             // The warp curve maps warpTime -> sourceTime, so we need to find what
@@ -883,18 +884,20 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
         if (!clip)
             return;
 
-        // Pixel delta → warp-time delta (no speedRatio — warp owns the timing)
-        double timeDelta = (event.x - dragStartX_) / horizontalZoom_;
-        double newWarpTime = dragStartWarpTime_ + timeDelta;
-        if (newWarpTime < clip->offset)
-            newWarpTime = clip->offset;
+        // Pixel delta → timeline delta, then convert to source file delta
+        double timelineDelta = (event.x - dragStartX_) / horizontalZoom_;
+        // Convert timeline delta to source time delta
+        double sourceDelta = displayInfo_.timelineToSource(timelineDelta);
+        double newWarpTime = dragStartWarpTime_ + sourceDelta;
+        if (newWarpTime < 0.0)
+            newWarpTime = 0.0;
 
         // Snap to grid unless Alt is held
-        // Must snap in clip-relative coordinates to align with visual grid lines
+        // Snap in timeline coordinates to align with visual grid lines, then convert back
         if (!event.mods.isAltDown() && gridResolution_ != GridResolution::Off) {
-            double clipRelTime = newWarpTime - clip->offset;
-            clipRelTime = snapTimeToGrid(clipRelTime);
-            newWarpTime = clipRelTime + clip->offset;
+            double timelinePos = displayInfo_.sourceToTimeline(newWarpTime);
+            timelinePos = snapTimeToGrid(timelinePos);
+            newWarpTime = displayInfo_.timelineToSource(timelinePos);
         }
 
         if (draggingMarkerIndex_ >= 0 && onWarpMarkerMove) {
@@ -1097,13 +1100,14 @@ const magda::ClipInfo* WaveformGridComponent::getClip() const {
 // ============================================================================
 
 void WaveformGridComponent::paintWarpMarkers(juce::Graphics& g, const magda::ClipInfo& clip) {
+    juce::ignoreUnused(clip);
     auto bounds = getLocalBounds().reduced(LEFT_PADDING, TOP_PADDING);
     if (bounds.getWidth() <= 0 || bounds.getHeight() <= 0)
         return;
 
     double displayStartTime = getDisplayStartTime();
     int positionPixels = timeToPixel(displayStartTime);
-    int widthPixels = static_cast<int>(clip.length * horizontalZoom_);
+    int widthPixels = static_cast<int>(displayInfo_.fullSourceExtentSeconds * horizontalZoom_);
     if (widthPixels <= 0)
         return;
 
@@ -1119,13 +1123,8 @@ void WaveformGridComponent::paintWarpMarkers(juce::Graphics& g, const magda::Cli
     for (int i = 1; i < numMarkers - 1; ++i) {
         const auto& marker = warpMarkers_[static_cast<size_t>(i)];
 
-        // Warp time is in the playback coordinate space — no speedRatio needed.
-        // Subtract offset to get clip-relative time.
-        double clipRelativeTime = marker.warpTime - clip.offset;
-        if (clipRelativeTime < 0.0 || clipRelativeTime > clip.length * 2.0)
-            continue;
-
-        double displayTime = clipRelativeTime + displayStartTime;
+        // Warp time is in source file seconds — convert to timeline display time
+        double displayTime = displayInfo_.sourceToTimeline(marker.warpTime) + displayStartTime;
         int px = timeToPixel(displayTime);
 
         // Cull outside visible bounds and waveform rect
@@ -1176,8 +1175,7 @@ int WaveformGridComponent::findMarkerAtPixel(int x) const {
     int numMarkers = static_cast<int>(warpMarkers_.size());
     for (int i = 1; i < numMarkers - 1; ++i) {
         const auto& marker = warpMarkers_[static_cast<size_t>(i)];
-        double clipRelativeTime = marker.warpTime - clip->offset;
-        double displayTime = clipRelativeTime + displayStartTime;
+        double displayTime = displayInfo_.sourceToTimeline(marker.warpTime) + displayStartTime;
         int px = timeToPixel(displayTime);
         if (std::abs(x - px) <= WARP_MARKER_HIT_DISTANCE)
             return i;

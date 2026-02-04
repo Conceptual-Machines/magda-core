@@ -110,6 +110,7 @@ class WaveformEditorContent : public PanelContent,
     double cachedEditPosition_ = 0.0;
     double cachedPlaybackPosition_ = 0.0;
     bool cachedIsPlaying_ = false;
+    magda::ClipDisplayInfo cachedDisplayInfo_{};  // Cached for playhead overlay positioning
 
     // Look and feel
     class ButtonLookAndFeel;
