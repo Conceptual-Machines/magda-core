@@ -44,6 +44,7 @@ struct ClipDisplayInfo {
                                       // seconds)
     double loopEndPositionSeconds;    // loopStartPositionSeconds + loopLengthSeconds
     double offsetPositionSeconds;     // offset position in timeline seconds (from file start)
+    double loopPhasePositionSeconds;  // phase position in timeline seconds (loopStart + phase)
 
     // Full source extent (from file start to file end, for waveform editor)
     double fullSourceExtentSeconds;
@@ -172,6 +173,7 @@ struct ClipDisplayInfo {
         d.loopStartPositionSeconds = srcToTimeline(clip.loopStart);
         d.loopEndPositionSeconds = d.loopStartPositionSeconds + d.loopLengthSeconds;
         d.offsetPositionSeconds = srcToTimeline(clip.offset);
+        d.loopPhasePositionSeconds = d.loopStartPositionSeconds + srcToTimeline(d.loopOffset);
 
         // Full source extent from file start to file end
         if (fileDuration > 0.0) {

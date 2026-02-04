@@ -482,14 +482,25 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         g.drawText("L", loopEndX + 3, 2, 12, 12, juce::Justification::centredLeft, false);
     }
 
-    // Offset marker (orange) — always visible, shows playback start position in source file
+    // Offset marker (orange) — greyed out when looped (offset is driven by loopStart + phase)
     {
         int offsetX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds);
         auto offsetColour = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
-        g.setColour(offsetColour.withAlpha(0.8f));
+        float offsetAlpha = isLooped ? 0.25f : 0.8f;
+        g.setColour(offsetColour.withAlpha(offsetAlpha));
         g.fillRect(offsetX - 1, 0, 2, bounds.getHeight());
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.drawText("O", offsetX + 3, 2, 12, 12, juce::Justification::centredLeft, false);
+    }
+
+    // Loop phase marker (orange) — only visible when looped, shows phase within loop region
+    if (isLooped) {
+        int phaseX = timeToPixel(baseTime + displayInfo_.loopPhasePositionSeconds);
+        auto phaseColour = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
+        g.setColour(phaseColour.withAlpha(0.8f));
+        g.fillRect(phaseX - 1, 0, 2, bounds.getHeight());
+        g.setFont(FontManager::getInstance().getUIFont(10.0f));
+        g.drawText("P", phaseX + 3, 2, 12, 12, juce::Justification::centredLeft, false);
     }
 
     // Ghost overlay past clip end — dim everything beyond the clip's timeline length

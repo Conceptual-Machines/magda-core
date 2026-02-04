@@ -1632,7 +1632,9 @@ void InspectorContent::updateFromSelectedClip() {
         if (clip->type == magda::ClipType::MIDI) {
             clipContentOffsetValue_->setValue(clip->midiOffset, juce::dontSendNotification);
         } else if (clip->type == magda::ClipType::Audio) {
-            double offsetBeats = magda::TimelineUtils::secondsToBeats(clip->offset, bpm);
+            // When looped, show loopStart (the locked base) so phase edits don't move this value
+            double displayOffset = (clip->loopEnabled) ? clip->loopStart : clip->offset;
+            double offsetBeats = magda::TimelineUtils::secondsToBeats(displayOffset, bpm);
             clipContentOffsetValue_->setValue(offsetBeats, juce::dontSendNotification);
         }
         clipContentOffsetIcon_->setVisible(true);
