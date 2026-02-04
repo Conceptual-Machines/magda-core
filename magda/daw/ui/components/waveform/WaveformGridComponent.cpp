@@ -505,7 +505,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
 
     // Ghost overlay past clip end — dim everything beyond the clip's timeline length
     {
-        int clipEndX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds + clipLength_);
+        int clipEndX = timeToPixel(baseTime + clipLength_);
         int rightEdge = bounds.getRight();
         if (clipEndX < rightEdge) {
             auto ghostRect = juce::Rectangle<int>(clipEndX, bounds.getY(), rightEdge - clipEndX,

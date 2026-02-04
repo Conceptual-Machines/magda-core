@@ -967,19 +967,17 @@ void InspectorContent::resized() {
 
         // Position grid: two rows (position | loop), three fields each
         {
-            const int rowLabelWidth = 46;
-            const int toggleSize = 18;
+            const int iconSize = 22;
             const int gap = 3;
             const int labelHeight = 14;
             const int valueHeight = 22;
-            int fieldWidth = (bounds.getWidth() - rowLabelWidth - gap * 3) / 3;
+            int fieldWidth = (bounds.getWidth() - iconSize - gap * 3) / 3;
 
-            // Row 1: position — start, end, offset
+            // Row 1: position icon — start, end, offset
             {
                 // Labels
                 auto labelRow = bounds.removeFromTop(labelHeight);
-                playbackColumnLabel_.setBounds(labelRow.removeFromLeft(rowLabelWidth));
-                labelRow.removeFromLeft(gap);
+                labelRow.removeFromLeft(iconSize + gap);
                 clipStartLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
                 labelRow.removeFromLeft(gap);
                 clipEndLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
@@ -988,7 +986,8 @@ void InspectorContent::resized() {
 
                 // Values
                 auto valueRow = bounds.removeFromTop(valueHeight);
-                valueRow.removeFromLeft(rowLabelWidth + gap);
+                clipPositionIcon_->setBounds(valueRow.removeFromLeft(iconSize));
+                valueRow.removeFromLeft(gap);
                 clipStartValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
                 valueRow.removeFromLeft(gap);
                 clipEndValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
@@ -997,15 +996,11 @@ void InspectorContent::resized() {
             }
             bounds.removeFromTop(6);
 
-            // Row 2: loop — start, length, phase
+            // Row 2: loop toggle — start, length, phase
             if (clipLoopToggle_->isVisible()) {
                 // Labels
                 auto labelRow = bounds.removeFromTop(labelHeight);
-                clipLoopToggle_->setBounds(labelRow.removeFromLeft(toggleSize)
-                                               .withSizeKeepingCentre(toggleSize, toggleSize));
-                labelRow.removeFromLeft(2);
-                loopColumnLabel_.setBounds(labelRow.removeFromLeft(rowLabelWidth - toggleSize - 2));
-                labelRow.removeFromLeft(gap);
+                labelRow.removeFromLeft(iconSize + gap);
                 clipLoopStartLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
                 labelRow.removeFromLeft(gap);
                 clipLoopLengthLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
@@ -1014,7 +1009,9 @@ void InspectorContent::resized() {
 
                 // Values
                 auto valueRow = bounds.removeFromTop(valueHeight);
-                valueRow.removeFromLeft(rowLabelWidth + gap);
+                clipLoopToggle_->setBounds(
+                    valueRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+                valueRow.removeFromLeft(gap);
                 clipLoopStartValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
                 valueRow.removeFromLeft(gap);
                 clipLoopLengthValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
@@ -1639,8 +1636,8 @@ void InspectorContent::updateFromSelectedClip() {
             double offsetBeats = magda::TimelineUtils::secondsToBeats(displayOffset, bpm);
             clipContentOffsetValue_->setValue(offsetBeats, juce::dontSendNotification);
         }
-        // Icons hidden — replaced by row labels in the position grid
-        clipPositionIcon_->setVisible(false);
+        // Position icon visible, content offset icon hidden (replaced by grid column)
+        clipPositionIcon_->setVisible(true);
         clipContentOffsetIcon_->setVisible(false);
 
         clipContentOffsetValue_->setVisible(true);
@@ -1712,7 +1709,7 @@ void InspectorContent::updateFromSelectedClip() {
         clipLoopPhaseLabel_.setVisible(true);
         clipLoopPhaseValue_->setVisible(true);
         clipLoopPhaseValue_->setBeatsPerBar(beatsPerBar);
-        double phaseSeconds = clip->offset - clip->loopStart;  // always >= 0
+        double phaseSeconds = loopOn ? (clip->offset - clip->loopStart) : 0.0;
         double phaseBeats = magda::TimelineUtils::secondsToBeats(phaseSeconds, bpm);
         clipLoopPhaseValue_->setValue(phaseBeats, juce::dontSendNotification);
         clipLoopPhaseValue_->setEnabled(loopOn);
@@ -1777,9 +1774,8 @@ void InspectorContent::showClipControls(bool show) {
         clipBpmValue_.setVisible(false);
         clipBeatsLengthValue_->setVisible(false);
     }
-    // Position grid row labels and values
-    playbackColumnLabel_.setVisible(show);
-    loopColumnLabel_.setVisible(show);
+    // Position grid — icons as row identifiers, text labels as column headers
+    clipPositionIcon_->setVisible(show);
     clipOffsetRowLabel_.setVisible(show);
     clipStartLabel_.setVisible(show);
     clipStartValue_->setVisible(show);
@@ -1793,8 +1789,9 @@ void InspectorContent::showClipControls(bool show) {
     clipLoopLengthValue_->setVisible(show);
     clipLoopPhaseLabel_.setVisible(show);
     clipLoopPhaseValue_->setVisible(show);
-    // Icons hidden — replaced by row labels
-    clipPositionIcon_->setVisible(false);
+    // Unused labels/icons hidden
+    playbackColumnLabel_.setVisible(false);
+    loopColumnLabel_.setVisible(false);
     clipContentOffsetIcon_->setVisible(false);
     if (!show) {
         clipWarpToggle_.setVisible(false);
