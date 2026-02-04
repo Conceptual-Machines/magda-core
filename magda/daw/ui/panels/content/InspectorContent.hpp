@@ -133,8 +133,8 @@ class InspectorContent : public PanelContent,
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopStartValue_;
     juce::Label clipLoopLengthLabel_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopLengthValue_;
-    juce::Label clipLoopOffsetLabel_;
-    std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopOffsetValue_;
+    juce::Label clipLoopPhaseLabel_;
+    std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopPhaseValue_;
     juce::Label clipBpmValue_;  // Detected BPM (no label)
     std::unique_ptr<magda::DraggableValueLabel>
         clipBeatsLengthValue_;  // Length in beats for auto-tempo

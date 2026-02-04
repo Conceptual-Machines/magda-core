@@ -566,9 +566,14 @@ InspectorContent::InspectorContent() {
         if (timelineController_) {
             bpm = timelineController_->getState().tempo.bpm;
         }
+        // Preserve current phase when moving loop start
+        double currentPhase = clip->offset - clip->loopStart;
         double newLoopStartBeats = clipLoopStartValue_->getValue();
         double newLoopStartSeconds = magda::TimelineUtils::beatsToSeconds(newLoopStartBeats, bpm);
+        newLoopStartSeconds = std::max(0.0, newLoopStartSeconds);
+        double newOffset = newLoopStartSeconds + currentPhase;
         magda::ClipManager::getInstance().setLoopStart(selectedClipId_, newLoopStartSeconds);
+        magda::ClipManager::getInstance().setOffset(selectedClipId_, newOffset);
     };
     addChildComponent(*clipLoopStartValue_);
 
@@ -625,17 +630,17 @@ InspectorContent::InspectorContent() {
     };
     addChildComponent(*clipLoopLengthValue_);
 
-    // Loop offset (phase relative to loop start)
-    clipLoopOffsetLabel_.setText("Loop Offset", juce::dontSendNotification);
-    clipLoopOffsetLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipLoopOffsetLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    addChildComponent(clipLoopOffsetLabel_);
+    // Loop phase (offset into loop region)
+    clipLoopPhaseLabel_.setText("Phase", juce::dontSendNotification);
+    clipLoopPhaseLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    clipLoopPhaseLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    addChildComponent(clipLoopPhaseLabel_);
 
-    clipLoopOffsetValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
-    clipLoopOffsetValue_->setRange(-10000.0, 10000.0, 0.0);
-    clipLoopOffsetValue_->setDoubleClickResetsValue(true);
-    clipLoopOffsetValue_->setBarsBeatsIsPosition(false);
-    clipLoopOffsetValue_->onValueChange = [this]() {
+    clipLoopPhaseValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
+    clipLoopPhaseValue_->setRange(0.0, 10000.0, 0.0);
+    clipLoopPhaseValue_->setBarsBeatsIsPosition(false);
+    clipLoopPhaseValue_->setDoubleClickResetsValue(true);
+    clipLoopPhaseValue_->onValueChange = [this]() {
         if (selectedClipId_ == magda::INVALID_CLIP_ID)
             return;
         const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
@@ -646,15 +651,13 @@ InspectorContent::InspectorContent() {
         if (timelineController_) {
             bpm = timelineController_->getState().tempo.bpm;
         }
-        // Loop offset in source-time beats -> source seconds (no speedRatio conversion)
-        double loopOffsetBeats = clipLoopOffsetValue_->getValue();
-        double loopOffsetSource = magda::TimelineUtils::beatsToSeconds(loopOffsetBeats, bpm);
-        // offset = loopStart + loopOffsetSource
-        double newOffset = clip->loopStart + loopOffsetSource;
-        newOffset = juce::jmax(0.0, newOffset);
+        double newPhaseBeats = clipLoopPhaseValue_->getValue();
+        double newPhaseSeconds = magda::TimelineUtils::beatsToSeconds(newPhaseBeats, bpm);
+        newPhaseSeconds = std::max(0.0, newPhaseSeconds);
+        double newOffset = clip->loopStart + newPhaseSeconds;
         magda::ClipManager::getInstance().setOffset(selectedClipId_, newOffset);
     };
-    addChildComponent(*clipLoopOffsetValue_);
+    addChildComponent(*clipLoopPhaseValue_);
 
     // ========================================================================
     // Session clip launch properties
@@ -990,6 +993,20 @@ void InspectorContent::resized() {
             }
             clipLoopLengthValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
             bounds.removeFromTop(8);
+
+            // Loop Phase row (within the loop toggle block)
+            if (clipLoopPhaseLabel_.isVisible()) {
+                int phaseFieldWidth = (bounds.getWidth() - loopSize - gap * 2) / 2;
+
+                auto phaseLabelRow = bounds.removeFromTop(16);
+                phaseLabelRow.removeFromLeft(loopSize + gap);
+                clipLoopPhaseLabel_.setBounds(phaseLabelRow.removeFromLeft(phaseFieldWidth));
+
+                auto phaseValueRow = bounds.removeFromTop(loopSize);
+                phaseValueRow.removeFromLeft(loopSize + gap);
+                clipLoopPhaseValue_->setBounds(phaseValueRow.removeFromLeft(phaseFieldWidth));
+                bounds.removeFromTop(8);
+            }
         }
 
         // Content Offset — icon + half-width value field (underneath loop)
@@ -1002,16 +1019,6 @@ void InspectorContent::resized() {
             clipContentOffsetIcon_->setBounds(valueRow.removeFromLeft(iconSize));
             valueRow.removeFromLeft(gap);
             clipContentOffsetValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
-            bounds.removeFromTop(8);
-        }
-
-        // Loop Offset (phase relative to loop start)
-        if (clipLoopOffsetLabel_.isVisible()) {
-            const int gap = 4;
-            int fieldWidth = (bounds.getWidth() - gap) / 2;
-
-            clipLoopOffsetLabel_.setBounds(bounds.removeFromTop(16).removeFromLeft(fieldWidth));
-            clipLoopOffsetValue_->setBounds(bounds.removeFromTop(22).removeFromLeft(fieldWidth));
             bounds.removeFromTop(8);
         }
 
@@ -1621,7 +1628,7 @@ void InspectorContent::updateFromSelectedClip() {
             clipEndValue_->setValue(clip->getEndBeats(bpm), juce::dontSendNotification);
         }
 
-        // Content offset (always visible)
+        // Content offset (always visible, disabled when looped audio)
         if (clip->type == magda::ClipType::MIDI) {
             clipContentOffsetValue_->setValue(clip->midiOffset, juce::dontSendNotification);
         } else if (clip->type == magda::ClipType::Audio) {
@@ -1630,6 +1637,11 @@ void InspectorContent::updateFromSelectedClip() {
         }
         clipContentOffsetIcon_->setVisible(true);
         clipContentOffsetValue_->setVisible(true);
+
+        // Disable offset editing when loop is enabled on audio clips
+        bool offsetEditable = !(clip->loopEnabled && isAudioClip);
+        clipContentOffsetValue_->setEnabled(offsetEditable);
+        clipContentOffsetValue_->setAlpha(offsetEditable ? 1.0f : 0.4f);
 
         double sourceLength =
             clip->loopLength > 0.0 ? clip->loopLength : clip->length * clip->speedRatio;
@@ -1689,16 +1701,15 @@ void InspectorContent::updateFromSelectedClip() {
             clipLoopStartValue_->setValue(loopStartBeats, juce::dontSendNotification);
         }
 
-        // Loop offset (phase relative to loop start, audio clips only)
-        bool showLoopOffset = isAudioClip;
-        clipLoopOffsetLabel_.setVisible(showLoopOffset);
-        clipLoopOffsetValue_->setVisible(showLoopOffset);
-        if (showLoopOffset) {
-            clipLoopOffsetValue_->setBeatsPerBar(beatsPerBar);
-            // offset - loopStart in source seconds, converted directly to beats (no speedRatio)
-            double loopOffsetSource = clip->offset - clip->loopStart;
-            double loopOffsetBeats = magda::TimelineUtils::secondsToBeats(loopOffsetSource, bpm);
-            clipLoopOffsetValue_->setValue(loopOffsetBeats, juce::dontSendNotification);
+        // Loop phase control (only when loop is enabled on audio clips)
+        bool showPhase = clip->loopEnabled && isAudioClip;
+        clipLoopPhaseLabel_.setVisible(showPhase);
+        clipLoopPhaseValue_->setVisible(showPhase);
+        if (showPhase) {
+            clipLoopPhaseValue_->setBeatsPerBar(beatsPerBar);
+            double phaseSeconds = clip->offset - clip->loopStart;  // always >= 0
+            double phaseBeats = magda::TimelineUtils::secondsToBeats(phaseSeconds, bpm);
+            clipLoopPhaseValue_->setValue(phaseBeats, juce::dontSendNotification);
         }
 
         // Session clip launch properties
@@ -1773,14 +1784,14 @@ void InspectorContent::showClipControls(bool show) {
             clipStretchValue_->setVisible(false);
         stretchModeCombo_.setVisible(false);
     }
-    // Loop start, length, and offset visibility is managed by updateFromSelectedClip
+    // Loop start, length, and phase visibility is managed by updateFromSelectedClip
     if (!show) {
         clipLoopStartLabel_.setVisible(false);
         clipLoopStartValue_->setVisible(false);
         clipLoopLengthLabel_.setVisible(false);
         clipLoopLengthValue_->setVisible(false);
-        clipLoopOffsetLabel_.setVisible(false);
-        clipLoopOffsetValue_->setVisible(false);
+        clipLoopPhaseLabel_.setVisible(false);
+        clipLoopPhaseValue_->setVisible(false);
     }
 
     // Session launch controls are conditionally shown in updateFromSelectedClip
