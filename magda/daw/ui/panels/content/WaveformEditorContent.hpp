@@ -102,7 +102,6 @@ class WaveformEditorContent : public PanelContent,
     std::unique_ptr<juce::TextButton> warpModeButton_;
     std::unique_ptr<juce::Label> bpmLabel_;
     std::unique_ptr<juce::ComboBox> gridResolutionCombo_;
-    std::unique_ptr<juce::TextButton> loopGhostButton_;
 
     // Playhead overlay
     class PlayheadOverlay;

@@ -25,7 +25,7 @@ TEST_CASE("Audio clip - Stretch factor basics", "[audio][clip][stretch]") {
         clip.speedRatio = 1.0;
 
         // File window equals length when stretch factor is 1.0
-        double fileWindow = clip.length / clip.speedRatio;
+        double fileWindow = clip.length * clip.speedRatio;
         REQUIRE(fileWindow == 4.0);
     }
 
@@ -33,28 +33,28 @@ TEST_CASE("Audio clip - Stretch factor basics", "[audio][clip][stretch]") {
         ClipInfo clip;
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
-        clip.length = 8.0;
-        clip.speedRatio = 2.0;  // 2x slower
+        clip.length = 4.0;
+        clip.speedRatio = 2.0;  // 2x faster
 
-        // File window is half the length when stretched 2x
-        double fileWindow = clip.length / clip.speedRatio;
-        REQUIRE(fileWindow == 4.0);
+        // File window is double the length when 2x faster
+        double fileWindow = clip.length * clip.speedRatio;
+        REQUIRE(fileWindow == 8.0);
 
-        // Reading from file offset 0-4, displaying as 0-8 seconds
+        // Reading from file offset 0-8, displaying as 0-4 seconds
     }
 
-    SECTION("Stretch factor 0.5 = 2x faster") {
+    SECTION("Stretch factor 0.5 = 2x slower") {
         ClipInfo clip;
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
-        clip.length = 2.0;
-        clip.speedRatio = 0.5;  // 2x faster
+        clip.length = 8.0;
+        clip.speedRatio = 0.5;  // 2x slower
 
-        // File window is double the length when compressed 2x
-        double fileWindow = clip.length / clip.speedRatio;
+        // File window is half the length when 2x slower
+        double fileWindow = clip.length * clip.speedRatio;
         REQUIRE(fileWindow == 4.0);
 
-        // Reading from file offset 0-4, displaying as 0-2 seconds
+        // Reading from file offset 0-4, displaying as 0-8 seconds
     }
 }
 
@@ -115,20 +115,20 @@ TEST_CASE("Audio Clip - Left edge resize trims file offset", "[audio][clip][trim
     }
 
     SECTION("Trim with stretch factor converts to file time") {
-        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 8.0, "test.wav");
+        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 4.0, "test.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
 
         clip->offset = 0.0;
-        clip->speedRatio = 2.0;  // 2x slower, file window = 4.0
+        clip->speedRatio = 2.0;  // 2x faster, file window = 8.0
 
         // Trim from left by 2.0 timeline seconds
-        ClipManager::getInstance().resizeClip(clipId, 6.0, true);
+        ClipManager::getInstance().resizeClip(clipId, 2.0, true);
 
         REQUIRE(clip->startTime == 2.0);
-        REQUIRE(clip->length == 6.0);
+        REQUIRE(clip->length == 2.0);
 
-        // File trim amount = 2.0 / 2.0 = 1.0 file seconds
-        REQUIRE(clip->offset == Catch::Approx(1.0));
+        // File trim amount = 2.0 * 2.0 = 4.0 file seconds
+        REQUIRE(clip->offset == Catch::Approx(4.0));
     }
 }
 
@@ -159,39 +159,39 @@ TEST_CASE("Audio Clip - Stretch maintains file window", "[audio][clip][stretch]"
 
     ClipManager::getInstance().shutdown();
 
-    SECTION("Stretching by 2x doubles length but file window stays same") {
+    SECTION("Stretching by 2x halves length but file window stays same") {
         ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 4.0, "test.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
 
         clip->offset = 0.0;
         clip->speedRatio = 1.0;
 
-        double originalFileWindow = clip->length / clip->speedRatio;
+        double originalFileWindow = clip->length * clip->speedRatio;
         REQUIRE(originalFileWindow == 4.0);
 
-        // Stretch 2x: length becomes 8, stretch factor becomes 2
+        // Stretch 2x slower: length becomes 8, stretch factor becomes 0.5
         clip->length = 8.0;
-        ClipManager::getInstance().setSpeedRatio(clipId, 2.0);
+        ClipManager::getInstance().setSpeedRatio(clipId, 0.5);
 
-        double newFileWindow = clip->length / clip->speedRatio;
+        double newFileWindow = clip->length * clip->speedRatio;
         REQUIRE(newFileWindow == Catch::Approx(originalFileWindow));
     }
 
-    SECTION("Compressing by 0.5x halves length but file window stays same") {
+    SECTION("Compressing by 2x halves length but file window stays same") {
         ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 4.0, "test.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
 
         clip->offset = 1.0;
         clip->speedRatio = 1.0;
 
-        double originalFileWindow = clip->length / clip->speedRatio;
+        double originalFileWindow = clip->length * clip->speedRatio;
         REQUIRE(originalFileWindow == 4.0);
 
-        // Compress 2x: length becomes 2, stretch factor becomes 0.5
+        // Compress 2x faster: length becomes 2, stretch factor becomes 2.0
         clip->length = 2.0;
-        ClipManager::getInstance().setSpeedRatio(clipId, 0.5);
+        ClipManager::getInstance().setSpeedRatio(clipId, 2.0);
 
-        double newFileWindow = clip->length / clip->speedRatio;
+        double newFileWindow = clip->length * clip->speedRatio;
         REQUIRE(newFileWindow == Catch::Approx(originalFileWindow));
 
         // File offset unchanged
@@ -233,7 +233,7 @@ TEST_CASE("Audio Clip - Real-world scenario: Amen break trim", "[audio][clip][in
         auto* clip = ClipManager::getInstance().getClip(clipId);
 
         clip->offset = 0.0;
-        clip->speedRatio = 2.0;  // 2x slower, file window = 9.0s
+        clip->speedRatio = 0.5;  // 2x slower, file window = 9.0s
 
         // Trim from left by 2.0 timeline seconds (to first snare)
         ClipManager::getInstance().resizeClip(clipId, 16.0, true);
@@ -241,7 +241,7 @@ TEST_CASE("Audio Clip - Real-world scenario: Amen break trim", "[audio][clip][in
         REQUIRE(clip->startTime == 2.0);
         REQUIRE(clip->length == 16.0);
 
-        // File trim amount = 2.0 / 2.0 = 1.0 file seconds
+        // File trim amount = 2.0 * 0.5 = 1.0 file seconds
         REQUIRE(clip->offset == Catch::Approx(1.0));
     }
 }
@@ -303,7 +303,7 @@ TEST_CASE("ClipOperations - stretchAudioFromLeft right edge anchoring",
         REQUIRE(rightEdge1 == Catch::Approx(expectedRightEdge));
         REQUIRE(clip.startTime == Catch::Approx(9.0));  // 15.0 - 6.0
         REQUIRE(clip.length == Catch::Approx(6.0));
-        REQUIRE(clip.speedRatio == Catch::Approx(1.2));  // 6.0 / 5.0
+        REQUIRE(clip.speedRatio == Catch::Approx(1.0 / 1.2));  // 1.0 / (6.0 / 5.0) = 5.0 / 6.0
 
         // Simulate drag event 2: stretch to 7.0 seconds (more stretching)
         ClipOperations::stretchAudioFromLeft(clip, 7.0, originalLength, originalStretchFactor);
@@ -312,7 +312,7 @@ TEST_CASE("ClipOperations - stretchAudioFromLeft right edge anchoring",
         REQUIRE(rightEdge2 == Catch::Approx(expectedRightEdge));  // Still 15.0!
         REQUIRE(clip.startTime == Catch::Approx(8.0));            // 15.0 - 7.0
         REQUIRE(clip.length == Catch::Approx(7.0));
-        REQUIRE(clip.speedRatio == Catch::Approx(1.4));  // 7.0 / 5.0
+        REQUIRE(clip.speedRatio == Catch::Approx(1.0 / 1.4));  // 1.0 / (7.0 / 5.0) = 5.0 / 7.0
 
         // Simulate drag event 3: compress to 4.0 seconds (user dragged right)
         ClipOperations::stretchAudioFromLeft(clip, 4.0, originalLength, originalStretchFactor);
@@ -321,7 +321,8 @@ TEST_CASE("ClipOperations - stretchAudioFromLeft right edge anchoring",
         REQUIRE(rightEdge3 == Catch::Approx(expectedRightEdge));  // Still 15.0!
         REQUIRE(clip.startTime == Catch::Approx(11.0));           // 15.0 - 4.0
         REQUIRE(clip.length == Catch::Approx(4.0));
-        REQUIRE(clip.speedRatio == Catch::Approx(0.8));  // 4.0 / 5.0
+        REQUIRE(clip.speedRatio ==
+                Catch::Approx(1.0 / 0.8));  // 1.0 / (4.0 / 5.0) = 5.0 / 4.0 = 1.25
 
         // Simulate drag event 4: back to original length
         ClipOperations::stretchAudioFromLeft(clip, 5.0, originalLength, originalStretchFactor);
@@ -346,11 +347,14 @@ TEST_CASE("ClipOperations - stretchAudioFromLeft right edge anchoring",
         double originalLength = clip.length;
         double originalStretchFactor = clip.speedRatio;
 
-        // Try to stretch to 10.0 (5.0x ratio) — clamped to 4.0x max
+        // Try to stretch to 10.0 (5.0x ratio) — clamped to 0.25 min
         ClipOperations::stretchAudioFromLeft(clip, 10.0, originalLength, originalStretchFactor);
 
-        // Stretch factor clamped to 4.0, so actual length = 2.0 * 4.0 = 8.0
-        REQUIRE(clip.speedRatio == Catch::Approx(4.0));
+        // Stretch ratio = 10.0 / 2.0 = 5.0
+        // newSpeedRatio = 1.0 / 5.0 = 0.2, but clamped to 0.25 (MIN_SPEED_RATIO)
+        // actual length = oldLength * (originalSpeedRatio / newSpeedRatio) = 2.0 * (1.0 / 0.25)
+        // = 8.0
+        REQUIRE(clip.speedRatio == Catch::Approx(0.25));
         REQUIRE(clip.length == Catch::Approx(8.0));
 
         // Right edge maintained
@@ -374,8 +378,8 @@ TEST_CASE("ClipOperations - stretchAudioFromLeft right edge anchoring",
         // Stretch from 10.0 to 15.0 (1.5x stretch on top of existing 2.0x)
         ClipOperations::stretchAudioFromLeft(clip, 15.0, originalLength, originalStretchFactor);
 
-        // New stretch factor: 2.0 * (15.0 / 10.0) = 3.0
-        REQUIRE(clip.speedRatio == Catch::Approx(3.0));
+        // New stretch factor: 2.0 / (15.0 / 10.0) = 2.0 / 1.5 = 1.333...
+        REQUIRE(clip.speedRatio == Catch::Approx(2.0 / 1.5));
         REQUIRE(clip.length == Catch::Approx(15.0));
 
         // Right edge still anchored

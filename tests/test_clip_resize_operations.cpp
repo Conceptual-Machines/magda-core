@@ -48,7 +48,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - trims audio offset", "[clip
         clip.type = ClipType::Audio;
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
-        clip.speedRatio = 2.0;  // 2x slower (speedRatio = stretchFactor semantics)
+        clip.speedRatio = 2.0;  // 2x faster (speedRatio = speed factor semantics)
 
         // Shrink from left by 2.0 timeline seconds
         ClipOperations::resizeContainerFromLeft(clip, 6.0);
@@ -56,8 +56,8 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - trims audio offset", "[clip
         REQUIRE(clip.startTime == 2.0);
         REQUIRE(clip.length == 6.0);
 
-        // File offset advances by 2.0 / 2.0 = 1.0 file seconds
-        REQUIRE(clip.offset == Catch::Approx(1.0));
+        // File offset advances by 2.0 * 2.0 = 4.0 file seconds
+        REQUIRE(clip.offset == Catch::Approx(4.0));
         REQUIRE(clip.speedRatio == 2.0);  // Unchanged
     }
 
@@ -256,7 +256,7 @@ TEST_CASE("Waveform visible region calculation - flat clip model", "[clip][wavef
         double speedRatio = 1.0;
 
         double fileStart = offset;
-        double fileEnd = offset + clipLength / speedRatio;
+        double fileEnd = offset + clipLength * speedRatio;
 
         REQUIRE(fileStart == 0.0);
         REQUIRE(fileEnd == 4.0);
@@ -268,7 +268,7 @@ TEST_CASE("Waveform visible region calculation - flat clip model", "[clip][wavef
         double speedRatio = 1.0;
 
         double fileStart = offset;
-        double fileEnd = offset + clipLength / speedRatio;
+        double fileEnd = offset + clipLength * speedRatio;
 
         // File reads from 1.0 to 4.0 (same audio content as before trimming)
         REQUIRE(fileStart == Catch::Approx(1.0));
@@ -276,28 +276,28 @@ TEST_CASE("Waveform visible region calculation - flat clip model", "[clip][wavef
     }
 
     SECTION("Stretched audio - file times account for speed ratio") {
-        double clipLength = 8.0;
+        double clipLength = 2.0;
         double offset = 0.0;
-        double speedRatio = 2.0;  // 2x slower (speedRatio = stretchFactor semantics)
+        double speedRatio = 2.0;  // 2x faster (speedRatio = speed factor semantics)
 
         double fileStart = offset;
-        double fileEnd = offset + clipLength / speedRatio;
+        double fileEnd = offset + clipLength * speedRatio;
 
-        // 8 timeline seconds / 2.0 speedRatio = 4 file seconds
+        // 2 timeline seconds * 2.0 speedRatio = 4 file seconds
         REQUIRE(fileStart == 0.0);
         REQUIRE(fileEnd == 4.0);
     }
 
     SECTION("Audio with offset and speed ratio") {
-        double clipLength = 6.0;
+        double clipLength = 4.0;
         double offset = 2.0;      // Start 2s into file
-        double speedRatio = 1.5;  // 1.5x slower
+        double speedRatio = 1.5;  // 1.5x faster
 
         double fileStart = offset;
-        double fileEnd = offset + clipLength / speedRatio;
+        double fileEnd = offset + clipLength * speedRatio;
 
         REQUIRE(fileStart == Catch::Approx(2.0));
-        REQUIRE(fileEnd == Catch::Approx(2.0 + 6.0 / 1.5));  // 2.0 + 4.0 = 6.0
+        REQUIRE(fileEnd == Catch::Approx(2.0 + 4.0 * 1.5));  // 2.0 + 6.0 = 8.0
     }
 }
 
@@ -320,12 +320,12 @@ TEST_CASE("Waveform visible region - drag preview simulation", "[clip][waveform]
         double trimAmount = dragStartLength - previewLength;  // 1.0
 
         // Simulated offset during drag preview
-        double previewOffset = offset + trimAmount / speedRatio;
+        double previewOffset = offset + trimAmount * speedRatio;
         REQUIRE(previewOffset == Catch::Approx(1.0));
 
         // File time with simulated offset
         double fileStart = previewOffset;
-        double fileEnd = previewOffset + previewLength / speedRatio;
+        double fileEnd = previewOffset + previewLength * speedRatio;
 
         REQUIRE(fileStart == Catch::Approx(1.0));
         REQUIRE(fileEnd == Catch::Approx(4.0));
@@ -341,13 +341,13 @@ TEST_CASE("Waveform visible region - drag preview simulation", "[clip][waveform]
         double trimAmount = dragStartLength - previewLength;  // -2.0
 
         // Simulated offset during drag preview
-        double previewOffset = juce::jmax(0.0, offset + trimAmount / speedRatio);
+        double previewOffset = juce::jmax(0.0, offset + trimAmount * speedRatio);
         // 1.0 + (-2.0) = -1.0, clamped to 0.0
         REQUIRE(previewOffset == Catch::Approx(0.0));
 
         // File time: starts from beginning of file
         double fileStart = previewOffset;
-        double fileEnd = previewOffset + previewLength / speedRatio;
+        double fileEnd = previewOffset + previewLength * speedRatio;
 
         REQUIRE(fileStart == Catch::Approx(0.0));
         REQUIRE(fileEnd == Catch::Approx(5.0));
@@ -362,7 +362,7 @@ TEST_CASE("Waveform visible region - drag preview simulation", "[clip][waveform]
 
         // No offset adjustment for right resize
         double fileStart = offset;
-        double fileEnd = offset + previewLength / speedRatio;
+        double fileEnd = offset + previewLength * speedRatio;
 
         REQUIRE(fileStart == Catch::Approx(0.0));
         REQUIRE(fileEnd == Catch::Approx(3.0));
@@ -544,7 +544,7 @@ TEST_CASE("Waveform pixel conversion - no stretch from rounding",
         double offset = 0.0;
         double speedRatio = 1.0;
         double fileStart = offset;
-        double fileEnd = offset + clipLength / speedRatio;
+        double fileEnd = offset + clipLength * speedRatio;
 
         REQUIRE(fileStart == 0.0);
         REQUIRE(fileEnd == 4.0);

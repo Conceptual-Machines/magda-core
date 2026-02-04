@@ -111,7 +111,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         auto di = ClipDisplayInfo::from(clip, bpm);
 
         REQUIRE(di.loopLengthSeconds ==
-                Catch::Approx(2.0));  // 1s source * 2.0 speedRatio = 2s on timeline
+                Catch::Approx(0.5));  // 1s source / 2.0 speedRatio = 0.5s on timeline
         REQUIRE(di.isLooped());
 
         // Source file range for one cycle
@@ -132,7 +132,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
 
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
-        // With loopLength=0, sourceLength falls back to clip.length / speedRatio
+        // With loopLength=0, sourceLength falls back to clip.length * speedRatio
         // So it will be looped since sourceLength > 0
         REQUIRE(di.isLooped());
     }
@@ -149,7 +149,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
 
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
-        // sourceFileEnd must be clamped: loopStart + clip.length / speedRatio = 0.5 + 1.0 = 1.5
+        // sourceFileEnd must be clamped: loopStart + clip.length * speedRatio = 0.5 + 1.0 = 1.5
         // NOT the full loop cycle end of 2.5
         REQUIRE(di.sourceFileStart == Catch::Approx(0.5));
         REQUIRE(di.sourceFileEnd == Catch::Approx(1.5));
@@ -164,7 +164,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.loopEnabled = true;
         clip.offset = clip.loopStart;
         clip.loopStart = 0.0;
-        clip.loopLength = 1.0;  // 1s source region → 2s on timeline
+        clip.loopLength = 1.0;  // 1s source region → 0.5s on timeline
 
         auto di = ClipDisplayInfo::from(clip, 120.0);
 

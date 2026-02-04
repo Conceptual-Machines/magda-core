@@ -52,21 +52,39 @@ struct ClipDisplayInfo {
     double sourceFileStart;  // Where to start reading from source file
     double sourceFileEnd;    // Where to stop reading from source file
 
+    // Pre-computed display helpers
+    double effectiveSourceExtentSeconds;  // Visual boundary extent with fallback chain baked in
+    double fullDrawStartSeconds;          // Full drawable source-file range start
+    double fullDrawEndSeconds;  // Full drawable source-file range end (extends to file end in loop
+                                // mode)
+
+    // Auto-tempo (musical mode) display
+    bool autoTempo = false;        // Whether clip uses beat-based length
+    double loopLengthBeats = 0.0;  // Loop length in beats (when autoTempo=true)
+
     // Helpers
+    // speedRatio is a SPEED FACTOR: higher = faster playback
+    // Formula: timeline = source / speedRatio
     double timelineToSource(double timelineDelta) const {
-        return timelineDelta / speedRatio;
+        return timelineDelta * speedRatio;  // timeline * speed = source distance
     }
 
     double sourceToTimeline(double sourceDelta) const {
-        return sourceDelta * speedRatio;
+        return sourceDelta / speedRatio;  // source / speed = timeline duration
     }
 
     double maxClipLength(double fileDuration) const {
-        return (fileDuration - offset) * speedRatio;
+        return (fileDuration - offset) / speedRatio;  // source / speed = timeline
     }
 
     bool isLooped() const {
         return loopEnabled && sourceLength > 0.0;
+    }
+
+    // Convert a timeline position (relative to display anchor) to absolute source file time
+    double displayPositionToSourceTime(double timelinePos) const {
+        double anchor = isLooped() ? loopStart : offset;
+        return anchor + timelineToSource(timelinePos);
     }
 
     // Wrap a value within [0, period)
@@ -88,6 +106,10 @@ struct ClipDisplayInfo {
         d.offset = clip.offset;
         d.speedRatio = clip.speedRatio;
         d.endTime = clip.startTime + clip.length;
+
+        // Auto-tempo display info
+        d.autoTempo = clip.autoTempo;
+        d.loopLengthBeats = clip.loopLengthBeats;
 
         // Compute source length from loop region or derive from clip
         // Priority: loopLength > fileDuration > clip.length
@@ -113,31 +135,31 @@ struct ClipDisplayInfo {
         // Compute loop offset: phase within the loop region derived from offset - loopStart
         d.loopOffset = wrapPhase(clip.offset - clip.loopStart, d.sourceLength);
 
-        d.loopLengthSeconds = clip.loopLength > 0.0 ? clip.loopLength * clip.speedRatio : 0.0;
+        d.loopLengthSeconds = clip.loopLength > 0.0 ? clip.loopLength / clip.speedRatio : 0.0;
 
         if (clip.loopEnabled && clip.loopLength > 0.0) {
             // In loop mode, anchor display at loopStart.
             // Loop starts at position 0, offset is shown as a phase marker.
             d.loopStartPositionSeconds = 0.0;
             d.loopEndPositionSeconds = d.loopLengthSeconds;
-            d.offsetPositionSeconds = (clip.offset - clip.loopStart) * clip.speedRatio;
+            d.offsetPositionSeconds = (clip.offset - clip.loopStart) / clip.speedRatio;
 
             // Full source extent from loopStart to file end
             if (fileDuration > 0.0 && fileDuration > clip.loopStart) {
-                d.fullSourceExtentSeconds = (fileDuration - clip.loopStart) * clip.speedRatio;
+                d.fullSourceExtentSeconds = (fileDuration - clip.loopStart) / clip.speedRatio;
             } else {
                 d.fullSourceExtentSeconds = d.sourceExtentSeconds;
             }
         } else {
             // Non-loop: anchor at offset
             d.loopStartPositionSeconds =
-                std::max(0.0, (clip.loopStart - clip.offset) * clip.speedRatio);
+                std::max(0.0, (clip.loopStart - clip.offset) / clip.speedRatio);
             d.loopEndPositionSeconds = d.loopStartPositionSeconds + d.loopLengthSeconds;
             d.offsetPositionSeconds = 0.0;  // offset IS position 0
 
             // Full source extent from offset to file end
             if (fileDuration > 0.0 && fileDuration > clip.offset) {
-                d.fullSourceExtentSeconds = (fileDuration - clip.offset) * clip.speedRatio;
+                d.fullSourceExtentSeconds = (fileDuration - clip.offset) / clip.speedRatio;
             } else {
                 d.fullSourceExtentSeconds = d.sourceExtentSeconds;
             }
@@ -158,6 +180,21 @@ struct ClipDisplayInfo {
             // Non-looped: simple linear mapping from offset
             d.sourceFileStart = clip.offset;
             d.sourceFileEnd = clip.offset + d.sourceLength;
+        }
+
+        // Effective source extent: visual boundary with fallback chain
+        d.effectiveSourceExtentSeconds = d.fullSourceExtentSeconds;
+        if (d.effectiveSourceExtentSeconds <= 0.0)
+            d.effectiveSourceExtentSeconds = d.sourceExtentSeconds;
+        if (d.effectiveSourceExtentSeconds <= 0.0)
+            d.effectiveSourceExtentSeconds = clip.length;
+
+        // Full drawable source-file range (extends to file end in loop mode)
+        d.fullDrawStartSeconds = d.sourceFileStart;
+        if (d.isLooped() && fileDuration > 0.0) {
+            d.fullDrawEndSeconds = fileDuration;
+        } else {
+            d.fullDrawEndSeconds = d.sourceFileEnd;
         }
 
         return d;

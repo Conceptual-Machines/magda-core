@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <iostream>
 
+#include "../../core/ClipManager.hpp"
+#include "../utils/TimelineUtils.hpp"
 #include "Config.hpp"
 
 namespace magda {
@@ -451,6 +453,9 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopReg
     double start = juce::jlimit(0.0, state.timelineLength, e.startTime);
     double end = juce::jlimit(0.0, state.timelineLength, e.endTime);
 
+    std::cout << "[SetLoopRegion] Input: startTime=" << e.startTime << "s, endTime=" << e.endTime
+              << "s" << std::endl;
+
     // Ensure minimum duration
     if (end - start < 0.01) {
         end = start + 0.01;
@@ -458,6 +463,17 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopReg
 
     state.loop.startTime = start;
     state.loop.endTime = end;
+
+    // Store beat positions (authoritative for tempo changes)
+    double bpm = state.tempo.bpm;
+    state.loop.startBeats = magda::TimelineUtils::secondsToBeats(start, bpm);
+    state.loop.endBeats = magda::TimelineUtils::secondsToBeats(end, bpm);
+
+    std::cout << "[SetLoopRegion] Current BPM: " << bpm << std::endl;
+    std::cout << "[SetLoopRegion] Stored: startBeats=" << state.loop.startBeats
+              << ", endBeats=" << state.loop.endBeats << std::endl;
+    std::cout << "[SetLoopRegion] Time: startTime=" << state.loop.startTime
+              << "s, endTime=" << state.loop.endTime << "s" << std::endl;
 
     // Enable loop if it wasn't valid before
     if (!state.loop.enabled && state.loop.isValid()) {
@@ -522,16 +538,100 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const MoveLoopRe
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEvent& e) {
     double newBpm = juce::jlimit(20.0, 999.0, e.bpm);
     if (newBpm == state.tempo.bpm) {
+        std::cout << "[SetTempoEvent] No change, bpm=" << newBpm << std::endl;
         return ChangeFlags::None;
     }
 
+    double oldBpm = state.tempo.bpm;
     state.tempo.bpm = newBpm;
+
+    std::cout << "[SetTempoEvent] Tempo change: " << oldBpm << " -> " << newBpm << " BPM"
+              << std::endl;
+
+    // Update loop region to maintain bar/beat positions
+    std::cout << "[SetTempoEvent] Loop region state: isValid=" << state.loop.isValid()
+              << ", startBeats=" << state.loop.startBeats << ", endBeats=" << state.loop.endBeats
+              << ", startTime=" << state.loop.startTime << ", endTime=" << state.loop.endTime
+              << std::endl;
+
+    bool loopRegionUpdated = false;
+
+    // Migration: Calculate beat positions if missing (e.g., loop created without going through
+    // SetLoopRegionEvent)
+    if (state.loop.isValid() && state.loop.startBeats < 0 && state.loop.endBeats < 0) {
+        state.loop.startBeats = magda::TimelineUtils::secondsToBeats(state.loop.startTime, oldBpm);
+        state.loop.endBeats = magda::TimelineUtils::secondsToBeats(state.loop.endTime, oldBpm);
+        std::cout << "[SetTempoEvent] ⚠ Migrated loop region beats from time positions at "
+                  << oldBpm << " BPM: " << state.loop.startBeats << "-" << state.loop.endBeats
+                  << " beats" << std::endl;
+    }
+
+    if (state.loop.isValid() && state.loop.startBeats >= 0 && state.loop.endBeats >= 0) {
+        double oldStartTime = state.loop.startTime;
+        double oldEndTime = state.loop.endTime;
+
+        state.loop.startTime = magda::TimelineUtils::beatsToSeconds(state.loop.startBeats, newBpm);
+        state.loop.endTime = magda::TimelineUtils::beatsToSeconds(state.loop.endBeats, newBpm);
+
+        std::cout << "[SetTempoEvent] ✓ Updated loop region:" << std::endl;
+        std::cout << "  Beats: " << state.loop.startBeats << "-" << state.loop.endBeats << " beats"
+                  << std::endl;
+        std::cout << "  Old time: " << oldStartTime << "-" << oldEndTime << "s" << std::endl;
+        std::cout << "  New time: " << state.loop.startTime << "-" << state.loop.endTime << "s"
+                  << std::endl;
+
+        loopRegionUpdated = true;
+    } else {
+        std::cout << "[SetTempoEvent] ✗ NOT updating loop region (invalid or no beat positions)"
+                  << std::endl;
+    }
+
+    // Update auto-tempo clips when tempo changes
+    if (std::abs(newBpm - oldBpm) > 0.01) {
+        auto& clipManager = ClipManager::getInstance();
+        auto allClips = clipManager.getClips();
+
+        std::cout << "[SetTempoEvent] Checking " << allClips.size()
+                  << " clips for auto-tempo updates" << std::endl;
+
+        int autoTempoClipCount = 0;
+        for (const auto& clip : allClips) {
+            std::cout << "[SetTempoEvent] Clip " << clip.id << ": autoTempo=" << clip.autoTempo
+                      << ", type=" << (clip.type == ClipType::Audio ? "Audio" : "MIDI")
+                      << ", loopLengthBeats=" << clip.loopLengthBeats << ", length=" << clip.length
+                      << std::endl;
+
+            if (clip.autoTempo && clip.type == ClipType::Audio) {
+                autoTempoClipCount++;
+
+                double lengthInBeats = clip.loopLengthBeats > 0.0 ? clip.loopLengthBeats
+                                                                  : (clip.length * oldBpm) / 60.0;
+
+                double newLength = (lengthInBeats * 60.0) / newBpm;
+
+                std::cout << "[SetTempoEvent] Auto-tempo clip " << clip.id
+                          << ": lengthInBeats=" << lengthInBeats << ", oldLength=" << clip.length
+                          << ", newLength=" << newLength << std::endl;
+
+                clipManager.resizeClip(clip.id, newLength, false, newBpm);
+                std::cout << "[SetTempoEvent] Called resizeClip for clip " << clip.id << std::endl;
+            }
+        }
+
+        std::cout << "[SetTempoEvent] Updated " << autoTempoClipCount << " auto-tempo clips"
+                  << std::endl;
+    }
 
     // Notify audio engine of tempo change
     for (auto* listener : audioEngineListeners) {
         listener->onTempoChanged(newBpm);
     }
 
+    // Return combined flags if loop region was updated
+    if (loopRegionUpdated) {
+        return static_cast<ChangeFlags>(static_cast<uint32_t>(ChangeFlags::Tempo) |
+                                        static_cast<uint32_t>(ChangeFlags::Loop));
+    }
     return ChangeFlags::Tempo;
 }
 

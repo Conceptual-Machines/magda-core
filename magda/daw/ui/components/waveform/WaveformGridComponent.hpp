@@ -117,12 +117,6 @@ class WaveformGridComponent : public juce::Component {
     /** Set the TimeRuler to read tempo/time-signature from (not owned) */
     void setTimeRuler(magda::TimeRuler* ruler);
 
-    /** Show/hide loop ghost (waveform tiles beyond the loop boundary) */
-    void setShowLoopGhost(bool show);
-    bool getShowLoopGhost() const {
-        return showLoopGhost_;
-    }
-
     /** Get grid interval in beats for the current resolution */
     double getGridResolutionBeats() const;
 
@@ -223,9 +217,6 @@ class WaveformGridComponent : public juce::Component {
     int draggingMarkerIndex_ = -1;
     double dragStartWarpTime_ = 0.0;
 
-    // Loop ghost (show waveform tiles beyond loop boundary)
-    bool showLoopGhost_ = false;
-
     // Beat grid state
     GridResolution gridResolution_ = GridResolution::Off;
     magda::TimeRuler* timeRuler_ = nullptr;  // not owned — reads tempo/timeSig
@@ -263,6 +254,11 @@ class WaveformGridComponent : public juce::Component {
     int findMarkerAtPixel(int x) const;
     double snapToNearestTransient(double time) const;
     static constexpr int WARP_MARKER_HIT_DISTANCE = 5;
+
+    // Display start time (0.0 in relative mode, clipStartTime_ in absolute)
+    double getDisplayStartTime() const {
+        return relativeMode_ ? 0.0 : clipStartTime_;
+    }
 
     // Get current clip
     const magda::ClipInfo* getClip() const;

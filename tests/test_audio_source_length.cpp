@@ -37,7 +37,7 @@ TEST_CASE("ClipManager - setClipLoopEnabled preserves source extent",
         REQUIRE(clip != nullptr);
 
         clip->speedRatio = 1.0;
-        // loopLength is set at creation: length / speedRatio = 4.0
+        // loopLength is set at creation: length * speedRatio = 4.0
         REQUIRE(clip->loopLength == Catch::Approx(4.0));
 
         // Enable loop mode — loopLength already set, should not change
@@ -51,18 +51,18 @@ TEST_CASE("ClipManager - setClipLoopEnabled preserves source extent",
         ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 8.0, "test.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
 
-        // loopLength set at creation: 8.0 / 1.0 = 8.0
+        // loopLength set at creation: 8.0 * 1.0 = 8.0
         REQUIRE(clip->loopLength == Catch::Approx(8.0));
 
         // Manually change speed ratio (simulating stretch)
-        clip->speedRatio = 2.0;  // 2x faster, so 8s timeline = 4s source
+        clip->speedRatio = 2.0;  // 2x faster, so 8s timeline = 16s source
         // Reset loopLength to 0 to test that setClipLoopEnabled recalculates
         clip->loopLength = 0.0;
 
         ClipManager::getInstance().setClipLoopEnabled(clipId, true, 120.0);
 
-        // loopLength = 8.0 / 2.0 = 4.0 source seconds
-        REQUIRE(clip->loopLength == Catch::Approx(4.0));
+        // loopLength = 8.0 * 2.0 = 16.0 source seconds
+        REQUIRE(clip->loopLength == Catch::Approx(16.0));
     }
 
     SECTION("Enabling loop does not overwrite existing loopLength") {
@@ -143,7 +143,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in loop mode uses loopLength",
         REQUIRE(di.sourceExtentSeconds == Catch::Approx(3.0));  // 3.0 * 1.0
     }
 
-    SECTION("Loop mode with loopLength=0: falls back to clip.length / speedRatio") {
+    SECTION("Loop mode with loopLength=0: falls back to clip.length * speedRatio") {
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 8.0;
@@ -156,11 +156,11 @@ TEST_CASE("ClipDisplayInfo - sourceLength in loop mode uses loopLength",
 
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
-        // Falls back to clip.length / speedRatio
+        // Falls back to clip.length * speedRatio
         REQUIRE(di.sourceLength == Catch::Approx(8.0));
     }
 
-    SECTION("Loop mode with speed ratio: sourceExtentSeconds = sourceLength * speedRatio") {
+    SECTION("Loop mode with speed ratio: sourceExtentSeconds = sourceLength / speedRatio") {
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 16.0;
@@ -174,7 +174,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in loop mode uses loopLength",
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
         REQUIRE(di.sourceLength == Catch::Approx(3.0));
-        REQUIRE(di.sourceExtentSeconds == Catch::Approx(6.0));  // 3.0 * 2.0
+        REQUIRE(di.sourceExtentSeconds == Catch::Approx(1.5));  // 3.0 / 2.0
     }
 }
 
@@ -182,7 +182,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in non-loop mode derives from clip.len
           "[clip][display][source]") {
     using namespace magda;
 
-    SECTION("Non-loop mode: sourceLength = clip.length / speedRatio") {
+    SECTION("Non-loop mode: sourceLength = clip.length * speedRatio") {
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 4.0;
@@ -193,15 +193,15 @@ TEST_CASE("ClipDisplayInfo - sourceLength in non-loop mode derives from clip.len
 
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
-        // In non-loop mode, sourceLength derives from clip.length / speedRatio
+        // In non-loop mode, sourceLength derives from clip.length * speedRatio
         REQUIRE(di.sourceLength == Catch::Approx(4.0));
         REQUIRE(di.sourceExtentSeconds == Catch::Approx(4.0));
     }
 
-    SECTION("Non-loop mode with speed ratio: sourceLength = clip.length / speedRatio") {
+    SECTION("Non-loop mode with speed ratio: sourceLength = clip.length * speedRatio") {
         ClipInfo clip;
         clip.startTime = 0.0;
-        clip.length = 8.0;
+        clip.length = 4.0;
         clip.offset = 0.0;
         clip.speedRatio = 2.0;  // 2x faster
         clip.loopEnabled = false;
@@ -209,9 +209,9 @@ TEST_CASE("ClipDisplayInfo - sourceLength in non-loop mode derives from clip.len
 
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
-        // sourceLength = 8.0 / 2.0 = 4.0
-        REQUIRE(di.sourceLength == Catch::Approx(4.0));
-        REQUIRE(di.sourceExtentSeconds == Catch::Approx(8.0));  // 4.0 * 2.0
+        // sourceLength = 4.0 * 2.0 = 8.0
+        REQUIRE(di.sourceLength == Catch::Approx(8.0));
+        REQUIRE(di.sourceExtentSeconds == Catch::Approx(4.0));  // 8.0 / 2.0
     }
 }
 
@@ -229,7 +229,7 @@ TEST_CASE("ClipDisplayInfo - sourceFileEnd in non-loop mode", "[clip][display][s
 
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
-        // sourceLength = 4.0 / 1.0 = 4.0
+        // sourceLength = 4.0 * 1.0 = 4.0
         // sourceFileEnd = 1.0 + 4.0 = 5.0
         REQUIRE(di.sourceFileStart == Catch::Approx(1.0));
         REQUIRE(di.sourceFileEnd == Catch::Approx(5.0));

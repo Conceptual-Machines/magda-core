@@ -254,18 +254,6 @@ WaveformEditorContent::WaveformEditorContent() {
     };
     addAndMakeVisible(gridResolutionCombo_.get());
 
-    // Loop ghost toggle
-    loopGhostButton_ = std::make_unique<juce::TextButton>("GHOST");
-    loopGhostButton_->setTooltip("Show loop repetitions beyond the loop boundary");
-    loopGhostButton_->setClickingTogglesState(true);
-    loopGhostButton_->setToggleState(false, juce::dontSendNotification);
-    loopGhostButton_->setLookAndFeel(buttonLookAndFeel_.get());
-    loopGhostButton_->onClick = [this]() {
-        if (gridComponent_)
-            gridComponent_->setShowLoopGhost(loopGhostButton_->getToggleState());
-    };
-    addAndMakeVisible(loopGhostButton_.get());
-
     // Create waveform grid component
     gridComponent_ = std::make_unique<WaveformGridComponent>();
     gridComponent_->setRelativeMode(relativeTimeMode_);
@@ -361,9 +349,6 @@ WaveformEditorContent::~WaveformEditorContent() {
     if (gridResolutionCombo_) {
         gridResolutionCombo_->setLookAndFeel(nullptr);
     }
-    if (loopGhostButton_) {
-        loopGhostButton_->setLookAndFeel(nullptr);
-    }
 }
 
 // ============================================================================
@@ -386,7 +371,6 @@ void WaveformEditorContent::resized() {
         timeModeButton_->setBounds(0, 0, 0, 0);
         warpModeButton_->setBounds(0, 0, 0, 0);
         gridResolutionCombo_->setBounds(0, 0, 0, 0);
-        loopGhostButton_->setBounds(0, 0, 0, 0);
         bpmLabel_->setBounds(0, 0, 0, 0);
         timeRuler_->setBounds(0, 0, 0, 0);
         viewport_->setBounds(0, 0, 0, 0);
@@ -402,8 +386,6 @@ void WaveformEditorContent::resized() {
     warpModeButton_->setBounds(toolbarArea.removeFromLeft(60).reduced(2));
     toolbarArea.removeFromLeft(4);
     gridResolutionCombo_->setBounds(toolbarArea.removeFromLeft(70).reduced(2));
-    toolbarArea.removeFromLeft(4);
-    loopGhostButton_->setBounds(toolbarArea.removeFromLeft(60).reduced(2));
     toolbarArea.removeFromLeft(4);
     bpmLabel_->setBounds(toolbarArea.removeFromLeft(80).reduced(2));
 

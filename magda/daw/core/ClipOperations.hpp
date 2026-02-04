@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 
 #include <cmath>
+#include <utility>
 
 #include "ClipInfo.hpp"
 
@@ -72,28 +73,31 @@ class ClipOperations {
      *
      * @param clip Clip to resize
      * @param newLength New clip length (clamped to >= MIN_CLIP_LENGTH)
-     * @param bpm Current tempo (unused, kept for API compatibility)
+     * @param bpm Current tempo (used if autoTempo is enabled)
      */
     static inline void resizeContainerFromLeft(ClipInfo& clip, double newLength,
                                                double bpm = 120.0) {
-        juce::ignoreUnused(bpm);
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
         double lengthDelta = clip.length - newLength;
         double newStartTime = juce::jmax(0.0, clip.startTime + lengthDelta);
         double actualDelta = newStartTime - clip.startTime;
 
+        // NOTE: In auto-tempo mode, do NOT update loopLengthBeats here.
+        // loopLengthBeats is the authoritative source of truth and should only
+        // be updated when the user explicitly changes it, not during tempo-driven resizes.
+
         if (clip.type == ClipType::Audio && !clip.audioFilePath.isEmpty()) {
             if (!clip.loopEnabled) {
                 // Non-looped: adjust offset so content stays at timeline position
-                double sourceDelta = actualDelta / clip.speedRatio;
+                double sourceDelta = actualDelta * clip.speedRatio;
                 clip.offset = juce::jmax(0.0, clip.offset + sourceDelta);
             } else {
                 // Looped: adjust offset (wrapped within loop region) so content stays at timeline
                 // position
                 double sourceLength =
-                    clip.loopLength > 0.0 ? clip.loopLength : clip.length / clip.speedRatio;
+                    clip.loopLength > 0.0 ? clip.loopLength : clip.length * clip.speedRatio;
                 if (sourceLength > 0.0) {
-                    double phaseDelta = actualDelta / clip.speedRatio;
+                    double phaseDelta = actualDelta * clip.speedRatio;
                     double relOffset = clip.offset - clip.loopStart;
                     clip.offset = clip.loopStart + wrapPhase(relOffset + phaseDelta, sourceLength);
                 }
@@ -112,9 +116,15 @@ class ClipOperations {
      *
      * @param clip Clip to resize
      * @param newLength New clip length (clamped to >= MIN_CLIP_LENGTH)
+     * @param bpm Current tempo (used if autoTempo is enabled)
      */
-    static inline void resizeContainerFromRight(ClipInfo& clip, double newLength) {
+    static inline void resizeContainerFromRight(ClipInfo& clip, double newLength,
+                                                double bpm = 120.0) {
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
+
+        // NOTE: In auto-tempo mode, do NOT update loopLengthBeats here.
+        // loopLengthBeats is the authoritative source of truth and should only
+        // be updated when the user explicitly changes it, not during tempo-driven resizes.
 
         // For non-looped audio clips, update loopLength to track (used for display)
         if (clip.type == ClipType::Audio && !clip.audioFilePath.isEmpty() && !clip.loopEnabled) {
@@ -137,7 +147,7 @@ class ClipOperations {
      */
     static inline void trimAudioFromLeft(ClipInfo& clip, double trimAmount,
                                          double fileDuration = 0.0) {
-        double sourceDelta = trimAmount / clip.speedRatio;
+        double sourceDelta = trimAmount * clip.speedRatio;
         double newOffset = clip.offset + sourceDelta;
 
         if (fileDuration > 0.0) {
@@ -146,7 +156,7 @@ class ClipOperations {
         newOffset = juce::jmax(0.0, newOffset);
 
         double actualSourceDelta = newOffset - clip.offset;
-        double timelineDelta = actualSourceDelta * clip.speedRatio;
+        double timelineDelta = actualSourceDelta / clip.speedRatio;
 
         clip.offset = newOffset;
         clip.startTime = juce::jmax(0.0, clip.startTime + timelineDelta);
@@ -165,7 +175,7 @@ class ClipOperations {
         double newLength = clip.length - trimAmount;
 
         if (fileDuration > 0.0) {
-            double maxLength = (fileDuration - clip.offset) * clip.speedRatio;
+            double maxLength = (fileDuration - clip.offset) / clip.speedRatio;
             newLength = juce::jmin(newLength, maxLength);
         }
 
@@ -191,10 +201,10 @@ class ClipOperations {
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
 
         double stretchRatio = newLength / oldLength;
-        double newSpeedRatio = originalSpeedRatio * stretchRatio;
+        double newSpeedRatio = originalSpeedRatio / stretchRatio;
         newSpeedRatio = juce::jlimit(MIN_SPEED_RATIO, MAX_SPEED_RATIO, newSpeedRatio);
 
-        newLength = oldLength * (newSpeedRatio / originalSpeedRatio);
+        newLength = oldLength * (originalSpeedRatio / newSpeedRatio);
 
         clip.length = newLength;
         clip.speedRatio = newSpeedRatio;
@@ -215,10 +225,10 @@ class ClipOperations {
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
 
         double stretchRatio = newLength / oldLength;
-        double newSpeedRatio = originalSpeedRatio * stretchRatio;
+        double newSpeedRatio = originalSpeedRatio / stretchRatio;
         newSpeedRatio = juce::jlimit(MIN_SPEED_RATIO, MAX_SPEED_RATIO, newSpeedRatio);
 
-        newLength = oldLength * (newSpeedRatio / originalSpeedRatio);
+        newLength = oldLength * (originalSpeedRatio / newSpeedRatio);
 
         clip.length = newLength;
         clip.startTime = rightEdge - newLength;
@@ -324,6 +334,142 @@ class ClipOperations {
         // For non-looped clips, loopLength tracks with clip length
         if (!clip.loopEnabled) {
             clip.setLoopLengthFromTimeline(newLength);
+        }
+    }
+
+    // ========================================================================
+    // Auto-Tempo Operations (Musical Mode)
+    // ========================================================================
+
+    /**
+     * @brief Calculate the beat-based loop range for auto-tempo mode
+     *
+     * Returns the loop range in beats that should be sent to Tracktion Engine.
+     * This defines how much SOURCE audio is available to loop, not the clip's timeline length.
+     *
+     * @param clip The clip to calculate for
+     * @param bpm Current tempo
+     * @return Pair of (loopStartBeats, loopLengthBeats)
+     */
+    static inline std::pair<double, double> getAutoTempoBeatRange(const ClipInfo& clip,
+                                                                  double bpm) {
+        if (!clip.autoTempo) {
+            return {0.0, 0.0};
+        }
+
+        // Loop start in beats (usually 0 unless loop region is offset in source file)
+        double loopStartBeats = clip.loopStartBeats;
+
+        // Loop length: use the SOURCE audio length in beats, not clip timeline length
+        // The clip can be longer than the source (it will loop), but TE needs to know
+        // how much source audio is available
+        double sourceLoopSeconds = clip.loopLength > 0.0 ? clip.loopLength : clip.length;
+        double loopLengthBeats = (sourceLoopSeconds * bpm) / 60.0;
+
+        return {loopStartBeats, loopLengthBeats};
+    }
+
+    /**
+     * @brief Set clip to use beat-based length (enables autoTempo, stores beat values)
+     * @param clip Clip to modify
+     * @param lengthBeats Clip length in beats
+     * @param loopStartBeats Loop start position in beats (relative to file start)
+     * @param loopLengthBeats Loop length in beats (0 = derive from clip length)
+     * @param bpm Current tempo for time conversion
+     */
+    static inline void setClipLengthBeats(ClipInfo& clip, double lengthBeats, double loopStartBeats,
+                                          double loopLengthBeats, double bpm) {
+        clip.autoTempo = true;
+        clip.loopLengthBeats = loopLengthBeats > 0.0 ? loopLengthBeats : lengthBeats;
+        clip.loopStartBeats = loopStartBeats;
+
+        // Update time-based fields (derived values)
+        clip.setLengthFromBeats(lengthBeats, bpm);
+
+        // Auto-tempo requires speedRatio=1.0
+        clip.speedRatio = 1.0;
+    }
+
+    /**
+     * @brief Toggle auto-tempo mode (converts between time↔beat storage)
+     * @param clip Clip to modify
+     * @param enabled Enable auto-tempo mode
+     * @param bpm Current tempo for conversion
+     */
+    static inline void setAutoTempo(ClipInfo& clip, bool enabled, double bpm) {
+        if (clip.autoTempo == enabled)
+            return;
+
+        clip.autoTempo = enabled;
+
+        if (enabled) {
+            // Convert current time length to beats
+            clip.loopLengthBeats = clip.getLengthInBeats(bpm);
+            if (clip.loopEnabled && clip.loopLength > 0.0) {
+                // Convert loop properties to beats
+                clip.loopStartBeats = (clip.loopStart * bpm) / 60.0;
+            } else {
+                clip.loopStartBeats = 0.0;
+            }
+
+            // Enable looping (required for TE's autoTempo beat range to work)
+            if (!clip.loopEnabled) {
+                clip.loopEnabled = true;
+                // Set loop start to offset and loop length from clip length
+                clip.loopStart = clip.offset;
+                clip.setLoopLengthFromTimeline(clip.length);
+            }
+
+            // Force speedRatio to 1.0 (TE requirement for autoTempo)
+            clip.speedRatio = 1.0;
+        } else {
+            // Switching to time-based mode: keep current derived time values
+            // Clear beat values (no longer used)
+            clip.loopStartBeats = 0.0;
+            clip.loopLengthBeats = 0.0;
+        }
+    }
+
+    /**
+     * @brief Resize clip from right edge in musical mode (beat-based)
+     * @param clip Clip to resize
+     * @param newLengthBeats New length in beats
+     * @param bpm Current tempo for time conversion
+     */
+    static inline void resizeClipFromRightMusical(ClipInfo& clip, double newLengthBeats,
+                                                  double bpm) {
+        newLengthBeats = juce::jmax(MIN_CLIP_LENGTH * bpm / 60.0, newLengthBeats);
+
+        clip.loopLengthBeats = newLengthBeats;
+        clip.setLengthFromBeats(newLengthBeats, bpm);
+
+        // Update loopLength for display consistency
+        if (!clip.loopEnabled) {
+            clip.setLoopLengthFromTimeline(clip.length);
+        }
+    }
+
+    /**
+     * @brief Resize clip from left edge in musical mode (beat-based)
+     * @param clip Clip to resize
+     * @param newLengthBeats New length in beats
+     * @param bpm Current tempo for time conversion
+     */
+    static inline void resizeClipFromLeftMusical(ClipInfo& clip, double newLengthBeats,
+                                                 double bpm) {
+        newLengthBeats = juce::jmax(MIN_CLIP_LENGTH * bpm / 60.0, newLengthBeats);
+
+        double oldLength = clip.length;
+        clip.loopLengthBeats = newLengthBeats;
+        clip.setLengthFromBeats(newLengthBeats, bpm);
+
+        // Adjust startTime to keep right edge fixed
+        double lengthDelta = oldLength - clip.length;
+        clip.startTime = juce::jmax(0.0, clip.startTime + lengthDelta);
+
+        // Update loopLength for display consistency
+        if (!clip.loopEnabled) {
+            clip.setLoopLengthFromTimeline(clip.length);
         }
     }
 

@@ -189,7 +189,7 @@ TEST_CASE("ClipManager persists loop enabled and loop length", "[session][clip][
 
     SECTION("Default loop state") {
         REQUIRE(clip->loopEnabled == false);
-        // loopLength = length / speedRatio = 8.0 / 1.0 = 8.0
+        // loopLength = length * speedRatio = 8.0 * 1.0 = 8.0
         REQUIRE(clip->loopLength == Catch::Approx(8.0));
     }
 

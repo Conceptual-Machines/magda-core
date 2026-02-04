@@ -239,6 +239,31 @@ InspectorContent::InspectorContent() {
     clipBpmValue_.setJustificationType(juce::Justification::centredLeft);
     addChildComponent(clipBpmValue_);
 
+    // Length in beats (shown next to BPM when auto-tempo is enabled)
+    clipBeatsLengthValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
+    clipBeatsLengthValue_->setRange(0.25, 128.0, 4.0);  // Min 0.25 beats, max 128 beats
+    clipBeatsLengthValue_->setSuffix(" beats");
+    clipBeatsLengthValue_->setDecimalPlaces(2);
+    clipBeatsLengthValue_->onValueChange = [this]() {
+        if (selectedClipId_ != magda::INVALID_CLIP_ID) {
+            auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
+            if (clip && clip->autoTempo) {
+                double newBeats = clipBeatsLengthValue_->getValue();
+                double bpm =
+                    timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
+
+                // Update loopLengthBeats and recalculate time-based length
+                clip->loopLengthBeats = newBeats;
+                clip->setLengthFromBeats(newBeats, bpm);
+
+                // Trigger sync to engine
+                magda::ClipManager::getInstance().resizeClip(selectedClipId_, clip->length, false,
+                                                             bpm);
+            }
+        }
+    };
+    addChildComponent(*clipBeatsLengthValue_);
+
     // Position icon (static, non-interactive)
     clipPositionIcon_ = std::make_unique<magda::SvgButton>("Position", BinaryData::position_svg,
                                                            BinaryData::position_svgSize);
@@ -309,9 +334,9 @@ InspectorContent::InspectorContent() {
             // If offset is past new clip end, pull it back
             if (offsetSeconds >= clip->loopStart + newClipEndSeconds) {
                 double srcLen = clip->loopLength > 0.0 ? clip->loopLength
-                                                       : newClipEndSeconds / clip->speedRatio;
+                                                       : newClipEndSeconds * clip->speedRatio;
                 offsetSeconds = std::max(clip->loopStart, clip->loopStart + srcLen -
-                                                              newClipEndSeconds / clip->speedRatio);
+                                                              newClipEndSeconds * clip->speedRatio);
                 if (offsetSeconds < clip->loopStart)
                     offsetSeconds = clip->loopStart;
                 magda::ClipManager::getInstance().setOffset(selectedClipId_, offsetSeconds);
@@ -319,11 +344,11 @@ InspectorContent::InspectorContent() {
 
             // If source region exceeds clip end, shrink it
             double sourceLengthSeconds =
-                clip->loopLength > 0.0 ? clip->loopLength : newClipEndSeconds / clip->speedRatio;
+                clip->loopLength > 0.0 ? clip->loopLength : newClipEndSeconds * clip->speedRatio;
             double sourceEndSeconds = clip->loopStart + sourceLengthSeconds;
             if (sourceEndSeconds > clip->loopStart + newClipEndSeconds) {
                 double clampedLoopLength = std::max(magda::ClipOperations::MIN_SOURCE_LENGTH,
-                                                    newClipEndSeconds / clip->speedRatio);
+                                                    newClipEndSeconds * clip->speedRatio);
                 magda::ClipManager::getInstance().setLoopLength(selectedClipId_, clampedLoopLength);
             }
         } else {
@@ -417,6 +442,76 @@ InspectorContent::InspectorContent() {
     };
     addChildComponent(clipWarpToggle_);
 
+    // Auto-tempo (musical mode) toggle button
+    clipAutoTempoToggle_.setButtonText(juce::CharPointer_UTF8("\xe2\x99\xa9 MUSICAL"));
+    clipAutoTempoToggle_.setColour(juce::TextButton::buttonColourId,
+                                   DarkTheme::getColour(DarkTheme::SURFACE));
+    clipAutoTempoToggle_.setColour(juce::TextButton::buttonOnColourId,
+                                   DarkTheme::getAccentColour().withAlpha(0.3f));
+    clipAutoTempoToggle_.setColour(juce::TextButton::textColourOffId,
+                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipAutoTempoToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+    clipAutoTempoToggle_.setClickingTogglesState(true);
+    clipAutoTempoToggle_.setTooltip(
+        "Lock clip to musical time (bars/beats) instead of absolute time.\n"
+        "Clip length changes with tempo to maintain fixed beat length.");
+    clipAutoTempoToggle_.onClick = [this]() {
+        if (selectedClipId_ != magda::INVALID_CLIP_ID) {
+            bool newState = clipAutoTempoToggle_.getToggleState();
+            auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
+            if (!clip)
+                return;
+
+            DBG("========== MUSICAL MODE TOGGLE ==========");
+            DBG("  Clip ID: " << selectedClipId_);
+            DBG("  New State: " << (int)newState);
+            DBG("  BEFORE: autoTempo="
+                << (int)clip->autoTempo << ", loopEnabled=" << (int)clip->loopEnabled
+                << ", loopLengthBeats=" << clip->loopLengthBeats << ", length=" << clip->length);
+
+            double bpm = 120.0;
+            if (timelineController_) {
+                bpm = timelineController_->getState().tempo.bpm;
+            }
+            DBG("  Current BPM: " << bpm);
+
+            // Auto-reset speedRatio to 1.0 if enabling auto-tempo on stretched clip
+            if (newState && std::abs(clip->speedRatio - 1.0) > 0.001) {
+                // Show warning that stretch will be reset
+                auto result = juce::NativeMessageBox::showOkCancelBox(
+                    juce::MessageBoxIconType::WarningIcon, "Reset Time Stretch",
+                    "Auto-tempo mode requires speed ratio 1.0.\n"
+                    "Current stretch (" +
+                        juce::String(clip->speedRatio, 2) + "x) will be reset.\n\nContinue?",
+                    nullptr, nullptr);
+
+                if (!result) {
+                    clipAutoTempoToggle_.setToggleState(false, juce::dontSendNotification);
+                    return;
+                }
+            }
+
+            DBG("  -> Calling ClipOperations::setAutoTempo()");
+            magda::ClipOperations::setAutoTempo(*clip, newState, bpm);
+
+            DBG("  AFTER setAutoTempo: autoTempo="
+                << (int)clip->autoTempo << ", loopEnabled=" << (int)clip->loopEnabled
+                << ", loopLengthBeats=" << clip->loopLengthBeats
+                << ", loopStart=" << clip->loopStart << ", loopLength=" << clip->loopLength);
+
+            // Trigger notification through ClipManager's public API
+            // Use resizeClip to trigger proper notifications (keeps same length)
+            DBG("  -> Calling resizeClip to trigger sync");
+            magda::ClipManager::getInstance().resizeClip(selectedClipId_, clip->length, false, bpm);
+
+            DBG("  -> Refreshing UI");
+            // Refresh UI to show updated values
+            updateFromSelectedClip();
+            DBG("=========================================");
+        }
+    };
+    addChildComponent(clipAutoTempoToggle_);
+
     clipStretchValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
     clipStretchValue_->setRange(0.25, 4.0, 1.0);
     clipStretchValue_->setSuffix("x");
@@ -494,13 +589,15 @@ InspectorContent::InspectorContent() {
         if (!clip)
             return;
 
-        // UI shows source-time beats; convert directly to source seconds
+        // UI shows source-time beats; convert to timeline seconds, then to source seconds
         double newLoopLengthBeats = clipLoopLengthValue_->getValue();
         double bpm = 120.0;
         if (timelineController_) {
             bpm = timelineController_->getState().tempo.bpm;
         }
-        double newLoopLengthSeconds = magda::TimelineUtils::beatsToSeconds(newLoopLengthBeats, bpm);
+        double timelineSeconds = magda::TimelineUtils::beatsToSeconds(newLoopLengthBeats, bpm);
+        // Convert timeline seconds to source seconds using speedRatio
+        double newLoopLengthSeconds = timelineSeconds * clip->speedRatio;
 
         if (clip->view == magda::ClipView::Session) {
             double clipEndSeconds = clip->length;
@@ -925,8 +1022,9 @@ void InspectorContent::resized() {
             bounds.removeFromTop(8);
         }
 
-        // BPM and WARP on the same row at the bottom (audio clips only)
-        if (clipWarpToggle_.isVisible() || clipBpmValue_.isVisible()) {
+        // BPM, WARP, and MUSICAL on the same row at the bottom (audio clips only)
+        if (clipWarpToggle_.isVisible() || clipBpmValue_.isVisible() ||
+            clipAutoTempoToggle_.isVisible() || clipBeatsLengthValue_->isVisible()) {
             const int gap = 8;
             auto bottomRow = bounds.removeFromTop(24);
 
@@ -936,9 +1034,21 @@ void InspectorContent::resized() {
                 bottomRow.removeFromLeft(gap);
             }
 
+            // Length in beats (shown when auto-tempo is enabled)
+            if (clipBeatsLengthValue_->isVisible()) {
+                clipBeatsLengthValue_->setBounds(bottomRow.removeFromLeft(100));
+                bottomRow.removeFromLeft(gap);
+            }
+
             // WARP button
             if (clipWarpToggle_.isVisible()) {
                 clipWarpToggle_.setBounds(bottomRow.removeFromLeft(60).reduced(0, 1));
+                bottomRow.removeFromLeft(gap);
+            }
+
+            // MUSICAL button
+            if (clipAutoTempoToggle_.isVisible()) {
+                clipAutoTempoToggle_.setBounds(bottomRow.removeFromLeft(85).reduced(0, 1));
             }
             bounds.removeFromTop(8);
         }
@@ -1469,6 +1579,14 @@ void InspectorContent::updateFromSelectedClip() {
             clipBpmValue_.setVisible(false);
         }
 
+        // Show length in beats for audio clips with auto-tempo enabled
+        if (isAudioClip && clip->autoTempo) {
+            clipBeatsLengthValue_->setVisible(true);
+            clipBeatsLengthValue_->setValue(clip->loopLengthBeats, juce::dontSendNotification);
+        } else {
+            clipBeatsLengthValue_->setVisible(false);
+        }
+
         // Get tempo from TimelineController, fallback to 120 BPM if not available
         double bpm = 120.0;
         int beatsPerBar = 4;
@@ -1514,7 +1632,7 @@ void InspectorContent::updateFromSelectedClip() {
         clipContentOffsetValue_->setVisible(true);
 
         double sourceLength =
-            clip->loopLength > 0.0 ? clip->loopLength : clip->length / clip->speedRatio;
+            clip->loopLength > 0.0 ? clip->loopLength : clip->length * clip->speedRatio;
         // Display in source-time beats (independent of speedRatio, consistent with loopStart)
         clipLoopLengthValue_->setValue(magda::TimelineUtils::secondsToBeats(sourceLength, bpm),
                                        juce::dontSendNotification);
@@ -1522,10 +1640,21 @@ void InspectorContent::updateFromSelectedClip() {
         clipLoopToggle_->setActive(clip->loopEnabled);
         clipLoopToggle_->setEnabled(true);
 
-        // Warp toggle (only for audio clips) - isAudioClip already defined above
-        clipWarpToggle_.setVisible(isAudioClip);
+        // Warp toggle (only for audio clips, hidden when auto-tempo is enabled)
+        clipWarpToggle_.setVisible(isAudioClip && !clip->autoTempo);
         if (isAudioClip) {
             clipWarpToggle_.setToggleState(clip->warpEnabled, juce::dontSendNotification);
+        }
+
+        // Auto-tempo toggle (always visible for audio clips)
+        clipAutoTempoToggle_.setVisible(isAudioClip);
+        if (isAudioClip) {
+            clipAutoTempoToggle_.setToggleState(clip->autoTempo, juce::dontSendNotification);
+            // Disable stretch control when auto-tempo is enabled (speedRatio must be 1.0)
+            if (clip->autoTempo && clipStretchValue_) {
+                clipStretchValue_->setEnabled(false);
+                clipStretchValue_->setAlpha(0.4f);
+            }
         }
 
         clipStretchValue_->setVisible(isAudioClip);
@@ -1534,6 +1663,12 @@ void InspectorContent::updateFromSelectedClip() {
             clipStretchValue_->setValue(clip->speedRatio, juce::dontSendNotification);
             // Set stretch mode combo: mode+1 because ComboBox IDs start at 1
             stretchModeCombo_.setSelectedId(clip->timeStretchMode + 1, juce::dontSendNotification);
+
+            // Enable/disable stretch controls based on auto-tempo mode
+            if (!clip->autoTempo && clipStretchValue_) {
+                clipStretchValue_->setEnabled(true);
+                clipStretchValue_->setAlpha(1.0f);
+            }
         }
 
         // Always show loop length, but grey out when loop is off
@@ -1617,9 +1752,10 @@ void InspectorContent::showTrackControls(bool show) {
 void InspectorContent::showClipControls(bool show) {
     clipNameValue_.setVisible(show);
     clipTypeIcon_->setVisible(show);
-    // BPM visibility is managed by updateFromSelectedClip (audio clips only)
+    // BPM and beats length visibility is managed by updateFromSelectedClip (audio clips only)
     if (!show) {
         clipBpmValue_.setVisible(false);
+        clipBeatsLengthValue_->setVisible(false);
     }
     clipPositionIcon_->setVisible(show);
     clipStartLabel_.setVisible(show);
@@ -1632,6 +1768,7 @@ void InspectorContent::showClipControls(bool show) {
     clipLoopToggle_->setVisible(show);
     if (!show) {
         clipWarpToggle_.setVisible(false);
+        clipAutoTempoToggle_.setVisible(false);
         if (clipStretchValue_)
             clipStretchValue_->setVisible(false);
         stretchModeCombo_.setVisible(false);

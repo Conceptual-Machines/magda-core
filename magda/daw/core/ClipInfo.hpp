@@ -55,10 +55,32 @@ struct ClipInfo {
 
     // Time stretch
     // TE: Clip::speedRatio
+    // speedRatio is a SPEED FACTOR (NOT stretch factor!)
+    // Formula: timeline_seconds = source_seconds / speedRatio
+    // speedRatio = 1.0: normal playback
+    // speedRatio = 2.0: 2x faster (half timeline duration)
+    // speedRatio = 0.5: 2x slower (double timeline duration)
     double speedRatio = 1.0;  // Playback speed ratio (1.0 = original, 2.0 = 2x speed/half duration)
 
     bool warpEnabled = false;  // Whether warp markers are active on this clip
     int timeStretchMode = 0;   // TimeStretcher::Mode (0 = default/auto)
+
+    // =========================================================================
+    // Auto-tempo / Musical mode (beat-based length)
+    // =========================================================================
+    // When autoTempo=true:
+    // - Beat values are authoritative, time values are derived from BPM
+    // - TE's autoTempo is enabled, clips maintain fixed musical length
+    // - speedRatio must be 1.0 (TE requirement)
+    // When autoTempo=false (default):
+    // - Time values are authoritative (current behavior)
+    // - Clips maintain fixed absolute time length regardless of BPM
+    bool autoTempo = false;  // Enable beat-based length (musical mode)
+
+    // Beat-based loop properties (only used when autoTempo = true)
+    // TE: AudioClipBase::loopStartBeats, loopLengthBeats
+    double loopStartBeats = 0.0;   // Loop start in beats (relative to file start)
+    double loopLengthBeats = 0.0;  // Loop length in beats (0 = derive from clip length)
 
     // MIDI-specific properties
     std::vector<MidiNote> midiNotes;
@@ -81,14 +103,16 @@ struct ClipInfo {
         return startTime + length;
     }
 
-    /// Convert source-time to timeline-time (internal convention: timeline = source * speedRatio)
+    /// Convert source-time to timeline-time (speed-factor semantics: timeline = source /
+    /// speedRatio)
     double sourceToTimeline(double sourceTime) const {
-        return sourceTime * speedRatio;
+        return sourceTime / speedRatio;  // Faster = shorter timeline
     }
 
-    /// Convert timeline-time to source-time (internal convention: source = timeline / speedRatio)
+    /// Convert timeline-time to source-time (speed-factor semantics: source = timeline *
+    /// speedRatio)
     double timelineToSource(double timelineTime) const {
-        return timelineTime / speedRatio;
+        return timelineTime * speedRatio;  // Timeline × speed = source distance
     }
 
     /// Effective source length: loopLength if set, otherwise derived from clip length
@@ -108,17 +132,17 @@ struct ClipInfo {
 
     /// TE offset: phase within the loop region, in stretched time
     double getTeOffset() const {
-        return (offset - loopStart) / speedRatio;
+        return (offset - loopStart) * speedRatio;
     }
 
     /// TE loop start in stretched time
     double getTeLoopStart() const {
-        return loopStart / speedRatio;
+        return loopStart * speedRatio;
     }
 
     /// TE loop end in stretched time
     double getTeLoopEnd() const {
-        return (loopStart + getSourceLength()) / speedRatio;
+        return (loopStart + getSourceLength()) * speedRatio;
     }
 
     /// Sync loopStart to match offset (keeps loop region anchored to playback start)
@@ -136,7 +160,7 @@ struct ClipInfo {
     void clampLengthToSource(double fileDuration) {
         if (!loopEnabled && fileDuration > 0.0) {
             double available = fileDuration - offset;
-            double maxLength = available * speedRatio;
+            double maxLength = available / speedRatio;
             if (length > maxLength) {
                 length = juce::jmax(MIN_CLIP_LENGTH, maxLength);
             }
@@ -153,6 +177,31 @@ struct ClipInfo {
 
     bool overlaps(const ClipInfo& other) const {
         return overlaps(other.startTime, other.getEndTime());
+    }
+
+    // =========================================================================
+    // Auto-tempo helpers
+    // =========================================================================
+
+    /// Get effective loop length for display/operations
+    /// Returns beat length when autoTempo=true, time length otherwise
+    double getEffectiveLoopLength() const {
+        if (autoTempo) {
+            return loopLengthBeats;
+        }
+        return loopLength;
+    }
+
+    /// Convert clip length to beats (using current tempo)
+    double getLengthInBeats(double bpm) const {
+        // beats = (seconds * bpm) / 60
+        return (length * bpm) / 60.0;
+    }
+
+    /// Set clip length from beats (updates `length` field based on BPM)
+    void setLengthFromBeats(double beats, double bpm) {
+        // seconds = (beats * 60) / bpm
+        length = (beats * 60.0) / bpm;
     }
 
     // Default clip colors (different palette from tracks)

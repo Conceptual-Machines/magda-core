@@ -61,9 +61,9 @@ void ClipComponent::paint(juce::Graphics& g) {
         double displayLength =
             (isDragging_ && previewLength_ > 0.0) ? previewLength_ : clip->length;
         double clipLengthInBeats = displayLength * beatsPerSecond;
-        // Loop length in beats: source length (seconds) * speedRatio (stretch factor) *
+        // Loop length in beats: source length (seconds) / speedRatio (speed factor) *
         // beatsPerSecond
-        double loopLengthBeats = srcLength * clip->speedRatio * beatsPerSecond;
+        double loopLengthBeats = srcLength / clip->speedRatio * beatsPerSecond;
         double beatRange = juce::jmax(1.0, clipLengthInBeats);
         int numBoundaries = static_cast<int>(clipLengthInBeats / loopLengthBeats);
         auto markerColour = juce::Colours::lightgrey;
@@ -416,6 +416,15 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
         g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.drawText(clip.name, headerArea.reduced(4, 0), juce::Justification::centredLeft, true);
+    }
+
+    // Musical mode indicator (auto-tempo)
+    if (clip.autoTempo && clip.type == ClipType::Audio) {
+        auto musicalArea = headerArea.removeFromRight(14).reduced(2);
+        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+        g.setFont(FontManager::getInstance().getUIFont(12.0f));
+        g.drawText(juce::CharPointer_UTF8("\xe2\x99\xa9"), musicalArea,
+                   juce::Justification::centred, false);
     }
 
     // Loop indicator

@@ -126,6 +126,7 @@ class InspectorContent : public PanelContent,
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipContentOffsetValue_;
     std::unique_ptr<magda::SvgButton> clipLoopToggle_;
     juce::TextButton clipWarpToggle_;
+    juce::TextButton clipAutoTempoToggle_;  // Musical mode toggle
     std::unique_ptr<magda::DraggableValueLabel> clipStretchValue_;
     juce::ComboBox stretchModeCombo_;  // Time stretch algorithm selector
     juce::Label clipLoopStartLabel_;
@@ -134,7 +135,9 @@ class InspectorContent : public PanelContent,
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopLengthValue_;
     juce::Label clipLoopOffsetLabel_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopOffsetValue_;
-    juce::Label clipBpmValue_;  // BPM value only (no label)
+    juce::Label clipBpmValue_;  // Detected BPM (no label)
+    std::unique_ptr<magda::DraggableValueLabel>
+        clipBeatsLengthValue_;  // Length in beats for auto-tempo
 
     // Session clip launch properties
     juce::Label launchModeLabel_;

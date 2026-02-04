@@ -59,7 +59,7 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
 
             // Draw loop region if enabled
             if (di.isLooped()) {
-                double loopSourceLength = di.loopLengthSeconds / di.speedRatio;
+                double loopSourceLength = di.sourceLength;
                 double loopEndTime = startTime + loopSourceLength;
 
                 if (loopEndTime <= endTime) {

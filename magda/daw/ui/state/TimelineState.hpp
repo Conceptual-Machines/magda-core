@@ -97,8 +97,10 @@ struct TimeSelection {
  * @brief Loop region state (persistent loop markers)
  */
 struct LoopRegion {
-    double startTime = -1.0;
-    double endTime = -1.0;
+    double startTime = -1.0;   // Time in seconds (derived from beats)
+    double endTime = -1.0;     // Time in seconds (derived from beats)
+    double startBeats = -1.0;  // Position in beats (authoritative)
+    double endBeats = -1.0;    // Position in beats (authoritative)
     bool enabled = false;
 
     bool isValid() const {
@@ -107,6 +109,8 @@ struct LoopRegion {
     void clear() {
         startTime = -1.0;
         endTime = -1.0;
+        startBeats = -1.0;
+        endBeats = -1.0;
         enabled = false;
     }
     double getDuration() const {

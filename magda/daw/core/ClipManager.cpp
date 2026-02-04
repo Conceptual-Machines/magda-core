@@ -246,7 +246,7 @@ void ClipManager::resizeClip(ClipId clipId, double newLength, bool fromStart, do
         if (fromStart) {
             ClipOperations::resizeContainerFromLeft(*clip, newLength, tempo);
         } else {
-            ClipOperations::resizeContainerFromRight(*clip, newLength);
+            ClipOperations::resizeContainerFromRight(*clip, newLength, tempo);
         }
         notifyClipPropertyChanged(clipId);
     }
