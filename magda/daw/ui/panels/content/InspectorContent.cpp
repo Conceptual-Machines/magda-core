@@ -1615,10 +1615,10 @@ void InspectorContent::updateFromSelectedClip() {
             // Arrangement clips: start and end as positions in beats
             clipStartValue_->setEnabled(true);
             clipStartValue_->setAlpha(1.0f);
-            double startBeats = magda::TimelineUtils::secondsToBeats(clip->startTime, bpm);
-            double endBeats = startBeats + magda::TimelineUtils::secondsToBeats(clip->length, bpm);
-            clipStartValue_->setValue(startBeats, juce::dontSendNotification);
-            clipEndValue_->setValue(endBeats, juce::dontSendNotification);
+
+            // Use centralized methods (single source of truth)
+            clipStartValue_->setValue(clip->getStartBeats(bpm), juce::dontSendNotification);
+            clipEndValue_->setValue(clip->getEndBeats(bpm), juce::dontSendNotification);
         }
 
         // Content offset (always visible)

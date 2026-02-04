@@ -462,7 +462,7 @@ void WaveformEditorContent::mouseDrag(const juce::MouseEvent& event) {
                 if (controller) {
                     bpm = controller->getState().tempo.bpm;
                 }
-                timeRuler_->setZoom(horizontalZoom_);
+                timeRuler_->setZoom(horizontalZoom_ * 60.0 / bpm);
                 timeRuler_->setTempo(bpm);
             }
 
@@ -539,7 +539,7 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
                 bpm = controller->getState().tempo.bpm;
             }
 
-            timeRuler_->setZoom(horizontalZoom_);
+            timeRuler_->setZoom(horizontalZoom_ * 60.0 / bpm);
             timeRuler_->setTempo(bpm);
             timeRuler_->setTimeOffset(clip->startTime);
             timeRuler_->setClipLength(clip->length);
@@ -663,7 +663,7 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
                 bpm = controller->getState().tempo.bpm;
             }
 
-            timeRuler_->setZoom(horizontalZoom_);
+            timeRuler_->setZoom(horizontalZoom_ * 60.0 / bpm);
             timeRuler_->setTempo(bpm);
             timeRuler_->setTimeOffset(clip->startTime);
             timeRuler_->setClipLength(clip->length);
@@ -833,7 +833,7 @@ void WaveformEditorContent::performAnchorPointZoom(double zoomFactor, int anchor
             if (controller) {
                 bpm = controller->getState().tempo.bpm;
             }
-            timeRuler_->setZoom(horizontalZoom_);
+            timeRuler_->setZoom(horizontalZoom_ * 60.0 / bpm);
             timeRuler_->setTempo(bpm);
         }
 

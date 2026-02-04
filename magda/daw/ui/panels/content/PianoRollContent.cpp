@@ -697,9 +697,8 @@ void PianoRollContent::updateTimeRuler() {
     // Set timeline length to full arrangement
     timeRuler_->setTimelineLength(timelineLength);
 
-    // Set zoom (convert pixels per beat to pixels per second)
-    double pixelsPerSecond = horizontalZoom_ / secondsPerBeat;
-    timeRuler_->setZoom(pixelsPerSecond);
+    // Set zoom (TimeRuler now takes pixels per beat directly)
+    timeRuler_->setZoom(horizontalZoom_);
 
     // Set clip info for boundary drawing
     // timeOffset is always the clip's start time (used for boundary markers)

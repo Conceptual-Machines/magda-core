@@ -211,8 +211,9 @@ void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
 }
 
 void TrackContentPanel::resized() {
-    // Update size based on zoom and timeline length
-    int contentWidth = static_cast<int>(timelineLength * currentZoom);
+    // Update size based on zoom (ppb) and timeline length
+    double beats = timelineLength * tempoBPM / 60.0;
+    int contentWidth = static_cast<int>(beats * currentZoom);
     int contentHeight = getTotalTracksHeight();
 
     setSize(juce::jmax(contentWidth, getWidth()), juce::jmax(contentHeight, getHeight()));
@@ -409,11 +410,18 @@ bool TrackContentPanel::isInSelectableArea(int x, int y) const {
 }
 
 double TrackContentPanel::pixelToTime(int pixel) const {
-    return TimelineUtils::pixelToTime(pixel, currentZoom, LEFT_PADDING);
+    // currentZoom is ppb, convert through beats
+    if (currentZoom > 0 && tempoBPM > 0) {
+        double beats = static_cast<double>(pixel - LEFT_PADDING) / currentZoom;
+        return beats * 60.0 / tempoBPM;
+    }
+    return 0.0;
 }
 
 int TrackContentPanel::timeToPixel(double time) const {
-    return TimelineUtils::timeToPixel(time, currentZoom, LEFT_PADDING);
+    // currentZoom is ppb, convert through beats
+    double beats = time * tempoBPM / 60.0;
+    return static_cast<int>(beats * currentZoom) + LEFT_PADDING;
 }
 
 int TrackContentPanel::getTrackIndexAtY(int y) const {
@@ -1268,9 +1276,10 @@ void TrackContentPanel::updateClipComponentPositions() {
         int trackIndex = static_cast<int>(std::distance(visibleTrackIds_.begin(), it));
         auto trackArea = getTrackLaneArea(trackIndex);
 
-        // Calculate clip bounds
+        // Calculate clip bounds (currentZoom is ppb)
         int clipX = timeToPixel(clip->startTime);
-        int clipWidth = static_cast<int>(clip->length * currentZoom);
+        double clipBeats = clip->length * tempoBPM / 60.0;
+        int clipWidth = static_cast<int>(clipBeats * currentZoom);
 
         // Inset from track edges
         int clipY = trackArea.getY() + 2;
@@ -1545,20 +1554,22 @@ void TrackContentPanel::updateMultiClipDrag(const juce::Point<int>& currentPos) 
         isMultiClipDuplicating_ = true;
     }
 
-    double pixelsPerSecond = currentZoom;
-    if (pixelsPerSecond <= 0) {
+    // currentZoom is ppb - convert pixel delta to time through beats
+    if (currentZoom <= 0 || tempoBPM <= 0) {
         return;
     }
 
     int deltaX = currentPos.x - multiClipDragStartPos_.x;
-    double deltaTime = deltaX / pixelsPerSecond;
+    double deltaBeats = deltaX / currentZoom;
+    double deltaTime = deltaBeats * 60.0 / tempoBPM;
 
     // Calculate new anchor time with snapping
     double newAnchorTime = juce::jmax(0.0, multiClipDragStartTime_ + deltaTime);
     if (snapTimeToGrid) {
         double snappedTime = snapTimeToGrid(newAnchorTime);
-        // Magnetic snap threshold
-        double snapDeltaPixels = std::abs((snappedTime - newAnchorTime) * pixelsPerSecond);
+        // Magnetic snap threshold (convert time diff to pixels through beats)
+        double snapDeltaBeats = std::abs((snappedTime - newAnchorTime) * tempoBPM / 60.0);
+        double snapDeltaPixels = snapDeltaBeats * currentZoom;
         if (snapDeltaPixels <= 15) {  // SNAP_THRESHOLD_PIXELS
             newAnchorTime = snappedTime;
         }
@@ -1577,7 +1588,8 @@ void TrackContentPanel::updateMultiClipDrag(const juce::Point<int>& currentPos) 
                 for (const auto& clipComp : clipComponents_) {
                     if (clipComp->getClipId() == dragInfo.clipId) {
                         int ghostX = timeToPixel(newStartTime);
-                        int ghostWidth = static_cast<int>(clip->length * pixelsPerSecond);
+                        double ghostBeats = clip->length * tempoBPM / 60.0;
+                        int ghostWidth = static_cast<int>(ghostBeats * currentZoom);
                         juce::Rectangle<int> ghostBounds(ghostX, clipComp->getY(),
                                                          juce::jmax(10, ghostWidth),
                                                          clipComp->getHeight());
@@ -1599,7 +1611,8 @@ void TrackContentPanel::updateMultiClipDrag(const juce::Point<int>& currentPos) 
                     const auto* clip = ClipManager::getInstance().getClip(dragInfo.clipId);
                     if (clip) {
                         int newX = timeToPixel(newStartTime);
-                        int clipWidth = static_cast<int>(clip->length * pixelsPerSecond);
+                        double clipBeats = clip->length * tempoBPM / 60.0;
+                        int clipWidth = static_cast<int>(clipBeats * currentZoom);
                         clipComp->setBounds(newX, clipComp->getY(), juce::jmax(10, clipWidth),
                                             clipComp->getHeight());
                     }
@@ -1850,7 +1863,8 @@ void TrackContentPanel::moveClipsWithTimeSelection(double deltaTime) {
                 const auto* clip = ClipManager::getInstance().getClip(info.clipId);
                 if (clip) {
                     int newX = timeToPixel(newStartTime);
-                    int clipWidth = static_cast<int>(clip->length * currentZoom);
+                    double clipBts = clip->length * tempoBPM / 60.0;
+                    int clipWidth = static_cast<int>(clipBts * currentZoom);
                     clipComp->setBounds(newX, clipComp->getY(), juce::jmax(10, clipWidth),
                                         clipComp->getHeight());
                 }
@@ -2319,7 +2333,8 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
             entry.trackId = trackId;
             entry.laneId = laneId;
             entry.component = std::make_unique<AutomationLaneComponent>(laneId);
-            entry.component->setPixelsPerSecond(currentZoom);
+            // Convert ppb to pps for automation (time-based rendering)
+            entry.component->setPixelsPerSecond(currentZoom * tempoBPM / 60.0);
             entry.component->snapTimeToGrid = snapTimeToGrid;
 
             // Wire up height change callback for resizing
@@ -2393,7 +2408,8 @@ void TrackContentPanel::updateAutomationLanePositions() {
                                     : AutomationLaneComponent::HEADER_HEIGHT;
 
         entry.component->setBounds(0, y, getWidth(), height);
-        entry.component->setPixelsPerSecond(currentZoom);
+        // Convert ppb to pps for automation (time-based rendering)
+        entry.component->setPixelsPerSecond(currentZoom * tempoBPM / 60.0);
     }
 }
 

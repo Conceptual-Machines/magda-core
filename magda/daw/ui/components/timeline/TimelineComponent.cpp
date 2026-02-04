@@ -759,18 +759,21 @@ void TimelineComponent::clearSections() {
 }
 
 double TimelineComponent::pixelToTime(int pixel) const {
-    if (zoom > 0) {
-        return (pixel - LEFT_PADDING) / zoom;
+    if (zoom > 0 && tempoBPM > 0) {
+        double beats = (pixel - LEFT_PADDING) / zoom;
+        return beats * 60.0 / tempoBPM;
     }
     return 0.0;
 }
 
 int TimelineComponent::timeToPixel(double time) const {
-    return static_cast<int>(time * zoom);
+    double beats = time * tempoBPM / 60.0;
+    return static_cast<int>(beats * zoom);
 }
 
 int TimelineComponent::timeDurationToPixels(double duration) const {
-    return static_cast<int>(duration * zoom);
+    double beats = duration * tempoBPM / 60.0;
+    return static_cast<int>(beats * zoom);
 }
 
 void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {

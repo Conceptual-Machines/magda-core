@@ -36,6 +36,9 @@ struct ClipInfo {
     double startTime = 0.0;  // Position on timeline (seconds) - only for Arrangement view
     double length = 4.0;     // Duration (seconds)
 
+    // Beat-based position (only used when autoTempo = true in Arrangement view)
+    double startBeats = -1.0;  // Start position in beats (-1 = not set/use startTime)
+
     // Audio-specific properties (flat model: one clip = one file reference)
     juce::String audioFilePath;  // Path to audio file
 
@@ -202,6 +205,28 @@ struct ClipInfo {
     void setLengthFromBeats(double beats, double bpm) {
         // seconds = (beats * 60) / bpm
         length = (beats * 60.0) / bpm;
+    }
+
+    /// Get clip start position in beats (single source of truth for display)
+    /// Returns stored beat value in autoTempo mode, calculates from time otherwise
+    double getStartBeats(double bpm) const {
+        if (autoTempo) {
+            return startBeats;  // Authoritative beat value
+        }
+        // Calculate from time
+        return (startTime * bpm) / 60.0;
+    }
+
+    /// Get clip end position in beats (single source of truth for display)
+    /// Returns start + length in beats, using authoritative values based on mode
+    double getEndBeats(double bpm) const {
+        if (autoTempo) {
+            return startBeats + loopLengthBeats;  // Both authoritative
+        }
+        // Calculate from time
+        double startBeats = (startTime * bpm) / 60.0;
+        double lengthBeats = (length * bpm) / 60.0;
+        return startBeats + lengthBeats;
     }
 
     // Default clip colors (different palette from tracks)

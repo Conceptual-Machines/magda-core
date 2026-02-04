@@ -61,9 +61,11 @@ void ClipComponent::paint(juce::Graphics& g) {
         double displayLength =
             (isDragging_ && previewLength_ > 0.0) ? previewLength_ : clip->length;
         double clipLengthInBeats = displayLength * beatsPerSecond;
-        // Loop length in beats: source length (seconds) / speedRatio (speed factor) *
-        // beatsPerSecond
-        double loopLengthBeats = srcLength / clip->speedRatio * beatsPerSecond;
+        // Loop length in beats: use authoritative beat value for autoTempo,
+        // otherwise derive from source length and speedRatio
+        double loopLengthBeats = (clip->autoTempo && clip->loopLengthBeats > 0.0)
+                                     ? clip->loopLengthBeats
+                                     : srcLength / clip->speedRatio * beatsPerSecond;
         double beatRange = juce::jmax(1.0, clipLengthInBeats);
         int numBoundaries = static_cast<int>(clipLengthInBeats / loopLengthBeats);
         auto markerColour = juce::Colours::lightgrey;
@@ -690,16 +692,20 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
     }
 
     // Convert pixel delta to time delta
-    double pixelsPerSecond = parentPanel_->getZoom();
-    if (pixelsPerSecond <= 0) {
+    // getZoom() returns pixels per beat (ppb)
+    double pixelsPerBeat = parentPanel_->getZoom();
+    if (pixelsPerBeat <= 0) {
         return;
     }
+    double tempoBPM = parentPanel_->getTempo();
 
     // Use parent's coordinate space for stable delta calculation
     // (component position changes during drag, but parent doesn't move)
     auto parentPos = e.getEventRelativeTo(parentPanel_).getPosition();
     int deltaX = parentPos.x - dragStartPos_.x;
-    double deltaTime = deltaX / pixelsPerSecond;
+    // deltaX / ppb = deltaBeats, then convert to seconds
+    double deltaBeats = deltaX / pixelsPerBeat;
+    double deltaTime = deltaBeats * 60.0 / tempoBPM;
 
     switch (dragMode_) {
         case DragMode::Move: {
@@ -710,7 +716,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             // Magnetic snap: if close to grid, snap to it
             if (snapTimeToGrid) {
                 double snappedTime = snapTimeToGrid(rawStartTime);
-                double snapDeltaPixels = std::abs((snappedTime - rawStartTime) * pixelsPerSecond);
+                double snapDeltaBeats = std::abs((snappedTime - rawStartTime) * tempoBPM / 60.0);
+                double snapDeltaPixels = snapDeltaBeats * pixelsPerBeat;
                 if (snapDeltaPixels <= SNAP_THRESHOLD_PIXELS) {
                     finalTime = snappedTime;
                 }
@@ -723,7 +730,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 const auto* clip = getClipInfo();
                 if (clip && parentPanel_) {
                     int ghostX = parentPanel_->timeToPixel(finalTime);
-                    int ghostWidth = static_cast<int>(dragStartLength_ * pixelsPerSecond);
+                    double lengthBeats = dragStartLength_ * tempoBPM / 60.0;
+                    int ghostWidth = static_cast<int>(lengthBeats * pixelsPerBeat);
                     juce::Rectangle<int> ghostBounds(ghostX, getY(), juce::jmax(10, ghostWidth),
                                                      getHeight());
                     parentPanel_->setClipGhost(clipId_, ghostBounds, clip->colour);
@@ -732,7 +740,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             } else {
                 // Normal move: update component position
                 int newX = parentPanel_->timeToPixel(finalTime);
-                int newWidth = static_cast<int>(dragStartLength_ * pixelsPerSecond);
+                double lengthBeats = dragStartLength_ * tempoBPM / 60.0;
+                int newWidth = static_cast<int>(lengthBeats * pixelsPerBeat);
                 setBounds(newX, getY(), juce::jmax(10, newWidth), getHeight());
             }
             break;
@@ -747,7 +756,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             // Magnetic snap for left edge
             if (snapTimeToGrid) {
                 double snappedTime = snapTimeToGrid(rawStartTime);
-                double snapDeltaPixels = std::abs((snappedTime - rawStartTime) * pixelsPerSecond);
+                double snapDeltaBeats = std::abs((snappedTime - rawStartTime) * tempoBPM / 60.0);
+                double snapDeltaPixels = snapDeltaBeats * pixelsPerBeat;
                 if (snapDeltaPixels <= SNAP_THRESHOLD_PIXELS) {
                     finalStartTime = snappedTime;
                 }
@@ -781,7 +791,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 
             // Convert to pixels (using parent's method to account for padding)
             int newX = parentPanel_->timeToPixel(finalStartTime);
-            int newWidth = static_cast<int>(finalLength * pixelsPerSecond);
+            double finalLengthBeats = finalLength * tempoBPM / 60.0;
+            int newWidth = static_cast<int>(finalLengthBeats * pixelsPerBeat);
             setBounds(newX, getY(), juce::jmax(10, newWidth), getHeight());
             break;
         }
@@ -794,7 +805,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             // Magnetic snap for right edge (end time)
             if (snapTimeToGrid) {
                 double snappedEndTime = snapTimeToGrid(rawEndTime);
-                double snapDeltaPixels = std::abs((snappedEndTime - rawEndTime) * pixelsPerSecond);
+                double snapDeltaBeats = std::abs((snappedEndTime - rawEndTime) * tempoBPM / 60.0);
+                double snapDeltaPixels = snapDeltaBeats * pixelsPerBeat;
                 if (snapDeltaPixels <= SNAP_THRESHOLD_PIXELS) {
                     finalEndTime = snappedEndTime;
                 }
@@ -823,7 +835,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 
             // Convert to pixels (using parent's method to account for padding)
             int newX = parentPanel_->timeToPixel(dragStartTime_);
-            int newWidth = static_cast<int>(finalLength * pixelsPerSecond);
+            double finalLengthBeats = finalLength * tempoBPM / 60.0;
+            int newWidth = static_cast<int>(finalLengthBeats * pixelsPerBeat);
             setBounds(newX, getY(), juce::jmax(10, newWidth), getHeight());
             break;
         }
@@ -835,7 +848,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 
             if (snapTimeToGrid) {
                 double snappedEndTime = snapTimeToGrid(rawEndTime);
-                double snapDeltaPixels = std::abs((snappedEndTime - rawEndTime) * pixelsPerSecond);
+                double snapDeltaBeats = std::abs((snappedEndTime - rawEndTime) * tempoBPM / 60.0);
+                double snapDeltaPixels = snapDeltaBeats * pixelsPerBeat;
                 if (snapDeltaPixels <= SNAP_THRESHOLD_PIXELS) {
                     finalEndTime = snappedEndTime;
                 }
@@ -853,7 +867,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             previewLength_ = finalLength;
 
             int newX = parentPanel_->timeToPixel(dragStartTime_);
-            int newWidth = static_cast<int>(finalLength * pixelsPerSecond);
+            double finalLengthBeats = finalLength * tempoBPM / 60.0;
+            int newWidth = static_cast<int>(finalLengthBeats * pixelsPerBeat);
             setBounds(newX, getY(), juce::jmax(10, newWidth), getHeight());
 
             // Throttled live update to audio engine
@@ -875,7 +890,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 
             if (snapTimeToGrid) {
                 double snappedTime = snapTimeToGrid(rawStartTime);
-                double snapDeltaPixels = std::abs((snappedTime - rawStartTime) * pixelsPerSecond);
+                double snapDeltaBeats = std::abs((snappedTime - rawStartTime) * tempoBPM / 60.0);
+                double snapDeltaPixels = snapDeltaBeats * pixelsPerBeat;
                 if (snapDeltaPixels <= SNAP_THRESHOLD_PIXELS) {
                     finalStartTime = snappedTime;
                 }
@@ -895,7 +911,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             previewLength_ = finalLength;
 
             int newX = parentPanel_->timeToPixel(finalStartTime);
-            int newWidth = static_cast<int>(finalLength * pixelsPerSecond);
+            double finalLengthBeats = finalLength * tempoBPM / 60.0;
+            int newWidth = static_cast<int>(finalLengthBeats * pixelsPerBeat);
             setBounds(newX, getY(), juce::jmax(10, newWidth), getHeight());
 
             // Throttled live update to audio engine

@@ -21,7 +21,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     void resized() override;
 
     // Configuration
-    void setZoom(double pixelsPerSecond);
+    void setZoom(double pixelsPerBeat);
     void setTimelineLength(double lengthInSeconds);
     void setDisplayMode(DisplayMode mode);
     void setScrollOffset(int offsetPixels);
@@ -97,7 +97,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
   private:
     // Display state
     DisplayMode displayMode = DisplayMode::Seconds;
-    double zoom = 20.0;             // pixels per second
+    double zoom = 10.0;             // pixels per beat
     double timelineLength = 300.0;  // seconds
     int scrollOffset = 0;           // pixels
 

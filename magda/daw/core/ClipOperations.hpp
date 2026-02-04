@@ -357,16 +357,9 @@ class ClipOperations {
             return {0.0, 0.0};
         }
 
-        // Loop start in beats (usually 0 unless loop region is offset in source file)
-        double loopStartBeats = clip.loopStartBeats;
-
-        // Loop length: use the SOURCE audio length in beats, not clip timeline length
-        // The clip can be longer than the source (it will loop), but TE needs to know
-        // how much source audio is available
-        double sourceLoopSeconds = clip.loopLength > 0.0 ? clip.loopLength : clip.length;
-        double loopLengthBeats = (sourceLoopSeconds * bpm) / 60.0;
-
-        return {loopStartBeats, loopLengthBeats};
+        // In musical mode, beat values are authoritative - just return the stored values
+        // DO NOT recalculate from time, as that defeats the purpose of tempo-locked beats
+        return {clip.loopStartBeats, clip.loopLengthBeats};
     }
 
     /**
@@ -403,6 +396,9 @@ class ClipOperations {
         clip.autoTempo = enabled;
 
         if (enabled) {
+            // Convert current timeline position to beats
+            clip.startBeats = (clip.startTime * bpm) / 60.0;
+
             // Convert current time length to beats
             clip.loopLengthBeats = clip.getLengthInBeats(bpm);
             if (clip.loopEnabled && clip.loopLength > 0.0) {
@@ -425,6 +421,7 @@ class ClipOperations {
         } else {
             // Switching to time-based mode: keep current derived time values
             // Clear beat values (no longer used)
+            clip.startBeats = -1.0;
             clip.loopStartBeats = 0.0;
             clip.loopLengthBeats = 0.0;
         }

@@ -40,8 +40,8 @@ void TimeRuler::resized() {
     // Nothing specific needed
 }
 
-void TimeRuler::setZoom(double pixelsPerSecond) {
-    zoom = pixelsPerSecond;
+void TimeRuler::setZoom(double pixelsPerBeat) {
+    zoom = pixelsPerBeat;
     repaint();
 }
 
@@ -169,8 +169,8 @@ void TimeRuler::mouseDrag(const juce::MouseEvent& event) {
         double exponent = static_cast<double>(yDelta) / sensitivity;
         double newZoom = zoomStartValue * std::pow(2.0, exponent);
 
-        // Clamp zoom to reasonable limits (pixels per second)
-        newZoom = juce::jlimit(5.0, 2000.0, newZoom);
+        // Clamp zoom to reasonable limits (pixels per beat)
+        newZoom = juce::jlimit(1.0, 2000.0, newZoom);
 
         if (onZoomChanged) {
             onZoomChanged(newZoom, zoomAnchorTime, mouseDownX);
@@ -267,13 +267,10 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     const int height = getHeight();
     const int width = getWidth();
 
-    // Calculate seconds per beat and per bar
+    // zoom is ppb, so pixelsPerBar = zoom * beatsPerBar (no BPM dependency!)
     double secondsPerBeat = 60.0 / tempo;
     double secondsPerBar = secondsPerBeat * timeSigNumerator;
-
-    // Determine what to show based on zoom level
-    // At low zoom, show only bars; at high zoom, show beats too
-    double pixelsPerBar = secondsPerBar * zoom;
+    double pixelsPerBar = zoom * timeSigNumerator;
     bool showBeats = pixelsPerBar > 60;  // Only show beats if bars are wide enough
 
     // In ABS mode: bar numbers are absolute (1, 2, 3...), grid starts at project time 0
@@ -426,8 +423,10 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
 double TimeRuler::calculateMarkerInterval() const {
     // Target roughly 80-120 pixels between major markers
+    // zoom is ppb, convert to pps for seconds-mode interval calculation
+    double pps = zoom * tempo / 60.0;
     double targetPixels = 100.0;
-    double targetInterval = targetPixels / zoom;
+    double targetInterval = (pps > 0) ? targetPixels / pps : 1.0;
 
     // Round to nice intervals: 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, etc.
     static const double niceIntervals[] = {0.01, 0.02, 0.05, 0.1,  0.2,  0.5,   1.0,   2.0,
@@ -479,14 +478,21 @@ juce::String TimeRuler::formatBarsBeatsLabel(double time) const {
 
 double TimeRuler::pixelToTime(int pixel) const {
     // Use linked viewport's position for real-time scroll sync
+    // zoom is ppb, so pixel→beats→seconds
     int currentScrollOffset = linkedViewport ? linkedViewport->getViewPositionX() : scrollOffset;
-    return (pixel + currentScrollOffset - leftPadding) / zoom;
+    if (zoom > 0 && tempo > 0) {
+        double beats = (pixel + currentScrollOffset - leftPadding) / zoom;
+        return beats * 60.0 / tempo;
+    }
+    return 0.0;
 }
 
 int TimeRuler::timeToPixel(double time) const {
     // Use linked viewport's position for real-time scroll sync
+    // zoom is ppb, so seconds→beats→pixel
     int currentScrollOffset = linkedViewport ? linkedViewport->getViewPositionX() : scrollOffset;
-    return static_cast<int>(time * zoom) - currentScrollOffset + leftPadding;
+    double beats = time * tempo / 60.0;
+    return static_cast<int>(beats * zoom) - currentScrollOffset + leftPadding;
 }
 
 }  // namespace magda
