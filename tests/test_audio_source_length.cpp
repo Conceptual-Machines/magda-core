@@ -37,13 +37,12 @@ TEST_CASE("ClipManager - setClipLoopEnabled preserves source extent",
         REQUIRE(clip != nullptr);
 
         clip->speedRatio = 1.0;
-        REQUIRE(clip->loopLength == 0.0);  // Not set initially
+        // loopLength is set at creation: length / speedRatio = 4.0
+        REQUIRE(clip->loopLength == Catch::Approx(4.0));
 
-        // Enable loop mode
+        // Enable loop mode — loopLength already set, should not change
         ClipManager::getInstance().setClipLoopEnabled(clipId, true, 120.0);
 
-        // loopLength should now be set based on clip.length * speedRatio
-        // (capturing the current source extent)
         REQUIRE(clip->loopLength == Catch::Approx(4.0));
         REQUIRE(clip->loopEnabled == true);
     }
@@ -52,8 +51,13 @@ TEST_CASE("ClipManager - setClipLoopEnabled preserves source extent",
         ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 8.0, "test.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
 
-        clip->speedRatio = 2.0;  // 2x slower, so 8s timeline = 4s source
-        REQUIRE(clip->loopLength == 0.0);
+        // loopLength set at creation: 8.0 / 1.0 = 8.0
+        REQUIRE(clip->loopLength == Catch::Approx(8.0));
+
+        // Manually change speed ratio (simulating stretch)
+        clip->speedRatio = 2.0;  // 2x faster, so 8s timeline = 4s source
+        // Reset loopLength to 0 to test that setClipLoopEnabled recalculates
+        clip->loopLength = 0.0;
 
         ClipManager::getInstance().setClipLoopEnabled(clipId, true, 120.0);
 
@@ -128,7 +132,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in loop mode uses loopLength",
         clip.offset = 0.0;
         clip.speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopPhase = 0.0;
+
         clip.loopStart = 0.0;
         clip.loopLength = 3.0;  // User's selected source extent
 
@@ -146,7 +150,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in loop mode uses loopLength",
         clip.offset = 0.0;
         clip.speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopPhase = 0.0;
+
         clip.loopStart = 0.0;
         clip.loopLength = 0.0;  // Not set
 
@@ -163,7 +167,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in loop mode uses loopLength",
         clip.offset = 0.0;
         clip.speedRatio = 2.0;  // 2x faster
         clip.loopEnabled = true;
-        clip.loopPhase = 0.0;
+
         clip.loopStart = 0.0;
         clip.loopLength = 3.0;  // 3s of source audio
 
@@ -264,7 +268,7 @@ TEST_CASE("ClipDisplayInfo - sourceExtentSeconds and loopEndPositionSeconds for 
         clip.offset = 0.0;
         clip.speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopPhase = 0.0;
+
         clip.loopStart = 0.0;
         clip.loopLength = 5.0;  // 5s of source
 
@@ -282,7 +286,7 @@ TEST_CASE("ClipDisplayInfo - sourceExtentSeconds and loopEndPositionSeconds for 
         clip.offset = 0.0;
         clip.speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopPhase = 0.0;
+
         clip.loopStart = 0.0;
         clip.loopLength = 2.0;  // 2s loop
 

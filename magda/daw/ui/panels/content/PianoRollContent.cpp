@@ -659,8 +659,8 @@ void PianoRollContent::updateGridSize() {
             tempo = controller->getState().tempo.bpm;
         }
         double beatsPerSecond = tempo / 60.0;
-        double loopPhaseBeats = clip->loopPhase * beatsPerSecond;
-        double sourceLengthBeats = clip->getSourceLength() * beatsPerSecond;
+        double loopPhaseBeats = (clip->offset - clip->loopStart) * beatsPerSecond;
+        double sourceLengthBeats = clip->loopLength * beatsPerSecond;
         gridComponent_->setLoopRegion(loopPhaseBeats, sourceLengthBeats, clip->loopEnabled);
     } else {
         gridComponent_->setLoopRegion(0.0, 0.0, false);
@@ -715,7 +715,8 @@ void PianoRollContent::updateTimeRuler() {
         }
 
         // Pass loop region data to time ruler (already in seconds in new model)
-        timeRuler_->setLoopRegion(clip->loopPhase, clip->getSourceLength(), clip->loopEnabled);
+        timeRuler_->setLoopRegion(clip->offset - clip->loopStart, clip->loopLength,
+                                  clip->loopEnabled);
     } else {
         timeRuler_->setTimeOffset(0.0);
         timeRuler_->setClipLength(0.0);

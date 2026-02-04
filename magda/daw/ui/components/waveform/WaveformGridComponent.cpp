@@ -151,7 +151,7 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
                 DBG("=== LOOP WAVEFORM DRAWING ===");
                 DBG("  displayInfo_.sourceFileStart=" << fileStart << "s");
                 DBG("  displayInfo_.sourceFileEnd=" << fileEnd << "s");
-                DBG("  displayInfo_.loopPhase=" << displayInfo_.loopPhase << "s");
+                DBG("  displayInfo_.loopOffset=" << displayInfo_.loopOffset << "s");
                 DBG("  displayInfo_.loopLengthSeconds=" << loopCycle << "s");
                 DBG("  displayInfo_.sourceExtentSeconds=" << displayInfo_.sourceExtentSeconds
                                                           << "s");
@@ -1040,8 +1040,7 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
             newOffset = juce::jmax(0.0, newOffset);
 
             DBG("=== RESIZE LEFT (Editor) ===");
-            DBG("  BEFORE: offset=" << clip->offset << ", loopStart=" << clip->loopStart
-                                    << ", loopPhase=" << clip->loopPhase);
+            DBG("  BEFORE: offset=" << clip->offset << ", loopStart=" << clip->loopStart);
             DBG("  fileDelta=" << fileDelta << ", newOffset=" << newOffset);
 
             clip->offset = newOffset;

@@ -132,7 +132,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
             double playPos = owner_.cachedPlaybackPosition_;
 
             // Wrap playhead inside loop region when looping is enabled
-            double srcLength = clip->getSourceLength();
+            double srcLength = clip->loopLength;
             if (clip->loopEnabled && srcLength > 0.0) {
                 double bpm = 120.0;
                 auto* controller = magda::TimelineController::getCurrent();
@@ -145,7 +145,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
                     // Position relative to clip start, offset by loop phase
                     double relPos = playPos - clip->startTime;
                     if (relPos >= 0.0) {
-                        relPos = std::fmod(relPos, di.loopLengthSeconds) + di.loopPhase;
+                        relPos = std::fmod(relPos, di.loopLengthSeconds) + di.loopOffset;
                         playPos = clip->startTime + relPos;
                     }
                 }
@@ -591,15 +591,19 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
             wasWarpEnabled_ = warpEnabled;
 
             // Update BPM label
-            if (clip->detectedBPM > 0.0) {
-                bpmLabel_->setText(juce::String(clip->detectedBPM, 1) + " BPM",
-                                   juce::dontSendNotification);
-                bpmLabel_->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-            } else {
-                bpmLabel_->setText(juce::String::fromUTF8("\xe2\x80\x94 BPM"),
-                                   juce::dontSendNotification);
-                bpmLabel_->setColour(juce::Label::textColourId,
-                                     DarkTheme::getSecondaryTextColour());
+            {
+                double detectedBPM =
+                    magda::AudioThumbnailManager::getInstance().detectBPM(clip->audioFilePath);
+                if (detectedBPM > 0.0) {
+                    bpmLabel_->setText(juce::String(detectedBPM, 1) + " BPM",
+                                       juce::dontSendNotification);
+                    bpmLabel_->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+                } else {
+                    bpmLabel_->setText(juce::String::fromUTF8("\xe2\x80\x94 BPM"),
+                                       juce::dontSendNotification);
+                    bpmLabel_->setColour(juce::Label::textColourId,
+                                         DarkTheme::getSecondaryTextColour());
+                }
             }
 
             // Scroll viewport to show clip at new position
@@ -685,15 +689,19 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
             updateDisplayInfo(*clip);
 
             // Update BPM label
-            if (clip->detectedBPM > 0.0) {
-                bpmLabel_->setText(juce::String(clip->detectedBPM, 1) + " BPM",
-                                   juce::dontSendNotification);
-                bpmLabel_->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-            } else {
-                bpmLabel_->setText(juce::String::fromUTF8("\xe2\x80\x94 BPM"),
-                                   juce::dontSendNotification);
-                bpmLabel_->setColour(juce::Label::textColourId,
-                                     DarkTheme::getSecondaryTextColour());
+            {
+                double detectedBPM =
+                    magda::AudioThumbnailManager::getInstance().detectBPM(clip->audioFilePath);
+                if (detectedBPM > 0.0) {
+                    bpmLabel_->setText(juce::String(detectedBPM, 1) + " BPM",
+                                       juce::dontSendNotification);
+                    bpmLabel_->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+                } else {
+                    bpmLabel_->setText(juce::String::fromUTF8("\xe2\x80\x94 BPM"),
+                                       juce::dontSendNotification);
+                    bpmLabel_->setColour(juce::Label::textColourId,
+                                         DarkTheme::getSecondaryTextColour());
+                }
             }
         }
 
@@ -806,7 +814,7 @@ void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
     // Update time ruler loop region (green markers with triangles)
     // Use loopEnabled directly instead of isLooped() which has additional constraints
     if (timeRuler_) {
-        timeRuler_->setLoopRegion(info.loopPhase, info.loopLengthSeconds, info.loopEnabled);
+        timeRuler_->setLoopRegion(info.loopOffset, info.loopLengthSeconds, info.loopEnabled);
     }
 }
 

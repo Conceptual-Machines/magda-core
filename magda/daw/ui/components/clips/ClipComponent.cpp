@@ -51,7 +51,7 @@ void ClipComponent::paint(juce::Graphics& g) {
     paintClipHeader(g, *clip, bounds);
 
     // Draw loop boundary corner cuts (after header so they cut through everything)
-    double srcLength = clip->getSourceLength();
+    double srcLength = clip->loopLength;
     if (clip->loopEnabled && srcLength > 0.0) {
         auto clipBounds = getLocalBounds();
         double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
@@ -233,7 +233,7 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                 double loopCycle = di.loopLengthSeconds;
 
                 // File range per cycle from display info (adjusted for drag offset)
-                double fileStart = displayOffset + di.loopPhase / di.speedRatio;
+                double fileStart = displayOffset + di.loopOffset / di.speedRatio;
                 double fileEnd = fileStart + loopCycle / di.speedRatio;
                 if (fileDuration > 0.0 && fileEnd > fileDuration)
                     fileEnd = fileDuration;

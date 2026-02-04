@@ -823,7 +823,6 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("length", clip.length);
     obj->setProperty("view", static_cast<int>(clip.view));
     obj->setProperty("loopEnabled", clip.loopEnabled);
-    obj->setProperty("loopPhase", clip.loopPhase);
     obj->setProperty("sceneIndex", clip.sceneIndex);
     obj->setProperty("launchMode", static_cast<int>(clip.launchMode));
     obj->setProperty("launchQuantize", static_cast<int>(clip.launchQuantize));
@@ -835,9 +834,6 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
         obj->setProperty("loopStart", clip.loopStart);
         obj->setProperty("loopLength", clip.loopLength);
         obj->setProperty("speedRatio", clip.speedRatio);
-        if (clip.detectedBPM > 0.0) {
-            obj->setProperty("detectedBPM", clip.detectedBPM);
-        }
         if (clip.warpEnabled) {
             obj->setProperty("warpEnabled", clip.warpEnabled);
         }
@@ -883,10 +879,6 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     } else {
         // Backward compatibility: try old field name
         outClip.loopEnabled = obj->getProperty("internalLoopEnabled");
-    }
-    auto loopPhaseVar = obj->getProperty("loopPhase");
-    if (!loopPhaseVar.isVoid()) {
-        outClip.loopPhase = static_cast<double>(loopPhaseVar);
     }
     outClip.sceneIndex = obj->getProperty("sceneIndex");
 
@@ -957,10 +949,6 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
         if (outClip.speedRatio <= 0.0)
             outClip.speedRatio = 1.0;
 
-        auto detectedBPMVar = obj->getProperty("detectedBPM");
-        if (!detectedBPMVar.isVoid()) {
-            outClip.detectedBPM = static_cast<double>(detectedBPMVar);
-        }
         auto warpEnabledVar = obj->getProperty("warpEnabled");
         if (!warpEnabledVar.isVoid()) {
             outClip.warpEnabled = static_cast<bool>(warpEnabledVar);

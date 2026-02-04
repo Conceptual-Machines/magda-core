@@ -10,6 +10,7 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../utils/TimelineUtils.hpp"
+#include "audio/AudioThumbnailManager.hpp"
 #include "core/MidiNoteCommands.hpp"
 
 namespace magda::daw::ui {
@@ -301,26 +302,28 @@ InspectorContent::InspectorContent() {
             magda::ClipManager::getInstance().resizeClip(selectedClipId_, newLengthSeconds, false,
                                                          bpm);
 
-            // Clamp loop offset and length so loop stays within clip bounds
-            // Note: loopPhase and sourceLength are in seconds, need to convert newClipEndBeats
+            // Clamp offset and loop length so they stay within clip bounds
             double newClipEndSeconds = magda::TimelineUtils::beatsToSeconds(newClipEndBeats, bpm);
-            double loopPhaseSeconds = clip->loopPhase;
-            double sourceLengthSeconds = clip->getSourceLength();
+            double offsetSeconds = clip->offset;
 
-            // If loop phase is past new clip end, pull it back
-            if (loopPhaseSeconds >= newClipEndSeconds) {
-                loopPhaseSeconds = std::max(0.0, newClipEndSeconds - sourceLengthSeconds);
-                if (loopPhaseSeconds < 0.0)
-                    loopPhaseSeconds = 0.0;
-                magda::ClipManager::getInstance().setClipLoopPhase(selectedClipId_,
-                                                                   loopPhaseSeconds);
+            // If offset is past new clip end, pull it back
+            if (offsetSeconds >= clip->loopStart + newClipEndSeconds) {
+                double srcLen = clip->loopLength > 0.0 ? clip->loopLength
+                                                       : newClipEndSeconds / clip->speedRatio;
+                offsetSeconds = std::max(clip->loopStart, clip->loopStart + srcLen -
+                                                              newClipEndSeconds / clip->speedRatio);
+                if (offsetSeconds < clip->loopStart)
+                    offsetSeconds = clip->loopStart;
+                magda::ClipManager::getInstance().setOffset(selectedClipId_, offsetSeconds);
             }
 
             // If source region exceeds clip end, shrink it
+            double sourceLengthSeconds =
+                clip->loopLength > 0.0 ? clip->loopLength : newClipEndSeconds / clip->speedRatio;
             double sourceEndSeconds = clip->loopStart + sourceLengthSeconds;
             if (sourceEndSeconds > clip->loopStart + newClipEndSeconds) {
                 double clampedLoopLength = std::max(magda::ClipOperations::MIN_SOURCE_LENGTH,
-                                                    newClipEndSeconds - loopPhaseSeconds);
+                                                    newClipEndSeconds / clip->speedRatio);
                 magda::ClipManager::getInstance().setLoopLength(selectedClipId_, clampedLoopLength);
             }
         } else {
@@ -448,114 +451,6 @@ InspectorContent::InspectorContent() {
     };
     addChildComponent(stretchModeCombo_);
 
-    // Source start/end (audio clips only)
-    clipSourceIcon_ = std::make_unique<magda::SvgButton>("Source", BinaryData::sinewave_svg,
-                                                         BinaryData::sinewave_svgSize);
-    clipSourceIcon_->setEnabled(false);
-    addChildComponent(*clipSourceIcon_);
-
-    clipSourceStartLabel_.setText("Start", juce::dontSendNotification);
-    clipSourceStartLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipSourceStartLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    addChildComponent(clipSourceStartLabel_);
-
-    clipSourceStartValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
-    clipSourceStartValue_->setRange(0.0, 10000.0, 0.0);
-    clipSourceStartValue_->setDoubleClickResetsValue(false);
-    clipSourceStartValue_->setBarsBeatsIsPosition(false);  // Source position, not timeline position
-    clipSourceStartValue_->onValueChange = [this]() {
-        if (selectedClipId_ == magda::INVALID_CLIP_ID)
-            return;
-        auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
-        if (!clip || clip->type != magda::ClipType::Audio)
-            return;
-        double bpm = 120.0;
-        if (timelineController_)
-            bpm = timelineController_->getState().tempo.bpm;
-        // Convert beats to source-file seconds
-        double timelineSeconds =
-            magda::TimelineUtils::beatsToSeconds(clipSourceStartValue_->getValue(), bpm);
-        double sourceSeconds = timelineSeconds * clip->speedRatio;
-        magda::ClipManager::getInstance().setOffset(selectedClipId_, sourceSeconds);
-    };
-    addChildComponent(*clipSourceStartValue_);
-
-    clipSourceEndLabel_.setText("End", juce::dontSendNotification);
-    clipSourceEndLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipSourceEndLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    addChildComponent(clipSourceEndLabel_);
-
-    clipSourceEndValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
-    clipSourceEndValue_->setRange(0.0, 10000.0, 1.0);
-    clipSourceEndValue_->setDoubleClickResetsValue(false);
-    clipSourceEndValue_->setBarsBeatsIsPosition(false);
-    clipSourceEndValue_->onValueChange = [this]() {
-        if (selectedClipId_ == magda::INVALID_CLIP_ID)
-            return;
-        auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
-        if (!clip || clip->type != magda::ClipType::Audio)
-            return;
-        double bpm = 120.0;
-        if (timelineController_)
-            bpm = timelineController_->getState().tempo.bpm;
-        // Source end in beats -> source-file seconds -> source length
-        double endTimelineSeconds =
-            magda::TimelineUtils::beatsToSeconds(clipSourceEndValue_->getValue(), bpm);
-        double endSourceSeconds = endTimelineSeconds * clip->speedRatio;
-        double sourceLength = endSourceSeconds - clip->loopStart;
-
-        if (clip->loopEnabled) {
-            // Loop mode: change source extent (decoupled from clip length)
-            magda::ClipManager::getInstance().setLoopLength(selectedClipId_, sourceLength);
-        } else {
-            // Non-loop mode: change clip length (source end and clip end are linked)
-            double newClipLength = sourceLength / clip->speedRatio;
-            magda::ClipManager::getInstance().resizeClip(selectedClipId_, newClipLength, false);
-        }
-    };
-    addChildComponent(*clipSourceEndValue_);
-
-    // Loop position
-    clipLoopPosLabel_.setText("Pos", juce::dontSendNotification);
-    clipLoopPosLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipLoopPosLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    addChildComponent(clipLoopPosLabel_);
-
-    clipLoopPosValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
-    clipLoopPosValue_->setRange(0.0, 10000.0, 0.0);
-    clipLoopPosValue_->setDoubleClickResetsValue(false);
-    clipLoopPosValue_->setBarsBeatsIsPosition(true);
-    clipLoopPosValue_->onValueChange = [this]() {
-        if (selectedClipId_ == magda::INVALID_CLIP_ID)
-            return;
-        const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
-        if (!clip)
-            return;
-
-        // newLoopPos is in beats from the UI, convert to seconds for loopPhase
-        double newLoopPosBeats = clipLoopPosValue_->getValue();
-        double bpm = 120.0;
-        if (timelineController_) {
-            bpm = timelineController_->getState().tempo.bpm;
-        }
-        double newLoopPosSeconds = magda::TimelineUtils::beatsToSeconds(newLoopPosBeats, bpm);
-
-        if (clip->view == magda::ClipView::Session) {
-            double clipEndSeconds = clip->length;
-            double sourceLengthSeconds = clip->getSourceLength();
-
-            // Clamp so loop region stays within clip bounds
-            if (newLoopPosSeconds + sourceLengthSeconds > clipEndSeconds) {
-                newLoopPosSeconds = clipEndSeconds - sourceLengthSeconds;
-            }
-            if (newLoopPosSeconds < 0.0)
-                newLoopPosSeconds = 0.0;
-        }
-
-        magda::ClipManager::getInstance().setClipLoopPhase(selectedClipId_, newLoopPosSeconds);
-    };
-    addChildComponent(*clipLoopPosValue_);
-
     // Loop length
     clipLoopLengthLabel_.setText("Length", juce::dontSendNotification);
     clipLoopLengthLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
@@ -573,13 +468,14 @@ InspectorContent::InspectorContent() {
         if (!clip)
             return;
 
-        // newLoopLength is in beats from the UI, convert to seconds for the new model
+        // UI shows timeline beats; convert to source seconds for loopLength
         double newLoopLengthBeats = clipLoopLengthValue_->getValue();
         double bpm = 120.0;
         if (timelineController_) {
             bpm = timelineController_->getState().tempo.bpm;
         }
-        double newLoopLengthSeconds = magda::TimelineUtils::beatsToSeconds(newLoopLengthBeats, bpm);
+        double timelineSeconds = magda::TimelineUtils::beatsToSeconds(newLoopLengthBeats, bpm);
+        double newLoopLengthSeconds = timelineSeconds / clip->speedRatio;
 
         if (clip->view == magda::ClipView::Session) {
             double clipEndSeconds = clip->length;
@@ -918,7 +814,7 @@ void InspectorContent::resized() {
             bounds.removeFromTop(8);
         }
 
-        // Loop: toggle + Pos / Length side by side
+        // Loop: toggle + Length
         if (clipLoopToggle_->isVisible()) {
             const int loopSize = 22;
             const int gap = 4;
@@ -926,16 +822,12 @@ void InspectorContent::resized() {
 
             auto labelRow = bounds.removeFromTop(16);
             labelRow.removeFromLeft(loopSize + gap);  // space for toggle column
-            clipLoopPosLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
-            labelRow.removeFromLeft(gap);
-            clipLoopLengthLabel_.setBounds(labelRow);
+            clipLoopLengthLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
 
             auto valueRow = bounds.removeFromTop(loopSize);
             clipLoopToggle_->setBounds(valueRow.removeFromLeft(loopSize));
             valueRow.removeFromLeft(gap);
-            clipLoopPosValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
-            valueRow.removeFromLeft(gap);
-            clipLoopLengthValue_->setBounds(valueRow);
+            clipLoopLengthValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
             bounds.removeFromTop(8);
         }
 
@@ -988,31 +880,6 @@ void InspectorContent::resized() {
             bounds.removeFromTop(8);
         }
 
-        // Source start/end (audio clips only)
-        if (clipSourceIcon_ && clipSourceIcon_->isVisible()) {
-            const int iconSize = 22;
-            const int labelWidth = 32;
-            const int gap = 4;
-            int fieldWidth = (bounds.getWidth() - iconSize - labelWidth * 2 - gap * 4) / 2;
-
-            // Labels row
-            auto labelRow = bounds.removeFromTop(16);
-            labelRow.removeFromLeft(iconSize + gap);  // Skip icon column
-            clipSourceStartLabel_.setBounds(labelRow.removeFromLeft(labelWidth + fieldWidth));
-            labelRow.removeFromLeft(gap);
-            clipSourceEndLabel_.setBounds(labelRow);
-
-            // Values row
-            auto valueRow = bounds.removeFromTop(iconSize);
-            clipSourceIcon_->setBounds(valueRow.removeFromLeft(iconSize));
-            valueRow.removeFromLeft(gap);
-            valueRow.removeFromLeft(labelWidth);  // Skip label space
-            clipSourceStartValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
-            valueRow.removeFromLeft(gap);
-            valueRow.removeFromLeft(labelWidth);  // Skip label space
-            clipSourceEndValue_->setBounds(valueRow);
-            bounds.removeFromTop(8);
-        }
     } else if (currentSelectionType_ == magda::SelectionType::Note) {
         // Note properties layout
         if (noteSelection_.getCount() > 1) {
@@ -1477,14 +1344,17 @@ void InspectorContent::updateFromSelectedClip() {
         }
 
         // Show BPM for audio clips (at bottom with WARP)
-        if (isAudioClip && clip->detectedBPM > 0.0) {
+        if (isAudioClip) {
+            double detectedBPM =
+                magda::AudioThumbnailManager::getInstance().detectBPM(clip->audioFilePath);
             clipBpmValue_.setVisible(true);
-            clipBpmValue_.setText(juce::String(clip->detectedBPM, 1) + " BPM",
-                                  juce::dontSendNotification);
-        } else if (isAudioClip) {
-            clipBpmValue_.setVisible(true);
-            clipBpmValue_.setText(juce::String::fromUTF8("\xe2\x80\x94"),  // em dash
-                                  juce::dontSendNotification);
+            if (detectedBPM > 0.0) {
+                clipBpmValue_.setText(juce::String(detectedBPM, 1) + " BPM",
+                                      juce::dontSendNotification);
+            } else {
+                clipBpmValue_.setText(juce::String::fromUTF8("\xe2\x80\x94"),  // em dash
+                                      juce::dontSendNotification);
+            }
         } else {
             clipBpmValue_.setVisible(false);
         }
@@ -1504,7 +1374,6 @@ void InspectorContent::updateFromSelectedClip() {
         clipStartValue_->setBeatsPerBar(beatsPerBar);
         clipEndValue_->setBeatsPerBar(beatsPerBar);
         clipContentOffsetValue_->setBeatsPerBar(beatsPerBar);
-        clipLoopPosValue_->setBeatsPerBar(beatsPerBar);
         clipLoopLengthValue_->setBeatsPerBar(beatsPerBar);
 
         if (isSessionClip) {
@@ -1534,8 +1403,12 @@ void InspectorContent::updateFromSelectedClip() {
         clipContentOffsetIcon_->setVisible(true);
         clipContentOffsetValue_->setVisible(true);
 
-        clipLoopPosValue_->setValue(clip->loopPhase, juce::dontSendNotification);
-        clipLoopLengthValue_->setValue(clip->getSourceLength(), juce::dontSendNotification);
+        double sourceLength =
+            clip->loopLength > 0.0 ? clip->loopLength : clip->length / clip->speedRatio;
+        // Display in timeline seconds (source * speedRatio) converted to beats
+        double timelineSeconds = sourceLength * clip->speedRatio;
+        clipLoopLengthValue_->setValue(magda::TimelineUtils::secondsToBeats(timelineSeconds, bpm),
+                                       juce::dontSendNotification);
 
         clipLoopToggle_->setActive(clip->loopEnabled);
         clipLoopToggle_->setEnabled(true);
@@ -1554,39 +1427,12 @@ void InspectorContent::updateFromSelectedClip() {
             stretchModeCombo_.setSelectedId(clip->timeStretchMode + 1, juce::dontSendNotification);
         }
 
-        // Source start/end (audio clips only)
-        clipSourceIcon_->setVisible(isAudioClip);
-        clipSourceStartLabel_.setVisible(isAudioClip);
-        clipSourceStartValue_->setVisible(isAudioClip);
-        clipSourceEndLabel_.setVisible(isAudioClip);
-        clipSourceEndValue_->setVisible(isAudioClip);
-        if (isAudioClip) {
-            clipSourceStartValue_->setBeatsPerBar(beatsPerBar);
-            clipSourceEndValue_->setBeatsPerBar(beatsPerBar);
-            // loopStart is in source-file seconds, convert to timeline seconds then beats
-            double sourceStartSeconds = clip->loopStart / clip->speedRatio;
-            double sourceStartBeats = magda::TimelineUtils::secondsToBeats(sourceStartSeconds, bpm);
-            clipSourceStartValue_->setValue(sourceStartBeats, juce::dontSendNotification);
-            // sourceLength from loopLength; if 0, fall back to clip length
-            double sourceLength = clip->loopLength;
-            if (sourceLength <= 0.0)
-                sourceLength = clip->length * clip->speedRatio;
-            double sourceEndSeconds = (clip->loopStart + sourceLength) / clip->speedRatio;
-            double sourceEndBeats = magda::TimelineUtils::secondsToBeats(sourceEndSeconds, bpm);
-            clipSourceEndValue_->setValue(sourceEndBeats, juce::dontSendNotification);
-        }
-
-        // Always show loop pos/length, but grey out when loop is off
+        // Always show loop length, but grey out when loop is off
         bool loopOn = isSessionClip || clip->loopEnabled;
-        clipLoopPosLabel_.setVisible(true);
-        clipLoopPosValue_->setVisible(true);
         clipLoopLengthLabel_.setVisible(true);
         clipLoopLengthValue_->setVisible(true);
-        clipLoopPosValue_->setEnabled(loopOn);
-        clipLoopPosValue_->setAlpha(loopOn ? 1.0f : 0.4f);
         clipLoopLengthValue_->setEnabled(loopOn);
         clipLoopLengthValue_->setAlpha(loopOn ? 1.0f : 0.4f);
-        clipLoopPosLabel_.setAlpha(loopOn ? 1.0f : 0.4f);
         clipLoopLengthLabel_.setAlpha(loopOn ? 1.0f : 0.4f);
 
         // Session clip launch properties
@@ -1658,19 +1504,9 @@ void InspectorContent::showClipControls(bool show) {
         if (clipStretchValue_)
             clipStretchValue_->setVisible(false);
         stretchModeCombo_.setVisible(false);
-        if (clipSourceIcon_)
-            clipSourceIcon_->setVisible(false);
-        clipSourceStartLabel_.setVisible(false);
-        if (clipSourceStartValue_)
-            clipSourceStartValue_->setVisible(false);
-        clipSourceEndLabel_.setVisible(false);
-        if (clipSourceEndValue_)
-            clipSourceEndValue_->setVisible(false);
     }
-    // Loop pos/length visibility is managed by updateFromSelectedClip
+    // Loop length visibility is managed by updateFromSelectedClip
     if (!show) {
-        clipLoopPosLabel_.setVisible(false);
-        clipLoopPosValue_->setVisible(false);
         clipLoopLengthLabel_.setVisible(false);
         clipLoopLengthValue_->setVisible(false);
     }
@@ -1833,13 +1669,6 @@ void InspectorContent::updateFromSelectedNotes() {
         showNoteControls(false);
         noSelectionLabel_.setVisible(true);
         return;
-    }
-
-    // Get tempo info
-    double bpm = 120.0;
-    if (timelineController_) {
-        const auto& state = timelineController_->getState();
-        bpm = state.tempo.bpm;
     }
 
     if (noteSelection_.isSingleNote()) {

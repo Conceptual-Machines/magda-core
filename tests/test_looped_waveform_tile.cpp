@@ -22,7 +22,7 @@
  * - loopStart/loopLength: loop region in source file (seconds)
  * - speedRatio: playback speed ratio (1.0 = normal, 2.0 = 2x faster)
  * - loopEnabled: whether to loop
- * - loopPhase: phase offset within loop cycle (seconds)
+ * - offset: start position in source file, also encodes loop phase (seconds)
  */
 
 namespace {
@@ -65,7 +65,6 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.offset = 1.0;
         clip.speedRatio = 1.0;
         clip.loopEnabled = false;
-        clip.loopPhase = 0.0;
         clip.loopStart = 0.0;
         clip.loopLength = 0.0;  // Not set, derived from clip length
 
@@ -80,12 +79,11 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 8.0;  // clip is 8s long
-        clip.offset = 0.5;
         clip.speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopPhase = 0.0;
-        clip.loopStart = 0.5;   // loop starts at 0.5s in source
-        clip.loopLength = 2.0;  // 2s of source audio (loop cycle)
+        clip.loopStart = 0.5;          // loop starts at 0.5s in source
+        clip.loopLength = 2.0;         // 2s of source audio (loop cycle)
+        clip.offset = clip.loopStart;  // phase=0 within loop
 
         double bpm = 120.0;
         auto di = ClipDisplayInfo::from(clip, bpm);
@@ -102,13 +100,12 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
     SECTION("Looped clip with stretch: source range accounts for stretch") {
         ClipInfo clip;
         clip.startTime = 0.0;
-        clip.length = 16.0;  // stretched clip
-        clip.offset = 1.0;
+        clip.length = 16.0;     // stretched clip
         clip.speedRatio = 2.0;  // 2x faster
         clip.loopEnabled = true;
-        clip.loopPhase = 0.0;
-        clip.loopStart = 1.0;   // loop starts at 1.0s in source
-        clip.loopLength = 1.0;  // 1s of source audio
+        clip.loopStart = 1.0;          // loop starts at 1.0s in source
+        clip.loopLength = 1.0;         // 1s of source audio
+        clip.offset = clip.loopStart;  // phase=0 within loop
 
         double bpm = 120.0;
         auto di = ClipDisplayInfo::from(clip, bpm);
@@ -129,7 +126,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.offset = 0.0;
         clip.speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopPhase = 0.0;
+        clip.offset = clip.loopStart;
         clip.loopStart = 0.0;
         clip.loopLength = 0.0;  // No source region defined
 
@@ -144,12 +141,11 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 1.0;  // 1s clip, shorter than 2s loop cycle
-        clip.offset = 0.5;
         clip.speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopPhase = 0.0;
-        clip.loopStart = 0.5;   // loop starts at 0.5s
-        clip.loopLength = 2.0;  // 2s source region
+        clip.loopStart = 0.5;          // loop starts at 0.5s
+        clip.loopLength = 2.0;         // 2s source region
+        clip.offset = clip.loopStart;  // phase=0 within loop
 
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
@@ -166,7 +162,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.offset = 0.0;
         clip.speedRatio = 2.0;  // 2x faster
         clip.loopEnabled = true;
-        clip.loopPhase = 0.0;
+        clip.offset = clip.loopStart;
         clip.loopStart = 0.0;
         clip.loopLength = 1.0;  // 1s source region → 2s on timeline
 
@@ -186,7 +182,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.offset = 0.0;
         clip.speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopPhase = 0.0;
+        clip.offset = clip.loopStart;
         clip.loopStart = 0.0;
         clip.loopLength = 2.0;  // 2s source = 2s on timeline
 
@@ -204,7 +200,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.offset = 0.0;
         clip.speedRatio = 1.0;
         clip.loopEnabled = true;
-        clip.loopPhase = 0.0;
+        clip.offset = clip.loopStart;
         clip.loopStart = 0.0;
         clip.loopLength = 2.0;  // 2s source = 2s loop on timeline
 

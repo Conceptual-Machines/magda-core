@@ -20,7 +20,8 @@ namespace magda {
  *
  * TE-aligned model behavior:
  * - Non-looped resize left: adjusts offset to keep content at timeline position
- * - Looped resize left: adjusts loopPhase to keep content at timeline position
+ * - Looped resize left: adjusts offset (wrapped within loop region) to keep content at timeline
+ * position
  * - Resize right: only changes length (more/fewer loop cycles for looped)
  *
  * All methods are stateless and modify data structures in place.
@@ -67,7 +68,8 @@ class ClipOperations {
      *
      * TE-aligned behavior:
      * - Non-looped: adjusts offset so audio content stays at its timeline position
-     * - Looped: adjusts loopPhase so audio content stays at its timeline position
+     * - Looped: adjusts offset (wrapped within loop region) so audio content stays at its timeline
+     * position
      *
      * @param clip Clip to resize
      * @param newLength New clip length (clamped to >= MIN_CLIP_LENGTH)
@@ -83,8 +85,8 @@ class ClipOperations {
 
         if (clip.type == ClipType::Audio && !clip.audioFilePath.isEmpty()) {
             std::cout << "=== resizeContainerFromLeft ===" << std::endl;
-            std::cout << "  BEFORE: offset=" << clip.offset << ", loopPhase=" << clip.loopPhase
-                      << ", loopEnabled=" << clip.loopEnabled << std::endl;
+            std::cout << "  BEFORE: offset=" << clip.offset << ", loopEnabled=" << clip.loopEnabled
+                      << std::endl;
             std::cout << "  actualDelta=" << actualDelta << ", newLength=" << newLength
                       << std::endl;
 
@@ -96,18 +98,18 @@ class ClipOperations {
                 // Also adjust loopStart to maintain consistency
                 clip.loopStart = clip.offset;
             } else {
-                // Looped: adjust loopPhase so content stays at timeline position
-                // deltaTime in timeline seconds -> convert to source time
+                // Looped: adjust offset (wrapped within loop region) so content stays at timeline
+                // position
                 double sourceLength =
                     clip.loopLength > 0.0 ? clip.loopLength : clip.length / clip.speedRatio;
                 if (sourceLength > 0.0) {
                     double phaseDelta = actualDelta / clip.speedRatio;
-                    clip.loopPhase = wrapPhase(clip.loopPhase + phaseDelta, sourceLength);
+                    double relOffset = clip.offset - clip.loopStart;
+                    clip.offset = clip.loopStart + wrapPhase(relOffset + phaseDelta, sourceLength);
                 }
             }
 
-            std::cout << "  AFTER: offset=" << clip.offset << ", loopPhase=" << clip.loopPhase
-                      << std::endl;
+            std::cout << "  AFTER: offset=" << clip.offset << std::endl;
             std::cout << "================================" << std::endl;
         }
 

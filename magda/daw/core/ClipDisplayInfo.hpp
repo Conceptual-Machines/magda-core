@@ -20,7 +20,6 @@ namespace magda {
  * - loopStart/loopLength: loop region in source file
  * - speedRatio: time stretch ratio
  * - loopEnabled: whether source region loops
- * - loopPhase: phase offset within loop cycle (seconds, source time)
  */
 struct ClipDisplayInfo {
     // Source data (copied for convenience, using TE terminology)
@@ -39,7 +38,7 @@ struct ClipDisplayInfo {
     // Loop (all in seconds) - TE: AudioClipBase loopStart/loopLength
     bool loopEnabled;
     double loopStart;               // where loop starts in source file
-    double loopPhase;               // phase offset within loop cycle (source time)
+    double loopOffset;              // phase within loop region, derived from offset - loopStart
     double loopLengthSeconds;       // loop duration in timeline seconds
     double loopEndPositionSeconds;  // where loop region ends on timeline (for drawing)
 
@@ -100,15 +99,17 @@ struct ClipDisplayInfo {
         d.sourceExtentSeconds = d.sourceLength * d.speedRatio;
 
         d.loopEnabled = clip.loopEnabled;
-        d.loopPhase = clip.loopPhase;
+
+        // Compute loop offset: phase within the loop region derived from offset - loopStart
+        d.loopOffset = wrapPhase(clip.offset - clip.loopStart, d.sourceLength);
 
         // Loop length in timeline seconds is the source region stretched
         d.loopLengthSeconds = d.sourceLength * d.speedRatio;
         d.loopEndPositionSeconds = d.loopLengthSeconds;  // Loop region starts at 0 in clip-relative
 
         if (d.loopEnabled && d.sourceLength > 0.0) {
-            // In loop mode, loopPhase determines where in the source we start
-            double phase = wrapPhase(clip.loopPhase, d.sourceLength);
+            // In loop mode, offset determines where in the source we start
+            double phase = wrapPhase(clip.offset - clip.loopStart, d.sourceLength);
             d.sourceFileStart = d.loopStart + phase;
             d.sourceFileEnd = d.loopStart + d.sourceLength;
 
@@ -135,7 +136,6 @@ struct ClipDisplayInfo {
             std::cout << "    startTime=" << clip.startTime << "s, length=" << clip.length << "s"
                       << std::endl;
             std::cout << "    loopEnabled=" << clip.loopEnabled << std::endl;
-            std::cout << "    loopPhase=" << clip.loopPhase << "s" << std::endl;
             std::cout << "  OUTPUT (ClipDisplayInfo):" << std::endl;
             std::cout << "    sourceLength=" << d.sourceLength << "s" << std::endl;
             std::cout << "    sourceExtentSeconds=" << d.sourceExtentSeconds << "s" << std::endl;

@@ -36,18 +36,9 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     clip.offset = 0.0;
     clip.speedRatio = 1.0;
 
-    // Detect BPM from audio file
-    clip.detectedBPM = AudioThumbnailManager::getInstance().detectBPM(audioFilePath);
-
-    // Set loopStart/loopLength from file duration
-    auto* thumbnail = AudioThumbnailManager::getInstance().getThumbnail(audioFilePath);
-    if (thumbnail) {
-        double fileDuration = thumbnail->getTotalLength();
-        if (fileDuration > 0.0) {
-            clip.loopStart = 0.0;
-            clip.loopLength = fileDuration;
-        }
-    }
+    // Set loopStart to offset (0), loopLength to the clip's source extent
+    clip.loopStart = 0.0;
+    clip.loopLength = length / clip.speedRatio;
 
     // Add to appropriate array based on view
     if (view == ClipView::Arrangement) {
@@ -389,20 +380,10 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
                     if (clip->length > maxLength) {
                         clip->length = juce::jmax(ClipOperations::MIN_CLIP_LENGTH, maxLength);
                     }
-                    // Update loopLength to track with clip extent
-                    clip->loopStart = clip->offset;
-                    clip->loopLength = clip->length / clip->speedRatio;
                 }
             }
         }
 
-        notifyClipPropertyChanged(clipId);
-    }
-}
-
-void ClipManager::setClipLoopPhase(ClipId clipId, double phase) {
-    if (auto* clip = getClip(clipId)) {
-        clip->loopPhase = juce::jmax(0.0, phase);
         notifyClipPropertyChanged(clipId);
     }
 }
@@ -448,15 +429,24 @@ void ClipManager::setOffset(ClipId clipId, double offset) {
             clip->offset = juce::jmax(0.0, offset);
             clip->loopStart = clip->offset;  // Keep in sync
 
-            // Clamp clip length to available audio (for non-looped clips)
-            if (!clip->loopEnabled && !clip->audioFilePath.isEmpty()) {
+            if (!clip->audioFilePath.isEmpty()) {
                 auto* thumbnail =
                     AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
                 if (thumbnail) {
                     double fileDuration = thumbnail->getTotalLength();
-                    double maxLength = (fileDuration - clip->offset) * clip->speedRatio;
-                    if (clip->length > maxLength) {
-                        clip->length = juce::jmax(ClipOperations::MIN_CLIP_LENGTH, maxLength);
+                    double available = fileDuration - clip->offset;
+
+                    // Clamp loopLength so loop region stays within file
+                    if (clip->loopLength > available) {
+                        clip->loopLength = juce::jmax(0.0, available);
+                    }
+
+                    // Clamp clip length to available audio (for non-looped clips)
+                    if (!clip->loopEnabled) {
+                        double maxLength = available * clip->speedRatio;
+                        if (clip->length > maxLength) {
+                            clip->length = juce::jmax(ClipOperations::MIN_CLIP_LENGTH, maxLength);
+                        }
                     }
                 }
             }
@@ -468,19 +458,15 @@ void ClipManager::setOffset(ClipId clipId, double offset) {
 
 void ClipManager::setLoopStart(ClipId clipId, double loopStart) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
-            clip->loopStart = juce::jmax(0.0, loopStart);
-            notifyClipPropertyChanged(clipId);
-        }
+        clip->loopStart = juce::jmax(0.0, loopStart);
+        notifyClipPropertyChanged(clipId);
     }
 }
 
 void ClipManager::setLoopLength(ClipId clipId, double loopLength) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
-            clip->loopLength = juce::jmax(0.0, loopLength);
-            notifyClipPropertyChanged(clipId);
-        }
+        clip->loopLength = juce::jmax(0.0, loopLength);
+        notifyClipPropertyChanged(clipId);
     }
 }
 
@@ -953,7 +939,6 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                 newClip->name = clipData.name + " (copy)";
                 newClip->colour = clipData.colour;
                 newClip->loopEnabled = clipData.loopEnabled;
-                newClip->loopPhase = clipData.loopPhase;
 
                 // Copy MIDI notes if MIDI clip
                 if (clipData.type == ClipType::MIDI) {

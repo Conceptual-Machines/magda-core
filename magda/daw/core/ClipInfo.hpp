@@ -57,35 +57,8 @@ struct ClipInfo {
     // TE: Clip::speedRatio
     double speedRatio = 1.0;  // Playback speed ratio (1.0 = original, 2.0 = 2x speed/half duration)
 
-    // Content anchoring - MAGDA extension (no TE equivalent)
-    // Used to keep content anchored when resizing looped clips from the left
-    double loopPhase = 0.0;  // Phase offset within loop cycle (source-time seconds)
-
-    // =========================================================================
-    // Analysis/metadata
-    // =========================================================================
-    double detectedBPM = 0.0;  // Detected BPM from audio analysis (0 = not detected)
     bool warpEnabled = false;  // Whether warp markers are active on this clip
     int timeStretchMode = 0;   // TimeStretcher::Mode (0 = default/auto)
-
-    // =========================================================================
-    // Computed helpers
-    // =========================================================================
-
-    // Returns the loop length, or derives it from clip length if not set
-    double getLoopLength() const {
-        return loopLength > 0.0 ? loopLength : 0.0;
-    }
-
-    // Returns the effective source length being used
-    // When looping: loopLength (if set)
-    // When not looping: derived from clip length / speedRatio
-    double getSourceLength() const {
-        if (loopEnabled && loopLength > 0.0) {
-            return loopLength;
-        }
-        return 0.0;  // Caller should derive from clip length if needed
-    }
 
     // MIDI-specific properties
     std::vector<MidiNote> midiNotes;
@@ -103,6 +76,26 @@ struct ClipInfo {
     // Helpers
     double getEndTime() const {
         return startTime + length;
+    }
+
+    /// Effective source length: loopLength if set, otherwise derived from clip length
+    double getSourceLength() const {
+        return loopLength > 0.0 ? loopLength : length / speedRatio;
+    }
+
+    /// TE offset: phase within the loop region, in stretched time
+    double getTeOffset() const {
+        return (offset - loopStart) / speedRatio;
+    }
+
+    /// TE loop start in stretched time
+    double getTeLoopStart() const {
+        return loopStart / speedRatio;
+    }
+
+    /// TE loop end in stretched time
+    double getTeLoopEnd() const {
+        return (loopStart + getSourceLength()) / speedRatio;
     }
 
     bool containsTime(double time) const {
