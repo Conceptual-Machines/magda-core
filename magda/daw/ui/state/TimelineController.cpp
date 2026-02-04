@@ -291,6 +291,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetEditPos
     }
 
     state.playhead.editPosition = newPos;
+    state.playhead.editPositionBeats =
+        magda::TimelineUtils::secondsToBeats(newPos, state.tempo.bpm);
     // If not playing, also sync playbackPosition to editPosition
     if (!state.playhead.isPlaying) {
         state.playhead.playbackPosition = newPos;
@@ -423,6 +425,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimeSel
 
     state.selection.startTime = start;
     state.selection.endTime = end;
+    state.selection.startBeats = magda::TimelineUtils::secondsToBeats(start, state.tempo.bpm);
+    state.selection.endBeats = magda::TimelineUtils::secondsToBeats(end, state.tempo.bpm);
     state.selection.trackIndices = e.trackIndices;
     state.selection.visuallyHidden = false;  // New selection is always visible
 
@@ -551,9 +555,43 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
     double oldBpm = state.tempo.bpm;
     state.tempo.bpm = newBpm;
 
-    // Update loop region to maintain bar/beat positions
-    bool loopRegionUpdated = false;
+    // Update all beat-anchored positions to maintain bar/beat positions
+    uint32_t extraFlags = 0;
 
+    // --- Edit cursor ---
+    if (state.playhead.editPosition > 0.0) {
+        // Migration: calculate beat position if it was never set
+        if (state.playhead.editPositionBeats <= 0.0 && state.playhead.editPosition > 0.0) {
+            state.playhead.editPositionBeats =
+                magda::TimelineUtils::secondsToBeats(state.playhead.editPosition, oldBpm);
+        }
+        state.playhead.editPosition =
+            magda::TimelineUtils::beatsToSeconds(state.playhead.editPositionBeats, newBpm);
+        if (!state.playhead.isPlaying) {
+            state.playhead.playbackPosition = state.playhead.editPosition;
+        }
+        extraFlags |= static_cast<uint32_t>(ChangeFlags::Playhead);
+    }
+
+    // --- Time selection ---
+    if (state.selection.isActive()) {
+        // Migration: calculate beat positions if missing
+        if (state.selection.startBeats < 0 && state.selection.endBeats < 0) {
+            state.selection.startBeats =
+                magda::TimelineUtils::secondsToBeats(state.selection.startTime, oldBpm);
+            state.selection.endBeats =
+                magda::TimelineUtils::secondsToBeats(state.selection.endTime, oldBpm);
+        }
+        if (state.selection.startBeats >= 0 && state.selection.endBeats >= 0) {
+            state.selection.startTime =
+                magda::TimelineUtils::beatsToSeconds(state.selection.startBeats, newBpm);
+            state.selection.endTime =
+                magda::TimelineUtils::beatsToSeconds(state.selection.endBeats, newBpm);
+            extraFlags |= static_cast<uint32_t>(ChangeFlags::Selection);
+        }
+    }
+
+    // --- Loop region ---
     // Migration: Calculate beat positions if missing (e.g., loop created without going through
     // SetLoopRegionEvent)
     if (state.loop.isValid() && state.loop.startBeats < 0 && state.loop.endBeats < 0) {
@@ -564,7 +602,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
     if (state.loop.isValid() && state.loop.startBeats >= 0 && state.loop.endBeats >= 0) {
         state.loop.startTime = magda::TimelineUtils::beatsToSeconds(state.loop.startBeats, newBpm);
         state.loop.endTime = magda::TimelineUtils::beatsToSeconds(state.loop.endBeats, newBpm);
-        loopRegionUpdated = true;
+        extraFlags |= static_cast<uint32_t>(ChangeFlags::Loop);
     }
 
     // IMPORTANT: Notify audio engine FIRST so TE's tempo sequence is updated
@@ -610,12 +648,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
         }
     }
 
-    // Return combined flags if loop region was updated
-    if (loopRegionUpdated) {
-        return static_cast<ChangeFlags>(static_cast<uint32_t>(ChangeFlags::Tempo) |
-                                        static_cast<uint32_t>(ChangeFlags::Loop));
-    }
-    return ChangeFlags::Tempo;
+    // Return combined flags for all updated state
+    return static_cast<ChangeFlags>(static_cast<uint32_t>(ChangeFlags::Tempo) | extraFlags);
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimeSignatureEvent& e) {

@@ -66,18 +66,27 @@ struct ClipDisplayInfo {
     double endBeats = 0.0;         // End position in beats
 
     // Helpers
-    // speedRatio is a SPEED FACTOR: higher = faster playback
-    // Formula: timeline = source / speedRatio
+    // For manual stretch: speedRatio is a SPEED FACTOR (timeline = source / speedRatio)
+    // For autoTempo: uses sourceLength/sourceExtentSeconds ratio instead of speedRatio
     double timelineToSource(double timelineDelta) const {
-        return timelineDelta * speedRatio;  // timeline * speed = source distance
+        if (autoTempo && sourceExtentSeconds > 0.0) {
+            return timelineDelta * sourceLength / sourceExtentSeconds;
+        }
+        return timelineDelta * speedRatio;
     }
 
     double sourceToTimeline(double sourceDelta) const {
-        return sourceDelta / speedRatio;  // source / speed = timeline duration
+        if (autoTempo && sourceLength > 0.0) {
+            return sourceDelta * sourceExtentSeconds / sourceLength;
+        }
+        return sourceDelta / speedRatio;
     }
 
     double maxClipLength(double fileDuration) const {
-        return (fileDuration - offset) / speedRatio;  // source / speed = timeline
+        if (autoTempo && sourceLength > 0.0 && sourceExtentSeconds > 0.0) {
+            return (fileDuration - offset) * sourceExtentSeconds / sourceLength;
+        }
+        return (fileDuration - offset) / speedRatio;
     }
 
     bool isLooped() const {

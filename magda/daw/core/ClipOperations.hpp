@@ -121,16 +121,6 @@ class ClipOperations {
     static inline void resizeContainerFromRight(ClipInfo& clip, double newLength,
                                                 double bpm = 120.0) {
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
-
-        // NOTE: In auto-tempo mode, do NOT update loopLengthBeats here.
-        // loopLengthBeats is the authoritative source of truth and should only
-        // be updated when the user explicitly changes it, not during tempo-driven resizes.
-
-        // For non-looped audio clips, update loopLength to track (used for display)
-        if (clip.type == ClipType::Audio && !clip.audioFilePath.isEmpty() && !clip.loopEnabled) {
-            clip.setLoopLengthFromTimeline(newLength);
-        }
-
         clip.length = newLength;
     }
 
@@ -181,11 +171,6 @@ class ClipOperations {
 
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
         clip.length = newLength;
-
-        // Update loopLength to track for non-looped clips
-        if (!clip.loopEnabled) {
-            clip.setLoopLengthFromTimeline(newLength);
-        }
     }
 
     /**
@@ -310,11 +295,6 @@ class ClipOperations {
     static inline void stretchAbsolute(ClipInfo& clip, double newSpeedRatio, double newLength) {
         clip.speedRatio = newSpeedRatio;
         clip.length = newLength;
-
-        // For non-looped clips, loopLength tracks with clip length
-        if (!clip.loopEnabled) {
-            clip.setLoopLengthFromTimeline(newLength);
-        }
     }
 
     /**
@@ -330,11 +310,6 @@ class ClipOperations {
         clip.speedRatio = newSpeedRatio;
         clip.length = newLength;
         clip.startTime = rightEdge - newLength;
-
-        // For non-looped clips, loopLength tracks with clip length
-        if (!clip.loopEnabled) {
-            clip.setLoopLengthFromTimeline(newLength);
-        }
     }
 
     // ========================================================================
@@ -439,11 +414,6 @@ class ClipOperations {
 
         clip.loopLengthBeats = newLengthBeats;
         clip.setLengthFromBeats(newLengthBeats, bpm);
-
-        // Update loopLength for display consistency
-        if (!clip.loopEnabled) {
-            clip.setLoopLengthFromTimeline(clip.length);
-        }
     }
 
     /**
@@ -463,11 +433,6 @@ class ClipOperations {
         // Adjust startTime to keep right edge fixed
         double lengthDelta = oldLength - clip.length;
         clip.startTime = juce::jmax(0.0, clip.startTime + lengthDelta);
-
-        // Update loopLength for display consistency
-        if (!clip.loopEnabled) {
-            clip.setLoopLengthFromTimeline(clip.length);
-        }
     }
 
     // ========================================================================

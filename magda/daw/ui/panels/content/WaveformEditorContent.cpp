@@ -612,8 +612,20 @@ void WaveformEditorContent::clipSelectionChanged(magda::ClipId clipId) {
 // ============================================================================
 
 void WaveformEditorContent::timelineStateChanged(const TimelineState& state) {
+    double newBpm = state.tempo.bpm;
+
+    // Scale pps zoom to keep visual bar width constant when BPM changes.
+    // new_pps = old_pps * new_bpm / old_bpm  (keeps ppb constant)
+    if (cachedBpm_ > 0.0 && std::abs(newBpm - cachedBpm_) > 0.01) {
+        horizontalZoom_ = juce::jlimit(MIN_ZOOM, MAX_ZOOM, horizontalZoom_ * newBpm / cachedBpm_);
+        gridComponent_->setHorizontalZoom(horizontalZoom_);
+        timeRuler_->setZoom(horizontalZoom_ * 60.0 / newBpm);
+        updateGridSize();
+    }
+    cachedBpm_ = newBpm;
+
     // Sync tempo to the TimeRuler so beat grid and snap stay in sync
-    timeRuler_->setTempo(state.tempo.bpm);
+    timeRuler_->setTempo(newBpm);
     timeRuler_->setTimeSignature(state.tempo.timeSignatureNumerator,
                                  state.tempo.timeSignatureDenominator);
     gridComponent_->repaint();
@@ -662,6 +674,7 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
             if (controller) {
                 bpm = controller->getState().tempo.bpm;
             }
+            cachedBpm_ = bpm;
 
             timeRuler_->setZoom(horizontalZoom_ * 60.0 / bpm);
             timeRuler_->setTempo(bpm);

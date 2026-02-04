@@ -36,10 +36,11 @@ struct ZoomState {
  * When playback stops, playbackPosition resets to editPosition.
  */
 struct PlayheadState {
-    double editPosition = 0.0;      // Triangle position (stationary during playback)
-    double playbackPosition = 0.0;  // Moving cursor position
-    bool isPlaying = false;         // Is transport playing
-    bool isRecording = false;       // Is transport recording
+    double editPosition = 0.0;       // Triangle position in seconds (derived from beats)
+    double editPositionBeats = 0.0;  // Triangle position in beats (authoritative)
+    double playbackPosition = 0.0;   // Moving cursor position
+    bool isPlaying = false;          // Is transport playing
+    bool isRecording = false;        // Is transport recording
 
     // Get the "current" position (playback when playing, edit otherwise)
     double getCurrentPosition() const {
@@ -59,8 +60,10 @@ struct PlayheadState {
  * Empty trackIndices = all tracks selected (backward compatible).
  */
 struct TimeSelection {
-    double startTime = -1.0;
-    double endTime = -1.0;
+    double startTime = -1.0;      // Time in seconds (derived from beats)
+    double endTime = -1.0;        // Time in seconds (derived from beats)
+    double startBeats = -1.0;     // Position in beats (authoritative)
+    double endBeats = -1.0;       // Position in beats (authoritative)
     std::set<int> trackIndices;   // Empty = all tracks
     bool visuallyHidden = false;  // When true, selection is hidden visually but data remains
 
@@ -79,6 +82,8 @@ struct TimeSelection {
     void clear() {
         startTime = -1.0;
         endTime = -1.0;
+        startBeats = -1.0;
+        endBeats = -1.0;
         trackIndices.clear();
         visuallyHidden = false;
     }
