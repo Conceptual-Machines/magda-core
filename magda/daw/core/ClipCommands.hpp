@@ -14,7 +14,7 @@ namespace magda {
  */
 class SplitClipCommand : public SnapshotCommand<ClipInfo> {
   public:
-    SplitClipCommand(ClipId clipId, double splitTime);
+    SplitClipCommand(ClipId clipId, double splitTime, double tempo = 120.0);
 
     juce::String getDescription() const override {
         return "Split Clip";
@@ -36,6 +36,7 @@ class SplitClipCommand : public SnapshotCommand<ClipInfo> {
   private:
     ClipId clipId_;
     double splitTime_;
+    double tempo_;
     ClipId rightClipId_ = INVALID_CLIP_ID;
 };
 
@@ -278,7 +279,7 @@ struct JoinClipsState {
  */
 class JoinClipsCommand : public SnapshotCommand<JoinClipsState> {
   public:
-    JoinClipsCommand(ClipId leftClipId, ClipId rightClipId);
+    JoinClipsCommand(ClipId leftClipId, ClipId rightClipId, double tempo = 120.0);
 
     juce::String getDescription() const override {
         return "Join Clips";
@@ -295,6 +296,7 @@ class JoinClipsCommand : public SnapshotCommand<JoinClipsState> {
   private:
     ClipId leftClipId_;
     ClipId rightClipId_;
+    double tempo_;
 };
 
 /**

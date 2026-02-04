@@ -146,7 +146,7 @@ class ClipManager {
      * @brief Split a clip at a specific time
      * @return The ID of the new clip (right half)
      */
-    ClipId splitClip(ClipId clipId, double splitTime);
+    ClipId splitClip(ClipId clipId, double splitTime, double tempo = 120.0);
 
     /**
      * @brief Trim clip to a range (used for time selection based creation)

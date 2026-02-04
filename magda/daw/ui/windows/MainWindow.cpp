@@ -810,6 +810,9 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     return ca->startTime < cb->startTime;
                 });
 
+                double tempo =
+                    mainView ? mainView->getTimelineController().getState().tempo.bpm : 120.0;
+
                 // Join sequentially: left absorbs right, then result absorbs next, etc.
                 if (sortedClips.size() > 2) {
                     UndoManager::getInstance().beginCompoundOperation("Join Clips");
@@ -818,7 +821,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 ClipId leftId = sortedClips[0];
                 bool allJoined = true;
                 for (size_t i = 1; i < sortedClips.size(); ++i) {
-                    auto cmd = std::make_unique<JoinClipsCommand>(leftId, sortedClips[i]);
+                    auto cmd = std::make_unique<JoinClipsCommand>(leftId, sortedClips[i], tempo);
                     if (cmd->canExecute()) {
                         UndoManager::getInstance().executeCommand(std::move(cmd));
                     } else {
@@ -842,6 +845,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             //        Otherwise → split clips at edit cursor
             if (mainView) {
                 const auto& state = mainView->getTimelineController().getState();
+                double tempo = state.tempo.bpm;
 
                 if (!state.selection.visuallyHidden && state.selection.isActive()) {
                     // TIME SELECTION EXISTS → Split clips at selection boundaries
@@ -878,8 +882,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
                             // Split at left edge if clip extends before selection
                             if (clip->startTime < trimStart && trimStart < clipEnd) {
-                                auto splitCmd =
-                                    std::make_unique<SplitClipCommand>(currentClipId, trimStart);
+                                auto splitCmd = std::make_unique<SplitClipCommand>(
+                                    currentClipId, trimStart, tempo);
                                 auto* cmdPtr = splitCmd.get();
                                 UndoManager::getInstance().executeCommand(std::move(splitCmd));
                                 currentClipId = cmdPtr->getRightClipId();
@@ -892,8 +896,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
                             // Split at right edge if clip extends after selection
                             if (trimEnd < clipEnd) {
-                                auto splitCmd =
-                                    std::make_unique<SplitClipCommand>(currentClipId, trimEnd);
+                                auto splitCmd = std::make_unique<SplitClipCommand>(currentClipId,
+                                                                                   trimEnd, tempo);
                                 UndoManager::getInstance().executeCommand(std::move(splitCmd));
                             }
 
@@ -931,7 +935,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                                 UndoManager::getInstance().beginCompoundOperation("Split Clips");
                             }
                             for (auto cid : clipsToSplit) {
-                                auto cmd = std::make_unique<SplitClipCommand>(cid, splitTime);
+                                auto cmd =
+                                    std::make_unique<SplitClipCommand>(cid, splitTime, tempo);
                                 UndoManager::getInstance().executeCommand(std::move(cmd));
                             }
                             if (clipsToSplit.size() > 1) {

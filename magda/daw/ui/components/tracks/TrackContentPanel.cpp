@@ -1227,8 +1227,8 @@ void TrackContentPanel::rebuildClipComponents() {
             }
         };
 
-        clipComp->onClipSplit = [](ClipId id, double splitTime) {
-            auto cmd = std::make_unique<SplitClipCommand>(id, splitTime);
+        clipComp->onClipSplit = [this](ClipId id, double splitTime) {
+            auto cmd = std::make_unique<SplitClipCommand>(id, splitTime, getTempo());
             UndoManager::getInstance().executeCommand(std::move(cmd));
 
             // Get the created clip ID for selection (we need to look it up)
@@ -1775,7 +1775,7 @@ void TrackContentPanel::splitClipsAtSelectionBoundaries() {
 
         // Split at left boundary first — the right piece gets a new ID
         if (info.needsLeftSplit) {
-            auto cmd = std::make_unique<SplitClipCommand>(info.clipId, start);
+            auto cmd = std::make_unique<SplitClipCommand>(info.clipId, start, getTempo());
             auto* cmdPtr = cmd.get();
             UndoManager::getInstance().executeCommand(std::move(cmd));
             // The right piece (from start onward) is the one that may need a right split
@@ -1786,7 +1786,7 @@ void TrackContentPanel::splitClipsAtSelectionBoundaries() {
         if (info.needsRightSplit) {
             const auto* clip = ClipManager::getInstance().getClip(rightSideId);
             if (clip && end > clip->startTime && end < clip->startTime + clip->length) {
-                auto cmd = std::make_unique<SplitClipCommand>(rightSideId, end);
+                auto cmd = std::make_unique<SplitClipCommand>(rightSideId, end, getTempo());
                 UndoManager::getInstance().executeCommand(std::move(cmd));
             }
         }
@@ -2150,7 +2150,7 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
 
         // Split each clip through the undo system
         for (ClipId clipId : clipsToSplit) {
-            auto cmd = std::make_unique<SplitClipCommand>(clipId, splitTime);
+            auto cmd = std::make_unique<SplitClipCommand>(clipId, splitTime, getTempo());
             UndoManager::getInstance().executeCommand(std::move(cmd));
         }
 

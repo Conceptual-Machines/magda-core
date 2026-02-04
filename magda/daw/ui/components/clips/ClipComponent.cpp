@@ -1418,7 +1418,9 @@ void ClipComponent::showContextMenu() {
                             if (toSplit.size() > 1)
                                 UndoManager::getInstance().beginCompoundOperation("Split Clips");
                             for (auto cid : toSplit) {
-                                auto cmd = std::make_unique<SplitClipCommand>(cid, splitTime);
+                                double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+                                auto cmd =
+                                    std::make_unique<SplitClipCommand>(cid, splitTime, tempo);
                                 UndoManager::getInstance().executeCommand(std::move(cmd));
                             }
                             if (toSplit.size() > 1)
@@ -1468,7 +1470,8 @@ void ClipComponent::showContextMenu() {
 
                     ClipId leftId = sorted[0];
                     for (size_t i = 1; i < sorted.size(); ++i) {
-                        auto cmd = std::make_unique<JoinClipsCommand>(leftId, sorted[i]);
+                        double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+                        auto cmd = std::make_unique<JoinClipsCommand>(leftId, sorted[i], tempo);
                         if (cmd->canExecute()) {
                             UndoManager::getInstance().executeCommand(std::move(cmd));
                         }

@@ -261,7 +261,7 @@ void ClipManager::resizeClip(ClipId clipId, double newLength, bool fromStart, do
     }
 }
 
-ClipId ClipManager::splitClip(ClipId clipId, double splitTime) {
+ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
     auto* clip = getClip(clipId);
     if (!clip) {
         return INVALID_CLIP_ID;
@@ -291,8 +291,7 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime) {
 
     // Handle MIDI clip splitting - DESTRUCTIVE (each clip owns its notes)
     if (rightClip.type == ClipType::MIDI && !rightClip.midiNotes.empty()) {
-        // TODO: Get actual tempo from project settings (assuming 120 BPM for now)
-        const double beatsPerSecond = 2.0;  // 120 BPM = 2 beats/second
+        const double beatsPerSecond = tempo / 60.0;
         double splitBeat = leftLength * beatsPerSecond;
 
         DBG("MIDI SPLIT (destructive):");
