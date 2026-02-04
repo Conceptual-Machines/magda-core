@@ -58,6 +58,9 @@ class TimeRuler : public juce::Component, private juce::Timer {
     // Loop region markers (shows loop boundaries on the ruler)
     void setLoopRegion(double offsetSeconds, double lengthSeconds, bool enabled);
 
+    // Loop phase marker (shows where playback phase is within the loop)
+    void setLoopPhaseMarker(double positionSeconds, bool visible);
+
     // Playhead position (for drawing playhead line during playback)
     void setPlayheadPosition(double positionSeconds);
     double getPlayheadPosition() const {
@@ -113,6 +116,10 @@ class TimeRuler : public juce::Component, private juce::Timer {
     double loopOffset = 0.0;   // seconds - loop start offset within clip
     double loopLength = 0.0;   // seconds - loop length
     bool loopEnabled = false;  // whether loop region is active
+
+    // Loop phase marker
+    double loopPhasePosition = 0.0;  // phase marker position in timeline seconds
+    bool loopPhaseVisible = false;
 
     // Layout
     int leftPadding = 18;  // Configurable padding (default 18 for main timeline)

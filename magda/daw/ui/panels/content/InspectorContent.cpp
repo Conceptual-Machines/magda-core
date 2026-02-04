@@ -451,6 +451,32 @@ InspectorContent::InspectorContent() {
     };
     addChildComponent(stretchModeCombo_);
 
+    // Loop start
+    clipLoopStartLabel_.setText("Start", juce::dontSendNotification);
+    clipLoopStartLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    clipLoopStartLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    addChildComponent(clipLoopStartLabel_);
+
+    clipLoopStartValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
+    clipLoopStartValue_->setRange(0.0, 10000.0, 0.0);
+    clipLoopStartValue_->setDoubleClickResetsValue(true);
+    clipLoopStartValue_->onValueChange = [this]() {
+        if (selectedClipId_ == magda::INVALID_CLIP_ID)
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
+        if (!clip)
+            return;
+
+        double bpm = 120.0;
+        if (timelineController_) {
+            bpm = timelineController_->getState().tempo.bpm;
+        }
+        double newLoopStartBeats = clipLoopStartValue_->getValue();
+        double newLoopStartSeconds = magda::TimelineUtils::beatsToSeconds(newLoopStartBeats, bpm);
+        magda::ClipManager::getInstance().setLoopStart(selectedClipId_, newLoopStartSeconds);
+    };
+    addChildComponent(*clipLoopStartValue_);
+
     // Loop length
     clipLoopLengthLabel_.setText("Length", juce::dontSendNotification);
     clipLoopLengthLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
@@ -468,14 +494,13 @@ InspectorContent::InspectorContent() {
         if (!clip)
             return;
 
-        // UI shows timeline beats; convert to source seconds for loopLength
+        // UI shows source-time beats; convert directly to source seconds
         double newLoopLengthBeats = clipLoopLengthValue_->getValue();
         double bpm = 120.0;
         if (timelineController_) {
             bpm = timelineController_->getState().tempo.bpm;
         }
-        double timelineSeconds = magda::TimelineUtils::beatsToSeconds(newLoopLengthBeats, bpm);
-        double newLoopLengthSeconds = timelineSeconds / clip->speedRatio;
+        double newLoopLengthSeconds = magda::TimelineUtils::beatsToSeconds(newLoopLengthBeats, bpm);
 
         if (clip->view == magda::ClipView::Session) {
             double clipEndSeconds = clip->length;
@@ -502,6 +527,37 @@ InspectorContent::InspectorContent() {
         magda::ClipManager::getInstance().setLoopLength(selectedClipId_, newLoopLengthSeconds);
     };
     addChildComponent(*clipLoopLengthValue_);
+
+    // Loop offset (phase relative to loop start)
+    clipLoopOffsetLabel_.setText("Loop Offset", juce::dontSendNotification);
+    clipLoopOffsetLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    clipLoopOffsetLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    addChildComponent(clipLoopOffsetLabel_);
+
+    clipLoopOffsetValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
+    clipLoopOffsetValue_->setRange(-10000.0, 10000.0, 0.0);
+    clipLoopOffsetValue_->setDoubleClickResetsValue(true);
+    clipLoopOffsetValue_->setBarsBeatsIsPosition(false);
+    clipLoopOffsetValue_->onValueChange = [this]() {
+        if (selectedClipId_ == magda::INVALID_CLIP_ID)
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
+        if (!clip)
+            return;
+
+        double bpm = 120.0;
+        if (timelineController_) {
+            bpm = timelineController_->getState().tempo.bpm;
+        }
+        // Loop offset in source-time beats -> source seconds (no speedRatio conversion)
+        double loopOffsetBeats = clipLoopOffsetValue_->getValue();
+        double loopOffsetSource = magda::TimelineUtils::beatsToSeconds(loopOffsetBeats, bpm);
+        // offset = loopStart + loopOffsetSource
+        double newOffset = clip->loopStart + loopOffsetSource;
+        newOffset = juce::jmax(0.0, newOffset);
+        magda::ClipManager::getInstance().setOffset(selectedClipId_, newOffset);
+    };
+    addChildComponent(*clipLoopOffsetValue_);
 
     // ========================================================================
     // Session clip launch properties
@@ -814,7 +870,7 @@ void InspectorContent::resized() {
             bounds.removeFromTop(8);
         }
 
-        // Loop: toggle + Length
+        // Loop: toggle + Start + Length
         if (clipLoopToggle_->isVisible()) {
             const int loopSize = 22;
             const int gap = 4;
@@ -822,11 +878,19 @@ void InspectorContent::resized() {
 
             auto labelRow = bounds.removeFromTop(16);
             labelRow.removeFromLeft(loopSize + gap);  // space for toggle column
+            if (clipLoopStartLabel_.isVisible()) {
+                clipLoopStartLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
+                labelRow.removeFromLeft(gap);
+            }
             clipLoopLengthLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
 
             auto valueRow = bounds.removeFromTop(loopSize);
             clipLoopToggle_->setBounds(valueRow.removeFromLeft(loopSize));
             valueRow.removeFromLeft(gap);
+            if (clipLoopStartValue_->isVisible()) {
+                clipLoopStartValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
+                valueRow.removeFromLeft(gap);
+            }
             clipLoopLengthValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
             bounds.removeFromTop(8);
         }
@@ -841,6 +905,16 @@ void InspectorContent::resized() {
             clipContentOffsetIcon_->setBounds(valueRow.removeFromLeft(iconSize));
             valueRow.removeFromLeft(gap);
             clipContentOffsetValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
+            bounds.removeFromTop(8);
+        }
+
+        // Loop Offset (phase relative to loop start)
+        if (clipLoopOffsetLabel_.isVisible()) {
+            const int gap = 4;
+            int fieldWidth = (bounds.getWidth() - gap) / 2;
+
+            clipLoopOffsetLabel_.setBounds(bounds.removeFromTop(16).removeFromLeft(fieldWidth));
+            clipLoopOffsetValue_->setBounds(bounds.removeFromTop(22).removeFromLeft(fieldWidth));
             bounds.removeFromTop(8);
         }
 
@@ -1329,6 +1403,42 @@ void InspectorContent::updateFromSelectedClip() {
         return;
     }
 
+    // Sanitize stale audio clip values (e.g. offset past file end from old model)
+    auto* mutableClip = magda::ClipManager::getInstance().getClip(selectedClipId_);
+    if (mutableClip && mutableClip->type == magda::ClipType::Audio &&
+        !mutableClip->audioFilePath.isEmpty()) {
+        auto* thumbnail =
+            magda::AudioThumbnailManager::getInstance().getThumbnail(mutableClip->audioFilePath);
+        if (thumbnail) {
+            double fileDur = thumbnail->getTotalLength();
+            if (fileDur > 0.0) {
+                bool fixed = false;
+                if (mutableClip->offset > fileDur) {
+                    mutableClip->offset = juce::jmin(mutableClip->offset, fileDur);
+                    fixed = true;
+                }
+                if (mutableClip->loopStart > fileDur) {
+                    mutableClip->loopStart = 0.0;
+                    fixed = true;
+                }
+                double avail = fileDur - mutableClip->loopStart;
+                if (mutableClip->loopLength > avail) {
+                    mutableClip->loopLength = avail;
+                    fixed = true;
+                }
+                if (mutableClip->offset > fileDur) {
+                    mutableClip->offset = juce::jmin(mutableClip->offset, fileDur);
+                    fixed = true;
+                }
+                if (fixed) {
+                    magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(
+                        selectedClipId_);
+                    return;  // Will be called again with fixed values
+                }
+            }
+        }
+    }
+
     const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
     if (clip) {
         clipNameValue_.setText(clip->name, juce::dontSendNotification);
@@ -1405,9 +1515,8 @@ void InspectorContent::updateFromSelectedClip() {
 
         double sourceLength =
             clip->loopLength > 0.0 ? clip->loopLength : clip->length / clip->speedRatio;
-        // Display in timeline seconds (source * speedRatio) converted to beats
-        double timelineSeconds = sourceLength * clip->speedRatio;
-        clipLoopLengthValue_->setValue(magda::TimelineUtils::secondsToBeats(timelineSeconds, bpm),
+        // Display in source-time beats (independent of speedRatio, consistent with loopStart)
+        clipLoopLengthValue_->setValue(magda::TimelineUtils::secondsToBeats(sourceLength, bpm),
                                        juce::dontSendNotification);
 
         clipLoopToggle_->setActive(clip->loopEnabled);
@@ -1434,6 +1543,28 @@ void InspectorContent::updateFromSelectedClip() {
         clipLoopLengthValue_->setEnabled(loopOn);
         clipLoopLengthValue_->setAlpha(loopOn ? 1.0f : 0.4f);
         clipLoopLengthLabel_.setAlpha(loopOn ? 1.0f : 0.4f);
+
+        // Loop start control (only when loop is enabled on audio clips)
+        bool showLoopStart = clip->loopEnabled && isAudioClip;
+        clipLoopStartLabel_.setVisible(showLoopStart);
+        clipLoopStartValue_->setVisible(showLoopStart);
+        if (showLoopStart) {
+            clipLoopStartValue_->setBeatsPerBar(beatsPerBar);
+            double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip->loopStart, bpm);
+            clipLoopStartValue_->setValue(loopStartBeats, juce::dontSendNotification);
+        }
+
+        // Loop offset (phase relative to loop start, audio clips only)
+        bool showLoopOffset = isAudioClip;
+        clipLoopOffsetLabel_.setVisible(showLoopOffset);
+        clipLoopOffsetValue_->setVisible(showLoopOffset);
+        if (showLoopOffset) {
+            clipLoopOffsetValue_->setBeatsPerBar(beatsPerBar);
+            // offset - loopStart in source seconds, converted directly to beats (no speedRatio)
+            double loopOffsetSource = clip->offset - clip->loopStart;
+            double loopOffsetBeats = magda::TimelineUtils::secondsToBeats(loopOffsetSource, bpm);
+            clipLoopOffsetValue_->setValue(loopOffsetBeats, juce::dontSendNotification);
+        }
 
         // Session clip launch properties
         launchModeLabel_.setVisible(false);
@@ -1505,10 +1636,14 @@ void InspectorContent::showClipControls(bool show) {
             clipStretchValue_->setVisible(false);
         stretchModeCombo_.setVisible(false);
     }
-    // Loop length visibility is managed by updateFromSelectedClip
+    // Loop start, length, and offset visibility is managed by updateFromSelectedClip
     if (!show) {
+        clipLoopStartLabel_.setVisible(false);
+        clipLoopStartValue_->setVisible(false);
         clipLoopLengthLabel_.setVisible(false);
         clipLoopLengthValue_->setVisible(false);
+        clipLoopOffsetLabel_.setVisible(false);
+        clipLoopOffsetValue_->setVisible(false);
     }
 
     // Session launch controls are conditionally shown in updateFromSelectedClip

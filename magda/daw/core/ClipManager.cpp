@@ -38,7 +38,7 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
 
     // Set loopStart to offset (0), loopLength to the clip's source extent
     clip.loopStart = 0.0;
-    clip.loopLength = length / clip.speedRatio;
+    clip.setLoopLengthFromTimeline(length);
 
     // Add to appropriate array based on view
     if (view == ClipView::Arrangement) {
@@ -277,7 +277,6 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
     // Adjust offset for right clip (TE-aligned: offset is start position in source)
     if (rightClip.type == ClipType::Audio) {
         rightClip.offset += leftLength / clip->speedRatio;
-        rightClip.loopStart = rightClip.offset;
     }
 
     // Handle MIDI clip splitting - DESTRUCTIVE (each clip owns its notes)
@@ -364,9 +363,10 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
         if (enabled && clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty()) {
             // Ensure loopLength is set (preserves source extent in loop mode)
             if (clip->loopLength <= 0.0) {
-                clip->loopStart = clip->offset;
-                clip->loopLength = clip->length / clip->speedRatio;
+                clip->setLoopLengthFromTimeline(clip->length);
             }
+
+            sanitizeAudioClip(*clip);
         }
 
         // When disabling loop on audio clips, clamp length to actual file content
@@ -374,13 +374,7 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
             auto* thumbnail =
                 AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
             if (thumbnail) {
-                double fileDuration = thumbnail->getTotalLength();
-                if (fileDuration > 0.0) {
-                    double maxLength = (fileDuration - clip->offset) * clip->speedRatio;
-                    if (clip->length > maxLength) {
-                        clip->length = juce::jmax(ClipOperations::MIN_CLIP_LENGTH, maxLength);
-                    }
-                }
+                clip->clampLengthToSource(thumbnail->getTotalLength());
             }
         }
 
@@ -427,30 +421,17 @@ void ClipManager::setOffset(ClipId clipId, double offset) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
             clip->offset = juce::jmax(0.0, offset);
-            clip->loopStart = clip->offset;  // Keep in sync
+            sanitizeAudioClip(*clip);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
 
-            if (!clip->audioFilePath.isEmpty()) {
-                auto* thumbnail =
-                    AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
-                if (thumbnail) {
-                    double fileDuration = thumbnail->getTotalLength();
-                    double available = fileDuration - clip->offset;
-
-                    // Clamp loopLength so loop region stays within file
-                    if (clip->loopLength > available) {
-                        clip->loopLength = juce::jmax(0.0, available);
-                    }
-
-                    // Clamp clip length to available audio (for non-looped clips)
-                    if (!clip->loopEnabled) {
-                        double maxLength = available * clip->speedRatio;
-                        if (clip->length > maxLength) {
-                            clip->length = juce::jmax(ClipOperations::MIN_CLIP_LENGTH, maxLength);
-                        }
-                    }
-                }
-            }
-
+void ClipManager::setLoopPhase(ClipId clipId, double phase) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio && clip->loopEnabled) {
+            clip->offset = clip->loopStart + phase;
+            sanitizeAudioClip(*clip);
             notifyClipPropertyChanged(clipId);
         }
     }
@@ -458,15 +439,21 @@ void ClipManager::setOffset(ClipId clipId, double offset) {
 
 void ClipManager::setLoopStart(ClipId clipId, double loopStart) {
     if (auto* clip = getClip(clipId)) {
-        clip->loopStart = juce::jmax(0.0, loopStart);
-        notifyClipPropertyChanged(clipId);
+        if (clip->type == ClipType::Audio) {
+            clip->loopStart = juce::jmax(0.0, loopStart);
+            sanitizeAudioClip(*clip);
+            notifyClipPropertyChanged(clipId);
+        }
     }
 }
 
 void ClipManager::setLoopLength(ClipId clipId, double loopLength) {
     if (auto* clip = getClip(clipId)) {
-        clip->loopLength = juce::jmax(0.0, loopLength);
-        notifyClipPropertyChanged(clipId);
+        if (clip->type == ClipType::Audio) {
+            clip->loopLength = juce::jmax(0.0, loopLength);
+            sanitizeAudioClip(*clip);
+            notifyClipPropertyChanged(clipId);
+        }
     }
 }
 
@@ -869,6 +856,36 @@ juce::String ClipManager::generateClipName(ClipType type) const {
         return "Audio " + juce::String(count);
     } else {
         return "MIDI " + juce::String(count);
+    }
+}
+
+void ClipManager::sanitizeAudioClip(ClipInfo& clip) {
+    if (clip.type != ClipType::Audio || clip.audioFilePath.isEmpty())
+        return;
+
+    auto* thumbnail = AudioThumbnailManager::getInstance().getThumbnail(clip.audioFilePath);
+    if (!thumbnail)
+        return;
+
+    double fileDuration = thumbnail->getTotalLength();
+    if (fileDuration <= 0.0)
+        return;
+
+    // Clamp loopStart to file bounds
+    clip.loopStart = juce::jlimit(0.0, fileDuration, clip.loopStart);
+
+    // Clamp loopLength so loop region doesn't exceed file
+    double availableFromLoop = fileDuration - clip.loopStart;
+    if (clip.loopLength > availableFromLoop) {
+        clip.loopLength = juce::jmax(0.0, availableFromLoop);
+    }
+
+    // Clamp offset to file bounds
+    clip.offset = juce::jlimit(0.0, fileDuration, clip.offset);
+
+    // Non-loop mode: clamp clip length to available source
+    if (!clip.loopEnabled) {
+        clip.clampLengthToSource(fileDuration);
     }
 }
 

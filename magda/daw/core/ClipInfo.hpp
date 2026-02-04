@@ -73,14 +73,37 @@ struct ClipInfo {
     LaunchMode launchMode = LaunchMode::Trigger;
     LaunchQuantize launchQuantize = LaunchQuantize::None;
 
+    // Constants
+    static constexpr double MIN_CLIP_LENGTH = 0.1;
+
     // Helpers
     double getEndTime() const {
         return startTime + length;
     }
 
+    /// Convert source-time to timeline-time (internal convention: timeline = source * speedRatio)
+    double sourceToTimeline(double sourceTime) const {
+        return sourceTime * speedRatio;
+    }
+
+    /// Convert timeline-time to source-time (internal convention: source = timeline / speedRatio)
+    double timelineToSource(double timelineTime) const {
+        return timelineTime / speedRatio;
+    }
+
     /// Effective source length: loopLength if set, otherwise derived from clip length
     double getSourceLength() const {
-        return loopLength > 0.0 ? loopLength : length / speedRatio;
+        return loopLength > 0.0 ? loopLength : timelineToSource(length);
+    }
+
+    /// Source length expressed in timeline seconds
+    double getSourceLengthOnTimeline() const {
+        return sourceToTimeline(getSourceLength());
+    }
+
+    /// Loop phase: offset relative to loopStart (meaningful in loop mode)
+    double getLoopPhase() const {
+        return offset - loopStart;
     }
 
     /// TE offset: phase within the loop region, in stretched time
@@ -96,6 +119,28 @@ struct ClipInfo {
     /// TE loop end in stretched time
     double getTeLoopEnd() const {
         return (loopStart + getSourceLength()) / speedRatio;
+    }
+
+    /// Sync loopStart to match offset (keeps loop region anchored to playback start)
+    void syncLoopStartToOffset() {
+        loopStart = offset;
+    }
+
+    /// Set loopLength from a timeline-time extent (converts to source-time)
+    void setLoopLengthFromTimeline(double timelineLength) {
+        loopLength = timelineToSource(timelineLength);
+    }
+
+    /// Clamp clip length so a non-looped clip doesn't exceed the available source audio.
+    /// @param fileDuration Total duration of the audio file (seconds)
+    void clampLengthToSource(double fileDuration) {
+        if (!loopEnabled && fileDuration > 0.0) {
+            double available = fileDuration - offset;
+            double maxLength = available * speedRatio;
+            if (length > maxLength) {
+                length = juce::jmax(MIN_CLIP_LENGTH, maxLength);
+            }
+        }
     }
 
     bool containsTime(double time) const {

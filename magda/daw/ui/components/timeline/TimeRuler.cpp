@@ -105,6 +105,12 @@ void TimeRuler::setLoopRegion(double offsetSeconds, double lengthSeconds, bool e
     repaint();
 }
 
+void TimeRuler::setLoopPhaseMarker(double positionSeconds, bool visible) {
+    loopPhasePosition = positionSeconds;
+    loopPhaseVisible = visible;
+    repaint();
+}
+
 void TimeRuler::setLinkedViewport(juce::Viewport* viewport) {
     linkedViewport = viewport;
     if (linkedViewport) {
@@ -385,6 +391,22 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
                                     static_cast<float>(flagTop + 5));
                 g.fillPath(endFlag);
             }
+        }
+    }
+
+    // Draw loop phase marker (yellow)
+    if (loopPhaseVisible && loopEnabled) {
+        double phaseTime = relativeMode ? loopPhasePosition : (timeOffset + loopPhasePosition);
+        int phaseX = timeToPixel(phaseTime);
+        if (phaseX >= 0 && phaseX <= width) {
+            auto col = juce::Colour(0xFFCCAA44);  // OFFSET_MARKER yellow
+            g.setColour(col);
+            g.fillRect(phaseX - 1, 0, 2, height);
+            // Downward triangle at top
+            juce::Path flag;
+            float fx = static_cast<float>(phaseX);
+            flag.addTriangle(fx - 5.0f, 2.0f, fx + 5.0f, 2.0f, fx, 10.0f);
+            g.fillPath(flag);
         }
     }
 

@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <iostream>
 
 #include "ClipInfo.hpp"
 
@@ -37,10 +36,17 @@ struct ClipDisplayInfo {
 
     // Loop (all in seconds) - TE: AudioClipBase loopStart/loopLength
     bool loopEnabled;
-    double loopStart;               // where loop starts in source file
-    double loopOffset;              // phase within loop region, derived from offset - loopStart
-    double loopLengthSeconds;       // loop duration in timeline seconds
-    double loopEndPositionSeconds;  // where loop region ends on timeline (for drawing)
+    double loopStart;          // where loop starts in source file
+    double loopOffset;         // phase within loop region, derived from offset - loopStart
+    double loopLengthSeconds;  // loop duration in timeline seconds (from clip's actual loopLength)
+    double loopStartPositionSeconds;  // loop start position in editor (0 when looped, relative to
+                                      // offset otherwise)
+    double loopEndPositionSeconds;    // loopStartPositionSeconds + loopLengthSeconds
+    double offsetPositionSeconds;  // playback start position relative to display anchor (loopStart
+                                   // when looped)
+
+    // Full source extent (from display anchor to file end, for waveform editor)
+    double fullSourceExtentSeconds;
 
     // Source-file ranges for waveform drawing
     double sourceFileStart;  // Where to start reading from source file
@@ -88,61 +94,70 @@ struct ClipDisplayInfo {
         if (clip.loopEnabled && clip.loopLength > 0.0) {
             d.sourceLength = clip.loopLength;
             d.loopStart = clip.loopStart;
+            // Clamp loop region to available audio
+            if (fileDuration > 0.0 && d.loopStart + d.sourceLength > fileDuration) {
+                d.sourceLength = std::max(0.001, fileDuration - d.loopStart);
+            }
         } else if (fileDuration > 0.0 && fileDuration > clip.offset) {
             d.sourceLength = fileDuration - clip.offset;
             d.loopStart = clip.offset;
         } else {
             // Fallback: derive from clip length
-            d.sourceLength = clip.length / d.speedRatio;
+            d.sourceLength = clip.timelineToSource(clip.length);
             d.loopStart = clip.offset;
         }
-        d.sourceExtentSeconds = d.sourceLength * d.speedRatio;
+        d.sourceExtentSeconds = clip.sourceToTimeline(d.sourceLength);
 
         d.loopEnabled = clip.loopEnabled;
 
         // Compute loop offset: phase within the loop region derived from offset - loopStart
         d.loopOffset = wrapPhase(clip.offset - clip.loopStart, d.sourceLength);
 
-        // Loop length in timeline seconds is the source region stretched
-        d.loopLengthSeconds = d.sourceLength * d.speedRatio;
-        d.loopEndPositionSeconds = d.loopLengthSeconds;  // Loop region starts at 0 in clip-relative
+        d.loopLengthSeconds = clip.loopLength > 0.0 ? clip.loopLength * clip.speedRatio : 0.0;
+
+        if (clip.loopEnabled && clip.loopLength > 0.0) {
+            // In loop mode, anchor display at loopStart.
+            // Loop starts at position 0, offset is shown as a phase marker.
+            d.loopStartPositionSeconds = 0.0;
+            d.loopEndPositionSeconds = d.loopLengthSeconds;
+            d.offsetPositionSeconds = (clip.offset - clip.loopStart) * clip.speedRatio;
+
+            // Full source extent from loopStart to file end
+            if (fileDuration > 0.0 && fileDuration > clip.loopStart) {
+                d.fullSourceExtentSeconds = (fileDuration - clip.loopStart) * clip.speedRatio;
+            } else {
+                d.fullSourceExtentSeconds = d.sourceExtentSeconds;
+            }
+        } else {
+            // Non-loop: anchor at offset
+            d.loopStartPositionSeconds =
+                std::max(0.0, (clip.loopStart - clip.offset) * clip.speedRatio);
+            d.loopEndPositionSeconds = d.loopStartPositionSeconds + d.loopLengthSeconds;
+            d.offsetPositionSeconds = 0.0;  // offset IS position 0
+
+            // Full source extent from offset to file end
+            if (fileDuration > 0.0 && fileDuration > clip.offset) {
+                d.fullSourceExtentSeconds = (fileDuration - clip.offset) * clip.speedRatio;
+            } else {
+                d.fullSourceExtentSeconds = d.sourceExtentSeconds;
+            }
+        }
 
         if (d.loopEnabled && d.sourceLength > 0.0) {
-            // In loop mode, offset determines where in the source we start
-            double phase = wrapPhase(clip.offset - clip.loopStart, d.sourceLength);
-            d.sourceFileStart = d.loopStart + phase;
+            // In loop mode, show the full loop region from loopStart.
+            // Phase (offset - loopStart) only affects playback position,
+            // not the displayed source range.
+            d.sourceFileStart = d.loopStart;
             d.sourceFileEnd = d.loopStart + d.sourceLength;
 
-            // When clip is shorter than one loop cycle, only show what fits
-            double maxSourceEnd = d.sourceFileStart + (clip.length / d.speedRatio);
-            if (maxSourceEnd < d.sourceFileEnd) {
-                d.sourceFileEnd = maxSourceEnd;
+            // Clamp to file bounds
+            if (fileDuration > 0.0 && d.sourceFileEnd > fileDuration) {
+                d.sourceFileEnd = fileDuration;
             }
         } else {
             // Non-looped: simple linear mapping from offset
             d.sourceFileStart = clip.offset;
             d.sourceFileEnd = clip.offset + d.sourceLength;
-        }
-
-        // DEBUG: Log all values to understand the model
-        static int logCount = 0;
-        if (++logCount % 100 == 1) {  // Throttle logging
-            std::cout << "=== ClipDisplayInfo::from() ===" << std::endl;
-            std::cout << "  INPUT (ClipInfo):" << std::endl;
-            std::cout << "    offset=" << clip.offset << "s" << std::endl;
-            std::cout << "    loopStart=" << clip.loopStart << "s" << std::endl;
-            std::cout << "    loopLength=" << clip.loopLength << "s" << std::endl;
-            std::cout << "    speedRatio=" << clip.speedRatio << std::endl;
-            std::cout << "    startTime=" << clip.startTime << "s, length=" << clip.length << "s"
-                      << std::endl;
-            std::cout << "    loopEnabled=" << clip.loopEnabled << std::endl;
-            std::cout << "  OUTPUT (ClipDisplayInfo):" << std::endl;
-            std::cout << "    sourceLength=" << d.sourceLength << "s" << std::endl;
-            std::cout << "    sourceExtentSeconds=" << d.sourceExtentSeconds << "s" << std::endl;
-            std::cout << "    loopLengthSeconds=" << d.loopLengthSeconds << "s" << std::endl;
-            std::cout << "    sourceFileStart=" << d.sourceFileStart << "s" << std::endl;
-            std::cout << "    sourceFileEnd=" << d.sourceFileEnd << "s" << std::endl;
-            std::cout << "===============================" << std::endl;
         }
 
         return d;

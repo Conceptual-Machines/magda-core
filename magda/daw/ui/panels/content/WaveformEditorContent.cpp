@@ -142,10 +142,10 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
                 auto di = magda::ClipDisplayInfo::from(*clip, bpm);
 
                 if (di.loopLengthSeconds > 0.0) {
-                    // Position relative to clip start, offset by loop phase
+                    // Position relative to clip start, wrapped within loop cycle
                     double relPos = playPos - clip->startTime;
                     if (relPos >= 0.0) {
-                        relPos = std::fmod(relPos, di.loopLengthSeconds) + di.loopOffset;
+                        relPos = std::fmod(relPos, di.loopLengthSeconds);
                         playPos = clip->startTime + relPos;
                     }
                 }
@@ -812,9 +812,16 @@ void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
     gridComponent_->setDisplayInfo(info);
 
     // Update time ruler loop region (green markers with triangles)
-    // Use loopEnabled directly instead of isLooped() which has additional constraints
+    // In loop mode, display is anchored at loopStart, so loop starts at position 0
     if (timeRuler_) {
-        timeRuler_->setLoopRegion(info.loopOffset, info.loopLengthSeconds, info.loopEnabled);
+        bool showMarkers = clip.loopLength > 0.0;
+        double loopStartPos = info.loopStartPositionSeconds;
+        double loopLen = info.loopLengthSeconds;
+        timeRuler_->setLoopRegion(loopStartPos, loopLen, showMarkers);
+
+        // Show offset/phase marker when offset differs from loopStart
+        bool showPhase = info.loopEnabled && std::abs(info.offsetPositionSeconds) > 0.001;
+        timeRuler_->setLoopPhaseMarker(info.offsetPositionSeconds, showPhase);
     }
 }
 

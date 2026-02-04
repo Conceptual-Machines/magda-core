@@ -3,7 +3,6 @@
 #include <juce_core/juce_core.h>
 
 #include <cmath>
-#include <iostream>
 
 #include "ClipInfo.hpp"
 
@@ -32,7 +31,7 @@ class ClipOperations {
     // Constraint Constants
     // ========================================================================
 
-    static constexpr double MIN_CLIP_LENGTH = 0.1;
+    static constexpr double MIN_CLIP_LENGTH = ClipInfo::MIN_CLIP_LENGTH;
     static constexpr double MIN_SOURCE_LENGTH = 0.01;
     static constexpr double MIN_SPEED_RATIO = 0.25;
     static constexpr double MAX_SPEED_RATIO = 4.0;
@@ -84,19 +83,10 @@ class ClipOperations {
         double actualDelta = newStartTime - clip.startTime;
 
         if (clip.type == ClipType::Audio && !clip.audioFilePath.isEmpty()) {
-            std::cout << "=== resizeContainerFromLeft ===" << std::endl;
-            std::cout << "  BEFORE: offset=" << clip.offset << ", loopEnabled=" << clip.loopEnabled
-                      << std::endl;
-            std::cout << "  actualDelta=" << actualDelta << ", newLength=" << newLength
-                      << std::endl;
-
             if (!clip.loopEnabled) {
                 // Non-looped: adjust offset so content stays at timeline position
                 double sourceDelta = actualDelta / clip.speedRatio;
                 clip.offset = juce::jmax(0.0, clip.offset + sourceDelta);
-
-                // Also adjust loopStart to maintain consistency
-                clip.loopStart = clip.offset;
             } else {
                 // Looped: adjust offset (wrapped within loop region) so content stays at timeline
                 // position
@@ -108,9 +98,6 @@ class ClipOperations {
                     clip.offset = clip.loopStart + wrapPhase(relOffset + phaseDelta, sourceLength);
                 }
             }
-
-            std::cout << "  AFTER: offset=" << clip.offset << std::endl;
-            std::cout << "================================" << std::endl;
         }
 
         clip.startTime = newStartTime;
@@ -131,10 +118,7 @@ class ClipOperations {
 
         // For non-looped audio clips, update loopLength to track (used for display)
         if (clip.type == ClipType::Audio && !clip.audioFilePath.isEmpty() && !clip.loopEnabled) {
-            // In non-loop mode, loopStart/loopLength can track offset + clip extent
-            // (they define what would loop if looping were enabled)
-            clip.loopStart = clip.offset;
-            clip.loopLength = newLength / clip.speedRatio;
+            clip.setLoopLengthFromTimeline(newLength);
         }
 
         clip.length = newLength;
@@ -165,7 +149,6 @@ class ClipOperations {
         double timelineDelta = actualSourceDelta * clip.speedRatio;
 
         clip.offset = newOffset;
-        clip.loopStart = newOffset;  // Keep in sync
         clip.startTime = juce::jmax(0.0, clip.startTime + timelineDelta);
         clip.length = juce::jmax(MIN_CLIP_LENGTH, clip.length - timelineDelta);
     }
@@ -191,7 +174,7 @@ class ClipOperations {
 
         // Update loopLength to track for non-looped clips
         if (!clip.loopEnabled) {
-            clip.loopLength = newLength / clip.speedRatio;
+            clip.setLoopLengthFromTimeline(newLength);
         }
     }
 
@@ -288,6 +271,139 @@ class ClipOperations {
         resizeContainerFromRight(clip, newLength);
 
         stretchAudioFromRight(clip, newLength, oldLength, originalSpeedRatio);
+    }
+
+    // ========================================================================
+    // Arrangement Drag Helpers (absolute target state)
+    // ========================================================================
+
+    /**
+     * @brief Resize container to absolute target start/length (for drag preview).
+     * Maintains loopLength invariant for non-looped clips.
+     * @param clip Clip to resize
+     * @param newStartTime New start time
+     * @param newLength New clip length
+     */
+    static inline void resizeContainerAbsolute(ClipInfo& clip, double newStartTime,
+                                               double newLength) {
+        clip.startTime = newStartTime;
+        resizeContainerFromRight(clip, newLength);
+    }
+
+    /**
+     * @brief Stretch to absolute target speed/length (for drag preview).
+     * Maintains loopLength when looped (keeps loop markers fixed on timeline).
+     * @param clip Clip to stretch
+     * @param newSpeedRatio New speed ratio
+     * @param newLength New clip length
+     */
+    static inline void stretchAbsolute(ClipInfo& clip, double newSpeedRatio, double newLength) {
+        clip.speedRatio = newSpeedRatio;
+        clip.length = newLength;
+
+        // For non-looped clips, loopLength tracks with clip length
+        if (!clip.loopEnabled) {
+            clip.setLoopLengthFromTimeline(newLength);
+        }
+    }
+
+    /**
+     * @brief Stretch from left edge to absolute target (for drag preview).
+     * Keeps right edge fixed.
+     * @param clip Clip to stretch
+     * @param newSpeedRatio New speed ratio
+     * @param newLength New clip length
+     * @param rightEdge Fixed right edge position
+     */
+    static inline void stretchAbsoluteFromLeft(ClipInfo& clip, double newSpeedRatio,
+                                               double newLength, double rightEdge) {
+        clip.speedRatio = newSpeedRatio;
+        clip.length = newLength;
+        clip.startTime = rightEdge - newLength;
+
+        // For non-looped clips, loopLength tracks with clip length
+        if (!clip.loopEnabled) {
+            clip.setLoopLengthFromTimeline(newLength);
+        }
+    }
+
+    // ========================================================================
+    // Editor-Specific Operations
+    // ========================================================================
+
+    /**
+     * @brief Move loop start (editor left-edge drag in loop mode)
+     * @param clip Clip to modify
+     * @param newLoopStart New loop start position in source time
+     * @param fileDuration Total file duration for clamping
+     */
+    static inline void moveLoopStart(ClipInfo& clip, double newLoopStart, double fileDuration) {
+        clip.loopStart = newLoopStart;
+        // Clamp loopLength to available audio from new loopStart
+        if (fileDuration > 0.0) {
+            double avail = fileDuration - clip.loopStart;
+            if (clip.loopLength > avail)
+                clip.loopLength = juce::jmax(0.0, avail);
+        }
+        clip.clampLengthToSource(fileDuration);
+    }
+
+    /**
+     * @brief Set source extent via timeline extent (editor right-edge drag)
+     * Updates loopLength from timeline extent.
+     * For non-looped clips, also updates clip.length.
+     * @param clip Clip to modify
+     * @param newTimelineExtent New extent in timeline seconds
+     */
+    static inline void resizeSourceExtent(ClipInfo& clip, double newTimelineExtent) {
+        clip.setLoopLengthFromTimeline(newTimelineExtent);
+        if (!clip.loopEnabled) {
+            clip.length = newTimelineExtent;
+        }
+    }
+
+    /**
+     * @brief Stretch in editor (changes speedRatio, scales clip.length,
+     * adjusts loopLength for looped clips)
+     * @param clip Clip to stretch
+     * @param newSpeedRatio New speed ratio
+     * @param clipLengthScaleFactor Ratio of new speed to original speed (newSpeedRatio /
+     * dragStartSpeedRatio)
+     * @param dragStartClipLength Original clip length at drag start
+     * @param dragStartExtent Source extent in timeline seconds at drag start (for loopLength calc)
+     */
+    static inline void stretchEditor(ClipInfo& clip, double newSpeedRatio,
+                                     double clipLengthScaleFactor, double dragStartClipLength,
+                                     double dragStartExtent) {
+        clip.speedRatio = newSpeedRatio;
+        clip.length = dragStartClipLength * clipLengthScaleFactor;
+        // In loop mode, adjust loopLength to keep loop markers fixed on timeline
+        if (clip.loopEnabled && clip.loopLength > 0.0) {
+            clip.loopLength = dragStartExtent / newSpeedRatio;
+        }
+    }
+
+    /**
+     * @brief Stretch from left in editor (also adjusts startTime)
+     * @param clip Clip to stretch
+     * @param newSpeedRatio New speed ratio
+     * @param clipLengthScaleFactor Ratio of new speed to original speed (newSpeedRatio /
+     * dragStartSpeedRatio)
+     * @param dragStartClipLength Original clip length at drag start
+     * @param dragStartExtent Source extent in timeline seconds at drag start (for loopLength calc)
+     * @param rightEdge Fixed right edge position (dragStartStartTime + dragStartClipLength)
+     */
+    static inline void stretchEditorFromLeft(ClipInfo& clip, double newSpeedRatio,
+                                             double clipLengthScaleFactor,
+                                             double dragStartClipLength, double dragStartExtent,
+                                             double rightEdge) {
+        clip.speedRatio = newSpeedRatio;
+        clip.length = dragStartClipLength * clipLengthScaleFactor;
+        clip.startTime = rightEdge - clip.length;
+        // In loop mode, adjust loopLength to keep loop markers fixed on timeline
+        if (clip.loopEnabled && clip.loopLength > 0.0) {
+            clip.loopLength = dragStartExtent / newSpeedRatio;
+        }
     }
 
   private:

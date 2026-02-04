@@ -172,6 +172,8 @@ class ClipManager {
     /** @brief Set the offset (start position) in the audio file (source-time seconds) - TE:
      * Clip::offset */
     void setOffset(ClipId clipId, double offset);
+    /** @brief Set the loop phase (offset relative to loopStart) in loop mode */
+    void setLoopPhase(ClipId clipId, double phase);
     /** @brief Set the loop region start in the audio file (source-time seconds) - TE:
      * AudioClipBase::loopStart */
     void setLoopStart(ClipId clipId, double loopStart);
@@ -397,6 +399,9 @@ class ClipManager {
     void notifyClipPropertyChanged(ClipId clipId);
     void notifyClipSelectionChanged(ClipId clipId);
     void notifyClipPlaybackStateChanged(ClipId clipId);
+
+    // Clamp audio clip properties (offset, loopStart, loopLength) to file bounds
+    void sanitizeAudioClip(ClipInfo& clip);
 
     // Helper to generate unique clip name
     juce::String generateClipName(ClipType type) const;

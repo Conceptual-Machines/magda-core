@@ -10,6 +10,7 @@
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
+#include "core/ClipOperations.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
@@ -60,8 +61,9 @@ void ClipComponent::paint(juce::Graphics& g) {
         double displayLength =
             (isDragging_ && previewLength_ > 0.0) ? previewLength_ : clip->length;
         double clipLengthInBeats = displayLength * beatsPerSecond;
-        // Loop length in beats: source length (seconds) / speedRatio * beatsPerSecond
-        double loopLengthBeats = srcLength / clip->speedRatio * beatsPerSecond;
+        // Loop length in beats: source length (seconds) * speedRatio (stretch factor) *
+        // beatsPerSecond
+        double loopLengthBeats = srcLength * clip->speedRatio * beatsPerSecond;
         double beatRange = juce::jmax(1.0, clipLengthInBeats);
         int numBoundaries = static_cast<int>(clipLengthInBeats / loopLengthBeats);
         auto markerColour = juce::Colours::lightgrey;
@@ -232,9 +234,9 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                 // Looped: tile the waveform for each loop cycle
                 double loopCycle = di.loopLengthSeconds;
 
-                // File range per cycle from display info (adjusted for drag offset)
-                double fileStart = displayOffset + di.loopOffset / di.speedRatio;
-                double fileEnd = fileStart + loopCycle / di.speedRatio;
+                // File range per cycle: the loop region in the source file
+                double fileStart = di.loopStart;
+                double fileEnd = di.loopStart + di.sourceLength;
                 if (fileDuration > 0.0 && fileEnd > fileDuration)
                     fileEnd = fileDuration;
 
@@ -762,8 +764,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             if (resizeThrottle_.check()) {
                 auto& cm = magda::ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
-                    mutableClip->startTime = finalStartTime;
-                    mutableClip->length = finalLength;
+                    ClipOperations::resizeContainerAbsolute(*mutableClip, finalStartTime,
+                                                            finalLength);
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
             }
@@ -805,7 +807,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             if (resizeThrottle_.check()) {
                 auto& cm = magda::ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
-                    mutableClip->length = finalLength;
+                    ClipOperations::resizeContainerFromRight(*mutableClip, finalLength);
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
             }
@@ -849,8 +851,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             if (stretchThrottle_.check()) {
                 auto& cm = ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
-                    mutableClip->length = finalLength;
-                    mutableClip->speedRatio = newSpeedRatio;
+                    ClipOperations::stretchAbsolute(*mutableClip, newSpeedRatio, finalLength);
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
             }
@@ -892,9 +893,9 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             if (stretchThrottle_.check()) {
                 auto& cm = ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
-                    mutableClip->startTime = finalStartTime;
-                    mutableClip->length = finalLength;
-                    mutableClip->speedRatio = newSpeedRatio;
+                    double rightEdge = dragStartTime_ + dragStartLength_;
+                    ClipOperations::stretchAbsoluteFromLeft(*mutableClip, newSpeedRatio,
+                                                            finalLength, rightEdge);
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
             }
@@ -1049,17 +1050,14 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
 
                 // Compute final stretch factor from drag-start values
                 double stretchRatio = finalLength / dragStartLength_;
-                // speedRatio is inverse of stretchFactor: speedRatio = 1/stretchFactor
-                // So newSpeedRatio = dragStartSpeedRatio / stretchRatio
-                double newSpeedRatio = dragStartSpeedRatio_ / stretchRatio;
+                double newSpeedRatio = dragStartSpeedRatio_ * stretchRatio;
                 newSpeedRatio = juce::jlimit(0.25, 4.0, newSpeedRatio);
-                finalLength = dragStartLength_ * (dragStartSpeedRatio_ / newSpeedRatio);
+                finalLength = dragStartLength_ * (newSpeedRatio / dragStartSpeedRatio_);
 
                 // Apply final values
                 auto& cm = ClipManager::getInstance();
                 if (auto* clip = cm.getClip(clipId_)) {
-                    clip->length = finalLength;
-                    clip->speedRatio = newSpeedRatio;
+                    ClipOperations::stretchAbsolute(*clip, newSpeedRatio, finalLength);
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
 
@@ -1082,19 +1080,17 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 }
 
                 // Compute final speed ratio from drag-start values
-                // speedRatio is inverse of stretchFactor: speedRatio = 1/stretchFactor
                 double stretchRatio = finalLength / dragStartLength_;
-                double newSpeedRatio = dragStartSpeedRatio_ / stretchRatio;
+                double newSpeedRatio = dragStartSpeedRatio_ * stretchRatio;
                 newSpeedRatio = juce::jlimit(0.25, 4.0, newSpeedRatio);
-                finalLength = dragStartLength_ * (dragStartSpeedRatio_ / newSpeedRatio);
+                finalLength = dragStartLength_ * (newSpeedRatio / dragStartSpeedRatio_);
                 finalStartTime = endTime - finalLength;
 
                 // Apply final values
                 auto& cm = ClipManager::getInstance();
                 if (auto* clip = cm.getClip(clipId_)) {
-                    clip->startTime = finalStartTime;
-                    clip->length = finalLength;
-                    clip->speedRatio = newSpeedRatio;
+                    ClipOperations::stretchAbsoluteFromLeft(*clip, newSpeedRatio, finalLength,
+                                                            endTime);
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
 

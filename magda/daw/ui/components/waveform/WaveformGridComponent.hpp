@@ -207,6 +207,7 @@ class WaveformGridComponent : public juce::Component {
     int dragStartX_ = 0;
     double dragStartSpeedRatio_ = 1.0;
     double dragStartFileDuration_ = 0.0;
+    double dragStartClipLength_ = 0.0;  // Original clip.length at drag start (for stretch)
 
     // Throttled update for live preview
     static constexpr int DRAG_UPDATE_INTERVAL_MS = 50;  // Update arrangement view every 50ms
