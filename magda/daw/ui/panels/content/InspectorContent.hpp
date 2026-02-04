@@ -117,11 +117,14 @@ class InspectorContent : public PanelContent,
     juce::Label clipNameLabel_;
     juce::Label clipNameValue_;
     std::unique_ptr<magda::SvgButton> clipTypeIcon_;  // Audio (sinewave) or MIDI icon
+    juce::Label playbackColumnLabel_;
+    juce::Label loopColumnLabel_;
     std::unique_ptr<magda::SvgButton> clipPositionIcon_;
     juce::Label clipStartLabel_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipStartValue_;
     juce::Label clipEndLabel_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipEndValue_;
+    juce::Label clipOffsetRowLabel_;
     std::unique_ptr<magda::SvgButton> clipContentOffsetIcon_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipContentOffsetValue_;
     std::unique_ptr<magda::SvgButton> clipLoopToggle_;
