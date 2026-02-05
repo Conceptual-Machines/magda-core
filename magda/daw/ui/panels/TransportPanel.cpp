@@ -58,6 +58,10 @@ void TransportPanel::paint(juce::Graphics& g) {
                          .getUnion(punchOutButton->getBounds())
                          .getUnion(punchEndLabel->getBounds()),
                      "", DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    drawGroupWrapper(tempoLabel->getBounds()
+                         .getUnion(timeSignatureLabel->getBounds())
+                         .getUnion(metronomeButton->getBounds()),
+                     "", DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
 
     // Bottom border for visual separation from content below
     g.setColour(DarkTheme::getBorderColour());
@@ -144,13 +148,19 @@ void TransportPanel::resized() {
     playheadPositionLabel->setBounds(cursorX, rowY1, boxWidth, rowHeight);
     editCursorLabel->setBounds(cursorX, rowY2, boxWidth, rowHeight);
 
-    // Metronome + BPM — right after transport controls
+    // Metronome + BPM — stacked box: tempo (top), time sig + metronome icon (bottom)
     auto metroBpmArea = getMetronomeBpmArea();
-    auto metroBpmX = metroBpmArea.getX() + 8;
+    int metroBoxWidth = 70;
+    int metroX = metroBpmArea.getX() + (metroBpmArea.getWidth() - metroBoxWidth) / 2;
+    int metroIconSize = rowHeight / 2 + 2;
 
-    metronomeButton->setBounds(metroBpmX, buttonY, buttonSize, buttonSize);
-    tempoLabel->setBounds(metroBpmX + buttonSize + 4, buttonY, 56, buttonSize);
-    timeSignatureLabel->setBounds(metroBpmX + buttonSize + 4 + 56 + 4, buttonY, 42, buttonSize);
+    tempoLabel->setBounds(metroX, rowY1, metroBoxWidth, rowHeight);
+    timeSignatureLabel->setBounds(metroX, rowY2, metroBoxWidth, rowHeight);
+
+    int metroBtnX = metroX + metroBoxWidth - metroIconSize - 4;
+    metronomeButton->setBounds(metroBtnX, rowY2 + (rowHeight - metroIconSize) / 2, metroIconSize,
+                               metroIconSize);
+    metronomeButton->toFront(false);
 
     // Quantize and snap layout
     auto tempoY = tempoArea.getCentreY() - 13;
@@ -172,18 +182,18 @@ juce::Rectangle<int> TransportPanel::getTransportControlsArea() const {
 juce::Rectangle<int> TransportPanel::getMetronomeBpmArea() const {
     auto bounds = getLocalBounds();
     bounds.removeFromLeft(getTransportControlsArea().getWidth());
-    return bounds.removeFromLeft(164);
+    return bounds.removeFromLeft(90);
 }
 
 juce::Rectangle<int> TransportPanel::getTimeDisplayArea() const {
     auto bounds = getLocalBounds();
-    bounds.removeFromLeft(getTransportControlsArea().getWidth() + 180);
+    bounds.removeFromLeft(getTransportControlsArea().getWidth() + 106);
     return bounds.removeFromLeft(440);
 }
 
 juce::Rectangle<int> TransportPanel::getTempoQuantizeArea() const {
     auto bounds = getLocalBounds();
-    bounds.removeFromLeft(getTransportControlsArea().getWidth() + 180 + 440);
+    bounds.removeFromLeft(getTransportControlsArea().getWidth() + 106 + 440);
     return bounds;
 }
 
@@ -440,10 +450,8 @@ void TransportPanel::setupTempoAndQuantize() {
     timeSignatureLabel->setFont(FontManager::getInstance().getUIFont(14.0f));
     timeSignatureLabel->setColour(juce::Label::textColourId,
                                   DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    timeSignatureLabel->setColour(juce::Label::backgroundColourId,
-                                  DarkTheme::getColour(DarkTheme::SURFACE));
-    timeSignatureLabel->setColour(juce::Label::outlineColourId, juce::Colour(0xFF444444));
-    timeSignatureLabel->setJustificationType(juce::Justification::centred);
+    timeSignatureLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    timeSignatureLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(*timeSignatureLabel);
 
     // Quantize combo
@@ -460,8 +468,6 @@ void TransportPanel::setupTempoAndQuantize() {
     metronomeButton = std::make_unique<SvgButton>("Metronome", BinaryData::metronome_svg,
                                                   BinaryData::metronome_svgSize);
     styleTransportButton(*metronomeButton, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    metronomeButton->setBorderColor(juce::Colour(0xFF444444));
-    metronomeButton->setBorderThickness(1.0f);
     metronomeButton->setOriginalColor(juce::Colours::black);
     metronomeButton->setNormalColor(juce::Colour(0xFFBCBCBC));
     metronomeButton->onClick = [this]() {
