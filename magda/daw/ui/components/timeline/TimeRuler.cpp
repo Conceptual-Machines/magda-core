@@ -331,32 +331,35 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     }
 
     // Draw clip boundary markers (shifted by content offset in source file)
+    // In loop mode, hide clip end marker (arrangement length is irrelevant in source editor)
     if (clipLength > 0) {
         if (!relativeMode) {
-            // ABS mode: draw start and end boundaries at absolute positions
             int clipStartX = timeToPixel(timeOffset + clipContentOffset);
             if (clipStartX >= 0 && clipStartX <= width) {
                 g.setColour(DarkTheme::getAccentColour().withAlpha(0.6f));
                 g.fillRect(clipStartX - 1, 0, 2, height);
             }
 
-            int clipEndX = timeToPixel(timeOffset + clipContentOffset + clipLength);
-            if (clipEndX >= 0 && clipEndX <= width) {
-                g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
-                g.fillRect(clipEndX - 1, 0, 3, height);
+            if (!loopActive) {
+                int clipEndX = timeToPixel(timeOffset + clipContentOffset + clipLength);
+                if (clipEndX >= 0 && clipEndX <= width) {
+                    g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
+                    g.fillRect(clipEndX - 1, 0, 3, height);
+                }
             }
         } else {
-            // REL mode: draw boundaries relative to file start, shifted by offset
             int clipStartX = timeToPixel(clipContentOffset);
             if (clipStartX >= 0 && clipStartX <= width) {
                 g.setColour(DarkTheme::getAccentColour().withAlpha(0.6f));
                 g.fillRect(clipStartX - 1, 0, 2, height);
             }
 
-            int clipEndX = timeToPixel(clipContentOffset + clipLength);
-            if (clipEndX >= 0 && clipEndX <= width) {
-                g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
-                g.fillRect(clipEndX - 1, 0, 3, height);
+            if (!loopActive) {
+                int clipEndX = timeToPixel(clipContentOffset + clipLength);
+                if (clipEndX >= 0 && clipEndX <= width) {
+                    g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
+                    g.fillRect(clipEndX - 1, 0, 3, height);
+                }
             }
         }
     }

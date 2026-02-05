@@ -449,14 +449,17 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     double baseTime = getDisplayStartTime();
 
     // Clip boundaries — clip starts at offset, ends at offset + clipLength (in timeline seconds)
+    // In loop mode, hide clip end marker (arrangement length is irrelevant in source editor)
     {
         int clipStartX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds);
         g.setColour(DarkTheme::getAccentColour().withAlpha(0.6f));
         g.fillRect(clipStartX - 1, 0, 2, bounds.getHeight());
 
-        int clipEndX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds + clipLength_);
-        g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
-        g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
+        if (!isLooped) {
+            int clipEndX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds + clipLength_);
+            g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
+            g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
+        }
     }
 
     // Loop boundaries - green when enabled, grey when disabled
@@ -503,11 +506,24 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         g.drawText("P", phaseX + 3, 2, 12, 12, juce::Justification::centredLeft, false);
     }
 
-    // Ghost overlays — dim everything outside the clip's playback region
+    // Ghost overlays — dim everything outside the active source region
     {
         auto ghostColour = DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND).withAlpha(0.7f);
         int clipStartX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds);
-        int clipEndX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds + clipLength_);
+
+        // In loop mode, the right boundary is the loop end (arrangement clip length is irrelevant)
+        // In non-loop mode, it's the clip end or loop end, whichever is more restrictive
+        int rightBoundaryX;
+        if (isLooped) {
+            rightBoundaryX = timeToPixel(baseTime + displayInfo_.loopEndPositionSeconds);
+        } else if (displayInfo_.loopEndPositionSeconds > 0.0) {
+            int clipEndX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds + clipLength_);
+            int loopEndX = timeToPixel(baseTime + displayInfo_.loopEndPositionSeconds);
+            rightBoundaryX = juce::jmin(clipEndX, loopEndX);
+        } else {
+            rightBoundaryX =
+                timeToPixel(baseTime + displayInfo_.offsetPositionSeconds + clipLength_);
+        }
 
         // Left ghost: everything before clip start
         int leftEdge = bounds.getX();
@@ -517,24 +533,12 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
                                             bounds.getHeight()));
         }
 
-        // Right ghost: everything after clip end
+        // Right ghost: everything after the active region boundary
         int rightEdge = bounds.getRight();
-        if (clipEndX < rightEdge) {
+        if (rightBoundaryX < rightEdge) {
             g.setColour(ghostColour);
-            g.fillRect(juce::Rectangle<int>(clipEndX, bounds.getY(), rightEdge - clipEndX,
-                                            bounds.getHeight()));
-        }
-
-        // Loop end ghost: grey out area past the loop/source region end
-        if (!isLooped && displayInfo_.loopEndPositionSeconds > 0.0) {
-            int loopEndX = timeToPixel(baseTime + displayInfo_.loopEndPositionSeconds);
-            if (loopEndX > clipStartX && loopEndX < clipEndX) {
-                auto loopGhostColour =
-                    DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND).withAlpha(0.5f);
-                g.setColour(loopGhostColour);
-                g.fillRect(juce::Rectangle<int>(loopEndX, bounds.getY(), clipEndX - loopEndX,
-                                                bounds.getHeight()));
-            }
+            g.fillRect(juce::Rectangle<int>(rightBoundaryX, bounds.getY(),
+                                            rightEdge - rightBoundaryX, bounds.getHeight()));
         }
     }
 }
