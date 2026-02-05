@@ -525,12 +525,15 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
                 timeToPixel(baseTime + displayInfo_.offsetPositionSeconds + clipLength_);
         }
 
-        // Left ghost: everything before clip start
-        int leftEdge = bounds.getX();
-        if (clipStartX > leftEdge) {
-            g.setColour(ghostColour);
-            g.fillRect(juce::Rectangle<int>(leftEdge, bounds.getY(), clipStartX - leftEdge,
-                                            bounds.getHeight()));
+        // Left ghost: everything before clip start (non-loop mode only —
+        // in loop mode offset is a phase, not a trim point)
+        if (!isLooped) {
+            int leftEdge = bounds.getX();
+            if (clipStartX > leftEdge) {
+                g.setColour(ghostColour);
+                g.fillRect(juce::Rectangle<int>(leftEdge, bounds.getY(), clipStartX - leftEdge,
+                                                bounds.getHeight()));
+            }
         }
 
         // Right ghost: everything after the active region boundary
