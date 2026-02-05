@@ -336,7 +336,24 @@ class ClipOperations {
         // Convert from source-time seconds to source beats
         if (clip.sourceBPM > 0.0) {
             double srcBps = clip.sourceBPM / 60.0;
-            return {clip.loopStart * srcBps, clip.loopLength * srcBps};
+            double start = clip.loopStart * srcBps;
+            double length = clip.loopLength * srcBps;
+
+            // TE's setLoopRangeBeats clamps end to loopInfo.getNumBeats().
+            // In time-based mode loops can wrap past file end, but beat-based
+            // mode cannot. Shift the start back so the full region fits.
+            if (clip.sourceNumBeats > 0.0) {
+                if (length > clip.sourceNumBeats) {
+                    length = clip.sourceNumBeats;
+                    start = 0.0;
+                } else if (start + length > clip.sourceNumBeats) {
+                    start = clip.sourceNumBeats - length;
+                    if (start < 0.0)
+                        start = 0.0;
+                }
+            }
+
+            return {start, length};
         }
 
         // Fallback: return project beats (correct only when project BPM == source BPM)
@@ -395,6 +412,18 @@ class ClipOperations {
             } else {
                 clip.loopStartBeats = 0.0;
             }
+
+            // Calibrate sourceBPM to the current playback speed so that enabling
+            // autoTempo doesn't change the audible playback speed.
+            // effectiveBPM = projectBPM / speedRatio.  When speedRatio=1.0 this
+            // equals projectBPM, so TE applies stretch ratio 1.0 (no change).
+            // Future project BPM changes will stretch proportionally.
+            double effectiveBPM = bpm / clip.speedRatio;
+            if (clip.sourceBPM > 0.0 && clip.sourceNumBeats > 0.0) {
+                double fileDuration = clip.sourceNumBeats * 60.0 / clip.sourceBPM;
+                clip.sourceNumBeats = effectiveBPM * fileDuration / 60.0;
+            }
+            clip.sourceBPM = effectiveBPM;
 
             // Force speedRatio to 1.0 (TE requirement for autoTempo)
             clip.speedRatio = 1.0;

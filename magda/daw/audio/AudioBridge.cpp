@@ -654,7 +654,10 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     DBG("    offset: " << clip->offset);
     DBG("    length: " << clip->length);
     DBG("    speedRatio: " << clip->speedRatio);
+    DBG("    sourceBPM: " << clip->sourceBPM);
+    DBG("    sourceNumBeats: " << clip->sourceNumBeats);
     DBG("    getTeOffset(): " << clip->getTeOffset());
+    DBG("    loopStart+loopLength: " << (clip->loopStart + clip->loopLength));
     DBG("  TE STATE BEFORE:");
     DBG("    autoTempo: " << (int)audioClipPtr->getAutoTempo());
     DBG("    isLooping: " << (int)audioClipPtr->isLooping());
@@ -774,11 +777,28 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
         double bpm = edit_.tempoSequence.getTempo(0)->getBpm();
         DBG("  Current BPM: " << bpm);
 
+        // Override TE's loopInfo BPM to match our calibrated sourceBPM.
+        // setAutoTempo calibrates sourceBPM = projectBPM / speedRatio so that
+        // enabling autoTempo doesn't change playback speed.  TE uses loopInfo
+        // to map source beats ↔ source time, so the two must agree.
+        if (clip->sourceBPM > 0.0) {
+            auto waveInfo = audioClipPtr->getWaveInfo();
+            auto& li = audioClipPtr->getLoopInfo();
+            double currentLoopInfoBpm = li.getBpm(waveInfo);
+            if (std::abs(currentLoopInfoBpm - clip->sourceBPM) > 0.1) {
+                DBG("  -> Overriding TE loopInfo BPM: " << currentLoopInfoBpm << " -> "
+                                                        << clip->sourceBPM);
+                li.setBpm(clip->sourceBPM, waveInfo);
+            }
+        }
+
         // Calculate beat range using centralized helper
         auto [loopStartBeats, loopLengthBeats] = ClipOperations::getAutoTempoBeatRange(*clip, bpm);
 
-        DBG("  -> Beat range (from ClipOperations): start=" << loopStartBeats << ", length="
-                                                            << loopLengthBeats << " beats");
+        DBG("  -> Beat range (from ClipOperations): start="
+            << loopStartBeats << ", length=" << loopLengthBeats << " beats"
+            << ", end=" << (loopStartBeats + loopLengthBeats));
+        DBG("  -> TE loopInfo.getNumBeats(): " << audioClipPtr->getLoopInfo().getNumBeats());
 
         // Set the beat-based loop range in TE
         auto loopRange = te::BeatRange(te::BeatPosition::fromBeats(loopStartBeats),
