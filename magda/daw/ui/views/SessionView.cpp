@@ -1366,7 +1366,7 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
 
             // Show clip name with loop indicator if enabled
             juce::String displayText = "   " + clip->name;  // Indent for play button area
-            if (clip->internalLoopEnabled) {
+            if (clip->loopEnabled) {
                 displayText += " [L]";
             }
             slot->setButtonText(displayText);
@@ -1536,19 +1536,19 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
         }
 
         // Create audio clip for session view (not arrangement)
+        double bpm = 120.0;
+        if (timelineController_) {
+            bpm = timelineController_->getState().tempo.bpm;
+        }
         ClipId newClipId = clipManager.createAudioClip(targetTrackId, 0.0, fileDuration, filePath,
-                                                       ClipView::Session);
+                                                       ClipView::Session, bpm);
         if (newClipId != INVALID_CLIP_ID) {
             clipManager.setClipName(newClipId, audioFile.getFileNameWithoutExtension());
 
-            // Session clips default to looping, with loop length matching clip duration
-            double bpm = 120.0;
-            if (timelineController_) {
-                bpm = timelineController_->getState().tempo.bpm;
-            }
-            double durationInBeats = (fileDuration / 60.0) * bpm;
-            clipManager.setClipLoopEnabled(newClipId, true);
-            clipManager.setClipLoopLength(newClipId, durationInBeats);
+            // Session clips default to looping, with source end matching clip duration
+            clipManager.setClipLoopEnabled(newClipId, true, bpm);
+            // Set loopLength to match file duration (source region = entire file)
+            clipManager.setLoopLength(newClipId, fileDuration);
 
             // Assign to session view slot (triggers proper notification)
             clipManager.setClipSceneIndex(newClipId, currentSceneIndex);

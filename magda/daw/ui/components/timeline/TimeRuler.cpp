@@ -40,8 +40,8 @@ void TimeRuler::resized() {
     // Nothing specific needed
 }
 
-void TimeRuler::setZoom(double pixelsPerSecond) {
-    zoom = pixelsPerSecond;
+void TimeRuler::setZoom(double pixelsPerBeat) {
+    zoom = pixelsPerBeat;
     repaint();
 }
 
@@ -86,6 +86,11 @@ void TimeRuler::setClipLength(double lengthSeconds) {
     repaint();
 }
 
+void TimeRuler::setClipContentOffset(double offsetSeconds) {
+    clipContentOffset = offsetSeconds;
+    repaint();
+}
+
 void TimeRuler::setPlayheadPosition(double positionSeconds) {
     if (playheadPosition != positionSeconds) {
         playheadPosition = positionSeconds;
@@ -98,10 +103,18 @@ void TimeRuler::setLeftPadding(int padding) {
     repaint();
 }
 
-void TimeRuler::setLoopRegion(double offsetSeconds, double lengthSeconds, bool enabled) {
+void TimeRuler::setLoopRegion(double offsetSeconds, double lengthSeconds, bool enabled,
+                              bool active) {
     loopOffset = offsetSeconds;
     loopLength = lengthSeconds;
     loopEnabled = enabled;
+    loopActive = active;
+    repaint();
+}
+
+void TimeRuler::setLoopPhaseMarker(double positionSeconds, bool visible) {
+    loopPhasePosition = positionSeconds;
+    loopPhaseVisible = visible;
     repaint();
 }
 
@@ -163,8 +176,8 @@ void TimeRuler::mouseDrag(const juce::MouseEvent& event) {
         double exponent = static_cast<double>(yDelta) / sensitivity;
         double newZoom = zoomStartValue * std::pow(2.0, exponent);
 
-        // Clamp zoom to reasonable limits (pixels per second)
-        newZoom = juce::jlimit(5.0, 2000.0, newZoom);
+        // Clamp zoom to reasonable limits (pixels per beat)
+        newZoom = juce::jlimit(1.0, 2000.0, newZoom);
 
         if (onZoomChanged) {
             onZoomChanged(newZoom, zoomAnchorTime, mouseDownX);
@@ -261,13 +274,10 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     const int height = getHeight();
     const int width = getWidth();
 
-    // Calculate seconds per beat and per bar
+    // zoom is ppb, so pixelsPerBar = zoom * beatsPerBar (no BPM dependency!)
     double secondsPerBeat = 60.0 / tempo;
     double secondsPerBar = secondsPerBeat * timeSigNumerator;
-
-    // Determine what to show based on zoom level
-    // At low zoom, show only bars; at high zoom, show beats too
-    double pixelsPerBar = secondsPerBar * zoom;
+    double pixelsPerBar = zoom * timeSigNumerator;
     bool showBeats = pixelsPerBar > 60;  // Only show beats if bars are wide enough
 
     // In ABS mode: bar numbers are absolute (1, 2, 3...), grid starts at project time 0
@@ -320,32 +330,39 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         }
     }
 
-    // Draw clip boundary markers
+    // Draw clip boundary markers (shifted by content offset in source file)
+    // In loop mode, hide clip boundary markers (arrangement length is irrelevant in source editor)
     if (clipLength > 0) {
-        if (!relativeMode) {
-            // ABS mode: draw start and end boundaries at absolute positions
-            int clipStartX = timeToPixel(timeOffset);
-            if (clipStartX >= 0 && clipStartX <= width) {
-                g.setColour(DarkTheme::getAccentColour().withAlpha(0.6f));
-                g.fillRect(clipStartX - 1, 0, 2, height);
-            }
+        if (!loopActive) {
+            if (!relativeMode) {
+                int clipStartX = timeToPixel(timeOffset + clipContentOffset);
+                if (clipStartX >= 0 && clipStartX <= width) {
+                    g.setColour(DarkTheme::getAccentColour().withAlpha(0.6f));
+                    g.fillRect(clipStartX - 1, 0, 2, height);
+                }
 
-            int clipEndX = timeToPixel(timeOffset + clipLength);
-            if (clipEndX >= 0 && clipEndX <= width) {
-                g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
-                g.fillRect(clipEndX - 1, 0, 3, height);
-            }
-        } else {
-            // REL mode: draw end boundary relative to clip start (which is at time 0)
-            int clipEndX = timeToPixel(clipLength);
-            if (clipEndX >= 0 && clipEndX <= width) {
-                g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
-                g.fillRect(clipEndX - 1, 0, 3, height);
+                int clipEndX = timeToPixel(timeOffset + clipContentOffset + clipLength);
+                if (clipEndX >= 0 && clipEndX <= width) {
+                    g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
+                    g.fillRect(clipEndX - 1, 0, 3, height);
+                }
+            } else {
+                int clipStartX = timeToPixel(clipContentOffset);
+                if (clipStartX >= 0 && clipStartX <= width) {
+                    g.setColour(DarkTheme::getAccentColour().withAlpha(0.6f));
+                    g.fillRect(clipStartX - 1, 0, 2, height);
+                }
+
+                int clipEndX = timeToPixel(clipContentOffset + clipLength);
+                if (clipEndX >= 0 && clipEndX <= width) {
+                    g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
+                    g.fillRect(clipEndX - 1, 0, 3, height);
+                }
             }
         }
     }
 
-    // Draw loop region markers
+    // Draw loop region markers (green when active, grey when disabled)
     if (loopEnabled && loopLength > 0.0) {
         double loopStartTime = relativeMode ? loopOffset : (timeOffset + loopOffset);
         double loopEndTime = loopStartTime + loopLength;
@@ -353,13 +370,17 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         int loopStartX = timeToPixel(loopStartTime);
         int loopEndX = timeToPixel(loopEndTime);
 
+        auto markerColour = loopActive ? DarkTheme::getColour(DarkTheme::LOOP_MARKER)
+                                       : DarkTheme::getColour(DarkTheme::TEXT_DISABLED);
+        float stripeAlpha = loopActive ? 0.2f : 0.1f;
+
         if (loopEndX >= 0 && loopStartX <= width) {
-            // Semi-transparent green stripe across ruler height
-            g.setColour(DarkTheme::getColour(DarkTheme::LOOP_MARKER).withAlpha(0.2f));
+            // Semi-transparent stripe across ruler height
+            g.setColour(markerColour.withAlpha(stripeAlpha));
             g.fillRect(loopStartX, 0, loopEndX - loopStartX, height);
 
             // 2px vertical lines at boundaries
-            g.setColour(DarkTheme::getColour(DarkTheme::LOOP_MARKER));
+            g.setColour(markerColour.withAlpha(loopActive ? 1.0f : 0.5f));
             if (loopStartX >= 0 && loopStartX <= width) {
                 g.fillRect(loopStartX - 1, 0, 2, height);
             }
@@ -388,6 +409,22 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         }
     }
 
+    // Draw loop phase marker (yellow)
+    if (loopPhaseVisible && loopEnabled) {
+        double phaseTime = relativeMode ? loopPhasePosition : (timeOffset + loopPhasePosition);
+        int phaseX = timeToPixel(phaseTime);
+        if (phaseX >= 0 && phaseX <= width) {
+            auto col = juce::Colour(0xFFCCAA44);  // OFFSET_MARKER yellow
+            g.setColour(col);
+            g.fillRect(phaseX - 1, 0, 2, height);
+            // Downward triangle at top
+            juce::Path flag;
+            float fx = static_cast<float>(phaseX);
+            flag.addTriangle(fx - 5.0f, 2.0f, fx + 5.0f, 2.0f, fx, 10.0f);
+            g.fillPath(flag);
+        }
+    }
+
     // Draw playhead line if playing
     if (playheadPosition >= 0.0) {
         // In absolute mode, playhead is at absolute position
@@ -404,8 +441,10 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
 double TimeRuler::calculateMarkerInterval() const {
     // Target roughly 80-120 pixels between major markers
+    // zoom is ppb, convert to pps for seconds-mode interval calculation
+    double pps = zoom * tempo / 60.0;
     double targetPixels = 100.0;
-    double targetInterval = targetPixels / zoom;
+    double targetInterval = (pps > 0) ? targetPixels / pps : 1.0;
 
     // Round to nice intervals: 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, etc.
     static const double niceIntervals[] = {0.01, 0.02, 0.05, 0.1,  0.2,  0.5,   1.0,   2.0,
@@ -457,14 +496,21 @@ juce::String TimeRuler::formatBarsBeatsLabel(double time) const {
 
 double TimeRuler::pixelToTime(int pixel) const {
     // Use linked viewport's position for real-time scroll sync
+    // zoom is ppb, so pixel→beats→seconds
     int currentScrollOffset = linkedViewport ? linkedViewport->getViewPositionX() : scrollOffset;
-    return (pixel + currentScrollOffset - leftPadding) / zoom;
+    if (zoom > 0 && tempo > 0) {
+        double beats = (pixel + currentScrollOffset - leftPadding) / zoom;
+        return beats * 60.0 / tempo;
+    }
+    return 0.0;
 }
 
 int TimeRuler::timeToPixel(double time) const {
     // Use linked viewport's position for real-time scroll sync
+    // zoom is ppb, so seconds→beats→pixel
     int currentScrollOffset = linkedViewport ? linkedViewport->getViewPositionX() : scrollOffset;
-    return static_cast<int>(time * zoom) - currentScrollOffset + leftPadding;
+    double beats = time * tempo / 60.0;
+    return static_cast<int>(beats * zoom) - currentScrollOffset + leftPadding;
 }
 
 }  // namespace magda

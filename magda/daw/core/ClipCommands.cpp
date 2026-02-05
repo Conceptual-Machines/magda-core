@@ -8,8 +8,8 @@ namespace magda {
 // SplitClipCommand
 // ============================================================================
 
-SplitClipCommand::SplitClipCommand(ClipId clipId, double splitTime)
-    : clipId_(clipId), splitTime_(splitTime) {}
+SplitClipCommand::SplitClipCommand(ClipId clipId, double splitTime, double tempo)
+    : clipId_(clipId), splitTime_(splitTime), tempo_(tempo) {}
 
 bool SplitClipCommand::canExecute() const {
     auto* clip = ClipManager::getInstance().getClip(clipId_);
@@ -38,7 +38,7 @@ void SplitClipCommand::restoreState(const ClipInfo& state) {
 }
 
 void SplitClipCommand::performAction() {
-    rightClipId_ = ClipManager::getInstance().splitClip(clipId_, splitTime_);
+    rightClipId_ = ClipManager::getInstance().splitClip(clipId_, splitTime_, tempo_);
 }
 
 bool SplitClipCommand::validateState() const {
@@ -163,8 +163,8 @@ bool MoveClipToTrackCommand::validateState() const {
 // ResizeClipCommand
 // ============================================================================
 
-ResizeClipCommand::ResizeClipCommand(ClipId clipId, double newLength, bool fromStart)
-    : clipId_(clipId), newLength_(newLength), fromStart_(fromStart) {}
+ResizeClipCommand::ResizeClipCommand(ClipId clipId, double newLength, bool fromStart, double tempo)
+    : clipId_(clipId), newLength_(newLength), fromStart_(fromStart), tempo_(tempo) {}
 
 ClipInfo ResizeClipCommand::captureState() {
     auto* clip = ClipManager::getInstance().getClip(clipId_);
@@ -180,7 +180,7 @@ void ResizeClipCommand::restoreState(const ClipInfo& state) {
 }
 
 void ResizeClipCommand::performAction() {
-    ClipManager::getInstance().resizeClip(clipId_, newLength_, fromStart_);
+    ClipManager::getInstance().resizeClip(clipId_, newLength_, fromStart_, tempo_);
 }
 
 bool ResizeClipCommand::canMergeWith(const UndoableCommand* other) const {
@@ -428,8 +428,8 @@ bool PasteClipCommand::validateState() const {
 // JoinClipsCommand
 // ============================================================================
 
-JoinClipsCommand::JoinClipsCommand(ClipId leftClipId, ClipId rightClipId)
-    : leftClipId_(leftClipId), rightClipId_(rightClipId) {}
+JoinClipsCommand::JoinClipsCommand(ClipId leftClipId, ClipId rightClipId, double tempo)
+    : leftClipId_(leftClipId), rightClipId_(rightClipId), tempo_(tempo) {}
 
 bool JoinClipsCommand::canExecute() const {
     auto& clipManager = ClipManager::getInstance();
@@ -493,7 +493,7 @@ void JoinClipsCommand::performAction() {
 
     if (left->type == ClipType::MIDI) {
         // MIDI join: copy right clip's notes into left, adjusting beat positions
-        const double beatsPerSecond = 2.0;  // 120 BPM (matches splitClip)
+        const double beatsPerSecond = tempo_ / 60.0;
         double beatOffset = (right->startTime - left->startTime) * beatsPerSecond;
 
         for (const auto& note : right->midiNotes) {
@@ -502,21 +502,8 @@ void JoinClipsCommand::performAction() {
             left->midiNotes.push_back(adjustedNote);
         }
     } else if (left->type == ClipType::Audio) {
-        // Audio join: extend left clip's audio source to cover both clips
-        if (!right->audioSources.empty()) {
-            if (!left->audioSources.empty()) {
-                // Extend the first audio source length to cover the right clip
-                left->audioSources[0].length = left->length + right->length;
-            }
-            // If right has additional audio sources, add them with adjusted positions
-            for (size_t i = 0; i < right->audioSources.size(); ++i) {
-                if (i == 0 && !left->audioSources.empty())
-                    continue;  // Already handled by extending
-                AudioSource src = right->audioSources[i];
-                src.position += left->length;
-                left->audioSources.push_back(src);
-            }
-        }
+        // Audio join: extend left clip length to cover both clips
+        // (offset and speedRatio remain from left clip)
     }
 
     // Extend left clip length
@@ -537,6 +524,38 @@ bool JoinClipsCommand::validateState() const {
         return false;
 
     return true;
+}
+
+// ============================================================================
+// StretchClipCommand
+// ============================================================================
+
+StretchClipCommand::StretchClipCommand(ClipId clipId, const ClipInfo& beforeState)
+    : clipId_(clipId), beforeState_(beforeState) {}
+
+void StretchClipCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip)
+        return;
+
+    if (afterState_.id == INVALID_CLIP_ID) {
+        // First execution: clip is already in final state from drag updates.
+        // Just capture it for redo.
+        afterState_ = *clip;
+    } else {
+        // Redo: restore the after-state
+        *clip = afterState_;
+        clipManager.forceNotifyClipsChanged();
+    }
+}
+
+void StretchClipCommand::undo() {
+    auto& clipManager = ClipManager::getInstance();
+    if (auto* clip = clipManager.getClip(clipId_)) {
+        *clip = beforeState_;
+        clipManager.forceNotifyClipsChanged();
+    }
 }
 
 }  // namespace magda

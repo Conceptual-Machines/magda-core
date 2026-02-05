@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <iostream>
 
+#include "../../core/ClipManager.hpp"
+#include "../utils/TimelineUtils.hpp"
 #include "Config.hpp"
 
 namespace magda {
@@ -15,10 +17,12 @@ TimelineController::TimelineController() {
     auto& config = magda::Config::getInstance();
     state.timelineLength = config.getDefaultTimelineLength();
 
-    // Set default zoom to show a reasonable view duration
+    // Set default zoom (ppb) to show a reasonable view duration
     double defaultViewDuration = config.getDefaultZoomViewDuration();
     if (defaultViewDuration > 0 && state.zoom.viewportWidth > 0) {
-        state.zoom.horizontalZoom = state.zoom.viewportWidth / defaultViewDuration;
+        double beats = state.secondsToBeats(defaultViewDuration);
+        if (beats > 0)
+            state.zoom.horizontalZoom = state.zoom.viewportWidth / beats;
     }
 
     std::cout << "TimelineController: initialized with timelineLength=" << state.timelineLength
@@ -164,8 +168,10 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetZoomCen
     double newZoom = clampZoom(e.zoom);
 
     // Calculate where the center time should appear after zoom
+    // Convert time to beats since zoom is ppb
     int viewportCenter = state.zoom.viewportWidth / 2;
-    int timeContentX = static_cast<int>(e.centerTime * newZoom) + TimelineState::LEFT_PADDING;
+    double centerBeats = state.secondsToBeats(e.centerTime);
+    int timeContentX = static_cast<int>(centerBeats * newZoom) + TimelineState::LEFT_PADDING;
     int newScrollX = timeContentX - viewportCenter;
 
     state.zoom.horizontalZoom = newZoom;
@@ -179,7 +185,9 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetZoomAnc
     double newZoom = clampZoom(e.zoom);
 
     // Calculate scroll position to keep anchorTime at anchorScreenX
-    int anchorPixelPos = static_cast<int>(e.anchorTime * newZoom) + TimelineState::LEFT_PADDING;
+    // Convert time to beats since zoom is ppb
+    double anchorBeats = state.secondsToBeats(e.anchorTime);
+    int anchorPixelPos = static_cast<int>(anchorBeats * newZoom) + TimelineState::LEFT_PADDING;
     int newScrollX = anchorPixelPos - e.anchorScreenX;
 
     state.zoom.horizontalZoom = newZoom;
@@ -194,14 +202,18 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ZoomToFitE
         return ChangeFlags::None;
     }
 
+    // Convert duration to beats since zoom is ppb
     double duration = e.endTime - e.startTime;
-    double padding = duration * e.paddingPercent;
-    double zoomToFit = static_cast<double>(state.zoom.viewportWidth) / (duration + padding * 2);
+    double durationBeats = state.secondsToBeats(duration);
+    double paddingBeats = durationBeats * e.paddingPercent;
+    double zoomToFit =
+        static_cast<double>(state.zoom.viewportWidth) / (durationBeats + paddingBeats * 2);
 
     state.zoom.horizontalZoom = clampZoom(zoomToFit);
 
     // Calculate scroll to show the start (with padding)
-    int scrollX = static_cast<int>((e.startTime - padding) * state.zoom.horizontalZoom);
+    double startBeats = state.secondsToBeats(e.startTime) - paddingBeats;
+    int scrollX = static_cast<int>(startBeats * state.zoom.horizontalZoom);
     state.zoom.scrollX = juce::jmax(0, scrollX);
     clampScrollPosition();
 
@@ -213,8 +225,10 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ResetZoomE
         return ChangeFlags::None;
     }
 
+    // Convert timeline length to beats since zoom is ppb
     int availableWidth = state.zoom.viewportWidth - TimelineState::LEFT_PADDING;
-    double fitZoom = static_cast<double>(availableWidth) / state.timelineLength;
+    double beats = state.secondsToBeats(state.timelineLength);
+    double fitZoom = (beats > 0) ? static_cast<double>(availableWidth) / beats : 1.0;
 
     state.zoom.horizontalZoom = clampZoom(fitZoom);
     state.zoom.scrollX = 0;
@@ -254,8 +268,9 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ScrollByDe
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const ScrollToTimeEvent& e) {
-    int targetX =
-        static_cast<int>(e.time * state.zoom.horizontalZoom) + TimelineState::LEFT_PADDING;
+    // Convert time to beats since zoom is ppb
+    double beats = state.secondsToBeats(e.time);
+    int targetX = static_cast<int>(beats * state.zoom.horizontalZoom) + TimelineState::LEFT_PADDING;
 
     if (e.center) {
         targetX -= state.zoom.viewportWidth / 2;
@@ -276,6 +291,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetEditPos
     }
 
     state.playhead.editPosition = newPos;
+    state.playhead.editPositionBeats =
+        magda::TimelineUtils::secondsToBeats(newPos, state.tempo.bpm);
     // If not playing, also sync playbackPosition to editPosition
     if (!state.playhead.isPlaying) {
         state.playhead.playbackPosition = newPos;
@@ -408,6 +425,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimeSel
 
     state.selection.startTime = start;
     state.selection.endTime = end;
+    state.selection.startBeats = magda::TimelineUtils::secondsToBeats(start, state.tempo.bpm);
+    state.selection.endBeats = magda::TimelineUtils::secondsToBeats(end, state.tempo.bpm);
     state.selection.trackIndices = e.trackIndices;
     state.selection.visuallyHidden = false;  // New selection is always visible
 
@@ -451,6 +470,9 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopReg
     double start = juce::jlimit(0.0, state.timelineLength, e.startTime);
     double end = juce::jlimit(0.0, state.timelineLength, e.endTime);
 
+    std::cout << "[SetLoopRegion] Input: startTime=" << e.startTime << "s, endTime=" << e.endTime
+              << "s" << std::endl;
+
     // Ensure minimum duration
     if (end - start < 0.01) {
         end = start + 0.01;
@@ -458,6 +480,11 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopReg
 
     state.loop.startTime = start;
     state.loop.endTime = end;
+
+    // Store beat positions (authoritative for tempo changes)
+    double bpm = state.tempo.bpm;
+    state.loop.startBeats = magda::TimelineUtils::secondsToBeats(start, bpm);
+    state.loop.endBeats = magda::TimelineUtils::secondsToBeats(end, bpm);
 
     // Enable loop if it wasn't valid before
     if (!state.loop.enabled && state.loop.isValid()) {
@@ -525,14 +552,116 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
         return ChangeFlags::None;
     }
 
+    double oldBpm = state.tempo.bpm;
     state.tempo.bpm = newBpm;
 
-    // Notify audio engine of tempo change
+    // Update all beat-anchored positions to maintain bar/beat positions
+    uint32_t extraFlags = 0;
+
+    // --- Edit cursor ---
+    if (state.playhead.editPosition > 0.0) {
+        // Migration: calculate beat position if it was never set
+        if (state.playhead.editPositionBeats <= 0.0 && state.playhead.editPosition > 0.0) {
+            state.playhead.editPositionBeats =
+                magda::TimelineUtils::secondsToBeats(state.playhead.editPosition, oldBpm);
+        }
+        state.playhead.editPosition =
+            magda::TimelineUtils::beatsToSeconds(state.playhead.editPositionBeats, newBpm);
+        if (!state.playhead.isPlaying) {
+            state.playhead.playbackPosition = state.playhead.editPosition;
+        }
+        extraFlags |= static_cast<uint32_t>(ChangeFlags::Playhead);
+    }
+
+    // --- Time selection ---
+    if (state.selection.isActive()) {
+        // Migration: calculate beat positions if missing
+        if (state.selection.startBeats < 0 && state.selection.endBeats < 0) {
+            state.selection.startBeats =
+                magda::TimelineUtils::secondsToBeats(state.selection.startTime, oldBpm);
+            state.selection.endBeats =
+                magda::TimelineUtils::secondsToBeats(state.selection.endTime, oldBpm);
+        }
+        if (state.selection.startBeats >= 0 && state.selection.endBeats >= 0) {
+            state.selection.startTime =
+                magda::TimelineUtils::beatsToSeconds(state.selection.startBeats, newBpm);
+            state.selection.endTime =
+                magda::TimelineUtils::beatsToSeconds(state.selection.endBeats, newBpm);
+            extraFlags |= static_cast<uint32_t>(ChangeFlags::Selection);
+        }
+    }
+
+    // --- Loop region ---
+    // Migration: Calculate beat positions if missing (e.g., loop created without going through
+    // SetLoopRegionEvent)
+    if (state.loop.isValid() && state.loop.startBeats < 0 && state.loop.endBeats < 0) {
+        state.loop.startBeats = magda::TimelineUtils::secondsToBeats(state.loop.startTime, oldBpm);
+        state.loop.endBeats = magda::TimelineUtils::secondsToBeats(state.loop.endTime, oldBpm);
+    }
+
+    if (state.loop.isValid() && state.loop.startBeats >= 0 && state.loop.endBeats >= 0) {
+        state.loop.startTime = magda::TimelineUtils::beatsToSeconds(state.loop.startBeats, newBpm);
+        state.loop.endTime = magda::TimelineUtils::beatsToSeconds(state.loop.endBeats, newBpm);
+        extraFlags |= static_cast<uint32_t>(ChangeFlags::Loop);
+    }
+
+    // IMPORTANT: Notify audio engine FIRST so TE's tempo sequence is updated
+    // before we sync clips (clips will read BPM from TE's tempo sequence)
     for (auto* listener : audioEngineListeners) {
         listener->onTempoChanged(newBpm);
     }
 
-    return ChangeFlags::Tempo;
+    // Notify audio engine of updated loop region (TE transport needs new time positions)
+    if (state.loop.isValid() && state.loop.enabled) {
+        for (auto* listener : audioEngineListeners) {
+            listener->onLoopRegionChanged(state.loop.startTime, state.loop.endTime, true);
+        }
+    }
+
+    // Update auto-tempo clips when tempo changes
+    // Beats are authoritative — update derived seconds and notify AudioBridge to re-sync TE.
+    // UI reads beats directly so the notification doesn't cause stale-BPM layout issues.
+    if (std::abs(newBpm - oldBpm) > 0.01) {
+        auto& clipManager = ClipManager::getInstance();
+        auto allClips = clipManager.getClips();
+
+        // First pass: update all seconds from beats
+        std::vector<ClipId> updatedClipIds;
+        for (const auto& clip : allClips) {
+            if (clip.autoTempo && clip.type == ClipType::Audio) {
+                auto* mutableClip = clipManager.getClip(clip.id);
+                if (!mutableClip) {
+                    continue;
+                }
+
+                // Migration: populate beat values if not set
+                if (mutableClip->startBeats < 0) {
+                    mutableClip->startBeats =
+                        magda::TimelineUtils::secondsToBeats(clip.startTime, oldBpm);
+                }
+                if (mutableClip->lengthBeats <= 0.0) {
+                    mutableClip->lengthBeats =
+                        magda::TimelineUtils::secondsToBeats(clip.length, oldBpm);
+                }
+
+                // Update derived seconds
+                mutableClip->startTime =
+                    magda::TimelineUtils::beatsToSeconds(mutableClip->startBeats, newBpm);
+                mutableClip->length =
+                    magda::TimelineUtils::beatsToSeconds(mutableClip->lengthBeats, newBpm);
+
+                updatedClipIds.push_back(clip.id);
+            }
+        }
+
+        // Second pass: notify so AudioBridge re-syncs TE clip positions
+        for (auto clipId : updatedClipIds) {
+            clipManager.forceNotifyClipPropertyChanged(clipId);
+        }
+    }
+
+    // Return combined flags for all updated state
+    return static_cast<ChangeFlags>(static_cast<uint32_t>(ChangeFlags::Tempo) | extraFlags);
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimeSignatureEvent& e) {

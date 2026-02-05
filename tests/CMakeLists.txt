@@ -3,7 +3,9 @@ set(TEST_SOURCES
     test_audio_bridge.cpp
     test_audiobridge_track_limit_bug.cpp
     test_audiobridge_plugin_cleanup_bug.cpp
+    test_auto_tempo.cpp
     test_audio_clip_stretch.cpp
+    test_audio_source_length.cpp
     test_audio_export.cpp
     test_command.cpp
     # test_export_no_assertion.cpp  # Disabled - see issue #611 (generator device export)
@@ -22,6 +24,7 @@ set(TEST_SOURCES
     test_waveform_editor_absolute_mode.cpp
     test_clip_commands.cpp
     test_clip_resize_operations.cpp
+    test_looped_waveform_tile.cpp
     test_project_serialization.cpp
     test_session_clip_playback.cpp
     test_tracktion_engine_wrapper_refactoring.cpp
