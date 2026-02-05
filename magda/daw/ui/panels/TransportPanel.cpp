@@ -31,13 +31,9 @@ void TransportPanel::paint(juce::Graphics& g) {
     g.drawVerticalLine(timeArea.getRight(), bounds.getY(), bounds.getBottom());
 
     // Draw wrapper borders around each stacked pair in time display area
-    auto drawGroupWrapper = [&](BarsBeatsTicksLabel* topLabel, BarsBeatsTicksLabel* bottomLabel,
-                                const juce::String& groupName, juce::Colour groupColour) {
-        if (!topLabel || !bottomLabel)
-            return;
-        auto topBounds = topLabel->getBounds();
-        auto bottomBounds = bottomLabel->getBounds();
-        auto wrapperBounds = topBounds.getUnion(bottomBounds).expanded(2).toFloat();
+    auto drawGroupWrapper = [&](juce::Rectangle<int> wrapperArea, const juce::String& groupName,
+                                juce::Colour groupColour) {
+        auto wrapperBounds = wrapperArea.expanded(2, 0).toFloat();
 
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
         g.fillRoundedRectangle(wrapperBounds, 2.0f);
@@ -51,12 +47,17 @@ void TransportPanel::paint(juce::Graphics& g) {
                    juce::Justification::topRight, false);
     };
 
-    drawGroupWrapper(selectionStartLabel.get(), selectionEndLabel.get(), "SEL",
-                     DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    drawGroupWrapper(loopStartLabel.get(), loopEndLabel.get(), "LOOP",
+    drawGroupWrapper(selectionStartLabel->getBounds().getUnion(selectionEndLabel->getBounds()),
+                     "SEL", DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    drawGroupWrapper(loopStartLabel->getBounds().getUnion(loopEndLabel->getBounds()), "LOOP",
                      DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
-    drawGroupWrapper(playheadPositionLabel.get(), editCursorLabel.get(), "CUR",
-                     DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    drawGroupWrapper(playheadPositionLabel->getBounds().getUnion(editCursorLabel->getBounds()),
+                     "CUR", DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    drawGroupWrapper(punchInButton->getBounds()
+                         .getUnion(punchStartLabel->getBounds())
+                         .getUnion(punchOutButton->getBounds())
+                         .getUnion(punchEndLabel->getBounds()),
+                     "", DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
 
     // Bottom border for visual separation from content below
     g.setColour(DarkTheme::getBorderColour());
@@ -97,44 +98,51 @@ void TransportPanel::resized() {
     nextButton->setBounds(x, buttonY, buttonSize, buttonSize);
     x += buttonSize + buttonSpacing + 3;  // extra gap before punch group
 
-    // Punch in/out — stacked two rows: [label] [button] per row
-    int punchBtnSize = (buttonSize - 2) / 2;  // two rows with 2px gap
-    int punchLabelWidth = 95;
-    int punchGap = 3;
+    // Stacked row metrics (shared by punch group and time display groups)
+    int boxWidth = 130;
+    int rowHeight = (buttonSize - 4) / 2;  // 1px top + 1px bottom padding
+    int rowY1 = buttonY + 1;               // 1px top padding
+    int rowY2 = rowY1 + rowHeight + 2;     // 2px gap between rows
 
-    punchStartLabel->setBounds(x, buttonY, punchLabelWidth, punchBtnSize);
-    punchInButton->setBounds(x + punchLabelWidth + punchGap, buttonY, punchBtnSize, punchBtnSize);
+    // Punch in/out — stacked box with labels + icon buttons overlapping right edge
+    int punchIconSize = rowHeight / 2 + 2;
 
-    punchEndLabel->setBounds(x, buttonY + punchBtnSize + 2, punchLabelWidth, punchBtnSize);
-    punchOutButton->setBounds(x + punchLabelWidth + punchGap, buttonY + punchBtnSize + 2,
-                              punchBtnSize, punchBtnSize);
+    punchStartLabel->setBounds(x, rowY1, boxWidth, rowHeight);
+    punchEndLabel->setBounds(x, rowY2, boxWidth, rowHeight);
+
+    // Place buttons overlapping the right side of labels, then raise z-order
+    int btnX = x + boxWidth - punchIconSize - 4;
+    punchInButton->setBounds(btnX, rowY1 + (rowHeight - punchIconSize) / 2, punchIconSize,
+                             punchIconSize);
+    punchOutButton->setBounds(btnX, rowY2 + (rowHeight - punchIconSize) / 2, punchIconSize,
+                              punchIconSize);
+    punchInButton->toFront(false);
+    punchOutButton->toFront(false);
 
     // Pause button — hidden but still functional via callbacks
     pauseButton->setBounds(0, 0, 0, 0);
     pauseButton->setVisible(false);
 
-    // Time display boxes layout — 3 stacked groups
-    int boxWidth = 130;
-    int rowHeight = (buttonSize - 2) / 2;
+    // Time display boxes layout — 3 stacked groups with 1px top/bottom padding
     int groupSpacing = 8;
 
     int startX = timeArea.getX() + 10;
 
     // Group 1 — Selection: start (top), end (bottom)
-    selectionStartLabel->setBounds(startX, buttonY, boxWidth, rowHeight);
-    selectionEndLabel->setBounds(startX, buttonY + rowHeight + 2, boxWidth, rowHeight);
+    selectionStartLabel->setBounds(startX, rowY1, boxWidth, rowHeight);
+    selectionEndLabel->setBounds(startX, rowY2, boxWidth, rowHeight);
 
     int loopX = startX + boxWidth + groupSpacing;
 
     // Group 2 — Loop: start (top), end (bottom)
-    loopStartLabel->setBounds(loopX, buttonY, boxWidth, rowHeight);
-    loopEndLabel->setBounds(loopX, buttonY + rowHeight + 2, boxWidth, rowHeight);
+    loopStartLabel->setBounds(loopX, rowY1, boxWidth, rowHeight);
+    loopEndLabel->setBounds(loopX, rowY2, boxWidth, rowHeight);
 
     int cursorX = loopX + boxWidth + groupSpacing;
 
     // Group 3 — Cursors: playhead (top), edit cursor (bottom)
-    playheadPositionLabel->setBounds(cursorX, buttonY, boxWidth, rowHeight);
-    editCursorLabel->setBounds(cursorX, buttonY + rowHeight + 2, boxWidth, rowHeight);
+    playheadPositionLabel->setBounds(cursorX, rowY1, boxWidth, rowHeight);
+    editCursorLabel->setBounds(cursorX, rowY2, boxWidth, rowHeight);
 
     // Metronome + BPM — right after transport controls
     auto metroBpmArea = getMetronomeBpmArea();
@@ -153,12 +161,11 @@ void TransportPanel::resized() {
 }
 
 juce::Rectangle<int> TransportPanel::getTransportControlsArea() const {
-    // 7 square buttons + punch group (label + gap + btn per row)
+    // 7 square buttons + punch stacked box (boxWidth=130)
     int buttonSize = getHeight() - 6;
-    int punchBtnSize = (buttonSize - 2) / 2;
-    int punchGroupWidth = 95 + 3 + punchBtnSize;  // label + gap + button
-    // 6px left pad + 7 buttons + 6*1px spacing + 3px gap + punch group + 6px right pad
-    int width = 6 + 7 * buttonSize + 6 + 3 + punchGroupWidth + 6;
+    int boxWidth = 130;
+    // 6px left pad + 7 buttons + 6*1px spacing + 3px gap + punch box + 6px right pad
+    int width = 6 + 7 * buttonSize + 6 + 3 + boxWidth + 6;
     return getLocalBounds().removeFromLeft(width);
 }
 
@@ -291,8 +298,6 @@ void TransportPanel::setupTransportButtons() {
     punchInButton =
         std::make_unique<SvgButton>("PunchIn", BinaryData::punchin_svg, BinaryData::punchin_svgSize,
                                     BinaryData::punchin_on_svg, BinaryData::punchin_on_svgSize);
-    punchInButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    punchInButton->setBorderThickness(1.0f);
     punchInButton->onClick = [this]() {
         isPunchInEnabled = !isPunchInEnabled;
         punchInButton->setActive(isPunchInEnabled);
@@ -306,8 +311,6 @@ void TransportPanel::setupTransportButtons() {
     punchOutButton = std::make_unique<SvgButton>(
         "PunchOut", BinaryData::punchout_svg, BinaryData::punchout_svgSize,
         BinaryData::punchout_on_svg, BinaryData::punchout_on_svgSize);
-    punchOutButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    punchOutButton->setBorderThickness(1.0f);
     punchOutButton->onClick = [this]() {
         isPunchOutEnabled = !isPunchOutEnabled;
         punchOutButton->setActive(isPunchOutEnabled);
@@ -386,30 +389,26 @@ void TransportPanel::setupTimeDisplayBoxes() {
             onEditCursorEdit(seconds);
     };
 
-    // Punch start/end — remain in transport controls area
-    punchStartLabel = std::make_unique<BarsBeatsTicksLabel>();
-    punchStartLabel->setRange(0.0, 100000.0, 0.0);
-    punchStartLabel->setBarsBeatsIsPosition(true);
-    punchStartLabel->setDoubleClickResetsValue(false);
+    // Punch start/end — stacked box in time display area
+    auto accentPurple = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
+
+    setupBBTLabel(punchStartLabel, "I", accentPurple);
     punchStartLabel->onValueChange = [this]() {
         double startBeats = punchStartLabel->getValue();
         double startSeconds = (startBeats * 60.0) / currentTempo;
         if (onPunchRegionEdit)
             onPunchRegionEdit(startSeconds, cachedPunchEnd);
     };
-    addAndMakeVisible(*punchStartLabel);
 
-    punchEndLabel = std::make_unique<BarsBeatsTicksLabel>();
-    punchEndLabel->setRange(0.0, 100000.0, 0.0);
-    punchEndLabel->setBarsBeatsIsPosition(true);
-    punchEndLabel->setDoubleClickResetsValue(false);
+    setupBBTLabel(punchEndLabel, "O", accentPurple);
     punchEndLabel->onValueChange = [this]() {
         double endBeats = punchEndLabel->getValue();
         double endSeconds = (endBeats * 60.0) / currentTempo;
         if (onPunchRegionEdit)
             onPunchRegionEdit(cachedPunchStart, endSeconds);
     };
-    addAndMakeVisible(*punchEndLabel);
+
+    updatePunchLabelColors();
 
     // Initialize displays
     setPlayheadPosition(0.0);
