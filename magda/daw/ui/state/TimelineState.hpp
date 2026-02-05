@@ -481,10 +481,12 @@ struct TimelineState {
         if (timelineLength > 0 && zoom.viewportWidth > 0) {
             double availableWidth = zoom.viewportWidth - 50.0;
             double beats = secondsToBeats(timelineLength);
-            if (beats > 0)
-                return availableWidth / beats;
+            if (beats > 0) {
+                // Allow zooming out to 1/4 of the fit-to-viewport level
+                return (availableWidth / beats) * 0.25;
+            }
         }
-        return 0.1;
+        return 0.01;
     }
 };
 

@@ -602,10 +602,11 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
         double newZoom = zoomStartValue * std::pow(2.0, exponent);
 
         // Calculate minimum zoom based on timeline length and viewport width
+        // Allow zooming out to 1/4 of the fit-to-viewport level
         double minZoom = minZoomLevel;
         if (timelineLength > 0 && viewportWidth > 0) {
             double availableWidth = viewportWidth - 50.0;
-            minZoom = availableWidth / timelineLength;
+            minZoom = (availableWidth / timelineLength) * 0.25;
             minZoom = juce::jmax(minZoom, minZoomLevel);
         }
 

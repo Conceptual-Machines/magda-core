@@ -150,7 +150,7 @@ void MainView::setupComponents() {
     trackContentPanel = std::make_unique<TrackContentPanel>();
     trackContentPanel->setController(timelineController.get());  // Connect to centralized state
     trackContentViewport->setViewedComponent(trackContentPanel.get(), false);
-    trackContentViewport->setScrollBarsShown(true, true);
+    trackContentViewport->setScrollBarsShown(false, false, true, true);
     addAndMakeVisible(*trackContentViewport);
 
     // Create grid overlay component (vertical time grid lines - below selection and playhead)
@@ -566,10 +566,6 @@ void MainView::resized() {
 
     // Grid and selection overlays cover the track content area
     auto overlayArea = bounds;
-    // Reduce the area to avoid covering scrollbars
-    int scrollBarThickness = trackContentViewport->getScrollBarThickness();
-    overlayArea =
-        overlayArea.withTrimmedRight(scrollBarThickness).withTrimmedBottom(scrollBarThickness);
 
     // Grid overlay (bottom layer - draws vertical time grid lines)
     gridOverlay->setBounds(overlayArea);
@@ -583,8 +579,7 @@ void MainView::resized() {
     auto playheadArea = bounds;
     playheadArea =
         playheadArea.withTop(getTimelineHeight() - 20);  // Start 20px above timeline border
-    playheadArea =
-        playheadArea.withTrimmedRight(scrollBarThickness).withTrimmedBottom(scrollBarThickness);
+    // No trim needed — internal viewport scrollbars are hidden
     playheadComponent->setBounds(playheadArea);
 
     // Notify controller about viewport resize
