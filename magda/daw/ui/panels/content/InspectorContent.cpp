@@ -2106,8 +2106,13 @@ void InspectorContent::updateFromSelectedClip() {
         stretchModeCombo_.setVisible(isAudioClip);
         if (isAudioClip) {
             clipStretchValue_->setValue(clip->speedRatio, juce::dontSendNotification);
-            // Set stretch mode combo: mode+1 because ComboBox IDs start at 1
-            stretchModeCombo_.setSelectedId(clip->timeStretchMode + 1, juce::dontSendNotification);
+            // Show effective stretch mode (auto-upgraded when autoTempo/warp is active)
+            int effectiveMode = clip->timeStretchMode;
+            if (effectiveMode == 0 && (clip->autoTempo || clip->warpEnabled ||
+                                       std::abs(clip->speedRatio - 1.0) > 0.001)) {
+                effectiveMode = 4;  // soundtouchBetter (defaultMode)
+            }
+            stretchModeCombo_.setSelectedId(effectiveMode + 1, juce::dontSendNotification);
 
             // Enable/disable stretch controls based on auto-tempo mode
             if (!clip->autoTempo && clipStretchValue_) {
@@ -2195,8 +2200,8 @@ void InspectorContent::updateFromSelectedClip() {
         // Playback / Beat Detection section (audio clips only)
         beatDetectionSectionLabel_.setVisible(isAudioClip);
         reverseToggle_.setVisible(isAudioClip);
-        autoDetectBeatsToggle_.setVisible(isAudioClip);
-        beatSensitivityValue_->setVisible(isAudioClip);
+        autoDetectBeatsToggle_.setVisible(false);  // Hidden: no effect with SoundTouch stretcher
+        beatSensitivityValue_->setVisible(false);  // Hidden: no effect with SoundTouch stretcher
         if (isAudioClip) {
             reverseToggle_.setToggleState(clip->isReversed, juce::dontSendNotification);
             autoDetectBeatsToggle_.setToggleState(clip->autoDetectBeats,

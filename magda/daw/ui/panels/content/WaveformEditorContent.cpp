@@ -941,6 +941,9 @@ magda::AudioBridge* WaveformEditorContent::getBridge() {
 
 // ============================================================================
 // Timer (Transient Detection Polling)
+// TODO: Expose transient detection sensitivity control. TE's TransientDetectionJob
+//       accepts a Config { float sensitivity } but WarpTimeManager hardcodes 0.5f.
+//       Would need to modify WarpTimeManager or re-run the job with a custom config.
 // ============================================================================
 
 void WaveformEditorContent::timerCallback() {
