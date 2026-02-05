@@ -1051,7 +1051,7 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
     if (editPos >= 0 && editPos <= owner.timelineLength && editX >= 0 && editX < getWidth()) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         juce::Path triangle;
-        triangle.addTriangle(editX - 6, 8, editX + 6, 8, editX, 20);
+        triangle.addTriangle(editX - 6, 6, editX + 6, 6, editX, 20);
         g.fillPath(triangle);
     }
 
