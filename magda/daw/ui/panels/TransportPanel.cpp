@@ -65,12 +65,6 @@ void TransportPanel::resized() {
     x += buttonSize + buttonSpacing;
 
     nextButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing;
-
-    punchInButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing;
-
-    punchOutButton->setBounds(x, buttonY, buttonSize, buttonSize);
 
     // Pause button — hidden but still functional via callbacks
     pauseButton->setBounds(0, 0, 0, 0);
@@ -113,11 +107,25 @@ void TransportPanel::resized() {
     loopStartLabel->setBounds(loopX, boxY, loopLabelWidth, boxHeight);
     loopEndLabel->setBounds(loopX + loopLabelWidth + 4, boxY, loopLabelWidth, boxHeight);
 
-    // Punch start + end (editable BarsBeatsTicksLabels)
+    // Punch in/out — stacked two rows: [button] [label] per row
     int punchX = loopX + loopLabelWidth * 2 + 4 + boxSpacing;
+    int punchBtnSize = 22;
     int punchLabelWidth = 95;
-    punchStartLabel->setBounds(punchX, boxY, punchLabelWidth, boxHeight);
-    punchEndLabel->setBounds(punchX + punchLabelWidth + 4, boxY, punchLabelWidth, boxHeight);
+    int punchRowHeight = 22;
+    int punchRowGap = 2;
+    int punchTotalHeight = punchRowHeight * 2 + punchRowGap;
+    int punchTopY = centerY - punchTotalHeight / 2;
+    int punchBtnLabelGap = 3;
+
+    punchInButton->setBounds(punchX, punchTopY, punchBtnSize, punchRowHeight);
+    punchStartLabel->setBounds(punchX + punchBtnSize + punchBtnLabelGap, punchTopY, punchLabelWidth,
+                               punchRowHeight);
+
+    punchOutButton->setBounds(punchX, punchTopY + punchRowHeight + punchRowGap, punchBtnSize,
+                              punchRowHeight);
+    punchEndLabel->setBounds(punchX + punchBtnSize + punchBtnLabelGap,
+                             punchTopY + punchRowHeight + punchRowGap, punchLabelWidth,
+                             punchRowHeight);
 
     // Tempo and quantize layout
     auto tempoY = tempoArea.getCentreY() - 13;
@@ -131,19 +139,19 @@ void TransportPanel::resized() {
 }
 
 juce::Rectangle<int> TransportPanel::getTransportControlsArea() const {
-    // 9 buttons * 30px + 8 * 2px spacing + 12px padding = 298px
-    return getLocalBounds().removeFromLeft(300);
+    // 7 buttons * 30px + 6 * 2px spacing + 12px padding = 234px
+    return getLocalBounds().removeFromLeft(240);
 }
 
 juce::Rectangle<int> TransportPanel::getTimeDisplayArea() const {
     auto bounds = getLocalBounds();
-    bounds.removeFromLeft(300);
+    bounds.removeFromLeft(240);
     return bounds.removeFromLeft(700);
 }
 
 juce::Rectangle<int> TransportPanel::getTempoQuantizeArea() const {
     auto bounds = getLocalBounds();
-    bounds.removeFromLeft(1000);  // 300 + 700
+    bounds.removeFromLeft(940);  // 240 + 700
     return bounds;
 }
 
@@ -258,6 +266,9 @@ void TransportPanel::setupTransportButtons() {
     punchInButton = std::make_unique<SvgButton>("PunchIn", BinaryData::punchin_svg,
                                                 BinaryData::punchin_svgSize);
     styleTransportButton(*punchInButton, DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    punchInButton->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    punchInButton->setBorderColor(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    punchInButton->setBorderThickness(1.0f);
     punchInButton->onClick = [this]() {
         isPunchEnabled = !isPunchEnabled;
         punchInButton->setActive(isPunchEnabled);
@@ -271,6 +282,9 @@ void TransportPanel::setupTransportButtons() {
     punchOutButton = std::make_unique<SvgButton>("PunchOut", BinaryData::punchout_svg,
                                                  BinaryData::punchout_svgSize);
     styleTransportButton(*punchOutButton, DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    punchOutButton->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    punchOutButton->setBorderColor(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    punchOutButton->setBorderThickness(1.0f);
     punchOutButton->onClick = [this]() {
         isPunchEnabled = !isPunchEnabled;
         punchInButton->setActive(isPunchEnabled);
