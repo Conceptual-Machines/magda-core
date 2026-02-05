@@ -467,6 +467,26 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         // Sync timeline component's snap state
         mainView->syncSnapState();
     };
+
+    // Navigation callbacks
+    transportPanel->onGoHome = [this]() {
+        mainView->getTimelineController().dispatch(SetEditPositionEvent{0.0});
+    };
+    transportPanel->onGoToPrev = [this]() {
+        mainView->getTimelineController().dispatch(SetEditPositionEvent{0.0});
+    };
+    transportPanel->onGoToNext = [this]() {
+        auto& state = mainView->getTimelineController().getState();
+        mainView->getTimelineController().dispatch(SetEditPositionEvent{state.timelineLength});
+    };
+    transportPanel->onPlayheadEdit = [this](double beats) {
+        double bpm = mainView->getTimelineController().getState().tempo.bpm;
+        double seconds = (beats * 60.0) / bpm;
+        mainView->getTimelineController().dispatch(SetEditPositionEvent{seconds});
+    };
+    transportPanel->onLoopRegionEdit = [this](double startSec, double endSec) {
+        mainView->getTimelineController().dispatch(SetLoopRegionEvent{startSec, endSec});
+    };
 }
 
 void MainWindow::MainComponent::setupDeviceLoadingCallback() {

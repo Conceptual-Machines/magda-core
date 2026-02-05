@@ -6,7 +6,7 @@ namespace magda {
 
 /**
  * Manages custom mouse cursors for the DAW UI.
- * Loads cursors from SVG assets and caches them.
+ * Draws crisp cursors programmatically at pixel-perfect sizes.
  */
 class CursorManager {
   public:
@@ -27,15 +27,13 @@ class CursorManager {
     CursorManager();
     ~CursorManager() = default;
 
-    // Disable copying
     CursorManager(const CursorManager&) = delete;
     CursorManager& operator=(const CursorManager&) = delete;
 
-    // Create a cursor from SVG binary data
-    juce::MouseCursor createCursorFromSvg(const char* svgData, int svgSize, int cursorSize,
-                                          int hotspotX, int hotspotY);
+    // Draw a magnifying glass cursor with optional +/- glyph
+    enum class ZoomGlyph { None, Plus, Minus };
+    static juce::MouseCursor createZoomCursor(ZoomGlyph glyph);
 
-    // Cached cursors
     juce::MouseCursor zoomCursor;
     juce::MouseCursor zoomInCursor;
     juce::MouseCursor zoomOutCursor;

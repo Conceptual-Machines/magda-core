@@ -4,6 +4,8 @@
 
 #include <memory>
 
+#include "../components/common/BarsBeatsTicksLabel.hpp"
+#include "../components/common/DraggableValueLabel.hpp"
 #include "../components/common/SvgButton.hpp"
 
 namespace magda {
@@ -26,6 +28,13 @@ class TransportPanel : public juce::Component {
     std::function<void(bool)> onMetronomeToggle;
     std::function<void(bool)> onSnapToggle;
 
+    // Navigation callbacks
+    std::function<void()> onGoHome;
+    std::function<void()> onGoToPrev;
+    std::function<void()> onGoToNext;
+    std::function<void(double)> onPlayheadEdit;            // beats
+    std::function<void(double, double)> onLoopRegionEdit;  // startSeconds, endSeconds
+
     // Update displays - simplified API
     void setPlayheadPosition(double positionInSeconds);
     void setTimeSelection(double startTime, double endTime, bool hasSelection);
@@ -46,32 +55,33 @@ class TransportPanel : public juce::Component {
     std::unique_ptr<SvgButton> stopButton;
     std::unique_ptr<SvgButton> recordButton;
     std::unique_ptr<SvgButton> pauseButton;
+
+    // Navigation buttons
+    std::unique_ptr<SvgButton> homeButton;
+    std::unique_ptr<SvgButton> prevButton;
+    std::unique_ptr<SvgButton> nextButton;
+
+    // Loop button
     std::unique_ptr<SvgButton> loopButton;
 
-    // Time display boxes (center section) - each has primary and optional secondary row
-    // Playhead box
-    std::unique_ptr<juce::Label> playheadPrimaryLabel;
-    std::unique_ptr<juce::Label> playheadSecondaryLabel;
+    // Playhead position (editable BarsBeatsTicksLabel)
+    std::unique_ptr<BarsBeatsTicksLabel> playheadPositionLabel;
 
-    // Selection box
+    // Selection (read-only labels)
     std::unique_ptr<juce::Label> selectionPrimaryLabel;
     std::unique_ptr<juce::Label> selectionSecondaryLabel;
 
-    // Loop box
-    std::unique_ptr<juce::Label> loopPrimaryLabel;
-    std::unique_ptr<juce::Label> loopSecondaryLabel;
+    // Loop start/end (editable BarsBeatsTicksLabels)
+    std::unique_ptr<BarsBeatsTicksLabel> loopStartLabel;
+    std::unique_ptr<BarsBeatsTicksLabel> loopEndLabel;
 
-    // Tempo and quantize (right section)
-    std::unique_ptr<juce::Label> tempoDisplay;
-    std::unique_ptr<SvgButton> tempoDecreaseButton;
-    std::unique_ptr<SvgButton> tempoIncreaseButton;
+    // Tempo (DraggableValueLabel)
+    std::unique_ptr<DraggableValueLabel> tempoLabel;
+
+    // Quantize, metronome, snap
     std::unique_ptr<juce::ComboBox> quantizeCombo;
     std::unique_ptr<SvgButton> metronomeButton;
     std::unique_ptr<juce::TextButton> snapButton;
-
-    // Tempo editing
-    void updateTempoDisplay();
-    void adjustTempo(double delta);
 
     // Layout sections
     juce::Rectangle<int> getTransportControlsArea() const;
@@ -83,15 +93,6 @@ class TransportPanel : public juce::Component {
     void setupTransportButtons();
     void setupTimeDisplayBoxes();
     void setupTempoAndQuantize();
-
-    // Formatting helpers
-    juce::String formatPositionBarsBeats(double seconds) const;
-    juce::String formatPositionSeconds(double seconds) const;
-    juce::String formatRangeBarsBeats(double startTime, double endTime) const;
-    juce::String formatRangeSeconds(double startTime, double endTime) const;
-    void updateDisplayBox(juce::Label* primary, juce::Label* secondary,
-                          const juce::String& barsText, const juce::String& secsText,
-                          bool showBothRows);
 
     // State
     bool isPlaying = false;

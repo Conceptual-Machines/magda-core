@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iostream>
 
+#include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "Config.hpp"
@@ -399,8 +400,8 @@ void TimelineComponent::mouseMove(const juce::MouseEvent& event) {
         int rulerMidpoint = layout.getRulerZoneSplitY();
 
         if (event.y < rulerMidpoint) {
-            // Upper ruler area - zoom cursor (left/right drag to zoom)
-            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+            // Upper ruler area - zoom cursor (magnifying glass)
+            setMouseCursor(CursorManager::getInstance().getZoomCursor());
         } else {
             // Lower ruler area (near tick labels) - time selection cursor
             setMouseCursor(juce::MouseCursor::IBeamCursor);
