@@ -660,6 +660,7 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
     if (editingClipId_ != clipId) {
         editingClipId_ = clipId;
         transientsCached_ = false;
+        transientPollCount_ = 0;
         stopTimer();
         gridComponent_->setClip(clipId);
 
@@ -948,6 +949,13 @@ magda::AudioBridge* WaveformEditorContent::getBridge() {
 
 void WaveformEditorContent::timerCallback() {
     if (transientsCached_ || editingClipId_ == magda::INVALID_CLIP_ID) {
+        stopTimer();
+        return;
+    }
+
+    if (++transientPollCount_ >= MAX_TRANSIENT_POLL_ATTEMPTS) {
+        DBG("WaveformEditorContent: transient detection timed out after "
+            << MAX_TRANSIENT_POLL_ATTEMPTS << " attempts");
         stopTimer();
         return;
     }

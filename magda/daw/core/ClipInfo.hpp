@@ -11,6 +11,16 @@
 
 namespace magda {
 
+/// Wrap a value into [0, period). Used for loop phase calculations.
+inline double wrapPhase(double value, double period) {
+    if (period <= 0.0)
+        return 0.0;
+    double result = std::fmod(value, period);
+    if (result < 0.0)
+        result += period;
+    return result;
+}
+
 /**
  * @brief MIDI note data for MIDI clips
  */

@@ -137,6 +137,8 @@ class WaveformEditorContent : public PanelContent,
 
     // Transient detection polling
     bool transientsCached_ = false;
+    int transientPollCount_ = 0;
+    static constexpr int MAX_TRANSIENT_POLL_ATTEMPTS = 40;  // ~10s at 250ms interval
     void timerCallback() override;
 
     // Header drag-zoom state

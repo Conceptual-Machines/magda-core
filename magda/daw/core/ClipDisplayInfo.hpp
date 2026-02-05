@@ -100,16 +100,6 @@ struct ClipDisplayInfo {
         return timelineToSource(timelinePos);
     }
 
-    // Wrap a value within [0, period)
-    static double wrapPhase(double value, double period) {
-        if (period <= 0.0)
-            return 0.0;
-        double result = std::fmod(value, period);
-        if (result < 0.0)
-            result += period;
-        return result;
-    }
-
     // Factory
     // fileDuration is optional - pass 0 if unknown
     static ClipDisplayInfo from(const ClipInfo& clip, double bpm, double fileDuration = 0.0) {

@@ -41,15 +41,6 @@ class ClipOperations {
     // Helper: Wrap phase within [0, period)
     // ========================================================================
 
-    static inline double wrapPhase(double value, double period) {
-        if (period <= 0.0)
-            return 0.0;
-        double result = std::fmod(value, period);
-        if (result < 0.0)
-            result += period;
-        return result;
-    }
-
     // ========================================================================
     // Container Operations (clip-level only)
     // ========================================================================
@@ -397,6 +388,9 @@ class ClipOperations {
      */
     static inline void setAutoTempo(ClipInfo& clip, bool enabled, double bpm) {
         if (clip.autoTempo == enabled)
+            return;
+
+        if (enabled && bpm <= 0.0)
             return;
 
         clip.autoTempo = enabled;
