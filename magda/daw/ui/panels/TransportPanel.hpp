@@ -27,6 +27,7 @@ class TransportPanel : public juce::Component {
     std::function<void(double)> onTempoChange;
     std::function<void(bool)> onMetronomeToggle;
     std::function<void(bool)> onSnapToggle;
+    std::function<void(bool, int, int)> onGridQuantizeChange;  // (autoGrid, numerator, denominator)
 
     // Navigation callbacks
     std::function<void()> onGoHome;
@@ -48,6 +49,7 @@ class TransportPanel : public juce::Component {
     void setTempo(double bpm);
     void setTimeSignature(int numerator, int denominator);
     void setSnapEnabled(bool enabled);
+    void setGridQuantize(bool autoGrid, int numerator, int denominator, bool isBars = false);
     void setPunchRegion(double startTime, double endTime, bool punchInEnabled,
                         bool punchOutEnabled);
 
@@ -97,8 +99,13 @@ class TransportPanel : public juce::Component {
     // Tempo (DraggableValueLabel)
     std::unique_ptr<DraggableValueLabel> tempoLabel;
 
-    // Quantize, metronome, snap, time signature
-    std::unique_ptr<juce::ComboBox> quantizeCombo;
+    // Grid quantize controls
+    std::unique_ptr<juce::TextButton> autoGridButton;
+    std::unique_ptr<DraggableValueLabel> gridNumeratorLabel;
+    std::unique_ptr<DraggableValueLabel> gridDenominatorLabel;
+    std::unique_ptr<juce::Label> gridSlashLabel;
+
+    // Metronome, snap, time signature
     std::unique_ptr<SvgButton> metronomeButton;
     std::unique_ptr<juce::TextButton> snapButton;
     std::unique_ptr<juce::Label> timeSignatureLabel;
@@ -122,6 +129,9 @@ class TransportPanel : public juce::Component {
     bool isPaused = false;
     bool isLooping = false;
     bool isSnapEnabled = true;
+    bool isAutoGrid = true;
+    int gridNumerator = 1;
+    int gridDenominator = 4;
     bool isPunchInEnabled = false;
     bool isPunchOutEnabled = false;
     double currentTempo = 120.0;

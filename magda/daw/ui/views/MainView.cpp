@@ -429,6 +429,17 @@ void MainView::loopStateChanged(const TimelineState& state) {
     }
 }
 
+void MainView::displayConfigChanged(const TimelineState& state) {
+    // Update grid division display when display config changes
+    updateGridDivisionDisplay();
+
+    // Notify external listeners about grid quantize change
+    if (onGridQuantizeChanged) {
+        const auto& gq = state.display.gridQuantize;
+        onGridQuantizeChanged(gq.autoGrid, gq.numerator, gq.denominator, false);
+    }
+}
+
 void MainView::punchStateChanged(const TimelineState& state) {
     // Notify external listeners about punch region change
     if (onPunchRegionChanged) {
@@ -711,8 +722,8 @@ void MainView::setLoopEnabled(bool enabled) {
 }
 
 void MainView::syncSnapState() {
-    bool snapEnabled = timelineController->getState().display.snapEnabled;
-    timeline->setSnapEnabled(snapEnabled);
+    const auto& state = timelineController->getState();
+    timeline->setSnapEnabled(state.display.snapEnabled);
 }
 
 // Add keyboard event handler for zoom reset shortcut
@@ -1826,46 +1837,66 @@ void MainView::MasterContentPanel::paint(juce::Graphics& g) {
 
 juce::String MainView::calculateGridDivisionString() const {
     const auto& state = timelineController->getState();
-    double zoom = state.zoom.horizontalZoom;  // pixels per beat
-    int timeSigNumerator = state.tempo.timeSignatureNumerator;
 
-    // Use same logic as TimelineComponent to determine grid interval
+    // If grid override is active, return the numerator/denominator string
+    if (!state.display.gridQuantize.autoGrid) {
+        int num = state.display.gridQuantize.numerator;
+        int den = state.display.gridQuantize.denominator;
+        return juce::String(num) + "/" + juce::String(den);
+    }
+
+    // Auto mode: compute smart grid and format as text
+    int num = 0, den = 0;
+    bool isBars = false;
+    calculateSmartGridNumeratorDenominator(num, den, isBars);
+
+    if (isBars) {
+        return num == 1 ? "1 bar" : juce::String(num) + " bars";
+    }
+    return juce::String(num) + "/" + juce::String(den);
+}
+
+void MainView::calculateSmartGridNumeratorDenominator(int& outNum, int& outDen,
+                                                      bool& outIsBars) const {
+    const auto& state = timelineController->getState();
+    double zoom = state.zoom.horizontalZoom;
+    int timeSigNumerator = state.tempo.timeSignatureNumerator;
     auto& layout = LayoutConfig::getInstance();
     int minPixelSpacing = layout.minGridPixelSpacing;
 
-    // zoom is ppb - beat fraction * zoom gives pixels directly
-    // Beat fractions from 1/512 to 1/4
-    const double beatFractions[] = {0.0078125, 0.015625, 0.03125, 0.0625, 0.125, 0.25, 0.5, 1.0};
-    const char* beatNames[] = {"1/512", "1/256", "1/128", "1/64", "1/32", "1/16", "1/8", "1/4"};
+    outIsBars = false;
 
-    // First try beat subdivisions
-    for (int i = 0; i < 8; i++) {
-        double pixelSpacing = beatFractions[i] * zoom;
-        if (static_cast<int>(pixelSpacing) >= minPixelSpacing) {
-            return beatNames[i];
-        }
+    // Try beat subdivisions (powers of 2)
+    double frac = GridConstants::findBeatSubdivision(zoom, minPixelSpacing);
+    if (frac > 0) {
+        // Convert beat fraction to whole-note-relative num/den
+        // beatFraction = 2^p, denominator = 4 / beatFraction
+        outNum = 1;
+        outDen = static_cast<int>(4.0 / frac);
+        if (outDen < 1)
+            outDen = 1;  // For frac > 4 (shouldn't happen)
+        return;
     }
 
-    // If no beat subdivision fits, use bar multiples
-    // pixelsPerBar = zoom * beatsPerBar (= zoom * timeSigNumerator)
-    const int barMultiples[] = {1, 2, 4, 8, 16, 32};
-    for (int mult : barMultiples) {
-        double pixelSpacing = zoom * timeSigNumerator * mult;
-        if (static_cast<int>(pixelSpacing) >= minPixelSpacing) {
-            if (mult == 1) {
-                return "1 bar";
-            } else {
-                return juce::String(mult) + " bars";
-            }
-        }
-    }
-
-    return "32 bars";  // Fallback for very zoomed out views
+    // Bar multiples
+    int mult = GridConstants::findBarMultiple(zoom, timeSigNumerator, minPixelSpacing);
+    outNum = mult;
+    outDen = 0;
+    outIsBars = true;
 }
 
 void MainView::updateGridDivisionDisplay() {
     if (horizontalZoomScrollBar) {
         horizontalZoomScrollBar->setLabel(calculateGridDivisionString());
+    }
+
+    // When Auto mode is on, push the smart grid values to the transport panel
+    const auto& state = timelineController->getState();
+    if (state.display.gridQuantize.autoGrid && onGridQuantizeChanged) {
+        int num = 0, den = 0;
+        bool isBars = false;
+        calculateSmartGridNumeratorDenominator(num, den, isBars);
+        onGridQuantizeChanged(true, num, den, isBars);
     }
 }
 

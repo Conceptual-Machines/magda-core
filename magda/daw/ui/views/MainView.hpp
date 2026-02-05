@@ -73,6 +73,8 @@ class MainView : public juce::Component,
     std::function<void(double, double, bool, bool)>
         onPunchRegionChanged;  // (startTime, endTime, punchInEnabled, punchOutEnabled)
     std::function<void(double)> onEditCursorChanged;  // (positionInSeconds)
+    std::function<void(bool, int, int, bool)>
+        onGridQuantizeChanged;  // (autoGrid, numerator, denominator, isBars)
 
     // ScrollBar::Listener implementation
     void scrollBarMoved(juce::ScrollBar* scrollBarThatHasMoved, double newRangeStart) override;
@@ -84,6 +86,7 @@ class MainView : public juce::Component,
     void selectionStateChanged(const TimelineState& state) override;
     void loopStateChanged(const TimelineState& state) override;
     void punchStateChanged(const TimelineState& state) override;
+    void displayConfigChanged(const TimelineState& state) override;
 
     // TrackManagerListener implementation
     void tracksChanged() override {}  // Handled by TrackHeadersPanel
@@ -231,6 +234,7 @@ class MainView : public juce::Component,
     // Grid division display (shown on horizontal zoom scroll bar)
     void updateGridDivisionDisplay();
     juce::String calculateGridDivisionString() const;
+    void calculateSmartGridNumeratorDenominator(int& outNum, int& outDen, bool& outIsBars) const;
 
     // Audio engine reference for metering
     AudioEngine* audioEngine_ = nullptr;

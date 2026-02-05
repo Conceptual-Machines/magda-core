@@ -42,6 +42,10 @@ class SvgButton : public juce::Button {
         activeBackgroundColor = color;
         hasActiveBackgroundColor = true;
     }
+    void setNormalBackgroundColor(juce::Colour color) {
+        normalBackgroundColor = color;
+        hasNormalBackgroundColor = true;
+    }
     void setOriginalColor(juce::Colour color) {
         originalColor = color;
         hasOriginalColor = true;
@@ -81,6 +85,8 @@ class SvgButton : public juce::Button {
     bool hasOriginalColor = false;
     juce::Colour activeBackgroundColor;  // Background color when active
     bool hasActiveBackgroundColor = false;
+    juce::Colour normalBackgroundColor;  // Background color in normal state
+    bool hasNormalBackgroundColor = false;
 
     // Border settings
     juce::Colour borderColor;

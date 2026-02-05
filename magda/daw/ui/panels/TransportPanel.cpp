@@ -62,6 +62,10 @@ void TransportPanel::paint(juce::Graphics& g) {
                          .getUnion(timeSignatureLabel->getBounds())
                          .getUnion(metronomeButton->getBounds()),
                      "", DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    drawGroupWrapper(gridNumeratorLabel->getBounds().getUnion(gridDenominatorLabel->getBounds()),
+                     "", DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    drawGroupWrapper(autoGridButton->getBounds().getUnion(snapButton->getBounds()), "",
+                     DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
 
     // Bottom border for visual separation from content below
     g.setColour(DarkTheme::getBorderColour());
@@ -163,12 +167,24 @@ void TransportPanel::resized() {
     metronomeButton->setAlpha(0.6f);
     metronomeButton->toFront(false);
 
-    // Quantize and snap layout
-    auto tempoY = tempoArea.getCentreY() - 13;
-    auto tempoX = tempoArea.getX() + 10;
+    // Grid quantize layout — two stacked boxes side by side
+    int gridX = tempoArea.getX() + 6;
+    int numDenWidth = 30;
+    int gridGap = 4;
+    int btnWidth = 44;
 
-    quantizeCombo->setBounds(tempoX, tempoY, 60, 26);
-    snapButton->setBounds(tempoX + 68, tempoY, 45, 26);
+    // Left box: numerator (top) / denominator (bottom)
+    gridNumeratorLabel->setBounds(gridX, rowY1, numDenWidth, rowHeight);
+    gridDenominatorLabel->setBounds(gridX, rowY2, numDenWidth, rowHeight);
+
+    // Right box: AUTO (top) / SNAP (bottom)
+    int gridBtnX = gridX + numDenWidth + gridGap;
+    autoGridButton->setBounds(gridBtnX, rowY1, btnWidth, rowHeight);
+    snapButton->setBounds(gridBtnX, rowY2, btnWidth, rowHeight);
+
+    // Hide slash label (no longer needed in this layout)
+    gridSlashLabel->setBounds(0, 0, 0, 0);
+    gridSlashLabel->setVisible(false);
 }
 
 juce::Rectangle<int> TransportPanel::getTransportControlsArea() const {
@@ -456,15 +472,92 @@ void TransportPanel::setupTempoAndQuantize() {
     timeSignatureLabel->setJustificationType(juce::Justification::centred);
     addAndMakeVisible(*timeSignatureLabel);
 
-    // Quantize combo
-    quantizeCombo = std::make_unique<juce::ComboBox>();
-    quantizeCombo->addItem("Off", 1);
-    quantizeCombo->addItem("1/4", 2);
-    quantizeCombo->addItem("1/8", 3);
-    quantizeCombo->addItem("1/16", 4);
-    quantizeCombo->addItem("1/32", 5);
-    quantizeCombo->setSelectedId(2);
-    addAndMakeVisible(*quantizeCombo);
+    // Auto grid toggle button (like SNAP button)
+    autoGridButton = std::make_unique<juce::TextButton>("AUTO");
+    autoGridButton->setColour(juce::TextButton::buttonColourId,
+                              DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
+    autoGridButton->setColour(juce::TextButton::buttonOnColourId,
+                              DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
+    autoGridButton->setColour(juce::TextButton::textColourOffId,
+                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    autoGridButton->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    autoGridButton->setConnectedEdges(
+        juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+        juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    autoGridButton->setWantsKeyboardFocus(false);
+    autoGridButton->setClickingTogglesState(true);
+    autoGridButton->setToggleState(isAutoGrid, juce::dontSendNotification);
+    autoGridButton->onClick = [this]() {
+        isAutoGrid = autoGridButton->getToggleState();
+        // Enable/disable numerator/denominator labels
+        gridNumeratorLabel->setEnabled(!isAutoGrid);
+        gridDenominatorLabel->setEnabled(!isAutoGrid);
+        gridNumeratorLabel->setAlpha(isAutoGrid ? 0.4f : 1.0f);
+        gridDenominatorLabel->setAlpha(isAutoGrid ? 0.4f : 1.0f);
+        if (onGridQuantizeChange)
+            onGridQuantizeChange(isAutoGrid, gridNumerator, gridDenominator);
+    };
+    addAndMakeVisible(*autoGridButton);
+
+    // Grid numerator (Integer format, range 1-32)
+    gridNumeratorLabel =
+        std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Integer);
+    gridNumeratorLabel->setRange(1.0, 128.0, 1.0);
+    gridNumeratorLabel->setValue(static_cast<double>(gridNumerator), juce::dontSendNotification);
+    gridNumeratorLabel->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    gridNumeratorLabel->setShowFillIndicator(false);
+    gridNumeratorLabel->setFontSize(12.0f);
+    gridNumeratorLabel->setDoubleClickResetsValue(true);
+    gridNumeratorLabel->setDrawBorder(false);
+    gridNumeratorLabel->setEnabled(!isAutoGrid);
+    gridNumeratorLabel->setAlpha(isAutoGrid ? 0.4f : 1.0f);
+    gridNumeratorLabel->onValueChange = [this]() {
+        gridNumerator = static_cast<int>(gridNumeratorLabel->getValue());
+        if (!isAutoGrid && onGridQuantizeChange)
+            onGridQuantizeChange(isAutoGrid, gridNumerator, gridDenominator);
+    };
+    addAndMakeVisible(*gridNumeratorLabel);
+
+    // Grid slash label
+    gridSlashLabel = std::make_unique<juce::Label>();
+    gridSlashLabel->setText("/", juce::dontSendNotification);
+    gridSlashLabel->setFont(FontManager::getInstance().getUIFont(12.0f));
+    gridSlashLabel->setColour(juce::Label::textColourId,
+                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    gridSlashLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    gridSlashLabel->setJustificationType(juce::Justification::centred);
+    gridSlashLabel->setAlpha(isAutoGrid ? 0.4f : 1.0f);
+    addAndMakeVisible(*gridSlashLabel);
+
+    // Grid denominator (Integer format, constrained to powers of 2)
+    gridDenominatorLabel =
+        std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Integer);
+    gridDenominatorLabel->setRange(1.0, 64.0, 4.0);
+    gridDenominatorLabel->setValue(static_cast<double>(gridDenominator),
+                                   juce::dontSendNotification);
+    gridDenominatorLabel->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    gridDenominatorLabel->setShowFillIndicator(false);
+    gridDenominatorLabel->setFontSize(12.0f);
+    gridDenominatorLabel->setDoubleClickResetsValue(true);
+    gridDenominatorLabel->setDrawBorder(false);
+    gridDenominatorLabel->setEnabled(!isAutoGrid);
+    gridDenominatorLabel->setAlpha(isAutoGrid ? 0.4f : 1.0f);
+    gridDenominatorLabel->onValueChange = [this]() {
+        // Constrain to nearest power of 2
+        int raw = static_cast<int>(gridDenominatorLabel->getValue());
+        int pow2 = 1;
+        while (pow2 * 2 <= raw)
+            pow2 *= 2;
+        // Round to nearest power of 2
+        if (raw - pow2 > pow2 * 2 - raw && pow2 * 2 <= 64)
+            pow2 *= 2;
+        gridDenominator = pow2;
+        gridDenominatorLabel->setValue(static_cast<double>(gridDenominator),
+                                       juce::dontSendNotification);
+        if (!isAutoGrid && onGridQuantizeChange)
+            onGridQuantizeChange(isAutoGrid, gridNumerator, gridDenominator);
+    };
+    addAndMakeVisible(*gridDenominatorLabel);
 
     // Metronome button
     metronomeButton = std::make_unique<SvgButton>("Metronome", BinaryData::metronome_svg,
@@ -484,10 +577,13 @@ void TransportPanel::setupTempoAndQuantize() {
     snapButton->setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
     snapButton->setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+                          DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
     snapButton->setColour(juce::TextButton::textColourOffId,
                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     snapButton->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    snapButton->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+                                  juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    snapButton->setWantsKeyboardFocus(false);
     snapButton->setClickingTogglesState(true);
     snapButton->setToggleState(isSnapEnabled, juce::dontSendNotification);
     snapButton->onClick = [this]() {
@@ -670,6 +766,29 @@ void TransportPanel::setPlaybackState(bool playing) {
         isPlaying = playing;
         playButton->setActive(isPlaying);
     }
+}
+
+void TransportPanel::setGridQuantize(bool autoGrid, int numerator, int denominator, bool isBars) {
+    isAutoGrid = autoGrid;
+    gridNumerator = numerator;
+    gridDenominator = denominator;
+
+    autoGridButton->setToggleState(autoGrid, juce::dontSendNotification);
+    gridNumeratorLabel->setValue(static_cast<double>(numerator), juce::dontSendNotification);
+
+    if (isBars) {
+        gridDenominatorLabel->setTextOverride("B");
+    } else {
+        gridDenominatorLabel->clearTextOverride();
+        gridDenominatorLabel->setValue(static_cast<double>(denominator),
+                                       juce::dontSendNotification);
+    }
+
+    // Enable/disable labels based on autoGrid state
+    gridNumeratorLabel->setEnabled(!autoGrid);
+    gridDenominatorLabel->setEnabled(!autoGrid);
+    gridNumeratorLabel->setAlpha(autoGrid ? 0.4f : 1.0f);
+    gridDenominatorLabel->setAlpha(autoGrid ? 0.4f : 1.0f);
 }
 
 void TransportPanel::setSnapEnabled(bool enabled) {

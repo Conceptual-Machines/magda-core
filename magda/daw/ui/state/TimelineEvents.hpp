@@ -263,6 +263,15 @@ struct SetArrangementLockedEvent {
     bool locked;
 };
 
+/**
+ * @brief Set grid quantize (auto toggle + numerator/denominator)
+ */
+struct SetGridQuantizeEvent {
+    bool autoGrid;
+    int numerator;
+    int denominator;
+};
+
 // ===== Section Events =====
 
 /**
@@ -348,7 +357,7 @@ using TimelineEvent = std::variant<
     // Tempo events
     SetTempoEvent, SetTimeSignatureEvent,
     // Display events
-    SetTimeDisplayModeEvent, SetSnapEnabledEvent, SetArrangementLockedEvent,
+    SetTimeDisplayModeEvent, SetSnapEnabledEvent, SetArrangementLockedEvent, SetGridQuantizeEvent,
     // Section events
     AddSectionEvent, RemoveSectionEvent, MoveSectionEvent, ResizeSectionEvent, SelectSectionEvent,
     // Viewport events

@@ -325,6 +325,10 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
                                             bool punchOutEnabled) {
         transportPanel->setPunchRegion(start, end, punchInEnabled, punchOutEnabled);
     };
+    mainView->onGridQuantizeChanged = [this](bool autoGrid, int numerator, int denominator,
+                                             bool isBars) {
+        transportPanel->setGridQuantize(autoGrid, numerator, denominator, isBars);
+    };
 
     setupResizeHandles();
     setupViewModeListener();
@@ -473,6 +477,11 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         mainView->getTimelineController().dispatch(SetSnapEnabledEvent{enabled});
         // Sync timeline component's snap state
         mainView->syncSnapState();
+    };
+
+    transportPanel->onGridQuantizeChange = [this](bool autoGrid, int numerator, int denominator) {
+        mainView->getTimelineController().dispatch(
+            SetGridQuantizeEvent{autoGrid, numerator, denominator});
     };
 
     // Navigation callbacks

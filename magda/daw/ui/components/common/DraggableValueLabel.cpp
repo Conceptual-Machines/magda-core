@@ -282,7 +282,8 @@ void DraggableValueLabel::paint(juce::Graphics& g) {
     if (!isEditing_) {
         g.setColour(customTextColour_.value_or(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)));
         g.setFont(FontManager::getInstance().getUIFont(fontSize_));
-        g.drawText(formatValue(value_), bounds.reduced(2, 0), juce::Justification::centred, false);
+        auto displayText = textOverride_.isNotEmpty() ? textOverride_ : formatValue(value_);
+        g.drawText(displayText, bounds.reduced(2, 0), juce::Justification::centred, false);
     }
 }
 

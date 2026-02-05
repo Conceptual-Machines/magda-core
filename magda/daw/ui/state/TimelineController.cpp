@@ -825,6 +825,19 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
     return ChangeFlags::Display;
 }
 
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetGridQuantizeEvent& e) {
+    auto& gq = state.display.gridQuantize;
+    if (gq.autoGrid == e.autoGrid && gq.numerator == e.numerator &&
+        gq.denominator == e.denominator) {
+        return ChangeFlags::None;
+    }
+
+    gq.autoGrid = e.autoGrid;
+    gq.numerator = e.numerator;
+    gq.denominator = e.denominator;
+    return ChangeFlags::Display;
+}
+
 // ===== Section Event Handlers =====
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const AddSectionEvent& e) {

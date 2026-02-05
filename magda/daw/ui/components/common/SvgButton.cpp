@@ -100,7 +100,7 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
         iconColor = hoverColor;
     }
 
-    // Draw background if pressed or active
+    // Draw background
     if (isActive && hasActiveBackgroundColor) {
         g.setColour(activeBackgroundColor);
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
@@ -109,6 +109,9 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
     } else if (shouldDrawButtonAsHighlighted) {
         g.setColour(iconColor.withAlpha(0.1f));
+        g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
+    } else if (hasNormalBackgroundColor) {
+        g.setColour(normalBackgroundColor);
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
     }
 

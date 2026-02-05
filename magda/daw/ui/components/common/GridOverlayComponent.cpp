@@ -164,34 +164,17 @@ void GridOverlayComponent::drawBarsBeatsGrid(juce::Graphics& g, juce::Rectangle<
     auto& layout = LayoutConfig::getInstance();
     const int minPixelSpacing = layout.minGridPixelSpacing;
 
-    // currentZoom is ppb - beat fraction * zoom gives pixels directly
-    const double beatFractions[] = {0.0078125, 0.015625, 0.03125, 0.0625, 0.125, 0.25, 0.5, 1.0};
-    const int barMultiples[] = {1, 2, 4, 8, 16, 32};
-
+    // Find grid interval using centralized power-of-2 logic
     double markerIntervalBeats = 1.0;
-    bool useBarMultiples = false;
 
-    for (double fraction : beatFractions) {
-        double pixelSpacing = fraction * currentZoom;
-        if (static_cast<int>(pixelSpacing) >= minPixelSpacing) {
-            markerIntervalBeats = fraction;
-            break;
-        }
-        if (fraction == 1.0) {
-            useBarMultiples = true;
-        }
-    }
-
-    // pixelsPerBar = currentZoom * timeSignatureNumerator
-    if (useBarMultiples ||
-        static_cast<int>(currentZoom * timeSignatureNumerator) < minPixelSpacing) {
-        for (int mult : barMultiples) {
-            double pixelSpacing = currentZoom * timeSignatureNumerator * mult;
-            if (static_cast<int>(pixelSpacing) >= minPixelSpacing) {
-                markerIntervalBeats = timeSignatureNumerator * mult;
-                break;
-            }
-        }
+    double frac = GridConstants::findBeatSubdivision(currentZoom, minPixelSpacing);
+    if (frac > 0) {
+        markerIntervalBeats = frac;
+    } else {
+        // Bar multiples
+        int mult =
+            GridConstants::findBarMultiple(currentZoom, timeSignatureNumerator, minPixelSpacing);
+        markerIntervalBeats = timeSignatureNumerator * mult;
     }
 
     // Convert timeline length to total beats for iteration

@@ -169,7 +169,8 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     double loopDragOffset = 0.0;        // Offset from click position to loop start
 
     // Snap to grid state
-    bool snapEnabled = true;  // Snap enabled by default
+    bool snapEnabled = true;    // Snap enabled by default
+    GridQuantize gridQuantize;  // Grid quantize settings
 
     // Time selection state (for ruler highlight)
     double timeSelectionStart = -1.0;

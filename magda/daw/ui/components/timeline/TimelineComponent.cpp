@@ -54,6 +54,7 @@ void TimelineComponent::setController(TimelineController* controller) {
         timeSignatureDenominator = state.tempo.timeSignatureDenominator;
         snapEnabled = state.display.snapEnabled;
         arrangementLocked = state.display.arrangementLocked;
+        gridQuantize = state.display.gridQuantize;
 
         // Sync loop region
         if (state.loop.isValid()) {
@@ -86,6 +87,7 @@ void TimelineComponent::timelineStateChanged(const TimelineState& state) {
     timeSignatureDenominator = state.tempo.timeSignatureDenominator;
     snapEnabled = state.display.snapEnabled;
     arrangementLocked = state.display.arrangementLocked;
+    gridQuantize = state.display.gridQuantize;
     repaint();
 }
 
@@ -1309,6 +1311,13 @@ bool TimelineComponent::isOnLoopTopBorder(int x, int y) const {
 }
 
 double TimelineComponent::getSnapInterval() const {
+    // If grid override is active, return the fixed interval
+    if (!gridQuantize.autoGrid) {
+        double secondsPerBeat = 60.0 / tempoBPM;
+        double beatFraction = gridQuantize.toBeatFraction();
+        return secondsPerBeat * beatFraction;
+    }
+
     // Get the visible snap interval based on zoom level and display mode
     auto& layout = LayoutConfig::getInstance();
     const int minPixelSpacing = layout.minGridPixelSpacing;
@@ -1325,22 +1334,18 @@ double TimelineComponent::getSnapInterval() const {
         }
         return 1.0;  // Default to 1 second
     } else {
-        // Bars/beats mode - snap to beat divisions
+        // Bars/beats mode - find first power-of-2 beat fraction that fits
         double secondsPerBeat = 60.0 / tempoBPM;
+        double ppb = zoom * secondsPerBeat;  // Convert pixels/sec to pixels/beat
 
-        // Beat fractions: 64th, 32nd, 16th, 8th, quarter, half, bar
-        const double beatFractions[] = {0.0625, 0.125, 0.25, 0.5, 1.0, 2.0};
-
-        for (double fraction : beatFractions) {
-            double intervalSeconds = secondsPerBeat * fraction;
-            if (timeDurationToPixels(intervalSeconds) >= minPixelSpacing) {
-                return intervalSeconds;
-            }
+        double frac = GridConstants::findBeatSubdivision(ppb, minPixelSpacing);
+        if (frac > 0) {
+            return secondsPerBeat * frac;
         }
 
-        // If beats are too dense, snap to bars
-        double secondsPerBar = secondsPerBeat * timeSignatureNumerator;
-        return secondsPerBar;
+        // Fall back to bar multiples
+        int mult = GridConstants::findBarMultiple(ppb, timeSignatureNumerator, minPixelSpacing);
+        return secondsPerBeat * timeSignatureNumerator * mult;
     }
 }
 

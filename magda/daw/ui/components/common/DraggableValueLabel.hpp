@@ -109,6 +109,16 @@ class DraggableValueLabel : public juce::Component {
         repaint();
     }
 
+    // Text override: when set, displays this text instead of the formatted value
+    void setTextOverride(const juce::String& text) {
+        textOverride_ = text;
+        repaint();
+    }
+    void clearTextOverride() {
+        textOverride_.clear();
+        repaint();
+    }
+
     // Callback when value changes
     std::function<void()> onValueChange;
 
@@ -137,6 +147,7 @@ class DraggableValueLabel : public juce::Component {
     bool showFillIndicator_ = true;
     bool drawBorder_ = true;
     float fontSize_ = 10.0f;
+    juce::String textOverride_;
 
     // Drag state
     bool isDragging_ = false;

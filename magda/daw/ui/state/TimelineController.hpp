@@ -278,6 +278,7 @@ class TimelineController {
     ChangeFlags handleEvent(const SetTimeDisplayModeEvent& e);
     ChangeFlags handleEvent(const SetSnapEnabledEvent& e);
     ChangeFlags handleEvent(const SetArrangementLockedEvent& e);
+    ChangeFlags handleEvent(const SetGridQuantizeEvent& e);
 
     ChangeFlags handleEvent(const AddSectionEvent& e);
     ChangeFlags handleEvent(const RemoveSectionEvent& e);
