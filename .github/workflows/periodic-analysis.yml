@@ -92,7 +92,7 @@ jobs:
         grep -r "static.*[^const].*=" magda/ tests/ --include="*.cpp" --include="*.hpp" -n | grep -v "const" | head -20 >> analysis-report.txt || true
 
     - name: Upload analysis report
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: code-analysis-report
         path: |
