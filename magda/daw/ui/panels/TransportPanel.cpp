@@ -65,6 +65,12 @@ void TransportPanel::resized() {
     x += buttonSize + buttonSpacing;
 
     nextButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + buttonSpacing;
+
+    punchInButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + buttonSpacing;
+
+    punchOutButton->setBounds(x, buttonY, buttonSize, buttonSize);
 
     // Pause button — hidden but still functional via callbacks
     pauseButton->setBounds(0, 0, 0, 0);
@@ -107,24 +113,16 @@ void TransportPanel::resized() {
     loopStartLabel->setBounds(loopX, boxY, loopLabelWidth, boxHeight);
     loopEndLabel->setBounds(loopX + loopLabelWidth + 4, boxY, loopLabelWidth, boxHeight);
 
-    // Punch in/out — stacked two rows: [button] [label] per row
+    // Punch start/end — stacked two rows
     int punchX = loopX + loopLabelWidth * 2 + 4 + boxSpacing;
-    int punchBtnSize = 22;
     int punchLabelWidth = 95;
     int punchRowHeight = 22;
     int punchRowGap = 2;
     int punchTotalHeight = punchRowHeight * 2 + punchRowGap;
     int punchTopY = centerY - punchTotalHeight / 2;
-    int punchBtnLabelGap = 3;
 
-    punchInButton->setBounds(punchX, punchTopY, punchBtnSize, punchRowHeight);
-    punchStartLabel->setBounds(punchX + punchBtnSize + punchBtnLabelGap, punchTopY, punchLabelWidth,
-                               punchRowHeight);
-
-    punchOutButton->setBounds(punchX, punchTopY + punchRowHeight + punchRowGap, punchBtnSize,
-                              punchRowHeight);
-    punchEndLabel->setBounds(punchX + punchBtnSize + punchBtnLabelGap,
-                             punchTopY + punchRowHeight + punchRowGap, punchLabelWidth,
+    punchStartLabel->setBounds(punchX, punchTopY, punchLabelWidth, punchRowHeight);
+    punchEndLabel->setBounds(punchX, punchTopY + punchRowHeight + punchRowGap, punchLabelWidth,
                              punchRowHeight);
 
     // Tempo and quantize layout
@@ -139,19 +137,19 @@ void TransportPanel::resized() {
 }
 
 juce::Rectangle<int> TransportPanel::getTransportControlsArea() const {
-    // 7 buttons * 30px + 6 * 2px spacing + 12px padding = 234px
-    return getLocalBounds().removeFromLeft(240);
+    // 9 buttons * 30px + 8 * 2px spacing + 12px padding = 298px
+    return getLocalBounds().removeFromLeft(300);
 }
 
 juce::Rectangle<int> TransportPanel::getTimeDisplayArea() const {
     auto bounds = getLocalBounds();
-    bounds.removeFromLeft(240);
+    bounds.removeFromLeft(300);
     return bounds.removeFromLeft(700);
 }
 
 juce::Rectangle<int> TransportPanel::getTempoQuantizeArea() const {
     auto bounds = getLocalBounds();
-    bounds.removeFromLeft(940);  // 240 + 700
+    bounds.removeFromLeft(1000);  // 300 + 700
     return bounds;
 }
 
