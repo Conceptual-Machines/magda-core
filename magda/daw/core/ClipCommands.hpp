@@ -14,7 +14,7 @@ namespace magda {
  */
 class SplitClipCommand : public SnapshotCommand<ClipInfo> {
   public:
-    SplitClipCommand(ClipId clipId, double splitTime);
+    SplitClipCommand(ClipId clipId, double splitTime, double tempo = 120.0);
 
     juce::String getDescription() const override {
         return "Split Clip";
@@ -36,6 +36,7 @@ class SplitClipCommand : public SnapshotCommand<ClipInfo> {
   private:
     ClipId clipId_;
     double splitTime_;
+    double tempo_;
     ClipId rightClipId_ = INVALID_CLIP_ID;
 };
 
@@ -96,7 +97,8 @@ class MoveClipToTrackCommand : public SnapshotCommand<ClipInfo> {
  */
 class ResizeClipCommand : public SnapshotCommand<ClipInfo> {
   public:
-    ResizeClipCommand(ClipId clipId, double newLength, bool fromStart = false);
+    ResizeClipCommand(ClipId clipId, double newLength, bool fromStart = false,
+                      double tempo = 120.0);
 
     juce::String getDescription() const override {
         return "Resize Clip";
@@ -114,6 +116,7 @@ class ResizeClipCommand : public SnapshotCommand<ClipInfo> {
     ClipId clipId_;
     double newLength_;
     bool fromStart_;
+    double tempo_;
 };
 
 /**
@@ -276,7 +279,7 @@ struct JoinClipsState {
  */
 class JoinClipsCommand : public SnapshotCommand<JoinClipsState> {
   public:
-    JoinClipsCommand(ClipId leftClipId, ClipId rightClipId);
+    JoinClipsCommand(ClipId leftClipId, ClipId rightClipId, double tempo = 120.0);
 
     juce::String getDescription() const override {
         return "Join Clips";
@@ -293,6 +296,32 @@ class JoinClipsCommand : public SnapshotCommand<JoinClipsState> {
   private:
     ClipId leftClipId_;
     ClipId rightClipId_;
+    double tempo_;
+};
+
+/**
+ * @brief Command for stretching a clip (time-stretch)
+ *
+ * Since stretch operations modify the clip directly during drag (for live preview),
+ * this command takes the before-state saved at drag start. The clip is already in
+ * its final state when execute() is called, so performAction is a no-op.
+ * Undo restores the full ClipInfo snapshot from before the stretch began.
+ */
+class StretchClipCommand : public UndoableCommand {
+  public:
+    StretchClipCommand(ClipId clipId, const ClipInfo& beforeState);
+
+    juce::String getDescription() const override {
+        return "Stretch Clip";
+    }
+
+    void execute() override;
+    void undo() override;
+
+  private:
+    ClipId clipId_;
+    ClipInfo beforeState_;
+    ClipInfo afterState_;
 };
 
 }  // namespace magda

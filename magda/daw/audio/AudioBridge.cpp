@@ -3,8 +3,10 @@
 #include <iostream>
 #include <unordered_set>
 
+#include "../core/ClipOperations.hpp"
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
+#include "AudioThumbnailManager.hpp"
 
 namespace magda {
 
@@ -247,6 +249,13 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
         return;
     }
 
+    if (clip->autoTempo) {
+        DBG("[AUDIO-BRIDGE] clipPropertyChanged clip "
+            << clipId << " length=" << clip->length << " loopLength=" << clip->loopLength
+            << " loopLengthBeats=" << clip->loopLengthBeats << " lengthBeats=" << clip->lengthBeats
+            << " startTime=" << clip->startTime << " startBeats=" << clip->startBeats);
+    }
+
     if (clip->view == ClipView::Session) {
         // Session clip property changed (e.g. sceneIndex set after creation).
         // Try to sync it to a slot if not already synced.
@@ -272,18 +281,12 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
                     }
 
                     // Update clip's own loop state
-                    if (clip->internalLoopEnabled) {
-                        auto& tempoSeq = edit_.tempoSequence;
-                        double loopStart = clip->internalLoopOffset;
-                        double loopEnd = loopStart + clip->internalLoopLength;
-                        auto loopStartTime =
-                            tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopStart));
-                        auto loopEndTime =
-                            tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEnd));
-
-                        teClip->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
-                        teClip->setLoopRangeBeats({te::BeatPosition::fromBeats(loopStart),
-                                                   te::BeatPosition::fromBeats(loopEnd)});
+                    if (clip->loopEnabled) {
+                        if (clip->getSourceLength() > 0.0) {
+                            teClip->setLoopRange(
+                                te::TimeRange(te::TimePosition::fromSeconds(clip->getTeLoopStart()),
+                                              te::TimePosition::fromSeconds(clip->getTeLoopEnd())));
+                        }
                     } else {
                         teClip->disableLooping();
                     }
@@ -291,11 +294,35 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
                     // Update looping on the launch handle
                     auto launchHandle = teClip->getLaunchHandle();
                     if (launchHandle) {
-                        if (clip->internalLoopEnabled) {
-                            launchHandle->setLooping(
-                                te::BeatDuration::fromBeats(clip->internalLoopLength));
+                        if (clip->loopEnabled) {
+                            double loopLengthSeconds = clip->getSourceLength() / clip->speedRatio;
+                            double bps = edit_.tempoSequence.getBpmAt(te::TimePosition()) / 60.0;
+                            double loopLengthBeats = loopLengthSeconds * bps;
+                            launchHandle->setLooping(te::BeatDuration::fromBeats(loopLengthBeats));
                         } else {
                             launchHandle->setLooping(std::nullopt);
+                        }
+                    }
+
+                    // Sync session-applicable audio clip properties
+                    if (clip->type == ClipType::Audio) {
+                        auto* audioClip = dynamic_cast<te::WaveAudioClip*>(teClip);
+                        if (audioClip) {
+                            // Pitch
+                            if (clip->autoPitch != audioClip->getAutoPitch())
+                                audioClip->setAutoPitch(clip->autoPitch);
+                            if (std::abs(audioClip->getPitchChange() - clip->pitchChange) > 0.001f)
+                                audioClip->setPitchChange(clip->pitchChange);
+                            if (audioClip->getTransposeSemiTones(false) != clip->transpose)
+                                audioClip->setTranspose(clip->transpose);
+                            // Playback
+                            if (clip->isReversed != audioClip->getIsReversed())
+                                audioClip->setIsReversed(clip->isReversed);
+                            // Per-Clip Mix
+                            if (std::abs(audioClip->getGainDB() - clip->gainDB) > 0.001f)
+                                audioClip->setGainDB(clip->gainDB);
+                            if (std::abs(audioClip->getPan() - clip->pan) > 0.001f)
+                                audioClip->setPan(clip->pan);
                         }
                     }
 
@@ -305,19 +332,21 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
                             auto& sequence = midiClip->getSequence();
                             sequence.clear(nullptr);
 
-                            double loopEndBeat =
-                                clip->internalLoopOffset + clip->internalLoopLength;
+                            // For MIDI, use clip length as boundary
+                            double clipLengthBeats =
+                                clip->length *
+                                (edit_.tempoSequence.getBpmAt(te::TimePosition()) / 60.0);
                             for (const auto& note : clip->midiNotes) {
                                 double start = note.startBeat;
                                 double length = note.lengthBeats;
 
-                                // Skip or truncate notes at the loop boundary
-                                if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
-                                    if (start >= loopEndBeat)
+                                // Skip or truncate notes at the clip boundary
+                                if (clip->loopEnabled) {
+                                    if (start >= clipLengthBeats)
                                         continue;
                                     double noteEnd = start + length;
-                                    if (noteEnd > loopEndBeat)
-                                        length = loopEndBeat - start;
+                                    if (noteEnd > clipLengthBeats)
+                                        length = clipLengthBeats - start;
                                 }
 
                                 sequence.addNote(
@@ -429,16 +458,17 @@ void AudioBridge::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip) {
     midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
 
     // Set up internal looping on the TE clip
-    if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
+    if (clip->loopEnabled) {
+        // For MIDI clips, use clip length as loop region
+        const double beatsPerSecond = edit_.tempoSequence.getBpmAt(te::TimePosition()) / 60.0;
+        double clipLengthBeats = clip->length * beatsPerSecond;
         auto& tempoSeq = edit_.tempoSequence;
-        double loopStart = clip->internalLoopOffset;
-        double loopEnd = loopStart + clip->internalLoopLength;
-        auto loopStartTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopStart));
-        auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEnd));
+        auto loopStartTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(0.0));
+        auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(clipLengthBeats));
 
         midiClipPtr->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
         midiClipPtr->setLoopRangeBeats(
-            {te::BeatPosition::fromBeats(loopStart), te::BeatPosition::fromBeats(loopEnd)});
+            {te::BeatPosition::fromBeats(0.0), te::BeatPosition::fromBeats(clipLengthBeats)});
     } else {
         midiClipPtr->disableLooping();
     }
@@ -452,21 +482,18 @@ void AudioBridge::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip) {
     double clipLengthBeats = clip->length * beatsPerSecond;
     // Only session clips use midiOffset; arrangement clips play all their notes
     double effectiveOffset =
-        (clip->view == ClipView::Session || clip->internalLoopEnabled) ? clip->midiOffset : 0.0;
+        (clip->view == ClipView::Session || clip->loopEnabled) ? clip->midiOffset : 0.0;
     double visibleStart = effectiveOffset;  // Where the clip's "view window" starts
     double visibleEnd = effectiveOffset + clipLengthBeats;
 
     DBG("MIDI SYNC clip " << clipId << ":");
     DBG("  midiOffset=" << clip->midiOffset << ", clipLength=" << clipLengthBeats << " beats");
-    DBG("  loopEnabled=" << (int)clip->internalLoopEnabled
-                         << ", loopOffset=" << clip->internalLoopOffset
-                         << ", loopLength=" << clip->internalLoopLength);
+    DBG("  loopEnabled=" << (int)clip->loopEnabled);
     DBG("  Visible range: [" << visibleStart << ", " << visibleEnd << ")");
     DBG("  Total notes: " << clip->midiNotes.size());
 
     // Only add notes that overlap with the visible range
     int addedCount = 0;
-    double loopEndBeat = clip->internalLoopOffset + clip->internalLoopLength;
 
     for (const auto& note : clip->midiNotes) {
         double noteStart = note.startBeat;
@@ -477,13 +504,13 @@ void AudioBridge::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip) {
             continue;
         }
 
-        // When looping, truncate notes at loop boundary to prevent stuck notes
+        // When looping, truncate notes at clip boundary to prevent stuck notes
         double adjustedLength = note.lengthBeats;
-        if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
-            if (noteStart >= loopEndBeat)
+        if (clip->loopEnabled) {
+            if (noteStart >= clipLengthBeats)
                 continue;
-            if (noteEnd > loopEndBeat)
-                adjustedLength = loopEndBeat - noteStart;
+            if (noteEnd > clipLengthBeats)
+                adjustedLength = clipLengthBeats - noteStart;
         }
 
         // Calculate position relative to clip start (subtract midiOffset for session clips only)
@@ -548,19 +575,18 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
 
     // 3. CREATE new clip if doesn't exist
     if (!audioClipPtr) {
-        if (clip->audioSources.empty()) {
-            DBG("AudioBridge: No audio sources for clip " << clipId);
+        if (clip->audioFilePath.isEmpty()) {
+            DBG("AudioBridge: No audio file for clip " << clipId);
             return;
         }
-        const auto& source = clip->audioSources[0];
-        juce::File audioFile(source.filePath);
+        juce::File audioFile(clip->audioFilePath);
         if (!audioFile.existsAsFile()) {
-            DBG("AudioBridge: Audio file not found: " << source.filePath);
+            DBG("AudioBridge: Audio file not found: " << clip->audioFilePath);
             return;
         }
 
-        double createStart = clip->startTime + source.position;
-        double createEnd = createStart + source.length;
+        double createStart = clip->startTime;
+        double createEnd = createStart + clip->length;
         auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(createStart),
                                        te::TimePosition::fromSeconds(createEnd));
 
@@ -575,9 +601,26 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
 
         audioClipPtr = clipRef.get();
 
-        // Enable timestretcher at creation time (before any speedRatio changes)
-        // Must be set before setSpeedRatio() to avoid assertion failures
-        audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
+        // Set timestretcher mode at creation time
+        // When timeStretchMode is 0 (disabled), keep it disabled — TE's
+        // getActualTimeStretchMode() will auto-upgrade to defaultMode when
+        // autoPitch/autoTempo/pitchChange require it.
+        // Force defaultMode when speedRatio != 1.0 or warp is enabled.
+        auto stretchMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+        if (stretchMode == te::TimeStretcher::disabled &&
+            (std::abs(clip->speedRatio - 1.0) > 0.001 || clip->warpEnabled))
+            stretchMode = te::TimeStretcher::defaultMode;
+        audioClipPtr->setTimeStretchMode(stretchMode);
+        audioClipPtr->setUsesProxy(false);
+
+        // Populate source file metadata from TE's loopInfo
+        {
+            auto& loopInfoRef = audioClipPtr->getLoopInfo();
+            auto waveInfo = audioClipPtr->getWaveInfo();
+            if (auto* mutableClip = ClipManager::getInstance().getClip(clipId))
+                mutableClip->setSourceMetadata(loopInfoRef.getNumBeats(),
+                                               loopInfoRef.getBpm(waveInfo));
+        }
 
         // Store bidirectional mapping
         std::string engineClipId = audioClipPtr->itemID.toString().toStdString();
@@ -587,34 +630,10 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
         DBG("AudioBridge: Created WaveAudioClip (engine ID: " << engineClipId << ")");
     }
 
-    // 4. UPDATE clip position/length using audio source position within clip
-    // The engine clip plays audio starting at clip->startTime + source.position,
-    // for source.length duration, reading from source.offset in the file.
-    // IMPORTANT: Clamp to clip boundaries so audio stops at visual clip end.
-    double clipStart = clip->startTime;
-    double clipEnd = clip->startTime + clip->length;
-    double engineStart = clipStart;
-    double engineEnd = clipEnd;
-    double engineOffset = 0.0;
-
-    if (!clip->audioSources.empty()) {
-        const auto& source = clip->audioSources[0];
-        double sourceStart = clip->startTime + source.position;
-        double sourceEnd = sourceStart + source.length;
-
-        // Clamp engine boundaries to clip boundaries
-        // Audio should only play within the visible clip region
-        engineStart = std::max(sourceStart, clipStart);
-        engineEnd = std::min(sourceEnd, clipEnd);
-
-        // Adjust offset if source starts before clip (left side clipped)
-        if (sourceStart < clipStart) {
-            double clippedTime = clipStart - sourceStart;
-            engineOffset = source.offset + (clippedTime / source.stretchFactor);
-        } else {
-            engineOffset = source.offset;
-        }
-    }
+    // 4. UPDATE clip position/length
+    // Read seconds directly — BPM handler keeps these in sync for autoTempo clips.
+    double engineStart = clip->startTime;
+    double engineEnd = clip->startTime + clip->length;
 
     auto currentPos = audioClipPtr->getPosition();
     auto currentStart = currentPos.getStart().inSeconds();
@@ -630,32 +649,296 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
         audioClipPtr->setPosition(te::ClipPosition{newTimeRange, currentPos.getOffset()});
     }
 
-    // 5. UPDATE audio offset (trim point in file)
-    auto currentOffset = audioClipPtr->getPosition().getOffset().inSeconds();
-    if (std::abs(currentOffset - engineOffset) > 0.001) {
-        audioClipPtr->setOffset(te::TimeDuration::fromSeconds(engineOffset));
-    }
+    // 5. UPDATE speed ratio and auto-tempo mode
+    // Handle auto-tempo (musical mode) vs time-based mode
+    DBG("========== AUTO-TEMPO SYNC [" << clipId << "] ==========");
+    DBG("  OUR MODEL:");
+    DBG("    autoTempo: " << (int)clip->autoTempo);
+    DBG("    loopEnabled: " << (int)clip->loopEnabled);
+    DBG("    loopStartBeats: " << clip->loopStartBeats);
+    DBG("    loopLengthBeats: " << clip->loopLengthBeats);
+    DBG("    loopStart: " << clip->loopStart);
+    DBG("    loopLength: " << clip->loopLength);
+    DBG("    offset: " << clip->offset);
+    DBG("    length: " << clip->length);
+    DBG("    speedRatio: " << clip->speedRatio);
+    DBG("    sourceBPM: " << clip->sourceBPM);
+    DBG("    sourceNumBeats: " << clip->sourceNumBeats);
+    DBG("    getTeOffset(): " << clip->getTeOffset());
+    DBG("    loopStart+loopLength: " << (clip->loopStart + clip->loopLength));
+    DBG("  TE STATE BEFORE:");
+    DBG("    autoTempo: " << (int)audioClipPtr->getAutoTempo());
+    DBG("    isLooping: " << (int)audioClipPtr->isLooping());
+    DBG("    loopStartBeats: " << audioClipPtr->getLoopStartBeats().inBeats());
+    DBG("    loopLengthBeats: " << audioClipPtr->getLoopLengthBeats().inBeats());
+    DBG("    loopStart: " << audioClipPtr->getLoopStart().inSeconds());
+    DBG("    loopLength: " << audioClipPtr->getLoopLength().inSeconds());
+    DBG("    offset: " << audioClipPtr->getPosition().getOffset().inSeconds());
+    DBG("    speedRatio: " << audioClipPtr->getSpeedRatio());
 
-    // 6. UPDATE speed ratio for time-stretching
-    // TE speedRatio: 1.0 = normal, 2.0 = 2x faster, 0.5 = 2x slower
-    // Our stretchFactor: 1.0 = normal, 2.0 = 2x slower, 0.5 = 2x faster
-    // Mapping: TE speedRatio = 1.0 / stretchFactor
-    if (!clip->audioSources.empty()) {
-        const auto& source = clip->audioSources[0];
-        double teSpeedRatio = 1.0 / source.stretchFactor;
+    if (clip->autoTempo) {
+        // ========================================================================
+        // AUTO-TEMPO MODE (Beat-based length, maintains musical time)
+        // ========================================================================
+        // In auto-tempo mode:
+        // - TE's autoTempo is enabled (clips stretch/shrink with BPM)
+        // - speedRatio must be 1.0 (TE requirement)
+        // - Use beat-based loop range (setLoopRangeBeats)
+
+        DBG("syncAudioClip [" << clipId << "] ENABLING AUTO-TEMPO MODE");
+
+        // Enable auto-tempo in TE if not already enabled
+        if (!audioClipPtr->getAutoTempo()) {
+            DBG("  -> Setting TE autoTempo = true");
+            audioClipPtr->setAutoTempo(true);
+            DBG("  TE STATE AFTER setAutoTempo(true):");
+            DBG("    isLooping: " << (int)audioClipPtr->isLooping());
+            DBG("    loopStartBeats: " << audioClipPtr->getLoopStartBeats().inBeats());
+            DBG("    loopLengthBeats: " << audioClipPtr->getLoopLengthBeats().inBeats());
+            DBG("    loopStart: " << audioClipPtr->getLoopStart().inSeconds());
+            DBG("    loopLength: " << audioClipPtr->getLoopLength().inSeconds());
+            DBG("    offset: " << audioClipPtr->getPosition().getOffset().inSeconds());
+        } else {
+            DBG("  -> TE autoTempo already true");
+        }
+
+        // Force speedRatio to 1.0 (auto-tempo requirement)
+        if (std::abs(audioClipPtr->getSpeedRatio() - 1.0) > 0.001) {
+            DBG("  -> Forcing speedRatio to 1.0 (was " << audioClipPtr->getSpeedRatio() << ")");
+            audioClipPtr->setSpeedRatio(1.0);
+        }
+
+        // Disable warp (auto-tempo incompatible with warp)
+        if (audioClipPtr->getWarpTime()) {
+            DBG("  -> Disabling warp");
+            audioClipPtr->setWarpTime(false);
+        }
+
+        // Auto-tempo requires a valid stretch mode for TE to time-stretch audio
+        if (audioClipPtr->getTimeStretchMode() == te::TimeStretcher::disabled) {
+            DBG("  -> Setting stretch mode to default (required for autoTempo)");
+            audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
+        }
+
+    } else {
+        // ========================================================================
+        // TIME-BASED MODE (Fixed absolute time, current default behavior)
+        // ========================================================================
+
+        // Always disable autoTempo in TE when our model says it's off
+        if (audioClipPtr->getAutoTempo()) {
+            DBG("syncAudioClip [" << clipId << "] disabling TE autoTempo");
+            audioClipPtr->setAutoTempo(false);
+            DBG("  TE STATE AFTER setAutoTempo(false):");
+            DBG("    isLooping: " << (int)audioClipPtr->isLooping());
+            DBG("    loopStartBeats: " << audioClipPtr->getLoopStartBeats().inBeats());
+            DBG("    loopLengthBeats: " << audioClipPtr->getLoopLengthBeats().inBeats());
+            DBG("    loopStart: " << audioClipPtr->getLoopStart().inSeconds());
+            DBG("    loopLength: " << audioClipPtr->getLoopLength().inSeconds());
+            DBG("    offset: " << audioClipPtr->getPosition().getOffset().inSeconds());
+        }
+
+        double teSpeedRatio = clip->speedRatio;
         double currentSpeedRatio = audioClipPtr->getSpeedRatio();
 
-        if (std::abs(currentSpeedRatio - teSpeedRatio) > 0.001) {
-            // Ensure timestretcher is enabled (may not be set for pre-existing clips)
-            if (audioClipPtr->getTimeStretchMode() == te::TimeStretcher::disabled) {
-                audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
-            }
-            // Disable autoTempo which blocks setSpeedRatio in AudioClipBase
-            if (audioClipPtr->getAutoTempo()) {
-                audioClipPtr->setAutoTempo(false);
-            }
-            audioClipPtr->setSpeedRatio(teSpeedRatio);
+        // Sync time stretch mode — warp also requires a valid stretcher
+        auto desiredMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+        if (desiredMode == te::TimeStretcher::disabled &&
+            (std::abs(teSpeedRatio - 1.0) > 0.001 || clip->warpEnabled))
+            desiredMode = te::TimeStretcher::defaultMode;
+        if (audioClipPtr->getTimeStretchMode() != desiredMode) {
+            audioClipPtr->setTimeStretchMode(desiredMode);
         }
+
+        if (std::abs(currentSpeedRatio - teSpeedRatio) > 0.001) {
+            DBG("syncAudioClip [" << clipId << "] setSpeedRatio: " << teSpeedRatio << " (was "
+                                  << currentSpeedRatio << ", speedRatio=" << clip->speedRatio
+                                  << ")");
+            audioClipPtr->setUsesProxy(false);
+            audioClipPtr->setSpeedRatio(teSpeedRatio);
+
+            // Log TE state after setSpeedRatio (which internally calls setLoopRange)
+            auto posAfterSpeed = audioClipPtr->getPosition();
+            auto loopRangeAfterSpeed = audioClipPtr->getLoopRange();
+            DBG("  TE after setSpeedRatio: offset="
+                << posAfterSpeed.getOffset().inSeconds()
+                << ", start=" << posAfterSpeed.getStart().inSeconds()
+                << ", end=" << posAfterSpeed.getEnd().inSeconds()
+                << ", loopRange=" << loopRangeAfterSpeed.getStart().inSeconds() << "-"
+                << loopRangeAfterSpeed.getEnd().inSeconds()
+                << ", autoTempo=" << (int)audioClipPtr->getAutoTempo()
+                << ", isLooping=" << (int)audioClipPtr->isLooping());
+        }
+
+        // Sync warp state to engine
+        if (clip->warpEnabled != audioClipPtr->getWarpTime()) {
+            audioClipPtr->setWarpTime(clip->warpEnabled);
+        }
+    }
+
+    // 6. UPDATE loop properties (BEFORE offset — setLoopRangeBeats can reset offset)
+    // Use beat-based loop range in auto-tempo mode, time-based otherwise
+    if (clip->autoTempo) {
+        // Auto-tempo mode: ALWAYS set beat-based loop range
+        // The loop range defines the clip's musical extent (not just the loop region)
+
+        // Get tempo for beat calculations
+        double bpm = edit_.tempoSequence.getTempo(0)->getBpm();
+        DBG("  Current BPM: " << bpm);
+
+        // Override TE's loopInfo BPM to match our calibrated sourceBPM.
+        // setAutoTempo calibrates sourceBPM = projectBPM / speedRatio so that
+        // enabling autoTempo doesn't change playback speed.  TE uses loopInfo
+        // to map source beats ↔ source time, so the two must agree.
+        if (clip->sourceBPM > 0.0) {
+            auto waveInfo = audioClipPtr->getWaveInfo();
+            auto& li = audioClipPtr->getLoopInfo();
+            double currentLoopInfoBpm = li.getBpm(waveInfo);
+            if (std::abs(currentLoopInfoBpm - clip->sourceBPM) > 0.1) {
+                DBG("  -> Overriding TE loopInfo BPM: " << currentLoopInfoBpm << " -> "
+                                                        << clip->sourceBPM);
+                li.setBpm(clip->sourceBPM, waveInfo);
+            }
+        }
+
+        // Calculate beat range using centralized helper
+        auto [loopStartBeats, loopLengthBeats] = ClipOperations::getAutoTempoBeatRange(*clip, bpm);
+
+        DBG("  -> Beat range (from ClipOperations): start="
+            << loopStartBeats << ", length=" << loopLengthBeats << " beats"
+            << ", end=" << (loopStartBeats + loopLengthBeats));
+        DBG("  -> TE loopInfo.getNumBeats(): " << audioClipPtr->getLoopInfo().getNumBeats());
+
+        // Set the beat-based loop range in TE
+        auto loopRange = te::BeatRange(te::BeatPosition::fromBeats(loopStartBeats),
+                                       te::BeatDuration::fromBeats(loopLengthBeats));
+
+        DBG("  -> Calling audioClipPtr->setLoopRangeBeats()");
+        audioClipPtr->setLoopRangeBeats(loopRange);
+        DBG("  TE STATE AFTER setLoopRangeBeats:");
+        DBG("    isLooping: " << (int)audioClipPtr->isLooping());
+        DBG("    loopStartBeats: " << audioClipPtr->getLoopStartBeats().inBeats());
+        DBG("    loopLengthBeats: " << audioClipPtr->getLoopLengthBeats().inBeats());
+        DBG("    loopStart: " << audioClipPtr->getLoopStart().inSeconds());
+        DBG("    loopLength: " << audioClipPtr->getLoopLength().inSeconds());
+        DBG("    offset: " << audioClipPtr->getPosition().getOffset().inSeconds());
+        DBG("    autoTempo: " << (int)audioClipPtr->getAutoTempo());
+        DBG("    speedRatio: " << audioClipPtr->getSpeedRatio());
+
+        if (!audioClipPtr->isLooping()) {
+            DBG("  -> WARNING: TE isLooping() is FALSE after setLoopRangeBeats!");
+        }
+    } else {
+        // Time-based mode: Use time-based loop range
+        // Only use setLoopRange (time-based), NOT setLoopRangeBeats which forces
+        // autoTempo=true and speedRatio=1.0, breaking time-stretch.
+        if (clip->loopEnabled && clip->getSourceLength() > 0.0) {
+            auto loopStartTime = te::TimePosition::fromSeconds(clip->getTeLoopStart());
+            auto loopEndTime = te::TimePosition::fromSeconds(clip->getTeLoopEnd());
+            audioClipPtr->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
+        } else if (audioClipPtr->isLooping()) {
+            // Looping disabled in our model but TE still has it on — clear it
+            DBG("syncAudioClip [" << clipId << "] clearing TE loop range (our loopEnabled=false)");
+            audioClipPtr->setLoopRange({});
+        }
+    }
+
+    // 7. UPDATE audio offset (trim point in file)
+    // Must come AFTER loop range — setLoopRangeBeats resets offset internally
+    {
+        double teOffset = juce::jmax(0.0, clip->getTeOffset());
+        auto currentOffset = audioClipPtr->getPosition().getOffset().inSeconds();
+        DBG("  OFFSET SYNC: teOffset=" << teOffset << " (offset=" << clip->offset
+                                       << " - loopStart=" << clip->loopStart
+                                       << " * speedRatio=" << clip->speedRatio << ")"
+                                       << ", currentTEOffset=" << currentOffset);
+        if (std::abs(currentOffset - teOffset) > 0.001) {
+            audioClipPtr->setOffset(te::TimeDuration::fromSeconds(teOffset));
+            DBG("    -> setOffset(" << teOffset << ")");
+        }
+    }
+
+    // 8. PITCH
+    if (clip->autoPitch != audioClipPtr->getAutoPitch())
+        audioClipPtr->setAutoPitch(clip->autoPitch);
+    if (static_cast<int>(audioClipPtr->getAutoPitchMode()) != clip->autoPitchMode)
+        audioClipPtr->setAutoPitchMode(
+            static_cast<te::AudioClipBase::AutoPitchMode>(clip->autoPitchMode));
+    if (std::abs(audioClipPtr->getPitchChange() - clip->pitchChange) > 0.001f)
+        audioClipPtr->setPitchChange(clip->pitchChange);
+    if (audioClipPtr->getTransposeSemiTones(false) != clip->transpose)
+        audioClipPtr->setTranspose(clip->transpose);
+
+    // 9. BEAT DETECTION
+    if (clip->autoDetectBeats != audioClipPtr->getAutoDetectBeats())
+        audioClipPtr->setAutoDetectBeats(clip->autoDetectBeats);
+    if (std::abs(audioClipPtr->getBeatSensitivity() - clip->beatSensitivity) > 0.001f)
+        audioClipPtr->setBeatSensitivity(clip->beatSensitivity);
+
+    // 10. PLAYBACK
+    if (clip->isReversed != audioClipPtr->getIsReversed())
+        audioClipPtr->setIsReversed(clip->isReversed);
+
+    // 11. PER-CLIP MIX
+    if (std::abs(audioClipPtr->getGainDB() - clip->gainDB) > 0.001f)
+        audioClipPtr->setGainDB(clip->gainDB);
+    if (std::abs(audioClipPtr->getPan() - clip->pan) > 0.001f)
+        audioClipPtr->setPan(clip->pan);
+
+    // 12. FADES
+    {
+        double teFadeIn = audioClipPtr->getFadeIn().inSeconds();
+        if (std::abs(teFadeIn - clip->fadeIn) > 0.001)
+            audioClipPtr->setFadeIn(te::TimeDuration::fromSeconds(clip->fadeIn));
+    }
+    {
+        double teFadeOut = audioClipPtr->getFadeOut().inSeconds();
+        if (std::abs(teFadeOut - clip->fadeOut) > 0.001)
+            audioClipPtr->setFadeOut(te::TimeDuration::fromSeconds(clip->fadeOut));
+    }
+    if (static_cast<int>(audioClipPtr->getFadeInType()) != clip->fadeInType)
+        audioClipPtr->setFadeInType(static_cast<te::AudioFadeCurve::Type>(clip->fadeInType));
+    if (static_cast<int>(audioClipPtr->getFadeOutType()) != clip->fadeOutType)
+        audioClipPtr->setFadeOutType(static_cast<te::AudioFadeCurve::Type>(clip->fadeOutType));
+    if (static_cast<int>(audioClipPtr->getFadeInBehaviour()) != clip->fadeInBehaviour)
+        audioClipPtr->setFadeInBehaviour(
+            static_cast<te::AudioClipBase::FadeBehaviour>(clip->fadeInBehaviour));
+    if (static_cast<int>(audioClipPtr->getFadeOutBehaviour()) != clip->fadeOutBehaviour)
+        audioClipPtr->setFadeOutBehaviour(
+            static_cast<te::AudioClipBase::FadeBehaviour>(clip->fadeOutBehaviour));
+    if (clip->autoCrossfade != audioClipPtr->getAutoCrossfade())
+        audioClipPtr->setAutoCrossfade(clip->autoCrossfade);
+
+    // 13. CHANNELS
+    if (clip->leftChannelActive != audioClipPtr->isLeftChannelActive())
+        audioClipPtr->setLeftChannelActive(clip->leftChannelActive);
+    if (clip->rightChannelActive != audioClipPtr->isRightChannelActive())
+        audioClipPtr->setRightChannelActive(clip->rightChannelActive);
+
+    // Final state dump
+    {
+        auto finalPos = audioClipPtr->getPosition();
+        auto finalLoop = audioClipPtr->getLoopRange();
+        auto finalLoopBeats = audioClipPtr->getLoopRangeBeats();
+
+        DBG("========== FINAL STATE [" << clipId << "] ==========");
+        DBG("  TE Position: " << finalPos.getStart().inSeconds() << " - "
+                              << finalPos.getEnd().inSeconds());
+        DBG("  TE Offset: " << finalPos.getOffset().inSeconds());
+        DBG("  TE SpeedRatio: " << audioClipPtr->getSpeedRatio());
+        DBG("  TE AutoTempo: " << (int)audioClipPtr->getAutoTempo());
+        DBG("  TE IsLooping: " << (int)audioClipPtr->isLooping());
+        DBG("  TE LoopRange (time): " << finalLoop.getStart().inSeconds() << " - "
+                                      << finalLoop.getEnd().inSeconds());
+        DBG("  TE LoopRangeBeats: "
+            << finalLoopBeats.getStart().inBeats() << " - "
+            << (finalLoopBeats.getStart() + finalLoopBeats.getLength()).inBeats()
+            << " (length: " << finalLoopBeats.getLength().inBeats() << " beats)");
+        DBG("  Our offset: " << clip->offset);
+        DBG("  Our speedRatio: " << clip->speedRatio);
+        DBG("  Our loopEnabled: " << (int)clip->loopEnabled);
+        DBG("  Our autoTempo: " << (int)clip->autoTempo);
+        DBG("=============================================");
     }
 }
 
@@ -736,13 +1019,13 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
     // TE's free functions insertWaveClip(ClipOwner&, ...) and insertMIDIClip(ClipOwner&, ...)
     // accept ClipSlot as a ClipOwner, creating the clip's ValueTree directly in the slot.
     if (clip->type == ClipType::Audio) {
-        if (clip->audioSources.empty())
+        if (clip->audioFilePath.isEmpty())
             return false;
 
-        const auto& source = clip->audioSources[0];
-        juce::File audioFile(source.filePath);
+        juce::File audioFile(clip->audioFilePath);
         if (!audioFile.existsAsFile()) {
-            DBG("AudioBridge::syncSessionClipToSlot: Audio file not found: " << source.filePath);
+            DBG("AudioBridge::syncSessionClipToSlot: Audio file not found: "
+                << clip->audioFilePath);
             return false;
         }
 
@@ -759,32 +1042,40 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
 
         auto* audioClipPtr = clipRef.get();
 
-        // Enable timestretcher
-        audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
+        // Populate source file metadata from TE's loopInfo
+        {
+            auto& loopInfoRef = audioClipPtr->getLoopInfo();
+            auto waveInfo = audioClipPtr->getWaveInfo();
+            if (auto* mutableClip = cm.getClip(clipId))
+                mutableClip->setSourceMetadata(loopInfoRef.getNumBeats(),
+                                               loopInfoRef.getBpm(waveInfo));
+        }
 
-        // Set file offset (trim point)
-        audioClipPtr->setOffset(te::TimeDuration::fromSeconds(source.offset));
+        // Set timestretcher mode — keep disabled when mode is 0 and speedRatio is 1.0
+        // Warp also requires a valid stretcher
+        auto stretchMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+        if (stretchMode == te::TimeStretcher::disabled &&
+            (std::abs(clip->speedRatio - 1.0) > 0.001 || clip->warpEnabled))
+            stretchMode = te::TimeStretcher::defaultMode;
+        audioClipPtr->setTimeStretchMode(stretchMode);
 
-        // Set speed ratio from stretch factor
-        if (std::abs(source.stretchFactor - 1.0) > 0.001) {
-            double teSpeedRatio = 1.0 / source.stretchFactor;
+        // Set speed ratio (BEFORE offset, since TE offset
+        // is in stretched time and must be set after speed ratio)
+        if (std::abs(clip->speedRatio - 1.0) > 0.001) {
             if (audioClipPtr->getAutoTempo()) {
                 audioClipPtr->setAutoTempo(false);
             }
-            audioClipPtr->setSpeedRatio(teSpeedRatio);
+            audioClipPtr->setSpeedRatio(clip->speedRatio);
         }
 
-        // Set looping properties
-        if (clip->internalLoopEnabled) {
-            auto& tempoSeq = edit_.tempoSequence;
-            double loopStart = clip->internalLoopOffset;
-            double loopEnd = loopStart + clip->internalLoopLength;
-            auto loopStartTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopStart));
-            auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEnd));
+        // Set file offset (trim point) - relative to loop start, in stretched time
+        audioClipPtr->setOffset(te::TimeDuration::fromSeconds(clip->getTeOffset()));
 
-            audioClipPtr->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
-            audioClipPtr->setLoopRangeBeats(
-                {te::BeatPosition::fromBeats(loopStart), te::BeatPosition::fromBeats(loopEnd)});
+        // Set looping properties
+        if (clip->loopEnabled && clip->getSourceLength() > 0.0) {
+            audioClipPtr->setLoopRange(
+                te::TimeRange(te::TimePosition::fromSeconds(clip->getTeLoopStart()),
+                              te::TimePosition::fromSeconds(clip->getTeLoopEnd())));
         }
 
         // Set per-clip launch quantization
@@ -792,6 +1083,20 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
         if (auto* lq = audioClipPtr->getLaunchQuantisation()) {
             lq->type = toTELaunchQType(clip->launchQuantize);
         }
+
+        // Sync session-applicable audio properties at creation
+        if (clip->autoPitch)
+            audioClipPtr->setAutoPitch(true);
+        if (std::abs(clip->pitchChange) > 0.001f)
+            audioClipPtr->setPitchChange(clip->pitchChange);
+        if (clip->transpose != 0)
+            audioClipPtr->setTranspose(clip->transpose);
+        if (clip->isReversed)
+            audioClipPtr->setIsReversed(true);
+        if (std::abs(clip->gainDB) > 0.001f)
+            audioClipPtr->setGainDB(clip->gainDB);
+        if (std::abs(clip->pan) > 0.001f)
+            audioClipPtr->setPan(clip->pan);
 
         return true;
 
@@ -812,13 +1117,17 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
 
         // Add MIDI notes (skip/truncate at loop boundary to prevent stuck notes)
         auto& sequence = midiClipPtr->getSequence();
-        double loopStart = clip->internalLoopOffset;
-        double loopEndBeat = loopStart + clip->internalLoopLength;
+        double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+        double srcLength = clip->getSourceLength();
+        double loopStartBeat = clip->loopStart * (bpm / 60.0);
+        double loopLengthBeats = srcLength * (bpm / 60.0);
+        double loopEndBeat = loopStartBeat + loopLengthBeats;
+
         for (const auto& note : clip->midiNotes) {
             double start = note.startBeat;
             double length = note.lengthBeats;
 
-            if (clip->internalLoopEnabled && clip->internalLoopLength > 0.0) {
+            if (clip->loopEnabled && loopLengthBeats > 0.0) {
                 if (start >= loopEndBeat)
                     continue;
                 double noteEnd = start + length;
@@ -831,9 +1140,9 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
         }
 
         // Set looping if enabled
-        if (clip->internalLoopEnabled) {
-            midiClipPtr->setLoopRangeBeats(
-                {te::BeatPosition::fromBeats(loopStart), te::BeatPosition::fromBeats(loopEndBeat)});
+        if (clip->loopEnabled) {
+            midiClipPtr->setLoopRangeBeats({te::BeatPosition::fromBeats(loopStartBeat),
+                                            te::BeatPosition::fromBeats(loopEndBeat)});
         }
 
         // Set per-clip launch quantization
@@ -870,19 +1179,32 @@ void AudioBridge::launchSessionClip(ClipId clipId) {
     // Set looping before play
     const auto* clip = ClipManager::getInstance().getClip(clipId);
     if (clip) {
-        if (clip->internalLoopEnabled) {
-            // Set clip's own loop range
-            auto& tempoSeq = edit_.tempoSequence;
-            double loopStart = clip->internalLoopOffset;
-            double loopEnd = loopStart + clip->internalLoopLength;
-            auto loopStartTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopStart));
-            auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEnd));
-            teClip->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
-            teClip->setLoopRangeBeats(
-                {te::BeatPosition::fromBeats(loopStart), te::BeatPosition::fromBeats(loopEnd)});
+        if (clip->loopEnabled) {
+            double srcLength = clip->getSourceLength();
+            if (clip->type == ClipType::Audio && srcLength > 0.0) {
+                teClip->setLoopRange(
+                    te::TimeRange(te::TimePosition::fromSeconds(clip->getTeLoopStart()),
+                                  te::TimePosition::fromSeconds(clip->getTeLoopEnd())));
+                double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                double loopDurationBeats = (srcLength / clip->speedRatio) * (bpm / 60.0);
+                launchHandle->setLooping(te::BeatDuration::fromBeats(loopDurationBeats));
+            } else {
+                // MIDI: convert source region to beats
+                double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                double loopStartBeat = clip->loopStart * (bpm / 60.0);
+                double loopLengthBeats = srcLength * (bpm / 60.0);
+                double loopEndBeat = loopStartBeat + loopLengthBeats;
 
-            // Set launch handle looping
-            launchHandle->setLooping(te::BeatDuration::fromBeats(clip->internalLoopLength));
+                auto& tempoSeq = edit_.tempoSequence;
+                auto loopStartTime =
+                    tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopStartBeat));
+                auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEndBeat));
+                teClip->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
+                teClip->setLoopRangeBeats({te::BeatPosition::fromBeats(loopStartBeat),
+                                           te::BeatPosition::fromBeats(loopEndBeat)});
+
+                launchHandle->setLooping(te::BeatDuration::fromBeats(loopLengthBeats));
+            }
         } else {
             teClip->disableLooping();
             launchHandle->setLooping(std::nullopt);
@@ -2279,6 +2601,229 @@ bool AudioBridge::togglePluginWindow(DeviceId deviceId) {
         }
     }
     return false;
+}
+
+// ============================================================================
+// Transient Detection
+// ============================================================================
+
+bool AudioBridge::getTransientTimes(ClipId clipId) {
+    namespace te = tracktion;
+
+    // Get clip info for file path
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (!clip || clip->type != ClipType::Audio || clip->audioFilePath.isEmpty()) {
+        return false;
+    }
+
+    // Check cache first
+    auto& thumbnailManager = AudioThumbnailManager::getInstance();
+    if (thumbnailManager.getCachedTransients(clip->audioFilePath) != nullptr) {
+        return true;
+    }
+
+    // Find TE WaveAudioClip via clipIdToEngineId_
+    auto it = clipIdToEngineId_.find(clipId);
+    if (it == clipIdToEngineId_.end()) {
+        return false;
+    }
+
+    std::string engineId = it->second;
+    te::WaveAudioClip* audioClipPtr = nullptr;
+
+    for (auto* track : te::getAudioTracks(edit_)) {
+        for (auto* teClip : track->getClips()) {
+            if (teClip->itemID.toString().toStdString() == engineId) {
+                audioClipPtr = dynamic_cast<te::WaveAudioClip*>(teClip);
+                break;
+            }
+        }
+        if (audioClipPtr)
+            break;
+    }
+
+    if (!audioClipPtr) {
+        return false;
+    }
+
+    // Get WarpTimeManager from the clip
+    auto& warpManager = audioClipPtr->getWarpTimeManager();
+
+    // Trigger detection if not started
+    warpManager.editFinishedLoading();
+
+    // Poll for completion
+    auto [complete, transientPositions] = warpManager.getTransientTimes();
+
+    if (complete) {
+        // Convert TimePosition array to double array
+        juce::Array<double> times;
+        times.ensureStorageAllocated(transientPositions.size());
+        for (const auto& tp : transientPositions) {
+            times.add(tp.inSeconds());
+        }
+
+        thumbnailManager.cacheTransients(clip->audioFilePath, times);
+        DBG("AudioBridge: Cached " << times.size() << " transients for " << clip->audioFilePath);
+        return true;
+    }
+
+    return false;
+}
+
+// =============================================================================
+// Warp Markers
+// =============================================================================
+
+namespace {
+te::WaveAudioClip* findWaveAudioClip(te::Edit& edit,
+                                     const std::map<ClipId, std::string>& clipIdToEngineId,
+                                     ClipId clipId) {
+    auto it = clipIdToEngineId.find(clipId);
+    if (it == clipIdToEngineId.end())
+        return nullptr;
+
+    const auto& engineId = it->second;
+    for (auto* track : te::getAudioTracks(edit)) {
+        for (auto* teClip : track->getClips()) {
+            if (teClip->itemID.toString().toStdString() == engineId) {
+                return dynamic_cast<te::WaveAudioClip*>(teClip);
+            }
+        }
+    }
+    return nullptr;
+}
+}  // namespace
+
+void AudioBridge::enableWarp(ClipId clipId) {
+    auto* audioClipPtr = findWaveAudioClip(edit_, clipIdToEngineId_, clipId);
+    if (!audioClipPtr)
+        return;
+
+    auto& warpManager = audioClipPtr->getWarpTimeManager();
+
+    // Remove any existing markers (creates default boundaries at 0 and sourceLen)
+    warpManager.removeAllMarkers();
+
+    // Get clip info
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (!clip)
+        return;
+
+    // Get the clip's offset - this is where playback starts in the source file
+    double clipOffset = clip->offset;
+
+    // Get cached transients from AudioThumbnailManager
+    auto* cachedTransients =
+        AudioThumbnailManager::getInstance().getCachedTransients(clip->audioFilePath);
+    DBG("AudioBridge::enableWarp cachedTransients="
+        << (cachedTransients ? juce::String(cachedTransients->size()) : "null")
+        << " file=" << clip->audioFilePath << " offset=" << clipOffset);
+    if (cachedTransients) {
+        // Insert identity-mapped markers at each transient position within the visible range
+        double visibleEnd = clipOffset + clip->length * clip->speedRatio;
+        for (double t : *cachedTransients) {
+            // Only include transients within the visible portion of the clip
+            if (t >= clipOffset && t <= visibleEnd) {
+                auto pos = te::TimePosition::fromSeconds(t);
+                warpManager.insertMarker(te::WarpMarker(pos, pos));
+            }
+        }
+    }
+
+    // Set end marker to source length
+    auto sourceLen = warpManager.getSourceLength();
+    warpManager.setWarpEndMarkerTime(te::TimePosition::fromSeconds(0.0) + sourceLen);
+
+    // Warp requires a valid time stretch mode — TE only auto-upgrades for
+    // autoTempo/autoPitch, not for warp-only clips.
+    if (audioClipPtr->getTimeStretchMode() == te::TimeStretcher::disabled) {
+        audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
+    }
+
+    audioClipPtr->setWarpTime(true);
+
+    DBG("AudioBridge::enableWarp clip " << clipId << " -> " << warpManager.getMarkers().size()
+                                        << " markers");
+}
+
+void AudioBridge::disableWarp(ClipId clipId) {
+    auto* audioClipPtr = findWaveAudioClip(edit_, clipIdToEngineId_, clipId);
+    if (!audioClipPtr)
+        return;
+
+    auto& warpManager = audioClipPtr->getWarpTimeManager();
+    warpManager.removeAllMarkers();
+    audioClipPtr->setWarpTime(false);
+
+    DBG("AudioBridge::disableWarp clip " << clipId);
+}
+
+std::vector<AudioBridge::WarpMarkerInfo> AudioBridge::getWarpMarkers(ClipId clipId) {
+    std::vector<WarpMarkerInfo> result;
+
+    auto* audioClipPtr = findWaveAudioClip(edit_, clipIdToEngineId_, clipId);
+    if (!audioClipPtr) {
+        DBG("AudioBridge::getWarpMarkers clip " << clipId << " -> no TE clip found");
+        return result;
+    }
+
+    auto& warpManager = audioClipPtr->getWarpTimeManager();
+    const auto& markers = warpManager.getMarkers();
+
+    // Return ALL markers including TE's boundary markers at (0,0) and (sourceLen,sourceLen).
+    // The visual renderer needs the same boundaries as the audio engine for correct interpolation.
+    int count = markers.size();
+    result.reserve(static_cast<size_t>(count));
+    for (int i = 0; i < count; ++i) {
+        auto* marker = markers.getUnchecked(i);
+        result.push_back({marker->sourceTime.inSeconds(), marker->warpTime.inSeconds()});
+    }
+
+    return result;
+}
+
+int AudioBridge::addWarpMarker(ClipId clipId, double sourceTime, double warpTime) {
+    auto* audioClipPtr = findWaveAudioClip(edit_, clipIdToEngineId_, clipId);
+    if (!audioClipPtr) {
+        DBG("AudioBridge::addWarpMarker - clip not found");
+        return -1;
+    }
+
+    auto& warpManager = audioClipPtr->getWarpTimeManager();
+    int markerCountBefore = warpManager.getMarkers().size();
+
+    int teIndex = warpManager.insertMarker(te::WarpMarker(te::TimePosition::fromSeconds(sourceTime),
+                                                          te::TimePosition::fromSeconds(warpTime)));
+
+    int markerCountAfter = warpManager.getMarkers().size();
+    DBG("AudioBridge::addWarpMarker clip "
+        << clipId << " src=" << sourceTime << " warp=" << warpTime << " -> teIndex=" << teIndex
+        << " (markers: " << markerCountBefore << " -> " << markerCountAfter << ")");
+
+    // Return TE index directly - UI now uses the same index space
+    return teIndex;
+}
+
+double AudioBridge::moveWarpMarker(ClipId clipId, int index, double newWarpTime) {
+    auto* audioClipPtr = findWaveAudioClip(edit_, clipIdToEngineId_, clipId);
+    if (!audioClipPtr)
+        return newWarpTime;
+
+    // Use TE index directly - UI now uses the same index space
+    auto& warpManager = audioClipPtr->getWarpTimeManager();
+    auto result = warpManager.moveMarker(index, te::TimePosition::fromSeconds(newWarpTime));
+    return result.inSeconds();
+}
+
+void AudioBridge::removeWarpMarker(ClipId clipId, int index) {
+    auto* audioClipPtr = findWaveAudioClip(edit_, clipIdToEngineId_, clipId);
+    if (!audioClipPtr)
+        return;
+
+    // Use TE index directly - UI now uses the same index space
+    auto& warpManager = audioClipPtr->getWarpTimeManager();
+    warpManager.removeMarker(index);
 }
 
 }  // namespace magda

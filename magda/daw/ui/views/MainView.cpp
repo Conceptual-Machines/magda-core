@@ -58,7 +58,7 @@ float dbToMeterPos(float db) {
 MainView::MainView(AudioEngine* audioEngine)
     : audioEngine_(audioEngine),
       playheadPosition(0.0),
-      horizontalZoom(20.0),
+      horizontalZoom(10.0),
       initialZoomSet(false) {
     // Load configuration
     auto& config = magda::Config::getInstance();
@@ -181,12 +181,15 @@ void MainView::setupComponents() {
         double rangeWidth = end - start;
         if (rangeWidth > 0 && timelineLength > 0) {
             // Calculate zoom: smaller range = higher zoom
+            // horizontalZoom is ppb: convert timelineLength to beats
+            const auto& st = timelineController->getState();
+            double totalBeats = st.secondsToBeats(timelineLength);
             int viewportWidth = trackContentViewport->getWidth();
-            double newZoom = static_cast<double>(viewportWidth) / (rangeWidth * timelineLength);
+            double newZoom = static_cast<double>(viewportWidth) / (rangeWidth * totalBeats);
 
-            // Calculate scroll position
-            double scrollTime = start * timelineLength;
-            int scrollX = static_cast<int>(scrollTime * newZoom);
+            // Calculate scroll position (in beats, then to pixels)
+            double scrollBeats = start * totalBeats;
+            int scrollX = static_cast<int>(scrollBeats * newZoom);
 
             // Dispatch to TimelineController
             timelineController->dispatch(SetZoomEvent{newZoom});
@@ -571,7 +574,11 @@ void MainView::resized() {
             if (availableWidth > 0) {
                 auto& config = magda::Config::getInstance();
                 double zoomViewDuration = config.getDefaultZoomViewDuration();
-                double zoomForDefaultView = static_cast<double>(availableWidth) / zoomViewDuration;
+                // horizontalZoom is ppb: convert duration to beats
+                const auto& st = timelineController->getState();
+                double viewBeats = st.secondsToBeats(zoomViewDuration);
+                double zoomForDefaultView =
+                    (viewBeats > 0) ? static_cast<double>(availableWidth) / viewBeats : 10.0;
 
                 // Ensure minimum zoom level for usability
                 zoomForDefaultView = juce::jmax(zoomForDefaultView, 0.5);
@@ -604,7 +611,10 @@ void MainView::setVerticalZoom(double zoomFactor) {
 }
 
 void MainView::scrollToPosition(double timePosition) {
-    auto pixelPosition = static_cast<int>(timePosition * horizontalZoom);
+    // horizontalZoom is ppb, convert time to beats
+    const auto& state = timelineController->getState();
+    double beats = state.secondsToBeats(timePosition);
+    auto pixelPosition = static_cast<int>(beats * horizontalZoom);
     timelineViewport->setViewPosition(pixelPosition, 0);
     trackContentViewport->setViewPosition(pixelPosition, trackContentViewport->getViewPositionY());
 }
@@ -783,7 +793,10 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
 
 void MainView::updateContentSizes() {
     // Use the same content width calculation as ZoomManager for consistency
-    auto baseWidth = static_cast<int>(timelineLength * horizontalZoom);
+    // horizontalZoom is ppb, convert timeline length to beats
+    const auto& st = timelineController->getState();
+    double beats = st.secondsToBeats(timelineLength);
+    auto baseWidth = static_cast<int>(beats * horizontalZoom);
     auto viewportWidth = timelineViewport->getWidth();
     auto minWidth = viewportWidth + (viewportWidth / 2);  // 1.5x viewport width for centering
     auto contentWidth = juce::jmax(baseWidth, minWidth);
@@ -891,12 +904,18 @@ void MainView::updateHorizontalZoomScrollBar() {
     if (timelineLength <= 0 || horizontalZoom <= 0)
         return;
 
+    const auto& st = timelineController->getState();
     int viewportWidth = trackContentViewport->getWidth();
     int scrollX = trackContentViewport->getViewPositionX();
 
     // Calculate visible range as fraction of total timeline
-    double visibleDuration = static_cast<double>(viewportWidth) / horizontalZoom;
-    double scrollTime = static_cast<double>(scrollX) / horizontalZoom;
+    // horizontalZoom is ppb, convert through beats
+    double totalBeats = st.secondsToBeats(timelineLength);
+    double visibleBeats =
+        (horizontalZoom > 0) ? static_cast<double>(viewportWidth) / horizontalZoom : 0;
+    double scrollBeats = (horizontalZoom > 0) ? static_cast<double>(scrollX) / horizontalZoom : 0;
+    double visibleDuration = st.beatsToSeconds(visibleBeats);
+    double scrollTime = st.beatsToSeconds(scrollBeats);
 
     double visibleStart = scrollTime / timelineLength;
     double visibleEnd = (scrollTime + visibleDuration) / timelineLength;
@@ -999,13 +1018,16 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
     bool isPlaying = state.playhead.isPlaying;
 
     // Calculate edit cursor position in pixels (triangle position)
+    // horizontalZoom is ppb, convert time to beats
+    double editBeats = state.secondsToBeats(editPos);
     int editX =
-        static_cast<int>(editPos * owner.horizontalZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
+        static_cast<int>(editBeats * owner.horizontalZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
     editX -= scrollOffset;
 
     // Calculate play cursor position in pixels (vertical line position)
+    double playBeats = state.secondsToBeats(playbackPos);
     int playX =
-        static_cast<int>(playbackPos * owner.horizontalZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
+        static_cast<int>(playBeats * owner.horizontalZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
     playX -= scrollOffset;
 
     // Draw edit cursor (triangle) - always visible
@@ -1043,8 +1065,10 @@ void MainView::PlayheadComponent::mouseDown(const juce::MouseEvent& e) {
     double editPos = state.playhead.editPosition;
 
     // Calculate edit cursor (triangle) position in pixels
+    // horizontalZoom is ppb, convert time to beats
+    double editBeats = state.secondsToBeats(editPos);
     int editX =
-        static_cast<int>(editPos * owner.horizontalZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
+        static_cast<int>(editBeats * owner.horizontalZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
 
     // Adjust for horizontal scroll offset
     int scrollOffset = owner.trackContentViewport->getViewPositionX();
@@ -1064,7 +1088,10 @@ void MainView::PlayheadComponent::mouseDrag(const juce::MouseEvent& e) {
         int deltaX = e.x - dragStartX;
 
         // Convert pixel change to time change
-        double deltaTime = deltaX / owner.horizontalZoom;
+        // horizontalZoom is ppb: deltaX / ppb = deltaBeats, then convert to seconds
+        const auto& state = owner.timelineController->getState();
+        double deltaBeats = deltaX / owner.horizontalZoom;
+        double deltaTime = state.beatsToSeconds(deltaBeats);
 
         // Calculate new playhead position
         double newPosition = dragStartPosition + deltaTime;
@@ -1091,8 +1118,10 @@ void MainView::PlayheadComponent::mouseMove(const juce::MouseEvent& event) {
     double editPos = state.playhead.editPosition;
 
     // Calculate edit cursor (triangle) position in pixels
+    // horizontalZoom is ppb, convert time to beats
+    double editBeats = state.secondsToBeats(editPos);
     int editX =
-        static_cast<int>(editPos * owner.horizontalZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
+        static_cast<int>(editBeats * owner.horizontalZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
 
     // Adjust for horizontal scroll offset
     int scrollOffset = owner.trackContentViewport->getViewPositionX();
@@ -1360,10 +1389,13 @@ void MainView::SelectionOverlayComponent::drawTimeSelection(juce::Graphics& g) {
     }
 
     // Calculate pixel positions
+    // horizontalZoom is ppb, convert times to beats
+    double startBeats = state.secondsToBeats(state.selection.startTime);
+    double endBeats = state.secondsToBeats(state.selection.endTime);
     // Add LEFT_PADDING to align with timeline markers
-    int startX = static_cast<int>(state.selection.startTime * state.zoom.horizontalZoom) +
+    int startX = static_cast<int>(startBeats * state.zoom.horizontalZoom) +
                  LayoutConfig::TIMELINE_LEFT_PADDING;
-    int endX = static_cast<int>(state.selection.endTime * state.zoom.horizontalZoom) +
+    int endX = static_cast<int>(endBeats * state.zoom.horizontalZoom) +
                LayoutConfig::TIMELINE_LEFT_PADDING;
 
     // Adjust for scroll offset
@@ -1444,9 +1476,12 @@ void MainView::SelectionOverlayComponent::drawLoopRegion(juce::Graphics& g) {
     }
 
     // Calculate pixel positions
-    int startX = static_cast<int>(state.loop.startTime * state.zoom.horizontalZoom) +
+    // horizontalZoom is ppb, convert times to beats
+    double loopStartBeats = state.secondsToBeats(state.loop.startTime);
+    double loopEndBeats = state.secondsToBeats(state.loop.endTime);
+    int startX = static_cast<int>(loopStartBeats * state.zoom.horizontalZoom) +
                  LayoutConfig::TIMELINE_LEFT_PADDING;
-    int endX = static_cast<int>(state.loop.endTime * state.zoom.horizontalZoom) +
+    int endX = static_cast<int>(loopEndBeats * state.zoom.horizontalZoom) +
                LayoutConfig::TIMELINE_LEFT_PADDING;
 
     // Adjust for scroll offset
@@ -1774,39 +1809,32 @@ void MainView::MasterContentPanel::paint(juce::Graphics& g) {
 
 juce::String MainView::calculateGridDivisionString() const {
     const auto& state = timelineController->getState();
-    double zoom = state.zoom.horizontalZoom;
-    double bpm = state.tempo.bpm;
+    double zoom = state.zoom.horizontalZoom;  // pixels per beat
     int timeSigNumerator = state.tempo.timeSignatureNumerator;
-
-    // Calculate timing values
-    double secondsPerBeat = 60.0 / bpm;
-    double secondsPerBar = secondsPerBeat * timeSigNumerator;
 
     // Use same logic as TimelineComponent to determine grid interval
     auto& layout = LayoutConfig::getInstance();
     int minPixelSpacing = layout.minGridPixelSpacing;
 
-    auto timeDurationToPixels = [zoom](double duration) {
-        return static_cast<int>(duration * zoom);
-    };
-
+    // zoom is ppb - beat fraction * zoom gives pixels directly
     // Beat fractions from 1/512 to 1/4
     const double beatFractions[] = {0.0078125, 0.015625, 0.03125, 0.0625, 0.125, 0.25, 0.5, 1.0};
     const char* beatNames[] = {"1/512", "1/256", "1/128", "1/64", "1/32", "1/16", "1/8", "1/4"};
 
     // First try beat subdivisions
     for (int i = 0; i < 8; i++) {
-        double intervalSeconds = secondsPerBeat * beatFractions[i];
-        if (timeDurationToPixels(intervalSeconds) >= minPixelSpacing) {
+        double pixelSpacing = beatFractions[i] * zoom;
+        if (static_cast<int>(pixelSpacing) >= minPixelSpacing) {
             return beatNames[i];
         }
     }
 
     // If no beat subdivision fits, use bar multiples
+    // pixelsPerBar = zoom * beatsPerBar (= zoom * timeSigNumerator)
     const int barMultiples[] = {1, 2, 4, 8, 16, 32};
     for (int mult : barMultiples) {
-        double intervalSeconds = secondsPerBar * mult;
-        if (timeDurationToPixels(intervalSeconds) >= minPixelSpacing) {
+        double pixelSpacing = zoom * timeSigNumerator * mult;
+        if (static_cast<int>(pixelSpacing) >= minPixelSpacing) {
             if (mult == 1) {
                 return "1 bar";
             } else {

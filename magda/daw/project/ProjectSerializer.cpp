@@ -822,18 +822,25 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("startTime", clip.startTime);
     obj->setProperty("length", clip.length);
     obj->setProperty("view", static_cast<int>(clip.view));
-    obj->setProperty("internalLoopEnabled", clip.internalLoopEnabled);
-    obj->setProperty("internalLoopLength", clip.internalLoopLength);
+    obj->setProperty("loopEnabled", clip.loopEnabled);
     obj->setProperty("sceneIndex", clip.sceneIndex);
     obj->setProperty("launchMode", static_cast<int>(clip.launchMode));
     obj->setProperty("launchQuantize", static_cast<int>(clip.launchQuantize));
 
-    // Audio sources
-    juce::Array<juce::var> audioSourcesArray;
-    for (const auto& source : clip.audioSources) {
-        audioSourcesArray.add(serializeAudioSource(source));
+    // Audio properties (TE-aligned model)
+    if (clip.audioFilePath.isNotEmpty()) {
+        obj->setProperty("audioFilePath", clip.audioFilePath);
+        obj->setProperty("offset", clip.offset);
+        obj->setProperty("loopStart", clip.loopStart);
+        obj->setProperty("loopLength", clip.loopLength);
+        obj->setProperty("speedRatio", clip.speedRatio);
+        if (clip.warpEnabled) {
+            obj->setProperty("warpEnabled", clip.warpEnabled);
+        }
+        if (clip.timeStretchMode != 0) {
+            obj->setProperty("timeStretchMode", clip.timeStretchMode);
+        }
     }
-    obj->setProperty("audioSources", juce::var(audioSourcesArray));
 
     // MIDI notes
     juce::Array<juce::var> midiNotesArray;
@@ -865,8 +872,14 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     if (!viewVar.isVoid()) {
         outClip.view = static_cast<ClipView>(static_cast<int>(viewVar));
     }
-    outClip.internalLoopEnabled = obj->getProperty("internalLoopEnabled");
-    outClip.internalLoopLength = obj->getProperty("internalLoopLength");
+    // Loop settings (new model)
+    auto loopEnabledVar = obj->getProperty("loopEnabled");
+    if (!loopEnabledVar.isVoid()) {
+        outClip.loopEnabled = static_cast<bool>(loopEnabledVar);
+    } else {
+        // Backward compatibility: try old field name
+        outClip.loopEnabled = obj->getProperty("internalLoopEnabled");
+    }
     outClip.sceneIndex = obj->getProperty("sceneIndex");
 
     // Launch properties (backward compatible - defaults apply if missing)
@@ -879,16 +892,88 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
         outClip.launchQuantize = static_cast<LaunchQuantize>(static_cast<int>(launchQuantizeVar));
     }
 
-    // Audio sources
-    auto audioSourcesVar = obj->getProperty("audioSources");
-    if (audioSourcesVar.isArray()) {
-        auto* arr = audioSourcesVar.getArray();
-        for (const auto& sourceVar : *arr) {
-            AudioSource source;
-            if (!deserializeAudioSource(sourceVar, source)) {
-                return false;
+    // Audio properties (TE-aligned model)
+    auto audioFilePathVar = obj->getProperty("audioFilePath");
+    if (!audioFilePathVar.isVoid()) {
+        outClip.audioFilePath = audioFilePathVar.toString();
+
+        // Try new TE-aligned field names first, fall back to old names for backward compatibility
+        auto offsetVar = obj->getProperty("offset");
+        if (!offsetVar.isVoid()) {
+            outClip.offset = static_cast<double>(offsetVar);
+        } else {
+            // Backward compatibility: try sourceStart, then audioOffset
+            auto sourceStartVar = obj->getProperty("sourceStart");
+            if (!sourceStartVar.isVoid()) {
+                outClip.offset = static_cast<double>(sourceStartVar);
+            } else {
+                outClip.offset = obj->getProperty("audioOffset");
             }
-            outClip.audioSources.push_back(source);
+        }
+
+        auto loopStartVar = obj->getProperty("loopStart");
+        if (!loopStartVar.isVoid()) {
+            outClip.loopStart = static_cast<double>(loopStartVar);
+        } else {
+            // Backward compatibility: loopStart defaults to offset
+            outClip.loopStart = outClip.offset;
+        }
+
+        auto loopLengthVar = obj->getProperty("loopLength");
+        if (!loopLengthVar.isVoid()) {
+            outClip.loopLength = static_cast<double>(loopLengthVar);
+        } else {
+            // Backward compatibility: try to derive from old sourceEnd
+            auto sourceEndVar = obj->getProperty("sourceEnd");
+            if (!sourceEndVar.isVoid()) {
+                double sourceEnd = static_cast<double>(sourceEndVar);
+                if (sourceEnd > outClip.offset) {
+                    outClip.loopLength = sourceEnd - outClip.offset;
+                }
+            }
+            // Note: loopLength=0 means "use clip length", which is fine for migration
+        }
+
+        auto speedRatioVar = obj->getProperty("speedRatio");
+        if (!speedRatioVar.isVoid()) {
+            outClip.speedRatio = static_cast<double>(speedRatioVar);
+        } else {
+            // Backward compatibility: try stretchFactor, then audioStretchFactor
+            auto stretchVar = obj->getProperty("stretchFactor");
+            if (!stretchVar.isVoid()) {
+                outClip.speedRatio = static_cast<double>(stretchVar);
+            } else {
+                outClip.speedRatio = obj->getProperty("audioStretchFactor");
+            }
+        }
+        if (outClip.speedRatio <= 0.0)
+            outClip.speedRatio = 1.0;
+
+        auto warpEnabledVar = obj->getProperty("warpEnabled");
+        if (!warpEnabledVar.isVoid()) {
+            outClip.warpEnabled = static_cast<bool>(warpEnabledVar);
+        }
+        auto timeStretchModeVar = obj->getProperty("timeStretchMode");
+        if (!timeStretchModeVar.isVoid()) {
+            outClip.timeStretchMode = static_cast<int>(timeStretchModeVar);
+        }
+    } else {
+        // Migration from old audioSources format
+        auto audioSourcesVar = obj->getProperty("audioSources");
+        if (audioSourcesVar.isArray()) {
+            auto* arr = audioSourcesVar.getArray();
+            if (arr && !arr->isEmpty()) {
+                auto firstSourceVar = (*arr)[0];
+                if (firstSourceVar.isObject()) {
+                    auto* srcObj = firstSourceVar.getDynamicObject();
+                    outClip.audioFilePath = srcObj->getProperty("filePath").toString();
+                    outClip.offset = srcObj->getProperty("offset");
+                    outClip.loopStart = outClip.offset;
+                    outClip.speedRatio = srcObj->getProperty("stretchFactor");
+                    if (outClip.speedRatio <= 0.0)
+                        outClip.speedRatio = 1.0;
+                }
+            }
         }
     }
 
@@ -904,35 +989,6 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
             outClip.midiNotes.push_back(note);
         }
     }
-
-    return true;
-}
-
-juce::var ProjectSerializer::serializeAudioSource(const AudioSource& source) {
-    auto* obj = new juce::DynamicObject();
-
-    obj->setProperty("filePath", source.filePath);
-    obj->setProperty("position", source.position);
-    obj->setProperty("offset", source.offset);
-    obj->setProperty("length", source.length);
-    obj->setProperty("stretchFactor", source.stretchFactor);
-
-    return juce::var(obj);
-}
-
-bool ProjectSerializer::deserializeAudioSource(const juce::var& json, AudioSource& outSource) {
-    if (!json.isObject()) {
-        lastError_ = "Audio source is not an object";
-        return false;
-    }
-
-    auto* obj = json.getDynamicObject();
-
-    outSource.filePath = obj->getProperty("filePath").toString();
-    outSource.position = obj->getProperty("position");
-    outSource.offset = obj->getProperty("offset");
-    outSource.length = obj->getProperty("length");
-    outSource.stretchFactor = obj->getProperty("stretchFactor");
 
     return true;
 }

@@ -21,14 +21,20 @@ class TimeRuler : public juce::Component, private juce::Timer {
     void resized() override;
 
     // Configuration
-    void setZoom(double pixelsPerSecond);
+    void setZoom(double pixelsPerBeat);
     void setTimelineLength(double lengthInSeconds);
     void setDisplayMode(DisplayMode mode);
     void setScrollOffset(int offsetPixels);
 
     // For bars/beats mode
     void setTempo(double bpm);
+    double getTempo() const {
+        return tempo;
+    }
     void setTimeSignature(int numerator, int denominator);
+    int getTimeSigNumerator() const {
+        return timeSigNumerator;
+    }
 
     // Time offset for piano roll (absolute vs relative mode)
     // When set, displayed times are offset by this amount (e.g., clip starts at bar 5)
@@ -43,14 +49,23 @@ class TimeRuler : public juce::Component, private juce::Timer {
         return relativeMode;
     }
 
-    // Clip boundary marker (shows where clip content ends)
+    // Clip boundary marker (shows where clip content starts/ends)
     void setClipLength(double lengthSeconds);
     double getClipLength() const {
         return clipLength;
     }
+    void setClipContentOffset(double offsetSeconds);
+    double getClipContentOffset() const {
+        return clipContentOffset;
+    }
 
     // Loop region markers (shows loop boundaries on the ruler)
-    void setLoopRegion(double offsetSeconds, double lengthSeconds, bool enabled);
+    // enabled: show markers at all; active: loop is actually on (green vs grey)
+    void setLoopRegion(double offsetSeconds, double lengthSeconds, bool enabled,
+                       bool active = true);
+
+    // Loop phase marker (shows where playback phase is within the loop)
+    void setLoopPhaseMarker(double positionSeconds, bool visible);
 
     // Playhead position (for drawing playhead line during playback)
     void setPlayheadPosition(double positionSeconds);
@@ -88,7 +103,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
   private:
     // Display state
     DisplayMode displayMode = DisplayMode::Seconds;
-    double zoom = 20.0;             // pixels per second
+    double zoom = 10.0;             // pixels per beat
     double timelineLength = 300.0;  // seconds
     int scrollOffset = 0;           // pixels
 
@@ -101,12 +116,19 @@ class TimeRuler : public juce::Component, private juce::Timer {
     double timeOffset = 0.0;    // seconds - absolute position of content start
     bool relativeMode = false;  // true = show relative time (1, 2, 3...), false = show absolute
     double clipLength = 0.0;    // seconds - length of clip (0 = no boundary marker)
+    double clipContentOffset =
+        0.0;  // seconds - source offset in timeline seconds (shifts boundaries)
     double playheadPosition = -1.0;  // seconds - current playback position (-1 = not playing)
 
     // Loop region
     double loopOffset = 0.0;   // seconds - loop start offset within clip
     double loopLength = 0.0;   // seconds - loop length
-    bool loopEnabled = false;  // whether loop region is active
+    bool loopEnabled = false;  // whether loop markers are visible
+    bool loopActive = false;   // whether loop is actually enabled (green vs grey)
+
+    // Loop phase marker
+    double loopPhasePosition = 0.0;  // phase marker position in timeline seconds
+    bool loopPhaseVisible = false;
 
     // Layout
     int leftPadding = 18;  // Configurable padding (default 18 for main timeline)

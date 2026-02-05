@@ -154,9 +154,6 @@ class ProjectSerializer {
     static juce::var serializeClipInfo(const ClipInfo& clip);
     static bool deserializeClipInfo(const juce::var& json, ClipInfo& outClip);
 
-    static juce::var serializeAudioSource(const AudioSource& source);
-    static bool deserializeAudioSource(const juce::var& json, AudioSource& outSource);
-
     static juce::var serializeMidiNote(const MidiNote& note);
     static bool deserializeMidiNote(const juce::var& json, MidiNote& outNote);
 

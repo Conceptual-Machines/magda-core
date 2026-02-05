@@ -2,15 +2,26 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <vector>
+
+#include "audio/AudioBridge.hpp"
+#include "core/ClipDisplayInfo.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
 
+namespace magda {
+class TimeRuler;  // Forward declaration
+}
+
 namespace magda::daw::ui {
+
+/** Beat grid resolution for waveform overlay */
+enum class GridResolution { Off, Bar, Beat, Eighth, Sixteenth, ThirtySecond };
 
 /**
  * @brief Scrollable waveform grid component
  *
- * Handles waveform drawing and interaction (trim, move, stretch).
+ * Handles waveform drawing and interaction (trim, stretch).
  * Designed to be placed inside a Viewport for scrolling.
  * Similar to PianoRollGridComponent architecture.
  */
@@ -28,6 +39,7 @@ class WaveformGridComponent : public juce::Component {
     void mouseDrag(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
+    void mouseDoubleClick(const juce::MouseEvent& event) override;
 
     // ========================================================================
     // Configuration
@@ -81,11 +93,45 @@ class WaveformGridComponent : public juce::Component {
     void updateClipPosition(double startTime, double length);
 
     /**
-     * @brief Set the loop end boundary in seconds (clip-relative)
-     * When set (> 0), audio past the loop point is dimmed.
-     * Pass 0 or negative to clear.
+     * @brief Set pre-computed display info (loop boundaries, source-file ranges, etc.)
+     * @param info ClipDisplayInfo built from ClipInfo + BPM
      */
-    void setLoopEndSeconds(double loopEndSeconds);
+    void setDisplayInfo(const magda::ClipDisplayInfo& info);
+
+    /**
+     * @brief Set detected transient times (in source file seconds)
+     * @param times Array of transient times in source-file seconds
+     */
+    void setTransientTimes(const juce::Array<double>& times);
+
+    // ========================================================================
+    // Beat Grid
+    // ========================================================================
+
+    /** Set the beat grid resolution (Off disables the grid) */
+    void setGridResolution(GridResolution resolution);
+
+    /** Get current grid resolution */
+    GridResolution getGridResolution() const;
+
+    /** Set the TimeRuler to read tempo/time-signature from (not owned) */
+    void setTimeRuler(magda::TimeRuler* ruler);
+
+    /** Get grid interval in beats for the current resolution */
+    double getGridResolutionBeats() const;
+
+    /** Snap a source-file time to the nearest grid line */
+    double snapTimeToGrid(double time) const;
+
+    // ========================================================================
+    // Warp Mode
+    // ========================================================================
+
+    /** Enable/disable warp marker display and interaction */
+    void setWarpMode(bool enabled);
+
+    /** Update warp markers for display */
+    void setWarpMarkers(const std::vector<magda::AudioBridge::WarpMarkerInfo>& markers);
 
     // ========================================================================
     // Coordinate Conversion
@@ -111,14 +157,19 @@ class WaveformGridComponent : public juce::Component {
 
     std::function<void()> onWaveformChanged;
 
+    // Warp marker callbacks
+    std::function<void(double sourceTime, double warpTime)> onWarpMarkerAdd;
+    std::function<void(int index, double newWarpTime)> onWarpMarkerMove;
+    std::function<void(int index)> onWarpMarkerRemove;
+
   private:
     magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
 
     // Timeline mode
     bool relativeMode_ = false;
-    double clipStartTime_ = 0.0;   // Clip start position on timeline (seconds)
-    double clipLength_ = 0.0;      // Clip length (seconds)
-    double loopEndSeconds_ = 0.0;  // Loop end boundary in seconds (0 = no loop)
+    double clipStartTime_ = 0.0;            // Clip start position on timeline (seconds)
+    double clipLength_ = 0.0;               // Clip length (seconds)
+    magda::ClipDisplayInfo displayInfo_{};  // Pre-computed display values
 
     // Zoom and scroll
     double horizontalZoom_ = 100.0;  // pixels per second
@@ -135,28 +186,79 @@ class WaveformGridComponent : public juce::Component {
     int minimumHeight_ = 400;
 
     // Drag state
-    enum class DragMode { None, ResizeLeft, ResizeRight, Move, StretchLeft, StretchRight };
+    enum class DragMode {
+        None,
+        ResizeLeft,
+        ResizeRight,
+        StretchLeft,
+        StretchRight,
+        MoveWarpMarker
+    };
     DragMode dragMode_ = DragMode::None;
-    double dragStartPosition_ = 0.0;
     double dragStartAudioOffset_ = 0.0;
     double dragStartLength_ = 0.0;
+    double dragStartStartTime_ = 0.0;
     int dragStartX_ = 0;
-    double dragStartStretchFactor_ = 1.0;
+    double dragStartSpeedRatio_ = 1.0;
     double dragStartFileDuration_ = 0.0;
+    double dragStartClipLength_ = 0.0;  // Original clip.length at drag start (for stretch)
 
     // Throttled update for live preview
     static constexpr int DRAG_UPDATE_INTERVAL_MS = 50;  // Update arrangement view every 50ms
     juce::int64 lastDragUpdateTime_ = 0;
 
+    // Transient markers (source file seconds)
+    juce::Array<double> transientTimes_;
+
+    // Warp mode state
+    bool warpMode_ = false;
+    std::vector<magda::AudioBridge::WarpMarkerInfo> warpMarkers_;
+    int hoveredMarkerIndex_ = -1;
+    int draggingMarkerIndex_ = -1;
+    double dragStartWarpTime_ = 0.0;
+
+    // Beat grid state
+    GridResolution gridResolution_ = GridResolution::Off;
+    magda::TimeRuler* timeRuler_ = nullptr;  // not owned — reads tempo/timeSig
+
+    // Layout info shared between paint helpers
+    struct WaveformLayout {
+        juce::Rectangle<int> rect;  // full waveform rect (position + size)
+        int clipEndPixel;           // pixel X of the effective clip/loop end
+    };
+
     // Painting helpers
     void paintWaveform(juce::Graphics& g, const magda::ClipInfo& clip);
+    WaveformLayout computeWaveformLayout(const magda::ClipInfo& clip) const;
+    void paintWaveformBackground(juce::Graphics& g, const magda::ClipInfo& clip,
+                                 const WaveformLayout& layout);
+    void paintWaveformThumbnail(juce::Graphics& g, const magda::ClipInfo& clip,
+                                const WaveformLayout& layout);
+    void paintWaveformOverlays(juce::Graphics& g, const magda::ClipInfo& clip,
+                               const WaveformLayout& layout);
+    void paintBeatGrid(juce::Graphics& g, const magda::ClipInfo& clip);
+    void paintWarpedWaveform(juce::Graphics& g, const magda::ClipInfo& clip,
+                             juce::Rectangle<int> waveformRect, juce::Colour waveColour,
+                             float vertZoom);
+    void paintTransientMarkers(juce::Graphics& g, const magda::ClipInfo& clip);
+    void paintWarpMarkers(juce::Graphics& g, const magda::ClipInfo& clip);
     void paintClipBoundaries(juce::Graphics& g);
     void paintNoClipMessage(juce::Graphics& g);
 
     // Hit testing helpers
-    bool isNearLeftEdge(int x, const magda::AudioSource& source) const;
-    bool isNearRightEdge(int x, const magda::AudioSource& source) const;
-    bool isInsideWaveform(int x, const magda::AudioSource& source) const;
+    bool isNearLeftEdge(int x, const magda::ClipInfo& clip) const;
+    bool isNearRightEdge(int x, const magda::ClipInfo& clip) const;
+    bool isInsideWaveform(int x, const magda::ClipInfo& clip) const;
+
+    // Warp marker helpers
+    int findMarkerAtPixel(int x) const;
+    double snapToNearestTransient(double time) const;
+    static constexpr int WARP_MARKER_HIT_DISTANCE = 5;
+
+    // Display start time (0.0 in relative mode, clipStartTime_ in absolute)
+    double getDisplayStartTime() const {
+        return relativeMode_ ? 0.0 : clipStartTime_;
+    }
 
     // Get current clip
     const magda::ClipInfo* getClip() const;

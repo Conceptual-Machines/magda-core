@@ -73,8 +73,8 @@ class ClipManager {
      * @param startTime Position on timeline - only used for Arrangement view
      */
     ClipId createAudioClip(TrackId trackId, double startTime, double length,
-                           const juce::String& audioFilePath,
-                           ClipView view = ClipView::Arrangement);
+                           const juce::String& audioFilePath, ClipView view = ClipView::Arrangement,
+                           double projectBPM = 120.0);
 
     /**
      * @brief Create an empty MIDI clip
@@ -146,7 +146,7 @@ class ClipManager {
      * @brief Split a clip at a specific time
      * @return The ID of the new clip (right half)
      */
-    ClipId splitClip(ClipId clipId, double splitTime);
+    ClipId splitClip(ClipId clipId, double splitTime, double tempo = 120.0);
 
     /**
      * @brief Trim clip to a range (used for time selection based creation)
@@ -159,20 +159,65 @@ class ClipManager {
 
     void setClipName(ClipId clipId, const juce::String& name);
     void setClipColour(ClipId clipId, juce::Colour colour);
-    void setClipLoopEnabled(ClipId clipId, bool enabled);
-    void setClipLoopOffset(ClipId clipId, double offsetBeats);
-    void setClipLoopLength(ClipId clipId, double lengthBeats);
+    void setClipLoopEnabled(ClipId clipId, bool enabled, double projectBPM = 120.0);
     void setClipMidiOffset(ClipId clipId, double offsetBeats);
     void setClipLaunchMode(ClipId clipId, LaunchMode mode);
     void setClipLaunchQuantize(ClipId clipId, LaunchQuantize quantize);
 
-    // Audio-specific
-    /** @brief Set the position of an audio source within its clip container */
-    void setAudioSourcePosition(ClipId clipId, int sourceIndex, double position);
-    /** @brief Set the timeline length of an audio source */
-    void setAudioSourceLength(ClipId clipId, int sourceIndex, double length);
-    /** @brief Set the time-stretch factor of an audio source (1.0 = original speed) */
-    void setAudioSourceStretchFactor(ClipId clipId, int sourceIndex, double stretchFactor);
+    // Warp
+    /** @brief Enable or disable warp markers on an audio clip */
+    void setClipWarpEnabled(ClipId clipId, bool enabled);
+
+    // Audio-specific (TE-aligned model)
+    /** @brief Set the offset (start position) in the audio file (source-time seconds) - TE:
+     * Clip::offset */
+    void setOffset(ClipId clipId, double offset);
+    /** @brief Set the loop phase (offset relative to loopStart) in loop mode */
+    void setLoopPhase(ClipId clipId, double phase);
+    /** @brief Set the loop region start in the audio file (source-time seconds) - TE:
+     * AudioClipBase::loopStart
+     * @param bpm Current tempo — used to update loopStartBeats when autoTempo is enabled */
+    void setLoopStart(ClipId clipId, double loopStart, double bpm = 120.0);
+    /** @brief Set the loop region length (source-time seconds) - TE: AudioClipBase::loopLength
+     * @param bpm Current tempo — used to update loopLengthBeats when autoTempo is enabled */
+    void setLoopLength(ClipId clipId, double loopLength, double bpm = 120.0);
+    /** @brief Set the clip timeline length in beats (autoTempo mode only) */
+    void setLengthBeats(ClipId clipId, double beats, double bpm);
+    /** @brief Set the playback speed ratio (1.0 = original, 2.0 = double speed) - TE:
+     * Clip::speedRatio */
+    void setSpeedRatio(ClipId clipId, double speedRatio);
+    /** @brief Set the time-stretch algorithm mode for an audio clip */
+    void setTimeStretchMode(ClipId clipId, int mode);
+
+    // Pitch
+    void setAutoPitch(ClipId clipId, bool enabled);
+    void setAutoPitchMode(ClipId clipId, int mode);
+    void setPitchChange(ClipId clipId, float semitones);
+    void setTranspose(ClipId clipId, int semitones);
+
+    // Beat Detection
+    void setAutoDetectBeats(ClipId clipId, bool enabled);
+    void setBeatSensitivity(ClipId clipId, float sensitivity);
+
+    // Playback
+    void setIsReversed(ClipId clipId, bool reversed);
+
+    // Per-Clip Mix
+    void setClipGainDB(ClipId clipId, float dB);
+    void setClipPan(ClipId clipId, float pan);
+
+    // Fades
+    void setFadeIn(ClipId clipId, double seconds);
+    void setFadeOut(ClipId clipId, double seconds);
+    void setFadeInType(ClipId clipId, int type);
+    void setFadeOutType(ClipId clipId, int type);
+    void setFadeInBehaviour(ClipId clipId, int behaviour);
+    void setFadeOutBehaviour(ClipId clipId, int behaviour);
+    void setAutoCrossfade(ClipId clipId, bool enabled);
+
+    // Channels
+    void setLeftChannelActive(ClipId clipId, bool active);
+    void setRightChannelActive(ClipId clipId, bool active);
 
     // ========================================================================
     // Content-Level Operations (Editor Operations)
@@ -191,45 +236,36 @@ class ClipManager {
     // ========================================================================
 
     /**
-     * @brief Trim/extend audio source from left edge
+     * @brief Trim/extend audio from left edge
      * @param trimAmount Amount to trim in timeline seconds (positive=trim, negative=extend)
      * @param fileDuration Total file duration for constraint checking (0 = no constraint)
      */
-    void trimAudioSourceLeft(ClipId clipId, int sourceIndex, double trimAmount,
-                             double fileDuration = 0.0);
+    void trimAudioLeft(ClipId clipId, double trimAmount, double fileDuration = 0.0);
 
     /**
-     * @brief Trim/extend audio source from right edge
+     * @brief Trim/extend audio from right edge
      * @param trimAmount Amount to trim in timeline seconds (positive=trim, negative=extend)
      * @param fileDuration Total file duration for constraint checking (0 = no constraint)
      */
-    void trimAudioSourceRight(ClipId clipId, int sourceIndex, double trimAmount,
-                              double fileDuration = 0.0);
+    void trimAudioRight(ClipId clipId, double trimAmount, double fileDuration = 0.0);
 
     /**
-     * @brief Stretch audio source from left edge (editor operation)
+     * @brief Stretch audio from left edge (editor operation)
      * @param newLength New timeline length
      * @param oldLength Original timeline length at drag start
-     * @param originalPosition Original position at drag start
-     * @param originalStretchFactor Original stretch factor at drag start
+     * @param originalSpeedRatio Original speed ratio at drag start
      */
-    void stretchAudioSourceLeft(ClipId clipId, int sourceIndex, double newLength, double oldLength,
-                                double originalPosition, double originalStretchFactor);
+    void stretchAudioLeft(ClipId clipId, double newLength, double oldLength,
+                          double originalSpeedRatio);
 
     /**
-     * @brief Stretch audio source from right edge (editor operation)
+     * @brief Stretch audio from right edge (editor operation)
      * @param newLength New timeline length
      * @param oldLength Original timeline length at drag start
-     * @param originalStretchFactor Original stretch factor at drag start
+     * @param originalSpeedRatio Original speed ratio at drag start
      */
-    void stretchAudioSourceRight(ClipId clipId, int sourceIndex, double newLength, double oldLength,
-                                 double originalStretchFactor);
-
-    /**
-     * @brief Move audio source within clip container (editor operation)
-     * @param newPosition New position within clip (clamped to >= 0.0)
-     */
-    void moveAudioSource(ClipId clipId, int sourceIndex, double newPosition);
+    void stretchAudioRight(ClipId clipId, double newLength, double oldLength,
+                           double originalSpeedRatio);
 
     // MIDI-specific
     void addMidiNote(ClipId clipId, const MidiNote& note);
@@ -397,6 +433,9 @@ class ClipManager {
     void notifyClipPropertyChanged(ClipId clipId);
     void notifyClipSelectionChanged(ClipId clipId);
     void notifyClipPlaybackStateChanged(ClipId clipId);
+
+    // Clamp audio clip properties (offset, loopStart, loopLength) to file bounds
+    void sanitizeAudioClip(ClipInfo& clip);
 
     // Helper to generate unique clip name
     juce::String generateClipName(ClipType type) const;

@@ -1,5 +1,10 @@
 #include "AudioThumbnailManager.hpp"
 
+// clang-format off
+#include <tracktion_engine/tracktion_engine.h>
+#include <tracktion_engine/timestretch/tracktion_TempoDetect.h>
+// clang-format on
+
 namespace magda {
 
 AudioThumbnailManager::AudioThumbnailManager() {
@@ -92,15 +97,71 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
     thumbnail->drawChannels(g, bounds, startTime, endTime, verticalZoom);
 }
 
+double AudioThumbnailManager::detectBPM(const juce::String& filePath) {
+    // Check cache first
+    auto it = bpmCache_.find(filePath);
+    if (it != bpmCache_.end()) {
+        return it->second;
+    }
+
+    juce::File audioFile(filePath);
+    if (!audioFile.existsAsFile()) {
+        bpmCache_[filePath] = 0.0;
+        return 0.0;
+    }
+
+    std::unique_ptr<juce::AudioFormatReader> reader(formatManager_.createReaderFor(audioFile));
+    if (!reader) {
+        bpmCache_[filePath] = 0.0;
+        return 0.0;
+    }
+
+    tracktion::engine::TempoDetect detector(static_cast<int>(reader->numChannels),
+                                            reader->sampleRate);
+    float bpm = detector.processReader(*reader);
+
+    double result = 0.0;
+    if (detector.isBpmSensible()) {
+        result = static_cast<double>(bpm);
+        // Snap to nearest integer BPM if within 0.5 — most music uses whole-number tempos
+        double rounded = std::round(result);
+        if (std::abs(result - rounded) < 0.5) {
+            result = rounded;
+        }
+    }
+
+    bpmCache_[filePath] = result;
+    DBG("AudioThumbnailManager: Detected BPM for " << filePath << ": " << result);
+    return result;
+}
+
+const juce::Array<double>* AudioThumbnailManager::getCachedTransients(
+    const juce::String& filePath) const {
+    auto it = transientCache_.find(filePath);
+    if (it != transientCache_.end()) {
+        return &it->second;
+    }
+    return nullptr;
+}
+
+void AudioThumbnailManager::cacheTransients(const juce::String& filePath,
+                                            const juce::Array<double>& times) {
+    transientCache_[filePath] = times;
+}
+
 void AudioThumbnailManager::clearCache() {
     thumbnails_.clear();
     thumbnailCache_->clear();
+    bpmCache_.clear();
+    transientCache_.clear();
     DBG("AudioThumbnailManager: Cache cleared");
 }
 
 void AudioThumbnailManager::shutdown() {
     thumbnails_.clear();
     thumbnailCache_.reset();
+    bpmCache_.clear();
+    transientCache_.clear();
 }
 
 }  // namespace magda
