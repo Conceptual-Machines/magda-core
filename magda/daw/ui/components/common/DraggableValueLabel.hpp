@@ -79,6 +79,11 @@ class DraggableValueLabel : public juce::Component {
         repaint();
     }
 
+    // Snap to integer values on drag/wheel (shift = fine fractional control)
+    void setSnapToInteger(bool snap) {
+        snapToInteger_ = snap;
+    }
+
     // Callback when value changes
     std::function<void()> onValueChange;
 
@@ -102,6 +107,7 @@ class DraggableValueLabel : public juce::Component {
     bool barsBeatsIsPosition_ = true;
     juce::String suffix_;
     bool doubleClickResets_ = true;
+    bool snapToInteger_ = false;
 
     // Drag state
     bool isDragging_ = false;

@@ -2731,6 +2731,12 @@ void AudioBridge::enableWarp(ClipId clipId) {
     auto sourceLen = warpManager.getSourceLength();
     warpManager.setWarpEndMarkerTime(te::TimePosition::fromSeconds(0.0) + sourceLen);
 
+    // Warp requires a valid time stretch mode — TE only auto-upgrades for
+    // autoTempo/autoPitch, not for warp-only clips.
+    if (audioClipPtr->getTimeStretchMode() == te::TimeStretcher::disabled) {
+        audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
+    }
+
     audioClipPtr->setWarpTime(true);
 
     DBG("AudioBridge::enableWarp clip " << clipId << " -> " << warpManager.getMarkers().size()

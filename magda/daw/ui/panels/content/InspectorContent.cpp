@@ -244,6 +244,7 @@ InspectorContent::InspectorContent() {
     clipBeatsLengthValue_->setRange(0.25, 128.0, 4.0);  // Min 0.25 beats, max 128 beats
     clipBeatsLengthValue_->setSuffix(" beats");
     clipBeatsLengthValue_->setDecimalPlaces(2);
+    clipBeatsLengthValue_->setSnapToInteger(true);
     clipBeatsLengthValue_->onValueChange = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID) {
             auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);

@@ -309,6 +309,12 @@ void DraggableValueLabel::mouseDrag(const juce::MouseEvent& e) {
         if (e.mods.isShiftDown()) {
             deltaValue *= 0.25;
         }
+    } else if (snapToInteger_ && !e.mods.isShiftDown()) {
+        // Integer snap mode: 1 unit per ~30px
+        deltaValue = deltaY / 30.0;
+        double newValue = std::round(dragStartValue_ + deltaValue);
+        setValue(newValue);
+        return;
     } else {
         double range = maxValue_ - minValue_;
         deltaValue = (deltaY / dragSensitivity_) * range;
@@ -372,6 +378,11 @@ void DraggableValueLabel::mouseWheelMove(const juce::MouseEvent& e,
             increment = 1.0 / TICKS_PER_BEAT;
         }
 
+        double direction = (wheel.deltaY > 0) ? 1.0 : -1.0;
+        setValue(value_ + increment * direction);
+    } else if (snapToInteger_) {
+        // Integer snap: scroll by 1, shift = 0.25
+        double increment = e.mods.isShiftDown() ? 0.25 : 1.0;
         double direction = (wheel.deltaY > 0) ? 1.0 : -1.0;
         setValue(value_ + increment * direction);
     } else {
