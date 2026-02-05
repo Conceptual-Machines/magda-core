@@ -488,11 +488,52 @@ void ClipManager::setLoopLength(ClipId clipId, double loopLength, double bpm) {
     }
 }
 
-void ClipManager::setLengthBeats(ClipId clipId, double beats, double bpm) {
+void ClipManager::setLengthBeats(ClipId clipId, double newBeats, double bpm) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio && clip->autoTempo && bpm > 0.0) {
-            clip->lengthBeats = juce::jmax(ClipInfo::MIN_CLIP_LENGTH * bpm / 60.0, beats);
-            clip->setLengthFromBeats(clip->lengthBeats, bpm);
+            double minBeats = ClipInfo::MIN_CLIP_LENGTH * bpm / 60.0;
+            newBeats = juce::jmax(minBeats, newBeats);
+
+            // Source audio length stays constant — we change sourceBPM to stretch
+            double sourceSeconds =
+                clip->loopLength > 0.0 ? clip->loopLength : clip->getSourceLength();
+            if (sourceSeconds <= 0.0)
+                return;
+
+            DBG("[SET-LENGTH-BEATS] clip "
+                << clipId << " newBeats=" << newBeats << " bpm=" << bpm << " BEFORE: sourceBPM="
+                << clip->sourceBPM << " loopLengthBeats=" << clip->loopLengthBeats
+                << " lengthBeats=" << clip->lengthBeats << " loopLength=" << clip->loopLength);
+
+            // Compute new sourceBPM so TE stretches the same audio to fill newBeats
+            // Formula: sourceBPM = beats * 60 / sourceSeconds
+            double oldSourceBPM = clip->sourceBPM;
+            clip->sourceBPM = newBeats * 60.0 / sourceSeconds;
+
+            // Scale sourceNumBeats proportionally
+            if (oldSourceBPM > 0.0 && clip->sourceNumBeats > 0.0) {
+                clip->sourceNumBeats *= clip->sourceBPM / oldSourceBPM;
+            }
+
+            // Update beat values — scale lengthBeats proportionally for sub-loop case
+            double oldLoopLengthBeats = clip->loopLengthBeats;
+            clip->loopLengthBeats = newBeats;
+            if (oldLoopLengthBeats > 0.0) {
+                clip->lengthBeats = clip->lengthBeats * newBeats / oldLoopLengthBeats;
+            } else {
+                clip->lengthBeats = newBeats;
+            }
+
+            // Update loopStartBeats to match new sourceBPM domain
+            clip->loopStartBeats = clip->loopStart * clip->sourceBPM / 60.0;
+
+            // Update clip timeline duration from new beat length
+            clip->length = clip->lengthBeats * 60.0 / bpm;
+
+            DBG("[SET-LENGTH-BEATS]   AFTER: sourceBPM="
+                << clip->sourceBPM << " loopLengthBeats=" << clip->loopLengthBeats
+                << " lengthBeats=" << clip->lengthBeats << " length=" << clip->length);
+
             notifyClipPropertyChanged(clipId);
         }
     }

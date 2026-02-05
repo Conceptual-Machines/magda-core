@@ -247,14 +247,12 @@ InspectorContent::InspectorContent() {
     clipBeatsLengthValue_->onValueChange = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID) {
             auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
-            if (clip && clip->autoTempo && clip->sourceBPM > 0.0) {
+            if (clip && clip->autoTempo) {
                 double newBeats = clipBeatsLengthValue_->getValue();
                 double bpm =
                     timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
-                // Convert source beats to source seconds using sourceBPM
-                double newLoopLength = (newBeats * 60.0) / clip->sourceBPM;
-                magda::ClipManager::getInstance().setLoopLength(selectedClipId_, newLoopLength,
-                                                                bpm);
+                // Stretch: keep source audio constant, change how many beats it fills
+                magda::ClipManager::getInstance().setLengthBeats(selectedClipId_, newBeats, bpm);
             }
         }
     };
@@ -2004,8 +2002,8 @@ void InspectorContent::updateFromSelectedClip() {
         // Show length in beats for audio clips with auto-tempo enabled (read-only display)
         if (isAudioClip && clip->autoTempo) {
             clipBeatsLengthValue_->setVisible(true);
-            clipBeatsLengthValue_->setEnabled(false);
-            clipBeatsLengthValue_->setAlpha(0.6f);
+            clipBeatsLengthValue_->setEnabled(true);
+            clipBeatsLengthValue_->setAlpha(1.0f);
             clipBeatsLengthValue_->setValue(clip->loopLengthBeats, juce::dontSendNotification);
         } else {
             clipBeatsLengthValue_->setVisible(false);
