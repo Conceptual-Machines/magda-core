@@ -55,8 +55,15 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
             return;
         }
 
-        // Draw the icon to fill the button bounds
-        auto bounds = getLocalBounds().toFloat();
+        // Draw border if set
+        if (hasBorder) {
+            g.setColour(borderColor);
+            g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(borderThickness * 0.5f), 2.0f,
+                                   borderThickness);
+        }
+
+        // Draw the icon with padding
+        auto bounds = getLocalBounds().reduced(4).toFloat();
 
         // Apply slight opacity change on hover
         float opacity = 1.0f;

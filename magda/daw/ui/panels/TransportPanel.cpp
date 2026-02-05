@@ -265,6 +265,8 @@ void TransportPanel::setupTransportButtons() {
     punchInButton =
         std::make_unique<SvgButton>("PunchIn", BinaryData::punchin_svg, BinaryData::punchin_svgSize,
                                     BinaryData::punchin_on_svg, BinaryData::punchin_on_svgSize);
+    punchInButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    punchInButton->setBorderThickness(1.0f);
     punchInButton->onClick = [this]() {
         isPunchInEnabled = !isPunchInEnabled;
         punchInButton->setActive(isPunchInEnabled);
@@ -278,6 +280,8 @@ void TransportPanel::setupTransportButtons() {
     punchOutButton = std::make_unique<SvgButton>(
         "PunchOut", BinaryData::punchout_svg, BinaryData::punchout_svgSize,
         BinaryData::punchout_on_svg, BinaryData::punchout_on_svgSize);
+    punchOutButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    punchOutButton->setBorderThickness(1.0f);
     punchOutButton->onClick = [this]() {
         isPunchOutEnabled = !isPunchOutEnabled;
         punchOutButton->setActive(isPunchOutEnabled);
