@@ -40,10 +40,10 @@ void TransportPanel::resized() {
     auto tempoArea = getTempoQuantizeArea();
 
     // Transport controls layout — order: Home, Prev, Play, Stop, Rec, Loop, Next
-    auto buttonMargin = 4;
+    auto buttonMargin = 3;
     auto buttonSize = transportArea.getHeight() - buttonMargin * 2;
     auto buttonY = buttonMargin;
-    auto buttonSpacing = 2;
+    auto buttonSpacing = 1;
 
     auto x = transportArea.getX() + 6;
 
@@ -66,7 +66,7 @@ void TransportPanel::resized() {
     x += buttonSize + buttonSpacing;
 
     nextButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing + 4;  // extra gap before punch group
+    x += buttonSize + buttonSpacing + 3;  // extra gap before punch group
 
     // Punch in/out — stacked two rows: [label] [button] per row
     int punchBtnSize = (buttonSize - 2) / 2;  // two rows with 2px gap
@@ -134,11 +134,11 @@ void TransportPanel::resized() {
 
 juce::Rectangle<int> TransportPanel::getTransportControlsArea() const {
     // 7 square buttons + punch group (label + gap + btn per row)
-    int buttonSize = getHeight() - 8;
+    int buttonSize = getHeight() - 6;
     int punchBtnSize = (buttonSize - 2) / 2;
     int punchGroupWidth = 95 + 3 + punchBtnSize;  // label + gap + button
-    // 6px left pad + 7 buttons + 6*2px spacing + 4px gap + punch group + 6px right pad
-    int width = 6 + 7 * buttonSize + 6 * 2 + 4 + punchGroupWidth + 6;
+    // 6px left pad + 7 buttons + 6*1px spacing + 3px gap + punch group + 6px right pad
+    int width = 6 + 7 * buttonSize + 6 + 3 + punchGroupWidth + 6;
     return getLocalBounds().removeFromLeft(width);
 }
 

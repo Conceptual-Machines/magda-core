@@ -62,8 +62,10 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
                                    borderThickness);
         }
 
-        // Draw the icon with padding
-        auto bounds = getLocalBounds().reduced(4).toFloat();
+        // Icons with built-in backgrounds (transport buttons) need no padding;
+        // icons with programmatic borders (punch buttons) need padding
+        auto bounds =
+            hasBorder ? getLocalBounds().reduced(3).toFloat() : getLocalBounds().toFloat();
 
         // Apply slight opacity change on hover
         float opacity = 1.0f;
