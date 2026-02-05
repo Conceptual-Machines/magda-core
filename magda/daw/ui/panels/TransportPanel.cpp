@@ -152,14 +152,15 @@ void TransportPanel::resized() {
     auto metroBpmArea = getMetronomeBpmArea();
     int metroBoxWidth = 70;
     int metroX = metroBpmArea.getX() + (metroBpmArea.getWidth() - metroBoxWidth) / 2;
-    int metroIconSize = rowHeight / 2 + 2;
+    int metroIconSize = rowHeight;
 
     tempoLabel->setBounds(metroX, rowY1, metroBoxWidth, rowHeight);
     timeSignatureLabel->setBounds(metroX, rowY2, metroBoxWidth, rowHeight);
 
-    int metroBtnX = metroX + metroBoxWidth - metroIconSize - 4;
+    int metroBtnX = metroX + metroBoxWidth - metroIconSize;
     metronomeButton->setBounds(metroBtnX, rowY2 + (rowHeight - metroIconSize) / 2, metroIconSize,
                                metroIconSize);
+    metronomeButton->setAlpha(0.6f);
     metronomeButton->toFront(false);
 
     // Quantize and snap layout
@@ -437,6 +438,7 @@ void TransportPanel::setupTempoAndQuantize() {
     tempoLabel->setFontSize(14.0f);
     tempoLabel->setDoubleClickResetsValue(false);
     tempoLabel->setSnapToInteger(true);
+    tempoLabel->setDrawBorder(false);
     tempoLabel->onValueChange = [this]() {
         currentTempo = tempoLabel->getValue();
         if (onTempoChange)
@@ -451,7 +453,7 @@ void TransportPanel::setupTempoAndQuantize() {
     timeSignatureLabel->setColour(juce::Label::textColourId,
                                   DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     timeSignatureLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
-    timeSignatureLabel->setJustificationType(juce::Justification::centredLeft);
+    timeSignatureLabel->setJustificationType(juce::Justification::centred);
     addAndMakeVisible(*timeSignatureLabel);
 
     // Quantize combo
@@ -468,7 +470,6 @@ void TransportPanel::setupTempoAndQuantize() {
     metronomeButton = std::make_unique<SvgButton>("Metronome", BinaryData::metronome_svg,
                                                   BinaryData::metronome_svgSize);
     styleTransportButton(*metronomeButton, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    metronomeButton->setOriginalColor(juce::Colours::black);
     metronomeButton->setNormalColor(juce::Colour(0xFFBCBCBC));
     metronomeButton->onClick = [this]() {
         bool newState = !metronomeButton->isActive();
