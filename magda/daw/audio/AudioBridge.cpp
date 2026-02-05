@@ -605,9 +605,10 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
         // When timeStretchMode is 0 (disabled), keep it disabled — TE's
         // getActualTimeStretchMode() will auto-upgrade to defaultMode when
         // autoPitch/autoTempo/pitchChange require it.
-        // Only force defaultMode when speedRatio != 1.0 and mode is disabled.
+        // Force defaultMode when speedRatio != 1.0 or warp is enabled.
         auto stretchMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
-        if (stretchMode == te::TimeStretcher::disabled && std::abs(clip->speedRatio - 1.0) > 0.001)
+        if (stretchMode == te::TimeStretcher::disabled &&
+            (std::abs(clip->speedRatio - 1.0) > 0.001 || clip->warpEnabled))
             stretchMode = te::TimeStretcher::defaultMode;
         audioClipPtr->setTimeStretchMode(stretchMode);
         audioClipPtr->setUsesProxy(false);
@@ -740,9 +741,10 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
         double teSpeedRatio = clip->speedRatio;
         double currentSpeedRatio = audioClipPtr->getSpeedRatio();
 
-        // Sync time stretch mode
+        // Sync time stretch mode — warp also requires a valid stretcher
         auto desiredMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
-        if (desiredMode == te::TimeStretcher::disabled && std::abs(teSpeedRatio - 1.0) > 0.001)
+        if (desiredMode == te::TimeStretcher::disabled &&
+            (std::abs(teSpeedRatio - 1.0) > 0.001 || clip->warpEnabled))
             desiredMode = te::TimeStretcher::defaultMode;
         if (audioClipPtr->getTimeStretchMode() != desiredMode) {
             audioClipPtr->setTimeStretchMode(desiredMode);
@@ -1050,8 +1052,10 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
         }
 
         // Set timestretcher mode — keep disabled when mode is 0 and speedRatio is 1.0
+        // Warp also requires a valid stretcher
         auto stretchMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
-        if (stretchMode == te::TimeStretcher::disabled && std::abs(clip->speedRatio - 1.0) > 0.001)
+        if (stretchMode == te::TimeStretcher::disabled &&
+            (std::abs(clip->speedRatio - 1.0) > 0.001 || clip->warpEnabled))
             stretchMode = te::TimeStretcher::defaultMode;
         audioClipPtr->setTimeStretchMode(stretchMode);
 
