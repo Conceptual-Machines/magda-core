@@ -261,13 +261,10 @@ void TransportPanel::setupTransportButtons() {
     };
     addAndMakeVisible(*loopButton);
 
-    // Punch In button
-    punchInButton = std::make_unique<SvgButton>("PunchIn", BinaryData::punchin_svg,
-                                                BinaryData::punchin_svgSize);
-    styleTransportButton(*punchInButton, DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
-    punchInButton->setOriginalColor(juce::Colours::white);
-    punchInButton->setBorderColor(DarkTheme::getColour(DarkTheme::SEPARATOR));
-    punchInButton->setBorderThickness(1.0f);
+    // Punch In button (dual-icon: off/on)
+    punchInButton =
+        std::make_unique<SvgButton>("PunchIn", BinaryData::punchin_svg, BinaryData::punchin_svgSize,
+                                    BinaryData::punchin_on_svg, BinaryData::punchin_on_svgSize);
     punchInButton->onClick = [this]() {
         isPunchInEnabled = !isPunchInEnabled;
         punchInButton->setActive(isPunchInEnabled);
@@ -277,13 +274,10 @@ void TransportPanel::setupTransportButtons() {
     };
     addAndMakeVisible(*punchInButton);
 
-    // Punch Out button (independent toggle)
-    punchOutButton = std::make_unique<SvgButton>("PunchOut", BinaryData::punchout_svg,
-                                                 BinaryData::punchout_svgSize);
-    styleTransportButton(*punchOutButton, DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
-    punchOutButton->setOriginalColor(juce::Colours::white);
-    punchOutButton->setBorderColor(DarkTheme::getColour(DarkTheme::SEPARATOR));
-    punchOutButton->setBorderThickness(1.0f);
+    // Punch Out button (dual-icon: off/on, independent toggle)
+    punchOutButton = std::make_unique<SvgButton>(
+        "PunchOut", BinaryData::punchout_svg, BinaryData::punchout_svgSize,
+        BinaryData::punchout_on_svg, BinaryData::punchout_on_svgSize);
     punchOutButton->onClick = [this]() {
         isPunchOutEnabled = !isPunchOutEnabled;
         punchOutButton->setActive(isPunchOutEnabled);

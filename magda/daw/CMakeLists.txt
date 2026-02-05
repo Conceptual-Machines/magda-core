@@ -89,7 +89,9 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/knob/knob_pointer.svg
     # Punch in/out icons
     ../../assets/icons/punchinout/punchin.svg
+    ../../assets/icons/punchinout/punchin_on.svg
     ../../assets/icons/punchinout/punchout.svg
+    ../../assets/icons/punchinout/punchout_on.svg
 )
 
 # DAW Core sources
