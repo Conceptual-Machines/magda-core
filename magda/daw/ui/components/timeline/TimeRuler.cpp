@@ -331,30 +331,28 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     }
 
     // Draw clip boundary markers (shifted by content offset in source file)
-    // In loop mode, hide clip end marker (arrangement length is irrelevant in source editor)
+    // In loop mode, hide clip boundary markers (arrangement length is irrelevant in source editor)
     if (clipLength > 0) {
-        if (!relativeMode) {
-            int clipStartX = timeToPixel(timeOffset + clipContentOffset);
-            if (clipStartX >= 0 && clipStartX <= width) {
-                g.setColour(DarkTheme::getAccentColour().withAlpha(0.6f));
-                g.fillRect(clipStartX - 1, 0, 2, height);
-            }
+        if (!loopActive) {
+            if (!relativeMode) {
+                int clipStartX = timeToPixel(timeOffset + clipContentOffset);
+                if (clipStartX >= 0 && clipStartX <= width) {
+                    g.setColour(DarkTheme::getAccentColour().withAlpha(0.6f));
+                    g.fillRect(clipStartX - 1, 0, 2, height);
+                }
 
-            if (!loopActive) {
                 int clipEndX = timeToPixel(timeOffset + clipContentOffset + clipLength);
                 if (clipEndX >= 0 && clipEndX <= width) {
                     g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
                     g.fillRect(clipEndX - 1, 0, 3, height);
                 }
-            }
-        } else {
-            int clipStartX = timeToPixel(clipContentOffset);
-            if (clipStartX >= 0 && clipStartX <= width) {
-                g.setColour(DarkTheme::getAccentColour().withAlpha(0.6f));
-                g.fillRect(clipStartX - 1, 0, 2, height);
-            }
+            } else {
+                int clipStartX = timeToPixel(clipContentOffset);
+                if (clipStartX >= 0 && clipStartX <= width) {
+                    g.setColour(DarkTheme::getAccentColour().withAlpha(0.6f));
+                    g.fillRect(clipStartX - 1, 0, 2, height);
+                }
 
-            if (!loopActive) {
                 int clipEndX = timeToPixel(clipContentOffset + clipLength);
                 if (clipEndX >= 0 && clipEndX <= width) {
                     g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));

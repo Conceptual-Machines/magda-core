@@ -179,8 +179,8 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                 }
             }
 
-            if (useWarpedDraw) {
-                // Warped waveform: draw segments between warp markers
+            if (useWarpedDraw && !di.isLooped()) {
+                // Warped waveform (non-looped): draw segments between warp markers
                 // Sort markers by warpTime
                 std::sort(warpMarkers.begin(), warpMarkers.end(),
                           [](const auto& a, const auto& b) { return a.warpTime < b.warpTime; });

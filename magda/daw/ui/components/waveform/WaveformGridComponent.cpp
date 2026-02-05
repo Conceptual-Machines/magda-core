@@ -449,17 +449,15 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     double baseTime = getDisplayStartTime();
 
     // Clip boundaries — clip starts at offset, ends at offset + clipLength (in timeline seconds)
-    // In loop mode, hide clip end marker (arrangement length is irrelevant in source editor)
-    {
+    // In loop mode, hide clip boundary markers (arrangement length is irrelevant in source editor)
+    if (!isLooped) {
         int clipStartX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds);
         g.setColour(DarkTheme::getAccentColour().withAlpha(0.6f));
         g.fillRect(clipStartX - 1, 0, 2, bounds.getHeight());
 
-        if (!isLooped) {
-            int clipEndX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds + clipLength_);
-            g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
-            g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
-        }
+        int clipEndX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds + clipLength_);
+        g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
+        g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
     }
 
     // Loop boundaries - green when enabled, grey when disabled
@@ -525,13 +523,20 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
                 timeToPixel(baseTime + displayInfo_.offsetPositionSeconds + clipLength_);
         }
 
-        // Left ghost: everything before clip start (non-loop mode only —
-        // in loop mode offset is a phase, not a trim point)
-        if (!isLooped) {
+        // Left ghost: dim everything before the active region start
+        // In loop mode: grey out before loop start (offset is phase, not trim)
+        // In non-loop mode: grey out before clip start (offset)
+        {
+            int leftBoundaryX;
+            if (isLooped) {
+                leftBoundaryX = timeToPixel(baseTime + displayInfo_.loopStartPositionSeconds);
+            } else {
+                leftBoundaryX = clipStartX;
+            }
             int leftEdge = bounds.getX();
-            if (clipStartX > leftEdge) {
+            if (leftBoundaryX > leftEdge) {
                 g.setColour(ghostColour);
-                g.fillRect(juce::Rectangle<int>(leftEdge, bounds.getY(), clipStartX - leftEdge,
+                g.fillRect(juce::Rectangle<int>(leftEdge, bounds.getY(), leftBoundaryX - leftEdge,
                                                 bounds.getHeight()));
             }
         }
