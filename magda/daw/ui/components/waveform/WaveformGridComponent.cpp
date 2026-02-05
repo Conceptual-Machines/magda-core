@@ -524,6 +524,18 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
             g.fillRect(juce::Rectangle<int>(clipEndX, bounds.getY(), rightEdge - clipEndX,
                                             bounds.getHeight()));
         }
+
+        // Loop end ghost: grey out area past the loop/source region end
+        if (!isLooped && displayInfo_.loopEndPositionSeconds > 0.0) {
+            int loopEndX = timeToPixel(baseTime + displayInfo_.loopEndPositionSeconds);
+            if (loopEndX > clipStartX && loopEndX < clipEndX) {
+                auto loopGhostColour =
+                    DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND).withAlpha(0.5f);
+                g.setColour(loopGhostColour);
+                g.fillRect(juce::Rectangle<int>(loopEndX, bounds.getY(), clipEndX - loopEndX,
+                                                bounds.getHeight()));
+            }
+        }
     }
 }
 

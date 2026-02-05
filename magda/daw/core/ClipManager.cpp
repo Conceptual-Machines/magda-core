@@ -253,8 +253,20 @@ void ClipManager::resizeClip(ClipId clipId, double newLength, bool fromStart, do
                                   << " loopLengthBeats=" << clip->loopLengthBeats);
         if (fromStart) {
             ClipOperations::resizeContainerFromLeft(*clip, newLength, tempo);
+            // Non-loop mode: keep loopStart synced to offset
+            if (!clip->loopEnabled && clip->type == ClipType::Audio) {
+                clip->loopStart = clip->offset;
+            }
         } else {
             ClipOperations::resizeContainerFromRight(*clip, newLength, tempo);
+
+            // In non-loop mode, clip length defines the source region — keep loopLength in sync
+            if (!clip->loopEnabled && clip->type == ClipType::Audio) {
+                clip->loopLength = clip->timelineToSource(clip->length);
+                if (clip->autoTempo && clip->sourceBPM > 0.0) {
+                    clip->loopLengthBeats = clip->loopLength * clip->sourceBPM / 60.0;
+                }
+            }
         }
         DBG("[RESIZE-CLIP]   AFTER: length=" << clip->length << " loopLength=" << clip->loopLength
                                              << " loopLengthBeats=" << clip->loopLengthBeats);
@@ -1165,8 +1177,9 @@ void ClipManager::sanitizeAudioClip(ClipInfo& clip) {
     // Clamp offset to file bounds
     clip.offset = juce::jlimit(0.0, fileDuration, clip.offset);
 
-    // Non-loop mode: clamp clip length to available source
+    // Non-loop mode: keep loopStart synced to offset and clamp clip length
     if (!clip.loopEnabled) {
+        clip.loopStart = clip.offset;
         clip.clampLengthToSource(fileDuration);
     }
 
