@@ -242,9 +242,24 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                 if (fileDuration > 0.0 && fileEnd > fileDuration)
                     fileEnd = fileDuration;
 
+                // Phase offset: the first tile starts partway through the loop
+                double phaseSource = di.loopOffset;
+                double phaseTimeline = di.sourceToTimeline(phaseSource);
+                bool isFirstTile = (phaseTimeline > 0.001);
+
                 double timePos = 0.0;
                 while (timePos < clipDisplayLength) {
-                    double cycleEnd = juce::jmin(timePos + loopCycle, clipDisplayLength);
+                    double tileFileStart = fileStart;
+                    double tileFullDuration = loopCycle;
+
+                    if (isFirstTile) {
+                        // First tile: start from phase point, shorter duration
+                        tileFileStart = fileStart + phaseSource;
+                        tileFullDuration = loopCycle - phaseTimeline;
+                        isFirstTile = false;
+                    }
+
+                    double cycleEnd = juce::jmin(timePos + tileFullDuration, clipDisplayLength);
 
                     int drawX =
                         waveformArea.getX() + static_cast<int>(timePos * pixelsPerSecond + 0.5);
@@ -257,15 +272,16 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                     // the source range proportionally to avoid compressing the
                     // full loop cycle's audio into a shorter pixel rect.
                     double tileDuration = cycleEnd - timePos;
-                    double tileFileEnd = fileEnd;
-                    if (tileDuration < loopCycle - 0.0001) {
-                        double fraction = tileDuration / loopCycle;
-                        tileFileEnd = fileStart + (fileEnd - fileStart) * fraction;
+                    double tileSourceLen = fileEnd - tileFileStart;
+                    double tileFileEnd = tileFileStart + tileSourceLen;
+                    if (tileDuration < tileFullDuration - 0.0001) {
+                        double fraction = tileDuration / tileFullDuration;
+                        tileFileEnd = tileFileStart + tileSourceLen * fraction;
                     }
 
-                    thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, fileStart,
+                    thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, tileFileStart,
                                                   tileFileEnd, waveColour);
-                    timePos += loopCycle;
+                    timePos += tileFullDuration;
                 }
             } else {
                 // Non-looped: single draw, clamped to file duration
