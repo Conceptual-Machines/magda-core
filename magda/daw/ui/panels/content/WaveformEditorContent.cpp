@@ -5,6 +5,11 @@
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "audio/AudioBridge.hpp"
+#include "audio/AudioThumbnailManager.hpp"
+#include "core/ClipDisplayInfo.hpp"
+#include "core/TrackManager.hpp"
+#include "engine/AudioEngine.hpp"
 
 namespace magda::daw::ui {
 
@@ -104,9 +109,18 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
 
         int scrollX = owner_.viewport_->getViewPositionX();
 
-        // Helper to convert a timeline time to pixel X in our overlay coordinate space
+        const auto& di = owner_.cachedDisplayInfo_;
+
+        // Convert an arrangement-timeline position to pixel X in overlay space.
+        // The display is anchored at source file start, so arrangement positions
+        // need the offset added (TE plays from offset in the source file).
         auto timeToOverlayX = [&](double time) -> int {
-            double displayTime = owner_.relativeTimeMode_ ? (time - clip->startTime) : time;
+            double displayTime;
+            if (owner_.relativeTimeMode_) {
+                displayTime = (time - clip->startTime) + di.offsetPositionSeconds;
+            } else {
+                displayTime = time + di.offsetPositionSeconds;
+            }
             return static_cast<int>(displayTime * owner_.horizontalZoom_) + GRID_LEFT_PADDING -
                    scrollX;
         };
@@ -125,6 +139,29 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
         // Draw playback cursor (vertical line) - only during playback
         if (owner_.cachedIsPlaying_) {
             double playPos = owner_.cachedPlaybackPosition_;
+
+            // Wrap playhead inside loop region when looping is enabled
+            if (clip->loopEnabled && di.loopLengthSeconds > 0.0) {
+                double relPos = playPos - clip->startTime;
+                if (relPos >= 0.0) {
+                    // Wrap within loop cycle, accounting for loop offset
+                    // (offset may not equal loopStart — playback starts mid-loop)
+                    double phaseShift = di.offsetPositionSeconds - di.loopStartPositionSeconds;
+                    double wrapped = std::fmod(phaseShift + relPos, di.loopLengthSeconds);
+                    if (wrapped < 0.0)
+                        wrapped += di.loopLengthSeconds;
+                    double displayPos = di.loopStartPositionSeconds + wrapped;
+                    int playX = static_cast<int>(displayPos * owner_.horizontalZoom_) +
+                                GRID_LEFT_PADDING - scrollX;
+                    if (playX >= 0 && playX < getWidth()) {
+                        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                        g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
+                                   static_cast<float>(getHeight()), 1.5f);
+                    }
+                    return;
+                }
+            }
+
             int playX = timeToOverlayX(playPos);
             if (playX >= 0 && playX < getWidth()) {
                 g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
@@ -168,10 +205,71 @@ WaveformEditorContent::WaveformEditorContent() {
     timeModeButton_->onClick = [this]() { setRelativeTimeMode(timeModeButton_->getToggleState()); };
     addAndMakeVisible(timeModeButton_.get());
 
+    // Create WARP mode toggle button
+    warpModeButton_ = std::make_unique<juce::TextButton>("WARP");
+    warpModeButton_->setTooltip("Toggle warp mode (add/move warp markers)");
+    warpModeButton_->setClickingTogglesState(true);
+    warpModeButton_->setToggleState(false, juce::dontSendNotification);
+    warpModeButton_->setLookAndFeel(buttonLookAndFeel_.get());
+    warpModeButton_->onClick = [this]() {
+        if (editingClipId_ != magda::INVALID_CLIP_ID) {
+            bool newState = warpModeButton_->getToggleState();
+            magda::ClipManager::getInstance().setClipWarpEnabled(editingClipId_, newState);
+        }
+    };
+    addAndMakeVisible(warpModeButton_.get());
+
+    // Create BPM label for toolbar
+    bpmLabel_ =
+        std::make_unique<juce::Label>("bpmLabel", juce::String::fromUTF8("\xe2\x80\x94 BPM"));
+    bpmLabel_->setFont(magda::FontManager::getInstance().getUIFont(11.0f));
+    bpmLabel_->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    bpmLabel_->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(bpmLabel_.get());
+
+    // Create grid resolution combo box
+    gridResolutionCombo_ = std::make_unique<juce::ComboBox>("gridResolution");
+    gridResolutionCombo_->addItem("Off", 1);
+    gridResolutionCombo_->addItem("Bar", 2);
+    gridResolutionCombo_->addItem("Beat", 3);
+    gridResolutionCombo_->addItem("1/8", 4);
+    gridResolutionCombo_->addItem("1/16", 5);
+    gridResolutionCombo_->addItem("1/32", 6);
+    gridResolutionCombo_->setSelectedId(1, juce::dontSendNotification);
+    gridResolutionCombo_->setTooltip("Beat grid resolution for snap and display");
+    gridResolutionCombo_->setLookAndFeel(buttonLookAndFeel_.get());
+    gridResolutionCombo_->onChange = [this]() {
+        auto id = gridResolutionCombo_->getSelectedId();
+        GridResolution res = GridResolution::Off;
+        switch (id) {
+            case 2:
+                res = GridResolution::Bar;
+                break;
+            case 3:
+                res = GridResolution::Beat;
+                break;
+            case 4:
+                res = GridResolution::Eighth;
+                break;
+            case 5:
+                res = GridResolution::Sixteenth;
+                break;
+            case 6:
+                res = GridResolution::ThirtySecond;
+                break;
+            default:
+                res = GridResolution::Off;
+                break;
+        }
+        gridComponent_->setGridResolution(res);
+    };
+    addAndMakeVisible(gridResolutionCombo_.get());
+
     // Create waveform grid component
     gridComponent_ = std::make_unique<WaveformGridComponent>();
     gridComponent_->setRelativeMode(relativeTimeMode_);
     gridComponent_->setHorizontalZoom(horizontalZoom_);
+    gridComponent_->setTimeRuler(timeRuler_.get());
 
     // Create viewport and add grid
     viewport_ = std::make_unique<ScrollNotifyingViewport>();
@@ -207,6 +305,31 @@ WaveformEditorContent::WaveformEditorContent() {
         // Could add logic here if needed
     };
 
+    // Warp marker callbacks
+    gridComponent_->onWarpMarkerAdd = [this](double sourceTime, double warpTime) {
+        auto* bridge = getBridge();
+        if (bridge) {
+            bridge->addWarpMarker(editingClipId_, sourceTime, warpTime);
+            refreshWarpMarkers();
+        }
+    };
+
+    gridComponent_->onWarpMarkerMove = [this](int index, double newWarpTime) {
+        auto* bridge = getBridge();
+        if (bridge) {
+            bridge->moveWarpMarker(editingClipId_, index, newWarpTime);
+            refreshWarpMarkers();
+        }
+    };
+
+    gridComponent_->onWarpMarkerRemove = [this](int index) {
+        auto* bridge = getBridge();
+        if (bridge) {
+            bridge->removeWarpMarker(editingClipId_, index);
+            refreshWarpMarkers();
+        }
+    };
+
     // Check if there's already a selected audio clip
     magda::ClipId selectedClip = magda::ClipManager::getInstance().getSelectedClip();
     if (selectedClip != magda::INVALID_CLIP_ID) {
@@ -218,6 +341,8 @@ WaveformEditorContent::WaveformEditorContent() {
 }
 
 WaveformEditorContent::~WaveformEditorContent() {
+    stopTimer();
+
     auto* controller = magda::TimelineController::getCurrent();
     if (controller) {
         controller->removeListener(this);
@@ -228,6 +353,12 @@ WaveformEditorContent::~WaveformEditorContent() {
     // Clear look and feel before destruction
     if (timeModeButton_) {
         timeModeButton_->setLookAndFeel(nullptr);
+    }
+    if (warpModeButton_) {
+        warpModeButton_->setLookAndFeel(nullptr);
+    }
+    if (gridResolutionCombo_) {
+        gridResolutionCombo_->setLookAndFeel(nullptr);
     }
 }
 
@@ -249,6 +380,9 @@ void WaveformEditorContent::resized() {
     if (bounds.getHeight() < minHeight || bounds.getWidth() <= 0) {
         // Hide everything when too small to avoid zero-sized paint
         timeModeButton_->setBounds(0, 0, 0, 0);
+        warpModeButton_->setBounds(0, 0, 0, 0);
+        gridResolutionCombo_->setBounds(0, 0, 0, 0);
+        bpmLabel_->setBounds(0, 0, 0, 0);
         timeRuler_->setBounds(0, 0, 0, 0);
         viewport_->setBounds(0, 0, 0, 0);
         if (playheadOverlay_)
@@ -259,6 +393,12 @@ void WaveformEditorContent::resized() {
     // Toolbar at top
     auto toolbarArea = bounds.removeFromTop(TOOLBAR_HEIGHT);
     timeModeButton_->setBounds(toolbarArea.removeFromLeft(60).reduced(2));
+    toolbarArea.removeFromLeft(4);
+    warpModeButton_->setBounds(toolbarArea.removeFromLeft(60).reduced(2));
+    toolbarArea.removeFromLeft(4);
+    gridResolutionCombo_->setBounds(toolbarArea.removeFromLeft(70).reduced(2));
+    toolbarArea.removeFromLeft(4);
+    bpmLabel_->setBounds(toolbarArea.removeFromLeft(80).reduced(2));
 
     // Time ruler below toolbar
     auto rulerArea = bounds.removeFromTop(TIME_RULER_HEIGHT);
@@ -333,7 +473,7 @@ void WaveformEditorContent::mouseDrag(const juce::MouseEvent& event) {
                 if (controller) {
                     bpm = controller->getState().tempo.bpm;
                 }
-                timeRuler_->setZoom(horizontalZoom_);
+                timeRuler_->setZoom(horizontalZoom_ * 60.0 / bpm);
                 timeRuler_->setTempo(bpm);
             }
 
@@ -410,13 +550,54 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
                 bpm = controller->getState().tempo.bpm;
             }
 
-            timeRuler_->setZoom(horizontalZoom_);
+            timeRuler_->setZoom(horizontalZoom_ * 60.0 / bpm);
             timeRuler_->setTempo(bpm);
-            timeRuler_->setTimeOffset(clip->startTime);
+            timeRuler_->setTimeOffset(relativeTimeMode_ ? 0.0 : clip->startTime);
             timeRuler_->setClipLength(clip->length);
 
-            // Update loop boundary dimming
-            updateLoopBoundary(*clip);
+            // Update loop boundary dimming (also sets clip content offset on ruler)
+            updateDisplayInfo(*clip);
+
+            // Update warp mode state
+            bool warpEnabled = clip->warpEnabled;
+            warpModeButton_->setToggleState(warpEnabled, juce::dontSendNotification);
+            gridComponent_->setWarpMode(warpEnabled);
+
+            if (warpEnabled) {
+                auto* bridge = getBridge();
+                if (bridge) {
+                    // Only refresh markers when transitioning to warp mode
+                    // (not on every clip property change to avoid performance issues)
+                    if (!wasWarpEnabled_) {
+                        bridge->enableWarp(editingClipId_);
+                        auto markers = bridge->getWarpMarkers(editingClipId_);
+                        gridComponent_->setWarpMarkers(markers);
+                    }
+                }
+            } else if (wasWarpEnabled_) {
+                // Only disable if warp was previously on
+                auto* bridge = getBridge();
+                if (bridge) {
+                    bridge->disableWarp(editingClipId_);
+                }
+            }
+            wasWarpEnabled_ = warpEnabled;
+
+            // Update BPM label
+            {
+                double detectedBPM =
+                    magda::AudioThumbnailManager::getInstance().detectBPM(clip->audioFilePath);
+                if (detectedBPM > 0.0) {
+                    bpmLabel_->setText(juce::String(detectedBPM, 1) + " BPM",
+                                       juce::dontSendNotification);
+                    bpmLabel_->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+                } else {
+                    bpmLabel_->setText(juce::String::fromUTF8("\xe2\x80\x94 BPM"),
+                                       juce::dontSendNotification);
+                    bpmLabel_->setColour(juce::Label::textColourId,
+                                         DarkTheme::getSecondaryTextColour());
+                }
+            }
 
             // Scroll viewport to show clip at new position
             scrollToClipStart();
@@ -441,8 +622,24 @@ void WaveformEditorContent::clipSelectionChanged(magda::ClipId clipId) {
 // TimelineStateListener
 // ============================================================================
 
-void WaveformEditorContent::timelineStateChanged(const TimelineState& /*state*/) {
-    // General state change - no specific action needed
+void WaveformEditorContent::timelineStateChanged(const TimelineState& state) {
+    double newBpm = state.tempo.bpm;
+
+    // Scale pps zoom to keep visual bar width constant when BPM changes.
+    // new_pps = old_pps * new_bpm / old_bpm  (keeps ppb constant)
+    if (cachedBpm_ > 0.0 && std::abs(newBpm - cachedBpm_) > 0.01) {
+        horizontalZoom_ = juce::jlimit(MIN_ZOOM, MAX_ZOOM, horizontalZoom_ * newBpm / cachedBpm_);
+        gridComponent_->setHorizontalZoom(horizontalZoom_);
+        timeRuler_->setZoom(horizontalZoom_ * 60.0 / newBpm);
+        updateGridSize();
+    }
+    cachedBpm_ = newBpm;
+
+    // Sync tempo to the TimeRuler so beat grid and snap stay in sync
+    timeRuler_->setTempo(newBpm);
+    timeRuler_->setTimeSignature(state.tempo.timeSignatureNumerator,
+                                 state.tempo.timeSignatureDenominator);
+    gridComponent_->repaint();
 }
 
 void WaveformEditorContent::playheadStateChanged(const TimelineState& state) {
@@ -462,6 +659,9 @@ void WaveformEditorContent::playheadStateChanged(const TimelineState& state) {
 void WaveformEditorContent::setClip(magda::ClipId clipId) {
     if (editingClipId_ != clipId) {
         editingClipId_ = clipId;
+        transientsCached_ = false;
+        transientPollCount_ = 0;
+        stopTimer();
         gridComponent_->setClip(clipId);
 
         // Update time ruler with clip info
@@ -486,13 +686,62 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
             if (controller) {
                 bpm = controller->getState().tempo.bpm;
             }
+            cachedBpm_ = bpm;
 
-            timeRuler_->setZoom(horizontalZoom_);
+            timeRuler_->setZoom(horizontalZoom_ * 60.0 / bpm);
             timeRuler_->setTempo(bpm);
-            timeRuler_->setTimeOffset(clip->startTime);
+            // In relative mode, anchor at source file start (position 0 = beat 1)
+            // In absolute mode, anchor at clip's timeline position
+            timeRuler_->setTimeOffset(relativeTimeMode_ ? 0.0 : clip->startTime);
             timeRuler_->setClipLength(clip->length);
 
-            updateLoopBoundary(*clip);
+            updateDisplayInfo(*clip);
+
+            // Update BPM label
+            {
+                double detectedBPM =
+                    magda::AudioThumbnailManager::getInstance().detectBPM(clip->audioFilePath);
+                if (detectedBPM > 0.0) {
+                    bpmLabel_->setText(juce::String(detectedBPM, 1) + " BPM",
+                                       juce::dontSendNotification);
+                    bpmLabel_->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+                } else {
+                    bpmLabel_->setText(juce::String::fromUTF8("\xe2\x80\x94 BPM"),
+                                       juce::dontSendNotification);
+                    bpmLabel_->setColour(juce::Label::textColourId,
+                                         DarkTheme::getSecondaryTextColour());
+                }
+            }
+        }
+
+        // Update warp mode state
+        if (clip) {
+            bool warpEnabled = clip->warpEnabled;
+            warpModeButton_->setToggleState(warpEnabled, juce::dontSendNotification);
+            gridComponent_->setWarpMode(warpEnabled);
+            wasWarpEnabled_ = warpEnabled;
+
+            if (warpEnabled) {
+                auto* bridge = getBridge();
+                if (bridge) {
+                    // Always populate markers when opening a clip with warp enabled
+                    bridge->enableWarp(editingClipId_);
+                    auto markers = bridge->getWarpMarkers(editingClipId_);
+                    gridComponent_->setWarpMarkers(markers);
+                }
+            }
+        }
+
+        // Check for cached transients or start polling
+        if (clip && clip->type == magda::ClipType::Audio && !clip->audioFilePath.isEmpty()) {
+            auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
+                clip->audioFilePath);
+            if (cached) {
+                gridComponent_->setTransientTimes(*cached);
+                transientsCached_ = true;
+            } else {
+                startTimer(250);
+            }
         }
 
         updateGridSize();
@@ -513,6 +762,12 @@ void WaveformEditorContent::setRelativeTimeMode(bool relative) {
         gridComponent_->setRelativeMode(relative);
         timeRuler_->setRelativeMode(relative);
 
+        // Update time ruler offset for the new mode
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (clip && timeRuler_) {
+            timeRuler_->setTimeOffset(relative ? 0.0 : clip->startTime);
+        }
+
         // Update grid size and scroll
         updateGridSize();
         scrollToClipStart();
@@ -531,7 +786,24 @@ void WaveformEditorContent::updateGridSize() {
         // Update time ruler length
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
         if (clip && timeRuler_) {
-            double totalTime = relativeTimeMode_ ? clip->length : (clip->startTime + clip->length);
+            double totalTime;
+            if (relativeTimeMode_) {
+                // In relative mode, ruler spans the full source file duration
+                double fileDuration = 0.0;
+                if (clip->audioFilePath.isNotEmpty()) {
+                    auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
+                        clip->audioFilePath);
+                    if (thumbnail) {
+                        fileDuration = thumbnail->getTotalLength();
+                    }
+                }
+                // Convert file duration to timeline seconds (accounting for speed/tempo)
+                double bpm = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
+                auto info = magda::ClipDisplayInfo::from(*clip, bpm, fileDuration);
+                totalTime = info.fullSourceExtentSeconds;
+            } else {
+                totalTime = clip->startTime + clip->length;
+            }
             timeRuler_->setTimelineLength(totalTime + 10.0);  // Add padding
         }
     }
@@ -539,8 +811,27 @@ void WaveformEditorContent::updateGridSize() {
 
 void WaveformEditorContent::scrollToClipStart() {
     if (relativeTimeMode_) {
-        // In relative mode, scroll to beginning
-        viewport_->setViewPosition(0, viewport_->getViewPositionY());
+        // In relative mode, scroll to the offset position so user sees the relevant audio
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (clip && gridComponent_) {
+            double bpm = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
+            double fileDuration = 0.0;
+            if (clip->audioFilePath.isNotEmpty()) {
+                auto* thumbnail =
+                    magda::AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
+                if (thumbnail) {
+                    fileDuration = thumbnail->getTotalLength();
+                }
+            }
+            auto info = magda::ClipDisplayInfo::from(*clip, bpm, fileDuration);
+            int offsetX = gridComponent_->timeToPixel(info.offsetPositionSeconds);
+            // Center the offset in the viewport
+            int viewportWidth = viewport_->getWidth();
+            int scrollX = juce::jmax(0, offsetX - viewportWidth / 4);
+            viewport_->setViewPosition(scrollX, viewport_->getViewPositionY());
+        } else {
+            viewport_->setViewPosition(0, viewport_->getViewPositionY());
+        }
     } else {
         // In absolute mode, scroll to clip start position
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
@@ -551,17 +842,41 @@ void WaveformEditorContent::scrollToClipStart() {
     }
 }
 
-void WaveformEditorContent::updateLoopBoundary(const magda::ClipInfo& clip) {
-    if (clip.internalLoopEnabled && clip.internalLoopLength > 0.0) {
-        double bpm = 120.0;
-        auto* controller = magda::TimelineController::getCurrent();
-        if (controller) {
-            bpm = controller->getState().tempo.bpm;
+void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
+    double bpm = 120.0;
+    auto* controller = magda::TimelineController::getCurrent();
+    if (controller) {
+        bpm = controller->getState().tempo.bpm;
+    }
+
+    // Get file duration for source extent calculation
+    double fileDuration = 0.0;
+    if (clip.audioFilePath.isNotEmpty()) {
+        auto* thumbnail =
+            magda::AudioThumbnailManager::getInstance().getThumbnail(clip.audioFilePath);
+        if (thumbnail) {
+            fileDuration = thumbnail->getTotalLength();
         }
-        double loopEndSec = (bpm > 0.0) ? (clip.internalLoopLength * 60.0 / bpm) : 0.0;
-        gridComponent_->setLoopEndSeconds(loopEndSec);
-    } else {
-        gridComponent_->setLoopEndSeconds(0.0);
+    }
+
+    auto info = magda::ClipDisplayInfo::from(clip, bpm, fileDuration);
+    cachedDisplayInfo_ = info;
+    gridComponent_->setDisplayInfo(info);
+
+    // Update time ruler loop region (green when active, grey when disabled)
+    // Display anchored at file start — loop markers at real source positions
+    if (timeRuler_) {
+        bool showMarkers = clip.loopLength > 0.0;
+        bool loopIsActive = clip.loopEnabled;
+        double loopStartPos = info.loopStartPositionSeconds;
+        double loopLen = info.loopLengthSeconds;
+        timeRuler_->setLoopRegion(loopStartPos, loopLen, showMarkers, loopIsActive);
+
+        // Shift clip boundary markers by the content offset
+        timeRuler_->setClipContentOffset(info.offsetPositionSeconds);
+
+        // Offset marker is shown on the waveform grid; no separate ruler marker needed
+        timeRuler_->setLoopPhaseMarker(0.0, false);
     }
 }
 
@@ -591,7 +906,7 @@ void WaveformEditorContent::performAnchorPointZoom(double zoomFactor, int anchor
             if (controller) {
                 bpm = controller->getState().tempo.bpm;
             }
-            timeRuler_->setZoom(horizontalZoom_);
+            timeRuler_->setZoom(horizontalZoom_ * 60.0 / bpm);
             timeRuler_->setTempo(bpm);
         }
 
@@ -603,6 +918,67 @@ void WaveformEditorContent::performAnchorPointZoom(double zoomFactor, int anchor
             int newScrollX = newAnchorX - anchorX;
             viewport_->setViewPosition(newScrollX, viewport_->getViewPositionY());
         }
+    }
+}
+
+// ============================================================================
+// Warp Helpers
+// ============================================================================
+
+void WaveformEditorContent::refreshWarpMarkers() {
+    auto* bridge = getBridge();
+    if (bridge && editingClipId_ != magda::INVALID_CLIP_ID) {
+        auto markers = bridge->getWarpMarkers(editingClipId_);
+        gridComponent_->setWarpMarkers(markers);
+    }
+}
+
+magda::AudioBridge* WaveformEditorContent::getBridge() {
+    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+    if (!audioEngine)
+        return nullptr;
+    return audioEngine->getAudioBridge();
+}
+
+// ============================================================================
+// Timer (Transient Detection Polling)
+// TODO: Expose transient detection sensitivity control. TE's TransientDetectionJob
+//       accepts a Config { float sensitivity } but WarpTimeManager hardcodes 0.5f.
+//       Would need to modify WarpTimeManager or re-run the job with a custom config.
+// ============================================================================
+
+void WaveformEditorContent::timerCallback() {
+    if (transientsCached_ || editingClipId_ == magda::INVALID_CLIP_ID) {
+        stopTimer();
+        return;
+    }
+
+    if (++transientPollCount_ >= MAX_TRANSIENT_POLL_ATTEMPTS) {
+        DBG("WaveformEditorContent: transient detection timed out after "
+            << MAX_TRANSIENT_POLL_ATTEMPTS << " attempts");
+        stopTimer();
+        return;
+    }
+
+    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+    if (!audioEngine)
+        return;
+
+    auto* bridge = audioEngine->getAudioBridge();
+    if (!bridge)
+        return;
+
+    if (bridge->getTransientTimes(editingClipId_)) {
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (clip && !clip->audioFilePath.isEmpty()) {
+            auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
+                clip->audioFilePath);
+            if (cached) {
+                gridComponent_->setTransientTimes(*cached);
+            }
+        }
+        transientsCached_ = true;
+        stopTimer();
     }
 }
 

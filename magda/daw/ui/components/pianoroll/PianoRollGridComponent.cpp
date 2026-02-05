@@ -575,9 +575,8 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
                 tempo = controller->getState().tempo.bpm;
             }
             double clipStartBeats = clip->startTime * (tempo / 60.0);
-            double offset = (clip->view == ClipView::Session || clip->internalLoopEnabled)
-                                ? clip->midiOffset
-                                : 0.0;
+            double offset =
+                (clip->view == ClipView::Session || clip->loopEnabled) ? clip->midiOffset : 0.0;
             displayBeat = clipStartBeats + beat - offset;
         } else {
             displayBeat = clipStartBeats_ + beat;
@@ -773,9 +772,8 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
                 tempo = controller->getState().tempo.bpm;
             }
             double clipStartBeats = clip->startTime * (tempo / 60.0);
-            double offset = (clip->view == ClipView::Session || clip->internalLoopEnabled)
-                                ? clip->midiOffset
-                                : 0.0;
+            double offset =
+                (clip->view == ClipView::Session || clip->loopEnabled) ? clip->midiOffset : 0.0;
             displayBeat = clipStartBeats + note.startBeat - offset;
         }
 

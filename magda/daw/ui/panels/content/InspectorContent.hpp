@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../state/TimelineController.hpp"
 #include "../common/BarsBeatsTicksLabel.hpp"
 #include "../common/DraggableValueLabel.hpp"
 #include "../common/SvgButton.hpp"
@@ -10,8 +11,7 @@
 #include "core/TrackManager.hpp"
 
 namespace magda {
-class TimelineController;  // Forward declaration
-class AudioEngine;         // Forward declaration
+class AudioEngine;  // Forward declaration
 }  // namespace magda
 
 namespace magda::daw::ui {
@@ -25,7 +25,8 @@ namespace magda::daw::ui {
 class InspectorContent : public PanelContent,
                          public magda::TrackManagerListener,
                          public magda::ClipManagerListener,
-                         public magda::SelectionManagerListener {
+                         public magda::SelectionManagerListener,
+                         public magda::TimelineStateListener {
   public:
     InspectorContent();
     ~InspectorContent() override;
@@ -70,6 +71,10 @@ class InspectorContent : public PanelContent,
     void modsPanelSelectionChanged(const magda::ModsPanelSelection& selection) override;
     void macrosPanelSelectionChanged(const magda::MacrosPanelSelection& selection) override;
     void paramSelectionChanged(const magda::ParamSelection& selection) override;
+
+    // TimelineStateListener
+    void timelineStateChanged(const magda::TimelineState& state) override;
+    void tempoStateChanged(const magda::TimelineState& state) override;
 
   private:
     juce::Label titleLabel_;
@@ -116,20 +121,70 @@ class InspectorContent : public PanelContent,
     // Clip properties section
     juce::Label clipNameLabel_;
     juce::Label clipNameValue_;
+    std::unique_ptr<magda::SvgButton> clipTypeIcon_;  // Audio (sinewave) or MIDI icon
+    juce::Label playbackColumnLabel_;
+    juce::Label loopColumnLabel_;
     std::unique_ptr<magda::SvgButton> clipPositionIcon_;
     juce::Label clipStartLabel_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipStartValue_;
     juce::Label clipEndLabel_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipEndValue_;
+    juce::Label clipOffsetRowLabel_;
     std::unique_ptr<magda::SvgButton> clipContentOffsetIcon_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipContentOffsetValue_;
     std::unique_ptr<magda::SvgButton> clipLoopToggle_;
-    juce::Label clipLoopPosLabel_;
-    std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopPosValue_;
+    juce::TextButton clipWarpToggle_;
+    juce::TextButton clipAutoTempoToggle_;  // Musical mode toggle
+    std::unique_ptr<magda::DraggableValueLabel> clipStretchValue_;
+    juce::ComboBox stretchModeCombo_;  // Time stretch algorithm selector
+    juce::Label clipLoopStartLabel_;
+    std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopStartValue_;
     juce::Label clipLoopLengthLabel_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopLengthValue_;
-    juce::Label clipTypeLabel_;
-    juce::Label clipTypeValue_;
+    juce::Label clipLoopPhaseLabel_;
+    std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopPhaseValue_;
+    juce::Label clipBpmValue_;  // Detected BPM (no label)
+    std::unique_ptr<magda::DraggableValueLabel>
+        clipBeatsLengthValue_;  // Length in beats for auto-tempo
+
+    // Clip properties viewport (scrollable container for all clip controls)
+    juce::Viewport clipPropsViewport_;
+    juce::Component clipPropsContainer_;
+
+    // Pitch section
+    juce::Label pitchSectionLabel_;
+    juce::TextButton autoPitchToggle_;
+    juce::ComboBox autoPitchModeCombo_;
+    std::unique_ptr<magda::DraggableValueLabel> pitchChangeValue_;
+    std::unique_ptr<magda::DraggableValueLabel> transposeValue_;
+
+    // Beat Detection section
+    juce::Label beatDetectionSectionLabel_;
+    juce::TextButton autoDetectBeatsToggle_;
+    std::unique_ptr<magda::DraggableValueLabel> beatSensitivityValue_;
+
+    // Playback
+    juce::TextButton reverseToggle_;
+
+    // Per-Clip Mix section
+    juce::Label clipMixSectionLabel_;
+    std::unique_ptr<magda::DraggableValueLabel> clipGainValue_;
+    std::unique_ptr<magda::DraggableValueLabel> clipPanValue_;
+
+    // Fades section
+    juce::Label fadesSectionLabel_;
+    std::unique_ptr<magda::DraggableValueLabel> fadeInValue_;
+    std::unique_ptr<magda::DraggableValueLabel> fadeOutValue_;
+    juce::ComboBox fadeInTypeCombo_;
+    juce::ComboBox fadeOutTypeCombo_;
+    juce::ComboBox fadeInBehaviourCombo_;
+    juce::ComboBox fadeOutBehaviourCombo_;
+    juce::TextButton autoCrossfadeToggle_;
+
+    // Channels section
+    juce::Label channelsSectionLabel_;
+    juce::TextButton leftChannelToggle_;
+    juce::TextButton rightChannelToggle_;
 
     // Session clip launch properties
     juce::Label launchModeLabel_;

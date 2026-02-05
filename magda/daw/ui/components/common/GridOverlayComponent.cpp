@@ -110,6 +110,9 @@ void GridOverlayComponent::drawSecondsGrid(juce::Graphics& g, juce::Rectangle<in
     auto& layout = LayoutConfig::getInstance();
     const int minPixelSpacing = layout.minGridPixelSpacing;
 
+    // currentZoom is ppb - convert to pps for seconds-mode grid calculation
+    double pps = (tempoBPM > 0) ? currentZoom * tempoBPM / 60.0 : currentZoom;
+
     // Extended intervals for deep zoom
     const double intervals[] = {0.0001, 0.0002, 0.0005,                           // Sub-millisecond
                                 0.001,  0.002,  0.005,                            // Milliseconds
@@ -119,14 +122,16 @@ void GridOverlayComponent::drawSecondsGrid(juce::Graphics& g, juce::Rectangle<in
 
     double gridInterval = 1.0;
     for (double interval : intervals) {
-        if (static_cast<int>(interval * currentZoom) >= minPixelSpacing) {
+        if (static_cast<int>(interval * pps) >= minPixelSpacing) {
             gridInterval = interval;
             break;
         }
     }
 
     for (double time = 0.0; time <= timelineLength; time += gridInterval) {
-        int x = static_cast<int>(time * currentZoom) + leftPadding - scrollOffset;
+        // Convert time to beats, then to pixels
+        double beats = time * tempoBPM / 60.0;
+        int x = static_cast<int>(beats * currentZoom) + leftPadding - scrollOffset;
         if (x >= area.getX() && x <= area.getRight()) {
             // Determine line brightness based on time hierarchy
             bool isMajor = false;
@@ -159,11 +164,7 @@ void GridOverlayComponent::drawBarsBeatsGrid(juce::Graphics& g, juce::Rectangle<
     auto& layout = LayoutConfig::getInstance();
     const int minPixelSpacing = layout.minGridPixelSpacing;
 
-    double secondsPerBeat = 60.0 / tempoBPM;
-    double secondsPerBar = secondsPerBeat * timeSignatureNumerator;
-
-    // Find appropriate interval (supporting subdivisions down to 1/128 for deep zoom)
-    // Must match TimelineComponent::drawTimeMarkers() for grid/ruler sync
+    // currentZoom is ppb - beat fraction * zoom gives pixels directly
     const double beatFractions[] = {0.0078125, 0.015625, 0.03125, 0.0625, 0.125, 0.25, 0.5, 1.0};
     const int barMultiples[] = {1, 2, 4, 8, 16, 32};
 
@@ -171,37 +172,38 @@ void GridOverlayComponent::drawBarsBeatsGrid(juce::Graphics& g, juce::Rectangle<
     bool useBarMultiples = false;
 
     for (double fraction : beatFractions) {
-        double intervalSeconds = secondsPerBeat * fraction;
-        if (static_cast<int>(intervalSeconds * currentZoom) >= minPixelSpacing) {
+        double pixelSpacing = fraction * currentZoom;
+        if (static_cast<int>(pixelSpacing) >= minPixelSpacing) {
             markerIntervalBeats = fraction;
             break;
         }
-        // If we've gone through all beat fractions (last is 1.0), switch to bar multiples
         if (fraction == 1.0) {
             useBarMultiples = true;
         }
     }
 
-    if (useBarMultiples || static_cast<int>(secondsPerBar * currentZoom) < minPixelSpacing) {
+    // pixelsPerBar = currentZoom * timeSignatureNumerator
+    if (useBarMultiples ||
+        static_cast<int>(currentZoom * timeSignatureNumerator) < minPixelSpacing) {
         for (int mult : barMultiples) {
-            double intervalSeconds = secondsPerBar * mult;
-            if (static_cast<int>(intervalSeconds * currentZoom) >= minPixelSpacing) {
+            double pixelSpacing = currentZoom * timeSignatureNumerator * mult;
+            if (static_cast<int>(pixelSpacing) >= minPixelSpacing) {
                 markerIntervalBeats = timeSignatureNumerator * mult;
                 break;
             }
         }
     }
 
-    double markerIntervalSeconds = secondsPerBeat * markerIntervalBeats;
+    // Convert timeline length to total beats for iteration
+    double totalTimelineBeats = timelineLength * tempoBPM / 60.0;
 
-    // Draw grid lines
-    for (double time = 0.0; time <= timelineLength; time += markerIntervalSeconds) {
-        int x = static_cast<int>(time * currentZoom) + leftPadding - scrollOffset;
+    // Draw grid lines iterating in beats
+    for (double beat = 0.0; beat <= totalTimelineBeats; beat += markerIntervalBeats) {
+        int x = static_cast<int>(beat * currentZoom) + leftPadding - scrollOffset;
         if (x >= area.getX() && x <= area.getRight()) {
             // Determine line style based on musical position
-            double totalBeats = time / secondsPerBeat;
-            bool isBarLine = std::fmod(totalBeats, timeSignatureNumerator) < 0.001;
-            bool isBeatLine = std::fmod(totalBeats, 1.0) < 0.001;
+            bool isBarLine = std::fmod(beat, static_cast<double>(timeSignatureNumerator)) < 0.001;
+            bool isBeatLine = std::fmod(beat, 1.0) < 0.001;
 
             if (isBarLine) {
                 g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.4f));
@@ -229,12 +231,13 @@ void GridOverlayComponent::drawBeatOverlay(juce::Graphics& g, juce::Rectangle<in
     // Draw beat subdivisions using actual tempo
     g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).withAlpha(0.5f));
 
-    const double beatInterval = 60.0 / tempoBPM;
-    const int beatPixelSpacing = static_cast<int>(beatInterval * currentZoom);
+    // currentZoom is ppb - one beat = currentZoom pixels
+    const int beatPixelSpacing = static_cast<int>(currentZoom);
 
     // Only draw beat grid if it's not too dense
+    double totalTimelineBeats = timelineLength * tempoBPM / 60.0;
     if (beatPixelSpacing >= 10) {
-        for (double beat = 0.0; beat <= timelineLength; beat += beatInterval) {
+        for (double beat = 0.0; beat <= totalTimelineBeats; beat += 1.0) {
             int x = static_cast<int>(beat * currentZoom) + leftPadding - scrollOffset;
             if (x >= area.getX() && x <= area.getRight()) {
                 g.drawLine(static_cast<float>(x), static_cast<float>(area.getY()),

@@ -19,7 +19,7 @@ enum class TimeDisplayMode {
  * @brief Zoom state for the timeline
  */
 struct ZoomState {
-    double horizontalZoom = 20.0;  // Pixels per second
+    double horizontalZoom = 10.0;  // Pixels per beat
     double verticalZoom = 1.0;     // Track height multiplier
     int scrollX = 0;               // Horizontal scroll position in pixels
     int scrollY = 0;               // Vertical scroll position in pixels
@@ -36,10 +36,11 @@ struct ZoomState {
  * When playback stops, playbackPosition resets to editPosition.
  */
 struct PlayheadState {
-    double editPosition = 0.0;      // Triangle position (stationary during playback)
-    double playbackPosition = 0.0;  // Moving cursor position
-    bool isPlaying = false;         // Is transport playing
-    bool isRecording = false;       // Is transport recording
+    double editPosition = 0.0;       // Triangle position in seconds (derived from beats)
+    double editPositionBeats = 0.0;  // Triangle position in beats (authoritative)
+    double playbackPosition = 0.0;   // Moving cursor position
+    bool isPlaying = false;          // Is transport playing
+    bool isRecording = false;        // Is transport recording
 
     // Get the "current" position (playback when playing, edit otherwise)
     double getCurrentPosition() const {
@@ -59,8 +60,10 @@ struct PlayheadState {
  * Empty trackIndices = all tracks selected (backward compatible).
  */
 struct TimeSelection {
-    double startTime = -1.0;
-    double endTime = -1.0;
+    double startTime = -1.0;      // Time in seconds (derived from beats)
+    double endTime = -1.0;        // Time in seconds (derived from beats)
+    double startBeats = -1.0;     // Position in beats (authoritative)
+    double endBeats = -1.0;       // Position in beats (authoritative)
     std::set<int> trackIndices;   // Empty = all tracks
     bool visuallyHidden = false;  // When true, selection is hidden visually but data remains
 
@@ -79,6 +82,8 @@ struct TimeSelection {
     void clear() {
         startTime = -1.0;
         endTime = -1.0;
+        startBeats = -1.0;
+        endBeats = -1.0;
         trackIndices.clear();
         visuallyHidden = false;
     }
@@ -97,8 +102,10 @@ struct TimeSelection {
  * @brief Loop region state (persistent loop markers)
  */
 struct LoopRegion {
-    double startTime = -1.0;
-    double endTime = -1.0;
+    double startTime = -1.0;   // Time in seconds (derived from beats)
+    double endTime = -1.0;     // Time in seconds (derived from beats)
+    double startBeats = -1.0;  // Position in beats (authoritative)
+    double endBeats = -1.0;    // Position in beats (authoritative)
     bool enabled = false;
 
     bool isValid() const {
@@ -107,6 +114,8 @@ struct LoopRegion {
     void clear() {
         startTime = -1.0;
         endTime = -1.0;
+        startBeats = -1.0;
+        endBeats = -1.0;
         enabled = false;
     }
     double getDuration() const {
@@ -197,14 +206,29 @@ struct TimelineState {
     // Layout constant (shared across components)
     static constexpr int LEFT_PADDING = LayoutConfig::TIMELINE_LEFT_PADDING;
 
+    // ===== Beat/time conversion helpers =====
+
+    /** Convert seconds to beats using current tempo */
+    double secondsToBeats(double seconds) const {
+        return seconds * tempo.bpm / 60.0;
+    }
+
+    /** Convert beats to seconds using current tempo */
+    double beatsToSeconds(double beats) const {
+        return beats * 60.0 / tempo.bpm;
+    }
+
     // ===== Coordinate conversion helpers =====
+    // horizontalZoom is in pixels per beat.
+    // All time↔pixel conversions go through beats.
 
     /**
      * Convert a pixel position to time (accounting for scroll and padding)
      */
     double pixelToTime(int pixel) const {
         if (zoom.horizontalZoom > 0) {
-            return (pixel + zoom.scrollX - LEFT_PADDING) / zoom.horizontalZoom;
+            double beats = (pixel + zoom.scrollX - LEFT_PADDING) / zoom.horizontalZoom;
+            return beatsToSeconds(beats);
         }
         return 0.0;
     }
@@ -214,7 +238,8 @@ struct TimelineState {
      */
     double pixelToTimeLocal(int pixel) const {
         if (zoom.horizontalZoom > 0) {
-            return (pixel - LEFT_PADDING) / zoom.horizontalZoom;
+            double beats = (pixel - LEFT_PADDING) / zoom.horizontalZoom;
+            return beatsToSeconds(beats);
         }
         return 0.0;
     }
@@ -223,21 +248,24 @@ struct TimelineState {
      * Convert time to pixel position (accounting for scroll and padding)
      */
     int timeToPixel(double time) const {
-        return static_cast<int>(time * zoom.horizontalZoom) + LEFT_PADDING - zoom.scrollX;
+        double beats = secondsToBeats(time);
+        return static_cast<int>(beats * zoom.horizontalZoom) + LEFT_PADDING - zoom.scrollX;
     }
 
     /**
      * Convert time to pixel position (local to component, no scroll adjustment)
      */
     int timeToPixelLocal(double time) const {
-        return static_cast<int>(time * zoom.horizontalZoom) + LEFT_PADDING;
+        double beats = secondsToBeats(time);
+        return static_cast<int>(beats * zoom.horizontalZoom) + LEFT_PADDING;
     }
 
     /**
      * Convert a time duration to pixels (zoom-dependent, no padding)
      */
     int timeDurationToPixels(double duration) const {
-        return static_cast<int>(duration * zoom.horizontalZoom);
+        double beats = secondsToBeats(duration);
+        return static_cast<int>(beats * zoom.horizontalZoom);
     }
 
     /**
@@ -272,13 +300,13 @@ struct TimelineState {
             }
             return 1.0;
         } else {
-            double secondsPerBeat = tempo.getSecondsPerBeat();
+            // BarsBeats: zoom is ppb, so pixels for a beat fraction is just zoom * fraction
             const double beatFractions[] = {0.0625, 0.125, 0.25, 0.5, 1.0, 2.0};
 
             for (double fraction : beatFractions) {
-                double intervalSeconds = secondsPerBeat * fraction;
-                if (timeDurationToPixels(intervalSeconds) >= minPixelSpacing) {
-                    return intervalSeconds;
+                if (zoom.horizontalZoom * fraction >= minPixelSpacing) {
+                    // Return interval in seconds for compatibility with snap logic
+                    return tempo.getSecondsPerBeat() * fraction;
                 }
             }
 
@@ -319,7 +347,8 @@ struct TimelineState {
      * Calculate content width based on zoom and timeline length
      */
     int getContentWidth() const {
-        int baseWidth = static_cast<int>(timelineLength * zoom.horizontalZoom);
+        double beats = secondsToBeats(timelineLength);
+        int baseWidth = static_cast<int>(beats * zoom.horizontalZoom);
         int minWidth = zoom.viewportWidth + (zoom.viewportWidth / 2);
         return juce::jmax(baseWidth, minWidth);
     }
@@ -332,12 +361,14 @@ struct TimelineState {
     }
 
     /**
-     * Calculate minimum zoom level to fit timeline in viewport
+     * Calculate minimum zoom level (ppb) to fit timeline in viewport
      */
     double getMinZoom() const {
         if (timelineLength > 0 && zoom.viewportWidth > 0) {
             double availableWidth = zoom.viewportWidth - 50.0;
-            return availableWidth / timelineLength;
+            double beats = secondsToBeats(timelineLength);
+            if (beats > 0)
+                return availableWidth / beats;
         }
         return 0.1;
     }

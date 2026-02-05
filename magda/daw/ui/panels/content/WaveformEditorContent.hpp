@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "PanelContent.hpp"
+#include "core/ClipDisplayInfo.hpp"
 #include "core/ClipManager.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
 #include "ui/components/waveform/WaveformGridComponent.hpp"
@@ -24,7 +25,8 @@ namespace magda::daw::ui {
  */
 class WaveformEditorContent : public PanelContent,
                               public magda::ClipManagerListener,
-                              public TimelineStateListener {
+                              public TimelineStateListener,
+                              public juce::Timer {
   public:
     WaveformEditorContent();
     ~WaveformEditorContent() override;
@@ -81,6 +83,7 @@ class WaveformEditorContent : public PanelContent,
     // Zoom
     double horizontalZoom_ = 100.0;  // pixels per second
     double verticalZoom_ = 1.0;      // amplitude multiplier
+    double cachedBpm_ = 120.0;       // last known BPM for zoom scaling on tempo change
     static constexpr double MIN_ZOOM = 20.0;
     static constexpr double MAX_ZOOM = 500.0;
     static constexpr double MIN_VERTICAL_ZOOM = 0.25;
@@ -97,6 +100,9 @@ class WaveformEditorContent : public PanelContent,
     std::unique_ptr<WaveformGridComponent> gridComponent_;
     std::unique_ptr<magda::TimeRuler> timeRuler_;
     std::unique_ptr<juce::TextButton> timeModeButton_;
+    std::unique_ptr<juce::TextButton> warpModeButton_;
+    std::unique_ptr<juce::Label> bpmLabel_;
+    std::unique_ptr<juce::ComboBox> gridResolutionCombo_;
 
     // Playhead overlay
     class PlayheadOverlay;
@@ -104,6 +110,7 @@ class WaveformEditorContent : public PanelContent,
     double cachedEditPosition_ = 0.0;
     double cachedPlaybackPosition_ = 0.0;
     bool cachedIsPlaying_ = false;
+    magda::ClipDisplayInfo cachedDisplayInfo_{};  // Cached for playhead overlay positioning
 
     // Look and feel
     class ButtonLookAndFeel;
@@ -119,7 +126,20 @@ class WaveformEditorContent : public PanelContent,
     void performAnchorPointZoom(double zoomFactor, int anchorX);
 
     // Update the grid's loop boundary from clip info
-    void updateLoopBoundary(const magda::ClipInfo& clip);
+    void updateDisplayInfo(const magda::ClipInfo& clip);
+
+    // Warp marker helpers
+    void refreshWarpMarkers();
+    magda::AudioBridge* getBridge();
+
+    // Warp state tracking
+    bool wasWarpEnabled_ = false;
+
+    // Transient detection polling
+    bool transientsCached_ = false;
+    int transientPollCount_ = 0;
+    static constexpr int MAX_TRANSIENT_POLL_ATTEMPTS = 40;  // ~10s at 250ms interval
+    void timerCallback() override;
 
     // Header drag-zoom state
     bool headerDragActive_ = false;

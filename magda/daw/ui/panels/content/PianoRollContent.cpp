@@ -327,10 +327,9 @@ void PianoRollContent::setupGridCallbacks() {
             double clipLengthBeats = clip->length * beatsPerSecond;
 
             // Check if note is outside visible range [offset, offset + length]
-            double effectiveOffset =
-                (clip->view == magda::ClipView::Session || clip->internalLoopEnabled)
-                    ? clip->midiOffset
-                    : 0.0;
+            double effectiveOffset = (clip->view == magda::ClipView::Session || clip->loopEnabled)
+                                         ? clip->midiOffset
+                                         : 0.0;
             if (note.startBeat < effectiveOffset ||
                 note.startBeat >= effectiveOffset + clipLengthBeats) {
                 DBG("Note is no longer visible in clip "
@@ -354,10 +353,10 @@ void PianoRollContent::setupGridCallbacks() {
                         // Calculate position in destination clip's content coordinates
                         // absoluteBeat is timeline position, convert to content position
                         double destClipStartBeats = destClip->startTime * beatsPerSecond;
-                        double destOffset = (destClip->view == magda::ClipView::Session ||
-                                             destClip->internalLoopEnabled)
-                                                ? destClip->midiOffset
-                                                : 0.0;
+                        double destOffset =
+                            (destClip->view == magda::ClipView::Session || destClip->loopEnabled)
+                                ? destClip->midiOffset
+                                : 0.0;
                         double relativeNewBeat = absoluteBeat - destClipStartBeats + destOffset;
 
                         DBG("  -> Transfer: absoluteBeat="
@@ -653,9 +652,16 @@ void PianoRollContent::updateGridSize() {
     gridComponent_->setTimelineLengthBeats(displayLengthBeats);
 
     // Pass loop region data to grid
+    // Note: Grid expects beats, so convert from seconds
     if (clip && selectedClipIds.size() <= 1) {
-        gridComponent_->setLoopRegion(clip->internalLoopOffset, clip->internalLoopLength,
-                                      clip->internalLoopEnabled);
+        double tempo = 120.0;
+        if (auto* controller = magda::TimelineController::getCurrent()) {
+            tempo = controller->getState().tempo.bpm;
+        }
+        double beatsPerSecond = tempo / 60.0;
+        double loopPhaseBeats = (clip->offset - clip->loopStart) * beatsPerSecond;
+        double sourceLengthBeats = clip->loopLength * beatsPerSecond;
+        gridComponent_->setLoopRegion(loopPhaseBeats, sourceLengthBeats, clip->loopEnabled);
     } else {
         gridComponent_->setLoopRegion(0.0, 0.0, false);
     }
@@ -691,9 +697,8 @@ void PianoRollContent::updateTimeRuler() {
     // Set timeline length to full arrangement
     timeRuler_->setTimelineLength(timelineLength);
 
-    // Set zoom (convert pixels per beat to pixels per second)
-    double pixelsPerSecond = horizontalZoom_ / secondsPerBeat;
-    timeRuler_->setZoom(pixelsPerSecond);
+    // Set zoom (TimeRuler now takes pixels per beat directly)
+    timeRuler_->setZoom(horizontalZoom_);
 
     // Set clip info for boundary drawing
     // timeOffset is always the clip's start time (used for boundary markers)
@@ -708,10 +713,9 @@ void PianoRollContent::updateTimeRuler() {
             timeRuler_->setClipLength(clip->length);
         }
 
-        // Pass loop region data to time ruler (converted to seconds)
-        timeRuler_->setLoopRegion(clip->internalLoopOffset * secondsPerBeat,
-                                  clip->internalLoopLength * secondsPerBeat,
-                                  clip->internalLoopEnabled);
+        // Pass loop region data to time ruler (already in seconds in new model)
+        timeRuler_->setLoopRegion(clip->offset - clip->loopStart, clip->loopLength,
+                                  clip->loopEnabled);
     } else {
         timeRuler_->setTimeOffset(0.0);
         timeRuler_->setClipLength(0.0);
@@ -811,12 +815,11 @@ void PianoRollContent::onActivated() {
             gridComponent_->setClip(selectedClip);
 
             // Session clips and looping arrangement clips are locked to relative mode
-            bool forceRelative =
-                (clip->view == magda::ClipView::Session) || clip->internalLoopEnabled;
+            bool forceRelative = (clip->view == magda::ClipView::Session) || clip->loopEnabled;
             if (forceRelative) {
                 setRelativeTimeMode(true);
                 timeModeButton_->setEnabled(false);
-                timeModeButton_->setTooltip(clip->internalLoopEnabled
+                timeModeButton_->setTooltip(clip->loopEnabled
                                                 ? "Looping clips use relative time"
                                                 : "Session clips always use relative time");
             } else {
@@ -907,13 +910,13 @@ void PianoRollContent::clipPropertyChanged(magda::ClipId clipId) {
                 const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
                 if (clip && clip->type == magda::ClipType::MIDI) {
                     bool forceRelative =
-                        (clip->view == magda::ClipView::Session) || clip->internalLoopEnabled;
+                        (clip->view == magda::ClipView::Session) || clip->loopEnabled;
                     if (forceRelative) {
                         self->setRelativeTimeMode(true);
                         self->timeModeButton_->setEnabled(false);
                         self->timeModeButton_->setTooltip(
-                            clip->internalLoopEnabled ? "Looping clips use relative time"
-                                                      : "Session clips always use relative time");
+                            clip->loopEnabled ? "Looping clips use relative time"
+                                              : "Session clips always use relative time");
                     } else {
                         self->timeModeButton_->setEnabled(true);
                         self->timeModeButton_->setTooltip(
