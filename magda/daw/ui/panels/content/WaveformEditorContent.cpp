@@ -555,7 +555,7 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
             timeRuler_->setTimeOffset(relativeTimeMode_ ? 0.0 : clip->startTime);
             timeRuler_->setClipLength(clip->length);
 
-            // Update loop boundary dimming
+            // Update loop boundary dimming (also sets clip content offset on ruler)
             updateDisplayInfo(*clip);
 
             // Update warp mode state
@@ -870,6 +870,9 @@ void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
         double loopStartPos = info.loopStartPositionSeconds;
         double loopLen = info.loopLengthSeconds;
         timeRuler_->setLoopRegion(loopStartPos, loopLen, showMarkers, loopIsActive);
+
+        // Shift clip boundary markers by the content offset
+        timeRuler_->setClipContentOffset(info.offsetPositionSeconds);
 
         // Offset marker is shown on the waveform grid; no separate ruler marker needed
         timeRuler_->setLoopPhaseMarker(0.0, false);

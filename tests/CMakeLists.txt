@@ -3,6 +3,7 @@ set(TEST_SOURCES
     test_audio_bridge.cpp
     test_audiobridge_track_limit_bug.cpp
     test_audiobridge_plugin_cleanup_bug.cpp
+    test_auto_tempo.cpp
     test_audio_clip_stretch.cpp
     test_audio_source_length.cpp
     test_audio_export.cpp

@@ -317,14 +317,15 @@ class ClipOperations {
     // ========================================================================
 
     /**
-     * @brief Calculate the beat-based loop range for auto-tempo mode
+     * @brief Calculate the beat-based loop range for Tracktion Engine sync
      *
-     * Returns the loop range in beats that should be sent to Tracktion Engine.
-     * This defines how much SOURCE audio is available to loop, not the clip's timeline length.
+     * Converts model beat values (project beats) to SOURCE beats for TE.
+     * TE's loopStartBeats/loopLengthBeats are in source-file beats (clamped
+     * to loopInfo.getNumBeats()), NOT project-timeline beats.
      *
      * @param clip The clip to calculate for
-     * @param bpm Current tempo
-     * @return Pair of (loopStartBeats, loopLengthBeats)
+     * @param bpm Current project tempo
+     * @return Pair of (loopStartBeats, loopLengthBeats) in SOURCE beats
      */
     static inline std::pair<double, double> getAutoTempoBeatRange(const ClipInfo& clip,
                                                                   double bpm) {
@@ -332,8 +333,13 @@ class ClipOperations {
             return {0.0, 0.0};
         }
 
-        // In musical mode, beat values are authoritative - just return the stored values
-        // DO NOT recalculate from time, as that defeats the purpose of tempo-locked beats
+        // Convert from source-time seconds to source beats
+        if (clip.sourceBPM > 0.0) {
+            double srcBps = clip.sourceBPM / 60.0;
+            return {clip.loopStart * srcBps, clip.loopLength * srcBps};
+        }
+
+        // Fallback: return project beats (correct only when project BPM == source BPM)
         return {clip.loopStartBeats, clip.loopLengthBeats};
     }
 
@@ -374,21 +380,20 @@ class ClipOperations {
             // Convert current timeline position to beats
             clip.startBeats = (clip.startTime * bpm) / 60.0;
 
-            // Convert current time length to beats
-            clip.loopLengthBeats = clip.getLengthInBeats(bpm);
-            if (clip.loopEnabled && clip.loopLength > 0.0) {
-                // Convert loop properties to beats
-                clip.loopStartBeats = (clip.loopStart * bpm) / 60.0;
-            } else {
-                clip.loopStartBeats = 0.0;
-            }
-
             // Enable looping (required for TE's autoTempo beat range to work)
             if (!clip.loopEnabled) {
                 clip.loopEnabled = true;
-                // Set loop start to offset and loop length from clip length
                 clip.loopStart = clip.offset;
                 clip.setLoopLengthFromTimeline(clip.length);
+            }
+
+            // Store beat values in PROJECT beats (used by display, getEndBeats, etc.)
+            // TE needs SOURCE beats — that conversion happens in getAutoTempoBeatRange()
+            clip.loopLengthBeats = clip.getLengthInBeats(bpm);
+            if (clip.loopEnabled && clip.loopLength > 0.0) {
+                clip.loopStartBeats = (clip.loopStart * bpm) / 60.0;
+            } else {
+                clip.loopStartBeats = 0.0;
             }
 
             // Force speedRatio to 1.0 (TE requirement for autoTempo)

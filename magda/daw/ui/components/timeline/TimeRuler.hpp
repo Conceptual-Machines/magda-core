@@ -49,10 +49,14 @@ class TimeRuler : public juce::Component, private juce::Timer {
         return relativeMode;
     }
 
-    // Clip boundary marker (shows where clip content ends)
+    // Clip boundary marker (shows where clip content starts/ends)
     void setClipLength(double lengthSeconds);
     double getClipLength() const {
         return clipLength;
+    }
+    void setClipContentOffset(double offsetSeconds);
+    double getClipContentOffset() const {
+        return clipContentOffset;
     }
 
     // Loop region markers (shows loop boundaries on the ruler)
@@ -112,6 +116,8 @@ class TimeRuler : public juce::Component, private juce::Timer {
     double timeOffset = 0.0;    // seconds - absolute position of content start
     bool relativeMode = false;  // true = show relative time (1, 2, 3...), false = show absolute
     double clipLength = 0.0;    // seconds - length of clip (0 = no boundary marker)
+    double clipContentOffset =
+        0.0;  // seconds - source offset in timeline seconds (shifts boundaries)
     double playheadPosition = -1.0;  // seconds - current playback position (-1 = not playing)
 
     // Loop region

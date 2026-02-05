@@ -40,7 +40,17 @@ struct ClipInfo {
     double startBeats = -1.0;  // Start position in beats (-1 = not set/use startTime)
 
     // Audio-specific properties (flat model: one clip = one file reference)
-    juce::String audioFilePath;  // Path to audio file
+    juce::String audioFilePath;   // Path to audio file
+    double sourceNumBeats = 0.0;  // Beat count from source file metadata (TE loopInfo)
+    double sourceBPM = 0.0;       // Source file BPM (from TE loopInfo, 0 = unknown)
+
+    /// Populate source metadata from engine (only sets if not already populated)
+    void setSourceMetadata(double numBeats, double bpm) {
+        if (numBeats > 0.0 && sourceNumBeats <= 0.0)
+            sourceNumBeats = numBeats;
+        if (bpm > 0.0 && sourceBPM <= 0.0)
+            sourceBPM = bpm;
+    }
 
     // =========================================================================
     // Audio playback parameters (TE-aligned terminology)
