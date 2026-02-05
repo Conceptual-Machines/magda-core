@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../state/TimelineController.hpp"
 #include "../common/BarsBeatsTicksLabel.hpp"
 #include "../common/DraggableValueLabel.hpp"
 #include "../common/SvgButton.hpp"
@@ -10,8 +11,7 @@
 #include "core/TrackManager.hpp"
 
 namespace magda {
-class TimelineController;  // Forward declaration
-class AudioEngine;         // Forward declaration
+class AudioEngine;  // Forward declaration
 }  // namespace magda
 
 namespace magda::daw::ui {
@@ -25,7 +25,8 @@ namespace magda::daw::ui {
 class InspectorContent : public PanelContent,
                          public magda::TrackManagerListener,
                          public magda::ClipManagerListener,
-                         public magda::SelectionManagerListener {
+                         public magda::SelectionManagerListener,
+                         public magda::TimelineStateListener {
   public:
     InspectorContent();
     ~InspectorContent() override;
@@ -70,6 +71,10 @@ class InspectorContent : public PanelContent,
     void modsPanelSelectionChanged(const magda::ModsPanelSelection& selection) override;
     void macrosPanelSelectionChanged(const magda::MacrosPanelSelection& selection) override;
     void paramSelectionChanged(const magda::ParamSelection& selection) override;
+
+    // TimelineStateListener
+    void timelineStateChanged(const magda::TimelineState& state) override;
+    void tempoStateChanged(const magda::TimelineState& state) override;
 
   private:
     juce::Label titleLabel_;

@@ -1142,13 +1142,21 @@ InspectorContent::InspectorContent() {
 }
 
 InspectorContent::~InspectorContent() {
+    if (timelineController_)
+        timelineController_->removeListener(this);
     magda::TrackManager::getInstance().removeListener(this);
     magda::ClipManager::getInstance().removeListener(this);
     magda::SelectionManager::getInstance().removeListener(this);
 }
 
 void InspectorContent::setTimelineController(magda::TimelineController* controller) {
+    if (timelineController_)
+        timelineController_->removeListener(this);
     timelineController_ = controller;
+    if (timelineController_) {
+        timelineController_->addListener(this);
+        DBG("InspectorContent: registered as TimelineStateListener");
+    }
     // Refresh display with new tempo info if a clip is selected
     if (currentSelectionType_ == magda::SelectionType::Clip) {
         updateFromSelectedClip();
@@ -1619,6 +1627,22 @@ void InspectorContent::clipPropertyChanged(magda::ClipId clipId) {
 void InspectorContent::clipSelectionChanged(magda::ClipId clipId) {
     if (currentSelectionType_ == magda::SelectionType::Clip) {
         selectedClipId_ = clipId;
+        updateFromSelectedClip();
+    }
+}
+
+// ============================================================================
+// TimelineStateListener
+
+void InspectorContent::timelineStateChanged(const magda::TimelineState& state) {
+    DBG("InspectorContent::timelineStateChanged - bpm=" << state.tempo.bpm);
+}
+
+void InspectorContent::tempoStateChanged(const magda::TimelineState& state) {
+    DBG("InspectorContent::tempoStateChanged - bpm=" << state.tempo.bpm << ", selectionType="
+                                                     << static_cast<int>(currentSelectionType_));
+    if (currentSelectionType_ == magda::SelectionType::Clip) {
+        DBG("  -> updating clip display");
         updateFromSelectedClip();
     }
 }

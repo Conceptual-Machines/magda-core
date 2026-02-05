@@ -163,6 +163,8 @@ void TrackContentPanel::timelineStateChanged(const TimelineState& state) {
         }
     }
 
+    updateClipComponentPositions();
+    resized();
     repaint();
 }
 

@@ -450,8 +450,15 @@ class ClipOperations {
         // Clamp loopLength to available audio from new loopStart
         if (fileDuration > 0.0) {
             double avail = fileDuration - clip.loopStart;
-            if (clip.loopLength > avail)
+            if (clip.loopLength > avail) {
+                double oldLoopLength = clip.loopLength;
                 clip.loopLength = juce::jmax(0.0, avail);
+                // In autoTempo mode, scale loopLengthBeats proportionally
+                // to maintain the same stretch ratio
+                if (clip.autoTempo && oldLoopLength > 0.0) {
+                    clip.loopLengthBeats *= clip.loopLength / oldLoopLength;
+                }
+            }
         }
         clip.clampLengthToSource(fileDuration);
     }

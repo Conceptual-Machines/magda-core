@@ -503,15 +503,26 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         g.drawText("P", phaseX + 3, 2, 12, 12, juce::Justification::centredLeft, false);
     }
 
-    // Ghost overlay past clip end — dim everything beyond the clip's timeline length
+    // Ghost overlays — dim everything outside the clip's playback region
     {
-        int clipEndX = timeToPixel(baseTime + clipLength_);
+        auto ghostColour = DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND).withAlpha(0.7f);
+        int clipStartX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds);
+        int clipEndX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds + clipLength_);
+
+        // Left ghost: everything before clip start
+        int leftEdge = bounds.getX();
+        if (clipStartX > leftEdge) {
+            g.setColour(ghostColour);
+            g.fillRect(juce::Rectangle<int>(leftEdge, bounds.getY(), clipStartX - leftEdge,
+                                            bounds.getHeight()));
+        }
+
+        // Right ghost: everything after clip end
         int rightEdge = bounds.getRight();
         if (clipEndX < rightEdge) {
-            auto ghostRect = juce::Rectangle<int>(clipEndX, bounds.getY(), rightEdge - clipEndX,
-                                                  bounds.getHeight());
-            g.setColour(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND).withAlpha(0.7f));
-            g.fillRect(ghostRect);
+            g.setColour(ghostColour);
+            g.fillRect(juce::Rectangle<int>(clipEndX, bounds.getY(), rightEdge - clipEndX,
+                                            bounds.getHeight()));
         }
     }
 }

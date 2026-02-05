@@ -1072,7 +1072,13 @@ void ClipManager::sanitizeAudioClip(ClipInfo& clip) {
     // Clamp loopLength so loop region doesn't exceed file
     double availableFromLoop = fileDuration - clip.loopStart;
     if (clip.loopLength > availableFromLoop) {
+        double oldLoopLength = clip.loopLength;
         clip.loopLength = juce::jmax(0.0, availableFromLoop);
+        // In autoTempo mode, scale loopLengthBeats proportionally
+        // to maintain the same stretch ratio
+        if (clip.autoTempo && oldLoopLength > 0.0) {
+            clip.loopLengthBeats *= clip.loopLength / oldLoopLength;
+        }
     }
 
     // Clamp offset to file bounds

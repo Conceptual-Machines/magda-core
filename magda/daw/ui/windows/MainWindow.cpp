@@ -300,6 +300,11 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     sessionView->setTimelineController(&mainView->getTimelineController());
     addChildComponent(*sessionView);
 
+    // Wire timeline controller to panels (for inspector tempo updates)
+    leftPanel->setTimelineController(&mainView->getTimelineController());
+    rightPanel->setTimelineController(&mainView->getTimelineController());
+    bottomPanel->setTimelineController(&mainView->getTimelineController());
+
     mixerView = std::make_unique<MixerView>(externalEngine);
     addChildComponent(*mixerView);
 
