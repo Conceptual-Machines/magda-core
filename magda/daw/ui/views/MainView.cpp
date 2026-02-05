@@ -391,6 +391,11 @@ void MainView::selectionStateChanged(const TimelineState& state) {
         onTimeSelectionChanged(timeSelection.startTime, timeSelection.endTime,
                                timeSelection.isActive());
     }
+
+    // Notify about edit cursor position change
+    if (onEditCursorChanged) {
+        onEditCursorChanged(state.editCursorPosition);
+    }
 }
 
 void MainView::loopStateChanged(const TimelineState& state) {

@@ -72,6 +72,7 @@ class MainView : public juce::Component,
         onTimeSelectionChanged;  // (startTime, endTime, hasSelection)
     std::function<void(double, double, bool, bool)>
         onPunchRegionChanged;  // (startTime, endTime, punchInEnabled, punchOutEnabled)
+    std::function<void(double)> onEditCursorChanged;  // (positionInSeconds)
 
     // ScrollBar::Listener implementation
     void scrollBarMoved(juce::ScrollBar* scrollBarThatHasMoved, double newRangeStart) override;

@@ -36,10 +36,13 @@ class TransportPanel : public juce::Component {
     std::function<void(double, double)> onLoopRegionEdit;  // startSeconds, endSeconds
     std::function<void(bool)> onPunchInToggle;
     std::function<void(bool)> onPunchOutToggle;
-    std::function<void(double, double)> onPunchRegionEdit;  // startSeconds, endSeconds
+    std::function<void(double, double)> onPunchRegionEdit;    // startSeconds, endSeconds
+    std::function<void(double, double)> onTimeSelectionEdit;  // startSeconds, endSeconds
+    std::function<void(double)> onEditCursorEdit;             // positionInSeconds
 
     // Update displays - simplified API
     void setPlayheadPosition(double positionInSeconds);
+    void setEditCursorPosition(double positionInSeconds);
     void setTimeSelection(double startTime, double endTime, bool hasSelection);
     void setLoopRegion(double startTime, double endTime, bool loopEnabled);
     void setTempo(double bpm);
@@ -76,9 +79,12 @@ class TransportPanel : public juce::Component {
     // Playhead position (editable BarsBeatsTicksLabel)
     std::unique_ptr<BarsBeatsTicksLabel> playheadPositionLabel;
 
-    // Selection (read-only labels)
-    std::unique_ptr<juce::Label> selectionPrimaryLabel;
-    std::unique_ptr<juce::Label> selectionSecondaryLabel;
+    // Edit cursor position (editable BarsBeatsTicksLabel)
+    std::unique_ptr<BarsBeatsTicksLabel> editCursorLabel;
+
+    // Selection start/end (editable BarsBeatsTicksLabels)
+    std::unique_ptr<BarsBeatsTicksLabel> selectionStartLabel;
+    std::unique_ptr<BarsBeatsTicksLabel> selectionEndLabel;
 
     // Loop start/end (editable BarsBeatsTicksLabels)
     std::unique_ptr<BarsBeatsTicksLabel> loopStartLabel;
@@ -91,13 +97,15 @@ class TransportPanel : public juce::Component {
     // Tempo (DraggableValueLabel)
     std::unique_ptr<DraggableValueLabel> tempoLabel;
 
-    // Quantize, metronome, snap
+    // Quantize, metronome, snap, time signature
     std::unique_ptr<juce::ComboBox> quantizeCombo;
     std::unique_ptr<SvgButton> metronomeButton;
     std::unique_ptr<juce::TextButton> snapButton;
+    std::unique_ptr<juce::Label> timeSignatureLabel;
 
     // Layout sections
     juce::Rectangle<int> getTransportControlsArea() const;
+    juce::Rectangle<int> getMetronomeBpmArea() const;
     juce::Rectangle<int> getTimeDisplayArea() const;
     juce::Rectangle<int> getTempoQuantizeArea() const;
 
@@ -122,6 +130,7 @@ class TransportPanel : public juce::Component {
 
     // Cached state for display updates
     double cachedPlayheadPosition = 0.0;
+    double cachedEditCursorPosition = 0.0;
     double cachedSelectionStart = -1.0;
     double cachedSelectionEnd = -1.0;
     bool cachedSelectionActive = false;

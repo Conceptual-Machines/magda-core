@@ -41,6 +41,12 @@ class BarsBeatsTicksLabel : public juce::Component {
     void setTextColour(juce::Colour colour);
     juce::Colour getTextColour() const;
 
+    // Overlay label drawn at top-left corner in tiny font
+    void setOverlayLabel(const juce::String& label);
+
+    // Whether to draw background fill + border (default: true)
+    void setDrawBackground(bool draw);
+
     // Callback when value changes
     std::function<void()> onValueChange;
 
@@ -66,6 +72,8 @@ class BarsBeatsTicksLabel : public juce::Component {
     bool doubleClickResets_ = true;
     juce::Colour customTextColour_;
     bool hasCustomTextColour_ = false;
+    juce::String overlayLabel_;
+    bool drawBackground_ = true;
 
     std::unique_ptr<SegmentLabel> barsSegment_;
     std::unique_ptr<SegmentLabel> beatsSegment_;
