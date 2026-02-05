@@ -464,28 +464,28 @@ void ClipManager::setLoopPhase(ClipId clipId, double phase) {
 
 void ClipManager::setLoopStart(ClipId clipId, double loopStart, double bpm) {
     if (auto* clip = getClip(clipId)) {
+        clip->loopStart = juce::jmax(0.0, loopStart);
         if (clip->type == ClipType::Audio) {
-            clip->loopStart = juce::jmax(0.0, loopStart);
             if (clip->autoTempo) {
                 // Use sourceBPM for beat conversion — loopStartBeats is in source-beat domain
                 double convBpm = (clip->sourceBPM > 0.0) ? clip->sourceBPM : bpm;
                 clip->loopStartBeats = (clip->loopStart * convBpm) / 60.0;
             }
             sanitizeAudioClip(*clip);
-            notifyClipPropertyChanged(clipId);
         }
+        notifyClipPropertyChanged(clipId);
     }
 }
 
 void ClipManager::setLoopLength(ClipId clipId, double loopLength, double bpm) {
     if (auto* clip = getClip(clipId)) {
+        clip->loopLength = juce::jmax(0.0, loopLength);
         if (clip->type == ClipType::Audio) {
             DBG("[SET-LOOP-LENGTH] clip "
                 << clipId << " newLoopLength=" << loopLength << " bpm=" << bpm
                 << " BEFORE: loopLength=" << clip->loopLength
                 << " loopLengthBeats=" << clip->loopLengthBeats << " length=" << clip->length
                 << " lengthBeats=" << clip->lengthBeats);
-            clip->loopLength = juce::jmax(0.0, loopLength);
             if (clip->autoTempo) {
                 // Use sourceBPM for beat conversion — loopLengthBeats is in source-beat domain
                 double convBpm = (clip->sourceBPM > 0.0) ? clip->sourceBPM : bpm;
@@ -495,8 +495,8 @@ void ClipManager::setLoopLength(ClipId clipId, double loopLength, double bpm) {
             DBG("[SET-LOOP-LENGTH]   AFTER: loopLength="
                 << clip->loopLength << " loopLengthBeats=" << clip->loopLengthBeats
                 << " length=" << clip->length << " lengthBeats=" << clip->lengthBeats);
-            notifyClipPropertyChanged(clipId);
         }
+        notifyClipPropertyChanged(clipId);
     }
 }
 

@@ -246,10 +246,10 @@ TEST_CASE("ClipDisplayInfo - sourceFileEnd in non-loop mode", "[clip][display][s
 
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
-        // sourceLength = 8.0 / 2.0 = 4.0
-        // sourceFileEnd = 0.5 + 4.0 = 4.5
+        // At 2x speed, 8s on timeline consumes 16s of source (timelineToSource = length *
+        // speedRatio) sourceFileEnd = offset + sourceLength = 0.5 + 16.0 = 16.5
         REQUIRE(di.sourceFileStart == Catch::Approx(0.5));
-        REQUIRE(di.sourceFileEnd == Catch::Approx(4.5));
+        REQUIRE(di.sourceFileEnd == Catch::Approx(16.5));
     }
 }
 

@@ -89,7 +89,8 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         auto di = ClipDisplayInfo::from(clip, bpm);
 
         REQUIRE(di.loopLengthSeconds == Catch::Approx(2.0));  // sourceLength * speedRatio
-        REQUIRE(di.loopEndPositionSeconds == Catch::Approx(2.0));
+        REQUIRE(di.loopEndPositionSeconds ==
+                Catch::Approx(2.5));  // loopStart(0.5) + loopLength(2.0)
         REQUIRE(di.isLooped());
 
         // Source file range for one cycle
@@ -137,7 +138,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         REQUIRE(di.isLooped());
     }
 
-    SECTION("Clip shorter than loop cycle: source range clamped to clip length") {
+    SECTION("Clip shorter than loop cycle: source range covers full loop region") {
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 1.0;  // 1s clip, shorter than 2s loop cycle
@@ -149,13 +150,13 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
 
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
-        // sourceFileEnd must be clamped: loopStart + clip.length * speedRatio = 0.5 + 1.0 = 1.5
-        // NOT the full loop cycle end of 2.5
+        // sourceFileStart/End represent the full loop source region for waveform drawing.
+        // Per-tile clamping for partial cycles is handled by the drawing code.
         REQUIRE(di.sourceFileStart == Catch::Approx(0.5));
-        REQUIRE(di.sourceFileEnd == Catch::Approx(1.5));
+        REQUIRE(di.sourceFileEnd == Catch::Approx(2.5));  // loopStart + loopLength
     }
 
-    SECTION("Clip shorter than loop cycle with stretch: source range clamped") {
+    SECTION("Looped clip with stretch: clip covers multiple cycles") {
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 1.0;  // 1s on timeline
@@ -164,15 +165,14 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.loopEnabled = true;
         clip.offset = clip.loopStart;
         clip.loopStart = 0.0;
-        clip.loopLength = 1.0;  // 1s source region → 0.5s on timeline
+        clip.loopLength = 1.0;  // 1s source region → 0.5s on timeline → clip has 2 full cycles
 
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
-        // Full loop source range would be 1.0s of source
-        // But clip is only 1.0s on timeline = 0.5s of source (at 2x speed)
-        // sourceFileEnd = loopStart + 1.0/2.0 = 0.5
+        // At 2x speed: 1.0s on timeline = 2.0s of source, loop cycle = 0.5s on timeline
+        // Clip covers 2 full loop cycles, so full loop source range is needed
         REQUIRE(di.sourceFileStart == Catch::Approx(0.0));
-        REQUIRE(di.sourceFileEnd == Catch::Approx(0.5));
+        REQUIRE(di.sourceFileEnd == Catch::Approx(1.0));  // loopStart + loopLength
     }
 
     SECTION("Clip equal to loop cycle: source range not clamped") {

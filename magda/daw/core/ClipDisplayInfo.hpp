@@ -174,9 +174,16 @@ struct ClipDisplayInfo {
             d.fullSourceExtentSeconds = d.sourceExtentSeconds;
         }
 
-        // Source file range: start from file start, extend to loop/offset end
-        d.sourceFileStart = 0.0;
-        d.sourceFileEnd = clip.offset + d.sourceLength;
+        // Source file range: the source region relevant for waveform drawing
+        // Looped: the loop region (loopStart to loopStart + loopLength)
+        // Non-looped: from offset to offset + sourceLength
+        if (clip.loopEnabled && clip.loopLength > 0.0) {
+            d.sourceFileStart = clip.loopStart;
+            d.sourceFileEnd = clip.loopStart + d.sourceLength;
+        } else {
+            d.sourceFileStart = clip.offset;
+            d.sourceFileEnd = clip.offset + d.sourceLength;
+        }
 
         // Clamp to file bounds
         if (fileDuration > 0.0 && d.sourceFileEnd > fileDuration) {
