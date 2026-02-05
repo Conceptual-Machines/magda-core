@@ -41,38 +41,37 @@ void TransportPanel::resized() {
 
     // Transport controls layout — order: Home, Prev, Play, Stop, Rec, Loop, Next, PunchIn, PunchOut
     auto buttonMargin = 4;
-    auto buttonHeight = transportArea.getHeight() - buttonMargin * 2;
-    auto buttonWidth = 30;
+    auto buttonSize = transportArea.getHeight() - buttonMargin * 2;
     auto buttonY = buttonMargin;
     auto buttonSpacing = 2;
 
     auto x = transportArea.getX() + 6;
 
-    homeButton->setBounds(x, buttonY, buttonWidth, buttonHeight);
-    x += buttonWidth + buttonSpacing;
+    homeButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + buttonSpacing;
 
-    prevButton->setBounds(x, buttonY, buttonWidth, buttonHeight);
-    x += buttonWidth + buttonSpacing;
+    prevButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + buttonSpacing;
 
-    playButton->setBounds(x, buttonY, buttonWidth, buttonHeight);
-    x += buttonWidth + buttonSpacing;
+    playButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + buttonSpacing;
 
-    stopButton->setBounds(x, buttonY, buttonWidth, buttonHeight);
-    x += buttonWidth + buttonSpacing;
+    stopButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + buttonSpacing;
 
-    recordButton->setBounds(x, buttonY, buttonWidth, buttonHeight);
-    x += buttonWidth + buttonSpacing;
+    recordButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + buttonSpacing;
 
-    loopButton->setBounds(x, buttonY, buttonWidth, buttonHeight);
-    x += buttonWidth + buttonSpacing;
+    loopButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + buttonSpacing;
 
-    nextButton->setBounds(x, buttonY, buttonWidth, buttonHeight);
-    x += buttonWidth + buttonSpacing;
+    nextButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + buttonSpacing;
 
-    punchInButton->setBounds(x, buttonY, buttonWidth, buttonHeight);
-    x += buttonWidth + buttonSpacing;
+    punchInButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + buttonSpacing;
 
-    punchOutButton->setBounds(x, buttonY, buttonWidth, buttonHeight);
+    punchOutButton->setBounds(x, buttonY, buttonSize, buttonSize);
 
     // Pause button — hidden but still functional via callbacks
     pauseButton->setBounds(0, 0, 0, 0);
@@ -139,19 +138,21 @@ void TransportPanel::resized() {
 }
 
 juce::Rectangle<int> TransportPanel::getTransportControlsArea() const {
-    // 9 buttons * 30px + 8 * 2px spacing + 12px padding = 298px
-    return getLocalBounds().removeFromLeft(300);
+    // 9 square buttons (height-4*2) + 8 * 2px spacing + 12px padding
+    int buttonSize = getHeight() - 8;
+    int width = 9 * buttonSize + 8 * 2 + 12;
+    return getLocalBounds().removeFromLeft(width);
 }
 
 juce::Rectangle<int> TransportPanel::getTimeDisplayArea() const {
     auto bounds = getLocalBounds();
-    bounds.removeFromLeft(300);
+    bounds.removeFromLeft(getTransportControlsArea().getWidth());
     return bounds.removeFromLeft(700);
 }
 
 juce::Rectangle<int> TransportPanel::getTempoQuantizeArea() const {
     auto bounds = getLocalBounds();
-    bounds.removeFromLeft(1000);  // 300 + 700
+    bounds.removeFromLeft(getTransportControlsArea().getWidth() + 700);
     return bounds;
 }
 
