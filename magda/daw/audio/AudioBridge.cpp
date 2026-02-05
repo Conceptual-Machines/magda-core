@@ -249,6 +249,13 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
         return;
     }
 
+    if (clip->autoTempo) {
+        DBG("[AUDIO-BRIDGE] clipPropertyChanged clip "
+            << clipId << " length=" << clip->length << " loopLength=" << clip->loopLength
+            << " loopLengthBeats=" << clip->loopLengthBeats << " lengthBeats=" << clip->lengthBeats
+            << " startTime=" << clip->startTime << " startBeats=" << clip->startBeats);
+    }
+
     if (clip->view == ClipView::Session) {
         // Session clip property changed (e.g. sceneIndex set after creation).
         // Try to sync it to a slot if not already synced.
@@ -623,7 +630,7 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     }
 
     // 4. UPDATE clip position/length
-    // Flat model: clip.startTime IS where audio starts, clip.length IS the duration.
+    // Read seconds directly — BPM handler keeps these in sync for autoTempo clips.
     double engineStart = clip->startTime;
     double engineEnd = clip->startTime + clip->length;
 

@@ -223,9 +223,12 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
 // Clip Manipulation
 // ============================================================================
 
-void ClipManager::moveClip(ClipId clipId, double newStartTime, double /*tempo*/) {
+void ClipManager::moveClip(ClipId clipId, double newStartTime, double tempo) {
     if (auto* clip = getClip(clipId)) {
         ClipOperations::moveContainer(*clip, newStartTime);
+        if (clip->autoTempo && tempo > 0.0) {
+            clip->startBeats = clip->startTime * tempo / 60.0;
+        }
         // Notes maintain their relative position within the clip (startBeat unchanged)
         // so they move with the clip on the timeline
         notifyClipPropertyChanged(clipId);
@@ -243,11 +246,18 @@ void ClipManager::moveClipToTrack(ClipId clipId, TrackId newTrackId) {
 
 void ClipManager::resizeClip(ClipId clipId, double newLength, bool fromStart, double tempo) {
     if (auto* clip = getClip(clipId)) {
+        DBG("[RESIZE-CLIP] clip " << clipId << " newLength=" << newLength
+                                  << " fromStart=" << (int)fromStart << " tempo=" << tempo
+                                  << " BEFORE: length=" << clip->length
+                                  << " loopLength=" << clip->loopLength
+                                  << " loopLengthBeats=" << clip->loopLengthBeats);
         if (fromStart) {
             ClipOperations::resizeContainerFromLeft(*clip, newLength, tempo);
         } else {
             ClipOperations::resizeContainerFromRight(*clip, newLength, tempo);
         }
+        DBG("[RESIZE-CLIP]   AFTER: length=" << clip->length << " loopLength=" << clip->loopLength
+                                             << " loopLengthBeats=" << clip->loopLengthBeats);
         notifyClipPropertyChanged(clipId);
     }
 }
@@ -444,8 +454,10 @@ void ClipManager::setLoopStart(ClipId clipId, double loopStart, double bpm) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
             clip->loopStart = juce::jmax(0.0, loopStart);
-            if (clip->autoTempo && bpm > 0.0) {
-                clip->loopStartBeats = (clip->loopStart * bpm) / 60.0;
+            if (clip->autoTempo) {
+                // Use sourceBPM for beat conversion — loopStartBeats is in source-beat domain
+                double convBpm = (clip->sourceBPM > 0.0) ? clip->sourceBPM : bpm;
+                clip->loopStartBeats = (clip->loopStart * convBpm) / 60.0;
             }
             sanitizeAudioClip(*clip);
             notifyClipPropertyChanged(clipId);
@@ -456,11 +468,31 @@ void ClipManager::setLoopStart(ClipId clipId, double loopStart, double bpm) {
 void ClipManager::setLoopLength(ClipId clipId, double loopLength, double bpm) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
+            DBG("[SET-LOOP-LENGTH] clip "
+                << clipId << " newLoopLength=" << loopLength << " bpm=" << bpm
+                << " BEFORE: loopLength=" << clip->loopLength
+                << " loopLengthBeats=" << clip->loopLengthBeats << " length=" << clip->length
+                << " lengthBeats=" << clip->lengthBeats);
             clip->loopLength = juce::jmax(0.0, loopLength);
-            if (clip->autoTempo && bpm > 0.0) {
-                clip->loopLengthBeats = (clip->loopLength * bpm) / 60.0;
+            if (clip->autoTempo) {
+                // Use sourceBPM for beat conversion — loopLengthBeats is in source-beat domain
+                double convBpm = (clip->sourceBPM > 0.0) ? clip->sourceBPM : bpm;
+                clip->loopLengthBeats = (clip->loopLength * convBpm) / 60.0;
             }
             sanitizeAudioClip(*clip);
+            DBG("[SET-LOOP-LENGTH]   AFTER: loopLength="
+                << clip->loopLength << " loopLengthBeats=" << clip->loopLengthBeats
+                << " length=" << clip->length << " lengthBeats=" << clip->lengthBeats);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::setLengthBeats(ClipId clipId, double beats, double bpm) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio && clip->autoTempo && bpm > 0.0) {
+            clip->lengthBeats = juce::jmax(ClipInfo::MIN_CLIP_LENGTH * bpm / 60.0, beats);
+            clip->setLengthFromBeats(clip->lengthBeats, bpm);
             notifyClipPropertyChanged(clipId);
         }
     }
@@ -1066,17 +1098,25 @@ void ClipManager::sanitizeAudioClip(ClipInfo& clip) {
     if (fileDuration <= 0.0)
         return;
 
+    DBG("[SANITIZE] clip " << clip.id << " fileDuration=" << fileDuration << " BEFORE: loopStart="
+                           << clip.loopStart << " loopLength=" << clip.loopLength
+                           << " loopLengthBeats=" << clip.loopLengthBeats
+                           << " offset=" << clip.offset << " length=" << clip.length
+                           << " loopEnabled=" << (clip.loopEnabled ? 1 : 0));
+
     // Clamp loopStart to file bounds
     clip.loopStart = juce::jlimit(0.0, fileDuration, clip.loopStart);
 
     // Clamp loopLength so loop region doesn't exceed file
     double availableFromLoop = fileDuration - clip.loopStart;
     if (clip.loopLength > availableFromLoop) {
+        DBG("[SANITIZE]   CLAMPING loopLength from " << clip.loopLength << " to "
+                                                     << availableFromLoop);
         double oldLoopLength = clip.loopLength;
         clip.loopLength = juce::jmax(0.0, availableFromLoop);
-        // In autoTempo mode, scale loopLengthBeats proportionally
-        // to maintain the same stretch ratio
         if (clip.autoTempo && oldLoopLength > 0.0) {
+            DBG("[SANITIZE]   SCALING loopLengthBeats from " << clip.loopLengthBeats << " by "
+                                                             << clip.loopLength / oldLoopLength);
             clip.loopLengthBeats *= clip.loopLength / oldLoopLength;
         }
     }
@@ -1088,6 +1128,10 @@ void ClipManager::sanitizeAudioClip(ClipInfo& clip) {
     if (!clip.loopEnabled) {
         clip.clampLengthToSource(fileDuration);
     }
+
+    DBG("[SANITIZE]   AFTER: loopStart=" << clip.loopStart << " loopLength=" << clip.loopLength
+                                         << " loopLengthBeats=" << clip.loopLengthBeats
+                                         << " offset=" << clip.offset << " length=" << clip.length);
 }
 
 // ============================================================================

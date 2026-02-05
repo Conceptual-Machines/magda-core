@@ -181,6 +181,8 @@ class ClipManager {
     /** @brief Set the loop region length (source-time seconds) - TE: AudioClipBase::loopLength
      * @param bpm Current tempo — used to update loopLengthBeats when autoTempo is enabled */
     void setLoopLength(ClipId clipId, double loopLength, double bpm = 120.0);
+    /** @brief Set the clip timeline length in beats (autoTempo mode only) */
+    void setLengthBeats(ClipId clipId, double beats, double bpm);
     /** @brief Set the playback speed ratio (1.0 = original, 2.0 = double speed) - TE:
      * Clip::speedRatio */
     void setSpeedRatio(ClipId clipId, double speedRatio);

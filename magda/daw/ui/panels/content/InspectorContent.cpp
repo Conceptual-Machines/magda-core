@@ -247,18 +247,14 @@ InspectorContent::InspectorContent() {
     clipBeatsLengthValue_->onValueChange = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID) {
             auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
-            if (clip && clip->autoTempo) {
+            if (clip && clip->autoTempo && clip->sourceBPM > 0.0) {
                 double newBeats = clipBeatsLengthValue_->getValue();
                 double bpm =
                     timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
-
-                // Update loopLengthBeats and recalculate time-based length
-                clip->loopLengthBeats = newBeats;
-                clip->setLengthFromBeats(newBeats, bpm);
-
-                // Trigger sync to engine
-                magda::ClipManager::getInstance().resizeClip(selectedClipId_, clip->length, false,
-                                                             bpm);
+                // Convert source beats to source seconds using sourceBPM
+                double newLoopLength = (newBeats * 60.0) / clip->sourceBPM;
+                magda::ClipManager::getInstance().setLoopLength(selectedClipId_, newLoopLength,
+                                                                bpm);
             }
         }
     };
@@ -598,15 +594,21 @@ InspectorContent::InspectorContent() {
         if (!clip)
             return;
 
-        // UI shows source-time beats; convert to timeline seconds, then to source seconds
         double newLoopLengthBeats = clipLoopLengthValue_->getValue();
         double bpm = 120.0;
         if (timelineController_) {
             bpm = timelineController_->getState().tempo.bpm;
         }
-        double timelineSeconds = magda::TimelineUtils::beatsToSeconds(newLoopLengthBeats, bpm);
-        // Convert timeline seconds to source seconds using speedRatio
-        double newLoopLengthSeconds = timelineSeconds * clip->speedRatio;
+
+        double newLoopLengthSeconds;
+        if (clip->autoTempo && clip->sourceBPM > 0.0) {
+            // AutoTempo: beats are in source BPM domain, convert directly
+            newLoopLengthSeconds = (newLoopLengthBeats * 60.0) / clip->sourceBPM;
+        } else {
+            // Manual: convert beats to timeline seconds, then to source seconds
+            double timelineSeconds = magda::TimelineUtils::beatsToSeconds(newLoopLengthBeats, bpm);
+            newLoopLengthSeconds = timelineSeconds * clip->speedRatio;
+        }
 
         if (clip->view == magda::ClipView::Session) {
             double clipEndSeconds = clip->length;
@@ -2048,9 +2050,15 @@ void InspectorContent::updateFromSelectedClip() {
             clipContentOffsetValue_->setValue(clip->midiOffset, juce::dontSendNotification);
         } else if (clip->type == magda::ClipType::Audio) {
             // When looped, show loopStart (the locked base) so phase edits don't move this value
-            double displayOffset = (clip->loopEnabled) ? clip->loopStart : clip->offset;
-            double offsetBeats = magda::TimelineUtils::secondsToBeats(displayOffset, bpm);
-            clipContentOffsetValue_->setValue(offsetBeats, juce::dontSendNotification);
+            double offsetDisplayBeats;
+            if (clip->autoTempo && clip->loopEnabled && clip->loopStartBeats >= 0.0) {
+                // AutoTempo: use authoritative beat value (invariant to project BPM)
+                offsetDisplayBeats = clip->loopStartBeats;
+            } else {
+                double displayOffset = (clip->loopEnabled) ? clip->loopStart : clip->offset;
+                offsetDisplayBeats = magda::TimelineUtils::secondsToBeats(displayOffset, bpm);
+            }
+            clipContentOffsetValue_->setValue(offsetDisplayBeats, juce::dontSendNotification);
         }
         // Position icon visible, content offset icon hidden (replaced by grid column)
         clipPositionIcon_->setVisible(true);
@@ -2063,11 +2071,17 @@ void InspectorContent::updateFromSelectedClip() {
         clipContentOffsetValue_->setEnabled(offsetEditable);
         clipContentOffsetValue_->setAlpha(offsetEditable ? 1.0f : 0.4f);
 
-        double sourceLength =
-            clip->loopLength > 0.0 ? clip->loopLength : clip->length * clip->speedRatio;
-        // Display in source-time beats (independent of speedRatio, consistent with loopStart)
-        clipLoopLengthValue_->setValue(magda::TimelineUtils::secondsToBeats(sourceLength, bpm),
-                                       juce::dontSendNotification);
+        // Display loop length in beats
+        double loopLengthDisplayBeats;
+        if (clip->autoTempo && clip->loopLengthBeats > 0.0) {
+            // AutoTempo: use authoritative beat value (invariant to project BPM)
+            loopLengthDisplayBeats = clip->loopLengthBeats;
+        } else {
+            double sourceLength =
+                clip->loopLength > 0.0 ? clip->loopLength : clip->length * clip->speedRatio;
+            loopLengthDisplayBeats = magda::TimelineUtils::secondsToBeats(sourceLength, bpm);
+        }
+        clipLoopLengthValue_->setValue(loopLengthDisplayBeats, juce::dontSendNotification);
 
         clipLoopToggle_->setActive(clip->loopEnabled);
         clipLoopToggle_->setEnabled(true);

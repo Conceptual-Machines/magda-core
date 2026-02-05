@@ -611,40 +611,52 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
         listener->onTempoChanged(newBpm);
     }
 
+    // Notify audio engine of updated loop region (TE transport needs new time positions)
+    if (state.loop.isValid() && state.loop.enabled) {
+        for (auto* listener : audioEngineListeners) {
+            listener->onLoopRegionChanged(state.loop.startTime, state.loop.endTime, true);
+        }
+    }
+
     // Update auto-tempo clips when tempo changes
+    // Beats are authoritative — update derived seconds and notify AudioBridge to re-sync TE.
+    // UI reads beats directly so the notification doesn't cause stale-BPM layout issues.
     if (std::abs(newBpm - oldBpm) > 0.01) {
         auto& clipManager = ClipManager::getInstance();
         auto allClips = clipManager.getClips();
 
+        // First pass: update all seconds from beats
+        std::vector<ClipId> updatedClipIds;
         for (const auto& clip : allClips) {
             if (clip.autoTempo && clip.type == ClipType::Audio) {
-                // Get mutable clip reference
                 auto* mutableClip = clipManager.getClip(clip.id);
                 if (!mutableClip) {
                     continue;
                 }
 
-                // Migration: Calculate beat positions if not set (first tempo change after enabling
-                // autoTempo)
+                // Migration: populate beat values if not set
                 if (mutableClip->startBeats < 0) {
                     mutableClip->startBeats =
                         magda::TimelineUtils::secondsToBeats(clip.startTime, oldBpm);
                 }
-                if (mutableClip->loopLengthBeats <= 0.0) {
-                    mutableClip->loopLengthBeats =
+                if (mutableClip->lengthBeats <= 0.0) {
+                    mutableClip->lengthBeats =
                         magda::TimelineUtils::secondsToBeats(clip.length, oldBpm);
                 }
 
-                // Now beats are locked - just recalculate time positions from beats at new BPM
-                double newStartTime =
+                // Update derived seconds
+                mutableClip->startTime =
                     magda::TimelineUtils::beatsToSeconds(mutableClip->startBeats, newBpm);
-                double newLength =
-                    magda::TimelineUtils::beatsToSeconds(mutableClip->loopLengthBeats, newBpm);
+                mutableClip->length =
+                    magda::TimelineUtils::beatsToSeconds(mutableClip->lengthBeats, newBpm);
 
-                // Update both start position and length to maintain bar/beat positions
-                clipManager.moveClip(clip.id, newStartTime);
-                clipManager.resizeClip(clip.id, newLength, false, newBpm);
+                updatedClipIds.push_back(clip.id);
             }
+        }
+
+        // Second pass: notify so AudioBridge re-syncs TE clip positions
+        for (auto clipId : updatedClipIds) {
+            clipManager.forceNotifyClipPropertyChanged(clipId);
         }
     }
 

@@ -106,6 +106,10 @@ class ClipOperations {
 
         clip.startTime = newStartTime;
         clip.length = newLength;
+        if (clip.autoTempo && bpm > 0.0) {
+            clip.startBeats = newStartTime * bpm / 60.0;
+            clip.lengthBeats = newLength * bpm / 60.0;
+        }
     }
 
     /**
@@ -122,6 +126,9 @@ class ClipOperations {
                                                 double bpm = 120.0) {
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
         clip.length = newLength;
+        if (clip.autoTempo && bpm > 0.0) {
+            clip.lengthBeats = newLength * bpm / 60.0;
+        }
     }
 
     // ========================================================================
@@ -371,6 +378,7 @@ class ClipOperations {
     static inline void setClipLengthBeats(ClipInfo& clip, double lengthBeats, double loopStartBeats,
                                           double loopLengthBeats, double bpm) {
         clip.autoTempo = true;
+        clip.lengthBeats = lengthBeats;
         clip.loopLengthBeats = loopLengthBeats > 0.0 ? loopLengthBeats : lengthBeats;
         clip.loopStartBeats = loopStartBeats;
 
@@ -394,6 +402,12 @@ class ClipOperations {
         clip.autoTempo = enabled;
 
         if (enabled) {
+            DBG("[SET-AUTO-TEMPO] ENABLING clip " << clip.id << " bpm=" << bpm);
+            DBG("[SET-AUTO-TEMPO]   BEFORE: startTime="
+                << clip.startTime << " length=" << clip.length << " loopLength=" << clip.loopLength
+                << " loopStart=" << clip.loopStart << " offset=" << clip.offset
+                << " speedRatio=" << clip.speedRatio << " sourceBPM=" << clip.sourceBPM);
+
             // Convert current timeline position to beats
             clip.startBeats = (clip.startTime * bpm) / 60.0;
 
@@ -406,12 +420,18 @@ class ClipOperations {
 
             // Store beat values in PROJECT beats (used by display, getEndBeats, etc.)
             // TE needs SOURCE beats — that conversion happens in getAutoTempoBeatRange()
-            clip.loopLengthBeats = clip.getLengthInBeats(bpm);
+            clip.lengthBeats = clip.getLengthInBeats(bpm);
             if (clip.loopEnabled && clip.loopLength > 0.0) {
+                clip.loopLengthBeats = (clip.loopLength * bpm) / 60.0;
                 clip.loopStartBeats = (clip.loopStart * bpm) / 60.0;
             } else {
+                clip.loopLengthBeats = clip.lengthBeats;
                 clip.loopStartBeats = 0.0;
             }
+
+            DBG("[SET-AUTO-TEMPO]   beat values: startBeats="
+                << clip.startBeats << " lengthBeats=" << clip.lengthBeats << " loopLengthBeats="
+                << clip.loopLengthBeats << " loopStartBeats=" << clip.loopStartBeats);
 
             // Calibrate sourceBPM to the current playback speed so that enabling
             // autoTempo doesn't change the audible playback speed.
@@ -427,12 +447,17 @@ class ClipOperations {
 
             // Force speedRatio to 1.0 (TE requirement for autoTempo)
             clip.speedRatio = 1.0;
+
+            DBG("[SET-AUTO-TEMPO]   AFTER: sourceBPM=" << clip.sourceBPM
+                                                       << " speedRatio=" << clip.speedRatio
+                                                       << " loopLength=" << clip.loopLength);
         } else {
             // Switching to time-based mode: keep current derived time values
             // Clear beat values (no longer used)
             clip.startBeats = -1.0;
             clip.loopStartBeats = 0.0;
             clip.loopLengthBeats = 0.0;
+            clip.lengthBeats = 0.0;
         }
     }
 
@@ -446,7 +471,7 @@ class ClipOperations {
                                                   double bpm) {
         newLengthBeats = juce::jmax(MIN_CLIP_LENGTH * bpm / 60.0, newLengthBeats);
 
-        clip.loopLengthBeats = newLengthBeats;
+        clip.lengthBeats = newLengthBeats;
         clip.setLengthFromBeats(newLengthBeats, bpm);
     }
 
@@ -461,7 +486,7 @@ class ClipOperations {
         newLengthBeats = juce::jmax(MIN_CLIP_LENGTH * bpm / 60.0, newLengthBeats);
 
         double oldLength = clip.length;
-        clip.loopLengthBeats = newLengthBeats;
+        clip.lengthBeats = newLengthBeats;
         clip.setLengthFromBeats(newLengthBeats, bpm);
 
         // Adjust startTime to keep right edge fixed
@@ -480,15 +505,13 @@ class ClipOperations {
      * @param fileDuration Total file duration for clamping
      */
     static inline void moveLoopStart(ClipInfo& clip, double newLoopStart, double fileDuration) {
+        double oldLoopLength = clip.loopLength;
         clip.loopStart = newLoopStart;
         // Clamp loopLength to available audio from new loopStart
         if (fileDuration > 0.0) {
             double avail = fileDuration - clip.loopStart;
             if (clip.loopLength > avail) {
-                double oldLoopLength = clip.loopLength;
                 clip.loopLength = juce::jmax(0.0, avail);
-                // In autoTempo mode, scale loopLengthBeats proportionally
-                // to maintain the same stretch ratio
                 if (clip.autoTempo && oldLoopLength > 0.0) {
                     clip.loopLengthBeats *= clip.loopLength / oldLoopLength;
                 }

@@ -1279,8 +1279,12 @@ void TrackContentPanel::updateClipComponentPositions() {
         auto trackArea = getTrackLaneArea(trackIndex);
 
         // Calculate clip bounds (currentZoom is ppb)
-        int clipX = timeToPixel(clip->startTime);
-        double clipBeats = clip->length * tempoBPM / 60.0;
+        int clipX = (clip->autoTempo && clip->startBeats >= 0.0)
+                        ? static_cast<int>(clip->startBeats * currentZoom) + LEFT_PADDING
+                        : timeToPixel(clip->startTime);
+        double clipBeats = (clip->autoTempo && clip->lengthBeats > 0.0)
+                               ? clip->lengthBeats
+                               : clip->length * tempoBPM / 60.0;
         int clipWidth = static_cast<int>(clipBeats * currentZoom);
 
         // Inset from track edges
@@ -1590,7 +1594,9 @@ void TrackContentPanel::updateMultiClipDrag(const juce::Point<int>& currentPos) 
                 for (const auto& clipComp : clipComponents_) {
                     if (clipComp->getClipId() == dragInfo.clipId) {
                         int ghostX = timeToPixel(newStartTime);
-                        double ghostBeats = clip->length * tempoBPM / 60.0;
+                        double ghostBeats = (clip->autoTempo && clip->lengthBeats > 0.0)
+                                                ? clip->lengthBeats
+                                                : clip->length * tempoBPM / 60.0;
                         int ghostWidth = static_cast<int>(ghostBeats * currentZoom);
                         juce::Rectangle<int> ghostBounds(ghostX, clipComp->getY(),
                                                          juce::jmax(10, ghostWidth),
@@ -1613,7 +1619,9 @@ void TrackContentPanel::updateMultiClipDrag(const juce::Point<int>& currentPos) 
                     const auto* clip = ClipManager::getInstance().getClip(dragInfo.clipId);
                     if (clip) {
                         int newX = timeToPixel(newStartTime);
-                        double clipBeats = clip->length * tempoBPM / 60.0;
+                        double clipBeats = (clip->autoTempo && clip->lengthBeats > 0.0)
+                                               ? clip->lengthBeats
+                                               : clip->length * tempoBPM / 60.0;
                         int clipWidth = static_cast<int>(clipBeats * currentZoom);
                         clipComp->setBounds(newX, clipComp->getY(), juce::jmax(10, clipWidth),
                                             clipComp->getHeight());
@@ -1865,7 +1873,9 @@ void TrackContentPanel::moveClipsWithTimeSelection(double deltaTime) {
                 const auto* clip = ClipManager::getInstance().getClip(info.clipId);
                 if (clip) {
                     int newX = timeToPixel(newStartTime);
-                    double clipBts = clip->length * tempoBPM / 60.0;
+                    double clipBts = (clip->autoTempo && clip->lengthBeats > 0.0)
+                                         ? clip->lengthBeats
+                                         : clip->length * tempoBPM / 60.0;
                     int clipWidth = static_cast<int>(clipBts * currentZoom);
                     clipComp->setBounds(newX, clipComp->getY(), juce::jmax(10, clipWidth),
                                         clipComp->getHeight());

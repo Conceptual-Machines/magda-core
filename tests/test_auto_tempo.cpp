@@ -85,11 +85,18 @@ TEST_CASE("ClipInfo::setSourceMetadata - populates unset fields", "[clip][auto-t
 TEST_CASE("setAutoTempo - stores project beats in model", "[clip][auto-tempo]") {
     auto clip = makeAmenClip();
 
-    SECTION("loopLengthBeats is in project beats") {
+    SECTION("lengthBeats is in project beats") {
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
         double expectedProjectBeats = (AMEN_DURATION * PROJECT_BPM) / 60.0;
-        REQUIRE(clip.loopLengthBeats == Approx(expectedProjectBeats));
+        REQUIRE(clip.lengthBeats == Approx(expectedProjectBeats));
+    }
+
+    SECTION("lengthBeats == loopLengthBeats at initial setup (no sub-loop)") {
+        ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
+
+        // When loop = entire clip, both fields should be equal
+        REQUIRE(clip.lengthBeats == Approx(clip.loopLengthBeats));
     }
 
     SECTION("clip.length stays consistent with loopLengthBeats at project BPM") {
@@ -201,9 +208,9 @@ TEST_CASE("getEndBeats - consistent units in auto-tempo mode", "[clip][auto-temp
         REQUIRE(endBeats == Approx(startBeats + lengthBeats));
     }
 
-    SECTION("getEndBeats matches startBeats + loopLengthBeats") {
+    SECTION("getEndBeats matches startBeats + lengthBeats") {
         // Since both are in project beats, simple addition should work
-        REQUIRE(clip.getEndBeats(PROJECT_BPM) == Approx(clip.startBeats + clip.loopLengthBeats));
+        REQUIRE(clip.getEndBeats(PROJECT_BPM) == Approx(clip.startBeats + clip.lengthBeats));
     }
 }
 
@@ -312,9 +319,12 @@ TEST_CASE("setAutoTempo - respects existing loop region", "[clip][auto-tempo][lo
         REQUIRE(clip.loopLength == Approx(0.8));
     }
 
-    SECTION("Derives loopLengthBeats from clip length at project BPM") {
-        double expectedBeats = (clip.length * PROJECT_BPM) / 60.0;
-        REQUIRE(clip.loopLengthBeats == Approx(expectedBeats));
+    SECTION("lengthBeats derives from clip length, loopLengthBeats from loopLength") {
+        double expectedLengthBeats = (clip.length * PROJECT_BPM) / 60.0;
+        REQUIRE(clip.lengthBeats == Approx(expectedLengthBeats));
+
+        double expectedLoopBeats = (clip.loopLength * PROJECT_BPM) / 60.0;
+        REQUIRE(clip.loopLengthBeats == Approx(expectedLoopBeats));
     }
 }
 
@@ -327,6 +337,7 @@ TEST_CASE("setAutoTempo - disable clears beat values", "[clip][auto-tempo]") {
     ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
     // Verify beat values were set
+    REQUIRE(clip.lengthBeats > 0.0);
     REQUIRE(clip.loopLengthBeats > 0.0);
     REQUIRE(clip.startBeats >= 0.0);
 
@@ -336,6 +347,7 @@ TEST_CASE("setAutoTempo - disable clears beat values", "[clip][auto-tempo]") {
         REQUIRE(clip.startBeats == -1.0);
         REQUIRE(clip.loopStartBeats == 0.0);
         REQUIRE(clip.loopLengthBeats == 0.0);
+        REQUIRE(clip.lengthBeats == 0.0);
     }
 
     SECTION("autoTempo is false") {
@@ -349,12 +361,14 @@ TEST_CASE("setAutoTempo - no-op when already in target state", "[clip][auto-temp
     SECTION("Enable when already enabled is no-op") {
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
         double savedLength = clip.length;
-        double savedBeats = clip.loopLengthBeats;
+        double savedLengthBeats = clip.lengthBeats;
+        double savedLoopLengthBeats = clip.loopLengthBeats;
 
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
         REQUIRE(clip.length == Approx(savedLength));
-        REQUIRE(clip.loopLengthBeats == Approx(savedBeats));
+        REQUIRE(clip.lengthBeats == Approx(savedLengthBeats));
+        REQUIRE(clip.loopLengthBeats == Approx(savedLoopLengthBeats));
     }
 
     SECTION("Disable when already disabled is no-op") {
@@ -380,7 +394,8 @@ TEST_CASE("setAutoTempo - different project BPMs", "[clip][auto-tempo]") {
 
         REQUIRE(clip.sourceBPM == Approx(120.0));
         REQUIRE(clip.length == Approx(2.0));
-        REQUIRE(clip.loopLengthBeats == Approx(4.0));
+        REQUIRE(clip.lengthBeats == Approx(4.0));
+        REQUIRE(clip.loopLengthBeats == Approx(4.0));  // loop = entire clip
 
         // Stretch ratio = 120/120 = 1.0 (no stretch)
         REQUIRE(120.0 / clip.sourceBPM == Approx(1.0));
@@ -395,7 +410,7 @@ TEST_CASE("setAutoTempo - different project BPMs", "[clip][auto-tempo]") {
         ClipOperations::setAutoTempo(clip, true, 60.0);
 
         REQUIRE(clip.sourceBPM == Approx(60.0));
-        REQUIRE(clip.loopLengthBeats == Approx(2.0));  // 2.0s * 60/60 = 2.0 beats
+        REQUIRE(clip.lengthBeats == Approx(2.0));  // 2.0s * 60/60 = 2.0 beats
 
         // Stretch ratio = 60/60 = 1.0 (no stretch at transition)
         REQUIRE(60.0 / clip.sourceBPM == Approx(1.0));
@@ -480,5 +495,52 @@ TEST_CASE("Regression: loop wrapping past file end with calibration",
         // The recovered region should fit within the file
         REQUIRE(recoveredStart >= 0.0);
         REQUIRE(recoveredStart + recoveredLength <= FILE_DURATION + 0.001);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// lengthBeats vs loopLengthBeats — diverge with sub-loop
+// ─────────────────────────────────────────────────────────────
+
+TEST_CASE("lengthBeats > loopLengthBeats with sub-loop", "[clip][auto-tempo][lengthBeats]") {
+    // 4-bar clip with 1-bar loop: lengthBeats should be 16, loopLengthBeats should be 4
+    ClipInfo clip;
+    clip.type = ClipType::Audio;
+    clip.audioFilePath = "long_sample.wav";
+    clip.startTime = 0.0;
+    clip.speedRatio = 1.0;
+    clip.sourceBPM = 120.0;
+    clip.sourceNumBeats = 32.0;
+
+    double barSeconds = 4.0 * 60.0 / 120.0;  // 2.0s per bar at 120 BPM
+
+    // 4-bar clip with 1-bar loop region
+    clip.length = 4.0 * barSeconds;  // 8.0s = 4 bars
+    clip.offset = 0.0;
+    clip.loopEnabled = true;
+    clip.loopStart = 0.0;
+    clip.loopLength = barSeconds;  // 1 bar = 2.0s
+
+    ClipOperations::setAutoTempo(clip, true, 120.0);
+
+    SECTION("lengthBeats represents clip timeline extent") {
+        // 4 bars * 4 beats = 16 beats
+        REQUIRE(clip.lengthBeats == Approx(16.0));
+    }
+
+    SECTION("loopLengthBeats represents source loop length") {
+        // 1 bar * 4 beats = 4 beats
+        REQUIRE(clip.loopLengthBeats == Approx(4.0));
+    }
+
+    SECTION("lengthBeats > loopLengthBeats") {
+        REQUIRE(clip.lengthBeats > clip.loopLengthBeats);
+    }
+
+    SECTION("getEndBeats uses lengthBeats, not loopLengthBeats") {
+        double expectedEnd = clip.startBeats + clip.lengthBeats;
+        REQUIRE(clip.getEndBeats(120.0) == Approx(expectedEnd));
+        // Must NOT be startBeats + loopLengthBeats (would be 4 instead of 16)
+        REQUIRE(clip.getEndBeats(120.0) != Approx(clip.startBeats + clip.loopLengthBeats));
     }
 }

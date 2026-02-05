@@ -94,6 +94,7 @@ struct ClipInfo {
     // TE: AudioClipBase::loopStartBeats, loopLengthBeats
     double loopStartBeats = 0.0;   // Loop start in beats (relative to file start)
     double loopLengthBeats = 0.0;  // Loop length in beats (0 = derive from clip length)
+    double lengthBeats = 0.0;  // Clip timeline length in project beats (authoritative in autoTempo)
 
     // Pitch
     bool autoPitch = false;
@@ -260,13 +261,13 @@ struct ClipInfo {
     /// Get clip end position in beats (single source of truth for display)
     /// Returns start + length in beats, using authoritative values based on mode
     double getEndBeats(double bpm) const {
-        if (autoTempo) {
-            return startBeats + loopLengthBeats;  // Both authoritative
+        if (autoTempo && lengthBeats > 0.0) {
+            return startBeats + lengthBeats;
         }
         // Calculate from time
-        double startBeats = (startTime * bpm) / 60.0;
-        double lengthBeats = (length * bpm) / 60.0;
-        return startBeats + lengthBeats;
+        double startB = (startTime * bpm) / 60.0;
+        double lenB = (length * bpm) / 60.0;
+        return startB + lenB;
     }
 
     // Default clip colors (different palette from tracks)

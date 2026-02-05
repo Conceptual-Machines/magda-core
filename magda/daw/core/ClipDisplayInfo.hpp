@@ -61,6 +61,7 @@ struct ClipDisplayInfo {
 
     // Auto-tempo (musical mode) display
     bool autoTempo = false;        // Whether clip uses beat-based length
+    double lengthBeats = 0.0;      // Clip timeline length in project beats
     double loopLengthBeats = 0.0;  // Loop length in beats (when autoTempo=true)
     double startBeats = 0.0;       // Start position in beats
     double endBeats = 0.0;         // End position in beats
@@ -121,6 +122,7 @@ struct ClipDisplayInfo {
 
         // Auto-tempo display info (using centralized ClipInfo methods)
         d.autoTempo = clip.autoTempo;
+        d.lengthBeats = clip.lengthBeats;
         d.loopLengthBeats = clip.loopLengthBeats;
         d.startBeats = clip.getStartBeats(bpm);
         d.endBeats = clip.getEndBeats(bpm);
