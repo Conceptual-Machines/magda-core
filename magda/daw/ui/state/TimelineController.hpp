@@ -269,7 +269,8 @@ class TimelineController {
 
     ChangeFlags handleEvent(const SetPunchRegionEvent& e);
     ChangeFlags handleEvent(const ClearPunchRegionEvent& e);
-    ChangeFlags handleEvent(const SetPunchEnabledEvent& e);
+    ChangeFlags handleEvent(const SetPunchInEnabledEvent& e);
+    ChangeFlags handleEvent(const SetPunchOutEnabledEvent& e);
 
     ChangeFlags handleEvent(const SetTempoEvent& e);
     ChangeFlags handleEvent(const SetTimeSignatureEvent& e);

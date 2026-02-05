@@ -26,6 +26,18 @@ BarsBeatsTicksLabel::BarsBeatsTicksLabel() {
 
 BarsBeatsTicksLabel::~BarsBeatsTicksLabel() = default;
 
+void BarsBeatsTicksLabel::setTextColour(juce::Colour colour) {
+    customTextColour_ = colour;
+    hasCustomTextColour_ = true;
+    repaint();
+}
+
+juce::Colour BarsBeatsTicksLabel::getTextColour() const {
+    if (hasCustomTextColour_)
+        return customTextColour_;
+    return DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+}
+
 void BarsBeatsTicksLabel::setRange(double min, double max, double defaultValue) {
     minValue_ = min;
     maxValue_ = max;
@@ -124,7 +136,7 @@ void BarsBeatsTicksLabel::paint(juce::Graphics& g) {
     g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.0f);
 
     // Draw dot separators between segments
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    g.setColour(getTextColour());
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
 
     // Dot between bars and beats
@@ -191,7 +203,7 @@ juce::String BarsBeatsTicksLabel::SegmentLabel::formatDisplay() const {
 
 void BarsBeatsTicksLabel::SegmentLabel::paint(juce::Graphics& g) {
     if (!isEditing_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        g.setColour(owner_.getTextColour());
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.drawText(formatDisplay(), getLocalBounds(), juce::Justification::centred, false);
     }

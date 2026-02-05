@@ -265,31 +265,31 @@ void TransportPanel::setupTransportButtons() {
     punchInButton = std::make_unique<SvgButton>("PunchIn", BinaryData::punchin_svg,
                                                 BinaryData::punchin_svgSize);
     styleTransportButton(*punchInButton, DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
-    punchInButton->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    punchInButton->setOriginalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     punchInButton->setBorderColor(DarkTheme::getColour(DarkTheme::SEPARATOR));
     punchInButton->setBorderThickness(1.0f);
     punchInButton->onClick = [this]() {
-        isPunchEnabled = !isPunchEnabled;
-        punchInButton->setActive(isPunchEnabled);
-        punchOutButton->setActive(isPunchEnabled);
-        if (onPunchToggle)
-            onPunchToggle(isPunchEnabled);
+        isPunchInEnabled = !isPunchInEnabled;
+        punchInButton->setActive(isPunchInEnabled);
+        updatePunchLabelColors();
+        if (onPunchInToggle)
+            onPunchInToggle(isPunchInEnabled);
     };
     addAndMakeVisible(*punchInButton);
 
-    // Punch Out button (visual pair, toggles same state)
+    // Punch Out button (independent toggle)
     punchOutButton = std::make_unique<SvgButton>("PunchOut", BinaryData::punchout_svg,
                                                  BinaryData::punchout_svgSize);
     styleTransportButton(*punchOutButton, DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
-    punchOutButton->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    punchOutButton->setOriginalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     punchOutButton->setBorderColor(DarkTheme::getColour(DarkTheme::SEPARATOR));
     punchOutButton->setBorderThickness(1.0f);
     punchOutButton->onClick = [this]() {
-        isPunchEnabled = !isPunchEnabled;
-        punchInButton->setActive(isPunchEnabled);
-        punchOutButton->setActive(isPunchEnabled);
-        if (onPunchToggle)
-            onPunchToggle(isPunchEnabled);
+        isPunchOutEnabled = !isPunchOutEnabled;
+        punchOutButton->setActive(isPunchOutEnabled);
+        updatePunchLabelColors();
+        if (onPunchOutToggle)
+            onPunchOutToggle(isPunchOutEnabled);
     };
     addAndMakeVisible(*punchOutButton);
 }
@@ -559,16 +559,21 @@ void TransportPanel::setLoopRegion(double startTime, double endTime, bool loopEn
     loopEndLabel->setAlpha(alpha);
 }
 
-void TransportPanel::setPunchRegion(double startTime, double endTime, bool punchEnabled) {
+void TransportPanel::setPunchRegion(double startTime, double endTime, bool punchInEnabled,
+                                    bool punchOutEnabled) {
     cachedPunchStart = startTime;
     cachedPunchEnd = endTime;
-    cachedPunchEnabled = punchEnabled;
+    cachedPunchInEnabled = punchInEnabled;
+    cachedPunchOutEnabled = punchOutEnabled;
 
-    // Sync punch button state
-    if (isPunchEnabled != punchEnabled) {
-        isPunchEnabled = punchEnabled;
-        punchInButton->setActive(isPunchEnabled);
-        punchOutButton->setActive(isPunchEnabled);
+    // Sync punch button states independently
+    if (isPunchInEnabled != punchInEnabled) {
+        isPunchInEnabled = punchInEnabled;
+        punchInButton->setActive(isPunchInEnabled);
+    }
+    if (isPunchOutEnabled != punchOutEnabled) {
+        isPunchOutEnabled = punchOutEnabled;
+        punchOutButton->setActive(isPunchOutEnabled);
     }
 
     bool hasPunch = startTime >= 0 && endTime > startTime;
@@ -582,12 +587,7 @@ void TransportPanel::setPunchRegion(double startTime, double endTime, bool punch
         punchEndLabel->setValue(0.0, juce::dontSendNotification);
     }
 
-    // Update enabled appearance
-    punchStartLabel->setEnabled(punchEnabled);
-    punchEndLabel->setEnabled(punchEnabled);
-    float alpha = punchEnabled ? 1.0f : 0.5f;
-    punchStartLabel->setAlpha(alpha);
-    punchEndLabel->setAlpha(alpha);
+    updatePunchLabelColors();
 }
 
 void TransportPanel::setTimeSignature(int numerator, int denominator) {
@@ -605,7 +605,7 @@ void TransportPanel::setTimeSignature(int numerator, int denominator) {
     setPlayheadPosition(cachedPlayheadPosition);
     setTimeSelection(cachedSelectionStart, cachedSelectionEnd, cachedSelectionActive);
     setLoopRegion(cachedLoopStart, cachedLoopEnd, cachedLoopEnabled);
-    setPunchRegion(cachedPunchStart, cachedPunchEnd, cachedPunchEnabled);
+    setPunchRegion(cachedPunchStart, cachedPunchEnd, cachedPunchInEnabled, cachedPunchOutEnabled);
 }
 
 void TransportPanel::setTempo(double bpm) {
@@ -616,7 +616,7 @@ void TransportPanel::setTempo(double bpm) {
     setPlayheadPosition(cachedPlayheadPosition);
     setTimeSelection(cachedSelectionStart, cachedSelectionEnd, cachedSelectionActive);
     setLoopRegion(cachedLoopStart, cachedLoopEnd, cachedLoopEnabled);
-    setPunchRegion(cachedPunchStart, cachedPunchEnd, cachedPunchEnabled);
+    setPunchRegion(cachedPunchStart, cachedPunchEnd, cachedPunchInEnabled, cachedPunchOutEnabled);
 }
 
 void TransportPanel::setPlaybackState(bool playing) {
@@ -631,6 +631,19 @@ void TransportPanel::setSnapEnabled(bool enabled) {
         isSnapEnabled = enabled;
         snapButton->setToggleState(enabled, juce::dontSendNotification);
     }
+}
+
+void TransportPanel::updatePunchLabelColors() {
+    auto activeColor = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
+    auto inactiveColor = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+
+    // Punch start label color matches punch in button state
+    punchStartLabel->setTextColour(isPunchInEnabled ? activeColor : inactiveColor);
+    punchStartLabel->setAlpha(isPunchInEnabled ? 1.0f : 0.5f);
+
+    // Punch end label color matches punch out button state
+    punchEndLabel->setTextColour(isPunchOutEnabled ? activeColor : inactiveColor);
+    punchEndLabel->setAlpha(isPunchOutEnabled ? 1.0f : 0.5f);
 }
 
 }  // namespace magda

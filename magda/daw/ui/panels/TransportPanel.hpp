@@ -34,7 +34,8 @@ class TransportPanel : public juce::Component {
     std::function<void()> onGoToNext;
     std::function<void(double)> onPlayheadEdit;            // beats
     std::function<void(double, double)> onLoopRegionEdit;  // startSeconds, endSeconds
-    std::function<void(bool)> onPunchToggle;
+    std::function<void(bool)> onPunchInToggle;
+    std::function<void(bool)> onPunchOutToggle;
     std::function<void(double, double)> onPunchRegionEdit;  // startSeconds, endSeconds
 
     // Update displays - simplified API
@@ -44,7 +45,8 @@ class TransportPanel : public juce::Component {
     void setTempo(double bpm);
     void setTimeSignature(int numerator, int denominator);
     void setSnapEnabled(bool enabled);
-    void setPunchRegion(double startTime, double endTime, bool punchEnabled);
+    void setPunchRegion(double startTime, double endTime, bool punchInEnabled,
+                        bool punchOutEnabled);
 
     // Enable/disable transport controls (e.g., during device loading)
     void setTransportEnabled(bool enabled);
@@ -104,6 +106,7 @@ class TransportPanel : public juce::Component {
     void setupTransportButtons();
     void setupTimeDisplayBoxes();
     void setupTempoAndQuantize();
+    void updatePunchLabelColors();
 
     // State
     bool isPlaying = false;
@@ -111,7 +114,8 @@ class TransportPanel : public juce::Component {
     bool isPaused = false;
     bool isLooping = false;
     bool isSnapEnabled = true;
-    bool isPunchEnabled = false;
+    bool isPunchInEnabled = false;
+    bool isPunchOutEnabled = false;
     double currentTempo = 120.0;
     int timeSignatureNumerator = 4;
     int timeSignatureDenominator = 4;
@@ -126,7 +130,8 @@ class TransportPanel : public juce::Component {
     bool cachedLoopEnabled = false;
     double cachedPunchStart = -1.0;
     double cachedPunchEnd = -1.0;
-    bool cachedPunchEnabled = false;
+    bool cachedPunchInEnabled = false;
+    bool cachedPunchOutEnabled = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TransportPanel)
 };

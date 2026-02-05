@@ -131,17 +131,22 @@ struct PunchRegion {
     double endTime = -1.0;     // Time in seconds (derived from beats)
     double startBeats = -1.0;  // Position in beats (authoritative)
     double endBeats = -1.0;    // Position in beats (authoritative)
-    bool enabled = false;
+    bool punchInEnabled = false;
+    bool punchOutEnabled = false;
 
     bool isValid() const {
         return startTime >= 0 && endTime > startTime;
+    }
+    bool isEnabled() const {
+        return punchInEnabled || punchOutEnabled;
     }
     void clear() {
         startTime = -1.0;
         endTime = -1.0;
         startBeats = -1.0;
         endBeats = -1.0;
-        enabled = false;
+        punchInEnabled = false;
+        punchOutEnabled = false;
     }
     double getDuration() const {
         return isValid() ? (endTime - startTime) : 0.0;

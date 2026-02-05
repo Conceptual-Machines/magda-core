@@ -428,9 +428,10 @@ void MainView::punchStateChanged(const TimelineState& state) {
     // Notify external listeners about punch region change
     if (onPunchRegionChanged) {
         if (state.punch.isValid()) {
-            onPunchRegionChanged(state.punch.startTime, state.punch.endTime, state.punch.enabled);
+            onPunchRegionChanged(state.punch.startTime, state.punch.endTime,
+                                 state.punch.punchInEnabled, state.punch.punchOutEnabled);
         } else {
-            onPunchRegionChanged(-1.0, -1.0, false);
+            onPunchRegionChanged(-1.0, -1.0, false, false);
         }
     }
 }

@@ -37,6 +37,10 @@ class BarsBeatsTicksLabel : public juce::Component {
         doubleClickResets_ = shouldReset;
     }
 
+    // Custom text colour (default: uses TEXT_PRIMARY from theme)
+    void setTextColour(juce::Colour colour);
+    juce::Colour getTextColour() const;
+
     // Callback when value changes
     std::function<void()> onValueChange;
 
@@ -60,6 +64,8 @@ class BarsBeatsTicksLabel : public juce::Component {
     int beatsPerBar_ = 4;
     bool barsBeatsIsPosition_ = true;
     bool doubleClickResets_ = true;
+    juce::Colour customTextColour_;
+    bool hasCustomTextColour_ = false;
 
     std::unique_ptr<SegmentLabel> barsSegment_;
     std::unique_ptr<SegmentLabel> beatsSegment_;

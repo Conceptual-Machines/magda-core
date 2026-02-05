@@ -565,14 +565,16 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPunchRe
     state.punch.startBeats = magda::TimelineUtils::secondsToBeats(start, bpm);
     state.punch.endBeats = magda::TimelineUtils::secondsToBeats(end, bpm);
 
-    // Enable punch if it wasn't valid before
-    if (!state.punch.enabled && state.punch.isValid()) {
-        state.punch.enabled = true;
+    // Enable both punch in/out if region wasn't valid before
+    if (!state.punch.isEnabled() && state.punch.isValid()) {
+        state.punch.punchInEnabled = true;
+        state.punch.punchOutEnabled = true;
     }
 
     // Notify audio engine of punch region change
     for (auto* listener : audioEngineListeners) {
-        listener->onPunchRegionChanged(start, end, state.punch.enabled);
+        listener->onPunchRegionChanged(start, end, state.punch.punchInEnabled,
+                                       state.punch.punchOutEnabled);
     }
 
     return ChangeFlags::Punch;
@@ -588,26 +590,45 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
 
     // Notify audio engine
     for (auto* listener : audioEngineListeners) {
-        listener->onPunchRegionChanged(-1.0, -1.0, false);
+        listener->onPunchRegionChanged(-1.0, -1.0, false, false);
     }
 
     return ChangeFlags::Punch;
 }
 
-TimelineController::ChangeFlags TimelineController::handleEvent(const SetPunchEnabledEvent& e) {
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetPunchInEnabledEvent& e) {
     if (!state.punch.isValid()) {
         return ChangeFlags::None;
     }
 
-    if (state.punch.enabled == e.enabled) {
+    if (state.punch.punchInEnabled == e.enabled) {
         return ChangeFlags::None;
     }
 
-    state.punch.enabled = e.enabled;
+    state.punch.punchInEnabled = e.enabled;
 
     // Notify audio engine of punch enabled change
     for (auto* listener : audioEngineListeners) {
-        listener->onPunchEnabledChanged(e.enabled);
+        listener->onPunchEnabledChanged(state.punch.punchInEnabled, state.punch.punchOutEnabled);
+    }
+
+    return ChangeFlags::Punch;
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetPunchOutEnabledEvent& e) {
+    if (!state.punch.isValid()) {
+        return ChangeFlags::None;
+    }
+
+    if (state.punch.punchOutEnabled == e.enabled) {
+        return ChangeFlags::None;
+    }
+
+    state.punch.punchOutEnabled = e.enabled;
+
+    // Notify audio engine of punch enabled change
+    for (auto* listener : audioEngineListeners) {
+        listener->onPunchEnabledChanged(state.punch.punchInEnabled, state.punch.punchOutEnabled);
     }
 
     return ChangeFlags::Punch;
@@ -702,9 +723,10 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
     }
 
     // Notify audio engine of updated punch region
-    if (state.punch.isValid() && state.punch.enabled) {
+    if (state.punch.isValid() && state.punch.isEnabled()) {
         for (auto* listener : audioEngineListeners) {
-            listener->onPunchRegionChanged(state.punch.startTime, state.punch.endTime, true);
+            listener->onPunchRegionChanged(state.punch.startTime, state.punch.endTime,
+                                           state.punch.punchInEnabled, state.punch.punchOutEnabled);
         }
     }
 

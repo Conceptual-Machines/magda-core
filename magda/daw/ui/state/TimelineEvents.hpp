@@ -210,9 +210,16 @@ struct SetPunchRegionEvent {
 struct ClearPunchRegionEvent {};
 
 /**
- * @brief Enable or disable punch in/out
+ * @brief Enable or disable punch in
  */
-struct SetPunchEnabledEvent {
+struct SetPunchInEnabledEvent {
+    bool enabled;
+};
+
+/**
+ * @brief Enable or disable punch out
+ */
+struct SetPunchOutEnabledEvent {
     bool enabled;
 };
 
@@ -337,7 +344,7 @@ using TimelineEvent = std::variant<
     // Loop events
     SetLoopRegionEvent, ClearLoopRegionEvent, SetLoopEnabledEvent, MoveLoopRegionEvent,
     // Punch in/out events
-    SetPunchRegionEvent, ClearPunchRegionEvent, SetPunchEnabledEvent,
+    SetPunchRegionEvent, ClearPunchRegionEvent, SetPunchInEnabledEvent, SetPunchOutEnabledEvent,
     // Tempo events
     SetTempoEvent, SetTimeSignatureEvent,
     // Display events
