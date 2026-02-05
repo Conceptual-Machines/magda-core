@@ -65,6 +65,12 @@ void TransportPanel::resized() {
     x += buttonSize + buttonSpacing;
 
     nextButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + buttonSpacing;
+
+    punchInButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + buttonSpacing;
+
+    punchOutButton->setBounds(x, buttonY, buttonSize, buttonSize);
 
     // Pause button — hidden but still functional via callbacks
     pauseButton->setBounds(0, 0, 0, 0);
@@ -107,6 +113,12 @@ void TransportPanel::resized() {
     loopStartLabel->setBounds(loopX, boxY, loopLabelWidth, boxHeight);
     loopEndLabel->setBounds(loopX + loopLabelWidth + 4, boxY, loopLabelWidth, boxHeight);
 
+    // Punch start + end (editable BarsBeatsTicksLabels)
+    int punchX = loopX + loopLabelWidth * 2 + 4 + boxSpacing;
+    int punchLabelWidth = 95;
+    punchStartLabel->setBounds(punchX, boxY, punchLabelWidth, boxHeight);
+    punchEndLabel->setBounds(punchX + punchLabelWidth + 4, boxY, punchLabelWidth, boxHeight);
+
     // Tempo and quantize layout
     auto tempoY = tempoArea.getCentreY() - 13;
     auto tempoX = tempoArea.getX() + 10;
@@ -119,19 +131,19 @@ void TransportPanel::resized() {
 }
 
 juce::Rectangle<int> TransportPanel::getTransportControlsArea() const {
-    // 7 buttons * 30px + 6 * 2px spacing + 12px padding = 234px
-    return getLocalBounds().removeFromLeft(240);
+    // 9 buttons * 30px + 8 * 2px spacing + 12px padding = 298px
+    return getLocalBounds().removeFromLeft(300);
 }
 
 juce::Rectangle<int> TransportPanel::getTimeDisplayArea() const {
     auto bounds = getLocalBounds();
-    bounds.removeFromLeft(240);
-    return bounds.removeFromLeft(500);
+    bounds.removeFromLeft(300);
+    return bounds.removeFromLeft(700);
 }
 
 juce::Rectangle<int> TransportPanel::getTempoQuantizeArea() const {
     auto bounds = getLocalBounds();
-    bounds.removeFromLeft(740);  // 240 + 500
+    bounds.removeFromLeft(1000);  // 300 + 700
     return bounds;
 }
 
@@ -241,6 +253,32 @@ void TransportPanel::setupTransportButtons() {
             onLoop(isLooping);
     };
     addAndMakeVisible(*loopButton);
+
+    // Punch In button
+    punchInButton = std::make_unique<SvgButton>("PunchIn", BinaryData::punchin_svg,
+                                                BinaryData::punchin_svgSize);
+    styleTransportButton(*punchInButton, DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    punchInButton->onClick = [this]() {
+        isPunchEnabled = !isPunchEnabled;
+        punchInButton->setActive(isPunchEnabled);
+        punchOutButton->setActive(isPunchEnabled);
+        if (onPunchToggle)
+            onPunchToggle(isPunchEnabled);
+    };
+    addAndMakeVisible(*punchInButton);
+
+    // Punch Out button (visual pair, toggles same state)
+    punchOutButton = std::make_unique<SvgButton>("PunchOut", BinaryData::punchout_svg,
+                                                 BinaryData::punchout_svgSize);
+    styleTransportButton(*punchOutButton, DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    punchOutButton->onClick = [this]() {
+        isPunchEnabled = !isPunchEnabled;
+        punchInButton->setActive(isPunchEnabled);
+        punchOutButton->setActive(isPunchEnabled);
+        if (onPunchToggle)
+            onPunchToggle(isPunchEnabled);
+    };
+    addAndMakeVisible(*punchOutButton);
 }
 
 void TransportPanel::setupTimeDisplayBoxes() {
@@ -297,6 +335,32 @@ void TransportPanel::setupTimeDisplayBoxes() {
             onLoopRegionEdit(cachedLoopStart, endSeconds);
     };
     addAndMakeVisible(*loopEndLabel);
+
+    // Punch start — editable BarsBeatsTicksLabel
+    punchStartLabel = std::make_unique<BarsBeatsTicksLabel>();
+    punchStartLabel->setRange(0.0, 100000.0, 0.0);
+    punchStartLabel->setBarsBeatsIsPosition(true);
+    punchStartLabel->setDoubleClickResetsValue(false);
+    punchStartLabel->onValueChange = [this]() {
+        double startBeats = punchStartLabel->getValue();
+        double startSeconds = (startBeats * 60.0) / currentTempo;
+        if (onPunchRegionEdit)
+            onPunchRegionEdit(startSeconds, cachedPunchEnd);
+    };
+    addAndMakeVisible(*punchStartLabel);
+
+    // Punch end — editable BarsBeatsTicksLabel
+    punchEndLabel = std::make_unique<BarsBeatsTicksLabel>();
+    punchEndLabel->setRange(0.0, 100000.0, 0.0);
+    punchEndLabel->setBarsBeatsIsPosition(true);
+    punchEndLabel->setDoubleClickResetsValue(false);
+    punchEndLabel->onValueChange = [this]() {
+        double endBeats = punchEndLabel->getValue();
+        double endSeconds = (endBeats * 60.0) / currentTempo;
+        if (onPunchRegionEdit)
+            onPunchRegionEdit(cachedPunchStart, endSeconds);
+    };
+    addAndMakeVisible(*punchEndLabel);
 
     // Initialize displays
     setPlayheadPosition(0.0);
@@ -367,6 +431,8 @@ void TransportPanel::setTransportEnabled(bool enabled) {
     homeButton->setEnabled(enabled);
     prevButton->setEnabled(enabled);
     nextButton->setEnabled(enabled);
+    punchInButton->setEnabled(enabled);
+    punchOutButton->setEnabled(enabled);
 
     // Visual feedback - dim buttons when disabled
     float alpha = enabled ? 1.0f : 0.4f;
@@ -377,6 +443,8 @@ void TransportPanel::setTransportEnabled(bool enabled) {
     homeButton->setAlpha(alpha);
     prevButton->setAlpha(alpha);
     nextButton->setAlpha(alpha);
+    punchInButton->setAlpha(alpha);
+    punchOutButton->setAlpha(alpha);
 }
 
 void TransportPanel::styleTransportButton(SvgButton& button, juce::Colour accentColor) {
@@ -478,6 +546,37 @@ void TransportPanel::setLoopRegion(double startTime, double endTime, bool loopEn
     loopEndLabel->setAlpha(alpha);
 }
 
+void TransportPanel::setPunchRegion(double startTime, double endTime, bool punchEnabled) {
+    cachedPunchStart = startTime;
+    cachedPunchEnd = endTime;
+    cachedPunchEnabled = punchEnabled;
+
+    // Sync punch button state
+    if (isPunchEnabled != punchEnabled) {
+        isPunchEnabled = punchEnabled;
+        punchInButton->setActive(isPunchEnabled);
+        punchOutButton->setActive(isPunchEnabled);
+    }
+
+    bool hasPunch = startTime >= 0 && endTime > startTime;
+    if (hasPunch) {
+        double startBeats = (startTime * currentTempo) / 60.0;
+        double endBeats = (endTime * currentTempo) / 60.0;
+        punchStartLabel->setValue(startBeats, juce::dontSendNotification);
+        punchEndLabel->setValue(endBeats, juce::dontSendNotification);
+    } else {
+        punchStartLabel->setValue(0.0, juce::dontSendNotification);
+        punchEndLabel->setValue(0.0, juce::dontSendNotification);
+    }
+
+    // Update enabled appearance
+    punchStartLabel->setEnabled(punchEnabled);
+    punchEndLabel->setEnabled(punchEnabled);
+    float alpha = punchEnabled ? 1.0f : 0.5f;
+    punchStartLabel->setAlpha(alpha);
+    punchEndLabel->setAlpha(alpha);
+}
+
 void TransportPanel::setTimeSignature(int numerator, int denominator) {
     timeSignatureNumerator = numerator;
     timeSignatureDenominator = denominator;
@@ -486,11 +585,14 @@ void TransportPanel::setTimeSignature(int numerator, int denominator) {
     playheadPositionLabel->setBeatsPerBar(numerator);
     loopStartLabel->setBeatsPerBar(numerator);
     loopEndLabel->setBeatsPerBar(numerator);
+    punchStartLabel->setBeatsPerBar(numerator);
+    punchEndLabel->setBeatsPerBar(numerator);
 
     // Refresh all displays with new time signature
     setPlayheadPosition(cachedPlayheadPosition);
     setTimeSelection(cachedSelectionStart, cachedSelectionEnd, cachedSelectionActive);
     setLoopRegion(cachedLoopStart, cachedLoopEnd, cachedLoopEnabled);
+    setPunchRegion(cachedPunchStart, cachedPunchEnd, cachedPunchEnabled);
 }
 
 void TransportPanel::setTempo(double bpm) {
@@ -501,6 +603,7 @@ void TransportPanel::setTempo(double bpm) {
     setPlayheadPosition(cachedPlayheadPosition);
     setTimeSelection(cachedSelectionStart, cachedSelectionEnd, cachedSelectionActive);
     setLoopRegion(cachedLoopStart, cachedLoopEnd, cachedLoopEnabled);
+    setPunchRegion(cachedPunchStart, cachedPunchEnd, cachedPunchEnabled);
 }
 
 void TransportPanel::setPlaybackState(bool playing) {

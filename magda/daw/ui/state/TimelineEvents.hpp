@@ -194,6 +194,28 @@ struct MoveLoopRegionEvent {
     double deltaSeconds;
 };
 
+// ===== Punch In/Out Events =====
+
+/**
+ * @brief Set punch in/out region
+ */
+struct SetPunchRegionEvent {
+    double startTime;
+    double endTime;
+};
+
+/**
+ * @brief Clear punch region
+ */
+struct ClearPunchRegionEvent {};
+
+/**
+ * @brief Enable or disable punch in/out
+ */
+struct SetPunchEnabledEvent {
+    bool enabled;
+};
+
 // ===== Tempo Events =====
 
 /**
@@ -314,6 +336,8 @@ using TimelineEvent = std::variant<
     SetTimeSelectionEvent, ClearTimeSelectionEvent, CreateLoopFromSelectionEvent,
     // Loop events
     SetLoopRegionEvent, ClearLoopRegionEvent, SetLoopEnabledEvent, MoveLoopRegionEvent,
+    // Punch in/out events
+    SetPunchRegionEvent, ClearPunchRegionEvent, SetPunchEnabledEvent,
     // Tempo events
     SetTempoEvent, SetTimeSignatureEvent,
     // Display events

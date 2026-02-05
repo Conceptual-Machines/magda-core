@@ -46,6 +46,8 @@ void TimelineController::dispatch(const TimelineEvent& event) {
             if constexpr (std::is_same_v<T, SetLoopRegionEvent> ||
                           std::is_same_v<T, ClearLoopRegionEvent> ||
                           std::is_same_v<T, CreateLoopFromSelectionEvent> ||
+                          std::is_same_v<T, SetPunchRegionEvent> ||
+                          std::is_same_v<T, ClearPunchRegionEvent> ||
                           std::is_same_v<T, ZoomToFitEvent> || std::is_same_v<T, ResetZoomEvent> ||
                           std::is_same_v<T, AddSectionEvent> ||
                           std::is_same_v<T, RemoveSectionEvent> ||
@@ -544,6 +546,73 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const MoveLoopRe
     return ChangeFlags::Loop;
 }
 
+// ===== Punch In/Out Event Handlers =====
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetPunchRegionEvent& e) {
+    double start = juce::jlimit(0.0, state.timelineLength, e.startTime);
+    double end = juce::jlimit(0.0, state.timelineLength, e.endTime);
+
+    // Ensure minimum duration
+    if (end - start < 0.01) {
+        end = start + 0.01;
+    }
+
+    state.punch.startTime = start;
+    state.punch.endTime = end;
+
+    // Store beat positions (authoritative for tempo changes)
+    double bpm = state.tempo.bpm;
+    state.punch.startBeats = magda::TimelineUtils::secondsToBeats(start, bpm);
+    state.punch.endBeats = magda::TimelineUtils::secondsToBeats(end, bpm);
+
+    // Enable punch if it wasn't valid before
+    if (!state.punch.enabled && state.punch.isValid()) {
+        state.punch.enabled = true;
+    }
+
+    // Notify audio engine of punch region change
+    for (auto* listener : audioEngineListeners) {
+        listener->onPunchRegionChanged(start, end, state.punch.enabled);
+    }
+
+    return ChangeFlags::Punch;
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(
+    const ClearPunchRegionEvent& /*e*/) {
+    if (!state.punch.isValid()) {
+        return ChangeFlags::None;
+    }
+
+    state.punch.clear();
+
+    // Notify audio engine
+    for (auto* listener : audioEngineListeners) {
+        listener->onPunchRegionChanged(-1.0, -1.0, false);
+    }
+
+    return ChangeFlags::Punch;
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetPunchEnabledEvent& e) {
+    if (!state.punch.isValid()) {
+        return ChangeFlags::None;
+    }
+
+    if (state.punch.enabled == e.enabled) {
+        return ChangeFlags::None;
+    }
+
+    state.punch.enabled = e.enabled;
+
+    // Notify audio engine of punch enabled change
+    for (auto* listener : audioEngineListeners) {
+        listener->onPunchEnabledChanged(e.enabled);
+    }
+
+    return ChangeFlags::Punch;
+}
+
 // ===== Tempo Event Handlers =====
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEvent& e) {
@@ -591,6 +660,20 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
         }
     }
 
+    // --- Punch region ---
+    if (state.punch.isValid() && state.punch.startBeats < 0 && state.punch.endBeats < 0) {
+        state.punch.startBeats =
+            magda::TimelineUtils::secondsToBeats(state.punch.startTime, oldBpm);
+        state.punch.endBeats = magda::TimelineUtils::secondsToBeats(state.punch.endTime, oldBpm);
+    }
+
+    if (state.punch.isValid() && state.punch.startBeats >= 0 && state.punch.endBeats >= 0) {
+        state.punch.startTime =
+            magda::TimelineUtils::beatsToSeconds(state.punch.startBeats, newBpm);
+        state.punch.endTime = magda::TimelineUtils::beatsToSeconds(state.punch.endBeats, newBpm);
+        extraFlags |= static_cast<uint32_t>(ChangeFlags::Punch);
+    }
+
     // --- Loop region ---
     // Migration: Calculate beat positions if missing (e.g., loop created without going through
     // SetLoopRegionEvent)
@@ -615,6 +698,13 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
     if (state.loop.isValid() && state.loop.enabled) {
         for (auto* listener : audioEngineListeners) {
             listener->onLoopRegionChanged(state.loop.startTime, state.loop.endTime, true);
+        }
+    }
+
+    // Notify audio engine of updated punch region
+    if (state.punch.isValid() && state.punch.enabled) {
+        for (auto* listener : audioEngineListeners) {
+            listener->onPunchRegionChanged(state.punch.startTime, state.punch.endTime, true);
         }
     }
 
@@ -829,6 +919,13 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimelin
         }
     }
 
+    if (state.punch.isValid()) {
+        state.punch.endTime = juce::jmin(state.punch.endTime, state.timelineLength);
+        if (state.punch.startTime >= state.punch.endTime) {
+            state.punch.clear();
+        }
+    }
+
     clampScrollPosition();
 
     return ChangeFlags::Timeline | ChangeFlags::Zoom | ChangeFlags::Scroll;
@@ -853,6 +950,9 @@ void TimelineController::notifyListeners(ChangeFlags changes) {
         }
         if (hasFlag(changes, ChangeFlags::Tempo)) {
             listener->tempoStateChanged(state);
+        }
+        if (hasFlag(changes, ChangeFlags::Punch)) {
+            listener->punchStateChanged(state);
         }
         if (hasFlag(changes, ChangeFlags::Display)) {
             listener->displayConfigChanged(state);

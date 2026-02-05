@@ -70,6 +70,8 @@ class MainView : public juce::Component,
     std::function<void(double)> onPlayheadPositionChanged;  // (positionInSeconds)
     std::function<void(double, double, bool)>
         onTimeSelectionChanged;  // (startTime, endTime, hasSelection)
+    std::function<void(double, double, bool)>
+        onPunchRegionChanged;  // (startTime, endTime, punchEnabled)
 
     // ScrollBar::Listener implementation
     void scrollBarMoved(juce::ScrollBar* scrollBarThatHasMoved, double newRangeStart) override;
@@ -80,6 +82,7 @@ class MainView : public juce::Component,
     void playheadStateChanged(const TimelineState& state) override;
     void selectionStateChanged(const TimelineState& state) override;
     void loopStateChanged(const TimelineState& state) override;
+    void punchStateChanged(const TimelineState& state) override;
 
     // TrackManagerListener implementation
     void tracksChanged() override {}  // Handled by TrackHeadersPanel

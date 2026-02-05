@@ -34,6 +34,8 @@ class TransportPanel : public juce::Component {
     std::function<void()> onGoToNext;
     std::function<void(double)> onPlayheadEdit;            // beats
     std::function<void(double, double)> onLoopRegionEdit;  // startSeconds, endSeconds
+    std::function<void(bool)> onPunchToggle;
+    std::function<void(double, double)> onPunchRegionEdit;  // startSeconds, endSeconds
 
     // Update displays - simplified API
     void setPlayheadPosition(double positionInSeconds);
@@ -42,6 +44,7 @@ class TransportPanel : public juce::Component {
     void setTempo(double bpm);
     void setTimeSignature(int numerator, int denominator);
     void setSnapEnabled(bool enabled);
+    void setPunchRegion(double startTime, double endTime, bool punchEnabled);
 
     // Enable/disable transport controls (e.g., during device loading)
     void setTransportEnabled(bool enabled);
@@ -64,6 +67,10 @@ class TransportPanel : public juce::Component {
     // Loop button
     std::unique_ptr<SvgButton> loopButton;
 
+    // Punch in/out button
+    std::unique_ptr<SvgButton> punchInButton;
+    std::unique_ptr<SvgButton> punchOutButton;
+
     // Playhead position (editable BarsBeatsTicksLabel)
     std::unique_ptr<BarsBeatsTicksLabel> playheadPositionLabel;
 
@@ -74,6 +81,10 @@ class TransportPanel : public juce::Component {
     // Loop start/end (editable BarsBeatsTicksLabels)
     std::unique_ptr<BarsBeatsTicksLabel> loopStartLabel;
     std::unique_ptr<BarsBeatsTicksLabel> loopEndLabel;
+
+    // Punch start/end (editable BarsBeatsTicksLabels)
+    std::unique_ptr<BarsBeatsTicksLabel> punchStartLabel;
+    std::unique_ptr<BarsBeatsTicksLabel> punchEndLabel;
 
     // Tempo (DraggableValueLabel)
     std::unique_ptr<DraggableValueLabel> tempoLabel;
@@ -100,6 +111,7 @@ class TransportPanel : public juce::Component {
     bool isPaused = false;
     bool isLooping = false;
     bool isSnapEnabled = true;
+    bool isPunchEnabled = false;
     double currentTempo = 120.0;
     int timeSignatureNumerator = 4;
     int timeSignatureDenominator = 4;
@@ -112,6 +124,9 @@ class TransportPanel : public juce::Component {
     double cachedLoopStart = -1.0;
     double cachedLoopEnd = -1.0;
     bool cachedLoopEnabled = false;
+    double cachedPunchStart = -1.0;
+    double cachedPunchEnd = -1.0;
+    bool cachedPunchEnabled = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TransportPanel)
 };

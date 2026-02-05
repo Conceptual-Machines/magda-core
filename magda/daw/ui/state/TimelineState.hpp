@@ -124,6 +124,31 @@ struct LoopRegion {
 };
 
 /**
+ * @brief Punch in/out region state (independent markers for punch recording)
+ */
+struct PunchRegion {
+    double startTime = -1.0;   // Time in seconds (derived from beats)
+    double endTime = -1.0;     // Time in seconds (derived from beats)
+    double startBeats = -1.0;  // Position in beats (authoritative)
+    double endBeats = -1.0;    // Position in beats (authoritative)
+    bool enabled = false;
+
+    bool isValid() const {
+        return startTime >= 0 && endTime > startTime;
+    }
+    void clear() {
+        startTime = -1.0;
+        endTime = -1.0;
+        startBeats = -1.0;
+        endBeats = -1.0;
+        enabled = false;
+    }
+    double getDuration() const {
+        return isValid() ? (endTime - startTime) : 0.0;
+    }
+};
+
+/**
  * @brief Tempo and time signature state
  */
 struct TempoState {
@@ -196,6 +221,7 @@ struct TimelineState {
     PlayheadState playhead;
     TimeSelection selection;
     LoopRegion loop;
+    PunchRegion punch;
     TempoState tempo;
     DisplayConfig display;
 

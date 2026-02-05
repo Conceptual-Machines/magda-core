@@ -424,6 +424,17 @@ void MainView::loopStateChanged(const TimelineState& state) {
     }
 }
 
+void MainView::punchStateChanged(const TimelineState& state) {
+    // Notify external listeners about punch region change
+    if (onPunchRegionChanged) {
+        if (state.punch.isValid()) {
+            onPunchRegionChanged(state.punch.startTime, state.punch.endTime, state.punch.enabled);
+        } else {
+            onPunchRegionChanged(-1.0, -1.0, false);
+        }
+    }
+}
+
 // ===== TrackManagerListener Implementation =====
 
 void MainView::masterChannelChanged() {

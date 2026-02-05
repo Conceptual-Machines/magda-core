@@ -63,6 +63,14 @@ class TimelineStateListener {
     }
 
     /**
+     * Called specifically when punch in/out region changes.
+     */
+    virtual void punchStateChanged(const TimelineState& state) {
+        // Default: fall through to general handler
+        timelineStateChanged(state);
+    }
+
+    /**
      * Called specifically when tempo or time signature changes.
      */
     virtual void tempoStateChanged(const TimelineState& state) {
@@ -211,6 +219,7 @@ class TimelineController {
         Display = 1 << 6,
         Sections = 1 << 7,
         Timeline = 1 << 8,
+        Punch = 1 << 9,
         All = 0xFFFFFFFF
     };
 
@@ -257,6 +266,10 @@ class TimelineController {
     ChangeFlags handleEvent(const ClearLoopRegionEvent& e);
     ChangeFlags handleEvent(const SetLoopEnabledEvent& e);
     ChangeFlags handleEvent(const MoveLoopRegionEvent& e);
+
+    ChangeFlags handleEvent(const SetPunchRegionEvent& e);
+    ChangeFlags handleEvent(const ClearPunchRegionEvent& e);
+    ChangeFlags handleEvent(const SetPunchEnabledEvent& e);
 
     ChangeFlags handleEvent(const SetTempoEvent& e);
     ChangeFlags handleEvent(const SetTimeSignatureEvent& e);

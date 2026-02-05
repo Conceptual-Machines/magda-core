@@ -318,6 +318,9 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     mainView->onTimeSelectionChanged = [this](double start, double end, bool hasSelection) {
         transportPanel->setTimeSelection(start, end, hasSelection);
     };
+    mainView->onPunchRegionChanged = [this](double start, double end, bool enabled) {
+        transportPanel->setPunchRegion(start, end, enabled);
+    };
 
     setupResizeHandles();
     setupViewModeListener();
@@ -486,6 +489,14 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     };
     transportPanel->onLoopRegionEdit = [this](double startSec, double endSec) {
         mainView->getTimelineController().dispatch(SetLoopRegionEvent{startSec, endSec});
+    };
+
+    // Punch in/out callbacks
+    transportPanel->onPunchToggle = [this](bool enabled) {
+        mainView->getTimelineController().dispatch(SetPunchEnabledEvent{enabled});
+    };
+    transportPanel->onPunchRegionEdit = [this](double startSec, double endSec) {
+        mainView->getTimelineController().dispatch(SetPunchRegionEvent{startSec, endSec});
     };
 }
 
