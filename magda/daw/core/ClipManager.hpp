@@ -175,15 +175,47 @@ class ClipManager {
     /** @brief Set the loop phase (offset relative to loopStart) in loop mode */
     void setLoopPhase(ClipId clipId, double phase);
     /** @brief Set the loop region start in the audio file (source-time seconds) - TE:
-     * AudioClipBase::loopStart */
-    void setLoopStart(ClipId clipId, double loopStart);
-    /** @brief Set the loop region length (source-time seconds) - TE: AudioClipBase::loopLength */
-    void setLoopLength(ClipId clipId, double loopLength);
+     * AudioClipBase::loopStart
+     * @param bpm Current tempo — used to update loopStartBeats when autoTempo is enabled */
+    void setLoopStart(ClipId clipId, double loopStart, double bpm = 120.0);
+    /** @brief Set the loop region length (source-time seconds) - TE: AudioClipBase::loopLength
+     * @param bpm Current tempo — used to update loopLengthBeats when autoTempo is enabled */
+    void setLoopLength(ClipId clipId, double loopLength, double bpm = 120.0);
     /** @brief Set the playback speed ratio (1.0 = original, 2.0 = double speed) - TE:
      * Clip::speedRatio */
     void setSpeedRatio(ClipId clipId, double speedRatio);
     /** @brief Set the time-stretch algorithm mode for an audio clip */
     void setTimeStretchMode(ClipId clipId, int mode);
+
+    // Pitch
+    void setAutoPitch(ClipId clipId, bool enabled);
+    void setAutoPitchMode(ClipId clipId, int mode);
+    void setPitchChange(ClipId clipId, float semitones);
+    void setTranspose(ClipId clipId, int semitones);
+
+    // Beat Detection
+    void setAutoDetectBeats(ClipId clipId, bool enabled);
+    void setBeatSensitivity(ClipId clipId, float sensitivity);
+
+    // Playback
+    void setIsReversed(ClipId clipId, bool reversed);
+
+    // Per-Clip Mix
+    void setClipGainDB(ClipId clipId, float dB);
+    void setClipPan(ClipId clipId, float pan);
+
+    // Fades
+    void setFadeIn(ClipId clipId, double seconds);
+    void setFadeOut(ClipId clipId, double seconds);
+    void setFadeInType(ClipId clipId, int type);
+    void setFadeOutType(ClipId clipId, int type);
+    void setFadeInBehaviour(ClipId clipId, int behaviour);
+    void setFadeOutBehaviour(ClipId clipId, int behaviour);
+    void setAutoCrossfade(ClipId clipId, bool enabled);
+
+    // Channels
+    void setLeftChannelActive(ClipId clipId, bool active);
+    void setRightChannelActive(ClipId clipId, bool active);
 
     // ========================================================================
     // Content-Level Operations (Editor Operations)

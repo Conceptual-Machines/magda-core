@@ -359,8 +359,11 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
     if (auto* clip = getClip(clipId)) {
         clip->loopEnabled = enabled;
 
-        // When enabling loop on audio clips, preserve the source region
+        // When enabling loop on audio clips, transfer offset → loopStart
+        // The user's current offset becomes the loop start point (phase resets to 0)
         if (enabled && clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty()) {
+            clip->loopStart = clip->offset;
+
             // Ensure loopLength is set (preserves source extent in loop mode)
             if (clip->loopLength <= 0.0) {
                 clip->setLoopLengthFromTimeline(clip->length);
@@ -437,20 +440,26 @@ void ClipManager::setLoopPhase(ClipId clipId, double phase) {
     }
 }
 
-void ClipManager::setLoopStart(ClipId clipId, double loopStart) {
+void ClipManager::setLoopStart(ClipId clipId, double loopStart, double bpm) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
             clip->loopStart = juce::jmax(0.0, loopStart);
+            if (clip->autoTempo && bpm > 0.0) {
+                clip->loopStartBeats = (clip->loopStart * bpm) / 60.0;
+            }
             sanitizeAudioClip(*clip);
             notifyClipPropertyChanged(clipId);
         }
     }
 }
 
-void ClipManager::setLoopLength(ClipId clipId, double loopLength) {
+void ClipManager::setLoopLength(ClipId clipId, double loopLength, double bpm) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
             clip->loopLength = juce::jmax(0.0, loopLength);
+            if (clip->autoTempo && bpm > 0.0) {
+                clip->loopLengthBeats = (clip->loopLength * bpm) / 60.0;
+            }
             sanitizeAudioClip(*clip);
             notifyClipPropertyChanged(clipId);
         }
@@ -471,6 +480,192 @@ void ClipManager::setTimeStretchMode(ClipId clipId, int mode) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
             clip->timeStretchMode = mode;
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+// ============================================================================
+// Pitch
+// ============================================================================
+
+void ClipManager::setAutoPitch(ClipId clipId, bool enabled) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->autoPitch = enabled;
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::setAutoPitchMode(ClipId clipId, int mode) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->autoPitchMode = juce::jlimit(0, 2, mode);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::setPitchChange(ClipId clipId, float semitones) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->pitchChange = juce::jlimit(-48.0f, 48.0f, semitones);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::setTranspose(ClipId clipId, int semitones) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->transpose = juce::jlimit(-24, 24, semitones);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+// ============================================================================
+// Beat Detection
+// ============================================================================
+
+void ClipManager::setAutoDetectBeats(ClipId clipId, bool enabled) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->autoDetectBeats = enabled;
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::setBeatSensitivity(ClipId clipId, float sensitivity) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->beatSensitivity = juce::jlimit(0.0f, 1.0f, sensitivity);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+// ============================================================================
+// Playback
+// ============================================================================
+
+void ClipManager::setIsReversed(ClipId clipId, bool reversed) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->isReversed = reversed;
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+// ============================================================================
+// Per-Clip Mix
+// ============================================================================
+
+void ClipManager::setClipGainDB(ClipId clipId, float dB) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->gainDB = juce::jlimit(-60.0f, 24.0f, dB);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::setClipPan(ClipId clipId, float pan) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->pan = juce::jlimit(-1.0f, 1.0f, pan);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+// ============================================================================
+// Fades
+// ============================================================================
+
+void ClipManager::setFadeIn(ClipId clipId, double seconds) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->fadeIn = juce::jmax(0.0, seconds);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::setFadeOut(ClipId clipId, double seconds) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->fadeOut = juce::jmax(0.0, seconds);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::setFadeInType(ClipId clipId, int type) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->fadeInType = juce::jlimit(0, 3, type);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::setFadeOutType(ClipId clipId, int type) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->fadeOutType = juce::jlimit(0, 3, type);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::setFadeInBehaviour(ClipId clipId, int behaviour) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->fadeInBehaviour = juce::jlimit(0, 1, behaviour);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::setFadeOutBehaviour(ClipId clipId, int behaviour) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->fadeOutBehaviour = juce::jlimit(0, 1, behaviour);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::setAutoCrossfade(ClipId clipId, bool enabled) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->autoCrossfade = enabled;
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+// ============================================================================
+// Channels
+// ============================================================================
+
+void ClipManager::setLeftChannelActive(ClipId clipId, bool active) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->leftChannelActive = active;
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::setRightChannelActive(ClipId clipId, bool active) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->rightChannelActive = active;
             notifyClipPropertyChanged(clipId);
         }
     }

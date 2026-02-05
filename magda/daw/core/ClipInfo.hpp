@@ -85,6 +85,36 @@ struct ClipInfo {
     double loopStartBeats = 0.0;   // Loop start in beats (relative to file start)
     double loopLengthBeats = 0.0;  // Loop length in beats (0 = derive from clip length)
 
+    // Pitch
+    bool autoPitch = false;
+    int autoPitchMode = 0;     // 0=pitchTrack, 1=chordTrackMono, 2=chordTrackPoly
+    float pitchChange = 0.0f;  // -48 to +48 semitones
+    int transpose = 0;         // -24 to +24 semitones (only when !autoPitch)
+
+    // Beat Detection
+    bool autoDetectBeats = false;
+    float beatSensitivity = 0.5f;
+
+    // Playback
+    bool isReversed = false;
+
+    // Per-Clip Mix
+    float gainDB = 0.0f;
+    float pan = 0.0f;  // -1.0 to 1.0
+
+    // Fades
+    double fadeIn = 0.0;
+    double fadeOut = 0.0;
+    int fadeInType = 1;  // AudioFadeCurve::Type
+    int fadeOutType = 1;
+    int fadeInBehaviour = 0;  // 0=gainFade, 1=speedRamp
+    int fadeOutBehaviour = 0;
+    bool autoCrossfade = false;
+
+    // Channels
+    bool leftChannelActive = true;
+    bool rightChannelActive = true;
+
     // MIDI-specific properties
     std::vector<MidiNote> midiNotes;
     double midiOffset = 0.0;  // Start offset in beats (for non-destructive trim)

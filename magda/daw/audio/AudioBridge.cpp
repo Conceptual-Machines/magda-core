@@ -297,6 +297,28 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
                         }
                     }
 
+                    // Sync session-applicable audio clip properties
+                    if (clip->type == ClipType::Audio) {
+                        auto* audioClip = dynamic_cast<te::WaveAudioClip*>(teClip);
+                        if (audioClip) {
+                            // Pitch
+                            if (clip->autoPitch != audioClip->getAutoPitch())
+                                audioClip->setAutoPitch(clip->autoPitch);
+                            if (std::abs(audioClip->getPitchChange() - clip->pitchChange) > 0.001f)
+                                audioClip->setPitchChange(clip->pitchChange);
+                            if (audioClip->getTransposeSemiTones(false) != clip->transpose)
+                                audioClip->setTranspose(clip->transpose);
+                            // Playback
+                            if (clip->isReversed != audioClip->getIsReversed())
+                                audioClip->setIsReversed(clip->isReversed);
+                            // Per-Clip Mix
+                            if (std::abs(audioClip->getGainDB() - clip->gainDB) > 0.001f)
+                                audioClip->setGainDB(clip->gainDB);
+                            if (std::abs(audioClip->getPan() - clip->pan) > 0.001f)
+                                audioClip->setPan(clip->pan);
+                        }
+                    }
+
                     // Re-sync MIDI notes from ClipManager to the TE MidiClip
                     if (clip->type == ClipType::MIDI) {
                         if (auto* midiClip = dynamic_cast<te::MidiClip*>(teClip)) {
@@ -572,12 +594,14 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
 
         audioClipPtr = clipRef.get();
 
-        // Enable timestretcher at creation time (before any speedRatio changes)
-        // Must be set before setSpeedRatio() to avoid assertion failures
-        // Use clip's timeStretchMode, or default if 0
-        auto stretchMode = clip->timeStretchMode == 0
-                               ? te::TimeStretcher::defaultMode
-                               : static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+        // Set timestretcher mode at creation time
+        // When timeStretchMode is 0 (disabled), keep it disabled — TE's
+        // getActualTimeStretchMode() will auto-upgrade to defaultMode when
+        // autoPitch/autoTempo/pitchChange require it.
+        // Only force defaultMode when speedRatio != 1.0 and mode is disabled.
+        auto stretchMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+        if (stretchMode == te::TimeStretcher::disabled && std::abs(clip->speedRatio - 1.0) > 0.001)
+            stretchMode = te::TimeStretcher::defaultMode;
         audioClipPtr->setTimeStretchMode(stretchMode);
         audioClipPtr->setUsesProxy(false);
 
@@ -664,9 +688,10 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
                                   << currentSpeedRatio << ", speedRatio=" << clip->speedRatio
                                   << ")");
             // Ensure timestretcher is enabled with correct mode
-            auto desiredMode = clip->timeStretchMode == 0
-                                   ? te::TimeStretcher::defaultMode
-                                   : static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+            // speedRatio != 1.0 requires a real stretch mode
+            auto desiredMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+            if (desiredMode == te::TimeStretcher::disabled && std::abs(teSpeedRatio - 1.0) > 0.001)
+                desiredMode = te::TimeStretcher::defaultMode;
             if (audioClipPtr->getTimeStretchMode() != desiredMode) {
                 audioClipPtr->setTimeStretchMode(desiredMode);
             }
@@ -746,6 +771,63 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
             audioClipPtr->setLoopRange({});
         }
     }
+
+    // 8. PITCH
+    if (clip->autoPitch != audioClipPtr->getAutoPitch())
+        audioClipPtr->setAutoPitch(clip->autoPitch);
+    if (static_cast<int>(audioClipPtr->getAutoPitchMode()) != clip->autoPitchMode)
+        audioClipPtr->setAutoPitchMode(
+            static_cast<te::AudioClipBase::AutoPitchMode>(clip->autoPitchMode));
+    if (std::abs(audioClipPtr->getPitchChange() - clip->pitchChange) > 0.001f)
+        audioClipPtr->setPitchChange(clip->pitchChange);
+    if (audioClipPtr->getTransposeSemiTones(false) != clip->transpose)
+        audioClipPtr->setTranspose(clip->transpose);
+
+    // 9. BEAT DETECTION
+    if (clip->autoDetectBeats != audioClipPtr->getAutoDetectBeats())
+        audioClipPtr->setAutoDetectBeats(clip->autoDetectBeats);
+    if (std::abs(audioClipPtr->getBeatSensitivity() - clip->beatSensitivity) > 0.001f)
+        audioClipPtr->setBeatSensitivity(clip->beatSensitivity);
+
+    // 10. PLAYBACK
+    if (clip->isReversed != audioClipPtr->getIsReversed())
+        audioClipPtr->setIsReversed(clip->isReversed);
+
+    // 11. PER-CLIP MIX
+    if (std::abs(audioClipPtr->getGainDB() - clip->gainDB) > 0.001f)
+        audioClipPtr->setGainDB(clip->gainDB);
+    if (std::abs(audioClipPtr->getPan() - clip->pan) > 0.001f)
+        audioClipPtr->setPan(clip->pan);
+
+    // 12. FADES
+    {
+        double teFadeIn = audioClipPtr->getFadeIn().inSeconds();
+        if (std::abs(teFadeIn - clip->fadeIn) > 0.001)
+            audioClipPtr->setFadeIn(te::TimeDuration::fromSeconds(clip->fadeIn));
+    }
+    {
+        double teFadeOut = audioClipPtr->getFadeOut().inSeconds();
+        if (std::abs(teFadeOut - clip->fadeOut) > 0.001)
+            audioClipPtr->setFadeOut(te::TimeDuration::fromSeconds(clip->fadeOut));
+    }
+    if (static_cast<int>(audioClipPtr->getFadeInType()) != clip->fadeInType)
+        audioClipPtr->setFadeInType(static_cast<te::AudioFadeCurve::Type>(clip->fadeInType));
+    if (static_cast<int>(audioClipPtr->getFadeOutType()) != clip->fadeOutType)
+        audioClipPtr->setFadeOutType(static_cast<te::AudioFadeCurve::Type>(clip->fadeOutType));
+    if (static_cast<int>(audioClipPtr->getFadeInBehaviour()) != clip->fadeInBehaviour)
+        audioClipPtr->setFadeInBehaviour(
+            static_cast<te::AudioClipBase::FadeBehaviour>(clip->fadeInBehaviour));
+    if (static_cast<int>(audioClipPtr->getFadeOutBehaviour()) != clip->fadeOutBehaviour)
+        audioClipPtr->setFadeOutBehaviour(
+            static_cast<te::AudioClipBase::FadeBehaviour>(clip->fadeOutBehaviour));
+    if (clip->autoCrossfade != audioClipPtr->getAutoCrossfade())
+        audioClipPtr->setAutoCrossfade(clip->autoCrossfade);
+
+    // 13. CHANNELS
+    if (clip->leftChannelActive != audioClipPtr->isLeftChannelActive())
+        audioClipPtr->setLeftChannelActive(clip->leftChannelActive);
+    if (clip->rightChannelActive != audioClipPtr->isRightChannelActive())
+        audioClipPtr->setRightChannelActive(clip->rightChannelActive);
 
     // Final state dump
     {
@@ -874,10 +956,10 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
 
         auto* audioClipPtr = clipRef.get();
 
-        // Enable timestretcher with clip's mode (or default if 0)
-        auto stretchMode = clip->timeStretchMode == 0
-                               ? te::TimeStretcher::defaultMode
-                               : static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+        // Set timestretcher mode — keep disabled when mode is 0 and speedRatio is 1.0
+        auto stretchMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+        if (stretchMode == te::TimeStretcher::disabled && std::abs(clip->speedRatio - 1.0) > 0.001)
+            stretchMode = te::TimeStretcher::defaultMode;
         audioClipPtr->setTimeStretchMode(stretchMode);
 
         // Set speed ratio (BEFORE offset, since TE offset
@@ -904,6 +986,20 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
         if (auto* lq = audioClipPtr->getLaunchQuantisation()) {
             lq->type = toTELaunchQType(clip->launchQuantize);
         }
+
+        // Sync session-applicable audio properties at creation
+        if (clip->autoPitch)
+            audioClipPtr->setAutoPitch(true);
+        if (std::abs(clip->pitchChange) > 0.001f)
+            audioClipPtr->setPitchChange(clip->pitchChange);
+        if (clip->transpose != 0)
+            audioClipPtr->setTranspose(clip->transpose);
+        if (clip->isReversed)
+            audioClipPtr->setIsReversed(true);
+        if (std::abs(clip->gainDB) > 0.001f)
+            audioClipPtr->setGainDB(clip->gainDB);
+        if (std::abs(clip->pan) > 0.001f)
+            audioClipPtr->setPan(clip->pan);
 
         return true;
 
