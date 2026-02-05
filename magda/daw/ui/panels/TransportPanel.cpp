@@ -39,7 +39,7 @@ void TransportPanel::resized() {
     auto timeArea = getTimeDisplayArea();
     auto tempoArea = getTempoQuantizeArea();
 
-    // Transport controls layout — order: Home, Prev, Play, Stop, Rec, Loop, Next, PunchIn, PunchOut
+    // Transport controls layout — order: Home, Prev, Play, Stop, Rec, Loop, Next
     auto buttonMargin = 4;
     auto buttonSize = transportArea.getHeight() - buttonMargin * 2;
     auto buttonY = buttonMargin;
@@ -66,12 +66,19 @@ void TransportPanel::resized() {
     x += buttonSize + buttonSpacing;
 
     nextButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing;
+    x += buttonSize + buttonSpacing + 4;  // extra gap before punch group
 
-    punchInButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing;
+    // Punch in/out — stacked two rows: [label] [button] per row
+    int punchBtnSize = (buttonSize - 2) / 2;  // two rows with 2px gap
+    int punchLabelWidth = 95;
+    int punchGap = 3;
 
-    punchOutButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    punchStartLabel->setBounds(x, buttonY, punchLabelWidth, punchBtnSize);
+    punchInButton->setBounds(x + punchLabelWidth + punchGap, buttonY, punchBtnSize, punchBtnSize);
+
+    punchEndLabel->setBounds(x, buttonY + punchBtnSize + 2, punchLabelWidth, punchBtnSize);
+    punchOutButton->setBounds(x + punchLabelWidth + punchGap, buttonY + punchBtnSize + 2,
+                              punchBtnSize, punchBtnSize);
 
     // Pause button — hidden but still functional via callbacks
     pauseButton->setBounds(0, 0, 0, 0);
@@ -114,18 +121,6 @@ void TransportPanel::resized() {
     loopStartLabel->setBounds(loopX, boxY, loopLabelWidth, boxHeight);
     loopEndLabel->setBounds(loopX + loopLabelWidth + 4, boxY, loopLabelWidth, boxHeight);
 
-    // Punch start/end — stacked two rows
-    int punchX = loopX + loopLabelWidth * 2 + 4 + boxSpacing;
-    int punchLabelWidth = 95;
-    int punchRowHeight = 22;
-    int punchRowGap = 2;
-    int punchTotalHeight = punchRowHeight * 2 + punchRowGap;
-    int punchTopY = centerY - punchTotalHeight / 2;
-
-    punchStartLabel->setBounds(punchX, punchTopY, punchLabelWidth, punchRowHeight);
-    punchEndLabel->setBounds(punchX, punchTopY + punchRowHeight + punchRowGap, punchLabelWidth,
-                             punchRowHeight);
-
     // Tempo and quantize layout
     auto tempoY = tempoArea.getCentreY() - 13;
     auto tempoX = tempoArea.getX() + 10;
@@ -138,9 +133,12 @@ void TransportPanel::resized() {
 }
 
 juce::Rectangle<int> TransportPanel::getTransportControlsArea() const {
-    // 9 square buttons (height-4*2) + 8 * 2px spacing + 12px padding
+    // 7 square buttons + punch group (label + gap + btn per row)
     int buttonSize = getHeight() - 8;
-    int width = 9 * buttonSize + 8 * 2 + 12;
+    int punchBtnSize = (buttonSize - 2) / 2;
+    int punchGroupWidth = 95 + 3 + punchBtnSize;  // label + gap + button
+    // 6px left pad + 7 buttons + 6*2px spacing + 4px gap + punch group + 6px right pad
+    int width = 6 + 7 * buttonSize + 6 * 2 + 4 + punchGroupWidth + 6;
     return getLocalBounds().removeFromLeft(width);
 }
 
