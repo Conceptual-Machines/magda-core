@@ -39,38 +39,40 @@ void TransportPanel::resized() {
     auto timeArea = getTimeDisplayArea();
     auto tempoArea = getTempoQuantizeArea();
 
-    // Transport controls layout — order: Home, Prev, Play, Stop, Rec, Loop, Next
-    auto buttonSize = 30;
-    auto buttonY = transportArea.getCentreY() - buttonSize / 2;
+    // Transport controls layout — order: Home, Prev, Play, Stop, Rec, Loop, Next, PunchIn, PunchOut
+    auto buttonMargin = 4;
+    auto buttonHeight = transportArea.getHeight() - buttonMargin * 2;
+    auto buttonWidth = 30;
+    auto buttonY = buttonMargin;
     auto buttonSpacing = 2;
 
     auto x = transportArea.getX() + 6;
 
-    homeButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing;
+    homeButton->setBounds(x, buttonY, buttonWidth, buttonHeight);
+    x += buttonWidth + buttonSpacing;
 
-    prevButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing;
+    prevButton->setBounds(x, buttonY, buttonWidth, buttonHeight);
+    x += buttonWidth + buttonSpacing;
 
-    playButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing;
+    playButton->setBounds(x, buttonY, buttonWidth, buttonHeight);
+    x += buttonWidth + buttonSpacing;
 
-    stopButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing;
+    stopButton->setBounds(x, buttonY, buttonWidth, buttonHeight);
+    x += buttonWidth + buttonSpacing;
 
-    recordButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing;
+    recordButton->setBounds(x, buttonY, buttonWidth, buttonHeight);
+    x += buttonWidth + buttonSpacing;
 
-    loopButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing;
+    loopButton->setBounds(x, buttonY, buttonWidth, buttonHeight);
+    x += buttonWidth + buttonSpacing;
 
-    nextButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing;
+    nextButton->setBounds(x, buttonY, buttonWidth, buttonHeight);
+    x += buttonWidth + buttonSpacing;
 
-    punchInButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing;
+    punchInButton->setBounds(x, buttonY, buttonWidth, buttonHeight);
+    x += buttonWidth + buttonSpacing;
 
-    punchOutButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    punchOutButton->setBounds(x, buttonY, buttonWidth, buttonHeight);
 
     // Pause button — hidden but still functional via callbacks
     pauseButton->setBounds(0, 0, 0, 0);
