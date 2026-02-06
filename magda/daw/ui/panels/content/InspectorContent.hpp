@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "../../state/TimelineController.hpp"
 #include "../common/BarsBeatsTicksLabel.hpp"
 #include "../common/DraggableValueLabel.hpp"
@@ -148,9 +150,14 @@ class InspectorContent : public PanelContent,
     std::unique_ptr<magda::DraggableValueLabel>
         clipBeatsLengthValue_;  // Length in beats for auto-tempo
 
-    // Clip properties viewport (scrollable container for all clip controls)
+    // Clip properties viewport (scrollable container with separator lines)
     juce::Viewport clipPropsViewport_;
-    juce::Component clipPropsContainer_;
+    class ClipPropsContainer : public juce::Component {
+      public:
+        void paint(juce::Graphics& g) override;
+        std::vector<int> separatorYPositions;
+    };
+    ClipPropsContainer clipPropsContainer_;
 
     // Pitch section
     juce::Label pitchSectionLabel_;
@@ -172,7 +179,9 @@ class InspectorContent : public PanelContent,
     std::unique_ptr<magda::DraggableValueLabel> clipGainValue_;
     std::unique_ptr<magda::DraggableValueLabel> clipPanValue_;
 
-    // Fades section
+    // Fades section (collapsible)
+    bool fadesCollapsed_ = false;
+    juce::TextButton fadesCollapseToggle_;
     juce::Label fadesSectionLabel_;
     std::unique_ptr<magda::DraggableValueLabel> fadeInValue_;
     std::unique_ptr<magda::DraggableValueLabel> fadeOutValue_;

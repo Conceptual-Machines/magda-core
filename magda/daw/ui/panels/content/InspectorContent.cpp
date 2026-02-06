@@ -9,6 +9,7 @@
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../../themes/InspectorComboBoxLookAndFeel.hpp"
 #include "../../utils/TimelineUtils.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/MidiNoteCommands.hpp"
@@ -551,6 +552,12 @@ InspectorContent::InspectorContent() {
     };
     clipPropsContainer_.addChildComponent(stretchModeCombo_);
 
+    // Apply themed LookAndFeel to all inspector combo boxes
+    stretchModeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
+    autoPitchModeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
+    launchModeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
+    launchQuantizeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
+
     // Loop start
     clipLoopStartLabel_.setText("start", juce::dontSendNotification);
     clipLoopStartLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
@@ -1020,6 +1027,27 @@ InspectorContent::InspectorContent() {
     };
     clipPropsContainer_.addChildComponent(autoCrossfadeToggle_);
 
+    // Fades collapse toggle (triangle button)
+    fadesCollapseToggle_.setButtonText(juce::String::charToString(0x25BC));  // ▼ expanded
+    fadesCollapseToggle_.setColour(juce::TextButton::buttonColourId,
+                                   juce::Colours::transparentBlack);
+    fadesCollapseToggle_.setColour(juce::TextButton::buttonOnColourId,
+                                   juce::Colours::transparentBlack);
+    fadesCollapseToggle_.setColour(juce::TextButton::textColourOffId,
+                                   DarkTheme::getSecondaryTextColour());
+    fadesCollapseToggle_.setColour(juce::TextButton::textColourOnId,
+                                   DarkTheme::getSecondaryTextColour());
+    fadesCollapseToggle_.setConnectedEdges(
+        juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+        juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    fadesCollapseToggle_.onClick = [this]() {
+        fadesCollapsed_ = !fadesCollapsed_;
+        fadesCollapseToggle_.setButtonText(
+            juce::String::charToString(fadesCollapsed_ ? 0x25B6 : 0x25BC));  // ▶ or ▼
+        resized();
+    };
+    clipPropsContainer_.addChildComponent(fadesCollapseToggle_);
+
     // ========================================================================
     // Channels section
     // ========================================================================
@@ -1188,6 +1216,11 @@ InspectorContent::InspectorContent() {
 }
 
 InspectorContent::~InspectorContent() {
+    stretchModeCombo_.setLookAndFeel(nullptr);
+    autoPitchModeCombo_.setLookAndFeel(nullptr);
+    launchModeCombo_.setLookAndFeel(nullptr);
+    launchQuantizeCombo_.setLookAndFeel(nullptr);
+
     if (timelineController_)
         timelineController_->removeListener(this);
     magda::TrackManager::getInstance().removeListener(this);
@@ -1217,6 +1250,12 @@ void InspectorContent::setAudioEngine(magda::AudioEngine* engine) {
     }
     // Note: We now receive routing changes via trackPropertyChanged() from TrackManager
     // instead of listening to MidiBridge directly
+}
+
+void InspectorContent::ClipPropsContainer::paint(juce::Graphics& g) {
+    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    for (int y : separatorYPositions)
+        g.fillRect(4, y, getWidth() - 8, 1);
 }
 
 void InspectorContent::paint(juce::Graphics& g) {
@@ -1325,6 +1364,14 @@ void InspectorContent::resized() {
         };
         auto addSpace = [&](int height) { cb.setHeight(cb.getHeight() + height); };
 
+        // Clear separator positions for this layout pass
+        clipPropsContainer_.separatorYPositions.clear();
+        auto addSeparator = [&]() {
+            addSpace(4);
+            clipPropsContainer_.separatorYPositions.push_back(cb.getHeight());
+            addSpace(5);
+        };
+
         const int iconSize = 22;
         const int gap = 3;
         const int labelHeight = 14;
@@ -1372,7 +1419,7 @@ void InspectorContent::resized() {
             valueRow.removeFromLeft(gap);
             clipLoopPhaseValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
         }
-        addSpace(8);
+        addSpace(4);
 
         // Row 1: WARP icon | MUSICAL icon | stretch mode dropdown
         if (clipWarpToggle_->isVisible() || clipAutoTempoToggle_->isVisible()) {
@@ -1407,8 +1454,11 @@ void InspectorContent::resized() {
             if (clipBeatsLengthValue_->isVisible()) {
                 clipBeatsLengthValue_->setBounds(row2.removeFromLeft(80));
             }
-            addSpace(8);
         }
+
+        // Separator: after position/warp rows, before Pitch
+        if (pitchSectionLabel_.isVisible())
+            addSeparator();
 
         // Pitch section (audio clips only)
         if (pitchSectionLabel_.isVisible()) {
@@ -1429,10 +1479,13 @@ void InspectorContent::resized() {
                 row.removeFromLeft(8);
                 transposeValue_->setBounds(row.removeFromLeft(halfWidth));
             }
-            addSpace(8);
         }
 
-        // Mix section (audio clips only)
+        // Separator: between Pitch and Mix
+        if (clipMixSectionLabel_.isVisible())
+            addSeparator();
+
+        // Mix section (audio clips only) — includes Gain/Pan + Reverse/L/R
         if (clipMixSectionLabel_.isVisible()) {
             clipMixSectionLabel_.setBounds(addRow(16));
             addSpace(4);
@@ -1443,97 +1496,92 @@ void InspectorContent::resized() {
                 row.removeFromLeft(8);
                 clipPanValue_->setBounds(row.removeFromLeft(halfWidth));
             }
-            addSpace(8);
-        }
-
-        // Playback / Beat Detection section (audio clips only)
-        if (beatDetectionSectionLabel_.isVisible()) {
-            beatDetectionSectionLabel_.setBounds(addRow(16));
             addSpace(4);
             {
                 auto row = addRow(22);
-                int thirdWidth = (containerWidth - 16) / 3;
-                reverseToggle_.setBounds(row.removeFromLeft(thirdWidth).reduced(0, 1));
+                reverseToggle_.setBounds(row.removeFromLeft(70).reduced(0, 1));
                 row.removeFromLeft(8);
-                autoDetectBeatsToggle_.setBounds(row.removeFromLeft(thirdWidth).reduced(0, 1));
-                row.removeFromLeft(8);
-                beatSensitivityValue_->setBounds(row.removeFromLeft(thirdWidth));
-            }
-            addSpace(8);
-        }
-
-        // Fades section (arrangement clips only)
-        if (fadesSectionLabel_.isVisible()) {
-            fadesSectionLabel_.setBounds(addRow(16));
-            addSpace(4);
-            {
-                auto row = addRow(22);
-                int halfWidth = (containerWidth - 8) / 2;
-                fadeInValue_->setBounds(row.removeFromLeft(halfWidth));
-                row.removeFromLeft(8);
-                fadeOutValue_->setBounds(row.removeFromLeft(halfWidth));
-            }
-            addSpace(4);
-            {
-                auto row = addRow(22);
-                int halfWidth = (containerWidth - 8) / 2;
-                // Fade-in type buttons (4 icons in left half)
-                auto leftHalf = row.removeFromLeft(halfWidth);
-                int btnSize = juce::jmin(20, (leftHalf.getWidth() - 6) / 4);
-                for (int i = 0; i < 4; ++i) {
-                    fadeInTypeButtons_[i]->setBounds(leftHalf.removeFromLeft(btnSize).reduced(1));
-                    if (i < 3)
-                        leftHalf.removeFromLeft(2);
-                }
-                row.removeFromLeft(8);
-                // Fade-out type buttons (4 icons in right half)
-                auto rightHalf = row.removeFromLeft(halfWidth);
-                for (int i = 0; i < 4; ++i) {
-                    fadeOutTypeButtons_[i]->setBounds(rightHalf.removeFromLeft(btnSize).reduced(1));
-                    if (i < 3)
-                        rightHalf.removeFromLeft(2);
-                }
-            }
-            addSpace(4);
-            {
-                auto row = addRow(22);
-                int halfWidth = (containerWidth - 8) / 2;
-                // Fade-in behaviour buttons (2 icons in left half)
-                auto leftHalf2 = row.removeFromLeft(halfWidth);
-                int behBtnSize = juce::jmin(20, (leftHalf2.getWidth() - 2) / 2);
-                for (int i = 0; i < 2; ++i) {
-                    fadeInBehaviourButtons_[i]->setBounds(
-                        leftHalf2.removeFromLeft(behBtnSize).reduced(1));
-                    if (i < 1)
-                        leftHalf2.removeFromLeft(2);
-                }
-                row.removeFromLeft(8);
-                // Fade-out behaviour buttons (2 icons in right half)
-                auto rightHalf2 = row.removeFromLeft(halfWidth);
-                for (int i = 0; i < 2; ++i) {
-                    fadeOutBehaviourButtons_[i]->setBounds(
-                        rightHalf2.removeFromLeft(behBtnSize).reduced(1));
-                    if (i < 1)
-                        rightHalf2.removeFromLeft(2);
-                }
-            }
-            addSpace(4);
-            autoCrossfadeToggle_.setBounds(addRow(22).removeFromLeft(100).reduced(0, 1));
-            addSpace(8);
-        }
-
-        // Channels section (audio clips only)
-        if (channelsSectionLabel_.isVisible()) {
-            channelsSectionLabel_.setBounds(addRow(16));
-            addSpace(4);
-            {
-                auto row = addRow(22);
                 leftChannelToggle_.setBounds(row.removeFromLeft(30).reduced(0, 1));
                 row.removeFromLeft(4);
                 rightChannelToggle_.setBounds(row.removeFromLeft(30).reduced(0, 1));
             }
-            addSpace(8);
         }
+
+        // Separator: between Mix and Fades
+        if (fadesSectionLabel_.isVisible())
+            addSeparator();
+
+        // Fades section (arrangement clips only, collapsible)
+        if (fadesSectionLabel_.isVisible()) {
+            {
+                auto headerRow = addRow(16);
+                fadesCollapseToggle_.setBounds(headerRow.removeFromLeft(16));
+                fadesSectionLabel_.setBounds(headerRow);
+            }
+
+            if (!fadesCollapsed_) {
+                addSpace(4);
+                {
+                    auto row = addRow(22);
+                    int halfWidth = (containerWidth - 8) / 2;
+                    fadeInValue_->setBounds(row.removeFromLeft(halfWidth));
+                    row.removeFromLeft(8);
+                    fadeOutValue_->setBounds(row.removeFromLeft(halfWidth));
+                }
+                addSpace(4);
+                {
+                    auto row = addRow(22);
+                    int halfWidth = (containerWidth - 8) / 2;
+                    // Fade-in type buttons (4 icons in left half)
+                    auto leftHalf = row.removeFromLeft(halfWidth);
+                    int btnSize = juce::jmin(20, (leftHalf.getWidth() - 6) / 4);
+                    for (int i = 0; i < 4; ++i) {
+                        fadeInTypeButtons_[i]->setBounds(
+                            leftHalf.removeFromLeft(btnSize).reduced(1));
+                        if (i < 3)
+                            leftHalf.removeFromLeft(2);
+                    }
+                    row.removeFromLeft(8);
+                    // Fade-out type buttons (4 icons in right half)
+                    auto rightHalf = row.removeFromLeft(halfWidth);
+                    for (int i = 0; i < 4; ++i) {
+                        fadeOutTypeButtons_[i]->setBounds(
+                            rightHalf.removeFromLeft(btnSize).reduced(1));
+                        if (i < 3)
+                            rightHalf.removeFromLeft(2);
+                    }
+                }
+                addSpace(4);
+                {
+                    auto row = addRow(22);
+                    int halfWidth = (containerWidth - 8) / 2;
+                    // Fade-in behaviour buttons (2 icons in left half)
+                    auto leftHalf2 = row.removeFromLeft(halfWidth);
+                    int behBtnSize = juce::jmin(20, (leftHalf2.getWidth() - 2) / 2);
+                    for (int i = 0; i < 2; ++i) {
+                        fadeInBehaviourButtons_[i]->setBounds(
+                            leftHalf2.removeFromLeft(behBtnSize).reduced(1));
+                        if (i < 1)
+                            leftHalf2.removeFromLeft(2);
+                    }
+                    row.removeFromLeft(8);
+                    // Fade-out behaviour buttons (2 icons in right half)
+                    auto rightHalf2 = row.removeFromLeft(halfWidth);
+                    for (int i = 0; i < 2; ++i) {
+                        fadeOutBehaviourButtons_[i]->setBounds(
+                            rightHalf2.removeFromLeft(behBtnSize).reduced(1));
+                        if (i < 1)
+                            rightHalf2.removeFromLeft(2);
+                    }
+                }
+                addSpace(4);
+                autoCrossfadeToggle_.setBounds(addRow(22).removeFromLeft(100).reduced(0, 1));
+            }
+        }
+
+        // Separator: after Fades, before Launch (session clips)
+        if (launchQuantizeLabel_.isVisible())
+            addSeparator();
 
         // Session clip launch properties (only for session clips)
         if (launchQuantizeLabel_.isVisible()) {
@@ -2276,45 +2324,43 @@ void InspectorContent::updateFromSelectedClip() {
             transposeValue_->setAlpha(clip->autoPitch ? 0.4f : 1.0f);
         }
 
-        // Mix section (audio clips only)
+        // Mix section (audio clips only) — includes Gain/Pan + Reverse/L/R
         clipMixSectionLabel_.setVisible(isAudioClip);
         clipGainValue_->setVisible(isAudioClip);
         clipPanValue_->setVisible(isAudioClip);
+        reverseToggle_.setVisible(isAudioClip);
+        leftChannelToggle_.setVisible(isAudioClip);
+        rightChannelToggle_.setVisible(isAudioClip);
         if (isAudioClip) {
             clipGainValue_->setValue(clip->gainDB, juce::dontSendNotification);
             clipPanValue_->setValue(clip->pan, juce::dontSendNotification);
-        }
-
-        // Playback / Beat Detection section (audio clips only)
-        beatDetectionSectionLabel_.setVisible(isAudioClip);
-        reverseToggle_.setVisible(isAudioClip);
-        autoDetectBeatsToggle_.setVisible(false);  // Hidden: no effect with SoundTouch stretcher
-        beatSensitivityValue_->setVisible(false);  // Hidden: no effect with SoundTouch stretcher
-        if (isAudioClip) {
             reverseToggle_.setToggleState(clip->isReversed, juce::dontSendNotification);
-            autoDetectBeatsToggle_.setToggleState(clip->autoDetectBeats,
-                                                  juce::dontSendNotification);
-            beatSensitivityValue_->setValue(clip->beatSensitivity, juce::dontSendNotification);
-
-            // beatSensitivity only meaningful when autoDetectBeats is on
-            beatSensitivityValue_->setEnabled(clip->autoDetectBeats);
-            beatSensitivityValue_->setAlpha(clip->autoDetectBeats ? 1.0f : 0.4f);
+            leftChannelToggle_.setToggleState(clip->leftChannelActive, juce::dontSendNotification);
+            rightChannelToggle_.setToggleState(clip->rightChannelActive,
+                                               juce::dontSendNotification);
         }
 
-        // Fades section (arrangement audio clips only, hidden for session)
+        // Playback / Beat Detection section — hidden (all controls moved or unused)
+        beatDetectionSectionLabel_.setVisible(false);
+        autoDetectBeatsToggle_.setVisible(false);
+        beatSensitivityValue_->setVisible(false);
+
+        // Fades section (arrangement audio clips only, hidden for session, collapsible)
         bool showFades = isAudioClip && !isSessionClip;
+        bool showFadeControls = showFades && !fadesCollapsed_;
         fadesSectionLabel_.setVisible(showFades);
-        fadeInValue_->setVisible(showFades);
-        fadeOutValue_->setVisible(showFades);
+        fadesCollapseToggle_.setVisible(showFades);
+        fadeInValue_->setVisible(showFadeControls);
+        fadeOutValue_->setVisible(showFadeControls);
         for (int i = 0; i < 4; ++i) {
-            fadeInTypeButtons_[i]->setVisible(showFades);
-            fadeOutTypeButtons_[i]->setVisible(showFades);
+            fadeInTypeButtons_[i]->setVisible(showFadeControls);
+            fadeOutTypeButtons_[i]->setVisible(showFadeControls);
         }
         for (int i = 0; i < 2; ++i) {
-            fadeInBehaviourButtons_[i]->setVisible(showFades);
-            fadeOutBehaviourButtons_[i]->setVisible(showFades);
+            fadeInBehaviourButtons_[i]->setVisible(showFadeControls);
+            fadeOutBehaviourButtons_[i]->setVisible(showFadeControls);
         }
-        autoCrossfadeToggle_.setVisible(showFades);
+        autoCrossfadeToggle_.setVisible(showFadeControls);
         if (showFades) {
             fadeInValue_->setValue(clip->fadeIn, juce::dontSendNotification);
             fadeOutValue_->setValue(clip->fadeOut, juce::dontSendNotification);
@@ -2329,15 +2375,8 @@ void InspectorContent::updateFromSelectedClip() {
             autoCrossfadeToggle_.setToggleState(clip->autoCrossfade, juce::dontSendNotification);
         }
 
-        // Channels section (audio clips only)
-        channelsSectionLabel_.setVisible(isAudioClip);
-        leftChannelToggle_.setVisible(isAudioClip);
-        rightChannelToggle_.setVisible(isAudioClip);
-        if (isAudioClip) {
-            leftChannelToggle_.setToggleState(clip->leftChannelActive, juce::dontSendNotification);
-            rightChannelToggle_.setToggleState(clip->rightChannelActive,
-                                               juce::dontSendNotification);
-        }
+        // Channels section label hidden (controls moved to Mix section)
+        channelsSectionLabel_.setVisible(false);
 
         showClipControls(true);
         noSelectionLabel_.setVisible(false);
@@ -2439,6 +2478,7 @@ void InspectorContent::showClipControls(bool show) {
             if (btn)
                 btn->setVisible(false);
         autoCrossfadeToggle_.setVisible(false);
+        fadesCollapseToggle_.setVisible(false);
         channelsSectionLabel_.setVisible(false);
         leftChannelToggle_.setVisible(false);
         rightChannelToggle_.setVisible(false);
