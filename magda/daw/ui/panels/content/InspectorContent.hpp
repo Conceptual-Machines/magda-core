@@ -179,8 +179,9 @@ class InspectorContent : public PanelContent,
     // Fade type icon buttons (linear=1, convex=2, concave=3, s-curve=4)
     std::unique_ptr<magda::SvgButton> fadeInTypeButtons_[4];
     std::unique_ptr<magda::SvgButton> fadeOutTypeButtons_[4];
-    juce::ComboBox fadeInBehaviourCombo_;
-    juce::ComboBox fadeOutBehaviourCombo_;
+    // Fade behaviour icon buttons (0=gainFade, 1=speedRamp)
+    std::unique_ptr<magda::SvgButton> fadeInBehaviourButtons_[2];
+    std::unique_ptr<magda::SvgButton> fadeOutBehaviourButtons_[2];
     juce::TextButton autoCrossfadeToggle_;
 
     // Channels section

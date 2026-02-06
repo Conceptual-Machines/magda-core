@@ -957,34 +957,50 @@ InspectorContent::InspectorContent() {
         };
     }
 
-    auto setupBehaviourCombo = [](juce::ComboBox& combo) {
-        combo.setColour(juce::ComboBox::backgroundColourId,
-                        DarkTheme::getColour(DarkTheme::SURFACE));
-        combo.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-        combo.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+    // Fade behaviour icon buttons: 0=gainFade, 1=speedRamp
+    struct FadeBehaviourIcon {
+        const char* name;
+        const char* data;
+        size_t size;
+        const char* tooltip;
+    };
+    FadeBehaviourIcon fadeBehaviourIcons[] = {
+        {"GainFade", BinaryData::fade_gain_svg, BinaryData::fade_gain_svgSize, "Gain Fade"},
+        {"SpeedRamp", BinaryData::fade_speedramp_svg, BinaryData::fade_speedramp_svgSize,
+         "Speed Ramp"},
     };
 
-    fadeInBehaviourCombo_.addItem("Gain Fade", 1);
-    fadeInBehaviourCombo_.addItem("Speed Ramp", 2);
-    setupBehaviourCombo(fadeInBehaviourCombo_);
-    fadeInBehaviourCombo_.setSelectedId(1, juce::dontSendNotification);
-    fadeInBehaviourCombo_.onChange = [this]() {
-        if (selectedClipId_ != magda::INVALID_CLIP_ID)
-            magda::ClipManager::getInstance().setFadeInBehaviour(
-                selectedClipId_, fadeInBehaviourCombo_.getSelectedId() - 1);
+    auto setupFadeBehaviourButton = [this](std::unique_ptr<magda::SvgButton>& btn,
+                                           const FadeBehaviourIcon& icon) {
+        btn = std::make_unique<magda::SvgButton>(icon.name, icon.data, icon.size);
+        btn->setOriginalColor(juce::Colour(0xFFE3E3E3));
+        btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setTooltip(icon.tooltip);
+        btn->setClickingTogglesState(false);
+        clipPropsContainer_.addChildComponent(*btn);
     };
-    clipPropsContainer_.addChildComponent(fadeInBehaviourCombo_);
 
-    fadeOutBehaviourCombo_.addItem("Gain Fade", 1);
-    fadeOutBehaviourCombo_.addItem("Speed Ramp", 2);
-    setupBehaviourCombo(fadeOutBehaviourCombo_);
-    fadeOutBehaviourCombo_.setSelectedId(1, juce::dontSendNotification);
-    fadeOutBehaviourCombo_.onChange = [this]() {
-        if (selectedClipId_ != magda::INVALID_CLIP_ID)
-            magda::ClipManager::getInstance().setFadeOutBehaviour(
-                selectedClipId_, fadeOutBehaviourCombo_.getSelectedId() - 1);
-    };
-    clipPropsContainer_.addChildComponent(fadeOutBehaviourCombo_);
+    for (int i = 0; i < 2; ++i) {
+        setupFadeBehaviourButton(fadeInBehaviourButtons_[i], fadeBehaviourIcons[i]);
+        fadeInBehaviourButtons_[i]->onClick = [this, i]() {
+            if (selectedClipId_ != magda::INVALID_CLIP_ID) {
+                magda::ClipManager::getInstance().setFadeInBehaviour(selectedClipId_, i);
+                for (int j = 0; j < 2; ++j)
+                    fadeInBehaviourButtons_[j]->setActive(j == i);
+            }
+        };
+
+        setupFadeBehaviourButton(fadeOutBehaviourButtons_[i], fadeBehaviourIcons[i]);
+        fadeOutBehaviourButtons_[i]->onClick = [this, i]() {
+            if (selectedClipId_ != magda::INVALID_CLIP_ID) {
+                magda::ClipManager::getInstance().setFadeOutBehaviour(selectedClipId_, i);
+                for (int j = 0; j < 2; ++j)
+                    fadeOutBehaviourButtons_[j]->setActive(j == i);
+            }
+        };
+    }
 
     autoCrossfadeToggle_.setButtonText("AUTO-XFADE");
     autoCrossfadeToggle_.setColour(juce::TextButton::buttonColourId,
@@ -1482,9 +1498,24 @@ void InspectorContent::resized() {
             {
                 auto row = addRow(22);
                 int halfWidth = (containerWidth - 8) / 2;
-                fadeInBehaviourCombo_.setBounds(row.removeFromLeft(halfWidth).reduced(0, 1));
+                // Fade-in behaviour buttons (2 icons in left half)
+                auto leftHalf2 = row.removeFromLeft(halfWidth);
+                int behBtnSize = juce::jmin(20, (leftHalf2.getWidth() - 2) / 2);
+                for (int i = 0; i < 2; ++i) {
+                    fadeInBehaviourButtons_[i]->setBounds(
+                        leftHalf2.removeFromLeft(behBtnSize).reduced(1));
+                    if (i < 1)
+                        leftHalf2.removeFromLeft(2);
+                }
                 row.removeFromLeft(8);
-                fadeOutBehaviourCombo_.setBounds(row.removeFromLeft(halfWidth).reduced(0, 1));
+                // Fade-out behaviour buttons (2 icons in right half)
+                auto rightHalf2 = row.removeFromLeft(halfWidth);
+                for (int i = 0; i < 2; ++i) {
+                    fadeOutBehaviourButtons_[i]->setBounds(
+                        rightHalf2.removeFromLeft(behBtnSize).reduced(1));
+                    if (i < 1)
+                        rightHalf2.removeFromLeft(2);
+                }
             }
             addSpace(4);
             autoCrossfadeToggle_.setBounds(addRow(22).removeFromLeft(100).reduced(0, 1));
@@ -2279,8 +2310,10 @@ void InspectorContent::updateFromSelectedClip() {
             fadeInTypeButtons_[i]->setVisible(showFades);
             fadeOutTypeButtons_[i]->setVisible(showFades);
         }
-        fadeInBehaviourCombo_.setVisible(showFades);
-        fadeOutBehaviourCombo_.setVisible(showFades);
+        for (int i = 0; i < 2; ++i) {
+            fadeInBehaviourButtons_[i]->setVisible(showFades);
+            fadeOutBehaviourButtons_[i]->setVisible(showFades);
+        }
         autoCrossfadeToggle_.setVisible(showFades);
         if (showFades) {
             fadeInValue_->setValue(clip->fadeIn, juce::dontSendNotification);
@@ -2289,10 +2322,10 @@ void InspectorContent::updateFromSelectedClip() {
                 fadeInTypeButtons_[i]->setActive(i == clip->fadeInType - 1);
                 fadeOutTypeButtons_[i]->setActive(i == clip->fadeOutType - 1);
             }
-            fadeInBehaviourCombo_.setSelectedId(clip->fadeInBehaviour + 1,
-                                                juce::dontSendNotification);
-            fadeOutBehaviourCombo_.setSelectedId(clip->fadeOutBehaviour + 1,
-                                                 juce::dontSendNotification);
+            for (int i = 0; i < 2; ++i) {
+                fadeInBehaviourButtons_[i]->setActive(i == clip->fadeInBehaviour);
+                fadeOutBehaviourButtons_[i]->setActive(i == clip->fadeOutBehaviour);
+            }
             autoCrossfadeToggle_.setToggleState(clip->autoCrossfade, juce::dontSendNotification);
         }
 
@@ -2399,8 +2432,12 @@ void InspectorContent::showClipControls(bool show) {
         for (auto& btn : fadeOutTypeButtons_)
             if (btn)
                 btn->setVisible(false);
-        fadeInBehaviourCombo_.setVisible(false);
-        fadeOutBehaviourCombo_.setVisible(false);
+        for (auto& btn : fadeInBehaviourButtons_)
+            if (btn)
+                btn->setVisible(false);
+        for (auto& btn : fadeOutBehaviourButtons_)
+            if (btn)
+                btn->setVisible(false);
         autoCrossfadeToggle_.setVisible(false);
         channelsSectionLabel_.setVisible(false);
         leftChannelToggle_.setVisible(false);

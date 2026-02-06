@@ -103,6 +103,9 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/fade_convex.svg
     ../../assets/icons/fade_concave.svg
     ../../assets/icons/fade_scurve.svg
+    # Fade behaviour icons
+    ../../assets/icons/fade_gain.svg
+    ../../assets/icons/fade_speedramp.svg
     # Punch in/out icons
     ../../assets/icons/punchinout/punchin.svg
     ../../assets/icons/punchinout/punchin_on.svg
