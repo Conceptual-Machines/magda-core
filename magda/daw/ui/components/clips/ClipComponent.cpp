@@ -1,5 +1,7 @@
 #include "ClipComponent.hpp"
 
+#include <BinaryData.h>
+
 #include <cmath>
 
 #include "../../panels/state/PanelController.hpp"
@@ -274,6 +276,15 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
 
                 // Phase offset: the first tile starts partway through the loop
                 double phaseSource = di.loopOffset;
+
+                // During left resize drag, adjust loop phase to keep waveform
+                // anchored to the timeline (same logic as ClipOperations::trimFromLeft)
+                if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
+                    double trimDelta = dragStartLength_ - previewLength_;
+                    double phaseDelta = di.timelineToSource(trimDelta);
+                    phaseSource = wrapPhase(phaseSource + phaseDelta, di.sourceLength);
+                }
+
                 double phaseTimeline = di.sourceToTimeline(phaseSource);
                 bool isFirstTile = (phaseTimeline > 0.001);
 
@@ -491,11 +502,20 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
                    juce::Justification::centred, false);
     }
 
-    // Loop indicator
+    // Loop indicator (infinito/infinity icon)
     if (clip.loopEnabled) {
-        auto loopArea = headerArea.removeFromRight(14).reduced(2);
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
-        g.drawText("L", loopArea, juce::Justification::centred, false);
+        headerArea.removeFromRight(2);  // right padding
+        auto loopArea = headerArea.removeFromRight(14).reduced(1);
+        static auto loopIcon = [] {
+            auto icon = juce::Drawable::createFromImageData(BinaryData::infinito_svg,
+                                                            BinaryData::infinito_svgSize);
+            if (icon)
+                icon->replaceColour(juce::Colour(0xFFB3B3B3),
+                                    DarkTheme::getColour(DarkTheme::BACKGROUND));
+            return icon;
+        }();
+        if (loopIcon)
+            loopIcon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
     }
 }
 

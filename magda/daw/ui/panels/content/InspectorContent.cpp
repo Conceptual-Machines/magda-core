@@ -1435,7 +1435,7 @@ void InspectorContent::resized() {
                 row1.removeFromLeft(8);
             }
             if (stretchModeCombo_.isVisible()) {
-                stretchModeCombo_.setBounds(row1.reduced(0, 1));
+                stretchModeCombo_.setBounds(row1.removeFromLeft(100).reduced(0, 1));
             }
             addSpace(4);
         }
@@ -1531,7 +1531,9 @@ void InspectorContent::resized() {
                 addSpace(4);
                 {
                     auto row = addRow(22);
-                    int halfWidth = (containerWidth - 8) / 2;
+                    row.removeFromLeft(4);   // left padding
+                    row.removeFromRight(4);  // right padding
+                    int halfWidth = (row.getWidth() - 8) / 2;
                     // Fade-in type buttons (4 icons in left half)
                     auto leftHalf = row.removeFromLeft(halfWidth);
                     int btnSize = juce::jmin(20, (leftHalf.getWidth() - 6) / 4);
@@ -1554,7 +1556,9 @@ void InspectorContent::resized() {
                 addSpace(4);
                 {
                     auto row = addRow(22);
-                    int halfWidth = (containerWidth - 8) / 2;
+                    row.removeFromLeft(4);   // left padding
+                    row.removeFromRight(4);  // right padding
+                    int halfWidth = (row.getWidth() - 8) / 2;
                     // Fade-in behaviour buttons (2 icons in left half)
                     auto leftHalf2 = row.removeFromLeft(halfWidth);
                     int behBtnSize = juce::jmin(20, (leftHalf2.getWidth() - 2) / 2);
