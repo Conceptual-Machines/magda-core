@@ -20,9 +20,10 @@ enum {
     duplicate = 0x1005,
     deleteCmd = 0x1006,  // 'delete' is a keyword
     selectAll = 0x1007,
-    splitOrTrim = 0x1008,   // Cmd+E: split at cursor, or trim to selection if time selection exists
-    joinClips = 0x1009,     // Cmd+J: join two adjacent clips into one
-    renderBounce = 0x100A,  // Cmd+B: render/bounce clips or time selection
+    splitOrTrim = 0x1008,  // Cmd+E: split at cursor, or trim to selection if time selection exists
+    joinClips = 0x1009,    // Cmd+J: join two adjacent clips into one
+    renderClip = 0x100A,   // Cmd+B: render selected clips
+    renderTimeSelection = 0x100B,  // Cmd+Shift+B: consolidate time selection to audio
 
     // Transport menu
     play = 0x2000,

@@ -705,20 +705,20 @@ juce::ApplicationCommandTarget* MainWindow::MainComponent::getNextCommandTarget(
 void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& commands) {
     using namespace CommandIDs;
 
-    const juce::CommandID allCommands[] = {// Edit menu
-                                           undo, redo, cut, copy, paste, duplicate, deleteCmd,
-                                           selectAll, splitOrTrim, joinClips, renderBounce,
-                                           // File menu
-                                           newProject, openProject, saveProject, saveProjectAs,
-                                           exportAudio,
-                                           // Transport
-                                           play, stop, record, goToStart, goToEnd,
-                                           // Track
-                                           newAudioTrack, newMidiTrack, deleteTrack,
-                                           // View
-                                           zoom, toggleArrangeSession,
-                                           // Help
-                                           showHelp, about};
+    const juce::CommandID allCommands[] = {
+        // Edit menu
+        undo, redo, cut, copy, paste, duplicate, deleteCmd, selectAll, splitOrTrim, joinClips,
+        renderClip, renderTimeSelection,
+        // File menu
+        newProject, openProject, saveProject, saveProjectAs, exportAudio,
+        // Transport
+        play, stop, record, goToStart, goToEnd,
+        // Track
+        newAudioTrack, newMidiTrack, deleteTrack,
+        // View
+        zoom, toggleArrangeSession,
+        // Help
+        showHelp, about};
 
     commands.addArray(allCommands, juce::numElementsInArray(allCommands));
 }
@@ -780,9 +780,16 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             result.addDefaultKeypress('j', juce::ModifierKeys::commandModifier);
             break;
 
-        case renderBounce:
-            result.setInfo("Render / Bounce", "Render clips or time selection to audio", "Edit", 0);
+        case renderClip:
+            result.setInfo("Render Clip", "Render selected clips to audio", "Edit", 0);
             result.addDefaultKeypress('b', juce::ModifierKeys::commandModifier);
+            break;
+
+        case renderTimeSelection:
+            result.setInfo("Render Time Selection",
+                           "Consolidate time selection to a single clip per track", "Edit", 0);
+            result.addDefaultKeypress('b', juce::ModifierKeys::commandModifier |
+                                               juce::ModifierKeys::shiftModifier);
             break;
 
         // Add other commands as needed...
@@ -1063,76 +1070,74 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             }
             return true;
 
-        case renderBounce: {
+        case renderClip: {
             auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
-            if (!engine) {
-                DBG("RenderBounce: no TracktionEngineWrapper available");
+            if (!engine || selectedClips.empty())
                 return true;
+
+            std::vector<ClipId> audioClips;
+            for (auto cid : selectedClips) {
+                auto* c = clipManager.getClip(cid);
+                if (c && c->type == ClipType::Audio)
+                    audioClips.push_back(cid);
             }
 
-            if (mainView) {
-                const auto& state = mainView->getTimelineController().getState();
+            if (!audioClips.empty()) {
+                if (audioClips.size() > 1)
+                    UndoManager::getInstance().beginCompoundOperation("Render Clips");
 
-                // Context-aware dispatch: time selection → render time selection
-                if (state.selection.isActive() && !state.selection.visuallyHidden) {
-                    // Resolve track indices to TrackIds
-                    auto visibleTracks = TrackManager::getInstance().getVisibleTracks(
-                        ViewModeController::getInstance().getViewMode());
+                std::vector<ClipId> newClips;
+                for (auto cid : audioClips) {
+                    auto cmd = std::make_unique<RenderClipCommand>(cid, engine);
+                    auto* cmdPtr = cmd.get();
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+                    if (cmdPtr->wasSuccessful())
+                        newClips.push_back(cmdPtr->getNewClipId());
+                }
 
-                    std::vector<TrackId> trackIds;
-                    if (state.selection.isAllTracks()) {
-                        trackIds = visibleTracks;
-                    } else {
-                        for (int idx : state.selection.trackIndices) {
-                            if (idx >= 0 && idx < static_cast<int>(visibleTracks.size())) {
-                                trackIds.push_back(visibleTracks[idx]);
-                            }
-                        }
-                    }
+                if (audioClips.size() > 1)
+                    UndoManager::getInstance().endCompoundOperation();
 
-                    if (!trackIds.empty()) {
-                        auto cmd = std::make_unique<RenderTimeSelectionCommand>(
-                            state.selection.startTime, state.selection.endTime, trackIds, engine);
-                        auto* cmdPtr = cmd.get();
-                        UndoManager::getInstance().executeCommand(std::move(cmd));
+                if (!newClips.empty()) {
+                    std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
+                    selectionManager.selectClips(newSelection);
+                }
+            }
+            return true;
+        }
 
-                        if (cmdPtr->wasSuccessful()) {
-                            const auto& newIds = cmdPtr->getNewClipIds();
-                            std::unordered_set<ClipId> newSelection(newIds.begin(), newIds.end());
-                            selectionManager.selectClips(newSelection);
-                        }
-                    }
-                } else if (!selectedClips.empty()) {
-                    // No time selection → render selected clips
-                    std::vector<ClipId> audioClips;
-                    for (auto cid : selectedClips) {
-                        auto* c = clipManager.getClip(cid);
-                        if (c && c->type == ClipType::Audio)
-                            audioClips.push_back(cid);
-                    }
+        case renderTimeSelection: {
+            auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
+            if (!engine || !mainView)
+                return true;
 
-                    if (!audioClips.empty()) {
-                        if (audioClips.size() > 1)
-                            UndoManager::getInstance().beginCompoundOperation("Render Clips");
+            const auto& state = mainView->getTimelineController().getState();
+            if (!state.selection.isActive() || state.selection.visuallyHidden)
+                return true;
 
-                        std::vector<ClipId> newClips;
-                        for (auto cid : audioClips) {
-                            auto cmd = std::make_unique<RenderClipCommand>(cid, engine);
-                            auto* cmdPtr = cmd.get();
-                            UndoManager::getInstance().executeCommand(std::move(cmd));
-                            if (cmdPtr->wasSuccessful())
-                                newClips.push_back(cmdPtr->getNewClipId());
-                        }
+            auto visibleTracks = TrackManager::getInstance().getVisibleTracks(
+                ViewModeController::getInstance().getViewMode());
 
-                        if (audioClips.size() > 1)
-                            UndoManager::getInstance().endCompoundOperation();
+            std::vector<TrackId> trackIds;
+            if (state.selection.isAllTracks()) {
+                trackIds = visibleTracks;
+            } else {
+                for (int idx : state.selection.trackIndices) {
+                    if (idx >= 0 && idx < static_cast<int>(visibleTracks.size()))
+                        trackIds.push_back(visibleTracks[idx]);
+                }
+            }
 
-                        if (!newClips.empty()) {
-                            std::unordered_set<ClipId> newSelection(newClips.begin(),
-                                                                    newClips.end());
-                            selectionManager.selectClips(newSelection);
-                        }
-                    }
+            if (!trackIds.empty()) {
+                auto cmd = std::make_unique<RenderTimeSelectionCommand>(
+                    state.selection.startTime, state.selection.endTime, trackIds, engine);
+                auto* cmdPtr = cmd.get();
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                if (cmdPtr->wasSuccessful()) {
+                    const auto& newIds = cmdPtr->getNewClipIds();
+                    std::unordered_set<ClipId> newSelection(newIds.begin(), newIds.end());
+                    selectionManager.selectClips(newSelection);
                 }
             }
             return true;
