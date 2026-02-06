@@ -317,8 +317,8 @@ void DraggableValueLabel::mouseDrag(const juce::MouseEvent& e) {
             deltaValue *= 0.25;
         }
     } else if (snapToInteger_ && !e.mods.isShiftDown()) {
-        // Integer snap mode: 1 unit per ~30px
-        deltaValue = deltaY / 30.0;
+        // Integer snap mode: 1 unit per ~10px
+        deltaValue = deltaY / 10.0;
         double newValue = std::round(dragStartValue_ + deltaValue);
         setValue(newValue);
         return;

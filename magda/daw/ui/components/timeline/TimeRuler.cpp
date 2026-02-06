@@ -62,7 +62,6 @@ void TimeRuler::setScrollOffset(int offsetPixels) {
 
 void TimeRuler::setTempo(double bpm) {
     tempo = bpm;
-    repaint();
 }
 
 void TimeRuler::setTimeSignature(int numerator, int denominator) {
