@@ -249,7 +249,7 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
         return;
     }
 
-    if (clip->autoTempo) {
+    if (clip->autoTempo || clip->warpEnabled) {
         DBG("[AUDIO-BRIDGE] clipPropertyChanged clip "
             << clipId << " length=" << clip->length << " loopLength=" << clip->loopLength
             << " loopLengthBeats=" << clip->loopLengthBeats << " lengthBeats=" << clip->lengthBeats
@@ -676,9 +676,11 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     DBG("    offset: " << audioClipPtr->getPosition().getOffset().inSeconds());
     DBG("    speedRatio: " << audioClipPtr->getSpeedRatio());
 
-    if (clip->autoTempo) {
+    if (clip->autoTempo || clip->warpEnabled) {
         // ========================================================================
         // AUTO-TEMPO MODE (Beat-based length, maintains musical time)
+        // Warp also uses this path — TE only passes warpMap to WaveNodeRealTime
+        // via the auto-tempo code path in EditNodeBuilder.
         // ========================================================================
         // In auto-tempo mode:
         // - TE's autoTempo is enabled (clips stretch/shrink with BPM)
@@ -771,8 +773,8 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     }
 
     // 6. UPDATE loop properties (BEFORE offset — setLoopRangeBeats can reset offset)
-    // Use beat-based loop range in auto-tempo mode, time-based otherwise
-    if (clip->autoTempo) {
+    // Use beat-based loop range in auto-tempo/warp mode, time-based otherwise
+    if (clip->autoTempo || clip->warpEnabled) {
         // Auto-tempo mode: ALWAYS set beat-based loop range
         // The loop range defines the clip's musical extent (not just the loop region)
 

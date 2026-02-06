@@ -97,7 +97,7 @@ class ClipOperations {
 
         clip.startTime = newStartTime;
         clip.length = newLength;
-        if (clip.autoTempo && bpm > 0.0) {
+        if ((clip.autoTempo || clip.warpEnabled) && bpm > 0.0) {
             clip.startBeats = newStartTime * bpm / 60.0;
             clip.lengthBeats = newLength * bpm / 60.0;
         }
@@ -117,7 +117,7 @@ class ClipOperations {
                                                 double bpm = 120.0) {
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
         clip.length = newLength;
-        if (clip.autoTempo && bpm > 0.0) {
+        if ((clip.autoTempo || clip.warpEnabled) && bpm > 0.0) {
             clip.lengthBeats = newLength * bpm / 60.0;
         }
     }
@@ -506,7 +506,7 @@ class ClipOperations {
             double avail = fileDuration - clip.loopStart;
             if (clip.loopLength > avail) {
                 clip.loopLength = juce::jmax(0.0, avail);
-                if (clip.autoTempo && oldLoopLength > 0.0) {
+                if ((clip.autoTempo || clip.warpEnabled) && oldLoopLength > 0.0) {
                     clip.loopLengthBeats *= clip.loopLength / oldLoopLength;
                 }
             }
