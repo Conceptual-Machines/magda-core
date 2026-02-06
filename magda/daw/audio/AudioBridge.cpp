@@ -636,11 +636,18 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
 
     // 3b. REVERSE — must be handled before position/loop/offset sync.
     // setIsReversed triggers updateReversedState() which internally transforms
-    // offset and loop points via reverseLoopPoints(). Return early so the
-    // subsequent sync steps don't overwrite those transformed values.
+    // offset and loop points via reverseLoopPoints(). After setting reverse,
+    // read back TE's transformed offset so subsequent sync steps stay consistent.
     if (clip->isReversed != audioClipPtr->getIsReversed()) {
         audioClipPtr->setIsReversed(clip->isReversed);
-        return;
+
+        // Read back TE's post-reverse offset into our model so step 6 doesn't overwrite it
+        if (auto* mutableClip = ClipManager::getInstance().getClip(clipId)) {
+            double teOffset = audioClipPtr->getPosition().getOffset().inSeconds();
+            mutableClip->offset = teOffset;
+            if (!mutableClip->loopEnabled)
+                mutableClip->loopStart = teOffset;
+        }
     }
 
     // 4. UPDATE clip position/length

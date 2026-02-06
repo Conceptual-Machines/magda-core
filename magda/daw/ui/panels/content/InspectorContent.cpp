@@ -244,7 +244,8 @@ InspectorContent::InspectorContent() {
     // Detected BPM (shown at bottom with WARP button)
     clipBpmValue_.setFont(FontManager::getInstance().getUIFont(11.0f));
     clipBpmValue_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    clipBpmValue_.setJustificationType(juce::Justification::centredLeft);
+    clipBpmValue_.setColour(juce::Label::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+    clipBpmValue_.setJustificationType(juce::Justification::centred);
     clipPropsContainer_.addChildComponent(clipBpmValue_);
 
     // Length in beats (shown next to BPM when auto-tempo is enabled)
@@ -254,7 +255,8 @@ InspectorContent::InspectorContent() {
     clipBeatsLengthValue_->setDecimalPlaces(2);
     clipBeatsLengthValue_->setSnapToInteger(true);
     clipBeatsLengthValue_->setDrawBackground(false);
-    clipBeatsLengthValue_->setDrawBorder(false);
+    clipBeatsLengthValue_->setDrawBorder(true);
+    clipBeatsLengthValue_->setShowFillIndicator(false);
     clipBeatsLengthValue_->onValueChange = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID) {
             auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
@@ -570,7 +572,8 @@ InspectorContent::InspectorContent() {
     clipStretchValue_->setRange(0.25, 4.0, 1.0);
     clipStretchValue_->setSuffix("x");
     clipStretchValue_->setDrawBackground(false);
-    clipStretchValue_->setDrawBorder(false);
+    clipStretchValue_->setDrawBorder(true);
+    clipStretchValue_->setShowFillIndicator(false);
     clipStretchValue_->onValueChange = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID)
             magda::ClipManager::getInstance().setSpeedRatio(selectedClipId_,
@@ -1057,6 +1060,7 @@ InspectorContent::InspectorContent() {
     }
 
     autoCrossfadeToggle_.setButtonText("AUTO-XFADE");
+    autoCrossfadeToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     autoCrossfadeToggle_.setColour(juce::TextButton::buttonColourId,
                                    DarkTheme::getColour(DarkTheme::SURFACE));
     autoCrossfadeToggle_.setColour(juce::TextButton::buttonOnColourId,
@@ -1600,10 +1604,7 @@ void InspectorContent::resized() {
                 row.removeFromLeft(colGap);
                 auto right = row;
 
-                int revWidth = 70;
-                int revOffset = (left.getWidth() - revWidth) / 2;
-                reverseToggle_.setBounds(
-                    left.withX(left.getX() + revOffset).withWidth(revWidth).reduced(0, 1));
+                reverseToggle_.setBounds(left.reduced(0, 1));
 
                 int btnWidth = 30;
                 int btnGap = 4;
