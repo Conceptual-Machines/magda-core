@@ -12,79 +12,51 @@
 
 namespace magda {
 
+// ===== Change Flags =====
+// Indicates what parts of state changed
+enum class ChangeFlags : uint32_t {
+    None = 0,
+    Zoom = 1 << 0,
+    Scroll = 1 << 1,
+    Playhead = 1 << 2,
+    Selection = 1 << 3,
+    Loop = 1 << 4,
+    Tempo = 1 << 5,
+    Display = 1 << 6,
+    Sections = 1 << 7,
+    Timeline = 1 << 8,
+    Punch = 1 << 9,
+    All = 0xFFFFFFFF
+};
+
+inline ChangeFlags operator|(ChangeFlags a, ChangeFlags b) {
+    return static_cast<ChangeFlags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+
+inline ChangeFlags operator&(ChangeFlags a, ChangeFlags b) {
+    return static_cast<ChangeFlags>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
+}
+
+inline bool hasFlag(ChangeFlags flags, ChangeFlags flag) {
+    return (static_cast<uint32_t>(flags) & static_cast<uint32_t>(flag)) != 0;
+}
+
 /**
  * @brief Listener interface for timeline state changes
  *
  * Components implement this interface to receive notifications
- * when the timeline state changes.
+ * when the timeline state changes. Each listener checks hasFlag()
+ * for the flags it cares about.
  */
 class TimelineStateListener {
   public:
     virtual ~TimelineStateListener() = default;
 
     /**
-     * Called when any part of the timeline state changes.
-     * This is always called after more specific notifications.
+     * Called when the timeline state changes.
+     * Check hasFlag(changes, ...) for the specific changes you care about.
      */
-    virtual void timelineStateChanged(const TimelineState& state) = 0;
-
-    /**
-     * Called specifically when zoom or scroll state changes.
-     * Override for optimized handling of frequent updates.
-     */
-    virtual void zoomStateChanged(const TimelineState& state) {
-        // Default: fall through to general handler
-        timelineStateChanged(state);
-    }
-
-    /**
-     * Called specifically when playhead position changes.
-     * Override for optimized handling of frequent updates.
-     */
-    virtual void playheadStateChanged(const TimelineState& state) {
-        // Default: fall through to general handler
-        timelineStateChanged(state);
-    }
-
-    /**
-     * Called specifically when time selection changes.
-     */
-    virtual void selectionStateChanged(const TimelineState& state) {
-        // Default: fall through to general handler
-        timelineStateChanged(state);
-    }
-
-    /**
-     * Called specifically when loop region changes.
-     */
-    virtual void loopStateChanged(const TimelineState& state) {
-        // Default: fall through to general handler
-        timelineStateChanged(state);
-    }
-
-    /**
-     * Called specifically when punch in/out region changes.
-     */
-    virtual void punchStateChanged(const TimelineState& state) {
-        // Default: fall through to general handler
-        timelineStateChanged(state);
-    }
-
-    /**
-     * Called specifically when tempo or time signature changes.
-     */
-    virtual void tempoStateChanged(const TimelineState& state) {
-        // Default: fall through to general handler
-        timelineStateChanged(state);
-    }
-
-    /**
-     * Called specifically when display settings change.
-     */
-    virtual void displayConfigChanged(const TimelineState& state) {
-        // Default: fall through to general handler
-        timelineStateChanged(state);
-    }
+    virtual void timelineStateChanged(const TimelineState& state, ChangeFlags changes) = 0;
 };
 
 /**
@@ -206,22 +178,8 @@ class TimelineController {
         maxUndoStates = maxStates;
     }
 
-    // ===== Change Flags =====
-    // Indicates what parts of state changed (public for helper functions)
-    enum class ChangeFlags : uint32_t {
-        None = 0,
-        Zoom = 1 << 0,
-        Scroll = 1 << 1,
-        Playhead = 1 << 2,
-        Selection = 1 << 3,
-        Loop = 1 << 4,
-        Tempo = 1 << 5,
-        Display = 1 << 6,
-        Sections = 1 << 7,
-        Timeline = 1 << 8,
-        Punch = 1 << 9,
-        All = 0xFFFFFFFF
-    };
+    // Backward-compatible alias for ChangeFlags (now at namespace scope)
+    using ChangeFlags = magda::ChangeFlags;
 
   private:
     // The single source of truth
@@ -303,22 +261,5 @@ class TimelineController {
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TimelineController)
 };
-
-// Helper operators for ChangeFlags
-inline TimelineController::ChangeFlags operator|(TimelineController::ChangeFlags a,
-                                                 TimelineController::ChangeFlags b) {
-    return static_cast<TimelineController::ChangeFlags>(static_cast<uint32_t>(a) |
-                                                        static_cast<uint32_t>(b));
-}
-
-inline TimelineController::ChangeFlags operator&(TimelineController::ChangeFlags a,
-                                                 TimelineController::ChangeFlags b) {
-    return static_cast<TimelineController::ChangeFlags>(static_cast<uint32_t>(a) &
-                                                        static_cast<uint32_t>(b));
-}
-
-inline bool hasFlag(TimelineController::ChangeFlags flags, TimelineController::ChangeFlags flag) {
-    return (static_cast<uint32_t>(flags) & static_cast<uint32_t>(flag)) != 0;
-}
 
 }  // namespace magda

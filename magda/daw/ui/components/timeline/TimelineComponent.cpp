@@ -78,47 +78,72 @@ void TimelineComponent::setController(TimelineController* controller) {
 
 // ===== TimelineStateListener Implementation =====
 
-void TimelineComponent::timelineStateChanged(const TimelineState& state) {
-    // General state change - sync all cached values
-    timelineLength = state.timelineLength;
-    displayMode = state.display.timeDisplayMode;
+void TimelineComponent::timelineStateChanged(const TimelineState& state, ChangeFlags changes) {
+    bool needsRepaint = false;
+
+    // Zoom/scroll changes
+    if (hasFlag(changes, ChangeFlags::Zoom) || hasFlag(changes, ChangeFlags::Scroll)) {
+        zoom = state.zoom.horizontalZoom;
+        needsRepaint = true;
+    }
+
+    // Loop changes
+    if (hasFlag(changes, ChangeFlags::Loop)) {
+        if (state.loop.isValid()) {
+            loopStartTime = state.loop.startTime;
+            loopEndTime = state.loop.endTime;
+            loopEnabled = state.loop.enabled;
+        } else {
+            loopStartTime = -1.0;
+            loopEndTime = -1.0;
+            loopEnabled = false;
+        }
+        needsRepaint = true;
+    }
+
+    // Selection changes
+    if (hasFlag(changes, ChangeFlags::Selection)) {
+        if (state.selection.isVisuallyActive()) {
+            timeSelectionStart = state.selection.startTime;
+            timeSelectionEnd = state.selection.endTime;
+        } else {
+            timeSelectionStart = -1.0;
+            timeSelectionEnd = -1.0;
+        }
+        needsRepaint = true;
+    }
+
+    // General cache sync (timeline length, display mode, snap, arrangement lock, grid quantize)
+    if (timelineLength != state.timelineLength) {
+        timelineLength = state.timelineLength;
+        needsRepaint = true;
+    }
+    if (displayMode != state.display.timeDisplayMode) {
+        displayMode = state.display.timeDisplayMode;
+        needsRepaint = true;
+    }
+    if (snapEnabled != state.display.snapEnabled) {
+        snapEnabled = state.display.snapEnabled;
+        needsRepaint = true;
+    }
+    if (arrangementLocked != state.display.arrangementLocked) {
+        arrangementLocked = state.display.arrangementLocked;
+        needsRepaint = true;
+    }
+    if (gridQuantize.autoGrid != state.display.gridQuantize.autoGrid ||
+        gridQuantize.numerator != state.display.gridQuantize.numerator ||
+        gridQuantize.denominator != state.display.gridQuantize.denominator) {
+        gridQuantize = state.display.gridQuantize;
+        needsRepaint = true;
+    }
+
+    // These don't affect pixel positions (ppb zoom), just store them
     tempoBPM = state.tempo.bpm;
     timeSignatureNumerator = state.tempo.timeSignatureNumerator;
     timeSignatureDenominator = state.tempo.timeSignatureDenominator;
-    snapEnabled = state.display.snapEnabled;
-    arrangementLocked = state.display.arrangementLocked;
-    gridQuantize = state.display.gridQuantize;
-    repaint();
-}
 
-void TimelineComponent::zoomStateChanged(const TimelineState& state) {
-    zoom = state.zoom.horizontalZoom;
-    repaint();
-}
-
-void TimelineComponent::loopStateChanged(const TimelineState& state) {
-    if (state.loop.isValid()) {
-        loopStartTime = state.loop.startTime;
-        loopEndTime = state.loop.endTime;
-        loopEnabled = state.loop.enabled;
-    } else {
-        loopStartTime = -1.0;
-        loopEndTime = -1.0;
-        loopEnabled = false;
-    }
-    repaint();
-}
-
-void TimelineComponent::selectionStateChanged(const TimelineState& state) {
-    // Only show selection visually if not hidden (e.g., when loop is created from it)
-    if (state.selection.isVisuallyActive()) {
-        timeSelectionStart = state.selection.startTime;
-        timeSelectionEnd = state.selection.endTime;
-    } else {
-        timeSelectionStart = -1.0;
-        timeSelectionEnd = -1.0;
-    }
-    repaint();
+    if (needsRepaint)
+        repaint();
 }
 
 void TimelineComponent::paint(juce::Graphics& g) {
@@ -204,7 +229,6 @@ void TimelineComponent::setTimeDisplayMode(TimeDisplayMode mode) {
 
 void TimelineComponent::setTempo(double bpm) {
     tempoBPM = juce::jlimit(20.0, 999.0, bpm);
-    repaint();
 }
 
 void TimelineComponent::setTimeSignature(int numerator, int denominator) {

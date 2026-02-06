@@ -622,33 +622,38 @@ void WaveformEditorContent::clipSelectionChanged(magda::ClipId clipId) {
 // TimelineStateListener
 // ============================================================================
 
-void WaveformEditorContent::timelineStateChanged(const TimelineState& state) {
-    double newBpm = state.tempo.bpm;
+void WaveformEditorContent::timelineStateChanged(const TimelineState& state, ChangeFlags changes) {
+    // Playhead changes
+    if (hasFlag(changes, ChangeFlags::Playhead)) {
+        cachedEditPosition_ = state.playhead.editPosition;
+        cachedPlaybackPosition_ = state.playhead.playbackPosition;
+        cachedIsPlaying_ = state.playhead.isPlaying;
 
-    // Scale pps zoom to keep visual bar width constant when BPM changes.
-    // new_pps = old_pps * new_bpm / old_bpm  (keeps ppb constant)
-    if (cachedBpm_ > 0.0 && std::abs(newBpm - cachedBpm_) > 0.01) {
-        horizontalZoom_ = juce::jlimit(MIN_ZOOM, MAX_ZOOM, horizontalZoom_ * newBpm / cachedBpm_);
-        gridComponent_->setHorizontalZoom(horizontalZoom_);
-        timeRuler_->setZoom(horizontalZoom_ * 60.0 / newBpm);
-        updateGridSize();
+        if (playheadOverlay_) {
+            playheadOverlay_->repaint();
+        }
     }
-    cachedBpm_ = newBpm;
 
-    // Sync tempo to the TimeRuler so beat grid and snap stay in sync
-    timeRuler_->setTempo(newBpm);
-    timeRuler_->setTimeSignature(state.tempo.timeSignatureNumerator,
-                                 state.tempo.timeSignatureDenominator);
-    gridComponent_->repaint();
-}
+    // Tempo changes - BPM zoom scaling + ruler sync
+    if (hasFlag(changes, ChangeFlags::Tempo)) {
+        double newBpm = state.tempo.bpm;
 
-void WaveformEditorContent::playheadStateChanged(const TimelineState& state) {
-    cachedEditPosition_ = state.playhead.editPosition;
-    cachedPlaybackPosition_ = state.playhead.playbackPosition;
-    cachedIsPlaying_ = state.playhead.isPlaying;
+        // Scale pps zoom to keep visual bar width constant when BPM changes.
+        // new_pps = old_pps * new_bpm / old_bpm  (keeps ppb constant)
+        if (cachedBpm_ > 0.0 && std::abs(newBpm - cachedBpm_) > 0.01) {
+            horizontalZoom_ =
+                juce::jlimit(MIN_ZOOM, MAX_ZOOM, horizontalZoom_ * newBpm / cachedBpm_);
+            gridComponent_->setHorizontalZoom(horizontalZoom_);
+            timeRuler_->setZoom(horizontalZoom_ * 60.0 / newBpm);
+            updateGridSize();
+        }
+        cachedBpm_ = newBpm;
 
-    if (playheadOverlay_) {
-        playheadOverlay_->repaint();
+        // Sync tempo to the TimeRuler so beat grid and snap stay in sync
+        timeRuler_->setTempo(newBpm);
+        timeRuler_->setTimeSignature(state.tempo.timeSignatureNumerator,
+                                     state.tempo.timeSignatureDenominator);
+        gridComponent_->repaint();
     }
 }
 

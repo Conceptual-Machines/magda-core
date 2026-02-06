@@ -76,18 +76,32 @@ void GridOverlayComponent::setTimeSignature(int numerator, int denominator) {
 
 // ===== TimelineStateListener Implementation =====
 
-void GridOverlayComponent::timelineStateChanged(const TimelineState& state) {
-    timelineLength = state.timelineLength;
-    displayMode = state.display.timeDisplayMode;
+void GridOverlayComponent::timelineStateChanged(const TimelineState& state, ChangeFlags changes) {
+    bool needsRepaint = false;
+
+    // Zoom/scroll changes
+    if (hasFlag(changes, ChangeFlags::Zoom) || hasFlag(changes, ChangeFlags::Scroll)) {
+        currentZoom = state.zoom.horizontalZoom;
+        needsRepaint = true;
+    }
+
+    // General cache sync with dirty checks
+    if (timelineLength != state.timelineLength) {
+        timelineLength = state.timelineLength;
+        needsRepaint = true;
+    }
+    if (displayMode != state.display.timeDisplayMode) {
+        displayMode = state.display.timeDisplayMode;
+        needsRepaint = true;
+    }
+
+    // Tempo/time-sig don't affect grid pixel positions (ppb zoom)
     tempoBPM = state.tempo.bpm;
     timeSignatureNumerator = state.tempo.timeSignatureNumerator;
     timeSignatureDenominator = state.tempo.timeSignatureDenominator;
-    repaint();
-}
 
-void GridOverlayComponent::zoomStateChanged(const TimelineState& state) {
-    currentZoom = state.zoom.horizontalZoom;
-    repaint();
+    if (needsRepaint)
+        repaint();
 }
 
 // ===== Paint =====

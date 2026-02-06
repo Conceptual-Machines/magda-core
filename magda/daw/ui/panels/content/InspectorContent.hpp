@@ -73,8 +73,8 @@ class InspectorContent : public PanelContent,
     void paramSelectionChanged(const magda::ParamSelection& selection) override;
 
     // TimelineStateListener
-    void timelineStateChanged(const magda::TimelineState& state) override;
-    void tempoStateChanged(const magda::TimelineState& state) override;
+    void timelineStateChanged(const magda::TimelineState& state,
+                              magda::ChangeFlags changes) override;
 
   private:
     juce::Label titleLabel_;

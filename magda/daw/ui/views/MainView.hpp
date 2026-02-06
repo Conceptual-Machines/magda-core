@@ -80,13 +80,7 @@ class MainView : public juce::Component,
     void scrollBarMoved(juce::ScrollBar* scrollBarThatHasMoved, double newRangeStart) override;
 
     // TimelineStateListener implementation
-    void timelineStateChanged(const TimelineState& state) override;
-    void zoomStateChanged(const TimelineState& state) override;
-    void playheadStateChanged(const TimelineState& state) override;
-    void selectionStateChanged(const TimelineState& state) override;
-    void loopStateChanged(const TimelineState& state) override;
-    void punchStateChanged(const TimelineState& state) override;
-    void displayConfigChanged(const TimelineState& state) override;
+    void timelineStateChanged(const TimelineState& state, ChangeFlags changes) override;
 
     // TrackManagerListener implementation
     void tracksChanged() override {}  // Handled by TrackHeadersPanel

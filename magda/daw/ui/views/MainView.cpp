@@ -346,132 +346,116 @@ void MainView::timerCallback() {
 
 // ===== TimelineStateListener Implementation =====
 
-void MainView::timelineStateChanged(const TimelineState& state) {
-    // General state change handler - sync all cached values
-    syncStateFromController();
-}
+void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags changes) {
+    // Zoom/scroll changes
+    if (hasFlag(changes, ChangeFlags::Zoom) || hasFlag(changes, ChangeFlags::Scroll)) {
+        horizontalZoom = state.zoom.horizontalZoom;
+        verticalZoom = state.zoom.verticalZoom;
 
-void MainView::zoomStateChanged(const TimelineState& state) {
-    // Update cached zoom values
-    horizontalZoom = state.zoom.horizontalZoom;
-    verticalZoom = state.zoom.verticalZoom;
+        timeline->setZoom(horizontalZoom);
+        trackContentPanel->setZoom(horizontalZoom);
+        trackContentPanel->setVerticalZoom(verticalZoom);
 
-    // Update child components
-    timeline->setZoom(horizontalZoom);
-    trackContentPanel->setZoom(horizontalZoom);
-    trackContentPanel->setVerticalZoom(verticalZoom);
+        timelineViewport->setViewPosition(state.zoom.scrollX, 0);
+        trackContentViewport->setViewPosition(state.zoom.scrollX, state.zoom.scrollY);
 
-    // Update viewports with new scroll position
-    timelineViewport->setViewPosition(state.zoom.scrollX, 0);
-    trackContentViewport->setViewPosition(state.zoom.scrollX, state.zoom.scrollY);
+        updateContentSizes();
+        updateHorizontalZoomScrollBar();
+        updateVerticalZoomScrollBar();
+        updateGridDivisionDisplay();
 
-    // Update content sizes
-    updateContentSizes();
-
-    // Update zoom scroll bars
-    updateHorizontalZoomScrollBar();
-    updateVerticalZoomScrollBar();
-
-    // Update grid division display
-    updateGridDivisionDisplay();
-
-    // Repaint
-    playheadComponent->repaint();
-    selectionOverlay->repaint();
-    repaint();
-}
-
-void MainView::playheadStateChanged(const TimelineState& state) {
-    playheadPosition = state.playhead.getPosition();
-    playheadComponent->setPlayheadPosition(playheadPosition);
-    playheadComponent->repaint();
-
-    // Notify external listeners about playhead position change
-    if (onPlayheadPositionChanged) {
-        onPlayheadPositionChanged(playheadPosition);
-    }
-}
-
-void MainView::selectionStateChanged(const TimelineState& state) {
-    timeSelection = state.selection;
-
-    // Update timeline component (only if visually active)
-    if (timeSelection.isVisuallyActive()) {
-        timeline->setTimeSelection(timeSelection.startTime, timeSelection.endTime);
-    } else {
-        timeline->clearTimeSelection();
-    }
-
-    // Update selection overlay
-    if (selectionOverlay) {
+        playheadComponent->repaint();
         selectionOverlay->repaint();
+        repaint();
     }
 
-    // Notify external listeners about time selection change
-    // Use isActive() here so transport info still shows selection data even when hidden visually
-    if (onTimeSelectionChanged) {
-        onTimeSelectionChanged(timeSelection.startTime, timeSelection.endTime,
-                               timeSelection.isActive());
+    // Playhead changes
+    if (hasFlag(changes, ChangeFlags::Playhead)) {
+        playheadPosition = state.playhead.getPosition();
+        playheadComponent->setPlayheadPosition(playheadPosition);
+        playheadComponent->repaint();
+
+        if (onPlayheadPositionChanged) {
+            onPlayheadPositionChanged(playheadPosition);
+        }
     }
 
-    // Notify about edit cursor position change
-    if (onEditCursorChanged) {
-        onEditCursorChanged(state.editCursorPosition);
-    }
-}
+    // Selection changes
+    if (hasFlag(changes, ChangeFlags::Selection)) {
+        timeSelection = state.selection;
 
-void MainView::loopStateChanged(const TimelineState& state) {
-    loopRegion = state.loop;
+        if (timeSelection.isVisuallyActive()) {
+            timeline->setTimeSelection(timeSelection.startTime, timeSelection.endTime);
+        } else {
+            timeline->clearTimeSelection();
+        }
 
-    // Prevent recursive updates
-    isUpdatingLoopRegion = true;
+        if (selectionOverlay) {
+            selectionOverlay->repaint();
+        }
 
-    // Update timeline component
-    if (loopRegion.isValid()) {
-        timeline->setLoopRegion(loopRegion.startTime, loopRegion.endTime);
-        timeline->setLoopEnabled(loopRegion.enabled);
-    } else {
-        timeline->clearLoopRegion();
-    }
+        if (onTimeSelectionChanged) {
+            onTimeSelectionChanged(timeSelection.startTime, timeSelection.endTime,
+                                   timeSelection.isActive());
+        }
 
-    isUpdatingLoopRegion = false;
-
-    // Update selection overlay
-    if (selectionOverlay) {
-        selectionOverlay->repaint();
+        if (onEditCursorChanged) {
+            onEditCursorChanged(state.editCursorPosition);
+        }
     }
 
-    // Notify external listeners about loop region change
-    if (onLoopRegionChanged) {
+    // Loop changes
+    if (hasFlag(changes, ChangeFlags::Loop)) {
+        loopRegion = state.loop;
+
+        isUpdatingLoopRegion = true;
+
         if (loopRegion.isValid()) {
-            onLoopRegionChanged(loopRegion.startTime, loopRegion.endTime, loopRegion.enabled);
+            timeline->setLoopRegion(loopRegion.startTime, loopRegion.endTime);
+            timeline->setLoopEnabled(loopRegion.enabled);
         } else {
-            onLoopRegionChanged(-1.0, -1.0, false);
+            timeline->clearLoopRegion();
+        }
+
+        isUpdatingLoopRegion = false;
+
+        if (selectionOverlay) {
+            selectionOverlay->repaint();
+        }
+
+        if (onLoopRegionChanged) {
+            if (loopRegion.isValid()) {
+                onLoopRegionChanged(loopRegion.startTime, loopRegion.endTime, loopRegion.enabled);
+            } else {
+                onLoopRegionChanged(-1.0, -1.0, false);
+            }
         }
     }
-}
 
-void MainView::displayConfigChanged(const TimelineState& state) {
-    // Update grid division display when display config changes
-    updateGridDivisionDisplay();
+    // Display config changes
+    if (hasFlag(changes, ChangeFlags::Display)) {
+        updateGridDivisionDisplay();
 
-    // Notify external listeners about grid quantize change
-    if (onGridQuantizeChanged) {
-        const auto& gq = state.display.gridQuantize;
-        onGridQuantizeChanged(gq.autoGrid, gq.numerator, gq.denominator, false);
-    }
-}
-
-void MainView::punchStateChanged(const TimelineState& state) {
-    // Notify external listeners about punch region change
-    if (onPunchRegionChanged) {
-        if (state.punch.isValid()) {
-            onPunchRegionChanged(state.punch.startTime, state.punch.endTime,
-                                 state.punch.punchInEnabled, state.punch.punchOutEnabled);
-        } else {
-            onPunchRegionChanged(-1.0, -1.0, false, false);
+        if (onGridQuantizeChanged) {
+            const auto& gq = state.display.gridQuantize;
+            onGridQuantizeChanged(gq.autoGrid, gq.numerator, gq.denominator, false);
         }
     }
+
+    // Punch changes
+    if (hasFlag(changes, ChangeFlags::Punch)) {
+        if (onPunchRegionChanged) {
+            if (state.punch.isValid()) {
+                onPunchRegionChanged(state.punch.startTime, state.punch.endTime,
+                                     state.punch.punchInEnabled, state.punch.punchOutEnabled);
+            } else {
+                onPunchRegionChanged(-1.0, -1.0, false, false);
+            }
+        }
+    }
+
+    // Always sync cached state
+    syncStateFromController();
 }
 
 // ===== TrackManagerListener Implementation =====

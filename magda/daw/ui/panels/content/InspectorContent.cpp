@@ -1637,14 +1637,15 @@ void InspectorContent::clipSelectionChanged(magda::ClipId clipId) {
 // ============================================================================
 // TimelineStateListener
 
-void InspectorContent::timelineStateChanged(const magda::TimelineState& /*state*/) {}
-
-void InspectorContent::tempoStateChanged(const magda::TimelineState& state) {
-    DBG("InspectorContent::tempoStateChanged - bpm=" << state.tempo.bpm << ", selectionType="
-                                                     << static_cast<int>(currentSelectionType_));
-    if (currentSelectionType_ == magda::SelectionType::Clip) {
-        DBG("  -> updating clip display");
-        updateFromSelectedClip();
+void InspectorContent::timelineStateChanged(const magda::TimelineState& state,
+                                            magda::ChangeFlags changes) {
+    if (magda::hasFlag(changes, magda::ChangeFlags::Tempo)) {
+        DBG("InspectorContent::timelineStateChanged(Tempo) - bpm="
+            << state.tempo.bpm << ", selectionType=" << static_cast<int>(currentSelectionType_));
+        if (currentSelectionType_ == magda::SelectionType::Clip) {
+            DBG("  -> updating clip display");
+            updateFromSelectedClip();
+        }
     }
 }
 

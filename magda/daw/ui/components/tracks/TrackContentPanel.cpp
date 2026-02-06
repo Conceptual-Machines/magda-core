@@ -141,37 +141,47 @@ void TrackContentPanel::setController(TimelineController* controller) {
 
 // ===== TimelineStateListener Implementation =====
 
-void TrackContentPanel::timelineStateChanged(const TimelineState& state) {
-    // General state change - sync cached values
-    timelineLength = state.timelineLength;
-    displayMode = state.display.timeDisplayMode;
+void TrackContentPanel::timelineStateChanged(const TimelineState& state, ChangeFlags changes) {
+    bool needsRepaint = false;
+
+    // Zoom/scroll changes
+    if (hasFlag(changes, ChangeFlags::Zoom) || hasFlag(changes, ChangeFlags::Scroll)) {
+        currentZoom = state.zoom.horizontalZoom;
+        needsRepaint = true;
+    }
+
+    // General cache sync with dirty checks
+    if (timelineLength != state.timelineLength) {
+        timelineLength = state.timelineLength;
+        needsRepaint = true;
+    }
+    if (displayMode != state.display.timeDisplayMode) {
+        displayMode = state.display.timeDisplayMode;
+        needsRepaint = true;
+    }
+
+    // Tempo/time-sig don't affect grid pixel positions (ppb zoom)
     tempoBPM = state.tempo.bpm;
     timeSignatureNumerator = state.tempo.timeSignatureNumerator;
     timeSignatureDenominator = state.tempo.timeSignatureDenominator;
 
-    // Manage edit cursor blink timer
+    // Manage edit cursor blink timer (unconditional)
     if (state.editCursorPosition >= 0) {
-        // Edit cursor is active - reset blink to visible and ensure timer is running
         editCursorBlinkVisible_ = true;
         if (!isTimerRunning()) {
             startTimer(EDIT_CURSOR_BLINK_MS);
         }
     } else {
-        // Edit cursor is hidden - stop blink timer
         if (isTimerRunning()) {
             stopTimer();
         }
     }
 
-    updateClipComponentPositions();
-    resized();
-    repaint();
-}
-
-void TrackContentPanel::zoomStateChanged(const TimelineState& state) {
-    currentZoom = state.zoom.horizontalZoom;
-    resized();
-    repaint();
+    if (needsRepaint) {
+        updateClipComponentPositions();
+        resized();
+        repaint();
+    }
 }
 
 void TrackContentPanel::paint(juce::Graphics& g) {

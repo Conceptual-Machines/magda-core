@@ -47,8 +47,7 @@ class TrackContentPanel : public juce::Component,
     bool keyPressed(const juce::KeyPress& key) override;
 
     // TimelineStateListener implementation
-    void timelineStateChanged(const TimelineState& state) override;
-    void zoomStateChanged(const TimelineState& state) override;
+    void timelineStateChanged(const TimelineState& state, ChangeFlags changes) override;
 
     // TrackManagerListener implementation
     void tracksChanged() override;

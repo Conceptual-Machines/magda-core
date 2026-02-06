@@ -59,8 +59,7 @@ class WaveformEditorContent : public PanelContent,
     void clipSelectionChanged(magda::ClipId clipId) override;
 
     // TimelineStateListener
-    void timelineStateChanged(const TimelineState& state) override;
-    void playheadStateChanged(const TimelineState& state) override;
+    void timelineStateChanged(const TimelineState& state, ChangeFlags changes) override;
 
     // Set the clip to edit
     void setClip(magda::ClipId clipId);

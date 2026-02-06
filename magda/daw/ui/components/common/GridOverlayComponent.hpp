@@ -61,8 +61,7 @@ class GridOverlayComponent : public juce::Component, public TimelineStateListene
     }
 
     // TimelineStateListener implementation
-    void timelineStateChanged(const TimelineState& state) override;
-    void zoomStateChanged(const TimelineState& state) override;
+    void timelineStateChanged(const TimelineState& state, ChangeFlags changes) override;
 
   private:
     // Controller reference (not owned)

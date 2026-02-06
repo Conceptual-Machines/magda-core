@@ -1058,20 +1058,26 @@ void PianoRollContent::clipDragPreview(magda::ClipId clipId, double previewStart
 // TimelineStateListener
 // ============================================================================
 
-void PianoRollContent::timelineStateChanged(const magda::TimelineState& state) {
-    // General state changes (tempo, time signature, etc.)
-    updateTimeRuler();
-    updateGridSize();
-    repaint();
-}
-
-void PianoRollContent::playheadStateChanged(const magda::TimelineState& state) {
-    // Update grid component with current playback position
-    if (gridComponent_) {
-        gridComponent_->setPlayheadPosition(state.playhead.playbackPosition);
+void PianoRollContent::timelineStateChanged(const magda::TimelineState& state,
+                                            magda::ChangeFlags changes) {
+    // Playhead changes
+    if (magda::hasFlag(changes, magda::ChangeFlags::Playhead)) {
+        if (gridComponent_) {
+            gridComponent_->setPlayheadPosition(state.playhead.playbackPosition);
+        }
+        if (timeRuler_) {
+            timeRuler_->setPlayheadPosition(state.playhead.playbackPosition);
+        }
     }
-    if (timeRuler_) {
-        timeRuler_->setPlayheadPosition(state.playhead.playbackPosition);
+
+    // Tempo, display, timeline, or zoom changes - update ruler and grid
+    if (magda::hasFlag(changes, magda::ChangeFlags::Tempo) ||
+        magda::hasFlag(changes, magda::ChangeFlags::Display) ||
+        magda::hasFlag(changes, magda::ChangeFlags::Timeline) ||
+        magda::hasFlag(changes, magda::ChangeFlags::Zoom)) {
+        updateTimeRuler();
+        updateGridSize();
+        repaint();
     }
 }
 
