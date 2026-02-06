@@ -126,6 +126,12 @@ class WaveformGridComponent : public juce::Component {
     /** Snap a source-file time to the nearest grid line */
     double snapTimeToGrid(double time) const;
 
+    /** Enable/disable snap-to-grid for drag operations */
+    void setSnapEnabled(bool enabled);
+
+    /** Get snap state */
+    bool isSnapEnabled() const;
+
     // ========================================================================
     // Warp Mode
     // ========================================================================
@@ -227,6 +233,7 @@ class WaveformGridComponent : public juce::Component {
     // Beat grid state
     GridResolution gridResolution_ = GridResolution::Off;
     double customGridBeats_ = 0.0;           // When > 0, overrides enum-based resolution
+    bool snapEnabled_ = false;               // Snap drag operations to grid
     magda::TimeRuler* timeRuler_ = nullptr;  // not owned — reads tempo/timeSig + bar origin
 
     // Layout info shared between paint helpers

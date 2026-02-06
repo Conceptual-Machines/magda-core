@@ -262,6 +262,16 @@ WaveformEditorContent::WaveformEditorContent() {
     };
     addAndMakeVisible(gridDenominatorLabel_.get());
 
+    // Snap toggle button
+    snapButton_ = std::make_unique<juce::TextButton>("SNAP");
+    snapButton_->setClickingTogglesState(true);
+    snapButton_->setToggleState(false, juce::dontSendNotification);
+    snapButton_->setLookAndFeel(buttonLookAndFeel_.get());
+    snapButton_->onClick = [this]() {
+        gridComponent_->setSnapEnabled(snapButton_->getToggleState());
+    };
+    addAndMakeVisible(snapButton_.get());
+
     // Create waveform grid component
     gridComponent_ = std::make_unique<WaveformGridComponent>();
     gridComponent_->setRelativeMode(relativeTimeMode_);
@@ -348,9 +358,10 @@ WaveformEditorContent::~WaveformEditorContent() {
     magda::ClipManager::getInstance().removeListener(this);
 
     // Clear look and feel before destruction
-    if (timeModeButton_) {
+    if (timeModeButton_)
         timeModeButton_->setLookAndFeel(nullptr);
-    }
+    if (snapButton_)
+        snapButton_->setLookAndFeel(nullptr);
 }
 
 // ============================================================================
@@ -374,6 +385,7 @@ void WaveformEditorContent::resized() {
         gridNumeratorLabel_->setBounds(0, 0, 0, 0);
         gridSlashLabel_->setBounds(0, 0, 0, 0);
         gridDenominatorLabel_->setBounds(0, 0, 0, 0);
+        snapButton_->setBounds(0, 0, 0, 0);
         timeRuler_->setBounds(0, 0, 0, 0);
         viewport_->setBounds(0, 0, 0, 0);
         if (playheadOverlay_)
@@ -388,6 +400,8 @@ void WaveformEditorContent::resized() {
     gridNumeratorLabel_->setBounds(toolbarArea.removeFromLeft(28).reduced(2));
     gridSlashLabel_->setBounds(toolbarArea.removeFromLeft(10).reduced(0, 2));
     gridDenominatorLabel_->setBounds(toolbarArea.removeFromLeft(28).reduced(2));
+    toolbarArea.removeFromLeft(4);
+    snapButton_->setBounds(toolbarArea.removeFromLeft(44).reduced(2));
 
     // Time ruler below toolbar
     auto rulerArea = bounds.removeFromTop(TIME_RULER_HEIGHT);

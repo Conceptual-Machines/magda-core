@@ -761,8 +761,17 @@ double WaveformGridComponent::snapTimeToGrid(double time) const {
         return time;
     }
     double secondsPerGrid = beatsPerGrid * 60.0 / bpm;
-    double snapped = std::round(time / secondsPerGrid) * secondsPerGrid;
+    double origin = timeRuler_ ? displayInfo_.sourceToTimeline(timeRuler_->getBarOrigin()) : 0.0;
+    double snapped = std::round((time - origin) / secondsPerGrid) * secondsPerGrid + origin;
     return snapped;
+}
+
+void WaveformGridComponent::setSnapEnabled(bool enabled) {
+    snapEnabled_ = enabled;
+}
+
+bool WaveformGridComponent::isSnapEnabled() const {
+    return snapEnabled_;
 }
 
 void WaveformGridComponent::setWarpMode(bool enabled) {
@@ -975,9 +984,8 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
         if (newWarpTime < 0.0)
             newWarpTime = 0.0;
 
-        // Snap to grid unless Alt is held
-        // Snap in timeline coordinates to align with visual grid lines, then convert back
-        if (!event.mods.isAltDown() && gridResolution_ != GridResolution::Off) {
+        // Snap to grid when snap is enabled and Alt is not held
+        if (snapEnabled_ && !event.mods.isAltDown()) {
             double timelinePos = displayInfo_.sourceToTimeline(newWarpTime);
             timelinePos = snapTimeToGrid(timelinePos);
             newWarpTime = displayInfo_.timelineToSource(timelinePos);

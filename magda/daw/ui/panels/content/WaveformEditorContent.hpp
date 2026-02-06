@@ -104,6 +104,7 @@ class WaveformEditorContent : public PanelContent,
     std::unique_ptr<DraggableValueLabel> gridNumeratorLabel_;
     std::unique_ptr<DraggableValueLabel> gridDenominatorLabel_;
     std::unique_ptr<juce::Label> gridSlashLabel_;
+    std::unique_ptr<juce::TextButton> snapButton_;
     int gridNumerator_ = 1;
     int gridDenominator_ = 4;
 
