@@ -148,7 +148,7 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
     // When looped, draw the remaining source audio beyond the loop end
     // so user can see and extend the loop range.
     // This must be OUTSIDE the clipped region above.
-    if (displayInfo_.isLooped() &&
+    if (showPostLoop_ && displayInfo_.isLooped() &&
         displayInfo_.fullSourceExtentSeconds > displayInfo_.loopEndPositionSeconds) {
         double remainingStart = displayInfo_.loopEndPositionSeconds;
         double remainingEnd = displayInfo_.fullSourceExtentSeconds;
@@ -293,9 +293,9 @@ void WaveformGridComponent::paintWarpedWaveform(juce::Graphics& g, const magda::
         double warpTime;
     };
 
-    // Use pre-computed visible source range from ClipDisplayInfo
-    double visibleStart = displayInfo_.sourceFileStart;
-    double visibleEnd = displayInfo_.sourceFileEnd;
+    // Use full drawable range so pre-offset/pre-loopStart audio is visible
+    double visibleStart = displayInfo_.fullDrawStartSeconds;
+    double visibleEnd = displayInfo_.fullDrawEndSeconds;
 
     // First, collect and sort all markers by warpTime
     std::vector<WarpPoint> allMarkers;
@@ -505,8 +505,11 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     }
 
     // Ghost overlays — dim everything outside the active source region
+    // When pre/post loop visibility is off, use fully opaque overlay to hide those regions
     {
-        auto ghostColour = DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND).withAlpha(0.7f);
+        float leftGhostAlpha = showPreLoop_ ? 0.7f : 1.0f;
+        float rightGhostAlpha = showPostLoop_ ? 0.7f : 1.0f;
+        auto bgColour = DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND);
         int clipStartX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds);
 
         // In loop mode, the right boundary is the loop end (arrangement clip length is irrelevant)
@@ -535,7 +538,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
             }
             int leftEdge = bounds.getX();
             if (leftBoundaryX > leftEdge) {
-                g.setColour(ghostColour);
+                g.setColour(bgColour.withAlpha(leftGhostAlpha));
                 g.fillRect(juce::Rectangle<int>(leftEdge, bounds.getY(), leftBoundaryX - leftEdge,
                                                 bounds.getHeight()));
             }
@@ -544,7 +547,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         // Right ghost: everything after the active region boundary
         int rightEdge = bounds.getRight();
         if (rightBoundaryX < rightEdge) {
-            g.setColour(ghostColour);
+            g.setColour(bgColour.withAlpha(rightGhostAlpha));
             g.fillRect(juce::Rectangle<int>(rightBoundaryX, bounds.getY(),
                                             rightEdge - rightBoundaryX, bounds.getHeight()));
         }
@@ -811,17 +814,14 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
     int x = event.x;
     bool shiftHeld = event.mods.isShiftDown();
 
+    // Right-click context menu (all modes)
+    if (event.mods.isPopupMenu()) {
+        showContextMenu(event);
+        return;
+    }
+
     // Warp mode interaction
     if (warpMode_) {
-        // Right-click on marker: remove it
-        if (event.mods.isPopupMenu()) {
-            int markerIndex = findMarkerAtPixel(x);
-            if (markerIndex >= 0 && onWarpMarkerRemove) {
-                onWarpMarkerRemove(markerIndex);
-            }
-            return;
-        }
-
         // Check if clicking on an existing marker to drag it
         int markerIndex = findMarkerAtPixel(x);
         if (markerIndex >= 0) {
@@ -1242,6 +1242,34 @@ double WaveformGridComponent::snapToNearestTransient(double time) const {
         }
     }
     return closest;
+}
+
+void WaveformGridComponent::showContextMenu(const juce::MouseEvent& event) {
+    juce::PopupMenu menu;
+
+    menu.addItem(1, "Show Pre-Marker Audio", true, showPreLoop_);
+    menu.addItem(2, "Show Post-Marker Audio", true, showPostLoop_);
+
+    int markerIndex = -1;
+    if (warpMode_) {
+        markerIndex = findMarkerAtPixel(event.x);
+        if (markerIndex >= 0) {
+            menu.addSeparator();
+            menu.addItem(3, "Remove Warp Marker");
+        }
+    }
+
+    menu.showMenuAsync(juce::PopupMenu::Options(), [this, markerIndex](int result) {
+        if (result == 1) {
+            showPreLoop_ = !showPreLoop_;
+            repaint();
+        } else if (result == 2) {
+            showPostLoop_ = !showPostLoop_;
+            repaint();
+        } else if (result == 3 && markerIndex >= 0 && onWarpMarkerRemove) {
+            onWarpMarkerRemove(markerIndex);
+        }
+    });
 }
 
 void WaveformGridComponent::mouseDoubleClick(const juce::MouseEvent& event) {

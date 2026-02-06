@@ -217,6 +217,10 @@ class WaveformGridComponent : public juce::Component {
     int draggingMarkerIndex_ = -1;
     double dragStartWarpTime_ = 0.0;
 
+    // Pre/post loop visibility
+    bool showPreLoop_ = true;
+    bool showPostLoop_ = true;
+
     // Beat grid state
     GridResolution gridResolution_ = GridResolution::Off;
     magda::TimeRuler* timeRuler_ = nullptr;  // not owned — reads tempo/timeSig
@@ -244,6 +248,7 @@ class WaveformGridComponent : public juce::Component {
     void paintWarpMarkers(juce::Graphics& g, const magda::ClipInfo& clip);
     void paintClipBoundaries(juce::Graphics& g);
     void paintNoClipMessage(juce::Graphics& g);
+    void showContextMenu(const juce::MouseEvent& event);
 
     // Hit testing helpers
     bool isNearLeftEdge(int x, const magda::ClipInfo& clip) const;
