@@ -87,6 +87,14 @@ juce_add_binary_data(MagdaAssets
     # Mixer knob icons
     ../../assets/icons/knob/knob_body.svg
     ../../assets/icons/knob/knob_pointer.svg
+    # View toolbar icons
+    ../../assets/icons/zoom_out_map.svg
+    ../../assets/icons/fit_width.svg
+    ../../assets/icons/compact.svg
+    ../../assets/icons/large.svg
+    # I/O routing icons
+    ../../assets/icons/IO/Input.svg
+    ../../assets/icons/IO/Output.svg
     # Punch in/out icons
     ../../assets/icons/punchinout/punchin.svg
     ../../assets/icons/punchinout/punchin_on.svg

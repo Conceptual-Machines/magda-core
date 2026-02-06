@@ -100,26 +100,30 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
         iconColor = hoverColor;
     }
 
+    // Corner radius: proportional to smaller dimension, capped
+    float cornerRadius = juce::jmin(getWidth(), getHeight()) * 0.15f;
+    cornerRadius = juce::jlimit(2.0f, 8.0f, cornerRadius);
+
     // Draw background
     if (isActive && hasActiveBackgroundColor) {
         g.setColour(activeBackgroundColor);
-        g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
+        g.fillRoundedRectangle(getLocalBounds().toFloat(), cornerRadius);
     } else if (shouldDrawButtonAsDown) {
         g.setColour(iconColor.withAlpha(0.2f));
-        g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
+        g.fillRoundedRectangle(getLocalBounds().toFloat(), cornerRadius);
     } else if (shouldDrawButtonAsHighlighted) {
         g.setColour(iconColor.withAlpha(0.1f));
-        g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
+        g.fillRoundedRectangle(getLocalBounds().toFloat(), cornerRadius);
     } else if (hasNormalBackgroundColor) {
         g.setColour(normalBackgroundColor);
-        g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
+        g.fillRoundedRectangle(getLocalBounds().toFloat(), cornerRadius);
     }
 
     // Draw border if set
     if (hasBorder) {
         g.setColour(borderColor);
-        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(borderThickness * 0.5f), 2.0f,
-                               borderThickness);
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(borderThickness * 0.5f),
+                               cornerRadius, borderThickness);
     }
 
     // Calculate icon bounds (centered with some padding)

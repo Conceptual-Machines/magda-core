@@ -125,9 +125,6 @@ class MainView : public juce::Component,
     std::unique_ptr<juce::Viewport> trackHeadersViewport;
     std::unique_ptr<TrackHeadersPanel> trackHeadersPanel;
 
-    // Arrangement lock button
-    std::unique_ptr<SvgButton> arrangementLockButton;
-
     // Track content viewport (both horizontal and vertical scroll)
     std::unique_ptr<juce::Viewport> trackContentViewport;
     std::unique_ptr<TrackContentPanel> trackContentPanel;
@@ -214,6 +211,8 @@ class MainView : public juce::Component,
     void setupComponents();
     void setupCallbacks();
     void resetZoomToFitTimeline();
+    void zoomToSelection();
+    void setAllTrackHeights(int height);
     void syncStateFromController();
 
     // Resize handle helper methods
@@ -238,6 +237,12 @@ class MainView : public juce::Component,
 
     // Audio engine reference for metering
     AudioEngine* audioEngine_ = nullptr;
+
+    // Corner toolbar buttons (above track headers)
+    std::unique_ptr<SvgButton> zoomFitButton;
+    std::unique_ptr<SvgButton> zoomSelButton;
+    std::unique_ptr<SvgButton> trackCompactButton;
+    std::unique_ptr<SvgButton> trackExpandButton;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainView)
 };

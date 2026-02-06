@@ -136,13 +136,6 @@ void MainView::setupComponents() {
                                              false);  // false = don't delete
     addAndMakeVisible(*trackHeadersViewport);
 
-    // Create arrangement lock button
-    arrangementLockButton = std::make_unique<SvgButton>("ArrangementLock", BinaryData::lock_svg,
-                                                        BinaryData::lock_svgSize);
-    arrangementLockButton->setTooltip("Toggle arrangement lock (F4)");
-    arrangementLockButton->onClick = [this]() { toggleArrangementLock(); };
-    addAndMakeVisible(arrangementLockButton.get());
-
     // Create track content viewport
     trackContentViewport = std::make_unique<juce::Viewport>();
     trackContentViewport->setWantsKeyboardFocus(
@@ -237,7 +230,36 @@ void MainView::setupComponents() {
     };
     addAndMakeVisible(*verticalZoomScrollBar);
 
-    // Layout debug panel removed for now
+    // Corner toolbar buttons (above track headers)
+    // Zoom icon buttons
+    auto setupCornerButton = [this](std::unique_ptr<SvgButton>& btn, const juce::String& name,
+                                    const char* svgData, size_t svgSize) {
+        btn = std::make_unique<SvgButton>(name, svgData, svgSize);
+        btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
+        btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        btn->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        btn->setBorderThickness(1.0f);
+        btn->setWantsKeyboardFocus(false);
+        addAndMakeVisible(*btn);
+    };
+
+    setupCornerButton(zoomFitButton, "ZoomFit", BinaryData::zoom_out_map_svg,
+                      BinaryData::zoom_out_map_svgSize);
+    zoomFitButton->onClick = [this]() { resetZoomToFitTimeline(); };
+
+    setupCornerButton(zoomSelButton, "ZoomSel", BinaryData::fit_width_svg,
+                      BinaryData::fit_width_svgSize);
+    zoomSelButton->onClick = [this]() { zoomToSelection(); };
+
+    setupCornerButton(trackCompactButton, "TrackCompact", BinaryData::compact_svg,
+                      BinaryData::compact_svgSize);
+    trackCompactButton->onClick = [this]() { setAllTrackHeights(60); };
+
+    setupCornerButton(trackExpandButton, "TrackExpand", BinaryData::large_svg,
+                      BinaryData::large_svgSize);
+    trackExpandButton->onClick = [this]() { setAllTrackHeights(200); };
 
     // Set up scroll synchronization
     trackContentViewport->getHorizontalScrollBar().addListener(this);
@@ -541,12 +563,29 @@ void MainView::resized() {
     // Timeline viewport at the top - offset by track header width
     auto timelineArea = bounds.removeFromTop(getTimelineHeight());
 
-    // Position buttons in corner above track headers
-    auto buttonArea = headerColumn.removeFrom(timelineArea, trackHeaderWidth);
-    auto topRow = buttonArea.removeFromTop(35);
+    // Corner toolbar area above track headers — 2x2 icon grid (left-aligned, half-size)
+    auto cornerArea = headerColumn.removeFrom(timelineArea, trackHeaderWidth);
+    {
+        int btnSize = 22;
+        int gap = 2;
+        int gridW = btnSize * 2 + gap;
+        int gridH = btnSize * 2 + gap;
+        // Left-aligned, vertically centred
+        auto grid = juce::Rectangle<int>(cornerArea.getX() + 4, cornerArea.getCentreY() - gridH / 2,
+                                         gridW, gridH);
 
-    // Lock button
-    arrangementLockButton->setBounds(topRow.removeFromLeft(35).reduced(3));
+        auto topRow = grid.removeFromTop(btnSize);
+        grid.removeFromTop(gap);
+        auto botRow = grid.removeFromTop(btnSize);
+
+        zoomFitButton->setBounds(topRow.removeFromLeft(btnSize));
+        topRow.removeFromLeft(gap);
+        zoomSelButton->setBounds(topRow.removeFromLeft(btnSize));
+
+        trackCompactButton->setBounds(botRow.removeFromLeft(btnSize));
+        botRow.removeFromLeft(gap);
+        trackExpandButton->setBounds(botRow.removeFromLeft(btnSize));
+    }
 
     // Add padding space for the resize handle
     headerColumn.removeSpacing(timelineArea, layout.componentSpacing);
@@ -689,16 +728,6 @@ void MainView::toggleArrangementLock() {
     // Also update timeline component directly for now
     timeline->setArrangementLocked(newLockedState);
     timeline->repaint();
-
-    // Update lock button icon
-    if (newLockedState) {
-        arrangementLockButton->updateSvgData(BinaryData::lock_svg, BinaryData::lock_svgSize);
-        arrangementLockButton->setTooltip("Arrangement locked - Click to unlock (F4)");
-    } else {
-        arrangementLockButton->updateSvgData(BinaryData::lock_open_svg,
-                                             BinaryData::lock_open_svgSize);
-        arrangementLockButton->setTooltip("Arrangement unlocked - Click to lock (F4)");
-    }
 }
 
 bool MainView::isArrangementLocked() const {
@@ -1336,6 +1365,23 @@ void MainView::resetZoomToFitTimeline() {
 
     std::cout << "🎯 ZOOM RESET: timelineLength=" << timelineController->getState().timelineLength
               << ", zoom=" << timelineController->getState().zoom.horizontalZoom << std::endl;
+}
+
+void MainView::zoomToSelection() {
+    const auto& sel = timelineController->getState().selection;
+    if (sel.isActive()) {
+        timelineController->dispatch(ZoomToFitEvent{sel.startTime, sel.endTime, 0.05});
+    }
+}
+
+void MainView::setAllTrackHeights(int height) {
+    int numTracks = trackHeadersPanel->getNumTracks();
+    for (int i = 0; i < numTracks; ++i) {
+        trackHeadersPanel->setTrackHeight(i, height);
+        trackContentPanel->setTrackHeight(i, height);
+    }
+    updateContentSizes();
+    updateVerticalZoomScrollBar();
 }
 
 void MainView::clearTimeSelection() {
