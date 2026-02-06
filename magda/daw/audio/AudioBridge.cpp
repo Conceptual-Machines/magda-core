@@ -630,6 +630,15 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
         DBG("AudioBridge: Created WaveAudioClip (engine ID: " << engineClipId << ")");
     }
 
+    // 3b. REVERSE — must be handled before position/loop/offset sync.
+    // setIsReversed triggers updateReversedState() which internally transforms
+    // offset and loop points via reverseLoopPoints(). Return early so the
+    // subsequent sync steps don't overwrite those transformed values.
+    if (clip->isReversed != audioClipPtr->getIsReversed()) {
+        audioClipPtr->setIsReversed(clip->isReversed);
+        return;
+    }
+
     // 4. UPDATE clip position/length
     // Read seconds directly — BPM handler keeps these in sync for autoTempo clips.
     double engineStart = clip->startTime;
@@ -871,9 +880,7 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     if (std::abs(audioClipPtr->getBeatSensitivity() - clip->beatSensitivity) > 0.001f)
         audioClipPtr->setBeatSensitivity(clip->beatSensitivity);
 
-    // 10. PLAYBACK
-    if (clip->isReversed != audioClipPtr->getIsReversed())
-        audioClipPtr->setIsReversed(clip->isReversed);
+    // 10. PLAYBACK (isReversed handled at top of function)
 
     // 11. PER-CLIP MIX
     if (std::abs(audioClipPtr->getGainDB() - clip->gainDB) > 0.001f)

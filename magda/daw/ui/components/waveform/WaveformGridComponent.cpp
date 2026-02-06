@@ -121,6 +121,12 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
 
     g.saveState();
     if (g.reduceClipRegion(waveformRect)) {
+        // Reverse: flip graphics horizontally so waveform draws mirrored
+        if (clip.isReversed) {
+            g.addTransform(juce::AffineTransform::scale(-1.0f, 1.0f, waveformRect.getCentreX(),
+                                                        waveformRect.getCentreY()));
+        }
+
         if (warpMode_ && !warpMarkers_.empty()) {
             paintWarpedWaveform(g, clip, waveformRect, waveColour, vertZoom);
         } else {
@@ -165,10 +171,17 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
                                                   waveformRect.getHeight());
         auto drawRect = remainingRect.reduced(0, 4);
         if (drawRect.getWidth() > 0 && drawRect.getHeight() > 0) {
+            if (clip.isReversed) {
+                g.saveState();
+                g.addTransform(juce::AffineTransform::scale(-1.0f, 1.0f, drawRect.getCentreX(),
+                                                            drawRect.getCentreY()));
+            }
             // Draw dimmer to indicate it's outside the loop
             auto dimColour = waveColour.withAlpha(0.4f);
             thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, remainingFileStart,
                                           remainingFileEnd, dimColour, vertZoom);
+            if (clip.isReversed)
+                g.restoreState();
         }
     }
 }

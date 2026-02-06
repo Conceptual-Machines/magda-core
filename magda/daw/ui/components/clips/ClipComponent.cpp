@@ -167,6 +167,13 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                 : 0.0;
 
         if (pixelsPerSecond > 0.0) {
+            // Reverse: flip graphics horizontally so waveform draws mirrored
+            if (clip.isReversed) {
+                g.saveState();
+                g.addTransform(juce::AffineTransform::scale(-1.0f, 1.0f, waveformArea.getCentreX(),
+                                                            waveformArea.getCentreY()));
+            }
+
             // Build ClipDisplayInfo for consistent calculations
             double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
             auto di = ClipDisplayInfo::from(clip, tempo);
@@ -324,6 +331,9 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                 thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, fileStart, fileEnd,
                                               waveColour);
             }
+            // Restore from reverse flip
+            if (clip.isReversed)
+                g.restoreState();
         }
     } else {
         // Fallback: draw placeholder if no audio source
