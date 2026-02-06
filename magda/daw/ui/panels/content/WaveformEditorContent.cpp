@@ -210,7 +210,7 @@ WaveformEditorContent::WaveformEditorContent() {
 
     // Grid resolution num/den controls (like transport header)
     auto applyGridBeats = [this]() {
-        if (gridNumerator_ <= 0) {
+        if (!gridVisible_ || gridNumerator_ <= 0) {
             gridComponent_->setGridResolutionBeats(0.0);
         } else {
             double beats = static_cast<double>(gridNumerator_) * (4.0 / gridDenominator_);
@@ -220,13 +220,12 @@ WaveformEditorContent::WaveformEditorContent() {
 
     gridNumeratorLabel_ =
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Integer);
-    gridNumeratorLabel_->setRange(0.0, 128.0, 1.0);
+    gridNumeratorLabel_->setRange(1.0, 128.0, 1.0);
     gridNumeratorLabel_->setValue(static_cast<double>(gridNumerator_), juce::dontSendNotification);
     gridNumeratorLabel_->setTextColour(DarkTheme::getSecondaryTextColour());
     gridNumeratorLabel_->setShowFillIndicator(false);
     gridNumeratorLabel_->setFontSize(11.0f);
     gridNumeratorLabel_->setDoubleClickResetsValue(true);
-    gridNumeratorLabel_->setDrawBorder(false);
     gridNumeratorLabel_->onValueChange = [this, applyGridBeats]() {
         gridNumerator_ = static_cast<int>(gridNumeratorLabel_->getValue());
         applyGridBeats();
@@ -248,7 +247,6 @@ WaveformEditorContent::WaveformEditorContent() {
     gridDenominatorLabel_->setShowFillIndicator(false);
     gridDenominatorLabel_->setFontSize(11.0f);
     gridDenominatorLabel_->setDoubleClickResetsValue(true);
-    gridDenominatorLabel_->setDrawBorder(false);
     gridDenominatorLabel_->onValueChange = [this, applyGridBeats]() {
         int raw = static_cast<int>(gridDenominatorLabel_->getValue());
         int pow2 = 1;
@@ -273,11 +271,33 @@ WaveformEditorContent::WaveformEditorContent() {
     };
     addAndMakeVisible(snapButton_.get());
 
+    // Grid visibility toggle button
+    gridButton_ = std::make_unique<juce::TextButton>("GRID");
+    gridButton_->setClickingTogglesState(true);
+    gridButton_->setToggleState(gridVisible_, juce::dontSendNotification);
+    gridButton_->setLookAndFeel(buttonLookAndFeel_.get());
+    gridButton_->onClick = [this]() {
+        gridVisible_ = gridButton_->getToggleState();
+        if (gridVisible_ && gridNumerator_ > 0) {
+            double beats = static_cast<double>(gridNumerator_) * (4.0 / gridDenominator_);
+            gridComponent_->setGridResolutionBeats(beats);
+        } else {
+            gridComponent_->setGridResolutionBeats(0.0);
+        }
+    };
+    addAndMakeVisible(gridButton_.get());
+
     // Create waveform grid component
     gridComponent_ = std::make_unique<WaveformGridComponent>();
     gridComponent_->setRelativeMode(relativeTimeMode_);
     gridComponent_->setHorizontalZoom(horizontalZoom_);
     gridComponent_->setTimeRuler(timeRuler_.get());
+
+    // Apply initial grid resolution from num/den defaults
+    if (gridNumerator_ > 0) {
+        double beats = static_cast<double>(gridNumerator_) * (4.0 / gridDenominator_);
+        gridComponent_->setGridResolutionBeats(beats);
+    }
 
     // Create viewport and add grid
     viewport_ = std::make_unique<ScrollNotifyingViewport>();
@@ -400,6 +420,8 @@ WaveformEditorContent::~WaveformEditorContent() {
         timeModeButton_->setLookAndFeel(nullptr);
     if (snapButton_)
         snapButton_->setLookAndFeel(nullptr);
+    if (gridButton_)
+        gridButton_->setLookAndFeel(nullptr);
 }
 
 // ============================================================================
@@ -424,6 +446,7 @@ void WaveformEditorContent::resized() {
         gridSlashLabel_->setBounds(0, 0, 0, 0);
         gridDenominatorLabel_->setBounds(0, 0, 0, 0);
         snapButton_->setBounds(0, 0, 0, 0);
+        gridButton_->setBounds(0, 0, 0, 0);
         timeRuler_->setBounds(0, 0, 0, 0);
         viewport_->setBounds(0, 0, 0, 0);
         if (playheadOverlay_)
@@ -440,6 +463,8 @@ void WaveformEditorContent::resized() {
     gridDenominatorLabel_->setBounds(toolbarArea.removeFromLeft(28).reduced(2));
     toolbarArea.removeFromLeft(4);
     snapButton_->setBounds(toolbarArea.removeFromLeft(44).reduced(2));
+    toolbarArea.removeFromLeft(4);
+    gridButton_->setBounds(toolbarArea.removeFromLeft(44).reduced(2));
 
     // Time ruler below toolbar
     auto rulerArea = bounds.removeFromTop(TIME_RULER_HEIGHT);
