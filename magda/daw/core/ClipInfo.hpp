@@ -21,6 +21,9 @@ inline double wrapPhase(double value, double period) {
     return result;
 }
 
+/** Fade curve type — matches tracktion::AudioFadeCurve::Type values */
+enum class FadeCurve : int { Linear = 1, Convex = 2, Concave = 3, SCurve = 4 };
+
 /**
  * @brief MIDI note data for MIDI clips
  */

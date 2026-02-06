@@ -20,21 +20,21 @@
 
 namespace magda {
 
-// Matches tracktion::AudioFadeCurve exactly
-static float computeFadeGain(float alpha, int fadeType) {
+static float computeFadeGain(float alpha, FadeCurve curve) {
     const float a = alpha * juce::MathConstants<float>::halfPi;
-    switch (fadeType) {
-        case 2:  // convex
+    switch (curve) {
+        case FadeCurve::Convex:
             return std::sin(a);
-        case 3:  // concave
+        case FadeCurve::Concave:
             return 1.0f - std::cos(a);
-        case 4: {  // sCurve — blend of concave and convex
+        case FadeCurve::SCurve: {
             float concave = 1.0f - std::cos(a);
             float convex = std::sin(a);
             return (1.0f - alpha) * concave + alpha * convex;
         }
+        case FadeCurve::Linear:
         default:
-            return alpha;  // linear (type 1)
+            return alpha;
     }
 }
 
@@ -562,7 +562,7 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
             // Trace the fade curve from right to left (gain 1→0)
             for (int i = NUM_STEPS; i >= 0; --i) {
                 float alpha = static_cast<float>(i) / static_cast<float>(NUM_STEPS);
-                float gain = computeFadeGain(alpha, clip.fadeInType);
+                float gain = computeFadeGain(alpha, static_cast<FadeCurve>(clip.fadeInType));
                 float x = areaLeft + alpha * fadeInPx;
                 float y = areaTop + (1.0f - gain) * areaHeight;
                 overlay.lineTo(x, y);
@@ -576,7 +576,7 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
             juce::Path curveLine;
             for (int i = 0; i <= NUM_STEPS; ++i) {
                 float alpha = static_cast<float>(i) / static_cast<float>(NUM_STEPS);
-                float gain = computeFadeGain(alpha, clip.fadeInType);
+                float gain = computeFadeGain(alpha, static_cast<FadeCurve>(clip.fadeInType));
                 float x = areaLeft + alpha * fadeInPx;
                 float y = areaTop + (1.0f - gain) * areaHeight;
                 if (i == 0)
@@ -607,7 +607,8 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
             for (int i = NUM_STEPS; i >= 0; --i) {
                 float alpha = static_cast<float>(i) / static_cast<float>(NUM_STEPS);
                 // alpha=0 at fadeStart (gain=1), alpha=1 at areaRight (gain=0)
-                float gain = computeFadeGain(1.0f - alpha, clip.fadeOutType);
+                float gain =
+                    computeFadeGain(1.0f - alpha, static_cast<FadeCurve>(clip.fadeOutType));
                 float x = fadeStart + alpha * fadeOutPx;
                 float y = areaTop + (1.0f - gain) * areaHeight;
                 overlay.lineTo(x, y);
@@ -621,7 +622,8 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
             juce::Path curveLine;
             for (int i = 0; i <= NUM_STEPS; ++i) {
                 float alpha = static_cast<float>(i) / static_cast<float>(NUM_STEPS);
-                float gain = computeFadeGain(1.0f - alpha, clip.fadeOutType);
+                float gain =
+                    computeFadeGain(1.0f - alpha, static_cast<FadeCurve>(clip.fadeOutType));
                 float x = fadeStart + alpha * fadeOutPx;
                 float y = areaTop + (1.0f - gain) * areaHeight;
                 if (i == 0)
