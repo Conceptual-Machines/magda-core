@@ -82,7 +82,7 @@ Files under 300 lines, header files with only declarations, and test files shoul
 
 ### Architecture
 - **DAW Core** (`magda/daw/`): Main application using JUCE and Tracktion Engine
-- **Agents System** (`magda/agents/`): Multi-agent audio system
+- **Agents System** (`magda/agents/`): Multi-agent system
 - **UI Components** (`magda/daw/ui/`): JUCE-based user interface
 - **Audio Engine** (`magda/daw/engine/`): Tracktion Engine wrapper and audio processing
 
