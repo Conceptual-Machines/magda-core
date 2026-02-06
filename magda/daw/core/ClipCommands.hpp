@@ -364,4 +364,52 @@ class RenderClipCommand : public UndoableCommand {
     bool success_ = false;
 };
 
+/**
+ * @brief Per-track state for RenderTimeSelectionCommand undo
+ */
+struct RenderTrackState {
+    TrackId trackId = INVALID_TRACK_ID;
+    std::vector<ClipInfo> originalClips;
+    ClipId newClipId = INVALID_CLIP_ID;
+    juce::File renderedFile;
+};
+
+/**
+ * @brief Command for rendering all audio within a time selection range per-track
+ *
+ * Renders all overlapping clips on each track within the selection to a single
+ * clean clip per track. Replaces the originals (standard "consolidate" behavior).
+ * Does NOT include track or master plugins.
+ */
+class RenderTimeSelectionCommand : public UndoableCommand {
+  public:
+    RenderTimeSelectionCommand(double startTime, double endTime,
+                               const std::vector<TrackId>& trackIds,
+                               TracktionEngineWrapper* engine);
+
+    juce::String getDescription() const override {
+        return "Render Time Selection";
+    }
+
+    void execute() override;
+    void undo() override;
+
+    bool wasSuccessful() const {
+        return success_;
+    }
+
+    const std::vector<ClipId>& getNewClipIds() const {
+        return newClipIds_;
+    }
+
+  private:
+    double startTime_;
+    double endTime_;
+    std::vector<TrackId> trackIds_;
+    TracktionEngineWrapper* engine_;
+    std::vector<RenderTrackState> trackStates_;
+    std::vector<ClipId> newClipIds_;
+    bool success_ = false;
+};
+
 }  // namespace magda

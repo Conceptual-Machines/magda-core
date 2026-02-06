@@ -1366,12 +1366,24 @@ void ClipComponent::showContextMenu() {
         menu.addItem(7, "Loop Settings...");
     }
 
-    // Render Clip (only for single audio clip)
-    if (!isMultiSelection) {
-        const auto* clipInfo = getClipInfo();
-        if (clipInfo && clipInfo->type == ClipType::Audio) {
+    // Render Clip(s) - available for audio clips (single or multi-selection)
+    {
+        bool allAudio = true;
+        if (isMultiSelection) {
+            for (auto cid : selectionManager.getSelectedClips()) {
+                auto* c = clipManager.getClip(cid);
+                if (!c || c->type != ClipType::Audio) {
+                    allAudio = false;
+                    break;
+                }
+            }
+        } else {
+            const auto* clipInfo = getClipInfo();
+            allAudio = clipInfo && clipInfo->type == ClipType::Audio;
+        }
+        if (allAudio) {
             menu.addSeparator();
-            menu.addItem(9, "Render Clip");
+            menu.addItem(9, isMultiSelection ? "Render Clips" : "Render Clip");
         }
     }
 

@@ -4,6 +4,7 @@
 
 #include "../audio/AudioBridge.hpp"
 #include "../engine/TracktionEngineWrapper.hpp"
+#include "TrackManager.hpp"
 
 namespace magda {
 
@@ -721,6 +722,197 @@ void RenderClipCommand::undo() {
         renderedFile_.deleteFile();
     }
 
+    success_ = false;
+}
+
+// ============================================================================
+// RenderTimeSelectionCommand
+// ============================================================================
+
+RenderTimeSelectionCommand::RenderTimeSelectionCommand(double startTime, double endTime,
+                                                       const std::vector<TrackId>& trackIds,
+                                                       TracktionEngineWrapper* engine)
+    : startTime_(startTime), endTime_(endTime), trackIds_(trackIds), engine_(engine) {}
+
+void RenderTimeSelectionCommand::execute() {
+    if (!engine_ || startTime_ >= endTime_ || trackIds_.empty()) {
+        std::cerr << "RenderTimeSelectionCommand: invalid inputs" << std::endl;
+        return;
+    }
+
+    auto* edit = engine_->getEdit();
+    auto* bridge = engine_->getAudioBridge();
+    if (!edit || !bridge) {
+        std::cerr << "RenderTimeSelectionCommand: no edit or bridge" << std::endl;
+        return;
+    }
+
+    auto& clipManager = ClipManager::getInstance();
+
+    // Stop transport and free playback context for offline rendering
+    auto& transport = edit->getTransport();
+    if (transport.isPlaying()) {
+        transport.stop(false, false);
+    }
+    te::freePlaybackContextIfNotRecording(transport);
+
+    auto allTracks = te::getAllTracks(*edit);
+    juce::String timestamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S");
+
+    trackStates_.clear();
+    newClipIds_.clear();
+
+    for (auto trackId : trackIds_) {
+        // Get overlapping clips on this track
+        auto overlappingIds = clipManager.getClipsInRange(trackId, startTime_, endTime_);
+        if (overlappingIds.empty())
+            continue;
+
+        // Check all overlapping clips are audio
+        bool allAudio = true;
+        for (auto cid : overlappingIds) {
+            auto* c = clipManager.getClip(cid);
+            if (!c || c->type != ClipType::Audio) {
+                allAudio = false;
+                break;
+            }
+        }
+        if (!allAudio)
+            continue;
+
+        // Snapshot all overlapping clips for undo
+        RenderTrackState trackState;
+        trackState.trackId = trackId;
+        for (auto cid : overlappingIds) {
+            auto* c = clipManager.getClip(cid);
+            if (c)
+                trackState.originalClips.push_back(*c);
+        }
+
+        // Determine output file path from first overlapping clip's source
+        auto* firstClip = clipManager.getClip(overlappingIds[0]);
+        juce::File sourceFile(firstClip->audioFilePath);
+        juce::File rendersDir = sourceFile.getParentDirectory().getChildFile("renders");
+        rendersDir.createDirectory();
+
+        auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+        juce::String trackName = trackInfo ? trackInfo->name : "Track";
+        trackName = trackName.replaceCharacters(" /\\:", "____");
+        trackState.renderedFile =
+            rendersDir.getChildFile(trackName + "_rendered_" + timestamp + ".wav");
+
+        // Resolve TE track index
+        auto* teTrack = bridge->getAudioTrack(trackId);
+        if (!teTrack) {
+            std::cerr << "RenderTimeSelectionCommand: TE track not found for trackId " << trackId
+                      << std::endl;
+            continue;
+        }
+
+        int trackIndex = -1;
+        for (int i = 0; i < allTracks.size(); ++i) {
+            if (allTracks[i] == teTrack) {
+                trackIndex = i;
+                break;
+            }
+        }
+        if (trackIndex < 0)
+            continue;
+
+        // Build Renderer::Parameters
+        te::Renderer::Parameters params(*edit);
+        params.destFile = trackState.renderedFile;
+
+        auto& formatManager = engine_->getEngine()->getAudioFileFormatManager();
+        params.audioFormat = formatManager.getWavFormat();
+        params.bitDepth = 24;
+        params.sampleRateForAudio = edit->engine.getDeviceManager().getSampleRate();
+        params.blockSizeForAudio = 8192;
+        params.usePlugins = false;
+        params.useMasterPlugins = false;
+        params.checkNodesForAudio = false;
+
+        params.time = te::TimeRange(te::TimePosition::fromSeconds(startTime_),
+                                    te::TimePosition::fromSeconds(endTime_));
+
+        juce::BigInteger trackBits;
+        trackBits.setBit(trackIndex);
+        params.tracksToDo = trackBits;
+        // allowedClips empty = all clips on track in range
+
+        // Run render synchronously
+        std::atomic<float> progress{0.0f};
+        auto renderTask = std::make_unique<te::Renderer::RenderTask>("Render Time Selection",
+                                                                     params, &progress, nullptr);
+        while (true) {
+            auto status = renderTask->runJob();
+            if (status == juce::ThreadPoolJob::jobHasFinished)
+                break;
+            if (status != juce::ThreadPoolJob::jobNeedsRunningAgain)
+                break;
+        }
+        renderTask.reset();
+
+        // Verify render succeeded
+        if (!trackState.renderedFile.existsAsFile() || trackState.renderedFile.getSize() == 0) {
+            std::cerr << "RenderTimeSelectionCommand: render failed for track " << trackId
+                      << std::endl;
+            continue;
+        }
+
+        // Delete all overlapping clips
+        for (auto cid : overlappingIds) {
+            clipManager.deleteClip(cid);
+        }
+
+        // Create new clean clip at selection start with selection length
+        double newLength = endTime_ - startTime_;
+        juce::Colour colour = trackState.originalClips[0].colour;
+
+        trackState.newClipId = clipManager.createAudioClip(
+            trackId, startTime_, newLength, trackState.renderedFile.getFullPathName());
+
+        if (auto* newClip = clipManager.getClip(trackState.newClipId)) {
+            newClip->colour = colour;
+            newClip->name = trackName + " (rendered)";
+        }
+
+        newClipIds_.push_back(trackState.newClipId);
+        trackStates_.push_back(std::move(trackState));
+    }
+
+    if (!trackStates_.empty()) {
+        clipManager.forceNotifyClipsChanged();
+        success_ = true;
+    }
+}
+
+void RenderTimeSelectionCommand::undo() {
+    if (!success_)
+        return;
+
+    auto& clipManager = ClipManager::getInstance();
+
+    for (auto& trackState : trackStates_) {
+        // Delete the new rendered clip
+        if (trackState.newClipId != INVALID_CLIP_ID) {
+            clipManager.deleteClip(trackState.newClipId);
+            trackState.newClipId = INVALID_CLIP_ID;
+        }
+
+        // Restore all original clips
+        for (const auto& originalClip : trackState.originalClips) {
+            clipManager.restoreClip(originalClip);
+        }
+
+        // Delete rendered file
+        if (trackState.renderedFile.existsAsFile()) {
+            trackState.renderedFile.deleteFile();
+        }
+    }
+
+    clipManager.forceNotifyClipsChanged();
+    newClipIds_.clear();
     success_ = false;
 }
 
