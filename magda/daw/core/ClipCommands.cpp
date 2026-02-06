@@ -653,11 +653,17 @@ void RenderClipCommand::execute() {
         transport.stop(false, false);
     }
     te::freePlaybackContextIfNotRecording(transport);
+    // Restore playback after render if it was playing
+    auto restoreTransport = [wasPlaying, &transport]() {
+        if (wasPlaying)
+            transport.play(false);
+    };
 
     // Find track index in getAllTracks for tracksToDo bitset
     auto* teTrack = teClip->getTrack();
     if (!teTrack) {
         std::cerr << "RenderClipCommand: clip has no track" << std::endl;
+        restoreTransport();
         return;
     }
 
@@ -672,6 +678,7 @@ void RenderClipCommand::execute() {
 
     if (trackIndex < 0) {
         std::cerr << "RenderClipCommand: track not found in edit" << std::endl;
+        restoreTransport();
         return;
     }
 
@@ -716,6 +723,7 @@ void RenderClipCommand::execute() {
     // Verify render succeeded
     if (!renderedFile_.existsAsFile() || renderedFile_.getSize() == 0) {
         std::cerr << "RenderClipCommand: render failed, no output file" << std::endl;
+        restoreTransport();
         return;
     }
 
@@ -738,6 +746,7 @@ void RenderClipCommand::execute() {
         clipManager.forceNotifyClipsChanged();
     }
 
+    restoreTransport();
     success_ = true;
 }
 
@@ -790,7 +799,8 @@ void RenderTimeSelectionCommand::execute() {
 
     // Stop transport and free playback context for offline rendering
     auto& transport = edit->getTransport();
-    if (transport.isPlaying()) {
+    bool wasPlaying = transport.isPlaying();
+    if (wasPlaying) {
         transport.stop(false, false);
     }
     te::freePlaybackContextIfNotRecording(transport);
@@ -930,6 +940,9 @@ void RenderTimeSelectionCommand::execute() {
         clipManager.forceNotifyClipsChanged();
         success_ = true;
     }
+
+    if (wasPlaying)
+        transport.play(false);
 }
 
 void RenderTimeSelectionCommand::undo() {

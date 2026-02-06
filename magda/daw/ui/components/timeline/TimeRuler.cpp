@@ -61,6 +61,8 @@ void TimeRuler::setScrollOffset(int offsetPixels) {
 }
 
 void TimeRuler::setTempo(double bpm) {
+    // No repaint — callers (e.g. WaveformEditorContent) already repaint
+    // after adjusting zoom/scroll in response to tempo changes.
     tempo = bpm;
 }
 
