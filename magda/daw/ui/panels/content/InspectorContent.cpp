@@ -886,6 +886,7 @@ InspectorContent::InspectorContent() {
     clipPropsContainer_.addChildComponent(beatDetectionSectionLabel_);
 
     reverseToggle_.setButtonText("REVERSE");
+    reverseToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     reverseToggle_.setColour(juce::TextButton::buttonColourId,
                              DarkTheme::getColour(DarkTheme::SURFACE));
     reverseToggle_.setColour(juce::TextButton::buttonOnColourId,
@@ -1104,6 +1105,7 @@ InspectorContent::InspectorContent() {
     clipPropsContainer_.addChildComponent(channelsSectionLabel_);
 
     leftChannelToggle_.setButtonText("L");
+    leftChannelToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     leftChannelToggle_.setColour(juce::TextButton::buttonColourId,
                                  DarkTheme::getColour(DarkTheme::SURFACE));
     leftChannelToggle_.setColour(juce::TextButton::buttonOnColourId,
@@ -1122,6 +1124,7 @@ InspectorContent::InspectorContent() {
     clipPropsContainer_.addChildComponent(leftChannelToggle_);
 
     rightChannelToggle_.setButtonText("R");
+    rightChannelToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     rightChannelToggle_.setColour(juce::TextButton::buttonColourId,
                                   DarkTheme::getColour(DarkTheme::SURFACE));
     rightChannelToggle_.setColour(juce::TextButton::buttonOnColourId,
@@ -1575,25 +1578,41 @@ void InspectorContent::resized() {
         if (clipMixSectionLabel_.isVisible())
             addSeparator();
 
-        // Mix section (audio clips only) — includes Gain/Pan + Reverse/L/R
+        // Mix section (audio clips only) — 2-column: volume/pan, reverse/LR
         if (clipMixSectionLabel_.isVisible()) {
             clipMixSectionLabel_.setBounds(addRow(16));
             addSpace(4);
+            const int colGap = 8;
+            int halfWidth = (containerWidth - colGap) / 2;
+
+            // Row 1: [volume] | [pan]
             {
                 auto row = addRow(22);
-                int halfWidth = (containerWidth - 8) / 2;
                 clipGainValue_->setBounds(row.removeFromLeft(halfWidth));
-                row.removeFromLeft(8);
+                row.removeFromLeft(colGap);
                 clipPanValue_->setBounds(row.removeFromLeft(halfWidth));
             }
             addSpace(4);
+            // Row 2: [REVERSE centered] | [L] [R] centered
             {
                 auto row = addRow(22);
-                reverseToggle_.setBounds(row.removeFromLeft(70).reduced(0, 1));
-                row.removeFromLeft(8);
-                leftChannelToggle_.setBounds(row.removeFromLeft(30).reduced(0, 1));
-                row.removeFromLeft(4);
-                rightChannelToggle_.setBounds(row.removeFromLeft(30).reduced(0, 1));
+                auto left = row.removeFromLeft(halfWidth);
+                row.removeFromLeft(colGap);
+                auto right = row;
+
+                int revWidth = 70;
+                int revOffset = (left.getWidth() - revWidth) / 2;
+                reverseToggle_.setBounds(
+                    left.withX(left.getX() + revOffset).withWidth(revWidth).reduced(0, 1));
+
+                int btnWidth = 30;
+                int btnGap = 4;
+                int lrWidth = btnWidth * 2 + btnGap;
+                int lrOffset = (right.getWidth() - lrWidth) / 2;
+                auto lrArea = right.withX(right.getX() + lrOffset).withWidth(lrWidth);
+                leftChannelToggle_.setBounds(lrArea.removeFromLeft(btnWidth).reduced(0, 1));
+                lrArea.removeFromLeft(btnGap);
+                rightChannelToggle_.setBounds(lrArea.removeFromLeft(btnWidth).reduced(0, 1));
             }
         }
 
