@@ -207,58 +207,60 @@ WaveformEditorContent::WaveformEditorContent() {
     timeModeButton_->onClick = [this]() { setRelativeTimeMode(timeModeButton_->getToggleState()); };
     addAndMakeVisible(timeModeButton_.get());
 
-    // Create BPM label for toolbar
-    bpmLabel_ =
-        std::make_unique<juce::Label>("bpmLabel", juce::String::fromUTF8("\xe2\x80\x94 BPM"));
-    bpmLabel_->setFont(magda::FontManager::getInstance().getUIFont(11.0f));
-    bpmLabel_->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    bpmLabel_->setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(bpmLabel_.get());
-
-    // Create file path label for toolbar
-    filePathLabel_ = std::make_unique<juce::Label>("filePathLabel", "");
-    filePathLabel_->setFont(magda::FontManager::getInstance().getUIFont(10.0f));
-    filePathLabel_->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    filePathLabel_->setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(filePathLabel_.get());
-
-    // Create grid resolution combo box
-    gridResolutionCombo_ = std::make_unique<juce::ComboBox>("gridResolution");
-    gridResolutionCombo_->addItem("Off", 1);
-    gridResolutionCombo_->addItem("Bar", 2);
-    gridResolutionCombo_->addItem("Beat", 3);
-    gridResolutionCombo_->addItem("1/8", 4);
-    gridResolutionCombo_->addItem("1/16", 5);
-    gridResolutionCombo_->addItem("1/32", 6);
-    gridResolutionCombo_->setSelectedId(1, juce::dontSendNotification);
-    gridResolutionCombo_->setTooltip("Beat grid resolution for snap and display");
-    gridResolutionCombo_->setLookAndFeel(buttonLookAndFeel_.get());
-    gridResolutionCombo_->onChange = [this]() {
-        auto id = gridResolutionCombo_->getSelectedId();
-        GridResolution res = GridResolution::Off;
-        switch (id) {
-            case 2:
-                res = GridResolution::Bar;
-                break;
-            case 3:
-                res = GridResolution::Beat;
-                break;
-            case 4:
-                res = GridResolution::Eighth;
-                break;
-            case 5:
-                res = GridResolution::Sixteenth;
-                break;
-            case 6:
-                res = GridResolution::ThirtySecond;
-                break;
-            default:
-                res = GridResolution::Off;
-                break;
+    // Grid resolution num/den controls (like transport header)
+    auto applyGridBeats = [this]() {
+        if (gridNumerator_ <= 0) {
+            gridComponent_->setGridResolutionBeats(0.0);
+        } else {
+            double beats = static_cast<double>(gridNumerator_) * (4.0 / gridDenominator_);
+            gridComponent_->setGridResolutionBeats(beats);
         }
-        gridComponent_->setGridResolution(res);
     };
-    addAndMakeVisible(gridResolutionCombo_.get());
+
+    gridNumeratorLabel_ =
+        std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Integer);
+    gridNumeratorLabel_->setRange(0.0, 128.0, 1.0);
+    gridNumeratorLabel_->setValue(static_cast<double>(gridNumerator_), juce::dontSendNotification);
+    gridNumeratorLabel_->setTextColour(DarkTheme::getSecondaryTextColour());
+    gridNumeratorLabel_->setShowFillIndicator(false);
+    gridNumeratorLabel_->setFontSize(11.0f);
+    gridNumeratorLabel_->setDoubleClickResetsValue(true);
+    gridNumeratorLabel_->setDrawBorder(false);
+    gridNumeratorLabel_->onValueChange = [this, applyGridBeats]() {
+        gridNumerator_ = static_cast<int>(gridNumeratorLabel_->getValue());
+        applyGridBeats();
+    };
+    addAndMakeVisible(gridNumeratorLabel_.get());
+
+    gridSlashLabel_ = std::make_unique<juce::Label>("gridSlash", "/");
+    gridSlashLabel_->setFont(magda::FontManager::getInstance().getUIFont(11.0f));
+    gridSlashLabel_->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    gridSlashLabel_->setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(gridSlashLabel_.get());
+
+    gridDenominatorLabel_ =
+        std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Integer);
+    gridDenominatorLabel_->setRange(1.0, 64.0, 4.0);
+    gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
+                                    juce::dontSendNotification);
+    gridDenominatorLabel_->setTextColour(DarkTheme::getSecondaryTextColour());
+    gridDenominatorLabel_->setShowFillIndicator(false);
+    gridDenominatorLabel_->setFontSize(11.0f);
+    gridDenominatorLabel_->setDoubleClickResetsValue(true);
+    gridDenominatorLabel_->setDrawBorder(false);
+    gridDenominatorLabel_->onValueChange = [this, applyGridBeats]() {
+        int raw = static_cast<int>(gridDenominatorLabel_->getValue());
+        int pow2 = 1;
+        while (pow2 * 2 <= raw)
+            pow2 *= 2;
+        if (raw - pow2 > pow2 * 2 - raw && pow2 * 2 <= 64)
+            pow2 *= 2;
+        gridDenominator_ = pow2;
+        gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
+                                        juce::dontSendNotification);
+        applyGridBeats();
+    };
+    addAndMakeVisible(gridDenominatorLabel_.get());
 
     // Create waveform grid component
     gridComponent_ = std::make_unique<WaveformGridComponent>();
@@ -349,9 +351,6 @@ WaveformEditorContent::~WaveformEditorContent() {
     if (timeModeButton_) {
         timeModeButton_->setLookAndFeel(nullptr);
     }
-    if (gridResolutionCombo_) {
-        gridResolutionCombo_->setLookAndFeel(nullptr);
-    }
 }
 
 // ============================================================================
@@ -372,9 +371,9 @@ void WaveformEditorContent::resized() {
     if (bounds.getHeight() < minHeight || bounds.getWidth() <= 0) {
         // Hide everything when too small to avoid zero-sized paint
         timeModeButton_->setBounds(0, 0, 0, 0);
-        gridResolutionCombo_->setBounds(0, 0, 0, 0);
-        bpmLabel_->setBounds(0, 0, 0, 0);
-        filePathLabel_->setBounds(0, 0, 0, 0);
+        gridNumeratorLabel_->setBounds(0, 0, 0, 0);
+        gridSlashLabel_->setBounds(0, 0, 0, 0);
+        gridDenominatorLabel_->setBounds(0, 0, 0, 0);
         timeRuler_->setBounds(0, 0, 0, 0);
         viewport_->setBounds(0, 0, 0, 0);
         if (playheadOverlay_)
@@ -386,11 +385,9 @@ void WaveformEditorContent::resized() {
     auto toolbarArea = bounds.removeFromTop(TOOLBAR_HEIGHT);
     timeModeButton_->setBounds(toolbarArea.removeFromLeft(60).reduced(2));
     toolbarArea.removeFromLeft(4);
-    gridResolutionCombo_->setBounds(toolbarArea.removeFromLeft(70).reduced(2));
-    toolbarArea.removeFromLeft(4);
-    bpmLabel_->setBounds(toolbarArea.removeFromLeft(80).reduced(2));
-    toolbarArea.removeFromLeft(8);
-    filePathLabel_->setBounds(toolbarArea.reduced(2));
+    gridNumeratorLabel_->setBounds(toolbarArea.removeFromLeft(28).reduced(2));
+    gridSlashLabel_->setBounds(toolbarArea.removeFromLeft(10).reduced(0, 2));
+    gridDenominatorLabel_->setBounds(toolbarArea.removeFromLeft(28).reduced(2));
 
     // Time ruler below toolbar
     auto rulerArea = bounds.removeFromTop(TIME_RULER_HEIGHT);
@@ -558,22 +555,6 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
                 }
             }
             wasWarpEnabled_ = warpEnabled;
-
-            // Update BPM label
-            {
-                double detectedBPM =
-                    magda::AudioThumbnailManager::getInstance().detectBPM(clip->audioFilePath);
-                if (detectedBPM > 0.0) {
-                    bpmLabel_->setText(juce::String(detectedBPM, 1) + " BPM",
-                                       juce::dontSendNotification);
-                    bpmLabel_->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-                } else {
-                    bpmLabel_->setText(juce::String::fromUTF8("\xe2\x80\x94 BPM"),
-                                       juce::dontSendNotification);
-                    bpmLabel_->setColour(juce::Label::textColourId,
-                                         DarkTheme::getSecondaryTextColour());
-                }
-            }
         }
 
         updateGridSize();
@@ -665,27 +646,6 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
             timeRuler_->setClipLength(clip->length);
 
             updateDisplayInfo(*clip);
-
-            // Update BPM label
-            {
-                double detectedBPM =
-                    magda::AudioThumbnailManager::getInstance().detectBPM(clip->audioFilePath);
-                if (detectedBPM > 0.0) {
-                    bpmLabel_->setText(juce::String(detectedBPM, 1) + " BPM",
-                                       juce::dontSendNotification);
-                    bpmLabel_->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-                } else {
-                    bpmLabel_->setText(juce::String::fromUTF8("\xe2\x80\x94 BPM"),
-                                       juce::dontSendNotification);
-                    bpmLabel_->setColour(juce::Label::textColourId,
-                                         DarkTheme::getSecondaryTextColour());
-                }
-            }
-
-            // Update file path label (filename only, full path in tooltip)
-            juce::File audioFile(clip->audioFilePath);
-            filePathLabel_->setText(audioFile.getFileName(), juce::dontSendNotification);
-            filePathLabel_->setTooltip(clip->audioFilePath);
         }
 
         // Update warp mode state

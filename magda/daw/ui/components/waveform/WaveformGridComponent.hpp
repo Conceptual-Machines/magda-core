@@ -117,6 +117,9 @@ class WaveformGridComponent : public juce::Component {
     /** Set the TimeRuler to read tempo/time-signature from (not owned) */
     void setTimeRuler(magda::TimeRuler* ruler);
 
+    /** Set grid resolution directly in beats (overrides enum; 0 = use enum) */
+    void setGridResolutionBeats(double beats);
+
     /** Get grid interval in beats for the current resolution */
     double getGridResolutionBeats() const;
 
@@ -223,6 +226,7 @@ class WaveformGridComponent : public juce::Component {
 
     // Beat grid state
     GridResolution gridResolution_ = GridResolution::Off;
+    double customGridBeats_ = 0.0;           // When > 0, overrides enum-based resolution
     magda::TimeRuler* timeRuler_ = nullptr;  // not owned — reads tempo/timeSig + bar origin
 
     // Layout info shared between paint helpers

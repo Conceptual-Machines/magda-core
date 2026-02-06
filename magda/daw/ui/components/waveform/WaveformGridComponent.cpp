@@ -211,10 +211,12 @@ void WaveformGridComponent::paintWaveformOverlays(juce::Graphics& g, const magda
         g.fillRect(layout.clipEndPixel - 1, waveformRect.getY(), 2, waveformRect.getHeight());
     }
 
-    // Clip info overlay
+    // Clip info overlay — show file name on the waveform
     g.setColour(clip.colour);
     g.setFont(FontManager::getInstance().getUIFont(12.0f));
-    g.drawText(clip.name, waveformRect.reduced(8, 4), juce::Justification::topLeft, true);
+    juce::String displayName =
+        clip.audioFilePath.isNotEmpty() ? juce::File(clip.audioFilePath).getFileName() : clip.name;
+    g.drawText(displayName, waveformRect.reduced(8, 4), juce::Justification::topLeft, true);
 
     // Border around source block
     g.setColour(clip.colour.withAlpha(0.5f));
@@ -228,7 +230,7 @@ void WaveformGridComponent::paintWaveformOverlays(juce::Graphics& g, const magda
 
 void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipInfo& clip) {
     juce::ignoreUnused(clip);
-    if (gridResolution_ == GridResolution::Off || !timeRuler_)
+    if ((gridResolution_ == GridResolution::Off && customGridBeats_ <= 0.0) || !timeRuler_)
         return;
 
     auto bounds = getLocalBounds().reduced(LEFT_PADDING, TOP_PADDING);
@@ -725,7 +727,16 @@ void WaveformGridComponent::setTimeRuler(magda::TimeRuler* ruler) {
     repaint();
 }
 
+void WaveformGridComponent::setGridResolutionBeats(double beats) {
+    if (customGridBeats_ != beats) {
+        customGridBeats_ = beats;
+        repaint();
+    }
+}
+
 double WaveformGridComponent::getGridResolutionBeats() const {
+    if (customGridBeats_ > 0.0)
+        return customGridBeats_;
     switch (gridResolution_) {
         case GridResolution::Bar:
             return timeRuler_ ? static_cast<double>(timeRuler_->getTimeSigNumerator()) : 4.0;

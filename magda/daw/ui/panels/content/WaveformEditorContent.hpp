@@ -5,6 +5,7 @@
 #include "PanelContent.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipManager.hpp"
+#include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
 #include "ui/components/waveform/WaveformGridComponent.hpp"
 #include "ui/state/TimelineController.hpp"
@@ -100,9 +101,11 @@ class WaveformEditorContent : public PanelContent,
     std::unique_ptr<magda::TimeRuler> timeRuler_;
     std::unique_ptr<juce::TextButton> timeModeButton_;
 
-    std::unique_ptr<juce::Label> bpmLabel_;
-    std::unique_ptr<juce::Label> filePathLabel_;
-    std::unique_ptr<juce::ComboBox> gridResolutionCombo_;
+    std::unique_ptr<DraggableValueLabel> gridNumeratorLabel_;
+    std::unique_ptr<DraggableValueLabel> gridDenominatorLabel_;
+    std::unique_ptr<juce::Label> gridSlashLabel_;
+    int gridNumerator_ = 1;
+    int gridDenominator_ = 4;
 
     // Playhead overlay
     class PlayheadOverlay;
