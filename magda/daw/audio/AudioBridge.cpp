@@ -708,12 +708,6 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
             audioClipPtr->setSpeedRatio(1.0);
         }
 
-        // Disable warp (auto-tempo incompatible with warp)
-        if (audioClipPtr->getWarpTime()) {
-            DBG("  -> Disabling warp");
-            audioClipPtr->setWarpTime(false);
-        }
-
         // Auto-tempo requires a valid stretch mode for TE to time-stretch audio
         if (audioClipPtr->getTimeStretchMode() == te::TimeStretcher::disabled) {
             DBG("  -> Setting stretch mode to default (required for autoTempo)");

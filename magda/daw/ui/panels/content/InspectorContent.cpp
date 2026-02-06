@@ -245,6 +245,8 @@ InspectorContent::InspectorContent() {
     clipBeatsLengthValue_->setSuffix(" beats");
     clipBeatsLengthValue_->setDecimalPlaces(2);
     clipBeatsLengthValue_->setSnapToInteger(true);
+    clipBeatsLengthValue_->setDrawBackground(false);
+    clipBeatsLengthValue_->setDrawBorder(false);
     clipBeatsLengthValue_->onValueChange = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID) {
             auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
@@ -435,34 +437,32 @@ InspectorContent::InspectorContent() {
     };
     clipPropsContainer_.addChildComponent(*clipLoopToggle_);
 
-    // Warp toggle button
-    clipWarpToggle_.setButtonText("WARP");
-    clipWarpToggle_.setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
-    clipWarpToggle_.setColour(juce::TextButton::buttonOnColourId,
-                              DarkTheme::getAccentColour().withAlpha(0.3f));
-    clipWarpToggle_.setColour(juce::TextButton::textColourOffId,
-                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    clipWarpToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
-    clipWarpToggle_.setClickingTogglesState(true);
-    clipWarpToggle_.onClick = [this]() {
+    // Warp toggle (pin icon)
+    clipWarpToggle_ =
+        std::make_unique<magda::SvgButton>("Warp", BinaryData::pin_svg, BinaryData::pin_svgSize);
+    clipWarpToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    clipWarpToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipWarpToggle_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    clipWarpToggle_->setActiveColor(DarkTheme::getAccentColour());
+    clipWarpToggle_->setClickingTogglesState(false);
+    clipWarpToggle_->onClick = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID) {
-            bool newState = clipWarpToggle_.getToggleState();
+            bool newState = !clipWarpToggle_->isActive();
+            clipWarpToggle_->setActive(newState);
             magda::ClipManager::getInstance().setClipWarpEnabled(selectedClipId_, newState);
         }
     };
-    clipPropsContainer_.addChildComponent(clipWarpToggle_);
+    clipPropsContainer_.addChildComponent(*clipWarpToggle_);
 
-    // Auto-tempo (musical mode) toggle button
-    clipAutoTempoToggle_.setButtonText(juce::CharPointer_UTF8("\xe2\x99\xa9 MUSICAL"));
-    clipAutoTempoToggle_.setColour(juce::TextButton::buttonColourId,
-                                   DarkTheme::getColour(DarkTheme::SURFACE));
-    clipAutoTempoToggle_.setColour(juce::TextButton::buttonOnColourId,
-                                   DarkTheme::getAccentColour().withAlpha(0.3f));
-    clipAutoTempoToggle_.setColour(juce::TextButton::textColourOffId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    clipAutoTempoToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
-    clipAutoTempoToggle_.setTooltip(
+    // Auto-tempo (musical mode) toggle (note icon)
+    clipAutoTempoToggle_ = std::make_unique<magda::SvgButton>("Musical", BinaryData::note_svg,
+                                                              BinaryData::note_svgSize);
+    clipAutoTempoToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    clipAutoTempoToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipAutoTempoToggle_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    clipAutoTempoToggle_->setActiveColor(DarkTheme::getAccentColour());
+    clipAutoTempoToggle_->setClickingTogglesState(false);
+    clipAutoTempoToggle_->setTooltip(
         "Lock clip to musical time (bars/beats) instead of absolute time.\n"
         "Clip length changes with tempo to maintain fixed beat length.");
 
@@ -482,7 +482,7 @@ InspectorContent::InspectorContent() {
         updateFromSelectedClip();
     };
 
-    clipAutoTempoToggle_.onClick = [this, applyAutoTempo]() {
+    clipAutoTempoToggle_->onClick = [this, applyAutoTempo]() {
         if (selectedClipId_ == magda::INVALID_CLIP_ID)
             return;
         auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
@@ -513,7 +513,7 @@ InspectorContent::InspectorContent() {
 
         applyAutoTempo(newState);
     };
-    clipPropsContainer_.addChildComponent(clipAutoTempoToggle_);
+    clipPropsContainer_.addChildComponent(*clipAutoTempoToggle_);
 
     clipStretchValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
     clipStretchValue_->setRange(0.25, 4.0, 1.0);
@@ -1328,36 +1328,38 @@ void InspectorContent::resized() {
         }
         addSpace(8);
 
-        // BPM, WARP, and MUSICAL row (audio clips only)
-        if (clipWarpToggle_.isVisible() || clipBpmValue_.isVisible() ||
-            clipAutoTempoToggle_.isVisible() || clipBeatsLengthValue_->isVisible()) {
-            auto bottomRow = addRow(24);
-
-            if (clipBpmValue_.isVisible()) {
-                clipBpmValue_.setBounds(bottomRow.removeFromLeft(70));
-                bottomRow.removeFromLeft(8);
+        // Row 1: WARP icon | MUSICAL icon | stretch mode dropdown
+        if (clipWarpToggle_->isVisible() || clipAutoTempoToggle_->isVisible()) {
+            auto row1 = addRow(24);
+            if (clipWarpToggle_->isVisible()) {
+                clipWarpToggle_->setBounds(
+                    row1.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+                row1.removeFromLeft(4);
             }
-            if (clipBeatsLengthValue_->isVisible()) {
-                clipBeatsLengthValue_->setBounds(bottomRow.removeFromLeft(100));
-                bottomRow.removeFromLeft(8);
+            if (clipAutoTempoToggle_->isVisible()) {
+                clipAutoTempoToggle_->setBounds(
+                    row1.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+                row1.removeFromLeft(8);
             }
-            if (clipWarpToggle_.isVisible()) {
-                clipWarpToggle_.setBounds(bottomRow.removeFromLeft(60).reduced(0, 1));
-                bottomRow.removeFromLeft(8);
+            if (stretchModeCombo_.isVisible()) {
+                stretchModeCombo_.setBounds(row1.reduced(0, 1));
             }
-            if (clipAutoTempoToggle_.isVisible()) {
-                clipAutoTempoToggle_.setBounds(bottomRow.removeFromLeft(85).reduced(0, 1));
-            }
-            addSpace(8);
+            addSpace(4);
         }
 
-        // Stretch factor and mode
-        if (clipStretchValue_ && clipStretchValue_->isVisible()) {
-            auto stretchRow = addRow(22);
-            clipStretchValue_->setBounds(stretchRow.removeFromLeft(60).reduced(0, 1));
-            stretchRow.removeFromLeft(8);
-            if (stretchModeCombo_.isVisible()) {
-                stretchModeCombo_.setBounds(stretchRow.reduced(0, 1));
+        // Row 2: BPM | speed OR beats
+        if (clipBpmValue_.isVisible() || (clipStretchValue_ && clipStretchValue_->isVisible()) ||
+            clipBeatsLengthValue_->isVisible()) {
+            auto row2 = addRow(22);
+            if (clipBpmValue_.isVisible()) {
+                clipBpmValue_.setBounds(row2.removeFromLeft(70));
+                row2.removeFromLeft(8);
+            }
+            if (clipStretchValue_ && clipStretchValue_->isVisible()) {
+                clipStretchValue_->setBounds(row2.removeFromLeft(60).reduced(0, 1));
+            }
+            if (clipBeatsLengthValue_->isVisible()) {
+                clipBeatsLengthValue_->setBounds(row2.removeFromLeft(80));
             }
             addSpace(8);
         }
@@ -2083,16 +2085,16 @@ void InspectorContent::updateFromSelectedClip() {
         clipLoopToggle_->setActive(clip->loopEnabled);
         clipLoopToggle_->setEnabled(true);
 
-        // Warp toggle (only for audio clips, hidden when auto-tempo is enabled)
-        clipWarpToggle_.setVisible(isAudioClip && !clip->autoTempo);
+        // Warp toggle (always visible for audio clips)
+        clipWarpToggle_->setVisible(isAudioClip);
         if (isAudioClip) {
-            clipWarpToggle_.setToggleState(clip->warpEnabled, juce::dontSendNotification);
+            clipWarpToggle_->setActive(clip->warpEnabled);
         }
 
         // Auto-tempo toggle (always visible for audio clips)
-        clipAutoTempoToggle_.setVisible(isAudioClip);
+        clipAutoTempoToggle_->setVisible(isAudioClip);
         if (isAudioClip) {
-            clipAutoTempoToggle_.setToggleState(clip->autoTempo, juce::dontSendNotification);
+            clipAutoTempoToggle_->setActive(clip->autoTempo);
             // Disable stretch control when auto-tempo is enabled (speedRatio must be 1.0)
             if (clip->autoTempo && clipStretchValue_) {
                 clipStretchValue_->setEnabled(false);
@@ -2100,7 +2102,7 @@ void InspectorContent::updateFromSelectedClip() {
             }
         }
 
-        clipStretchValue_->setVisible(isAudioClip);
+        clipStretchValue_->setVisible(isAudioClip && !clip->autoTempo);
         stretchModeCombo_.setVisible(isAudioClip);
         if (isAudioClip) {
             clipStretchValue_->setValue(clip->speedRatio, juce::dontSendNotification);
@@ -2303,8 +2305,8 @@ void InspectorContent::showClipControls(bool show) {
         clipLoopLengthValue_->setVisible(false);
         clipLoopPhaseLabel_.setVisible(false);
         clipLoopPhaseValue_->setVisible(false);
-        clipWarpToggle_.setVisible(false);
-        clipAutoTempoToggle_.setVisible(false);
+        clipWarpToggle_->setVisible(false);
+        clipAutoTempoToggle_->setVisible(false);
         if (clipStretchValue_)
             clipStretchValue_->setVisible(false);
         stretchModeCombo_.setVisible(false);

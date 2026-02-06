@@ -133,8 +133,8 @@ class InspectorContent : public PanelContent,
     std::unique_ptr<magda::SvgButton> clipContentOffsetIcon_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipContentOffsetValue_;
     std::unique_ptr<magda::SvgButton> clipLoopToggle_;
-    juce::TextButton clipWarpToggle_;
-    juce::TextButton clipAutoTempoToggle_;  // Musical mode toggle
+    std::unique_ptr<magda::SvgButton> clipWarpToggle_;
+    std::unique_ptr<magda::SvgButton> clipAutoTempoToggle_;  // Musical mode toggle
     std::unique_ptr<magda::DraggableValueLabel> clipStretchValue_;
     juce::ComboBox stretchModeCombo_;  // Time stretch algorithm selector
     juce::Label clipLoopStartLabel_;

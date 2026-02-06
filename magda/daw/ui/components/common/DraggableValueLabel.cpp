@@ -234,8 +234,10 @@ void DraggableValueLabel::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
 
     // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-    g.fillRoundedRectangle(bounds, 2.0f);
+    if (drawBackground_) {
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.fillRoundedRectangle(bounds, 2.0f);
+    }
 
     // Fill indicator
     if (showFillIndicator_) {

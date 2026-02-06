@@ -95,6 +95,9 @@ juce_add_binary_data(MagdaAssets
     # I/O routing icons
     ../../assets/icons/IO/Input.svg
     ../../assets/icons/IO/Output.svg
+    # Inspector clip icons
+    ../../assets/icons/pin.svg
+    ../../assets/icons/note.svg
     # Punch in/out icons
     ../../assets/icons/punchinout/punchin.svg
     ../../assets/icons/punchinout/punchin_on.svg
