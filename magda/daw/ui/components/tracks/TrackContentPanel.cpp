@@ -160,8 +160,11 @@ void TrackContentPanel::timelineStateChanged(const TimelineState& state, ChangeF
         needsRepaint = true;
     }
 
-    // Tempo/time-sig don't affect grid pixel positions (ppb zoom)
-    tempoBPM = state.tempo.bpm;
+    // Tempo affects non-musical-mode clip widths (length * bpm / 60 * ppb)
+    if (tempoBPM != state.tempo.bpm) {
+        tempoBPM = state.tempo.bpm;
+        needsRepaint = true;
+    }
     timeSignatureNumerator = state.tempo.timeSignatureNumerator;
     timeSignatureDenominator = state.tempo.timeSignatureDenominator;
 
