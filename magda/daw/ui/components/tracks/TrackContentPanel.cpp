@@ -2461,14 +2461,14 @@ bool TrackContentPanel::isInterestedInFileDrag(const juce::StringArray& files) {
 }
 
 void TrackContentPanel::fileDragEnter(const juce::StringArray& files, int x, int y) {
-    dropInsertTime_ = pixelToTime(x);
+    dropInsertTime_ = juce::jmax(0.0, pixelToTime(x));
     dropTargetTrackIndex_ = getTrackIndexAtY(y);
     showDropIndicator_ = true;
     repaint();
 }
 
 void TrackContentPanel::fileDragMove(const juce::StringArray& files, int x, int y) {
-    dropInsertTime_ = pixelToTime(x);
+    dropInsertTime_ = juce::jmax(0.0, pixelToTime(x));
     dropTargetTrackIndex_ = getTrackIndexAtY(y);
     repaint();
 }
@@ -2482,8 +2482,8 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
     showDropIndicator_ = false;
     repaint();
 
-    // Determine drop position
-    double dropTime = pixelToTime(x);
+    // Determine drop position (clamp to timeline start)
+    double dropTime = juce::jmax(0.0, pixelToTime(x));
     int trackIndex = getTrackIndexAtY(y);
 
     if (trackIndex < 0 || trackIndex >= static_cast<int>(visibleTrackIds_.size())) {
