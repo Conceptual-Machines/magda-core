@@ -37,6 +37,43 @@ PreferencesDialog::PreferencesDialog() {
     setupSectionHeader(layoutHeader, "Layout");
     setupToggle(leftHandedLayoutToggle, "Headers on Right");
 
+    // Setup rendering section
+    setupSectionHeader(renderHeader, "Rendering");
+
+    renderFolderLabel.setText("Render Output Folder", juce::dontSendNotification);
+    renderFolderLabel.setColour(juce::Label::textColourId,
+                                DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    renderFolderLabel.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(renderFolderLabel);
+
+    renderFolderValue.setText("Default (beside source file)", juce::dontSendNotification);
+    renderFolderValue.setColour(juce::Label::textColourId,
+                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    renderFolderValue.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(renderFolderValue);
+
+    renderFolderBrowseButton.setButtonText("Browse...");
+    renderFolderBrowseButton.onClick = [this]() {
+        fileChooser_ = std::make_unique<juce::FileChooser>("Select Render Output Folder");
+        fileChooser_->launchAsync(
+            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+            [this](const juce::FileChooser& fc) {
+                auto result = fc.getResult();
+                if (result.exists()) {
+                    renderFolderValue.setText(result.getFullPathName(), juce::dontSendNotification);
+                    renderFolderValue.setTooltip(result.getFullPathName());
+                }
+            });
+    };
+    addAndMakeVisible(renderFolderBrowseButton);
+
+    renderFolderClearButton.setButtonText("Clear");
+    renderFolderClearButton.onClick = [this]() {
+        renderFolderValue.setText("Default (beside source file)", juce::dontSendNotification);
+        renderFolderValue.setTooltip("");
+    };
+    addAndMakeVisible(renderFolderClearButton);
+
     // Setup keyboard shortcuts section
     setupSectionHeader(shortcutsHeader, "Keyboard Shortcuts");
 #if JUCE_MAC
@@ -77,8 +114,8 @@ PreferencesDialog::PreferencesDialog() {
     // Load current settings
     loadCurrentSettings();
 
-    // Set preferred size (increased height for panels, layout and shortcuts sections)
-    setSize(450, 840);
+    // Set preferred size (increased height for panels, layout, rendering and shortcuts sections)
+    setSize(450, 940);
 }
 
 PreferencesDialog::~PreferencesDialog() = default;
@@ -189,6 +226,28 @@ void PreferencesDialog::resized() {
 
     bounds.removeFromTop(sectionSpacing);
 
+    // Rendering section
+    auto renderHeaderBounds = bounds.removeFromTop(headerHeight);
+    renderHeader.setBounds(renderHeaderBounds);
+    bounds.removeFromTop(4);
+
+    // Render folder label
+    row = bounds.removeFromTop(rowHeight);
+    renderFolderLabel.setBounds(row);
+    bounds.removeFromTop(4);
+
+    // Render folder value + buttons
+    row = bounds.removeFromTop(rowHeight);
+    {
+        auto buttonsArea = row.removeFromRight(140);
+        renderFolderValue.setBounds(row);
+        renderFolderClearButton.setBounds(buttonsArea.removeFromRight(60).reduced(0, 2));
+        buttonsArea.removeFromRight(4);
+        renderFolderBrowseButton.setBounds(buttonsArea.reduced(0, 2));
+    }
+
+    bounds.removeFromTop(sectionSpacing);
+
     // Keyboard Shortcuts section
     auto shortcutsHeaderBounds = bounds.removeFromTop(headerHeight);
     shortcutsHeader.setBounds(shortcutsHeaderBounds);
@@ -258,6 +317,16 @@ void PreferencesDialog::loadCurrentSettings() {
 
     // Load layout settings
     leftHandedLayoutToggle.setToggleState(config.getScrollbarOnLeft(), juce::dontSendNotification);
+
+    // Load render folder setting
+    auto folder = config.getRenderFolder();
+    if (folder.empty()) {
+        renderFolderValue.setText("Default (beside source file)", juce::dontSendNotification);
+        renderFolderValue.setTooltip("");
+    } else {
+        renderFolderValue.setText(juce::String(folder), juce::dontSendNotification);
+        renderFolderValue.setTooltip(juce::String(folder));
+    }
 }
 
 void PreferencesDialog::applySettings() {
@@ -285,6 +354,14 @@ void PreferencesDialog::applySettings() {
 
     // Apply layout settings
     config.setScrollbarOnLeft(leftHandedLayoutToggle.getToggleState());
+
+    // Apply render folder setting
+    auto folderText = renderFolderValue.getText();
+    if (folderText == "Default (beside source file)") {
+        config.setRenderFolder("");
+    } else {
+        config.setRenderFolder(folderText.toStdString());
+    }
 }
 
 void PreferencesDialog::showDialog(juce::Component* parent) {

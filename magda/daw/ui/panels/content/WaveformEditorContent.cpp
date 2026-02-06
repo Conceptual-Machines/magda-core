@@ -227,6 +227,13 @@ WaveformEditorContent::WaveformEditorContent() {
     bpmLabel_->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(bpmLabel_.get());
 
+    // Create file path label for toolbar
+    filePathLabel_ = std::make_unique<juce::Label>("filePathLabel", "");
+    filePathLabel_->setFont(magda::FontManager::getInstance().getUIFont(10.0f));
+    filePathLabel_->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    filePathLabel_->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(filePathLabel_.get());
+
     // Create grid resolution combo box
     gridResolutionCombo_ = std::make_unique<juce::ComboBox>("gridResolution");
     gridResolutionCombo_->addItem("Off", 1);
@@ -383,6 +390,7 @@ void WaveformEditorContent::resized() {
         warpModeButton_->setBounds(0, 0, 0, 0);
         gridResolutionCombo_->setBounds(0, 0, 0, 0);
         bpmLabel_->setBounds(0, 0, 0, 0);
+        filePathLabel_->setBounds(0, 0, 0, 0);
         timeRuler_->setBounds(0, 0, 0, 0);
         viewport_->setBounds(0, 0, 0, 0);
         if (playheadOverlay_)
@@ -399,6 +407,8 @@ void WaveformEditorContent::resized() {
     gridResolutionCombo_->setBounds(toolbarArea.removeFromLeft(70).reduced(2));
     toolbarArea.removeFromLeft(4);
     bpmLabel_->setBounds(toolbarArea.removeFromLeft(80).reduced(2));
+    toolbarArea.removeFromLeft(8);
+    filePathLabel_->setBounds(toolbarArea.reduced(2));
 
     // Time ruler below toolbar
     auto rulerArea = bounds.removeFromTop(TIME_RULER_HEIGHT);
@@ -717,6 +727,11 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
                                          DarkTheme::getSecondaryTextColour());
                 }
             }
+
+            // Update file path label (filename only, full path in tooltip)
+            juce::File audioFile(clip->audioFilePath);
+            filePathLabel_->setText(audioFile.getFileName(), juce::dontSendNotification);
+            filePathLabel_->setTooltip(clip->audioFilePath);
         }
 
         // Update warp mode state

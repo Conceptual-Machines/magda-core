@@ -121,6 +121,7 @@ class InspectorContent : public PanelContent,
     // Clip properties section
     juce::Label clipNameLabel_;
     juce::Label clipNameValue_;
+    juce::Label clipFilePathLabel_;                   // Full file path (read-only, below clip name)
     std::unique_ptr<magda::SvgButton> clipTypeIcon_;  // Audio (sinewave) or MIDI icon
     juce::Label playbackColumnLabel_;
     juce::Label loopColumnLabel_;

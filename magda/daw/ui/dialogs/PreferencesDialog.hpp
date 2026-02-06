@@ -44,6 +44,14 @@ class PreferencesDialog : public juce::Component {
     // Layout section
     juce::ToggleButton leftHandedLayoutToggle;
 
+    // Rendering section
+    juce::Label renderHeader;
+    juce::Label renderFolderLabel;
+    juce::Label renderFolderValue;
+    juce::TextButton renderFolderBrowseButton;
+    juce::TextButton renderFolderClearButton;
+    std::unique_ptr<juce::FileChooser> fileChooser_;
+
     // Keyboard shortcuts section (read-only display for now)
     juce::Label shortcutsHeader;
     juce::Label addTrackShortcut;

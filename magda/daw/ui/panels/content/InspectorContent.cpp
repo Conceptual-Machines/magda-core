@@ -224,6 +224,12 @@ InspectorContent::InspectorContent() {
     };
     addChildComponent(clipNameValue_);
 
+    // Clip file path (read-only, below clip name)
+    clipFilePathLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
+    clipFilePathLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipFilePathLabel_.setJustificationType(juce::Justification::centredLeft);
+    addChildComponent(clipFilePathLabel_);
+
     // Clip type icon (sinewave for audio, midi for MIDI)
     clipTypeIcon_ = std::make_unique<magda::SvgButton>("Type", BinaryData::sinewave_svg,
                                                        BinaryData::sinewave_svgSize);
@@ -1264,6 +1270,7 @@ void InspectorContent::resized() {
             headerRow.removeFromLeft(gap);
             clipNameValue_.setBounds(headerRow);
         }
+        clipFilePathLabel_.setBounds(bounds.removeFromTop(16));
         bounds.removeFromTop(8);
 
         // Viewport takes remaining space for scrollable clip properties
@@ -1975,6 +1982,19 @@ void InspectorContent::updateFromSelectedClip() {
     if (clip) {
         clipNameValue_.setText(clip->name, juce::dontSendNotification);
 
+        // Update file path label (show filename only, full path in tooltip)
+        if (clip->type == magda::ClipType::Audio && clip->audioFilePath.isNotEmpty()) {
+            juce::File audioFile(clip->audioFilePath);
+            clipFilePathLabel_.setText(audioFile.getFileName(), juce::dontSendNotification);
+            clipFilePathLabel_.setTooltip(clip->audioFilePath);
+        } else if (clip->type == magda::ClipType::MIDI) {
+            clipFilePathLabel_.setText("(MIDI)", juce::dontSendNotification);
+            clipFilePathLabel_.setTooltip("");
+        } else {
+            clipFilePathLabel_.setText("", juce::dontSendNotification);
+            clipFilePathLabel_.setTooltip("");
+        }
+
         // Update type icon based on clip type
         bool isAudioClip = (clip->type == magda::ClipType::Audio);
         if (isAudioClip) {
@@ -2285,6 +2305,7 @@ void InspectorContent::showTrackControls(bool show) {
 
 void InspectorContent::showClipControls(bool show) {
     clipNameValue_.setVisible(show);
+    clipFilePathLabel_.setVisible(show);
     clipTypeIcon_->setVisible(show);
     clipPropsViewport_.setVisible(show);
 

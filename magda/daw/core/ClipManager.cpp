@@ -27,7 +27,11 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     clip.trackId = trackId;
     clip.type = ClipType::Audio;
     clip.view = view;
-    clip.name = generateClipName(ClipType::Audio);
+    if (audioFilePath.isNotEmpty()) {
+        clip.name = juce::File(audioFilePath).getFileNameWithoutExtension();
+    } else {
+        clip.name = generateClipName(ClipType::Audio);
+    }
     clip.colour = ClipInfo::getDefaultColor(
         static_cast<int>(arrangementClips_.size() + sessionClips_.size()));
     clip.startTime = startTime;

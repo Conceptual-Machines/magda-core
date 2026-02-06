@@ -4,6 +4,7 @@
 
 #include "../audio/AudioBridge.hpp"
 #include "../engine/TracktionEngineWrapper.hpp"
+#include "Config.hpp"
 #include "TrackManager.hpp"
 
 namespace magda {
@@ -596,9 +597,15 @@ void RenderClipCommand::execute() {
         return;
     }
 
-    // Determine output file path: renders/ subdirectory next to source file
+    // Determine output file path
     juce::File sourceFile(clip->audioFilePath);
-    juce::File rendersDir = sourceFile.getParentDirectory().getChildFile("renders");
+    auto configFolder = Config::getInstance().getRenderFolder();
+    juce::File rendersDir;
+    if (!configFolder.empty()) {
+        rendersDir = juce::File(configFolder);
+    } else {
+        rendersDir = sourceFile.getParentDirectory().getChildFile("renders");
+    }
     rendersDir.createDirectory();
 
     juce::String timestamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S");
@@ -792,7 +799,13 @@ void RenderTimeSelectionCommand::execute() {
         // Determine output file path from first overlapping clip's source
         auto* firstClip = clipManager.getClip(overlappingIds[0]);
         juce::File sourceFile(firstClip->audioFilePath);
-        juce::File rendersDir = sourceFile.getParentDirectory().getChildFile("renders");
+        auto configFolder = Config::getInstance().getRenderFolder();
+        juce::File rendersDir;
+        if (!configFolder.empty()) {
+            rendersDir = juce::File(configFolder);
+        } else {
+            rendersDir = sourceFile.getParentDirectory().getChildFile("renders");
+        }
         rendersDir.createDirectory();
 
         auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
