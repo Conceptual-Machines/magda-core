@@ -171,6 +171,9 @@ class WaveformGridComponent : public juce::Component {
     std::function<void(int index, double newWarpTime)> onWarpMarkerMove;
     std::function<void(int index)> onWarpMarkerRemove;
 
+    // Zoom drag callback (deltaY from start, anchorX in viewport coords)
+    std::function<void(int deltaY, int anchorX)> onZoomDrag;
+
   private:
     magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
 
@@ -201,13 +204,16 @@ class WaveformGridComponent : public juce::Component {
         ResizeRight,
         StretchLeft,
         StretchRight,
-        MoveWarpMarker
+        MoveWarpMarker,
+        Zoom
     };
     DragMode dragMode_ = DragMode::None;
     double dragStartAudioOffset_ = 0.0;
     double dragStartLength_ = 0.0;
     double dragStartStartTime_ = 0.0;
     int dragStartX_ = 0;
+    int zoomDragStartY_ = 0;
+    int zoomDragAnchorX_ = 0;
     double dragStartSpeedRatio_ = 1.0;
     double dragStartFileDuration_ = 0.0;
     double dragStartClipLength_ = 0.0;  // Original clip.length at drag start (for stretch)

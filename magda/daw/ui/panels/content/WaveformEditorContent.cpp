@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "../../state/TimelineController.hpp"
+#include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "audio/AudioBridge.hpp"
@@ -337,6 +338,43 @@ WaveformEditorContent::WaveformEditorContent() {
         }
     };
 
+    // Zoom drag on waveform — same log-curve sensitivity as header drag
+    gridComponent_->onZoomDrag = [this](int deltaY, int anchorX) {
+        // deltaY == 0 signals drag start — capture starting zoom
+        if (deltaY == 0) {
+            waveformZoomStartZoom_ = horizontalZoom_;
+            return;
+        }
+
+        double startZoom = waveformZoomStartZoom_;
+        if (startZoom <= 0.0)
+            startZoom = horizontalZoom_;
+
+        double zoomRange = std::log(MAX_ZOOM) - std::log(MIN_ZOOM);
+        double zoomPosition = (std::log(startZoom) - std::log(MIN_ZOOM)) / zoomRange;
+
+        double minSensitivity = 25.0;
+        double maxSensitivity = 40.0;
+        double baseSensitivity = minSensitivity + zoomPosition * (maxSensitivity - minSensitivity);
+
+        double sensitivity = baseSensitivity;
+
+        double absDeltaY = std::abs(static_cast<double>(deltaY));
+        if (absDeltaY > 80.0) {
+            double accelerationFactor = 1.0 + (absDeltaY - 80.0) / 150.0;
+            sensitivity /= accelerationFactor;
+        }
+
+        double exponent = static_cast<double>(deltaY) / sensitivity;
+        double newZoom = startZoom * std::pow(2.0, exponent);
+        newZoom = juce::jlimit(MIN_ZOOM, MAX_ZOOM, newZoom);
+
+        if (newZoom != horizontalZoom_) {
+            // anchorX is already viewport-relative (converted in grid mouseDown)
+            performAnchorPointZoom(newZoom / horizontalZoom_, anchorX);
+        }
+    };
+
     // Check if there's already a selected audio clip
     magda::ClipId selectedClip = magda::ClipManager::getInstance().getSelectedClip();
     if (selectedClip != magda::INVALID_CLIP_ID) {
@@ -451,36 +489,53 @@ void WaveformEditorContent::mouseDown(const juce::MouseEvent& event) {
     bool overHeader = event.y < (TOOLBAR_HEIGHT + TIME_RULER_HEIGHT);
     if (overHeader) {
         headerDragActive_ = true;
-        headerDragStartX_ = event.x;
+        headerDragStartY_ = event.y;
+        headerDragAnchorX_ = event.x - viewport_->getX();
         headerDragStartZoom_ = horizontalZoom_;
     }
 }
 
 void WaveformEditorContent::mouseDrag(const juce::MouseEvent& event) {
     if (headerDragActive_) {
-        int deltaX = event.x - headerDragStartX_;
-        // Drag right = zoom in, drag left = zoom out
-        // ~200px drag = 2x zoom change
-        double zoomFactor = std::pow(2.0, deltaX / 200.0);
-        double newZoom = headerDragStartZoom_ * zoomFactor;
+        // Vertical drag: up = zoom in, down = zoom out (matches arranger)
+        int deltaY = headerDragStartY_ - event.y;
+
+        // Zoom-level-dependent sensitivity (log curve):
+        // When zoomed out → lower sensitivity (faster zoom)
+        // When zoomed in → higher sensitivity (finer control)
+        double zoomRange = std::log(MAX_ZOOM) - std::log(MIN_ZOOM);
+        double zoomPosition = (std::log(headerDragStartZoom_) - std::log(MIN_ZOOM)) / zoomRange;
+
+        double minSensitivity = 25.0;  // Fast when zoomed out
+        double maxSensitivity = 40.0;  // Finer when zoomed in
+        double baseSensitivity = minSensitivity + zoomPosition * (maxSensitivity - minSensitivity);
+
+        double sensitivity = baseSensitivity;
+        if (event.mods.isShiftDown()) {
+            sensitivity = 8.0;  // Turbo
+        } else if (event.mods.isAltDown()) {
+            sensitivity = baseSensitivity * 3.0;  // Fine
+        }
+
+        // Progressive acceleration after 80px of drag
+        double absDeltaY = std::abs(static_cast<double>(deltaY));
+        if (absDeltaY > 80.0) {
+            double accelerationFactor = 1.0 + (absDeltaY - 80.0) / 150.0;
+            sensitivity /= accelerationFactor;
+        }
+
+        double exponent = static_cast<double>(deltaY) / sensitivity;
+        double newZoom = headerDragStartZoom_ * std::pow(2.0, exponent);
         newZoom = juce::jlimit(MIN_ZOOM, MAX_ZOOM, newZoom);
 
         if (newZoom != horizontalZoom_) {
-            horizontalZoom_ = newZoom;
-            gridComponent_->setHorizontalZoom(horizontalZoom_);
-
-            const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-            if (clip && timeRuler_) {
-                double bpm = 120.0;
-                auto* controller = magda::TimelineController::getCurrent();
-                if (controller) {
-                    bpm = controller->getState().tempo.bpm;
-                }
-                timeRuler_->setZoom(horizontalZoom_ * 60.0 / bpm);
-                timeRuler_->setTempo(bpm);
+            if (deltaY > 0) {
+                setMouseCursor(magda::CursorManager::getInstance().getZoomInCursor());
+            } else if (deltaY < 0) {
+                setMouseCursor(magda::CursorManager::getInstance().getZoomOutCursor());
             }
 
-            updateGridSize();
+            performAnchorPointZoom(newZoom / horizontalZoom_, headerDragAnchorX_);
         }
     }
 }
@@ -492,7 +547,7 @@ void WaveformEditorContent::mouseUp(const juce::MouseEvent& /*event*/) {
 void WaveformEditorContent::mouseMove(const juce::MouseEvent& event) {
     bool overHeader = event.y < (TOOLBAR_HEIGHT + TIME_RULER_HEIGHT);
     if (overHeader) {
-        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+        setMouseCursor(magda::CursorManager::getInstance().getZoomCursor());
     } else {
         setMouseCursor(juce::MouseCursor::NormalCursor);
     }

@@ -84,8 +84,8 @@ class WaveformEditorContent : public PanelContent,
     double horizontalZoom_ = 100.0;  // pixels per second
     double verticalZoom_ = 1.0;      // amplitude multiplier
     double cachedBpm_ = 120.0;       // last known BPM for zoom scaling on tempo change
-    static constexpr double MIN_ZOOM = 20.0;
-    static constexpr double MAX_ZOOM = 500.0;
+    static constexpr double MIN_ZOOM = 5.0;
+    static constexpr double MAX_ZOOM = 100000.0;  // ~2px per sample at 44.1kHz
     static constexpr double MIN_VERTICAL_ZOOM = 0.25;
     static constexpr double MAX_VERTICAL_ZOOM = 4.0;
 
@@ -147,8 +147,12 @@ class WaveformEditorContent : public PanelContent,
 
     // Header drag-zoom state
     bool headerDragActive_ = false;
-    int headerDragStartX_ = 0;
+    int headerDragStartY_ = 0;
+    int headerDragAnchorX_ = 0;
     double headerDragStartZoom_ = 0.0;
+
+    // Waveform zoom drag state (from grid component callback)
+    double waveformZoomStartZoom_ = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaveformEditorContent)
 };

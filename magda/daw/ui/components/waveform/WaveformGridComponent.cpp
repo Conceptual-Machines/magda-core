@@ -1,5 +1,6 @@
 #include "WaveformGridComponent.hpp"
 
+#include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../timeline/TimeRuler.hpp"
@@ -868,6 +869,16 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
 
     // Warp mode interaction
     if (warpMode_) {
+        // Shift + click inside waveform = zoom (instead of adding warp marker)
+        if (shiftHeld && isInsideWaveform(x, *clip)) {
+            dragMode_ = DragMode::Zoom;
+            zoomDragStartY_ = event.y;
+            zoomDragAnchorX_ = x - scrollOffsetX_;  // viewport-relative
+            if (onZoomDrag)
+                onZoomDrag(0, zoomDragAnchorX_);  // Signal drag start
+            return;
+        }
+
         // Check if clicking on an existing marker to drag it
         int markerIndex = findMarkerAtPixel(x);
         if (markerIndex >= 0) {
@@ -931,8 +942,12 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
     } else if (isNearRightEdge(x, *clip)) {
         dragMode_ = shiftHeld ? DragMode::StretchRight : DragMode::ResizeRight;
     } else if (isInsideWaveform(x, *clip)) {
-        // Inside waveform but not near edges — no drag (removed Move mode)
-        dragMode_ = DragMode::None;
+        // Inside waveform but not near edges — zoom drag
+        dragMode_ = DragMode::Zoom;
+        zoomDragStartY_ = event.y;
+        zoomDragAnchorX_ = x - scrollOffsetX_;  // viewport-relative
+        if (onZoomDrag)
+            onZoomDrag(0, zoomDragAnchorX_);  // Signal drag start
         return;
     } else {
         dragMode_ = DragMode::None;
@@ -967,6 +982,20 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
         return;
     }
     if (editingClipId_ == magda::INVALID_CLIP_ID) {
+        return;
+    }
+
+    // Zoom drag
+    if (dragMode_ == DragMode::Zoom) {
+        int deltaY = zoomDragStartY_ - event.y;
+        if (deltaY > 0) {
+            setMouseCursor(magda::CursorManager::getInstance().getZoomInCursor());
+        } else if (deltaY < 0) {
+            setMouseCursor(magda::CursorManager::getInstance().getZoomOutCursor());
+        }
+        if (onZoomDrag) {
+            onZoomDrag(deltaY, zoomDragAnchorX_);
+        }
         return;
     }
 
@@ -1095,6 +1124,11 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
 }
 
 void WaveformGridComponent::mouseUp(const juce::MouseEvent& /*event*/) {
+    if (dragMode_ == DragMode::Zoom) {
+        dragMode_ = DragMode::None;
+        return;
+    }
+
     if (dragMode_ == DragMode::MoveWarpMarker) {
         draggingMarkerIndex_ = -1;
         dragMode_ = DragMode::None;
@@ -1135,6 +1169,8 @@ void WaveformGridComponent::mouseMove(const juce::MouseEvent& event) {
 
         if (newHovered >= 0) {
             setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+        } else if (event.mods.isShiftDown() && isInsideWaveform(x, *clip)) {
+            setMouseCursor(magda::CursorManager::getInstance().getZoomCursor());
         } else if (isInsideWaveform(x, *clip)) {
             setMouseCursor(juce::MouseCursor::CrosshairCursor);
         } else {
@@ -1149,6 +1185,8 @@ void WaveformGridComponent::mouseMove(const juce::MouseEvent& event) {
         } else {
             setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
         }
+    } else if (isInsideWaveform(x, *clip)) {
+        setMouseCursor(magda::CursorManager::getInstance().getZoomCursor());
     } else {
         setMouseCursor(juce::MouseCursor::NormalCursor);
     }
