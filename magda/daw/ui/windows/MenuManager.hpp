@@ -32,6 +32,8 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         std::function<void()> onDelete;
         std::function<void()> onSplitOrTrim;
         std::function<void()> onJoinClips;
+        std::function<void()> onRenderClip;
+        std::function<void()> onRenderTimeSelection;
         std::function<void()> onSelectAll;
         std::function<void()> onPreferences;
 
@@ -136,7 +138,9 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         Delete,
         SplitOrTrim = 218,
         JoinClips,
-        SelectAll = 220,
+        RenderClip,
+        RenderTimeSelection,
+        SelectAll = 225,
         Preferences = 299,
 
         // Settings menu (800-899)

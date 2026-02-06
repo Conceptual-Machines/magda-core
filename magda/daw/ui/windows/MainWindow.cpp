@@ -381,6 +381,11 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         }
     };
 
+    // Wire render time selection callback
+    mainView->onRenderTimeSelectionRequested = [this]() {
+        getCommandManager().invokeDirectly(CommandIDs::renderTimeSelection, false);
+    };
+
     setupResizeHandles();
     setupViewModeListener();
     setupAudioEngineCallbacks(externalEngine);
@@ -1840,6 +1845,14 @@ void MainWindow::setupMenuCallbacks() {
 
     callbacks.onJoinClips = [this]() {
         mainComponent->getCommandManager().invokeDirectly(CommandIDs::joinClips, false);
+    };
+
+    callbacks.onRenderClip = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::renderClip, false);
+    };
+
+    callbacks.onRenderTimeSelection = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::renderTimeSelection, false);
     };
 
     callbacks.onSelectAll = [this]() {

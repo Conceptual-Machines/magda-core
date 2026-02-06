@@ -1259,10 +1259,14 @@ void TrackContentPanel::rebuildClipComponents() {
             // For now, the selection will be handled by the command or we need to refactor
         };
 
-        // Wire up render callback (bubbles up to MainWindow which has engine access)
+        // Wire up render callbacks (bubble up to MainWindow which has engine access)
         clipComp->onClipRenderRequested = [this](ClipId id) {
             if (onClipRenderRequested)
                 onClipRenderRequested(id);
+        };
+        clipComp->onRenderTimeSelectionRequested = [this]() {
+            if (onRenderTimeSelectionRequested)
+                onRenderTimeSelectionRequested();
         };
 
         // Wire up grid snapping

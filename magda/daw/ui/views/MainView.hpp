@@ -75,7 +75,8 @@ class MainView : public juce::Component,
     std::function<void(double)> onEditCursorChanged;  // (positionInSeconds)
     std::function<void(bool, int, int, bool)>
         onGridQuantizeChanged;  // (autoGrid, numerator, denominator, isBars)
-    std::function<void(ClipId)> onClipRenderRequested;  // Render clip to new file
+    std::function<void(ClipId)> onClipRenderRequested;     // Render clip to new file
+    std::function<void()> onRenderTimeSelectionRequested;  // Render time selection
 
     // ScrollBar::Listener implementation
     void scrollBarMoved(juce::ScrollBar* scrollBarThatHasMoved, double newRangeStart) override;

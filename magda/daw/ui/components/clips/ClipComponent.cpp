@@ -1403,8 +1403,18 @@ void ClipComponent::showContextMenu() {
         }
         if (allAudio) {
             menu.addSeparator();
-            menu.addItem(9, isMultiSelection ? "Render Clips" : "Render Clip");
+            menu.addItem(9, isMultiSelection ? "Render Selected Clip(s)" : "Render Selected Clip");
         }
+    }
+
+    // Render Time Selection - always available
+    {
+        bool hasTimeSelection = false;
+        if (parentPanel_ && parentPanel_->getTimelineController()) {
+            const auto& state = parentPanel_->getTimelineController()->getState();
+            hasTimeSelection = state.selection.isActive() && !state.selection.visuallyHidden;
+        }
+        menu.addItem(10, "Render Time Selection", hasTimeSelection);
     }
 
     // Show menu
@@ -1567,6 +1577,13 @@ void ClipComponent::showContextMenu() {
             case 9: {  // Render Clip
                 if (onClipRenderRequested) {
                     onClipRenderRequested(clipId_);
+                }
+                break;
+            }
+
+            case 10: {  // Render Time Selection
+                if (onRenderTimeSelectionRequested) {
+                    onRenderTimeSelectionRequested();
                 }
                 break;
             }
