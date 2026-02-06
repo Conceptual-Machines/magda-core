@@ -1,7 +1,7 @@
 # MAGDA - Project Vision & Feature Requirements
 
 ## Project Overview
-MAGDA is a **Multi-Agent Interface for Creative Audio** - a DAW that combines traditional audio production with AI-driven multi-agent collaboration. Beyond the multi-agent framework we've discussed, here are the core DAW features and design principles.
+MAGDA - **Multi-Agent Digital Audio** - a DAW that combines traditional audio production with AI-driven multi-agent collaboration. Beyond the multi-agent framework we've discussed, here are the core DAW features and design principles.
 
 ## Core DAW Features
 
