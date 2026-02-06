@@ -644,7 +644,7 @@ void RenderClipCommand::execute() {
     params.audioFormat = formatManager.getWavFormat();
     params.bitDepth = 24;
     params.sampleRateForAudio = edit->engine.getDeviceManager().getSampleRate();
-    params.blockSizeForAudio = 8192;
+    params.blockSizeForAudio = 512;
     params.usePlugins = false;
     params.useMasterPlugins = false;
     params.checkNodesForAudio = false;
@@ -827,7 +827,7 @@ void RenderTimeSelectionCommand::execute() {
         params.audioFormat = formatManager.getWavFormat();
         params.bitDepth = 24;
         params.sampleRateForAudio = edit->engine.getDeviceManager().getSampleRate();
-        params.blockSizeForAudio = 8192;
+        params.blockSizeForAudio = 512;
         params.usePlugins = false;
         params.useMasterPlugins = false;
         params.checkNodesForAudio = false;
