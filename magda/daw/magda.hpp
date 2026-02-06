@@ -4,7 +4,7 @@
  * @file magda.hpp
  * @brief Main header for the MAGDA - Multi Agent Digital Audio system
  *
- * MAGDA is a Multi-Agent Interface for Creative Audio.
+ * MAGDA is a Multi-Agent Digital Audio system.
  * It enables multiple intelligent agents to collaboratively compose, arrange, and
  * manipulate music in real time through a unified API and server-based communication model.
  */
