@@ -294,7 +294,8 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
     // Find first visible bar (offset by barOriginSeconds)
     double startTime = pixelToTime(0);
-    int startBar = static_cast<int>(std::floor((startTime - barOriginSeconds) / secondsPerBar)) + 1;
+    int startBar = juce::jmax(
+        1, static_cast<int>(std::floor((startTime - barOriginSeconds) / secondsPerBar)) + 1);
 
     g.setFont(11.0f);
 

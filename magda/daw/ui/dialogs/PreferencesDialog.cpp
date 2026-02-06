@@ -355,13 +355,9 @@ void PreferencesDialog::applySettings() {
     // Apply layout settings
     config.setScrollbarOnLeft(leftHandedLayoutToggle.getToggleState());
 
-    // Apply render folder setting
-    auto folderText = renderFolderValue.getText();
-    if (folderText == "Default (beside source file)") {
-        config.setRenderFolder("");
-    } else {
-        config.setRenderFolder(folderText.toStdString());
-    }
+    // Apply render folder setting (tooltip holds the real path; empty = default)
+    auto folderPath = renderFolderValue.getTooltip();
+    config.setRenderFolder(folderPath.toStdString());
 }
 
 void PreferencesDialog::showDialog(juce::Component* parent) {
