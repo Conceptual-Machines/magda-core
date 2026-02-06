@@ -494,24 +494,20 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
     }
 
-    // Loop boundaries - green when enabled, grey when disabled
-    if (displayInfo_.loopLengthSeconds > 0.0) {
-        auto markerColour =
-            isLooped ? loopColour : juce::Colour(DarkTheme::getColour(DarkTheme::TEXT_DISABLED));
-        float alpha = isLooped ? 0.8f : 0.35f;
-
+    // Loop boundaries - only shown when loop is enabled
+    if (isLooped && displayInfo_.loopLengthSeconds > 0.0) {
         // Loop markers from ClipDisplayInfo (at real source positions)
         double loopStartPos = displayInfo_.loopStartPositionSeconds;
         double loopEndPos = displayInfo_.loopEndPositionSeconds;
 
         // Loop start marker
         int loopStartX = timeToPixel(baseTime + loopStartPos);
-        g.setColour(markerColour.withAlpha(alpha));
+        g.setColour(loopColour.withAlpha(0.8f));
         g.fillRect(loopStartX - 1, 0, 2, bounds.getHeight());
 
         // Loop end marker
         int loopEndX = timeToPixel(baseTime + loopEndPos);
-        g.setColour(markerColour.withAlpha(alpha));
+        g.setColour(loopColour.withAlpha(0.8f));
         g.fillRect(loopEndX - 1, 0, 3, bounds.getHeight());
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.drawText("L", loopEndX + 3, 2, 12, 12, juce::Justification::centredLeft, false);
@@ -547,14 +543,10 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         int clipStartX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds);
 
         // In loop mode, the right boundary is the loop end (arrangement clip length is irrelevant)
-        // In non-loop mode, it's the clip end or loop end, whichever is more restrictive
+        // In non-loop mode, it's simply the clip end
         int rightBoundaryX;
         if (isLooped) {
             rightBoundaryX = timeToPixel(baseTime + displayInfo_.loopEndPositionSeconds);
-        } else if (displayInfo_.loopEndPositionSeconds > 0.0) {
-            int clipEndX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds + clipLength_);
-            int loopEndX = timeToPixel(baseTime + displayInfo_.loopEndPositionSeconds);
-            rightBoundaryX = juce::jmin(clipEndX, loopEndX);
         } else {
             rightBoundaryX =
                 timeToPixel(baseTime + displayInfo_.offsetPositionSeconds + clipLength_);

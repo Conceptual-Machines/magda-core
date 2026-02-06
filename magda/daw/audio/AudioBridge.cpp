@@ -635,19 +635,73 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     }
 
     // 3b. REVERSE — must be handled before position/loop/offset sync.
-    // setIsReversed triggers updateReversedState() which internally transforms
-    // offset and loop points via reverseLoopPoints(). After setting reverse,
-    // read back TE's transformed offset so subsequent sync steps stay consistent.
+    // setIsReversed triggers updateReversedState() which:
+    //   1. Points source to the original file
+    //   2. Starts async render of reversed proxy (if reversing)
+    //   3. Calls reverseLoopPoints() to transform offset/loop range
+    //   4. Calls changed() which updates thumbnails
+    // We MUST return after this — the subsequent sync steps would overwrite
+    // TE's reversed offset/loop with our model's pre-reverse values.
+    // The playback graph rebuild is deferred until the proxy file is ready.
     if (clip->isReversed != audioClipPtr->getIsReversed()) {
+        DBG("========== REVERSE TOGGLE [" << clipId << "] ==========");
+        DBG("  Setting isReversed = " << (int)clip->isReversed);
+        DBG("  BEFORE setIsReversed:");
+        DBG("    TE offset: " << audioClipPtr->getPosition().getOffset().inSeconds());
+        DBG("    TE loopStart: " << audioClipPtr->getLoopStart().inSeconds());
+        DBG("    TE loopLength: " << audioClipPtr->getLoopLength().inSeconds());
+        DBG("    TE isLooping: " << (int)audioClipPtr->isLooping());
+        DBG("    TE sourceFile: " << audioClipPtr->getCurrentSourceFile().getFullPathName());
+        DBG("    TE playbackFile: " << audioClipPtr->getPlaybackFile().getFile().getFullPathName());
+        DBG("    TE speedRatio: " << audioClipPtr->getSpeedRatio());
+        DBG("    Model offset: " << clip->offset);
+        DBG("    Model loopStart: " << clip->loopStart);
+        DBG("    Model loopLength: " << clip->loopLength);
+        DBG("    Model loopEnabled: " << (int)clip->loopEnabled);
+
         audioClipPtr->setIsReversed(clip->isReversed);
 
-        // Read back TE's post-reverse offset into our model so step 6 doesn't overwrite it
+        DBG("  AFTER setIsReversed:");
+        DBG("    TE offset: " << audioClipPtr->getPosition().getOffset().inSeconds());
+        DBG("    TE loopStart: " << audioClipPtr->getLoopStart().inSeconds());
+        DBG("    TE loopLength: " << audioClipPtr->getLoopLength().inSeconds());
+        DBG("    TE isLooping: " << (int)audioClipPtr->isLooping());
+        DBG("    TE sourceFile: " << audioClipPtr->getCurrentSourceFile().getFullPathName());
+        DBG("    TE playbackFile: " << audioClipPtr->getPlaybackFile().getFile().getFullPathName());
+        DBG("    TE playbackFile exists: "
+            << (int)audioClipPtr->getPlaybackFile().getFile().existsAsFile());
+        DBG("    TE position: " << audioClipPtr->getPosition().getStart().inSeconds() << " - "
+                                << audioClipPtr->getPosition().getEnd().inSeconds());
+
+        // Read back ALL of TE's transformed values into our model
         if (auto* mutableClip = ClipManager::getInstance().getClip(clipId)) {
             double teOffset = audioClipPtr->getPosition().getOffset().inSeconds();
             mutableClip->offset = teOffset;
-            if (!mutableClip->loopEnabled)
+            if (mutableClip->loopEnabled) {
+                mutableClip->loopStart = audioClipPtr->getLoopStart().inSeconds();
+                mutableClip->loopLength = audioClipPtr->getLoopLength().inSeconds();
+            } else {
                 mutableClip->loopStart = teOffset;
+            }
+            DBG("  Model UPDATED:");
+            DBG("    offset: " << mutableClip->offset);
+            DBG("    loopStart: " << mutableClip->loopStart);
+            DBG("    loopLength: " << mutableClip->loopLength);
         }
+
+        // Check if the reversed proxy file is ready
+        auto playbackFile = audioClipPtr->getPlaybackFile();
+        if (playbackFile.getFile().existsAsFile()) {
+            DBG("  Proxy file EXISTS — reallocating immediately");
+            if (auto* ctx = edit_.getCurrentPlaybackContext())
+                ctx->reallocate();
+        } else {
+            DBG("  Proxy file NOT FOUND — polling until ready (clipId=" << clipId << ")");
+            pendingReverseClipId_ = clipId;
+        }
+
+        DBG("========== REVERSE TOGGLE DONE ==========");
+        return;  // Don't let subsequent sync steps overwrite TE's reversed state
     }
 
     // 4. UPDATE clip position/length
@@ -923,11 +977,7 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     if (clip->autoCrossfade != audioClipPtr->getAutoCrossfade())
         audioClipPtr->setAutoCrossfade(clip->autoCrossfade);
 
-    // 13. CHANNELS
-    if (clip->leftChannelActive != audioClipPtr->isLeftChannelActive())
-        audioClipPtr->setLeftChannelActive(clip->leftChannelActive);
-    if (clip->rightChannelActive != audioClipPtr->isRightChannelActive())
-        audioClipPtr->setRightChannelActive(clip->rightChannelActive);
+    // 13. CHANNELS — removed (L/R controls removed from Inspector)
 
     // Final state dump
     {
@@ -1835,6 +1885,32 @@ void AudioBridge::timerCallback() {
 
     // Apply any pending MIDI routes now that playback context may be available
     applyPendingMidiRoutes();
+
+    // Poll for reversed proxy file completion
+    if (pendingReverseClipId_ != INVALID_CLIP_ID) {
+        auto it = clipIdToEngineId_.find(pendingReverseClipId_);
+        if (it != clipIdToEngineId_.end()) {
+            for (auto* track : te::getAudioTracks(edit_)) {
+                for (auto* teClip : track->getClips()) {
+                    if (teClip->itemID.toString().toStdString() == it->second) {
+                        if (auto* audioClip = dynamic_cast<te::WaveAudioClip*>(teClip)) {
+                            auto proxyFile = audioClip->getPlaybackFile().getFile();
+                            if (proxyFile.existsAsFile()) {
+                                DBG("REVERSE TIMER: proxy ready — reallocating ("
+                                    << proxyFile.getFullPathName() << ")");
+                                pendingReverseClipId_ = INVALID_CLIP_ID;
+                                if (auto* ctx = edit_.getCurrentPlaybackContext())
+                                    ctx->reallocate();
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        } else {
+            pendingReverseClipId_ = INVALID_CLIP_ID;
+        }
+    }
 
     // NOTE: Window state sync is now handled by PluginWindowManager's timer
 

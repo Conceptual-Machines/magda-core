@@ -1539,7 +1539,7 @@ void InspectorContent::resized() {
                 auto right = row2;
 
                 if (clipBpmValue_.isVisible()) {
-                    int bpmWidth = 70;
+                    int bpmWidth = 96;  // matches WARP(46) + gap(4) + BEAT(46)
                     int bpmOffset = (left.getWidth() - bpmWidth) / 2;
                     clipBpmValue_.setBounds(
                         left.withX(left.getX() + bpmOffset).withWidth(bpmWidth));
@@ -1597,23 +1597,10 @@ void InspectorContent::resized() {
                 clipPanValue_->setBounds(row.removeFromLeft(halfWidth));
             }
             addSpace(4);
-            // Row 2: [REVERSE centered] | [L] [R] centered
+            // Row 2: [REVERSE full width]
             {
                 auto row = addRow(22);
-                auto left = row.removeFromLeft(halfWidth);
-                row.removeFromLeft(colGap);
-                auto right = row;
-
-                reverseToggle_.setBounds(left.reduced(0, 1));
-
-                int btnWidth = 30;
-                int btnGap = 4;
-                int lrWidth = btnWidth * 2 + btnGap;
-                int lrOffset = (right.getWidth() - lrWidth) / 2;
-                auto lrArea = right.withX(right.getX() + lrOffset).withWidth(lrWidth);
-                leftChannelToggle_.setBounds(lrArea.removeFromLeft(btnWidth).reduced(0, 1));
-                lrArea.removeFromLeft(btnGap);
-                rightChannelToggle_.setBounds(lrArea.removeFromLeft(btnWidth).reduced(0, 1));
+                reverseToggle_.setBounds(row.reduced(0, 1));
             }
         }
 
@@ -2450,15 +2437,12 @@ void InspectorContent::updateFromSelectedClip() {
         clipGainValue_->setVisible(isAudioClip);
         clipPanValue_->setVisible(isAudioClip);
         reverseToggle_.setVisible(isAudioClip);
-        leftChannelToggle_.setVisible(isAudioClip);
-        rightChannelToggle_.setVisible(isAudioClip);
+        leftChannelToggle_.setVisible(false);
+        rightChannelToggle_.setVisible(false);
         if (isAudioClip) {
             clipGainValue_->setValue(clip->gainDB, juce::dontSendNotification);
             clipPanValue_->setValue(clip->pan, juce::dontSendNotification);
             reverseToggle_.setToggleState(clip->isReversed, juce::dontSendNotification);
-            leftChannelToggle_.setToggleState(clip->leftChannelActive, juce::dontSendNotification);
-            rightChannelToggle_.setToggleState(clip->rightChannelActive,
-                                               juce::dontSendNotification);
         }
 
         // Playback / Beat Detection section — hidden (all controls moved or unused)

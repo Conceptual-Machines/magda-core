@@ -207,20 +207,6 @@ WaveformEditorContent::WaveformEditorContent() {
     timeModeButton_->onClick = [this]() { setRelativeTimeMode(timeModeButton_->getToggleState()); };
     addAndMakeVisible(timeModeButton_.get());
 
-    // Create WARP mode toggle button
-    warpModeButton_ = std::make_unique<juce::TextButton>("WARP");
-    warpModeButton_->setTooltip("Toggle warp mode (add/move warp markers)");
-    warpModeButton_->setClickingTogglesState(true);
-    warpModeButton_->setToggleState(false, juce::dontSendNotification);
-    warpModeButton_->setLookAndFeel(buttonLookAndFeel_.get());
-    warpModeButton_->onClick = [this]() {
-        if (editingClipId_ != magda::INVALID_CLIP_ID) {
-            bool newState = warpModeButton_->getToggleState();
-            magda::ClipManager::getInstance().setClipWarpEnabled(editingClipId_, newState);
-        }
-    };
-    addAndMakeVisible(warpModeButton_.get());
-
     // Create BPM label for toolbar
     bpmLabel_ =
         std::make_unique<juce::Label>("bpmLabel", juce::String::fromUTF8("\xe2\x80\x94 BPM"));
@@ -363,9 +349,6 @@ WaveformEditorContent::~WaveformEditorContent() {
     if (timeModeButton_) {
         timeModeButton_->setLookAndFeel(nullptr);
     }
-    if (warpModeButton_) {
-        warpModeButton_->setLookAndFeel(nullptr);
-    }
     if (gridResolutionCombo_) {
         gridResolutionCombo_->setLookAndFeel(nullptr);
     }
@@ -389,7 +372,6 @@ void WaveformEditorContent::resized() {
     if (bounds.getHeight() < minHeight || bounds.getWidth() <= 0) {
         // Hide everything when too small to avoid zero-sized paint
         timeModeButton_->setBounds(0, 0, 0, 0);
-        warpModeButton_->setBounds(0, 0, 0, 0);
         gridResolutionCombo_->setBounds(0, 0, 0, 0);
         bpmLabel_->setBounds(0, 0, 0, 0);
         filePathLabel_->setBounds(0, 0, 0, 0);
@@ -403,8 +385,6 @@ void WaveformEditorContent::resized() {
     // Toolbar at top
     auto toolbarArea = bounds.removeFromTop(TOOLBAR_HEIGHT);
     timeModeButton_->setBounds(toolbarArea.removeFromLeft(60).reduced(2));
-    toolbarArea.removeFromLeft(4);
-    warpModeButton_->setBounds(toolbarArea.removeFromLeft(60).reduced(2));
     toolbarArea.removeFromLeft(4);
     gridResolutionCombo_->setBounds(toolbarArea.removeFromLeft(70).reduced(2));
     toolbarArea.removeFromLeft(4);
@@ -560,7 +540,6 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
 
             // Update warp mode state
             bool warpEnabled = clip->warpEnabled;
-            warpModeButton_->setToggleState(warpEnabled, juce::dontSendNotification);
             gridComponent_->setWarpMode(warpEnabled);
 
             if (warpEnabled) {
@@ -712,7 +691,6 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
         // Update warp mode state
         if (clip) {
             bool warpEnabled = clip->warpEnabled;
-            warpModeButton_->setToggleState(warpEnabled, juce::dontSendNotification);
             gridComponent_->setWarpMode(warpEnabled);
             wasWarpEnabled_ = warpEnabled;
 
@@ -861,7 +839,7 @@ void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
     // Update time ruler loop region (green when active, grey when disabled)
     // Display anchored at file start — loop markers at real source positions
     if (timeRuler_) {
-        bool showMarkers = clip.loopLength > 0.0;
+        bool showMarkers = clip.loopEnabled && clip.loopLength > 0.0;
         bool loopIsActive = clip.loopEnabled;
         double loopStartPos = info.loopStartPositionSeconds;
         double loopLen = info.loopLengthSeconds;

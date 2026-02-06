@@ -644,6 +644,10 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Engine wrapper (owns this AudioBridge, used for ClipInterface access)
     TracktionEngineWrapper* engineWrapper_ = nullptr;
 
+    // Deferred reallocate after reverse proxy render completes
+    // Stores the clip ID so we can poll until the proxy file exists
+    ClipId pendingReverseClipId_{INVALID_CLIP_ID};
+
     // Shutdown flag to prevent operations during cleanup
     std::atomic<bool> isShuttingDown_{false};
 

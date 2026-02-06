@@ -99,7 +99,7 @@ class WaveformEditorContent : public PanelContent,
     std::unique_ptr<WaveformGridComponent> gridComponent_;
     std::unique_ptr<magda::TimeRuler> timeRuler_;
     std::unique_ptr<juce::TextButton> timeModeButton_;
-    std::unique_ptr<juce::TextButton> warpModeButton_;
+
     std::unique_ptr<juce::Label> bpmLabel_;
     std::unique_ptr<juce::Label> filePathLabel_;
     std::unique_ptr<juce::ComboBox> gridResolutionCombo_;
