@@ -95,15 +95,10 @@ void GridOverlayComponent::timelineStateChanged(const TimelineState& state, Chan
         needsRepaint = true;
     }
 
-    // Tempo/time-sig affect grid line placement (seconds↔beats conversion)
-    if (tempoBPM != state.tempo.bpm ||
-        timeSignatureNumerator != state.tempo.timeSignatureNumerator ||
-        timeSignatureDenominator != state.tempo.timeSignatureDenominator) {
-        tempoBPM = state.tempo.bpm;
-        timeSignatureNumerator = state.tempo.timeSignatureNumerator;
-        timeSignatureDenominator = state.tempo.timeSignatureDenominator;
-        needsRepaint = true;
-    }
+    // Tempo/time-sig don't affect grid pixel positions (ppb zoom) — just store them
+    tempoBPM = state.tempo.bpm;
+    timeSignatureNumerator = state.tempo.timeSignatureNumerator;
+    timeSignatureDenominator = state.tempo.timeSignatureDenominator;
 
     if (needsRepaint)
         repaint();

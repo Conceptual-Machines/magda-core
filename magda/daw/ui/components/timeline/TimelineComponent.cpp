@@ -137,15 +137,10 @@ void TimelineComponent::timelineStateChanged(const TimelineState& state, ChangeF
         needsRepaint = true;
     }
 
-    // Tempo/time-sig affect grid/marker layout — repaint when they change
-    if (tempoBPM != state.tempo.bpm ||
-        timeSignatureNumerator != state.tempo.timeSignatureNumerator ||
-        timeSignatureDenominator != state.tempo.timeSignatureDenominator) {
-        tempoBPM = state.tempo.bpm;
-        timeSignatureNumerator = state.tempo.timeSignatureNumerator;
-        timeSignatureDenominator = state.tempo.timeSignatureDenominator;
-        needsRepaint = true;
-    }
+    // Tempo/time-sig don't affect pixel positions (ppb zoom) — just store them
+    tempoBPM = state.tempo.bpm;
+    timeSignatureNumerator = state.tempo.timeSignatureNumerator;
+    timeSignatureDenominator = state.tempo.timeSignatureDenominator;
 
     if (needsRepaint)
         repaint();
