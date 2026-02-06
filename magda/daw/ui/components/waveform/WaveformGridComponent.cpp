@@ -243,11 +243,21 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
     double secondsPerGrid = gridBeats * secondsPerBeat;
     double beatsPerBar = static_cast<double>(timeRuler_->getTimeSigNumerator());
 
-    // Iterate grid lines across the full file extent
+    // Grid origin in timeline seconds (where bar 1 beat 1 starts)
+    double originTimeline =
+        timeRuler_ ? displayInfo_.sourceToTimeline(timeRuler_->getBarOrigin()) : 0.0;
+
+    // Grid lines at: originTimeline + k * secondsPerGrid for all integer k
+    // Find the first grid line at or before t=0
+    double startK = std::floor((0.0 - originTimeline) / secondsPerGrid);
+    double iterStart = originTimeline + startK * secondsPerGrid;
+
     int visibleLeft = 0;
     int visibleRight = getWidth();
 
-    for (double t = 0.0; t < fileExtent + secondsPerGrid; t += secondsPerGrid) {
+    auto& fontMgr = FontManager::getInstance();
+
+    for (double t = iterStart; t < fileExtent + secondsPerGrid; t += secondsPerGrid) {
         double displayTime = t + displayStartTime;
         int px = timeToPixel(displayTime);
 
@@ -256,10 +266,12 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
         if (px < waveformRect.getX() || px > waveformRect.getRight())
             continue;
 
-        // Determine line type based on beat position
-        double beatPos = t / secondsPerBeat;
-        bool isBar = (std::fmod(beatPos, beatsPerBar) < 0.001);
-        bool isBeat = (std::fmod(beatPos, 1.0) < 0.001);
+        // Beat position relative to the grid origin
+        double beatPos = (t - originTimeline) / secondsPerBeat;
+        // Round to avoid floating-point drift
+        double beatPosRounded = std::round(beatPos * 1000.0) / 1000.0;
+        bool isBar = (std::fmod(std::abs(beatPosRounded), beatsPerBar) < 0.001);
+        bool isBeat = (std::fmod(std::abs(beatPosRounded), 1.0) < 0.001);
 
         if (isBar) {
             g.setColour(juce::Colour(0xFF707070));
@@ -271,6 +283,15 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
 
         g.drawVerticalLine(px, static_cast<float>(waveformRect.getY()),
                            static_cast<float>(waveformRect.getBottom()));
+
+        // Draw bar number at bar lines
+        if (isBar) {
+            int barNumber = static_cast<int>(std::round(beatPosRounded / beatsPerBar)) + 1;
+            g.setColour(juce::Colour(0xFFAAAAAA));
+            g.setFont(fontMgr.getUIFont(9.0f));
+            g.drawText(juce::String(barNumber), px + 2, waveformRect.getBottom() - 14, 30, 12,
+                       juce::Justification::centredLeft, false);
+        }
     }
 }
 
@@ -1247,26 +1268,42 @@ double WaveformGridComponent::snapToNearestTransient(double time) const {
 void WaveformGridComponent::showContextMenu(const juce::MouseEvent& event) {
     juce::PopupMenu menu;
 
-    menu.addItem(1, "Show Pre-Marker Audio", true, showPreLoop_);
-    menu.addItem(2, "Show Post-Marker Audio", true, showPostLoop_);
+    // "Set Beat 1 Here" uses the clip's audio offset (source file seconds)
+    const auto* clip = getClip();
+    double clipOffset = clip ? clip->offset : 0.0;
+
+    menu.addItem(1, "Set Beat 1 at Offset");
+    if (timeRuler_ && timeRuler_->getBarOrigin() != 0.0)
+        menu.addItem(2, "Reset Beat Grid Origin");
+    menu.addSeparator();
+    menu.addItem(3, "Show Pre-Marker Audio", true, showPreLoop_);
+    menu.addItem(4, "Show Post-Marker Audio", true, showPostLoop_);
 
     int markerIndex = -1;
     if (warpMode_) {
         markerIndex = findMarkerAtPixel(event.x);
         if (markerIndex >= 0) {
             menu.addSeparator();
-            menu.addItem(3, "Remove Warp Marker");
+            menu.addItem(5, "Remove Warp Marker");
         }
     }
 
-    menu.showMenuAsync(juce::PopupMenu::Options(), [this, markerIndex](int result) {
+    menu.showMenuAsync(juce::PopupMenu::Options(), [this, markerIndex, clipOffset](int result) {
         if (result == 1) {
-            showPreLoop_ = !showPreLoop_;
+            if (timeRuler_)
+                timeRuler_->setBarOrigin(clipOffset);
             repaint();
         } else if (result == 2) {
+            if (timeRuler_)
+                timeRuler_->setBarOrigin(0.0);
+            repaint();
+        } else if (result == 3) {
+            showPreLoop_ = !showPreLoop_;
+            repaint();
+        } else if (result == 4) {
             showPostLoop_ = !showPostLoop_;
             repaint();
-        } else if (result == 3 && markerIndex >= 0 && onWarpMarkerRemove) {
+        } else if (result == 5 && markerIndex >= 0 && onWarpMarkerRemove) {
             onWarpMarkerRemove(markerIndex);
         }
     });

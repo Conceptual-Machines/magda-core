@@ -76,6 +76,13 @@ void TimeRuler::setTimeOffset(double offsetSeconds) {
     repaint();
 }
 
+void TimeRuler::setBarOrigin(double originSeconds) {
+    if (barOriginSeconds != originSeconds) {
+        barOriginSeconds = originSeconds;
+        repaint();
+    }
+}
+
 void TimeRuler::setRelativeMode(bool relative) {
     relativeMode = relative;
     repaint();
@@ -284,17 +291,15 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     // In REL mode: bar numbers relative to clip (1, 2, 3...), grid starts at clip time 0
     // No barOffset needed since grid coordinate system matches display
 
-    // Find first visible bar
+    // Find first visible bar (offset by barOriginSeconds)
     double startTime = pixelToTime(0);
-    int startBar = static_cast<int>(std::floor(startTime / secondsPerBar));
-    if (startBar < 1)
-        startBar = 1;
+    int startBar = static_cast<int>(std::floor((startTime - barOriginSeconds) / secondsPerBar)) + 1;
 
     g.setFont(11.0f);
 
     // Draw bar lines and optionally beat lines
     for (int bar = startBar;; bar++) {
-        double barTime = (bar - 1) * secondsPerBar;
+        double barTime = barOriginSeconds + (bar - 1) * secondsPerBar;
         int barX = timeToPixel(barTime);
 
         if (barX > width)

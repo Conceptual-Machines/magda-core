@@ -223,7 +223,7 @@ class WaveformGridComponent : public juce::Component {
 
     // Beat grid state
     GridResolution gridResolution_ = GridResolution::Off;
-    magda::TimeRuler* timeRuler_ = nullptr;  // not owned — reads tempo/timeSig
+    magda::TimeRuler* timeRuler_ = nullptr;  // not owned — reads tempo/timeSig + bar origin
 
     // Layout info shared between paint helpers
     struct WaveformLayout {
