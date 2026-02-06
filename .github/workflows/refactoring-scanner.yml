@@ -180,7 +180,7 @@ jobs:
         head -c 60000 results/detailed-findings.txt > results/detailed-findings-truncated.txt || true
 
     - name: Upload Refactoring Artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: refactoring-results
         path: results/
