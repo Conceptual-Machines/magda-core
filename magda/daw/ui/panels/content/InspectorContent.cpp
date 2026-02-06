@@ -10,6 +10,7 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/InspectorComboBoxLookAndFeel.hpp"
+#include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "../../utils/TimelineUtils.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/MidiNoteCommands.hpp"
@@ -462,6 +463,14 @@ InspectorContent::InspectorContent() {
     clipLoopToggle_->setClickingTogglesState(false);
     clipLoopToggle_->onClick = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID) {
+            auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
+            if (!clip)
+                return;
+
+            // Beat mode requires loop — don't allow disabling
+            if (clip->autoTempo && clipLoopToggle_->isActive())
+                return;
+
             bool newState = !clipLoopToggle_->isActive();
             clipLoopToggle_->setActive(newState);
             double bpm = 120.0;
@@ -474,31 +483,37 @@ InspectorContent::InspectorContent() {
     clipPropsContainer_.addChildComponent(*clipLoopToggle_);
 
     // Warp toggle (pin icon)
-    clipWarpToggle_ =
-        std::make_unique<magda::SvgButton>("Warp", BinaryData::pin_svg, BinaryData::pin_svgSize);
-    clipWarpToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    clipWarpToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    clipWarpToggle_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    clipWarpToggle_->setActiveColor(DarkTheme::getAccentColour());
-    clipWarpToggle_->setClickingTogglesState(false);
-    clipWarpToggle_->onClick = [this]() {
+    clipWarpToggle_.setButtonText("WARP");
+    clipWarpToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    clipWarpToggle_.setColour(juce::TextButton::buttonColourId,
+                              DarkTheme::getColour(DarkTheme::SURFACE));
+    clipWarpToggle_.setColour(juce::TextButton::buttonOnColourId,
+                              DarkTheme::getAccentColour().withAlpha(0.3f));
+    clipWarpToggle_.setColour(juce::TextButton::textColourOffId,
+                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipWarpToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+    clipWarpToggle_.setClickingTogglesState(false);
+    clipWarpToggle_.onClick = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID) {
-            bool newState = !clipWarpToggle_->isActive();
-            clipWarpToggle_->setActive(newState);
+            bool newState = !clipWarpToggle_.getToggleState();
+            clipWarpToggle_.setToggleState(newState, juce::dontSendNotification);
             magda::ClipManager::getInstance().setClipWarpEnabled(selectedClipId_, newState);
         }
     };
-    clipPropsContainer_.addChildComponent(*clipWarpToggle_);
+    clipPropsContainer_.addChildComponent(clipWarpToggle_);
 
-    // Auto-tempo (musical mode) toggle (note icon)
-    clipAutoTempoToggle_ = std::make_unique<magda::SvgButton>("Musical", BinaryData::note_svg,
-                                                              BinaryData::note_svgSize);
-    clipAutoTempoToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    clipAutoTempoToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    clipAutoTempoToggle_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    clipAutoTempoToggle_->setActiveColor(DarkTheme::getAccentColour());
-    clipAutoTempoToggle_->setClickingTogglesState(false);
-    clipAutoTempoToggle_->setTooltip(
+    // Auto-tempo (beat mode) toggle
+    clipAutoTempoToggle_.setButtonText("BEAT");
+    clipAutoTempoToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    clipAutoTempoToggle_.setColour(juce::TextButton::buttonColourId,
+                                   DarkTheme::getColour(DarkTheme::SURFACE));
+    clipAutoTempoToggle_.setColour(juce::TextButton::buttonOnColourId,
+                                   DarkTheme::getAccentColour().withAlpha(0.3f));
+    clipAutoTempoToggle_.setColour(juce::TextButton::textColourOffId,
+                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipAutoTempoToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+    clipAutoTempoToggle_.setClickingTogglesState(false);
+    clipAutoTempoToggle_.setTooltip(
         "Lock clip to musical time (bars/beats) instead of absolute time.\n"
         "Clip length changes with tempo to maintain fixed beat length.");
 
@@ -518,7 +533,7 @@ InspectorContent::InspectorContent() {
         updateFromSelectedClip();
     };
 
-    clipAutoTempoToggle_->onClick = [this, applyAutoTempo]() {
+    clipAutoTempoToggle_.onClick = [this, applyAutoTempo]() {
         if (selectedClipId_ == magda::INVALID_CLIP_ID)
             return;
         auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
@@ -549,11 +564,13 @@ InspectorContent::InspectorContent() {
 
         applyAutoTempo(newState);
     };
-    clipPropsContainer_.addChildComponent(*clipAutoTempoToggle_);
+    clipPropsContainer_.addChildComponent(clipAutoTempoToggle_);
 
     clipStretchValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
     clipStretchValue_->setRange(0.25, 4.0, 1.0);
     clipStretchValue_->setSuffix("x");
+    clipStretchValue_->setDrawBackground(false);
+    clipStretchValue_->setDrawBorder(false);
     clipStretchValue_->onValueChange = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID)
             magda::ClipManager::getInstance().setSpeedRatio(selectedClipId_,
@@ -1458,7 +1475,7 @@ void InspectorContent::resized() {
                 valueRow.removeFromLeft(gap);
                 clipLoopPhaseValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
             } else {
-                // Loop OFF: loop toggle — offset only (first column)
+                // Loop OFF: "offset" label above, matching loop-ON label row
                 auto labelRow = addRow(labelHeight);
                 labelRow.removeFromLeft(iconSize + gap);
                 clipOffsetRowLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
@@ -1470,40 +1487,62 @@ void InspectorContent::resized() {
                 clipContentOffsetValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
             }
         }
-        addSpace(4);
+        addSeparator();
 
-        // Row 1: WARP icon | MUSICAL icon | stretch mode dropdown
-        if (clipWarpToggle_->isVisible() || clipAutoTempoToggle_->isVisible()) {
-            auto row1 = addRow(24);
-            if (clipWarpToggle_->isVisible()) {
-                clipWarpToggle_->setBounds(
-                    row1.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-                row1.removeFromLeft(4);
-            }
-            if (clipAutoTempoToggle_->isVisible()) {
-                clipAutoTempoToggle_->setBounds(
-                    row1.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-                row1.removeFromLeft(8);
-            }
-            if (stretchModeCombo_.isVisible()) {
-                stretchModeCombo_.setBounds(row1.removeFromLeft(100).reduced(0, 1));
-            }
-            addSpace(4);
-        }
+        // 2-column grid: warp toggles | combo  /  BPM | speed/beats
+        {
+            const int colGap = 8;
+            int halfWidth = (containerWidth - colGap) / 2;
 
-        // Row 2: BPM | speed OR beats
-        if (clipBpmValue_.isVisible() || (clipStretchValue_ && clipStretchValue_->isVisible()) ||
-            clipBeatsLengthValue_->isVisible()) {
-            auto row2 = addRow(22);
-            if (clipBpmValue_.isVisible()) {
-                clipBpmValue_.setBounds(row2.removeFromLeft(70));
-                row2.removeFromLeft(8);
+            // Row 1: [WARP] [BEAT] centered | [stretch combo]
+            if (clipWarpToggle_.isVisible() || clipAutoTempoToggle_.isVisible()) {
+                auto row1 = addRow(24);
+                auto left = row1.removeFromLeft(halfWidth);
+                row1.removeFromLeft(colGap);
+                auto right = row1;
+
+                const int btnWidth = 46;
+                const int btnGap = 4;
+                int numBtns = (clipWarpToggle_.isVisible() ? 1 : 0) +
+                              (clipAutoTempoToggle_.isVisible() ? 1 : 0);
+                int totalBtnsWidth = numBtns * btnWidth + (numBtns > 1 ? btnGap : 0);
+                int btnOffset = (left.getWidth() - totalBtnsWidth) / 2;
+                left.removeFromLeft(btnOffset);
+
+                if (clipWarpToggle_.isVisible()) {
+                    clipWarpToggle_.setBounds(left.removeFromLeft(btnWidth).reduced(0, 1));
+                    left.removeFromLeft(btnGap);
+                }
+                if (clipAutoTempoToggle_.isVisible()) {
+                    clipAutoTempoToggle_.setBounds(left.removeFromLeft(btnWidth).reduced(0, 1));
+                }
+                if (stretchModeCombo_.isVisible()) {
+                    stretchModeCombo_.setBounds(right.reduced(0, 1));
+                }
             }
-            if (clipStretchValue_ && clipStretchValue_->isVisible()) {
-                clipStretchValue_->setBounds(row2.removeFromLeft(60).reduced(0, 1));
-            }
-            if (clipBeatsLengthValue_->isVisible()) {
-                clipBeatsLengthValue_->setBounds(row2.removeFromLeft(80));
+
+            // Row 2: [BPM] centered | [speed OR beats]
+            if (clipBpmValue_.isVisible() ||
+                (clipStretchValue_ && clipStretchValue_->isVisible()) ||
+                clipBeatsLengthValue_->isVisible()) {
+                addSpace(4);
+                auto row2 = addRow(22);
+                auto left = row2.removeFromLeft(halfWidth);
+                row2.removeFromLeft(colGap);
+                auto right = row2;
+
+                if (clipBpmValue_.isVisible()) {
+                    int bpmWidth = 70;
+                    int bpmOffset = (left.getWidth() - bpmWidth) / 2;
+                    clipBpmValue_.setBounds(
+                        left.withX(left.getX() + bpmOffset).withWidth(bpmWidth));
+                }
+                if (clipStretchValue_ && clipStretchValue_->isVisible()) {
+                    clipStretchValue_->setBounds(right.reduced(0, 1));
+                }
+                if (clipBeatsLengthValue_->isVisible()) {
+                    clipBeatsLengthValue_->setBounds(right.reduced(0, 1));
+                }
             }
         }
 
@@ -1514,8 +1553,8 @@ void InspectorContent::resized() {
         // Pitch section (audio clips only)
         if (pitchSectionLabel_.isVisible()) {
             pitchSectionLabel_.setBounds(addRow(16));
-            addSpace(4);
-            {
+            if (autoPitchToggle_.isVisible()) {
+                addSpace(4);
                 auto row = addRow(22);
                 int halfWidth = (containerWidth - 8) / 2;
                 autoPitchToggle_.setBounds(row.removeFromLeft(halfWidth).reduced(0, 1));
@@ -2245,7 +2284,8 @@ void InspectorContent::updateFromSelectedClip() {
         clipContentOffsetIcon_->setVisible(false);
 
         clipLoopToggle_->setActive(clip->loopEnabled);
-        clipLoopToggle_->setEnabled(true);
+        // Beat mode forces loop on — disable the toggle so user can't turn it off
+        clipLoopToggle_->setEnabled(!clip->autoTempo);
 
         // Conditional Row 2 based on loop state
         bool loopOn = isSessionClip || clip->loopEnabled;
@@ -2312,15 +2352,15 @@ void InspectorContent::updateFromSelectedClip() {
         }
 
         // Warp toggle (always visible for audio clips)
-        clipWarpToggle_->setVisible(isAudioClip);
+        clipWarpToggle_.setVisible(isAudioClip);
         if (isAudioClip) {
-            clipWarpToggle_->setActive(clip->warpEnabled);
+            clipWarpToggle_.setToggleState(clip->warpEnabled, juce::dontSendNotification);
         }
 
         // Auto-tempo toggle (always visible for audio clips)
-        clipAutoTempoToggle_->setVisible(isAudioClip);
+        clipAutoTempoToggle_.setVisible(isAudioClip);
         if (isAudioClip) {
-            clipAutoTempoToggle_->setActive(clip->autoTempo);
+            clipAutoTempoToggle_.setToggleState(clip->autoTempo, juce::dontSendNotification);
             // Disable stretch control when auto-tempo is enabled (speedRatio must be 1.0)
             if (clip->autoTempo && clipStretchValue_) {
                 clipStretchValue_->setEnabled(false);
@@ -2366,8 +2406,8 @@ void InspectorContent::updateFromSelectedClip() {
 
         // Pitch section (audio clips only)
         pitchSectionLabel_.setVisible(isAudioClip);
-        autoPitchToggle_.setVisible(isAudioClip);
-        autoPitchModeCombo_.setVisible(isAudioClip);
+        autoPitchToggle_.setVisible(false);     // hidden for now
+        autoPitchModeCombo_.setVisible(false);  // hidden for now
         pitchChangeValue_->setVisible(isAudioClip);
         transposeValue_->setVisible(isAudioClip);
         if (isAudioClip) {
@@ -2502,8 +2542,8 @@ void InspectorContent::showClipControls(bool show) {
         clipLoopLengthValue_->setVisible(false);
         clipLoopPhaseLabel_.setVisible(false);
         clipLoopPhaseValue_->setVisible(false);
-        clipWarpToggle_->setVisible(false);
-        clipAutoTempoToggle_->setVisible(false);
+        clipWarpToggle_.setVisible(false);
+        clipAutoTempoToggle_.setVisible(false);
         if (clipStretchValue_)
             clipStretchValue_->setVisible(false);
         stretchModeCombo_.setVisible(false);
