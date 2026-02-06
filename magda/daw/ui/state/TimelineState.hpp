@@ -15,6 +15,84 @@ enum class TimeDisplayMode {
     BarsBeats  // Display as 1.1.1, 1.2.1, 2.1.1, etc. (bar.beat.subdivision)
 };
 
+// Grid quantize setting (numerator/denominator + auto toggle)
+struct GridQuantize {
+    bool autoGrid = true;  // When true, use smart grid based on zoom level
+    int numerator = 1;     // e.g. 1, 2, 3
+    int denominator = 4;   // Must be power of 2: 1, 2, 4, 8, 16, 32
+
+    // Returns beat fraction: numerator/denominator relative to whole note (4 beats)
+    // e.g. 1/4 = 1 beat, 1/8 = 0.5 beats, 3/8 = 1.5 beats
+    double toBeatFraction() const {
+        return (4.0 * numerator) / denominator;
+    }
+};
+
+/**
+ * Centralized grid utilities. Beat subdivisions and bar multiples are
+ * computed as powers of 2, so the grid scales to any zoom level.
+ *
+ * Beat fractions: 2^n for n = minBeatPow..maxBeatPow (fractions of a beat).
+ *   e.g. 2^-6 = 1/64 beat = 1/256 note, 2^0 = 1 beat = 1/4 note, 2^1 = 2 beats = 1/2 note.
+ *
+ * Display: denominator = 4 / beatFraction (whole-note relative).
+ *   e.g. beatFraction=0.25 -> 1/16, beatFraction=1.0 -> 1/4, beatFraction=2.0 -> 1/2.
+ */
+struct GridConstants {
+    // Range of beat fraction powers: 2^minBeatPow .. 2^maxBeatPow
+    static constexpr int minBeatPow = -6;  // 2^-6 = 1/64 beat = 1/256 note
+    static constexpr int maxBeatPow = 1;   // 2^1  = 2 beats  = 1/2 note
+
+    // Max bar multiple power: 2^0 .. 2^maxBarPow bars
+    static constexpr int maxBarPow = 5;  // 2^5 = 32 bars
+
+    // Get beat fraction for a given power
+    static constexpr double beatFraction(int pow) {
+        // Manual constexpr pow2: positive shifts up, negative shifts down
+        if (pow >= 0) {
+            return static_cast<double>(1 << pow);
+        } else {
+            return 1.0 / static_cast<double>(1 << (-pow));
+        }
+    }
+
+    // Get display denominator for a beat fraction (whole-note relative: 4/fraction)
+    static constexpr int denominator(int pow) {
+        // denom = 4 / beatFraction = 4 * 2^(-pow) = 2^(2-pow)
+        int shift = 2 - pow;
+        return (shift >= 0) ? (1 << shift) : 1;
+    }
+
+    /**
+     * Find the first beat subdivision where pixelSpacing >= minPixels.
+     * Returns the beat fraction, or -1 if none found (caller should try bar multiples).
+     */
+    static double findBeatSubdivision(double zoom, int minPixels) {
+        for (int p = minBeatPow; p <= maxBeatPow; p++) {
+            double frac = beatFraction(p);
+            if (static_cast<int>(frac * zoom) >= minPixels) {
+                return frac;
+            }
+        }
+        return -1.0;
+    }
+
+    /**
+     * Find the first bar multiple where pixelSpacing >= minPixels.
+     * Returns the bar multiple count (1, 2, 4, ...), or the max as fallback.
+     */
+    static int findBarMultiple(double zoom, int timeSigNumerator, int minPixels) {
+        for (int p = 0; p <= maxBarPow; p++) {
+            int mult = 1 << p;
+            double pixelSpacing = zoom * timeSigNumerator * mult;
+            if (static_cast<int>(pixelSpacing) >= minPixels) {
+                return mult;
+            }
+        }
+        return 1 << maxBarPow;
+    }
+};
+
 /**
  * @brief Zoom state for the timeline
  */
@@ -124,6 +202,36 @@ struct LoopRegion {
 };
 
 /**
+ * @brief Punch in/out region state (independent markers for punch recording)
+ */
+struct PunchRegion {
+    double startTime = -1.0;   // Time in seconds (derived from beats)
+    double endTime = -1.0;     // Time in seconds (derived from beats)
+    double startBeats = -1.0;  // Position in beats (authoritative)
+    double endBeats = -1.0;    // Position in beats (authoritative)
+    bool punchInEnabled = false;
+    bool punchOutEnabled = false;
+
+    bool isValid() const {
+        return startTime >= 0 && endTime > startTime;
+    }
+    bool isEnabled() const {
+        return punchInEnabled || punchOutEnabled;
+    }
+    void clear() {
+        startTime = -1.0;
+        endTime = -1.0;
+        startBeats = -1.0;
+        endBeats = -1.0;
+        punchInEnabled = false;
+        punchOutEnabled = false;
+    }
+    double getDuration() const {
+        return isValid() ? (endTime - startTime) : 0.0;
+    }
+};
+
+/**
  * @brief Tempo and time signature state
  */
 struct TempoState {
@@ -156,6 +264,7 @@ struct DisplayConfig {
     TimeDisplayMode timeDisplayMode = TimeDisplayMode::BarsBeats;
     bool snapEnabled = true;
     bool arrangementLocked = true;
+    GridQuantize gridQuantize;
 };
 
 /**
@@ -196,6 +305,7 @@ struct TimelineState {
     PlayheadState playhead;
     TimeSelection selection;
     LoopRegion loop;
+    PunchRegion punch;
     TempoState tempo;
     DisplayConfig display;
 
@@ -288,6 +398,12 @@ struct TimelineState {
      * Get the current snap interval based on zoom level and display mode
      */
     double getSnapInterval() const {
+        // If grid override is active, return the fixed interval
+        if (!display.gridQuantize.autoGrid) {
+            double beatFraction = display.gridQuantize.toBeatFraction();
+            return tempo.getSecondsPerBeat() * beatFraction;
+        }
+
         const int minPixelSpacing = 50;  // From LayoutConfig
 
         if (display.timeDisplayMode == TimeDisplayMode::Seconds) {
@@ -300,17 +416,15 @@ struct TimelineState {
             }
             return 1.0;
         } else {
-            // BarsBeats: zoom is ppb, so pixels for a beat fraction is just zoom * fraction
-            const double beatFractions[] = {0.0625, 0.125, 0.25, 0.5, 1.0, 2.0};
-
-            for (double fraction : beatFractions) {
-                if (zoom.horizontalZoom * fraction >= minPixelSpacing) {
-                    // Return interval in seconds for compatibility with snap logic
-                    return tempo.getSecondsPerBeat() * fraction;
-                }
+            // BarsBeats: zoom is ppb, find first power-of-2 beat fraction that fits
+            double frac = GridConstants::findBeatSubdivision(zoom.horizontalZoom, minPixelSpacing);
+            if (frac > 0) {
+                return tempo.getSecondsPerBeat() * frac;
             }
-
-            return tempo.getSecondsPerBar();
+            // Fall back to bar multiples
+            int mult = GridConstants::findBarMultiple(
+                zoom.horizontalZoom, tempo.timeSignatureNumerator, minPixelSpacing);
+            return tempo.getSecondsPerBar() * mult;
         }
     }
 
@@ -367,10 +481,12 @@ struct TimelineState {
         if (timelineLength > 0 && zoom.viewportWidth > 0) {
             double availableWidth = zoom.viewportWidth - 50.0;
             double beats = secondsToBeats(timelineLength);
-            if (beats > 0)
-                return availableWidth / beats;
+            if (beats > 0) {
+                // Allow zooming out to 1/4 of the fit-to-viewport level
+                return (availableWidth / beats) * 0.25;
+            }
         }
-        return 0.1;
+        return 0.01;
     }
 };
 

@@ -1,5 +1,7 @@
 #include "RoutingSelector.hpp"
 
+#include <BinaryData.h>
+
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 
@@ -7,6 +9,16 @@ namespace magda {
 
 RoutingSelector::RoutingSelector(Type type) : type_(type) {
     setRepaintsOnMouseActivity(true);
+
+    // Load I/O icon based on type (Input or Output)
+    bool isInput = (type_ == Type::AudioIn || type_ == Type::MidiIn);
+    if (isInput) {
+        icon_ =
+            juce::Drawable::createFromImageData(BinaryData::Input_svg, BinaryData::Input_svgSize);
+    } else {
+        icon_ =
+            juce::Drawable::createFromImageData(BinaryData::Output_svg, BinaryData::Output_svgSize);
+    }
 }
 
 void RoutingSelector::paint(juce::Graphics& g) {
@@ -41,11 +53,15 @@ void RoutingSelector::paint(juce::Graphics& g) {
     g.drawLine(dropdownArea.getX(), dropdownArea.getY() + 2, dropdownArea.getX(),
                dropdownArea.getBottom() - 2, 1.0f);
 
-    // Draw label text
-    g.setColour(enabled_ ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)
-                         : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    g.setFont(FontManager::getInstance().getUIFont(9.0f));
-    g.drawText(getLabel(), mainArea.toNearestInt(), juce::Justification::centred, false);
+    // Draw I/O icon
+    if (icon_) {
+        auto iconColour = enabled_ ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)
+                                   : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+        auto iconCopy = icon_->createCopy();
+        iconCopy->replaceColour(juce::Colour(0xFFB3B3B3), iconColour);
+        auto iconBounds = mainArea.reduced(2.0f);
+        iconCopy->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
+    }
 
     // Draw dropdown arrow
     auto arrowBounds = dropdownArea.reduced(2.0f);
@@ -186,20 +202,6 @@ void RoutingSelector::showPopupMenu() {
                                }
                            }
                        });
-}
-
-juce::String RoutingSelector::getLabel() const {
-    switch (type_) {
-        case Type::AudioIn:
-            return "Ai";
-        case Type::AudioOut:
-            return "Ao";
-        case Type::MidiIn:
-            return "Mi";
-        case Type::MidiOut:
-            return "Mo";
-    }
-    return "?";
 }
 
 juce::Colour RoutingSelector::getEnabledColour() const {

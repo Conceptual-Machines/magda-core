@@ -168,7 +168,7 @@ class Config {
     double defaultZoomViewDuration = 60.0;  // Show 1 minute by default
 
     // Zoom limits
-    double minZoomLevel = 0.1;      // Minimum zoom level
+    double minZoomLevel = 0.01;     // Minimum zoom level (allows extreme zoom out)
     double maxZoomLevel = 10000.0;  // Maximum zoom level (sample-level detail)
 
     // Zoom sensitivity settings

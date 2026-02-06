@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <optional>
 
 namespace magda {
 
@@ -84,6 +85,40 @@ class DraggableValueLabel : public juce::Component {
         snapToInteger_ = snap;
     }
 
+    // Custom text colour (overrides default TEXT_PRIMARY)
+    void setTextColour(juce::Colour colour) {
+        customTextColour_ = colour;
+        repaint();
+    }
+
+    // Whether to show the fill/level indicator bar
+    void setShowFillIndicator(bool show) {
+        showFillIndicator_ = show;
+        repaint();
+    }
+
+    // Font size for display text
+    void setFontSize(float size) {
+        fontSize_ = size;
+        repaint();
+    }
+
+    // Whether to draw the border
+    void setDrawBorder(bool draw) {
+        drawBorder_ = draw;
+        repaint();
+    }
+
+    // Text override: when set, displays this text instead of the formatted value
+    void setTextOverride(const juce::String& text) {
+        textOverride_ = text;
+        repaint();
+    }
+    void clearTextOverride() {
+        textOverride_.clear();
+        repaint();
+    }
+
     // Callback when value changes
     std::function<void()> onValueChange;
 
@@ -108,6 +143,11 @@ class DraggableValueLabel : public juce::Component {
     juce::String suffix_;
     bool doubleClickResets_ = true;
     bool snapToInteger_ = false;
+    std::optional<juce::Colour> customTextColour_;
+    bool showFillIndicator_ = true;
+    bool drawBorder_ = true;
+    float fontSize_ = 10.0f;
+    juce::String textOverride_;
 
     // Drag state
     bool isDragging_ = false;

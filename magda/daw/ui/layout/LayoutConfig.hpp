@@ -65,7 +65,7 @@ struct LayoutConfig {
     int zoomSliderMinWidth = 60;
 
     // Main window panels
-    int defaultTransportHeight = 60;
+    int defaultTransportHeight = 48;
     int minTransportHeight = 40;
     int maxTransportHeight = 120;
 

@@ -70,6 +70,11 @@ class MainView : public juce::Component,
     std::function<void(double)> onPlayheadPositionChanged;  // (positionInSeconds)
     std::function<void(double, double, bool)>
         onTimeSelectionChanged;  // (startTime, endTime, hasSelection)
+    std::function<void(double, double, bool, bool)>
+        onPunchRegionChanged;  // (startTime, endTime, punchInEnabled, punchOutEnabled)
+    std::function<void(double)> onEditCursorChanged;  // (positionInSeconds)
+    std::function<void(bool, int, int, bool)>
+        onGridQuantizeChanged;  // (autoGrid, numerator, denominator, isBars)
 
     // ScrollBar::Listener implementation
     void scrollBarMoved(juce::ScrollBar* scrollBarThatHasMoved, double newRangeStart) override;
@@ -80,6 +85,8 @@ class MainView : public juce::Component,
     void playheadStateChanged(const TimelineState& state) override;
     void selectionStateChanged(const TimelineState& state) override;
     void loopStateChanged(const TimelineState& state) override;
+    void punchStateChanged(const TimelineState& state) override;
+    void displayConfigChanged(const TimelineState& state) override;
 
     // TrackManagerListener implementation
     void tracksChanged() override {}  // Handled by TrackHeadersPanel
@@ -117,9 +124,6 @@ class MainView : public juce::Component,
     // Track headers viewport (vertical scroll synced with track content)
     std::unique_ptr<juce::Viewport> trackHeadersViewport;
     std::unique_ptr<TrackHeadersPanel> trackHeadersPanel;
-
-    // Arrangement lock button
-    std::unique_ptr<SvgButton> arrangementLockButton;
 
     // Track content viewport (both horizontal and vertical scroll)
     std::unique_ptr<juce::Viewport> trackContentViewport;
@@ -207,6 +211,8 @@ class MainView : public juce::Component,
     void setupComponents();
     void setupCallbacks();
     void resetZoomToFitTimeline();
+    void zoomToSelection();
+    void setAllTrackHeights(int height);
     void syncStateFromController();
 
     // Resize handle helper methods
@@ -227,9 +233,16 @@ class MainView : public juce::Component,
     // Grid division display (shown on horizontal zoom scroll bar)
     void updateGridDivisionDisplay();
     juce::String calculateGridDivisionString() const;
+    void calculateSmartGridNumeratorDenominator(int& outNum, int& outDen, bool& outIsBars) const;
 
     // Audio engine reference for metering
     AudioEngine* audioEngine_ = nullptr;
+
+    // Corner toolbar buttons (above track headers)
+    std::unique_ptr<SvgButton> zoomFitButton;
+    std::unique_ptr<SvgButton> zoomSelButton;
+    std::unique_ptr<SvgButton> trackCompactButton;
+    std::unique_ptr<SvgButton> trackExpandButton;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainView)
 };

@@ -1635,9 +1635,7 @@ void InspectorContent::clipSelectionChanged(magda::ClipId clipId) {
 // ============================================================================
 // TimelineStateListener
 
-void InspectorContent::timelineStateChanged(const magda::TimelineState& state) {
-    DBG("InspectorContent::timelineStateChanged - bpm=" << state.tempo.bpm);
-}
+void InspectorContent::timelineStateChanged(const magda::TimelineState& /*state*/) {}
 
 void InspectorContent::tempoStateChanged(const magda::TimelineState& state) {
     DBG("InspectorContent::tempoStateChanged - bpm=" << state.tempo.bpm << ", selectionType="

@@ -194,6 +194,35 @@ struct MoveLoopRegionEvent {
     double deltaSeconds;
 };
 
+// ===== Punch In/Out Events =====
+
+/**
+ * @brief Set punch in/out region
+ */
+struct SetPunchRegionEvent {
+    double startTime;
+    double endTime;
+};
+
+/**
+ * @brief Clear punch region
+ */
+struct ClearPunchRegionEvent {};
+
+/**
+ * @brief Enable or disable punch in
+ */
+struct SetPunchInEnabledEvent {
+    bool enabled;
+};
+
+/**
+ * @brief Enable or disable punch out
+ */
+struct SetPunchOutEnabledEvent {
+    bool enabled;
+};
+
 // ===== Tempo Events =====
 
 /**
@@ -232,6 +261,15 @@ struct SetSnapEnabledEvent {
  */
 struct SetArrangementLockedEvent {
     bool locked;
+};
+
+/**
+ * @brief Set grid quantize (auto toggle + numerator/denominator)
+ */
+struct SetGridQuantizeEvent {
+    bool autoGrid;
+    int numerator;
+    int denominator;
 };
 
 // ===== Section Events =====
@@ -314,10 +352,12 @@ using TimelineEvent = std::variant<
     SetTimeSelectionEvent, ClearTimeSelectionEvent, CreateLoopFromSelectionEvent,
     // Loop events
     SetLoopRegionEvent, ClearLoopRegionEvent, SetLoopEnabledEvent, MoveLoopRegionEvent,
+    // Punch in/out events
+    SetPunchRegionEvent, ClearPunchRegionEvent, SetPunchInEnabledEvent, SetPunchOutEnabledEvent,
     // Tempo events
     SetTempoEvent, SetTimeSignatureEvent,
     // Display events
-    SetTimeDisplayModeEvent, SetSnapEnabledEvent, SetArrangementLockedEvent,
+    SetTimeDisplayModeEvent, SetSnapEnabledEvent, SetArrangementLockedEvent, SetGridQuantizeEvent,
     // Section events
     AddSectionEvent, RemoveSectionEvent, MoveSectionEvent, ResizeSectionEvent, SelectSectionEvent,
     // Viewport events

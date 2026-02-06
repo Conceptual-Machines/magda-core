@@ -238,47 +238,52 @@ void DraggableValueLabel::paint(juce::Graphics& g) {
     g.fillRoundedRectangle(bounds, 2.0f);
 
     // Fill indicator
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+    if (showFillIndicator_) {
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
 
-    if (format_ == Format::Pan) {
-        // Pan: draw from center outward
-        float centerX = bounds.getCentreX();
-        float normalizedPan = static_cast<float>(value_);  // -1 to +1
+        if (format_ == Format::Pan) {
+            // Pan: draw from center outward
+            float centerX = bounds.getCentreX();
+            float normalizedPan = static_cast<float>(value_);  // -1 to +1
 
-        if (std::abs(normalizedPan) < 0.01f) {
-            // Center: draw thin line
-            g.fillRect(centerX - 1.0f, bounds.getY(), 2.0f, bounds.getHeight());
-        } else if (normalizedPan < 0) {
-            // Left: draw from center to left
-            float fillWidth = centerX * (-normalizedPan);
-            g.fillRect(centerX - fillWidth, bounds.getY(), fillWidth, bounds.getHeight());
+            if (std::abs(normalizedPan) < 0.01f) {
+                // Center: draw thin line
+                g.fillRect(centerX - 1.0f, bounds.getY(), 2.0f, bounds.getHeight());
+            } else if (normalizedPan < 0) {
+                // Left: draw from center to left
+                float fillWidth = centerX * (-normalizedPan);
+                g.fillRect(centerX - fillWidth, bounds.getY(), fillWidth, bounds.getHeight());
+            } else {
+                // Right: draw from center to right
+                float fillWidth = (bounds.getWidth() - centerX) * normalizedPan;
+                g.fillRect(centerX, bounds.getY(), fillWidth, bounds.getHeight());
+            }
         } else {
-            // Right: draw from center to right
-            float fillWidth = (bounds.getWidth() - centerX) * normalizedPan;
-            g.fillRect(centerX, bounds.getY(), fillWidth, bounds.getHeight());
-        }
-    } else {
-        // Other formats: fill from left based on normalized value
-        double normalizedValue = (value_ - minValue_) / (maxValue_ - minValue_);
-        normalizedValue = juce::jlimit(0.0, 1.0, normalizedValue);
+            // Other formats: fill from left based on normalized value
+            double normalizedValue = (value_ - minValue_) / (maxValue_ - minValue_);
+            normalizedValue = juce::jlimit(0.0, 1.0, normalizedValue);
 
-        if (normalizedValue > 0.0) {
-            float fillWidth = static_cast<float>(bounds.getWidth() * normalizedValue);
-            auto fillBounds = bounds.withWidth(fillWidth);
-            g.fillRoundedRectangle(fillBounds, 2.0f);
+            if (normalizedValue > 0.0) {
+                float fillWidth = static_cast<float>(bounds.getWidth() * normalizedValue);
+                auto fillBounds = bounds.withWidth(fillWidth);
+                g.fillRoundedRectangle(fillBounds, 2.0f);
+            }
         }
     }
 
     // Border
-    g.setColour(isDragging_ ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
-                            : DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.0f);
+    if (drawBorder_) {
+        g.setColour(isDragging_ ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+                                : DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.0f);
+    }
 
     // Text
     if (!isEditing_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        g.drawText(formatValue(value_), bounds.reduced(2, 0), juce::Justification::centred, false);
+        g.setColour(customTextColour_.value_or(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)));
+        g.setFont(FontManager::getInstance().getUIFont(fontSize_));
+        auto displayText = textOverride_.isNotEmpty() ? textOverride_ : formatValue(value_);
+        g.drawText(displayText, bounds.reduced(2, 0), juce::Justification::centred, false);
     }
 }
 

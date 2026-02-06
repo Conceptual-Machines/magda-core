@@ -26,6 +26,28 @@ BarsBeatsTicksLabel::BarsBeatsTicksLabel() {
 
 BarsBeatsTicksLabel::~BarsBeatsTicksLabel() = default;
 
+void BarsBeatsTicksLabel::setTextColour(juce::Colour colour) {
+    customTextColour_ = colour;
+    hasCustomTextColour_ = true;
+    repaint();
+}
+
+juce::Colour BarsBeatsTicksLabel::getTextColour() const {
+    if (hasCustomTextColour_)
+        return customTextColour_;
+    return DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+}
+
+void BarsBeatsTicksLabel::setOverlayLabel(const juce::String& label) {
+    overlayLabel_ = label;
+    repaint();
+}
+
+void BarsBeatsTicksLabel::setDrawBackground(bool draw) {
+    drawBackground_ = draw;
+    repaint();
+}
+
 void BarsBeatsTicksLabel::setRange(double min, double max, double defaultValue) {
     minValue_ = min;
     maxValue_ = max;
@@ -115,16 +137,18 @@ void BarsBeatsTicksLabel::updateSegmentTexts() {
 void BarsBeatsTicksLabel::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
 
-    // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-    g.fillRoundedRectangle(bounds, 2.0f);
+    if (drawBackground_) {
+        // Background
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.fillRoundedRectangle(bounds, 2.0f);
 
-    // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.0f);
+        // Border
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.0f);
+    }
 
     // Draw dot separators between segments
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    g.setColour(getTextColour());
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
 
     // Dot between bars and beats
@@ -142,6 +166,15 @@ void BarsBeatsTicksLabel::paint(juce::Graphics& g) {
         static_cast<float>(dot2X) +
         (static_cast<float>(ticksSegment_->getX()) - static_cast<float>(dot2X)) * 0.5f;
     g.fillEllipse(dot2CenterX - dotRadius, dotY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f);
+
+    // Draw overlay label at top-left corner
+    if (overlayLabel_.isNotEmpty()) {
+        auto overlayColour = getTextColour().withAlpha(0.5f);
+        g.setColour(overlayColour);
+        g.setFont(FontManager::getInstance().getUIFont(7.0f));
+        g.drawText(overlayLabel_, 2, 1, static_cast<int>(bounds.getWidth()) - 4, 8,
+                   juce::Justification::topLeft, false);
+    }
 }
 
 void BarsBeatsTicksLabel::resized() {
@@ -191,7 +224,7 @@ juce::String BarsBeatsTicksLabel::SegmentLabel::formatDisplay() const {
 
 void BarsBeatsTicksLabel::SegmentLabel::paint(juce::Graphics& g) {
     if (!isEditing_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        g.setColour(owner_.getTextColour());
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.drawText(formatDisplay(), getLocalBounds(), juce::Justification::centred, false);
     }

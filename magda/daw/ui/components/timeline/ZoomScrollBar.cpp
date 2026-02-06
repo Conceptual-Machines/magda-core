@@ -10,15 +10,20 @@ ZoomScrollBar::ZoomScrollBar(Orientation orientation) : orientation(orientation)
 }
 
 void ZoomScrollBar::paint(juce::Graphics& g) {
+    // Fade entire bar based on expand amount
+    float alpha = expandAmount_;
+    if (alpha < 0.01f)
+        return;  // Fully hidden, skip drawing
+
     auto trackBounds = getTrackBounds();
     auto thumbBounds = getThumbBounds();
 
     // Draw track background
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(alpha));
     g.fillRoundedRectangle(trackBounds.toFloat(), 3.0f);
 
     // Draw track border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(alpha));
     g.drawRoundedRectangle(trackBounds.toFloat(), 3.0f, 1.0f);
 
     // Draw thumb
@@ -26,17 +31,17 @@ void ZoomScrollBar::paint(juce::Graphics& g) {
     if (dragMode != DragMode::None) {
         thumbColour = thumbColour.brighter(0.2f);
     }
-    g.setColour(thumbColour.withAlpha(0.6f));
+    g.setColour(thumbColour.withAlpha(0.6f * alpha));
     g.fillRoundedRectangle(thumbBounds.toFloat(), 3.0f);
 
     // Draw thumb border
-    g.setColour(thumbColour);
+    g.setColour(thumbColour.withAlpha(alpha));
     g.drawRoundedRectangle(thumbBounds.toFloat(), 3.0f, 1.0f);
 
     // Draw resize handles (subtle lines at edges)
     int thumbPrimarySize = getPrimarySize(thumbBounds);
     if (thumbPrimarySize > MIN_THUMB_SIZE + EDGE_HANDLE_SIZE * 2) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f * alpha));
 
         if (orientation == Orientation::Horizontal) {
             // Left handle
@@ -67,7 +72,7 @@ void ZoomScrollBar::paint(juce::Graphics& g) {
 
     // Draw label if set (fixed position on right/bottom)
     if (label.isNotEmpty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(alpha));
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
 
         if (orientation == Orientation::Horizontal) {
@@ -199,6 +204,11 @@ void ZoomScrollBar::mouseDrag(const juce::MouseEvent& event) {
 
 void ZoomScrollBar::mouseUp(const juce::MouseEvent&) {
     dragMode = DragMode::None;
+    // If mouse left during drag, start collapse now
+    if (!isHovered_) {
+        targetExpand_ = 0.0f;
+        startTimerHz(60);
+    }
     repaint();
 }
 
@@ -208,11 +218,31 @@ void ZoomScrollBar::mouseMove(const juce::MouseEvent& event) {
 
 void ZoomScrollBar::mouseEnter(const juce::MouseEvent&) {
     isHovered_ = true;
-    repaint();
+    targetExpand_ = 1.0f;
+    startTimerHz(60);
+    if (onHoverChanged)
+        onHoverChanged(true);
 }
 
 void ZoomScrollBar::mouseExit(const juce::MouseEvent&) {
     isHovered_ = false;
+    // Don't collapse while dragging
+    if (dragMode == DragMode::None) {
+        targetExpand_ = 0.0f;
+        startTimerHz(60);
+    }
+    if (onHoverChanged)
+        onHoverChanged(false);
+}
+
+void ZoomScrollBar::timerCallback() {
+    float diff = targetExpand_ - expandAmount_;
+    if (std::abs(diff) < 0.01f) {
+        expandAmount_ = targetExpand_;
+        stopTimer();
+    } else {
+        expandAmount_ += diff * ANIM_SPEED;
+    }
     repaint();
 }
 

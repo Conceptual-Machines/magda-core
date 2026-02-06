@@ -79,6 +79,29 @@ class AudioEngineListener {
      * @param enabled Whether looping is enabled
      */
     virtual void onLoopEnabledChanged(bool enabled) = 0;
+
+    // ===== Punch In/Out =====
+
+    /**
+     * Called when punch in/out region changes.
+     * @param startTime Punch in position in seconds
+     * @param endTime Punch out position in seconds
+     * @param punchInEnabled Whether punch in is enabled
+     * @param punchOutEnabled Whether punch out is enabled
+     */
+    virtual void onPunchRegionChanged(double startTime, double endTime, bool punchInEnabled,
+                                      bool punchOutEnabled) {
+        juce::ignoreUnused(startTime, endTime, punchInEnabled, punchOutEnabled);
+    }
+
+    /**
+     * Called when punch in/out enable state changes.
+     * @param punchInEnabled Whether punch in is enabled
+     * @param punchOutEnabled Whether punch out is enabled
+     */
+    virtual void onPunchEnabledChanged(bool punchInEnabled, bool punchOutEnabled) {
+        juce::ignoreUnused(punchInEnabled, punchOutEnabled);
+    }
 };
 
 // Backwards compatibility alias

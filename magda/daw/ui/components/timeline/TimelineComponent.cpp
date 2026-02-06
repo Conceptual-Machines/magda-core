@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iostream>
 
+#include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "Config.hpp"
@@ -53,6 +54,7 @@ void TimelineComponent::setController(TimelineController* controller) {
         timeSignatureDenominator = state.tempo.timeSignatureDenominator;
         snapEnabled = state.display.snapEnabled;
         arrangementLocked = state.display.arrangementLocked;
+        gridQuantize = state.display.gridQuantize;
 
         // Sync loop region
         if (state.loop.isValid()) {
@@ -85,6 +87,7 @@ void TimelineComponent::timelineStateChanged(const TimelineState& state) {
     timeSignatureDenominator = state.tempo.timeSignatureDenominator;
     snapEnabled = state.display.snapEnabled;
     arrangementLocked = state.display.arrangementLocked;
+    gridQuantize = state.display.gridQuantize;
     repaint();
 }
 
@@ -399,8 +402,8 @@ void TimelineComponent::mouseMove(const juce::MouseEvent& event) {
         int rulerMidpoint = layout.getRulerZoneSplitY();
 
         if (event.y < rulerMidpoint) {
-            // Upper ruler area - zoom cursor (left/right drag to zoom)
-            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+            // Upper ruler area - zoom cursor (magnifying glass)
+            setMouseCursor(CursorManager::getInstance().getZoomCursor());
         } else {
             // Lower ruler area (near tick labels) - time selection cursor
             setMouseCursor(juce::MouseCursor::IBeamCursor);
@@ -599,10 +602,11 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
         double newZoom = zoomStartValue * std::pow(2.0, exponent);
 
         // Calculate minimum zoom based on timeline length and viewport width
+        // Allow zooming out to 1/4 of the fit-to-viewport level
         double minZoom = minZoomLevel;
         if (timelineLength > 0 && viewportWidth > 0) {
             double availableWidth = viewportWidth - 50.0;
-            minZoom = availableWidth / timelineLength;
+            minZoom = (availableWidth / timelineLength) * 0.25;
             minZoom = juce::jmax(minZoom, minZoomLevel);
         }
 
@@ -1308,6 +1312,13 @@ bool TimelineComponent::isOnLoopTopBorder(int x, int y) const {
 }
 
 double TimelineComponent::getSnapInterval() const {
+    // If grid override is active, return the fixed interval
+    if (!gridQuantize.autoGrid) {
+        double secondsPerBeat = 60.0 / tempoBPM;
+        double beatFraction = gridQuantize.toBeatFraction();
+        return secondsPerBeat * beatFraction;
+    }
+
     // Get the visible snap interval based on zoom level and display mode
     auto& layout = LayoutConfig::getInstance();
     const int minPixelSpacing = layout.minGridPixelSpacing;
@@ -1324,22 +1335,18 @@ double TimelineComponent::getSnapInterval() const {
         }
         return 1.0;  // Default to 1 second
     } else {
-        // Bars/beats mode - snap to beat divisions
+        // Bars/beats mode - find first power-of-2 beat fraction that fits
         double secondsPerBeat = 60.0 / tempoBPM;
+        double ppb = zoom * secondsPerBeat;  // Convert pixels/sec to pixels/beat
 
-        // Beat fractions: 64th, 32nd, 16th, 8th, quarter, half, bar
-        const double beatFractions[] = {0.0625, 0.125, 0.25, 0.5, 1.0, 2.0};
-
-        for (double fraction : beatFractions) {
-            double intervalSeconds = secondsPerBeat * fraction;
-            if (timeDurationToPixels(intervalSeconds) >= minPixelSpacing) {
-                return intervalSeconds;
-            }
+        double frac = GridConstants::findBeatSubdivision(ppb, minPixelSpacing);
+        if (frac > 0) {
+            return secondsPerBeat * frac;
         }
 
-        // If beats are too dense, snap to bars
-        double secondsPerBar = secondsPerBeat * timeSignatureNumerator;
-        return secondsPerBar;
+        // Fall back to bar multiples
+        int mult = GridConstants::findBarMultiple(ppb, timeSignatureNumerator, minPixelSpacing);
+        return secondsPerBeat * timeSignatureNumerator * mult;
     }
 }
 

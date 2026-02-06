@@ -136,13 +136,6 @@ void MainView::setupComponents() {
                                              false);  // false = don't delete
     addAndMakeVisible(*trackHeadersViewport);
 
-    // Create arrangement lock button
-    arrangementLockButton = std::make_unique<SvgButton>("ArrangementLock", BinaryData::lock_svg,
-                                                        BinaryData::lock_svgSize);
-    arrangementLockButton->setTooltip("Toggle arrangement lock (F4)");
-    arrangementLockButton->onClick = [this]() { toggleArrangementLock(); };
-    addAndMakeVisible(arrangementLockButton.get());
-
     // Create track content viewport
     trackContentViewport = std::make_unique<juce::Viewport>();
     trackContentViewport->setWantsKeyboardFocus(
@@ -150,7 +143,7 @@ void MainView::setupComponents() {
     trackContentPanel = std::make_unique<TrackContentPanel>();
     trackContentPanel->setController(timelineController.get());  // Connect to centralized state
     trackContentViewport->setViewedComponent(trackContentPanel.get(), false);
-    trackContentViewport->setScrollBarsShown(true, true);
+    trackContentViewport->setScrollBarsShown(false, false, true, true);
     addAndMakeVisible(*trackContentViewport);
 
     // Create grid overlay component (vertical time grid lines - below selection and playhead)
@@ -237,7 +230,36 @@ void MainView::setupComponents() {
     };
     addAndMakeVisible(*verticalZoomScrollBar);
 
-    // Layout debug panel removed for now
+    // Corner toolbar buttons (above track headers)
+    // Zoom icon buttons
+    auto setupCornerButton = [this](std::unique_ptr<SvgButton>& btn, const juce::String& name,
+                                    const char* svgData, size_t svgSize) {
+        btn = std::make_unique<SvgButton>(name, svgData, svgSize);
+        btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
+        btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        btn->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        btn->setBorderThickness(1.0f);
+        btn->setWantsKeyboardFocus(false);
+        addAndMakeVisible(*btn);
+    };
+
+    setupCornerButton(zoomFitButton, "ZoomFit", BinaryData::zoom_out_map_svg,
+                      BinaryData::zoom_out_map_svgSize);
+    zoomFitButton->onClick = [this]() { resetZoomToFitTimeline(); };
+
+    setupCornerButton(zoomSelButton, "ZoomSel", BinaryData::fit_width_svg,
+                      BinaryData::fit_width_svgSize);
+    zoomSelButton->onClick = [this]() { zoomToSelection(); };
+
+    setupCornerButton(trackCompactButton, "TrackCompact", BinaryData::compact_svg,
+                      BinaryData::compact_svgSize);
+    trackCompactButton->onClick = [this]() { setAllTrackHeights(60); };
+
+    setupCornerButton(trackExpandButton, "TrackExpand", BinaryData::large_svg,
+                      BinaryData::large_svgSize);
+    trackExpandButton->onClick = [this]() { setAllTrackHeights(200); };
 
     // Set up scroll synchronization
     trackContentViewport->getHorizontalScrollBar().addListener(this);
@@ -391,6 +413,11 @@ void MainView::selectionStateChanged(const TimelineState& state) {
         onTimeSelectionChanged(timeSelection.startTime, timeSelection.endTime,
                                timeSelection.isActive());
     }
+
+    // Notify about edit cursor position change
+    if (onEditCursorChanged) {
+        onEditCursorChanged(state.editCursorPosition);
+    }
 }
 
 void MainView::loopStateChanged(const TimelineState& state) {
@@ -420,6 +447,29 @@ void MainView::loopStateChanged(const TimelineState& state) {
             onLoopRegionChanged(loopRegion.startTime, loopRegion.endTime, loopRegion.enabled);
         } else {
             onLoopRegionChanged(-1.0, -1.0, false);
+        }
+    }
+}
+
+void MainView::displayConfigChanged(const TimelineState& state) {
+    // Update grid division display when display config changes
+    updateGridDivisionDisplay();
+
+    // Notify external listeners about grid quantize change
+    if (onGridQuantizeChanged) {
+        const auto& gq = state.display.gridQuantize;
+        onGridQuantizeChanged(gq.autoGrid, gq.numerator, gq.denominator, false);
+    }
+}
+
+void MainView::punchStateChanged(const TimelineState& state) {
+    // Notify external listeners about punch region change
+    if (onPunchRegionChanged) {
+        if (state.punch.isValid()) {
+            onPunchRegionChanged(state.punch.startTime, state.punch.endTime,
+                                 state.punch.punchInEnabled, state.punch.punchOutEnabled);
+        } else {
+            onPunchRegionChanged(-1.0, -1.0, false, false);
         }
     }
 }
@@ -513,12 +563,29 @@ void MainView::resized() {
     // Timeline viewport at the top - offset by track header width
     auto timelineArea = bounds.removeFromTop(getTimelineHeight());
 
-    // Position buttons in corner above track headers
-    auto buttonArea = headerColumn.removeFrom(timelineArea, trackHeaderWidth);
-    auto topRow = buttonArea.removeFromTop(35);
+    // Corner toolbar area above track headers — 2x2 icon grid (left-aligned, half-size)
+    auto cornerArea = headerColumn.removeFrom(timelineArea, trackHeaderWidth);
+    {
+        int btnSize = 22;
+        int gap = 2;
+        int gridW = btnSize * 2 + gap;
+        int gridH = btnSize * 2 + gap;
+        // Left-aligned, vertically centred
+        auto grid = juce::Rectangle<int>(cornerArea.getX() + 4, cornerArea.getCentreY() - gridH / 2,
+                                         gridW, gridH);
 
-    // Lock button
-    arrangementLockButton->setBounds(topRow.removeFromLeft(35).reduced(3));
+        auto topRow = grid.removeFromTop(btnSize);
+        grid.removeFromTop(gap);
+        auto botRow = grid.removeFromTop(btnSize);
+
+        zoomFitButton->setBounds(topRow.removeFromLeft(btnSize));
+        topRow.removeFromLeft(gap);
+        zoomSelButton->setBounds(topRow.removeFromLeft(btnSize));
+
+        trackCompactButton->setBounds(botRow.removeFromLeft(btnSize));
+        botRow.removeFromLeft(gap);
+        trackExpandButton->setBounds(botRow.removeFromLeft(btnSize));
+    }
 
     // Add padding space for the resize handle
     headerColumn.removeSpacing(timelineArea, layout.componentSpacing);
@@ -538,10 +605,6 @@ void MainView::resized() {
 
     // Grid and selection overlays cover the track content area
     auto overlayArea = bounds;
-    // Reduce the area to avoid covering scrollbars
-    int scrollBarThickness = trackContentViewport->getScrollBarThickness();
-    overlayArea =
-        overlayArea.withTrimmedRight(scrollBarThickness).withTrimmedBottom(scrollBarThickness);
 
     // Grid overlay (bottom layer - draws vertical time grid lines)
     gridOverlay->setBounds(overlayArea);
@@ -555,8 +618,7 @@ void MainView::resized() {
     auto playheadArea = bounds;
     playheadArea =
         playheadArea.withTop(getTimelineHeight() - 20);  // Start 20px above timeline border
-    playheadArea =
-        playheadArea.withTrimmedRight(scrollBarThickness).withTrimmedBottom(scrollBarThickness);
+    // No trim needed — internal viewport scrollbars are hidden
     playheadComponent->setBounds(playheadArea);
 
     // Notify controller about viewport resize
@@ -666,16 +728,6 @@ void MainView::toggleArrangementLock() {
     // Also update timeline component directly for now
     timeline->setArrangementLocked(newLockedState);
     timeline->repaint();
-
-    // Update lock button icon
-    if (newLockedState) {
-        arrangementLockButton->updateSvgData(BinaryData::lock_svg, BinaryData::lock_svgSize);
-        arrangementLockButton->setTooltip("Arrangement locked - Click to unlock (F4)");
-    } else {
-        arrangementLockButton->updateSvgData(BinaryData::lock_open_svg,
-                                             BinaryData::lock_open_svgSize);
-        arrangementLockButton->setTooltip("Arrangement unlocked - Click to lock (F4)");
-    }
 }
 
 bool MainView::isArrangementLocked() const {
@@ -694,8 +746,8 @@ void MainView::setLoopEnabled(bool enabled) {
 }
 
 void MainView::syncSnapState() {
-    bool snapEnabled = timelineController->getState().display.snapEnabled;
-    timeline->setSnapEnabled(snapEnabled);
+    const auto& state = timelineController->getState();
+    timeline->setSnapEnabled(state.display.snapEnabled);
 }
 
 // Add keyboard event handler for zoom reset shortcut
@@ -1034,7 +1086,7 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
     if (editPos >= 0 && editPos <= owner.timelineLength && editX >= 0 && editX < getWidth()) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         juce::Path triangle;
-        triangle.addTriangle(editX - 6, 8, editX + 6, 8, editX, 20);
+        triangle.addTriangle(editX - 6, 6, editX + 6, 6, editX, 20);
         g.fillPath(triangle);
     }
 
@@ -1313,6 +1365,23 @@ void MainView::resetZoomToFitTimeline() {
 
     std::cout << "🎯 ZOOM RESET: timelineLength=" << timelineController->getState().timelineLength
               << ", zoom=" << timelineController->getState().zoom.horizontalZoom << std::endl;
+}
+
+void MainView::zoomToSelection() {
+    const auto& sel = timelineController->getState().selection;
+    if (sel.isActive()) {
+        timelineController->dispatch(ZoomToFitEvent{sel.startTime, sel.endTime, 0.05});
+    }
+}
+
+void MainView::setAllTrackHeights(int height) {
+    int numTracks = trackHeadersPanel->getNumTracks();
+    for (int i = 0; i < numTracks; ++i) {
+        trackHeadersPanel->setTrackHeight(i, height);
+        trackContentPanel->setTrackHeight(i, height);
+    }
+    updateContentSizes();
+    updateVerticalZoomScrollBar();
 }
 
 void MainView::clearTimeSelection() {
@@ -1809,46 +1878,66 @@ void MainView::MasterContentPanel::paint(juce::Graphics& g) {
 
 juce::String MainView::calculateGridDivisionString() const {
     const auto& state = timelineController->getState();
-    double zoom = state.zoom.horizontalZoom;  // pixels per beat
-    int timeSigNumerator = state.tempo.timeSignatureNumerator;
 
-    // Use same logic as TimelineComponent to determine grid interval
+    // If grid override is active, return the numerator/denominator string
+    if (!state.display.gridQuantize.autoGrid) {
+        int num = state.display.gridQuantize.numerator;
+        int den = state.display.gridQuantize.denominator;
+        return juce::String(num) + "/" + juce::String(den);
+    }
+
+    // Auto mode: compute smart grid and format as text
+    int num = 0, den = 0;
+    bool isBars = false;
+    calculateSmartGridNumeratorDenominator(num, den, isBars);
+
+    if (isBars) {
+        return num == 1 ? "1 bar" : juce::String(num) + " bars";
+    }
+    return juce::String(num) + "/" + juce::String(den);
+}
+
+void MainView::calculateSmartGridNumeratorDenominator(int& outNum, int& outDen,
+                                                      bool& outIsBars) const {
+    const auto& state = timelineController->getState();
+    double zoom = state.zoom.horizontalZoom;
+    int timeSigNumerator = state.tempo.timeSignatureNumerator;
     auto& layout = LayoutConfig::getInstance();
     int minPixelSpacing = layout.minGridPixelSpacing;
 
-    // zoom is ppb - beat fraction * zoom gives pixels directly
-    // Beat fractions from 1/512 to 1/4
-    const double beatFractions[] = {0.0078125, 0.015625, 0.03125, 0.0625, 0.125, 0.25, 0.5, 1.0};
-    const char* beatNames[] = {"1/512", "1/256", "1/128", "1/64", "1/32", "1/16", "1/8", "1/4"};
+    outIsBars = false;
 
-    // First try beat subdivisions
-    for (int i = 0; i < 8; i++) {
-        double pixelSpacing = beatFractions[i] * zoom;
-        if (static_cast<int>(pixelSpacing) >= minPixelSpacing) {
-            return beatNames[i];
-        }
+    // Try beat subdivisions (powers of 2)
+    double frac = GridConstants::findBeatSubdivision(zoom, minPixelSpacing);
+    if (frac > 0) {
+        // Convert beat fraction to whole-note-relative num/den
+        // beatFraction = 2^p, denominator = 4 / beatFraction
+        outNum = 1;
+        outDen = static_cast<int>(4.0 / frac);
+        if (outDen < 1)
+            outDen = 1;  // For frac > 4 (shouldn't happen)
+        return;
     }
 
-    // If no beat subdivision fits, use bar multiples
-    // pixelsPerBar = zoom * beatsPerBar (= zoom * timeSigNumerator)
-    const int barMultiples[] = {1, 2, 4, 8, 16, 32};
-    for (int mult : barMultiples) {
-        double pixelSpacing = zoom * timeSigNumerator * mult;
-        if (static_cast<int>(pixelSpacing) >= minPixelSpacing) {
-            if (mult == 1) {
-                return "1 bar";
-            } else {
-                return juce::String(mult) + " bars";
-            }
-        }
-    }
-
-    return "32 bars";  // Fallback for very zoomed out views
+    // Bar multiples
+    int mult = GridConstants::findBarMultiple(zoom, timeSigNumerator, minPixelSpacing);
+    outNum = mult;
+    outDen = 0;
+    outIsBars = true;
 }
 
 void MainView::updateGridDivisionDisplay() {
     if (horizontalZoomScrollBar) {
         horizontalZoomScrollBar->setLabel(calculateGridDivisionString());
+    }
+
+    // When Auto mode is on, push the smart grid values to the transport panel
+    const auto& state = timelineController->getState();
+    if (state.display.gridQuantize.autoGrid && onGridQuantizeChanged) {
+        int num = 0, den = 0;
+        bool isBars = false;
+        calculateSmartGridNumeratorDenominator(num, den, isBars);
+        onGridQuantizeChanged(true, num, den, isBars);
     }
 }
 

@@ -3,7 +3,6 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "BinaryData.h"
-#include "Config.hpp"
 
 namespace magda {
 
@@ -23,11 +22,50 @@ void TransportPanel::paint(juce::Graphics& g) {
 
     auto bounds = getLocalBounds();
     auto transportArea = getTransportControlsArea();
+    auto metroBpmArea = getMetronomeBpmArea();
     auto timeArea = getTimeDisplayArea();
 
     // Vertical separators
     g.drawVerticalLine(transportArea.getRight(), bounds.getY(), bounds.getBottom());
+    g.drawVerticalLine(metroBpmArea.getRight(), bounds.getY(), bounds.getBottom());
     g.drawVerticalLine(timeArea.getRight(), bounds.getY(), bounds.getBottom());
+
+    // Draw wrapper borders around each stacked pair in time display area
+    auto drawGroupWrapper = [&](juce::Rectangle<int> wrapperArea, const juce::String& groupName,
+                                juce::Colour groupColour) {
+        auto wrapperBounds = wrapperArea.expanded(2, 0).toFloat();
+
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.fillRoundedRectangle(wrapperBounds, 2.0f);
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawRoundedRectangle(wrapperBounds.reduced(0.5f), 2.0f, 1.0f);
+
+        // Group label at top-right
+        g.setColour(groupColour.withAlpha(0.5f));
+        g.setFont(FontManager::getInstance().getUIFont(7.0f));
+        g.drawText(groupName, wrapperBounds.toNearestInt().reduced(2, 1),
+                   juce::Justification::topRight, false);
+    };
+
+    drawGroupWrapper(selectionStartLabel->getBounds().getUnion(selectionEndLabel->getBounds()),
+                     "SEL", DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    drawGroupWrapper(loopStartLabel->getBounds().getUnion(loopEndLabel->getBounds()), "LOOP",
+                     DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+    drawGroupWrapper(playheadPositionLabel->getBounds().getUnion(editCursorLabel->getBounds()),
+                     "CUR", DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    drawGroupWrapper(punchInButton->getBounds()
+                         .getUnion(punchStartLabel->getBounds())
+                         .getUnion(punchOutButton->getBounds())
+                         .getUnion(punchEndLabel->getBounds()),
+                     "", DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    drawGroupWrapper(tempoLabel->getBounds()
+                         .getUnion(timeSignatureLabel->getBounds())
+                         .getUnion(metronomeButton->getBounds()),
+                     "", DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    drawGroupWrapper(gridNumeratorLabel->getBounds().getUnion(gridDenominatorLabel->getBounds()),
+                     "", DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    drawGroupWrapper(autoGridButton->getBounds().getUnion(snapButton->getBounds()), "",
+                     DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
 
     // Bottom border for visual separation from content below
     g.setColour(DarkTheme::getBorderColour());
@@ -39,12 +77,19 @@ void TransportPanel::resized() {
     auto timeArea = getTimeDisplayArea();
     auto tempoArea = getTempoQuantizeArea();
 
-    // Transport controls layout
-    auto buttonSize = 44;
-    auto buttonY = transportArea.getCentreY() - buttonSize / 2;
-    auto buttonSpacing = 4;
+    // Transport controls layout — order: Home, Prev, Play, Stop, Rec, Loop, Next
+    auto buttonMargin = 3;
+    auto buttonSize = transportArea.getHeight() - buttonMargin * 2;
+    auto buttonY = buttonMargin;
+    auto buttonSpacing = 1;
 
-    auto x = transportArea.getX() + 8;
+    auto x = transportArea.getX() + 6;
+
+    homeButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + buttonSpacing;
+
+    prevButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + buttonSpacing;
 
     playButton->setBounds(x, buttonY, buttonSize, buttonSize);
     x += buttonSize + buttonSpacing;
@@ -55,85 +100,117 @@ void TransportPanel::resized() {
     recordButton->setBounds(x, buttonY, buttonSize, buttonSize);
     x += buttonSize + buttonSpacing;
 
-    pauseButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing + 8;
-
     loopButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + buttonSpacing;
 
-    // Time display boxes layout - 3 equal boxes
-    auto& config = Config::getInstance();
-    bool showBothRows = config.getTransportShowBothFormats();
+    nextButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + buttonSpacing + 3;  // extra gap before punch group
 
-    int boxWidth = 160;  // Wider for bars.beats.sub format
-    int boxSpacing = 8;
-    int primaryHeight = showBothRows ? 18 : 30;
-    int secondaryHeight = showBothRows ? 16 : 0;
-    int totalBoxHeight = primaryHeight + secondaryHeight;
+    // Stacked row metrics (shared by punch group and time display groups)
+    int boxWidth = 130;
+    int rowHeight = (buttonSize - 4) / 2;  // 1px top + 1px bottom padding
+    int rowY1 = buttonY + 1;               // 1px top padding
+    int rowY2 = rowY1 + rowHeight + 2;     // 2px gap between rows
+
+    // Punch in/out — stacked box with labels + icon buttons overlapping right edge
+    int punchIconSize = rowHeight / 2 + 2;
+
+    punchStartLabel->setBounds(x, rowY1, boxWidth, rowHeight);
+    punchEndLabel->setBounds(x, rowY2, boxWidth, rowHeight);
+
+    // Place buttons overlapping the right side of labels, then raise z-order
+    int btnX = x + boxWidth - punchIconSize - 4;
+    punchInButton->setBounds(btnX, rowY1 + (rowHeight - punchIconSize) / 2, punchIconSize,
+                             punchIconSize);
+    punchOutButton->setBounds(btnX, rowY2 + (rowHeight - punchIconSize) / 2, punchIconSize,
+                              punchIconSize);
+    punchInButton->toFront(false);
+    punchOutButton->toFront(false);
+
+    // Pause button — hidden but still functional via callbacks
+    pauseButton->setBounds(0, 0, 0, 0);
+    pauseButton->setVisible(false);
+
+    // Time display boxes layout — 3 stacked groups with 1px top/bottom padding
+    int groupSpacing = 8;
 
     int startX = timeArea.getX() + 10;
-    int centerY = timeArea.getCentreY();
-    int boxY = centerY - totalBoxHeight / 2;
 
-    // Playhead box
-    playheadPrimaryLabel->setBounds(startX, boxY, boxWidth, primaryHeight);
-    if (showBothRows) {
-        playheadSecondaryLabel->setBounds(startX, boxY + primaryHeight, boxWidth, secondaryHeight);
-        playheadSecondaryLabel->setVisible(true);
-    } else {
-        playheadSecondaryLabel->setVisible(false);
-    }
+    // Group 1 — Selection: start (top), end (bottom)
+    selectionStartLabel->setBounds(startX, rowY1, boxWidth, rowHeight);
+    selectionEndLabel->setBounds(startX, rowY2, boxWidth, rowHeight);
 
-    // Selection box
-    int selX = startX + boxWidth + boxSpacing;
-    selectionPrimaryLabel->setBounds(selX, boxY, boxWidth, primaryHeight);
-    if (showBothRows) {
-        selectionSecondaryLabel->setBounds(selX, boxY + primaryHeight, boxWidth, secondaryHeight);
-        selectionSecondaryLabel->setVisible(true);
-    } else {
-        selectionSecondaryLabel->setVisible(false);
-    }
+    int loopX = startX + boxWidth + groupSpacing;
 
-    // Loop box
-    int loopX = selX + boxWidth + boxSpacing;
-    loopPrimaryLabel->setBounds(loopX, boxY, boxWidth, primaryHeight);
-    if (showBothRows) {
-        loopSecondaryLabel->setBounds(loopX, boxY + primaryHeight, boxWidth, secondaryHeight);
-        loopSecondaryLabel->setVisible(true);
-    } else {
-        loopSecondaryLabel->setVisible(false);
-    }
+    // Group 2 — Loop: start (top), end (bottom)
+    loopStartLabel->setBounds(loopX, rowY1, boxWidth, rowHeight);
+    loopEndLabel->setBounds(loopX, rowY2, boxWidth, rowHeight);
 
-    // Tempo and quantize layout
-    auto tempoY = tempoArea.getCentreY() - 15;
-    auto tempoX = tempoArea.getX() + 10;
+    int cursorX = loopX + boxWidth + groupSpacing;
 
-    tempoDisplay->setBounds(tempoX, tempoY, 70, 30);
+    // Group 3 — Cursors: playhead (top), edit cursor (bottom)
+    playheadPositionLabel->setBounds(cursorX, rowY1, boxWidth, rowHeight);
+    editCursorLabel->setBounds(cursorX, rowY2, boxWidth, rowHeight);
 
-    int stackX = tempoX + 75;
-    int stackButtonSize = 14;
-    int stackTop = tempoY + 1;
-    tempoIncreaseButton->setBounds(stackX, stackTop, stackButtonSize, stackButtonSize);
-    tempoDecreaseButton->setBounds(stackX, stackTop + stackButtonSize, stackButtonSize,
-                                   stackButtonSize);
+    // Metronome + BPM — stacked box: tempo (top), time sig + metronome icon (bottom)
+    auto metroBpmArea = getMetronomeBpmArea();
+    int metroBoxWidth = 70;
+    int metroX = metroBpmArea.getX() + (metroBpmArea.getWidth() - metroBoxWidth) / 2;
+    int metroIconSize = rowHeight;
 
-    quantizeCombo->setBounds(tempoX + 100, tempoY, 70, 30);
-    metronomeButton->setBounds(tempoX + 180, tempoY, 35, 30);
-    snapButton->setBounds(tempoX + 220, tempoY, 50, 30);
+    tempoLabel->setBounds(metroX, rowY1, metroBoxWidth, rowHeight);
+    timeSignatureLabel->setBounds(metroX, rowY2, metroBoxWidth, rowHeight);
+
+    int metroBtnX = metroX + metroBoxWidth - metroIconSize;
+    metronomeButton->setBounds(metroBtnX, rowY2 + (rowHeight - metroIconSize) / 2, metroIconSize,
+                               metroIconSize);
+    metronomeButton->setAlpha(0.6f);
+    metronomeButton->toFront(false);
+
+    // Grid quantize layout — two stacked boxes side by side
+    int gridX = tempoArea.getX() + 6;
+    int numDenWidth = 30;
+    int gridGap = 4;
+    int btnWidth = 44;
+
+    // Left box: numerator (top) / denominator (bottom)
+    gridNumeratorLabel->setBounds(gridX, rowY1, numDenWidth, rowHeight);
+    gridDenominatorLabel->setBounds(gridX, rowY2, numDenWidth, rowHeight);
+
+    // Right box: AUTO (top) / SNAP (bottom)
+    int gridBtnX = gridX + numDenWidth + gridGap;
+    autoGridButton->setBounds(gridBtnX, rowY1, btnWidth, rowHeight);
+    snapButton->setBounds(gridBtnX, rowY2, btnWidth, rowHeight);
+
+    // Hide slash label (no longer needed in this layout)
+    gridSlashLabel->setBounds(0, 0, 0, 0);
+    gridSlashLabel->setVisible(false);
 }
 
 juce::Rectangle<int> TransportPanel::getTransportControlsArea() const {
-    return getLocalBounds().removeFromLeft(270);
+    // 7 square buttons + punch stacked box (boxWidth=130)
+    int buttonSize = getHeight() - 6;
+    int boxWidth = 130;
+    // 6px left pad + 7 buttons + 6*1px spacing + 3px gap + punch box + 6px right pad
+    int width = 6 + 7 * buttonSize + 6 + 3 + boxWidth + 6;
+    return getLocalBounds().removeFromLeft(width);
+}
+
+juce::Rectangle<int> TransportPanel::getMetronomeBpmArea() const {
+    auto bounds = getLocalBounds();
+    bounds.removeFromLeft(getTransportControlsArea().getWidth());
+    return bounds.removeFromLeft(90);
 }
 
 juce::Rectangle<int> TransportPanel::getTimeDisplayArea() const {
     auto bounds = getLocalBounds();
-    bounds.removeFromLeft(270);
-    return bounds.removeFromLeft(520);  // 3 boxes @ 160 + spacing
+    bounds.removeFromLeft(getTransportControlsArea().getWidth() + 106);
+    return bounds.removeFromLeft(440);
 }
 
 juce::Rectangle<int> TransportPanel::getTempoQuantizeArea() const {
     auto bounds = getLocalBounds();
-    bounds.removeFromLeft(790);  // 270 + 520
+    bounds.removeFromLeft(getTransportControlsArea().getWidth() + 106 + 440);
     return bounds;
 }
 
@@ -202,6 +279,36 @@ void TransportPanel::setupTransportButtons() {
     };
     addAndMakeVisible(*pauseButton);
 
+    // Home button
+    homeButton = std::make_unique<SvgButton>(
+        "Home", BinaryData::rewind_off_svg, BinaryData::rewind_off_svgSize,
+        BinaryData::rewind_on_svg, BinaryData::rewind_on_svgSize);
+    homeButton->onClick = [this]() {
+        if (onGoHome)
+            onGoHome();
+    };
+    addAndMakeVisible(*homeButton);
+
+    // Prev button
+    prevButton =
+        std::make_unique<SvgButton>("Prev", BinaryData::prev_off_svg, BinaryData::prev_off_svgSize,
+                                    BinaryData::prev_on_svg, BinaryData::prev_on_svgSize);
+    prevButton->onClick = [this]() {
+        if (onGoToPrev)
+            onGoToPrev();
+    };
+    addAndMakeVisible(*prevButton);
+
+    // Next button
+    nextButton =
+        std::make_unique<SvgButton>("Next", BinaryData::next_off_svg, BinaryData::next_off_svgSize,
+                                    BinaryData::next_on_svg, BinaryData::next_on_svgSize);
+    nextButton->onClick = [this]() {
+        if (onGoToNext)
+            onGoToNext();
+    };
+    addAndMakeVisible(*nextButton);
+
     // Loop button
     loopButton =
         std::make_unique<SvgButton>("Loop", BinaryData::loop_off_svg, BinaryData::loop_off_svgSize,
@@ -213,89 +320,250 @@ void TransportPanel::setupTransportButtons() {
             onLoop(isLooping);
     };
     addAndMakeVisible(*loopButton);
+
+    // Punch In button (dual-icon: off/on)
+    punchInButton =
+        std::make_unique<SvgButton>("PunchIn", BinaryData::punchin_svg, BinaryData::punchin_svgSize,
+                                    BinaryData::punchin_on_svg, BinaryData::punchin_on_svgSize);
+    punchInButton->onClick = [this]() {
+        isPunchInEnabled = !isPunchInEnabled;
+        punchInButton->setActive(isPunchInEnabled);
+        updatePunchLabelColors();
+        if (onPunchInToggle)
+            onPunchInToggle(isPunchInEnabled);
+    };
+    addAndMakeVisible(*punchInButton);
+
+    // Punch Out button (dual-icon: off/on, independent toggle)
+    punchOutButton = std::make_unique<SvgButton>(
+        "PunchOut", BinaryData::punchout_svg, BinaryData::punchout_svgSize,
+        BinaryData::punchout_on_svg, BinaryData::punchout_on_svgSize);
+    punchOutButton->onClick = [this]() {
+        isPunchOutEnabled = !isPunchOutEnabled;
+        punchOutButton->setActive(isPunchOutEnabled);
+        updatePunchLabelColors();
+        if (onPunchOutToggle)
+            onPunchOutToggle(isPunchOutEnabled);
+    };
+    addAndMakeVisible(*punchOutButton);
 }
 
 void TransportPanel::setupTimeDisplayBoxes() {
-    auto setupLabel = [this](std::unique_ptr<juce::Label>& label, juce::Colour textColor,
-                             float fontSize, bool isPrimary) {
-        label = std::make_unique<juce::Label>();
-        label->setText("", juce::dontSendNotification);
-        label->setFont(FontManager::getInstance().getUIFont(fontSize));
-        label->setColour(juce::Label::textColourId, textColor);
-        label->setColour(juce::Label::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-        label->setJustificationType(juce::Justification::centred);
+    auto setupBBTLabel = [this](std::unique_ptr<BarsBeatsTicksLabel>& label,
+                                const juce::String& overlay, juce::Colour textColour) {
+        label = std::make_unique<BarsBeatsTicksLabel>();
+        label->setRange(0.0, 100000.0, 0.0);
+        label->setBarsBeatsIsPosition(true);
+        label->setDoubleClickResetsValue(false);
+        label->setDrawBackground(false);
+        label->setOverlayLabel(overlay);
+        label->setTextColour(textColour);
         addAndMakeVisible(*label);
     };
 
-    // Playhead - white/primary color
-    setupLabel(playheadPrimaryLabel, DarkTheme::getTextColour(), 14.0f, true);
-    setupLabel(playheadSecondaryLabel, DarkTheme::getSecondaryTextColour(), 11.0f, false);
+    auto accentBlue = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    auto accentGreen = DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
+    auto accentOrange = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
 
-    // Selection - blue accent
-    setupLabel(selectionPrimaryLabel, DarkTheme::getColour(DarkTheme::ACCENT_BLUE), 14.0f, true);
-    setupLabel(selectionSecondaryLabel, DarkTheme::getColour(DarkTheme::ACCENT_BLUE).darker(0.3f),
-               11.0f, false);
+    // Selection start/end
+    setupBBTLabel(selectionStartLabel, "S", accentBlue);
+    selectionStartLabel->onValueChange = [this]() {
+        double startBeats = selectionStartLabel->getValue();
+        double startSeconds = (startBeats * 60.0) / currentTempo;
+        if (onTimeSelectionEdit)
+            onTimeSelectionEdit(startSeconds, cachedSelectionEnd);
+    };
 
-    // Loop - green/loop marker color
-    setupLabel(loopPrimaryLabel, DarkTheme::getColour(DarkTheme::LOOP_MARKER), 14.0f, true);
-    setupLabel(loopSecondaryLabel, DarkTheme::getColour(DarkTheme::LOOP_MARKER).darker(0.3f), 11.0f,
-               false);
+    setupBBTLabel(selectionEndLabel, "E", accentBlue);
+    selectionEndLabel->onValueChange = [this]() {
+        double endBeats = selectionEndLabel->getValue();
+        double endSeconds = (endBeats * 60.0) / currentTempo;
+        if (onTimeSelectionEdit)
+            onTimeSelectionEdit(cachedSelectionStart, endSeconds);
+    };
+
+    // Loop start/end
+    setupBBTLabel(loopStartLabel, "S", accentGreen);
+    loopStartLabel->onValueChange = [this]() {
+        double startBeats = loopStartLabel->getValue();
+        double startSeconds = (startBeats * 60.0) / currentTempo;
+        if (onLoopRegionEdit)
+            onLoopRegionEdit(startSeconds, cachedLoopEnd);
+    };
+
+    setupBBTLabel(loopEndLabel, "E", accentGreen);
+    loopEndLabel->onValueChange = [this]() {
+        double endBeats = loopEndLabel->getValue();
+        double endSeconds = (endBeats * 60.0) / currentTempo;
+        if (onLoopRegionEdit)
+            onLoopRegionEdit(cachedLoopStart, endSeconds);
+    };
+
+    // Playhead position
+    setupBBTLabel(playheadPositionLabel, "P", accentOrange);
+    playheadPositionLabel->onValueChange = [this]() {
+        double beats = playheadPositionLabel->getValue();
+        if (onPlayheadEdit)
+            onPlayheadEdit(beats);
+    };
+
+    // Edit cursor
+    setupBBTLabel(editCursorLabel, "E", accentOrange);
+    editCursorLabel->onValueChange = [this]() {
+        double beats = editCursorLabel->getValue();
+        double seconds = (beats * 60.0) / currentTempo;
+        if (onEditCursorEdit)
+            onEditCursorEdit(seconds);
+    };
+
+    // Punch start/end — stacked box in time display area
+    auto accentPurple = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
+
+    setupBBTLabel(punchStartLabel, "I", accentPurple);
+    punchStartLabel->onValueChange = [this]() {
+        double startBeats = punchStartLabel->getValue();
+        double startSeconds = (startBeats * 60.0) / currentTempo;
+        if (onPunchRegionEdit)
+            onPunchRegionEdit(startSeconds, cachedPunchEnd);
+    };
+
+    setupBBTLabel(punchEndLabel, "O", accentPurple);
+    punchEndLabel->onValueChange = [this]() {
+        double endBeats = punchEndLabel->getValue();
+        double endSeconds = (endBeats * 60.0) / currentTempo;
+        if (onPunchRegionEdit)
+            onPunchRegionEdit(cachedPunchStart, endSeconds);
+    };
+
+    updatePunchLabelColors();
 
     // Initialize displays
     setPlayheadPosition(0.0);
+    setEditCursorPosition(0.0);
 }
 
 void TransportPanel::setupTempoAndQuantize() {
-    // Tempo decrease button
-    tempoDecreaseButton =
-        std::make_unique<SvgButton>("Decrease", BinaryData::remove_svg, BinaryData::remove_svgSize);
-    styleTransportButton(*tempoDecreaseButton, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    tempoDecreaseButton->onClick = [this]() { adjustTempo(-1.0); };
-    addAndMakeVisible(*tempoDecreaseButton);
-
-    // Tempo display
-    tempoDisplay = std::make_unique<juce::Label>();
-    tempoDisplay->setFont(FontManager::getInstance().getTimeFont(18.0f));
-    tempoDisplay->setColour(juce::Label::textColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    tempoDisplay->setColour(juce::Label::backgroundColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
-    tempoDisplay->setColour(juce::Label::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
-    tempoDisplay->setJustificationType(juce::Justification::centred);
-    tempoDisplay->setEditable(true);
-    tempoDisplay->onTextChange = [this]() {
-        double newTempo = tempoDisplay->getText().getDoubleValue();
-        if (newTempo >= 20.0 && newTempo <= 999.0) {
-            currentTempo = newTempo;
-            if (onTempoChange)
-                onTempoChange(currentTempo);
-        }
-        updateTempoDisplay();
+    // Tempo — DraggableValueLabel (Raw format with suffix)
+    tempoLabel = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
+    tempoLabel->setRange(20.0, 999.0, 120.0);
+    tempoLabel->setValue(currentTempo, juce::dontSendNotification);
+    tempoLabel->setSuffix("");
+    tempoLabel->setDecimalPlaces(2);
+    tempoLabel->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    tempoLabel->setShowFillIndicator(false);
+    tempoLabel->setFontSize(14.0f);
+    tempoLabel->setDoubleClickResetsValue(false);
+    tempoLabel->setSnapToInteger(true);
+    tempoLabel->setDrawBorder(false);
+    tempoLabel->onValueChange = [this]() {
+        currentTempo = tempoLabel->getValue();
+        if (onTempoChange)
+            onTempoChange(currentTempo);
     };
-    addAndMakeVisible(*tempoDisplay);
-    updateTempoDisplay();
+    addAndMakeVisible(*tempoLabel);
 
-    // Tempo increase button
-    tempoIncreaseButton =
-        std::make_unique<SvgButton>("Increase", BinaryData::add_svg, BinaryData::add_svgSize);
-    styleTransportButton(*tempoIncreaseButton, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    tempoIncreaseButton->onClick = [this]() { adjustTempo(1.0); };
-    addAndMakeVisible(*tempoIncreaseButton);
+    // Time signature label
+    timeSignatureLabel = std::make_unique<juce::Label>();
+    timeSignatureLabel->setText("4/4", juce::dontSendNotification);
+    timeSignatureLabel->setFont(FontManager::getInstance().getUIFont(14.0f));
+    timeSignatureLabel->setColour(juce::Label::textColourId,
+                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    timeSignatureLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    timeSignatureLabel->setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(*timeSignatureLabel);
 
-    // Quantize combo
-    quantizeCombo = std::make_unique<juce::ComboBox>();
-    quantizeCombo->addItem("Off", 1);
-    quantizeCombo->addItem("1/4", 2);
-    quantizeCombo->addItem("1/8", 3);
-    quantizeCombo->addItem("1/16", 4);
-    quantizeCombo->addItem("1/32", 5);
-    quantizeCombo->setSelectedId(2);
-    addAndMakeVisible(*quantizeCombo);
+    // Auto grid toggle button (like SNAP button)
+    autoGridButton = std::make_unique<juce::TextButton>("AUTO");
+    autoGridButton->setColour(juce::TextButton::buttonColourId,
+                              DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
+    autoGridButton->setColour(juce::TextButton::buttonOnColourId,
+                              DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
+    autoGridButton->setColour(juce::TextButton::textColourOffId,
+                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    autoGridButton->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    autoGridButton->setConnectedEdges(
+        juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+        juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    autoGridButton->setWantsKeyboardFocus(false);
+    autoGridButton->setClickingTogglesState(true);
+    autoGridButton->setToggleState(isAutoGrid, juce::dontSendNotification);
+    autoGridButton->onClick = [this]() {
+        isAutoGrid = autoGridButton->getToggleState();
+        // Enable/disable numerator/denominator labels
+        gridNumeratorLabel->setEnabled(!isAutoGrid);
+        gridDenominatorLabel->setEnabled(!isAutoGrid);
+        gridNumeratorLabel->setAlpha(isAutoGrid ? 0.4f : 1.0f);
+        gridDenominatorLabel->setAlpha(isAutoGrid ? 0.4f : 1.0f);
+        if (onGridQuantizeChange)
+            onGridQuantizeChange(isAutoGrid, gridNumerator, gridDenominator);
+    };
+    addAndMakeVisible(*autoGridButton);
+
+    // Grid numerator (Integer format, range 1-32)
+    gridNumeratorLabel =
+        std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Integer);
+    gridNumeratorLabel->setRange(1.0, 128.0, 1.0);
+    gridNumeratorLabel->setValue(static_cast<double>(gridNumerator), juce::dontSendNotification);
+    gridNumeratorLabel->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    gridNumeratorLabel->setShowFillIndicator(false);
+    gridNumeratorLabel->setFontSize(12.0f);
+    gridNumeratorLabel->setDoubleClickResetsValue(true);
+    gridNumeratorLabel->setDrawBorder(false);
+    gridNumeratorLabel->setEnabled(!isAutoGrid);
+    gridNumeratorLabel->setAlpha(isAutoGrid ? 0.4f : 1.0f);
+    gridNumeratorLabel->onValueChange = [this]() {
+        gridNumerator = static_cast<int>(gridNumeratorLabel->getValue());
+        if (!isAutoGrid && onGridQuantizeChange)
+            onGridQuantizeChange(isAutoGrid, gridNumerator, gridDenominator);
+    };
+    addAndMakeVisible(*gridNumeratorLabel);
+
+    // Grid slash label
+    gridSlashLabel = std::make_unique<juce::Label>();
+    gridSlashLabel->setText("/", juce::dontSendNotification);
+    gridSlashLabel->setFont(FontManager::getInstance().getUIFont(12.0f));
+    gridSlashLabel->setColour(juce::Label::textColourId,
+                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    gridSlashLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    gridSlashLabel->setJustificationType(juce::Justification::centred);
+    gridSlashLabel->setAlpha(isAutoGrid ? 0.4f : 1.0f);
+    addAndMakeVisible(*gridSlashLabel);
+
+    // Grid denominator (Integer format, constrained to powers of 2)
+    gridDenominatorLabel =
+        std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Integer);
+    gridDenominatorLabel->setRange(1.0, 64.0, 4.0);
+    gridDenominatorLabel->setValue(static_cast<double>(gridDenominator),
+                                   juce::dontSendNotification);
+    gridDenominatorLabel->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    gridDenominatorLabel->setShowFillIndicator(false);
+    gridDenominatorLabel->setFontSize(12.0f);
+    gridDenominatorLabel->setDoubleClickResetsValue(true);
+    gridDenominatorLabel->setDrawBorder(false);
+    gridDenominatorLabel->setEnabled(!isAutoGrid);
+    gridDenominatorLabel->setAlpha(isAutoGrid ? 0.4f : 1.0f);
+    gridDenominatorLabel->onValueChange = [this]() {
+        // Constrain to nearest power of 2
+        int raw = static_cast<int>(gridDenominatorLabel->getValue());
+        int pow2 = 1;
+        while (pow2 * 2 <= raw)
+            pow2 *= 2;
+        // Round to nearest power of 2
+        if (raw - pow2 > pow2 * 2 - raw && pow2 * 2 <= 64)
+            pow2 *= 2;
+        gridDenominator = pow2;
+        gridDenominatorLabel->setValue(static_cast<double>(gridDenominator),
+                                       juce::dontSendNotification);
+        if (!isAutoGrid && onGridQuantizeChange)
+            onGridQuantizeChange(isAutoGrid, gridNumerator, gridDenominator);
+    };
+    addAndMakeVisible(*gridDenominatorLabel);
 
     // Metronome button
     metronomeButton = std::make_unique<SvgButton>("Metronome", BinaryData::metronome_svg,
                                                   BinaryData::metronome_svgSize);
     styleTransportButton(*metronomeButton, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    metronomeButton->setNormalColor(juce::Colour(0xFFBCBCBC));
     metronomeButton->onClick = [this]() {
         bool newState = !metronomeButton->isActive();
         metronomeButton->setActive(newState);
@@ -309,10 +577,13 @@ void TransportPanel::setupTempoAndQuantize() {
     snapButton->setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
     snapButton->setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+                          DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
     snapButton->setColour(juce::TextButton::textColourOffId,
                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     snapButton->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    snapButton->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+                                  juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    snapButton->setWantsKeyboardFocus(false);
     snapButton->setClickingTogglesState(true);
     snapButton->setToggleState(isSnapEnabled, juce::dontSendNotification);
     snapButton->onClick = [this]() {
@@ -328,6 +599,11 @@ void TransportPanel::setTransportEnabled(bool enabled) {
     stopButton->setEnabled(enabled);
     recordButton->setEnabled(enabled);
     pauseButton->setEnabled(enabled);
+    homeButton->setEnabled(enabled);
+    prevButton->setEnabled(enabled);
+    nextButton->setEnabled(enabled);
+    punchInButton->setEnabled(enabled);
+    punchOutButton->setEnabled(enabled);
 
     // Visual feedback - dim buttons when disabled
     float alpha = enabled ? 1.0f : 0.4f;
@@ -335,17 +611,11 @@ void TransportPanel::setTransportEnabled(bool enabled) {
     stopButton->setAlpha(alpha);
     recordButton->setAlpha(alpha);
     pauseButton->setAlpha(alpha);
-}
-
-void TransportPanel::updateTempoDisplay() {
-    tempoDisplay->setText(juce::String(currentTempo, 1), juce::dontSendNotification);
-}
-
-void TransportPanel::adjustTempo(double delta) {
-    currentTempo = juce::jlimit(20.0, 999.0, currentTempo + delta);
-    updateTempoDisplay();
-    if (onTempoChange)
-        onTempoChange(currentTempo);
+    homeButton->setAlpha(alpha);
+    prevButton->setAlpha(alpha);
+    nextButton->setAlpha(alpha);
+    punchInButton->setAlpha(alpha);
+    punchOutButton->setAlpha(alpha);
 }
 
 void TransportPanel::styleTransportButton(SvgButton& button, juce::Colour accentColor) {
@@ -355,139 +625,19 @@ void TransportPanel::styleTransportButton(SvgButton& button, juce::Colour accent
     button.setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
 }
 
-// Formatting helpers
-juce::String TransportPanel::formatPositionBarsBeats(double seconds) const {
-    if (seconds < 0)
-        return "-";
-
-    double secondsPerBeat = 60.0 / currentTempo;
-    double totalBeats = seconds / secondsPerBeat;
-
-    int bars = static_cast<int>(totalBeats / timeSignatureNumerator) + 1;
-    double beatInBar = std::fmod(totalBeats, static_cast<double>(timeSignatureNumerator));
-    int beat = static_cast<int>(beatInBar) + 1;
-
-    // Subdivision (16ths within beat) and ticks
-    double beatFraction = std::fmod(beatInBar, 1.0);
-    int subdivision = static_cast<int>(beatFraction * 4) + 1;              // 1-4 (16th notes)
-    int ticks = static_cast<int>(std::fmod(beatFraction * 4, 1.0) * 100);  // 00-99
-
-    return juce::String::formatted("%d.%d.%d.%02d", bars, beat, subdivision, ticks);
-}
-
-juce::String TransportPanel::formatPositionSeconds(double seconds) const {
-    if (seconds < 0)
-        return "-";
-
-    int minutes = static_cast<int>(seconds) / 60;
-    double secs = std::fmod(seconds, 60.0);
-    return juce::String::formatted("%d:%05.2f", minutes, secs);
-}
-
-juce::String TransportPanel::formatRangeBarsBeats(double startTime, double endTime) const {
-    if (startTime < 0 || endTime <= startTime)
-        return "-";
-
-    double secondsPerBeat = 60.0 / currentTempo;
-
-    // Start position (bars.beats.subdivision)
-    double startBeats = startTime / secondsPerBeat;
-    int startBars = static_cast<int>(startBeats / timeSignatureNumerator) + 1;
-    double startBeatInBar = std::fmod(startBeats, static_cast<double>(timeSignatureNumerator));
-    int startBeat = static_cast<int>(startBeatInBar) + 1;
-    int startSub = static_cast<int>(std::fmod(startBeatInBar, 1.0) * 4) + 1;
-
-    // End position (bars.beats.subdivision)
-    double endBeats = endTime / secondsPerBeat;
-    int endBars = static_cast<int>(endBeats / timeSignatureNumerator) + 1;
-    double endBeatInBar = std::fmod(endBeats, static_cast<double>(timeSignatureNumerator));
-    int endBeat = static_cast<int>(endBeatInBar) + 1;
-    int endSub = static_cast<int>(std::fmod(endBeatInBar, 1.0) * 4) + 1;
-
-    // Length in bars.beats.subdivision
-    double lengthBeats = (endTime - startTime) / secondsPerBeat;
-    int lenBars = static_cast<int>(lengthBeats / timeSignatureNumerator);
-    double lenBeatFrac = std::fmod(lengthBeats, static_cast<double>(timeSignatureNumerator));
-    int lenBeat = static_cast<int>(lenBeatFrac);
-    int lenSub = static_cast<int>(std::fmod(lenBeatFrac, 1.0) * 4);
-
-    juce::String lenStr;
-    if (lenBars > 0) {
-        lenStr = juce::String::formatted("%d.%d.%d", lenBars, lenBeat, lenSub);
-    } else if (lenBeat > 0) {
-        lenStr = juce::String::formatted("%d.%d", lenBeat, lenSub);
-    } else {
-        lenStr = juce::String::formatted(".%d", lenSub);
-    }
-
-    return juce::String::formatted("%d.%d.%d - %d.%d.%d - %s", startBars, startBeat, startSub,
-                                   endBars, endBeat, endSub, lenStr.toRawUTF8());
-}
-
-juce::String TransportPanel::formatRangeSeconds(double startTime, double endTime) const {
-    if (startTime < 0 || endTime <= startTime)
-        return "-";
-
-    double length = endTime - startTime;
-
-    // Format start
-    int startMin = static_cast<int>(startTime) / 60;
-    double startSec = std::fmod(startTime, 60.0);
-
-    // Format end
-    int endMin = static_cast<int>(endTime) / 60;
-    double endSec = std::fmod(endTime, 60.0);
-
-    // Format length
-    juce::String lenStr;
-    if (length >= 60.0) {
-        int lenMin = static_cast<int>(length) / 60;
-        double lenSec = std::fmod(length, 60.0);
-        lenStr = juce::String::formatted("%d:%04.1f", lenMin, lenSec);
-    } else {
-        lenStr = juce::String::formatted("%.1fs", length);
-    }
-
-    return juce::String::formatted("%d:%04.1f-%d:%04.1f-%s", startMin, startSec, endMin, endSec,
-                                   lenStr.toRawUTF8());
-}
-
-void TransportPanel::updateDisplayBox(juce::Label* primary, juce::Label* secondary,
-                                      const juce::String& barsText, const juce::String& secsText,
-                                      bool showBothRows) {
-    auto& config = Config::getInstance();
-    bool defaultBarsBeats = config.getTransportDefaultBarsBeats();
-
-    if (showBothRows) {
-        // Primary = default format, Secondary = alternate
-        if (defaultBarsBeats) {
-            primary->setText(barsText, juce::dontSendNotification);
-            secondary->setText(secsText, juce::dontSendNotification);
-        } else {
-            primary->setText(secsText, juce::dontSendNotification);
-            secondary->setText(barsText, juce::dontSendNotification);
-        }
-    } else {
-        // Single row - use default format
-        if (defaultBarsBeats) {
-            primary->setText(barsText, juce::dontSendNotification);
-        } else {
-            primary->setText(secsText, juce::dontSendNotification);
-        }
-    }
-}
-
 void TransportPanel::setPlayheadPosition(double positionInSeconds) {
     cachedPlayheadPosition = positionInSeconds;
 
-    auto& config = Config::getInstance();
-    bool showBothRows = config.getTransportShowBothFormats();
+    // Convert seconds to beats
+    double beats = (positionInSeconds * currentTempo) / 60.0;
+    playheadPositionLabel->setValue(beats, juce::dontSendNotification);
+}
 
-    juce::String barsText = formatPositionBarsBeats(positionInSeconds);
-    juce::String secsText = formatPositionSeconds(positionInSeconds);
+void TransportPanel::setEditCursorPosition(double positionInSeconds) {
+    cachedEditCursorPosition = positionInSeconds;
 
-    updateDisplayBox(playheadPrimaryLabel.get(), playheadSecondaryLabel.get(), barsText, secsText,
-                     showBothRows);
+    double beats = (positionInSeconds * currentTempo) / 60.0;
+    editCursorLabel->setValue(beats, juce::dontSendNotification);
 }
 
 void TransportPanel::setTimeSelection(double startTime, double endTime, bool hasSelection) {
@@ -495,14 +645,21 @@ void TransportPanel::setTimeSelection(double startTime, double endTime, bool has
     cachedSelectionEnd = endTime;
     cachedSelectionActive = hasSelection;
 
-    auto& config = Config::getInstance();
-    bool showBothRows = config.getTransportShowBothFormats();
+    if (hasSelection) {
+        double startBeats = (startTime * currentTempo) / 60.0;
+        double endBeats = (endTime * currentTempo) / 60.0;
+        selectionStartLabel->setValue(startBeats, juce::dontSendNotification);
+        selectionEndLabel->setValue(endBeats, juce::dontSendNotification);
+    } else {
+        selectionStartLabel->setValue(0.0, juce::dontSendNotification);
+        selectionEndLabel->setValue(0.0, juce::dontSendNotification);
+    }
 
-    juce::String barsText = hasSelection ? formatRangeBarsBeats(startTime, endTime) : "-";
-    juce::String secsText = hasSelection ? formatRangeSeconds(startTime, endTime) : "-";
-
-    updateDisplayBox(selectionPrimaryLabel.get(), selectionSecondaryLabel.get(), barsText, secsText,
-                     showBothRows);
+    selectionStartLabel->setEnabled(hasSelection);
+    selectionEndLabel->setEnabled(hasSelection);
+    float alpha = hasSelection ? 1.0f : 0.5f;
+    selectionStartLabel->setAlpha(alpha);
+    selectionEndLabel->setAlpha(alpha);
 }
 
 void TransportPanel::setLoopRegion(double startTime, double endTime, bool loopEnabled) {
@@ -516,41 +673,92 @@ void TransportPanel::setLoopRegion(double startTime, double endTime, bool loopEn
         loopButton->setActive(isLooping);
     }
 
-    auto& config = Config::getInstance();
-    bool showBothRows = config.getTransportShowBothFormats();
-
     bool hasLoop = startTime >= 0 && endTime > startTime;
-    juce::String barsText = hasLoop ? formatRangeBarsBeats(startTime, endTime) : "-";
-    juce::String secsText = hasLoop ? formatRangeSeconds(startTime, endTime) : "-";
+    if (hasLoop) {
+        double startBeats = (startTime * currentTempo) / 60.0;
+        double endBeats = (endTime * currentTempo) / 60.0;
+        loopStartLabel->setValue(startBeats, juce::dontSendNotification);
+        loopEndLabel->setValue(endBeats, juce::dontSendNotification);
+    } else {
+        loopStartLabel->setValue(0.0, juce::dontSendNotification);
+        loopEndLabel->setValue(0.0, juce::dontSendNotification);
+    }
 
-    updateDisplayBox(loopPrimaryLabel.get(), loopSecondaryLabel.get(), barsText, secsText,
-                     showBothRows);
+    // Update enabled appearance
+    loopStartLabel->setEnabled(loopEnabled);
+    loopEndLabel->setEnabled(loopEnabled);
+    float alpha = loopEnabled ? 1.0f : 0.5f;
+    loopStartLabel->setAlpha(alpha);
+    loopEndLabel->setAlpha(alpha);
+}
 
-    // Update color based on enabled state
-    juce::Colour loopColor = loopEnabled ? DarkTheme::getColour(DarkTheme::LOOP_MARKER)
-                                         : DarkTheme::getColour(DarkTheme::TEXT_DIM);
-    loopPrimaryLabel->setColour(juce::Label::textColourId, loopColor);
-    loopSecondaryLabel->setColour(juce::Label::textColourId, loopColor.darker(0.3f));
+void TransportPanel::setPunchRegion(double startTime, double endTime, bool punchInEnabled,
+                                    bool punchOutEnabled) {
+    cachedPunchStart = startTime;
+    cachedPunchEnd = endTime;
+    cachedPunchInEnabled = punchInEnabled;
+    cachedPunchOutEnabled = punchOutEnabled;
+
+    // Sync punch button states independently
+    if (isPunchInEnabled != punchInEnabled) {
+        isPunchInEnabled = punchInEnabled;
+        punchInButton->setActive(isPunchInEnabled);
+    }
+    if (isPunchOutEnabled != punchOutEnabled) {
+        isPunchOutEnabled = punchOutEnabled;
+        punchOutButton->setActive(isPunchOutEnabled);
+    }
+
+    bool hasPunch = startTime >= 0 && endTime > startTime;
+    if (hasPunch) {
+        double startBeats = (startTime * currentTempo) / 60.0;
+        double endBeats = (endTime * currentTempo) / 60.0;
+        punchStartLabel->setValue(startBeats, juce::dontSendNotification);
+        punchEndLabel->setValue(endBeats, juce::dontSendNotification);
+    } else {
+        punchStartLabel->setValue(0.0, juce::dontSendNotification);
+        punchEndLabel->setValue(0.0, juce::dontSendNotification);
+    }
+
+    updatePunchLabelColors();
 }
 
 void TransportPanel::setTimeSignature(int numerator, int denominator) {
     timeSignatureNumerator = numerator;
     timeSignatureDenominator = denominator;
 
+    // Update time signature display
+    timeSignatureLabel->setText(juce::String(numerator) + "/" + juce::String(denominator),
+                                juce::dontSendNotification);
+
+    // Update beats per bar on BarsBeatsTicksLabels
+    playheadPositionLabel->setBeatsPerBar(numerator);
+    editCursorLabel->setBeatsPerBar(numerator);
+    selectionStartLabel->setBeatsPerBar(numerator);
+    selectionEndLabel->setBeatsPerBar(numerator);
+    loopStartLabel->setBeatsPerBar(numerator);
+    loopEndLabel->setBeatsPerBar(numerator);
+    punchStartLabel->setBeatsPerBar(numerator);
+    punchEndLabel->setBeatsPerBar(numerator);
+
     // Refresh all displays with new time signature
     setPlayheadPosition(cachedPlayheadPosition);
+    setEditCursorPosition(cachedEditCursorPosition);
     setTimeSelection(cachedSelectionStart, cachedSelectionEnd, cachedSelectionActive);
     setLoopRegion(cachedLoopStart, cachedLoopEnd, cachedLoopEnabled);
+    setPunchRegion(cachedPunchStart, cachedPunchEnd, cachedPunchInEnabled, cachedPunchOutEnabled);
 }
 
 void TransportPanel::setTempo(double bpm) {
     currentTempo = juce::jlimit(20.0, 999.0, bpm);
-    updateTempoDisplay();
+    tempoLabel->setValue(currentTempo, juce::dontSendNotification);
 
     // Refresh all displays with new tempo
     setPlayheadPosition(cachedPlayheadPosition);
+    setEditCursorPosition(cachedEditCursorPosition);
     setTimeSelection(cachedSelectionStart, cachedSelectionEnd, cachedSelectionActive);
     setLoopRegion(cachedLoopStart, cachedLoopEnd, cachedLoopEnabled);
+    setPunchRegion(cachedPunchStart, cachedPunchEnd, cachedPunchInEnabled, cachedPunchOutEnabled);
 }
 
 void TransportPanel::setPlaybackState(bool playing) {
@@ -560,11 +768,47 @@ void TransportPanel::setPlaybackState(bool playing) {
     }
 }
 
+void TransportPanel::setGridQuantize(bool autoGrid, int numerator, int denominator, bool isBars) {
+    isAutoGrid = autoGrid;
+    gridNumerator = numerator;
+    gridDenominator = denominator;
+
+    autoGridButton->setToggleState(autoGrid, juce::dontSendNotification);
+    gridNumeratorLabel->setValue(static_cast<double>(numerator), juce::dontSendNotification);
+
+    if (isBars) {
+        gridDenominatorLabel->setTextOverride("B");
+    } else {
+        gridDenominatorLabel->clearTextOverride();
+        gridDenominatorLabel->setValue(static_cast<double>(denominator),
+                                       juce::dontSendNotification);
+    }
+
+    // Enable/disable labels based on autoGrid state
+    gridNumeratorLabel->setEnabled(!autoGrid);
+    gridDenominatorLabel->setEnabled(!autoGrid);
+    gridNumeratorLabel->setAlpha(autoGrid ? 0.4f : 1.0f);
+    gridDenominatorLabel->setAlpha(autoGrid ? 0.4f : 1.0f);
+}
+
 void TransportPanel::setSnapEnabled(bool enabled) {
     if (isSnapEnabled != enabled) {
         isSnapEnabled = enabled;
         snapButton->setToggleState(enabled, juce::dontSendNotification);
     }
+}
+
+void TransportPanel::updatePunchLabelColors() {
+    auto activeColor = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
+    auto inactiveColor = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+
+    // Punch start label color matches punch in button state
+    punchStartLabel->setTextColour(isPunchInEnabled ? activeColor : inactiveColor);
+    punchStartLabel->setAlpha(isPunchInEnabled ? 1.0f : 0.5f);
+
+    // Punch end label color matches punch out button state
+    punchEndLabel->setTextColour(isPunchOutEnabled ? activeColor : inactiveColor);
+    punchEndLabel->setAlpha(isPunchOutEnabled ? 1.0f : 0.5f);
 }
 
 }  // namespace magda

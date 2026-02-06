@@ -318,6 +318,17 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     mainView->onTimeSelectionChanged = [this](double start, double end, bool hasSelection) {
         transportPanel->setTimeSelection(start, end, hasSelection);
     };
+    mainView->onEditCursorChanged = [this](double position) {
+        transportPanel->setEditCursorPosition(position);
+    };
+    mainView->onPunchRegionChanged = [this](double start, double end, bool punchInEnabled,
+                                            bool punchOutEnabled) {
+        transportPanel->setPunchRegion(start, end, punchInEnabled, punchOutEnabled);
+    };
+    mainView->onGridQuantizeChanged = [this](bool autoGrid, int numerator, int denominator,
+                                             bool isBars) {
+        transportPanel->setGridQuantize(autoGrid, numerator, denominator, isBars);
+    };
 
     setupResizeHandles();
     setupViewModeListener();
@@ -466,6 +477,48 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         mainView->getTimelineController().dispatch(SetSnapEnabledEvent{enabled});
         // Sync timeline component's snap state
         mainView->syncSnapState();
+    };
+
+    transportPanel->onGridQuantizeChange = [this](bool autoGrid, int numerator, int denominator) {
+        mainView->getTimelineController().dispatch(
+            SetGridQuantizeEvent{autoGrid, numerator, denominator});
+    };
+
+    // Navigation callbacks
+    transportPanel->onGoHome = [this]() {
+        mainView->getTimelineController().dispatch(SetEditPositionEvent{0.0});
+    };
+    transportPanel->onGoToPrev = [this]() {
+        mainView->getTimelineController().dispatch(SetEditPositionEvent{0.0});
+    };
+    transportPanel->onGoToNext = [this]() {
+        auto& state = mainView->getTimelineController().getState();
+        mainView->getTimelineController().dispatch(SetEditPositionEvent{state.timelineLength});
+    };
+    transportPanel->onPlayheadEdit = [this](double beats) {
+        double bpm = mainView->getTimelineController().getState().tempo.bpm;
+        double seconds = (beats * 60.0) / bpm;
+        mainView->getTimelineController().dispatch(SetEditPositionEvent{seconds});
+    };
+    transportPanel->onLoopRegionEdit = [this](double startSec, double endSec) {
+        mainView->getTimelineController().dispatch(SetLoopRegionEvent{startSec, endSec});
+    };
+    transportPanel->onTimeSelectionEdit = [this](double startSec, double endSec) {
+        mainView->getTimelineController().dispatch(SetTimeSelectionEvent{startSec, endSec, {}});
+    };
+    transportPanel->onEditCursorEdit = [this](double positionSec) {
+        mainView->getTimelineController().dispatch(SetEditCursorEvent{positionSec});
+    };
+
+    // Punch in/out callbacks
+    transportPanel->onPunchInToggle = [this](bool enabled) {
+        mainView->getTimelineController().dispatch(SetPunchInEnabledEvent{enabled});
+    };
+    transportPanel->onPunchOutToggle = [this](bool enabled) {
+        mainView->getTimelineController().dispatch(SetPunchOutEnabledEvent{enabled});
+    };
+    transportPanel->onPunchRegionEdit = [this](double startSec, double endSec) {
+        mainView->getTimelineController().dispatch(SetPunchRegionEvent{startSec, endSec});
     };
 }
 

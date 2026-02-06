@@ -12,7 +12,7 @@ namespace magda {
  * - Drag the start/end edges to zoom (shrink = zoom in, expand = zoom out)
  * - Supports both horizontal (timeline) and vertical (tracks) orientations
  */
-class ZoomScrollBar : public juce::Component {
+class ZoomScrollBar : public juce::Component, private juce::Timer {
   public:
     enum class Orientation { Horizontal, Vertical };
 
@@ -86,7 +86,12 @@ class ZoomScrollBar : public juce::Component {
 
     // Hover state and animation
     bool isHovered_ = false;
-    float expandAmount_ = 1.0f;  // 0.0 = collapsed, 1.0 = expanded (always expanded for now)
+    float expandAmount_ = 0.0f;  // 0.0 = collapsed (hidden), 1.0 = expanded (visible)
+    float targetExpand_ = 0.0f;  // Animation target
+    static constexpr float ANIM_SPEED = 0.15f;  // Per frame blend factor
+
+    // Timer for animation
+    void timerCallback() override;
 
     // Helper methods
     juce::Rectangle<int> getThumbBounds() const;
