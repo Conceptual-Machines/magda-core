@@ -1391,6 +1391,12 @@ void MainView::setupSelectionCallbacks() {
         return timelineController->getState().snapTimeToGrid(time);
     };
 
+    // Set up render clip callback (bubbles up to MainWindow)
+    trackContentPanel->onClipRenderRequested = [this](ClipId id) {
+        if (onClipRenderRequested)
+            onClipRenderRequested(id);
+    };
+
     // Set up time selection callback from track content panel
     trackContentPanel->onTimeSelectionChanged = [this](double start, double end,
                                                        std::set<int> trackIndices) {

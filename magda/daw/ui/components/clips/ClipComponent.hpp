@@ -77,8 +77,9 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     std::function<void(ClipId, double, bool)> onClipResized;  // clipId, newLength, fromStart
     std::function<void(ClipId)> onClipSelected;
     std::function<void(ClipId)> onClipDoubleClicked;
-    std::function<void(ClipId, double)> onClipSplit;  // clipId, splitTime (Alt+click)
-    std::function<double(double)> snapTimeToGrid;     // Optional grid snapping
+    std::function<void(ClipId, double)> onClipSplit;    // clipId, splitTime (Alt+click)
+    std::function<void(ClipId)> onClipRenderRequested;  // clipId (render clip to new file)
+    std::function<double(double)> snapTimeToGrid;       // Optional grid snapping
 
     // Real-time preview callbacks (called during drag, not just on mouseUp)
     std::function<void(ClipId, double, double)>

@@ -1366,6 +1366,15 @@ void ClipComponent::showContextMenu() {
         menu.addItem(7, "Loop Settings...");
     }
 
+    // Render Clip (only for single audio clip)
+    if (!isMultiSelection) {
+        const auto* clipInfo = getClipInfo();
+        if (clipInfo && clipInfo->type == ClipType::Audio) {
+            menu.addSeparator();
+            menu.addItem(9, "Render Clip");
+        }
+    }
+
     // Show menu
     menu.showMenuAsync(juce::PopupMenu::Options(), [this, &clipManager,
                                                     &selectionManager](int result) {
@@ -1519,6 +1528,13 @@ void ClipComponent::showContextMenu() {
                         UndoManager::getInstance().endCompoundOperation();
 
                     selectionManager.selectClips({leftId});
+                }
+                break;
+            }
+
+            case 9: {  // Render Clip
+                if (onClipRenderRequested) {
+                    onClipRenderRequested(clipId_);
                 }
                 break;
             }

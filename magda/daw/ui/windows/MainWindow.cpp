@@ -330,6 +330,24 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         transportPanel->setGridQuantize(autoGrid, numerator, denominator, isBars);
     };
 
+    // Wire clip render callback
+    mainView->onClipRenderRequested = [this](ClipId clipId) {
+        auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
+        if (!engine) {
+            DBG("RenderClip: no TracktionEngineWrapper available");
+            return;
+        }
+
+        auto cmd = std::make_unique<RenderClipCommand>(clipId, engine);
+        auto* cmdPtr = cmd.get();
+        UndoManager::getInstance().executeCommand(std::move(cmd));
+
+        // Select the new clip if render succeeded
+        if (cmdPtr->wasSuccessful()) {
+            SelectionManager::getInstance().selectClip(cmdPtr->getNewClipId());
+        }
+    };
+
     setupResizeHandles();
     setupViewModeListener();
     setupAudioEngineCallbacks(externalEngine);

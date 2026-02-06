@@ -1,10 +1,15 @@
 #pragma once
 
+#include <juce_core/juce_core.h>
+
 #include "ClipInfo.hpp"
 #include "ClipManager.hpp"
 #include "CommandPattern.hpp"
 
 namespace magda {
+
+// Forward declarations
+class TracktionEngineWrapper;
 
 /**
  * @brief Command for splitting a clip at a given time
@@ -322,6 +327,41 @@ class StretchClipCommand : public UndoableCommand {
     ClipId clipId_;
     ClipInfo beforeState_;
     ClipInfo afterState_;
+};
+
+/**
+ * @brief Command for rendering a clip to a new audio file with all processing baked in
+ *
+ * Renders speed, pitch, warp, fades, gain, offset/trim into a new WAV file.
+ * Replaces the original clip with a clean clip referencing the rendered file.
+ * Does NOT include track or master plugins.
+ */
+class RenderClipCommand : public UndoableCommand {
+  public:
+    RenderClipCommand(ClipId clipId, TracktionEngineWrapper* engine);
+
+    juce::String getDescription() const override {
+        return "Render Clip";
+    }
+
+    void execute() override;
+    void undo() override;
+
+    bool wasSuccessful() const {
+        return success_;
+    }
+
+    ClipId getNewClipId() const {
+        return newClipId_;
+    }
+
+  private:
+    ClipId clipId_;
+    TracktionEngineWrapper* engine_;
+    ClipInfo originalClipSnapshot_;
+    ClipId newClipId_ = INVALID_CLIP_ID;
+    juce::File renderedFile_;
+    bool success_ = false;
 };
 
 }  // namespace magda

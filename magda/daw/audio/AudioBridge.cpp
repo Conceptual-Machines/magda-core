@@ -1257,6 +1257,21 @@ te::Clip* AudioBridge::getSessionTeClip(ClipId clipId) {
     return slot ? slot->getClip() : nullptr;
 }
 
+te::Clip* AudioBridge::getArrangementTeClip(ClipId clipId) const {
+    auto it = clipIdToEngineId_.find(clipId);
+    if (it == clipIdToEngineId_.end())
+        return nullptr;
+
+    const auto& engineId = it->second;
+    for (auto* track : te::getAudioTracks(edit_)) {
+        for (auto* teClip : track->getClips()) {
+            if (teClip->itemID.toString().toStdString() == engineId)
+                return teClip;
+        }
+    }
+    return nullptr;
+}
+
 // =============================================================================
 // Plugin Loading
 // =============================================================================

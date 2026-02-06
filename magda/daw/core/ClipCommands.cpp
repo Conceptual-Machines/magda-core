@@ -2,7 +2,12 @@
 
 #include <iostream>
 
+#include "../audio/AudioBridge.hpp"
+#include "../engine/TracktionEngineWrapper.hpp"
+
 namespace magda {
+
+namespace te = tracktion;
 
 // ============================================================================
 // SplitClipCommand
@@ -556,6 +561,167 @@ void StretchClipCommand::undo() {
         *clip = beforeState_;
         clipManager.forceNotifyClipsChanged();
     }
+}
+
+// ============================================================================
+// RenderClipCommand
+// ============================================================================
+
+RenderClipCommand::RenderClipCommand(ClipId clipId, TracktionEngineWrapper* engine)
+    : clipId_(clipId), engine_(engine) {}
+
+void RenderClipCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::Audio || !engine_) {
+        std::cerr << "RenderClipCommand: invalid clip or engine" << std::endl;
+        return;
+    }
+
+    // Snapshot original clip for undo
+    originalClipSnapshot_ = *clip;
+
+    auto* edit = engine_->getEdit();
+    auto* bridge = engine_->getAudioBridge();
+    if (!edit || !bridge) {
+        std::cerr << "RenderClipCommand: no edit or bridge" << std::endl;
+        return;
+    }
+
+    // Find the TE clip
+    auto* teClip = bridge->getArrangementTeClip(clipId_);
+    if (!teClip) {
+        std::cerr << "RenderClipCommand: TE clip not found" << std::endl;
+        return;
+    }
+
+    // Determine output file path: renders/ subdirectory next to source file
+    juce::File sourceFile(clip->audioFilePath);
+    juce::File rendersDir = sourceFile.getParentDirectory().getChildFile("renders");
+    rendersDir.createDirectory();
+
+    juce::String timestamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S");
+    juce::String safeName =
+        clip->name.isNotEmpty() ? clip->name : sourceFile.getFileNameWithoutExtension();
+    safeName = safeName.replaceCharacters(" /\\:", "____");
+    renderedFile_ = rendersDir.getChildFile(safeName + "_rendered_" + timestamp + ".wav");
+
+    // Stop transport and free playback context for offline rendering
+    auto& transport = edit->getTransport();
+    bool wasPlaying = transport.isPlaying();
+    if (wasPlaying) {
+        transport.stop(false, false);
+    }
+    te::freePlaybackContextIfNotRecording(transport);
+
+    // Find track index in getAllTracks for tracksToDo bitset
+    auto* teTrack = teClip->getTrack();
+    if (!teTrack) {
+        std::cerr << "RenderClipCommand: clip has no track" << std::endl;
+        return;
+    }
+
+    auto allTracks = te::getAllTracks(*edit);
+    int trackIndex = -1;
+    for (int i = 0; i < allTracks.size(); ++i) {
+        if (allTracks[i] == teTrack) {
+            trackIndex = i;
+            break;
+        }
+    }
+
+    if (trackIndex < 0) {
+        std::cerr << "RenderClipCommand: track not found in edit" << std::endl;
+        return;
+    }
+
+    // Build Renderer::Parameters
+    te::Renderer::Parameters params(*edit);
+    params.destFile = renderedFile_;
+
+    auto& formatManager = engine_->getEngine()->getAudioFileFormatManager();
+    params.audioFormat = formatManager.getWavFormat();
+    params.bitDepth = 24;
+    params.sampleRateForAudio = edit->engine.getDeviceManager().getSampleRate();
+    params.blockSizeForAudio = 8192;
+    params.usePlugins = false;
+    params.useMasterPlugins = false;
+    params.checkNodesForAudio = false;
+
+    // Set time range to clip's timeline range
+    params.time = te::TimeRange(te::TimePosition::fromSeconds(clip->startTime),
+                                te::TimePosition::fromSeconds(clip->startTime + clip->length));
+
+    // Set track and clip filters
+    juce::BigInteger trackBits;
+    trackBits.setBit(trackIndex);
+    params.tracksToDo = trackBits;
+    params.allowedClips.add(teClip);
+
+    // Run render synchronously
+    std::atomic<float> progress{0.0f};
+    auto renderTask =
+        std::make_unique<te::Renderer::RenderTask>("Render Clip", params, &progress, nullptr);
+
+    while (true) {
+        auto status = renderTask->runJob();
+        if (status == juce::ThreadPoolJob::jobHasFinished)
+            break;
+        if (status != juce::ThreadPoolJob::jobNeedsRunningAgain)
+            break;
+    }
+
+    renderTask.reset();
+
+    // Verify render succeeded
+    if (!renderedFile_.existsAsFile() || renderedFile_.getSize() == 0) {
+        std::cerr << "RenderClipCommand: render failed, no output file" << std::endl;
+        return;
+    }
+
+    // Delete original clip and create new clean clip at same position
+    double startTime = clip->startTime;
+    double length = clip->length;
+    TrackId trackId = clip->trackId;
+    juce::Colour colour = clip->colour;
+    juce::String name = clip->name;
+
+    clipManager.deleteClip(clipId_);
+
+    newClipId_ =
+        clipManager.createAudioClip(trackId, startTime, length, renderedFile_.getFullPathName());
+
+    // Copy over visual properties to the new clip
+    if (auto* newClip = clipManager.getClip(newClipId_)) {
+        newClip->colour = colour;
+        newClip->name = name.isNotEmpty() ? name : safeName;
+        clipManager.forceNotifyClipsChanged();
+    }
+
+    success_ = true;
+}
+
+void RenderClipCommand::undo() {
+    if (!success_)
+        return;
+
+    auto& clipManager = ClipManager::getInstance();
+
+    // Delete the replacement clip
+    if (newClipId_ != INVALID_CLIP_ID) {
+        clipManager.deleteClip(newClipId_);
+        newClipId_ = INVALID_CLIP_ID;
+    }
+
+    // Restore original clip from snapshot
+    clipManager.restoreClip(originalClipSnapshot_);
+
+    // Delete the rendered file
+    if (renderedFile_.existsAsFile()) {
+        renderedFile_.deleteFile();
+    }
+
+    success_ = false;
 }
 
 }  // namespace magda

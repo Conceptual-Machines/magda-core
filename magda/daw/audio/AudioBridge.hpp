@@ -137,6 +137,13 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     te::Clip* getSessionTeClip(ClipId clipId);
 
+    /**
+     * @brief Get the TE clip for an arrangement clip
+     * @param clipId The MAGDA clip ID
+     * @return The TE Clip pointer, or nullptr if not found
+     */
+    te::Clip* getArrangementTeClip(ClipId clipId) const;
+
     // =========================================================================
     // Transient Detection
     // =========================================================================

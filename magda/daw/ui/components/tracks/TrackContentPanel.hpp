@@ -135,6 +135,7 @@ class TrackContentPanel : public juce::Component,
     std::function<void(double, double, std::set<int>)>
         onTimeSelectionChanged;                             // startTime, endTime, trackIndices
     std::function<void(double)> onPlayheadPositionChanged;  // Called when playhead is set via click
+    std::function<void(ClipId)> onClipRenderRequested;      // Render clip to new file
     std::function<double(double)>
         snapTimeToGrid;  // Callback to snap time to grid (provided by MainView)
 
