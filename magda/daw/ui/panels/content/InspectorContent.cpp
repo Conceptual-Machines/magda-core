@@ -908,42 +908,65 @@ InspectorContent::InspectorContent() {
     };
     clipPropsContainer_.addChildComponent(*fadeOutValue_);
 
-    auto setupFadeCombo = [](juce::ComboBox& combo) {
+    // Fade type icon buttons: matches AudioFadeCurve::Type (1=linear, 2=convex, 3=concave,
+    // 4=sCurve)
+    struct FadeTypeIcon {
+        const char* name;
+        const char* data;
+        size_t size;
+        const char* tooltip;
+    };
+    FadeTypeIcon fadeTypeIcons[] = {
+        {"Linear", BinaryData::fade_linear_svg, BinaryData::fade_linear_svgSize, "Linear"},
+        {"Convex", BinaryData::fade_convex_svg, BinaryData::fade_convex_svgSize, "Convex"},
+        {"Concave", BinaryData::fade_concave_svg, BinaryData::fade_concave_svgSize, "Concave"},
+        {"SCurve", BinaryData::fade_scurve_svg, BinaryData::fade_scurve_svgSize, "S-Curve"},
+    };
+
+    auto setupFadeTypeButton = [this](std::unique_ptr<magda::SvgButton>& btn,
+                                      const FadeTypeIcon& icon) {
+        btn = std::make_unique<magda::SvgButton>(icon.name, icon.data, icon.size);
+        btn->setOriginalColor(juce::Colour(0xFFE3E3E3));
+        btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setTooltip(icon.tooltip);
+        btn->setClickingTogglesState(false);
+        clipPropsContainer_.addChildComponent(*btn);
+    };
+
+    for (int i = 0; i < 4; ++i) {
+        setupFadeTypeButton(fadeInTypeButtons_[i], fadeTypeIcons[i]);
+        int fadeType =
+            i + 1;  // AudioFadeCurve::Type is 1-based (1=linear,2=convex,3=concave,4=sCurve)
+        fadeInTypeButtons_[i]->onClick = [this, i, fadeType]() {
+            if (selectedClipId_ != magda::INVALID_CLIP_ID) {
+                magda::ClipManager::getInstance().setFadeInType(selectedClipId_, fadeType);
+                for (int j = 0; j < 4; ++j)
+                    fadeInTypeButtons_[j]->setActive(j == i);
+            }
+        };
+
+        setupFadeTypeButton(fadeOutTypeButtons_[i], fadeTypeIcons[i]);
+        fadeOutTypeButtons_[i]->onClick = [this, i, fadeType]() {
+            if (selectedClipId_ != magda::INVALID_CLIP_ID) {
+                magda::ClipManager::getInstance().setFadeOutType(selectedClipId_, fadeType);
+                for (int j = 0; j < 4; ++j)
+                    fadeOutTypeButtons_[j]->setActive(j == i);
+            }
+        };
+    }
+
+    auto setupBehaviourCombo = [](juce::ComboBox& combo) {
         combo.setColour(juce::ComboBox::backgroundColourId,
                         DarkTheme::getColour(DarkTheme::SURFACE));
         combo.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
         combo.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
     };
 
-    fadeInTypeCombo_.addItem("Concave", 1);
-    fadeInTypeCombo_.addItem("Linear", 2);
-    fadeInTypeCombo_.addItem("Convex", 3);
-    fadeInTypeCombo_.addItem("S-Curve", 4);
-    setupFadeCombo(fadeInTypeCombo_);
-    fadeInTypeCombo_.setSelectedId(2, juce::dontSendNotification);
-    fadeInTypeCombo_.onChange = [this]() {
-        if (selectedClipId_ != magda::INVALID_CLIP_ID)
-            magda::ClipManager::getInstance().setFadeInType(selectedClipId_,
-                                                            fadeInTypeCombo_.getSelectedId() - 1);
-    };
-    clipPropsContainer_.addChildComponent(fadeInTypeCombo_);
-
-    fadeOutTypeCombo_.addItem("Concave", 1);
-    fadeOutTypeCombo_.addItem("Linear", 2);
-    fadeOutTypeCombo_.addItem("Convex", 3);
-    fadeOutTypeCombo_.addItem("S-Curve", 4);
-    setupFadeCombo(fadeOutTypeCombo_);
-    fadeOutTypeCombo_.setSelectedId(2, juce::dontSendNotification);
-    fadeOutTypeCombo_.onChange = [this]() {
-        if (selectedClipId_ != magda::INVALID_CLIP_ID)
-            magda::ClipManager::getInstance().setFadeOutType(selectedClipId_,
-                                                             fadeOutTypeCombo_.getSelectedId() - 1);
-    };
-    clipPropsContainer_.addChildComponent(fadeOutTypeCombo_);
-
     fadeInBehaviourCombo_.addItem("Gain Fade", 1);
     fadeInBehaviourCombo_.addItem("Speed Ramp", 2);
-    setupFadeCombo(fadeInBehaviourCombo_);
+    setupBehaviourCombo(fadeInBehaviourCombo_);
     fadeInBehaviourCombo_.setSelectedId(1, juce::dontSendNotification);
     fadeInBehaviourCombo_.onChange = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID)
@@ -954,7 +977,7 @@ InspectorContent::InspectorContent() {
 
     fadeOutBehaviourCombo_.addItem("Gain Fade", 1);
     fadeOutBehaviourCombo_.addItem("Speed Ramp", 2);
-    setupFadeCombo(fadeOutBehaviourCombo_);
+    setupBehaviourCombo(fadeOutBehaviourCombo_);
     fadeOutBehaviourCombo_.setSelectedId(1, juce::dontSendNotification);
     fadeOutBehaviourCombo_.onChange = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID)
@@ -1438,9 +1461,22 @@ void InspectorContent::resized() {
             {
                 auto row = addRow(22);
                 int halfWidth = (containerWidth - 8) / 2;
-                fadeInTypeCombo_.setBounds(row.removeFromLeft(halfWidth).reduced(0, 1));
+                // Fade-in type buttons (4 icons in left half)
+                auto leftHalf = row.removeFromLeft(halfWidth);
+                int btnSize = juce::jmin(20, (leftHalf.getWidth() - 6) / 4);
+                for (int i = 0; i < 4; ++i) {
+                    fadeInTypeButtons_[i]->setBounds(leftHalf.removeFromLeft(btnSize).reduced(1));
+                    if (i < 3)
+                        leftHalf.removeFromLeft(2);
+                }
                 row.removeFromLeft(8);
-                fadeOutTypeCombo_.setBounds(row.removeFromLeft(halfWidth).reduced(0, 1));
+                // Fade-out type buttons (4 icons in right half)
+                auto rightHalf = row.removeFromLeft(halfWidth);
+                for (int i = 0; i < 4; ++i) {
+                    fadeOutTypeButtons_[i]->setBounds(rightHalf.removeFromLeft(btnSize).reduced(1));
+                    if (i < 3)
+                        rightHalf.removeFromLeft(2);
+                }
             }
             addSpace(4);
             {
@@ -2239,16 +2275,20 @@ void InspectorContent::updateFromSelectedClip() {
         fadesSectionLabel_.setVisible(showFades);
         fadeInValue_->setVisible(showFades);
         fadeOutValue_->setVisible(showFades);
-        fadeInTypeCombo_.setVisible(showFades);
-        fadeOutTypeCombo_.setVisible(showFades);
+        for (int i = 0; i < 4; ++i) {
+            fadeInTypeButtons_[i]->setVisible(showFades);
+            fadeOutTypeButtons_[i]->setVisible(showFades);
+        }
         fadeInBehaviourCombo_.setVisible(showFades);
         fadeOutBehaviourCombo_.setVisible(showFades);
         autoCrossfadeToggle_.setVisible(showFades);
         if (showFades) {
             fadeInValue_->setValue(clip->fadeIn, juce::dontSendNotification);
             fadeOutValue_->setValue(clip->fadeOut, juce::dontSendNotification);
-            fadeInTypeCombo_.setSelectedId(clip->fadeInType + 1, juce::dontSendNotification);
-            fadeOutTypeCombo_.setSelectedId(clip->fadeOutType + 1, juce::dontSendNotification);
+            for (int i = 0; i < 4; ++i) {
+                fadeInTypeButtons_[i]->setActive(i == clip->fadeInType - 1);
+                fadeOutTypeButtons_[i]->setActive(i == clip->fadeOutType - 1);
+            }
             fadeInBehaviourCombo_.setSelectedId(clip->fadeInBehaviour + 1,
                                                 juce::dontSendNotification);
             fadeOutBehaviourCombo_.setSelectedId(clip->fadeOutBehaviour + 1,
@@ -2353,8 +2393,12 @@ void InspectorContent::showClipControls(bool show) {
         fadesSectionLabel_.setVisible(false);
         fadeInValue_->setVisible(false);
         fadeOutValue_->setVisible(false);
-        fadeInTypeCombo_.setVisible(false);
-        fadeOutTypeCombo_.setVisible(false);
+        for (auto& btn : fadeInTypeButtons_)
+            if (btn)
+                btn->setVisible(false);
+        for (auto& btn : fadeOutTypeButtons_)
+            if (btn)
+                btn->setVisible(false);
         fadeInBehaviourCombo_.setVisible(false);
         fadeOutBehaviourCombo_.setVisible(false);
         autoCrossfadeToggle_.setVisible(false);

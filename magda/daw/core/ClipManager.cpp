@@ -696,7 +696,7 @@ void ClipManager::setFadeOut(ClipId clipId, double seconds) {
 void ClipManager::setFadeInType(ClipId clipId, int type) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
-            clip->fadeInType = juce::jlimit(0, 3, type);
+            clip->fadeInType = juce::jlimit(1, 4, type);
             notifyClipPropertyChanged(clipId);
         }
     }
@@ -705,7 +705,7 @@ void ClipManager::setFadeInType(ClipId clipId, int type) {
 void ClipManager::setFadeOutType(ClipId clipId, int type) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
-            clip->fadeOutType = juce::jlimit(0, 3, type);
+            clip->fadeOutType = juce::jlimit(1, 4, type);
             notifyClipPropertyChanged(clipId);
         }
     }

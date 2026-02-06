@@ -330,6 +330,31 @@ class StretchClipCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for adjusting fade in/out durations via drag handles
+ *
+ * Since fade operations modify the clip directly during drag (for live preview),
+ * this command takes the before-state saved at drag start. The clip is already in
+ * its final state when execute() is called, so performAction is a no-op.
+ * Undo restores the full ClipInfo snapshot from before the fade drag began.
+ */
+class SetFadeCommand : public UndoableCommand {
+  public:
+    SetFadeCommand(ClipId clipId, const ClipInfo& beforeState);
+
+    juce::String getDescription() const override {
+        return "Adjust Fade";
+    }
+
+    void execute() override;
+    void undo() override;
+
+  private:
+    ClipId clipId_;
+    ClipInfo beforeState_;
+    ClipInfo afterState_;
+};
+
+/**
  * @brief Command for rendering a clip to a new audio file with all processing baked in
  *
  * Renders speed, pitch, warp, fades, gain, offset/trim into a new WAV file.

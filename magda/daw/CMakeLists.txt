@@ -98,6 +98,11 @@ juce_add_binary_data(MagdaAssets
     # Inspector clip icons
     ../../assets/icons/pin.svg
     ../../assets/icons/note.svg
+    # Fade curve type icons
+    ../../assets/icons/fade_linear.svg
+    ../../assets/icons/fade_convex.svg
+    ../../assets/icons/fade_concave.svg
+    ../../assets/icons/fade_scurve.svg
     # Punch in/out icons
     ../../assets/icons/punchinout/punchin.svg
     ../../assets/icons/punchinout/punchin_on.svg
