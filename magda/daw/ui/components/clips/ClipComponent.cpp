@@ -180,12 +180,12 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
             double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
             auto di = ClipDisplayInfo::from(clip, tempo);
 
-            // During left resize drag, the offset hasn't been committed yet,
-            // so simulate the offset adjustment
+            // During left resize drag, compute display offset from the drag-start
+            // snapshot to avoid double-counting with throttled in-flight mutations.
             double displayOffset = clip.offset;
             if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
                 double trimDelta = dragStartLength_ - previewLength_;
-                displayOffset += di.timelineToSource(trimDelta);
+                displayOffset = dragStartClipSnapshot_.offset + di.timelineToSource(trimDelta);
             }
 
             auto waveColour = clip.colour.brighter(0.2f);
@@ -277,12 +277,15 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                 // Phase offset: the first tile starts partway through the loop
                 double phaseSource = di.loopOffset;
 
-                // During left resize drag, adjust loop phase to keep waveform
-                // anchored to the timeline (same logic as ClipOperations::trimFromLeft)
+                // During left resize drag, compute loop phase from the drag-start
+                // snapshot to avoid double-counting with throttled in-flight mutations.
                 if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
                     double trimDelta = dragStartLength_ - previewLength_;
                     double phaseDelta = di.timelineToSource(trimDelta);
-                    phaseSource = wrapPhase(phaseSource + phaseDelta, di.sourceLength);
+                    double originalPhase =
+                        wrapPhase(dragStartClipSnapshot_.offset - dragStartClipSnapshot_.loopStart,
+                                  di.sourceLength);
+                    phaseSource = wrapPhase(originalPhase + phaseDelta, di.sourceLength);
                 }
 
                 double phaseTimeline = di.sourceToTimeline(phaseSource);
@@ -888,6 +891,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             dragStartClipSnapshot_ = *clip;
         } else {
             dragMode_ = DragMode::ResizeLeft;
+            dragStartClipSnapshot_ = *clip;
         }
     } else if (isOnRightEdge(e.x)) {
         if (e.mods.isShiftDown() && clip->type == ClipType::Audio &&
@@ -897,6 +901,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             dragStartClipSnapshot_ = *clip;
         } else {
             dragMode_ = DragMode::ResizeRight;
+            dragStartClipSnapshot_ = *clip;
         }
     } else {
         dragMode_ = DragMode::Move;
@@ -1030,12 +1035,28 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             previewStartTime_ = finalStartTime;
             previewLength_ = finalLength;
 
-            // Throttled update so waveform editor stays in sync during drag
+            // Throttled update so waveform editor + TE stay in sync during drag
             if (resizeThrottle_.check()) {
                 auto& cm = magda::ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
-                    ClipOperations::resizeContainerAbsolute(*mutableClip, finalStartTime,
-                                                            finalLength);
+                    DBG("[RESIZE-LEFT-DRAG] BEFORE resizeFromLeft: startTime="
+                        << mutableClip->startTime << " length=" << mutableClip->length << " offset="
+                        << mutableClip->offset << " loopStart=" << mutableClip->loopStart
+                        << " loopLength=" << mutableClip->loopLength
+                        << " loopEnabled=" << (int)mutableClip->loopEnabled
+                        << " speedRatio=" << mutableClip->speedRatio
+                        << " getTeOffset()=" << mutableClip->getTeOffset(mutableClip->loopEnabled));
+                    ClipOperations::resizeContainerFromLeft(*mutableClip, finalLength);
+                    // Sync loopStart so getTeOffset() gives TE the correct value
+                    if (!mutableClip->loopEnabled && mutableClip->type == magda::ClipType::Audio) {
+                        mutableClip->loopStart = mutableClip->offset;
+                    }
+                    DBG("[RESIZE-LEFT-DRAG] AFTER: startTime="
+                        << mutableClip->startTime << " length=" << mutableClip->length << " offset="
+                        << mutableClip->offset << " loopStart=" << mutableClip->loopStart
+                        << " loopLength=" << mutableClip->loopLength
+                        << " getTeOffset()=" << mutableClip->getTeOffset(mutableClip->loopEnabled)
+                        << " finalLength=" << finalLength << " finalStartTime=" << finalStartTime);
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
             }
@@ -1324,15 +1345,15 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 finalStartTime = juce::jmax(0.0, finalStartTime);
                 finalLength = juce::jmax(0.1, finalLength);
 
-                // Restore clip to pre-drag state before committing.
-                // Throttled drag updates modified startTime/length directly
-                // without adjusting offset — ResizeClipCommand needs the
-                // original state to compute the correct offset delta.
+                // Restore only the fields modified by the throttled drag updates.
+                // ResizeClipCommand needs the original state to compute correctly.
                 {
                     auto& cm = ClipManager::getInstance();
                     if (auto* c = cm.getClip(clipId_)) {
                         c->startTime = dragStartTime_;
                         c->length = dragStartLength_;
+                        c->offset = dragStartClipSnapshot_.offset;
+                        c->loopStart = dragStartClipSnapshot_.loopStart;
                     }
                 }
 

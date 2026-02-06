@@ -111,58 +111,60 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
 
         const auto& di = owner_.cachedDisplayInfo_;
 
-        // Convert an arrangement-timeline position to pixel X in overlay space.
-        // The display is anchored at source file start, so arrangement positions
-        // need the offset added (TE plays from offset in the source file).
-        auto timeToOverlayX = [&](double time) -> int {
-            double displayTime;
-            if (owner_.relativeTimeMode_) {
-                displayTime = (time - clip->startTime) + di.offsetPositionSeconds;
-            } else {
-                displayTime = time + di.offsetPositionSeconds;
-            }
-            return static_cast<int>(displayTime * owner_.horizontalZoom_) + GRID_LEFT_PADDING -
+        // The editor shows source file content — convert arrangement time
+        // to source-file position. Only show cursors when the arrangement
+        // playhead falls within this clip's time range.
+        double clipEnd = clip->startTime + clip->length;
+
+        auto arrangementToSourceX = [&](double arrangementTime) -> int {
+            // Map arrangement time to position within source file
+            double relTime = arrangementTime - clip->startTime;
+            double sourcePos = di.offsetPositionSeconds + relTime;
+            return static_cast<int>(sourcePos * owner_.horizontalZoom_) + GRID_LEFT_PADDING -
                    scrollX;
         };
 
-        // Draw edit cursor (triangle at top) - always visible
+        // Draw edit cursor (triangle at top) — only when inside clip range
         double editPos = owner_.cachedEditPosition_;
-        int editX = timeToOverlayX(editPos);
-        if (editX >= 0 && editX < getWidth()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
-            juce::Path triangle;
-            triangle.addTriangle(static_cast<float>(editX - 5), 0.0f, static_cast<float>(editX + 5),
-                                 0.0f, static_cast<float>(editX), 10.0f);
-            g.fillPath(triangle);
+        if (editPos >= clip->startTime && editPos <= clipEnd) {
+            int editX = arrangementToSourceX(editPos);
+            if (editX >= 0 && editX < getWidth()) {
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                juce::Path triangle;
+                triangle.addTriangle(static_cast<float>(editX - 5), 0.0f,
+                                     static_cast<float>(editX + 5), 0.0f, static_cast<float>(editX),
+                                     10.0f);
+                g.fillPath(triangle);
+            }
         }
 
-        // Draw playback cursor (vertical line) - only during playback
+        // Draw playback cursor (vertical line) — only during playback and inside clip
         if (owner_.cachedIsPlaying_) {
             double playPos = owner_.cachedPlaybackPosition_;
+
+            // Only show when playhead is within clip's arrangement range
+            if (playPos < clip->startTime || playPos > clipEnd)
+                return;
 
             // Wrap playhead inside loop region when looping is enabled
             if (clip->loopEnabled && di.loopLengthSeconds > 0.0) {
                 double relPos = playPos - clip->startTime;
-                if (relPos >= 0.0) {
-                    // Wrap within loop cycle, accounting for loop offset
-                    // (offset may not equal loopStart — playback starts mid-loop)
-                    double phaseShift = di.offsetPositionSeconds - di.loopStartPositionSeconds;
-                    double wrapped = std::fmod(phaseShift + relPos, di.loopLengthSeconds);
-                    if (wrapped < 0.0)
-                        wrapped += di.loopLengthSeconds;
-                    double displayPos = di.loopStartPositionSeconds + wrapped;
-                    int playX = static_cast<int>(displayPos * owner_.horizontalZoom_) +
-                                GRID_LEFT_PADDING - scrollX;
-                    if (playX >= 0 && playX < getWidth()) {
-                        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
-                        g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
-                                   static_cast<float>(getHeight()), 1.5f);
-                    }
-                    return;
+                double phaseShift = di.offsetPositionSeconds - di.loopStartPositionSeconds;
+                double wrapped = std::fmod(phaseShift + relPos, di.loopLengthSeconds);
+                if (wrapped < 0.0)
+                    wrapped += di.loopLengthSeconds;
+                double displayPos = di.loopStartPositionSeconds + wrapped;
+                int playX = static_cast<int>(displayPos * owner_.horizontalZoom_) +
+                            GRID_LEFT_PADDING - scrollX;
+                if (playX >= 0 && playX < getWidth()) {
+                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                    g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
+                               static_cast<float>(getHeight()), 1.5f);
                 }
+                return;
             }
 
-            int playX = timeToOverlayX(playPos);
+            int playX = arrangementToSourceX(playPos);
             if (playX >= 0 && playX < getWidth()) {
                 g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
                 g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
@@ -549,23 +551,11 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
     if (clipId == editingClipId_) {
         const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
         if (clip) {
-            // Update grid component's clip position (lightweight, no full reload)
-            // This is needed when clip is moved from the timeline
+            // The editor is a source file viewer — ruler stays locked to
+            // source-relative mode.  Update clip boundaries (needed for resize)
+            // and display info (offset marker, loop markers).
             gridComponent_->updateClipPosition(clip->startTime, clip->length);
-
-            // Update time ruler with new clip position
-            double bpm = 120.0;
-            auto* controller = magda::TimelineController::getCurrent();
-            if (controller) {
-                bpm = controller->getState().tempo.bpm;
-            }
-
-            timeRuler_->setZoom(horizontalZoom_ * 60.0 / bpm);
-            timeRuler_->setTempo(bpm);
-            timeRuler_->setTimeOffset(relativeTimeMode_ ? 0.0 : clip->startTime);
             timeRuler_->setClipLength(clip->length);
-
-            // Update loop boundary dimming (also sets clip content offset on ruler)
             updateDisplayInfo(*clip);
 
             // Update warp mode state
@@ -576,8 +566,6 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
             if (warpEnabled) {
                 auto* bridge = getBridge();
                 if (bridge) {
-                    // Only refresh markers when transitioning to warp mode
-                    // (not on every clip property change to avoid performance issues)
                     if (!wasWarpEnabled_) {
                         bridge->enableWarp(editingClipId_);
                         auto markers = bridge->getWarpMarkers(editingClipId_);
@@ -585,7 +573,6 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
                     }
                 }
             } else if (wasWarpEnabled_) {
-                // Only disable if warp was previously on
                 auto* bridge = getBridge();
                 if (bridge) {
                     bridge->disableWarp(editingClipId_);
@@ -608,9 +595,6 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
                                          DarkTheme::getSecondaryTextColour());
                 }
             }
-
-            // Scroll viewport to show clip at new position
-            scrollToClipStart();
         }
 
         updateGridSize();
@@ -682,18 +666,11 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
         // Update time ruler with clip info
         const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
         if (clip) {
-            // Auto-switch time mode based on clip view
-            // Session clips are locked to relative mode (no absolute timeline position)
-            bool isSessionClip = (clip->view == magda::ClipView::Session);
-            if (isSessionClip) {
-                setRelativeTimeMode(true);
-                timeModeButton_->setEnabled(false);
-                timeModeButton_->setTooltip("Session clips always use relative time");
-            } else {
-                timeModeButton_->setEnabled(true);
-                timeModeButton_->setTooltip(
-                    "Toggle between Absolute (timeline) and Relative (clip) mode");
-            }
+            // Audio clips always use relative mode — the editor shows source file
+            // content, not timeline position. The ruler is anchored to the source file.
+            setRelativeTimeMode(true);
+            timeModeButton_->setEnabled(false);
+            timeModeButton_->setVisible(false);
 
             // Get tempo from TimelineController
             double bpm = 120.0;
@@ -705,9 +682,7 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
 
             timeRuler_->setZoom(horizontalZoom_ * 60.0 / bpm);
             timeRuler_->setTempo(bpm);
-            // In relative mode, anchor at source file start (position 0 = beat 1)
-            // In absolute mode, anchor at clip's timeline position
-            timeRuler_->setTimeOffset(relativeTimeMode_ ? 0.0 : clip->startTime);
+            timeRuler_->setTimeOffset(0.0);
             timeRuler_->setClipLength(clip->length);
 
             updateDisplayInfo(*clip);

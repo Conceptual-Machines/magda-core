@@ -184,9 +184,13 @@ struct ClipInfo {
         return offset - loopStart;
     }
 
-    /// TE offset: phase within the loop region, in stretched time
-    double getTeOffset() const {
-        return (offset - loopStart) * speedRatio;
+    /// TE offset in stretched time.
+    /// Looped: phase within the loop region (offset - loopStart).
+    /// Non-looped: raw trim point in the source file.
+    double getTeOffset(bool looped) const {
+        if (looped)
+            return (offset - loopStart) * speedRatio;
+        return offset * speedRatio;
     }
 
     /// TE loop start in stretched time

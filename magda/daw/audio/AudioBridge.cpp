@@ -248,6 +248,10 @@ void AudioBridge::clipPropertyChanged(ClipId clipId) {
         DBG("AudioBridge::clipPropertyChanged: clip " << clipId << " not found in ClipManager");
         return;
     }
+    DBG("[BRIDGE-PROP-CHANGED] clipId="
+        << clipId << " view=" << (int)clip->view << " startTime=" << clip->startTime << " length="
+        << clip->length << " offset=" << clip->offset << " loopStart=" << clip->loopStart
+        << " getTeOffset()=" << clip->getTeOffset(clip->loopEnabled));
 
     if (clip->autoTempo || clip->warpEnabled) {
         DBG("[AUDIO-BRIDGE] clipPropertyChanged clip "
@@ -673,7 +677,7 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     DBG("    speedRatio: " << clip->speedRatio);
     DBG("    sourceBPM: " << clip->sourceBPM);
     DBG("    sourceNumBeats: " << clip->sourceNumBeats);
-    DBG("    getTeOffset(): " << clip->getTeOffset());
+    DBG("    getTeOffset(): " << clip->getTeOffset(clip->loopEnabled));
     DBG("    loopStart+loopLength: " << (clip->loopStart + clip->loopLength));
     DBG("  TE STATE BEFORE:");
     DBG("    autoTempo: " << (int)audioClipPtr->getAutoTempo());
@@ -851,11 +855,11 @@ void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     // 7. UPDATE audio offset (trim point in file)
     // Must come AFTER loop range — setLoopRangeBeats resets offset internally
     {
-        double teOffset = juce::jmax(0.0, clip->getTeOffset());
+        double teOffset = juce::jmax(0.0, clip->getTeOffset(clip->loopEnabled));
         auto currentOffset = audioClipPtr->getPosition().getOffset().inSeconds();
-        DBG("  OFFSET SYNC: teOffset=" << teOffset << " (offset=" << clip->offset
-                                       << " - loopStart=" << clip->loopStart
-                                       << " * speedRatio=" << clip->speedRatio << ")"
+        DBG("  OFFSET SYNC: teOffset=" << teOffset << " (offset=" << clip->offset << " loopStart="
+                                       << clip->loopStart << " speedRatio=" << clip->speedRatio
+                                       << " loopEnabled=" << (int)clip->loopEnabled << ")"
                                        << ", currentTEOffset=" << currentOffset);
         if (std::abs(currentOffset - teOffset) > 0.001) {
             audioClipPtr->setOffset(te::TimeDuration::fromSeconds(teOffset));
@@ -1072,7 +1076,8 @@ bool AudioBridge::syncSessionClipToSlot(ClipId clipId) {
         }
 
         // Set file offset (trim point) - relative to loop start, in stretched time
-        audioClipPtr->setOffset(te::TimeDuration::fromSeconds(clip->getTeOffset()));
+        audioClipPtr->setOffset(
+            te::TimeDuration::fromSeconds(clip->getTeOffset(clip->loopEnabled)));
 
         // Set looping properties
         if (clip->loopEnabled && clip->getSourceLength() > 0.0) {

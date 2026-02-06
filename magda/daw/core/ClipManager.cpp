@@ -398,8 +398,10 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
             sanitizeAudioClip(*clip);
         }
 
-        // When disabling loop on audio clips, clamp length to actual file content
+        // When disabling loop on audio clips, sync loopStart and clamp length to actual file
+        // content
         if (!enabled && clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty()) {
+            clip->loopStart = clip->offset;
             auto* thumbnail =
                 AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
             if (thumbnail) {
