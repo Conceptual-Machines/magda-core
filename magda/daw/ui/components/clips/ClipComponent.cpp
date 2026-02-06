@@ -1055,9 +1055,19 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 finalStartTime = juce::jmax(0.0, finalStartTime);
                 finalLength = juce::jmax(0.1, finalLength);
 
+                // Restore clip to pre-drag state before committing.
+                // Throttled drag updates modified startTime/length directly
+                // without adjusting offset — ResizeClipCommand needs the
+                // original state to compute the correct offset delta.
+                {
+                    auto& cm = ClipManager::getInstance();
+                    if (auto* c = cm.getClip(clipId_)) {
+                        c->startTime = dragStartTime_;
+                        c->length = dragStartLength_;
+                    }
+                }
+
                 if (onClipResized) {
-                    // resizeClip(fromStart=true) adjusts clip->startTime and
-                    // compensates audio source positions internally
                     onClipResized(clipId_, finalLength, true);
                 }
                 break;
@@ -1073,6 +1083,16 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 }
 
                 finalLength = juce::jmax(0.1, finalLength);
+
+                // Restore clip length to pre-drag state before committing.
+                // Throttled drag updates modified length directly — the
+                // command needs the original state for correct undo capture.
+                {
+                    auto& cm = ClipManager::getInstance();
+                    if (auto* c = cm.getClip(clipId_)) {
+                        c->length = dragStartLength_;
+                    }
+                }
 
                 if (onClipResized) {
                     onClipResized(clipId_, finalLength, false);
