@@ -12,6 +12,10 @@
  */
 
 int main(int argc, char* argv[]) {
+    // Initialize JUCE GUI subsystem - required for message loop, timers, async updaters, etc.
+    // This must be alive for the entire test run to avoid SIGSEGV from singleton cleanup issues
+    juce::ScopedJuceInitialiser_GUI juceInit;
+
     juce::UnitTestRunner runner;
     runner.setAssertOnFailure(false);
 
