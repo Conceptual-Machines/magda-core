@@ -140,7 +140,7 @@ class WaveformGridComponent : public juce::Component {
     void setWarpMode(bool enabled);
 
     /** Update warp markers for display */
-    void setWarpMarkers(const std::vector<magda::AudioBridge::WarpMarkerInfo>& markers);
+    void setWarpMarkers(const std::vector<magda::WarpMarkerInfo>& markers);
 
     // ========================================================================
     // Coordinate Conversion
@@ -227,7 +227,7 @@ class WaveformGridComponent : public juce::Component {
 
     // Warp mode state
     bool warpMode_ = false;
-    std::vector<magda::AudioBridge::WarpMarkerInfo> warpMarkers_;
+    std::vector<magda::WarpMarkerInfo> warpMarkers_;
     int hoveredMarkerIndex_ = -1;
     int draggingMarkerIndex_ = -1;
     double dragStartWarpTime_ = 0.0;
