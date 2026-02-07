@@ -1713,10 +1713,8 @@ void AudioBridge::syncTrackPlugins(TrackId trackId) {
         }
 
         for (auto deviceId : toRemove) {
-            // Close plugin window before removing device (via PluginWindowManager)
-            if (windowManager_) {
-                windowManager_->closeWindowsForDevice(deviceId);
-            }
+            // Close plugin window before removing device (via PluginWindowBridge)
+            pluginWindowBridge_.closeWindowsForDevice(deviceId);
 
             auto it = deviceToPlugin_.find(deviceId);
             if (it != deviceToPlugin_.end()) {
@@ -2651,42 +2649,31 @@ juce::String AudioBridge::getTrackMidiInput(TrackId trackId) const {
 // =============================================================================
 
 void AudioBridge::showPluginWindow(DeviceId deviceId) {
-    if (windowManager_) {
-        auto plugin = getPlugin(deviceId);
-        if (plugin) {
-            // NOLINTNEXTLINE - false positive from static analysis
-            windowManager_->showPluginWindow(deviceId, plugin);
-        }
+    auto plugin = getPlugin(deviceId);
+    if (plugin) {
+        pluginWindowBridge_.showPluginWindow(deviceId, plugin);
     }
 }
 
 void AudioBridge::hidePluginWindow(DeviceId deviceId) {
-    if (windowManager_) {
-        auto plugin = getPlugin(deviceId);
-        if (plugin) {
-            // NOLINTNEXTLINE - false positive from static analysis
-            windowManager_->hidePluginWindow(deviceId, plugin);
-        }
+    auto plugin = getPlugin(deviceId);
+    if (plugin) {
+        pluginWindowBridge_.hidePluginWindow(deviceId, plugin);
     }
 }
 
 bool AudioBridge::isPluginWindowOpen(DeviceId deviceId) const {
-    if (windowManager_) {
-        auto plugin = getPlugin(deviceId);
-        if (plugin) {
-            return windowManager_->isPluginWindowOpen(plugin);
-        }
+    auto plugin = getPlugin(deviceId);
+    if (plugin) {
+        return pluginWindowBridge_.isPluginWindowOpen(plugin);
     }
     return false;
 }
 
 bool AudioBridge::togglePluginWindow(DeviceId deviceId) {
-    if (windowManager_) {
-        auto plugin = getPlugin(deviceId);
-        if (plugin) {
-            // NOLINTNEXTLINE - false positive from static analysis
-            return windowManager_->togglePluginWindow(deviceId, plugin);
-        }
+    auto plugin = getPlugin(deviceId);
+    if (plugin) {
+        return pluginWindowBridge_.togglePluginWindow(deviceId, plugin);
     }
     return false;
 }

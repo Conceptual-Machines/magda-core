@@ -15,6 +15,7 @@
 #include "MidiActivityMonitor.hpp"
 #include "ParameterManager.hpp"
 #include "ParameterQueue.hpp"
+#include "PluginWindowBridge.hpp"
 #include "TransportStateManager.hpp"
 
 namespace magda {
@@ -535,7 +536,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @param manager Pointer to PluginWindowManager (owned by TracktionEngineWrapper)
      */
     void setPluginWindowManager(PluginWindowManager* manager) {
-        windowManager_ = manager;
+        pluginWindowBridge_.setPluginWindowManager(manager);
     }
 
     /**
@@ -626,6 +627,9 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     MidiActivityMonitor midiActivity_;
     ParameterManager parameterManager_;
 
+    // Phase 2 refactoring: Independent features (extracted from AudioBridge)
+    PluginWindowBridge pluginWindowBridge_;
+
     // Master channel metering (lock-free atomics for thread safety)
     std::atomic<float> masterPeakL_{0.0f};
     std::atomic<float> masterPeakR_{0.0f};
@@ -639,9 +643,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Pending MIDI routes (applied when playback context becomes available)
     std::vector<std::pair<TrackId, juce::String>> pendingMidiRoutes_;
     void applyPendingMidiRoutes();
-
-    // Plugin window manager (owned by TracktionEngineWrapper, destroyed before us)
-    PluginWindowManager* windowManager_ = nullptr;
 
     // Engine wrapper (owns this AudioBridge, used for ClipInterface access)
     TracktionEngineWrapper* engineWrapper_ = nullptr;

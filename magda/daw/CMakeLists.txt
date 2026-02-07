@@ -145,6 +145,8 @@ set(DAW_CORE_SOURCES
     audio/TransportStateManager.cpp
     audio/MidiActivityMonitor.cpp
     audio/ParameterManager.cpp
+    # Phase 2 refactoring: Independent features
+    audio/PluginWindowBridge.cpp
     # TODO: Custom synth library (SimpleSynthPlugin.cpp) - for future implementation
     # Project serialization
     project/ProjectSerializer.cpp
@@ -357,6 +359,8 @@ set(DAW_HEADERS
     audio/TransportStateManager.hpp
     audio/MidiActivityMonitor.hpp
     audio/ParameterManager.hpp
+    # Phase 2 refactoring: Independent features
+    audio/PluginWindowBridge.hpp
     # Views
     ui/views/MainView.hpp
     ui/views/SessionView.hpp
