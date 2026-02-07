@@ -9,6 +9,8 @@
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../../themes/InspectorComboBoxLookAndFeel.hpp"
+#include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "../../utils/TimelineUtils.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/MidiNoteCommands.hpp"
@@ -224,6 +226,12 @@ InspectorContent::InspectorContent() {
     };
     addChildComponent(clipNameValue_);
 
+    // Clip file path (read-only, inside viewport)
+    clipFilePathLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
+    clipFilePathLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipFilePathLabel_.setJustificationType(juce::Justification::centredLeft);
+    clipPropsContainer_.addChildComponent(clipFilePathLabel_);
+
     // Clip type icon (sinewave for audio, midi for MIDI)
     clipTypeIcon_ = std::make_unique<magda::SvgButton>("Type", BinaryData::sinewave_svg,
                                                        BinaryData::sinewave_svgSize);
@@ -236,7 +244,8 @@ InspectorContent::InspectorContent() {
     // Detected BPM (shown at bottom with WARP button)
     clipBpmValue_.setFont(FontManager::getInstance().getUIFont(11.0f));
     clipBpmValue_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    clipBpmValue_.setJustificationType(juce::Justification::centredLeft);
+    clipBpmValue_.setColour(juce::Label::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+    clipBpmValue_.setJustificationType(juce::Justification::centred);
     clipPropsContainer_.addChildComponent(clipBpmValue_);
 
     // Length in beats (shown next to BPM when auto-tempo is enabled)
@@ -245,6 +254,9 @@ InspectorContent::InspectorContent() {
     clipBeatsLengthValue_->setSuffix(" beats");
     clipBeatsLengthValue_->setDecimalPlaces(2);
     clipBeatsLengthValue_->setSnapToInteger(true);
+    clipBeatsLengthValue_->setDrawBackground(false);
+    clipBeatsLengthValue_->setDrawBorder(true);
+    clipBeatsLengthValue_->setShowFillIndicator(false);
     clipBeatsLengthValue_->onValueChange = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID) {
             auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
@@ -375,6 +387,35 @@ InspectorContent::InspectorContent() {
     };
     clipPropsContainer_.addChildComponent(*clipEndValue_);
 
+    // Clip length
+    clipLengthLabel_.setText("length", juce::dontSendNotification);
+    clipLengthLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    clipLengthLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipPropsContainer_.addChildComponent(clipLengthLabel_);
+
+    clipLengthValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
+    clipLengthValue_->setRange(0.0, 10000.0, 4.0);
+    clipLengthValue_->setDoubleClickResetsValue(false);
+    clipLengthValue_->setBarsBeatsIsPosition(false);
+    clipLengthValue_->onValueChange = [this]() {
+        if (selectedClipId_ == magda::INVALID_CLIP_ID)
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
+        if (!clip)
+            return;
+
+        double bpm = 120.0;
+        if (timelineController_) {
+            bpm = timelineController_->getState().tempo.bpm;
+        }
+        double newLengthBeats = clipLengthValue_->getValue();
+        if (newLengthBeats < 0.0)
+            newLengthBeats = 0.0;
+        double newLengthSeconds = magda::TimelineUtils::beatsToSeconds(newLengthBeats, bpm);
+        magda::ClipManager::getInstance().resizeClip(selectedClipId_, newLengthSeconds, false, bpm);
+    };
+    clipPropsContainer_.addChildComponent(*clipLengthValue_);
+
     // Content offset icon (MIDI only - for non-destructive trim)
     clipContentOffsetIcon_ = std::make_unique<magda::SvgButton>("Offset", BinaryData::Offset_svg,
                                                                 BinaryData::Offset_svgSize);
@@ -424,6 +465,14 @@ InspectorContent::InspectorContent() {
     clipLoopToggle_->setClickingTogglesState(false);
     clipLoopToggle_->onClick = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID) {
+            auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
+            if (!clip)
+                return;
+
+            // Beat mode requires loop — don't allow disabling
+            if (clip->autoTempo && clipLoopToggle_->isActive())
+                return;
+
             bool newState = !clipLoopToggle_->isActive();
             clipLoopToggle_->setActive(newState);
             double bpm = 120.0;
@@ -435,8 +484,9 @@ InspectorContent::InspectorContent() {
     };
     clipPropsContainer_.addChildComponent(*clipLoopToggle_);
 
-    // Warp toggle button
+    // Warp toggle (pin icon)
     clipWarpToggle_.setButtonText("WARP");
+    clipWarpToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     clipWarpToggle_.setColour(juce::TextButton::buttonColourId,
                               DarkTheme::getColour(DarkTheme::SURFACE));
     clipWarpToggle_.setColour(juce::TextButton::buttonOnColourId,
@@ -444,17 +494,19 @@ InspectorContent::InspectorContent() {
     clipWarpToggle_.setColour(juce::TextButton::textColourOffId,
                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     clipWarpToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
-    clipWarpToggle_.setClickingTogglesState(true);
+    clipWarpToggle_.setClickingTogglesState(false);
     clipWarpToggle_.onClick = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID) {
-            bool newState = clipWarpToggle_.getToggleState();
+            bool newState = !clipWarpToggle_.getToggleState();
+            clipWarpToggle_.setToggleState(newState, juce::dontSendNotification);
             magda::ClipManager::getInstance().setClipWarpEnabled(selectedClipId_, newState);
         }
     };
     clipPropsContainer_.addChildComponent(clipWarpToggle_);
 
-    // Auto-tempo (musical mode) toggle button
-    clipAutoTempoToggle_.setButtonText(juce::CharPointer_UTF8("\xe2\x99\xa9 MUSICAL"));
+    // Auto-tempo (beat mode) toggle
+    clipAutoTempoToggle_.setButtonText("BEAT");
+    clipAutoTempoToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     clipAutoTempoToggle_.setColour(juce::TextButton::buttonColourId,
                                    DarkTheme::getColour(DarkTheme::SURFACE));
     clipAutoTempoToggle_.setColour(juce::TextButton::buttonOnColourId,
@@ -462,6 +514,7 @@ InspectorContent::InspectorContent() {
     clipAutoTempoToggle_.setColour(juce::TextButton::textColourOffId,
                                    DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     clipAutoTempoToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+    clipAutoTempoToggle_.setClickingTogglesState(false);
     clipAutoTempoToggle_.setTooltip(
         "Lock clip to musical time (bars/beats) instead of absolute time.\n"
         "Clip length changes with tempo to maintain fixed beat length.");
@@ -518,6 +571,9 @@ InspectorContent::InspectorContent() {
     clipStretchValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
     clipStretchValue_->setRange(0.25, 4.0, 1.0);
     clipStretchValue_->setSuffix("x");
+    clipStretchValue_->setDrawBackground(false);
+    clipStretchValue_->setDrawBorder(true);
+    clipStretchValue_->setShowFillIndicator(false);
     clipStretchValue_->onValueChange = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID)
             magda::ClipManager::getInstance().setSpeedRatio(selectedClipId_,
@@ -544,6 +600,12 @@ InspectorContent::InspectorContent() {
         }
     };
     clipPropsContainer_.addChildComponent(stretchModeCombo_);
+
+    // Apply themed LookAndFeel to all inspector combo boxes
+    stretchModeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
+    autoPitchModeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
+    launchModeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
+    launchQuantizeCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
 
     // Loop start
     clipLoopStartLabel_.setText("start", juce::dontSendNotification);
@@ -827,6 +889,7 @@ InspectorContent::InspectorContent() {
     clipPropsContainer_.addChildComponent(beatDetectionSectionLabel_);
 
     reverseToggle_.setButtonText("REVERSE");
+    reverseToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     reverseToggle_.setColour(juce::TextButton::buttonColourId,
                              DarkTheme::getColour(DarkTheme::SURFACE));
     reverseToggle_.setColour(juce::TextButton::buttonOnColourId,
@@ -902,62 +965,102 @@ InspectorContent::InspectorContent() {
     };
     clipPropsContainer_.addChildComponent(*fadeOutValue_);
 
-    auto setupFadeCombo = [](juce::ComboBox& combo) {
-        combo.setColour(juce::ComboBox::backgroundColourId,
-                        DarkTheme::getColour(DarkTheme::SURFACE));
-        combo.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-        combo.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+    // Fade type icon buttons: matches AudioFadeCurve::Type (1=linear, 2=convex, 3=concave,
+    // 4=sCurve)
+    struct FadeTypeIcon {
+        const char* name;
+        const char* data;
+        size_t size;
+        const char* tooltip;
+    };
+    FadeTypeIcon fadeTypeIcons[] = {
+        {"Linear", BinaryData::fade_linear_svg, BinaryData::fade_linear_svgSize, "Linear"},
+        {"Convex", BinaryData::fade_convex_svg, BinaryData::fade_convex_svgSize, "Convex"},
+        {"Concave", BinaryData::fade_concave_svg, BinaryData::fade_concave_svgSize, "Concave"},
+        {"SCurve", BinaryData::fade_scurve_svg, BinaryData::fade_scurve_svgSize, "S-Curve"},
     };
 
-    fadeInTypeCombo_.addItem("Concave", 1);
-    fadeInTypeCombo_.addItem("Linear", 2);
-    fadeInTypeCombo_.addItem("Convex", 3);
-    fadeInTypeCombo_.addItem("S-Curve", 4);
-    setupFadeCombo(fadeInTypeCombo_);
-    fadeInTypeCombo_.setSelectedId(2, juce::dontSendNotification);
-    fadeInTypeCombo_.onChange = [this]() {
-        if (selectedClipId_ != magda::INVALID_CLIP_ID)
-            magda::ClipManager::getInstance().setFadeInType(selectedClipId_,
-                                                            fadeInTypeCombo_.getSelectedId() - 1);
+    auto setupFadeTypeButton = [this](std::unique_ptr<magda::SvgButton>& btn,
+                                      const FadeTypeIcon& icon) {
+        btn = std::make_unique<magda::SvgButton>(icon.name, icon.data, icon.size);
+        btn->setOriginalColor(juce::Colour(0xFFE3E3E3));
+        btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setTooltip(icon.tooltip);
+        btn->setClickingTogglesState(false);
+        clipPropsContainer_.addChildComponent(*btn);
     };
-    clipPropsContainer_.addChildComponent(fadeInTypeCombo_);
 
-    fadeOutTypeCombo_.addItem("Concave", 1);
-    fadeOutTypeCombo_.addItem("Linear", 2);
-    fadeOutTypeCombo_.addItem("Convex", 3);
-    fadeOutTypeCombo_.addItem("S-Curve", 4);
-    setupFadeCombo(fadeOutTypeCombo_);
-    fadeOutTypeCombo_.setSelectedId(2, juce::dontSendNotification);
-    fadeOutTypeCombo_.onChange = [this]() {
-        if (selectedClipId_ != magda::INVALID_CLIP_ID)
-            magda::ClipManager::getInstance().setFadeOutType(selectedClipId_,
-                                                             fadeOutTypeCombo_.getSelectedId() - 1);
-    };
-    clipPropsContainer_.addChildComponent(fadeOutTypeCombo_);
+    for (int i = 0; i < 4; ++i) {
+        setupFadeTypeButton(fadeInTypeButtons_[i], fadeTypeIcons[i]);
+        int fadeType =
+            i + 1;  // AudioFadeCurve::Type is 1-based (1=linear,2=convex,3=concave,4=sCurve)
+        fadeInTypeButtons_[i]->onClick = [this, i, fadeType]() {
+            if (selectedClipId_ != magda::INVALID_CLIP_ID) {
+                magda::ClipManager::getInstance().setFadeInType(selectedClipId_, fadeType);
+                for (int j = 0; j < 4; ++j)
+                    fadeInTypeButtons_[j]->setActive(j == i);
+            }
+        };
 
-    fadeInBehaviourCombo_.addItem("Gain Fade", 1);
-    fadeInBehaviourCombo_.addItem("Speed Ramp", 2);
-    setupFadeCombo(fadeInBehaviourCombo_);
-    fadeInBehaviourCombo_.setSelectedId(1, juce::dontSendNotification);
-    fadeInBehaviourCombo_.onChange = [this]() {
-        if (selectedClipId_ != magda::INVALID_CLIP_ID)
-            magda::ClipManager::getInstance().setFadeInBehaviour(
-                selectedClipId_, fadeInBehaviourCombo_.getSelectedId() - 1);
-    };
-    clipPropsContainer_.addChildComponent(fadeInBehaviourCombo_);
+        setupFadeTypeButton(fadeOutTypeButtons_[i], fadeTypeIcons[i]);
+        fadeOutTypeButtons_[i]->onClick = [this, i, fadeType]() {
+            if (selectedClipId_ != magda::INVALID_CLIP_ID) {
+                magda::ClipManager::getInstance().setFadeOutType(selectedClipId_, fadeType);
+                for (int j = 0; j < 4; ++j)
+                    fadeOutTypeButtons_[j]->setActive(j == i);
+            }
+        };
+    }
 
-    fadeOutBehaviourCombo_.addItem("Gain Fade", 1);
-    fadeOutBehaviourCombo_.addItem("Speed Ramp", 2);
-    setupFadeCombo(fadeOutBehaviourCombo_);
-    fadeOutBehaviourCombo_.setSelectedId(1, juce::dontSendNotification);
-    fadeOutBehaviourCombo_.onChange = [this]() {
-        if (selectedClipId_ != magda::INVALID_CLIP_ID)
-            magda::ClipManager::getInstance().setFadeOutBehaviour(
-                selectedClipId_, fadeOutBehaviourCombo_.getSelectedId() - 1);
+    // Fade behaviour icon buttons: 0=gainFade, 1=speedRamp
+    struct FadeBehaviourIcon {
+        const char* name;
+        const char* data;
+        size_t size;
+        const char* tooltip;
     };
-    clipPropsContainer_.addChildComponent(fadeOutBehaviourCombo_);
+    FadeBehaviourIcon fadeBehaviourIcons[] = {
+        {"GainFade", BinaryData::fade_gain_svg, BinaryData::fade_gain_svgSize, "Gain Fade"},
+        {"SpeedRamp", BinaryData::fade_speedramp_svg, BinaryData::fade_speedramp_svgSize,
+         "Speed Ramp"},
+    };
+
+    auto setupFadeBehaviourButton = [this](std::unique_ptr<magda::SvgButton>& btn,
+                                           const FadeBehaviourIcon& icon) {
+        btn = std::make_unique<magda::SvgButton>(icon.name, icon.data, icon.size);
+        btn->setOriginalColor(juce::Colour(0xFFE3E3E3));
+        btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setTooltip(icon.tooltip);
+        btn->setClickingTogglesState(false);
+        clipPropsContainer_.addChildComponent(*btn);
+    };
+
+    for (int i = 0; i < 2; ++i) {
+        setupFadeBehaviourButton(fadeInBehaviourButtons_[i], fadeBehaviourIcons[i]);
+        fadeInBehaviourButtons_[i]->onClick = [this, i]() {
+            if (selectedClipId_ != magda::INVALID_CLIP_ID) {
+                magda::ClipManager::getInstance().setFadeInBehaviour(selectedClipId_, i);
+                for (int j = 0; j < 2; ++j)
+                    fadeInBehaviourButtons_[j]->setActive(j == i);
+            }
+        };
+
+        setupFadeBehaviourButton(fadeOutBehaviourButtons_[i], fadeBehaviourIcons[i]);
+        fadeOutBehaviourButtons_[i]->onClick = [this, i]() {
+            if (selectedClipId_ != magda::INVALID_CLIP_ID) {
+                magda::ClipManager::getInstance().setFadeOutBehaviour(selectedClipId_, i);
+                for (int j = 0; j < 2; ++j)
+                    fadeOutBehaviourButtons_[j]->setActive(j == i);
+            }
+        };
+    }
 
     autoCrossfadeToggle_.setButtonText("AUTO-XFADE");
+    autoCrossfadeToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     autoCrossfadeToggle_.setColour(juce::TextButton::buttonColourId,
                                    DarkTheme::getColour(DarkTheme::SURFACE));
     autoCrossfadeToggle_.setColour(juce::TextButton::buttonOnColourId,
@@ -975,6 +1078,27 @@ InspectorContent::InspectorContent() {
     };
     clipPropsContainer_.addChildComponent(autoCrossfadeToggle_);
 
+    // Fades collapse toggle (triangle button)
+    fadesCollapseToggle_.setButtonText(juce::String::charToString(0x25BC));  // ▼ expanded
+    fadesCollapseToggle_.setColour(juce::TextButton::buttonColourId,
+                                   juce::Colours::transparentBlack);
+    fadesCollapseToggle_.setColour(juce::TextButton::buttonOnColourId,
+                                   juce::Colours::transparentBlack);
+    fadesCollapseToggle_.setColour(juce::TextButton::textColourOffId,
+                                   DarkTheme::getSecondaryTextColour());
+    fadesCollapseToggle_.setColour(juce::TextButton::textColourOnId,
+                                   DarkTheme::getSecondaryTextColour());
+    fadesCollapseToggle_.setConnectedEdges(
+        juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+        juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    fadesCollapseToggle_.onClick = [this]() {
+        fadesCollapsed_ = !fadesCollapsed_;
+        fadesCollapseToggle_.setButtonText(
+            juce::String::charToString(fadesCollapsed_ ? 0x25B6 : 0x25BC));  // ▶ or ▼
+        resized();
+    };
+    clipPropsContainer_.addChildComponent(fadesCollapseToggle_);
+
     // ========================================================================
     // Channels section
     // ========================================================================
@@ -985,6 +1109,7 @@ InspectorContent::InspectorContent() {
     clipPropsContainer_.addChildComponent(channelsSectionLabel_);
 
     leftChannelToggle_.setButtonText("L");
+    leftChannelToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     leftChannelToggle_.setColour(juce::TextButton::buttonColourId,
                                  DarkTheme::getColour(DarkTheme::SURFACE));
     leftChannelToggle_.setColour(juce::TextButton::buttonOnColourId,
@@ -1003,6 +1128,7 @@ InspectorContent::InspectorContent() {
     clipPropsContainer_.addChildComponent(leftChannelToggle_);
 
     rightChannelToggle_.setButtonText("R");
+    rightChannelToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     rightChannelToggle_.setColour(juce::TextButton::buttonColourId,
                                   DarkTheme::getColour(DarkTheme::SURFACE));
     rightChannelToggle_.setColour(juce::TextButton::buttonOnColourId,
@@ -1143,6 +1269,11 @@ InspectorContent::InspectorContent() {
 }
 
 InspectorContent::~InspectorContent() {
+    stretchModeCombo_.setLookAndFeel(nullptr);
+    autoPitchModeCombo_.setLookAndFeel(nullptr);
+    launchModeCombo_.setLookAndFeel(nullptr);
+    launchQuantizeCombo_.setLookAndFeel(nullptr);
+
     if (timelineController_)
         timelineController_->removeListener(this);
     magda::TrackManager::getInstance().removeListener(this);
@@ -1172,6 +1303,12 @@ void InspectorContent::setAudioEngine(magda::AudioEngine* engine) {
     }
     // Note: We now receive routing changes via trackPropertyChanged() from TrackManager
     // instead of listening to MidiBridge directly
+}
+
+void InspectorContent::ClipPropsContainer::paint(juce::Graphics& g) {
+    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    for (int y : separatorYPositions)
+        g.fillRect(4, y, getWidth() - 8, 1);
 }
 
 void InspectorContent::paint(juce::Graphics& g) {
@@ -1279,13 +1416,21 @@ void InspectorContent::resized() {
         };
         auto addSpace = [&](int height) { cb.setHeight(cb.getHeight() + height); };
 
+        // Clear separator positions for this layout pass
+        clipPropsContainer_.separatorYPositions.clear();
+        auto addSeparator = [&]() {
+            addSpace(4);
+            clipPropsContainer_.separatorYPositions.push_back(cb.getHeight());
+            addSpace(5);
+        };
+
         const int iconSize = 22;
         const int gap = 3;
         const int labelHeight = 14;
         const int valueHeight = 22;
         int fieldWidth = (containerWidth - iconSize - gap * 3) / 3;
 
-        // Position grid Row 1: position icon — start, end, offset
+        // Position grid Row 1: position icon — start, end, length (always visible)
         {
             auto labelRow = addRow(labelHeight);
             labelRow.removeFromLeft(iconSize + gap);
@@ -1293,7 +1438,7 @@ void InspectorContent::resized() {
             labelRow.removeFromLeft(gap);
             clipEndLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
             labelRow.removeFromLeft(gap);
-            clipOffsetRowLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
+            clipLengthLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
 
             auto valueRow = addRow(valueHeight);
             clipPositionIcon_->setBounds(valueRow.removeFromLeft(iconSize));
@@ -1302,71 +1447,121 @@ void InspectorContent::resized() {
             valueRow.removeFromLeft(gap);
             clipEndValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
             valueRow.removeFromLeft(gap);
-            clipContentOffsetValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
+            clipLengthValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
         }
-        addSpace(6);
 
-        // Position grid Row 2: loop toggle — start, length, phase
+        addSeparator();
+
+        // File path label (full width)
+        clipFilePathLabel_.setBounds(addRow(16));
+
+        addSeparator();
+
+        // Source data Row 2: loop toggle + conditional content
         if (clipLoopToggle_->isVisible()) {
-            auto labelRow = addRow(labelHeight);
-            labelRow.removeFromLeft(iconSize + gap);
-            clipLoopStartLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
-            labelRow.removeFromLeft(gap);
-            clipLoopLengthLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
-            labelRow.removeFromLeft(gap);
-            clipLoopPhaseLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
+            const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
+            bool loopOn = clip && (clip->loopEnabled || clip->view == magda::ClipView::Session);
 
-            auto valueRow = addRow(valueHeight);
-            clipLoopToggle_->setBounds(
-                valueRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-            valueRow.removeFromLeft(gap);
-            clipLoopStartValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
-            valueRow.removeFromLeft(gap);
-            clipLoopLengthValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
-            valueRow.removeFromLeft(gap);
-            clipLoopPhaseValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
+            if (loopOn) {
+                // Loop ON: loop toggle — start, length, phase
+                auto labelRow = addRow(labelHeight);
+                labelRow.removeFromLeft(iconSize + gap);
+                clipLoopStartLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
+                labelRow.removeFromLeft(gap);
+                clipLoopLengthLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
+                labelRow.removeFromLeft(gap);
+                clipLoopPhaseLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
+
+                auto valueRow = addRow(valueHeight);
+                clipLoopToggle_->setBounds(
+                    valueRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+                valueRow.removeFromLeft(gap);
+                clipLoopStartValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
+                valueRow.removeFromLeft(gap);
+                clipLoopLengthValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
+                valueRow.removeFromLeft(gap);
+                clipLoopPhaseValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
+            } else {
+                // Loop OFF: "offset" label above, matching loop-ON label row
+                auto labelRow = addRow(labelHeight);
+                labelRow.removeFromLeft(iconSize + gap);
+                clipOffsetRowLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
+
+                auto valueRow = addRow(valueHeight);
+                clipLoopToggle_->setBounds(
+                    valueRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+                valueRow.removeFromLeft(gap);
+                clipContentOffsetValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
+            }
         }
-        addSpace(8);
+        addSeparator();
 
-        // BPM, WARP, and MUSICAL row (audio clips only)
-        if (clipWarpToggle_.isVisible() || clipBpmValue_.isVisible() ||
-            clipAutoTempoToggle_.isVisible() || clipBeatsLengthValue_->isVisible()) {
-            auto bottomRow = addRow(24);
+        // 2-column grid: warp toggles | combo  /  BPM | speed/beats
+        {
+            const int colGap = 8;
+            int halfWidth = (containerWidth - colGap) / 2;
 
-            if (clipBpmValue_.isVisible()) {
-                clipBpmValue_.setBounds(bottomRow.removeFromLeft(70));
-                bottomRow.removeFromLeft(8);
+            // Row 1: [WARP] [BEAT] centered | [stretch combo]
+            if (clipWarpToggle_.isVisible() || clipAutoTempoToggle_.isVisible()) {
+                auto row1 = addRow(24);
+                auto left = row1.removeFromLeft(halfWidth);
+                row1.removeFromLeft(colGap);
+                auto right = row1;
+
+                const int btnWidth = 46;
+                const int btnGap = 4;
+                int numBtns = (clipWarpToggle_.isVisible() ? 1 : 0) +
+                              (clipAutoTempoToggle_.isVisible() ? 1 : 0);
+                int totalBtnsWidth = numBtns * btnWidth + (numBtns > 1 ? btnGap : 0);
+                int btnOffset = (left.getWidth() - totalBtnsWidth) / 2;
+                left.removeFromLeft(btnOffset);
+
+                if (clipWarpToggle_.isVisible()) {
+                    clipWarpToggle_.setBounds(left.removeFromLeft(btnWidth).reduced(0, 1));
+                    left.removeFromLeft(btnGap);
+                }
+                if (clipAutoTempoToggle_.isVisible()) {
+                    clipAutoTempoToggle_.setBounds(left.removeFromLeft(btnWidth).reduced(0, 1));
+                }
+                if (stretchModeCombo_.isVisible()) {
+                    stretchModeCombo_.setBounds(right.reduced(0, 1));
+                }
             }
-            if (clipBeatsLengthValue_->isVisible()) {
-                clipBeatsLengthValue_->setBounds(bottomRow.removeFromLeft(100));
-                bottomRow.removeFromLeft(8);
+
+            // Row 2: [BPM] centered | [speed OR beats]
+            if (clipBpmValue_.isVisible() ||
+                (clipStretchValue_ && clipStretchValue_->isVisible()) ||
+                clipBeatsLengthValue_->isVisible()) {
+                addSpace(4);
+                auto row2 = addRow(22);
+                auto left = row2.removeFromLeft(halfWidth);
+                row2.removeFromLeft(colGap);
+                auto right = row2;
+
+                if (clipBpmValue_.isVisible()) {
+                    int bpmWidth = 96;  // matches WARP(46) + gap(4) + BEAT(46)
+                    int bpmOffset = (left.getWidth() - bpmWidth) / 2;
+                    clipBpmValue_.setBounds(
+                        left.withX(left.getX() + bpmOffset).withWidth(bpmWidth));
+                }
+                if (clipStretchValue_ && clipStretchValue_->isVisible()) {
+                    clipStretchValue_->setBounds(right.reduced(0, 1));
+                }
+                if (clipBeatsLengthValue_->isVisible()) {
+                    clipBeatsLengthValue_->setBounds(right.reduced(0, 1));
+                }
             }
-            if (clipWarpToggle_.isVisible()) {
-                clipWarpToggle_.setBounds(bottomRow.removeFromLeft(60).reduced(0, 1));
-                bottomRow.removeFromLeft(8);
-            }
-            if (clipAutoTempoToggle_.isVisible()) {
-                clipAutoTempoToggle_.setBounds(bottomRow.removeFromLeft(85).reduced(0, 1));
-            }
-            addSpace(8);
         }
 
-        // Stretch factor and mode
-        if (clipStretchValue_ && clipStretchValue_->isVisible()) {
-            auto stretchRow = addRow(22);
-            clipStretchValue_->setBounds(stretchRow.removeFromLeft(60).reduced(0, 1));
-            stretchRow.removeFromLeft(8);
-            if (stretchModeCombo_.isVisible()) {
-                stretchModeCombo_.setBounds(stretchRow.reduced(0, 1));
-            }
-            addSpace(8);
-        }
+        // Separator: after position/warp rows, before Pitch
+        if (pitchSectionLabel_.isVisible())
+            addSeparator();
 
         // Pitch section (audio clips only)
         if (pitchSectionLabel_.isVisible()) {
             pitchSectionLabel_.setBounds(addRow(16));
-            addSpace(4);
-            {
+            if (autoPitchToggle_.isVisible()) {
+                addSpace(4);
                 auto row = addRow(22);
                 int halfWidth = (containerWidth - 8) / 2;
                 autoPitchToggle_.setBounds(row.removeFromLeft(halfWidth).reduced(0, 1));
@@ -1381,83 +1576,113 @@ void InspectorContent::resized() {
                 row.removeFromLeft(8);
                 transposeValue_->setBounds(row.removeFromLeft(halfWidth));
             }
-            addSpace(8);
         }
 
-        // Mix section (audio clips only)
+        // Separator: between Pitch and Mix
+        if (clipMixSectionLabel_.isVisible())
+            addSeparator();
+
+        // Mix section (audio clips only) — 2-column: volume/pan, reverse/LR
         if (clipMixSectionLabel_.isVisible()) {
             clipMixSectionLabel_.setBounds(addRow(16));
             addSpace(4);
+            const int colGap = 8;
+            int halfWidth = (containerWidth - colGap) / 2;
+
+            // Row 1: [volume] | [pan]
             {
                 auto row = addRow(22);
-                int halfWidth = (containerWidth - 8) / 2;
                 clipGainValue_->setBounds(row.removeFromLeft(halfWidth));
-                row.removeFromLeft(8);
+                row.removeFromLeft(colGap);
                 clipPanValue_->setBounds(row.removeFromLeft(halfWidth));
             }
-            addSpace(8);
-        }
-
-        // Playback / Beat Detection section (audio clips only)
-        if (beatDetectionSectionLabel_.isVisible()) {
-            beatDetectionSectionLabel_.setBounds(addRow(16));
             addSpace(4);
+            // Row 2: [REVERSE full width]
             {
                 auto row = addRow(22);
-                int thirdWidth = (containerWidth - 16) / 3;
-                reverseToggle_.setBounds(row.removeFromLeft(thirdWidth).reduced(0, 1));
-                row.removeFromLeft(8);
-                autoDetectBeatsToggle_.setBounds(row.removeFromLeft(thirdWidth).reduced(0, 1));
-                row.removeFromLeft(8);
-                beatSensitivityValue_->setBounds(row.removeFromLeft(thirdWidth));
+                reverseToggle_.setBounds(row.reduced(0, 1));
             }
-            addSpace(8);
         }
 
-        // Fades section (arrangement clips only)
+        // Separator: between Mix and Fades
+        if (fadesSectionLabel_.isVisible())
+            addSeparator();
+
+        // Fades section (arrangement clips only, collapsible)
         if (fadesSectionLabel_.isVisible()) {
-            fadesSectionLabel_.setBounds(addRow(16));
-            addSpace(4);
             {
-                auto row = addRow(22);
-                int halfWidth = (containerWidth - 8) / 2;
-                fadeInValue_->setBounds(row.removeFromLeft(halfWidth));
-                row.removeFromLeft(8);
-                fadeOutValue_->setBounds(row.removeFromLeft(halfWidth));
+                auto headerRow = addRow(16);
+                fadesCollapseToggle_.setBounds(headerRow.removeFromLeft(16));
+                fadesSectionLabel_.setBounds(headerRow);
             }
-            addSpace(4);
-            {
-                auto row = addRow(22);
-                int halfWidth = (containerWidth - 8) / 2;
-                fadeInTypeCombo_.setBounds(row.removeFromLeft(halfWidth).reduced(0, 1));
-                row.removeFromLeft(8);
-                fadeOutTypeCombo_.setBounds(row.removeFromLeft(halfWidth).reduced(0, 1));
+
+            if (!fadesCollapsed_) {
+                addSpace(4);
+                {
+                    auto row = addRow(22);
+                    int halfWidth = (containerWidth - 8) / 2;
+                    fadeInValue_->setBounds(row.removeFromLeft(halfWidth));
+                    row.removeFromLeft(8);
+                    fadeOutValue_->setBounds(row.removeFromLeft(halfWidth));
+                }
+                addSpace(4);
+                {
+                    auto row = addRow(22);
+                    row.removeFromLeft(4);   // left padding
+                    row.removeFromRight(4);  // right padding
+                    int halfWidth = (row.getWidth() - 8) / 2;
+                    // Fade-in type buttons (4 icons in left half)
+                    auto leftHalf = row.removeFromLeft(halfWidth);
+                    int btnSize = juce::jmin(20, (leftHalf.getWidth() - 6) / 4);
+                    for (int i = 0; i < 4; ++i) {
+                        fadeInTypeButtons_[i]->setBounds(
+                            leftHalf.removeFromLeft(btnSize).reduced(1));
+                        if (i < 3)
+                            leftHalf.removeFromLeft(2);
+                    }
+                    row.removeFromLeft(8);
+                    // Fade-out type buttons (4 icons in right half)
+                    auto rightHalf = row.removeFromLeft(halfWidth);
+                    for (int i = 0; i < 4; ++i) {
+                        fadeOutTypeButtons_[i]->setBounds(
+                            rightHalf.removeFromLeft(btnSize).reduced(1));
+                        if (i < 3)
+                            rightHalf.removeFromLeft(2);
+                    }
+                }
+                addSpace(4);
+                {
+                    auto row = addRow(22);
+                    row.removeFromLeft(4);   // left padding
+                    row.removeFromRight(4);  // right padding
+                    int halfWidth = (row.getWidth() - 8) / 2;
+                    // Fade-in behaviour buttons (2 icons in left half)
+                    auto leftHalf2 = row.removeFromLeft(halfWidth);
+                    int behBtnSize = juce::jmin(20, (leftHalf2.getWidth() - 2) / 2);
+                    for (int i = 0; i < 2; ++i) {
+                        fadeInBehaviourButtons_[i]->setBounds(
+                            leftHalf2.removeFromLeft(behBtnSize).reduced(1));
+                        if (i < 1)
+                            leftHalf2.removeFromLeft(2);
+                    }
+                    row.removeFromLeft(8);
+                    // Fade-out behaviour buttons (2 icons in right half)
+                    auto rightHalf2 = row.removeFromLeft(halfWidth);
+                    for (int i = 0; i < 2; ++i) {
+                        fadeOutBehaviourButtons_[i]->setBounds(
+                            rightHalf2.removeFromLeft(behBtnSize).reduced(1));
+                        if (i < 1)
+                            rightHalf2.removeFromLeft(2);
+                    }
+                }
+                addSpace(4);
+                autoCrossfadeToggle_.setBounds(addRow(22).removeFromLeft(100).reduced(0, 1));
             }
-            addSpace(4);
-            {
-                auto row = addRow(22);
-                int halfWidth = (containerWidth - 8) / 2;
-                fadeInBehaviourCombo_.setBounds(row.removeFromLeft(halfWidth).reduced(0, 1));
-                row.removeFromLeft(8);
-                fadeOutBehaviourCombo_.setBounds(row.removeFromLeft(halfWidth).reduced(0, 1));
-            }
-            addSpace(4);
-            autoCrossfadeToggle_.setBounds(addRow(22).removeFromLeft(100).reduced(0, 1));
-            addSpace(8);
         }
 
-        // Channels section (audio clips only)
-        if (channelsSectionLabel_.isVisible()) {
-            channelsSectionLabel_.setBounds(addRow(16));
-            addSpace(4);
-            {
-                auto row = addRow(22);
-                leftChannelToggle_.setBounds(row.removeFromLeft(30).reduced(0, 1));
-                row.removeFromLeft(4);
-                rightChannelToggle_.setBounds(row.removeFromLeft(30).reduced(0, 1));
-            }
-            addSpace(8);
-        }
+        // Separator: after Fades, before Launch (session clips)
+        if (launchQuantizeLabel_.isVisible())
+            addSeparator();
 
         // Session clip launch properties (only for session clips)
         if (launchQuantizeLabel_.isVisible()) {
@@ -1635,14 +1860,15 @@ void InspectorContent::clipSelectionChanged(magda::ClipId clipId) {
 // ============================================================================
 // TimelineStateListener
 
-void InspectorContent::timelineStateChanged(const magda::TimelineState& /*state*/) {}
-
-void InspectorContent::tempoStateChanged(const magda::TimelineState& state) {
-    DBG("InspectorContent::tempoStateChanged - bpm=" << state.tempo.bpm << ", selectionType="
-                                                     << static_cast<int>(currentSelectionType_));
-    if (currentSelectionType_ == magda::SelectionType::Clip) {
-        DBG("  -> updating clip display");
-        updateFromSelectedClip();
+void InspectorContent::timelineStateChanged(const magda::TimelineState& state,
+                                            magda::ChangeFlags changes) {
+    if (magda::hasFlag(changes, magda::ChangeFlags::Tempo)) {
+        DBG("InspectorContent::timelineStateChanged(Tempo) - bpm="
+            << state.tempo.bpm << ", selectionType=" << static_cast<int>(currentSelectionType_));
+        if (currentSelectionType_ == magda::SelectionType::Clip) {
+            DBG("  -> updating clip display");
+            updateFromSelectedClip();
+        }
     }
 }
 
@@ -1972,6 +2198,19 @@ void InspectorContent::updateFromSelectedClip() {
     if (clip) {
         clipNameValue_.setText(clip->name, juce::dontSendNotification);
 
+        // Update file path label (show filename only, full path in tooltip)
+        if (clip->type == magda::ClipType::Audio && clip->audioFilePath.isNotEmpty()) {
+            juce::File audioFile(clip->audioFilePath);
+            clipFilePathLabel_.setText(audioFile.getFileName(), juce::dontSendNotification);
+            clipFilePathLabel_.setTooltip(clip->audioFilePath);
+        } else if (clip->type == magda::ClipType::MIDI) {
+            clipFilePathLabel_.setText("(MIDI)", juce::dontSendNotification);
+            clipFilePathLabel_.setTooltip("");
+        } else {
+            clipFilePathLabel_.setText("", juce::dontSendNotification);
+            clipFilePathLabel_.setTooltip("");
+        }
+
         // Update type icon based on clip type
         bool isAudioClip = (clip->type == magda::ClipType::Audio);
         if (isAudioClip) {
@@ -2042,49 +2281,85 @@ void InspectorContent::updateFromSelectedClip() {
             clipEndValue_->setValue(clip->getEndBeats(bpm), juce::dontSendNotification);
         }
 
-        // Content offset (always visible, disabled when looped audio)
-        if (clip->type == magda::ClipType::MIDI) {
-            clipContentOffsetValue_->setValue(clip->midiOffset, juce::dontSendNotification);
-        } else if (clip->type == magda::ClipType::Audio) {
-            // When looped, show loopStart (the locked base) so phase edits don't move this value
-            double offsetDisplayBeats;
-            if (clip->autoTempo && clip->loopEnabled && clip->loopStartBeats >= 0.0) {
-                // AutoTempo: use authoritative beat value (invariant to project BPM)
-                offsetDisplayBeats = clip->loopStartBeats;
-            } else {
-                double displayOffset = (clip->loopEnabled) ? clip->loopStart : clip->offset;
-                offsetDisplayBeats = magda::TimelineUtils::secondsToBeats(displayOffset, bpm);
-            }
-            clipContentOffsetValue_->setValue(offsetDisplayBeats, juce::dontSendNotification);
-        }
+        // Clip length (always visible)
+        clipLengthValue_->setBeatsPerBar(beatsPerBar);
+        clipLengthValue_->setValue(magda::TimelineUtils::secondsToBeats(clip->length, bpm),
+                                   juce::dontSendNotification);
+
         // Position icon visible, content offset icon hidden (replaced by grid column)
         clipPositionIcon_->setVisible(true);
         clipContentOffsetIcon_->setVisible(false);
 
-        clipContentOffsetValue_->setVisible(true);
-
-        // Disable offset editing when loop is enabled on audio clips
-        bool offsetEditable = !(clip->loopEnabled && isAudioClip);
-        clipContentOffsetValue_->setEnabled(offsetEditable);
-        clipContentOffsetValue_->setAlpha(offsetEditable ? 1.0f : 0.4f);
-
-        // Display loop length in beats
-        double loopLengthDisplayBeats;
-        if (clip->autoTempo && clip->loopLengthBeats > 0.0) {
-            // AutoTempo: use authoritative beat value (invariant to project BPM)
-            loopLengthDisplayBeats = clip->loopLengthBeats;
-        } else {
-            double sourceLength =
-                clip->loopLength > 0.0 ? clip->loopLength : clip->length * clip->speedRatio;
-            loopLengthDisplayBeats = magda::TimelineUtils::secondsToBeats(sourceLength, bpm);
-        }
-        clipLoopLengthValue_->setValue(loopLengthDisplayBeats, juce::dontSendNotification);
-
         clipLoopToggle_->setActive(clip->loopEnabled);
-        clipLoopToggle_->setEnabled(true);
+        // Beat mode forces loop on — disable the toggle so user can't turn it off
+        clipLoopToggle_->setEnabled(!clip->autoTempo);
 
-        // Warp toggle (only for audio clips, hidden when auto-tempo is enabled)
-        clipWarpToggle_.setVisible(isAudioClip && !clip->autoTempo);
+        // Conditional Row 2 based on loop state
+        bool loopOn = isSessionClip || clip->loopEnabled;
+
+        if (loopOn) {
+            // Loop ON: show loop start/length/phase, hide offset
+            clipOffsetRowLabel_.setVisible(false);
+            clipContentOffsetValue_->setVisible(false);
+
+            clipLoopStartLabel_.setVisible(true);
+            clipLoopStartValue_->setVisible(true);
+            clipLoopStartValue_->setBeatsPerBar(beatsPerBar);
+            double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip->loopStart, bpm);
+            clipLoopStartValue_->setValue(loopStartBeats, juce::dontSendNotification);
+            clipLoopStartValue_->setEnabled(true);
+            clipLoopStartValue_->setAlpha(1.0f);
+            clipLoopStartLabel_.setAlpha(1.0f);
+
+            // Display loop length in beats
+            double loopLengthDisplayBeats;
+            if (clip->autoTempo && clip->loopLengthBeats > 0.0) {
+                loopLengthDisplayBeats = clip->loopLengthBeats;
+            } else {
+                double sourceLength =
+                    clip->loopLength > 0.0 ? clip->loopLength : clip->length * clip->speedRatio;
+                loopLengthDisplayBeats = magda::TimelineUtils::secondsToBeats(sourceLength, bpm);
+            }
+            clipLoopLengthLabel_.setVisible(true);
+            clipLoopLengthValue_->setVisible(true);
+            clipLoopLengthValue_->setValue(loopLengthDisplayBeats, juce::dontSendNotification);
+            clipLoopLengthValue_->setEnabled(true);
+            clipLoopLengthValue_->setAlpha(1.0f);
+            clipLoopLengthLabel_.setAlpha(1.0f);
+
+            clipLoopPhaseLabel_.setVisible(true);
+            clipLoopPhaseValue_->setVisible(true);
+            clipLoopPhaseValue_->setBeatsPerBar(beatsPerBar);
+            double phaseSeconds = clip->offset - clip->loopStart;
+            double phaseBeats = magda::TimelineUtils::secondsToBeats(phaseSeconds, bpm);
+            clipLoopPhaseValue_->setValue(phaseBeats, juce::dontSendNotification);
+            clipLoopPhaseValue_->setEnabled(true);
+            clipLoopPhaseValue_->setAlpha(1.0f);
+            clipLoopPhaseLabel_.setAlpha(1.0f);
+        } else {
+            // Loop OFF: show offset, hide loop start/length/phase
+            clipOffsetRowLabel_.setVisible(true);
+            clipContentOffsetValue_->setVisible(true);
+
+            if (clip->type == magda::ClipType::MIDI) {
+                clipContentOffsetValue_->setValue(clip->midiOffset, juce::dontSendNotification);
+            } else if (clip->type == magda::ClipType::Audio) {
+                double offsetBeats = magda::TimelineUtils::secondsToBeats(clip->offset, bpm);
+                clipContentOffsetValue_->setValue(offsetBeats, juce::dontSendNotification);
+            }
+            clipContentOffsetValue_->setEnabled(true);
+            clipContentOffsetValue_->setAlpha(1.0f);
+
+            clipLoopStartLabel_.setVisible(false);
+            clipLoopStartValue_->setVisible(false);
+            clipLoopLengthLabel_.setVisible(false);
+            clipLoopLengthValue_->setVisible(false);
+            clipLoopPhaseLabel_.setVisible(false);
+            clipLoopPhaseValue_->setVisible(false);
+        }
+
+        // Warp toggle (always visible for audio clips)
+        clipWarpToggle_.setVisible(isAudioClip);
         if (isAudioClip) {
             clipWarpToggle_.setToggleState(clip->warpEnabled, juce::dontSendNotification);
         }
@@ -2100,7 +2375,7 @@ void InspectorContent::updateFromSelectedClip() {
             }
         }
 
-        clipStretchValue_->setVisible(isAudioClip);
+        clipStretchValue_->setVisible(isAudioClip && !clip->autoTempo);
         stretchModeCombo_.setVisible(isAudioClip);
         if (isAudioClip) {
             clipStretchValue_->setValue(clip->speedRatio, juce::dontSendNotification);
@@ -2119,36 +2394,7 @@ void InspectorContent::updateFromSelectedClip() {
             }
         }
 
-        // Loop controls — always visible, disabled when loop is off
-        bool loopOn = isSessionClip || clip->loopEnabled;
-        float loopAlpha = loopOn ? 1.0f : 0.4f;
-
-        clipLoopStartLabel_.setVisible(true);
-        clipLoopStartValue_->setVisible(true);
-        clipLoopStartValue_->setBeatsPerBar(beatsPerBar);
-        double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip->loopStart, bpm);
-        clipLoopStartValue_->setValue(loopStartBeats, juce::dontSendNotification);
-        clipLoopStartValue_->setEnabled(loopOn);
-        clipLoopStartValue_->setAlpha(loopAlpha);
-        clipLoopStartLabel_.setAlpha(loopAlpha);
-
-        clipLoopLengthLabel_.setVisible(true);
-        clipLoopLengthValue_->setVisible(true);
-        clipLoopLengthValue_->setEnabled(loopOn);
-        clipLoopLengthValue_->setAlpha(loopAlpha);
-        clipLoopLengthLabel_.setAlpha(loopAlpha);
-
-        clipLoopPhaseLabel_.setVisible(true);
-        clipLoopPhaseValue_->setVisible(true);
-        clipLoopPhaseValue_->setBeatsPerBar(beatsPerBar);
-        double phaseSeconds = loopOn ? (clip->offset - clip->loopStart) : 0.0;
-        double phaseBeats = magda::TimelineUtils::secondsToBeats(phaseSeconds, bpm);
-        clipLoopPhaseValue_->setValue(phaseBeats, juce::dontSendNotification);
-        clipLoopPhaseValue_->setEnabled(loopOn);
-        clipLoopPhaseValue_->setAlpha(loopAlpha);
-        clipLoopPhaseLabel_.setAlpha(loopAlpha);
-
-        loopColumnLabel_.setAlpha(loopAlpha);
+        loopColumnLabel_.setAlpha(loopOn ? 1.0f : 0.4f);
 
         // Session clip launch properties
         launchModeLabel_.setVisible(false);
@@ -2167,8 +2413,8 @@ void InspectorContent::updateFromSelectedClip() {
 
         // Pitch section (audio clips only)
         pitchSectionLabel_.setVisible(isAudioClip);
-        autoPitchToggle_.setVisible(isAudioClip);
-        autoPitchModeCombo_.setVisible(isAudioClip);
+        autoPitchToggle_.setVisible(false);     // hidden for now
+        autoPitchModeCombo_.setVisible(false);  // hidden for now
         pitchChangeValue_->setVisible(isAudioClip);
         transposeValue_->setVisible(isAudioClip);
         if (isAudioClip) {
@@ -2186,62 +2432,56 @@ void InspectorContent::updateFromSelectedClip() {
             transposeValue_->setAlpha(clip->autoPitch ? 0.4f : 1.0f);
         }
 
-        // Mix section (audio clips only)
+        // Mix section (audio clips only) — includes Gain/Pan + Reverse/L/R
         clipMixSectionLabel_.setVisible(isAudioClip);
         clipGainValue_->setVisible(isAudioClip);
         clipPanValue_->setVisible(isAudioClip);
+        reverseToggle_.setVisible(isAudioClip);
+        leftChannelToggle_.setVisible(false);
+        rightChannelToggle_.setVisible(false);
         if (isAudioClip) {
             clipGainValue_->setValue(clip->gainDB, juce::dontSendNotification);
             clipPanValue_->setValue(clip->pan, juce::dontSendNotification);
-        }
-
-        // Playback / Beat Detection section (audio clips only)
-        beatDetectionSectionLabel_.setVisible(isAudioClip);
-        reverseToggle_.setVisible(isAudioClip);
-        autoDetectBeatsToggle_.setVisible(false);  // Hidden: no effect with SoundTouch stretcher
-        beatSensitivityValue_->setVisible(false);  // Hidden: no effect with SoundTouch stretcher
-        if (isAudioClip) {
             reverseToggle_.setToggleState(clip->isReversed, juce::dontSendNotification);
-            autoDetectBeatsToggle_.setToggleState(clip->autoDetectBeats,
-                                                  juce::dontSendNotification);
-            beatSensitivityValue_->setValue(clip->beatSensitivity, juce::dontSendNotification);
-
-            // beatSensitivity only meaningful when autoDetectBeats is on
-            beatSensitivityValue_->setEnabled(clip->autoDetectBeats);
-            beatSensitivityValue_->setAlpha(clip->autoDetectBeats ? 1.0f : 0.4f);
         }
 
-        // Fades section (arrangement audio clips only, hidden for session)
+        // Playback / Beat Detection section — hidden (all controls moved or unused)
+        beatDetectionSectionLabel_.setVisible(false);
+        autoDetectBeatsToggle_.setVisible(false);
+        beatSensitivityValue_->setVisible(false);
+
+        // Fades section (arrangement audio clips only, hidden for session, collapsible)
         bool showFades = isAudioClip && !isSessionClip;
+        bool showFadeControls = showFades && !fadesCollapsed_;
         fadesSectionLabel_.setVisible(showFades);
-        fadeInValue_->setVisible(showFades);
-        fadeOutValue_->setVisible(showFades);
-        fadeInTypeCombo_.setVisible(showFades);
-        fadeOutTypeCombo_.setVisible(showFades);
-        fadeInBehaviourCombo_.setVisible(showFades);
-        fadeOutBehaviourCombo_.setVisible(showFades);
-        autoCrossfadeToggle_.setVisible(showFades);
+        fadesCollapseToggle_.setVisible(showFades);
+        fadeInValue_->setVisible(showFadeControls);
+        fadeOutValue_->setVisible(showFadeControls);
+        for (int i = 0; i < 4; ++i) {
+            fadeInTypeButtons_[i]->setVisible(showFadeControls);
+            fadeOutTypeButtons_[i]->setVisible(showFadeControls);
+        }
+        for (int i = 0; i < 2; ++i) {
+            fadeInBehaviourButtons_[i]->setVisible(showFadeControls);
+            fadeOutBehaviourButtons_[i]->setVisible(showFadeControls);
+        }
+        autoCrossfadeToggle_.setVisible(showFadeControls);
         if (showFades) {
             fadeInValue_->setValue(clip->fadeIn, juce::dontSendNotification);
             fadeOutValue_->setValue(clip->fadeOut, juce::dontSendNotification);
-            fadeInTypeCombo_.setSelectedId(clip->fadeInType + 1, juce::dontSendNotification);
-            fadeOutTypeCombo_.setSelectedId(clip->fadeOutType + 1, juce::dontSendNotification);
-            fadeInBehaviourCombo_.setSelectedId(clip->fadeInBehaviour + 1,
-                                                juce::dontSendNotification);
-            fadeOutBehaviourCombo_.setSelectedId(clip->fadeOutBehaviour + 1,
-                                                 juce::dontSendNotification);
+            for (int i = 0; i < 4; ++i) {
+                fadeInTypeButtons_[i]->setActive(i == clip->fadeInType - 1);
+                fadeOutTypeButtons_[i]->setActive(i == clip->fadeOutType - 1);
+            }
+            for (int i = 0; i < 2; ++i) {
+                fadeInBehaviourButtons_[i]->setActive(i == clip->fadeInBehaviour);
+                fadeOutBehaviourButtons_[i]->setActive(i == clip->fadeOutBehaviour);
+            }
             autoCrossfadeToggle_.setToggleState(clip->autoCrossfade, juce::dontSendNotification);
         }
 
-        // Channels section (audio clips only)
-        channelsSectionLabel_.setVisible(isAudioClip);
-        leftChannelToggle_.setVisible(isAudioClip);
-        rightChannelToggle_.setVisible(isAudioClip);
-        if (isAudioClip) {
-            leftChannelToggle_.setToggleState(clip->leftChannelActive, juce::dontSendNotification);
-            rightChannelToggle_.setToggleState(clip->rightChannelActive,
-                                               juce::dontSendNotification);
-        }
+        // Channels section label hidden (controls moved to Mix section)
+        channelsSectionLabel_.setVisible(false);
 
         showClipControls(true);
         noSelectionLabel_.setVisible(false);
@@ -2282,6 +2522,7 @@ void InspectorContent::showTrackControls(bool show) {
 
 void InspectorContent::showClipControls(bool show) {
     clipNameValue_.setVisible(show);
+    clipFilePathLabel_.setVisible(show);
     clipTypeIcon_->setVisible(show);
     clipPropsViewport_.setVisible(show);
 
@@ -2295,6 +2536,8 @@ void InspectorContent::showClipControls(bool show) {
         clipStartValue_->setVisible(false);
         clipEndLabel_.setVisible(false);
         clipEndValue_->setVisible(false);
+        clipLengthLabel_.setVisible(false);
+        clipLengthValue_->setVisible(false);
         clipContentOffsetValue_->setVisible(false);
         clipLoopToggle_->setVisible(false);
         clipLoopStartLabel_.setVisible(false);
@@ -2329,31 +2572,34 @@ void InspectorContent::showClipControls(bool show) {
         fadesSectionLabel_.setVisible(false);
         fadeInValue_->setVisible(false);
         fadeOutValue_->setVisible(false);
-        fadeInTypeCombo_.setVisible(false);
-        fadeOutTypeCombo_.setVisible(false);
-        fadeInBehaviourCombo_.setVisible(false);
-        fadeOutBehaviourCombo_.setVisible(false);
+        for (auto& btn : fadeInTypeButtons_)
+            if (btn)
+                btn->setVisible(false);
+        for (auto& btn : fadeOutTypeButtons_)
+            if (btn)
+                btn->setVisible(false);
+        for (auto& btn : fadeInBehaviourButtons_)
+            if (btn)
+                btn->setVisible(false);
+        for (auto& btn : fadeOutBehaviourButtons_)
+            if (btn)
+                btn->setVisible(false);
         autoCrossfadeToggle_.setVisible(false);
+        fadesCollapseToggle_.setVisible(false);
         channelsSectionLabel_.setVisible(false);
         leftChannelToggle_.setVisible(false);
         rightChannelToggle_.setVisible(false);
     } else {
-        // Show core clip controls (viewport is shown, individual visibility
-        // is managed by updateFromSelectedClip)
+        // Show always-visible clip controls (viewport is shown, conditional
+        // Row 2 visibility is managed by updateFromSelectedClip)
         clipPositionIcon_->setVisible(true);
-        clipOffsetRowLabel_.setVisible(true);
         clipStartLabel_.setVisible(true);
         clipStartValue_->setVisible(true);
         clipEndLabel_.setVisible(true);
         clipEndValue_->setVisible(true);
-        clipContentOffsetValue_->setVisible(true);
+        clipLengthLabel_.setVisible(true);
+        clipLengthValue_->setVisible(true);
         clipLoopToggle_->setVisible(true);
-        clipLoopStartLabel_.setVisible(true);
-        clipLoopStartValue_->setVisible(true);
-        clipLoopLengthLabel_.setVisible(true);
-        clipLoopLengthValue_->setVisible(true);
-        clipLoopPhaseLabel_.setVisible(true);
-        clipLoopPhaseValue_->setVisible(true);
     }
 
     // Unused labels/icons always hidden

@@ -24,10 +24,7 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     void resized() override;
 
     // TimelineStateListener implementation
-    void timelineStateChanged(const TimelineState& state) override;
-    void zoomStateChanged(const TimelineState& state) override;
-    void loopStateChanged(const TimelineState& state) override;
-    void selectionStateChanged(const TimelineState& state) override;
+    void timelineStateChanged(const TimelineState& state, ChangeFlags changes) override;
 
     // Set the controller reference (called by MainView after construction)
     void setController(TimelineController* controller);

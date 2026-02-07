@@ -584,3 +584,250 @@ TEST_CASE("Waveform pixel conversion - no stretch from rounding",
         REQUIRE(width1 != width2);
     }
 }
+
+// ============================================================================
+// loopStart = offset invariant for non-looped clips
+// ============================================================================
+
+TEST_CASE("ClipOperations::resizeContainerFromLeft - loopStart tracks offset for non-looped clips",
+          "[clip][resize][left][loopstart]") {
+    SECTION("Shrink from left: loopStart equals offset after resize") {
+        ClipInfo clip;
+        clip.startTime = 0.0;
+        clip.length = 4.0;
+        clip.type = ClipType::Audio;
+        clip.audioFilePath = "test.wav";
+        clip.offset = 0.0;
+        clip.loopStart = 0.0;
+        clip.loopEnabled = false;
+        clip.speedRatio = 1.0;
+
+        ClipOperations::resizeContainerFromLeft(clip, 3.0);
+
+        REQUIRE(clip.offset == Catch::Approx(1.0));
+        REQUIRE(clip.loopStart == Catch::Approx(clip.offset));
+    }
+
+    SECTION("Expand from left: loopStart equals offset after resize") {
+        ClipInfo clip;
+        clip.startTime = 2.0;
+        clip.length = 4.0;
+        clip.type = ClipType::Audio;
+        clip.audioFilePath = "test.wav";
+        clip.offset = 2.0;
+        clip.loopStart = 2.0;
+        clip.loopEnabled = false;
+        clip.speedRatio = 1.0;
+
+        ClipOperations::resizeContainerFromLeft(clip, 6.0);
+
+        REQUIRE(clip.offset == Catch::Approx(0.0));
+        REQUIRE(clip.loopStart == Catch::Approx(clip.offset));
+    }
+
+    SECTION("Multiple left resizes: loopStart always tracks offset") {
+        ClipInfo clip;
+        clip.startTime = 0.0;
+        clip.length = 8.0;
+        clip.type = ClipType::Audio;
+        clip.audioFilePath = "test.wav";
+        clip.offset = 0.0;
+        clip.loopStart = 0.0;
+        clip.loopEnabled = false;
+        clip.speedRatio = 1.0;
+
+        for (int i = 0; i < 5; ++i) {
+            ClipOperations::resizeContainerFromLeft(clip, clip.length - 1.0);
+            REQUIRE(clip.loopStart == Catch::Approx(clip.offset));
+        }
+    }
+
+    SECTION("With speed ratio: loopStart tracks offset correctly") {
+        ClipInfo clip;
+        clip.startTime = 0.0;
+        clip.length = 8.0;
+        clip.type = ClipType::Audio;
+        clip.audioFilePath = "test.wav";
+        clip.offset = 0.0;
+        clip.loopStart = 0.0;
+        clip.loopEnabled = false;
+        clip.speedRatio = 2.0;
+
+        ClipOperations::resizeContainerFromLeft(clip, 6.0);
+
+        // 2.0 timeline delta * 2.0 speedRatio = 4.0 source offset
+        REQUIRE(clip.offset == Catch::Approx(4.0));
+        REQUIRE(clip.loopStart == Catch::Approx(clip.offset));
+    }
+}
+
+// ============================================================================
+// Looped resize: loopStart must NOT change
+// ============================================================================
+
+TEST_CASE("ClipOperations::resizeContainerFromLeft - loopStart unchanged for looped clips",
+          "[clip][resize][left][loopstart][loop]") {
+    SECTION("Shrink from left: loopStart stays at user-defined position") {
+        ClipInfo clip;
+        clip.startTime = 0.0;
+        clip.length = 8.0;
+        clip.type = ClipType::Audio;
+        clip.audioFilePath = "test.wav";
+        clip.offset = 1.0;
+        clip.loopStart = 0.5;
+        clip.loopLength = 2.0;
+        clip.loopEnabled = true;
+        clip.speedRatio = 1.0;
+
+        double originalLoopStart = clip.loopStart;
+
+        ClipOperations::resizeContainerFromLeft(clip, 6.0);
+
+        // loopStart must NOT change — it's the user-defined loop anchor
+        REQUIRE(clip.loopStart == Catch::Approx(originalLoopStart));
+        // offset should have been adjusted (wrapped within loop region)
+        REQUIRE(clip.startTime == 2.0);
+        REQUIRE(clip.length == 6.0);
+    }
+
+    SECTION("Expand from left: loopStart stays at user-defined position") {
+        ClipInfo clip;
+        clip.startTime = 4.0;
+        clip.length = 4.0;
+        clip.type = ClipType::Audio;
+        clip.audioFilePath = "test.wav";
+        clip.offset = 1.5;
+        clip.loopStart = 0.5;
+        clip.loopLength = 2.0;
+        clip.loopEnabled = true;
+        clip.speedRatio = 1.0;
+
+        double originalLoopStart = clip.loopStart;
+
+        ClipOperations::resizeContainerFromLeft(clip, 6.0);
+
+        REQUIRE(clip.loopStart == Catch::Approx(originalLoopStart));
+    }
+
+    SECTION("Multiple looped resizes: loopStart never changes") {
+        ClipInfo clip;
+        clip.startTime = 0.0;
+        clip.length = 8.0;
+        clip.type = ClipType::Audio;
+        clip.audioFilePath = "test.wav";
+        clip.offset = 1.0;
+        clip.loopStart = 0.5;
+        clip.loopLength = 2.0;
+        clip.loopEnabled = true;
+        clip.speedRatio = 1.0;
+
+        double originalLoopStart = clip.loopStart;
+
+        // Shrink
+        ClipOperations::resizeContainerFromLeft(clip, 6.0);
+        REQUIRE(clip.loopStart == Catch::Approx(originalLoopStart));
+
+        // Shrink more
+        ClipOperations::resizeContainerFromLeft(clip, 4.0);
+        REQUIRE(clip.loopStart == Catch::Approx(originalLoopStart));
+
+        // Expand
+        ClipOperations::resizeContainerFromLeft(clip, 7.0);
+        REQUIRE(clip.loopStart == Catch::Approx(originalLoopStart));
+    }
+
+    SECTION("Looped offset wraps within loop region") {
+        ClipInfo clip;
+        clip.startTime = 0.0;
+        clip.length = 8.0;
+        clip.type = ClipType::Audio;
+        clip.audioFilePath = "test.wav";
+        clip.offset = 1.0;
+        clip.loopStart = 0.0;
+        clip.loopLength = 2.0;
+        clip.loopEnabled = true;
+        clip.speedRatio = 1.0;
+
+        // Shrink by 3 seconds — phaseDelta = 3.0, wraps within loopLength=2.0
+        ClipOperations::resizeContainerFromLeft(clip, 5.0);
+
+        // offset should wrap: relOffset = 1.0-0.0 = 1.0, phaseDelta = 3.0
+        // wrapPhase(1.0 + 3.0, 2.0) = wrapPhase(4.0, 2.0) = 0.0
+        // new offset = loopStart + 0.0 = 0.0
+        REQUIRE(clip.offset == Catch::Approx(0.0));
+        REQUIRE(clip.loopStart == Catch::Approx(0.0));  // Unchanged
+    }
+}
+
+// ============================================================================
+// trimAudioFromLeft: loopStart = offset invariant
+// ============================================================================
+
+TEST_CASE("ClipOperations::trimAudioFromLeft - loopStart tracks offset",
+          "[clip][trim][left][loopstart]") {
+    SECTION("Trim inward: loopStart equals offset") {
+        ClipInfo clip;
+        clip.startTime = 0.0;
+        clip.length = 4.0;
+        clip.type = ClipType::Audio;
+        clip.audioFilePath = "test.wav";
+        clip.offset = 0.0;
+        clip.loopStart = 0.0;
+        clip.speedRatio = 1.0;
+
+        ClipOperations::trimAudioFromLeft(clip, 1.0);
+
+        REQUIRE(clip.offset == Catch::Approx(1.0));
+        REQUIRE(clip.loopStart == Catch::Approx(clip.offset));
+    }
+
+    SECTION("Trim outward (extend): loopStart equals offset") {
+        ClipInfo clip;
+        clip.startTime = 2.0;
+        clip.length = 4.0;
+        clip.type = ClipType::Audio;
+        clip.audioFilePath = "test.wav";
+        clip.offset = 2.0;
+        clip.loopStart = 2.0;
+        clip.speedRatio = 1.0;
+
+        ClipOperations::trimAudioFromLeft(clip, -1.0);
+
+        REQUIRE(clip.offset == Catch::Approx(1.0));
+        REQUIRE(clip.loopStart == Catch::Approx(clip.offset));
+    }
+
+    SECTION("Trim with speed ratio: loopStart equals offset") {
+        ClipInfo clip;
+        clip.startTime = 0.0;
+        clip.length = 8.0;
+        clip.type = ClipType::Audio;
+        clip.audioFilePath = "test.wav";
+        clip.offset = 0.0;
+        clip.loopStart = 0.0;
+        clip.speedRatio = 1.5;
+
+        ClipOperations::trimAudioFromLeft(clip, 2.0);
+
+        // sourceDelta = 2.0 * 1.5 = 3.0
+        REQUIRE(clip.offset == Catch::Approx(3.0));
+        REQUIRE(clip.loopStart == Catch::Approx(clip.offset));
+    }
+
+    SECTION("Trim clamps to zero: loopStart equals offset") {
+        ClipInfo clip;
+        clip.startTime = 1.0;
+        clip.length = 4.0;
+        clip.type = ClipType::Audio;
+        clip.audioFilePath = "test.wav";
+        clip.offset = 0.5;
+        clip.loopStart = 0.5;
+        clip.speedRatio = 1.0;
+
+        // Try to extend past start of file
+        ClipOperations::trimAudioFromLeft(clip, -2.0);
+
+        REQUIRE(clip.offset == Catch::Approx(0.0));
+        REQUIRE(clip.loopStart == Catch::Approx(clip.offset));
+    }
+}

@@ -27,6 +27,7 @@ void Config::saveToFile(const std::string& filename) {
     file << "zoomInSensitivityShift=" << zoomInSensitivityShift << std::endl;
     file << "zoomOutSensitivityShift=" << zoomOutSensitivityShift << std::endl;
     file << "scrollbarOnLeft=" << (scrollbarOnLeft ? 1 : 0) << std::endl;
+    file << "renderFolder=" << renderFolder << std::endl;
     file << "preferredAudioDevice=" << preferredAudioDevice << std::endl;
     file << "preferredInputDevice=" << preferredInputDevice << std::endl;
     file << "preferredOutputDevice=" << preferredOutputDevice << std::endl;
@@ -63,6 +64,10 @@ void Config::loadFromFile(const std::string& filename) {
 void Config::parseConfigLine(const std::string& key, const std::string& value) {
     try {
         // Handle string values
+        if (key == "renderFolder") {
+            renderFolder = value;
+            return;
+        }
         if (key == "preferredAudioDevice") {
             preferredAudioDevice = value;
             return;

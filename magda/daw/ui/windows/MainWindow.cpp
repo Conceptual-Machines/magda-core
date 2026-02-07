@@ -330,6 +330,62 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         transportPanel->setGridQuantize(autoGrid, numerator, denominator, isBars);
     };
 
+    // Wire clip render callback (handles both single and multi-clip render)
+    mainView->onClipRenderRequested = [this](ClipId clipId) {
+        auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
+        if (!engine) {
+            DBG("RenderClip: no TracktionEngineWrapper available");
+            return;
+        }
+
+        auto& selectionManager = SelectionManager::getInstance();
+        auto& clipManager = ClipManager::getInstance();
+        auto selectedClips = selectionManager.getSelectedClips();
+
+        if (selectedClips.size() > 1) {
+            // Multi-clip render: filter to audio clips, compound operation
+            std::vector<ClipId> audioClips;
+            for (auto cid : selectedClips) {
+                auto* c = clipManager.getClip(cid);
+                if (c && c->type == ClipType::Audio)
+                    audioClips.push_back(cid);
+            }
+            if (audioClips.empty())
+                return;
+
+            UndoManager::getInstance().beginCompoundOperation("Render Clips");
+            std::vector<ClipId> newClips;
+            for (auto cid : audioClips) {
+                auto cmd = std::make_unique<RenderClipCommand>(cid, engine);
+                auto* cmdPtr = cmd.get();
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+                if (cmdPtr->wasSuccessful()) {
+                    newClips.push_back(cmdPtr->getNewClipId());
+                }
+            }
+            UndoManager::getInstance().endCompoundOperation();
+
+            if (!newClips.empty()) {
+                std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
+                selectionManager.selectClips(newSelection);
+            }
+        } else {
+            // Single clip render
+            auto cmd = std::make_unique<RenderClipCommand>(clipId, engine);
+            auto* cmdPtr = cmd.get();
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+
+            if (cmdPtr->wasSuccessful()) {
+                selectionManager.selectClip(cmdPtr->getNewClipId());
+            }
+        }
+    };
+
+    // Wire render time selection callback
+    mainView->onRenderTimeSelectionRequested = [this]() {
+        getCommandManager().invokeDirectly(CommandIDs::renderTimeSelection, false);
+    };
+
     setupResizeHandles();
     setupViewModeListener();
     setupAudioEngineCallbacks(externalEngine);
@@ -657,6 +713,7 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
     const juce::CommandID allCommands[] = {
         // Edit menu
         undo, redo, cut, copy, paste, duplicate, deleteCmd, selectAll, splitOrTrim, joinClips,
+        renderClip, renderTimeSelection,
         // File menu
         newProject, openProject, saveProject, saveProjectAs, exportAudio,
         // Transport
@@ -726,6 +783,18 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         case joinClips:
             result.setInfo("Join Clips", "Join two adjacent clips into one", "Edit", 0);
             result.addDefaultKeypress('j', juce::ModifierKeys::commandModifier);
+            break;
+
+        case renderClip:
+            result.setInfo("Render Clip", "Render selected clips to audio", "Edit", 0);
+            result.addDefaultKeypress('b', juce::ModifierKeys::commandModifier);
+            break;
+
+        case renderTimeSelection:
+            result.setInfo("Render Time Selection",
+                           "Consolidate time selection to a single clip per track", "Edit", 0);
+            result.addDefaultKeypress('b', juce::ModifierKeys::commandModifier |
+                                               juce::ModifierKeys::shiftModifier);
             break;
 
         // Add other commands as needed...
@@ -1006,6 +1075,79 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             }
             return true;
 
+        case renderClip: {
+            auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
+            if (!engine || selectedClips.empty())
+                return true;
+
+            std::vector<ClipId> audioClips;
+            for (auto cid : selectedClips) {
+                auto* c = clipManager.getClip(cid);
+                if (c && c->type == ClipType::Audio)
+                    audioClips.push_back(cid);
+            }
+
+            if (!audioClips.empty()) {
+                if (audioClips.size() > 1)
+                    UndoManager::getInstance().beginCompoundOperation("Render Clips");
+
+                std::vector<ClipId> newClips;
+                for (auto cid : audioClips) {
+                    auto cmd = std::make_unique<RenderClipCommand>(cid, engine);
+                    auto* cmdPtr = cmd.get();
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+                    if (cmdPtr->wasSuccessful())
+                        newClips.push_back(cmdPtr->getNewClipId());
+                }
+
+                if (audioClips.size() > 1)
+                    UndoManager::getInstance().endCompoundOperation();
+
+                if (!newClips.empty()) {
+                    std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
+                    selectionManager.selectClips(newSelection);
+                }
+            }
+            return true;
+        }
+
+        case renderTimeSelection: {
+            auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
+            if (!engine || !mainView)
+                return true;
+
+            const auto& state = mainView->getTimelineController().getState();
+            if (!state.selection.isActive() || state.selection.visuallyHidden)
+                return true;
+
+            auto visibleTracks = TrackManager::getInstance().getVisibleTracks(
+                ViewModeController::getInstance().getViewMode());
+
+            std::vector<TrackId> trackIds;
+            if (state.selection.isAllTracks()) {
+                trackIds = visibleTracks;
+            } else {
+                for (int idx : state.selection.trackIndices) {
+                    if (idx >= 0 && idx < static_cast<int>(visibleTracks.size()))
+                        trackIds.push_back(visibleTracks[idx]);
+                }
+            }
+
+            if (!trackIds.empty()) {
+                auto cmd = std::make_unique<RenderTimeSelectionCommand>(
+                    state.selection.startTime, state.selection.endTime, trackIds, engine);
+                auto* cmdPtr = cmd.get();
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                if (cmdPtr->wasSuccessful()) {
+                    const auto& newIds = cmdPtr->getNewClipIds();
+                    std::unordered_set<ClipId> newSelection(newIds.begin(), newIds.end());
+                    selectionManager.selectClips(newSelection);
+                }
+            }
+            return true;
+        }
+
         default:
             return false;
     }
@@ -1024,12 +1166,27 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
-    // Cmd/Ctrl+Shift+D: Open Debug Dialog
+    // Cmd/Ctrl+Shift+Alt+D: Open Debug Dialog
     if (key ==
-        juce::KeyPress('d', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier,
+        juce::KeyPress('d',
+                       juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier |
+                           juce::ModifierKeys::altModifier,
                        0)) {
         daw::ui::DebugDialog::show();
         return true;
+    }
+
+    // Cmd/Ctrl+Shift+D: Duplicate selected track without content (header only)
+    if (key ==
+        juce::KeyPress('d', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier,
+                       0)) {
+        TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
+        if (selectedTrack != INVALID_TRACK_ID) {
+            auto cmd = std::make_unique<DuplicateTrackCommand>(selectedTrack, false);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            return true;
+        }
+        return false;
     }
 
     // Cmd/Ctrl+Shift+A: Audio Test - Two tracks with -12dB each (expect -6dB on master)
@@ -1090,33 +1247,23 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
 
     // Delete or Backspace: Delete selected track (through undo system)
     if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {
-        if (mixerView && !mixerView->isSelectedMaster()) {
-            int selectedIndex = mixerView->getSelectedChannel();
-            if (selectedIndex >= 0) {
-                const auto& tracks = TrackManager::getInstance().getTracks();
-                if (selectedIndex < static_cast<int>(tracks.size())) {
-                    auto cmd = std::make_unique<DeleteTrackCommand>(tracks[selectedIndex].id);
-                    UndoManager::getInstance().executeCommand(std::move(cmd));
-                    return true;  // Consumed - deleted a track
-                }
-            }
+        TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
+        if (selectedTrack != INVALID_TRACK_ID) {
+            auto cmd = std::make_unique<DeleteTrackCommand>(selectedTrack);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            return true;
         }
         // Don't consume - let clips handle delete if no track action
         return false;
     }
 
-    // Cmd/Ctrl+D: Duplicate selected track (through undo system)
+    // Cmd/Ctrl+D: Duplicate selected track with content (through undo system)
     if (key == juce::KeyPress('d', juce::ModifierKeys::commandModifier, 0)) {
-        if (mixerView && !mixerView->isSelectedMaster()) {
-            int selectedIndex = mixerView->getSelectedChannel();
-            if (selectedIndex >= 0) {
-                const auto& tracks = TrackManager::getInstance().getTracks();
-                if (selectedIndex < static_cast<int>(tracks.size())) {
-                    auto cmd = std::make_unique<DuplicateTrackCommand>(tracks[selectedIndex].id);
-                    UndoManager::getInstance().executeCommand(std::move(cmd));
-                    return true;  // Track was duplicated, consume the key press
-                }
-            }
+        TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
+        if (selectedTrack != INVALID_TRACK_ID) {
+            auto cmd = std::make_unique<DuplicateTrackCommand>(selectedTrack, true);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            return true;
         }
         // No track was duplicated, let the key press fall through to duplicate clips
         return false;
@@ -1705,6 +1852,14 @@ void MainWindow::setupMenuCallbacks() {
         mainComponent->getCommandManager().invokeDirectly(CommandIDs::joinClips, false);
     };
 
+    callbacks.onRenderClip = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::renderClip, false);
+    };
+
+    callbacks.onRenderTimeSelection = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::renderTimeSelection, false);
+    };
+
     callbacks.onSelectAll = [this]() {
         // TODO: Implement select all
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Select All",
@@ -1874,17 +2029,19 @@ void MainWindow::setupMenuCallbacks() {
         }
     };
 
-    callbacks.onDuplicateTrack = [this]() {
-        // Duplicate the selected track from MixerView
-        if (mainComponent && mainComponent->mixerView) {
-            int selectedIndex = mainComponent->mixerView->getSelectedChannel();
-            if (!mainComponent->mixerView->isSelectedMaster() && selectedIndex >= 0) {
-                const auto& tracks = TrackManager::getInstance().getTracks();
-                if (selectedIndex < static_cast<int>(tracks.size())) {
-                    auto cmd = std::make_unique<DuplicateTrackCommand>(tracks[selectedIndex].id);
-                    UndoManager::getInstance().executeCommand(std::move(cmd));
-                }
-            }
+    callbacks.onDuplicateTrack = []() {
+        TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
+        if (selectedTrack != INVALID_TRACK_ID) {
+            auto cmd = std::make_unique<DuplicateTrackCommand>(selectedTrack, true);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+        }
+    };
+
+    callbacks.onDuplicateTrackNoContent = []() {
+        TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
+        if (selectedTrack != INVALID_TRACK_ID) {
+            auto cmd = std::make_unique<DuplicateTrackCommand>(selectedTrack, false);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
         }
     };
 

@@ -110,6 +110,14 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addItem(JoinClips, juce::String("Join Clips") + juce::String::fromUTF8("\t\u2318J"),
                      hasSelection_, false);
         menu.addSeparator();
+        menu.addItem(RenderClip,
+                     juce::String("Render Selected Clip(s)") + juce::String::fromUTF8("\t\u2318B"),
+                     hasSelection_, false);
+        menu.addItem(RenderTimeSelection,
+                     juce::String("Render Time Selection") +
+                         juce::String::fromUTF8("\t\u21E7\u2318B"),
+                     true, false);
+        menu.addSeparator();
         menu.addItem(SelectAll, juce::String("Select All") + juce::String::fromUTF8("\t\u2318A"),
                      true, false);
 #else
@@ -124,6 +132,9 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addSeparator();
         menu.addItem(SplitOrTrim, "Split / Trim\tCtrl+E", true, false);
         menu.addItem(JoinClips, "Join Clips\tCtrl+J", hasSelection_, false);
+        menu.addSeparator();
+        menu.addItem(RenderClip, "Render Selected Clip(s)\tCtrl+B", hasSelection_, false);
+        menu.addItem(RenderTimeSelection, "Render Time Selection\tCtrl+Shift+B", true, false);
         menu.addSeparator();
         menu.addItem(SelectAll, "Select All\tCtrl+A", true, false);
 #endif
@@ -179,12 +190,18 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addItem(DuplicateTrack,
                      juce::String("Duplicate Track") + juce::String::fromUTF8("\t\u2318D"), true,
                      false);
+        menu.addItem(DuplicateTrackNoContent,
+                     juce::String("Duplicate Track Without Content") +
+                         juce::String::fromUTF8("\t\u21E7\u2318D"),
+                     true, false);
 #else
         menu.addItem(AddTrack, "Add Track\tCtrl+T", true, false);
         menu.addItem(AddGroupTrack, "Add Group Track\tCtrl+Shift+T", true, false);
         menu.addSeparator();
         menu.addItem(DeleteTrack, "Delete Track\tDelete", true, false);
         menu.addItem(DuplicateTrack, "Duplicate Track\tCtrl+D", true, false);
+        menu.addItem(DuplicateTrackNoContent, "Duplicate Track Without Content\tCtrl+Shift+D", true,
+                     false);
 #endif
         menu.addSeparator();
         menu.addItem(MuteTrack, "Mute Track\tM", true, false);
@@ -275,6 +292,14 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case JoinClips:
             if (callbacks_.onJoinClips)
                 callbacks_.onJoinClips();
+            break;
+        case RenderClip:
+            if (callbacks_.onRenderClip)
+                callbacks_.onRenderClip();
+            break;
+        case RenderTimeSelection:
+            if (callbacks_.onRenderTimeSelection)
+                callbacks_.onRenderTimeSelection();
             break;
         case SelectAll:
             if (callbacks_.onSelectAll)
@@ -382,6 +407,10 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case DuplicateTrack:
             if (callbacks_.onDuplicateTrack)
                 callbacks_.onDuplicateTrack();
+            break;
+        case DuplicateTrackNoContent:
+            if (callbacks_.onDuplicateTrackNoContent)
+                callbacks_.onDuplicateTrackNoContent();
             break;
         case MuteTrack:
             if (callbacks_.onMuteTrack)

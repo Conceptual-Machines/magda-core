@@ -124,30 +124,35 @@ void TrackManager::restoreTrack(const TrackInfo& trackInfo) {
     DBG("Restored track: " << trackInfo.name << " (id=" << trackInfo.id << ")");
 }
 
-void TrackManager::duplicateTrack(TrackId trackId) {
+TrackId TrackManager::duplicateTrack(TrackId trackId) {
     auto it = std::find_if(tracks_.begin(), tracks_.end(),
                            [trackId](const TrackInfo& t) { return t.id == trackId; });
 
-    if (it != tracks_.end()) {
-        TrackInfo newTrack = *it;
-        newTrack.id = nextTrackId_++;
-        newTrack.name = it->name + " Copy";
-        newTrack.childIds.clear();  // Don't duplicate children references
-
-        // Insert after the original
-        auto insertPos = it + 1;
-        tracks_.insert(insertPos, newTrack);
-
-        // If the original had a parent, add the copy to the same parent
-        if (newTrack.hasParent()) {
-            if (auto* parent = getTrack(newTrack.parentId)) {
-                parent->childIds.push_back(newTrack.id);
-            }
-        }
-
-        notifyTracksChanged();
-        DBG("Duplicated track: " << newTrack.name << " (id=" << newTrack.id << ")");
+    if (it == tracks_.end()) {
+        return INVALID_TRACK_ID;
     }
+
+    TrackInfo newTrack = *it;
+    newTrack.id = nextTrackId_++;
+    newTrack.name = it->name + " Copy";
+    newTrack.childIds.clear();  // Don't duplicate children references
+
+    TrackId newId = newTrack.id;
+
+    // Insert after the original
+    auto insertPos = it + 1;
+    tracks_.insert(insertPos, newTrack);
+
+    // If the original had a parent, add the copy to the same parent
+    if (newTrack.hasParent()) {
+        if (auto* parent = getTrack(newTrack.parentId)) {
+            parent->childIds.push_back(newId);
+        }
+    }
+
+    notifyTracksChanged();
+    DBG("Duplicated track: " << newTrack.name << " (id=" << newId << ")");
+    return newId;
 }
 
 void TrackManager::moveTrack(TrackId trackId, int newIndex) {

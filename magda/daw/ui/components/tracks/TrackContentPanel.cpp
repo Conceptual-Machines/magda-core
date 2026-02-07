@@ -111,6 +111,7 @@ void TrackContentPanel::tracksChanged() {
     }
 
     resized();
+    updateClipComponentPositions();
     repaint();
 }
 
@@ -141,37 +142,50 @@ void TrackContentPanel::setController(TimelineController* controller) {
 
 // ===== TimelineStateListener Implementation =====
 
-void TrackContentPanel::timelineStateChanged(const TimelineState& state) {
-    // General state change - sync cached values
-    timelineLength = state.timelineLength;
-    displayMode = state.display.timeDisplayMode;
-    tempoBPM = state.tempo.bpm;
+void TrackContentPanel::timelineStateChanged(const TimelineState& state, ChangeFlags changes) {
+    bool needsRepaint = false;
+
+    // Zoom/scroll changes
+    if (hasFlag(changes, ChangeFlags::Zoom) || hasFlag(changes, ChangeFlags::Scroll)) {
+        currentZoom = state.zoom.horizontalZoom;
+        needsRepaint = true;
+    }
+
+    // General cache sync with dirty checks
+    if (timelineLength != state.timelineLength) {
+        timelineLength = state.timelineLength;
+        needsRepaint = true;
+    }
+    if (displayMode != state.display.timeDisplayMode) {
+        displayMode = state.display.timeDisplayMode;
+        needsRepaint = true;
+    }
+
+    // Tempo affects non-musical-mode clip widths (length * bpm / 60 * ppb)
+    if (tempoBPM != state.tempo.bpm) {
+        tempoBPM = state.tempo.bpm;
+        needsRepaint = true;
+    }
     timeSignatureNumerator = state.tempo.timeSignatureNumerator;
     timeSignatureDenominator = state.tempo.timeSignatureDenominator;
 
-    // Manage edit cursor blink timer
+    // Manage edit cursor blink timer (unconditional)
     if (state.editCursorPosition >= 0) {
-        // Edit cursor is active - reset blink to visible and ensure timer is running
         editCursorBlinkVisible_ = true;
         if (!isTimerRunning()) {
             startTimer(EDIT_CURSOR_BLINK_MS);
         }
     } else {
-        // Edit cursor is hidden - stop blink timer
         if (isTimerRunning()) {
             stopTimer();
         }
     }
 
-    updateClipComponentPositions();
-    resized();
-    repaint();
-}
-
-void TrackContentPanel::zoomStateChanged(const TimelineState& state) {
-    currentZoom = state.zoom.horizontalZoom;
-    resized();
-    repaint();
+    if (needsRepaint) {
+        updateClipComponentPositions();
+        resized();
+        repaint();
+    }
 }
 
 void TrackContentPanel::paint(juce::Graphics& g) {
@@ -219,29 +233,6 @@ void TrackContentPanel::resized() {
     int contentHeight = getTotalTracksHeight();
 
     setSize(juce::jmax(contentWidth, getWidth()), juce::jmax(contentHeight, getHeight()));
-}
-
-void TrackContentPanel::addTrack() {
-    auto lane = std::make_unique<TrackLane>();
-    trackLanes.push_back(std::move(lane));
-
-    resized();
-    repaint();
-}
-
-void TrackContentPanel::removeTrack(int index) {
-    if (index >= 0 && index < trackLanes.size()) {
-        trackLanes.erase(trackLanes.begin() + index);
-
-        if (selectedTrackIndex == index) {
-            selectedTrackIndex = -1;
-        } else if (selectedTrackIndex > index) {
-            selectedTrackIndex--;
-        }
-
-        resized();
-        repaint();
-    }
 }
 
 void TrackContentPanel::selectTrack(int index) {
@@ -1244,6 +1235,16 @@ void TrackContentPanel::rebuildClipComponents() {
             // Get the created clip ID for selection (we need to look it up)
             // The split command stores the created ID, but we don't have access to it here
             // For now, the selection will be handled by the command or we need to refactor
+        };
+
+        // Wire up render callbacks (bubble up to MainWindow which has engine access)
+        clipComp->onClipRenderRequested = [this](ClipId id) {
+            if (onClipRenderRequested)
+                onClipRenderRequested(id);
+        };
+        clipComp->onRenderTimeSelectionRequested = [this]() {
+            if (onRenderTimeSelectionRequested)
+                onRenderTimeSelectionRequested();
         };
 
         // Wire up grid snapping
@@ -2442,14 +2443,20 @@ bool TrackContentPanel::isInterestedInFileDrag(const juce::StringArray& files) {
 }
 
 void TrackContentPanel::fileDragEnter(const juce::StringArray& files, int x, int y) {
-    dropInsertTime_ = pixelToTime(x);
+    dropInsertTime_ = juce::jmax(0.0, pixelToTime(x));
+    if (snapTimeToGrid) {
+        dropInsertTime_ = snapTimeToGrid(dropInsertTime_);
+    }
     dropTargetTrackIndex_ = getTrackIndexAtY(y);
     showDropIndicator_ = true;
     repaint();
 }
 
 void TrackContentPanel::fileDragMove(const juce::StringArray& files, int x, int y) {
-    dropInsertTime_ = pixelToTime(x);
+    dropInsertTime_ = juce::jmax(0.0, pixelToTime(x));
+    if (snapTimeToGrid) {
+        dropInsertTime_ = snapTimeToGrid(dropInsertTime_);
+    }
     dropTargetTrackIndex_ = getTrackIndexAtY(y);
     repaint();
 }
@@ -2463,12 +2470,14 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
     showDropIndicator_ = false;
     repaint();
 
-    // Determine drop position
-    double dropTime = pixelToTime(x);
+    // Determine drop position (clamp to timeline start, snap if enabled)
+    double dropTime = juce::jmax(0.0, pixelToTime(x));
+    if (snapTimeToGrid) {
+        dropTime = snapTimeToGrid(dropTime);
+    }
     int trackIndex = getTrackIndexAtY(y);
 
     if (trackIndex < 0 || trackIndex >= static_cast<int>(visibleTrackIds_.size())) {
-        DBG("TrackContentPanel: Invalid drop track index");
         return;
     }
 
@@ -2476,7 +2485,6 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
     auto* track = TrackManager::getInstance().getTrack(targetTrackId);
 
     if (!track) {
-        DBG("TrackContentPanel: Track not found for drop");
         return;
     }
 

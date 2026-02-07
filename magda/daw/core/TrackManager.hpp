@@ -108,7 +108,7 @@ class TrackManager {
     TrackId createTrack(const juce::String& name = "", TrackType type = TrackType::Audio);
     TrackId createGroupTrack(const juce::String& name = "");
     void deleteTrack(TrackId trackId);
-    void duplicateTrack(TrackId trackId);
+    TrackId duplicateTrack(TrackId trackId);
     void restoreTrack(const TrackInfo& trackInfo);  // Used by undo system
     void moveTrack(TrackId trackId, int newIndex);
 

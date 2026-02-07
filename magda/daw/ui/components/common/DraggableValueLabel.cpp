@@ -234,8 +234,10 @@ void DraggableValueLabel::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
 
     // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-    g.fillRoundedRectangle(bounds, 2.0f);
+    if (drawBackground_) {
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.fillRoundedRectangle(bounds, 2.0f);
+    }
 
     // Fill indicator
     if (showFillIndicator_) {
@@ -315,8 +317,8 @@ void DraggableValueLabel::mouseDrag(const juce::MouseEvent& e) {
             deltaValue *= 0.25;
         }
     } else if (snapToInteger_ && !e.mods.isShiftDown()) {
-        // Integer snap mode: 1 unit per ~30px
-        deltaValue = deltaY / 30.0;
+        // Integer snap mode: 1 unit per ~10px
+        deltaValue = deltaY / 10.0;
         double newValue = std::round(dragStartValue_ + deltaValue);
         setValue(newValue);
         return;

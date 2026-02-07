@@ -2,6 +2,7 @@
 
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
+#include "../themes/SmallButtonLookAndFeel.hpp"
 #include "BinaryData.h"
 
 namespace magda {
@@ -12,7 +13,10 @@ TransportPanel::TransportPanel() {
     setupTempoAndQuantize();
 }
 
-TransportPanel::~TransportPanel() = default;
+TransportPanel::~TransportPanel() {
+    autoGridButton->setLookAndFeel(nullptr);
+    snapButton->setLookAndFeel(nullptr);
+}
 
 void TransportPanel::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::TRANSPORT_BACKGROUND));
@@ -487,6 +491,7 @@ void TransportPanel::setupTempoAndQuantize() {
     autoGridButton->setWantsKeyboardFocus(false);
     autoGridButton->setClickingTogglesState(true);
     autoGridButton->setToggleState(isAutoGrid, juce::dontSendNotification);
+    autoGridButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
     autoGridButton->onClick = [this]() {
         isAutoGrid = autoGridButton->getToggleState();
         // Enable/disable numerator/denominator labels
@@ -586,6 +591,7 @@ void TransportPanel::setupTempoAndQuantize() {
     snapButton->setWantsKeyboardFocus(false);
     snapButton->setClickingTogglesState(true);
     snapButton->setToggleState(isSnapEnabled, juce::dontSendNotification);
+    snapButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
     snapButton->onClick = [this]() {
         isSnapEnabled = snapButton->getToggleState();
         if (onSnapToggle)

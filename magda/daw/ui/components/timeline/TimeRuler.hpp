@@ -43,6 +43,12 @@ class TimeRuler : public juce::Component, private juce::Timer {
         return timeOffset;
     }
 
+    // Bar origin offset (shifts bar 1 to a different time position)
+    void setBarOrigin(double originSeconds);
+    double getBarOrigin() const {
+        return barOriginSeconds;
+    }
+
     // For relative mode display (shows 1, 2, 3... instead of 5, 6, 7...)
     void setRelativeMode(bool relative);
     bool isRelativeMode() const {
@@ -113,9 +119,10 @@ class TimeRuler : public juce::Component, private juce::Timer {
     int timeSigDenominator = 4;
 
     // Offset and relative mode (for piano roll)
-    double timeOffset = 0.0;    // seconds - absolute position of content start
-    bool relativeMode = false;  // true = show relative time (1, 2, 3...), false = show absolute
-    double clipLength = 0.0;    // seconds - length of clip (0 = no boundary marker)
+    double timeOffset = 0.0;        // seconds - absolute position of content start
+    bool relativeMode = false;      // true = show relative time (1, 2, 3...), false = show absolute
+    double barOriginSeconds = 0.0;  // time position where bar 1 starts
+    double clipLength = 0.0;        // seconds - length of clip (0 = no boundary marker)
     double clipContentOffset =
         0.0;  // seconds - source offset in timeline seconds (shifts boundaries)
     double playheadPosition = -1.0;  // seconds - current playback position (-1 = not playing)

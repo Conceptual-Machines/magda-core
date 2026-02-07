@@ -47,8 +47,7 @@ class TrackContentPanel : public juce::Component,
     bool keyPressed(const juce::KeyPress& key) override;
 
     // TimelineStateListener implementation
-    void timelineStateChanged(const TimelineState& state) override;
-    void zoomStateChanged(const TimelineState& state) override;
+    void timelineStateChanged(const TimelineState& state, ChangeFlags changes) override;
 
     // TrackManagerListener implementation
     void tracksChanged() override;
@@ -79,8 +78,6 @@ class TrackContentPanel : public juce::Component,
     }
 
     // Track management
-    void addTrack();
-    void removeTrack(int index);
     void selectTrack(int index);
     int getNumTracks() const;
     void setTrackHeight(int trackIndex, int height);
@@ -136,6 +133,8 @@ class TrackContentPanel : public juce::Component,
     std::function<void(double, double, std::set<int>)>
         onTimeSelectionChanged;                             // startTime, endTime, trackIndices
     std::function<void(double)> onPlayheadPositionChanged;  // Called when playhead is set via click
+    std::function<void(ClipId)> onClipRenderRequested;      // Render clip to new file
+    std::function<void()> onRenderTimeSelectionRequested;   // Render time selection
     std::function<double(double)>
         snapTimeToGrid;  // Callback to snap time to grid (provided by MainView)
 

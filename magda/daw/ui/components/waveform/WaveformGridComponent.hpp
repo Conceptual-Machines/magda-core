@@ -117,11 +117,20 @@ class WaveformGridComponent : public juce::Component {
     /** Set the TimeRuler to read tempo/time-signature from (not owned) */
     void setTimeRuler(magda::TimeRuler* ruler);
 
+    /** Set grid resolution directly in beats (overrides enum; 0 = use enum) */
+    void setGridResolutionBeats(double beats);
+
     /** Get grid interval in beats for the current resolution */
     double getGridResolutionBeats() const;
 
     /** Snap a source-file time to the nearest grid line */
     double snapTimeToGrid(double time) const;
+
+    /** Enable/disable snap-to-grid for drag operations */
+    void setSnapEnabled(bool enabled);
+
+    /** Get snap state */
+    bool isSnapEnabled() const;
 
     // ========================================================================
     // Warp Mode
@@ -162,6 +171,9 @@ class WaveformGridComponent : public juce::Component {
     std::function<void(int index, double newWarpTime)> onWarpMarkerMove;
     std::function<void(int index)> onWarpMarkerRemove;
 
+    // Zoom drag callback (deltaY from start, anchorX in viewport coords)
+    std::function<void(int deltaY, int anchorX)> onZoomDrag;
+
   private:
     magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
 
@@ -192,13 +204,16 @@ class WaveformGridComponent : public juce::Component {
         ResizeRight,
         StretchLeft,
         StretchRight,
-        MoveWarpMarker
+        MoveWarpMarker,
+        Zoom
     };
     DragMode dragMode_ = DragMode::None;
     double dragStartAudioOffset_ = 0.0;
     double dragStartLength_ = 0.0;
     double dragStartStartTime_ = 0.0;
     int dragStartX_ = 0;
+    int zoomDragStartY_ = 0;
+    int zoomDragAnchorX_ = 0;
     double dragStartSpeedRatio_ = 1.0;
     double dragStartFileDuration_ = 0.0;
     double dragStartClipLength_ = 0.0;  // Original clip.length at drag start (for stretch)
@@ -217,9 +232,15 @@ class WaveformGridComponent : public juce::Component {
     int draggingMarkerIndex_ = -1;
     double dragStartWarpTime_ = 0.0;
 
+    // Pre/post loop visibility
+    bool showPreLoop_ = true;
+    bool showPostLoop_ = true;
+
     // Beat grid state
     GridResolution gridResolution_ = GridResolution::Off;
-    magda::TimeRuler* timeRuler_ = nullptr;  // not owned — reads tempo/timeSig
+    double customGridBeats_ = 0.0;           // When > 0, overrides enum-based resolution
+    bool snapEnabled_ = false;               // Snap drag operations to grid
+    magda::TimeRuler* timeRuler_ = nullptr;  // not owned — reads tempo/timeSig + bar origin
 
     // Layout info shared between paint helpers
     struct WaveformLayout {
@@ -244,6 +265,7 @@ class WaveformGridComponent : public juce::Component {
     void paintWarpMarkers(juce::Graphics& g, const magda::ClipInfo& clip);
     void paintClipBoundaries(juce::Graphics& g);
     void paintNoClipMessage(juce::Graphics& g);
+    void showContextMenu(const juce::MouseEvent& event);
 
     // Hit testing helpers
     bool isNearLeftEdge(int x, const magda::ClipInfo& clip) const;

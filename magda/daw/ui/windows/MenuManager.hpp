@@ -32,6 +32,8 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         std::function<void()> onDelete;
         std::function<void()> onSplitOrTrim;
         std::function<void()> onJoinClips;
+        std::function<void()> onRenderClip;
+        std::function<void()> onRenderTimeSelection;
         std::function<void()> onSelectAll;
         std::function<void()> onPreferences;
 
@@ -64,6 +66,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         std::function<void()> onAddGroupTrack;
         std::function<void()> onDeleteTrack;
         std::function<void()> onDuplicateTrack;
+        std::function<void()> onDuplicateTrackNoContent;
         std::function<void()> onMuteTrack;
         std::function<void()> onSoloTrack;
 
@@ -136,7 +139,9 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         Delete,
         SplitOrTrim = 218,
         JoinClips,
-        SelectAll = 220,
+        RenderClip,
+        RenderTimeSelection,
+        SelectAll = 225,
         Preferences = 299,
 
         // Settings menu (800-899)
@@ -169,6 +174,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         AddGroupTrack,
         DeleteTrack = 510,
         DuplicateTrack,
+        DuplicateTrackNoContent,
         MuteTrack = 520,
         SoloTrack,
 
