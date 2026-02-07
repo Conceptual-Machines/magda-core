@@ -8,8 +8,6 @@ set(TEST_SOURCES
     test_audio_source_length.cpp
     test_audio_export.cpp
     test_command.cpp
-    # test_export_no_assertion.cpp  # Disabled - see issue #611 (generator device export)
-    test_export_transport_stop.cpp
     test_interfaces.cpp
     test_midi_clip_sync.cpp
     test_midi_clip_split.cpp
@@ -27,8 +25,6 @@ set(TEST_SOURCES
     test_looped_waveform_tile.cpp
     test_project_serialization.cpp
     test_session_clip_playback.cpp
-    test_tracktion_engine_wrapper_refactoring.cpp
-    SharedTestEngineCleanup.cpp
 )
 
 # Create test executable
@@ -65,14 +61,22 @@ juce_add_console_app(magda_juce_tests
     PRODUCT_NAME "Magica JUCE Tests"
 )
 
-# Add JUCE test source
-target_sources(magda_juce_tests PRIVATE test_zoom_simple.cpp)
+# Add JUCE test sources
+target_sources(magda_juce_tests PRIVATE
+    juce_tests_main.cpp
+    test_zoom_simple.cpp
+    test_export_transport_stop_juce.cpp
+    test_tracktion_engine_wrapper_refactoring_juce.cpp
+    # test_export_no_assertion_juce.cpp  # Disabled - see issue #611 (generator device export)
+)
 
 # Link required libraries for JUCE tests
 target_link_libraries(magda_juce_tests
     PRIVATE
+    magda_daw
     juce::juce_core
     juce::juce_events
+    juce::juce_gui_basics
     # Link curl dependencies on Linux
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
 )

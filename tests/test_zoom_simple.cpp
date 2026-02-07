@@ -237,16 +237,3 @@ class ZoomManagerTest final : public juce::UnitTest {
 
 // Static instance for auto-registration
 static ZoomManagerTest zoomManagerTest;
-
-//==============================================================================
-int main() {
-    juce::UnitTestRunner runner;
-
-    std::cout << "Running JUCE Unit Tests for ZoomManager Logic...\n\n";
-
-    runner.runAllTests();
-
-    std::cout << "\nTests completed.\n";
-
-    return 0;
-}
