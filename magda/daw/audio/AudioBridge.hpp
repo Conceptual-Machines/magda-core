@@ -10,6 +10,7 @@
 #include "../core/DeviceInfo.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/TypeIds.hpp"
+#include "ClipSynchronizer.hpp"
 #include "DeviceProcessor.hpp"
 #include "MeteringBuffer.hpp"
 #include "MidiActivityMonitor.hpp"
@@ -563,10 +564,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Timer callback for metering updates (runs on message thread)
     void timerCallback() override;
 
-    // Clip synchronization helpers
-    void syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip);
-    void syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip);
-
     // Create track mapping
     void ensureTrackMapping(TrackId trackId);
 
@@ -586,10 +583,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Bidirectional mappings
     std::map<TrackId, std::string> trackIdToEngineId_;  // MAGDA TrackId → Engine string ID
 
-    // Arrangement clip ID mappings (MAGDA ClipId <-> Tracktion Engine clip ID)
-    std::map<ClipId, std::string> clipIdToEngineId_;  // MAGDA → TE
-    std::map<std::string, ClipId> engineIdToClipId_;  // TE → MAGDA
-
     // (Session clips use ClipSlot-based mapping via trackId + sceneIndex — no ID maps needed)
 
     // Lock-free communication buffers
@@ -607,6 +600,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Phase 3 refactoring: Core controllers (extracted from AudioBridge)
     TrackController trackController_;
     PluginManager pluginManager_;
+    ClipSynchronizer clipSynchronizer_;
 
     // Master channel metering (lock-free atomics for thread safety)
     std::atomic<float> masterPeakL_{0.0f};
@@ -624,10 +618,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
 
     // Engine wrapper (owns this AudioBridge, used for ClipInterface access)
     TracktionEngineWrapper* engineWrapper_ = nullptr;
-
-    // Deferred reallocate after reverse proxy render completes
-    // Stores the clip ID so we can poll until the proxy file exists
-    ClipId pendingReverseClipId_{INVALID_CLIP_ID};
 
     // Shutdown flag to prevent operations during cleanup
     std::atomic<bool> isShuttingDown_{false};
