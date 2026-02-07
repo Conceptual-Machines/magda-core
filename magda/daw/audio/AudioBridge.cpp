@@ -1647,12 +1647,8 @@ void AudioBridge::removeAudioTrack(TrackId trackId) {
 // =============================================================================
 
 bool AudioBridge::pushParameterChange(DeviceId deviceId, int paramIndex, float value) {
-    ParameterChange change;
-    change.deviceId = deviceId;
-    change.paramIndex = paramIndex;
-    change.value = value;
-    change.source = ParameterChange::Source::User;
-    return parameterQueue_.push(change);
+    // Delegate to ParameterManager
+    return parameterManager_.pushChange(deviceId, paramIndex, value);
 }
 
 // =============================================================================
@@ -1777,7 +1773,7 @@ void AudioBridge::processParameterChanges() {
     MAGDA_MONITOR_SCOPE("ParamChanges");
 
     ParameterChange change;
-    while (parameterQueue_.pop(change)) {
+    while (parameterManager_.popChange(change)) {
         auto plugin = getPlugin(change.deviceId);
         if (plugin) {
             // NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign) - false positive from
@@ -1797,10 +1793,8 @@ void AudioBridge::processParameterChanges() {
 // =============================================================================
 
 void AudioBridge::updateTransportState(bool isPlaying, bool justStarted, bool justLooped) {
-    // UI thread writes, audio thread reads - use release/acquire semantics
-    transportPlaying_.store(isPlaying, std::memory_order_release);
-    justStartedFlag_.store(justStarted, std::memory_order_release);
-    justLoopedFlag_.store(justLooped, std::memory_order_release);
+    // Delegate to TransportStateManager
+    transportState_.updateState(isPlaying, justStarted, justLooped);
 
     // Enable/disable tone generators based on transport state
     juce::ScopedLock lock(mappingLock_);
@@ -1818,19 +1812,7 @@ void AudioBridge::updateTransportState(bool isPlaying, bool justStarted, bool ju
 // MIDI Activity Monitoring
 // =============================================================================
 
-void AudioBridge::triggerMidiActivity(TrackId trackId) {
-    if (trackId >= 0 && trackId < kMaxTracks) {
-        midiActivityFlags_[trackId].store(true, std::memory_order_release);
-    }
-}
-
-bool AudioBridge::consumeMidiActivity(TrackId trackId) {
-    if (trackId >= 0 && trackId < kMaxTracks) {
-        // Read and clear flag atomically
-        return midiActivityFlags_[trackId].exchange(false, std::memory_order_acq_rel);
-    }
-    return false;
-}
+// Methods moved to inline implementations in AudioBridge.hpp
 
 void AudioBridge::updateMetering() {
     // This would be called from the audio thread
@@ -2219,7 +2201,7 @@ te::Plugin::Ptr AudioBridge::loadDeviceAsPlugin(TrackId trackId, const DeviceInf
         // For tone generators (always transport-synced), sync initial state with transport
         if (auto* toneProc = dynamic_cast<ToneGeneratorProcessor*>(processor.get())) {
             // Get current transport state
-            bool isPlaying = transportPlaying_.load(std::memory_order_acquire);
+            bool isPlaying = transportState_.isPlaying();
             // Bypass if transport is not playing
             toneProc->setBypassed(!isPlaying);
         }

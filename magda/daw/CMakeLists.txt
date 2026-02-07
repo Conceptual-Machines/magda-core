@@ -141,6 +141,10 @@ set(DAW_CORE_SOURCES
     audio/DeviceProcessor.cpp
     audio/MidiBridge.cpp
     audio/SessionClipScheduler.cpp
+    # Phase 1 refactoring: Pure data managers
+    audio/TransportStateManager.cpp
+    audio/MidiActivityMonitor.cpp
+    audio/ParameterManager.cpp
     # TODO: Custom synth library (SimpleSynthPlugin.cpp) - for future implementation
     # Project serialization
     project/ProjectSerializer.cpp
@@ -349,6 +353,10 @@ set(DAW_HEADERS
     audio/SessionClipScheduler.hpp
     audio/MeteringBuffer.hpp
     audio/ParameterQueue.hpp
+    # Phase 1 refactoring: Pure data managers
+    audio/TransportStateManager.hpp
+    audio/MidiActivityMonitor.hpp
+    audio/ParameterManager.hpp
     # Views
     ui/views/MainView.hpp
     ui/views/SessionView.hpp
