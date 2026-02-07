@@ -21,6 +21,9 @@ inline double wrapPhase(double value, double period) {
     return result;
 }
 
+/** Fade curve type — matches tracktion::AudioFadeCurve::Type values */
+enum class FadeCurve : int { Linear = 1, Convex = 2, Concave = 3, SCurve = 4 };
+
 /**
  * @brief MIDI note data for MIDI clips
  */
@@ -184,9 +187,13 @@ struct ClipInfo {
         return offset - loopStart;
     }
 
-    /// TE offset: phase within the loop region, in stretched time
-    double getTeOffset() const {
-        return (offset - loopStart) * speedRatio;
+    /// TE offset in stretched time.
+    /// Looped: phase within the loop region (offset - loopStart).
+    /// Non-looped: raw trim point in the source file.
+    double getTeOffset(bool looped) const {
+        if (looped)
+            return (offset - loopStart) * speedRatio;
+        return offset * speedRatio;
     }
 
     /// TE loop start in stretched time

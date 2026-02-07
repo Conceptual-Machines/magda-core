@@ -82,9 +82,10 @@ class ClipOperations {
                 // Non-looped: adjust offset so content stays at timeline position
                 double sourceDelta = actualDelta * clip.speedRatio;
                 clip.offset = juce::jmax(0.0, clip.offset + sourceDelta);
+                clip.loopStart = clip.offset;
             } else {
                 // Looped: adjust offset (wrapped within loop region) so content stays at timeline
-                // position
+                // position.  loopStart is the user-defined loop anchor — it must NOT move.
                 double sourceLength =
                     clip.loopLength > 0.0 ? clip.loopLength : clip.length * clip.speedRatio;
                 if (sourceLength > 0.0) {
@@ -97,7 +98,7 @@ class ClipOperations {
 
         clip.startTime = newStartTime;
         clip.length = newLength;
-        if (clip.autoTempo && bpm > 0.0) {
+        if ((clip.autoTempo || clip.warpEnabled) && bpm > 0.0) {
             clip.startBeats = newStartTime * bpm / 60.0;
             clip.lengthBeats = newLength * bpm / 60.0;
         }
@@ -117,7 +118,7 @@ class ClipOperations {
                                                 double bpm = 120.0) {
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
         clip.length = newLength;
-        if (clip.autoTempo && bpm > 0.0) {
+        if ((clip.autoTempo || clip.warpEnabled) && bpm > 0.0) {
             clip.lengthBeats = newLength * bpm / 60.0;
         }
     }
@@ -147,6 +148,7 @@ class ClipOperations {
         double timelineDelta = actualSourceDelta / clip.speedRatio;
 
         clip.offset = newOffset;
+        clip.loopStart = clip.offset;
         clip.startTime = juce::jmax(0.0, clip.startTime + timelineDelta);
         clip.length = juce::jmax(MIN_CLIP_LENGTH, clip.length - timelineDelta);
     }
@@ -506,7 +508,7 @@ class ClipOperations {
             double avail = fileDuration - clip.loopStart;
             if (clip.loopLength > avail) {
                 clip.loopLength = juce::jmax(0.0, avail);
-                if (clip.autoTempo && oldLoopLength > 0.0) {
+                if ((clip.autoTempo || clip.warpEnabled) && oldLoopLength > 0.0) {
                     clip.loopLengthBeats *= clip.loopLength / oldLoopLength;
                 }
             }

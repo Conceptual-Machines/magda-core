@@ -1,5 +1,7 @@
 #include "ClipComponent.hpp"
 
+#include <BinaryData.h>
+
 #include <cmath>
 
 #include "../../panels/state/PanelController.hpp"
@@ -17,6 +19,24 @@
 #include "engine/AudioEngine.hpp"
 
 namespace magda {
+
+static float computeFadeGain(float alpha, FadeCurve curve) {
+    const float a = alpha * juce::MathConstants<float>::halfPi;
+    switch (curve) {
+        case FadeCurve::Convex:
+            return std::sin(a);
+        case FadeCurve::Concave:
+            return 1.0f - std::cos(a);
+        case FadeCurve::SCurve: {
+            float concave = 1.0f - std::cos(a);
+            float convex = std::sin(a);
+            return (1.0f - alpha) * concave + alpha * convex;
+        }
+        case FadeCurve::Linear:
+        default:
+            return alpha;
+    }
+}
 
 ClipComponent::ClipComponent(ClipId clipId, TrackContentPanel* parent)
     : clipId_(clipId), parentPanel_(parent) {
@@ -100,6 +120,11 @@ void ClipComponent::paint(juce::Graphics& g) {
         paintResizeHandles(g, bounds);
     }
 
+    // Draw fade handles (selected audio clips only)
+    if (isSelected_ && clip->type == ClipType::Audio) {
+        paintFadeHandles(g, *clip, getLocalBounds());
+    }
+
     // Marquee highlight overlay (during marquee drag)
     if (isMarqueeHighlighted_) {
         g.setColour(juce::Colours::white.withAlpha(0.2f));
@@ -144,16 +169,23 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                 : 0.0;
 
         if (pixelsPerSecond > 0.0) {
+            // Reverse: flip graphics horizontally so waveform draws mirrored
+            if (clip.isReversed) {
+                g.saveState();
+                g.addTransform(juce::AffineTransform::scale(-1.0f, 1.0f, waveformArea.getCentreX(),
+                                                            waveformArea.getCentreY()));
+            }
+
             // Build ClipDisplayInfo for consistent calculations
             double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
             auto di = ClipDisplayInfo::from(clip, tempo);
 
-            // During left resize drag, the offset hasn't been committed yet,
-            // so simulate the offset adjustment
+            // During left resize drag, compute display offset from the drag-start
+            // snapshot to avoid double-counting with throttled in-flight mutations.
             double displayOffset = clip.offset;
             if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
                 double trimDelta = dragStartLength_ - previewLength_;
-                displayOffset += di.timelineToSource(trimDelta);
+                displayOffset = dragStartClipSnapshot_.offset + di.timelineToSource(trimDelta);
             }
 
             auto waveColour = clip.colour.brighter(0.2f);
@@ -244,6 +276,18 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
 
                 // Phase offset: the first tile starts partway through the loop
                 double phaseSource = di.loopOffset;
+
+                // During left resize drag, compute loop phase from the drag-start
+                // snapshot to avoid double-counting with throttled in-flight mutations.
+                if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
+                    double trimDelta = dragStartLength_ - previewLength_;
+                    double phaseDelta = di.timelineToSource(trimDelta);
+                    double originalPhase =
+                        wrapPhase(dragStartClipSnapshot_.offset - dragStartClipSnapshot_.loopStart,
+                                  di.sourceLength);
+                    phaseSource = wrapPhase(originalPhase + phaseDelta, di.sourceLength);
+                }
+
                 double phaseTimeline = di.sourceToTimeline(phaseSource);
                 bool isFirstTile = (phaseTimeline > 0.001);
 
@@ -301,11 +345,27 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                 thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, fileStart, fileEnd,
                                               waveColour);
             }
+            // Restore from reverse flip
+            if (clip.isReversed)
+                g.restoreState();
         }
     } else {
         // Fallback: draw placeholder if no audio source
         g.setColour(clip.colour.brighter(0.2f).withAlpha(0.3f));
         g.drawText("No Audio", waveformArea, juce::Justification::centred);
+    }
+
+    // Fade overlays (always shown if fade > 0)
+    if (clip.fadeIn > 0.0 || clip.fadeOut > 0.0) {
+        double clipDisplayLength = clip.length;
+        if (isDragging_ && previewLength_ > 0.0)
+            clipDisplayLength = previewLength_;
+        double pps = (clipDisplayLength > 0.0)
+                         ? static_cast<double>(waveformArea.getWidth()) / clipDisplayLength
+                         : 0.0;
+        if (pps > 0.0) {
+            paintFadeOverlays(g, clip, waveformArea, pps);
+        }
     }
 
     // Border
@@ -445,11 +505,20 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
                    juce::Justification::centred, false);
     }
 
-    // Loop indicator
+    // Loop indicator (infinito/infinity icon)
     if (clip.loopEnabled) {
-        auto loopArea = headerArea.removeFromRight(14).reduced(2);
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
-        g.drawText("L", loopArea, juce::Justification::centred, false);
+        headerArea.removeFromRight(2);  // right padding
+        auto loopArea = headerArea.removeFromRight(14).reduced(1);
+        static auto loopIcon = [] {
+            auto icon = juce::Drawable::createFromImageData(BinaryData::infinito_svg,
+                                                            BinaryData::infinito_svgSize);
+            if (icon)
+                icon->replaceColour(juce::Colour(0xFFB3B3B3),
+                                    DarkTheme::getColour(DarkTheme::BACKGROUND));
+            return icon;
+        }();
+        if (loopIcon)
+            loopIcon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
     }
 }
 
@@ -468,6 +537,139 @@ void ClipComponent::paintResizeHandles(juce::Graphics& g, juce::Rectangle<int> b
     if (hoverRightEdge_) {
         g.setColour(handleColour);
         g.fillRect(rightHandle);
+    }
+}
+
+void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
+                                      juce::Rectangle<int> waveformArea, double pixelsPerSecond) {
+    constexpr int NUM_STEPS = 32;
+    float areaTop = static_cast<float>(waveformArea.getY());
+    float areaBottom = static_cast<float>(waveformArea.getBottom());
+    float areaHeight = areaBottom - areaTop;
+    float areaLeft = static_cast<float>(waveformArea.getX());
+    float areaRight = static_cast<float>(waveformArea.getRight());
+
+    // Fade-in overlay
+    if (clip.fadeIn > 0.0) {
+        float fadeInPx = juce::jmin(static_cast<float>(clip.fadeIn * pixelsPerSecond),
+                                    static_cast<float>(waveformArea.getWidth()));
+        if (fadeInPx > 1.0f) {
+            // Build overlay path: darkens area above the fade curve
+            juce::Path overlay;
+            overlay.startNewSubPath(areaLeft, areaTop);
+            overlay.lineTo(areaLeft + fadeInPx, areaTop);
+
+            // Trace the fade curve from right to left (gain 1→0)
+            for (int i = NUM_STEPS; i >= 0; --i) {
+                float alpha = static_cast<float>(i) / static_cast<float>(NUM_STEPS);
+                float gain = computeFadeGain(alpha, static_cast<FadeCurve>(clip.fadeInType));
+                float x = areaLeft + alpha * fadeInPx;
+                float y = areaTop + (1.0f - gain) * areaHeight;
+                overlay.lineTo(x, y);
+            }
+            overlay.closeSubPath();
+
+            g.setColour(juce::Colours::black.withAlpha(0.35f));
+            g.fillPath(overlay);
+
+            // Stroke the fade curve line
+            juce::Path curveLine;
+            for (int i = 0; i <= NUM_STEPS; ++i) {
+                float alpha = static_cast<float>(i) / static_cast<float>(NUM_STEPS);
+                float gain = computeFadeGain(alpha, static_cast<FadeCurve>(clip.fadeInType));
+                float x = areaLeft + alpha * fadeInPx;
+                float y = areaTop + (1.0f - gain) * areaHeight;
+                if (i == 0)
+                    curveLine.startNewSubPath(x, y);
+                else
+                    curveLine.lineTo(x, y);
+            }
+            g.setColour(juce::Colours::white.withAlpha(0.6f));
+            g.strokePath(curveLine, juce::PathStrokeType(1.5f));
+        }
+    }
+
+    // Fade-out overlay
+    if (clip.fadeOut > 0.0) {
+        float fadeOutPx = juce::jmin(static_cast<float>(clip.fadeOut * pixelsPerSecond),
+                                     static_cast<float>(waveformArea.getWidth()));
+        if (fadeOutPx > 1.0f) {
+            float fadeStart = areaRight - fadeOutPx;
+
+            // Build overlay path: darkens area above the fade curve
+            juce::Path overlay;
+            overlay.startNewSubPath(fadeStart, areaTop);
+            overlay.lineTo(areaRight, areaTop);
+            // Right edge down to bottom (gain = 0 at right edge)
+            overlay.lineTo(areaRight, areaBottom);
+
+            // Trace the fade curve from right to left (gain 0→1)
+            for (int i = NUM_STEPS; i >= 0; --i) {
+                float alpha = static_cast<float>(i) / static_cast<float>(NUM_STEPS);
+                // alpha=0 at fadeStart (gain=1), alpha=1 at areaRight (gain=0)
+                float gain =
+                    computeFadeGain(1.0f - alpha, static_cast<FadeCurve>(clip.fadeOutType));
+                float x = fadeStart + alpha * fadeOutPx;
+                float y = areaTop + (1.0f - gain) * areaHeight;
+                overlay.lineTo(x, y);
+            }
+            overlay.closeSubPath();
+
+            g.setColour(juce::Colours::black.withAlpha(0.35f));
+            g.fillPath(overlay);
+
+            // Stroke the fade curve line
+            juce::Path curveLine;
+            for (int i = 0; i <= NUM_STEPS; ++i) {
+                float alpha = static_cast<float>(i) / static_cast<float>(NUM_STEPS);
+                float gain =
+                    computeFadeGain(1.0f - alpha, static_cast<FadeCurve>(clip.fadeOutType));
+                float x = fadeStart + alpha * fadeOutPx;
+                float y = areaTop + (1.0f - gain) * areaHeight;
+                if (i == 0)
+                    curveLine.startNewSubPath(x, y);
+                else
+                    curveLine.lineTo(x, y);
+            }
+            g.setColour(juce::Colours::white.withAlpha(0.6f));
+            g.strokePath(curveLine, juce::PathStrokeType(1.5f));
+        }
+    }
+}
+
+void ClipComponent::paintFadeHandles(juce::Graphics& g, const ClipInfo& clip,
+                                     juce::Rectangle<int> bounds) {
+    auto waveformArea = bounds.reduced(2, HEADER_HEIGHT + 2);
+    if (waveformArea.getWidth() <= 0 || waveformArea.getHeight() <= 0)
+        return;
+
+    double clipDisplayLength = clip.length;
+    double pixelsPerSecond = (clipDisplayLength > 0.0)
+                                 ? static_cast<double>(waveformArea.getWidth()) / clipDisplayLength
+                                 : 0.0;
+    if (pixelsPerSecond <= 0.0)
+        return;
+
+    float hs = static_cast<float>(FADE_HANDLE_SIZE);
+    float half = hs * 0.5f;
+    float waveTop = static_cast<float>(waveformArea.getY());
+
+    auto handleColour = juce::Colour(DarkTheme::ACCENT_ORANGE);
+
+    // Fade-in handle: only visible on hover
+    if (hoverFadeIn_) {
+        float fadeInPx = static_cast<float>(clip.fadeIn * pixelsPerSecond);
+        float cx = static_cast<float>(waveformArea.getX()) + fadeInPx;
+        g.setColour(handleColour);
+        g.fillRect(cx - half, waveTop, hs, hs);
+    }
+
+    // Fade-out handle: only visible on hover
+    if (hoverFadeOut_) {
+        float fadeOutPx = static_cast<float>(clip.fadeOut * pixelsPerSecond);
+        float cx = static_cast<float>(waveformArea.getRight()) - fadeOutPx;
+        g.setColour(handleColour);
+        g.fillRect(cx - half, waveTop, hs, hs);
     }
 }
 
@@ -644,6 +846,44 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     isDragging_ = false;
 
     // Determine drag mode based on click position
+    // Fade handles take priority over resize edges (they check y-range, edges don't)
+    if (isSelected_ && isOnFadeInHandle(e.x, e.y)) {
+        if (e.mods.isShiftDown()) {
+            // Shift+click: cycle fade-in type (1→2→3→4→1)
+            dragStartClipSnapshot_ = *clip;
+            int newType = (clip->fadeInType % 4) + 1;
+            ClipManager::getInstance().setFadeInType(clipId_, newType);
+            auto cmd = std::make_unique<SetFadeCommand>(clipId_, dragStartClipSnapshot_);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            dragMode_ = DragMode::None;
+            repaint();
+            return;
+        }
+        dragMode_ = DragMode::FadeIn;
+        dragStartFadeIn_ = clip->fadeIn;
+        dragStartClipSnapshot_ = *clip;
+        repaint();
+        return;
+    }
+    if (isSelected_ && isOnFadeOutHandle(e.x, e.y)) {
+        if (e.mods.isShiftDown()) {
+            // Shift+click: cycle fade-out type (1→2→3→4→1)
+            dragStartClipSnapshot_ = *clip;
+            int newType = (clip->fadeOutType % 4) + 1;
+            ClipManager::getInstance().setFadeOutType(clipId_, newType);
+            auto cmd = std::make_unique<SetFadeCommand>(clipId_, dragStartClipSnapshot_);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            dragMode_ = DragMode::None;
+            repaint();
+            return;
+        }
+        dragMode_ = DragMode::FadeOut;
+        dragStartFadeOut_ = clip->fadeOut;
+        dragStartClipSnapshot_ = *clip;
+        repaint();
+        return;
+    }
+
     // Shift+edge = stretch mode (time-stretches audio source along with clip)
     if (isOnLeftEdge(e.x)) {
         if (e.mods.isShiftDown() && clip->type == ClipType::Audio &&
@@ -653,6 +893,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             dragStartClipSnapshot_ = *clip;
         } else {
             dragMode_ = DragMode::ResizeLeft;
+            dragStartClipSnapshot_ = *clip;
         }
     } else if (isOnRightEdge(e.x)) {
         if (e.mods.isShiftDown() && clip->type == ClipType::Audio &&
@@ -662,6 +903,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             dragStartClipSnapshot_ = *clip;
         } else {
             dragMode_ = DragMode::ResizeRight;
+            dragStartClipSnapshot_ = *clip;
         }
     } else {
         dragMode_ = DragMode::Move;
@@ -795,12 +1037,28 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             previewStartTime_ = finalStartTime;
             previewLength_ = finalLength;
 
-            // Throttled update so waveform editor stays in sync during drag
+            // Throttled update so waveform editor + TE stay in sync during drag
             if (resizeThrottle_.check()) {
                 auto& cm = magda::ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
-                    ClipOperations::resizeContainerAbsolute(*mutableClip, finalStartTime,
-                                                            finalLength);
+                    DBG("[RESIZE-LEFT-DRAG] BEFORE resizeFromLeft: startTime="
+                        << mutableClip->startTime << " length=" << mutableClip->length << " offset="
+                        << mutableClip->offset << " loopStart=" << mutableClip->loopStart
+                        << " loopLength=" << mutableClip->loopLength
+                        << " loopEnabled=" << (int)mutableClip->loopEnabled
+                        << " speedRatio=" << mutableClip->speedRatio
+                        << " getTeOffset()=" << mutableClip->getTeOffset(mutableClip->loopEnabled));
+                    ClipOperations::resizeContainerFromLeft(*mutableClip, finalLength);
+                    // Sync loopStart so getTeOffset() gives TE the correct value
+                    if (!mutableClip->loopEnabled && mutableClip->type == magda::ClipType::Audio) {
+                        mutableClip->loopStart = mutableClip->offset;
+                    }
+                    DBG("[RESIZE-LEFT-DRAG] AFTER: startTime="
+                        << mutableClip->startTime << " length=" << mutableClip->length << " offset="
+                        << mutableClip->offset << " loopStart=" << mutableClip->loopStart
+                        << " loopLength=" << mutableClip->loopLength
+                        << " getTeOffset()=" << mutableClip->getTeOffset(mutableClip->loopEnabled)
+                        << " finalLength=" << finalLength << " finalStartTime=" << finalStartTime);
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
             }
@@ -894,6 +1152,40 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                     ClipOperations::stretchAbsolute(*mutableClip, newSpeedRatio, finalLength);
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
+            }
+            break;
+        }
+
+        case DragMode::FadeIn: {
+            auto wfArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+            double pps = (dragStartLength_ > 0.0)
+                             ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
+                             : 0.0;
+            if (pps > 0.0) {
+                double fadeInPx = static_cast<double>(e.x - wfArea.getX());
+                double newFadeIn = juce::jmax(0.0, fadeInPx / pps);
+                const auto* ci = getClipInfo();
+                double maxFadeIn = ci ? ci->length - ci->fadeOut : dragStartLength_;
+                newFadeIn = juce::jmin(newFadeIn, juce::jmax(0.0, maxFadeIn));
+                ClipManager::getInstance().setFadeIn(clipId_, newFadeIn);
+                repaint();
+            }
+            break;
+        }
+
+        case DragMode::FadeOut: {
+            auto wfArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+            double pps = (dragStartLength_ > 0.0)
+                             ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
+                             : 0.0;
+            if (pps > 0.0) {
+                double fadeOutPx = static_cast<double>(wfArea.getRight() - e.x);
+                double newFadeOut = juce::jmax(0.0, fadeOutPx / pps);
+                const auto* ci = getClipInfo();
+                double maxFadeOut = ci ? ci->length - ci->fadeIn : dragStartLength_;
+                newFadeOut = juce::jmin(newFadeOut, juce::jmax(0.0, maxFadeOut));
+                ClipManager::getInstance().setFadeOut(clipId_, newFadeOut);
+                repaint();
             }
             break;
         }
@@ -1055,9 +1347,19 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 finalStartTime = juce::jmax(0.0, finalStartTime);
                 finalLength = juce::jmax(0.1, finalLength);
 
+                // Restore only the fields modified by the throttled drag updates.
+                // ResizeClipCommand needs the original state to compute correctly.
+                {
+                    auto& cm = ClipManager::getInstance();
+                    if (auto* c = cm.getClip(clipId_)) {
+                        c->startTime = dragStartTime_;
+                        c->length = dragStartLength_;
+                        c->offset = dragStartClipSnapshot_.offset;
+                        c->loopStart = dragStartClipSnapshot_.loopStart;
+                    }
+                }
+
                 if (onClipResized) {
-                    // resizeClip(fromStart=true) adjusts clip->startTime and
-                    // compensates audio source positions internally
                     onClipResized(clipId_, finalLength, true);
                 }
                 break;
@@ -1074,8 +1376,62 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
 
                 finalLength = juce::jmax(0.1, finalLength);
 
+                // Restore clip length to pre-drag state before committing.
+                // Throttled drag updates modified length directly — the
+                // command needs the original state for correct undo capture.
+                {
+                    auto& cm = ClipManager::getInstance();
+                    if (auto* c = cm.getClip(clipId_)) {
+                        c->length = dragStartLength_;
+                    }
+                }
+
                 if (onClipResized) {
                     onClipResized(clipId_, finalLength, false);
+                }
+                break;
+            }
+
+            case DragMode::FadeIn: {
+                {
+                    auto wfArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+                    double pps = (dragStartLength_ > 0.0)
+                                     ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
+                                     : 0.0;
+                    if (pps > 0.0) {
+                        double fadeInPx = static_cast<double>(e.x - wfArea.getX());
+                        double newFadeIn = juce::jmax(0.0, fadeInPx / pps);
+                        const auto* ci = getClipInfo();
+                        double maxFadeIn = ci ? ci->length - ci->fadeOut : dragStartLength_;
+                        newFadeIn = juce::jmin(newFadeIn, juce::jmax(0.0, maxFadeIn));
+                        ClipManager::getInstance().setFadeIn(clipId_, newFadeIn);
+                    }
+                }
+                {
+                    auto cmd = std::make_unique<SetFadeCommand>(clipId_, dragStartClipSnapshot_);
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+                }
+                break;
+            }
+
+            case DragMode::FadeOut: {
+                {
+                    auto wfArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+                    double pps = (dragStartLength_ > 0.0)
+                                     ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
+                                     : 0.0;
+                    if (pps > 0.0) {
+                        double fadeOutPx = static_cast<double>(wfArea.getRight() - e.x);
+                        double newFadeOut = juce::jmax(0.0, fadeOutPx / pps);
+                        const auto* ci = getClipInfo();
+                        double maxFadeOut = ci ? ci->length - ci->fadeIn : dragStartLength_;
+                        newFadeOut = juce::jmin(newFadeOut, juce::jmax(0.0, maxFadeOut));
+                        ClipManager::getInstance().setFadeOut(clipId_, newFadeOut);
+                    }
+                }
+                {
+                    auto cmd = std::make_unique<SetFadeCommand>(clipId_, dragStartClipSnapshot_);
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
                 }
                 break;
             }
@@ -1169,14 +1525,26 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
 void ClipComponent::mouseMove(const juce::MouseEvent& e) {
     bool wasHoverLeft = hoverLeftEdge_;
     bool wasHoverRight = hoverRightEdge_;
+    bool wasHoverFadeIn = hoverFadeIn_;
+    bool wasHoverFadeOut = hoverFadeOut_;
 
     hoverLeftEdge_ = isOnLeftEdge(e.x);
     hoverRightEdge_ = isOnRightEdge(e.x);
 
+    // Check fade handle hover (selected audio clips only)
+    if (isSelected_) {
+        hoverFadeIn_ = isOnFadeInHandle(e.x, e.y);
+        hoverFadeOut_ = isOnFadeOutHandle(e.x, e.y);
+    } else {
+        hoverFadeIn_ = false;
+        hoverFadeOut_ = false;
+    }
+
     // Always update cursor to check for Alt key (blade mode) and Shift key (stretch mode)
     updateCursor(e.mods.isAltDown(), e.mods.isShiftDown());
 
-    if (hoverLeftEdge_ != wasHoverLeft || hoverRightEdge_ != wasHoverRight) {
+    if (hoverLeftEdge_ != wasHoverLeft || hoverRightEdge_ != wasHoverRight ||
+        hoverFadeIn_ != wasHoverFadeIn || hoverFadeOut_ != wasHoverFadeOut) {
         repaint();
     }
 }
@@ -1184,6 +1552,8 @@ void ClipComponent::mouseMove(const juce::MouseEvent& e) {
 void ClipComponent::mouseExit(const juce::MouseEvent& /*e*/) {
     hoverLeftEdge_ = false;
     hoverRightEdge_ = false;
+    hoverFadeIn_ = false;
+    hoverFadeOut_ = false;
     updateCursor(false, false);
     repaint();
 }
@@ -1274,6 +1644,51 @@ bool ClipComponent::isOnRightEdge(int x) const {
     return x > getWidth() - RESIZE_HANDLE_WIDTH;
 }
 
+bool ClipComponent::isOnFadeInHandle(int x, int y) const {
+    const auto* clip = getClipInfo();
+    if (!clip || clip->type != ClipType::Audio)
+        return false;
+
+    auto waveformArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+    if (waveformArea.getWidth() <= 0)
+        return false;
+
+    // Check y is in handle zone (top of waveform area)
+    if (y < waveformArea.getY() || y > waveformArea.getY() + FADE_HANDLE_HIT_WIDTH)
+        return false;
+
+    double pps =
+        (clip->length > 0.0) ? static_cast<double>(waveformArea.getWidth()) / clip->length : 0.0;
+    if (pps <= 0.0)
+        return false;
+
+    float handleX =
+        static_cast<float>(waveformArea.getX()) + static_cast<float>(clip->fadeIn * pps);
+    return std::abs(static_cast<float>(x) - handleX) <= FADE_HANDLE_HIT_WIDTH * 0.5f;
+}
+
+bool ClipComponent::isOnFadeOutHandle(int x, int y) const {
+    const auto* clip = getClipInfo();
+    if (!clip || clip->type != ClipType::Audio)
+        return false;
+
+    auto waveformArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+    if (waveformArea.getWidth() <= 0)
+        return false;
+
+    if (y < waveformArea.getY() || y > waveformArea.getY() + FADE_HANDLE_HIT_WIDTH)
+        return false;
+
+    double pps =
+        (clip->length > 0.0) ? static_cast<double>(waveformArea.getWidth()) / clip->length : 0.0;
+    if (pps <= 0.0)
+        return false;
+
+    float handleX =
+        static_cast<float>(waveformArea.getRight()) - static_cast<float>(clip->fadeOut * pps);
+    return std::abs(static_cast<float>(x) - handleX) <= FADE_HANDLE_HIT_WIDTH * 0.5f;
+}
+
 void ClipComponent::updateCursor(bool isAltDown, bool isShiftDown) {
     // Alt key = blade/scissors mode
     if (isAltDown) {
@@ -1282,6 +1697,11 @@ void ClipComponent::updateCursor(bool isAltDown, bool isShiftDown) {
     }
 
     bool isClipSelected = SelectionManager::getInstance().isClipSelected(clipId_);
+
+    if (isClipSelected && (hoverFadeIn_ || hoverFadeOut_)) {
+        setMouseCursor(juce::MouseCursor::PointingHandCursor);
+        return;
+    }
 
     if (isClipSelected && (hoverLeftEdge_ || hoverRightEdge_)) {
         if (isShiftDown) {
@@ -1364,6 +1784,37 @@ void ClipComponent::showContextMenu() {
     // Loop Settings (only for single clip)
     if (!isMultiSelection) {
         menu.addItem(7, "Loop Settings...");
+    }
+
+    // Render Clip(s) - available for audio clips (single or multi-selection)
+    {
+        bool allAudio = true;
+        if (isMultiSelection) {
+            for (auto cid : selectionManager.getSelectedClips()) {
+                auto* c = clipManager.getClip(cid);
+                if (!c || c->type != ClipType::Audio) {
+                    allAudio = false;
+                    break;
+                }
+            }
+        } else {
+            const auto* clipInfo = getClipInfo();
+            allAudio = clipInfo && clipInfo->type == ClipType::Audio;
+        }
+        if (allAudio) {
+            menu.addSeparator();
+            menu.addItem(9, isMultiSelection ? "Render Selected Clip(s)" : "Render Selected Clip");
+        }
+    }
+
+    // Render Time Selection - always available
+    {
+        bool hasTimeSelection = false;
+        if (parentPanel_ && parentPanel_->getTimelineController()) {
+            const auto& state = parentPanel_->getTimelineController()->getState();
+            hasTimeSelection = state.selection.isActive() && !state.selection.visuallyHidden;
+        }
+        menu.addItem(10, "Render Time Selection", hasTimeSelection);
     }
 
     // Show menu
@@ -1519,6 +1970,20 @@ void ClipComponent::showContextMenu() {
                         UndoManager::getInstance().endCompoundOperation();
 
                     selectionManager.selectClips({leftId});
+                }
+                break;
+            }
+
+            case 9: {  // Render Clip
+                if (onClipRenderRequested) {
+                    onClipRenderRequested(clipId_);
+                }
+                break;
+            }
+
+            case 10: {  // Render Time Selection
+                if (onRenderTimeSelectionRequested) {
+                    onRenderTimeSelectionRequested();
                 }
                 break;
             }

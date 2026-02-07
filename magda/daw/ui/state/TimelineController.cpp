@@ -970,31 +970,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimelin
 
 void TimelineController::notifyListeners(ChangeFlags changes) {
     for (auto* listener : listeners) {
-        // Call specific handlers first
-        if (hasFlag(changes, ChangeFlags::Zoom) || hasFlag(changes, ChangeFlags::Scroll)) {
-            listener->zoomStateChanged(state);
-        }
-        if (hasFlag(changes, ChangeFlags::Playhead)) {
-            listener->playheadStateChanged(state);
-        }
-        if (hasFlag(changes, ChangeFlags::Selection)) {
-            listener->selectionStateChanged(state);
-        }
-        if (hasFlag(changes, ChangeFlags::Loop)) {
-            listener->loopStateChanged(state);
-        }
-        if (hasFlag(changes, ChangeFlags::Tempo)) {
-            listener->tempoStateChanged(state);
-        }
-        if (hasFlag(changes, ChangeFlags::Punch)) {
-            listener->punchStateChanged(state);
-        }
-        if (hasFlag(changes, ChangeFlags::Display)) {
-            listener->displayConfigChanged(state);
-        }
-
-        // Always call the general handler
-        listener->timelineStateChanged(state);
+        listener->timelineStateChanged(state, changes);
     }
 }
 

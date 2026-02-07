@@ -153,6 +153,14 @@ class Config {
         preferredOutputChannels = channels;
     }
 
+    // Render Configuration
+    std::string getRenderFolder() const {
+        return renderFolder;
+    }
+    void setRenderFolder(const std::string& folder) {
+        renderFolder = folder;
+    }
+
     // Save/Load Configuration (for future use)
     void saveToFile(const std::string& filename);
     void loadFromFile(const std::string& filename);
@@ -188,6 +196,9 @@ class Config {
 
     // Layout settings
     bool scrollbarOnLeft = false;  // Scrollbar on right by default
+
+    // Render settings
+    std::string renderFolder = "";  // Custom render output folder (empty = renders/ beside source)
 
     // Audio device settings
     std::string preferredAudioDevice = "";   // Preferred audio interface (empty = system default)

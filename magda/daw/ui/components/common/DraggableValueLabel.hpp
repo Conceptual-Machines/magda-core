@@ -103,6 +103,12 @@ class DraggableValueLabel : public juce::Component {
         repaint();
     }
 
+    // Whether to draw the background fill
+    void setDrawBackground(bool draw) {
+        drawBackground_ = draw;
+        repaint();
+    }
+
     // Whether to draw the border
     void setDrawBorder(bool draw) {
         drawBorder_ = draw;
@@ -145,6 +151,7 @@ class DraggableValueLabel : public juce::Component {
     bool snapToInteger_ = false;
     std::optional<juce::Colour> customTextColour_;
     bool showFillIndicator_ = true;
+    bool drawBackground_ = true;
     bool drawBorder_ = true;
     float fontSize_ = 10.0f;
     juce::String textOverride_;

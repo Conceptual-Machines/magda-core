@@ -5,6 +5,7 @@
 #include "PanelContent.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipManager.hpp"
+#include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
 #include "ui/components/waveform/WaveformGridComponent.hpp"
 #include "ui/state/TimelineController.hpp"
@@ -59,8 +60,7 @@ class WaveformEditorContent : public PanelContent,
     void clipSelectionChanged(magda::ClipId clipId) override;
 
     // TimelineStateListener
-    void timelineStateChanged(const TimelineState& state) override;
-    void playheadStateChanged(const TimelineState& state) override;
+    void timelineStateChanged(const TimelineState& state, ChangeFlags changes) override;
 
     // Set the clip to edit
     void setClip(magda::ClipId clipId);
@@ -84,8 +84,8 @@ class WaveformEditorContent : public PanelContent,
     double horizontalZoom_ = 100.0;  // pixels per second
     double verticalZoom_ = 1.0;      // amplitude multiplier
     double cachedBpm_ = 120.0;       // last known BPM for zoom scaling on tempo change
-    static constexpr double MIN_ZOOM = 20.0;
-    static constexpr double MAX_ZOOM = 500.0;
+    static constexpr double MIN_ZOOM = 5.0;
+    static constexpr double MAX_ZOOM = 100000.0;  // ~2px per sample at 44.1kHz
     static constexpr double MIN_VERTICAL_ZOOM = 0.25;
     static constexpr double MAX_VERTICAL_ZOOM = 4.0;
 
@@ -100,9 +100,15 @@ class WaveformEditorContent : public PanelContent,
     std::unique_ptr<WaveformGridComponent> gridComponent_;
     std::unique_ptr<magda::TimeRuler> timeRuler_;
     std::unique_ptr<juce::TextButton> timeModeButton_;
-    std::unique_ptr<juce::TextButton> warpModeButton_;
-    std::unique_ptr<juce::Label> bpmLabel_;
-    std::unique_ptr<juce::ComboBox> gridResolutionCombo_;
+
+    std::unique_ptr<DraggableValueLabel> gridNumeratorLabel_;
+    std::unique_ptr<DraggableValueLabel> gridDenominatorLabel_;
+    std::unique_ptr<juce::Label> gridSlashLabel_;
+    std::unique_ptr<juce::TextButton> snapButton_;
+    std::unique_ptr<juce::TextButton> gridButton_;
+    bool gridVisible_ = true;
+    int gridNumerator_ = 1;
+    int gridDenominator_ = 4;
 
     // Playhead overlay
     class PlayheadOverlay;
@@ -143,8 +149,12 @@ class WaveformEditorContent : public PanelContent,
 
     // Header drag-zoom state
     bool headerDragActive_ = false;
-    int headerDragStartX_ = 0;
+    int headerDragStartY_ = 0;
+    int headerDragAnchorX_ = 0;
     double headerDragStartZoom_ = 0.0;
+
+    // Waveform zoom drag state (from grid component callback)
+    double waveformZoomStartZoom_ = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaveformEditorContent)
 };

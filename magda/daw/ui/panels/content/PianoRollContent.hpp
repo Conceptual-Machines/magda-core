@@ -60,8 +60,8 @@ class PianoRollContent : public PanelContent,
     void multiClipSelectionChanged(const std::unordered_set<magda::ClipId>& clipIds) override;
 
     // TimelineStateListener
-    void timelineStateChanged(const magda::TimelineState& state) override;
-    void playheadStateChanged(const magda::TimelineState& state) override;
+    void timelineStateChanged(const magda::TimelineState& state,
+                              magda::ChangeFlags changes) override;
 
     // Set the clip to edit
     void setClip(magda::ClipId clipId);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "../../state/TimelineController.hpp"
 #include "../common/BarsBeatsTicksLabel.hpp"
 #include "../common/DraggableValueLabel.hpp"
@@ -73,8 +75,8 @@ class InspectorContent : public PanelContent,
     void paramSelectionChanged(const magda::ParamSelection& selection) override;
 
     // TimelineStateListener
-    void timelineStateChanged(const magda::TimelineState& state) override;
-    void tempoStateChanged(const magda::TimelineState& state) override;
+    void timelineStateChanged(const magda::TimelineState& state,
+                              magda::ChangeFlags changes) override;
 
   private:
     juce::Label titleLabel_;
@@ -121,6 +123,7 @@ class InspectorContent : public PanelContent,
     // Clip properties section
     juce::Label clipNameLabel_;
     juce::Label clipNameValue_;
+    juce::Label clipFilePathLabel_;                   // Full file path (read-only, below clip name)
     std::unique_ptr<magda::SvgButton> clipTypeIcon_;  // Audio (sinewave) or MIDI icon
     juce::Label playbackColumnLabel_;
     juce::Label loopColumnLabel_;
@@ -129,12 +132,14 @@ class InspectorContent : public PanelContent,
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipStartValue_;
     juce::Label clipEndLabel_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipEndValue_;
+    juce::Label clipLengthLabel_;
+    std::unique_ptr<magda::BarsBeatsTicksLabel> clipLengthValue_;
     juce::Label clipOffsetRowLabel_;
     std::unique_ptr<magda::SvgButton> clipContentOffsetIcon_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipContentOffsetValue_;
     std::unique_ptr<magda::SvgButton> clipLoopToggle_;
     juce::TextButton clipWarpToggle_;
-    juce::TextButton clipAutoTempoToggle_;  // Musical mode toggle
+    juce::TextButton clipAutoTempoToggle_;  // Beat mode toggle
     std::unique_ptr<magda::DraggableValueLabel> clipStretchValue_;
     juce::ComboBox stretchModeCombo_;  // Time stretch algorithm selector
     juce::Label clipLoopStartLabel_;
@@ -147,9 +152,14 @@ class InspectorContent : public PanelContent,
     std::unique_ptr<magda::DraggableValueLabel>
         clipBeatsLengthValue_;  // Length in beats for auto-tempo
 
-    // Clip properties viewport (scrollable container for all clip controls)
+    // Clip properties viewport (scrollable container with separator lines)
     juce::Viewport clipPropsViewport_;
-    juce::Component clipPropsContainer_;
+    class ClipPropsContainer : public juce::Component {
+      public:
+        void paint(juce::Graphics& g) override;
+        std::vector<int> separatorYPositions;
+    };
+    ClipPropsContainer clipPropsContainer_;
 
     // Pitch section
     juce::Label pitchSectionLabel_;
@@ -171,14 +181,18 @@ class InspectorContent : public PanelContent,
     std::unique_ptr<magda::DraggableValueLabel> clipGainValue_;
     std::unique_ptr<magda::DraggableValueLabel> clipPanValue_;
 
-    // Fades section
+    // Fades section (collapsible)
+    bool fadesCollapsed_ = false;
+    juce::TextButton fadesCollapseToggle_;
     juce::Label fadesSectionLabel_;
     std::unique_ptr<magda::DraggableValueLabel> fadeInValue_;
     std::unique_ptr<magda::DraggableValueLabel> fadeOutValue_;
-    juce::ComboBox fadeInTypeCombo_;
-    juce::ComboBox fadeOutTypeCombo_;
-    juce::ComboBox fadeInBehaviourCombo_;
-    juce::ComboBox fadeOutBehaviourCombo_;
+    // Fade type icon buttons (linear=1, convex=2, concave=3, s-curve=4)
+    std::unique_ptr<magda::SvgButton> fadeInTypeButtons_[4];
+    std::unique_ptr<magda::SvgButton> fadeOutTypeButtons_[4];
+    // Fade behaviour icon buttons (0=gainFade, 1=speedRamp)
+    std::unique_ptr<magda::SvgButton> fadeInBehaviourButtons_[2];
+    std::unique_ptr<magda::SvgButton> fadeOutBehaviourButtons_[2];
     juce::TextButton autoCrossfadeToggle_;
 
     // Channels section

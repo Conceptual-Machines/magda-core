@@ -80,6 +80,8 @@ struct ClipDisplayInfo {
         if (autoTempo && sourceLength > 0.0) {
             return sourceDelta * sourceExtentSeconds / sourceLength;
         }
+        if (speedRatio <= 0.0)
+            return 0.0;
         return sourceDelta / speedRatio;
     }
 
@@ -87,6 +89,8 @@ struct ClipDisplayInfo {
         if (autoTempo && sourceLength > 0.0 && sourceExtentSeconds > 0.0) {
             return (fileDuration - offset) * sourceExtentSeconds / sourceLength;
         }
+        if (speedRatio <= 0.0)
+            return 0.0;
         return (fileDuration - offset) / speedRatio;
     }
 

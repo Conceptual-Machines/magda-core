@@ -1,10 +1,15 @@
 #pragma once
 
+#include <juce_core/juce_core.h>
+
 #include "ClipInfo.hpp"
 #include "ClipManager.hpp"
 #include "CommandPattern.hpp"
 
 namespace magda {
+
+// Forward declarations
+class TracktionEngineWrapper;
 
 /**
  * @brief Command for splitting a clip at a given time
@@ -322,6 +327,114 @@ class StretchClipCommand : public UndoableCommand {
     ClipId clipId_;
     ClipInfo beforeState_;
     ClipInfo afterState_;
+};
+
+/**
+ * @brief Command for adjusting fade in/out durations via drag handles
+ *
+ * Since fade operations modify the clip directly during drag (for live preview),
+ * this command takes the before-state saved at drag start. The clip is already in
+ * its final state when execute() is called, so performAction is a no-op.
+ * Undo restores the full ClipInfo snapshot from before the fade drag began.
+ */
+class SetFadeCommand : public UndoableCommand {
+  public:
+    SetFadeCommand(ClipId clipId, const ClipInfo& beforeState);
+
+    juce::String getDescription() const override {
+        return "Adjust Fade";
+    }
+
+    void execute() override;
+    void undo() override;
+
+  private:
+    ClipId clipId_;
+    ClipInfo beforeState_;
+    ClipInfo afterState_;
+};
+
+/**
+ * @brief Command for rendering a clip to a new audio file with all processing baked in
+ *
+ * Renders speed, pitch, warp, fades, gain, offset/trim into a new WAV file.
+ * Replaces the original clip with a clean clip referencing the rendered file.
+ * Does NOT include track or master plugins.
+ */
+class RenderClipCommand : public UndoableCommand {
+  public:
+    RenderClipCommand(ClipId clipId, TracktionEngineWrapper* engine);
+
+    juce::String getDescription() const override {
+        return "Render Clip";
+    }
+
+    void execute() override;
+    void undo() override;
+
+    bool wasSuccessful() const {
+        return success_;
+    }
+
+    ClipId getNewClipId() const {
+        return newClipId_;
+    }
+
+  private:
+    ClipId clipId_;
+    TracktionEngineWrapper* engine_;
+    ClipInfo originalClipSnapshot_;
+    ClipId newClipId_ = INVALID_CLIP_ID;
+    juce::File renderedFile_;
+    bool success_ = false;
+};
+
+/**
+ * @brief Per-track state for RenderTimeSelectionCommand undo
+ */
+struct RenderTrackState {
+    TrackId trackId = INVALID_TRACK_ID;
+    std::vector<ClipInfo> originalClips;
+    ClipId newClipId = INVALID_CLIP_ID;
+    juce::File renderedFile;
+};
+
+/**
+ * @brief Command for rendering all audio within a time selection range per-track
+ *
+ * Renders all overlapping clips on each track within the selection to a single
+ * clean clip per track. Replaces the originals (standard "consolidate" behavior).
+ * Does NOT include track or master plugins.
+ */
+class RenderTimeSelectionCommand : public UndoableCommand {
+  public:
+    RenderTimeSelectionCommand(double startTime, double endTime,
+                               const std::vector<TrackId>& trackIds,
+                               TracktionEngineWrapper* engine);
+
+    juce::String getDescription() const override {
+        return "Render Time Selection";
+    }
+
+    void execute() override;
+    void undo() override;
+
+    bool wasSuccessful() const {
+        return success_;
+    }
+
+    const std::vector<ClipId>& getNewClipIds() const {
+        return newClipIds_;
+    }
+
+  private:
+    double startTime_;
+    double endTime_;
+    std::vector<TrackId> trackIds_;
+    TracktionEngineWrapper* engine_;
+    std::vector<RenderTrackState> trackStates_;
+    std::vector<ClipId> newClipIds_;
+    bool success_ = false;
 };
 
 }  // namespace magda

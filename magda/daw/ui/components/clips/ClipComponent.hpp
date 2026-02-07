@@ -77,8 +77,10 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     std::function<void(ClipId, double, bool)> onClipResized;  // clipId, newLength, fromStart
     std::function<void(ClipId)> onClipSelected;
     std::function<void(ClipId)> onClipDoubleClicked;
-    std::function<void(ClipId, double)> onClipSplit;  // clipId, splitTime (Alt+click)
-    std::function<double(double)> snapTimeToGrid;     // Optional grid snapping
+    std::function<void(ClipId, double)> onClipSplit;       // clipId, splitTime (Alt+click)
+    std::function<void(ClipId)> onClipRenderRequested;     // clipId (render clip to new file)
+    std::function<void()> onRenderTimeSelectionRequested;  // render time selection
+    std::function<double(double)> snapTimeToGrid;          // Optional grid snapping
 
     // Real-time preview callbacks (called during drag, not just on mouseUp)
     std::function<void(ClipId, double, double)>
@@ -91,7 +93,16 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     bool isMarqueeHighlighted_ = false;
 
     // Interaction state
-    enum class DragMode { None, Move, ResizeLeft, ResizeRight, StretchLeft, StretchRight };
+    enum class DragMode {
+        None,
+        Move,
+        ResizeLeft,
+        ResizeRight,
+        StretchLeft,
+        StretchRight,
+        FadeIn,
+        FadeOut
+    };
     DragMode dragMode_ = DragMode::None;
 
     // Drag state
@@ -127,21 +138,34 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     bool hoverLeftEdge_ = false;
     bool hoverRightEdge_ = false;
 
+    // Fade handle state
+    bool hoverFadeIn_ = false;
+    bool hoverFadeOut_ = false;
+    double dragStartFadeIn_ = 0.0;
+    double dragStartFadeOut_ = 0.0;
+
     // Visual constants
     static constexpr int RESIZE_HANDLE_WIDTH = 6;
     static constexpr int CORNER_RADIUS = 4;
     static constexpr int HEADER_HEIGHT = 16;
     static constexpr int MIN_WIDTH_FOR_NAME = 40;
+    static constexpr int FADE_HANDLE_SIZE = 8;
+    static constexpr int FADE_HANDLE_HIT_WIDTH = 14;
 
     // Painting helpers
     void paintAudioClip(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
     void paintMidiClip(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
     void paintClipHeader(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
     void paintResizeHandles(juce::Graphics& g, juce::Rectangle<int> bounds);
+    void paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
+                           juce::Rectangle<int> waveformArea, double pixelsPerSecond);
+    void paintFadeHandles(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
 
     // Interaction helpers
     bool isOnLeftEdge(int x) const;
     bool isOnRightEdge(int x) const;
+    bool isOnFadeInHandle(int x, int y) const;
+    bool isOnFadeOutHandle(int x, int y) const;
     void updateCursor(bool isAltDown = false, bool isShiftDown = false);
 
     // Helper to get current clip info
