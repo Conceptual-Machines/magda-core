@@ -111,6 +111,7 @@ void TrackContentPanel::tracksChanged() {
     }
 
     resized();
+    updateClipComponentPositions();
     repaint();
 }
 
@@ -232,29 +233,6 @@ void TrackContentPanel::resized() {
     int contentHeight = getTotalTracksHeight();
 
     setSize(juce::jmax(contentWidth, getWidth()), juce::jmax(contentHeight, getHeight()));
-}
-
-void TrackContentPanel::addTrack() {
-    auto lane = std::make_unique<TrackLane>();
-    trackLanes.push_back(std::move(lane));
-
-    resized();
-    repaint();
-}
-
-void TrackContentPanel::removeTrack(int index) {
-    if (index >= 0 && index < trackLanes.size()) {
-        trackLanes.erase(trackLanes.begin() + index);
-
-        if (selectedTrackIndex == index) {
-            selectedTrackIndex = -1;
-        } else if (selectedTrackIndex > index) {
-            selectedTrackIndex--;
-        }
-
-        resized();
-        repaint();
-    }
 }
 
 void TrackContentPanel::selectTrack(int index) {

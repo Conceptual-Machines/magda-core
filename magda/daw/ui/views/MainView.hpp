@@ -41,8 +41,6 @@ class MainView : public juce::Component,
     void scrollToTrack(int trackIndex);
 
     // Track management
-    void addTrack();
-    void removeTrack(int trackIndex);
     void selectTrack(int trackIndex);
 
     // Timeline controls

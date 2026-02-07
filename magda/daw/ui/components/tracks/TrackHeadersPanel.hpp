@@ -51,8 +51,6 @@ class TrackHeadersPanel : public juce::Component,
     void resized() override;
 
     // Track management
-    void addTrack();
-    void removeTrack(int index);
     void selectTrack(int index);
     int getNumTracks() const;
     void setTrackHeight(int trackIndex, int height);

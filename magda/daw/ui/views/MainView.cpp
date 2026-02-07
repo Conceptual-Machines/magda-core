@@ -673,18 +673,6 @@ void MainView::scrollToTrack(int trackIndex) {
     }
 }
 
-void MainView::addTrack() {
-    trackHeadersPanel->addTrack();
-    trackContentPanel->addTrack();
-    updateContentSizes();
-}
-
-void MainView::removeTrack(int trackIndex) {
-    trackHeadersPanel->removeTrack(trackIndex);
-    trackContentPanel->removeTrack(trackIndex);
-    updateContentSizes();
-}
-
 void MainView::selectTrack(int trackIndex) {
     trackHeadersPanel->selectTrack(trackIndex);
     trackContentPanel->selectTrack(trackIndex);
