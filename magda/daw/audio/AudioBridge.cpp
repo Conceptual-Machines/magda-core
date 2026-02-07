@@ -2223,19 +2223,19 @@ te::Plugin::Ptr AudioBridge::loadDeviceAsPlugin(TrackId trackId, const DeviceInf
 // =============================================================================
 
 void AudioBridge::setTrackVolume(TrackId trackId, float volume) {
-    mixerController_.setTrackVolume(edit_, trackMapping_, trackId, volume);
+    mixerController_.setTrackVolume(trackMapping_, trackId, volume);
 }
 
 float AudioBridge::getTrackVolume(TrackId trackId) const {
-    return mixerController_.getTrackVolume(edit_, trackMapping_, trackId);
+    return mixerController_.getTrackVolume(trackMapping_, trackId);
 }
 
 void AudioBridge::setTrackPan(TrackId trackId, float pan) {
-    mixerController_.setTrackPan(edit_, trackMapping_, trackId, pan);
+    mixerController_.setTrackPan(trackMapping_, trackId, pan);
 }
 
 float AudioBridge::getTrackPan(TrackId trackId) const {
-    return mixerController_.getTrackPan(edit_, trackMapping_, trackId);
+    return mixerController_.getTrackPan(trackMapping_, trackId);
 }
 
 void AudioBridge::setMasterVolume(float volume) {

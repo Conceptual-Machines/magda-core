@@ -11,8 +11,7 @@ te::AudioTrack* findAudioTrack(const std::map<TrackId, te::AudioTrack*>& trackMa
 }
 }  // namespace
 
-void MixerController::setTrackVolume(te::Edit& edit,
-                                     const std::map<TrackId, te::AudioTrack*>& trackMapping,
+void MixerController::setTrackVolume(const std::map<TrackId, te::AudioTrack*>& trackMapping,
                                      TrackId trackId, float volume) {
     auto* track = findAudioTrack(trackMapping, trackId);
     if (!track)
@@ -25,8 +24,7 @@ void MixerController::setTrackVolume(te::Edit& edit,
     }
 }
 
-float MixerController::getTrackVolume(te::Edit& edit,
-                                      const std::map<TrackId, te::AudioTrack*>& trackMapping,
+float MixerController::getTrackVolume(const std::map<TrackId, te::AudioTrack*>& trackMapping,
                                       TrackId trackId) const {
     auto* track = findAudioTrack(trackMapping, trackId);
     if (!track) {
@@ -39,8 +37,7 @@ float MixerController::getTrackVolume(te::Edit& edit,
     return 1.0f;
 }
 
-void MixerController::setTrackPan(te::Edit& edit,
-                                  const std::map<TrackId, te::AudioTrack*>& trackMapping,
+void MixerController::setTrackPan(const std::map<TrackId, te::AudioTrack*>& trackMapping,
                                   TrackId trackId, float pan) {
     auto* track = findAudioTrack(trackMapping, trackId);
     if (!track) {
@@ -54,8 +51,7 @@ void MixerController::setTrackPan(te::Edit& edit,
     }
 }
 
-float MixerController::getTrackPan(te::Edit& edit,
-                                   const std::map<TrackId, te::AudioTrack*>& trackMapping,
+float MixerController::getTrackPan(const std::map<TrackId, te::AudioTrack*>& trackMapping,
                                    TrackId trackId) const {
     auto* track = findAudioTrack(trackMapping, trackId);
     if (!track) {

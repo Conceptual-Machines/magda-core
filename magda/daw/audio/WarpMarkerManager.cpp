@@ -41,26 +41,8 @@ bool WarpMarkerManager::getTransientTimes(te::Edit& edit,
         return true;
     }
 
-    // Find TE WaveAudioClip via clipIdToEngineId
-    auto it = clipIdToEngineId.find(clipId);
-    if (it == clipIdToEngineId.end()) {
-        return false;
-    }
-
-    std::string engineId = it->second;
-    te::WaveAudioClip* audioClipPtr = nullptr;
-
-    for (auto* track : te::getAudioTracks(edit)) {
-        for (auto* teClip : track->getClips()) {
-            if (teClip->itemID.toString().toStdString() == engineId) {
-                audioClipPtr = dynamic_cast<te::WaveAudioClip*>(teClip);
-                break;
-            }
-        }
-        if (audioClipPtr)
-            break;
-    }
-
+    // Find TE WaveAudioClip via shared helper
+    te::WaveAudioClip* audioClipPtr = findWaveAudioClip(edit, clipIdToEngineId, clipId);
     if (!audioClipPtr) {
         return false;
     }

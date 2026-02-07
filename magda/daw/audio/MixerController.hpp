@@ -31,42 +31,38 @@ class MixerController {
 
     /**
      * @brief Set track volume (linear gain)
-     * @param edit Tracktion Engine edit
      * @param trackMapping Map from TrackId to TE AudioTrack pointer
      * @param trackId The track ID
      * @param volume Linear gain (0.0 = silence, 1.0 = unity, 2.0 = +6dB)
      */
-    void setTrackVolume(te::Edit& edit, const std::map<TrackId, te::AudioTrack*>& trackMapping,
-                        TrackId trackId, float volume);
+    void setTrackVolume(const std::map<TrackId, te::AudioTrack*>& trackMapping, TrackId trackId,
+                        float volume);
 
     /**
      * @brief Get track volume (linear gain)
-     * @param edit Tracktion Engine edit
      * @param trackMapping Map from TrackId to TE AudioTrack pointer
      * @param trackId The track ID
      * @return Linear gain (1.0 = unity)
      */
-    float getTrackVolume(te::Edit& edit, const std::map<TrackId, te::AudioTrack*>& trackMapping,
+    float getTrackVolume(const std::map<TrackId, te::AudioTrack*>& trackMapping,
                          TrackId trackId) const;
 
     /**
      * @brief Set track pan position
-     * @param edit Tracktion Engine edit
      * @param trackMapping Map from TrackId to TE AudioTrack pointer
      * @param trackId The track ID
      * @param pan Pan position (-1.0 = full left, 0.0 = center, 1.0 = full right)
      */
-    void setTrackPan(te::Edit& edit, const std::map<TrackId, te::AudioTrack*>& trackMapping,
-                     TrackId trackId, float pan);
+    void setTrackPan(const std::map<TrackId, te::AudioTrack*>& trackMapping, TrackId trackId,
+                     float pan);
 
     /**
      * @brief Get track pan position
-     * @param edit Tracktion Engine edit
      * @param trackMapping Map from TrackId to TE AudioTrack pointer
      * @param trackId The track ID
      * @return Pan position (-1.0 to 1.0, 0.0 = center)
      */
-    float getTrackPan(te::Edit& edit, const std::map<TrackId, te::AudioTrack*>& trackMapping,
+    float getTrackPan(const std::map<TrackId, te::AudioTrack*>& trackMapping,
                       TrackId trackId) const;
 
     /**
