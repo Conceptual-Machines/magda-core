@@ -2029,33 +2029,19 @@ void MainWindow::setupMenuCallbacks() {
         }
     };
 
-    callbacks.onDuplicateTrack = [this]() {
-        // Duplicate the selected track from MixerView
-        if (mainComponent && mainComponent->mixerView) {
-            int selectedIndex = mainComponent->mixerView->getSelectedChannel();
-            if (!mainComponent->mixerView->isSelectedMaster() && selectedIndex >= 0) {
-                const auto& tracks = TrackManager::getInstance().getTracks();
-                if (selectedIndex < static_cast<int>(tracks.size())) {
-                    auto cmd =
-                        std::make_unique<DuplicateTrackCommand>(tracks[selectedIndex].id, true);
-                    UndoManager::getInstance().executeCommand(std::move(cmd));
-                }
-            }
+    callbacks.onDuplicateTrack = []() {
+        TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
+        if (selectedTrack != INVALID_TRACK_ID) {
+            auto cmd = std::make_unique<DuplicateTrackCommand>(selectedTrack, true);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
         }
     };
 
-    callbacks.onDuplicateTrackNoContent = [this]() {
-        // Duplicate the selected track without content
-        if (mainComponent && mainComponent->mixerView) {
-            int selectedIndex = mainComponent->mixerView->getSelectedChannel();
-            if (!mainComponent->mixerView->isSelectedMaster() && selectedIndex >= 0) {
-                const auto& tracks = TrackManager::getInstance().getTracks();
-                if (selectedIndex < static_cast<int>(tracks.size())) {
-                    auto cmd =
-                        std::make_unique<DuplicateTrackCommand>(tracks[selectedIndex].id, false);
-                    UndoManager::getInstance().executeCommand(std::move(cmd));
-                }
-            }
+    callbacks.onDuplicateTrackNoContent = []() {
+        TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
+        if (selectedTrack != INVALID_TRACK_ID) {
+            auto cmd = std::make_unique<DuplicateTrackCommand>(selectedTrack, false);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
         }
     };
 

@@ -1,7 +1,5 @@
 #include "TrackCommands.hpp"
 
-#include <iostream>
-
 #include "ClipManager.hpp"
 
 namespace magda {
@@ -22,7 +20,7 @@ void CreateTrackCommand::execute() {
     }
 
     executed_ = true;
-    std::cout << "📝 UNDO: Created track " << createdTrackId_ << std::endl;
+    DBG("UNDO: Created track " << createdTrackId_);
 }
 
 void CreateTrackCommand::undo() {
@@ -38,7 +36,7 @@ void CreateTrackCommand::undo() {
     }
 
     TrackManager::getInstance().deleteTrack(createdTrackId_);
-    std::cout << "📝 UNDO: Undid create track " << createdTrackId_ << std::endl;
+    DBG("UNDO: Undid create track " << createdTrackId_);
 }
 
 juce::String CreateTrackCommand::getDescription() const {
@@ -92,7 +90,7 @@ void DeleteTrackCommand::execute() {
     trackManager.deleteTrack(trackId_);
     executed_ = true;
 
-    std::cout << "📝 UNDO: Deleted track " << trackId_ << std::endl;
+    DBG("UNDO: Deleted track " << trackId_);
 }
 
 void DeleteTrackCommand::undo() {
@@ -108,7 +106,7 @@ void DeleteTrackCommand::undo() {
         clipManager.restoreClip(clip);
     }
 
-    std::cout << "📝 UNDO: Restored track " << trackId_ << std::endl;
+    DBG("UNDO: Restored track " << trackId_);
 }
 
 // ============================================================================
@@ -135,8 +133,7 @@ void DuplicateTrackCommand::execute() {
     }
 
     executed_ = true;
-    std::cout << "📝 UNDO: Duplicated track " << sourceTrackId_ << " -> " << duplicatedTrackId_
-              << std::endl;
+    DBG("UNDO: Duplicated track " << sourceTrackId_ << " -> " << duplicatedTrackId_);
 }
 
 void DuplicateTrackCommand::undo() {
@@ -152,7 +149,7 @@ void DuplicateTrackCommand::undo() {
     }
 
     TrackManager::getInstance().deleteTrack(duplicatedTrackId_);
-    std::cout << "📝 UNDO: Undid duplicate track " << duplicatedTrackId_ << std::endl;
+    DBG("UNDO: Undid duplicate track " << duplicatedTrackId_);
 }
 
 }  // namespace magda

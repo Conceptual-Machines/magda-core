@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdexcept>
+
 #include "magda/daw/engine/TracktionEngineWrapper.hpp"
 
 namespace magda::test {
@@ -16,8 +18,10 @@ inline TracktionEngineWrapper& getSharedEngine() {
     static TracktionEngineWrapper engine;
     static bool initialized = false;
     if (!initialized) {
-        engine.initialize();
-        initialized = true;
+        initialized = engine.initialize();
+        if (!initialized) {
+            throw std::runtime_error("SharedTestEngine: engine.initialize() failed");
+        }
     }
     return engine;
 }
