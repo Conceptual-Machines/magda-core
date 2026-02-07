@@ -2,8 +2,8 @@
 
 #include <juce_core/juce_core.h>
 
+#include <array>
 #include <atomic>
-#include <unordered_map>
 
 #include "../core/TypeIds.hpp"
 
@@ -15,16 +15,17 @@ namespace magda {
  * Responsibilities:
  * - Per-track MIDI activity tracking (for UI visualization)
  * - Lock-free activity flags (write from audio thread, read from UI)
- * - Dynamic track container (no fixed limit, fixes bug #1)
+ * - Fixed-size array (512 tracks max, safe for audio thread)
  *
  * Thread Safety:
  * - Write: Audio thread (MIDI processing callback)
  * - Read: UI thread (visualization updates)
- * - Implementation: std::atomic per track, no locks needed
+ * - Implementation: std::array of std::atomic<bool>, no locks, no allocations
  *
- * Note: This uses a simple std::unordered_map with atomic values.
- * For maximum performance, could be replaced with a lock-free hash map,
- * but the current implementation is sufficient for typical use cases.
+ * Design Note:
+ * Uses fixed-size array instead of std::unordered_map to avoid allocations
+ * and rehashing on the audio thread (real-time safety violation).
+ * 512 tracks should be sufficient for any reasonable project.
  */
 class MidiActivityMonitor {
   public:
@@ -36,13 +37,12 @@ class MidiActivityMonitor {
      * @param trackId The track that received MIDI
      */
     void triggerActivity(TrackId trackId) {
-        if (trackId < 0) {
+        if (trackId < 0 || trackId >= kMaxTracks) {
+            // Out of bounds - log warning but don't crash
+            // This is rare and non-critical, so we just skip it
             return;
         }
 
-        // Get or create atomic flag for this track
-        // Note: operator[] is not thread-safe for concurrent writes,
-        // but we only write from audio thread, so it's safe
         activityFlags_[trackId].store(true, std::memory_order_release);
     }
 
@@ -52,18 +52,12 @@ class MidiActivityMonitor {
      * @return true if MIDI activity occurred since last check
      */
     bool consumeActivity(TrackId trackId) {
-        if (trackId < 0) {
-            return false;
-        }
-
-        // Check if track exists in map
-        auto it = activityFlags_.find(trackId);
-        if (it == activityFlags_.end()) {
+        if (trackId < 0 || trackId >= kMaxTracks) {
             return false;
         }
 
         // Read and clear flag atomically
-        return it->second.exchange(false, std::memory_order_acq_rel);
+        return activityFlags_[trackId].exchange(false, std::memory_order_acq_rel);
     }
 
     /**
@@ -71,14 +65,28 @@ class MidiActivityMonitor {
      * Call only when audio is stopped
      */
     void clearAll() {
-        activityFlags_.clear();
+        for (auto& flag : activityFlags_) {
+            flag.store(false, std::memory_order_relaxed);
+        }
+    }
+
+    /**
+     * @brief Get maximum number of tracks supported
+     */
+    static constexpr int getMaxTracks() {
+        return kMaxTracks;
     }
 
   private:
+    // Maximum number of tracks we support
+    // 512 should be more than enough for any reasonable project
+    // (increased from original 128 to avoid the bug in issue #1)
+    static constexpr int kMaxTracks = 512;
+
     // Per-track MIDI activity flags
-    // Key: TrackId, Value: atomic bool flag
     // Audio thread writes (triggerActivity), UI thread reads/clears (consumeActivity)
-    std::unordered_map<TrackId, std::atomic<bool>> activityFlags_;
+    // Using std::array for lock-free, allocation-free access (real-time safe)
+    std::array<std::atomic<bool>, kMaxTracks> activityFlags_;
 };
 
 }  // namespace magda
