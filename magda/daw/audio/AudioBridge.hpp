@@ -13,6 +13,7 @@
 #include "DeviceProcessor.hpp"
 #include "MeteringBuffer.hpp"
 #include "MidiActivityMonitor.hpp"
+#include "MixerController.hpp"
 #include "ParameterManager.hpp"
 #include "ParameterQueue.hpp"
 #include "PluginWindowBridge.hpp"
@@ -626,6 +627,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Phase 2 refactoring: Independent features (extracted from AudioBridge)
     PluginWindowBridge pluginWindowBridge_;
     WarpMarkerManager warpMarkerManager_;
+    MixerController mixerController_;
 
     // Master channel metering (lock-free atomics for thread safety)
     std::atomic<float> masterPeakL_{0.0f};

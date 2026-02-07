@@ -148,6 +148,7 @@ set(DAW_CORE_SOURCES
     # Phase 2 refactoring: Independent features
     audio/PluginWindowBridge.cpp
     audio/WarpMarkerManager.cpp
+    audio/MixerController.cpp
     # TODO: Custom synth library (SimpleSynthPlugin.cpp) - for future implementation
     # Project serialization
     project/ProjectSerializer.cpp
@@ -363,6 +364,7 @@ set(DAW_HEADERS
     # Phase 2 refactoring: Independent features
     audio/PluginWindowBridge.hpp
     audio/WarpMarkerManager.hpp
+    audio/MixerController.hpp
     # Views
     ui/views/MainView.hpp
     ui/views/SessionView.hpp

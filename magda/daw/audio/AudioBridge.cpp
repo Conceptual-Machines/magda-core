@@ -2223,79 +2223,35 @@ te::Plugin::Ptr AudioBridge::loadDeviceAsPlugin(TrackId trackId, const DeviceInf
 // =============================================================================
 
 void AudioBridge::setTrackVolume(TrackId trackId, float volume) {
-    auto* track = getAudioTrack(trackId);
-    if (!track)
-        return;
-
-    // Use the track's volume plugin (positioned at end of chain before LevelMeter)
-    if (auto* volPan = track->getVolumePlugin()) {
-        float db = volume > 0.0f ? juce::Decibels::gainToDecibels(volume) : -100.0f;
-        volPan->setVolumeDb(db);
-    }
+    mixerController_.setTrackVolume(edit_, trackMapping_, trackId, volume);
 }
 
 float AudioBridge::getTrackVolume(TrackId trackId) const {
-    auto* track = getAudioTrack(trackId);
-    if (!track) {
-        return 1.0f;
-    }
-
-    if (auto* volPan = track->getVolumePlugin()) {
-        return juce::Decibels::decibelsToGain(volPan->getVolumeDb());
-    }
-    return 1.0f;
+    return mixerController_.getTrackVolume(edit_, trackMapping_, trackId);
 }
 
 void AudioBridge::setTrackPan(TrackId trackId, float pan) {
-    auto* track = getAudioTrack(trackId);
-    if (!track) {
-        DBG("AudioBridge::setTrackPan - track not found: " << trackId);
-        return;
-    }
-
-    // Use the track's built-in volume plugin
-    if (auto* volPan = track->getVolumePlugin()) {
-        volPan->setPan(pan);
-    }
+    mixerController_.setTrackPan(edit_, trackMapping_, trackId, pan);
 }
 
 float AudioBridge::getTrackPan(TrackId trackId) const {
-    auto* track = getAudioTrack(trackId);
-    if (!track) {
-        return 0.0f;
-    }
-
-    if (auto* volPan = track->getVolumePlugin()) {
-        return volPan->getPan();
-    }
-    return 0.0f;
+    return mixerController_.getTrackPan(edit_, trackMapping_, trackId);
 }
 
 void AudioBridge::setMasterVolume(float volume) {
-    if (auto masterPlugin = edit_.getMasterVolumePlugin()) {
-        float db = volume > 0.0f ? juce::Decibels::gainToDecibels(volume) : -100.0f;
-        masterPlugin->setVolumeDb(db);
-    }
+    mixerController_.setMasterVolume(edit_, volume);
 }
 
 float AudioBridge::getMasterVolume() const {
-    if (auto masterPlugin = edit_.getMasterVolumePlugin()) {
-        return juce::Decibels::decibelsToGain(masterPlugin->getVolumeDb());
-    }
-    return 1.0f;
+    return mixerController_.getMasterVolume(edit_);
 }
 
 void AudioBridge::setMasterPan(float pan) {
-    if (auto masterPlugin = edit_.getMasterVolumePlugin()) {
-        masterPlugin->setPan(pan);
-    }
+    mixerController_.setMasterPan(edit_, pan);
 }
 
 float AudioBridge::getMasterPan() const {
-    if (auto masterPlugin = edit_.getMasterVolumePlugin()) {
-        return masterPlugin->getPan();
-    }
-    return 0.0f;
+    return mixerController_.getMasterPan(edit_);
 }
 
 // =============================================================================
