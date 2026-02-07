@@ -17,6 +17,7 @@
 #include "ParameterQueue.hpp"
 #include "PluginWindowBridge.hpp"
 #include "TransportStateManager.hpp"
+#include "WarpMarkerManager.hpp"
 
 namespace magda {
 
@@ -166,11 +167,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // =========================================================================
     // Warp Markers
     // =========================================================================
-
-    struct WarpMarkerInfo {
-        double sourceTime;
-        double warpTime;
-    };
 
     /** Enable warping: populate WarpTimeManager with markers at detected transients */
     void enableWarp(ClipId clipId);
@@ -629,6 +625,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
 
     // Phase 2 refactoring: Independent features (extracted from AudioBridge)
     PluginWindowBridge pluginWindowBridge_;
+    WarpMarkerManager warpMarkerManager_;
 
     // Master channel metering (lock-free atomics for thread safety)
     std::atomic<float> masterPeakL_{0.0f};

@@ -198,7 +198,7 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
 
             // Check for warp mode and draw warped waveform if enabled
             bool useWarpedDraw = false;
-            std::vector<AudioBridge::WarpMarkerInfo> warpMarkers;
+            std::vector<WarpMarkerInfo> warpMarkers;
 
             if (clip.warpEnabled) {
                 auto* audioEngine = TrackManager::getInstance().getAudioEngine();

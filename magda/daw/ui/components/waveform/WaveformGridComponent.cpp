@@ -787,8 +787,7 @@ void WaveformGridComponent::setWarpMode(bool enabled) {
     }
 }
 
-void WaveformGridComponent::setWarpMarkers(
-    const std::vector<magda::AudioBridge::WarpMarkerInfo>& markers) {
+void WaveformGridComponent::setWarpMarkers(const std::vector<magda::WarpMarkerInfo>& markers) {
     warpMarkers_ = markers;
     repaint();
 }
