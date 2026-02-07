@@ -341,6 +341,20 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartPlayb
     return ChangeFlags::Playhead;
 }
 
+TimelineController::ChangeFlags TimelineController::handleEvent(const StartRecordEvent& /*e*/) {
+    state.playhead.isPlaying = true;
+    state.playhead.isRecording = true;
+    // Sync playbackPosition to editPosition at start of recording
+    state.playhead.playbackPosition = state.playhead.editPosition;
+
+    // Notify transport listeners to start recording
+    for (auto* listener : audioEngineListeners) {
+        listener->onTransportRecord(state.playhead.editPosition);
+    }
+
+    return ChangeFlags::Playhead;
+}
+
 TimelineController::ChangeFlags TimelineController::handleEvent(const StopPlaybackEvent& /*e*/) {
     if (!state.playhead.isPlaying) {
         return ChangeFlags::None;  // Already stopped

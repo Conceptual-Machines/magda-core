@@ -5,6 +5,7 @@
 #include "../audio/AudioBridge.hpp"
 #include "../audio/MidiBridge.hpp"
 #include "../audio/SessionClipScheduler.hpp"
+#include "../core/ClipManager.hpp"
 #include "../core/Config.hpp"
 #include "../core/DeviceInfo.hpp"
 #include "../core/TrackManager.hpp"
@@ -250,6 +251,9 @@ void TracktionEngineWrapper::createEditAndBridges() {
     midiBridge_ = std::make_unique<MidiBridge>(*engine_);
     midiBridge_->setAudioBridge(audioBridge_.get());
 
+    // Register as transport listener for recording callbacks
+    currentEdit_->getTransport().addListener(this);
+
     std::cout << "Tracktion Engine initialized with Edit, AudioBridge, and MidiBridge" << std::endl;
 }
 
@@ -293,6 +297,11 @@ void TracktionEngineWrapper::shutdown() {
 
     // Release test tone plugin first (before Edit is destroyed)
     testTonePlugin_.reset();
+
+    // Remove transport listener before destroying edit
+    if (currentEdit_) {
+        currentEdit_->getTransport().removeListener(this);
+    }
 
     // Remove device manager listener
     if (engine_) {
@@ -1662,6 +1671,101 @@ void TracktionEngineWrapper::clearPluginList() {
     }
 
     std::cout << "Plugin list cleared. Use 'Scan' to rediscover plugins." << std::endl;
+}
+
+// =============================================================================
+// TransportControl::Listener implementation
+// =============================================================================
+
+void TracktionEngineWrapper::recordingFinished(
+    tracktion::InputDeviceInstance& /*instance*/, tracktion::EditItemID targetID,
+    const juce::ReferenceCountedArray<tracktion::Clip>& recordedClips) {
+    if (!audioBridge_)
+        return;
+
+    DBG("TracktionEngineWrapper::recordingFinished - " << recordedClips.size()
+                                                       << " clips recorded");
+
+    for (auto* clip : recordedClips) {
+        auto* midiClip = dynamic_cast<tracktion::MidiClip*>(clip);
+        if (!midiClip)
+            continue;
+
+        // Reverse-lookup MAGDA TrackId from TE's targetID
+        TrackId trackId = audioBridge_->getTrackIdForTeTrack(targetID);
+        if (trackId == INVALID_TRACK_ID) {
+            DBG("  -> Could not find MAGDA track for TE target, trying clip's track...");
+            // Try getting from clip's parent track
+            if (auto* teTrack = dynamic_cast<tracktion::AudioTrack*>(midiClip->getTrack())) {
+                trackId = audioBridge_->getTrackIdForTeTrack(teTrack->itemID);
+            }
+        }
+
+        if (trackId == INVALID_TRACK_ID) {
+            DBG("  -> Skipping recorded clip - no matching MAGDA track found");
+            continue;
+        }
+
+        // Read clip time range
+        auto clipStart = midiClip->getPosition().getStart();
+        auto clipLength = midiClip->getPosition().getLength();
+        double startSeconds = clipStart.inSeconds();
+        double lengthSeconds = clipLength.inSeconds();
+
+        DBG("  -> Creating MAGDA clip on track " << trackId << " at " << startSeconds
+                                                 << "s, length=" << lengthSeconds << "s");
+
+        // Create clip in ClipManager
+        auto& clipManager = ClipManager::getInstance();
+        ClipId newClipId =
+            clipManager.createMidiClip(trackId, startSeconds, lengthSeconds, ClipView::Arrangement);
+
+        // Read MIDI notes from TE clip and add to ClipManager
+        auto& midiList = midiClip->getSequence();
+        for (auto* note : midiList.getNotes()) {
+            if (!note)
+                continue;
+
+            MidiNote midiNote;
+            midiNote.noteNumber = note->getNoteNumber();
+            midiNote.velocity = note->getVelocity();
+            midiNote.startBeat = note->getStartBeat().inBeats();
+            midiNote.lengthBeats = note->getLengthBeats().inBeats();
+
+            clipManager.addMidiNote(newClipId, midiNote);
+        }
+
+        // Read CC and pitch bend data from TE clip
+        auto* clipInfo = clipManager.getClip(newClipId);
+        if (clipInfo) {
+            for (auto* controllerEvent : midiList.getControllerEvents()) {
+                if (!controllerEvent)
+                    continue;
+
+                int eventType = controllerEvent->getType();
+                if (eventType == tracktion::MidiControllerEvent::pitchWheelType) {
+                    // Pitch bend event
+                    MidiPitchBendData pbData;
+                    pbData.value = controllerEvent->getControllerValue();
+                    pbData.beatPosition = controllerEvent->getBeatPosition().inBeats();
+                    clipInfo->midiPitchBendData.push_back(pbData);
+                } else if (eventType < 128) {
+                    // Standard CC event (0-127)
+                    MidiCCData ccData;
+                    ccData.controller = eventType;
+                    ccData.value = controllerEvent->getControllerValue();
+                    ccData.beatPosition = controllerEvent->getBeatPosition().inBeats();
+                    clipInfo->midiCCData.push_back(ccData);
+                }
+            }
+        }
+
+        DBG("  -> Created clip " << newClipId << " with " << midiList.getNotes().size()
+                                 << " notes");
+
+        // Register clip ID mapping in AudioBridge so the TE clip is tracked
+        audioBridge_->syncClipToEngine(newClipId);
+    }
 }
 
 }  // namespace magda

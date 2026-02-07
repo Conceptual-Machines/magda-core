@@ -35,6 +35,7 @@ class TracktionEngineWrapper : public AudioEngine,
                                public TrackInterface,
                                public ClipInterface,
                                public MixerInterface,
+                               public tracktion::TransportControl::Listener,
                                private juce::ChangeListener {
   public:
     // Constants for audio device health checking
@@ -323,6 +324,14 @@ class TracktionEngineWrapper : public AudioEngine,
      * Called with (success, number of plugins found, failed plugins)
      */
     std::function<void(bool, int, const juce::StringArray&)> onPluginScanComplete;
+
+    // =========================================================================
+    // TransportControl::Listener implementation
+    // =========================================================================
+
+    void recordingFinished(
+        tracktion::InputDeviceInstance& instance, tracktion::EditItemID targetID,
+        const juce::ReferenceCountedArray<tracktion::Clip>& recordedClips) override;
 
   private:
     // juce::ChangeListener implementation

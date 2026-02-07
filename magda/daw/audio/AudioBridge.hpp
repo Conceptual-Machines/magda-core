@@ -503,6 +503,20 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     juce::String getTrackMidiInput(TrackId trackId) const;
 
     /**
+     * @brief Set record arm state on the TE InputDeviceInstance for a track
+     * @param trackId The MAGDA track ID
+     * @param armed True to enable recording, false to disable
+     */
+    void setTrackRecordArmed(TrackId trackId, bool armed);
+
+    /**
+     * @brief Reverse-lookup MAGDA TrackId from a TE track's EditItemID
+     * @param itemId The TE EditItemID
+     * @return The MAGDA TrackId, or INVALID_TRACK_ID if not found
+     */
+    TrackId getTrackIdForTeTrack(te::EditItemID itemId) const;
+
+    /**
      * @brief Enable all MIDI input devices in Tracktion Engine's DeviceManager
      *
      * Must be called before MIDI routing will work. This enables the devices

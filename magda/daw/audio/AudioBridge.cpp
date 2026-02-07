@@ -114,7 +114,7 @@ void AudioBridge::tracksChanged() {
 }
 
 void AudioBridge::trackPropertyChanged(int trackId) {
-    // Track property changed (volume, pan, mute, solo) - sync to Tracktion Engine
+    // Track property changed (volume, pan, mute, solo, recordArmed) - sync to Tracktion Engine
     auto* track = getAudioTrack(trackId);
     if (track) {
         auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
@@ -126,6 +126,9 @@ void AudioBridge::trackPropertyChanged(int trackId) {
             // Sync volume/pan to VolumeAndPanPlugin
             setTrackVolume(trackId, trackInfo->volume);
             setTrackPan(trackId, trackInfo->pan);
+
+            // Sync record arm to TE InputDeviceInstance
+            setTrackRecordArmed(trackId, trackInfo->recordArmed);
         }
     }
 }
@@ -541,6 +544,24 @@ void AudioBridge::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip) {
     }
 
     DBG("  Added " << addedCount << " notes to Tracktion");
+
+    // Sync CC data to TE
+    for (const auto& cc : clip->midiCCData) {
+        double adjustedBeat = cc.beatPosition - effectiveOffset;
+        if (adjustedBeat >= 0.0 && adjustedBeat < clipLengthBeats) {
+            sequence.addControllerEvent(te::BeatPosition::fromBeats(adjustedBeat), cc.controller,
+                                        cc.value, nullptr);
+        }
+    }
+
+    // Sync pitch bend data to TE
+    for (const auto& pb : clip->midiPitchBendData) {
+        double adjustedBeat = pb.beatPosition - effectiveOffset;
+        if (adjustedBeat >= 0.0 && adjustedBeat < clipLengthBeats) {
+            sequence.addControllerEvent(te::BeatPosition::fromBeats(adjustedBeat),
+                                        te::MidiControllerEvent::pitchWheelType, pb.value, nullptr);
+        }
+    }
 }
 
 void AudioBridge::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
@@ -2518,24 +2539,13 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
                 auto result =
                     inputDeviceInstance->setTarget(track->itemID, true, nullptr);  // true = MIDI
                 if (result.has_value()) {
-                    // Enable monitoring but not recording
-                    (*result)->recordEnabled = false;
+                    // Preserve arm state from TrackInfo
+                    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+                    (*result)->recordEnabled = trackInfo ? trackInfo->recordArmed : false;
                     addedAnyRouting = true;
-                    DBG("  -> Routed MIDI input '" << midiDevice->getName()
-                                                   << "' to track (monitor=on)");
-                    DBG("     Device enabled: " << (midiDevice->isEnabled() ? "yes" : "no"));
-                    DBG("     Monitor mode: " << (int)midiDevice->getMonitorMode());
-                    DBG("     Track name: " << track->getName());
-                    DBG("     Track plugins: " << track->pluginList.size());
-
-                    // List plugins on the track for debugging
-                    for (int i = 0; i < track->pluginList.size(); ++i) {
-                        auto* p = track->pluginList[i];
-                        if (p) {
-                            DBG("       Plugin " << i << ": " << p->getName() << " (enabled="
-                                                 << (p->isEnabled() ? "yes" : "no") << ")");
-                        }
-                    }
+                    DBG("  -> Routed MIDI input '"
+                        << midiDevice->getName() << "' to track (monitor=on, recordEnabled="
+                        << ((*result)->recordEnabled ? "true" : "false") << ")");
                 } else {
                     DBG("  -> FAILED to route MIDI input '" << midiDevice->getName()
                                                             << "' to track");
@@ -2602,12 +2612,13 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
                 if (&inputDeviceInstance->owner == midiDevice) {
                     auto result = inputDeviceInstance->setTarget(track->itemID, true, nullptr);
                     if (result.has_value()) {
-                        (*result)->recordEnabled = false;
+                        // Preserve arm state from TrackInfo
+                        auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+                        (*result)->recordEnabled = trackInfo ? trackInfo->recordArmed : false;
                         addedRouting = true;
-                        DBG("  -> Routed MIDI input '" << midiDevice->getName()
-                                                       << "' to track (monitor=on)");
-                        DBG("     Device enabled: " << (midiDevice->isEnabled() ? "yes" : "no"));
-                        DBG("     Monitor mode: " << (int)midiDevice->getMonitorMode());
+                        DBG("  -> Routed MIDI input '"
+                            << midiDevice->getName() << "' to track (monitor=on, recordEnabled="
+                            << ((*result)->recordEnabled ? "true" : "false") << ")");
                     } else {
                         DBG("  -> FAILED to route MIDI input '" << midiDevice->getName()
                                                                 << "' to track");
@@ -2662,6 +2673,48 @@ juce::String AudioBridge::getTrackMidiInput(TrackId trackId) const {
     } else {
         return "all";  // Multiple inputs = "all"
     }
+}
+
+// =============================================================================
+// Record Arm
+// =============================================================================
+
+void AudioBridge::setTrackRecordArmed(TrackId trackId, bool armed) {
+    auto* track = getAudioTrack(trackId);
+    if (!track) {
+        DBG("AudioBridge::setTrackRecordArmed - track not found: " << trackId);
+        return;
+    }
+
+    auto* playbackContext = edit_.getCurrentPlaybackContext();
+    if (!playbackContext) {
+        DBG("AudioBridge::setTrackRecordArmed - no playback context");
+        return;
+    }
+
+    // Find all InputDeviceInstances targeting this track and set recordEnabled
+    for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+        if (dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) {
+            for (auto* dest : inputDeviceInstance->destinations) {
+                if (dest->targetID == track->itemID) {
+                    dest->recordEnabled = armed;
+                    DBG("AudioBridge::setTrackRecordArmed - track "
+                        << trackId << " armed=" << (armed ? "true" : "false") << " on device '"
+                        << inputDeviceInstance->owner.getName() << "'");
+                }
+            }
+        }
+    }
+}
+
+TrackId AudioBridge::getTrackIdForTeTrack(te::EditItemID itemId) const {
+    juce::ScopedLock lock(mappingLock_);
+    for (const auto& [trackId, teTrack] : trackMapping_) {
+        if (teTrack && teTrack->itemID == itemId) {
+            return trackId;
+        }
+    }
+    return INVALID_TRACK_ID;
 }
 
 // =============================================================================

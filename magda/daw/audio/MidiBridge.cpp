@@ -178,6 +178,35 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
     // Get the device ID for this input
     juce::String sourceDeviceId = source->getIdentifier();
 
+    // Push event to global queue for MIDI monitor
+    {
+        MidiEventEntry entry;
+        entry.deviceName = source->getName();
+        entry.channel = message.getChannel();
+        entry.timestamp = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+
+        if (message.isNoteOn()) {
+            entry.type = MidiEventEntry::NoteOn;
+            entry.data1 = message.getNoteNumber();
+            entry.data2 = message.getVelocity();
+        } else if (message.isNoteOff()) {
+            entry.type = MidiEventEntry::NoteOff;
+            entry.data1 = message.getNoteNumber();
+            entry.data2 = message.getVelocity();
+        } else if (message.isController()) {
+            entry.type = MidiEventEntry::CC;
+            entry.data1 = message.getControllerNumber();
+            entry.data2 = message.getControllerValue();
+        } else if (message.isPitchWheel()) {
+            entry.type = MidiEventEntry::PitchBend;
+            entry.pitchBendValue = message.getPitchWheelValue();
+        } else {
+            entry.type = MidiEventEntry::Other;
+        }
+
+        globalEventQueue_.push(entry);
+    }
+
     // Debug: Log MIDI message receipt
     if (message.isNoteOn()) {
         DBG("MidiBridge: Note ON received - note="

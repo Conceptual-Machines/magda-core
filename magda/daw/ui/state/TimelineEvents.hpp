@@ -116,6 +116,11 @@ struct StartPlaybackEvent {};
 struct StopPlaybackEvent {};
 
 /**
+ * @brief Start recording (arms transport for recording + starts playback)
+ */
+struct StartRecordEvent {};
+
+/**
  * @brief Move playhead by a delta amount (in seconds)
  */
 struct MovePlayheadByDeltaEvent {
@@ -347,7 +352,8 @@ using TimelineEvent = std::variant<
     SetScrollPositionEvent, ScrollByDeltaEvent, ScrollToTimeEvent,
     // Playhead events
     SetEditPositionEvent, SetPlayheadPositionEvent, SetPlaybackPositionEvent, StartPlaybackEvent,
-    StopPlaybackEvent, MovePlayheadByDeltaEvent, SetPlaybackStateEvent, SetEditCursorEvent,
+    StopPlaybackEvent, StartRecordEvent, MovePlayheadByDeltaEvent, SetPlaybackStateEvent,
+    SetEditCursorEvent,
     // Selection events
     SetTimeSelectionEvent, ClearTimeSelectionEvent, CreateLoopFromSelectionEvent,
     // Loop events
