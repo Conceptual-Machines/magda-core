@@ -15,6 +15,7 @@
 #include "MidiActivityMonitor.hpp"
 #include "ParameterManager.hpp"
 #include "ParameterQueue.hpp"
+#include "PluginManager.hpp"
 #include "PluginWindowBridge.hpp"
 #include "TrackController.hpp"
 #include "TransportStateManager.hpp"
@@ -26,22 +27,6 @@ namespace magda {
 namespace te = tracktion;
 class PluginWindowManager;
 class TracktionEngineWrapper;
-
-/**
- * @brief Result of attempting to load a plugin
- */
-struct PluginLoadResult {
-    bool success = false;
-    juce::String errorMessage;
-    te::Plugin::Ptr plugin;
-
-    static PluginLoadResult Success(const te::Plugin::Ptr& p) {
-        return {true, {}, p};
-    }
-    static PluginLoadResult Failure(const juce::String& msg) {
-        return {false, msg, nullptr};
-    }
-};
 
 /**
  * @brief Bridges TrackManager and ClipManager (UI models) to Tracktion Engine (audio processing)
@@ -600,17 +585,12 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
 
     // Bidirectional mappings
     std::map<TrackId, std::string> trackIdToEngineId_;  // MAGDA TrackId → Engine string ID
-    std::map<DeviceId, te::Plugin::Ptr> deviceToPlugin_;
-    std::map<te::Plugin*, DeviceId> pluginToDevice_;
 
     // Arrangement clip ID mappings (MAGDA ClipId <-> Tracktion Engine clip ID)
     std::map<ClipId, std::string> clipIdToEngineId_;  // MAGDA → TE
     std::map<std::string, ClipId> engineIdToClipId_;  // TE → MAGDA
 
     // (Session clips use ClipSlot-based mapping via trackId + sceneIndex — no ID maps needed)
-
-    // Device processors (own the processing logic for each device)
-    std::map<DeviceId, std::unique_ptr<DeviceProcessor>> deviceProcessors_;
 
     // Lock-free communication buffers
     MeteringBuffer meteringBuffer_;
@@ -626,6 +606,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
 
     // Phase 3 refactoring: Core controllers (extracted from AudioBridge)
     TrackController trackController_;
+    PluginManager pluginManager_;
 
     // Master channel metering (lock-free atomics for thread safety)
     std::atomic<float> masterPeakL_{0.0f};
