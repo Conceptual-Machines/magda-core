@@ -13,10 +13,10 @@
 #include "DeviceProcessor.hpp"
 #include "MeteringBuffer.hpp"
 #include "MidiActivityMonitor.hpp"
-#include "MixerController.hpp"
 #include "ParameterManager.hpp"
 #include "ParameterQueue.hpp"
 #include "PluginWindowBridge.hpp"
+#include "TrackController.hpp"
 #include "TransportStateManager.hpp"
 #include "WarpMarkerManager.hpp"
 
@@ -599,7 +599,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     te::Edit& edit_;
 
     // Bidirectional mappings
-    std::map<TrackId, te::AudioTrack*> trackMapping_;
     std::map<TrackId, std::string> trackIdToEngineId_;  // MAGDA TrackId → Engine string ID
     std::map<DeviceId, te::Plugin::Ptr> deviceToPlugin_;
     std::map<te::Plugin*, DeviceId> pluginToDevice_;
@@ -613,9 +612,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Device processors (own the processing logic for each device)
     std::map<DeviceId, std::unique_ptr<DeviceProcessor>> deviceProcessors_;
 
-    // Per-track level measurer clients (needed to read levels)
-    std::map<TrackId, te::LevelMeasurer::Client> meterClients_;
-
     // Lock-free communication buffers
     MeteringBuffer meteringBuffer_;
 
@@ -627,7 +623,9 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Phase 2 refactoring: Independent features (extracted from AudioBridge)
     PluginWindowBridge pluginWindowBridge_;
     WarpMarkerManager warpMarkerManager_;
-    MixerController mixerController_;
+
+    // Phase 3 refactoring: Core controllers (extracted from AudioBridge)
+    TrackController trackController_;
 
     // Master channel metering (lock-free atomics for thread safety)
     std::atomic<float> masterPeakL_{0.0f};

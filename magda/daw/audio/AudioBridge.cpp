@@ -35,7 +35,8 @@ static te::LaunchQType toTELaunchQType(LaunchQuantize q) {
     return te::LaunchQType::none;
 }
 
-AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit) : engine_(engine), edit_(edit) {
+AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
+    : engine_(engine), edit_(edit), trackController_(engine, edit) {
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
 
@@ -81,24 +82,26 @@ AudioBridge::~AudioBridge() {
             }
         }
 
-        // Unregister all track meter clients
-        for (auto& [trackId, track] : trackMapping_) {
-            if (track) {
-                auto* levelMeter = track->getLevelMeterPlugin();
-                if (levelMeter) {
-                    auto it = meterClients_.find(trackId);
-                    if (it != meterClients_.end()) {
-                        levelMeter->measurer.removeClient(it->second);
+        // Unregister all track meter clients (via trackController)
+        trackController_.withTrackMapping([this](const auto& trackMapping) {
+            auto& meterClients = trackController_.getMeterClients();
+            for (auto& [trackId, track] : trackMapping) {
+                if (track) {
+                    auto* levelMeter = track->getLevelMeterPlugin();
+                    if (levelMeter) {
+                        auto it = meterClients.find(trackId);
+                        if (it != meterClients.end()) {
+                            levelMeter->measurer.removeClient(it->second);
+                        }
                     }
                 }
             }
-        }
+        });
 
         // Clear all mappings - safe now as timer is stopped and lock is held
-        trackMapping_.clear();
+        trackController_.clearAllMappings();
         deviceToPlugin_.clear();
         pluginToDevice_.clear();
-        meterClients_.clear();
     }
 
     std::cout << "AudioBridge destroyed" << std::endl;
@@ -1490,12 +1493,10 @@ te::Plugin::Ptr AudioBridge::addLevelMeterToTrack(TrackId trackId) {
     for (int i = plugins.size() - 1; i >= 0; --i) {
         if (auto* levelMeter = dynamic_cast<te::LevelMeterPlugin*>(plugins[i])) {
             // Unregister meter client from the old LevelMeter
-            {
-                juce::ScopedLock lock(mappingLock_);
-                auto it = meterClients_.find(trackId);
-                if (it != meterClients_.end()) {
-                    levelMeter->measurer.removeClient(it->second);
-                }
+            auto& meterClients = trackController_.getMeterClients();
+            auto it = meterClients.find(trackId);
+            if (it != meterClients.end()) {
+                levelMeter->measurer.removeClient(it->second);
             }
 
             levelMeter->deleteFromParent();
@@ -1508,10 +1509,10 @@ te::Plugin::Ptr AudioBridge::addLevelMeterToTrack(TrackId trackId) {
     // Register meter client with the new LevelMeter
     if (plugin) {
         if (auto* levelMeter = dynamic_cast<te::LevelMeterPlugin*>(plugin.get())) {
-            juce::ScopedLock lock(mappingLock_);
+            auto& meterClients = trackController_.getMeterClients();
 
             // Create or get existing client
-            auto [it, inserted] = meterClients_.try_emplace(trackId);
+            auto [it, inserted] = meterClients.try_emplace(trackId);
             levelMeter->measurer.addClient(it->second);
         }
     }
@@ -1562,9 +1563,7 @@ void AudioBridge::ensureVolumePluginPosition(te::AudioTrack* track) const {
 // =============================================================================
 
 te::AudioTrack* AudioBridge::getAudioTrack(TrackId trackId) const {
-    juce::ScopedLock lock(mappingLock_);
-    auto it = trackMapping_.find(trackId);
-    return it != trackMapping_.end() ? it->second : nullptr;
+    return trackController_.getAudioTrack(trackId);
 }
 
 te::Plugin::Ptr AudioBridge::getPlugin(DeviceId deviceId) const {
@@ -1580,66 +1579,11 @@ DeviceProcessor* AudioBridge::getDeviceProcessor(DeviceId deviceId) const {
 }
 
 te::AudioTrack* AudioBridge::createAudioTrack(TrackId trackId, const juce::String& name) {
-    // Check if track already exists
-    {
-        juce::ScopedLock lock(mappingLock_);
-        auto it = trackMapping_.find(trackId);
-        if (it != trackMapping_.end() && it->second != nullptr) {
-            return it->second;
-        }
-    }
-
-    // Insert new track at the end
-    auto insertPoint = te::TrackInsertPoint(nullptr, nullptr);
-    auto trackPtr = edit_.insertNewAudioTrack(insertPoint, nullptr);
-
-    te::AudioTrack* track = trackPtr.get();
-    if (track) {
-        track->setName(name);
-
-        // Route track output to master/default output
-        track->getOutput().setOutputToDefaultDevice(false);  // false = audio (not MIDI)
-
-        juce::ScopedLock lock(mappingLock_);
-        trackMapping_[trackId] = track;
-
-        // Don't register meter client yet - will do it when LevelMeter is added
-        std::cout << "Created Tracktion AudioTrack for MAGDA track " << trackId << ": " << name
-                  << " (routed to master)" << std::endl;
-    }
-
-    return track;
+    return trackController_.createAudioTrack(trackId, name);
 }
 
 void AudioBridge::removeAudioTrack(TrackId trackId) {
-    te::AudioTrack* track = nullptr;
-
-    {
-        juce::ScopedLock lock(mappingLock_);
-        auto it = trackMapping_.find(trackId);
-        if (it != trackMapping_.end()) {
-            track = it->second;
-
-            // Unregister meter client before removing track
-            if (track) {
-                auto* levelMeter = track->getLevelMeterPlugin();
-                if (levelMeter) {
-                    auto clientIt = meterClients_.find(trackId);
-                    if (clientIt != meterClients_.end()) {
-                        levelMeter->measurer.removeClient(clientIt->second);
-                        meterClients_.erase(clientIt);
-                    }
-                }
-            }
-
-            trackMapping_.erase(it);
-        }
-    }
-
-    if (track) {
-        edit_.deleteTrack(track);
-        std::cout << "Removed Tracktion AudioTrack for MAGDA track " << trackId << std::endl;
-    }
+    trackController_.removeAudioTrack(trackId);
 }
 
 // =============================================================================
@@ -1755,11 +1699,9 @@ void AudioBridge::syncTrackPlugins(TrackId trackId) {
 }
 
 void AudioBridge::ensureTrackMapping(TrackId trackId) {
-    if (!getAudioTrack(trackId)) {
-        auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
-        if (trackInfo) {
-            createAudioTrack(trackId, trackInfo->name);
-        }
+    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (trackInfo) {
+        trackController_.ensureTrackMapping(trackId, trackInfo->name);
     }
 }
 
@@ -1895,39 +1837,42 @@ void AudioBridge::timerCallback() {
     // NOTE: Window state sync is now handled by PluginWindowManager's timer
 
     // Update metering from level measurers (runs at 30 FPS on message thread)
-    juce::ScopedLock lock(mappingLock_);
+    // Use trackController's withTrackMapping for thread-safe access
+    trackController_.withTrackMapping([this](const auto& trackMapping) {
+        auto& meterClients = trackController_.getMeterClients();
 
-    // Update track metering
-    for (const auto& [trackId, track] : trackMapping_) {
-        if (!track)
-            continue;
+        // Update track metering
+        for (const auto& [trackId, track] : trackMapping) {
+            if (!track)
+                continue;
 
-        // Get the meter client for this track
-        auto clientIt = meterClients_.find(trackId);
-        if (clientIt == meterClients_.end())
-            continue;
+            // Get the meter client for this track
+            auto clientIt = meterClients.find(trackId);
+            if (clientIt == meterClients.end())
+                continue;
 
-        auto& client = clientIt->second;
+            auto& client = clientIt->second;
 
-        MeterData data;
+            MeterData data;
 
-        // Read and clear audio levels from the client (returns DbTimePair)
-        auto levelL = client.getAndClearAudioLevel(0);
-        auto levelR = client.getAndClearAudioLevel(1);
+            // Read and clear audio levels from the client (returns DbTimePair)
+            auto levelL = client.getAndClearAudioLevel(0);
+            auto levelR = client.getAndClearAudioLevel(1);
 
-        // Convert from dB to linear gain (allow > 1.0 for headroom)
-        data.peakL = juce::Decibels::decibelsToGain(levelL.dB);
-        data.peakR = juce::Decibels::decibelsToGain(levelR.dB);
+            // Convert from dB to linear gain (allow > 1.0 for headroom)
+            data.peakL = juce::Decibels::decibelsToGain(levelL.dB);
+            data.peakR = juce::Decibels::decibelsToGain(levelR.dB);
 
-        // Check for clipping
-        data.clipped = data.peakL > 1.0f || data.peakR > 1.0f;
+            // Check for clipping
+            data.clipped = data.peakL > 1.0f || data.peakR > 1.0f;
 
-        // RMS would require accumulation over time - simplified for now
-        data.rmsL = data.peakL * 0.7f;  // Rough approximation
-        data.rmsR = data.peakR * 0.7f;
+            // RMS would require accumulation over time - simplified for now
+            data.rmsL = data.peakL * 0.7f;  // Rough approximation
+            data.rmsR = data.peakR * 0.7f;
 
-        meteringBuffer_.pushLevels(trackId, data);
-    }
+            meteringBuffer_.pushLevels(trackId, data);
+        }
+    });
 
     // Register master meter client with playback context if not done yet
     if (!masterMeterRegistered_) {
@@ -2223,35 +2168,50 @@ te::Plugin::Ptr AudioBridge::loadDeviceAsPlugin(TrackId trackId, const DeviceInf
 // =============================================================================
 
 void AudioBridge::setTrackVolume(TrackId trackId, float volume) {
-    mixerController_.setTrackVolume(trackMapping_, trackId, volume);
+    trackController_.setTrackVolume(trackId, volume);
 }
 
 float AudioBridge::getTrackVolume(TrackId trackId) const {
-    return mixerController_.getTrackVolume(trackMapping_, trackId);
+    return trackController_.getTrackVolume(trackId);
 }
 
 void AudioBridge::setTrackPan(TrackId trackId, float pan) {
-    mixerController_.setTrackPan(trackMapping_, trackId, pan);
+    trackController_.setTrackPan(trackId, pan);
 }
 
 float AudioBridge::getTrackPan(TrackId trackId) const {
-    return mixerController_.getTrackPan(trackMapping_, trackId);
+    return trackController_.getTrackPan(trackId);
 }
 
 void AudioBridge::setMasterVolume(float volume) {
-    mixerController_.setMasterVolume(edit_, volume);
+    auto masterPlugin = edit_.getMasterVolumePlugin();
+    if (masterPlugin) {
+        float db = volume > 0.0f ? juce::Decibels::gainToDecibels(volume) : -100.0f;
+        masterPlugin->setVolumeDb(db);
+    }
 }
 
 float AudioBridge::getMasterVolume() const {
-    return mixerController_.getMasterVolume(edit_);
+    auto masterPlugin = edit_.getMasterVolumePlugin();
+    if (masterPlugin) {
+        return juce::Decibels::decibelsToGain(masterPlugin->getVolumeDb());
+    }
+    return 1.0f;
 }
 
 void AudioBridge::setMasterPan(float pan) {
-    mixerController_.setMasterPan(edit_, pan);
+    auto masterPlugin = edit_.getMasterVolumePlugin();
+    if (masterPlugin) {
+        masterPlugin->setPan(pan);
+    }
 }
 
 float AudioBridge::getMasterPan() const {
-    return mixerController_.getMasterPan(edit_);
+    auto masterPlugin = edit_.getMasterVolumePlugin();
+    if (masterPlugin) {
+        return masterPlugin->getPan();
+    }
+    return 0.0f;
 }
 
 // =============================================================================
@@ -2259,122 +2219,19 @@ float AudioBridge::getMasterPan() const {
 // =============================================================================
 
 void AudioBridge::setTrackAudioOutput(TrackId trackId, const juce::String& destination) {
-    auto* track = getAudioTrack(trackId);
-    if (!track) {
-        DBG("AudioBridge::setTrackAudioOutput - track not found: " << trackId);
-        return;
-    }
-
-    DBG("AudioBridge::setTrackAudioOutput - trackId=" << trackId << " destination='" << destination
-                                                      << "'");
-
-    if (destination.isEmpty()) {
-        // Disable output - mute the track
-        track->setMute(true);
-    } else if (destination == "master") {
-        // Route to default/master output
-        track->setMute(false);
-        track->getOutput().setOutputToDefaultDevice(false);  // false = audio (not MIDI)
-    } else {
-        // Route to specific output device
-        track->setMute(false);
-        track->getOutput().setOutputToDeviceID(destination);
-    }
+    trackController_.setTrackAudioOutput(trackId, destination);
 }
 
 void AudioBridge::setTrackAudioInput(TrackId trackId, const juce::String& deviceId) {
-    auto* track = getAudioTrack(trackId);
-    if (!track) {
-        DBG("AudioBridge::setTrackAudioInput - track not found: " << trackId);
-        return;
-    }
-
-    DBG("AudioBridge::setTrackAudioInput - trackId=" << trackId << " deviceId='" << deviceId
-                                                     << "'");
-
-    if (deviceId.isEmpty()) {
-        // Disable input - clear all assignments
-        auto* playbackContext = edit_.getCurrentPlaybackContext();
-        if (playbackContext) {
-            for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-                auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
-                if (!result) {
-                    DBG("  -> Warning: Could not remove audio input target - "
-                        << result.getErrorMessage());
-                }
-            }
-        }
-        DBG("  -> Cleared audio input");
-    } else {
-        // Enable input - route default or specific device to this track
-        auto* playbackContext = edit_.getCurrentPlaybackContext();
-        if (playbackContext) {
-            auto allInputs = playbackContext->getAllInputs();
-
-            if (deviceId == "default" && !allInputs.isEmpty()) {
-                // Use first available input device
-                auto* firstInput = allInputs.getFirst();
-                auto result = firstInput->setTarget(track->itemID, false, nullptr);
-                if (result.has_value()) {
-                    (*result)->recordEnabled = false;  // Don't auto-enable recording
-                    DBG("  -> Routed default input to track");
-                }
-            } else {
-                // Find specific device by name and route it
-                for (auto* inputDeviceInstance : allInputs) {
-                    if (inputDeviceInstance->owner.getName() == deviceId) {
-                        auto result = inputDeviceInstance->setTarget(track->itemID, false, nullptr);
-                        if (result.has_value()) {
-                            (*result)->recordEnabled = false;
-                            DBG("  -> Routed input '" << deviceId << "' to track");
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-    }
+    trackController_.setTrackAudioInput(trackId, deviceId);
 }
 
 juce::String AudioBridge::getTrackAudioOutput(TrackId trackId) const {
-    auto* track = getAudioTrack(trackId);
-    if (!track) {
-        return {};
-    }
-
-    if (track->isMuted(false)) {
-        return {};  // Muted = disabled output
-    }
-
-    auto& output = track->getOutput();
-    if (output.usesDefaultAudioOut()) {
-        return "master";
-    }
-
-    // Return the output device name
-    return output.getOutputName();
+    return trackController_.getTrackAudioOutput(trackId);
 }
 
 juce::String AudioBridge::getTrackAudioInput(TrackId trackId) const {
-    auto* track = getAudioTrack(trackId);
-    if (!track) {
-        return {};
-    }
-
-    // Check if any input device is routed to this track
-    auto* playbackContext = edit_.getCurrentPlaybackContext();
-    if (playbackContext) {
-        for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-            auto targets = inputDeviceInstance->getTargets();
-            for (auto targetID : targets) {
-                if (targetID == track->itemID) {
-                    return inputDeviceInstance->owner.getName();
-                }
-            }
-        }
-    }
-
-    return {};  // No input assigned
+    return trackController_.getTrackAudioInput(trackId);
 }
 
 // =============================================================================
