@@ -131,6 +131,16 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     void stopSessionClip(ClipId clipId);
 
     /**
+     * @brief Reset all synth plugins on a track to prevent stuck notes
+     * @param trackId The MAGDA track ID
+     *
+     * Iterates through the track's plugin list and calls reset() on any
+     * synth plugin, which triggers allNotesOff(). Use after stopping
+     * recording or session clip playback.
+     */
+    void resetSynthsOnTrack(TrackId trackId);
+
+    /**
      * @brief Get the TE clip from a session clip's ClipSlot
      * @param clipId The MAGDA clip ID
      * @return The TE Clip pointer, or nullptr if not found

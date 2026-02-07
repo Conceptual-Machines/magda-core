@@ -9,6 +9,7 @@
 #include "../core/Config.hpp"
 #include "../core/DeviceInfo.hpp"
 #include "../core/TrackManager.hpp"
+#include "MagdaEngineBehaviour.hpp"
 #include "MagdaUIBehaviour.hpp"
 #include "PluginScanCoordinator.hpp"
 #include "PluginWindowManager.hpp"
@@ -261,7 +262,9 @@ bool TracktionEngineWrapper::initialize() {
     try {
         // Initialize Tracktion Engine with custom UIBehaviour for plugin windows
         auto uiBehaviour = std::make_unique<MagdaUIBehaviour>();
-        engine_ = std::make_unique<tracktion::Engine>("MAGDA", std::move(uiBehaviour), nullptr);
+        auto engineBehaviour = std::make_unique<MagdaEngineBehaviour>();
+        engine_ = std::make_unique<tracktion::Engine>("MAGDA", std::move(uiBehaviour),
+                                                      std::move(engineBehaviour));
 
         // Initialize plugin formats and load plugin list
         initializePluginFormats();
@@ -597,13 +600,44 @@ void TracktionEngineWrapper::pause() {
 void TracktionEngineWrapper::record() {
     // Block recording while devices are loading
     if (devicesLoading_) {
-        std::cout << "Recording blocked - devices still loading" << std::endl;
+        DBG("TracktionEngineWrapper::record() - blocked, devices still loading");
         return;
     }
 
     if (currentEdit_) {
+        // Dump all input device instances and their record-enabled state
+        if (auto* ctx = currentEdit_->getCurrentPlaybackContext()) {
+            DBG("TracktionEngineWrapper::record() - input devices before record:");
+            for (auto* input : ctx->getAllInputs()) {
+                auto& dev = input->owner;
+                bool isMidi = dynamic_cast<tracktion::MidiInputDevice*>(&dev) != nullptr;
+                DBG("  device='" << dev.getName() << "' type=" << (isMidi ? "MIDI" : "Audio")
+                                 << " enabled=" << (dev.isEnabled() ? "Y" : "N")
+                                 << " destinations=" << (int)input->destinations.size());
+                for (auto* dest : input->destinations) {
+                    DBG("    dest targetID=" << dest->targetID.getRawID() << " recordEnabled="
+                                             << (dest->recordEnabled ? "Y" : "N"));
+                }
+            }
+        } else {
+            DBG("TracktionEngineWrapper::record() - NO playback context!");
+        }
+
+        DBG("TracktionEngineWrapper::record() - calling transport.record(false)");
         currentEdit_->getTransport().record(false);
-        std::cout << "Recording started" << std::endl;
+        DBG("TracktionEngineWrapper::record() - isRecording=" << (int)isRecording());
+
+        // Verify recording state on all input instances after record() returns
+        if (auto* ctx = currentEdit_->getCurrentPlaybackContext()) {
+            DBG("TracktionEngineWrapper::record() - post-record instance states:");
+            for (auto* input : ctx->getAllInputs()) {
+                if (dynamic_cast<tracktion::MidiInputDevice*>(&input->owner)) {
+                    DBG("  device='" << input->owner.getName()
+                                     << "' isRecording()=" << (int)input->isRecording()
+                                     << " isRecordingActive()=" << (int)input->isRecordingActive());
+                }
+            }
+        }
     }
 }
 
@@ -812,7 +846,42 @@ void TracktionEngineWrapper::onTransportStop(double returnPosition) {
         sessionScheduler_->deactivateAllSessionClips();
     }
 
+    // Capture current position before stopping (this is the recording end time)
+    double stopPosition = getCurrentPosition();
+
+    // transport.stop() triggers recordingFinished() synchronously per device,
+    // which populates activeRecordingClips_ for cross-device dedup.
     stop();
+
+    // For any track that was recording but got 0 clips from TE (blank recording),
+    // create an empty MIDI clip ourselves.
+    if (!recordingStartTimes_.empty()) {
+        auto& clipManager = ClipManager::getInstance();
+        for (auto& [trackId, startTime] : recordingStartTimes_) {
+            // Reset synths on every recorded track (fixes stuck notes)
+            if (audioBridge_) {
+                audioBridge_->resetSynthsOnTrack(trackId);
+            }
+
+            // Skip if TE already created a clip for this track
+            if (activeRecordingClips_.count(trackId) > 0) {
+                continue;
+            }
+
+            double length = stopPosition - startTime;
+            if (length > 0.01) {
+                ClipId clipId =
+                    clipManager.createMidiClip(trackId, startTime, length, ClipView::Arrangement);
+                DBG("Created empty recording clip " << clipId << " on track " << trackId
+                                                    << " start=" << startTime << " len=" << length);
+            }
+        }
+    }
+
+    // Clear dedup maps
+    activeRecordingClips_.clear();
+    recordingStartTimes_.clear();
+
     locate(returnPosition);
 }
 
@@ -823,6 +892,38 @@ void TracktionEngineWrapper::onTransportPause() {
 void TracktionEngineWrapper::onTransportRecord(double position) {
     locate(position);
     record();
+}
+
+void TracktionEngineWrapper::onTransportStopRecording() {
+    if (!currentEdit_)
+        return;
+
+    // Capture stop position before TE processes the stop
+    double stopPosition = getCurrentPosition();
+
+    // TE's stopRecording stops recording but keeps playback going.
+    // This triggers recordingFinished() synchronously per device.
+    currentEdit_->getTransport().stopRecording(false);
+
+    // Create clips for tracks that got 0 clips from TE (blank recording)
+    if (!recordingStartTimes_.empty()) {
+        auto& clipManager = ClipManager::getInstance();
+        for (auto& [trackId, startTime] : recordingStartTimes_) {
+            if (audioBridge_)
+                audioBridge_->resetSynthsOnTrack(trackId);
+
+            if (activeRecordingClips_.count(trackId) > 0)
+                continue;
+
+            double length = stopPosition - startTime;
+            if (length > 0.01) {
+                clipManager.createMidiClip(trackId, startTime, length, ClipView::Arrangement);
+            }
+        }
+    }
+
+    activeRecordingClips_.clear();
+    recordingStartTimes_.clear();
 }
 
 void TracktionEngineWrapper::onEditPositionChanged(double position) {
@@ -1677,94 +1778,165 @@ void TracktionEngineWrapper::clearPluginList() {
 // TransportControl::Listener implementation
 // =============================================================================
 
+void TracktionEngineWrapper::recordingAboutToStart(tracktion::InputDeviceInstance& instance,
+                                                   tracktion::EditItemID targetID) {
+    DBG("recordingAboutToStart: device='"
+        << instance.owner.getName() << "' targetID=" << targetID.getRawID()
+        << " instance.isRecording()=" << (int)instance.isRecording());
+
+    // Store recording start time per track (first device wins)
+    if (audioBridge_) {
+        TrackId trackId = audioBridge_->getTrackIdForTeTrack(targetID);
+        if (trackId != INVALID_TRACK_ID && recordingStartTimes_.count(trackId) == 0) {
+            double startTime = getCurrentPosition();
+            recordingStartTimes_[trackId] = startTime;
+            DBG("  -> stored recording start time " << startTime << " for track " << trackId);
+        }
+    }
+}
+
 void TracktionEngineWrapper::recordingFinished(
-    tracktion::InputDeviceInstance& /*instance*/, tracktion::EditItemID targetID,
+    tracktion::InputDeviceInstance& instance, tracktion::EditItemID targetID,
     const juce::ReferenceCountedArray<tracktion::Clip>& recordedClips) {
+    bool isPhysical = dynamic_cast<tracktion::PhysicalMidiInputDevice*>(&instance.owner) != nullptr;
+    bool isVirtual = dynamic_cast<tracktion::VirtualMidiInputDevice*>(&instance.owner) != nullptr;
+    DBG("recordingFinished: device='"
+        << instance.owner.getName() << "' " << recordedClips.size() << " clips"
+        << " targetID=" << (int)targetID.getRawID() << " physical=" << (int)isPhysical
+        << " virtual=" << (int)isVirtual << " enabled=" << (int)instance.owner.isEnabled());
     if (!audioBridge_)
         return;
 
-    DBG("TracktionEngineWrapper::recordingFinished - " << recordedClips.size()
-                                                       << " clips recorded");
+    TrackId trackId = audioBridge_->getTrackIdForTeTrack(targetID);
 
     for (auto* clip : recordedClips) {
         auto* midiClip = dynamic_cast<tracktion::MidiClip*>(clip);
         if (!midiClip)
             continue;
 
-        // Reverse-lookup MAGDA TrackId from TE's targetID
-        TrackId trackId = audioBridge_->getTrackIdForTeTrack(targetID);
         if (trackId == INVALID_TRACK_ID) {
-            DBG("  -> Could not find MAGDA track for TE target, trying clip's track...");
-            // Try getting from clip's parent track
-            if (auto* teTrack = dynamic_cast<tracktion::AudioTrack*>(midiClip->getTrack())) {
+            if (auto* teTrack = dynamic_cast<tracktion::AudioTrack*>(midiClip->getTrack()))
                 trackId = audioBridge_->getTrackIdForTeTrack(teTrack->itemID);
-            }
         }
 
-        if (trackId == INVALID_TRACK_ID) {
-            DBG("  -> Skipping recorded clip - no matching MAGDA track found");
+        if (trackId == INVALID_TRACK_ID)
+            continue;
+
+        // One clip per track — skip if already processed by another device
+        if (activeRecordingClips_.count(trackId) > 0) {
+            // Merge data into existing clip
+            ClipId clipId = activeRecordingClips_[trackId];
+            auto& clipManager = ClipManager::getInstance();
+            auto* clipInfo = clipManager.getClip(clipId);
+            if (!clipInfo) {
+                midiClip->removeFromParent();
+                continue;
+            }
+
+            // Extract notes before removing the TE clip
+            auto& midiList = midiClip->getSequence();
+            for (auto* note : midiList.getNotes()) {
+                if (!note)
+                    continue;
+                MidiNote mn;
+                mn.noteNumber = note->getNoteNumber();
+                mn.velocity = note->getVelocity();
+                mn.startBeat = note->getStartBeat().inBeats();
+                mn.lengthBeats = note->getLengthBeats().inBeats();
+                clipInfo->midiNotes.push_back(mn);
+            }
+
+            DBG("  merged " << (int)midiList.getNotes().size() << " notes from device '"
+                            << instance.owner.getName() << "' into clip " << clipId);
+
+            midiClip->removeFromParent();
+
+            // One sync after merging all notes
+            if (audioBridge_)
+                audioBridge_->syncClipToEngine(clipId);
+
             continue;
         }
 
-        // Read clip time range
-        auto clipStart = midiClip->getPosition().getStart();
-        auto clipLength = midiClip->getPosition().getLength();
-        double startSeconds = clipStart.inSeconds();
-        double lengthSeconds = clipLength.inSeconds();
+        // First device for this track — create the MAGDA clip
+        double startSeconds = midiClip->getPosition().getStart().inSeconds();
+        double lengthSeconds = midiClip->getPosition().getLength().inSeconds();
+        if (lengthSeconds <= 0.0) {
+            midiClip->removeFromParent();
+            continue;
+        }
 
-        DBG("  -> Creating MAGDA clip on track " << trackId << " at " << startSeconds
-                                                 << "s, length=" << lengthSeconds << "s");
+        // Extract ALL MIDI data from the TE recording clip BEFORE creating the MAGDA clip.
+        // createMidiClip() triggers syncClipToEngine() which calls insertMIDIClip() on the
+        // same track — this can invalidate the original recording clip's sequence data.
+        std::vector<MidiNote> recordedNotes;
+        std::vector<MidiCCData> recordedCC;
+        std::vector<MidiPitchBendData> recordedPB;
 
-        // Create clip in ClipManager
-        auto& clipManager = ClipManager::getInstance();
-        ClipId newClipId =
-            clipManager.createMidiClip(trackId, startSeconds, lengthSeconds, ClipView::Arrangement);
-
-        // Read MIDI notes from TE clip and add to ClipManager
         auto& midiList = midiClip->getSequence();
         for (auto* note : midiList.getNotes()) {
             if (!note)
                 continue;
-
-            MidiNote midiNote;
-            midiNote.noteNumber = note->getNoteNumber();
-            midiNote.velocity = note->getVelocity();
-            midiNote.startBeat = note->getStartBeat().inBeats();
-            midiNote.lengthBeats = note->getLengthBeats().inBeats();
-
-            clipManager.addMidiNote(newClipId, midiNote);
+            MidiNote mn;
+            mn.noteNumber = note->getNoteNumber();
+            mn.velocity = note->getVelocity();
+            mn.startBeat = note->getStartBeat().inBeats();
+            mn.lengthBeats = note->getLengthBeats().inBeats();
+            recordedNotes.push_back(mn);
         }
 
-        // Read CC and pitch bend data from TE clip
-        auto* clipInfo = clipManager.getClip(newClipId);
-        if (clipInfo) {
-            for (auto* controllerEvent : midiList.getControllerEvents()) {
-                if (!controllerEvent)
-                    continue;
-
-                int eventType = controllerEvent->getType();
-                if (eventType == tracktion::MidiControllerEvent::pitchWheelType) {
-                    // Pitch bend event
-                    MidiPitchBendData pbData;
-                    pbData.value = controllerEvent->getControllerValue();
-                    pbData.beatPosition = controllerEvent->getBeatPosition().inBeats();
-                    clipInfo->midiPitchBendData.push_back(pbData);
-                } else if (eventType < 128) {
-                    // Standard CC event (0-127)
-                    MidiCCData ccData;
-                    ccData.controller = eventType;
-                    ccData.value = controllerEvent->getControllerValue();
-                    ccData.beatPosition = controllerEvent->getBeatPosition().inBeats();
-                    clipInfo->midiCCData.push_back(ccData);
-                }
+        for (auto* ce : midiList.getControllerEvents()) {
+            if (!ce)
+                continue;
+            int eventType = ce->getType();
+            if (eventType == tracktion::MidiControllerEvent::pitchWheelType) {
+                MidiPitchBendData pb;
+                pb.value = ce->getControllerValue();
+                pb.beatPosition = ce->getBeatPosition().inBeats();
+                recordedPB.push_back(pb);
+            } else if (eventType < 128) {
+                MidiCCData cc;
+                cc.controller = eventType;
+                cc.value = ce->getControllerValue();
+                cc.beatPosition = ce->getBeatPosition().inBeats();
+                recordedCC.push_back(cc);
             }
         }
 
-        DBG("  -> Created clip " << newClipId << " with " << midiList.getNotes().size()
-                                 << " notes");
+        DBG("  extracted " << (int)recordedNotes.size() << " notes, " << (int)recordedCC.size()
+                           << " CC, " << (int)recordedPB.size() << " pitchbend from TE clip");
 
-        // Register clip ID mapping in AudioBridge so the TE clip is tracked
-        audioBridge_->syncClipToEngine(newClipId);
+        // Remove TE's recording clip BEFORE creating MAGDA clip to avoid
+        // two clips overlapping on the same time range
+        midiClip->removeFromParent();
+
+        // Create the MAGDA clip (triggers syncClipToEngine with 0 notes — that's fine)
+        auto& clipManager = ClipManager::getInstance();
+        ClipId clipId =
+            clipManager.createMidiClip(trackId, startSeconds, lengthSeconds, ClipView::Arrangement);
+        activeRecordingClips_[trackId] = clipId;
+
+        DBG("  created clip " << clipId << " on track " << trackId << " start=" << startSeconds
+                              << " len=" << lengthSeconds);
+
+        // Populate the MAGDA clip directly (bypass per-note notifications)
+        auto* clipInfo = clipManager.getClip(clipId);
+        if (clipInfo) {
+            clipInfo->midiNotes = std::move(recordedNotes);
+            clipInfo->midiCCData = std::move(recordedCC);
+            clipInfo->midiPitchBendData = std::move(recordedPB);
+
+            DBG("  populated clip with " << (int)clipInfo->midiNotes.size() << " notes");
+        }
+
+        // One final sync to push all MIDI data to the TE clip
+        if (audioBridge_)
+            audioBridge_->syncClipToEngine(clipId);
+    }
+
+    // Reset synths to prevent stuck notes
+    if (trackId != INVALID_TRACK_ID) {
+        audioBridge_->resetSynthsOnTrack(trackId);
     }
 }
 

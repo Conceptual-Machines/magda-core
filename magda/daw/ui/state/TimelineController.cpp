@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include "../../core/ClipManager.hpp"
+#include "../../core/TrackManager.hpp"
 #include "../utils/TimelineUtils.hpp"
 #include "Config.hpp"
 
@@ -333,7 +334,6 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartPlayb
     // Sync playbackPosition to editPosition at start of playback
     state.playhead.playbackPosition = state.playhead.editPosition;
 
-    // Notify transport listeners to start playback
     for (auto* listener : audioEngineListeners) {
         listener->onTransportPlay(state.playhead.editPosition);
     }
@@ -342,14 +342,47 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartPlayb
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const StartRecordEvent& /*e*/) {
-    state.playhead.isPlaying = true;
-    state.playhead.isRecording = true;
-    // Sync playbackPosition to editPosition at start of recording
-    state.playhead.playbackPosition = state.playhead.editPosition;
+    // If currently recording, punch out (stop recording, keep playing)
+    if (state.playhead.isRecording) {
+        DBG("StartRecordEvent: punch out (stop recording, keep playing)");
+        state.playhead.isRecording = false;
+        for (auto* listener : audioEngineListeners) {
+            listener->onTransportStopRecording();
+        }
+        return ChangeFlags::Playhead;
+    }
 
-    // Notify transport listeners to start recording
-    for (auto* listener : audioEngineListeners) {
-        listener->onTransportRecord(state.playhead.editPosition);
+    // Check if any track is armed
+    bool anyArmed = false;
+    auto& tracks = TrackManager::getInstance().getTracks();
+    for (const auto& track : tracks) {
+        if (track.recordArmed) {
+            anyArmed = true;
+            break;
+        }
+    }
+
+    if (!anyArmed) {
+        DBG("StartRecordEvent: no armed tracks, ignoring");
+        return ChangeFlags::None;
+    }
+
+    if (state.playhead.isPlaying) {
+        // Punch-in: already playing, start recording now
+        DBG("StartRecordEvent: punch-in recording at " << state.playhead.playbackPosition);
+        state.playhead.isRecording = true;
+        for (auto* listener : audioEngineListeners) {
+            listener->onTransportRecord(state.playhead.playbackPosition);
+        }
+    } else {
+        // Start recording from edit position (also starts playback)
+        DBG("StartRecordEvent: starting recording at " << state.playhead.editPosition);
+        state.playhead.isPlaying = true;
+        state.playhead.isRecording = true;
+        state.playhead.playbackPosition = state.playhead.editPosition;
+        for (auto* listener : audioEngineListeners) {
+            listener->onTransportRecord(state.playhead.editPosition);
+        }
     }
 
     return ChangeFlags::Playhead;

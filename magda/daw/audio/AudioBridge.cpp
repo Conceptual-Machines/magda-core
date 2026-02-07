@@ -5,6 +5,7 @@
 
 #include "../core/ClipOperations.hpp"
 #include "../engine/PluginWindowManager.hpp"
+#include "../engine/TracktionEngineWrapper.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
 
@@ -1314,13 +1315,18 @@ void AudioBridge::stopSessionClip(ClipId clipId) {
     // Reset synth plugins on the clip's track to prevent stuck notes
     const auto* clip = ClipManager::getInstance().getClip(clipId);
     if (clip && clip->type == ClipType::MIDI) {
-        auto* audioTrack = getAudioTrack(clip->trackId);
-        if (audioTrack) {
-            for (auto* plugin : audioTrack->pluginList) {
-                if (plugin->isSynth()) {
-                    plugin->reset();
-                }
-            }
+        resetSynthsOnTrack(clip->trackId);
+    }
+}
+
+void AudioBridge::resetSynthsOnTrack(TrackId trackId) {
+    auto* audioTrack = getAudioTrack(trackId);
+    if (!audioTrack)
+        return;
+
+    for (auto* plugin : audioTrack->pluginList) {
+        if (plugin->isSynth()) {
+            plugin->reset();
         }
     }
 }
@@ -2518,38 +2524,48 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
         }
         DBG("  -> Cleared MIDI input");
     } else if (midiDeviceId == "all") {
-        // Route ALL MIDI input devices to this track
+        // Route ONLY the "All MIDI Ins" virtual device to this track.
+        // This device aggregates all physical MIDI inputs, so we must NOT also
+        // route individual physical devices — that would cause duplicate note-on/off
+        // messages reaching the synth plugin, leading to stuck notes.
         bool addedAnyRouting = false;
-        DBG("  -> Routing ALL MIDI inputs to track. Total inputs in context: "
+        DBG("  -> Routing 'All MIDI Ins' virtual device to track. Total inputs in context: "
             << playbackContext->getAllInputs().size());
 
         for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-            // Check if this is a MIDI input device
-            if (auto* midiDevice =
-                    dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) {
-                // Make sure the device is enabled
-                if (!midiDevice->isEnabled()) {
-                    midiDevice->setEnabled(true);
-                }
+            auto* midiDevice = dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner);
+            if (!midiDevice)
+                continue;
 
-                // Set monitor mode to "on" so we hear MIDI without needing to arm for recording
-                midiDevice->setMonitorMode(te::InputDevice::MonitorMode::on);
+            // Only route the virtual "All MIDI Ins" device, skip physical devices
+            bool isVirtualAllInputs =
+                dynamic_cast<te::VirtualMidiInputDevice*>(midiDevice) != nullptr;
+            if (!isVirtualAllInputs) {
+                DBG("  -> Skipping physical device '" << midiDevice->getName() << "'");
+                continue;
+            }
 
-                // Set this track as target for live MIDI
-                auto result =
-                    inputDeviceInstance->setTarget(track->itemID, true, nullptr);  // true = MIDI
-                if (result.has_value()) {
-                    // Preserve arm state from TrackInfo
-                    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
-                    (*result)->recordEnabled = trackInfo ? trackInfo->recordArmed : false;
-                    addedAnyRouting = true;
-                    DBG("  -> Routed MIDI input '"
-                        << midiDevice->getName() << "' to track (monitor=on, recordEnabled="
-                        << ((*result)->recordEnabled ? "true" : "false") << ")");
-                } else {
-                    DBG("  -> FAILED to route MIDI input '" << midiDevice->getName()
-                                                            << "' to track");
-                }
+            // Make sure the device is enabled
+            if (!midiDevice->isEnabled()) {
+                midiDevice->setEnabled(true);
+            }
+
+            // Set monitor mode to "on" so we hear MIDI without needing to arm for recording
+            midiDevice->setMonitorMode(te::InputDevice::MonitorMode::on);
+
+            // Set this track as target for live MIDI
+            auto result =
+                inputDeviceInstance->setTarget(track->itemID, true, nullptr);  // true = MIDI
+            if (result.has_value()) {
+                // Preserve arm state from TrackInfo
+                auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+                (*result)->recordEnabled = trackInfo ? trackInfo->recordArmed : false;
+                addedAnyRouting = true;
+                DBG("  -> Routed MIDI input '"
+                    << midiDevice->getName() << "' to track (monitor=on, recordEnabled="
+                    << ((*result)->recordEnabled ? "true" : "false") << ")");
+            } else {
+                DBG("  -> FAILED to route MIDI input '" << midiDevice->getName() << "' to track");
             }
         }
 

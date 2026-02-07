@@ -43,6 +43,11 @@ class AudioEngineListener {
     virtual void onTransportRecord(double position) = 0;
 
     /**
+     * Called when recording should stop but playback continues (punch out).
+     */
+    virtual void onTransportStopRecording() = 0;
+
+    /**
      * Called when the edit position changes (user clicked timeline).
      * Audio engine should seek if not playing.
      * @param position The new edit position in seconds

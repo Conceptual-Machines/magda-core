@@ -218,72 +218,91 @@ class StartRecordEventTest final : public juce::UnitTest {
     StartRecordEventTest() : juce::UnitTest("StartRecordEvent Tests", "magda") {}
 
     void runTest() override {
-        testStartRecordSetsState();
-        testStartRecordSyncsPlaybackPosition();
-        testStartRecordNotifiesListeners();
+        testStartRecordNoArmedTracksDoesNothing();
+        testStartRecordWithArmedTrackStartsRecording();
+        testPlayWithArmedTrackStartsRecording();
+        testPlayWithNoArmedTrackStartsPlayback();
         testStopAfterRecordClearsRecording();
     }
 
   private:
-    // Simple listener to capture state changes
-    struct TestListener : public TimelineStateListener {
-        ChangeFlags lastChanges = ChangeFlags::None;
-        PlayheadState lastPlayhead;
-        int callCount = 0;
-
-        void timelineStateChanged(const TimelineState& state, ChangeFlags changes) override {
-            lastChanges = changes;
-            lastPlayhead = state.playhead;
-            callCount++;
-        }
-    };
-
-    void testStartRecordSetsState() {
-        beginTest("StartRecordEvent sets isPlaying and isRecording");
+    void testStartRecordNoArmedTracksDoesNothing() {
+        beginTest("StartRecordEvent does nothing when no tracks are armed");
 
         TimelineController controller;
 
-        // Set an edit position first
+        auto& tm = TrackManager::getInstance();
+        TrackId trackId = tm.createTrack("Test Track");
+        tm.setSelectedTrack(trackId);
+
+        controller.dispatch(StartRecordEvent{});
+
+        auto& state = controller.getState();
+        expect(!state.playhead.isPlaying, "Should not be playing");
+        expect(!state.playhead.isRecording, "Should not be recording");
+
+        tm.deleteTrack(trackId);
+    }
+
+    void testStartRecordWithArmedTrackStartsRecording() {
+        beginTest("StartRecordEvent starts recording when a track is already armed");
+
+        TimelineController controller;
+
+        auto& tm = TrackManager::getInstance();
+        TrackId trackId = tm.createTrack("Test Track");
+        tm.setSelectedTrack(trackId);
+        tm.setTrackRecordArmed(trackId, true);
+
+        controller.dispatch(SetEditPositionEvent{1.0});
+        controller.dispatch(StartRecordEvent{});
+
+        auto& state = controller.getState();
+        expect(state.playhead.isPlaying, "Should be playing");
+        expect(state.playhead.isRecording, "Should be recording");
+        expectEquals(state.playhead.playbackPosition, 1.0);
+
+        controller.dispatch(StopPlaybackEvent{});
+        tm.setTrackRecordArmed(trackId, false);
+        tm.deleteTrack(trackId);
+    }
+
+    void testPlayWithArmedTrackStartsRecording() {
+        beginTest("StartPlaybackEvent with armed track starts recording");
+
+        TimelineController controller;
+
+        auto& tm = TrackManager::getInstance();
+        TrackId trackId = tm.createTrack("Test Track");
+        tm.setSelectedTrack(trackId);
+        tm.setTrackRecordArmed(trackId, true);
+
         controller.dispatch(SetEditPositionEvent{2.0});
-
-        // Dispatch StartRecordEvent
-        controller.dispatch(StartRecordEvent{});
+        controller.dispatch(StartPlaybackEvent{});
 
         auto& state = controller.getState();
-        expect(state.playhead.isPlaying, "Should be playing after StartRecordEvent");
-        expect(state.playhead.isRecording, "Should be recording after StartRecordEvent");
+        expect(state.playhead.isPlaying, "Should be playing");
+        expect(state.playhead.isRecording, "Should be recording with armed track");
+        expectEquals(state.playhead.playbackPosition, 2.0);
+
+        controller.dispatch(StopPlaybackEvent{});
+        tm.setTrackRecordArmed(trackId, false);
+        tm.deleteTrack(trackId);
     }
 
-    void testStartRecordSyncsPlaybackPosition() {
-        beginTest("StartRecordEvent syncs playback to edit position");
+    void testPlayWithNoArmedTrackStartsPlayback() {
+        beginTest("StartPlaybackEvent with no armed tracks starts plain playback");
 
         TimelineController controller;
 
-        // Set edit position
-        controller.dispatch(SetEditPositionEvent{5.0});
-
-        // Start recording
-        controller.dispatch(StartRecordEvent{});
+        controller.dispatch(SetEditPositionEvent{3.0});
+        controller.dispatch(StartPlaybackEvent{});
 
         auto& state = controller.getState();
-        expectEquals(state.playhead.playbackPosition, state.playhead.editPosition);
-    }
+        expect(state.playhead.isPlaying, "Should be playing");
+        expect(!state.playhead.isRecording, "Should NOT be recording without armed tracks");
 
-    void testStartRecordNotifiesListeners() {
-        beginTest("StartRecordEvent notifies listeners with Playhead flag");
-
-        TimelineController controller;
-        TestListener listener;
-        controller.addListener(&listener);
-
-        controller.dispatch(StartRecordEvent{});
-
-        expect(listener.callCount > 0, "Listener should have been called");
-        expect(hasFlag(listener.lastChanges, ChangeFlags::Playhead),
-               "Changes should include Playhead flag");
-        expect(listener.lastPlayhead.isRecording, "Listener should see isRecording=true");
-
-        controller.removeListener(&listener);
+        controller.dispatch(StopPlaybackEvent{});
     }
 
     void testStopAfterRecordClearsRecording() {
@@ -291,7 +310,12 @@ class StartRecordEventTest final : public juce::UnitTest {
 
         TimelineController controller;
 
-        controller.dispatch(StartRecordEvent{});
+        auto& tm = TrackManager::getInstance();
+        TrackId trackId = tm.createTrack("Test Track");
+        tm.setSelectedTrack(trackId);
+        tm.setTrackRecordArmed(trackId, true);
+
+        controller.dispatch(StartPlaybackEvent{});
         expect(controller.getState().playhead.isRecording);
 
         controller.dispatch(StopPlaybackEvent{});
@@ -299,6 +323,9 @@ class StartRecordEventTest final : public juce::UnitTest {
         auto& state = controller.getState();
         expect(!state.playhead.isPlaying, "Should not be playing after stop");
         expect(!state.playhead.isRecording, "Should not be recording after stop");
+
+        tm.setTrackRecordArmed(trackId, false);
+        tm.deleteTrack(trackId);
     }
 };
 
