@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  Multi-Agent Generative Digital Audio
+  Multi-Agent Digital Audio
 </p>
 <p align="center"><img src="assets/treaktion-engine-logo.png" alt="Powered by Traktion Engine" width="250" height="80"></p>
 
