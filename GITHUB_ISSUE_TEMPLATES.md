@@ -290,3 +290,131 @@ Priority for fixes:
 1. **Bug #1** - Fix immediately (real user-facing bug)
 2. **Bug #3** - Document soon (prevent future issues)
 3. **Bug #2** - Improve when refactoring (minor code quality)
+
+---
+
+## Issue #4: Refactor AudioBridge into Focused Modules
+
+**Labels**: `refactoring`, `architecture`, `code-quality`, `audio`
+
+### Description
+
+The `AudioBridge` class has grown to 3,592 total lines with 70+ methods and 19 distinct areas of responsibility. This exceeds reasonable context size for both human developers and AI assistants, making the code difficult to maintain, test, and extend.
+
+### Current State
+
+**File Metrics:**
+- Total Lines: 3,592 (657 header + 2,935 implementation)
+- Methods: 70+ public/private methods
+- Member Variables: 60+ fields
+- Responsibilities: 19 distinct functional areas
+
+**Key Responsibilities:**
+- Track/Clip lifecycle management
+- Plugin loading and management
+- Audio/MIDI routing
+- Metering and parameter queues
+- Transport state management
+- Warp markers and transient detection
+- Plugin window management
+
+### Problem
+
+1. **Context Overflow** - Exceeds LLM context windows, makes AI-assisted development difficult
+2. **Testing Complexity** - Hard to unit test individual responsibilities
+3. **Thread Safety Complexity** - Multiple threading contexts spread across many concerns
+4. **Single Responsibility Violation** - God object antipattern
+5. **High Coupling** - Changes ripple unpredictably
+
+### Proposed Solution
+
+Break AudioBridge into 12 focused modules:
+
+**Core Coordination:**
+- AudioBridge (thin coordinator, ~500 LOC)
+
+**Mapping & Synchronization:**
+1. TrackMappingManager (~300 LOC)
+2. PluginManager (~400 LOC)
+3. ClipSynchronizer (~500 LOC)
+
+**Audio Processing:**
+4. MeteringManager (~300 LOC)
+5. ParameterManager (~200 LOC)
+6. MixerController (~250 LOC)
+
+**Routing:**
+7. AudioRoutingManager (~200 LOC)
+8. MidiRoutingManager (~250 LOC)
+
+**Specialized Features:**
+9. TransportStateManager (~150 LOC)
+10. MidiActivityMonitor (~200 LOC) - Also fixes track ID >= 128 bug
+11. WarpMarkerManager (~300 LOC)
+12. PluginWindowBridge (~150 LOC)
+
+### Implementation Strategy
+
+**Phase 1 (Low Risk):** Extract pure data managers (Transport, MIDI Activity, Parameter)
+**Phase 2 (Medium Risk):** Extract independent features (Warp, Window, Mixer)
+**Phase 3 (Higher Risk):** Extract core mappers (Track, Plugin, Clip)
+**Phase 4 (Highest Risk):** Extract routing & metering
+
+### Benefits
+
+- **Testability** - Each module unit testable in isolation
+- **Clarity** - Clear boundaries and responsibilities
+- **Maintainability** - Changes localized to specific modules
+- **AI-Friendly** - Each module fits in LLM context windows
+- **Thread Safety** - Easier to verify lock-free correctness per module
+
+### Success Criteria
+
+1. AudioBridge becomes thin coordinator (~500 LOC)
+2. Each module has single, clear responsibility
+3. Each module independently testable
+4. No module exceeds 500 LOC
+5. Thread safety clear and documented per module
+6. All existing functionality preserved
+7. All tests pass
+8. No performance regression
+
+### Detailed Plan
+
+See `docs/issues/audiobridge-refactoring.md` for:
+- Complete module specifications
+- Phase-by-phase implementation plan
+- Risk mitigation strategies
+- Testing approach
+- Thread safety considerations
+
+### Related Issues
+
+- Issue #1: MIDI activity tracking fails for track IDs >= 128 (will be fixed in MidiActivityMonitor)
+- See `BUG_ANALYSIS_REPORT.md` for other AudioBridge issues
+
+### Additional Info
+
+- Original file: `magda/daw/audio/AudioBridge.{hpp,cpp}`
+- Severity: HIGH (impacts maintainability)
+- Priority: MEDIUM (not urgent but important)
+- Confidence: 100% (clear need for refactoring)
+
+---
+
+## Summary
+
+All issues have been documented with:
+- ✅ Detailed descriptions
+- ✅ Code examples
+- ✅ Reproduction steps (where applicable)
+- ✅ Impact assessments
+- ✅ Suggested fixes
+- ✅ Test cases (where applicable)
+- ✅ Comprehensive analysis in supporting documents
+
+Priority for addressing:
+1. **Issue #1** - Fix immediately (real user-facing bug)
+2. **Issue #4** - Plan and scope (architectural improvement)
+3. **Issue #3** - Document soon (prevent future issues)
+4. **Issue #2** - Improve when refactoring (minor code quality)
