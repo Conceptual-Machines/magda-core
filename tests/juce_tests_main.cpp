@@ -3,6 +3,8 @@
 
 #include <iostream>
 
+#include "SharedTestEngine.hpp"
+
 /**
  * @brief Main entry point for JUCE unit tests
  *
@@ -23,7 +25,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Running MAGDA JUCE Unit Tests\n";
     std::cout << "========================================\n\n";
 
-    runner.runAllTests();
+    runner.runTestsInCategory("magda");
 
     std::cout << "\n========================================\n";
     std::cout << "Test Results Summary\n";
@@ -32,8 +34,7 @@ int main(int argc, char* argv[]) {
     int numFailures = 0;
     for (int i = 0; i < runner.getNumResults(); ++i) {
         auto* result = runner.getResult(i);
-        std::cout << result->unitTestName << ": "
-                  << result->passes << " passed, "
+        std::cout << result->unitTestName << ": " << result->passes << " passed, "
                   << result->failures << " failed\n";
         numFailures += result->failures;
     }
@@ -47,6 +48,10 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "========================================\n";
+
+    // Shut down the shared TE wrapper before ScopedJuceInitialiser_GUI destructs,
+    // otherwise static-destruction order causes a SIGSEGV in JUCE singletons.
+    magda::test::shutdownSharedEngine();
 
     return numFailures > 0 ? 1 : 0;
 }
