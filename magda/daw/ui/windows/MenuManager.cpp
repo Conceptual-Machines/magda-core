@@ -190,12 +190,18 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addItem(DuplicateTrack,
                      juce::String("Duplicate Track") + juce::String::fromUTF8("\t\u2318D"), true,
                      false);
+        menu.addItem(DuplicateTrackNoContent,
+                     juce::String("Duplicate Track Without Content") +
+                         juce::String::fromUTF8("\t\u21E7\u2318D"),
+                     true, false);
 #else
         menu.addItem(AddTrack, "Add Track\tCtrl+T", true, false);
         menu.addItem(AddGroupTrack, "Add Group Track\tCtrl+Shift+T", true, false);
         menu.addSeparator();
         menu.addItem(DeleteTrack, "Delete Track\tDelete", true, false);
         menu.addItem(DuplicateTrack, "Duplicate Track\tCtrl+D", true, false);
+        menu.addItem(DuplicateTrackNoContent, "Duplicate Track Without Content\tCtrl+Shift+D", true,
+                     false);
 #endif
         menu.addSeparator();
         menu.addItem(MuteTrack, "Mute Track\tM", true, false);
@@ -401,6 +407,10 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case DuplicateTrack:
             if (callbacks_.onDuplicateTrack)
                 callbacks_.onDuplicateTrack();
+            break;
+        case DuplicateTrackNoContent:
+            if (callbacks_.onDuplicateTrackNoContent)
+                callbacks_.onDuplicateTrackNoContent();
             break;
         case MuteTrack:
             if (callbacks_.onMuteTrack)

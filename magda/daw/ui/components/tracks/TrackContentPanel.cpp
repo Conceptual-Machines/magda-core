@@ -111,6 +111,7 @@ void TrackContentPanel::tracksChanged() {
     }
 
     resized();
+    updateClipComponentPositions();
     repaint();
 }
 
@@ -232,29 +233,6 @@ void TrackContentPanel::resized() {
     int contentHeight = getTotalTracksHeight();
 
     setSize(juce::jmax(contentWidth, getWidth()), juce::jmax(contentHeight, getHeight()));
-}
-
-void TrackContentPanel::addTrack() {
-    auto lane = std::make_unique<TrackLane>();
-    trackLanes.push_back(std::move(lane));
-
-    resized();
-    repaint();
-}
-
-void TrackContentPanel::removeTrack(int index) {
-    if (index >= 0 && index < trackLanes.size()) {
-        trackLanes.erase(trackLanes.begin() + index);
-
-        if (selectedTrackIndex == index) {
-            selectedTrackIndex = -1;
-        } else if (selectedTrackIndex > index) {
-            selectedTrackIndex--;
-        }
-
-        resized();
-        repaint();
-    }
 }
 
 void TrackContentPanel::selectTrack(int index) {
@@ -2466,6 +2444,9 @@ bool TrackContentPanel::isInterestedInFileDrag(const juce::StringArray& files) {
 
 void TrackContentPanel::fileDragEnter(const juce::StringArray& files, int x, int y) {
     dropInsertTime_ = juce::jmax(0.0, pixelToTime(x));
+    if (snapTimeToGrid) {
+        dropInsertTime_ = snapTimeToGrid(dropInsertTime_);
+    }
     dropTargetTrackIndex_ = getTrackIndexAtY(y);
     showDropIndicator_ = true;
     repaint();
@@ -2473,6 +2454,9 @@ void TrackContentPanel::fileDragEnter(const juce::StringArray& files, int x, int
 
 void TrackContentPanel::fileDragMove(const juce::StringArray& files, int x, int y) {
     dropInsertTime_ = juce::jmax(0.0, pixelToTime(x));
+    if (snapTimeToGrid) {
+        dropInsertTime_ = snapTimeToGrid(dropInsertTime_);
+    }
     dropTargetTrackIndex_ = getTrackIndexAtY(y);
     repaint();
 }
@@ -2486,12 +2470,14 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
     showDropIndicator_ = false;
     repaint();
 
-    // Determine drop position (clamp to timeline start)
+    // Determine drop position (clamp to timeline start, snap if enabled)
     double dropTime = juce::jmax(0.0, pixelToTime(x));
+    if (snapTimeToGrid) {
+        dropTime = snapTimeToGrid(dropTime);
+    }
     int trackIndex = getTrackIndexAtY(y);
 
     if (trackIndex < 0 || trackIndex >= static_cast<int>(visibleTrackIds_.size())) {
-        DBG("TrackContentPanel: Invalid drop track index");
         return;
     }
 
@@ -2499,7 +2485,6 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
     auto* track = TrackManager::getInstance().getTrack(targetTrackId);
 
     if (!track) {
-        DBG("TrackContentPanel: Track not found for drop");
         return;
     }
 

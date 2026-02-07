@@ -1166,12 +1166,27 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
-    // Cmd/Ctrl+Shift+D: Open Debug Dialog
+    // Cmd/Ctrl+Shift+Alt+D: Open Debug Dialog
     if (key ==
-        juce::KeyPress('d', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier,
+        juce::KeyPress('d',
+                       juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier |
+                           juce::ModifierKeys::altModifier,
                        0)) {
         daw::ui::DebugDialog::show();
         return true;
+    }
+
+    // Cmd/Ctrl+Shift+D: Duplicate selected track without content (header only)
+    if (key ==
+        juce::KeyPress('d', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier,
+                       0)) {
+        TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
+        if (selectedTrack != INVALID_TRACK_ID) {
+            auto cmd = std::make_unique<DuplicateTrackCommand>(selectedTrack, false);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            return true;
+        }
+        return false;
     }
 
     // Cmd/Ctrl+Shift+A: Audio Test - Two tracks with -12dB each (expect -6dB on master)
@@ -1232,33 +1247,23 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
 
     // Delete or Backspace: Delete selected track (through undo system)
     if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {
-        if (mixerView && !mixerView->isSelectedMaster()) {
-            int selectedIndex = mixerView->getSelectedChannel();
-            if (selectedIndex >= 0) {
-                const auto& tracks = TrackManager::getInstance().getTracks();
-                if (selectedIndex < static_cast<int>(tracks.size())) {
-                    auto cmd = std::make_unique<DeleteTrackCommand>(tracks[selectedIndex].id);
-                    UndoManager::getInstance().executeCommand(std::move(cmd));
-                    return true;  // Consumed - deleted a track
-                }
-            }
+        TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
+        if (selectedTrack != INVALID_TRACK_ID) {
+            auto cmd = std::make_unique<DeleteTrackCommand>(selectedTrack);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            return true;
         }
         // Don't consume - let clips handle delete if no track action
         return false;
     }
 
-    // Cmd/Ctrl+D: Duplicate selected track (through undo system)
+    // Cmd/Ctrl+D: Duplicate selected track with content (through undo system)
     if (key == juce::KeyPress('d', juce::ModifierKeys::commandModifier, 0)) {
-        if (mixerView && !mixerView->isSelectedMaster()) {
-            int selectedIndex = mixerView->getSelectedChannel();
-            if (selectedIndex >= 0) {
-                const auto& tracks = TrackManager::getInstance().getTracks();
-                if (selectedIndex < static_cast<int>(tracks.size())) {
-                    auto cmd = std::make_unique<DuplicateTrackCommand>(tracks[selectedIndex].id);
-                    UndoManager::getInstance().executeCommand(std::move(cmd));
-                    return true;  // Track was duplicated, consume the key press
-                }
-            }
+        TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
+        if (selectedTrack != INVALID_TRACK_ID) {
+            auto cmd = std::make_unique<DuplicateTrackCommand>(selectedTrack, true);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            return true;
         }
         // No track was duplicated, let the key press fall through to duplicate clips
         return false;
@@ -2024,17 +2029,19 @@ void MainWindow::setupMenuCallbacks() {
         }
     };
 
-    callbacks.onDuplicateTrack = [this]() {
-        // Duplicate the selected track from MixerView
-        if (mainComponent && mainComponent->mixerView) {
-            int selectedIndex = mainComponent->mixerView->getSelectedChannel();
-            if (!mainComponent->mixerView->isSelectedMaster() && selectedIndex >= 0) {
-                const auto& tracks = TrackManager::getInstance().getTracks();
-                if (selectedIndex < static_cast<int>(tracks.size())) {
-                    auto cmd = std::make_unique<DuplicateTrackCommand>(tracks[selectedIndex].id);
-                    UndoManager::getInstance().executeCommand(std::move(cmd));
-                }
-            }
+    callbacks.onDuplicateTrack = []() {
+        TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
+        if (selectedTrack != INVALID_TRACK_ID) {
+            auto cmd = std::make_unique<DuplicateTrackCommand>(selectedTrack, true);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+        }
+    };
+
+    callbacks.onDuplicateTrackNoContent = []() {
+        TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
+        if (selectedTrack != INVALID_TRACK_ID) {
+            auto cmd = std::make_unique<DuplicateTrackCommand>(selectedTrack, false);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
         }
     };
 

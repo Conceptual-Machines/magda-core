@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/engine/TracktionEngineWrapper.hpp"
+#include "SharedTestEngine.hpp"
 
 using namespace magda;
 
@@ -9,14 +9,12 @@ using namespace magda;
 // ============================================================================
 
 TEST_CASE("Export - Transport stops before rendering", "[export][transport]") {
-    // Create a minimal engine and edit for testing
-    TracktionEngineWrapper engine;
-    REQUIRE(engine.initialize());
-
+    auto& engine = test::getSharedEngine();
     auto* edit = engine.getEdit();
     REQUIRE(edit != nullptr);
 
     auto& transport = edit->getTransport();
+    test::resetTransport(engine);
 
     SECTION("Transport is stopped initially") {
         REQUIRE_FALSE(transport.isPlaying());
@@ -80,8 +78,6 @@ TEST_CASE("Export - Transport stops before rendering", "[export][transport]") {
             REQUIRE_FALSE(transport.isPlaying());
         }
     }
-
-    engine.shutdown();
 }
 
 // ============================================================================
@@ -89,13 +85,12 @@ TEST_CASE("Export - Transport stops before rendering", "[export][transport]") {
 // ============================================================================
 
 TEST_CASE("Export - Verify offline render preconditions", "[export][render]") {
-    TracktionEngineWrapper engine;
-    REQUIRE(engine.initialize());
-
+    auto& engine = test::getSharedEngine();
     auto* edit = engine.getEdit();
     REQUIRE(edit != nullptr);
 
     auto& transport = edit->getTransport();
+    test::resetTransport(engine);
 
     SECTION("Offline render requires inactive transport") {
         // This is the assertion from tracktion_NodeRenderContext.cpp:182
@@ -129,8 +124,6 @@ TEST_CASE("Export - Verify offline render preconditions", "[export][render]") {
         // After stopping, precondition is satisfied
         REQUIRE_FALSE(transport.isPlaying());
     }
-
-    engine.shutdown();
 }
 
 // ============================================================================
@@ -138,13 +131,12 @@ TEST_CASE("Export - Verify offline render preconditions", "[export][render]") {
 // ============================================================================
 
 TEST_CASE("Export - Multiple export attempts handle transport correctly", "[export][transport]") {
-    TracktionEngineWrapper engine;
-    REQUIRE(engine.initialize());
-
+    auto& engine = test::getSharedEngine();
     auto* edit = engine.getEdit();
     REQUIRE(edit != nullptr);
 
     auto& transport = edit->getTransport();
+    test::resetTransport(engine);
 
     // Simulate multiple export attempts with different transport states
     for (int i = 0; i < 3; ++i) {
@@ -164,8 +156,6 @@ TEST_CASE("Export - Multiple export attempts handle transport correctly", "[expo
         // Verify transport is always stopped before "export"
         REQUIRE_FALSE(transport.isPlaying());
     }
-
-    engine.shutdown();
 }
 
 // ============================================================================
@@ -173,13 +163,12 @@ TEST_CASE("Export - Multiple export attempts handle transport correctly", "[expo
 // ============================================================================
 
 TEST_CASE("Export - Transport state after export", "[export][transport]") {
-    TracktionEngineWrapper engine;
-    REQUIRE(engine.initialize());
-
+    auto& engine = test::getSharedEngine();
     auto* edit = engine.getEdit();
     REQUIRE(edit != nullptr);
 
     auto& transport = edit->getTransport();
+    test::resetTransport(engine);
 
     SECTION("Transport remains stopped after export completes") {
         // Start playing
@@ -215,6 +204,4 @@ TEST_CASE("Export - Transport state after export", "[export][transport]") {
             transport.stop(false, false);
         }
     }
-
-    engine.shutdown();
 }

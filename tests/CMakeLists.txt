@@ -28,6 +28,7 @@ set(TEST_SOURCES
     test_project_serialization.cpp
     test_session_clip_playback.cpp
     test_tracktion_engine_wrapper_refactoring.cpp
+    SharedTestEngineCleanup.cpp
 )
 
 # Create test executable

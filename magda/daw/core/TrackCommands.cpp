@@ -1,7 +1,5 @@
 #include "TrackCommands.hpp"
 
-#include <iostream>
-
 #include "ClipManager.hpp"
 
 namespace magda {
@@ -22,7 +20,7 @@ void CreateTrackCommand::execute() {
     }
 
     executed_ = true;
-    std::cout << "📝 UNDO: Created track " << createdTrackId_ << std::endl;
+    DBG("UNDO: Created track " << createdTrackId_);
 }
 
 void CreateTrackCommand::undo() {
@@ -38,7 +36,7 @@ void CreateTrackCommand::undo() {
     }
 
     TrackManager::getInstance().deleteTrack(createdTrackId_);
-    std::cout << "📝 UNDO: Undid create track " << createdTrackId_ << std::endl;
+    DBG("UNDO: Undid create track " << createdTrackId_);
 }
 
 juce::String CreateTrackCommand::getDescription() const {
@@ -92,7 +90,7 @@ void DeleteTrackCommand::execute() {
     trackManager.deleteTrack(trackId_);
     executed_ = true;
 
-    std::cout << "📝 UNDO: Deleted track " << trackId_ << std::endl;
+    DBG("UNDO: Deleted track " << trackId_);
 }
 
 void DeleteTrackCommand::undo() {
@@ -108,39 +106,34 @@ void DeleteTrackCommand::undo() {
         clipManager.restoreClip(clip);
     }
 
-    std::cout << "📝 UNDO: Restored track " << trackId_ << std::endl;
+    DBG("UNDO: Restored track " << trackId_);
 }
 
 // ============================================================================
 // DuplicateTrackCommand
 // ============================================================================
 
-DuplicateTrackCommand::DuplicateTrackCommand(TrackId sourceTrackId)
-    : sourceTrackId_(sourceTrackId) {}
+DuplicateTrackCommand::DuplicateTrackCommand(TrackId sourceTrackId, bool duplicateContent)
+    : sourceTrackId_(sourceTrackId), duplicateContent_(duplicateContent) {}
 
 void DuplicateTrackCommand::execute() {
     auto& trackManager = TrackManager::getInstance();
 
-    // Get the current track count to determine the new track's ID
-    int trackCountBefore = trackManager.getNumTracks();
+    duplicatedTrackId_ = trackManager.duplicateTrack(sourceTrackId_);
 
-    trackManager.duplicateTrack(sourceTrackId_);
-
-    // Find the newly created track (it should be the last one added)
-    const auto& tracks = trackManager.getTracks();
-    if (static_cast<int>(tracks.size()) > trackCountBefore) {
-        // Find the track that was just added (the duplicate)
-        for (const auto& track : tracks) {
-            if (track.name.endsWith(" Copy")) {
-                duplicatedTrackId_ = track.id;
-                break;
+    if (duplicateContent_ && duplicatedTrackId_ != INVALID_TRACK_ID) {
+        auto& clipManager = ClipManager::getInstance();
+        auto clipIds = clipManager.getClipsOnTrack(sourceTrackId_);
+        for (auto clipId : clipIds) {
+            const auto* clip = clipManager.getClip(clipId);
+            if (clip) {
+                clipManager.duplicateClipAt(clipId, clip->startTime, duplicatedTrackId_);
             }
         }
     }
 
     executed_ = true;
-    std::cout << "📝 UNDO: Duplicated track " << sourceTrackId_ << " -> " << duplicatedTrackId_
-              << std::endl;
+    DBG("UNDO: Duplicated track " << sourceTrackId_ << " -> " << duplicatedTrackId_);
 }
 
 void DuplicateTrackCommand::undo() {
@@ -156,7 +149,7 @@ void DuplicateTrackCommand::undo() {
     }
 
     TrackManager::getInstance().deleteTrack(duplicatedTrackId_);
-    std::cout << "📝 UNDO: Undid duplicate track " << duplicatedTrackId_ << std::endl;
+    DBG("UNDO: Undid duplicate track " << duplicatedTrackId_);
 }
 
 }  // namespace magda

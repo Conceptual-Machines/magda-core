@@ -1005,52 +1005,6 @@ void TrackHeadersPanel::resized() {
     updateTrackHeaderLayout();
 }
 
-void TrackHeadersPanel::addTrack() {
-    juce::String trackName = "Track " + juce::String(trackHeaders.size() + 1);
-    auto header = std::make_unique<TrackHeader>(trackName);
-
-    // Set up callbacks
-    int trackIndex = static_cast<int>(trackHeaders.size());
-    setupTrackHeader(*header, trackIndex);
-
-    // Add components
-    addAndMakeVisible(*header->nameLabel);
-    addAndMakeVisible(*header->muteButton);
-    addAndMakeVisible(*header->soloButton);
-    addAndMakeVisible(*header->recordButton);
-    addAndMakeVisible(*header->automationButton);
-    addAndMakeVisible(*header->volumeLabel);
-    addAndMakeVisible(*header->panLabel);
-    addAndMakeVisible(*header->audioInSelector);
-    addAndMakeVisible(*header->audioOutSelector);
-    addAndMakeVisible(*header->midiInSelector);
-    addAndMakeVisible(*header->midiOutSelector);
-    for (auto& sendLabel : header->sendLabels) {
-        addAndMakeVisible(*sendLabel);
-    }
-    addAndMakeVisible(*header->meterComponent);
-
-    trackHeaders.push_back(std::move(header));
-
-    updateTrackHeaderLayout();
-    repaint();
-}
-
-void TrackHeadersPanel::removeTrack(int index) {
-    if (index >= 0 && index < trackHeaders.size()) {
-        trackHeaders.erase(trackHeaders.begin() + index);
-
-        if (selectedTrackIndex == index) {
-            selectedTrackIndex = -1;
-        } else if (selectedTrackIndex > index) {
-            selectedTrackIndex--;
-        }
-
-        updateTrackHeaderLayout();
-        repaint();
-    }
-}
-
 void TrackHeadersPanel::selectTrack(int index) {
     if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
         selectedTrackIndex = index;
@@ -1800,6 +1754,10 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
 
     menu.addSeparator();
 
+    // Duplicate track
+    menu.addItem(4, "Duplicate Track");
+    menu.addItem(5, "Duplicate Track Without Content");
+
     // Delete track
     menu.addItem(3, "Delete Track");
 
@@ -1816,6 +1774,14 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                            } else if (result == 3) {
                                // Delete track (through undo system)
                                auto cmd = std::make_unique<DeleteTrackCommand>(trackId);
+                               UndoManager::getInstance().executeCommand(std::move(cmd));
+                           } else if (result == 4) {
+                               // Duplicate track with content
+                               auto cmd = std::make_unique<DuplicateTrackCommand>(trackId, true);
+                               UndoManager::getInstance().executeCommand(std::move(cmd));
+                           } else if (result == 5) {
+                               // Duplicate track without content
+                               auto cmd = std::make_unique<DuplicateTrackCommand>(trackId, false);
                                UndoManager::getInstance().executeCommand(std::move(cmd));
                            } else if (result == 10) {
                                // Toggle Audio In
