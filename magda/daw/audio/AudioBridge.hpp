@@ -12,7 +12,10 @@
 #include "../core/TypeIds.hpp"
 #include "DeviceProcessor.hpp"
 #include "MeteringBuffer.hpp"
+#include "MidiActivityMonitor.hpp"
+#include "ParameterManager.hpp"
 #include "ParameterQueue.hpp"
+#include "TransportStateManager.hpp"
 
 namespace magda {
 
@@ -287,7 +290,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @brief Get the parameter queue for pushing changes from UI
      */
     ParameterQueue& getParameterQueue() {
-        return parameterQueue_;
+        return parameterManager_.getQueue();
     }
 
     /**
@@ -340,21 +343,21 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @brief Get current transport playing state (audio thread safe)
      */
     bool isTransportPlaying() const {
-        return transportPlaying_.load(std::memory_order_acquire);
+        return transportState_.isPlaying();
     }
 
     /**
      * @brief Get just-started flag (audio thread safe)
      */
     bool didJustStart() const {
-        return justStartedFlag_.load(std::memory_order_acquire);
+        return transportState_.didJustStart();
     }
 
     /**
      * @brief Get just-looped flag (audio thread safe)
      */
     bool didJustLoop() const {
-        return justLoopedFlag_.load(std::memory_order_acquire);
+        return transportState_.didJustLoop();
     }
 
     // =========================================================================
@@ -365,14 +368,18 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @brief Trigger MIDI activity for a track (audio thread safe)
      * @param trackId The track that received MIDI
      */
-    void triggerMidiActivity(TrackId trackId);
+    void triggerMidiActivity(TrackId trackId) {
+        midiActivity_.triggerActivity(trackId);
+    }
 
     /**
      * @brief Check and clear MIDI activity flag for a track (UI thread)
      * @param trackId The track to check
      * @return true if MIDI activity occurred since last check
      */
-    bool consumeMidiActivity(TrackId trackId);
+    bool consumeMidiActivity(TrackId trackId) {
+        return midiActivity_.consumeActivity(trackId);
+    }
 
     // =========================================================================
     // Mixer Controls
@@ -613,16 +620,11 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
 
     // Lock-free communication buffers
     MeteringBuffer meteringBuffer_;
-    ParameterQueue parameterQueue_;
 
-    // Transport state (UI thread writes, audio thread reads - lock-free)
-    std::atomic<bool> transportPlaying_{false};
-    std::atomic<bool> justStartedFlag_{false};
-    std::atomic<bool> justLoopedFlag_{false};
-
-    // MIDI activity flags (audio thread writes, UI thread reads/clears - lock-free)
-    static constexpr int kMaxTracks = 128;
-    std::array<std::atomic<bool>, kMaxTracks> midiActivityFlags_;
+    // Phase 1 refactoring: Pure data managers (extracted from AudioBridge)
+    TransportStateManager transportState_;
+    MidiActivityMonitor midiActivity_;
+    ParameterManager parameterManager_;
 
     // Master channel metering (lock-free atomics for thread safety)
     std::atomic<float> masterPeakL_{0.0f};
