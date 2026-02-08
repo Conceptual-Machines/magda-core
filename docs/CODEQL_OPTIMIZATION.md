@@ -16,7 +16,7 @@ The CodeQL Security Scan workflow was taking **~67 minutes** to complete, which 
 - Scheduled weekly scans (Mondays at 2:00 AM UTC)
 - Manual workflow dispatch
 
-**Rationale**: 
+**Rationale**:
 - Security scans are more appropriate for integrated code rather than every PR iteration
 - PRs are already protected by other fast security checks (secret scanning, basic security patterns)
 - CodeQL results are most valuable when analyzing the main codebase

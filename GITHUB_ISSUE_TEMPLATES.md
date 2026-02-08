@@ -14,7 +14,7 @@ The `AudioBridge` class uses a fixed-size array to track MIDI activity indicator
 
 ### Bug Details
 
-**Location**: 
+**Location**:
 - `magda/daw/audio/AudioBridge.hpp` lines 534-535
 - `magda/daw/audio/AudioBridge.cpp` lines 1013-1024
 
@@ -39,7 +39,7 @@ Track IDs in `TrackManager` are generated using `nextTrackId_++` which can grow 
 3. Create 50 more tracks (track IDs 101-150)
 4. Observe that tracks with IDs >= 128 do not show MIDI activity indicators
 
-**Expected**: MIDI activity should work for all valid track IDs  
+**Expected**: MIDI activity should work for all valid track IDs
 **Actual**: MIDI activity silently fails for track IDs >= 128
 
 ### Impact
@@ -99,7 +99,7 @@ The plugin cleanup code in `AudioBridge::syncTrackPlugins()` has a fragile order
 
 ### Bug Details
 
-**Location**: 
+**Location**:
 - `magda/daw/audio/AudioBridge.cpp` around line 917 in `syncTrackPlugins()`
 
 **Current Code** (works but fragile):
@@ -175,7 +175,7 @@ See `tests/test_audiobridge_plugin_cleanup_bug.cpp` for:
 
 ### Bug Details
 
-**Location**: 
+**Location**:
 - `magda/daw/core/ClipManager.cpp` lines 392-404
 
 **Code**:
@@ -237,11 +237,11 @@ clip->length = newLength;  // ❌ May crash
 ```cpp
 /**
  * @brief Get a pointer to a clip (TEMPORARY USE ONLY)
- * 
+ *
  * WARNING: The returned pointer is invalidated by ANY operation that
  * modifies clips_ (create, delete, or any operation causing reallocation).
  * Do NOT store this pointer. Use immediately and discard.
- * 
+ *
  * @return Pointer to clip, valid only until next clips_ modification
  */
 ClipInfo* getClip(ClipId clipId);
@@ -262,7 +262,7 @@ std::deque<ClipInfo> clips_;
 
 ### Recommendation
 
-**Short term**: Add documentation warning (Option 1)  
+**Short term**: Add documentation warning (Option 1)
 **Long term**: Consider changing container if performance allows (Option 3)
 
 ### Additional Info

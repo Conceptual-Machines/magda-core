@@ -23,4 +23,3 @@ updates:
       - "github-actions"
     # Keep GitHub Actions up to date for security
     open-pull-requests-limit: 3
-

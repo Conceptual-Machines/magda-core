@@ -100,4 +100,4 @@ PenaltyReturnTypeOnItsOwnLine: 200
 Cpp11BracedListStyle: true
 FixNamespaceComments: true
 KeepEmptyLinesAtTheStartOfBlocks: false
-MaxEmptyLinesToKeep: 1 
+MaxEmptyLinesToKeep: 1

@@ -33,21 +33,21 @@ jobs:
       id: metrics
       run: |
         echo "Collecting codebase metrics..."
-        
+
         # Count lines of code
         cloc --json magda/ tests/ > cloc-report.json
-        
+
         # Find TODO/FIXME comments
         echo "=== TODOs and FIXMEs ===" > analysis-report.txt
         grep -r "TODO\|FIXME" magda/ tests/ --include="*.cpp" --include="*.hpp" --include="*.h" -n >> analysis-report.txt || true
-        
+
         # Count them
         TODO_COUNT=$(grep -r "TODO" magda/ tests/ --include="*.cpp" --include="*.hpp" --include="*.h" | wc -l || echo "0")
         FIXME_COUNT=$(grep -r "FIXME" magda/ tests/ --include="*.cpp" --include="*.hpp" --include="*.h" | wc -l || echo "0")
-        
+
         echo "todo_count=$TODO_COUNT" >> $GITHUB_OUTPUT
         echo "fixme_count=$FIXME_COUNT" >> $GITHUB_OUTPUT
-        
+
         echo "" >> analysis-report.txt
         echo "=== Summary ===" >> analysis-report.txt
         echo "TODOs found: $TODO_COUNT" >> analysis-report.txt
@@ -57,7 +57,7 @@ jobs:
       run: |
         echo "" >> analysis-report.txt
         echo "=== Potential Code Smells ===" >> analysis-report.txt
-        
+
         # Find long functions (simplified heuristic - files with long blocks)
         echo "Large implementation files (may contain long functions):" >> analysis-report.txt
         find magda/ tests/ \( -name "*.cpp" -o -name "*.hpp" \) | while read -r file; do
@@ -66,7 +66,7 @@ jobs:
             echo "$file: $LINES lines" >> analysis-report.txt
           fi
         done || true
-        
+
         # Find files with many includes (potential dependency issues)
         echo "" >> analysis-report.txt
         echo "Files with many includes (>15):" >> analysis-report.txt
@@ -81,11 +81,11 @@ jobs:
       run: |
         echo "" >> analysis-report.txt
         echo "=== Potential Anti-Patterns ===" >> analysis-report.txt
-        
+
         # Find potential memory leaks (new without corresponding delete/unique_ptr)
         echo "Files with raw 'new' (consider using smart pointers):" >> analysis-report.txt
         grep -r "\bnew\b" magda/ tests/ --include="*.cpp" --include="*.hpp" -l | head -20 >> analysis-report.txt || true
-        
+
         # Find potential thread safety issues (mutable static variables)
         echo "" >> analysis-report.txt
         echo "Static non-const variables (potential thread safety issues):" >> analysis-report.txt
@@ -107,36 +107,36 @@ jobs:
         script: |
           const fs = require('fs');
           const report = fs.readFileSync('analysis-report.txt', 'utf8');
-          
+
           const issueBody = `## Automated Code Analysis Report
-          
+
           This issue was automatically created by the periodic code analysis workflow.
-          
+
           ### Summary
           - **FIXMEs found**: ${{ steps.metrics.outputs.fixme_count }}
           - **TODOs found**: ${{ steps.metrics.outputs.todo_count }}
-          
+
           ### Details
-          
+
           <details>
           <summary>Full Analysis Report</summary>
-          
+
           \`\`\`
           ${report}
           \`\`\`
-          
+
           </details>
-          
+
           ### Recommendations
-          
+
           1. Review and address high-priority FIXMEs
           2. Consider creating separate issues for larger TODOs
           3. Refactor long functions for better maintainability
           4. Review files with many dependencies for potential simplification
-          
+
           **Note**: This is an automated report. Please review findings for false positives.
           `;
-          
+
           // Check if a similar issue already exists
           const issues = await github.rest.issues.listForRepo({
             owner: context.repo.owner,
@@ -144,7 +144,7 @@ jobs:
             labels: ['automated-analysis'],
             state: 'open'
           });
-          
+
           if (issues.data.length === 0) {
             // Create new issue
             await github.rest.issues.create({

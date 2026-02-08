@@ -14,7 +14,7 @@ The project uses GitHub Actions for continuous integration and periodic automate
 
 ### 1. CI Workflow (`.github/workflows/ci.yml`)
 
-**Triggers**: 
+**Triggers**:
 - Automatic: On every push to any branch
 - Manual: Can be triggered via workflow_dispatch with options
 
@@ -269,7 +269,7 @@ If you need the complete raw reports, you can download artifacts:
    ```bash
    # List recent runs
    gh run list --workflow=refactoring-scanner.yml
-   
+
    # Download artifacts from a specific run
    gh run download <run-id> -n refactoring-results
    ```

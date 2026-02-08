@@ -173,7 +173,7 @@ Create a `.github/CODEOWNERS` file to specify who must review certain parts of t
    git commit -m "test: try direct push"
    git push origin main
    ```
-   
+
    Expected result: ❌ Push rejected
    ```
    ! [remote rejected] main -> main (protected branch hook declined)
@@ -357,6 +357,6 @@ If you encounter issues configuring these settings:
 
 ---
 
-**Last Updated**: 2026-01-30  
-**Applies To**: MAGDA Core Repository  
+**Last Updated**: 2026-01-30
+**Applies To**: MAGDA Core Repository
 **Maintainer**: Repository Administrators

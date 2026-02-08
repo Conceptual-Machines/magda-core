@@ -221,7 +221,7 @@ For each extracted module:
 ## Risks & Mitigation
 
 ### Risk 1: Breaking Thread Safety
-**Mitigation**: 
+**Mitigation**:
 - Extract lock-free modules first (transport, MIDI activity)
 - Document threading model for each module
 - Add thread-safety assertions

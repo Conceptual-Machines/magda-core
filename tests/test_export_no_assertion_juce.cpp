@@ -64,8 +64,7 @@ class ExportNoAssertionTest final : public juce::UnitTest {
         params.realTimeRender = false;
 
         // Critical assertion check
-        expect(!transport.isPlayContextActive(),
-               "Play context must be inactive before render");
+        expect(!transport.isPlayContextActive(), "Play context must be inactive before render");
 
         // Perform the render
         auto renderedFile = te::Renderer::renderToFile("Test Export", params);
@@ -105,8 +104,7 @@ class ExportNoAssertionTest final : public juce::UnitTest {
         te::freePlaybackContextIfNotRecording(transport);
 
         // Verify playback context is now freed
-        expect(!transport.isPlayContextActive(),
-               "Play context should be freed after stop");
+        expect(!transport.isPlayContextActive(), "Play context should be freed after stop");
 
         // Create a temporary file for export
         auto tempFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
@@ -125,8 +123,7 @@ class ExportNoAssertionTest final : public juce::UnitTest {
         params.realTimeRender = false;
 
         // Critical assertion check
-        expect(!transport.isPlayContextActive(),
-               "Play context must be inactive before render");
+        expect(!transport.isPlayContextActive(), "Play context must be inactive before render");
 
         // Perform the render
         auto renderedFile = te::Renderer::renderToFile("Test Export", params);
@@ -138,7 +135,8 @@ class ExportNoAssertionTest final : public juce::UnitTest {
         renderedFile.deleteFile();
 
         if (wasPlaying) {
-            logMessage("Transport was playing before export - fix successfully prevented assertion");
+            logMessage(
+                "Transport was playing before export - fix successfully prevented assertion");
         }
 
         engine.shutdown();
@@ -185,15 +183,13 @@ class ExportNoAssertionTest final : public juce::UnitTest {
             params.bitDepth = 16;
             params.sampleRateForAudio = 44100.0;
             params.blockSizeForAudio = 8192;
-            params.time =
-                te::TimeRange(te::TimePosition::fromSeconds(0.0),
-                              te::TimePosition::fromSeconds(0.25));
+            params.time = te::TimeRange(te::TimePosition::fromSeconds(0.0),
+                                        te::TimePosition::fromSeconds(0.25));
             params.realTimeRender = false;
 
             std::atomic<float> progress{0.0f};
-            auto renderTask =
-                std::make_unique<te::Renderer::RenderTask>("Test Export", params, &progress,
-                                                           nullptr);
+            auto renderTask = std::make_unique<te::Renderer::RenderTask>("Test Export", params,
+                                                                         &progress, nullptr);
 
             bool renderSucceeded = false;
             int maxIterations = 1000;
@@ -215,7 +211,8 @@ class ExportNoAssertionTest final : public juce::UnitTest {
             }
 
             expect(renderSucceeded, "Render should succeed on iteration " + juce::String(i));
-            expect(tempFile.existsAsFile(), "Temp file should exist on iteration " + juce::String(i));
+            expect(tempFile.existsAsFile(),
+                   "Temp file should exist on iteration " + juce::String(i));
 
             tempFile.deleteFile();
         }
@@ -248,8 +245,7 @@ class ExportNoAssertionTest final : public juce::UnitTest {
             te::freePlaybackContextIfNotRecording(transport);
         }
 
-        expect(!transport.isPlayContextActive(),
-               "Play context should be freed after fix");
+        expect(!transport.isPlayContextActive(), "Play context should be freed after fix");
 
         // Test: freePlaybackContextIfNotRecording is safe to call multiple times
         transport.stop(false, false);
