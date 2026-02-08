@@ -41,6 +41,7 @@ class TrackInspector : public BaseInspector, public magda::TrackManagerListener 
     // TrackManagerListener interface
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
+    void trackDevicesChanged(magda::TrackId trackId) override;
     void trackSelectionChanged(magda::TrackId trackId) override;
     void deviceParameterChanged(magda::DeviceId deviceId, int paramIndex, float newValue) override;
 

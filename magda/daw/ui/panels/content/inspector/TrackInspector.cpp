@@ -287,6 +287,12 @@ void TrackInspector::trackPropertyChanged(int trackId) {
     }
 }
 
+void TrackInspector::trackDevicesChanged(magda::TrackId trackId) {
+    if (trackId == selectedTrackId_) {
+        rebuildSendsUI();
+    }
+}
+
 void TrackInspector::trackSelectionChanged(magda::TrackId trackId) {
     // Not used - selection is managed externally
     (void)trackId;
@@ -331,8 +337,17 @@ void TrackInspector::updateFromSelectedTrack() {
         // Update routing selectors to match track state
         updateRoutingSelectorsFromTrack();
 
-        // Update sends UI
-        rebuildSendsUI();
+        // Update send level values in-place (don't rebuild — that destroys mid-drag labels)
+        const auto& sends = track->sends;
+        if (sends.size() == sendLevelLabels_.size()) {
+            for (size_t i = 0; i < sends.size(); ++i) {
+                float levelDb =
+                    (sends[i].level <= 0.0f) ? -60.0f : 20.0f * std::log10(sends[i].level);
+                sendLevelLabels_[i]->setValue(levelDb, juce::dontSendNotification);
+            }
+        } else {
+            rebuildSendsUI();
+        }
 
         showTrackControls(true);
     } else {

@@ -785,7 +785,7 @@ void TrackHeadersPanel::tracksChanged() {
         addAndMakeVisible(*header->inputSelector);
         addAndMakeVisible(*header->outputSelector);
         for (auto& sendLabel : header->sendLabels) {
-            addAndMakeVisible(*sendLabel);
+            addChildComponent(*sendLabel);  // Hidden by default; shown when track has sends
         }
         addAndMakeVisible(*header->meterComponent);
         addAndMakeVisible(*header->midiIndicator);

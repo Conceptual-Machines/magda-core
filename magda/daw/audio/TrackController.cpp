@@ -156,23 +156,20 @@ void TrackController::setTrackAudioOutput(TrackId trackId, const juce::String& d
                                                           << destination << "'");
 
     if (destination.isEmpty()) {
-        // Disable output - mute the track
-        track->setMute(true);
+        // Disable output by routing to nothing
+        track->getOutput().setOutputToDeviceID({});
     } else if (destination == "master") {
         // Route to default/master output
-        track->setMute(false);
         track->getOutput().setOutputToDefaultDevice(false);  // false = audio (not MIDI)
     } else if (destination.startsWith("track:")) {
         // Route to another track (group or aux)
         TrackId targetId = destination.fromFirstOccurrenceOf("track:", false, false).getIntValue();
         auto* targetTrack = getAudioTrack(targetId);
         if (targetTrack) {
-            track->setMute(false);
             track->getOutput().setOutputToTrack(targetTrack);
         }
     } else {
         // Route to specific output device
-        track->setMute(false);
         track->getOutput().setOutputToDeviceID(destination);
     }
 }
@@ -181,10 +178,6 @@ juce::String TrackController::getTrackAudioOutput(TrackId trackId) const {
     auto* track = getAudioTrack(trackId);
     if (!track) {
         return {};
-    }
-
-    if (track->isMuted(false)) {
-        return {};  // Muted = disabled output (matches empty string from setTrackAudioOutput)
     }
 
     auto& output = track->getOutput();

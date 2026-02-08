@@ -104,6 +104,13 @@ void AudioBridge::trackPropertyChanged(int trackId) {
             // Sync audio output routing
             trackController_.setTrackAudioOutput(trackId, trackInfo->audioOutputDevice);
 
+            // Sync send levels to AuxSendPlugins
+            for (const auto& send : trackInfo->sends) {
+                if (auto* auxSend = track->getAuxSendPlugin(send.busIndex)) {
+                    auxSend->setGainDb(juce::Decibels::gainToDecibels(send.level));
+                }
+            }
+
             // Sync recordArmed state to InputDeviceInstance
             auto* playbackContext = edit_.getCurrentPlaybackContext();
             if (playbackContext) {
