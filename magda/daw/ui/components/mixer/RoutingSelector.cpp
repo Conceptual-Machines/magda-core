@@ -120,6 +120,7 @@ void RoutingSelector::setEnabled(bool shouldBeEnabled) {
 }
 
 void RoutingSelector::setSelectedId(int id) {
+    DBG("RoutingSelector::setSelectedId " << selectedId_ << " -> " << id);
     if (selectedId_ != id) {
         selectedId_ = id;
         repaint();
@@ -175,6 +176,9 @@ juce::Rectangle<int> RoutingSelector::getDropdownArea() const {
 void RoutingSelector::showPopupMenu() {
     juce::PopupMenu menu;
 
+    DBG("RoutingSelector::showPopupMenu - selectedId_=" << selectedId_
+                                                        << " options=" << (int)options_.size());
+
     // Add enable/disable toggle at top
     menu.addItem(1000, enabled_ ? "Disable" : "Enable", true, false);
     menu.addSeparator();
@@ -187,7 +191,10 @@ void RoutingSelector::showPopupMenu() {
             if (opt.isSeparator) {
                 menu.addSeparator();
             } else {
-                menu.addItem(opt.id, opt.name, true, opt.id == selectedId_);
+                bool ticked = opt.id == selectedId_;
+                DBG("  option id=" << opt.id << " name='" << opt.name
+                                   << "' ticked=" << (int)ticked);
+                menu.addItem(opt.id, opt.name, true, ticked);
             }
         }
     }

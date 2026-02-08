@@ -219,13 +219,17 @@ void TrackController::setTrackAudioInput(TrackId trackId, const juce::String& de
         if (playbackContext) {
             auto allInputs = playbackContext->getAllInputs();
 
-            if (deviceId == "default" && !allInputs.isEmpty()) {
-                // Use first available input device
-                auto* firstInput = allInputs.getFirst();
-                auto result = firstInput->setTarget(track->itemID, false, nullptr);
-                if (result.has_value()) {
-                    (*result)->recordEnabled = false;  // Don't auto-enable recording
-                    DBG("  -> Routed default input to track");
+            if (deviceId == "default") {
+                // Use first available audio (non-MIDI) input device
+                for (auto* input : allInputs) {
+                    if (dynamic_cast<te::MidiInputDevice*>(&input->owner))
+                        continue;
+                    auto result = input->setTarget(track->itemID, false, nullptr);
+                    if (result.has_value()) {
+                        (*result)->recordEnabled = false;  // Don't auto-enable recording
+                        DBG("  -> Routed default audio input to track");
+                    }
+                    break;
                 }
             } else {
                 // Find specific device by name and route it
