@@ -133,6 +133,13 @@ set(DAW_CORE_SOURCES
     core/MidiNoteCommands.cpp
     core/ParameterUtils.cpp
     engine/TracktionEngineWrapper.cpp
+    engine/TracktionEngineWrapperInit.cpp
+    engine/TracktionEngineWrapperDevices.cpp
+    engine/TracktionEngineWrapperTransport.cpp
+    engine/TracktionEngineWrapperTracks.cpp
+    engine/TracktionEngineWrapperClips.cpp
+    engine/TracktionEngineWrapperRecording.cpp
+    engine/TracktionEngineWrapperPlugins.cpp
     engine/MagdaUIBehaviour.cpp
     engine/PluginScanner.cpp
     engine/PluginScanCoordinator.cpp
