@@ -120,25 +120,18 @@ TrackInspector::TrackInspector() {
     routingSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(routingSectionLabel_);
 
-    // Audio input selector
-    audioInSelector_ =
-        std::make_unique<magda::RoutingSelector>(magda::RoutingSelector::Type::AudioIn);
-    addAndMakeVisible(*audioInSelector_);
+    // Input type selector (Audio/MIDI toggle)
+    inputTypeSelector_ = std::make_unique<magda::InputTypeSelector>();
+    addAndMakeVisible(*inputTypeSelector_);
 
-    // Audio output selector
-    audioOutSelector_ =
+    // Unified input selector (shows audio or MIDI options based on toggle)
+    inputSelector_ = std::make_unique<magda::RoutingSelector>(magda::RoutingSelector::Type::MidiIn);
+    addAndMakeVisible(*inputSelector_);
+
+    // Output selector (audio output, always master)
+    outputSelector_ =
         std::make_unique<magda::RoutingSelector>(magda::RoutingSelector::Type::AudioOut);
-    addAndMakeVisible(*audioOutSelector_);
-
-    // MIDI input selector
-    midiInSelector_ =
-        std::make_unique<magda::RoutingSelector>(magda::RoutingSelector::Type::MidiIn);
-    addAndMakeVisible(*midiInSelector_);
-
-    // MIDI output selector
-    midiOutSelector_ =
-        std::make_unique<magda::RoutingSelector>(magda::RoutingSelector::Type::MidiOut);
-    addAndMakeVisible(*midiOutSelector_);
+    addAndMakeVisible(*outputSelector_);
 
     // Send/Receive section
     sendReceiveSectionLabel_.setText("Sends / Receives", juce::dontSendNotification);
@@ -219,22 +212,21 @@ void TrackInspector::resized() {
     routingSectionLabel_.setBounds(bounds.removeFromTop(16));
     bounds.removeFromTop(4);
 
+    const int toggleWidth = 40;
     const int selectorWidth = 55;
     const int selectorHeight = 18;
     const int selectorGap = 4;
 
-    // Audio In/Out row
-    auto audioRow = bounds.removeFromTop(selectorHeight);
-    audioInSelector_->setBounds(audioRow.removeFromLeft(selectorWidth));
-    audioRow.removeFromLeft(selectorGap);
-    audioOutSelector_->setBounds(audioRow.removeFromLeft(selectorWidth));
+    // Input row: [Audio|MIDI toggle] [Input selector]
+    auto inputRow = bounds.removeFromTop(selectorHeight);
+    inputTypeSelector_->setBounds(inputRow.removeFromLeft(toggleWidth));
+    inputRow.removeFromLeft(selectorGap);
+    inputSelector_->setBounds(inputRow.removeFromLeft(selectorWidth));
     bounds.removeFromTop(4);
 
-    // MIDI In/Out row
-    auto midiRow = bounds.removeFromTop(selectorHeight);
-    midiInSelector_->setBounds(midiRow.removeFromLeft(selectorWidth));
-    midiRow.removeFromLeft(selectorGap);
-    midiOutSelector_->setBounds(midiRow.removeFromLeft(selectorWidth));
+    // Output row: [Output selector]
+    auto outputRow = bounds.removeFromTop(selectorHeight);
+    outputSelector_->setBounds(outputRow.removeFromLeft(selectorWidth));
     bounds.removeFromTop(16);
 
     // Send/Receive section
@@ -333,10 +325,9 @@ void TrackInspector::showTrackControls(bool show) {
 
     // Routing section
     routingSectionLabel_.setVisible(show);
-    audioInSelector_->setVisible(show);
-    audioOutSelector_->setVisible(show);
-    midiInSelector_->setVisible(show);
-    midiOutSelector_->setVisible(show);
+    inputTypeSelector_->setVisible(show);
+    inputSelector_->setVisible(show);
+    outputSelector_->setVisible(show);
 
     // Send/Receive section
     sendReceiveSectionLabel_.setVisible(show);
@@ -349,129 +340,110 @@ void TrackInspector::showTrackControls(bool show) {
 }
 
 void TrackInspector::populateRoutingSelectors() {
-    populateAudioInputOptions();
-    populateAudioOutputOptions();
-    populateMidiInputOptions();
-    populateMidiOutputOptions();
-
-    // Wire up callbacks to update track routing
     if (!audioEngine_)
         return;
 
+    // Populate output selector (always audio out)
+    populateAudioOutputOptions();
+
+    // Populate input selector based on current type
+    if (inputTypeSelector_->getInputType() == magda::InputTypeSelector::InputType::Audio) {
+        populateAudioInputOptions();
+    } else {
+        populateMidiInputOptions();
+    }
+
     auto* midiBridge = audioEngine_->getMidiBridge();
-    if (!midiBridge)
-        return;
 
-    // MIDI Input selector callback
-    midiInSelector_->onSelectionChanged = [this, midiBridge](int selectedId) {
-        DBG("TrackInspector MIDI input selector changed - selectedId=" << selectedId << " trackId="
-                                                                       << selectedTrackId_);
-
+    // Input type toggle callback
+    inputTypeSelector_->onInputTypeChanged = [this](magda::InputTypeSelector::InputType type) {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
             return;
 
-        if (selectedId == 2) {
-            // "None" selected
-            DBG("  -> Clearing MIDI input via TrackManager");
+        if (type == magda::InputTypeSelector::InputType::Audio) {
+            // Switching to Audio: clear MIDI input, populate audio options
             magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "");
-        } else if (selectedId == 1) {
-            // "All Inputs" selected
-            DBG("  -> Setting to All Inputs via TrackManager");
+            populateAudioInputOptions();
+            int firstChannel = inputSelector_->getFirstChannelOptionId();
+            inputSelector_->setSelectedId(firstChannel > 0 ? firstChannel : 1);
+            inputSelector_->setEnabled(true);
+            magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "default");
+        } else {
+            // Switching to MIDI: clear audio input, populate MIDI options
+            magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "");
+            populateMidiInputOptions();
+            // Default to "All Inputs"
+            inputSelector_->setSelectedId(1);
+            inputSelector_->setEnabled(true);
             magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "all");
-        } else if (selectedId >= 10) {
-            // Specific device selected
-            auto midiInputs = midiBridge->getAvailableMidiInputs();
-            int deviceIndex = selectedId - 10;
-            if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
-                DBG("  -> Setting to specific device via TrackManager: "
-                    << midiInputs[deviceIndex].name);
-                magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_,
-                                                                     midiInputs[deviceIndex].id);
-            }
         }
     };
 
-    // MIDI Input enabled/disabled toggle callback
-    midiInSelector_->onEnabledChanged = [this, midiBridge](bool enabled) {
-        DBG("TrackInspector MIDI input enabled changed - enabled=" << (int)enabled << " trackId="
-                                                                   << selectedTrackId_);
-
+    // Unified input selector callbacks
+    inputSelector_->onSelectionChanged = [this, midiBridge](int selectedId) {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
             return;
 
-        if (enabled) {
-            // Enable: Set to currently selected option or default to "All Inputs"
-            int selectedId = midiInSelector_->getSelectedId();
-            DBG("  -> Enabling with selectedId=" << selectedId);
-
+        if (inputTypeSelector_->getInputType() == magda::InputTypeSelector::InputType::Audio) {
+            // Audio input selection
             if (selectedId == 1) {
-                magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "all");
+                magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "");
             } else if (selectedId >= 10) {
+                magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "default");
+            }
+        } else {
+            // MIDI input selection
+            if (selectedId == 2) {
+                magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "");
+            } else if (selectedId == 1) {
+                magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "all");
+            } else if (selectedId >= 10 && midiBridge) {
                 auto midiInputs = midiBridge->getAvailableMidiInputs();
                 int deviceIndex = selectedId - 10;
                 if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
                     magda::TrackManager::getInstance().setTrackMidiInput(
                         selectedTrackId_, midiInputs[deviceIndex].id);
+                }
+            }
+        }
+    };
+
+    inputSelector_->onEnabledChanged = [this, midiBridge](bool enabled) {
+        if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+            return;
+
+        if (inputTypeSelector_->getInputType() == magda::InputTypeSelector::InputType::Audio) {
+            if (enabled) {
+                magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "default");
+            } else {
+                magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "");
+            }
+        } else {
+            if (enabled) {
+                int selectedId = inputSelector_->getSelectedId();
+                if (selectedId == 1) {
+                    magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "all");
+                } else if (selectedId >= 10 && midiBridge) {
+                    auto midiInputs = midiBridge->getAvailableMidiInputs();
+                    int deviceIndex = selectedId - 10;
+                    if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
+                        magda::TrackManager::getInstance().setTrackMidiInput(
+                            selectedTrackId_, midiInputs[deviceIndex].id);
+                    } else {
+                        magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_,
+                                                                             "all");
+                    }
                 } else {
-                    // Default to "all" if device not found
                     magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "all");
                 }
             } else {
-                // Default to "all" for any other case
-                DBG("  -> Defaulting to All Inputs");
-                magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "all");
+                magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "");
             }
-        } else {
-            // Disable: Clear MIDI input
-            DBG("  -> Disabling (clearing MIDI input)");
-            magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "");
         }
     };
 
-    // MIDI Output enabled/disabled toggle callback
-    midiOutSelector_->onEnabledChanged = [this, midiBridge](bool enabled) {
-        DBG("TrackInspector MIDI output enabled changed - enabled=" << (int)enabled << " trackId="
-                                                                    << selectedTrackId_);
-
-        if (selectedTrackId_ == magda::INVALID_TRACK_ID)
-            return;
-
-        if (enabled) {
-            int selectedId = midiOutSelector_->getSelectedId();
-            if (selectedId >= 10) {
-                auto midiOutputs = midiBridge->getAvailableMidiOutputs();
-                int deviceIndex = selectedId - 10;
-                if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiOutputs.size())) {
-                    magda::TrackManager::getInstance().setTrackMidiOutput(
-                        selectedTrackId_, midiOutputs[deviceIndex].id);
-                }
-            }
-        } else {
-            magda::TrackManager::getInstance().setTrackMidiOutput(selectedTrackId_, "");
-        }
-    };
-
-    // Audio Input enabled/disabled toggle callback
-    audioInSelector_->onEnabledChanged = [this](bool enabled) {
-        DBG("TrackInspector audio input enabled changed - enabled=" << (int)enabled << " trackId="
-                                                                    << selectedTrackId_);
-
-        if (selectedTrackId_ == magda::INVALID_TRACK_ID)
-            return;
-
-        if (enabled) {
-            // TODO: Get selected audio input device
-            magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "default");
-        } else {
-            magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "");
-        }
-    };
-
-    // Audio Output enabled/disabled toggle callback
-    audioOutSelector_->onEnabledChanged = [this](bool enabled) {
-        DBG("TrackInspector audio output enabled changed - enabled=" << (int)enabled << " trackId="
-                                                                     << selectedTrackId_);
-
+    // Output selector callbacks (always audio out)
+    outputSelector_->onEnabledChanged = [this](bool enabled) {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
             return;
 
@@ -481,35 +453,10 @@ void TrackInspector::populateRoutingSelectors() {
             magda::TrackManager::getInstance().setTrackAudioOutput(selectedTrackId_, "");
         }
     };
-
-    // MIDI Output selector callback
-    midiOutSelector_->onSelectionChanged = [this, midiBridge](int selectedId) {
-        DBG("TrackInspector MIDI output selector changed - selectedId=" << selectedId << " trackId="
-                                                                        << selectedTrackId_);
-
-        if (selectedTrackId_ == magda::INVALID_TRACK_ID)
-            return;
-
-        if (selectedId == 2) {
-            // "None" selected - clear output
-            DBG("  -> Clearing MIDI output via TrackManager");
-            magda::TrackManager::getInstance().setTrackMidiOutput(selectedTrackId_, "");
-        } else if (selectedId >= 10) {
-            // Specific device selected
-            auto midiOutputs = midiBridge->getAvailableMidiOutputs();
-            int deviceIndex = selectedId - 10;
-            if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiOutputs.size())) {
-                DBG("  -> Setting to specific device via TrackManager: "
-                    << midiOutputs[deviceIndex].name);
-                magda::TrackManager::getInstance().setTrackMidiOutput(selectedTrackId_,
-                                                                      midiOutputs[deviceIndex].id);
-            }
-        }
-    };
 }
 
 void TrackInspector::populateAudioInputOptions() {
-    if (!audioInSelector_ || !audioEngine_) {
+    if (!inputSelector_ || !audioEngine_) {
         return;
     }
 
@@ -572,11 +519,11 @@ void TrackInspector::populateAudioInputOptions() {
         options.push_back({2, "(No Device Active)"});
     }
 
-    audioInSelector_->setOptions(options);
+    inputSelector_->setOptions(options);
 }
 
 void TrackInspector::populateAudioOutputOptions() {
-    if (!audioOutSelector_ || !audioEngine_) {
+    if (!outputSelector_ || !audioEngine_) {
         return;
     }
 
@@ -639,11 +586,11 @@ void TrackInspector::populateAudioOutputOptions() {
         options.push_back({2, "(No Device Active)"});
     }
 
-    audioOutSelector_->setOptions(options);
+    outputSelector_->setOptions(options);
 }
 
 void TrackInspector::populateMidiInputOptions() {
-    if (!midiInSelector_ || !audioEngine_) {
+    if (!inputSelector_ || !audioEngine_) {
         return;
     }
 
@@ -670,124 +617,73 @@ void TrackInspector::populateMidiInputOptions() {
         }
     }
 
-    midiInSelector_->setOptions(options);
+    inputSelector_->setOptions(options);
 }
 
 void TrackInspector::populateMidiOutputOptions() {
-    if (!midiOutSelector_ || !audioEngine_) {
-        return;
-    }
-
-    auto* midiBridge = audioEngine_->getMidiBridge();
-    if (!midiBridge) {
-        return;
-    }
-
-    // Get available MIDI outputs from MidiBridge
-    auto midiOutputs = midiBridge->getAvailableMidiOutputs();
-
-    // Build options list
-    std::vector<magda::RoutingSelector::RoutingOption> options;
-    options.push_back({1, "None"});         // ID 1 = no output
-    options.push_back({2, "All Outputs"});  // ID 2 = all outputs
-
-    if (!midiOutputs.empty()) {
-        options.push_back({0, "", true});  // separator
-
-        // Add each MIDI device as an option (starting from ID 10)
-        int id = 10;
-        for (const auto& device : midiOutputs) {
-            options.push_back({id++, device.name});
-        }
-    }
-
-    midiOutSelector_->setOptions(options);
+    // MIDI output routing is kept in code but hidden from this UI
+    // (no midiOutSelector_ anymore)
 }
 
 void TrackInspector::updateRoutingSelectorsFromTrack() {
     if (selectedTrackId_ == magda::INVALID_TRACK_ID || !audioEngine_) {
-        DBG("TrackInspector::updateRoutingSelectorsFromTrack - invalid track or no engine");
         return;
     }
 
-    // Get track from TrackManager
     const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
     if (!track) {
-        DBG("TrackInspector::updateRoutingSelectorsFromTrack - track not found");
         return;
     }
 
     auto* midiBridge = audioEngine_->getMidiBridge();
 
-    // Update MIDI input selector from track state
-    juce::String currentMidiInput = track->midiInputDevice;
+    // Determine which input type is active
+    bool hasAudioInput = !track->audioInputDevice.isEmpty();
+    bool hasMidiInput = !track->midiInputDevice.isEmpty();
 
-    if (currentMidiInput.isEmpty()) {
-        midiInSelector_->setSelectedId(2);
-        midiInSelector_->setEnabled(false);
-    } else if (currentMidiInput == "all") {
-        midiInSelector_->setSelectedId(1);
-        midiInSelector_->setEnabled(true);
+    if (hasAudioInput) {
+        inputTypeSelector_->setInputTypeSilently(magda::InputTypeSelector::InputType::Audio);
+        int currentId = inputSelector_->getSelectedId();
+        populateAudioInputOptions();
+        if (currentId < 10) {
+            int firstChannel = inputSelector_->getFirstChannelOptionId();
+            inputSelector_->setSelectedId(firstChannel > 0 ? firstChannel : 1);
+        }
+        inputSelector_->setEnabled(true);
     } else {
-        if (midiBridge) {
+        inputTypeSelector_->setInputTypeSilently(magda::InputTypeSelector::InputType::MIDI);
+        populateMidiInputOptions();
+
+        if (!hasMidiInput) {
+            inputSelector_->setSelectedId(2);  // "None"
+            inputSelector_->setEnabled(false);
+        } else if (track->midiInputDevice == "all") {
+            inputSelector_->setSelectedId(1);  // "All Inputs"
+            inputSelector_->setEnabled(true);
+        } else if (midiBridge) {
             auto midiInputs = midiBridge->getAvailableMidiInputs();
             int selectedId = 2;
             for (size_t i = 0; i < midiInputs.size(); ++i) {
-                if (midiInputs[i].id == currentMidiInput) {
-                    selectedId = 10 + static_cast<int>(i);
-                    DBG("  -> Found MIDI In device at index " << i << ", setting to ID "
-                                                              << selectedId << " and ENABLED");
-                    break;
-                }
-            }
-            midiInSelector_->setSelectedId(selectedId);
-            midiInSelector_->setEnabled(selectedId != 2);
-        }
-    }
-
-    // Update MIDI Output selector
-    juce::String currentMidiOutput = track->midiOutputDevice;
-    if (currentMidiOutput.isEmpty()) {
-        midiOutSelector_->setSelectedId(2);  // "None"
-        midiOutSelector_->setEnabled(false);
-    } else {
-        if (midiBridge) {
-            auto midiOutputs = midiBridge->getAvailableMidiOutputs();
-            int selectedId = 2;
-            for (size_t i = 0; i < midiOutputs.size(); ++i) {
-                if (midiOutputs[i].id == currentMidiOutput) {
+                if (midiInputs[i].id == track->midiInputDevice) {
                     selectedId = 10 + static_cast<int>(i);
                     break;
                 }
             }
-            midiOutSelector_->setSelectedId(selectedId);
-            midiOutSelector_->setEnabled(selectedId != 2);
+            inputSelector_->setSelectedId(selectedId);
+            inputSelector_->setEnabled(selectedId != 2);
         }
-    }
-
-    // Update Audio Input selector
-    juce::String currentAudioInput = track->audioInputDevice;
-    if (currentAudioInput.isEmpty()) {
-        audioInSelector_->setSelectedId(2);  // "None"
-        audioInSelector_->setEnabled(false);
-    } else {
-        // TODO: Parse audio input and find in list
-        audioInSelector_->setEnabled(true);
     }
 
     // Update Audio Output selector
     juce::String currentAudioOutput = track->audioOutputDevice;
     if (currentAudioOutput.isEmpty()) {
-        // No output selected - disabled
-        audioOutSelector_->setSelectedId(2);  // "None"
-        audioOutSelector_->setEnabled(false);
+        outputSelector_->setSelectedId(2);  // "None"
+        outputSelector_->setEnabled(false);
     } else if (currentAudioOutput == "master") {
-        // Master output selected - enabled
-        audioOutSelector_->setSelectedId(1);  // Master
-        audioOutSelector_->setEnabled(true);
+        outputSelector_->setSelectedId(1);  // Master
+        outputSelector_->setEnabled(true);
     } else {
-        // TODO: Find specific output in list
-        audioOutSelector_->setEnabled(true);
+        outputSelector_->setEnabled(true);
     }
 }
 

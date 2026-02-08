@@ -76,7 +76,7 @@ void TracktionEngineWrapper::initializeDeviceManager() {
     int preferredOutputs = config.getPreferredOutputChannels();
 
     // Initialize DeviceManager with preferred channel counts
-    int inputChannels = (preferredInputs > 0) ? preferredInputs : 0;
+    int inputChannels = (preferredInputs > 0) ? preferredInputs : 1;
     int outputChannels = (preferredOutputs > 0) ? preferredOutputs : 2;
     dm.initialise(inputChannels, outputChannels);
     DBG("DeviceManager initialized with " << inputChannels << " input / " << outputChannels
@@ -863,8 +863,8 @@ void TracktionEngineWrapper::onTransportStop(double returnPosition) {
     // which populates activeRecordingClips_ for cross-device dedup.
     stop();
 
-    // For any track that was recording but got 0 clips from TE (blank recording),
-    // create an empty MIDI clip ourselves.
+    // For any track that was recording but got 0 clips from TE (blank MIDI recording),
+    // create an empty MIDI clip ourselves — but only if the track has MIDI input configured.
     if (!recordingStartTimes_.empty()) {
         auto& clipManager = ClipManager::getInstance();
         for (auto& [trackId, startTime] : recordingStartTimes_) {
@@ -875,6 +875,13 @@ void TracktionEngineWrapper::onTransportStop(double returnPosition) {
 
             // Skip if TE already created a clip for this track
             if (activeRecordingClips_.count(trackId) > 0) {
+                continue;
+            }
+
+            // Only create empty MIDI clip if the track actually has MIDI input configured.
+            // Audio-only tracks should not get a blank MIDI clip.
+            const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+            if (!trackInfo || trackInfo->midiInputDevice.isEmpty()) {
                 continue;
             }
 
@@ -920,7 +927,7 @@ void TracktionEngineWrapper::onTransportStopRecording() {
     // This triggers recordingFinished() synchronously per device.
     currentEdit_->getTransport().stopRecording(false);
 
-    // Create clips for tracks that got 0 clips from TE (blank recording)
+    // Create clips for tracks that got 0 clips from TE (blank MIDI recording)
     if (!recordingStartTimes_.empty()) {
         auto& clipManager = ClipManager::getInstance();
         for (auto& [trackId, startTime] : recordingStartTimes_) {
@@ -928,6 +935,11 @@ void TracktionEngineWrapper::onTransportStopRecording() {
                 audioBridge_->resetSynthsOnTrack(trackId);
 
             if (activeRecordingClips_.count(trackId) > 0)
+                continue;
+
+            // Only create empty MIDI clip if the track actually has MIDI input configured.
+            const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+            if (!trackInfo || trackInfo->midiInputDevice.isEmpty())
                 continue;
 
             double length = stopPosition - startTime;
@@ -1818,6 +1830,10 @@ void TracktionEngineWrapper::recordingAboutToStart(tracktion::InputDeviceInstanc
                 preview.trackId = trackId;
                 preview.startTime = startTime;
                 preview.currentLength = 0.0;
+
+                const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+                preview.isAudioRecording = trackInfo && !trackInfo->audioInputDevice.isEmpty();
+
                 recordingPreviews_[trackId] = std::move(preview);
             }
         }
@@ -1838,10 +1854,63 @@ void TracktionEngineWrapper::recordingFinished(
 
     TrackId trackId = audioBridge_->getTrackIdForTeTrack(targetID);
 
+    // Determine what input types this track is configured for.
+    // This is the authoritative source — only create clips matching the track's input config.
+    const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    bool hasAudioInput = trackInfo && !trackInfo->audioInputDevice.isEmpty();
+    bool hasMidiInput = trackInfo && !trackInfo->midiInputDevice.isEmpty();
+
+    DBG("  trackId=" << trackId << " hasAudioInput=" << (int)hasAudioInput
+                     << " hasMidiInput=" << (int)hasMidiInput);
+
     for (auto* clip : recordedClips) {
+        // Handle audio (wave) clips
+        auto* audioClip = dynamic_cast<tracktion::WaveAudioClip*>(clip);
+        if (audioClip) {
+            if (!hasAudioInput) {
+                DBG("  skipping audio clip — track has no audio input configured");
+                audioClip->removeFromParent();
+                continue;
+            }
+            juce::String audioFilePath = audioClip->getOriginalFile().getFullPathName();
+            double startSeconds = audioClip->getPosition().getStart().inSeconds();
+            double lengthSeconds = audioClip->getPosition().getLength().inSeconds();
+
+            if (trackId == INVALID_TRACK_ID) {
+                if (auto* teTrack = dynamic_cast<tracktion::AudioTrack*>(audioClip->getTrack()))
+                    trackId = audioBridge_->getTrackIdForTeTrack(teTrack->itemID);
+            }
+
+            if (lengthSeconds <= 0.0 || audioFilePath.isEmpty() || trackId == INVALID_TRACK_ID) {
+                audioClip->removeFromParent();
+                continue;
+            }
+
+            // Remove TE's recording clip before creating MAGDA clip
+            audioClip->removeFromParent();
+
+            // Create MAGDA audio clip (triggers syncClipToEngine which re-creates in TE)
+            auto& clipManager = ClipManager::getInstance();
+            ClipId clipId = clipManager.createAudioClip(trackId, startSeconds, lengthSeconds,
+                                                        audioFilePath, ClipView::Arrangement);
+
+            if (audioBridge_)
+                audioBridge_->syncClipToEngine(clipId);
+
+            DBG("  created audio clip " << clipId << " file=" << audioFilePath);
+            continue;
+        }
+
+        // Handle MIDI clips
         auto* midiClip = dynamic_cast<tracktion::MidiClip*>(clip);
         if (!midiClip)
             continue;
+
+        if (!hasMidiInput) {
+            DBG("  skipping MIDI clip — track has no MIDI input configured");
+            midiClip->removeFromParent();
+            continue;
+        }
 
         if (trackId == INVALID_TRACK_ID) {
             if (auto* teTrack = dynamic_cast<tracktion::AudioTrack*>(midiClip->getTrack()))
@@ -2019,6 +2088,20 @@ void TracktionEngineWrapper::drainRecordingNoteQueue() {
         double newLength = currentPos - preview.startTime;
         if (newLength > preview.currentLength)
             preview.currentLength = newLength;
+    }
+
+    // Sample metering data for audio-recording tracks
+    if (audioBridge_) {
+        auto& meteringBuffer = audioBridge_->getMeteringBuffer();
+        for (auto& [trackId, preview] : recordingPreviews_) {
+            if (!preview.isAudioRecording)
+                continue;
+
+            MeterData data;
+            if (meteringBuffer.drainToLatest(trackId, data)) {
+                preview.audioPeaks.push_back({data.peakL, data.peakR});
+            }
+        }
     }
 }
 

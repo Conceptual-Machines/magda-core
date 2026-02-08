@@ -417,6 +417,12 @@ void TrackManager::setTrackMidiInput(TrackId trackId, const juce::String& device
     DBG("TrackManager::setTrackMidiInput - trackId=" << trackId << " deviceId='" << deviceId
                                                      << "'");
 
+    // Audio and MIDI input are mutually exclusive — clear audio input when enabling MIDI
+    if (!deviceId.isEmpty() && !track->audioInputDevice.isEmpty()) {
+        DBG("  -> Clearing audio input (mutually exclusive with MIDI)");
+        setTrackAudioInput(trackId, "");
+    }
+
     // Update track state
     track->midiInputDevice = deviceId;
 
@@ -470,6 +476,12 @@ void TrackManager::setTrackAudioInput(TrackId trackId, const juce::String& devic
 
     DBG("TrackManager::setTrackAudioInput - trackId=" << trackId << " deviceId='" << deviceId
                                                       << "'");
+
+    // Audio and MIDI input are mutually exclusive — clear MIDI input when enabling audio
+    if (!deviceId.isEmpty() && !track->midiInputDevice.isEmpty()) {
+        DBG("  -> Clearing MIDI input (mutually exclusive with audio)");
+        setTrackMidiInput(trackId, "");
+    }
 
     // Update track state
     track->audioInputDevice = deviceId;
@@ -884,7 +896,6 @@ void TrackManager::setChainExpanded(TrackId trackId, RackId rackId, ChainId chai
         notifyTrackDevicesChanged(trackId);
     }
 }
-
 
 // ============================================================================
 // Path Resolution

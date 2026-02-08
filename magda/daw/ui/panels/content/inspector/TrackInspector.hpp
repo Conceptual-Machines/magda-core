@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../common/DraggableValueLabel.hpp"
+#include "../../mixer/InputTypeSelector.hpp"
 #include "../../mixer/RoutingSelector.hpp"
 #include "BaseInspector.hpp"
 #include "core/TrackManager.hpp"
@@ -54,12 +55,11 @@ class TrackInspector : public BaseInspector, public magda::TrackManagerListener 
     std::unique_ptr<magda::DraggableValueLabel> gainLabel_;
     std::unique_ptr<magda::DraggableValueLabel> panLabel_;
 
-    // Routing section (MIDI/Audio In/Out)
+    // Routing section (unified input type toggle + selectors)
     juce::Label routingSectionLabel_;
-    std::unique_ptr<magda::RoutingSelector> audioInSelector_;
-    std::unique_ptr<magda::RoutingSelector> audioOutSelector_;
-    std::unique_ptr<magda::RoutingSelector> midiInSelector_;
-    std::unique_ptr<magda::RoutingSelector> midiOutSelector_;
+    std::unique_ptr<magda::InputTypeSelector> inputTypeSelector_;
+    std::unique_ptr<magda::RoutingSelector> inputSelector_;   // Audio OR MIDI input
+    std::unique_ptr<magda::RoutingSelector> outputSelector_;  // Audio output (always master)
 
     // Send/Receive section
     juce::Label sendReceiveSectionLabel_;

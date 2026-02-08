@@ -9,6 +9,7 @@
 #include "../../themes/MixerLookAndFeel.hpp"
 #include "../common/DraggableValueLabel.hpp"
 #include "../common/SvgButton.hpp"
+#include "../mixer/InputTypeSelector.hpp"
 #include "../mixer/RoutingSelector.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/TrackManager.hpp"
@@ -112,15 +113,14 @@ class TrackHeadersPanel : public juce::Component,
         std::unique_ptr<juce::Label> nameLabel;
         std::unique_ptr<juce::TextButton> muteButton;
         std::unique_ptr<juce::TextButton> soloButton;
-        std::unique_ptr<juce::TextButton> recordButton;     // Record arm button
-        std::unique_ptr<DraggableValueLabel> volumeLabel;   // Volume as draggable dB label
-        std::unique_ptr<DraggableValueLabel> panLabel;      // Pan as draggable L/C/R label
-        std::unique_ptr<juce::TextButton> collapseButton;   // For groups
-        std::unique_ptr<SvgButton> automationButton;        // Show automation lanes
-        std::unique_ptr<RoutingSelector> audioInSelector;   // Audio input routing
-        std::unique_ptr<RoutingSelector> audioOutSelector;  // Audio output routing
-        std::unique_ptr<RoutingSelector> midiInSelector;    // MIDI input routing
-        std::unique_ptr<RoutingSelector> midiOutSelector;   // MIDI output routing
+        std::unique_ptr<juce::TextButton> recordButton;        // Record arm button
+        std::unique_ptr<DraggableValueLabel> volumeLabel;      // Volume as draggable dB label
+        std::unique_ptr<DraggableValueLabel> panLabel;         // Pan as draggable L/C/R label
+        std::unique_ptr<juce::TextButton> collapseButton;      // For groups
+        std::unique_ptr<SvgButton> automationButton;           // Show automation lanes
+        std::unique_ptr<InputTypeSelector> inputTypeSelector;  // Audio/MIDI toggle
+        std::unique_ptr<RoutingSelector> inputSelector;        // Unified input (audio OR midi)
+        std::unique_ptr<RoutingSelector> outputSelector;       // Audio output (always master)
         std::vector<std::unique_ptr<DraggableValueLabel>> sendLabels;  // Send level labels
         std::unique_ptr<juce::Component> meterComponent;               // Peak meter display
         std::unique_ptr<juce::Component> midiIndicator;                // MIDI activity indicator
@@ -163,18 +163,15 @@ class TrackHeadersPanel : public juce::Component,
     DropTargetType dropTargetType_ = DropTargetType::None;
     int dropTargetIndex_ = -1;
 
-    // Audio device management
+    // Routing device management
     void populateAudioInputOptions(RoutingSelector* selector);
     void populateAudioOutputOptions(RoutingSelector* selector);
-
-    // MIDI device management
     void populateMidiInputOptions(RoutingSelector* selector);
-    void populateMidiOutputOptions(RoutingSelector* selector);
-    void setupMidiCallbacks(TrackHeader& header, TrackId trackId);
-    void updateMidiRoutingSelectorFromTrack(TrackHeader& header, const TrackInfo* track);
+    void setupRoutingCallbacks(TrackHeader& header, TrackId trackId);
+    void updateRoutingSelectorFromTrack(TrackHeader& header, const TrackInfo* track);
 
-    // Refresh all MIDI selectors (call after MIDI device scan completes)
-    void refreshMidiSelectors();
+    // Refresh all input selectors (call after MIDI device scan completes)
+    void refreshInputSelectors();
 
     // Helper methods
     void setupTrackHeader(TrackHeader& header, int trackIndex);

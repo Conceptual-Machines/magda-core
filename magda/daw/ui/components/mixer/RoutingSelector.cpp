@@ -153,6 +153,15 @@ void RoutingSelector::clearOptions() {
     selectedId_ = -1;
 }
 
+int RoutingSelector::getFirstChannelOptionId() const {
+    for (const auto& opt : options_) {
+        if (!opt.isSeparator && opt.id >= 10) {
+            return opt.id;
+        }
+    }
+    return -1;
+}
+
 juce::Rectangle<int> RoutingSelector::getMainButtonArea() const {
     auto bounds = getLocalBounds();
     return bounds.withTrimmedRight(DROPDOWN_ARROW_WIDTH);

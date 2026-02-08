@@ -269,6 +269,7 @@ set(DAW_UI_SOURCES
     ui/components/automation/AutomationClipComponent.cpp
     # Components - Mixer
     ui/components/mixer/MasterChannelStrip.cpp
+    ui/components/mixer/InputTypeSelector.cpp
     ui/components/mixer/RoutingSelector.cpp
     # Components - Chain
     ui/components/chain/NodeComponent.cpp
@@ -435,6 +436,7 @@ set(DAW_HEADERS
     ui/components/waveform/WaveformGridComponent.hpp
     # Components - Mixer
     ui/components/mixer/MasterChannelStrip.hpp
+    ui/components/mixer/InputTypeSelector.hpp
     ui/components/mixer/RoutingSelector.hpp
     # Components - Chain
     ui/components/chain/NodeComponent.hpp

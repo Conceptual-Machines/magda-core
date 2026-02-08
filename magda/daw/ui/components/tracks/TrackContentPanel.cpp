@@ -399,7 +399,30 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
         // Note area (below header)
         auto noteArea = bounds.reduced(2, HEADER_HEIGHT + 2);
 
-        if (!preview.notes.empty() && noteArea.getHeight() > 5) {
+        if (preview.isAudioRecording && !preview.audioPeaks.empty() && noteArea.getHeight() > 5) {
+            // Draw audio waveform (symmetric around vertical center)
+            g.setColour(baseColour.brighter(0.3f));
+
+            float centerY = static_cast<float>(noteArea.getCentreY());
+            float halfHeight = noteArea.getHeight() * 0.5f;
+            int numPeaks = static_cast<int>(preview.audioPeaks.size());
+
+            for (int px = noteArea.getX(); px < noteArea.getRight(); ++px) {
+                float frac = static_cast<float>(px - noteArea.getX()) /
+                             static_cast<float>(noteArea.getWidth());
+                int peakIdx = juce::jlimit(0, numPeaks - 1, static_cast<int>(frac * numPeaks));
+
+                float peak = juce::jmax(preview.audioPeaks[peakIdx].peakL,
+                                        preview.audioPeaks[peakIdx].peakR);
+                peak = juce::jmin(peak, 1.0f);
+
+                float lineHalf = peak * halfHeight;
+                if (lineHalf < 0.5f)
+                    lineHalf = 0.5f;
+
+                g.drawVerticalLine(px, centerY - lineHalf, centerY + lineHalf);
+            }
+        } else if (!preview.notes.empty() && noteArea.getHeight() > 5) {
             g.setColour(baseColour.brighter(0.3f));
 
             double clipLengthInBeats = preview.currentLength * beatsPerSecond;

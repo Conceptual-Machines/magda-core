@@ -104,21 +104,20 @@ void AudioBridge::trackPropertyChanged(int trackId) {
             // Sync recordArmed state to InputDeviceInstance
             auto* playbackContext = edit_.getCurrentPlaybackContext();
             if (playbackContext) {
-                // Find any MIDI input device instances routed to this track
+                // Find any input device instances (MIDI or audio) routed to this track
                 for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-                    if (dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) {
-                        auto targets = inputDeviceInstance->getTargets();
-                        for (auto targetID : targets) {
-                            if (targetID == track->itemID) {
-                                // Found a MIDI input routed to this track - sync record armed state
-                                inputDeviceInstance->setRecordingEnabled(track->itemID,
-                                                                         trackInfo->recordArmed);
-                                DBG("Synced recordArmed=" << (trackInfo->recordArmed ? 1 : 0)
-                                                          << " to MIDI input '"
-                                                          << inputDeviceInstance->owner.getName()
-                                                          << "' for track " << trackId);
-                                break;
-                            }
+                    auto targets = inputDeviceInstance->getTargets();
+                    for (auto targetID : targets) {
+                        if (targetID == track->itemID) {
+                            bool isMidi = dynamic_cast<te::MidiInputDevice*>(
+                                              &inputDeviceInstance->owner) != nullptr;
+                            inputDeviceInstance->setRecordingEnabled(track->itemID,
+                                                                     trackInfo->recordArmed);
+                            DBG("Synced recordArmed=" << (trackInfo->recordArmed ? 1 : 0) << " to "
+                                                      << (isMidi ? "MIDI" : "audio") << " input '"
+                                                      << inputDeviceInstance->owner.getName()
+                                                      << "' for track " << trackId);
+                            break;
                         }
                     }
                 }
