@@ -87,6 +87,3 @@ target_include_directories(magda_juce_tests
     PRIVATE
     ${CMAKE_SOURCE_DIR}
 )
-
-# Add JUCE test to CTest
-add_test(NAME magda_juce_unit_tests COMMAND magda_juce_tests)

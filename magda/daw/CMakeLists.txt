@@ -141,6 +141,17 @@ set(DAW_CORE_SOURCES
     audio/DeviceProcessor.cpp
     audio/MidiBridge.cpp
     audio/SessionClipScheduler.cpp
+    # Phase 1 refactoring: Pure data managers
+    audio/TransportStateManager.cpp
+    audio/MidiActivityMonitor.cpp
+    audio/ParameterManager.cpp
+    # Phase 2 refactoring: Independent features
+    audio/PluginWindowBridge.cpp
+    audio/WarpMarkerManager.cpp
+    # Phase 3 refactoring: Core controllers
+    audio/TrackController.cpp
+    audio/PluginManager.cpp
+    audio/ClipSynchronizer.cpp
     # TODO: Custom synth library (SimpleSynthPlugin.cpp) - for future implementation
     # Project serialization
     project/ProjectSerializer.cpp
@@ -192,7 +203,13 @@ set(DAW_UI_SOURCES
     ui/panels/content/MediaExplorerContent.cpp
     ui/panels/content/PresetBrowserContent.cpp
     ui/panels/content/EmptyContent.cpp
-    ui/panels/content/InspectorContent.cpp
+    # Inspector refactoring (decomposition into specialized inspectors)
+    ui/panels/content/inspector/TrackInspector.cpp
+    ui/panels/content/inspector/ClipInspector.cpp
+    ui/panels/content/inspector/NoteInspector.cpp
+    ui/panels/content/inspector/DeviceInspector.cpp
+    ui/panels/content/inspector/InspectorFactory.cpp
+    ui/panels/content/inspector/InspectorContainer.cpp
     ui/panels/content/AIChatConsoleContent.cpp
     ui/panels/content/ScriptingConsoleContent.cpp
     ui/panels/content/TrackChainContent.cpp
@@ -337,7 +354,14 @@ set(DAW_HEADERS
     ui/panels/content/MediaExplorerContent.hpp
     ui/panels/content/PresetBrowserContent.hpp
     ui/panels/content/EmptyContent.hpp
-    ui/panels/content/InspectorContent.hpp
+    # Inspector refactoring (decomposition into specialized inspectors)
+    ui/panels/content/inspector/BaseInspector.hpp
+    ui/panels/content/inspector/TrackInspector.hpp
+    ui/panels/content/inspector/ClipInspector.hpp
+    ui/panels/content/inspector/NoteInspector.hpp
+    ui/panels/content/inspector/DeviceInspector.hpp
+    ui/panels/content/inspector/InspectorFactory.hpp
+    ui/panels/content/inspector/InspectorContainer.hpp
     ui/panels/content/AIChatConsoleContent.hpp
     ui/panels/content/ScriptingConsoleContent.hpp
     ui/panels/content/TrackChainContent.hpp
@@ -349,6 +373,17 @@ set(DAW_HEADERS
     audio/SessionClipScheduler.hpp
     audio/MeteringBuffer.hpp
     audio/ParameterQueue.hpp
+    # Phase 1 refactoring: Pure data managers
+    audio/TransportStateManager.hpp
+    audio/MidiActivityMonitor.hpp
+    audio/ParameterManager.hpp
+    # Phase 2 refactoring: Independent features
+    audio/PluginWindowBridge.hpp
+    audio/WarpMarkerManager.hpp
+    # Phase 3 refactoring: Core controllers
+    audio/TrackController.hpp
+    audio/PluginManager.hpp
+    audio/ClipSynchronizer.hpp
     # Views
     ui/views/MainView.hpp
     ui/views/SessionView.hpp

@@ -3,7 +3,6 @@
 // Include all content implementations for registration
 #include "AIChatConsoleContent.hpp"
 #include "EmptyContent.hpp"
-#include "InspectorContent.hpp"
 #include "MediaExplorerContent.hpp"
 #include "PianoRollContent.hpp"
 #include "PluginBrowserContent.hpp"
@@ -11,6 +10,7 @@
 #include "ScriptingConsoleContent.hpp"
 #include "TrackChainContent.hpp"
 #include "WaveformEditorContent.hpp"
+#include "inspector/InspectorContainer.hpp"
 
 namespace magda::daw::ui {
 
@@ -37,7 +37,7 @@ void PanelContentFactory::registerBuiltinTypes() {
                         []() { return std::make_unique<PresetBrowserContent>(); });
 
     registerContentType(PanelContentType::Inspector,
-                        []() { return std::make_unique<InspectorContent>(); });
+                        []() { return std::make_unique<InspectorContainer>(); });
 
     registerContentType(PanelContentType::AIChatConsole,
                         []() { return std::make_unique<AIChatConsoleContent>(); });

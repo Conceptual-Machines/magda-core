@@ -10,9 +10,17 @@
 #include "../core/DeviceInfo.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/TypeIds.hpp"
+#include "ClipSynchronizer.hpp"
 #include "DeviceProcessor.hpp"
 #include "MeteringBuffer.hpp"
+#include "MidiActivityMonitor.hpp"
+#include "ParameterManager.hpp"
 #include "ParameterQueue.hpp"
+#include "PluginManager.hpp"
+#include "PluginWindowBridge.hpp"
+#include "TrackController.hpp"
+#include "TransportStateManager.hpp"
+#include "WarpMarkerManager.hpp"
 
 namespace magda {
 
@@ -20,22 +28,6 @@ namespace magda {
 namespace te = tracktion;
 class PluginWindowManager;
 class TracktionEngineWrapper;
-
-/**
- * @brief Result of attempting to load a plugin
- */
-struct PluginLoadResult {
-    bool success = false;
-    juce::String errorMessage;
-    te::Plugin::Ptr plugin;
-
-    static PluginLoadResult Success(const te::Plugin::Ptr& p) {
-        return {true, {}, p};
-    }
-    static PluginLoadResult Failure(const juce::String& msg) {
-        return {false, msg, nullptr};
-    }
-};
 
 /**
  * @brief Bridges TrackManager and ClipManager (UI models) to Tracktion Engine (audio processing)
@@ -173,11 +165,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Warp Markers
     // =========================================================================
 
-    struct WarpMarkerInfo {
-        double sourceTime;
-        double warpTime;
-    };
-
     /** Enable warping: populate WarpTimeManager with markers at detected transients */
     void enableWarp(ClipId clipId);
 
@@ -297,7 +284,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @brief Get the parameter queue for pushing changes from UI
      */
     ParameterQueue& getParameterQueue() {
-        return parameterQueue_;
+        return parameterManager_.getQueue();
     }
 
     /**
@@ -350,21 +337,21 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @brief Get current transport playing state (audio thread safe)
      */
     bool isTransportPlaying() const {
-        return transportPlaying_.load(std::memory_order_acquire);
+        return transportState_.isPlaying();
     }
 
     /**
      * @brief Get just-started flag (audio thread safe)
      */
     bool didJustStart() const {
-        return justStartedFlag_.load(std::memory_order_acquire);
+        return transportState_.didJustStart();
     }
 
     /**
      * @brief Get just-looped flag (audio thread safe)
      */
     bool didJustLoop() const {
-        return justLoopedFlag_.load(std::memory_order_acquire);
+        return transportState_.didJustLoop();
     }
 
     // =========================================================================
@@ -375,14 +362,18 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @brief Trigger MIDI activity for a track (audio thread safe)
      * @param trackId The track that received MIDI
      */
-    void triggerMidiActivity(TrackId trackId);
+    void triggerMidiActivity(TrackId trackId) {
+        midiActivity_.triggerActivity(trackId);
+    }
 
     /**
      * @brief Check and clear MIDI activity flag for a track (UI thread)
      * @param trackId The track to check
      * @return true if MIDI activity occurred since last check
      */
-    bool consumeMidiActivity(TrackId trackId);
+    bool consumeMidiActivity(TrackId trackId) {
+        return midiActivity_.consumeActivity(trackId);
+    }
 
     // =========================================================================
     // Mixer Controls
@@ -552,7 +543,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @param manager Pointer to PluginWindowManager (owned by TracktionEngineWrapper)
      */
     void setPluginWindowManager(PluginWindowManager* manager) {
-        windowManager_ = manager;
+        pluginWindowBridge_.setPluginWindowManager(manager);
     }
 
     /**
@@ -597,10 +588,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Timer callback for metering updates (runs on message thread)
     void timerCallback() override;
 
-    // Clip synchronization helpers
-    void syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip);
-    void syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip);
-
     // Create track mapping
     void ensureTrackMapping(TrackId trackId);
 
@@ -618,35 +605,26 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     te::Edit& edit_;
 
     // Bidirectional mappings
-    std::map<TrackId, te::AudioTrack*> trackMapping_;
     std::map<TrackId, std::string> trackIdToEngineId_;  // MAGDA TrackId → Engine string ID
-    std::map<DeviceId, te::Plugin::Ptr> deviceToPlugin_;
-    std::map<te::Plugin*, DeviceId> pluginToDevice_;
-
-    // Arrangement clip ID mappings (MAGDA ClipId <-> Tracktion Engine clip ID)
-    std::map<ClipId, std::string> clipIdToEngineId_;  // MAGDA → TE
-    std::map<std::string, ClipId> engineIdToClipId_;  // TE → MAGDA
 
     // (Session clips use ClipSlot-based mapping via trackId + sceneIndex — no ID maps needed)
 
-    // Device processors (own the processing logic for each device)
-    std::map<DeviceId, std::unique_ptr<DeviceProcessor>> deviceProcessors_;
-
-    // Per-track level measurer clients (needed to read levels)
-    std::map<TrackId, te::LevelMeasurer::Client> meterClients_;
-
     // Lock-free communication buffers
     MeteringBuffer meteringBuffer_;
-    ParameterQueue parameterQueue_;
 
-    // Transport state (UI thread writes, audio thread reads - lock-free)
-    std::atomic<bool> transportPlaying_{false};
-    std::atomic<bool> justStartedFlag_{false};
-    std::atomic<bool> justLoopedFlag_{false};
+    // Phase 1 refactoring: Pure data managers (extracted from AudioBridge)
+    TransportStateManager transportState_;
+    MidiActivityMonitor midiActivity_;
+    ParameterManager parameterManager_;
 
-    // MIDI activity flags (audio thread writes, UI thread reads/clears - lock-free)
-    static constexpr int kMaxTracks = 128;
-    std::array<std::atomic<bool>, kMaxTracks> midiActivityFlags_;
+    // Phase 2 refactoring: Independent features (extracted from AudioBridge)
+    PluginWindowBridge pluginWindowBridge_;
+    WarpMarkerManager warpMarkerManager_;
+
+    // Phase 3 refactoring: Core controllers (extracted from AudioBridge)
+    TrackController trackController_;
+    PluginManager pluginManager_;
+    ClipSynchronizer clipSynchronizer_;
 
     // Master channel metering (lock-free atomics for thread safety)
     std::atomic<float> masterPeakL_{0.0f};
@@ -662,15 +640,8 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     std::vector<std::pair<TrackId, juce::String>> pendingMidiRoutes_;
     void applyPendingMidiRoutes();
 
-    // Plugin window manager (owned by TracktionEngineWrapper, destroyed before us)
-    PluginWindowManager* windowManager_ = nullptr;
-
     // Engine wrapper (owns this AudioBridge, used for ClipInterface access)
     TracktionEngineWrapper* engineWrapper_ = nullptr;
-
-    // Deferred reallocate after reverse proxy render completes
-    // Stores the clip ID so we can poll until the proxy file exists
-    ClipId pendingReverseClipId_{INVALID_CLIP_ID};
 
     // Shutdown flag to prevent operations during cleanup
     std::atomic<bool> isShuttingDown_{false};

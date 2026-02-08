@@ -1,24 +1,38 @@
 #pragma once
+
 #include "magda/daw/engine/TracktionEngineWrapper.hpp"
 
 namespace magda::test {
 
+/**
+ * Provides a single shared TracktionEngineWrapper for all tests.
+ *
+ * JUCE global singletons (MIDI device broadcaster, async updaters, timers)
+ * cannot survive repeated engine creation/destruction within a single process.
+ * Creating one engine and reusing it across tests avoids SIGSEGV crashes
+ * caused by corrupted global state.
+ */
 inline TracktionEngineWrapper& getSharedEngine() {
-    static TracktionEngineWrapper wrapper;
+    static TracktionEngineWrapper engine;
     static bool initialized = false;
     if (!initialized) {
-        wrapper.initialize();
+        engine.initialize();
         initialized = true;
     }
-    return wrapper;
+    return engine;
 }
 
-/// Call before JUCE teardown (i.e. before ScopedJuceInitialiser_GUI destructs).
-inline void shutdownSharedEngine() {
-    static bool shutdown = false;
-    if (!shutdown) {
-        getSharedEngine().shutdown();
-        shutdown = true;
+/**
+ * Reset transport to a clean state between tests.
+ * Call this at the start of each TEST_CASE that uses the shared engine.
+ */
+inline void resetTransport(TracktionEngineWrapper& engine) {
+    auto* edit = engine.getEdit();
+    if (!edit)
+        return;
+    auto& transport = edit->getTransport();
+    if (transport.isPlaying() || transport.isRecording()) {
+        transport.stop(false, false);
     }
 }
 
