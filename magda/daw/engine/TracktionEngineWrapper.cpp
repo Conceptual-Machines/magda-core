@@ -1,5 +1,11 @@
 #include "TracktionEngineWrapper.hpp"
 
+#include "../audio/AudioBridge.hpp"
+#include "../audio/MidiBridge.hpp"
+#include "../audio/SessionClipScheduler.hpp"
+#include "PluginScanCoordinator.hpp"
+#include "PluginWindowManager.hpp"
+
 namespace magda {
 
 // =============================================================================
