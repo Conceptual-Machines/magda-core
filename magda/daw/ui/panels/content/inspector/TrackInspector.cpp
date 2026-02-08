@@ -364,8 +364,8 @@ void TrackInspector::populateRoutingSelectors() {
             // Switching to Audio: clear MIDI input, populate audio options
             magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "");
             populateAudioInputOptions();
-            // Default to first stereo pair
-            inputSelector_->setSelectedId(10);
+            int firstChannel = inputSelector_->getFirstChannelOptionId();
+            inputSelector_->setSelectedId(firstChannel > 0 ? firstChannel : 1);
             inputSelector_->setEnabled(true);
             magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "default");
         } else {
@@ -643,8 +643,12 @@ void TrackInspector::updateRoutingSelectorsFromTrack() {
 
     if (hasAudioInput) {
         inputTypeSelector_->setInputType(magda::InputTypeSelector::InputType::Audio);
+        int currentId = inputSelector_->getSelectedId();
         populateAudioInputOptions();
-        inputSelector_->setSelectedId(10);  // First stereo pair
+        if (currentId < 10) {
+            int firstChannel = inputSelector_->getFirstChannelOptionId();
+            inputSelector_->setSelectedId(firstChannel > 0 ? firstChannel : 1);
+        }
         inputSelector_->setEnabled(true);
     } else {
         inputTypeSelector_->setInputType(magda::InputTypeSelector::InputType::MIDI);
