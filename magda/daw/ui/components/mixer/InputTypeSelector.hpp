@@ -25,6 +25,7 @@ class InputTypeSelector : public juce::Component {
     void mouseExit(const juce::MouseEvent& e) override;
 
     void setInputType(InputType type);
+    void setInputTypeSilently(InputType type);
     InputType getInputType() const {
         return currentType_;
     }

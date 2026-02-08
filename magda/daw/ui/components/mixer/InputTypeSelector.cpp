@@ -92,6 +92,13 @@ void InputTypeSelector::setInputType(InputType type) {
     }
 }
 
+void InputTypeSelector::setInputTypeSilently(InputType type) {
+    if (currentType_ != type) {
+        currentType_ = type;
+        repaint();
+    }
+}
+
 juce::Rectangle<int> InputTypeSelector::getAudioSegmentArea() const {
     auto bounds = getLocalBounds();
     return bounds.removeFromLeft(bounds.getWidth() / 2);

@@ -642,7 +642,7 @@ void TrackInspector::updateRoutingSelectorsFromTrack() {
     bool hasMidiInput = !track->midiInputDevice.isEmpty();
 
     if (hasAudioInput) {
-        inputTypeSelector_->setInputType(magda::InputTypeSelector::InputType::Audio);
+        inputTypeSelector_->setInputTypeSilently(magda::InputTypeSelector::InputType::Audio);
         int currentId = inputSelector_->getSelectedId();
         populateAudioInputOptions();
         if (currentId < 10) {
@@ -651,7 +651,7 @@ void TrackInspector::updateRoutingSelectorsFromTrack() {
         }
         inputSelector_->setEnabled(true);
     } else {
-        inputTypeSelector_->setInputType(magda::InputTypeSelector::InputType::MIDI);
+        inputTypeSelector_->setInputTypeSilently(magda::InputTypeSelector::InputType::MIDI);
         populateMidiInputOptions();
 
         if (!hasMidiInput) {

@@ -228,8 +228,8 @@ void TrackController::setTrackAudioInput(TrackId trackId, const juce::String& de
                     if (result.has_value()) {
                         (*result)->recordEnabled = false;  // Don't auto-enable recording
                         DBG("  -> Routed default audio input to track");
+                        break;
                     }
-                    break;
                 }
             } else {
                 // Find specific device by name and route it

@@ -806,7 +806,7 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
 
     if (header.inputTypeSelector && header.inputSelector) {
         if (hasAudioInput) {
-            header.inputTypeSelector->setInputType(InputTypeSelector::InputType::Audio);
+            header.inputTypeSelector->setInputTypeSilently(InputTypeSelector::InputType::Audio);
             int currentId = header.inputSelector->getSelectedId();
             populateAudioInputOptions(header.inputSelector.get());
             // Preserve current channel selection if valid, otherwise default to first channel
@@ -816,7 +816,7 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
             }
             header.inputSelector->setEnabled(true);
         } else {
-            header.inputTypeSelector->setInputType(InputTypeSelector::InputType::MIDI);
+            header.inputTypeSelector->setInputTypeSilently(InputTypeSelector::InputType::MIDI);
             populateMidiInputOptions(header.inputSelector.get());
 
             if (!hasMidiInput) {
