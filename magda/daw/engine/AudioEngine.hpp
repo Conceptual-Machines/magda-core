@@ -1,7 +1,9 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 
+#include "../audio/RecordingNoteQueue.hpp"
 #include "../ui/state/TransportStateListener.hpp"
 
 namespace juce {
@@ -79,6 +81,17 @@ class AudioEngine : public AudioEngineListener {
      */
     virtual void previewNoteOnTrack(const std::string& track_id, int noteNumber, int velocity,
                                     bool isNoteOn) = 0;
+
+    // ===== Recording Preview =====
+    /**
+     * @brief Get active recording previews for real-time MIDI note display
+     * Returns transient preview data that exists only during recording.
+     * No ClipManager clips are involved — this is paint-only overlay data.
+     */
+    virtual const std::unordered_map<TrackId, RecordingPreview>& getRecordingPreviews() const {
+        static const std::unordered_map<TrackId, RecordingPreview> empty;
+        return empty;
+    }
 };
 
 }  // namespace magda

@@ -15,6 +15,7 @@
 #include "core/ClipTypes.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
+#include "engine/AudioEngine.hpp"
 
 namespace magda {
 
@@ -70,6 +71,11 @@ class TrackContentPanel : public juce::Component,
     void fileDragMove(const juce::StringArray& files, int x, int y) override;
     void fileDragExit(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
+
+    // Set the audio engine reference (called by MainView after construction)
+    void setAudioEngine(AudioEngine* engine) {
+        audioEngine_ = engine;
+    }
 
     // Set the controller reference (called by MainView after construction)
     void setController(TimelineController* controller);
@@ -157,6 +163,9 @@ class TrackContentPanel : public juce::Component,
     // Controller reference (not owned)
     TimelineController* timelineController = nullptr;
 
+    // Audio engine reference for recording previews (not owned)
+    AudioEngine* audioEngine_ = nullptr;
+
     // Layout constants - use shared constant from LayoutConfig
     static constexpr int LEFT_PADDING = LayoutConfig::TIMELINE_LEFT_PADDING;
 
@@ -186,6 +195,7 @@ class TrackContentPanel : public juce::Component,
     void paintTrackLane(juce::Graphics& g, const TrackLane& lane, juce::Rectangle<int> area,
                         bool isSelected, int trackIndex);
     void paintEditCursor(juce::Graphics& g);
+    void paintRecordingPreviews(juce::Graphics& g);
     juce::Rectangle<int> getTrackLaneArea(int trackIndex) const;
 
     // Mouse handling

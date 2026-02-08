@@ -242,6 +242,7 @@ set(DAW_UI_SOURCES
     # Components - Tracks
     ui/components/tracks/TrackHeadersPanel.cpp
     ui/components/tracks/TrackContentPanel.cpp
+    ui/components/tracks/TrackContentPanelClipDrag.cpp
     # Components - Clips
     ui/components/clips/ClipComponent.cpp
     # Components - Piano Roll

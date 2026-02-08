@@ -142,6 +142,7 @@ void MainView::setupComponents() {
         false);  // Let TrackContentPanel handle keyboard focus
     trackContentPanel = std::make_unique<TrackContentPanel>();
     trackContentPanel->setController(timelineController.get());  // Connect to centralized state
+    trackContentPanel->setAudioEngine(audioEngine_);
     trackContentViewport->setViewedComponent(trackContentPanel.get(), false);
     trackContentViewport->setScrollBarsShown(false, false, true, true);
     addAndMakeVisible(*trackContentViewport);
@@ -1434,7 +1435,8 @@ MainView::SelectionOverlayComponent::SelectionOverlayComponent(MainView& owner) 
 MainView::SelectionOverlayComponent::~SelectionOverlayComponent() = default;
 
 void MainView::SelectionOverlayComponent::paint(juce::Graphics& g) {
-    drawRecordingRegion(g);
+    // NOTE: Recording region drawing removed — now handled by
+    // TrackContentPanel::paintRecordingPreviews() with real-time MIDI notes.
     drawTimeSelection(g);
     drawLoopRegion(g);
 }
