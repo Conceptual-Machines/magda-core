@@ -1,0 +1,21 @@
+File,Total Lines,Code Lines,Comment Lines,Blank Lines,Priority
+magda/daw/ui/panels/content/InspectorContent.cpp,3353,2635,306,412,CRITICAL
+magda/daw/core/TrackManager.cpp,2573,1991,254,328,CRITICAL
+magda/daw/ui/components/tracks/TrackContentPanel.cpp,2540,1782,346,412,CRITICAL
+magda/daw/ui/windows/MainWindow.cpp,2400,1823,216,361,HIGH
+magda/daw/ui/components/tracks/TrackHeadersPanel.cpp,2203,1588,270,345,HIGH
+magda/daw/ui/components/clips/ClipComponent.cpp,2007,1503,223,281,HIGH
+magda/daw/ui/views/MainView.cpp,1926,1278,290,358,MEDIUM
+magda/daw/ui/views/SessionView.cpp,1681,1259,156,266,MEDIUM
+magda/daw/engine/TracktionEngineWrapper.cpp,1667,1212,170,285,MEDIUM
+magda/daw/project/ProjectSerializer.cpp,1595,1203,137,255,MEDIUM
+magda/daw/ui/components/timeline/TimelineComponent.cpp,1432,1014,200,218,LOW
+magda/daw/ui/panels/content/TrackChainContent.cpp,1422,1075,155,192,LOW
+magda/daw/ui/components/waveform/WaveformGridComponent.cpp,1384,1020,153,211,LOW
+magda/daw/ui/panels/content/PianoRollContent.cpp,1359,976,182,201,LOW
+magda/daw/core/ClipManager.cpp,1249,918,141,190,LOW
+magda/daw/core/SelectionManager.cpp,1235,873,131,231,LOW
+magda/daw/ui/components/chain/DeviceSlotComponent.cpp,1189,874,155,160,LOW
+magda/daw/ui/components/chain/NodeComponent.cpp,1133,854,123,156,LOW
+magda/daw/core/SelectionManager.hpp,1127,616,334,177,LOW
+magda/daw/ui/panels/content/WaveformEditorContent.cpp,1012,738,128,146,LOW
