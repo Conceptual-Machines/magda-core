@@ -101,7 +101,7 @@ The `main` branch is protected with:
 - **Plugin Sandboxing**: VST/AU plugins run in the same process (not sandboxed)
   - Only load plugins from trusted sources
   - Malicious plugins can access the full application memory space
-  
+
 - **File Parsing**: Project files are parsed using JUCE/Tracktion Engine
   - Malformed files could potentially cause crashes
   - Always validate files from untrusted sources

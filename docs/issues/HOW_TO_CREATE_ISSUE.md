@@ -31,7 +31,7 @@ The `AudioBridge` class has grown to **3,592 lines** with **70+ methods** and **
 ## Problem
 
 1. **Context Overflow** - Exceeds LLM context windows
-2. **Testing Complexity** - Hard to unit test individual responsibilities  
+2. **Testing Complexity** - Hard to unit test individual responsibilities
 3. **Thread Safety Complexity** - Multiple threading contexts spread across concerns
 4. **Single Responsibility Violation** - God object antipattern
 5. **High Coupling** - Changes ripple unpredictably

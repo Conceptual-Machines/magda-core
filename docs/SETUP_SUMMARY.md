@@ -103,7 +103,7 @@ The main CI workflow now has conditional job execution:
 jobs:
   build-and-test-linux:
     if: |
-      github.event_name != 'workflow_dispatch' || 
+      github.event_name != 'workflow_dispatch' ||
       github.event.inputs.skip-cpp-build != 'true'
 ```
 

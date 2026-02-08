@@ -115,7 +115,7 @@ if command -v python3 &> /dev/null || command -v python &> /dev/null; then
     elif command -v pip &> /dev/null; then
         pip install pre-commit --user 2>/dev/null || true
     fi
-    
+
     if command -v pre-commit &> /dev/null; then
         pre-commit install 2>/dev/null || true
         print_success "Pre-commit hooks installed"
@@ -140,4 +140,4 @@ echo "  2. Run tests:           make test"
 echo "  3. Check code quality:  make quality"
 echo "  4. Run the DAW:         make run"
 echo ""
-echo "For more information, see: make help" 
+echo "For more information, see: make help"
