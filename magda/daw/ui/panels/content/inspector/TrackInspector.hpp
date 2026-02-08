@@ -65,7 +65,11 @@ class TrackInspector : public BaseInspector, public magda::TrackManagerListener 
 
     // Send/Receive section
     juce::Label sendReceiveSectionLabel_;
-    juce::Label sendsLabel_;
+    juce::TextButton addSendButton_;
+    std::vector<std::unique_ptr<juce::Label>> sendDestLabels_;
+    std::vector<std::unique_ptr<magda::DraggableValueLabel>> sendLevelLabels_;
+    std::vector<std::unique_ptr<juce::TextButton>> sendDeleteButtons_;
+    juce::Label noSendsLabel_;
     juce::Label receivesLabel_;
 
     // Clips section
@@ -75,6 +79,8 @@ class TrackInspector : public BaseInspector, public magda::TrackManagerListener 
     // Update methods
     void updateFromSelectedTrack();
     void showTrackControls(bool show);
+    void rebuildSendsUI();
+    void showAddSendMenu();
     void populateRoutingSelectors();
     void populateAudioInputOptions();
     void populateAudioOutputOptions();

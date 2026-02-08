@@ -862,6 +862,17 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
         // Update routing selectors to match track state
         updateRoutingSelectorFromTrack(header, track);
 
+        // Update send labels from track data
+        for (size_t i = 0; i < header.sendLabels.size(); ++i) {
+            if (i < track->sends.size()) {
+                float levelDb = gainToDb(track->sends[i].level);
+                header.sendLabels[i]->setValue(levelDb, juce::dontSendNotification);
+                header.sendLabels[i]->setVisible(true);
+            } else {
+                header.sendLabels[i]->setVisible(false);
+            }
+        }
+
         updateTrackHeaderLayout();
         repaint();
     }
@@ -1238,6 +1249,26 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
     header.automationButton->onClick = [this, trackId, &header]() {
         showAutomationMenu(trackId, header.automationButton.get());
     };
+
+    // Bind send label callbacks to TrackManager
+    const auto* track = TrackManager::getInstance().getTrack(trackId);
+    if (track) {
+        for (size_t i = 0; i < header.sendLabels.size() && i < track->sends.size(); ++i) {
+            int busIndex = track->sends[i].busIndex;
+            float levelDb = gainToDb(track->sends[i].level);
+            header.sendLabels[i]->setValue(levelDb, juce::dontSendNotification);
+            header.sendLabels[i]->setVisible(true);
+
+            header.sendLabels[i]->onValueChange = [trackId, busIndex, &header, i]() {
+                float gain = dbToGain(static_cast<float>(header.sendLabels[i]->getValue()));
+                TrackManager::getInstance().setSendLevel(trackId, busIndex, gain);
+            };
+        }
+        // Hide unused send labels
+        for (size_t i = track->sends.size(); i < header.sendLabels.size(); ++i) {
+            header.sendLabels[i]->setVisible(false);
+        }
+    }
 
     // Populate input options based on current type and output options
     populateMidiInputOptions(header.inputSelector.get());

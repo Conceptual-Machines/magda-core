@@ -568,6 +568,11 @@ void MainWindow::setupMenuCallbacks() {
         UndoManager::getInstance().executeCommand(std::move(cmd));
     };
 
+    callbacks.onAddAuxTrack = []() {
+        auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Aux);
+        UndoManager::getInstance().executeCommand(std::move(cmd));
+    };
+
     callbacks.onShowTrackManager = []() { TrackManagerDialog::show(); };
 
     callbacks.onDeleteTrack = [this]() {

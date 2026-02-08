@@ -140,10 +140,18 @@ TrackInspector::TrackInspector() {
                                        DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(sendReceiveSectionLabel_);
 
-    sendsLabel_.setText("No sends", juce::dontSendNotification);
-    sendsLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    sendsLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    addAndMakeVisible(sendsLabel_);
+    addSendButton_.setButtonText("+ Send");
+    addSendButton_.setColour(juce::TextButton::buttonColourId,
+                             DarkTheme::getColour(DarkTheme::SURFACE));
+    addSendButton_.setColour(juce::TextButton::textColourOffId,
+                             DarkTheme::getSecondaryTextColour());
+    addSendButton_.onClick = [this]() { showAddSendMenu(); };
+    addAndMakeVisible(addSendButton_);
+
+    noSendsLabel_.setText("No sends", juce::dontSendNotification);
+    noSendsLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
+    noSendsLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    addAndMakeVisible(noSendsLabel_);
 
     receivesLabel_.setText("No receives", juce::dontSendNotification);
     receivesLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
@@ -230,9 +238,27 @@ void TrackInspector::resized() {
     bounds.removeFromTop(16);
 
     // Send/Receive section
-    sendReceiveSectionLabel_.setBounds(bounds.removeFromTop(16));
+    auto sendHeaderRow = bounds.removeFromTop(16);
+    sendReceiveSectionLabel_.setBounds(sendHeaderRow.removeFromLeft(100));
+    addSendButton_.setBounds(sendHeaderRow.removeFromRight(50).withHeight(16));
     bounds.removeFromTop(4);
-    sendsLabel_.setBounds(bounds.removeFromTop(16));
+
+    if (sendDestLabels_.empty()) {
+        noSendsLabel_.setBounds(bounds.removeFromTop(16));
+        noSendsLabel_.setVisible(true);
+    } else {
+        noSendsLabel_.setVisible(false);
+        for (size_t i = 0; i < sendDestLabels_.size(); ++i) {
+            auto sendRow = bounds.removeFromTop(18);
+            sendDestLabels_[i]->setBounds(sendRow.removeFromLeft(60));
+            sendRow.removeFromLeft(4);
+            sendLevelLabels_[i]->setBounds(sendRow.removeFromLeft(50));
+            sendRow.removeFromLeft(4);
+            sendDeleteButtons_[i]->setBounds(sendRow.removeFromLeft(18));
+            bounds.removeFromTop(2);
+        }
+    }
+
     receivesLabel_.setBounds(bounds.removeFromTop(16));
     bounds.removeFromTop(16);
 
@@ -305,6 +331,9 @@ void TrackInspector::updateFromSelectedTrack() {
         // Update routing selectors to match track state
         updateRoutingSelectorsFromTrack();
 
+        // Update sends UI
+        rebuildSendsUI();
+
         showTrackControls(true);
     } else {
         showTrackControls(false);
@@ -331,12 +360,132 @@ void TrackInspector::showTrackControls(bool show) {
 
     // Send/Receive section
     sendReceiveSectionLabel_.setVisible(show);
-    sendsLabel_.setVisible(show);
+    addSendButton_.setVisible(show);
+    noSendsLabel_.setVisible(show);
     receivesLabel_.setVisible(show);
+    for (auto& l : sendDestLabels_)
+        l->setVisible(show);
+    for (auto& l : sendLevelLabels_)
+        l->setVisible(show);
+    for (auto& b : sendDeleteButtons_)
+        b->setVisible(show);
 
     // Clips section
     clipsSectionLabel_.setVisible(show);
     clipCountLabel_.setVisible(show);
+}
+
+void TrackInspector::rebuildSendsUI() {
+    // Remove existing send UI components
+    for (auto& l : sendDestLabels_)
+        removeChildComponent(l.get());
+    for (auto& l : sendLevelLabels_)
+        removeChildComponent(l.get());
+    for (auto& b : sendDeleteButtons_)
+        removeChildComponent(b.get());
+    sendDestLabels_.clear();
+    sendLevelLabels_.clear();
+    sendDeleteButtons_.clear();
+
+    if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+        return;
+
+    const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+    if (!track)
+        return;
+
+    for (const auto& send : track->sends) {
+        // Destination name label
+        auto destLabel = std::make_unique<juce::Label>();
+        const auto* destTrack = magda::TrackManager::getInstance().getTrack(send.destTrackId);
+        destLabel->setText(destTrack ? destTrack->name : "?", juce::dontSendNotification);
+        destLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
+        destLabel->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        addAndMakeVisible(*destLabel);
+        sendDestLabels_.push_back(std::move(destLabel));
+
+        // Send level label (draggable dB)
+        auto levelLabel = std::make_unique<magda::DraggableValueLabel>(
+            magda::DraggableValueLabel::Format::Decibels);
+        levelLabel->setRange(-60.0, 6.0, 0.0);
+        float levelDb = (send.level <= 0.0f) ? -60.0f : 20.0f * std::log10(send.level);
+        levelLabel->setValue(levelDb, juce::dontSendNotification);
+
+        int busIndex = send.busIndex;
+        magda::TrackId srcId = selectedTrackId_;
+        auto* levelLabelPtr = levelLabel.get();
+        levelLabel->onValueChange = [srcId, busIndex, levelLabelPtr]() {
+            double db = levelLabelPtr->getValue();
+            float gain = (db <= -60.0) ? 0.0f : std::pow(10.0f, static_cast<float>(db) / 20.0f);
+            magda::TrackManager::getInstance().setSendLevel(srcId, busIndex, gain);
+        };
+        addAndMakeVisible(*levelLabel);
+        sendLevelLabels_.push_back(std::move(levelLabel));
+
+        // Delete button
+        auto deleteBtn = std::make_unique<juce::TextButton>("X");
+        deleteBtn->setColour(juce::TextButton::buttonColourId,
+                             DarkTheme::getColour(DarkTheme::SURFACE));
+        deleteBtn->setColour(juce::TextButton::textColourOffId,
+                             DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+        deleteBtn->onClick = [srcId, busIndex]() {
+            magda::TrackManager::getInstance().removeSend(srcId, busIndex);
+        };
+        addAndMakeVisible(*deleteBtn);
+        sendDeleteButtons_.push_back(std::move(deleteBtn));
+    }
+
+    resized();
+    repaint();
+}
+
+void TrackInspector::showAddSendMenu() {
+    if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+        return;
+
+    const auto* currentTrack = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+    if (!currentTrack)
+        return;
+
+    juce::PopupMenu menu;
+    const auto& allTracks = magda::TrackManager::getInstance().getTracks();
+
+    int itemId = 1;
+    std::vector<magda::TrackId> auxTrackIds;
+
+    for (const auto& track : allTracks) {
+        if (track.type != magda::TrackType::Aux)
+            continue;
+        if (track.id == selectedTrackId_)
+            continue;
+
+        // Filter out aux tracks that already have a send from this track
+        bool alreadyHasSend = false;
+        for (const auto& send : currentTrack->sends) {
+            if (send.destTrackId == track.id) {
+                alreadyHasSend = true;
+                break;
+            }
+        }
+        if (alreadyHasSend)
+            continue;
+
+        menu.addItem(itemId, track.name);
+        auxTrackIds.push_back(track.id);
+        ++itemId;
+    }
+
+    if (menu.getNumItems() == 0) {
+        menu.addItem(-1, "(No available aux tracks)", false);
+    }
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&addSendButton_),
+                       [this, auxTrackIds](int result) {
+                           if (result > 0 && result <= static_cast<int>(auxTrackIds.size())) {
+                               magda::TrackManager::getInstance().addSend(selectedTrackId_,
+                                                                          auxTrackIds[result - 1]);
+                           }
+                       });
 }
 
 void TrackInspector::populateRoutingSelectors() {
