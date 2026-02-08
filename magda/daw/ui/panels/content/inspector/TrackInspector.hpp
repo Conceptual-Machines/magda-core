@@ -61,8 +61,9 @@ class TrackInspector : public BaseInspector, public magda::TrackManagerListener 
     // Routing section (unified input type toggle + selectors)
     juce::Label routingSectionLabel_;
     std::unique_ptr<magda::InputTypeSelector> inputTypeSelector_;
-    std::unique_ptr<magda::RoutingSelector> inputSelector_;   // Audio OR MIDI input
-    std::unique_ptr<magda::RoutingSelector> outputSelector_;  // Audio output (always master)
+    std::unique_ptr<magda::RoutingSelector> inputSelector_;       // Audio OR MIDI input
+    std::unique_ptr<magda::RoutingSelector> outputSelector_;      // Audio output (always master)
+    std::unique_ptr<magda::RoutingSelector> midiOutputSelector_;  // MIDI output device
 
     // Send/Receive section
     juce::Label sendReceiveSectionLabel_;

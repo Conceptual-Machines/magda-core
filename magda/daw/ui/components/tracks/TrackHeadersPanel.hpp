@@ -123,6 +123,7 @@ class TrackHeadersPanel : public juce::Component,
         std::unique_ptr<InputTypeSelector> inputTypeSelector;  // Audio/MIDI toggle
         std::unique_ptr<RoutingSelector> inputSelector;        // Unified input (audio OR midi)
         std::unique_ptr<RoutingSelector> outputSelector;       // Audio output (always master)
+        std::unique_ptr<RoutingSelector> midiOutputSelector;   // MIDI output device
         std::vector<std::unique_ptr<DraggableValueLabel>> sendLabels;  // Send level labels
         std::unique_ptr<juce::Component> meterComponent;               // Peak meter display
         std::unique_ptr<juce::Component> midiIndicator;                // MIDI activity indicator
@@ -170,6 +171,7 @@ class TrackHeadersPanel : public juce::Component,
     void populateAudioOutputOptions(RoutingSelector* selector,
                                     TrackId currentTrackId = INVALID_TRACK_ID);
     void populateMidiInputOptions(RoutingSelector* selector);
+    void populateMidiOutputOptions(RoutingSelector* selector);
     void setupRoutingCallbacks(TrackHeader& header, TrackId trackId);
     void updateRoutingSelectorFromTrack(TrackHeader& header, const TrackInfo* track);
 

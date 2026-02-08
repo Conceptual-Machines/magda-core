@@ -249,6 +249,11 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     outputSelector->setSelectedId(1);
     outputSelector->setEnabled(audioOutEnabled);
 
+    // MIDI output selector
+    midiOutputSelector = std::make_unique<RoutingSelector>(RoutingSelector::Type::MidiOut);
+    midiOutputSelector->setSelectedId(1);   // "None"
+    midiOutputSelector->setEnabled(false);  // Disabled by default
+
     // Send labels — created dynamically in setupTrackHeaderWithId based on actual sends
 
     // Meter component (stereo level display)
@@ -597,6 +602,33 @@ void TrackHeadersPanel::populateMidiInputOptions(RoutingSelector* selector) {
     selector->setOptions(options);
 }
 
+void TrackHeadersPanel::populateMidiOutputOptions(RoutingSelector* selector) {
+    if (!selector || !audioEngine_) {
+        return;
+    }
+
+    auto* midiBridge = audioEngine_->getMidiBridge();
+    if (!midiBridge) {
+        return;
+    }
+
+    auto midiOutputs = midiBridge->getAvailableMidiOutputs();
+
+    std::vector<RoutingSelector::RoutingOption> options;
+    options.push_back({1, "None"});
+
+    if (!midiOutputs.empty()) {
+        options.push_back({0, "", true});  // separator
+
+        int id = 10;
+        for (const auto& device : midiOutputs) {
+            options.push_back({id++, device.name});
+        }
+    }
+
+    selector->setOptions(options);
+}
+
 void TrackHeadersPanel::refreshInputSelectors() {
     for (auto& header : trackHeaders) {
         if (header->inputSelector && header->inputTypeSelector) {
@@ -719,6 +751,41 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
             TrackManager::getInstance().setTrackAudioOutput(trackId, "master");
         }
     };
+
+    // MIDI output selector callbacks
+    header.midiOutputSelector->onEnabledChanged = [this, trackId, midiBridge,
+                                                   &header](bool enabled) {
+        if (enabled) {
+            int selectedId = header.midiOutputSelector->getSelectedId();
+            if (selectedId >= 10 && midiBridge) {
+                auto midiOutputs = midiBridge->getAvailableMidiOutputs();
+                int deviceIndex = selectedId - 10;
+                if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiOutputs.size())) {
+                    TrackManager::getInstance().setTrackMidiOutput(trackId,
+                                                                   midiOutputs[deviceIndex].id);
+                    return;
+                }
+            }
+            // Fallback: no valid device selected, clear
+            TrackManager::getInstance().setTrackMidiOutput(trackId, "");
+        } else {
+            TrackManager::getInstance().setTrackMidiOutput(trackId, "");
+        }
+    };
+
+    header.midiOutputSelector->onSelectionChanged = [this, trackId, midiBridge](int selectedId) {
+        if (selectedId == 1) {
+            // None
+            TrackManager::getInstance().setTrackMidiOutput(trackId, "");
+        } else if (selectedId >= 10 && midiBridge) {
+            auto midiOutputs = midiBridge->getAvailableMidiOutputs();
+            int deviceIndex = selectedId - 10;
+            if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiOutputs.size())) {
+                TrackManager::getInstance().setTrackMidiOutput(trackId,
+                                                               midiOutputs[deviceIndex].id);
+            }
+        }
+    };
 }
 
 void TrackHeadersPanel::tracksChanged() {
@@ -733,6 +800,7 @@ void TrackHeadersPanel::tracksChanged() {
         removeChildComponent(header->inputTypeSelector.get());
         removeChildComponent(header->inputSelector.get());
         removeChildComponent(header->outputSelector.get());
+        removeChildComponent(header->midiOutputSelector.get());
     }
     trackHeaders.clear();
     visibleTrackIds_.clear();
@@ -777,6 +845,7 @@ void TrackHeadersPanel::tracksChanged() {
         addAndMakeVisible(*header->inputTypeSelector);
         addAndMakeVisible(*header->inputSelector);
         addAndMakeVisible(*header->outputSelector);
+        addAndMakeVisible(*header->midiOutputSelector);
         for (auto& sendLabel : header->sendLabels) {
             addChildComponent(*sendLabel);  // Hidden by default; shown when track has sends
         }
@@ -960,6 +1029,26 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
             header.outputSelector->setEnabled(true);
         }
     }
+
+    // Update MIDI Output selector
+    if (header.midiOutputSelector) {
+        juce::String currentMidiOutput = track->midiOutputDevice;
+        if (currentMidiOutput.isEmpty()) {
+            header.midiOutputSelector->setSelectedId(1);  // "None"
+            header.midiOutputSelector->setEnabled(false);
+        } else if (midiBridge) {
+            auto midiOutputs = midiBridge->getAvailableMidiOutputs();
+            int selectedId = 1;  // Default to "None"
+            for (size_t i = 0; i < midiOutputs.size(); ++i) {
+                if (midiOutputs[i].id == currentMidiOutput) {
+                    selectedId = 10 + static_cast<int>(i);
+                    break;
+                }
+            }
+            header.midiOutputSelector->setSelectedId(selectedId);
+            header.midiOutputSelector->setEnabled(selectedId != 1);
+        }
+    }
 }
 
 void TrackHeadersPanel::paint(juce::Graphics& g) {
@@ -1017,6 +1106,14 @@ void TrackHeadersPanel::setTrackHeight(int trackIndex, int height) {
     if (trackIndex >= 0 && trackIndex < trackHeaders.size()) {
         height = juce::jlimit(MIN_TRACK_HEIGHT, MAX_TRACK_HEIGHT, height);
         trackHeaders[trackIndex]->height = height;
+
+        // Persist to TrackManager so height survives tracksChanged() rebuilds
+        TrackId trackId = trackHeaders[trackIndex]->trackId;
+        auto& trackManager = TrackManager::getInstance();
+        auto* track = const_cast<TrackInfo*>(trackManager.getTrack(trackId));
+        if (track) {
+            track->viewSettings.setHeight(currentViewMode_, height);
+        }
 
         updateTrackHeaderLayout();
         repaint();
@@ -1263,8 +1360,9 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
 
     populateMidiInputOptions(header.inputSelector.get());
     populateAudioOutputOptions(header.outputSelector.get(), trackId);
+    populateMidiOutputOptions(header.midiOutputSelector.get());
 
-    // Set up routing callbacks (input type toggle, input selector, output selector)
+    // Set up routing callbacks (input type toggle, input selector, output selector, midi output)
     setupRoutingCallbacks(header, trackId);
 }
 
@@ -1463,6 +1561,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 header.inputTypeSelector->setVisible(false);
                 header.inputSelector->setVisible(false);
                 header.outputSelector->setVisible(false);
+                header.midiOutputSelector->setVisible(false);
                 for (auto& sendLabel : header.sendLabels) {
                     sendLabel->setVisible(false);
                 }
@@ -1474,23 +1573,28 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
             const int sendLabelWidth = 28;    // "-inf" or "-12"
 
             if (trackHeight >= 100) {
-                // LARGE LAYOUT - evenly distributed:
-                // Order: M S R, Input routing, Output routing, Volume/Pan, Sends
+                // LARGE LAYOUT - fixed 4-row grid, sends use remaining space
+                // Order: M S R A, Volume/Pan, Input routing, Output routing
+                // Sends appear between Vol/Pan and I/O if present
                 const int toggleWidth = 40;
                 const int dropdownWidth = 55;
                 const int buttonGap = 2;
                 const int contentRowHeight = rowHeight - 2;
+                const bool hasSends = !header.sendLabels.empty();
 
-                // Row count: 4 base + 1 if track has sends
-                bool hasSends = !header.sendLabels.empty();
-                int numRows = hasSends ? 5 : 4;
+                // Always 4 base rows for stable spacing
+                constexpr int numRows = 4;
 
                 // Calculate even spacing between rows
                 int totalContentHeight = numRows * contentRowHeight;
+                if (hasSends)
+                    totalContentHeight += contentRowHeight;
                 int availableSpace = tcpArea.getHeight() - totalContentHeight;
-                int rowGap = numRows > 1 ? std::max(2, availableSpace / (numRows - 1)) : 2;
+                int rowGap = numRows > 1
+                                 ? std::max(2, availableSpace / (numRows - 1 + (hasSends ? 1 : 0)))
+                                 : 2;
 
-                // M S R A buttons row (always visible, now on top)
+                // M S R A buttons row
                 auto buttonsRow = tcpArea.removeFromTop(contentRowHeight);
                 header.muteButton->setBounds(buttonsRow.removeFromLeft(smallButtonSize));
                 buttonsRow.removeFromLeft(buttonGap);
@@ -1504,21 +1608,6 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 
                 tcpArea.removeFromTop(rowGap);
 
-                // Input routing row: [Audio|MIDI toggle] [Input selector]
-                auto inputRow = tcpArea.removeFromTop(contentRowHeight);
-                header.inputTypeSelector->setBounds(inputRow.removeFromLeft(toggleWidth));
-                header.inputTypeSelector->setVisible(true);
-                inputRow.removeFromLeft(spacing);
-                header.inputSelector->setBounds(inputRow.removeFromLeft(dropdownWidth));
-                header.inputSelector->setVisible(true);
-                tcpArea.removeFromTop(rowGap);
-
-                // Output routing row: [Output selector]
-                auto outputRow = tcpArea.removeFromTop(contentRowHeight);
-                header.outputSelector->setBounds(outputRow.removeFromLeft(dropdownWidth));
-                header.outputSelector->setVisible(true);
-                tcpArea.removeFromTop(rowGap);
-
                 // Volume / Pan row
                 auto mixRow = tcpArea.removeFromTop(contentRowHeight);
 
@@ -1529,7 +1618,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 header.panLabel->setBounds(mixRow.removeFromLeft(panLabelWidth));
                 header.panLabel->setVisible(true);
 
-                // Sends row (only if track has sends)
+                // Sends row (only if track has sends — squeezed in without affecting base rows)
                 if (hasSends) {
                     tcpArea.removeFromTop(rowGap);
                     auto sendRow = tcpArea.removeFromTop(contentRowHeight);
@@ -1548,6 +1637,25 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                         sendLabel->setVisible(false);
                     }
                 }
+
+                tcpArea.removeFromTop(rowGap);
+
+                // Input routing row: [Audio|MIDI toggle] [Input selector]
+                auto inputRow = tcpArea.removeFromTop(contentRowHeight);
+                header.inputTypeSelector->setBounds(inputRow.removeFromLeft(toggleWidth));
+                header.inputTypeSelector->setVisible(true);
+                inputRow.removeFromLeft(spacing);
+                header.inputSelector->setBounds(inputRow.removeFromLeft(dropdownWidth));
+                header.inputSelector->setVisible(true);
+                tcpArea.removeFromTop(rowGap);
+
+                // Output routing row: [Audio Out] [MIDI Out]
+                auto outputRow = tcpArea.removeFromTop(contentRowHeight);
+                header.outputSelector->setBounds(outputRow.removeFromLeft(dropdownWidth));
+                header.outputSelector->setVisible(true);
+                outputRow.removeFromLeft(spacing);
+                header.midiOutputSelector->setBounds(outputRow.removeFromLeft(dropdownWidth));
+                header.midiOutputSelector->setVisible(true);
 
             } else if (trackHeight >= 55) {
                 // MEDIUM LAYOUT: Buttons + volume/pan only
@@ -1902,6 +2010,7 @@ void TrackHeadersPanel::toggleRouting(int trackIndex, RoutingType type) {
             break;
         case RoutingType::MidiOut:
             header.midiOutEnabled = !header.midiOutEnabled;
+            header.midiOutputSelector->setEnabled(header.midiOutEnabled);
             break;
     }
 
