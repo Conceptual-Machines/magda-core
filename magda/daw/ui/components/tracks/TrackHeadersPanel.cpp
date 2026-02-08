@@ -236,10 +236,15 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     collapseButton->setColour(juce::TextButton::textColourOffId,
                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
 
-    // Input type selector (Audio/MIDI toggle)
+    // Input type selector (hidden, kept for internal state)
     inputTypeSelector = std::make_unique<InputTypeSelector>();
 
-    // Unified input selector (shows audio or MIDI options based on toggle)
+    // Audio input selector
+    audioInputSelector = std::make_unique<RoutingSelector>(RoutingSelector::Type::AudioIn);
+    audioInputSelector->setSelectedId(1);
+    audioInputSelector->setEnabled(false);  // Disabled by default (MIDI input active)
+
+    // MIDI input selector
     inputSelector = std::make_unique<RoutingSelector>(RoutingSelector::Type::MidiIn);
     inputSelector->setSelectedId(1);
     inputSelector->setEnabled(midiInEnabled);
@@ -631,13 +636,10 @@ void TrackHeadersPanel::populateMidiOutputOptions(RoutingSelector* selector) {
 
 void TrackHeadersPanel::refreshInputSelectors() {
     for (auto& header : trackHeaders) {
-        if (header->inputSelector && header->inputTypeSelector) {
-            if (header->inputTypeSelector->getInputType() == InputTypeSelector::InputType::MIDI) {
-                populateMidiInputOptions(header->inputSelector.get());
-            } else {
-                populateAudioInputOptions(header->inputSelector.get());
-            }
-        }
+        if (header->audioInputSelector)
+            populateAudioInputOptions(header->audioInputSelector.get());
+        if (header->inputSelector)
+            populateMidiInputOptions(header->inputSelector.get());
     }
 
     repaint();
@@ -649,40 +651,45 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
 
     auto* midiBridge = audioEngine_->getMidiBridge();
 
-    // Input type toggle callback
-    header.inputTypeSelector->onInputTypeChanged = [this, trackId,
-                                                    &header](InputTypeSelector::InputType type) {
-        if (type == InputTypeSelector::InputType::Audio) {
-            // Switching to Audio: clear MIDI input, populate audio options
+    // Audio input selector callbacks (mutually exclusive with MIDI input)
+    header.audioInputSelector->onEnabledChanged = [this, trackId](bool enabled) {
+        if (enabled) {
+            // Disable MIDI input (mutually exclusive) — find header by trackId
+            for (auto& h : trackHeaders) {
+                if (h->trackId == trackId) {
+                    h->inputSelector->setEnabled(false);
+                    break;
+                }
+            }
             TrackManager::getInstance().setTrackMidiInput(trackId, "");
-            populateAudioInputOptions(header.inputSelector.get());
-            int firstChannel = header.inputSelector->getFirstChannelOptionId();
-            header.inputSelector->setSelectedId(firstChannel > 0 ? firstChannel : 1);
-            header.inputSelector->setEnabled(true);
             TrackManager::getInstance().setTrackAudioInput(trackId, "default");
         } else {
-            // Switching to MIDI: clear audio input, populate MIDI options
             TrackManager::getInstance().setTrackAudioInput(trackId, "");
-            populateMidiInputOptions(header.inputSelector.get());
-            header.inputSelector->setSelectedId(1);
-            header.inputSelector->setEnabled(true);
-            TrackManager::getInstance().setTrackMidiInput(trackId, "all");
         }
     };
 
-    // Unified input selector callbacks
-    header.inputSelector->onSelectionChanged = [this, trackId, midiBridge,
-                                                &header](int selectedId) {
-        if (header.inputTypeSelector->getInputType() == InputTypeSelector::InputType::Audio) {
-            if (selectedId == 1) {
-                TrackManager::getInstance().setTrackAudioInput(trackId, "");
-            } else if (selectedId >= 10) {
-                TrackManager::getInstance().setTrackAudioInput(trackId, "default");
+    header.audioInputSelector->onSelectionChanged = [this, trackId](int selectedId) {
+        if (selectedId == 1) {
+            TrackManager::getInstance().setTrackAudioInput(trackId, "");
+        } else if (selectedId >= 10) {
+            TrackManager::getInstance().setTrackAudioInput(trackId, "default");
+        }
+    };
+
+    // MIDI input selector callbacks (mutually exclusive with audio input)
+    header.inputSelector->onEnabledChanged = [this, trackId, midiBridge](bool enabled) {
+        if (enabled) {
+            // Disable audio input (mutually exclusive) — find header by trackId
+            int selectedId = 1;
+            for (auto& h : trackHeaders) {
+                if (h->trackId == trackId) {
+                    h->audioInputSelector->setEnabled(false);
+                    selectedId = h->inputSelector->getSelectedId();
+                    break;
+                }
             }
-        } else {
-            if (selectedId == 2) {
-                TrackManager::getInstance().setTrackMidiInput(trackId, "");
-            } else if (selectedId == 1) {
+            TrackManager::getInstance().setTrackAudioInput(trackId, "");
+            if (selectedId == 1) {
                 TrackManager::getInstance().setTrackMidiInput(trackId, "all");
             } else if (selectedId >= 10 && midiBridge) {
                 auto midiInputs = midiBridge->getAvailableMidiInputs();
@@ -690,37 +697,27 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
                 if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
                     TrackManager::getInstance().setTrackMidiInput(trackId,
                                                                   midiInputs[deviceIndex].id);
-                }
-            }
-        }
-    };
-
-    header.inputSelector->onEnabledChanged = [this, trackId, midiBridge, &header](bool enabled) {
-        if (header.inputTypeSelector->getInputType() == InputTypeSelector::InputType::Audio) {
-            if (enabled) {
-                TrackManager::getInstance().setTrackAudioInput(trackId, "default");
-            } else {
-                TrackManager::getInstance().setTrackAudioInput(trackId, "");
-            }
-        } else {
-            if (enabled) {
-                int selectedId = header.inputSelector->getSelectedId();
-                if (selectedId == 1) {
-                    TrackManager::getInstance().setTrackMidiInput(trackId, "all");
-                } else if (selectedId >= 10 && midiBridge) {
-                    auto midiInputs = midiBridge->getAvailableMidiInputs();
-                    int deviceIndex = selectedId - 10;
-                    if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
-                        TrackManager::getInstance().setTrackMidiInput(trackId,
-                                                                      midiInputs[deviceIndex].id);
-                    } else {
-                        TrackManager::getInstance().setTrackMidiInput(trackId, "all");
-                    }
                 } else {
                     TrackManager::getInstance().setTrackMidiInput(trackId, "all");
                 }
             } else {
-                TrackManager::getInstance().setTrackMidiInput(trackId, "");
+                TrackManager::getInstance().setTrackMidiInput(trackId, "all");
+            }
+        } else {
+            TrackManager::getInstance().setTrackMidiInput(trackId, "");
+        }
+    };
+
+    header.inputSelector->onSelectionChanged = [this, trackId, midiBridge](int selectedId) {
+        if (selectedId == 2) {
+            TrackManager::getInstance().setTrackMidiInput(trackId, "");
+        } else if (selectedId == 1) {
+            TrackManager::getInstance().setTrackMidiInput(trackId, "all");
+        } else if (selectedId >= 10 && midiBridge) {
+            auto midiInputs = midiBridge->getAvailableMidiInputs();
+            int deviceIndex = selectedId - 10;
+            if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
+                TrackManager::getInstance().setTrackMidiInput(trackId, midiInputs[deviceIndex].id);
             }
         }
     };
@@ -753,10 +750,16 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
     };
 
     // MIDI output selector callbacks
-    header.midiOutputSelector->onEnabledChanged = [this, trackId, midiBridge,
-                                                   &header](bool enabled) {
+    header.midiOutputSelector->onEnabledChanged = [this, trackId, midiBridge](bool enabled) {
         if (enabled) {
-            int selectedId = header.midiOutputSelector->getSelectedId();
+            // Find header by trackId to get current selection
+            int selectedId = 1;
+            for (auto& h : trackHeaders) {
+                if (h->trackId == trackId) {
+                    selectedId = h->midiOutputSelector->getSelectedId();
+                    break;
+                }
+            }
             if (selectedId >= 10 && midiBridge) {
                 auto midiOutputs = midiBridge->getAvailableMidiOutputs();
                 int deviceIndex = selectedId - 10;
@@ -797,7 +800,7 @@ void TrackHeadersPanel::tracksChanged() {
         removeChildComponent(header->volumeLabel.get());
         removeChildComponent(header->panLabel.get());
         removeChildComponent(header->collapseButton.get());
-        removeChildComponent(header->inputTypeSelector.get());
+        removeChildComponent(header->audioInputSelector.get());
         removeChildComponent(header->inputSelector.get());
         removeChildComponent(header->outputSelector.get());
         removeChildComponent(header->midiOutputSelector.get());
@@ -842,7 +845,7 @@ void TrackHeadersPanel::tracksChanged() {
         addAndMakeVisible(*header->automationButton);
         addAndMakeVisible(*header->volumeLabel);
         addAndMakeVisible(*header->panLabel);
-        addAndMakeVisible(*header->inputTypeSelector);
+        addAndMakeVisible(*header->audioInputSelector);
         addAndMakeVisible(*header->inputSelector);
         addAndMakeVisible(*header->outputSelector);
         addAndMakeVisible(*header->midiOutputSelector);
@@ -961,48 +964,51 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
 
     auto* midiBridge = audioEngine_->getMidiBridge();
 
-    // Determine which input type is active
     bool hasAudioInput = !track->audioInputDevice.isEmpty();
     bool hasMidiInput = !track->midiInputDevice.isEmpty();
 
-    if (header.inputTypeSelector && header.inputSelector) {
+    // Update Audio Input selector
+    if (header.audioInputSelector) {
         if (hasAudioInput) {
-            header.inputTypeSelector->setInputTypeSilently(InputTypeSelector::InputType::Audio);
-            int currentId = header.inputSelector->getSelectedId();
-            populateAudioInputOptions(header.inputSelector.get());
-            // Preserve current channel selection if valid, otherwise default to first channel
+            int currentId = header.audioInputSelector->getSelectedId();
+            populateAudioInputOptions(header.audioInputSelector.get());
             if (currentId < 10) {
-                int firstChannel = header.inputSelector->getFirstChannelOptionId();
-                header.inputSelector->setSelectedId(firstChannel > 0 ? firstChannel : 1);
+                int firstChannel = header.audioInputSelector->getFirstChannelOptionId();
+                header.audioInputSelector->setSelectedId(firstChannel > 0 ? firstChannel : 1);
             }
-            header.inputSelector->setEnabled(true);
+            header.audioInputSelector->setEnabled(true);
         } else {
-            header.inputTypeSelector->setInputTypeSilently(InputTypeSelector::InputType::MIDI);
-            populateMidiInputOptions(header.inputSelector.get());
+            header.audioInputSelector->setSelectedId(1);  // "None"
+            header.audioInputSelector->setEnabled(false);
+        }
+    }
 
-            if (!hasMidiInput) {
-                header.inputSelector->setSelectedId(2);  // "None"
-                header.inputSelector->setEnabled(false);
-            } else if (track->midiInputDevice == "all") {
-                header.inputSelector->setSelectedId(1);  // "All Inputs"
-                header.inputSelector->setEnabled(true);
-            } else if (midiBridge) {
-                auto midiInputs = midiBridge->getAvailableMidiInputs();
-                int selectedId = 2;
-                for (size_t i = 0; i < midiInputs.size(); ++i) {
-                    if (midiInputs[i].id == track->midiInputDevice) {
-                        selectedId = 10 + static_cast<int>(i);
-                        break;
-                    }
+    // Update MIDI Input selector
+    if (header.inputSelector) {
+        if (!hasMidiInput) {
+            header.inputSelector->setSelectedId(2);  // "None"
+            header.inputSelector->setEnabled(false);
+        } else if (track->midiInputDevice == "all") {
+            header.inputSelector->setSelectedId(1);  // "All Inputs"
+            header.inputSelector->setEnabled(true);
+        } else if (midiBridge) {
+            auto midiInputs = midiBridge->getAvailableMidiInputs();
+            int selectedId = 2;
+            for (size_t i = 0; i < midiInputs.size(); ++i) {
+                if (midiInputs[i].id == track->midiInputDevice) {
+                    selectedId = 10 + static_cast<int>(i);
+                    break;
                 }
-                header.inputSelector->setSelectedId(selectedId);
-                header.inputSelector->setEnabled(selectedId != 2);
             }
+            header.inputSelector->setSelectedId(selectedId);
+            header.inputSelector->setEnabled(selectedId != 2);
         }
     }
 
     // Update Audio Output selector
     if (header.outputSelector) {
+        // Repopulate options to rebuild outputTrackMapping_ for this track
+        populateAudioOutputOptions(header.outputSelector.get(), header.trackId);
         juce::String currentAudioOutput = track->audioOutputDevice;
         if (currentAudioOutput.isEmpty()) {
             header.outputSelector->setSelectedId(2);  // "None"
@@ -1356,13 +1362,14 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
     // Create send labels from actual track sends
     rebuildSendLabels(header, trackId);
 
-    // Populate input options based on current type and output options
+    // Populate all routing selectors
 
+    populateAudioInputOptions(header.audioInputSelector.get());
     populateMidiInputOptions(header.inputSelector.get());
     populateAudioOutputOptions(header.outputSelector.get(), trackId);
     populateMidiOutputOptions(header.midiOutputSelector.get());
 
-    // Set up routing callbacks (input type toggle, input selector, output selector, midi output)
+    // Set up routing callbacks (audio/MIDI input with mutual exclusion, outputs)
     setupRoutingCallbacks(header, trackId);
 }
 
@@ -1527,9 +1534,8 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 
             // MIDI indicator spans full track height
             header.midiIndicator->setBounds(midiArea);
-            header.midiIndicator->setVisible(header.inputTypeSelector &&
-                                             header.inputTypeSelector->getInputType() ==
-                                                 InputTypeSelector::InputType::MIDI);
+            header.midiIndicator->setVisible(header.inputSelector &&
+                                             header.inputSelector->isEnabled());
             header.midiIndicator->toFront(false);  // Ensure it's on top
 
             // Apply indentation based on depth for TCP area
@@ -1558,7 +1564,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 
             // Helper to hide all routing selectors and sends
             auto hideAllRouting = [&]() {
-                header.inputTypeSelector->setVisible(false);
+                header.audioInputSelector->setVisible(false);
                 header.inputSelector->setVisible(false);
                 header.outputSelector->setVisible(false);
                 header.midiOutputSelector->setVisible(false);
@@ -1640,16 +1646,16 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 
                 tcpArea.removeFromTop(rowGap);
 
-                // Input routing row: [Audio|MIDI toggle] [Input selector]
+                // Input row: [Audio In] [MIDI In]
                 auto inputRow = tcpArea.removeFromTop(contentRowHeight);
-                header.inputTypeSelector->setBounds(inputRow.removeFromLeft(toggleWidth));
-                header.inputTypeSelector->setVisible(true);
+                header.audioInputSelector->setBounds(inputRow.removeFromLeft(dropdownWidth));
+                header.audioInputSelector->setVisible(true);
                 inputRow.removeFromLeft(spacing);
                 header.inputSelector->setBounds(inputRow.removeFromLeft(dropdownWidth));
                 header.inputSelector->setVisible(true);
                 tcpArea.removeFromTop(rowGap);
 
-                // Output routing row: [Audio Out] [MIDI Out]
+                // Output row: [Audio Out] [MIDI Out]
                 auto outputRow = tcpArea.removeFromTop(contentRowHeight);
                 header.outputSelector->setBounds(outputRow.removeFromLeft(dropdownWidth));
                 header.outputSelector->setVisible(true);
@@ -1998,7 +2004,7 @@ void TrackHeadersPanel::toggleRouting(int trackIndex, RoutingType type) {
     switch (type) {
         case RoutingType::AudioIn:
             header.audioInEnabled = !header.audioInEnabled;
-            header.inputSelector->setEnabled(header.audioInEnabled);
+            header.audioInputSelector->setEnabled(header.audioInEnabled);
             break;
         case RoutingType::AudioOut:
             header.audioOutEnabled = !header.audioOutEnabled;

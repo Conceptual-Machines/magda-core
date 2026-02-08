@@ -120,10 +120,11 @@ class TrackHeadersPanel : public juce::Component,
         std::unique_ptr<DraggableValueLabel> panLabel;         // Pan as draggable L/C/R label
         std::unique_ptr<juce::TextButton> collapseButton;      // For groups
         std::unique_ptr<SvgButton> automationButton;           // Show automation lanes
-        std::unique_ptr<InputTypeSelector> inputTypeSelector;  // Audio/MIDI toggle
-        std::unique_ptr<RoutingSelector> inputSelector;        // Unified input (audio OR midi)
-        std::unique_ptr<RoutingSelector> outputSelector;       // Audio output (always master)
-        std::unique_ptr<RoutingSelector> midiOutputSelector;   // MIDI output device
+        std::unique_ptr<InputTypeSelector> inputTypeSelector;  // Hidden, kept for internal state
+        std::unique_ptr<RoutingSelector> audioInputSelector;   // Audio input
+        std::unique_ptr<RoutingSelector> inputSelector;        // MIDI input
+        std::unique_ptr<RoutingSelector> outputSelector;       // Audio output
+        std::unique_ptr<RoutingSelector> midiOutputSelector;   // MIDI output
         std::vector<std::unique_ptr<DraggableValueLabel>> sendLabels;  // Send level labels
         std::unique_ptr<juce::Component> meterComponent;               // Peak meter display
         std::unique_ptr<juce::Component> midiIndicator;                // MIDI activity indicator
