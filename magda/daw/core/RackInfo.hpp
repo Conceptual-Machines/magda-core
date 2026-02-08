@@ -158,7 +158,7 @@ struct RackInfo {
     MacroArray macros = createDefaultMacros();
 
     // Modulators for rack-wide modulation
-    ModArray mods = createDefaultMods();
+    ModArray mods = createDefaultMods(0);
 
     // Default constructor
     RackInfo() = default;
