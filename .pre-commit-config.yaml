@@ -39,13 +39,12 @@ repos:
   - repo: local
     hooks:
       # Enforce file size policy (<1KLOC guideline, hard limit at 1.5KLOC)
-      # Temporarily disabled
-      # - id: check-file-size
-      #   name: Check File Size (<1KLOC Policy)
-      #   entry: .pre-commit-hooks/check-file-size.sh
-      #   language: system
-      #   files: \.(cpp|hpp|h|c|cc|cxx)$
-      #   pass_filenames: true
+      - id: check-file-size
+        name: Check File Size (<1KLOC Policy)
+        entry: .pre-commit-hooks/check-file-size.sh
+        language: system
+        files: \.(cpp|hpp|h|c|cc|cxx)$
+        pass_filenames: true
 
       # Check that build still works after formatting
       - id: build-check
