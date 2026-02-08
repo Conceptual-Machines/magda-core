@@ -65,9 +65,11 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     }
 
     // Remove TE plugins that no longer exist in MAGDA
+    // Collect plugins to remove under lock, then delete outside lock to avoid blocking
+    std::vector<DeviceId> toRemove;
+    std::vector<te::Plugin::Ptr> pluginsToDelete;
     {
         juce::ScopedLock lock(pluginLock_);
-        std::vector<DeviceId> toRemove;
         for (const auto& [deviceId, plugin] : deviceToPlugin_) {
             auto pluginIt = pluginToDevice_.find(plugin.get());
             if (pluginIt != pluginToDevice_.end()) {
@@ -79,25 +81,28 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                                  magdaDevices.end();
                     if (!found) {
                         toRemove.push_back(deviceId);
+                        pluginsToDelete.push_back(plugin);
                     }
                 }
             }
         }
 
+        // Remove from mappings while under lock
         for (auto deviceId : toRemove) {
-            // Close plugin window before removing device (via PluginWindowBridge)
-            pluginWindowBridge_.closeWindowsForDevice(deviceId);
-
             auto it = deviceToPlugin_.find(deviceId);
             if (it != deviceToPlugin_.end()) {
-                auto plugin = it->second;
-                pluginToDevice_.erase(plugin.get());
+                pluginToDevice_.erase(it->second.get());
                 deviceToPlugin_.erase(it);
-                plugin->deleteFromParent();
             }
-
-            // Clean up device processor
             deviceProcessors_.erase(deviceId);
+        }
+    }
+
+    // Delete plugins outside lock to avoid blocking other threads
+    for (size_t i = 0; i < toRemove.size(); ++i) {
+        pluginWindowBridge_.closeWindowsForDevice(toRemove[i]);
+        if (pluginsToDelete[i]) {
+            pluginsToDelete[i]->deleteFromParent();
         }
     }
 
@@ -130,13 +135,13 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
 // Plugin Loading
 // =============================================================================
 
-te::Plugin::Ptr PluginManager::loadBuiltInPlugin(const TrackId TRACK_ID, const juce::String& type) {
-    auto* track = trackController_.getAudioTrack(TRACK_ID);
+te::Plugin::Ptr PluginManager::loadBuiltInPlugin(TrackId trackId, const juce::String& type) {
+    auto* track = trackController_.getAudioTrack(trackId);
     if (!track) {
         // Create track if it doesn't exist
-        auto* trackInfo = TrackManager::getInstance().getTrack(TRACK_ID);
+        auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
         juce::String name = trackInfo ? trackInfo->name : "Track";
-        track = trackController_.createAudioTrack(TRACK_ID, name);
+        track = trackController_.createAudioTrack(trackId, name);
     }
 
     if (!track)
@@ -274,13 +279,8 @@ te::Plugin::Ptr PluginManager::addLevelMeterToTrack(TrackId trackId) {
     auto& plugins = track->pluginList;
     for (int i = plugins.size() - 1; i >= 0; --i) {
         if (auto* levelMeter = dynamic_cast<te::LevelMeterPlugin*>(plugins[i])) {
-            // Unregister meter client from the old LevelMeter
-            auto& meterClients = trackController_.getMeterClients();
-            auto it = meterClients.find(trackId);
-            if (it != meterClients.end()) {
-                levelMeter->measurer.removeClient(it->second);
-            }
-
+            // Unregister meter client from the old LevelMeter (thread-safe)
+            trackController_.removeMeterClient(trackId, levelMeter);
             levelMeter->deleteFromParent();
         }
     }
@@ -288,14 +288,10 @@ te::Plugin::Ptr PluginManager::addLevelMeterToTrack(TrackId trackId) {
     // Now add a fresh LevelMeter at the end
     auto plugin = loadBuiltInPlugin(trackId, "levelmeter");
 
-    // Register meter client with the new LevelMeter
+    // Register meter client with the new LevelMeter (thread-safe)
     if (plugin) {
         if (auto* levelMeter = dynamic_cast<te::LevelMeterPlugin*>(plugin.get())) {
-            auto& meterClients = trackController_.getMeterClients();
-
-            // Create or get existing client
-            auto [it, inserted] = meterClients.try_emplace(trackId);
-            levelMeter->measurer.addClient(it->second);
+            trackController_.addMeterClient(trackId, levelMeter);
         }
     }
 
@@ -344,12 +340,18 @@ void PluginManager::ensureVolumePluginPosition(te::AudioTrack* track) const {
         // First remove the plugin (this doesn't delete it, just removes from list)
         volPanPlugin->removeFromParent();
 
-        // Reinsert at target position (before meter or at end)
-        // If there's a meter at targetIndex, we want to go before it
-        plugins.insertPlugin(volPanPlugin, meterIndex >= 0 ? meterIndex : -1, nullptr);
+        // After removal, if volume was before meter, meter index shifts down by 1
+        int insertIndex = -1;  // Default: append to end
+        if (meterIndex >= 0) {
+            // If volume was before meter, meter shifted down
+            insertIndex = (volPanIndex < meterIndex) ? (meterIndex - 1) : meterIndex;
+        }
+
+        // Reinsert at corrected position
+        plugins.insertPlugin(volPanPlugin, insertIndex, nullptr);
 
         DBG("Moved VolumeAndPanPlugin from position "
-            << volPanIndex << " to " << (meterIndex >= 0 ? meterIndex : plugins.size() - 1));
+            << volPanIndex << " to " << (insertIndex >= 0 ? insertIndex : plugins.size() - 1));
     }
 }
 

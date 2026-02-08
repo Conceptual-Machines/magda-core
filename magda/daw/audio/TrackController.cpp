@@ -18,17 +18,15 @@ te::AudioTrack* TrackController::getAudioTrack(TrackId trackId) const {
 }
 
 te::AudioTrack* TrackController::createAudioTrack(TrackId trackId, const juce::String& name) {
-    // Double-checked locking pattern for thread safety
-    // Check if track already exists (fast path without full lock contention)
-    {
-        juce::ScopedLock lock(trackLock_);
-        auto it = trackMapping_.find(trackId);
-        if (it != trackMapping_.end() && it->second != nullptr) {
-            return it->second;
-        }
+    juce::ScopedLock lock(trackLock_);
+
+    // Check if track already exists
+    auto it = trackMapping_.find(trackId);
+    if (it != trackMapping_.end() && it->second != nullptr) {
+        return it->second;
     }
 
-    // Create new track (expensive operation, done outside mapping lock)
+    // Create new track (must be done under lock to prevent race condition)
     auto insertPoint = te::TrackInsertPoint(nullptr, nullptr);
     auto trackPtr = edit_.insertNewAudioTrack(insertPoint, nullptr);
 
@@ -40,7 +38,6 @@ te::AudioTrack* TrackController::createAudioTrack(TrackId trackId, const juce::S
         track->getOutput().setOutputToDefaultDevice(false);  // false = audio (not MIDI)
 
         // Register track mapping
-        juce::ScopedLock lock(trackLock_);
         trackMapping_[trackId] = track;
 
         std::cout << "TrackController: Created Tracktion AudioTrack for MAGDA track " << trackId
@@ -179,15 +176,17 @@ juce::String TrackController::getTrackAudioOutput(TrackId trackId) const {
     }
 
     if (track->isMuted(false)) {
-        return {};  // Muted = disabled output
+        return {};  // Muted = disabled output (matches empty string from setTrackAudioOutput)
     }
 
     auto& output = track->getOutput();
     if (output.usesDefaultAudioOut()) {
-        return "master";
+        return "master";  // Consistent with "master" keyword in setTrackAudioOutput
     }
 
-    // Return the output device name
+    // Return the output device ID for round-trip consistency
+    // Note: getOutputToDeviceID() is not available, so we use getOutputName()
+    // which should match the deviceId passed to setOutputToDeviceID()
     return output.getOutputName();
 }
 
@@ -254,17 +253,23 @@ juce::String TrackController::getTrackAudioInput(TrackId trackId) const {
     // Check if any input device is routed to this track
     auto* playbackContext = edit_.getCurrentPlaybackContext();
     if (playbackContext) {
-        for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+        auto allInputs = playbackContext->getAllInputs();
+        for (int i = 0; i < allInputs.size(); ++i) {
+            auto* inputDeviceInstance = allInputs[i];
             auto targets = inputDeviceInstance->getTargets();
             for (auto targetID : targets) {
                 if (targetID == track->itemID) {
+                    // Return "default" if this is the first input (for round-trip consistency)
+                    if (i == 0) {
+                        return "default";
+                    }
                     return inputDeviceInstance->owner.getName();
                 }
             }
         }
     }
 
-    return {};  // No input assigned
+    return {};  // No input assigned (matches empty string from setTrackAudioInput)
 }
 
 // =============================================================================
@@ -291,6 +296,36 @@ void TrackController::withTrackMapping(
     std::function<void(const std::map<TrackId, te::AudioTrack*>&)> callback) const {
     juce::ScopedLock lock(trackLock_);
     callback(trackMapping_);
+}
+
+// =============================================================================
+// Metering Coordination
+// =============================================================================
+
+void TrackController::addMeterClient(TrackId trackId, te::LevelMeterPlugin* levelMeter) {
+    if (!levelMeter)
+        return;
+
+    juce::ScopedLock lock(trackLock_);
+    auto [it, inserted] = meterClients_.try_emplace(trackId);
+    levelMeter->measurer.addClient(it->second);
+}
+
+void TrackController::removeMeterClient(TrackId trackId, te::LevelMeterPlugin* levelMeter) {
+    juce::ScopedLock lock(trackLock_);
+    auto it = meterClients_.find(trackId);
+    if (it != meterClients_.end()) {
+        if (levelMeter) {
+            levelMeter->measurer.removeClient(it->second);
+        }
+        meterClients_.erase(it);
+    }
+}
+
+void TrackController::withMeterClients(
+    std::function<void(const std::map<TrackId, te::LevelMeasurer::Client>&)> callback) const {
+    juce::ScopedLock lock(trackLock_);
+    callback(meterClients_);
 }
 
 }  // namespace magda

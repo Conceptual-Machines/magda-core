@@ -27,8 +27,9 @@ namespace te = tracktion;
  *
  * Thread Safety:
  * - All operations protected by internal trackLock_
- * - Double-checked locking in createAudioTrack()
- * - withTrackMapping() provides lock-free callback iteration
+ * - createAudioTrack() uses single lock pattern for thread safety
+ * - withTrackMapping() provides lock-protected callback iteration
+ * - withMeterClients() provides lock-protected callback iteration
  *
  * Dependencies:
  * - te::Engine& (for device management)
@@ -51,6 +52,9 @@ class TrackController {
      * @brief Get the Tracktion AudioTrack for a MAGDA track
      * @param trackId MAGDA track ID
      * @return The AudioTrack, or nullptr if not found
+     *
+     * WARNING: Returns raw pointer under lock. Pointer may become invalid if track is deleted
+     * after this call returns. Caller must ensure track lifetime or use immediately.
      */
     te::AudioTrack* getAudioTrack(TrackId trackId) const;
 
@@ -167,18 +171,31 @@ class TrackController {
         std::function<void(const std::map<TrackId, te::AudioTrack*>&)> callback) const;
 
     // =========================================================================
-    // Metering Coordination (for AudioBridge)
+    // Metering Coordination (for PluginManager)
     // =========================================================================
 
     /**
-     * @brief Get mutable reference to meter clients map
-     * @return Reference to meterClients_ for AudioBridge to coordinate metering
-     *
-     * NOTE: AudioBridge's addLevelMeterToTrack() directly manipulates this map
+     * @brief Add a meter client for a track (thread-safe)
+     * @param trackId The track ID
+     * @param levelMeter The LevelMeterPlugin to register with
      */
-    std::map<TrackId, te::LevelMeasurer::Client>& getMeterClients() {
-        return meterClients_;
-    }
+    void addMeterClient(TrackId trackId, te::LevelMeterPlugin* levelMeter);
+
+    /**
+     * @brief Remove meter client for a track (thread-safe)
+     * @param trackId The track ID
+     * @param levelMeter The LevelMeterPlugin to unregister from (optional)
+     */
+    void removeMeterClient(TrackId trackId, te::LevelMeterPlugin* levelMeter = nullptr);
+
+    /**
+     * @brief Execute a callback with thread-safe access to meter clients
+     * @param callback Function to execute with const reference to meterClients_
+     *
+     * Used by AudioBridge for meter updates in timer thread
+     */
+    void withMeterClients(
+        std::function<void(const std::map<TrackId, te::LevelMeasurer::Client>&)> callback) const;
 
   private:
     // References to Tracktion Engine (not owned)

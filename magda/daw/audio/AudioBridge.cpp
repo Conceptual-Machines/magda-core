@@ -60,15 +60,11 @@ AudioBridge::~AudioBridge() {
 
         // Unregister all track meter clients (via trackController)
         trackController_.withTrackMapping([this](const auto& trackMapping) {
-            auto& meterClients = trackController_.getMeterClients();
             for (auto& [trackId, track] : trackMapping) {
                 if (track) {
                     auto* levelMeter = track->getLevelMeterPlugin();
                     if (levelMeter) {
-                        auto it = meterClients.find(trackId);
-                        if (it != meterClients.end()) {
-                            levelMeter->measurer.removeClient(it->second);
-                        }
+                        trackController_.removeMeterClient(trackId, levelMeter);
                     }
                 }
             }
@@ -442,41 +438,44 @@ void AudioBridge::timerCallback() {
     // NOTE: Window state sync is now handled by PluginWindowManager's timer
 
     // Update metering from level measurers (runs at 30 FPS on message thread)
-    // Use trackController's withTrackMapping for thread-safe access
+    // Use trackController's thread-safe accessors
     trackController_.withTrackMapping([this](const auto& trackMapping) {
-        auto& meterClients = trackController_.getMeterClients();
+        trackController_.withMeterClients([&](const auto& meterClients) {
+            // Update track metering
+            for (const auto& [trackId, track] : trackMapping) {
+                if (!track)
+                    continue;
 
-        // Update track metering
-        for (const auto& [trackId, track] : trackMapping) {
-            if (!track)
-                continue;
+                // Get the meter client for this track
+                auto clientIt = meterClients.find(trackId);
+                if (clientIt == meterClients.end())
+                    continue;
 
-            // Get the meter client for this track
-            auto clientIt = meterClients.find(trackId);
-            if (clientIt == meterClients.end())
-                continue;
+                // Note: getAndClearAudioLevel() mutates the client, but we're accessing
+                // through const reference. This is safe because the mutation is internal
+                // to the client's thread-safe implementation.
+                auto& client = const_cast<te::LevelMeasurer::Client&>(clientIt->second);
 
-            auto& client = clientIt->second;
+                MeterData data;
 
-            MeterData data;
+                // Read and clear audio levels from the client (returns DbTimePair)
+                auto levelL = client.getAndClearAudioLevel(0);
+                auto levelR = client.getAndClearAudioLevel(1);
 
-            // Read and clear audio levels from the client (returns DbTimePair)
-            auto levelL = client.getAndClearAudioLevel(0);
-            auto levelR = client.getAndClearAudioLevel(1);
+                // Convert from dB to linear gain (allow > 1.0 for headroom)
+                data.peakL = juce::Decibels::decibelsToGain(levelL.dB);
+                data.peakR = juce::Decibels::decibelsToGain(levelR.dB);
 
-            // Convert from dB to linear gain (allow > 1.0 for headroom)
-            data.peakL = juce::Decibels::decibelsToGain(levelL.dB);
-            data.peakR = juce::Decibels::decibelsToGain(levelR.dB);
+                // Check for clipping
+                data.clipped = data.peakL > 1.0f || data.peakR > 1.0f;
 
-            // Check for clipping
-            data.clipped = data.peakL > 1.0f || data.peakR > 1.0f;
+                // RMS would require accumulation over time - simplified for now
+                data.rmsL = data.peakL * 0.7f;  // Rough approximation
+                data.rmsR = data.peakR * 0.7f;
 
-            // RMS would require accumulation over time - simplified for now
-            data.rmsL = data.peakL * 0.7f;  // Rough approximation
-            data.rmsR = data.peakR * 0.7f;
-
-            meteringBuffer_.pushLevels(trackId, data);
-        }
+                meteringBuffer_.pushLevels(trackId, data);
+            }
+        });
     });
 
     // Register master meter client with playback context if not done yet
