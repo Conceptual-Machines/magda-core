@@ -113,7 +113,7 @@ void AudioBridge::trackPropertyChanged(int trackId) {
                                 // Found a MIDI input routed to this track - sync record armed state
                                 inputDeviceInstance->setRecordingEnabled(track->itemID,
                                                                          trackInfo->recordArmed);
-                                DBG("Synced recordArmed=" << trackInfo->recordArmed
+                                DBG("Synced recordArmed=" << (trackInfo->recordArmed ? "true" : "false")
                                                           << " to MIDI input '"
                                                           << inputDeviceInstance->owner.getName()
                                                           << "' for track " << trackId);
