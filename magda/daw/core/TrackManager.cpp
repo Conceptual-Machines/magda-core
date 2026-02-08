@@ -33,13 +33,15 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
 
     // Set default routing
     track.audioOutputDevice = "master";  // Audio always routes to master
-    track.midiInputDevice = "all";       // MIDI listens to all inputs
     track.audioInputDevice = "";         // Audio input disabled by default (enable via UI)
     // midiOutputDevice left empty - requires specific device selection
 
-    // Assign aux bus index for Aux tracks
+    // Assign aux bus index for Aux tracks; aux tracks never receive MIDI
     if (type == TrackType::Aux) {
         track.auxBusIndex = nextAuxBusIndex_++;
+        track.midiInputDevice = "";  // Aux tracks don't receive MIDI
+    } else {
+        track.midiInputDevice = "all";  // MIDI listens to all inputs
     }
 
     TrackId trackId = track.id;
@@ -50,16 +52,15 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
                           << ")");
 
     // Initialize MIDI routing for this track if audioEngine is available
-    if (audioEngine_) {
+    // Aux tracks never receive MIDI; other tracks rely on selection-based routing
+    if (audioEngine_ && type != TrackType::Aux) {
         if (auto* midiBridge = audioEngine_->getMidiBridge()) {
             midiBridge->setTrackMidiInput(trackId, "all");
             midiBridge->startMonitoring(trackId);
         }
-        // Route MIDI inputs at the TE level (creates InputDeviceInstance destinations
-        // needed for recording and live monitoring through synth plugins)
-        if (auto* audioBridge = audioEngine_->getAudioBridge()) {
-            audioBridge->setTrackMidiInput(trackId, "all");
-        }
+        // Don't auto-route MIDI at the TE level for every new track.
+        // AudioBridge::updateMidiRoutingForSelection() will handle this
+        // based on whether the track is selected or record-armed.
     }
 
     return trackId;
@@ -382,17 +383,17 @@ void TrackManager::setAudioEngine(AudioEngine* audioEngine) {
     audioEngine_ = audioEngine;
 
     // Sync existing tracks' MIDI routing (in case tracks were created before engine was set)
+    // Only set up MidiBridge monitoring; TE-level MIDI routing is handled by
+    // AudioBridge::updateMidiRoutingForSelection() based on selection/arm state.
     if (audioEngine_) {
         for (const auto& track : tracks_) {
-            if (!track.midiInputDevice.isEmpty()) {
+            if (!track.midiInputDevice.isEmpty() && track.type != TrackType::Aux) {
                 if (auto* midiBridge = audioEngine_->getMidiBridge()) {
                     midiBridge->setTrackMidiInput(track.id, track.midiInputDevice);
                     midiBridge->startMonitoring(track.id);
                 }
-                if (auto* audioBridge = audioEngine_->getAudioBridge()) {
-                    audioBridge->setTrackMidiInput(track.id, track.midiInputDevice);
-                }
-                DBG("Synced MIDI routing for track " << track.id << ": " << track.midiInputDevice);
+                DBG("Synced MIDI monitoring for track " << track.id << ": "
+                                                        << track.midiInputDevice);
             }
         }
     }
@@ -425,6 +426,12 @@ void TrackManager::previewNote(TrackId trackId, int noteNumber, int velocity, bo
 void TrackManager::setTrackMidiInput(TrackId trackId, const juce::String& deviceId) {
     auto* track = getTrack(trackId);
     if (!track) {
+        return;
+    }
+
+    // Aux tracks never receive MIDI
+    if (track->type == TrackType::Aux) {
+        DBG("Cannot set MIDI input on aux track " << trackId);
         return;
     }
 
@@ -632,6 +639,10 @@ void TrackManager::moveNode(TrackId trackId, int fromIndex, int toIndex) {
 
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device) {
     if (auto* track = getTrack(trackId)) {
+        if (track->type == TrackType::Aux && device.isInstrument) {
+            DBG("Cannot add instrument plugin to aux track");
+            return INVALID_DEVICE_ID;
+        }
         DeviceInfo newDevice = device;
         newDevice.id = nextDeviceId_++;
         track->chainElements.push_back(makeDeviceElement(newDevice));
@@ -646,6 +657,10 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device,
                                         int insertIndex) {
     if (auto* track = getTrack(trackId)) {
+        if (track->type == TrackType::Aux && device.isInstrument) {
+            DBG("Cannot add instrument plugin to aux track");
+            return INVALID_DEVICE_ID;
+        }
         DeviceInfo newDevice = device;
         newDevice.id = nextDeviceId_++;
 
