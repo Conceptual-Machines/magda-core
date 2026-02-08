@@ -44,6 +44,16 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     void clipSelectionChanged(magda::ClipId clipId) override;
 
   private:
+    // Initialization helpers (split from constructor for code size)
+    void initClipPropertiesSection();
+    void initSessionLaunchSection();
+    void initPitchSection();
+    void initMixSection();
+    void initPlaybackSection();
+    void initFadesSection();
+    void initChannelsSection();
+    void initViewport();
+
     // Current selection
     magda::ClipId selectedClipId_ = magda::INVALID_CLIP_ID;
 
