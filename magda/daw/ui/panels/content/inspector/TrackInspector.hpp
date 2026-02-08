@@ -1,5 +1,7 @@
 #pragma once
 
+#include <map>
+
 #include "../../common/DraggableValueLabel.hpp"
 #include "../../mixer/InputTypeSelector.hpp"
 #include "../../mixer/RoutingSelector.hpp"
@@ -79,6 +81,9 @@ class TrackInspector : public BaseInspector, public magda::TrackManagerListener 
     void populateMidiInputOptions();
     void populateMidiOutputOptions();
     void updateRoutingSelectorsFromTrack();
+
+    // Output routing: option ID → TrackId mapping for group/aux destinations
+    std::map<int, magda::TrackId> outputTrackMapping_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TrackInspector)
 };

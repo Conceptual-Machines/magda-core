@@ -37,6 +37,11 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
     track.audioInputDevice = "";         // Audio input disabled by default (enable via UI)
     // midiOutputDevice left empty - requires specific device selection
 
+    // Assign aux bus index for Aux tracks
+    if (type == TrackType::Aux) {
+        track.auxBusIndex = nextAuxBusIndex_++;
+    }
+
     TrackId trackId = track.id;
     tracks_.push_back(track);
     notifyTracksChanged();
@@ -203,6 +208,10 @@ void TrackManager::addTrackToGroup(TrackId trackId, TrackId groupId) {
     track->parentId = groupId;
     group->childIds.push_back(trackId);
 
+    // Auto-route child's audio output to the group track
+    track->audioOutputDevice = "track:" + juce::String(groupId);
+    notifyTrackPropertyChanged(trackId);
+
     notifyTracksChanged();
     DBG("Added track " << track->name << " to group " << group->name);
 }
@@ -218,6 +227,11 @@ void TrackManager::removeTrackFromGroup(TrackId trackId) {
     }
 
     track->parentId = INVALID_TRACK_ID;
+
+    // Revert audio output to master when removed from group
+    track->audioOutputDevice = "master";
+    notifyTrackPropertyChanged(trackId);
+
     notifyTracksChanged();
 }
 
@@ -518,6 +532,66 @@ void TrackManager::setTrackAudioOutput(TrackId trackId, const juce::String& rout
 
     // Notify listeners
     notifyTrackPropertyChanged(trackId);
+}
+
+// ============================================================================
+// Send Management
+// ============================================================================
+
+void TrackManager::addSend(TrackId sourceTrackId, TrackId destAuxTrackId) {
+    auto* source = getTrack(sourceTrackId);
+    auto* dest = getTrack(destAuxTrackId);
+    if (!source || !dest || dest->type != TrackType::Aux || dest->auxBusIndex < 0) {
+        DBG("addSend failed: invalid source or destination");
+        return;
+    }
+
+    // Check if send already exists
+    for (const auto& send : source->sends) {
+        if (send.busIndex == dest->auxBusIndex) {
+            return;  // Already exists
+        }
+    }
+
+    SendInfo send;
+    send.busIndex = dest->auxBusIndex;
+    send.level = 1.0f;
+    send.preFader = false;
+    send.destTrackId = destAuxTrackId;
+    source->sends.push_back(send);
+
+    notifyTrackDevicesChanged(sourceTrackId);
+    DBG("Added send from track " << sourceTrackId << " to aux track " << destAuxTrackId << " (bus "
+                                 << dest->auxBusIndex << ")");
+}
+
+void TrackManager::removeSend(TrackId sourceTrackId, int busIndex) {
+    auto* source = getTrack(sourceTrackId);
+    if (!source) {
+        return;
+    }
+
+    auto& sends = source->sends;
+    sends.erase(std::remove_if(sends.begin(), sends.end(),
+                               [busIndex](const SendInfo& s) { return s.busIndex == busIndex; }),
+                sends.end());
+
+    notifyTrackDevicesChanged(sourceTrackId);
+}
+
+void TrackManager::setSendLevel(TrackId sourceTrackId, int busIndex, float level) {
+    auto* source = getTrack(sourceTrackId);
+    if (!source) {
+        return;
+    }
+
+    for (auto& send : source->sends) {
+        if (send.busIndex == busIndex) {
+            send.level = level;
+            notifyTrackPropertyChanged(sourceTrackId);
+            return;
+        }
+    }
 }
 
 // ============================================================================

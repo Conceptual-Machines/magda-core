@@ -162,6 +162,14 @@ void TrackController::setTrackAudioOutput(TrackId trackId, const juce::String& d
         // Route to default/master output
         track->setMute(false);
         track->getOutput().setOutputToDefaultDevice(false);  // false = audio (not MIDI)
+    } else if (destination.startsWith("track:")) {
+        // Route to another track (group or aux)
+        TrackId targetId = destination.fromFirstOccurrenceOf("track:", false, false).getIntValue();
+        auto* targetTrack = getAudioTrack(targetId);
+        if (targetTrack) {
+            track->setMute(false);
+            track->getOutput().setOutputToTrack(targetTrack);
+        }
     } else {
         // Route to specific output device
         track->setMute(false);
@@ -184,9 +192,18 @@ juce::String TrackController::getTrackAudioOutput(TrackId trackId) const {
         return "master";  // Consistent with "master" keyword in setTrackAudioOutput
     }
 
+    // Check if routed to another track
+    if (auto* destTrack = output.getDestinationTrack()) {
+        // Find the MAGDA TrackId for this TE track
+        juce::ScopedLock lock(trackLock_);
+        for (const auto& [magdaId, teTrack] : trackMapping_) {
+            if (teTrack == destTrack) {
+                return "track:" + juce::String(magdaId);
+            }
+        }
+    }
+
     // Return the output device ID for round-trip consistency
-    // Note: getOutputToDeviceID() is not available, so we use getOutputName()
-    // which should match the deviceId passed to setOutputToDeviceID()
     return output.getOutputName();
 }
 

@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <map>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -165,10 +166,14 @@ class TrackHeadersPanel : public juce::Component,
 
     // Routing device management
     void populateAudioInputOptions(RoutingSelector* selector);
-    void populateAudioOutputOptions(RoutingSelector* selector);
+    void populateAudioOutputOptions(RoutingSelector* selector,
+                                    TrackId currentTrackId = INVALID_TRACK_ID);
     void populateMidiInputOptions(RoutingSelector* selector);
     void setupRoutingCallbacks(TrackHeader& header, TrackId trackId);
     void updateRoutingSelectorFromTrack(TrackHeader& header, const TrackInfo* track);
+
+    // Output routing: option ID → TrackId mapping for group/aux destinations
+    std::map<int, TrackId> outputTrackMapping_;
 
     // Refresh all input selectors (call after MIDI device scan completes)
     void refreshInputSelectors();

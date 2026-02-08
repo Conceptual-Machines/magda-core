@@ -157,6 +157,11 @@ class TrackManager {
     void setTrackAudioInput(TrackId trackId, const juce::String& deviceId);
     void setTrackAudioOutput(TrackId trackId, const juce::String& routing);
 
+    // Send management (track → aux track)
+    void addSend(TrackId sourceTrackId, TrackId destAuxTrackId);
+    void removeSend(TrackId sourceTrackId, int busIndex);
+    void setSendLevel(TrackId sourceTrackId, int busIndex, float level);
+
     // View settings
     void setTrackVisible(TrackId trackId, ViewMode mode, bool visible);
     void setTrackLocked(TrackId trackId, ViewMode mode, bool locked);
@@ -416,6 +421,7 @@ class TrackManager {
     int nextDeviceId_ = 1;
     int nextRackId_ = 1;
     int nextChainId_ = 1;
+    int nextAuxBusIndex_ = 0;
     MasterChannelState masterChannel_;
     TrackId selectedTrackId_ = INVALID_TRACK_ID;
     TrackId selectedChainTrackId_ = INVALID_TRACK_ID;

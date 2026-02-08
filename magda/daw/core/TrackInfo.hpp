@@ -10,6 +10,16 @@
 namespace magda {
 
 /**
+ * @brief Describes a send from this track to an aux track
+ */
+struct SendInfo {
+    int busIndex = 0;                        // TE aux bus index
+    float level = 1.0f;                      // Send level (0.0 - 1.0)
+    bool preFader = false;                   // Pre/post fader
+    TrackId destTrackId = INVALID_TRACK_ID;  // Target aux track (for display)
+};
+
+/**
  * @brief Track data structure containing all track properties
  */
 struct TrackInfo {
@@ -34,6 +44,12 @@ struct TrackInfo {
     juce::String midiOutputDevice;   // MIDI output device ID (device ID or empty for none)
     juce::String audioInputDevice;   // Audio input device/channel (device ID or empty for none)
     juce::String audioOutputDevice;  // Audio output routing (default: "master")
+
+    // Sends (to aux tracks)
+    std::vector<SendInfo> sends;
+
+    // Aux bus index (assigned when type == Aux, used for AuxReturn/AuxSend bus matching)
+    int auxBusIndex = -1;
 
     // Signal chain - ordered list of nodes (devices or racks) on this track
     std::vector<ChainElement> chainElements;
@@ -65,6 +81,8 @@ struct TrackInfo {
           midiOutputDevice(other.midiOutputDevice),
           audioInputDevice(other.audioInputDevice),
           audioOutputDevice(other.audioOutputDevice),
+          sends(other.sends),
+          auxBusIndex(other.auxBusIndex),
           viewSettings(other.viewSettings) {
         chainElements.reserve(other.chainElements.size());
         for (const auto& element : other.chainElements) {
@@ -90,6 +108,8 @@ struct TrackInfo {
             midiOutputDevice = other.midiOutputDevice;
             audioInputDevice = other.audioInputDevice;
             audioOutputDevice = other.audioOutputDevice;
+            sends = other.sends;
+            auxBusIndex = other.auxBusIndex;
             viewSettings = other.viewSettings;
             chainElements.clear();
             chainElements.reserve(other.chainElements.size());

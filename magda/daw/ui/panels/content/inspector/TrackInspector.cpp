@@ -442,7 +442,7 @@ void TrackInspector::populateRoutingSelectors() {
         }
     };
 
-    // Output selector callbacks (always audio out)
+    // Output selector callbacks
     outputSelector_->onEnabledChanged = [this](bool enabled) {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
             return;
@@ -451,6 +451,26 @@ void TrackInspector::populateRoutingSelectors() {
             magda::TrackManager::getInstance().setTrackAudioOutput(selectedTrackId_, "master");
         } else {
             magda::TrackManager::getInstance().setTrackAudioOutput(selectedTrackId_, "");
+        }
+    };
+
+    outputSelector_->onSelectionChanged = [this](int selectedId) {
+        if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+            return;
+
+        if (selectedId == 1) {
+            // Master
+            magda::TrackManager::getInstance().setTrackAudioOutput(selectedTrackId_, "master");
+        } else if (selectedId >= 200 && selectedId < 400) {
+            // Group or Aux track destination
+            auto it = outputTrackMapping_.find(selectedId);
+            if (it != outputTrackMapping_.end()) {
+                magda::TrackManager::getInstance().setTrackAudioOutput(
+                    selectedTrackId_, "track:" + juce::String(it->second));
+            }
+        } else if (selectedId >= 10) {
+            // Hardware output
+            magda::TrackManager::getInstance().setTrackAudioOutput(selectedTrackId_, "master");
         }
     };
 }
@@ -534,22 +554,81 @@ void TrackInspector::populateAudioOutputOptions() {
 
     std::vector<magda::RoutingSelector::RoutingOption> options;
 
-    // Get current audio device
+    // Add "Master" as default output
+    options.push_back({1, "Master"});
+
+    // Add Group and Aux tracks as routing destinations
+    auto& trackManager = magda::TrackManager::getInstance();
+    const auto& allTracks = trackManager.getTracks();
+
+    // Collect descendants to prevent routing cycles
+    std::vector<magda::TrackId> descendants;
+    if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+        descendants = trackManager.getAllDescendants(selectedTrackId_);
+    }
+
+    // Group tracks (ID 200+)
+    {
+        std::vector<magda::RoutingSelector::RoutingOption> groupOptions;
+        int id = 200;
+        for (const auto& t : allTracks) {
+            if (t.type == magda::TrackType::Group && t.id != selectedTrackId_) {
+                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+                    continue;
+                groupOptions.push_back({id++, t.name});
+            }
+        }
+        if (!groupOptions.empty()) {
+            options.push_back({0, "", true});
+            for (auto& opt : groupOptions)
+                options.push_back(std::move(opt));
+        }
+    }
+
+    // Aux tracks (ID 300+)
+    {
+        std::vector<magda::RoutingSelector::RoutingOption> auxOptions;
+        int id = 300;
+        for (const auto& t : allTracks) {
+            if (t.type == magda::TrackType::Aux && t.id != selectedTrackId_) {
+                auxOptions.push_back({id++, t.name});
+            }
+        }
+        if (!auxOptions.empty()) {
+            options.push_back({0, "", true});
+            for (auto& opt : auxOptions)
+                options.push_back(std::move(opt));
+        }
+    }
+
+    // Store track mapping for output selection callbacks
+    outputTrackMapping_.clear();
+    {
+        int id = 200;
+        for (const auto& t : allTracks) {
+            if (t.type == magda::TrackType::Group && t.id != selectedTrackId_) {
+                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+                    continue;
+                outputTrackMapping_[id++] = t.id;
+            }
+        }
+        id = 300;
+        for (const auto& t : allTracks) {
+            if (t.type == magda::TrackType::Aux && t.id != selectedTrackId_) {
+                outputTrackMapping_[id++] = t.id;
+            }
+        }
+    }
+
+    // Hardware output channels
     auto* currentDevice = deviceManager->getCurrentAudioDevice();
     if (currentDevice) {
-        // Get only the ACTIVE/ENABLED output channels
         auto activeOutputChannels = currentDevice->getActiveOutputChannels();
-
-        // Add "Master" as default output
-        options.push_back({1, "Master"});
-
-        // Count how many channels are actually enabled
         int numActiveChannels = activeOutputChannels.countNumberOfSetBits();
 
         if (numActiveChannels > 0) {
-            options.push_back({0, "", true});  // separator
+            options.push_back({0, "", true});
 
-            // Build list of active channel indices
             juce::Array<int> activeIndices;
             for (int i = 0; i < activeOutputChannels.getHighestBit() + 1; ++i) {
                 if (activeOutputChannels[i]) {
@@ -557,11 +636,9 @@ void TrackInspector::populateAudioOutputOptions() {
                 }
             }
 
-            // Add stereo pairs first (starting from ID 10)
             int id = 10;
             for (int i = 0; i < activeIndices.size(); i += 2) {
                 if (i + 1 < activeIndices.size()) {
-                    // Stereo pair - show as "1-2", "3-4", etc.
                     int ch1 = activeIndices[i] + 1;
                     int ch2 = activeIndices[i + 1] + 1;
                     juce::String pairName = juce::String(ch1) + "-" + juce::String(ch2);
@@ -569,21 +646,16 @@ void TrackInspector::populateAudioOutputOptions() {
                 }
             }
 
-            // Add separator before mono channels (only if we have multiple channels)
             if (activeIndices.size() > 1) {
-                options.push_back({0, "", true});  // separator
+                options.push_back({0, "", true});
             }
 
-            // Add individual mono channels (starting from ID 100 to avoid conflicts)
             id = 100;
             for (int i = 0; i < activeIndices.size(); ++i) {
                 int channelNum = activeIndices[i] + 1;
                 options.push_back({id++, juce::String(channelNum) + " (mono)"});
             }
         }
-    } else {
-        options.push_back({1, "Master"});
-        options.push_back({2, "(No Device Active)"});
     }
 
     outputSelector_->setOptions(options);
@@ -681,6 +753,21 @@ void TrackInspector::updateRoutingSelectorsFromTrack() {
         outputSelector_->setEnabled(false);
     } else if (currentAudioOutput == "master") {
         outputSelector_->setSelectedId(1);  // Master
+        outputSelector_->setEnabled(true);
+    } else if (currentAudioOutput.startsWith("track:")) {
+        // Track-to-track routing — find the option ID for this destination
+        magda::TrackId destId =
+            currentAudioOutput.fromFirstOccurrenceOf("track:", false, false).getIntValue();
+        int optionId = -1;
+        for (const auto& [oid, tid] : outputTrackMapping_) {
+            if (tid == destId) {
+                optionId = oid;
+                break;
+            }
+        }
+        if (optionId > 0) {
+            outputSelector_->setSelectedId(optionId);
+        }
         outputSelector_->setEnabled(true);
     } else {
         outputSelector_->setEnabled(true);

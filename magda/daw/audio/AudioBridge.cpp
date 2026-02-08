@@ -101,6 +101,9 @@ void AudioBridge::trackPropertyChanged(int trackId) {
             setTrackVolume(trackId, trackInfo->volume);
             setTrackPan(trackId, trackInfo->pan);
 
+            // Sync audio output routing
+            trackController_.setTrackAudioOutput(trackId, trackInfo->audioOutputDevice);
+
             // Sync recordArmed state to InputDeviceInstance
             auto* playbackContext = edit_.getCurrentPlaybackContext();
             if (playbackContext) {

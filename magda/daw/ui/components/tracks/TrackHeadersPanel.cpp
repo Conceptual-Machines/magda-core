@@ -449,7 +449,8 @@ void TrackHeadersPanel::populateAudioInputOptions(RoutingSelector* selector) {
     selector->setOptions(options);
 }
 
-void TrackHeadersPanel::populateAudioOutputOptions(RoutingSelector* selector) {
+void TrackHeadersPanel::populateAudioOutputOptions(RoutingSelector* selector,
+                                                   TrackId currentTrackId) {
     if (!selector || !audioEngine_) {
         return;
     }
@@ -461,22 +462,63 @@ void TrackHeadersPanel::populateAudioOutputOptions(RoutingSelector* selector) {
 
     std::vector<RoutingSelector::RoutingOption> options;
 
-    // Get current audio device
+    // Add "Master" as default output
+    options.push_back({1, "Master"});
+
+    // Add Group and Aux tracks as routing destinations
+    auto& trackManager = TrackManager::getInstance();
+    const auto& allTracks = trackManager.getTracks();
+
+    // Collect descendants to prevent routing cycles
+    std::vector<TrackId> descendants;
+    if (currentTrackId != INVALID_TRACK_ID) {
+        descendants = trackManager.getAllDescendants(currentTrackId);
+    }
+
+    // Group tracks (ID 200+)
+    {
+        std::vector<RoutingSelector::RoutingOption> groupOptions;
+        int id = 200;
+        for (const auto& t : allTracks) {
+            if (t.type == TrackType::Group && t.id != currentTrackId) {
+                // Prevent cycle: don't list descendants as destinations
+                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+                    continue;
+                groupOptions.push_back({id++, t.name});
+            }
+        }
+        if (!groupOptions.empty()) {
+            options.push_back({0, "", true});  // separator
+            for (auto& opt : groupOptions)
+                options.push_back(std::move(opt));
+        }
+    }
+
+    // Aux tracks (ID 300+)
+    {
+        std::vector<RoutingSelector::RoutingOption> auxOptions;
+        int id = 300;
+        for (const auto& t : allTracks) {
+            if (t.type == TrackType::Aux && t.id != currentTrackId) {
+                auxOptions.push_back({id++, t.name});
+            }
+        }
+        if (!auxOptions.empty()) {
+            options.push_back({0, "", true});  // separator
+            for (auto& opt : auxOptions)
+                options.push_back(std::move(opt));
+        }
+    }
+
+    // Hardware output channels
     auto* currentDevice = deviceManager->getCurrentAudioDevice();
     if (currentDevice) {
-        // Get only the ACTIVE/ENABLED output channels
         auto activeOutputChannels = currentDevice->getActiveOutputChannels();
-
-        // Add "Master" as default output
-        options.push_back({1, "Master"});
-
-        // Count how many channels are actually enabled
         int numActiveChannels = activeOutputChannels.countNumberOfSetBits();
 
         if (numActiveChannels > 0) {
             options.push_back({0, "", true});  // separator
 
-            // Build list of active channel indices
             juce::Array<int> activeIndices;
             for (int i = 0; i < activeOutputChannels.getHighestBit() + 1; ++i) {
                 if (activeOutputChannels[i]) {
@@ -488,7 +530,6 @@ void TrackHeadersPanel::populateAudioOutputOptions(RoutingSelector* selector) {
             int id = 10;
             for (int i = 0; i < activeIndices.size(); i += 2) {
                 if (i + 1 < activeIndices.size()) {
-                    // Stereo pair - show as "1-2", "3-4", etc.
                     int ch1 = activeIndices[i] + 1;
                     int ch2 = activeIndices[i + 1] + 1;
                     juce::String pairName = juce::String(ch1) + "-" + juce::String(ch2);
@@ -496,21 +537,37 @@ void TrackHeadersPanel::populateAudioOutputOptions(RoutingSelector* selector) {
                 }
             }
 
-            // Add separator before mono channels (only if we have multiple channels)
+            // Add separator before mono channels
             if (activeIndices.size() > 1) {
                 options.push_back({0, "", true});  // separator
             }
 
-            // Add individual mono channels (starting from ID 100 to avoid conflicts)
+            // Add individual mono channels (starting from ID 100)
             id = 100;
             for (int i = 0; i < activeIndices.size(); ++i) {
                 int channelNum = activeIndices[i] + 1;
                 options.push_back({id++, juce::String(channelNum) + " (mono)"});
             }
         }
-    } else {
-        options.push_back({1, "Master"});
-        options.push_back({2, "(No Device Active)"});
+    }
+
+    // Store the track-to-option-id mapping for this selector
+    outputTrackMapping_.clear();
+    {
+        int id = 200;
+        for (const auto& t : allTracks) {
+            if (t.type == TrackType::Group && t.id != currentTrackId) {
+                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+                    continue;
+                outputTrackMapping_[id++] = t.id;
+            }
+        }
+        id = 300;
+        for (const auto& t : allTracks) {
+            if (t.type == TrackType::Aux && t.id != currentTrackId) {
+                outputTrackMapping_[id++] = t.id;
+            }
+        }
     }
 
     selector->setOptions(options);
@@ -643,12 +700,30 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
         }
     };
 
-    // Output selector callbacks (always audio out)
+    // Output selector callbacks
     header.outputSelector->onEnabledChanged = [this, trackId](bool enabled) {
         if (enabled) {
             TrackManager::getInstance().setTrackAudioOutput(trackId, "master");
         } else {
             TrackManager::getInstance().setTrackAudioOutput(trackId, "");
+        }
+    };
+
+    header.outputSelector->onSelectionChanged = [this, trackId](int selectedId) {
+        if (selectedId == 1) {
+            // Master
+            TrackManager::getInstance().setTrackAudioOutput(trackId, "master");
+        } else if (selectedId >= 200 && selectedId < 400) {
+            // Group or Aux track destination
+            auto it = outputTrackMapping_.find(selectedId);
+            if (it != outputTrackMapping_.end()) {
+                TrackManager::getInstance().setTrackAudioOutput(
+                    trackId, "track:" + juce::String(it->second));
+            }
+        } else if (selectedId >= 10) {
+            // Hardware output device (existing behavior — use device ID)
+            // For now, hardware channels route via device ID
+            TrackManager::getInstance().setTrackAudioOutput(trackId, "master");
         }
     };
 }
@@ -848,6 +923,21 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
             header.outputSelector->setEnabled(false);
         } else if (currentAudioOutput == "master") {
             header.outputSelector->setSelectedId(1);  // Master
+            header.outputSelector->setEnabled(true);
+        } else if (currentAudioOutput.startsWith("track:")) {
+            // Track-to-track routing — find the option ID for this destination
+            TrackId destId =
+                currentAudioOutput.fromFirstOccurrenceOf("track:", false, false).getIntValue();
+            int optionId = -1;
+            for (const auto& [oid, tid] : outputTrackMapping_) {
+                if (tid == destId) {
+                    optionId = oid;
+                    break;
+                }
+            }
+            if (optionId > 0) {
+                header.outputSelector->setSelectedId(optionId);
+            }
             header.outputSelector->setEnabled(true);
         } else {
             header.outputSelector->setEnabled(true);
@@ -1151,7 +1241,7 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
 
     // Populate input options based on current type and output options
     populateMidiInputOptions(header.inputSelector.get());
-    populateAudioOutputOptions(header.outputSelector.get());
+    populateAudioOutputOptions(header.outputSelector.get(), trackId);
 
     // Set up routing callbacks (input type toggle, input selector, output selector)
     setupRoutingCallbacks(header, trackId);
