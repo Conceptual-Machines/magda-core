@@ -1,0 +1,8 @@
+{
+  "install": "make setup && make debug",
+  "terminals": [],
+  "build": {
+    "context": "..",
+    "dockerfile": "Dockerfile"
+  }
+}
