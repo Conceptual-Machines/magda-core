@@ -574,7 +574,8 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
             // Switching to Audio: clear MIDI input, populate audio options
             TrackManager::getInstance().setTrackMidiInput(trackId, "");
             populateAudioInputOptions(header.inputSelector.get());
-            header.inputSelector->setSelectedId(10);
+            int firstChannel = header.inputSelector->getFirstChannelOptionId();
+            header.inputSelector->setSelectedId(firstChannel > 0 ? firstChannel : 1);
             header.inputSelector->setEnabled(true);
             TrackManager::getInstance().setTrackAudioInput(trackId, "default");
         } else {
@@ -806,8 +807,13 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
     if (header.inputTypeSelector && header.inputSelector) {
         if (hasAudioInput) {
             header.inputTypeSelector->setInputType(InputTypeSelector::InputType::Audio);
+            int currentId = header.inputSelector->getSelectedId();
             populateAudioInputOptions(header.inputSelector.get());
-            header.inputSelector->setSelectedId(10);  // First stereo pair
+            // Preserve current channel selection if valid, otherwise default to first channel
+            if (currentId < 10) {
+                int firstChannel = header.inputSelector->getFirstChannelOptionId();
+                header.inputSelector->setSelectedId(firstChannel > 0 ? firstChannel : 1);
+            }
             header.inputSelector->setEnabled(true);
         } else {
             header.inputTypeSelector->setInputType(InputTypeSelector::InputType::MIDI);
