@@ -67,11 +67,20 @@ class RecordingNoteQueue {
  * Lives entirely outside ClipManager — no MAGDA clip is created until recording finishes.
  * Painted as an overlay by TrackContentPanel.
  */
+struct AudioPeakSample {
+    float peakL = 0.0f;  // Left channel peak (0.0 - 1.0+)
+    float peakR = 0.0f;  // Right channel peak (0.0 - 1.0+)
+};
+
 struct RecordingPreview {
     TrackId trackId = INVALID_TRACK_ID;
     double startTime = 0.0;      // Transport position when recording started (seconds)
     double currentLength = 0.0;  // Grows as playhead advances (seconds)
     std::vector<MidiNote> notes;
+
+    // Audio waveform preview (one peak sample per update tick, ~30fps)
+    std::vector<AudioPeakSample> audioPeaks;
+    bool isAudioRecording = false;  // True if this track records audio (not MIDI)
 };
 
 }  // namespace magda

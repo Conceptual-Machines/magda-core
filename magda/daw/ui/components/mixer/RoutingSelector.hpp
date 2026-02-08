@@ -53,6 +53,9 @@ class RoutingSelector : public juce::Component {
     void setOptions(const std::vector<RoutingOption>& options);
     void clearOptions();
 
+    /** Returns the ID of the first channel option (skipping "None"/separators), or -1. */
+    int getFirstChannelOptionId() const;
+
     // Callbacks
     std::function<void(bool enabled)> onEnabledChanged;
     std::function<void(int selectedId)> onSelectionChanged;
