@@ -21,30 +21,50 @@ void ClipInspector::updateFromSelectedClip() {
         auto* thumbnail =
             magda::AudioThumbnailManager::getInstance().getThumbnail(mutableClip->audioFilePath);
         if (thumbnail) {
-            double fileDur = thumbnail->getTotalLength();
+            const double fileDur = thumbnail->getTotalLength();
             if (fileDur > 0.0) {
+                // Work on local copies to avoid mutating ClipInfo directly from the UI
+                double newOffset = mutableClip->offset;
+                double newLoopStart = mutableClip->loopStart;
+                double newLoopLength = mutableClip->loopLength;
+
                 bool fixed = false;
-                if (mutableClip->offset > fileDur) {
-                    mutableClip->offset = juce::jmin(mutableClip->offset, fileDur);
+
+                if (newOffset > fileDur) {
+                    newOffset = juce::jmin(newOffset, fileDur);
                     fixed = true;
                 }
-                if (mutableClip->loopStart > fileDur) {
-                    mutableClip->loopStart = 0.0;
+
+                if (newLoopStart > fileDur) {
+                    newLoopStart = 0.0;
                     fixed = true;
                 }
-                double avail = fileDur - mutableClip->loopStart;
-                if (mutableClip->loopLength > avail) {
-                    mutableClip->loopLength = avail;
+
+                const double avail = fileDur - newLoopStart;
+                if (newLoopLength > avail) {
+                    newLoopLength = avail;
                     fixed = true;
                 }
-                if (mutableClip->offset > fileDur) {
-                    mutableClip->offset = juce::jmin(mutableClip->offset, fileDur);
-                    fixed = true;
-                }
+
                 if (fixed) {
-                    magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(
-                        selectedClipId_);
-                    return;  // Will be called again with fixed values
+                    auto& clipManager = magda::ClipManager::getInstance();
+
+                    if (newOffset != mutableClip->offset) {
+                        clipManager.setOffset(selectedClipId_, newOffset);
+                    }
+
+                    if (newLoopStart != mutableClip->loopStart) {
+                        clipManager.setLoopStart(selectedClipId_, newLoopStart);
+                    }
+
+                    if (newLoopLength != mutableClip->loopLength) {
+                        clipManager.setLoopLength(selectedClipId_, newLoopLength);
+                    }
+
+                    // The ClipManager setters are responsible for notification and
+                    // any additional sanitization (e.g. beat-domain fields).
+                    // This function will be called again with fixed values.
+                    return;
                 }
             }
         }
