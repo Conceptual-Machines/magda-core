@@ -53,7 +53,7 @@ struct DeviceInfo {
     MacroArray macros = createDefaultMacros();
 
     // Modulators for device-level modulation
-    ModArray mods = createDefaultMods();
+    ModArray mods = createDefaultMods(0);
 
     // UI state
     int currentParameterPage = 0;  // Current parameter page (for multi-page param display)
