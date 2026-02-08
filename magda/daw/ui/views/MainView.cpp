@@ -161,6 +161,14 @@ void MainView::setupComponents() {
     addAndMakeVisible(*playheadComponent);
     playheadComponent->toFront(false);
 
+    // Create fixed aux track section (above master)
+    auxHeadersPanel = std::make_unique<AuxHeadersPanel>();
+    addAndMakeVisible(*auxHeadersPanel);
+    auxHeadersPanel->setVisible(false);
+    auxContentPanel = std::make_unique<AuxContentPanel>();
+    addAndMakeVisible(*auxContentPanel);
+    auxContentPanel->setVisible(false);
+
     // Create fixed master track row at bottom (matching track panel style)
     masterHeaderPanel = std::make_unique<MasterHeaderPanel>();
     addAndMakeVisible(*masterHeaderPanel);
@@ -343,6 +351,11 @@ void MainView::timerCallback() {
     float masterPeakL = bridge->getMasterPeakL();
     float masterPeakR = bridge->getMasterPeakR();
     masterHeaderPanel->setPeakLevels(masterPeakL, masterPeakR);
+
+    // Update aux section metering
+    if (auxHeadersPanel && auxVisible_) {
+        auxHeadersPanel->updateMetering(audioEngine_);
+    }
 }
 
 // ===== TimelineStateListener Implementation =====
@@ -491,8 +504,12 @@ void MainView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profil
         masterVisible_ = newVisible;
         masterHeaderPanel->setVisible(masterVisible_);
         masterContentPanel->setVisible(masterVisible_);
-        resized();
     }
+
+    // Update aux visibility for new view mode
+    tracksChanged();
+
+    resized();
 }
 
 void MainView::paint(juce::Graphics& g) {
@@ -539,14 +556,25 @@ void MainView::resized() {
         headerColumn.removeSpacing(masterRowArea, layout.componentSpacing);
         // Master content takes the rest
         masterContentPanel->setBounds(masterRowArea);
+    }
 
-        // Remove space for the resize handle ABOVE the master row
+    // Fixed aux track section (directly above master, no extra gap)
+    if (auxVisible_) {
+        auto auxRowArea = bounds.removeFromBottom(auxSectionHeight);
+        auxHeadersPanel->setBounds(headerColumn.removeFrom(auxRowArea, trackHeaderWidth));
+        headerColumn.removeSpacing(auxRowArea, layout.componentSpacing);
+        auxContentPanel->setBounds(auxRowArea);
+    }
+
+    // Resize handle ABOVE the entire fixed bottom section (aux + master)
+    if (masterVisible_) {
         bounds.removeFromBottom(MASTER_RESIZE_HANDLE_HEIGHT);
     }
 
     // Now position vertical scroll bar (after bottom areas removed)
+    int effectiveAuxHeight = auxVisible_ ? auxSectionHeight : 0;
     verticalScrollBarArea.removeFromBottom(ZOOM_SCROLLBAR_SIZE + effectiveMasterHeight +
-                                           effectiveResizeHandleHeight);
+                                           effectiveResizeHandleHeight + effectiveAuxHeight);
     verticalScrollBarArea.removeFromTop(getTimelineHeight());  // Start below timeline
     verticalZoomScrollBar->setBounds(verticalScrollBarArea);
 
@@ -1300,10 +1328,11 @@ juce::Rectangle<int> MainView::getMasterResizeHandleArea() const {
 
     // Position the resize handle in the gap between track content and master strip
     static constexpr int ZOOM_SCROLLBAR_SIZE = 20;
+    int effectiveAuxHeight = auxVisible_ ? auxSectionHeight : 0;
     // Master row top is at: getHeight() - ZOOM_SCROLLBAR_SIZE - masterStripHeight
-    // Resize handle is ABOVE that
-    int resizeHandleY =
-        getHeight() - ZOOM_SCROLLBAR_SIZE - masterStripHeight - MASTER_RESIZE_HANDLE_HEIGHT;
+    // Resize handle is ABOVE that, and aux section is above that
+    int resizeHandleY = getHeight() - ZOOM_SCROLLBAR_SIZE - masterStripHeight -
+                        MASTER_RESIZE_HANDLE_HEIGHT - effectiveAuxHeight;
     return juce::Rectangle<int>(0, resizeHandleY, getWidth(), MASTER_RESIZE_HANDLE_HEIGHT);
 }
 
@@ -1937,6 +1966,27 @@ void MainView::MasterContentPanel::paint(juce::Graphics& g) {
     g.drawText("Master Output", getLocalBounds(), juce::Justification::centred);
 }
 
+// ===== TrackManagerListener — aux track management =====
+
+void MainView::tracksChanged() {
+    // Count aux tracks and update aux section visibility
+    const auto& tracks = TrackManager::getInstance().getTracks();
+    int auxCount = 0;
+    for (const auto& track : tracks) {
+        if (track.type == TrackType::Aux && track.isVisibleIn(currentViewMode_))
+            ++auxCount;
+    }
+
+    auxSectionHeight = auxCount * AUX_ROW_HEIGHT;
+    bool newAuxVisible = auxCount > 0;
+
+    auxVisible_ = newAuxVisible;
+    auxHeadersPanel->setVisible(auxVisible_);
+    auxContentPanel->setVisible(auxVisible_);
+    auxContentPanel->setAuxTrackCount(auxCount);
+    resized();
+}
+
 // ===== Grid Division Display =====
 
 juce::String MainView::calculateGridDivisionString() const {
@@ -2001,6 +2051,192 @@ void MainView::updateGridDivisionDisplay() {
         bool isBars = false;
         calculateSmartGridNumeratorDenominator(num, den, isBars);
         onGridQuantizeChanged(true, num, den, isBars);
+    }
+}
+
+// ===== AuxHeadersPanel Implementation =====
+
+MainView::AuxHeadersPanel::AuxHeadersPanel() {
+    TrackManager::getInstance().addListener(this);
+    rebuildAuxRows();
+}
+
+MainView::AuxHeadersPanel::~AuxHeadersPanel() {
+    TrackManager::getInstance().removeListener(this);
+}
+
+void MainView::AuxHeadersPanel::tracksChanged() {
+    rebuildAuxRows();
+}
+
+void MainView::AuxHeadersPanel::rebuildAuxRows() {
+    // Remove all existing child components
+    for (auto& row : auxRows_) {
+        removeChildComponent(row->nameLabel.get());
+        removeChildComponent(row->volumeLabel.get());
+        removeChildComponent(row->panLabel.get());
+        removeChildComponent(row->muteButton.get());
+        removeChildComponent(row->soloButton.get());
+    }
+    auxRows_.clear();
+
+    const auto& tracks = TrackManager::getInstance().getTracks();
+    auto currentViewMode = ViewModeController::getInstance().getViewMode();
+
+    for (const auto& track : tracks) {
+        if (track.type != TrackType::Aux || !track.isVisibleIn(currentViewMode))
+            continue;
+
+        auto row = std::make_unique<AuxRow>();
+        row->trackId = track.id;
+
+        // Name label - show "Aux N" based on bus index
+        juce::String auxName = "Aux " + juce::String(track.auxBusIndex + 1);
+        row->nameLabel = std::make_unique<juce::Label>("auxName", auxName);
+        row->nameLabel->setColour(juce::Label::textColourId,
+                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        row->nameLabel->setFont(FontManager::getInstance().getUIFont(11.0f));
+        addAndMakeVisible(*row->nameLabel);
+
+        // Volume label
+        row->volumeLabel =
+            std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
+        row->volumeLabel->setRange(-60.0, 6.0, 0.0);
+        float db = gainToDb(track.volume);
+        row->volumeLabel->setValue(db, juce::dontSendNotification);
+        TrackId tid = track.id;
+        auto* volLabelPtr = row->volumeLabel.get();
+        row->volumeLabel->onValueChange = [tid, volLabelPtr]() {
+            float newDb = static_cast<float>(volLabelPtr->getValue());
+            float gain = dbToGain(newDb);
+            TrackManager::getInstance().setTrackVolume(tid, gain);
+        };
+        addAndMakeVisible(*row->volumeLabel);
+
+        // Pan label
+        row->panLabel = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Pan);
+        row->panLabel->setRange(-1.0, 1.0, 0.0);
+        row->panLabel->setValue(track.pan, juce::dontSendNotification);
+        auto* panLabelPtr = row->panLabel.get();
+        row->panLabel->onValueChange = [tid, panLabelPtr]() {
+            TrackManager::getInstance().setTrackPan(tid,
+                                                    static_cast<float>(panLabelPtr->getValue()));
+        };
+        addAndMakeVisible(*row->panLabel);
+
+        // Mute button
+        row->muteButton = std::make_unique<juce::TextButton>("M");
+        row->muteButton->setConnectedEdges(
+            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+        row->muteButton->setColour(juce::TextButton::buttonColourId,
+                                   DarkTheme::getColour(DarkTheme::SURFACE));
+        row->muteButton->setColour(juce::TextButton::buttonOnColourId,
+                                   DarkTheme::getColour(DarkTheme::STATUS_WARNING));
+        row->muteButton->setColour(juce::TextButton::textColourOffId,
+                                   DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        row->muteButton->setColour(juce::TextButton::textColourOnId,
+                                   DarkTheme::getColour(DarkTheme::BACKGROUND));
+        row->muteButton->setClickingTogglesState(true);
+        row->muteButton->setToggleState(track.muted, juce::dontSendNotification);
+        auto* muteBtnPtr = row->muteButton.get();
+        row->muteButton->onClick = [tid, muteBtnPtr]() {
+            TrackManager::getInstance().setTrackMuted(tid, muteBtnPtr->getToggleState());
+        };
+        addAndMakeVisible(*row->muteButton);
+
+        // Solo button
+        row->soloButton = std::make_unique<juce::TextButton>("S");
+        row->soloButton->setConnectedEdges(
+            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+        row->soloButton->setColour(juce::TextButton::buttonColourId,
+                                   DarkTheme::getColour(DarkTheme::SURFACE));
+        row->soloButton->setColour(juce::TextButton::buttonOnColourId,
+                                   DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        row->soloButton->setColour(juce::TextButton::textColourOffId,
+                                   DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        row->soloButton->setColour(juce::TextButton::textColourOnId,
+                                   DarkTheme::getColour(DarkTheme::BACKGROUND));
+        row->soloButton->setClickingTogglesState(true);
+        row->soloButton->setToggleState(track.soloed, juce::dontSendNotification);
+        auto* soloBtnPtr = row->soloButton.get();
+        row->soloButton->onClick = [tid, soloBtnPtr]() {
+            TrackManager::getInstance().setTrackSoloed(tid, soloBtnPtr->getToggleState());
+        };
+        addAndMakeVisible(*row->soloButton);
+
+        auxRows_.push_back(std::move(row));
+    }
+
+    resized();
+    repaint();
+}
+
+void MainView::AuxHeadersPanel::paint(juce::Graphics& g) {
+    // Slightly different background to distinguish from regular tracks
+    g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE).darker(0.1f));
+
+    // Draw borders between rows
+    int rowHeight = getHeight() / juce::jmax(1, static_cast<int>(auxRows_.size()));
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.drawRect(getLocalBounds(), 1);
+
+    for (size_t i = 1; i < auxRows_.size(); ++i) {
+        int y = static_cast<int>(i) * rowHeight;
+        g.drawHorizontalLine(y, 0.0f, static_cast<float>(getWidth()));
+    }
+}
+
+void MainView::AuxHeadersPanel::resized() {
+    if (auxRows_.empty())
+        return;
+
+    int rowHeight = getHeight() / static_cast<int>(auxRows_.size());
+    auto bounds = getLocalBounds();
+
+    for (size_t i = 0; i < auxRows_.size(); ++i) {
+        auto& row = *auxRows_[i];
+        auto rowArea = bounds.removeFromTop(rowHeight);
+        // Centre a fixed 18px-tall strip within the row (matching master header controls)
+        auto controlArea = rowArea.withSizeKeepingCentre(rowArea.getWidth() - 8, 18);
+
+        // Layout: [Name 36px] [M 18px] [S 18px] [Vol 40px] [Pan 32px]
+        row.nameLabel->setBounds(controlArea.removeFromLeft(36));
+        controlArea.removeFromLeft(4);
+        row.muteButton->setBounds(controlArea.removeFromLeft(18).withSizeKeepingCentre(16, 16));
+        controlArea.removeFromLeft(2);
+        row.soloButton->setBounds(controlArea.removeFromLeft(18).withSizeKeepingCentre(16, 16));
+        controlArea.removeFromLeft(4);
+        row.volumeLabel->setBounds(controlArea.removeFromLeft(40));
+        controlArea.removeFromLeft(4);
+        row.panLabel->setBounds(controlArea.removeFromLeft(32));
+    }
+}
+
+void MainView::AuxHeadersPanel::updateMetering(AudioEngine* engine) {
+    // Aux metering could be added here in the future
+    // For now, aux tracks share the same metering infrastructure as regular tracks
+    (void)engine;
+}
+
+// ===== AuxContentPanel Implementation =====
+
+void MainView::AuxContentPanel::paint(juce::Graphics& g) {
+    // Background matching track content but slightly different to distinguish aux
+    g.fillAll(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND).darker(0.05f));
+
+    // Border
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.drawRect(getLocalBounds(), 1);
+
+    if (auxTrackCount_ > 0) {
+        // Draw row separators
+        int rowHeight = getHeight() / auxTrackCount_;
+        for (int i = 1; i < auxTrackCount_; ++i) {
+            int y = i * rowHeight;
+            g.drawHorizontalLine(y, 0.0f, static_cast<float>(getWidth()));
+        }
     }
 }
 

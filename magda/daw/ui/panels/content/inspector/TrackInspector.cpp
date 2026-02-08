@@ -388,17 +388,25 @@ void TrackInspector::showTrackControls(bool show) {
     outputSelector_->setVisible(show);
     midiOutputSelector_->setVisible(show);
 
-    // Send/Receive section
-    sendReceiveSectionLabel_.setVisible(show);
-    addSendButton_.setVisible(show);
-    noSendsLabel_.setVisible(show);
-    receivesLabel_.setVisible(show);
+    // Send/Receive section — hidden for aux tracks
+    bool isAux = false;
+    if (show && selectedTrackId_ != magda::INVALID_TRACK_ID) {
+        const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+        if (track && track->type == magda::TrackType::Aux)
+            isAux = true;
+    }
+
+    bool showSends = show && !isAux;
+    sendReceiveSectionLabel_.setVisible(showSends);
+    addSendButton_.setVisible(showSends);
+    noSendsLabel_.setVisible(showSends);
+    receivesLabel_.setVisible(showSends);
     for (auto& l : sendDestLabels_)
-        l->setVisible(show);
+        l->setVisible(showSends);
     for (auto& l : sendLevelLabels_)
-        l->setVisible(show);
+        l->setVisible(showSends);
     for (auto& b : sendDeleteButtons_)
-        b->setVisible(show);
+        b->setVisible(showSends);
 
     // Clips section
     clipsSectionLabel_.setVisible(show);
@@ -422,6 +430,10 @@ void TrackInspector::rebuildSendsUI() {
 
     const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
     if (!track)
+        return;
+
+    // Aux tracks don't have sends
+    if (track->type == magda::TrackType::Aux)
         return;
 
     for (const auto& send : track->sends) {
@@ -475,6 +487,10 @@ void TrackInspector::showAddSendMenu() {
 
     const auto* currentTrack = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
     if (!currentTrack)
+        return;
+
+    // Aux tracks can't have sends
+    if (currentTrack->type == magda::TrackType::Aux)
         return;
 
     juce::PopupMenu menu;

@@ -83,7 +83,7 @@ class MainView : public juce::Component,
     void timelineStateChanged(const TimelineState& state, ChangeFlags changes) override;
 
     // TrackManagerListener implementation
-    void tracksChanged() override {}  // Handled by TrackHeadersPanel
+    void tracksChanged() override;
     void masterChannelChanged() override;
 
     // ViewModeListener implementation
@@ -149,6 +149,15 @@ class MainView : public juce::Component,
     int masterStripHeight = 60;
     ViewMode currentViewMode_ = ViewMode::Arrange;
     bool masterVisible_ = true;
+
+    // Fixed aux track section above master (one row per aux track)
+    class AuxHeadersPanel;
+    class AuxContentPanel;
+    std::unique_ptr<AuxHeadersPanel> auxHeadersPanel;
+    std::unique_ptr<AuxContentPanel> auxContentPanel;
+    int auxSectionHeight = 0;
+    bool auxVisible_ = false;
+    static constexpr int AUX_ROW_HEIGHT = 30;
     static constexpr int MIN_MASTER_STRIP_HEIGHT = 40;
     static constexpr int MAX_MASTER_STRIP_HEIGHT = 150;
 
@@ -188,7 +197,7 @@ class MainView : public juce::Component,
     bool isResizingMasterStrip = false;
     int resizeStartY = 0;
     int resizeStartHeight = 0;
-    static constexpr int MASTER_RESIZE_HANDLE_HEIGHT = 8;
+    static constexpr int MASTER_RESIZE_HANDLE_HEIGHT = 4;
 
     // Time selection and loop region are now managed by TimelineController
     // Local caches for quick access (updated via listener callbacks)
@@ -339,6 +348,61 @@ class MainView::MasterContentPanel : public juce::Component {
 
   private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MasterContentPanel)
+};
+
+// Aux headers panel - one row per aux track with name, volume, pan, mute/solo
+class MainView::AuxHeadersPanel : public juce::Component, public TrackManagerListener {
+  public:
+    AuxHeadersPanel();
+    ~AuxHeadersPanel() override;
+
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+
+    // TrackManagerListener
+    void tracksChanged() override;
+
+    // Metering
+    void updateMetering(AudioEngine* engine);
+
+    // Get number of aux tracks
+    int getAuxTrackCount() const {
+        return static_cast<int>(auxRows_.size());
+    }
+
+  private:
+    struct AuxRow {
+        TrackId trackId = INVALID_TRACK_ID;
+        std::unique_ptr<juce::Label> nameLabel;
+        std::unique_ptr<DraggableValueLabel> volumeLabel;
+        std::unique_ptr<DraggableValueLabel> panLabel;
+        std::unique_ptr<juce::TextButton> muteButton;
+        std::unique_ptr<juce::TextButton> soloButton;
+    };
+
+    std::vector<std::unique_ptr<AuxRow>> auxRows_;
+    void rebuildAuxRows();
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AuxHeadersPanel)
+};
+
+// Aux content panel - empty background (aux tracks don't have timeline clips)
+class MainView::AuxContentPanel : public juce::Component {
+  public:
+    AuxContentPanel() = default;
+    ~AuxContentPanel() override = default;
+
+    void paint(juce::Graphics& g) override;
+
+    void setAuxTrackCount(int count) {
+        auxTrackCount_ = count;
+        repaint();
+    }
+
+  private:
+    int auxTrackCount_ = 0;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AuxContentPanel)
 };
 
 }  // namespace magda

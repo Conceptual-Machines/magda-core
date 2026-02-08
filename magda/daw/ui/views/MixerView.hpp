@@ -154,11 +154,15 @@ class MixerView : public juce::Component,
 
     // Channel strips (dynamic based on TrackManager)
     std::vector<std::unique_ptr<ChannelStrip>> channelStrips;
+    std::vector<std::unique_ptr<ChannelStrip>> auxChannelStrips;
     std::unique_ptr<MasterChannelStrip> masterStrip;
 
     // Scrollable area for channels
     std::unique_ptr<juce::Viewport> channelViewport;
     std::unique_ptr<juce::Component> channelContainer;
+
+    // Aux channel container (fixed, not scrollable, between channels and master)
+    std::unique_ptr<juce::Component> auxContainer;
 
     // Resize handle for channel width
     class ChannelResizeHandle : public juce::Component {

@@ -666,6 +666,10 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     channelViewport->setScrollBarsShown(false, true);  // Horizontal scroll only
     addAndMakeVisible(*channelViewport);
 
+    // Create aux container (fixed, between channels and master)
+    auxContainer = std::make_unique<juce::Component>();
+    addAndMakeVisible(*auxContainer);
+
     // Create master strip (uses shared MasterChannelStrip component)
     masterStrip = std::make_unique<MasterChannelStrip>(MasterChannelStrip::Orientation::Vertical);
     addAndMakeVisible(*masterStrip);
@@ -711,8 +715,10 @@ MixerView::~MixerView() {
     // This ensures components release their LookAndFeel references before
     // mixerLookAndFeel_ is destroyed (member destruction happens in reverse order)
     channelStrips.clear();
+    auxChannelStrips.clear();
     masterStrip.reset();
     debugPanel_.reset();
+    auxContainer.reset();
     channelContainer.reset();
     channelViewport.reset();
     channelResizeHandle_.reset();
@@ -730,6 +736,9 @@ void MixerView::rebuildChannelStrips() {
             continue;
         }
 
+        if (track.type == TrackType::Aux)
+            continue;  // Aux strips handled separately
+
         auto strip = std::make_unique<ChannelStrip>(track, &mixerLookAndFeel_, false);
         strip->onClicked = [this](int trackId, bool isMaster) {
             // Find the index of this track in the visible strips
@@ -742,6 +751,32 @@ void MixerView::rebuildChannelStrips() {
         };
         channelContainer->addAndMakeVisible(*strip);
         channelStrips.push_back(std::move(strip));
+    }
+
+    // Build aux channel strips separately
+    auxChannelStrips.clear();
+    for (const auto& track : tracks) {
+        if (track.type != TrackType::Aux || !track.isVisibleIn(currentViewMode_))
+            continue;
+        auto strip = std::make_unique<ChannelStrip>(track, &mixerLookAndFeel_, false);
+        strip->onClicked = [this](int trackId, bool isMaster) {
+            for (size_t i = 0; i < channelStrips.size(); ++i) {
+                if (channelStrips[i]->getTrackId() == trackId) {
+                    selectChannel(static_cast<int>(i), isMaster);
+                    return;
+                }
+            }
+            // Check aux strips — use negative index offset for identification
+            for (size_t i = 0; i < auxChannelStrips.size(); ++i) {
+                if (auxChannelStrips[i]->getTrackId() == trackId) {
+                    // Select via TrackManager directly
+                    SelectionManager::getInstance().selectTrack(trackId);
+                    return;
+                }
+            }
+        };
+        auxContainer->addAndMakeVisible(*strip);
+        auxChannelStrips.push_back(std::move(strip));
     }
 
     // Update master strip visibility
@@ -769,7 +804,15 @@ void MixerView::trackPropertyChanged(int trackId) {
     for (auto& strip : channelStrips) {
         if (strip->getTrackId() == trackId) {
             strip->updateFromTrack(*track);
-            break;
+            return;
+        }
+    }
+
+    // Check aux strips
+    for (auto& strip : auxChannelStrips) {
+        if (strip->getTrackId() == trackId) {
+            strip->updateFromTrack(*track);
+            return;
         }
     }
 }
@@ -803,6 +846,20 @@ void MixerView::resized() {
         // Resize handle between channels and master
         const int handleWidth = 8;
         channelResizeHandle_->setBounds(bounds.removeFromRight(handleWidth));
+    }
+
+    // Aux channel strips between regular channels and master
+    int numAux = static_cast<int>(auxChannelStrips.size());
+    int auxWidth = numAux * metrics.channelWidth;
+    if (auxWidth > 0) {
+        auto auxArea = bounds.removeFromRight(auxWidth);
+        auxContainer->setBounds(auxArea);
+        for (int i = 0; i < numAux; ++i) {
+            auxChannelStrips[i]->setBounds(i * metrics.channelWidth, 0, metrics.channelWidth,
+                                           auxArea.getHeight());
+        }
+    } else {
+        auxContainer->setBounds(0, 0, 0, 0);
     }
 
     // Channel viewport takes remaining space
@@ -841,7 +898,15 @@ void MixerView::timerCallback() {
         int trackId = strip->getTrackId();
         MeterData data;
         if (meteringBuffer.popLevels(trackId, data)) {
-            // Use stereo peak levels
+            strip->setMeterLevels(data.peakL, data.peakR);
+        }
+    }
+
+    // Update aux channel strip meters
+    for (auto& strip : auxChannelStrips) {
+        int trackId = strip->getTrackId();
+        MeterData data;
+        if (meteringBuffer.popLevels(trackId, data)) {
             strip->setMeterLevels(data.peakL, data.peakR);
         }
     }
@@ -959,6 +1024,9 @@ void MixerView::trackSelectionChanged(TrackId trackId) {
     for (auto& strip : channelStrips) {
         strip->setSelected(false);
     }
+    for (auto& strip : auxChannelStrips) {
+        strip->setSelected(false);
+    }
     selectedIsMaster = false;
     selectedChannelIndex = -1;
 
@@ -971,7 +1039,15 @@ void MixerView::trackSelectionChanged(TrackId trackId) {
         if (channelStrips[i]->getTrackId() == trackId) {
             channelStrips[i]->setSelected(true);
             selectedChannelIndex = static_cast<int>(i);
-            break;
+            return;
+        }
+    }
+
+    // Check aux strips
+    for (size_t i = 0; i < auxChannelStrips.size(); ++i) {
+        if (auxChannelStrips[i]->getTrackId() == trackId) {
+            auxChannelStrips[i]->setSelected(true);
+            return;
         }
     }
 }

@@ -800,6 +800,9 @@ void TrackHeadersPanel::tracksChanged() {
         if (!track || !track->isVisibleIn(currentViewMode_))
             return;
 
+        if (track->type == TrackType::Aux)
+            return;  // Aux tracks rendered in separate section
+
         visibleTrackIds_.push_back(trackId);
 
         auto header = std::make_unique<TrackHeader>(track->name);
@@ -1362,7 +1365,7 @@ void TrackHeadersPanel::rebuildSendLabels(TrackHeader& header, TrackId trackId) 
     header.sendLabels.clear();
 
     const auto* track = TrackManager::getInstance().getTrack(trackId);
-    if (!track)
+    if (!track || track->type == TrackType::Aux)
         return;
 
     for (const auto& send : track->sends) {
@@ -1889,8 +1892,8 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
 
     menu.addSeparator();
 
-    // Add Send submenu (list available aux tracks)
-    {
+    // Add Send submenu (list available aux tracks) — not for aux tracks themselves
+    if (track->type != TrackType::Aux) {
         juce::PopupMenu sendMenu;
         const auto& allTracks = trackManager.getTracks();
         int sendItemId = 500;
