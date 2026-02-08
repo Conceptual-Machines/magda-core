@@ -1,8 +1,8 @@
 #include "TabbedPanel.hpp"
 
 #include "../themes/DarkTheme.hpp"
-#include "content/InspectorContent.hpp"
 #include "content/MediaExplorerContent.hpp"
+#include "content/inspector/InspectorContainer.hpp"
 
 namespace magda::daw::ui {
 
@@ -249,7 +249,7 @@ PanelContent* TabbedPanel::getOrCreateContent(PanelContentType type) {
 
         // Initialize content with engine/controller references if it supports them
         // (using dynamic_cast to check if content has these methods)
-        if (auto* inspectorContent = dynamic_cast<InspectorContent*>(ptr)) {
+        if (auto* inspectorContent = dynamic_cast<InspectorContainer*>(ptr)) {
             if (audioEngine_) {
                 inspectorContent->setAudioEngine(audioEngine_);
             }
@@ -276,7 +276,7 @@ void TabbedPanel::setAudioEngine(magda::AudioEngine* engine) {
 
     // Update any existing content
     for (auto& [type, content] : contentCache_) {
-        if (auto* inspectorContent = dynamic_cast<InspectorContent*>(content.get())) {
+        if (auto* inspectorContent = dynamic_cast<InspectorContainer*>(content.get())) {
             inspectorContent->setAudioEngine(engine);
         }
         if (auto* mediaExplorerContent = dynamic_cast<MediaExplorerContent*>(content.get())) {
@@ -290,7 +290,7 @@ void TabbedPanel::setTimelineController(magda::TimelineController* controller) {
 
     // Update any existing content
     for (auto& [type, content] : contentCache_) {
-        if (auto* inspectorContent = dynamic_cast<InspectorContent*>(content.get())) {
+        if (auto* inspectorContent = dynamic_cast<InspectorContainer*>(content.get())) {
             inspectorContent->setTimelineController(controller);
         }
     }
