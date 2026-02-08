@@ -38,7 +38,8 @@ class PlaybackPositionTimer : private juce::Timer {
     AudioEngine& engine_;
     TimelineController& timeline_;
 
-    bool wasPlaying_ = false;  // Track engine playing state for change detection
+    bool wasPlaying_ = false;    // Track engine playing state for change detection
+    bool wasRecording_ = false;  // Track engine recording state for change detection
 
     static constexpr int UPDATE_INTERVAL_MS = 30;  // ~33fps for smooth playhead
 };

@@ -1,7 +1,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_events/juce_events.h>
 
-#include "magda/daw/engine/TracktionEngineWrapper.hpp"
+#include "SharedTestEngine.hpp"
 
 using namespace magda;
 
@@ -14,7 +14,7 @@ using namespace magda;
  */
 class ExportTransportTest final : public juce::UnitTest {
   public:
-    ExportTransportTest() : juce::UnitTest("Export Transport State Tests") {}
+    ExportTransportTest() : juce::UnitTest("Export Transport State Tests", "magda") {}
 
     void runTest() override {
         testTransportStopsBeforeRendering();
@@ -27,13 +27,15 @@ class ExportTransportTest final : public juce::UnitTest {
     void testTransportStopsBeforeRendering() {
         beginTest("Transport stops before rendering");
 
-        TracktionEngineWrapper engine;
-        expect(engine.initialize(), "Engine should initialize");
+        auto& engine = magda::test::getSharedEngine();
 
         auto* edit = engine.getEdit();
         expect(edit != nullptr, "Edit should exist");
 
         auto& transport = edit->getTransport();
+
+        // Reset transport state
+        transport.stop(false, false);
 
         // Test: Transport is stopped initially
         expect(!transport.isPlaying(), "Transport should not be playing initially");
@@ -77,20 +79,20 @@ class ExportTransportTest final : public juce::UnitTest {
         if (wasActive) {
             expect(!transport.isPlaying(), "Previously active transport should now be stopped");
         }
-
-        engine.shutdown();
     }
 
     void testOfflineRenderPreconditions() {
         beginTest("Offline render preconditions");
 
-        TracktionEngineWrapper engine;
-        expect(engine.initialize(), "Engine should initialize");
+        auto& engine = magda::test::getSharedEngine();
 
         auto* edit = engine.getEdit();
         expect(edit != nullptr, "Edit should exist");
 
         auto& transport = edit->getTransport();
+
+        // Reset transport state
+        transport.stop(false, false);
 
         // Test: Offline render requires inactive transport
         transport.stop(false, false);
@@ -108,20 +110,20 @@ class ExportTransportTest final : public juce::UnitTest {
         }
 
         expect(!transport.isPlaying(), "Transport should be stopped after precondition fix");
-
-        engine.shutdown();
     }
 
     void testMultipleExportAttempts() {
         beginTest("Multiple export attempts handle transport correctly");
 
-        TracktionEngineWrapper engine;
-        expect(engine.initialize(), "Engine should initialize");
+        auto& engine = magda::test::getSharedEngine();
 
         auto* edit = engine.getEdit();
         expect(edit != nullptr, "Edit should exist");
 
         auto& transport = edit->getTransport();
+
+        // Reset transport state
+        transport.stop(false, false);
 
         // Simulate multiple export attempts with different transport states
         for (int i = 0; i < 3; ++i) {
@@ -142,20 +144,20 @@ class ExportTransportTest final : public juce::UnitTest {
             expect(!transport.isPlaying(),
                    "Transport should be stopped on iteration " + juce::String(i));
         }
-
-        engine.shutdown();
     }
 
     void testTransportStateAfterExport() {
         beginTest("Transport state after export");
 
-        TracktionEngineWrapper engine;
-        expect(engine.initialize(), "Engine should initialize");
+        auto& engine = magda::test::getSharedEngine();
 
         auto* edit = engine.getEdit();
         expect(edit != nullptr, "Edit should exist");
 
         auto& transport = edit->getTransport();
+
+        // Reset transport state
+        transport.stop(false, false);
 
         // Test: Transport remains stopped after export completes
         transport.play(false);
@@ -180,8 +182,6 @@ class ExportTransportTest final : public juce::UnitTest {
             expect(transport.isPlaying(), "Playback can be restarted after export");
             transport.stop(false, false);
         }
-
-        engine.shutdown();
     }
 };
 

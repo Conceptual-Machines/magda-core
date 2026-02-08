@@ -33,11 +33,13 @@ void PlaybackPositionTimer::timerCallback() {
 
     // Detect engine play/stop transitions that happened outside the UI
     // (e.g. SessionClipScheduler starting transport for clip playback)
-    if (isPlaying != wasPlaying_) {
-        timeline_.dispatch(SetPlaybackStateEvent{isPlaying});
+    bool isRecording = engine_.isRecording();
+    if (isPlaying != wasPlaying_ || isRecording != wasRecording_) {
+        timeline_.dispatch(SetPlaybackStateEvent{isPlaying, isRecording});
         if (onPlayStateChanged)
             onPlayStateChanged(isPlaying);
         wasPlaying_ = isPlaying;
+        wasRecording_ = isRecording;
     }
 
     if (isPlaying) {

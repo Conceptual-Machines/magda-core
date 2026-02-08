@@ -109,7 +109,7 @@ using namespace magda;
 
 class ZoomManagerTest final : public juce::UnitTest {
   public:
-    ZoomManagerTest() : juce::UnitTest("ZoomManager Logic Tests") {}
+    ZoomManagerTest() : juce::UnitTest("ZoomManager Logic Tests", "magda") {}
 
     void runTest() override {
         testBasicZoomOperations();

@@ -212,6 +212,7 @@ class TimelineController {
     ChangeFlags handleEvent(const SetPlaybackPositionEvent& e);
     ChangeFlags handleEvent(const StartPlaybackEvent& e);
     ChangeFlags handleEvent(const StopPlaybackEvent& e);
+    ChangeFlags handleEvent(const StartRecordEvent& e);
     ChangeFlags handleEvent(const MovePlayheadByDeltaEvent& e);
     ChangeFlags handleEvent(const SetPlaybackStateEvent& e);
     ChangeFlags handleEvent(const SetEditCursorEvent& e);

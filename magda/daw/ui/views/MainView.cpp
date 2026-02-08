@@ -375,6 +375,11 @@ void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags chan
         playheadComponent->setPlayheadPosition(playheadPosition);
         playheadComponent->repaint();
 
+        // Repaint recording overlay when playhead moves during recording
+        if (state.playhead.isRecording) {
+            selectionOverlay->repaint();
+        }
+
         if (onPlayheadPositionChanged) {
             onPlayheadPositionChanged(playheadPosition);
         }
@@ -1429,6 +1434,7 @@ MainView::SelectionOverlayComponent::SelectionOverlayComponent(MainView& owner) 
 MainView::SelectionOverlayComponent::~SelectionOverlayComponent() = default;
 
 void MainView::SelectionOverlayComponent::paint(juce::Graphics& g) {
+    drawRecordingRegion(g);
     drawTimeSelection(g);
     drawLoopRegion(g);
 }
@@ -1574,6 +1580,79 @@ void MainView::SelectionOverlayComponent::drawLoopRegion(juce::Graphics& g) {
     if (originalEndX >= 0 && originalEndX <= getWidth()) {
         g.drawLine(static_cast<float>(originalEndX), 0.0f, static_cast<float>(originalEndX),
                    static_cast<float>(getHeight()), 2.0f);
+    }
+}
+
+void MainView::SelectionOverlayComponent::drawRecordingRegion(juce::Graphics& g) {
+    const auto& state = owner.timelineController->getState();
+
+    if (!state.playhead.isRecording) {
+        return;
+    }
+
+    // Recording region: from editPosition (start) to playbackPosition (current)
+    double recordStartTime = state.playhead.editPosition;
+    double recordEndTime = state.playhead.playbackPosition;
+
+    if (recordEndTime <= recordStartTime) {
+        return;
+    }
+
+    // Convert to pixels
+    double startBeats = state.secondsToBeats(recordStartTime);
+    double endBeats = state.secondsToBeats(recordEndTime);
+    int startX = static_cast<int>(startBeats * state.zoom.horizontalZoom) +
+                 LayoutConfig::TIMELINE_LEFT_PADDING;
+    int endX = static_cast<int>(endBeats * state.zoom.horizontalZoom) +
+               LayoutConfig::TIMELINE_LEFT_PADDING;
+
+    // Adjust for scroll offset
+    int scrollOffset = owner.trackContentViewport->getViewPositionX();
+    startX -= scrollOffset;
+    endX -= scrollOffset;
+
+    // Skip if out of view
+    if (endX < 0 || startX > getWidth()) {
+        return;
+    }
+
+    startX = juce::jmax(0, startX);
+    endX = juce::jmin(getWidth(), endX);
+
+    int scrollY = owner.trackContentViewport->getViewPositionY();
+    auto& tracks = TrackManager::getInstance().getTracks();
+
+    for (int trackIndex = 0; trackIndex < (int)tracks.size(); ++trackIndex) {
+        if (!tracks[trackIndex].recordArmed) {
+            continue;
+        }
+
+        int trackY = owner.trackContentPanel->getTrackYPosition(trackIndex) - scrollY;
+        int trackHeight = static_cast<int>(owner.trackContentPanel->getTrackHeight(trackIndex) *
+                                           owner.verticalZoom);
+
+        // Skip if not visible
+        if (trackY + trackHeight < 0 || trackY > getHeight()) {
+            continue;
+        }
+
+        int drawY = juce::jmax(0, trackY);
+        int drawBottom = juce::jmin(getHeight(), trackY + trackHeight);
+        int drawHeight = drawBottom - drawY;
+
+        if (drawHeight > 0) {
+            // Use the same style as a MIDI clip: darker fill of the default clip color
+            auto clipColour = ClipInfo::getDefaultColor(
+                static_cast<int>(ClipManager::getInstance().getArrangementClips().size()));
+            g.setColour(clipColour.darker(0.3f));
+            g.fillRoundedRectangle(startX, drawY, endX - startX, drawHeight, 3.0f);
+
+            // Red recording border
+            g.setColour(juce::Colours::red);
+            g.drawRoundedRectangle(static_cast<float>(startX), static_cast<float>(drawY),
+                                   static_cast<float>(endX - startX),
+                                   static_cast<float>(drawHeight), 3.0f, 1.5f);
+        }
     }
 }
 
