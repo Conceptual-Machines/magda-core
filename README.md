@@ -22,13 +22,34 @@ Early research and prototyping. Not yet ready for production use.
 
 ## Building
 
-### Prerequisites
+### Development Environment Options
 
+#### Option 1: GitHub Codespaces / VS Code Dev Containers (Recommended for Quick Start)
+
+The easiest way to get started is using the pre-configured development container:
+
+**GitHub Codespaces (Cloud)**:
+1. Click the green "Code" button on GitHub
+2. Select "Codespaces" → "Create codespace"
+3. Wait for the environment to initialize
+4. Run `make setup && make debug`
+
+**VS Code Dev Containers (Local)**:
+1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop) and [VS Code](https://code.visualstudio.com/)
+2. Install the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+3. Open the project in VS Code
+4. Click "Reopen in Container" when prompted
+5. Run `make setup && make debug`
+
+See [.devcontainer/README.md](.devcontainer/README.md) for more details.
+
+#### Option 2: Local Development
+
+**Prerequisites**:
 - C++20 compiler (GCC 10+, Clang 12+, or Xcode)
 - CMake 3.20+
 
-### Quick Start
-
+**Quick Start**:
 ```bash
 # Clone with submodules
 git clone --recursive https://github.com/Conceptual-Machines/magda-core.git
