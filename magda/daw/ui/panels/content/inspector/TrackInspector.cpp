@@ -636,25 +636,14 @@ void TrackInspector::populateRoutingSelectors() {
     };
 
     // MIDI output selector callbacks
-    midiOutputSelector_->onEnabledChanged = [this, midiBridge](bool enabled) {
+    midiOutputSelector_->onEnabledChanged = [this](bool enabled) {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
             return;
 
-        if (enabled) {
-            int selectedId = midiOutputSelector_->getSelectedId();
-            if (selectedId >= 10 && midiBridge) {
-                auto midiOutputs = midiBridge->getAvailableMidiOutputs();
-                int deviceIndex = selectedId - 10;
-                if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiOutputs.size())) {
-                    magda::TrackManager::getInstance().setTrackMidiOutput(
-                        selectedTrackId_, midiOutputs[deviceIndex].id);
-                    return;
-                }
-            }
-            magda::TrackManager::getInstance().setTrackMidiOutput(selectedTrackId_, "");
-        } else {
+        if (!enabled) {
             magda::TrackManager::getInstance().setTrackMidiOutput(selectedTrackId_, "");
         }
+        // When enabling, don't set anything yet — user picks a device from dropdown
     };
 
     midiOutputSelector_->onSelectionChanged = [this, midiBridge](int selectedId) {
@@ -999,7 +988,7 @@ void TrackInspector::updateRoutingSelectorsFromTrack() {
     juce::String currentMidiOutput = track->midiOutputDevice;
     if (currentMidiOutput.isEmpty()) {
         midiOutputSelector_->setSelectedId(1);  // "None"
-        midiOutputSelector_->setEnabled(false);
+        // Don't force-disable — user may have just enabled the toggle
     } else if (midiBridge) {
         auto midiOutputs = midiBridge->getAvailableMidiOutputs();
         int selectedId = 1;  // Default to "None"
@@ -1010,7 +999,7 @@ void TrackInspector::updateRoutingSelectorsFromTrack() {
             }
         }
         midiOutputSelector_->setSelectedId(selectedId);
-        midiOutputSelector_->setEnabled(selectedId != 1);
+        midiOutputSelector_->setEnabled(true);
     }
 }
 

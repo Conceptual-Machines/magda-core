@@ -751,29 +751,10 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
 
     // MIDI output selector callbacks
     header.midiOutputSelector->onEnabledChanged = [this, trackId, midiBridge](bool enabled) {
-        if (enabled) {
-            // Find header by trackId to get current selection
-            int selectedId = 1;
-            for (auto& h : trackHeaders) {
-                if (h->trackId == trackId) {
-                    selectedId = h->midiOutputSelector->getSelectedId();
-                    break;
-                }
-            }
-            if (selectedId >= 10 && midiBridge) {
-                auto midiOutputs = midiBridge->getAvailableMidiOutputs();
-                int deviceIndex = selectedId - 10;
-                if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiOutputs.size())) {
-                    TrackManager::getInstance().setTrackMidiOutput(trackId,
-                                                                   midiOutputs[deviceIndex].id);
-                    return;
-                }
-            }
-            // Fallback: no valid device selected, clear
-            TrackManager::getInstance().setTrackMidiOutput(trackId, "");
-        } else {
+        if (!enabled) {
             TrackManager::getInstance().setTrackMidiOutput(trackId, "");
         }
+        // When enabling, don't set anything yet — user picks a device from dropdown
     };
 
     header.midiOutputSelector->onSelectionChanged = [this, trackId, midiBridge](int selectedId) {
@@ -1041,7 +1022,7 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
         juce::String currentMidiOutput = track->midiOutputDevice;
         if (currentMidiOutput.isEmpty()) {
             header.midiOutputSelector->setSelectedId(1);  // "None"
-            header.midiOutputSelector->setEnabled(false);
+            // Don't force-disable — user may have just enabled the toggle
         } else if (midiBridge) {
             auto midiOutputs = midiBridge->getAvailableMidiOutputs();
             int selectedId = 1;  // Default to "None"
@@ -1052,7 +1033,7 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
                 }
             }
             header.midiOutputSelector->setSelectedId(selectedId);
-            header.midiOutputSelector->setEnabled(selectedId != 1);
+            header.midiOutputSelector->setEnabled(true);
         }
     }
 }
