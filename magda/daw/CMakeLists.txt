@@ -178,6 +178,9 @@ set(DAW_UI_SOURCES
     ui/themes/MixerLookAndFeel.cpp
     # Windows
     ui/windows/MainWindow.cpp
+    ui/windows/MainWindowMenus.cpp
+    ui/windows/MainWindowCommands.cpp
+    ui/windows/MainWindowExport.cpp
     ui/windows/MenuManager.cpp
     # Dialogs
     ui/dialogs/AudioSettingsDialog.cpp
