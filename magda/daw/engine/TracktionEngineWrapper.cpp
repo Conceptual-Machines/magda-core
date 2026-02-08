@@ -1830,6 +1830,10 @@ void TracktionEngineWrapper::recordingAboutToStart(tracktion::InputDeviceInstanc
                 preview.trackId = trackId;
                 preview.startTime = startTime;
                 preview.currentLength = 0.0;
+
+                const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+                preview.isAudioRecording = trackInfo && !trackInfo->audioInputDevice.isEmpty();
+
                 recordingPreviews_[trackId] = std::move(preview);
             }
         }
@@ -2084,6 +2088,20 @@ void TracktionEngineWrapper::drainRecordingNoteQueue() {
         double newLength = currentPos - preview.startTime;
         if (newLength > preview.currentLength)
             preview.currentLength = newLength;
+    }
+
+    // Sample metering data for audio-recording tracks
+    if (audioBridge_) {
+        auto& meteringBuffer = audioBridge_->getMeteringBuffer();
+        for (auto& [trackId, preview] : recordingPreviews_) {
+            if (!preview.isAudioRecording)
+                continue;
+
+            MeterData data;
+            if (meteringBuffer.drainToLatest(trackId, data)) {
+                preview.audioPeaks.push_back({data.peakL, data.peakR});
+            }
+        }
     }
 }
 
