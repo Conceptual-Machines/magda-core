@@ -234,9 +234,10 @@ void TracktionEngineWrapper::createEditAndBridges() {
     // Create SessionClipScheduler and PluginWindowManager only when NOT in headless CI
     // Both extend juce::Timer which creates GUI infrastructure and leaks in tests
     // Check: Skip if DISPLAY env var not set (Linux headless) or if explicitly disabled
-    bool isHeadless = (std::getenv("DISPLAY") == nullptr &&
-                       juce::SystemStats::getOperatingSystemType() != juce::SystemStats::MacOSX &&
-                       juce::SystemStats::getOperatingSystemType() != juce::SystemStats::Windows);
+    auto osType = juce::SystemStats::getOperatingSystemType();
+    bool isMacOS = (osType & juce::SystemStats::MacOSX) != 0;
+    bool isWindows = (osType & juce::SystemStats::Windows) != 0;
+    bool isHeadless = (std::getenv("DISPLAY") == nullptr && !isMacOS && !isWindows);
 
     if (!isHeadless) {
         sessionScheduler_ = std::make_unique<SessionClipScheduler>(*audioBridge_, *currentEdit_);
