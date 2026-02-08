@@ -205,7 +205,11 @@ set(DAW_UI_SOURCES
     ui/panels/content/EmptyContent.cpp
     # Inspector refactoring (decomposition into specialized inspectors)
     ui/panels/content/inspector/TrackInspector.cpp
-    ui/panels/content/inspector/ClipInspector.cpp
+    ui/panels/content/inspector/clip/ClipInspectorInit.cpp
+    ui/panels/content/inspector/clip/ClipInspectorLifecycle.cpp
+    ui/panels/content/inspector/clip/ClipInspectorLayout.cpp
+    ui/panels/content/inspector/clip/ClipInspectorSelection.cpp
+    ui/panels/content/inspector/clip/ClipInspectorState.cpp
     ui/panels/content/inspector/NoteInspector.cpp
     ui/panels/content/inspector/DeviceInspector.cpp
     ui/panels/content/inspector/InspectorFactory.cpp
