@@ -1,5 +1,6 @@
 #include "DebugDialog.hpp"
 
+#include "../../audio/MidiBridge.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "DebugSettings.hpp"
@@ -7,11 +8,22 @@
 namespace magda::daw::ui {
 
 std::unique_ptr<DebugDialog> DebugDialog::instance_;
+magda::MidiBridge* DebugDialog::midiBridge_ = nullptr;
 
 //==============================================================================
-// Content component with sliders
+// Helper: format MIDI note name
 //==============================================================================
-class DebugDialog::Content : public juce::Component {
+static juce::String midiNoteToName(int noteNumber) {
+    static const char* noteNames[] = {"C",  "C#", "D",  "D#", "E",  "F",
+                                      "F#", "G",  "G#", "A",  "A#", "B"};
+    int octave = (noteNumber / 12) - 1;
+    return juce::String(noteNames[noteNumber % 12]) + juce::String(octave);
+}
+
+//==============================================================================
+// Content component with sliders and MIDI monitor
+//==============================================================================
+class DebugDialog::Content : public juce::Component, private juce::Timer {
   public:
     Content() {
         // Title
@@ -100,7 +112,36 @@ class DebugDialog::Content : public juce::Component {
         };
         addAndMakeVisible(paramValueFontSlider_);
 
-        setSize(300, 240);
+        // === MIDI Monitor Section ===
+        midiMonitorLabel_.setText("MIDI Monitor", juce::dontSendNotification);
+        midiMonitorLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
+        midiMonitorLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        addAndMakeVisible(midiMonitorLabel_);
+
+        midiLog_.setMultiLine(true);
+        midiLog_.setReadOnly(true);
+        midiLog_.setScrollbarsShown(true);
+        midiLog_.setCaretVisible(false);
+        midiLog_.setFont(
+            juce::Font(juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain));
+        midiLog_.setColour(juce::TextEditor::backgroundColourId,
+                           DarkTheme::getColour(DarkTheme::BACKGROUND));
+        midiLog_.setColour(juce::TextEditor::textColourId,
+                           DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        addAndMakeVisible(midiLog_);
+
+        clearButton_.setButtonText("Clear");
+        clearButton_.onClick = [this]() { midiLog_.clear(); };
+        addAndMakeVisible(clearButton_);
+
+        setSize(500, 500);
+
+        // Start 30Hz timer for draining MIDI queue
+        startTimerHz(30);
+    }
+
+    ~Content() override {
+        stopTimer();
     }
 
     void paint(juce::Graphics& g) override {
@@ -141,9 +182,86 @@ class DebugDialog::Content : public juce::Component {
         row = bounds.removeFromTop(24);
         paramValueFontLabel_.setBounds(row.removeFromLeft(140));
         paramValueFontSlider_.setBounds(row);
+        bounds.removeFromTop(12);
+
+        // MIDI Monitor section
+        row = bounds.removeFromTop(24);
+        midiMonitorLabel_.setBounds(row.removeFromLeft(200));
+        clearButton_.setBounds(row.removeFromRight(60));
+        bounds.removeFromTop(4);
+
+        // MIDI log fills remaining space
+        midiLog_.setBounds(bounds);
     }
 
   private:
+    void timerCallback() override {
+        if (!DebugDialog::midiBridge_)
+            return;
+
+        auto& queue = DebugDialog::midiBridge_->getGlobalEventQueue();
+        magda::MidiEventEntry entry;
+        bool appended = false;
+
+        while (queue.pop(entry)) {
+            auto line = formatMidiEvent(entry);
+            midiLog_.moveCaretToEnd();
+            midiLog_.insertTextAtCaret(line + "\n");
+            appended = true;
+            lineCount_++;
+        }
+
+        // Trim to ~200 lines
+        if (appended && lineCount_ > 220) {
+            auto text = midiLog_.getText();
+            int linesToRemove = lineCount_ - 200;
+            int pos = 0;
+            for (int i = 0; i < linesToRemove && pos < text.length(); ++i) {
+                pos = text.indexOf(pos, "\n") + 1;
+                if (pos <= 0)
+                    break;
+            }
+            if (pos > 0 && pos < text.length()) {
+                midiLog_.setText(text.substring(pos));
+                lineCount_ = 200;
+            }
+        }
+    }
+
+    static juce::String formatMidiEvent(const magda::MidiEventEntry& entry) {
+        // Format timestamp as HH:MM:SS.mmm
+        auto now = juce::Time::getCurrentTime();
+        auto timeStr = now.formatted("[%H:%M:%S.") +
+                       juce::String(now.getMilliseconds()).paddedLeft('0', 3) + "]";
+
+        juce::String deviceStr = entry.deviceName.substring(0, 12).paddedRight(' ', 12);
+        juce::String channelStr = "Ch." + juce::String(entry.channel).paddedLeft(' ', 2);
+
+        switch (entry.type) {
+            case magda::MidiEventEntry::NoteOn:
+                return timeStr + " " + deviceStr + "  " + channelStr + "  NoteOn   " +
+                       midiNoteToName(entry.data1).paddedRight(' ', 4) +
+                       "vel=" + juce::String(entry.data2);
+            case magda::MidiEventEntry::NoteOff:
+                return timeStr + " " + deviceStr + "  " + channelStr + "  NoteOff  " +
+                       midiNoteToName(entry.data1).paddedRight(' ', 4) +
+                       "vel=" + juce::String(entry.data2);
+            case magda::MidiEventEntry::CC:
+                return timeStr + " " + deviceStr + "  " + channelStr + "  CC       " +
+                       juce::String(entry.data1).paddedRight(' ', 4) +
+                       "val=" + juce::String(entry.data2);
+            case magda::MidiEventEntry::PitchBend: {
+                int centered = entry.pitchBendValue - 8192;
+                juce::String sign = centered >= 0 ? "+" : "";
+                return timeStr + " " + deviceStr + "  " + channelStr + "  PitchBd  " + sign +
+                       juce::String(centered);
+            }
+            default:
+                return timeStr + " " + deviceStr + "  " + channelStr + "  Other";
+        }
+    }
+
+    // Debug settings widgets
     juce::Label titleLabel_;
     juce::Label bottomPanelLabel_;
     juce::Slider bottomPanelSlider_;
@@ -156,6 +274,12 @@ class DebugDialog::Content : public juce::Component {
     juce::Label paramValueFontLabel_;
     juce::Slider paramValueFontSlider_;
 
+    // MIDI Monitor widgets
+    juce::Label midiMonitorLabel_;
+    juce::TextEditor midiLog_;
+    juce::TextButton clearButton_;
+    int lineCount_ = 0;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Content)
 };
 
@@ -167,7 +291,7 @@ DebugDialog::DebugDialog()
                      DocumentWindow::closeButton) {
     content_ = std::make_unique<Content>();
     setContentNonOwned(content_.get(), true);
-    setResizable(false, false);
+    setResizable(true, true);
     setUsingNativeTitleBar(true);
     centreWithSize(getWidth(), getHeight());
 }
@@ -190,6 +314,10 @@ void DebugDialog::hide() {
     if (instance_) {
         instance_->setVisible(false);
     }
+}
+
+void DebugDialog::setMidiBridge(magda::MidiBridge* bridge) {
+    midiBridge_ = bridge;
 }
 
 }  // namespace magda::daw::ui

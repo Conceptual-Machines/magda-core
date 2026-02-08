@@ -44,11 +44,16 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
     DBG("Created track: " << track.name << " (id=" << trackId << ", type=" << getTrackTypeName(type)
                           << ")");
 
-    // Initialize MIDI monitoring for this track if audioEngine is available
+    // Initialize MIDI routing for this track if audioEngine is available
     if (audioEngine_) {
         if (auto* midiBridge = audioEngine_->getMidiBridge()) {
             midiBridge->setTrackMidiInput(trackId, "all");
             midiBridge->startMonitoring(trackId);
+        }
+        // Route MIDI inputs at the TE level (creates InputDeviceInstance destinations
+        // needed for recording and live monitoring through synth plugins)
+        if (auto* audioBridge = audioEngine_->getAudioBridge()) {
+            audioBridge->setTrackMidiInput(trackId, "all");
         }
     }
 
@@ -364,15 +369,16 @@ void TrackManager::setAudioEngine(AudioEngine* audioEngine) {
 
     // Sync existing tracks' MIDI routing (in case tracks were created before engine was set)
     if (audioEngine_) {
-        if (auto* midiBridge = audioEngine_->getMidiBridge()) {
-            for (const auto& track : tracks_) {
-                // Set up MIDI routing for tracks that have a MIDI input configured
-                if (!track.midiInputDevice.isEmpty()) {
+        for (const auto& track : tracks_) {
+            if (!track.midiInputDevice.isEmpty()) {
+                if (auto* midiBridge = audioEngine_->getMidiBridge()) {
                     midiBridge->setTrackMidiInput(track.id, track.midiInputDevice);
                     midiBridge->startMonitoring(track.id);
-                    DBG("Synced MIDI routing for track " << track.id << ": "
-                                                         << track.midiInputDevice);
                 }
+                if (auto* audioBridge = audioEngine_->getAudioBridge()) {
+                    audioBridge->setTrackMidiInput(track.id, track.midiInputDevice);
+                }
+                DBG("Synced MIDI routing for track " << track.id << ": " << track.midiInputDevice);
             }
         }
     }

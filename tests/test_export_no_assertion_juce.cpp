@@ -17,7 +17,7 @@ using namespace magda;
  */
 class ExportNoAssertionTest final : public juce::UnitTest {
   public:
-    ExportNoAssertionTest() : juce::UnitTest("Export No Assertion Tests") {}
+    ExportNoAssertionTest() : juce::UnitTest("Export No Assertion Tests", "magda") {}
 
     void runTest() override {
         testExportWhileStopped();

@@ -245,6 +245,11 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     // Initialize TrackManager with audio engine for routing operations
     TrackManager::getInstance().setAudioEngine(externalEngine);
 
+    // Wire MidiBridge to DebugDialog for MIDI monitor
+    if (externalEngine) {
+        daw::ui::DebugDialog::setMidiBridge(externalEngine->getMidiBridge());
+    }
+
     // Initialize panel sizes from LayoutConfig
     auto& layout = LayoutConfig::getInstance();
     transportHeight = layout.defaultTransportHeight;
@@ -511,8 +516,7 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     };
 
     transportPanel->onRecord = [this]() {
-        // TODO: Add RecordPlaybackEvent for proper recording state
-        mainView->getTimelineController().dispatch(StartPlaybackEvent{});
+        mainView->getTimelineController().dispatch(StartRecordEvent{});
     };
 
     transportPanel->onLoop = [this](bool enabled) {
@@ -1977,9 +1981,8 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onRecord = [this]() {
-        // TODO: Implement record
-        if (mainComponent && mainComponent->transportPanel) {
-            // mainComponent->transportPanel->toggleRecord();
+        if (mainComponent && mainComponent->mainView) {
+            mainComponent->mainView->getTimelineController().dispatch(StartRecordEvent{});
         }
     };
 

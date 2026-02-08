@@ -35,6 +35,23 @@ struct MidiNote {
 };
 
 /**
+ * @brief MIDI CC data for recorded CC events
+ */
+struct MidiCCData {
+    int controller = 0;         // CC number (0-127)
+    int value = 0;              // CC value (0-127)
+    double beatPosition = 0.0;  // Position in beats within clip
+};
+
+/**
+ * @brief MIDI pitch bend data for recorded pitch bend events
+ */
+struct MidiPitchBendData {
+    int value = 0;              // 0-16383, center=8192
+    double beatPosition = 0.0;  // Position in beats within clip
+};
+
+/**
  * @brief Clip data structure containing all clip properties
  */
 struct ClipInfo {
@@ -141,6 +158,8 @@ struct ClipInfo {
 
     // MIDI-specific properties
     std::vector<MidiNote> midiNotes;
+    std::vector<MidiCCData> midiCCData;
+    std::vector<MidiPitchBendData> midiPitchBendData;
     double midiOffset = 0.0;  // Start offset in beats (for non-destructive trim)
 
     // Session view properties

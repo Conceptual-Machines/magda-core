@@ -8,6 +8,8 @@
 
 #include "../core/MidiTypes.hpp"
 #include "../core/TypeIds.hpp"
+#include "MidiEventQueue.hpp"
+#include "RecordingNoteQueue.hpp"
 
 namespace magda {
 
@@ -144,6 +146,16 @@ class MidiBridge : public juce::MidiInputCallback {
      */
     bool isMonitoring(TrackId trackId) const;
 
+    /**
+     * @brief Get the global MIDI event queue for the debug monitor
+     * Audio thread pushes, UI thread reads.
+     */
+    MidiEventQueue& getGlobalEventQueue() {
+        return globalEventQueue_;
+    }
+
+    void setRecordingQueue(RecordingNoteQueue* queue, std::atomic<double>* transportPos);
+
   private:
     // MidiInputCallback implementation
     void handleIncomingMidiMessage(juce::MidiInput* source,
@@ -168,6 +180,13 @@ class MidiBridge : public juce::MidiInputCallback {
 
     // Whether to forward MIDI to instrument plugins
     bool forwardMidiToPlugins_ = true;
+
+    // Global MIDI event queue for debug monitor (audio thread → UI thread)
+    MidiEventQueue globalEventQueue_;
+
+    // Recording note queue for real-time MIDI preview (not owned)
+    RecordingNoteQueue* recordingQueue_ = nullptr;
+    std::atomic<double>* transportPosition_ = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiBridge)
 };

@@ -287,6 +287,7 @@ class MainView::SelectionOverlayComponent : public juce::Component {
 
     void drawTimeSelection(juce::Graphics& g);
     void drawLoopRegion(juce::Graphics& g);
+    void drawRecordingRegion(juce::Graphics& g);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SelectionOverlayComponent)
 };

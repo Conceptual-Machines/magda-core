@@ -116,6 +116,14 @@ struct StartPlaybackEvent {};
 struct StopPlaybackEvent {};
 
 /**
+ * @brief Toggle record-arm on the selected track
+ *
+ * Does NOT start the transport. When a track is armed and the user presses Play,
+ * recording will start automatically via StartPlaybackEvent.
+ */
+struct StartRecordEvent {};
+
+/**
  * @brief Move playhead by a delta amount (in seconds)
  */
 struct MovePlayheadByDeltaEvent {
@@ -347,7 +355,8 @@ using TimelineEvent = std::variant<
     SetScrollPositionEvent, ScrollByDeltaEvent, ScrollToTimeEvent,
     // Playhead events
     SetEditPositionEvent, SetPlayheadPositionEvent, SetPlaybackPositionEvent, StartPlaybackEvent,
-    StopPlaybackEvent, MovePlayheadByDeltaEvent, SetPlaybackStateEvent, SetEditCursorEvent,
+    StopPlaybackEvent, StartRecordEvent, MovePlayheadByDeltaEvent, SetPlaybackStateEvent,
+    SetEditCursorEvent,
     // Selection events
     SetTimeSelectionEvent, ClearTimeSelectionEvent, CreateLoopFromSelectionEvent,
     // Loop events

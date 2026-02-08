@@ -849,6 +849,31 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     }
     obj->setProperty("midiNotes", juce::var(midiNotesArray));
 
+    // MIDI CC data
+    if (!clip.midiCCData.empty()) {
+        juce::Array<juce::var> ccArray;
+        for (const auto& cc : clip.midiCCData) {
+            auto* ccObj = new juce::DynamicObject();
+            ccObj->setProperty("controller", cc.controller);
+            ccObj->setProperty("value", cc.value);
+            ccObj->setProperty("beatPosition", cc.beatPosition);
+            ccArray.add(juce::var(ccObj));
+        }
+        obj->setProperty("midiCCData", juce::var(ccArray));
+    }
+
+    // MIDI pitch bend data
+    if (!clip.midiPitchBendData.empty()) {
+        juce::Array<juce::var> pbArray;
+        for (const auto& pb : clip.midiPitchBendData) {
+            auto* pbObj = new juce::DynamicObject();
+            pbObj->setProperty("value", pb.value);
+            pbObj->setProperty("beatPosition", pb.beatPosition);
+            pbArray.add(juce::var(pbObj));
+        }
+        obj->setProperty("midiPitchBendData", juce::var(pbArray));
+    }
+
     return juce::var(obj);
 }
 
@@ -987,6 +1012,37 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
                 return false;
             }
             outClip.midiNotes.push_back(note);
+        }
+    }
+
+    // MIDI CC data
+    auto midiCCVar = obj->getProperty("midiCCData");
+    if (midiCCVar.isArray()) {
+        auto* arr = midiCCVar.getArray();
+        for (const auto& ccVar : *arr) {
+            if (ccVar.isObject()) {
+                auto* ccObj = ccVar.getDynamicObject();
+                MidiCCData cc;
+                cc.controller = ccObj->getProperty("controller");
+                cc.value = ccObj->getProperty("value");
+                cc.beatPosition = ccObj->getProperty("beatPosition");
+                outClip.midiCCData.push_back(cc);
+            }
+        }
+    }
+
+    // MIDI pitch bend data
+    auto midiPBVar = obj->getProperty("midiPitchBendData");
+    if (midiPBVar.isArray()) {
+        auto* arr = midiPBVar.getArray();
+        for (const auto& pbVar : *arr) {
+            if (pbVar.isObject()) {
+                auto* pbObj = pbVar.getDynamicObject();
+                MidiPitchBendData pb;
+                pb.value = pbObj->getProperty("value");
+                pb.beatPosition = pbObj->getProperty("beatPosition");
+                outClip.midiPitchBendData.push_back(pb);
+            }
         }
     }
 

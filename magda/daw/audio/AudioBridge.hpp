@@ -123,6 +123,16 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     void stopSessionClip(ClipId clipId);
 
     /**
+     * @brief Reset all synth plugins on a track to prevent stuck notes
+     * @param trackId The MAGDA track ID
+     *
+     * Iterates through the track's plugin list and calls reset() on any
+     * synth plugin, which triggers allNotesOff(). Use after stopping
+     * recording or session clip playback.
+     */
+    void resetSynthsOnTrack(TrackId trackId);
+
+    /**
      * @brief Get the TE clip from a session clip's ClipSlot
      * @param clipId The MAGDA clip ID
      * @return The TE Clip pointer, or nullptr if not found
@@ -492,6 +502,20 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @return MIDI device ID, or empty if none
      */
     juce::String getTrackMidiInput(TrackId trackId) const;
+
+    /**
+     * @brief Set record arm state on the TE InputDeviceInstance for a track
+     * @param trackId The MAGDA track ID
+     * @param armed True to enable recording, false to disable
+     */
+    void setTrackRecordArmed(TrackId trackId, bool armed);
+
+    /**
+     * @brief Reverse-lookup MAGDA TrackId from a TE track's EditItemID
+     * @param itemId The TE EditItemID
+     * @return The MAGDA TrackId, or INVALID_TRACK_ID if not found
+     */
+    TrackId getTrackIdForTeTrack(te::EditItemID itemId) const;
 
     /**
      * @brief Enable all MIDI input devices in Tracktion Engine's DeviceManager

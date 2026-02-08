@@ -823,6 +823,7 @@ void TrackHeadersPanel::tracksChanged() {
         // Update UI state
         header->muteButton->setToggleState(track->muted, juce::dontSendNotification);
         header->soloButton->setToggleState(track->soloed, juce::dontSendNotification);
+        header->recordButton->setToggleState(track->recordArmed, juce::dontSendNotification);
         header->volumeLabel->setValue(gainToDb(track->volume), juce::dontSendNotification);
         header->panLabel->setValue(track->pan, juce::dontSendNotification);
 
@@ -1255,6 +1256,15 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
             auto& header = *trackHeaders[index];
             header.pan = static_cast<float>(header.panLabel->getValue());
             TrackManager::getInstance().setTrackPan(trackId, header.pan);
+        }
+    };
+
+    // Record arm button callback - updates TrackManager
+    header.recordButton->onClick = [this, trackId]() {
+        int index = TrackManager::getInstance().getTrackIndex(trackId);
+        if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
+            bool armed = trackHeaders[index]->recordButton->getToggleState();
+            TrackManager::getInstance().setTrackRecordArmed(trackId, armed);
         }
     };
 

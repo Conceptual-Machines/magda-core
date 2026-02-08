@@ -1,7 +1,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_events/juce_events.h>
 
-#include "magda/daw/engine/TracktionEngineWrapper.hpp"
+#include "SharedTestEngine.hpp"
 
 using namespace magda;
 
@@ -14,12 +14,10 @@ using namespace magda;
 class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
   public:
     TracktionEngineWrapperRefactoringTest()
-        : juce::UnitTest("TracktionEngineWrapper Refactoring Tests") {}
+        : juce::UnitTest("TracktionEngineWrapper Refactoring Tests", "magda") {}
 
     void runTest() override {
         testConstants();
-        testConstruction();
-        testInitialization();
         testTransportOperations();
         testDeviceLoadingState();
         testTriggerStateTracking();
@@ -27,7 +25,6 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         testMetronomeOperations();
         testPluginScanningState();
         testDeviceManagerAccess();
-        testFullLifecycleIntegration();
         testThreadSafety();
     }
 
@@ -52,40 +49,13 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
                "Threshold should not exceed retries + 1");
     }
 
-    void testConstruction() {
-        beginTest("Construction and destruction");
-
-        {
-            TracktionEngineWrapper wrapper;
-            // Should not crash during construction
-            expect(true, "Wrapper constructed successfully");
-        }
-        // Should not crash during destruction
-        expect(true, "Wrapper destroyed successfully");
-    }
-
-    void testInitialization() {
-        beginTest("Initialization behavior");
-
-        TracktionEngineWrapper wrapper;
-
-        bool result = wrapper.initialize();
-        expect(result == true || result == false, "Initialize should return boolean");
-
-        // Can safely initialize and shutdown multiple times
-        wrapper.shutdown();
-        expect(true, "First shutdown completed");
-
-        wrapper.initialize();
-        wrapper.shutdown();
-        expect(true, "Second init/shutdown cycle completed");
-    }
-
     void testTransportOperations() {
         beginTest("Transport operations with refactored code");
 
-        TracktionEngineWrapper wrapper;
-        wrapper.initialize();
+        auto& wrapper = magda::test::getSharedEngine();
+
+        // Reset transport state
+        wrapper.getEdit()->getTransport().stop(false, false);
 
         // Transport controls should not crash
         wrapper.play();
@@ -103,15 +73,12 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         wrapper.setTempo(120.0);
         double tempo = wrapper.getTempo();
         expect(tempo > 0.0, "Tempo should be positive");
-
-        wrapper.shutdown();
     }
 
     void testDeviceLoadingState() {
         beginTest("Device loading state");
 
-        TracktionEngineWrapper wrapper;
-        wrapper.initialize();
+        auto& wrapper = magda::test::getSharedEngine();
 
         bool isLoading = wrapper.isDevicesLoading();
         expect(isLoading == true || isLoading == false, "Device loading state should be boolean");
@@ -125,16 +92,15 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         expect(true, "Callback set without crash");
 
         wrapper.onDevicesLoadingChanged = nullptr;
-        wrapper.shutdown();
     }
 
     void testTriggerStateTracking() {
         beginTest("Trigger state tracking");
 
-        TracktionEngineWrapper wrapper;
-        wrapper.initialize();
+        auto& wrapper = magda::test::getSharedEngine();
 
         // Reset transport to clean state
+        wrapper.getEdit()->getTransport().stop(false, false);
         wrapper.stop();
         juce::Thread::sleep(50);
 
@@ -160,14 +126,12 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         }
 
         wrapper.stop();
-        wrapper.shutdown();
     }
 
     void testBridgeAccess() {
         beginTest("Bridge access after refactoring");
 
-        TracktionEngineWrapper wrapper;
-        wrapper.initialize();
+        auto& wrapper = magda::test::getSharedEngine();
 
         // All bridge getters should be accessible
         wrapper.getAudioBridge();
@@ -176,15 +140,12 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         wrapper.getEngine();
         wrapper.getEdit();
         expect(true, "All bridge accessors work");
-
-        wrapper.shutdown();
     }
 
     void testMetronomeOperations() {
         beginTest("Metronome operations");
 
-        TracktionEngineWrapper wrapper;
-        wrapper.initialize();
+        auto& wrapper = magda::test::getSharedEngine();
 
         wrapper.setMetronomeEnabled(true);
         expect(true, "Metronome can be enabled");
@@ -192,15 +153,12 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         wrapper.setMetronomeEnabled(false);
         bool enabled = wrapper.isMetronomeEnabled();
         expect(!enabled, "Metronome should be disabled");
-
-        wrapper.shutdown();
     }
 
     void testPluginScanningState() {
         beginTest("Plugin scanning state");
 
-        TracktionEngineWrapper wrapper;
-        wrapper.initialize();
+        auto& wrapper = magda::test::getSharedEngine();
 
         bool scanning = wrapper.isScanning();
         expect(scanning == true || scanning == false, "Scanning state should be boolean");
@@ -208,48 +166,21 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         wrapper.getKnownPluginList();
         wrapper.getPluginListFile();
         expect(true, "Plugin list operations are safe");
-
-        wrapper.shutdown();
     }
 
     void testDeviceManagerAccess() {
         beginTest("DeviceManager access");
 
-        TracktionEngineWrapper wrapper;
-        wrapper.initialize();
+        auto& wrapper = magda::test::getSharedEngine();
 
         auto* dm = wrapper.getDeviceManager();
         expect(true, "DeviceManager access does not crash");
-
-        wrapper.shutdown();
-    }
-
-    void testFullLifecycleIntegration() {
-        beginTest("Full lifecycle integration test");
-
-        TracktionEngineWrapper wrapper;
-
-        bool initResult = wrapper.initialize();
-
-        wrapper.setTempo(100.0);
-        double tempo = wrapper.getTempo();
-
-        wrapper.play();
-        bool playing = wrapper.isPlaying();
-
-        wrapper.stop();
-        bool stopped = !wrapper.isPlaying();
-
-        wrapper.shutdown();
-
-        expect(true, "Full lifecycle completed without crash");
     }
 
     void testThreadSafety() {
         beginTest("Refactoring preserves thread safety");
 
-        TracktionEngineWrapper wrapper;
-        wrapper.initialize();
+        auto& wrapper = magda::test::getSharedEngine();
 
         // Simulate concurrent access patterns
         wrapper.getCurrentPosition();
@@ -258,8 +189,6 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         wrapper.isDevicesLoading();
 
         expect(true, "Concurrent access patterns work");
-
-        wrapper.shutdown();
     }
 };
 

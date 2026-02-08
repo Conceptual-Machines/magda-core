@@ -3,7 +3,9 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <functional>
+#include <unordered_map>
 
+#include "../audio/RecordingNoteQueue.hpp"
 #include "../command.hpp"
 #include "../interfaces/clip_interface.hpp"
 #include "../interfaces/mixer_interface.hpp"
@@ -35,6 +37,7 @@ class TracktionEngineWrapper : public AudioEngine,
                                public TrackInterface,
                                public ClipInterface,
                                public MixerInterface,
+                               public tracktion::TransportControl::Listener,
                                private juce::ChangeListener {
   public:
     // Constants for audio device health checking
@@ -89,6 +92,7 @@ class TracktionEngineWrapper : public AudioEngine,
     void onTransportStop(double returnPosition) override;
     void onTransportPause() override;
     void onTransportRecord(double position) override;
+    void onTransportStopRecording() override;
     void onEditPositionChanged(double position) override;
     void onTempoChanged(double bpm) override;
     void onTimeSignatureChanged(int numerator, int denominator) override;
@@ -180,6 +184,14 @@ class TracktionEngineWrapper : public AudioEngine,
     }
     const MidiBridge* getMidiBridge() const override {
         return midiBridge_.get();
+    }
+
+    /**
+     * @brief Get active recording previews for real-time MIDI display
+     * @return Map of trackId to preview data (empty if not recording)
+     */
+    const std::unordered_map<TrackId, RecordingPreview>& getRecordingPreviews() const override {
+        return recordingPreviews_;
     }
 
     /**
@@ -324,6 +336,16 @@ class TracktionEngineWrapper : public AudioEngine,
      */
     std::function<void(bool, int, const juce::StringArray&)> onPluginScanComplete;
 
+    // =========================================================================
+    // TransportControl::Listener implementation
+    // =========================================================================
+
+    void recordingAboutToStart(tracktion::InputDeviceInstance& instance,
+                               tracktion::EditItemID targetID) override;
+    void recordingFinished(
+        tracktion::InputDeviceInstance& instance, tracktion::EditItemID targetID,
+        const juce::ReferenceCountedArray<tracktion::Clip>& recordedClips) override;
+
   private:
     // juce::ChangeListener implementation
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
@@ -382,6 +404,19 @@ class TracktionEngineWrapper : public AudioEngine,
     int nextTrackId_ = 1;
     int nextClipId_ = 1;
     int nextEffectId_ = 1;
+
+    // Per-track dedup during recordingFinished (multiple devices per track).
+    // Populated in recordingFinished, cleared after transport stop.
+    std::unordered_map<int, int> activeRecordingClips_;
+
+    // Track recording start time per track (populated in recordingAboutToStart)
+    std::unordered_map<int, double> recordingStartTimes_;
+
+    // Real-time MIDI recording preview (outside ClipManager)
+    RecordingNoteQueue recordingNoteQueue_;
+    std::atomic<double> transportPositionForMidi_{0.0};
+    std::unordered_map<TrackId, RecordingPreview> recordingPreviews_;
+    void drainRecordingNoteQueue();
 
     // Device loading state
     bool devicesLoading_ = true;  // Start as loading until first scan completes
