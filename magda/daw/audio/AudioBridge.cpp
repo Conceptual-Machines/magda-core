@@ -88,7 +88,7 @@ void AudioBridge::tracksChanged() {
 }
 
 void AudioBridge::trackPropertyChanged(int trackId) {
-    // Track property changed (volume, pan, mute, solo) - sync to Tracktion Engine
+    // Track property changed (volume, pan, mute, solo, recordArmed) - sync to Tracktion Engine
     auto* track = getAudioTrack(trackId);
     if (track) {
         auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
@@ -100,6 +100,29 @@ void AudioBridge::trackPropertyChanged(int trackId) {
             // Sync volume/pan to VolumeAndPanPlugin
             setTrackVolume(trackId, trackInfo->volume);
             setTrackPan(trackId, trackInfo->pan);
+
+            // Sync recordArmed state to InputDeviceInstance
+            auto* playbackContext = edit_.getCurrentPlaybackContext();
+            if (playbackContext) {
+                // Find any MIDI input device instances routed to this track
+                for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+                    if (dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) {
+                        auto targets = inputDeviceInstance->getTargets();
+                        for (auto targetID : targets) {
+                            if (targetID == track->itemID) {
+                                // Found a MIDI input routed to this track - sync record armed state
+                                inputDeviceInstance->setRecordingEnabled(track->itemID,
+                                                                         trackInfo->recordArmed);
+                                DBG("Synced recordArmed=" << trackInfo->recordArmed
+                                                          << " to MIDI input '"
+                                                          << inputDeviceInstance->owner.getName()
+                                                          << "' for track " << trackId);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -243,6 +266,20 @@ void AudioBridge::ensureVolumePluginPosition(te::AudioTrack* track) const {
 
 te::AudioTrack* AudioBridge::getAudioTrack(TrackId trackId) const {
     return trackController_.getAudioTrack(trackId);
+}
+
+TrackId AudioBridge::getTrackIdForTeTrack(te::EditItemID itemId) const {
+    // Reverse lookup: find MAGDA TrackId from TE EditItemID
+    TrackId result = INVALID_TRACK_ID;
+    trackController_.withTrackMapping([&](const auto& mapping) {
+        for (const auto& [trackId, teTrack] : mapping) {
+            if (teTrack && teTrack->itemID == itemId) {
+                result = trackId;
+                break;
+            }
+        }
+    });
+    return result;
 }
 
 te::Plugin::Ptr AudioBridge::getPlugin(DeviceId deviceId) const {

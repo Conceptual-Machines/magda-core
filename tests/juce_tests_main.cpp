@@ -49,9 +49,5 @@ int main(int argc, char* argv[]) {
 
     std::cout << "========================================\n";
 
-    // Shut down the shared TE wrapper before ScopedJuceInitialiser_GUI destructs,
-    // otherwise static-destruction order causes a SIGSEGV in JUCE singletons.
-    magda::test::shutdownSharedEngine();
-
     return numFailures > 0 ? 1 : 0;
 }
