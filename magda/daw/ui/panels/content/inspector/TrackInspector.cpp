@@ -46,8 +46,11 @@ TrackInspector::TrackInspector() {
     muteButton_.setClickingTogglesState(true);
     muteButton_.onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            magda::TrackManager::getInstance().setTrackMuted(selectedTrackId_,
-                                                             muteButton_.getToggleState());
+            if (selectedTrackId_ == magda::MASTER_TRACK_ID)
+                magda::TrackManager::getInstance().setMasterMuted(muteButton_.getToggleState());
+            else
+                magda::TrackManager::getInstance().setTrackMuted(selectedTrackId_,
+                                                                 muteButton_.getToggleState());
         }
     };
     addAndMakeVisible(muteButton_);
@@ -94,10 +97,12 @@ TrackInspector::TrackInspector() {
     gainLabel_->setRange(-60.0, 6.0, 0.0);  // -60 to +6 dB, default 0 dB
     gainLabel_->onValueChange = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            // Convert dB to linear gain
             double db = gainLabel_->getValue();
             float gain = (db <= -60.0f) ? 0.0f : std::pow(10.0f, static_cast<float>(db) / 20.0f);
-            magda::TrackManager::getInstance().setTrackVolume(selectedTrackId_, gain);
+            if (selectedTrackId_ == magda::MASTER_TRACK_ID)
+                magda::TrackManager::getInstance().setMasterVolume(gain);
+            else
+                magda::TrackManager::getInstance().setTrackVolume(selectedTrackId_, gain);
         }
     };
     addAndMakeVisible(*gainLabel_);
@@ -108,8 +113,11 @@ TrackInspector::TrackInspector() {
     panLabel_->setRange(-1.0, 1.0, 0.0);  // -1 (L) to +1 (R), default center
     panLabel_->onValueChange = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            magda::TrackManager::getInstance().setTrackPan(
-                selectedTrackId_, static_cast<float>(panLabel_->getValue()));
+            float pan = static_cast<float>(panLabel_->getValue());
+            if (selectedTrackId_ == magda::MASTER_TRACK_ID)
+                magda::TrackManager::getInstance().setMasterPan(pan);
+            else
+                magda::TrackManager::getInstance().setTrackPan(selectedTrackId_, pan);
         }
     };
     addAndMakeVisible(*panLabel_);
@@ -312,6 +320,12 @@ void TrackInspector::trackSelectionChanged(magda::TrackId trackId) {
     (void)trackId;
 }
 
+void TrackInspector::masterChannelChanged() {
+    if (selectedTrackId_ == magda::MASTER_TRACK_ID) {
+        updateFromSelectedTrack();
+    }
+}
+
 void TrackInspector::deviceParameterChanged(magda::DeviceId deviceId, int paramIndex,
                                             float newValue) {
     // Not relevant for track inspector
@@ -327,6 +341,26 @@ void TrackInspector::deviceParameterChanged(magda::DeviceId deviceId, int paramI
 void TrackInspector::updateFromSelectedTrack() {
     if (selectedTrackId_ == magda::INVALID_TRACK_ID) {
         showTrackControls(false);
+        return;
+    }
+
+    // Master track — show basic controls from MasterChannelState
+    if (selectedTrackId_ == magda::MASTER_TRACK_ID) {
+        const auto& master = magda::TrackManager::getInstance().getMasterChannel();
+        trackNameValue_.setText("Master", juce::dontSendNotification);
+        muteButton_.setToggleState(master.muted, juce::dontSendNotification);
+        soloButton_.setToggleState(false, juce::dontSendNotification);
+        recordButton_.setToggleState(false, juce::dontSendNotification);
+
+        float gainDb = (master.volume <= 0.0f) ? -60.0f : 20.0f * std::log10(master.volume);
+        gainLabel_->setValue(gainDb, juce::dontSendNotification);
+        panLabel_->setValue(master.pan, juce::dontSendNotification);
+
+        clipCountLabel_.setText("0 clips", juce::dontSendNotification);
+
+        showTrackControls(true);
+        resized();
+        repaint();
         return;
     }
 
@@ -373,30 +407,33 @@ void TrackInspector::updateFromSelectedTrack() {
 }
 
 void TrackInspector::showTrackControls(bool show) {
-    trackNameLabel_.setVisible(show);
-    trackNameValue_.setVisible(show);
-    muteButton_.setVisible(show);
-    soloButton_.setVisible(show);
-    recordButton_.setVisible(show);
-    gainLabel_->setVisible(show);
-    panLabel_->setVisible(show);
-
-    // Routing section
-    routingSectionLabel_.setVisible(show);
-    audioInputSelector_->setVisible(show);
-    inputSelector_->setVisible(show);
-    outputSelector_->setVisible(show);
-    midiOutputSelector_->setVisible(show);
-
-    // Send/Receive section — hidden for aux tracks
+    bool isMaster = show && selectedTrackId_ == magda::MASTER_TRACK_ID;
     bool isAux = false;
-    if (show && selectedTrackId_ != magda::INVALID_TRACK_ID) {
+    if (show && selectedTrackId_ != magda::INVALID_TRACK_ID &&
+        selectedTrackId_ != magda::MASTER_TRACK_ID) {
         const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
         if (track && track->type == magda::TrackType::Aux)
             isAux = true;
     }
 
-    bool showSends = show && !isAux;
+    trackNameLabel_.setVisible(show);
+    trackNameValue_.setVisible(show);
+    muteButton_.setVisible(show);
+    soloButton_.setVisible(show && !isMaster);
+    recordButton_.setVisible(show && !isMaster && !isAux);
+    gainLabel_->setVisible(show);
+    panLabel_->setVisible(show);
+
+    // Routing section — hidden for master and aux
+    bool showRouting = show && !isMaster && !isAux;
+    routingSectionLabel_.setVisible(showRouting);
+    audioInputSelector_->setVisible(showRouting);
+    inputSelector_->setVisible(showRouting);
+    outputSelector_->setVisible(showRouting);
+    midiOutputSelector_->setVisible(showRouting);
+
+    // Send/Receive section — hidden for master and aux tracks
+    bool showSends = show && !isMaster && !isAux;
     sendReceiveSectionLabel_.setVisible(showSends);
     addSendButton_.setVisible(showSends);
     noSendsLabel_.setVisible(showSends);
@@ -408,9 +445,9 @@ void TrackInspector::showTrackControls(bool show) {
     for (auto& b : sendDeleteButtons_)
         b->setVisible(showSends);
 
-    // Clips section
-    clipsSectionLabel_.setVisible(show);
-    clipCountLabel_.setVisible(show);
+    // Clips section — hidden for master
+    clipsSectionLabel_.setVisible(show && !isMaster);
+    clipCountLabel_.setVisible(show && !isMaster);
 }
 
 void TrackInspector::rebuildSendsUI() {

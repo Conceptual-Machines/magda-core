@@ -309,6 +309,7 @@ class MainView::MasterHeaderPanel : public juce::Component, public TrackManagerL
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseDown(const juce::MouseEvent& event) override;
 
     // TrackManagerListener
     void tracksChanged() override {}
@@ -358,6 +359,7 @@ class MainView::AuxHeadersPanel : public juce::Component, public TrackManagerLis
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseDown(const juce::MouseEvent& event) override;
 
     // TrackManagerListener
     void tracksChanged() override;

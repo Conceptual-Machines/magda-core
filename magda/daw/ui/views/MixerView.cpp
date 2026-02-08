@@ -997,11 +997,9 @@ void MixerView::selectChannel(int index, bool isMaster) {
 
     // Select the clicked channel
     if (isMaster) {
-        // Master strip selection is visual-only (no setSelected on MasterChannelStrip)
         selectedChannelIndex = -1;
         selectedIsMaster = true;
-        // Master track doesn't have a TrackId, so we clear selection
-        SelectionManager::getInstance().clearSelection();
+        SelectionManager::getInstance().selectTrack(MASTER_TRACK_ID);
     } else {
         if (index >= 0 && index < static_cast<int>(channelStrips.size())) {
             channelStrips[index]->setSelected(true);

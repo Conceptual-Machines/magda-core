@@ -1862,6 +1862,10 @@ void MainView::MasterHeaderPanel::paint(juce::Graphics& g) {
     g.drawRect(getLocalBounds(), 1);
 }
 
+void MainView::MasterHeaderPanel::mouseDown(const juce::MouseEvent& /*event*/) {
+    SelectionManager::getInstance().selectTrack(MASTER_TRACK_ID);
+}
+
 void MainView::MasterHeaderPanel::resized() {
     auto contentArea = getLocalBounds().reduced(4);
 
@@ -2185,6 +2189,18 @@ void MainView::AuxHeadersPanel::paint(juce::Graphics& g) {
     for (size_t i = 1; i < auxRows_.size(); ++i) {
         int y = static_cast<int>(i) * rowHeight;
         g.drawHorizontalLine(y, 0.0f, static_cast<float>(getWidth()));
+    }
+}
+
+void MainView::AuxHeadersPanel::mouseDown(const juce::MouseEvent& event) {
+    if (auxRows_.empty())
+        return;
+
+    int rowHeight = getHeight() / static_cast<int>(auxRows_.size());
+    int rowIndex = event.getPosition().getY() / rowHeight;
+
+    if (rowIndex >= 0 && rowIndex < static_cast<int>(auxRows_.size())) {
+        SelectionManager::getInstance().selectTrack(auxRows_[rowIndex]->trackId);
     }
 }
 
