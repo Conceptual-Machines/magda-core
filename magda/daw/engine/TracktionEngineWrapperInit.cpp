@@ -8,6 +8,7 @@
 #include "../core/Config.hpp"
 #include "MagdaEngineBehaviour.hpp"
 #include "MagdaUIBehaviour.hpp"
+#include "PluginScanCoordinator.hpp"
 #include "PluginWindowManager.hpp"
 
 namespace magda {
