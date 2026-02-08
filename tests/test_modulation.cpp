@@ -441,6 +441,8 @@ TEST_CASE("TrackManager - Device mod operations", "[modulation][mod][integration
     devicePath.topLevelDeviceId = deviceId;
 
     SECTION("Set device mod amount") {
+        // Devices start with 0 mods - add one first
+        trackManager.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
         trackManager.setDeviceModAmount(devicePath, 0, 0.85f);
 
         auto* device = trackManager.getDeviceInChainByPath(devicePath);
@@ -448,6 +450,7 @@ TEST_CASE("TrackManager - Device mod operations", "[modulation][mod][integration
     }
 
     SECTION("Set device mod target and link amount") {
+        trackManager.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
         ModTarget target{deviceId, 4};
 
         trackManager.setDeviceModTarget(devicePath, 0, target);
@@ -460,6 +463,7 @@ TEST_CASE("TrackManager - Device mod operations", "[modulation][mod][integration
     }
 
     SECTION("Set device mod type and rate") {
+        trackManager.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
         trackManager.setDeviceModType(devicePath, 0, ModType::Envelope);
         trackManager.setDeviceModRate(devicePath, 0, 2.5f);
 
@@ -469,6 +473,8 @@ TEST_CASE("TrackManager - Device mod operations", "[modulation][mod][integration
     }
 
     SECTION("Set device mod name") {
+        trackManager.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+        trackManager.addDeviceMod(devicePath, 1, ModType::LFO, LFOWaveform::Sine);
         trackManager.setDeviceModName(devicePath, 1, "LFO 1");
 
         auto* device = trackManager.getDeviceInChainByPath(devicePath);
@@ -569,6 +575,7 @@ TEST_CASE("TrackManager - Modulation calculation scenarios", "[modulation][integ
     SECTION("Mod modulation calculation") {
         // Mod amount = 0.7, link amount = 0.6
         // Expected modulation = 0.7 * 0.6 = 0.42
+        trackManager.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
         ModTarget target{deviceId, 2};
         trackManager.setDeviceModAmount(devicePath, 0, 0.7f);
         trackManager.setDeviceModLinkAmount(devicePath, 0, target, 0.6f);
