@@ -5,6 +5,7 @@
 #include <functional>
 #include <unordered_map>
 
+#include "../audio/RecordingNoteQueue.hpp"
 #include "../command.hpp"
 #include "../interfaces/clip_interface.hpp"
 #include "../interfaces/mixer_interface.hpp"
@@ -183,6 +184,14 @@ class TracktionEngineWrapper : public AudioEngine,
     }
     const MidiBridge* getMidiBridge() const override {
         return midiBridge_.get();
+    }
+
+    /**
+     * @brief Get active recording previews for real-time MIDI display
+     * @return Map of trackId to preview data (empty if not recording)
+     */
+    const std::unordered_map<TrackId, RecordingPreview>& getRecordingPreviews() const override {
+        return recordingPreviews_;
     }
 
     /**
@@ -402,6 +411,12 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // Track recording start time per track (populated in recordingAboutToStart)
     std::unordered_map<int, double> recordingStartTimes_;
+
+    // Real-time MIDI recording preview (outside ClipManager)
+    RecordingNoteQueue recordingNoteQueue_;
+    std::atomic<double> transportPositionForMidi_{0.0};
+    std::unordered_map<TrackId, RecordingPreview> recordingPreviews_;
+    void drainRecordingNoteQueue();
 
     // Device loading state
     bool devicesLoading_ = true;  // Start as loading until first scan completes

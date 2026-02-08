@@ -1,5 +1,6 @@
 #include "MidiBridge.hpp"
 
+#include "../core/TrackManager.hpp"
 #include "AudioBridge.hpp"
 
 namespace magda {
@@ -258,8 +259,29 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
                     }
                 }
             }
+
+            // Push note events to recording queue for real-time preview
+            if (message.isNoteOn() || message.isNoteOff()) {
+                auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+                if (recordingQueue_ && transportPosition_ && trackInfo && trackInfo->recordArmed) {
+                    RecordingNoteEvent evt;
+                    evt.trackId = trackId;
+                    evt.noteNumber = message.getNoteNumber();
+                    evt.velocity = message.getVelocity();
+                    evt.isNoteOn = message.isNoteOn();
+                    evt.transportSeconds = transportPosition_->load(std::memory_order_relaxed);
+                    recordingQueue_->push(evt);
+                    DBG("RecPreview::push: note=" << evt.noteNumber << " on=" << (int)evt.isNoteOn
+                                                  << " t=" << evt.transportSeconds);
+                }
+            }
         }
     }
+}
+
+void MidiBridge::setRecordingQueue(RecordingNoteQueue* queue, std::atomic<double>* transportPos) {
+    recordingQueue_ = queue;
+    transportPosition_ = transportPos;
 }
 
 void MidiBridge::startMonitoring(TrackId trackId) {

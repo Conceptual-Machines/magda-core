@@ -251,6 +251,7 @@ void TracktionEngineWrapper::createEditAndBridges() {
     // Create MidiBridge for MIDI device management
     midiBridge_ = std::make_unique<MidiBridge>(*engine_);
     midiBridge_->setAudioBridge(audioBridge_.get());
+    midiBridge_->setRecordingQueue(&recordingNoteQueue_, &transportPositionForMidi_);
 
     // Register as transport listener for recording callbacks
     currentEdit_->getTransport().addListener(this);
@@ -775,6 +776,9 @@ void TracktionEngineWrapper::updateTriggerState() {
     bool currentlyPlaying = isPlaying();
     double currentPosition = getCurrentPosition();
 
+    // Update transport position for MIDI recording preview
+    transportPositionForMidi_.store(currentPosition, std::memory_order_relaxed);
+
     // Detect play start (was not playing, now playing)
     if (currentlyPlaying && !wasPlaying_) {
         justStarted_ = true;
@@ -796,6 +800,11 @@ void TracktionEngineWrapper::updateTriggerState() {
     // Update AudioBridge with transport state for trigger sync
     if (audioBridge_) {
         audioBridge_->updateTransportState(currentlyPlaying, justStarted_, justLooped_);
+    }
+
+    // Drain recording note queue and grow preview clips
+    if (!recordingPreviews_.empty()) {
+        drainRecordingNoteQueue();
     }
 }
 
@@ -878,6 +887,11 @@ void TracktionEngineWrapper::onTransportStop(double returnPosition) {
         }
     }
 
+    // Final drain and clear recording previews
+    drainRecordingNoteQueue();
+    recordingPreviews_.clear();
+    recordingNoteQueue_.clear();
+
     // Clear dedup maps
     activeRecordingClips_.clear();
     recordingStartTimes_.clear();
@@ -921,6 +935,11 @@ void TracktionEngineWrapper::onTransportStopRecording() {
             }
         }
     }
+
+    // Final drain and clear recording previews
+    drainRecordingNoteQueue();
+    recordingPreviews_.clear();
+    recordingNoteQueue_.clear();
 
     activeRecordingClips_.clear();
     recordingStartTimes_.clear();
@@ -1791,6 +1810,15 @@ void TracktionEngineWrapper::recordingAboutToStart(tracktion::InputDeviceInstanc
             double startTime = getCurrentPosition();
             recordingStartTimes_[trackId] = startTime;
             DBG("  -> stored recording start time " << startTime << " for track " << trackId);
+
+            // Create recording preview (no ClipManager clip — paint-only overlay)
+            if (recordingPreviews_.count(trackId) == 0) {
+                RecordingPreview preview;
+                preview.trackId = trackId;
+                preview.startTime = startTime;
+                preview.currentLength = 0.0;
+                recordingPreviews_[trackId] = std::move(preview);
+            }
         }
     }
 }
@@ -1934,9 +1962,62 @@ void TracktionEngineWrapper::recordingFinished(
             audioBridge_->syncClipToEngine(clipId);
     }
 
+    // Clear recording preview for this track — the real clip is now visible
+    recordingPreviews_.erase(trackId);
+
     // Reset synths to prevent stuck notes
     if (trackId != INVALID_TRACK_ID) {
         audioBridge_->resetSynthsOnTrack(trackId);
+    }
+}
+
+void TracktionEngineWrapper::drainRecordingNoteQueue() {
+    double tempo = getTempo();
+    double beatsPerSecond = tempo / 60.0;
+
+    int eventsPopped = 0;
+    RecordingNoteEvent evt;
+    while (recordingNoteQueue_.pop(evt)) {
+        eventsPopped++;
+        TrackId trackId = evt.trackId;
+        auto it = recordingPreviews_.find(trackId);
+        if (it == recordingPreviews_.end())
+            continue;
+
+        auto& preview = it->second;
+
+        if (evt.isNoteOn) {
+            MidiNote mn;
+            mn.noteNumber = evt.noteNumber;
+            mn.velocity = evt.velocity;
+            mn.startBeat = (evt.transportSeconds - preview.startTime) * beatsPerSecond;
+            mn.lengthBeats = -1.0;  // Sentinel: note still held
+            preview.notes.push_back(mn);
+        } else {
+            // Note-off: find matching open note (same noteNumber, lengthBeats < 0)
+            for (int i = static_cast<int>(preview.notes.size()) - 1; i >= 0; --i) {
+                auto& n = preview.notes[static_cast<size_t>(i)];
+                if (n.noteNumber == evt.noteNumber && n.lengthBeats < 0.0) {
+                    double endBeat = (evt.transportSeconds - preview.startTime) * beatsPerSecond;
+                    n.lengthBeats = endBeat - n.startBeat;
+                    if (n.lengthBeats < 0.01)
+                        n.lengthBeats = 0.01;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (eventsPopped > 0) {
+        DBG("RecPreview::drain: popped=" << eventsPopped);
+    }
+
+    // Grow each preview's currentLength to match playhead
+    double currentPos = getCurrentPosition();
+    for (auto& [trackId, preview] : recordingPreviews_) {
+        double newLength = currentPos - preview.startTime;
+        if (newLength > preview.currentLength)
+            preview.currentLength = newLength;
     }
 }
 
