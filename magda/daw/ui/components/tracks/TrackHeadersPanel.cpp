@@ -249,14 +249,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     outputSelector->setSelectedId(1);
     outputSelector->setEnabled(audioOutEnabled);
 
-    // Send labels (create 2 by default, show dB)
-    for (int i = 0; i < 2; ++i) {
-        auto sendLabel =
-            std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
-        sendLabel->setRange(MIN_DB, MAX_DB, MIN_DB);  // -60 to +6 dB, default -inf
-        sendLabel->setValue(MIN_DB, juce::dontSendNotification);
-        sendLabels.push_back(std::move(sendLabel));
-    }
+    // Send labels — created dynamically in setupTrackHeaderWithId based on actual sends
 
     // Meter component (stereo level display)
     meterComponent = std::make_unique<TrackMeter>();
@@ -863,18 +856,31 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
         updateRoutingSelectorFromTrack(header, track);
 
         // Update send labels from track data
-        for (size_t i = 0; i < header.sendLabels.size(); ++i) {
-            if (i < track->sends.size()) {
+        if (track->sends.size() == header.sendLabels.size()) {
+            // Same count — update levels in-place (avoids destroying labels mid-drag)
+            for (size_t i = 0; i < header.sendLabels.size(); ++i) {
                 float levelDb = gainToDb(track->sends[i].level);
                 header.sendLabels[i]->setValue(levelDb, juce::dontSendNotification);
-                header.sendLabels[i]->setVisible(true);
-            } else {
-                header.sendLabels[i]->setVisible(false);
             }
+        } else {
+            // Send count changed — full rebuild
+            rebuildSendLabels(header, trackId);
         }
 
         updateTrackHeaderLayout();
         repaint();
+    }
+}
+
+void TrackHeadersPanel::trackDevicesChanged(TrackId trackId) {
+    // Sends were added or removed — rebuild send labels for this track
+    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
+        if (visibleTrackIds_[i] == trackId && i < trackHeaders.size()) {
+            rebuildSendLabels(*trackHeaders[i], trackId);
+            updateTrackHeaderLayout();
+            repaint();
+            break;
+        }
     }
 }
 
@@ -1250,32 +1256,64 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
         showAutomationMenu(trackId, header.automationButton.get());
     };
 
-    // Bind send label callbacks to TrackManager
-    const auto* track = TrackManager::getInstance().getTrack(trackId);
-    if (track) {
-        for (size_t i = 0; i < header.sendLabels.size() && i < track->sends.size(); ++i) {
-            int busIndex = track->sends[i].busIndex;
-            float levelDb = gainToDb(track->sends[i].level);
-            header.sendLabels[i]->setValue(levelDb, juce::dontSendNotification);
-            header.sendLabels[i]->setVisible(true);
-
-            header.sendLabels[i]->onValueChange = [trackId, busIndex, &header, i]() {
-                float gain = dbToGain(static_cast<float>(header.sendLabels[i]->getValue()));
-                TrackManager::getInstance().setSendLevel(trackId, busIndex, gain);
-            };
-        }
-        // Hide unused send labels
-        for (size_t i = track->sends.size(); i < header.sendLabels.size(); ++i) {
-            header.sendLabels[i]->setVisible(false);
-        }
-    }
+    // Create send labels from actual track sends
+    rebuildSendLabels(header, trackId);
 
     // Populate input options based on current type and output options
+
     populateMidiInputOptions(header.inputSelector.get());
     populateAudioOutputOptions(header.outputSelector.get(), trackId);
 
     // Set up routing callbacks (input type toggle, input selector, output selector)
     setupRoutingCallbacks(header, trackId);
+}
+
+void TrackHeadersPanel::rebuildSendLabels(TrackHeader& header, TrackId trackId) {
+    // Remove existing send labels from parent
+    for (auto& label : header.sendLabels) {
+        removeChildComponent(label.get());
+    }
+    header.sendLabels.clear();
+
+    const auto* track = TrackManager::getInstance().getTrack(trackId);
+    if (!track)
+        return;
+
+    for (const auto& send : track->sends) {
+        auto label = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
+        label->setRange(MIN_DB, MAX_DB, 0.0);
+        float levelDb = gainToDb(send.level);
+        label->setValue(levelDb, juce::dontSendNotification);
+
+        int busIndex = send.busIndex;
+        label->onValueChange = [this, trackId, busIndex, &header]() {
+            // Find the label index by matching bus index
+            const auto* track = TrackManager::getInstance().getTrack(trackId);
+            if (!track)
+                return;
+            for (size_t i = 0; i < header.sendLabels.size() && i < track->sends.size(); ++i) {
+                if (track->sends[i].busIndex == busIndex) {
+                    float newLevel = dbToGain(static_cast<float>(header.sendLabels[i]->getValue()));
+                    TrackManager::getInstance().setSendLevel(trackId, busIndex, newLevel);
+                    break;
+                }
+            }
+        };
+
+        // Right-click to remove send
+        label->onRightClick = [trackId, busIndex]() {
+            juce::PopupMenu menu;
+            menu.addItem(1, "Remove Send");
+            menu.showMenuAsync(juce::PopupMenu::Options(), [trackId, busIndex](int result) {
+                if (result == 1) {
+                    TrackManager::getInstance().removeSend(trackId, busIndex);
+                }
+            });
+        };
+
+        addChildComponent(*label);  // Hidden by default, layout will show if space allows
+        header.sendLabels.push_back(std::move(label));
+    }
 }
 
 void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& header,
@@ -1437,14 +1475,15 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 
             if (trackHeight >= 100) {
                 // LARGE LAYOUT - evenly distributed:
-                // Order: M S R, Input routing, Output routing, Volume/Pan/Sends
+                // Order: M S R, Input routing, Output routing, Volume/Pan, Sends
                 const int toggleWidth = 40;
                 const int dropdownWidth = 55;
                 const int buttonGap = 2;
                 const int contentRowHeight = rowHeight - 2;
 
-                // Always show routing rows (4 rows total: buttons, input, output, volume/pan)
-                int numRows = 4;
+                // Row count: 4 base + 1 if track has sends
+                bool hasSends = !header.sendLabels.empty();
+                int numRows = hasSends ? 5 : 4;
 
                 // Calculate even spacing between rows
                 int totalContentHeight = numRows * contentRowHeight;
@@ -1480,7 +1519,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 header.outputSelector->setVisible(true);
                 tcpArea.removeFromTop(rowGap);
 
-                // Volume, Pan, Sends row (always visible)
+                // Volume / Pan row
                 auto mixRow = tcpArea.removeFromTop(contentRowHeight);
 
                 header.volumeLabel->setBounds(mixRow.removeFromLeft(volumeLabelWidth));
@@ -1489,15 +1528,23 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 
                 header.panLabel->setBounds(mixRow.removeFromLeft(panLabelWidth));
                 header.panLabel->setVisible(true);
-                mixRow.removeFromLeft(spacing);
 
-                // Sends on same row
-                for (auto& sendLabel : header.sendLabels) {
-                    if (mixRow.getWidth() >= sendLabelWidth) {
-                        sendLabel->setBounds(mixRow.removeFromLeft(sendLabelWidth));
-                        sendLabel->setVisible(true);
-                        mixRow.removeFromLeft(spacing);
-                    } else {
+                // Sends row (only if track has sends)
+                if (hasSends) {
+                    tcpArea.removeFromTop(rowGap);
+                    auto sendRow = tcpArea.removeFromTop(contentRowHeight);
+
+                    for (auto& sendLabel : header.sendLabels) {
+                        if (sendRow.getWidth() >= sendLabelWidth) {
+                            sendLabel->setBounds(sendRow.removeFromLeft(sendLabelWidth));
+                            sendLabel->setVisible(true);
+                            sendRow.removeFromLeft(spacing);
+                        } else {
+                            sendLabel->setVisible(false);
+                        }
+                    }
+                } else {
+                    for (auto& sendLabel : header.sendLabels) {
                         sendLabel->setVisible(false);
                     }
                 }
@@ -1747,6 +1794,46 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
 
     menu.addSeparator();
 
+    // Add Send submenu (list available aux tracks)
+    {
+        juce::PopupMenu sendMenu;
+        const auto& allTracks = trackManager.getTracks();
+        int sendItemId = 500;
+        bool hasAuxOptions = false;
+
+        for (const auto& t : allTracks) {
+            if (t.type != TrackType::Aux)
+                continue;
+            // Skip aux tracks that already have a send from this track
+            bool alreadyConnected = false;
+            for (const auto& s : track->sends) {
+                if (s.destTrackId == t.id) {
+                    alreadyConnected = true;
+                    break;
+                }
+            }
+            if (!alreadyConnected) {
+                sendMenu.addItem(sendItemId + t.id, t.name);
+                hasAuxOptions = true;
+            }
+        }
+
+        if (hasAuxOptions) {
+            menu.addSubMenu("Add Send", sendMenu);
+        }
+
+        // Remove Send submenu (list current sends)
+        if (!track->sends.empty()) {
+            juce::PopupMenu removeSendMenu;
+            for (const auto& s : track->sends) {
+                const auto* destTrack = trackManager.getTrack(s.destTrackId);
+                juce::String destName = destTrack ? destTrack->name : "Unknown";
+                removeSendMenu.addItem(600 + s.busIndex, destName);
+            }
+            menu.addSubMenu("Remove Send", removeSendMenu);
+        }
+    }
+
     menu.addSeparator();
 
     // Duplicate track
@@ -1778,6 +1865,14 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                                // Duplicate track without content
                                auto cmd = std::make_unique<DuplicateTrackCommand>(trackId, false);
                                UndoManager::getInstance().executeCommand(std::move(cmd));
+                           } else if (result >= 600) {
+                               // Remove send (busIndex = result - 600)
+                               int busIndex = result - 600;
+                               TrackManager::getInstance().removeSend(trackId, busIndex);
+                           } else if (result >= 500) {
+                               // Add send (aux trackId = result - 500)
+                               TrackId auxId = result - 500;
+                               TrackManager::getInstance().addSend(trackId, auxId);
                            } else if (result >= 100) {
                                // Move to group
                                TrackId groupId = result - 100;

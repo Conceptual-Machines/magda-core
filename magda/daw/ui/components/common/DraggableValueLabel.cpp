@@ -294,6 +294,11 @@ void DraggableValueLabel::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
+    if (e.mods.isPopupMenu() && onRightClick) {
+        onRightClick();
+        return;
+    }
+
     isDragging_ = true;
     dragStartValue_ = value_;
     dragStartY_ = e.y;

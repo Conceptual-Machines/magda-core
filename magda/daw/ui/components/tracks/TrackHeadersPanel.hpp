@@ -41,6 +41,7 @@ class TrackHeadersPanel : public juce::Component,
     // TrackManagerListener
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
+    void trackDevicesChanged(magda::TrackId trackId) override;
 
     // ViewModeListener
     void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
@@ -181,6 +182,7 @@ class TrackHeadersPanel : public juce::Component,
     // Helper methods
     void setupTrackHeader(TrackHeader& header, int trackIndex);
     void setupTrackHeaderWithId(TrackHeader& header, int trackId);
+    void rebuildSendLabels(TrackHeader& header, TrackId trackId);
     void paintTrackHeader(juce::Graphics& g, const TrackHeader& header, juce::Rectangle<int> area,
                           bool isSelected);
     void paintResizeHandle(juce::Graphics& g, juce::Rectangle<int> area);
