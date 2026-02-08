@@ -204,6 +204,8 @@ set(DAW_UI_SOURCES
     ui/panels/content/PresetBrowserContent.cpp
     ui/panels/content/EmptyContent.cpp
     ui/panels/content/InspectorContent.cpp
+    # Inspector refactoring (decomposition into specialized inspectors)
+    ui/panels/content/inspector/TrackInspector.cpp
     ui/panels/content/AIChatConsoleContent.cpp
     ui/panels/content/ScriptingConsoleContent.cpp
     ui/panels/content/TrackChainContent.cpp
@@ -349,6 +351,9 @@ set(DAW_HEADERS
     ui/panels/content/PresetBrowserContent.hpp
     ui/panels/content/EmptyContent.hpp
     ui/panels/content/InspectorContent.hpp
+    # Inspector refactoring (decomposition into specialized inspectors)
+    ui/panels/content/inspector/BaseInspector.hpp
+    ui/panels/content/inspector/TrackInspector.hpp
     ui/panels/content/AIChatConsoleContent.hpp
     ui/panels/content/ScriptingConsoleContent.hpp
     ui/panels/content/TrackChainContent.hpp
