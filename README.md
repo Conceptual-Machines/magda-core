@@ -7,6 +7,7 @@
   <a href="https://github.com/Conceptual-Machines/magda-core/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg" alt="Platform">
   <img src="https://img.shields.io/badge/C%2B%2B-20-blue.svg" alt="C++20">
+  <a href="https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=Conceptual-Machines/magda-core"><img src="https://img.shields.io/badge/Open_in-Codespaces-blue?logo=github" alt="Open in GitHub Codespaces"></a>
 </p>
 
 <p align="center">
