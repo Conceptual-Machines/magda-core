@@ -2,6 +2,7 @@
 #include <juce_events/juce_events.h>
 
 #include "SharedTestEngine.hpp"
+#include "magda/daw/audio/AudioBridge.hpp"
 
 using namespace magda;
 
@@ -18,6 +19,7 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
 
     void runTest() override {
         testConstants();
+        testHeadlessDetection();
         testTransportOperations();
         testDeviceLoadingState();
         testTriggerStateTracking();
@@ -47,6 +49,38 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         expect(TracktionEngineWrapper::AUDIO_DEVICE_CHECK_THRESHOLD <=
                    TracktionEngineWrapper::AUDIO_DEVICE_CHECK_RETRIES + 1,
                "Threshold should not exceed retries + 1");
+    }
+
+    void testHeadlessDetection() {
+        beginTest("OS type bitmask detection for headless mode");
+
+        // Verify JUCE OS type uses bitmask correctly (the bug was using == instead of &)
+        auto osType = juce::SystemStats::getOperatingSystemType();
+        bool isMacOS = (osType & juce::SystemStats::MacOSX) != 0;
+        bool isWindows = (osType & juce::SystemStats::Windows) != 0;
+
+#if JUCE_MAC
+        expect(isMacOS, "MacOS should be detected via bitmask on Mac");
+        expect(!isWindows, "Windows should not be detected on Mac");
+#elif JUCE_WINDOWS
+        expect(isWindows, "Windows should be detected via bitmask on Windows");
+        expect(!isMacOS, "MacOS should not be detected on Windows");
+#endif
+
+        // On desktop platforms, PluginWindowManager should be created
+        auto& wrapper = magda::test::getSharedEngine();
+#if JUCE_MAC || JUCE_WINDOWS
+        expect(wrapper.getPluginWindowManager() != nullptr,
+               "PluginWindowManager must be created on desktop platforms");
+#endif
+
+        // Verify AudioBridge has the window manager wired
+        auto* bridge = wrapper.getAudioBridge();
+        if (bridge && wrapper.getPluginWindowManager() != nullptr) {
+            // togglePluginWindow with invalid device should return false but not crash
+            bool result = bridge->togglePluginWindow(9999);
+            expect(!result, "togglePluginWindow with invalid device should return false");
+        }
     }
 
     void testTransportOperations() {
