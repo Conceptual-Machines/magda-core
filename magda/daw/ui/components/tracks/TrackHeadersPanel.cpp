@@ -809,12 +809,9 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
             header.inputTypeSelector->setInputType(InputTypeSelector::InputType::Audio);
             int currentId = header.inputSelector->getSelectedId();
             populateAudioInputOptions(header.inputSelector.get());
-            int firstChannel = header.inputSelector->getFirstChannelOptionId();
-            DBG("updateRoutingSelectorFromTrack: audio currentId="
-                << currentId << " firstChannel=" << firstChannel
-                << " selectedIdAfterPopulate=" << header.inputSelector->getSelectedId());
             // Preserve current channel selection if valid, otherwise default to first channel
             if (currentId < 10) {
+                int firstChannel = header.inputSelector->getFirstChannelOptionId();
                 header.inputSelector->setSelectedId(firstChannel > 0 ? firstChannel : 1);
             }
             header.inputSelector->setEnabled(true);
