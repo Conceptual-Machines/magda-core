@@ -34,6 +34,29 @@ InspectorContainer::~InspectorContainer() {
     magda::SelectionManager::getInstance().removeListener(this);
 }
 
+PanelContentType InspectorContainer::getContentType() const {
+    return PanelContentType::Inspector;
+}
+
+PanelContentInfo InspectorContainer::getContentInfo() const {
+    return {PanelContentType::Inspector, "Inspector", "View and edit properties of selected items",
+            "Inspector"};
+}
+
+void InspectorContainer::onActivated() {
+    // Activate current inspector when container is shown
+    if (currentInspector_) {
+        currentInspector_->onActivated();
+    }
+}
+
+void InspectorContainer::onDeactivated() {
+    // Deactivate current inspector when container is hidden
+    if (currentInspector_) {
+        currentInspector_->onDeactivated();
+    }
+}
+
 void InspectorContainer::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getPanelBackgroundColour());
 }

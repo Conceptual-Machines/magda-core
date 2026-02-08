@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "../PanelContent.hpp"
 #include "BaseInspector.hpp"
 #include "core/SelectionManager.hpp"
 
@@ -24,10 +25,16 @@ namespace magda::daw::ui {
  * This architecture keeps each inspector focused (~200-1000 LOC) and
  * makes it easy to add new inspector types in the future.
  */
-class InspectorContainer : public juce::Component, public magda::SelectionManagerListener {
+class InspectorContainer : public PanelContent, public magda::SelectionManagerListener {
   public:
     InspectorContainer();
     ~InspectorContainer() override;
+
+    // PanelContent interface
+    PanelContentType getContentType() const override;
+    PanelContentInfo getContentInfo() const override;
+    void onActivated() override;
+    void onDeactivated() override;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
