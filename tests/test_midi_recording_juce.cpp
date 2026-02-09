@@ -268,7 +268,7 @@ class StartRecordEventTest final : public juce::UnitTest {
     }
 
     void testPlayWithArmedTrackStartsRecording() {
-        beginTest("StartPlaybackEvent with armed track starts recording");
+        beginTest("StartRecordEvent with armed track starts recording and playback");
 
         TimelineController controller;
 
@@ -278,7 +278,7 @@ class StartRecordEventTest final : public juce::UnitTest {
         tm.setTrackRecordArmed(trackId, true);
 
         controller.dispatch(SetEditPositionEvent{2.0});
-        controller.dispatch(StartPlaybackEvent{});
+        controller.dispatch(StartRecordEvent{});
 
         auto& state = controller.getState();
         expect(state.playhead.isPlaying, "Should be playing");
@@ -315,7 +315,7 @@ class StartRecordEventTest final : public juce::UnitTest {
         tm.setSelectedTrack(trackId);
         tm.setTrackRecordArmed(trackId, true);
 
-        controller.dispatch(StartPlaybackEvent{});
+        controller.dispatch(StartRecordEvent{});
         expect(controller.getState().playhead.isRecording);
 
         controller.dispatch(StopPlaybackEvent{});

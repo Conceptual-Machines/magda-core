@@ -49,5 +49,8 @@ int main(int argc, char* argv[]) {
 
     std::cout << "========================================\n";
 
-    return numFailures > 0 ? 1 : 0;
+    // Use _exit() to avoid SIGSEGV during static destruction of TE/JUCE singletons.
+    // All test results have already been collected and printed above.
+    int exitCode = numFailures > 0 ? 1 : 0;
+    _exit(exitCode);
 }

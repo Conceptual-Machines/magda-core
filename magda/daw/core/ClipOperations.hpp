@@ -329,7 +329,7 @@ class ClipOperations {
      */
     static inline std::pair<double, double> getAutoTempoBeatRange(const ClipInfo& clip,
                                                                   double bpm) {
-        if (!clip.autoTempo) {
+        if (!clip.autoTempo && !clip.warpEnabled) {
             return {0.0, 0.0};
         }
 
