@@ -33,9 +33,16 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
 
     // Set default routing
     track.audioOutputDevice = "master";  // Audio always routes to master
-    track.midiInputDevice = "all";       // MIDI listens to all inputs
     track.audioInputDevice = "";         // Audio input disabled by default (enable via UI)
     // midiOutputDevice left empty - requires specific device selection
+
+    // Assign aux bus index for Aux tracks; aux tracks never receive MIDI
+    if (type == TrackType::Aux) {
+        track.auxBusIndex = nextAuxBusIndex_++;
+        track.midiInputDevice = "";  // Aux tracks don't receive MIDI
+    } else {
+        track.midiInputDevice = "all";  // MIDI listens to all inputs
+    }
 
     TrackId trackId = track.id;
     tracks_.push_back(track);
@@ -45,16 +52,15 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
                           << ")");
 
     // Initialize MIDI routing for this track if audioEngine is available
-    if (audioEngine_) {
+    // Aux tracks never receive MIDI; other tracks rely on selection-based routing
+    if (audioEngine_ && type != TrackType::Aux) {
         if (auto* midiBridge = audioEngine_->getMidiBridge()) {
             midiBridge->setTrackMidiInput(trackId, "all");
             midiBridge->startMonitoring(trackId);
         }
-        // Route MIDI inputs at the TE level (creates InputDeviceInstance destinations
-        // needed for recording and live monitoring through synth plugins)
-        if (auto* audioBridge = audioEngine_->getAudioBridge()) {
-            audioBridge->setTrackMidiInput(trackId, "all");
-        }
+        // Don't auto-route MIDI at the TE level for every new track.
+        // AudioBridge::updateMidiRoutingForSelection() will handle this
+        // based on whether the track is selected or record-armed.
     }
 
     return trackId;
@@ -203,6 +209,10 @@ void TrackManager::addTrackToGroup(TrackId trackId, TrackId groupId) {
     track->parentId = groupId;
     group->childIds.push_back(trackId);
 
+    // Auto-route child's audio output to the group track
+    track->audioOutputDevice = "track:" + juce::String(groupId);
+    notifyTrackPropertyChanged(trackId);
+
     notifyTracksChanged();
     DBG("Added track " << track->name << " to group " << group->name);
 }
@@ -218,6 +228,11 @@ void TrackManager::removeTrackFromGroup(TrackId trackId) {
     }
 
     track->parentId = INVALID_TRACK_ID;
+
+    // Revert audio output to master when removed from group
+    track->audioOutputDevice = "master";
+    notifyTrackPropertyChanged(trackId);
+
     notifyTracksChanged();
 }
 
@@ -368,17 +383,17 @@ void TrackManager::setAudioEngine(AudioEngine* audioEngine) {
     audioEngine_ = audioEngine;
 
     // Sync existing tracks' MIDI routing (in case tracks were created before engine was set)
+    // Only set up MidiBridge monitoring; TE-level MIDI routing is handled by
+    // AudioBridge::updateMidiRoutingForSelection() based on selection/arm state.
     if (audioEngine_) {
         for (const auto& track : tracks_) {
-            if (!track.midiInputDevice.isEmpty()) {
+            if (!track.midiInputDevice.isEmpty() && track.type != TrackType::Aux) {
                 if (auto* midiBridge = audioEngine_->getMidiBridge()) {
                     midiBridge->setTrackMidiInput(track.id, track.midiInputDevice);
                     midiBridge->startMonitoring(track.id);
                 }
-                if (auto* audioBridge = audioEngine_->getAudioBridge()) {
-                    audioBridge->setTrackMidiInput(track.id, track.midiInputDevice);
-                }
-                DBG("Synced MIDI routing for track " << track.id << ": " << track.midiInputDevice);
+                DBG("Synced MIDI monitoring for track " << track.id << ": "
+                                                        << track.midiInputDevice);
             }
         }
     }
@@ -411,6 +426,12 @@ void TrackManager::previewNote(TrackId trackId, int noteNumber, int velocity, bo
 void TrackManager::setTrackMidiInput(TrackId trackId, const juce::String& deviceId) {
     auto* track = getTrack(trackId);
     if (!track) {
+        return;
+    }
+
+    // Aux tracks never receive MIDI
+    if (track->type == TrackType::Aux) {
+        DBG("Cannot set MIDI input on aux track " << trackId);
         return;
     }
 
@@ -521,6 +542,66 @@ void TrackManager::setTrackAudioOutput(TrackId trackId, const juce::String& rout
 }
 
 // ============================================================================
+// Send Management
+// ============================================================================
+
+void TrackManager::addSend(TrackId sourceTrackId, TrackId destAuxTrackId) {
+    auto* source = getTrack(sourceTrackId);
+    auto* dest = getTrack(destAuxTrackId);
+    if (!source || !dest || dest->type != TrackType::Aux || dest->auxBusIndex < 0) {
+        DBG("addSend failed: invalid source or destination");
+        return;
+    }
+
+    // Check if send already exists
+    for (const auto& send : source->sends) {
+        if (send.busIndex == dest->auxBusIndex) {
+            return;  // Already exists
+        }
+    }
+
+    SendInfo send;
+    send.busIndex = dest->auxBusIndex;
+    send.level = 1.0f;
+    send.preFader = false;
+    send.destTrackId = destAuxTrackId;
+    source->sends.push_back(send);
+
+    notifyTrackDevicesChanged(sourceTrackId);
+    DBG("Added send from track " << sourceTrackId << " to aux track " << destAuxTrackId << " (bus "
+                                 << dest->auxBusIndex << ")");
+}
+
+void TrackManager::removeSend(TrackId sourceTrackId, int busIndex) {
+    auto* source = getTrack(sourceTrackId);
+    if (!source) {
+        return;
+    }
+
+    auto& sends = source->sends;
+    sends.erase(std::remove_if(sends.begin(), sends.end(),
+                               [busIndex](const SendInfo& s) { return s.busIndex == busIndex; }),
+                sends.end());
+
+    notifyTrackDevicesChanged(sourceTrackId);
+}
+
+void TrackManager::setSendLevel(TrackId sourceTrackId, int busIndex, float level) {
+    auto* source = getTrack(sourceTrackId);
+    if (!source) {
+        return;
+    }
+
+    for (auto& send : source->sends) {
+        if (send.busIndex == busIndex) {
+            send.level = level;
+            notifyTrackPropertyChanged(sourceTrackId);
+            return;
+        }
+    }
+}
+
+// ============================================================================
 // Signal Chain Management (Unified)
 // ============================================================================
 
@@ -558,6 +639,10 @@ void TrackManager::moveNode(TrackId trackId, int fromIndex, int toIndex) {
 
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device) {
     if (auto* track = getTrack(trackId)) {
+        if (track->type == TrackType::Aux && device.isInstrument) {
+            DBG("Cannot add instrument plugin to aux track");
+            return INVALID_DEVICE_ID;
+        }
         DeviceInfo newDevice = device;
         newDevice.id = nextDeviceId_++;
         track->chainElements.push_back(makeDeviceElement(newDevice));
@@ -572,6 +657,10 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device,
                                         int insertIndex) {
     if (auto* track = getTrack(trackId)) {
+        if (track->type == TrackType::Aux && device.isInstrument) {
+            DBG("Cannot add instrument plugin to aux track");
+            return INVALID_DEVICE_ID;
+        }
         DeviceInfo newDevice = device;
         newDevice.id = nextDeviceId_++;
 
@@ -1133,6 +1222,7 @@ void TrackManager::clearAllTracks() {
     nextDeviceId_ = 1;
     nextRackId_ = 1;
     nextChainId_ = 1;
+    nextAuxBusIndex_ = 0;
     notifyTracksChanged();
 }
 
@@ -1165,9 +1255,15 @@ void TrackManager::refreshIdCountersFromTracks() {
         }
     };
 
+    int maxAuxBusIndex = -1;
+
     // Scan all tracks
     for (const auto& track : tracks_) {
         maxTrackId = std::max(maxTrackId, track.id);
+
+        if (track.auxBusIndex >= 0) {
+            maxAuxBusIndex = std::max(maxAuxBusIndex, track.auxBusIndex);
+        }
 
         // Scan the track's chain elements
         for (const auto& element : track.chainElements) {
@@ -1180,6 +1276,7 @@ void TrackManager::refreshIdCountersFromTracks() {
     nextDeviceId_ = maxDeviceId + 1;
     nextRackId_ = maxRackId + 1;
     nextChainId_ = maxChainId + 1;
+    nextAuxBusIndex_ = maxAuxBusIndex + 1;
 }
 
 // ============================================================================

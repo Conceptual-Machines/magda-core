@@ -17,6 +17,7 @@ constexpr MacroId INVALID_MACRO_ID = -1;
 // Track identifiers
 using TrackId = int;
 constexpr TrackId INVALID_TRACK_ID = -1;
+constexpr TrackId MASTER_TRACK_ID = -2;  // Well-known ID for master track selection
 
 // Rack identifiers
 using RackId = int;

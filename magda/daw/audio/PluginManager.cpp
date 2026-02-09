@@ -18,7 +18,8 @@ PluginManager::PluginManager(te::Engine& engine, te::Edit& edit, TrackController
       edit_(edit),
       trackController_(trackController),
       pluginWindowBridge_(pluginWindowBridge),
-      transportState_(transportState) {}
+      transportState_(transportState),
+      instrumentRackManager_(edit) {}
 
 // =============================================================================
 // Plugin/Device Lookup
@@ -71,18 +72,36 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     {
         juce::ScopedLock lock(pluginLock_);
         for (const auto& [deviceId, plugin] : deviceToPlugin_) {
-            auto pluginIt = pluginToDevice_.find(plugin.get());
-            if (pluginIt != pluginToDevice_.end()) {
-                // Check if this plugin belongs to this track
-                auto* owner = plugin->getOwnerTrack();
-                if (owner == teTrack) {
-                    // Check if device still exists in MAGDA
-                    bool found = std::find(magdaDevices.begin(), magdaDevices.end(), deviceId) !=
-                                 magdaDevices.end();
-                    if (!found) {
-                        toRemove.push_back(deviceId);
-                        pluginsToDelete.push_back(plugin);
+            // Check if this plugin belongs to this track.
+            // For regular plugins: check ownerTrack directly
+            // For wrapped instruments: the inner plugin lives inside a rack,
+            // so we check if the wrapper rack instance is on this track
+            bool belongsToTrack = false;
+            auto* owner = plugin->getOwnerTrack();
+
+            if (owner == teTrack) {
+                belongsToTrack = true;
+            } else if (instrumentRackManager_.getInnerPlugin(deviceId) == plugin.get()) {
+                // This is a wrapped instrument — check if we created it for this track
+                // by scanning the track's plugin list for our rack instance
+                for (int i = 0; i < teTrack->pluginList.size(); ++i) {
+                    if (instrumentRackManager_.isWrapperRack(teTrack->pluginList[i])) {
+                        if (instrumentRackManager_.getDeviceIdForRack(teTrack->pluginList[i]) ==
+                            deviceId) {
+                            belongsToTrack = true;
+                            break;
+                        }
                     }
+                }
+            }
+
+            if (belongsToTrack) {
+                // Check if device still exists in MAGDA
+                bool found = std::find(magdaDevices.begin(), magdaDevices.end(), deviceId) !=
+                             magdaDevices.end();
+                if (!found) {
+                    toRemove.push_back(deviceId);
+                    pluginsToDelete.push_back(plugin);
                 }
             }
         }
@@ -101,7 +120,11 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     // Delete plugins outside lock to avoid blocking other threads
     for (size_t i = 0; i < toRemove.size(); ++i) {
         pluginWindowBridge_.closeWindowsForDevice(toRemove[i]);
-        if (pluginsToDelete[i]) {
+
+        // If this was a wrapped instrument, unwrap it (removes rack + rack type)
+        if (instrumentRackManager_.getInnerPlugin(toRemove[i]) != nullptr) {
+            instrumentRackManager_.unwrap(toRemove[i]);
+        } else if (pluginsToDelete[i]) {
             pluginsToDelete[i]->deleteFromParent();
         }
     }
@@ -118,6 +141,83 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                 if (plugin) {
                     deviceToPlugin_[device.id] = plugin;
                     pluginToDevice_[plugin.get()] = device.id;
+                }
+            }
+        }
+    }
+
+    // Aux track: ensure AuxReturnPlugin exists with correct bus number
+    if (trackInfo->type == TrackType::Aux && trackInfo->auxBusIndex >= 0) {
+        bool hasReturn = false;
+        for (int i = 0; i < teTrack->pluginList.size(); ++i) {
+            if (dynamic_cast<te::AuxReturnPlugin*>(teTrack->pluginList[i])) {
+                hasReturn = true;
+                break;
+            }
+        }
+        if (!hasReturn) {
+            auto ret = edit_.getPluginCache().createNewPlugin(te::AuxReturnPlugin::xmlTypeName, {});
+            if (ret) {
+                if (auto* auxRet = dynamic_cast<te::AuxReturnPlugin*>(ret.get())) {
+                    auxRet->busNumber = trackInfo->auxBusIndex;
+                }
+                teTrack->pluginList.insertPlugin(ret, 0, nullptr);
+            }
+        }
+    }
+
+    // Sync sends: ensure AuxSendPlugins match TrackInfo::sends
+    {
+        // Collect existing AuxSendPlugin bus numbers
+        std::vector<int> existingSendBuses;
+        for (int i = 0; i < teTrack->pluginList.size(); ++i) {
+            if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(teTrack->pluginList[i])) {
+                existingSendBuses.push_back(auxSend->getBusNumber());
+            }
+        }
+
+        // Collect desired bus numbers from TrackInfo
+        std::vector<int> desiredBuses;
+        for (const auto& send : trackInfo->sends) {
+            desiredBuses.push_back(send.busIndex);
+        }
+
+        // Remove AuxSendPlugins that are no longer needed
+        for (int i = teTrack->pluginList.size() - 1; i >= 0; --i) {
+            if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(teTrack->pluginList[i])) {
+                int bus = auxSend->getBusNumber();
+                if (std::find(desiredBuses.begin(), desiredBuses.end(), bus) ==
+                    desiredBuses.end()) {
+                    auxSend->deleteFromParent();
+                }
+            }
+        }
+
+        // Add missing AuxSendPlugins
+        for (const auto& send : trackInfo->sends) {
+            bool exists = std::find(existingSendBuses.begin(), existingSendBuses.end(),
+                                    send.busIndex) != existingSendBuses.end();
+            if (!exists) {
+                auto sendPlugin =
+                    edit_.getPluginCache().createNewPlugin(te::AuxSendPlugin::xmlTypeName, {});
+                if (sendPlugin) {
+                    if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(sendPlugin.get())) {
+                        auxSend->busNumber = send.busIndex;
+                        auxSend->setGainDb(juce::Decibels::gainToDecibels(send.level));
+                    }
+                    teTrack->pluginList.insertPlugin(sendPlugin, -1, nullptr);
+                }
+            }
+        }
+
+        // Update send levels for existing sends
+        for (const auto& send : trackInfo->sends) {
+            for (int i = 0; i < teTrack->pluginList.size(); ++i) {
+                if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(teTrack->pluginList[i])) {
+                    if (auxSend->getBusNumber() == send.busIndex) {
+                        auxSend->setGainDb(juce::Decibels::gainToDecibels(send.level));
+                        break;
+                    }
                 }
             }
         }
@@ -361,6 +461,7 @@ void PluginManager::ensureVolumePluginPosition(te::AudioTrack* track) const {
 
 void PluginManager::clearAllMappings() {
     juce::ScopedLock lock(pluginLock_);
+    instrumentRackManager_.clear();
     deviceToPlugin_.clear();
     pluginToDevice_.clear();
     deviceProcessors_.clear();
@@ -566,6 +667,34 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
 
         // Apply device state
         plugin->setEnabled(!device.bypassed);
+
+        // Wrap instruments in a RackType with audio passthrough so both synth
+        // output and audio clips on the same track are summed together
+        if (device.isInstrument) {
+            auto rackPlugin = instrumentRackManager_.wrapInstrument(plugin);
+            if (rackPlugin) {
+                // Record the wrapping so we can look up the inner plugin later
+                auto* rackInstance = dynamic_cast<te::RackInstance*>(rackPlugin.get());
+                te::RackType::Ptr rackType = rackInstance ? rackInstance->type : nullptr;
+                instrumentRackManager_.recordWrapping(device.id, rackType, plugin, rackPlugin);
+
+                // Insert the rack instance on the track
+                // The raw plugin is already inside the rack (added by wrapInstrument)
+                track->pluginList.insertPlugin(rackPlugin, -1, nullptr);
+
+                std::cout << "Loaded instrument device " << device.id << " (" << device.name
+                          << ") wrapped in rack" << std::endl;
+
+                // Return the INNER plugin (not the rack) so that deviceToPlugin_
+                // maps to the actual synth for parameter access and window opening
+                return plugin;
+            }
+            // Fallback: if wrapping failed, the plugin was already removed from the
+            // track by wrapInstrument, so re-insert it directly
+            track->pluginList.insertPlugin(plugin, -1, nullptr);
+            std::cerr << "InstrumentRackManager: Wrapping failed for " << device.name
+                      << ", using raw plugin" << std::endl;
+        }
 
         // For tone generators (always transport-synced), sync initial state with transport
         if (auto* toneProc = deviceProcessors_[device.id].get()) {

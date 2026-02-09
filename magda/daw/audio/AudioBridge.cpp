@@ -101,6 +101,20 @@ void AudioBridge::trackPropertyChanged(int trackId) {
             setTrackVolume(trackId, trackInfo->volume);
             setTrackPan(trackId, trackInfo->pan);
 
+            // Sync audio output routing
+            trackController_.setTrackAudioOutput(trackId, trackInfo->audioOutputDevice);
+
+            // Sync send levels to AuxSendPlugins
+            for (const auto& send : trackInfo->sends) {
+                if (auto* auxSend = track->getAuxSendPlugin(send.busIndex)) {
+                    auxSend->setGainDb(juce::Decibels::gainToDecibels(send.level));
+                }
+            }
+
+            // Update MIDI routing when record arm changes
+            // (armed tracks should receive MIDI even when not selected)
+            updateMidiRoutingForSelection();
+
             // Sync recordArmed state to InputDeviceInstance
             auto* playbackContext = edit_.getCurrentPlaybackContext();
             if (playbackContext) {
@@ -124,6 +138,56 @@ void AudioBridge::trackPropertyChanged(int trackId) {
             }
         }
     }
+}
+
+void AudioBridge::trackSelectionChanged(TrackId newTrackId) {
+    if (newTrackId == lastSelectedTrack_)
+        return;
+    lastSelectedTrack_ = newTrackId;
+    updateMidiRoutingForSelection();
+}
+
+void AudioBridge::updateMidiRoutingForSelection() {
+    auto& tm = TrackManager::getInstance();
+    const auto& tracks = tm.getTracks();
+
+    bool anyChanged = false;
+
+    for (const auto& track : tracks) {
+        // Aux tracks never receive MIDI
+        if (track.type == TrackType::Aux)
+            continue;
+
+        bool shouldReceiveMidi = (track.id == lastSelectedTrack_) || track.recordArmed;
+
+        // Check if this track has an instrument (only route MIDI to tracks with instruments)
+        bool hasInstrument = false;
+        for (const auto& element : track.chainElements) {
+            if (std::holds_alternative<DeviceInfo>(element)) {
+                if (std::get<DeviceInfo>(element).isInstrument) {
+                    hasInstrument = true;
+                    break;
+                }
+            }
+        }
+
+        if (!hasInstrument)
+            continue;
+
+        // Check current MIDI routing state
+        juce::String currentMidi = getTrackMidiInput(track.id);
+        bool currentlyRouted = currentMidi.isNotEmpty();
+
+        if (shouldReceiveMidi && !currentlyRouted) {
+            setTrackMidiInput(track.id, "all");
+            anyChanged = true;
+        } else if (!shouldReceiveMidi && currentlyRouted) {
+            setTrackMidiInput(track.id, "");
+            anyChanged = true;
+        }
+    }
+
+    // setTrackMidiInput already handles reallocate() internally
 }
 
 void AudioBridge::trackDevicesChanged(TrackId trackId) {
@@ -326,16 +390,26 @@ void AudioBridge::syncAll() {
 void AudioBridge::syncTrackPlugins(TrackId trackId) {
     pluginManager_.syncTrackPlugins(trackId);
 
-    // Auto-route MIDI for instruments (coordination logic)
+    // Auto-route MIDI for instruments only if this track is selected or armed
+    // (Aux tracks never receive MIDI)
     auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
-    if (trackInfo) {
+    if (trackInfo && trackInfo->type != TrackType::Aux) {
+        bool hasInstrument = false;
         for (const auto& element : trackInfo->chainElements) {
             if (std::holds_alternative<DeviceInfo>(element)) {
                 const auto& device = std::get<DeviceInfo>(element);
                 if (device.isInstrument) {
-                    setTrackMidiInput(trackId, "all");
+                    hasInstrument = true;
                     break;
                 }
+            }
+        }
+
+        if (hasInstrument) {
+            bool isSelected = (trackId == lastSelectedTrack_);
+            bool isArmed = trackInfo->recordArmed;
+            if (isSelected || isArmed) {
+                setTrackMidiInput(trackId, "all");
             }
         }
     }

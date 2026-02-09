@@ -61,6 +61,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
 
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
+    void trackSelectionChanged(TrackId trackId) override;
     void trackDevicesChanged(TrackId trackId) override;
     void devicePropertyChanged(DeviceId deviceId) override;
     void deviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue) override;
@@ -635,6 +636,10 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Synchronization
     mutable juce::CriticalSection
         mappingLock_;  // Protects mapping updates (mutable for const getters)
+
+    // Selection-based MIDI routing
+    TrackId lastSelectedTrack_ = INVALID_TRACK_ID;
+    void updateMidiRoutingForSelection();
 
     // Pending MIDI routes (applied when playback context becomes available)
     std::vector<std::pair<TrackId, juce::String>> pendingMidiRoutes_;

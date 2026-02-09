@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <map>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -40,6 +41,7 @@ class TrackHeadersPanel : public juce::Component,
     // TrackManagerListener
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
+    void trackDevicesChanged(magda::TrackId trackId) override;
 
     // ViewModeListener
     void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
@@ -118,9 +120,11 @@ class TrackHeadersPanel : public juce::Component,
         std::unique_ptr<DraggableValueLabel> panLabel;         // Pan as draggable L/C/R label
         std::unique_ptr<juce::TextButton> collapseButton;      // For groups
         std::unique_ptr<SvgButton> automationButton;           // Show automation lanes
-        std::unique_ptr<InputTypeSelector> inputTypeSelector;  // Audio/MIDI toggle
-        std::unique_ptr<RoutingSelector> inputSelector;        // Unified input (audio OR midi)
-        std::unique_ptr<RoutingSelector> outputSelector;       // Audio output (always master)
+        std::unique_ptr<InputTypeSelector> inputTypeSelector;  // Hidden, kept for internal state
+        std::unique_ptr<RoutingSelector> audioInputSelector;   // Audio input
+        std::unique_ptr<RoutingSelector> inputSelector;        // MIDI input
+        std::unique_ptr<RoutingSelector> outputSelector;       // Audio output
+        std::unique_ptr<RoutingSelector> midiOutputSelector;   // MIDI output
         std::vector<std::unique_ptr<DraggableValueLabel>> sendLabels;  // Send level labels
         std::unique_ptr<juce::Component> meterComponent;               // Peak meter display
         std::unique_ptr<juce::Component> midiIndicator;                // MIDI activity indicator
@@ -165,10 +169,15 @@ class TrackHeadersPanel : public juce::Component,
 
     // Routing device management
     void populateAudioInputOptions(RoutingSelector* selector);
-    void populateAudioOutputOptions(RoutingSelector* selector);
+    void populateAudioOutputOptions(RoutingSelector* selector,
+                                    TrackId currentTrackId = INVALID_TRACK_ID);
     void populateMidiInputOptions(RoutingSelector* selector);
+    void populateMidiOutputOptions(RoutingSelector* selector);
     void setupRoutingCallbacks(TrackHeader& header, TrackId trackId);
     void updateRoutingSelectorFromTrack(TrackHeader& header, const TrackInfo* track);
+
+    // Output routing: option ID → TrackId mapping for group/aux destinations
+    std::map<int, TrackId> outputTrackMapping_;
 
     // Refresh all input selectors (call after MIDI device scan completes)
     void refreshInputSelectors();
@@ -176,6 +185,7 @@ class TrackHeadersPanel : public juce::Component,
     // Helper methods
     void setupTrackHeader(TrackHeader& header, int trackIndex);
     void setupTrackHeaderWithId(TrackHeader& header, int trackId);
+    void rebuildSendLabels(TrackHeader& header, TrackId trackId);
     void paintTrackHeader(juce::Graphics& g, const TrackHeader& header, juce::Rectangle<int> area,
                           bool isSelected);
     void paintResizeHandle(juce::Graphics& g, juce::Rectangle<int> area);

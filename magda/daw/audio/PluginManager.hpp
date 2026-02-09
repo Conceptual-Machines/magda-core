@@ -10,6 +10,7 @@
 #include "../core/DeviceInfo.hpp"
 #include "../core/TypeIds.hpp"
 #include "DeviceProcessor.hpp"
+#include "InstrumentRackManager.hpp"
 
 namespace magda {
 
@@ -175,6 +176,9 @@ class PluginManager {
     TrackController& trackController_;
     PluginWindowBridge& pluginWindowBridge_;
     TransportStateManager& transportState_;
+
+    // Instrument rack wrapping (synth + audio passthrough)
+    InstrumentRackManager instrumentRackManager_;
 
     // Plugin/device mappings and processors
     std::map<DeviceId, te::Plugin::Ptr> deviceToPlugin_;

@@ -160,6 +160,7 @@ set(DAW_CORE_SOURCES
     # Phase 3 refactoring: Core controllers
     audio/TrackController.cpp
     audio/PluginManager.cpp
+    audio/InstrumentRackManager.cpp
     audio/ClipSynchronizer.cpp
     # TODO: Custom synth library (SimpleSynthPlugin.cpp) - for future implementation
     # Project serialization
@@ -402,6 +403,7 @@ set(DAW_HEADERS
     # Phase 3 refactoring: Core controllers
     audio/TrackController.hpp
     audio/PluginManager.hpp
+    audio/InstrumentRackManager.hpp
     audio/ClipSynchronizer.hpp
     # Views
     ui/views/MainView.hpp

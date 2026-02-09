@@ -128,6 +128,9 @@ class DraggableValueLabel : public juce::Component {
     // Callback when value changes
     std::function<void()> onValueChange;
 
+    // Callback for right-click (e.g. context menu)
+    std::function<void()> onRightClick;
+
     // Component overrides
     void paint(juce::Graphics& g) override;
     void mouseDown(const juce::MouseEvent& e) override;

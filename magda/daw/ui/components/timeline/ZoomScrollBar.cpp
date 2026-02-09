@@ -10,20 +10,15 @@ ZoomScrollBar::ZoomScrollBar(Orientation orientation) : orientation(orientation)
 }
 
 void ZoomScrollBar::paint(juce::Graphics& g) {
-    // Fade entire bar based on expand amount
-    float alpha = expandAmount_;
-    if (alpha < 0.01f)
-        return;  // Fully hidden, skip drawing
-
     auto trackBounds = getTrackBounds();
     auto thumbBounds = getThumbBounds();
 
     // Draw track background
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(alpha));
+    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
     g.fillRoundedRectangle(trackBounds.toFloat(), 3.0f);
 
     // Draw track border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(alpha));
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawRoundedRectangle(trackBounds.toFloat(), 3.0f, 1.0f);
 
     // Draw thumb
@@ -31,17 +26,17 @@ void ZoomScrollBar::paint(juce::Graphics& g) {
     if (dragMode != DragMode::None) {
         thumbColour = thumbColour.brighter(0.2f);
     }
-    g.setColour(thumbColour.withAlpha(0.6f * alpha));
+    g.setColour(thumbColour.withAlpha(0.6f));
     g.fillRoundedRectangle(thumbBounds.toFloat(), 3.0f);
 
     // Draw thumb border
-    g.setColour(thumbColour.withAlpha(alpha));
+    g.setColour(thumbColour);
     g.drawRoundedRectangle(thumbBounds.toFloat(), 3.0f, 1.0f);
 
     // Draw resize handles (subtle lines at edges)
     int thumbPrimarySize = getPrimarySize(thumbBounds);
     if (thumbPrimarySize > MIN_THUMB_SIZE + EDGE_HANDLE_SIZE * 2) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f * alpha));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
 
         if (orientation == Orientation::Horizontal) {
             // Left handle
@@ -72,7 +67,7 @@ void ZoomScrollBar::paint(juce::Graphics& g) {
 
     // Draw label if set (fixed position on right/bottom)
     if (label.isNotEmpty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(alpha));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
 
         if (orientation == Orientation::Horizontal) {
@@ -204,46 +199,11 @@ void ZoomScrollBar::mouseDrag(const juce::MouseEvent& event) {
 
 void ZoomScrollBar::mouseUp(const juce::MouseEvent&) {
     dragMode = DragMode::None;
-    // If mouse left during drag, start collapse now
-    if (!isHovered_) {
-        targetExpand_ = 0.0f;
-        startTimerHz(60);
-    }
     repaint();
 }
 
 void ZoomScrollBar::mouseMove(const juce::MouseEvent& event) {
     updateCursor(getPrimaryCoord(event));
-}
-
-void ZoomScrollBar::mouseEnter(const juce::MouseEvent&) {
-    isHovered_ = true;
-    targetExpand_ = 1.0f;
-    startTimerHz(60);
-    if (onHoverChanged)
-        onHoverChanged(true);
-}
-
-void ZoomScrollBar::mouseExit(const juce::MouseEvent&) {
-    isHovered_ = false;
-    // Don't collapse while dragging
-    if (dragMode == DragMode::None) {
-        targetExpand_ = 0.0f;
-        startTimerHz(60);
-    }
-    if (onHoverChanged)
-        onHoverChanged(false);
-}
-
-void ZoomScrollBar::timerCallback() {
-    float diff = targetExpand_ - expandAmount_;
-    if (std::abs(diff) < 0.01f) {
-        expandAmount_ = targetExpand_;
-        stopTimer();
-    } else {
-        expandAmount_ += diff * ANIM_SPEED;
-    }
-    repaint();
 }
 
 void ZoomScrollBar::setVisibleRange(double start, double end) {
@@ -265,26 +225,14 @@ juce::Rectangle<int> ZoomScrollBar::getTrackBounds() const {
     auto bounds = getLocalBounds();
 
     if (orientation == Orientation::Horizontal) {
-        // Horizontal: height changes based on hover
-        int fullHeight = bounds.getHeight() - 8;  // Normal padding
-        int collapsedHeight = static_cast<int>(COLLAPSED_SIZE);
-        int currentHeight =
-            collapsedHeight + static_cast<int>((fullHeight - collapsedHeight) * expandAmount_);
-
-        // Center vertically
-        int yOffset = (bounds.getHeight() - currentHeight) / 2;
+        int height = bounds.getHeight() - 8;
+        int yOffset = (bounds.getHeight() - height) / 2;
         return juce::Rectangle<int>(bounds.getX() + 2, bounds.getY() + yOffset,
-                                    bounds.getWidth() - 4, currentHeight);
+                                    bounds.getWidth() - 4, height);
     } else {
-        // Vertical: width changes based on hover
-        int fullWidth = bounds.getWidth() - 8;  // Normal padding
-        int collapsedWidth = static_cast<int>(COLLAPSED_SIZE);
-        int currentWidth =
-            collapsedWidth + static_cast<int>((fullWidth - collapsedWidth) * expandAmount_);
-
-        // Center horizontally
-        int xOffset = (bounds.getWidth() - currentWidth) / 2;
-        return juce::Rectangle<int>(bounds.getX() + xOffset, bounds.getY() + 2, currentWidth,
+        int width = bounds.getWidth() - 8;
+        int xOffset = (bounds.getWidth() - width) / 2;
+        return juce::Rectangle<int>(bounds.getX() + xOffset, bounds.getY() + 2, width,
                                     bounds.getHeight() - 4);
     }
 }

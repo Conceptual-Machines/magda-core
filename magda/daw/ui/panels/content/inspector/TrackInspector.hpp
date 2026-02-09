@@ -1,5 +1,7 @@
 #pragma once
 
+#include <map>
+
 #include "../../common/DraggableValueLabel.hpp"
 #include "../../mixer/InputTypeSelector.hpp"
 #include "../../mixer/RoutingSelector.hpp"
@@ -39,7 +41,9 @@ class TrackInspector : public BaseInspector, public magda::TrackManagerListener 
     // TrackManagerListener interface
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
+    void trackDevicesChanged(magda::TrackId trackId) override;
     void trackSelectionChanged(magda::TrackId trackId) override;
+    void masterChannelChanged() override;
     void deviceParameterChanged(magda::DeviceId deviceId, int paramIndex, float newValue) override;
 
   private:
@@ -57,13 +61,19 @@ class TrackInspector : public BaseInspector, public magda::TrackManagerListener 
 
     // Routing section (unified input type toggle + selectors)
     juce::Label routingSectionLabel_;
-    std::unique_ptr<magda::InputTypeSelector> inputTypeSelector_;
-    std::unique_ptr<magda::RoutingSelector> inputSelector_;   // Audio OR MIDI input
-    std::unique_ptr<magda::RoutingSelector> outputSelector_;  // Audio output (always master)
+    std::unique_ptr<magda::InputTypeSelector> inputTypeSelector_;  // Hidden, internal state
+    std::unique_ptr<magda::RoutingSelector> audioInputSelector_;   // Audio input
+    std::unique_ptr<magda::RoutingSelector> inputSelector_;        // MIDI input
+    std::unique_ptr<magda::RoutingSelector> outputSelector_;       // Audio output
+    std::unique_ptr<magda::RoutingSelector> midiOutputSelector_;   // MIDI output
 
     // Send/Receive section
     juce::Label sendReceiveSectionLabel_;
-    juce::Label sendsLabel_;
+    juce::TextButton addSendButton_;
+    std::vector<std::unique_ptr<juce::Label>> sendDestLabels_;
+    std::vector<std::unique_ptr<magda::DraggableValueLabel>> sendLevelLabels_;
+    std::vector<std::unique_ptr<juce::TextButton>> sendDeleteButtons_;
+    juce::Label noSendsLabel_;
     juce::Label receivesLabel_;
 
     // Clips section
@@ -73,12 +83,17 @@ class TrackInspector : public BaseInspector, public magda::TrackManagerListener 
     // Update methods
     void updateFromSelectedTrack();
     void showTrackControls(bool show);
+    void rebuildSendsUI();
+    void showAddSendMenu();
     void populateRoutingSelectors();
     void populateAudioInputOptions();
     void populateAudioOutputOptions();
     void populateMidiInputOptions();
     void populateMidiOutputOptions();
     void updateRoutingSelectorsFromTrack();
+
+    // Output routing: option ID → TrackId mapping for group/aux destinations
+    std::map<int, magda::TrackId> outputTrackMapping_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TrackInspector)
 };

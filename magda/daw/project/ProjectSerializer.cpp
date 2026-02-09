@@ -415,6 +415,21 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
     obj->setProperty("audioInputDevice", track.audioInputDevice);
     obj->setProperty("audioOutputDevice", track.audioOutputDevice);
 
+    // Aux bus index (for aux tracks)
+    obj->setProperty("auxBusIndex", track.auxBusIndex);
+
+    // Sends
+    juce::Array<juce::var> sendsArray;
+    for (const auto& send : track.sends) {
+        auto* sendObj = new juce::DynamicObject();
+        sendObj->setProperty("busIndex", send.busIndex);
+        sendObj->setProperty("level", send.level);
+        sendObj->setProperty("preFader", send.preFader);
+        sendObj->setProperty("destTrackId", send.destTrackId);
+        sendsArray.add(juce::var(sendObj));
+    }
+    obj->setProperty("sends", juce::var(sendsArray));
+
     // Chain elements
     juce::Array<juce::var> chainArray;
     for (const auto& element : track.chainElements) {
@@ -460,6 +475,27 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
     outTrack.midiOutputDevice = obj->getProperty("midiOutputDevice").toString();
     outTrack.audioInputDevice = obj->getProperty("audioInputDevice").toString();
     outTrack.audioOutputDevice = obj->getProperty("audioOutputDevice").toString();
+
+    // Aux bus index (defaults to -1 if not present in older project files)
+    if (obj->hasProperty("auxBusIndex")) {
+        outTrack.auxBusIndex = obj->getProperty("auxBusIndex");
+    }
+
+    // Sends
+    auto sendsVar = obj->getProperty("sends");
+    if (sendsVar.isArray()) {
+        auto* arr = sendsVar.getArray();
+        for (const auto& sendVar : *arr) {
+            if (auto* sendObj = sendVar.getDynamicObject()) {
+                SendInfo send;
+                send.busIndex = sendObj->getProperty("busIndex");
+                send.level = sendObj->getProperty("level");
+                send.preFader = sendObj->getProperty("preFader");
+                send.destTrackId = sendObj->getProperty("destTrackId");
+                outTrack.sends.push_back(send);
+            }
+        }
+    }
 
     // Chain elements
     auto chainVar = obj->getProperty("chainElements");
