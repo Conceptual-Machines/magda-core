@@ -285,17 +285,15 @@ void RackSyncManager::buildConnections(SyncedRack& synced, const RackInfo& rackI
             }
         }
 
-        // Skip empty chains — no device plugins means nothing to process.
-        // Without this, each empty chain's VolumeAndPan would pass the signal
-        // through to the output, causing gain doubling per empty chain.
-        if (chainPluginIds.empty())
-            continue;
-
-        // Add the chain's VolumeAndPan plugin at the end
+        // Add the chain's VolumeAndPan plugin at the end (even for empty chains,
+        // so they pass clean audio through with per-chain volume/pan control)
         auto volPanIt = synced.chainVolPanPlugins.find(chain.id);
         if (volPanIt != synced.chainVolPanPlugins.end() && volPanIt->second) {
             chainPluginIds.push_back(volPanIt->second->itemID);
         }
+
+        if (chainPluginIds.empty())
+            continue;
 
         // Wire serial connections: rack input → first plugin → ... → last plugin → rack output
         auto firstPlugin = chainPluginIds.front();
