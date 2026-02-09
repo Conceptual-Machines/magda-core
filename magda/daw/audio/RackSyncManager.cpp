@@ -263,6 +263,8 @@ void RackSyncManager::buildConnections(SyncedRack& synced, const RackInfo& rackI
         }
     }
 
+    bool anyChainConnectedToOutput = false;
+
     for (const auto& chain : rackInfo.chains) {
         // Determine if this chain should be active
         bool chainActive = true;
@@ -271,7 +273,7 @@ void RackSyncManager::buildConnections(SyncedRack& synced, const RackInfo& rackI
         if (anySoloed && !chain.solo)
             chainActive = false;
 
-        // Collect plugins in this chain (in order)
+        // Collect device plugins in this chain (in order)
         std::vector<te::EditItemID> chainPluginIds;
         for (const auto& element : chain.elements) {
             if (isDevice(element)) {
@@ -283,14 +285,17 @@ void RackSyncManager::buildConnections(SyncedRack& synced, const RackInfo& rackI
             }
         }
 
+        // Skip empty chains — no device plugins means nothing to process.
+        // Without this, each empty chain's VolumeAndPan would pass the signal
+        // through to the output, causing gain doubling per empty chain.
+        if (chainPluginIds.empty())
+            continue;
+
         // Add the chain's VolumeAndPan plugin at the end
         auto volPanIt = synced.chainVolPanPlugins.find(chain.id);
         if (volPanIt != synced.chainVolPanPlugins.end() && volPanIt->second) {
             chainPluginIds.push_back(volPanIt->second->itemID);
         }
-
-        if (chainPluginIds.empty())
-            continue;
 
         // Wire serial connections: rack input → first plugin → ... → last plugin → rack output
         auto firstPlugin = chainPluginIds.front();
@@ -316,18 +321,13 @@ void RackSyncManager::buildConnections(SyncedRack& synced, const RackInfo& rackI
         if (chainActive) {
             rackType->addConnection(lastPlugin, 1, rackIOId, 1);  // Left
             rackType->addConnection(lastPlugin, 2, rackIOId, 2);  // Right
+            anyChainConnectedToOutput = true;
         }
     }
 
-    // If no chains have any plugins, pass audio straight through
-    bool hasAnyPlugins = false;
-    for (const auto& [id, synced_rack] : synced.innerPlugins) {
-        juce::ignoreUnused(id);
-        if (synced_rack)
-            hasAnyPlugins = true;
-    }
-    if (!hasAnyPlugins) {
-        // Direct passthrough: rack input → rack output
+    // If no chain connected to output (all empty, muted, or no chains),
+    // pass audio straight through so the rack is transparent
+    if (!anyChainConnectedToOutput) {
         rackType->addConnection(rackIOId, 1, rackIOId, 1);
         rackType->addConnection(rackIOId, 2, rackIOId, 2);
     }
