@@ -15,6 +15,22 @@ namespace magda {
 enum class PluginFormat { VST3, AU, VST, Internal };
 
 /**
+ * @brief Sidechain routing configuration for a plugin
+ *
+ * Allows a plugin (e.g., compressor) to receive audio or MIDI from another track
+ * as a sidechain/key input.
+ */
+struct SidechainConfig {
+    enum class Type { None, Audio, MIDI };
+    Type type = Type::None;
+    TrackId sourceTrackId = INVALID_TRACK_ID;
+
+    bool isActive() const {
+        return type != Type::None && sourceTrackId != INVALID_TRACK_ID;
+    }
+};
+
+/**
  * @brief Device/plugin information stored on a track
  */
 struct DeviceInfo {
@@ -54,6 +70,9 @@ struct DeviceInfo {
 
     // Modulators for device-level modulation
     ModArray mods = createDefaultMods(0);
+
+    // Sidechain configuration (e.g., compressor key input)
+    SidechainConfig sidechain;
 
     // UI state
     int currentParameterPage = 0;  // Current parameter page (for multi-page param display)

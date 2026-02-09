@@ -13,6 +13,7 @@ set(TEST_SOURCES
     test_midi_clip_split.cpp
     test_midi_offset.cpp
     test_nested_racks.cpp
+    test_rack_audio.cpp
     test_modulation.cpp
     test_parameter_utils.cpp
     test_plugin_loading.cpp

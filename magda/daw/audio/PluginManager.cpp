@@ -3,6 +3,7 @@
 #include <iostream>
 #include <vector>
 
+#include "../core/RackInfo.hpp"
 #include "../core/TrackManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "PluginWindowBridge.hpp"
@@ -19,7 +20,8 @@ PluginManager::PluginManager(te::Engine& engine, te::Edit& edit, TrackController
       trackController_(trackController),
       pluginWindowBridge_(pluginWindowBridge),
       transportState_(transportState),
-      instrumentRackManager_(edit) {}
+      instrumentRackManager_(edit),
+      rackSyncManager_(edit, *this) {}
 
 // =============================================================================
 // Plugin/Device Lookup
@@ -28,7 +30,15 @@ PluginManager::PluginManager(te::Engine& engine, te::Edit& edit, TrackController
 te::Plugin::Ptr PluginManager::getPlugin(DeviceId deviceId) const {
     juce::ScopedLock lock(pluginLock_);
     auto it = deviceToPlugin_.find(deviceId);
-    return it != deviceToPlugin_.end() ? it->second : nullptr;
+    if (it != deviceToPlugin_.end())
+        return it->second;
+
+    // Fall through to rack sync manager for plugins inside racks
+    auto* innerPlugin = rackSyncManager_.getInnerPlugin(deviceId);
+    if (innerPlugin)
+        return innerPlugin;
+
+    return nullptr;
 }
 
 DeviceProcessor* PluginManager::getDeviceProcessor(DeviceId deviceId) const {
@@ -54,14 +64,14 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     if (!teTrack)
         return;
 
-    // For Phase 1, we'll sync top-level devices on the track
-    // (Full nested rack support comes in Phase 3)
-
-    // Get current MAGDA devices
+    // Get current MAGDA devices and racks from chain elements
     std::vector<DeviceId> magdaDevices;
+    std::vector<RackId> magdaRacks;
     for (const auto& element : trackInfo->chainElements) {
-        if (std::holds_alternative<DeviceInfo>(element)) {
-            magdaDevices.push_back(std::get<DeviceInfo>(element).id);
+        if (isDevice(element)) {
+            magdaDevices.push_back(getDevice(element).id);
+        } else if (isRack(element)) {
+            magdaRacks.push_back(getRack(element).id);
         }
     }
 
@@ -129,10 +139,30 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
         }
     }
 
+    // Remove stale racks (racks no longer in MAGDA chain elements)
+    {
+        std::vector<RackId> racksToRemove;
+        for (const auto& [rackId, plugin] : deviceToPlugin_) {
+            if (rackSyncManager_.isRackInstance(plugin.get())) {
+                auto actualRackId = rackSyncManager_.getRackIdForInstance(plugin.get());
+                if (std::find(magdaRacks.begin(), magdaRacks.end(), actualRackId) ==
+                    magdaRacks.end()) {
+                    racksToRemove.push_back(actualRackId);
+                }
+            }
+        }
+        // Also check racks not in deviceToPlugin_ (direct iteration of synced racks)
+        // This handles racks that were synced but whose RackInstance might have been tracked
+        // differently
+        for (auto rackId : racksToRemove) {
+            rackSyncManager_.removeRack(rackId);
+        }
+    }
+
     // Add new plugins for MAGDA devices that don't have TE counterparts
     for (const auto& element : trackInfo->chainElements) {
-        if (std::holds_alternative<DeviceInfo>(element)) {
-            const auto& device = std::get<DeviceInfo>(element);
+        if (isDevice(element)) {
+            const auto& device = getDevice(element);
 
             juce::ScopedLock lock(pluginLock_);
             if (deviceToPlugin_.find(device.id) == deviceToPlugin_.end()) {
@@ -141,6 +171,40 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                 if (plugin) {
                     deviceToPlugin_[device.id] = plugin;
                     pluginToDevice_[plugin.get()] = device.id;
+                }
+            }
+        } else if (isRack(element)) {
+            const auto& rackInfo = getRack(element);
+
+            // Sync rack (creates or updates TE RackType + RackInstance)
+            auto rackInstance = rackSyncManager_.syncRack(trackId, rackInfo);
+            if (rackInstance) {
+                // Check if this rack instance is already on the track
+                bool alreadyOnTrack = false;
+                for (int i = 0; i < teTrack->pluginList.size(); ++i) {
+                    if (teTrack->pluginList[i] == rackInstance.get()) {
+                        alreadyOnTrack = true;
+                        break;
+                    }
+                }
+
+                if (!alreadyOnTrack) {
+                    teTrack->pluginList.insertPlugin(rackInstance, -1, nullptr);
+                }
+
+                // Register inner plugins in our device-to-plugin maps for parameter access
+                for (const auto& chain : rackInfo.chains) {
+                    for (const auto& chainElement : chain.elements) {
+                        if (isDevice(chainElement)) {
+                            const auto& device = getDevice(chainElement);
+                            auto* innerPlugin = rackSyncManager_.getInnerPlugin(device.id);
+                            if (innerPlugin) {
+                                juce::ScopedLock lock(pluginLock_);
+                                deviceToPlugin_[device.id] = innerPlugin;
+                                pluginToDevice_[innerPlugin] = device.id;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -462,6 +526,7 @@ void PluginManager::ensureVolumePluginPosition(te::AudioTrack* track) const {
 void PluginManager::clearAllMappings() {
     juce::ScopedLock lock(pluginLock_);
     instrumentRackManager_.clear();
+    rackSyncManager_.clear();
     deviceToPlugin_.clear();
     pluginToDevice_.clear();
     deviceProcessors_.clear();
@@ -477,6 +542,100 @@ void PluginManager::updateTransportSyncedProcessors(bool isPlaying) {
             toneProc->setBypassed(!isPlaying);
         }
     }
+}
+
+// =============================================================================
+// Rack Plugin Creation
+// =============================================================================
+
+te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInfo& device) {
+    DBG("createPluginOnly: device='" << device.name << "' format=" << device.getFormatString());
+
+    te::Plugin::Ptr plugin;
+
+    if (device.format == PluginFormat::Internal) {
+        if (device.pluginId.containsIgnoreCase("delay")) {
+            plugin = edit_.getPluginCache().createNewPlugin(te::DelayPlugin::xmlTypeName, {});
+        } else if (device.pluginId.containsIgnoreCase("reverb")) {
+            plugin = edit_.getPluginCache().createNewPlugin(te::ReverbPlugin::xmlTypeName, {});
+        } else if (device.pluginId.containsIgnoreCase("eq")) {
+            plugin = edit_.getPluginCache().createNewPlugin(te::EqualiserPlugin::xmlTypeName, {});
+        } else if (device.pluginId.containsIgnoreCase("compressor")) {
+            plugin = edit_.getPluginCache().createNewPlugin(te::CompressorPlugin::xmlTypeName, {});
+        } else if (device.pluginId.containsIgnoreCase("chorus")) {
+            plugin = edit_.getPluginCache().createNewPlugin(te::ChorusPlugin::xmlTypeName, {});
+        } else if (device.pluginId.containsIgnoreCase("phaser")) {
+            plugin = edit_.getPluginCache().createNewPlugin(te::PhaserPlugin::xmlTypeName, {});
+        } else if (device.pluginId.containsIgnoreCase("tone")) {
+            plugin =
+                edit_.getPluginCache().createNewPlugin(te::ToneGeneratorPlugin::xmlTypeName, {});
+        } else if (device.pluginId.containsIgnoreCase("4osc")) {
+            plugin = edit_.getPluginCache().createNewPlugin(te::FourOscPlugin::xmlTypeName, {});
+        }
+    } else {
+        // External plugin — same lookup logic as loadDeviceAsPlugin but without track insertion
+        if (device.uniqueId.isNotEmpty() || device.fileOrIdentifier.isNotEmpty()) {
+            juce::PluginDescription desc;
+            desc.name = device.name;
+            desc.manufacturerName = device.manufacturer;
+            desc.fileOrIdentifier = device.fileOrIdentifier;
+            desc.isInstrument = device.isInstrument;
+
+            switch (device.format) {
+                case PluginFormat::VST3:
+                    desc.pluginFormatName = "VST3";
+                    break;
+                case PluginFormat::AU:
+                    desc.pluginFormatName = "AudioUnit";
+                    break;
+                case PluginFormat::VST:
+                    desc.pluginFormatName = "VST";
+                    break;
+                default:
+                    break;
+            }
+
+            // Try to find a matching plugin in KnownPluginList
+            auto& knownPlugins = engine_.getPluginManager().knownPluginList;
+            bool found = false;
+
+            for (const auto& knownDesc : knownPlugins.getTypes()) {
+                if (knownDesc.fileOrIdentifier == device.fileOrIdentifier &&
+                    knownDesc.isInstrument == device.isInstrument) {
+                    desc = knownDesc;
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                for (const auto& knownDesc : knownPlugins.getTypes()) {
+                    if (knownDesc.name == device.name &&
+                        knownDesc.manufacturerName == device.manufacturer &&
+                        knownDesc.isInstrument == device.isInstrument) {
+                        desc = knownDesc;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+
+            // Apply TE bug workaround (same as loadExternalPlugin)
+            juce::PluginDescription descCopy = desc;
+            if (descCopy.deprecatedUid != 0) {
+                descCopy.uniqueId = 0;
+            }
+
+            plugin =
+                edit_.getPluginCache().createNewPlugin(te::ExternalPlugin::xmlTypeName, descCopy);
+        }
+    }
+
+    if (plugin) {
+        plugin->setEnabled(!device.bypassed);
+    }
+
+    return plugin;
 }
 
 // =============================================================================

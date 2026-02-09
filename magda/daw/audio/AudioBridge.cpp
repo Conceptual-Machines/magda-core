@@ -4,11 +4,41 @@
 #include <unordered_set>
 
 #include "../core/ClipOperations.hpp"
+#include "../core/RackInfo.hpp"
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
 
 namespace magda {
+
+namespace {
+
+/**
+ * @brief Recursively search chain elements for a DeviceInfo with the given ID
+ *
+ * Searches top-level devices and recurses into RackInfo.chains[].elements[].
+ */
+const DeviceInfo* findDeviceRecursive(const std::vector<ChainElement>& elements,
+                                      DeviceId deviceId) {
+    for (const auto& element : elements) {
+        if (isDevice(element)) {
+            const auto& device = getDevice(element);
+            if (device.id == deviceId) {
+                return &device;
+            }
+        } else if (isRack(element)) {
+            const auto& rack = getRack(element);
+            for (const auto& chain : rack.chains) {
+                auto* found = findDeviceRecursive(chain.elements, deviceId);
+                if (found)
+                    return found;
+            }
+        }
+    }
+    return nullptr;
+}
+
+}  // namespace
 
 AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
     : engine_(engine),
@@ -228,19 +258,14 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
     }
 
     // Find the DeviceInfo to get updated values
-    // We need to search through all tracks to find this device
+    // Search through all tracks, recursing into racks
     auto& tm = TrackManager::getInstance();
     for (const auto& track : tm.getTracks()) {
-        for (const auto& element : track.chainElements) {
-            if (std::holds_alternative<DeviceInfo>(element)) {
-                const auto& device = std::get<DeviceInfo>(element);
-                if (device.id == deviceId) {
-                    DBG("  Found device in track " << track.id << ", syncing...");
-                    // Sync processor from the updated DeviceInfo
-                    processor->syncFromDeviceInfo(device);
-                    return;
-                }
-            }
+        auto* device = findDeviceRecursive(track.chainElements, deviceId);
+        if (device) {
+            DBG("  Found device in track " << track.id << ", syncing...");
+            processor->syncFromDeviceInfo(*device);
+            return;
         }
     }
     DBG("  Device not found in any track!");

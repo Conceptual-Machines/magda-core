@@ -161,6 +161,7 @@ set(DAW_CORE_SOURCES
     audio/TrackController.cpp
     audio/PluginManager.cpp
     audio/InstrumentRackManager.cpp
+    audio/RackSyncManager.cpp
     audio/ClipSynchronizer.cpp
     # TODO: Custom synth library (SimpleSynthPlugin.cpp) - for future implementation
     # Project serialization
@@ -404,6 +405,7 @@ set(DAW_HEADERS
     audio/TrackController.hpp
     audio/PluginManager.hpp
     audio/InstrumentRackManager.hpp
+    audio/RackSyncManager.hpp
     audio/ClipSynchronizer.hpp
     # Views
     ui/views/MainView.hpp

@@ -11,6 +11,7 @@
 #include "../core/TypeIds.hpp"
 #include "DeviceProcessor.hpp"
 #include "InstrumentRackManager.hpp"
+#include "RackSyncManager.hpp"
 
 namespace magda {
 
@@ -143,6 +144,33 @@ class PluginManager {
     std::function<void(DeviceId, const juce::String&)> onPluginLoadFailed;
 
     // =========================================================================
+    // Rack Plugin Creation
+    // =========================================================================
+
+    /**
+     * @brief Create a plugin from DeviceInfo without inserting it onto a track
+     *
+     * Same creation logic as loadDeviceAsPlugin() but returns the plugin without
+     * inserting it into a track's plugin list. Used for loading plugins inside racks.
+     *
+     * @param trackId The MAGDA track ID (for context, e.g. finding the track for instrument
+     * wrapping)
+     * @param device The device info describing the plugin to create
+     * @return The created plugin, or nullptr on failure
+     */
+    te::Plugin::Ptr createPluginOnly(TrackId trackId, const DeviceInfo& device);
+
+    /**
+     * @brief Get the RackSyncManager for rack audio routing
+     */
+    RackSyncManager& getRackSyncManager() {
+        return rackSyncManager_;
+    }
+    const RackSyncManager& getRackSyncManager() const {
+        return rackSyncManager_;
+    }
+
+    // =========================================================================
     // Utilities
     // =========================================================================
 
@@ -179,6 +207,9 @@ class PluginManager {
 
     // Instrument rack wrapping (synth + audio passthrough)
     InstrumentRackManager instrumentRackManager_;
+
+    // Rack audio routing (MAGDA RackInfo → TE RackType)
+    RackSyncManager rackSyncManager_;
 
     // Plugin/device mappings and processors
     std::map<DeviceId, te::Plugin::Ptr> deviceToPlugin_;

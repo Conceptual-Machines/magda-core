@@ -1,8 +1,7 @@
-#include "TrackManager.hpp"
-
 #include "../audio/AudioBridge.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "RackInfo.hpp"
+#include "TrackManager.hpp"
 
 namespace magda {
 
@@ -251,7 +250,6 @@ void TrackManager::setDeviceInChainBypassed(TrackId trackId, RackId rackId, Chai
         notifyTrackDevicesChanged(trackId);
     }
 }
-
 
 // Helper to get chain from a path that ends with Chain step
 static ChainInfo* getChainFromPath(TrackManager& tm, const ChainNodePath& chainPath) {
@@ -659,6 +657,49 @@ void TrackManager::removeRackFromChainByPath(const ChainNodePath& rackPath) {
     } else {
         DBG("  FAILED: chain not found via path!");
     }
+}
+
+// ============================================================================
+// Sidechain Configuration
+// ============================================================================
+
+void TrackManager::setSidechainSource(DeviceId targetDevice, TrackId sourceTrack,
+                                      SidechainConfig::Type type) {
+    // Search all tracks for the target device
+    for (auto& track : tracks_) {
+        // Search top-level chain elements
+        for (auto& element : track.chainElements) {
+            if (magda::isDevice(element)) {
+                auto& device = magda::getDevice(element);
+                if (device.id == targetDevice) {
+                    device.sidechain.type = type;
+                    device.sidechain.sourceTrackId = sourceTrack;
+                    notifyDevicePropertyChanged(targetDevice);
+                    return;
+                }
+            } else if (magda::isRack(element)) {
+                // Search inside racks
+                auto& rack = magda::getRack(element);
+                for (auto& chain : rack.chains) {
+                    for (auto& chainElement : chain.elements) {
+                        if (magda::isDevice(chainElement)) {
+                            auto& device = magda::getDevice(chainElement);
+                            if (device.id == targetDevice) {
+                                device.sidechain.type = type;
+                                device.sidechain.sourceTrackId = sourceTrack;
+                                notifyDevicePropertyChanged(targetDevice);
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void TrackManager::clearSidechain(DeviceId targetDevice) {
+    setSidechainSource(targetDevice, INVALID_TRACK_ID, SidechainConfig::Type::None);
 }
 
 }  // namespace magda
