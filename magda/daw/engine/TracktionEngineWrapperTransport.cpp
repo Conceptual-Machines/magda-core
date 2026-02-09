@@ -1,11 +1,10 @@
-#include "TracktionEngineWrapper.hpp"
-
 #include <iostream>
 
 #include "../audio/AudioBridge.hpp"
 #include "../audio/SessionClipScheduler.hpp"
 #include "../core/ClipManager.hpp"
 #include "../core/TrackManager.hpp"
+#include "TracktionEngineWrapper.hpp"
 
 namespace magda {
 
@@ -285,6 +284,10 @@ void TracktionEngineWrapper::updateTriggerState() {
     if (audioBridge_) {
         audioBridge_->updateTransportState(currentlyPlaying, justStarted_, justLooped_);
     }
+
+    // Update TrackManager with transport state for LFO trigger sync
+    TrackManager::getInstance().updateTransportState(currentlyPlaying, getTempo(), justStarted_,
+                                                     justLooped_);
 
     // Drain recording note queue and grow preview clips
     if (!recordingPreviews_.empty()) {

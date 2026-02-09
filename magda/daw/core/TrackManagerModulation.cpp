@@ -100,7 +100,13 @@ void TrackManager::setRackModTarget(const ChainNodePath& rackPath, int modIndex,
             return;
         }
         rack->mods[modIndex].target = target;
-        notifyTrackDevicesChanged(rackPath.trackId);
+        // Notify asynchronously so the UI callback can unwind before rebuild
+        auto tid = rackPath.trackId;
+        juce::MessageManager::callAsync([tid]() {
+            if (juce::JUCEApplicationBase::getInstance() == nullptr)
+                return;
+            TrackManager::getInstance().notifyTrackDevicesChanged(tid);
+        });
     }
 }
 
@@ -333,7 +339,13 @@ void TrackManager::setDeviceModTarget(const ChainNodePath& devicePath, int modIn
             mod->addLink(target, 0.5f);
         }
         mod->target = target;
-        notifyTrackDevicesChanged(devicePath.trackId);
+        // Notify asynchronously so the UI callback can unwind before rebuild
+        auto tid = devicePath.trackId;
+        juce::MessageManager::callAsync([tid]() {
+            if (juce::JUCEApplicationBase::getInstance() == nullptr)
+                return;
+            TrackManager::getInstance().notifyTrackDevicesChanged(tid);
+        });
     }
 }
 
@@ -510,9 +522,30 @@ void TrackManager::removeDeviceModPage(const ChainNodePath& devicePath) {
 }
 
 void TrackManager::triggerMidiNoteOn(TrackId trackId) {
-    DBG("TrackManager::triggerMidiNoteOn trackId=" << trackId);
     std::lock_guard<std::mutex> lock(midiTriggerMutex_);
     pendingMidiTriggers_.insert(trackId);
+}
+
+void TrackManager::triggerMidiNoteOff(TrackId trackId) {
+    std::lock_guard<std::mutex> lock(midiTriggerMutex_);
+    pendingMidiNoteOffs_.insert(trackId);
+}
+
+TrackManager::TransportSnapshot TrackManager::consumeTransportState() {
+    return {transportBpm_.load(std::memory_order_acquire),
+            transportJustStarted_.exchange(false, std::memory_order_acq_rel),
+            transportJustLooped_.exchange(false, std::memory_order_acq_rel)};
+}
+
+void TrackManager::updateTransportState(bool playing, double bpm, bool justStarted,
+                                        bool justLooped) {
+    transportPlaying_.store(playing, std::memory_order_release);
+    transportBpm_.store(bpm, std::memory_order_release);
+    // Use exchange so each flag is consumed only once
+    if (justStarted)
+        transportJustStarted_.store(true, std::memory_order_release);
+    if (justLooped)
+        transportJustLooped_.store(true, std::memory_order_release);
 }
 
 // ============================================================================
@@ -523,18 +556,15 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                                  bool transportJustLooped) {
     // Snapshot MIDI triggers (thread-safe)
     std::set<TrackId> midiTriggeredTracks;
+    std::set<TrackId> midiNoteOffTracks;
     {
         std::lock_guard<std::mutex> lock(midiTriggerMutex_);
         midiTriggeredTracks.swap(pendingMidiTriggers_);
+        midiNoteOffTracks.swap(pendingMidiNoteOffs_);
     }
-    if (!midiTriggeredTracks.empty()) {
-        for (auto tid : midiTriggeredTracks)
-            DBG("updateAllMods: MIDI trigger consumed for trackId=" << tid);
-    }
-
     // Lambda to update a single mod's phase and value
     auto updateMod = [deltaTime, bpm, transportJustStarted,
-                      transportJustLooped](ModInfo& mod, bool midiTriggered) {
+                      transportJustLooped](ModInfo& mod, bool midiTriggered, bool midiNoteOff) {
         // Skip disabled mods - set value to 0 so they don't affect modulation
         if (!mod.enabled) {
             mod.value = 0.0f;
@@ -553,66 +583,77 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                         shouldTrigger = true;
                     break;
                 case LFOTriggerMode::MIDI:
-                    if (midiTriggered) {
-                        DBG("updateAllMods: MIDI trigger FIRING for mod '"
-                            << mod.name << "' midiTriggered=" << (int)midiTriggered);
+                    if (midiTriggered)
                         shouldTrigger = true;
-                    }
                     break;
                 case LFOTriggerMode::Audio:
                     break;
             }
 
+            // Handle note-off: stop MIDI-triggered LFOs
+            if (mod.triggerMode == LFOTriggerMode::MIDI && midiNoteOff && mod.running)
+                mod.running = false;
+
             if (shouldTrigger) {
                 mod.phase = 0.0f;
                 mod.triggered = true;
+                mod.triggerCount++;
+                mod.running = true;
             } else {
                 mod.triggered = false;
             }
 
-            // Calculate effective rate (Hz or tempo-synced)
-            float effectiveRate = mod.rate;
-            if (mod.tempoSync) {
-                effectiveRate = ModulatorEngine::calculateSyncRateHz(mod.syncDivision, bpm);
-            }
+            // Gate: only advance phase for Free mode, or when running for triggered modes
+            bool shouldAdvance = (mod.triggerMode == LFOTriggerMode::Free) || mod.running;
 
-            // Update phase (wraps at 1.0)
-            mod.phase += static_cast<float>(effectiveRate * deltaTime);
-            while (mod.phase >= 1.0f) {
-                mod.phase -= 1.0f;
+            if (shouldAdvance) {
+                // Calculate effective rate (Hz or tempo-synced)
+                float effectiveRate = mod.rate;
+                if (mod.tempoSync) {
+                    effectiveRate = ModulatorEngine::calculateSyncRateHz(mod.syncDivision, bpm);
+                }
+
+                // Update phase (wraps at 1.0)
+                mod.phase += static_cast<float>(effectiveRate * deltaTime);
+                while (mod.phase >= 1.0f) {
+                    mod.phase -= 1.0f;
+                }
+                // Apply phase offset when generating waveform
+                float effectivePhase = std::fmod(mod.phase + mod.phaseOffset, 1.0f);
+                mod.value = ModulatorEngine::generateWaveformForMod(mod, effectivePhase);
+            } else {
+                mod.value = 0.0f;  // No output when not running
             }
-            // Apply phase offset when generating waveform
-            float effectivePhase = std::fmod(mod.phase + mod.phaseOffset, 1.0f);
-            mod.value = ModulatorEngine::generateWaveformForMod(mod, effectivePhase);
         }
     };
 
     // Recursive lambda to update mods in chain elements
-    std::function<void(ChainElement&, bool)> updateElementMods = [&](ChainElement& element,
-                                                                     bool midiTriggered) {
-        if (isDevice(element)) {
-            DeviceInfo& device = magda::getDevice(element);
-            for (auto& mod : device.mods) {
-                updateMod(mod, midiTriggered);
-            }
-        } else if (isRack(element)) {
-            RackInfo& rack = magda::getRack(element);
-            for (auto& mod : rack.mods) {
-                updateMod(mod, midiTriggered);
-            }
-            for (auto& chain : rack.chains) {
-                for (auto& chainElement : chain.elements) {
-                    updateElementMods(chainElement, midiTriggered);
+    std::function<void(ChainElement&, bool, bool)> updateElementMods =
+        [&](ChainElement& element, bool midiTriggered, bool midiNoteOff) {
+            if (isDevice(element)) {
+                DeviceInfo& device = magda::getDevice(element);
+                for (auto& mod : device.mods) {
+                    updateMod(mod, midiTriggered, midiNoteOff);
+                }
+            } else if (isRack(element)) {
+                RackInfo& rack = magda::getRack(element);
+                for (auto& mod : rack.mods) {
+                    updateMod(mod, midiTriggered, midiNoteOff);
+                }
+                for (auto& chain : rack.chains) {
+                    for (auto& chainElement : chain.elements) {
+                        updateElementMods(chainElement, midiTriggered, midiNoteOff);
+                    }
                 }
             }
-        }
-    };
+        };
 
     // Update mods in all tracks
     for (auto& track : tracks_) {
         bool trackMidiTriggered = midiTriggeredTracks.count(track.id) > 0;
+        bool trackMidiNoteOff = midiNoteOffTracks.count(track.id) > 0;
         for (auto& element : track.chainElements) {
-            updateElementMods(element, trackMidiTriggered);
+            updateElementMods(element, trackMidiTriggered, trackMidiNoteOff);
         }
     }
 }

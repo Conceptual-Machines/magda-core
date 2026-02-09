@@ -139,6 +139,7 @@ struct ModInfo {
     LFOTriggerMode triggerMode = LFOTriggerMode::Free;  // When to reset phase
     bool triggered = false;                             // Set true when trigger fires (for UI dot)
     uint32_t triggerCount = 0;  // Monotonic counter incremented on each trigger
+    bool running = false;       // Whether LFO is actively running (for triggered modes)
 
     // Loop/One-shot mode
     bool oneShot = false;  // If true, play once and hold at end value

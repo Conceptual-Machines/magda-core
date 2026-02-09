@@ -332,6 +332,22 @@ class TrackManager {
      * will reset phase on any mods with LFOTriggerMode::MIDI on this track.
      */
     void triggerMidiNoteOn(TrackId trackId);
+    void triggerMidiNoteOff(TrackId trackId);
+
+    /**
+     * @brief Update transport state for LFO trigger sync
+     *
+     * Called from TracktionEngineWrapper's timer callback with the current
+     * transport state. The next updateAllMods() tick will use these values.
+     */
+    void updateTransportState(bool playing, double bpm, bool justStarted, bool justLooped);
+
+    struct TransportSnapshot {
+        double bpm;
+        bool justStarted;
+        bool justLooped;
+    };
+    TransportSnapshot consumeTransportState();
 
     // Macro management for devices (path-based for nested device support)
     void setDeviceMacroValue(const ChainNodePath& devicePath, int macroIndex, float value);
@@ -452,7 +468,14 @@ class TrackManager {
     // MIDI state for modulator triggers, protected by midiTriggerMutex_
     // Written from MIDI thread, read from timer thread
     std::set<TrackId> pendingMidiTriggers_;  // note-on events (consumed each tick)
+    std::set<TrackId> pendingMidiNoteOffs_;  // note-off events (consumed each tick)
     std::mutex midiTriggerMutex_;
+
+    // Transport state for LFO trigger sync (written from engine timer, read by mod timer)
+    std::atomic<bool> transportPlaying_{false};
+    std::atomic<double> transportBpm_{120.0};
+    std::atomic<bool> transportJustStarted_{false};
+    std::atomic<bool> transportJustLooped_{false};
 
     void notifyTracksChanged();
     void notifyTrackPropertyChanged(int trackId);
