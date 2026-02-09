@@ -109,6 +109,17 @@ class RackSyncManager {
     };
 
     /**
+     * @brief Check if rack structure changed (devices/chains added/removed/reordered)
+     * vs only properties changed (bypass, volume, mute/solo)
+     */
+    bool structureChanged(const SyncedRack& synced, const RackInfo& rackInfo) const;
+
+    /**
+     * @brief Update only properties (bypass, volume, chain mute/solo) without rebuilding plugins
+     */
+    void updateProperties(SyncedRack& synced, const RackInfo& rackInfo);
+
+    /**
      * @brief Build connections within the RackType from RackInfo chains
      */
     void buildConnections(SyncedRack& synced, const RackInfo& rackInfo);

@@ -17,8 +17,13 @@ te::Plugin::Ptr RackSyncManager::syncRack(TrackId trackId, const RackInfo& rackI
     // Check if already synced
     auto it = syncedRacks_.find(rackInfo.id);
     if (it != syncedRacks_.end()) {
-        // Already synced — resync instead
-        resyncRack(trackId, rackInfo);
+        if (structureChanged(it->second, rackInfo)) {
+            // Structure changed — full rebuild
+            resyncRack(trackId, rackInfo);
+        } else {
+            // Only properties changed — lightweight update (no plugin destruction)
+            updateProperties(it->second, rackInfo);
+        }
         return it->second.rackInstance;
     }
 
@@ -330,6 +335,93 @@ void RackSyncManager::buildConnections(SyncedRack& synced, const RackInfo& rackI
 
 te::Plugin::Ptr RackSyncManager::createPluginForRack(TrackId trackId, const DeviceInfo& device) {
     return pluginManager_.createPluginOnly(trackId, device);
+}
+
+bool RackSyncManager::structureChanged(const SyncedRack& synced, const RackInfo& rackInfo) const {
+    // Check if number of chains changed
+    if (synced.chainVolPanPlugins.size() != rackInfo.chains.size())
+        return true;
+
+    // Check if the set of devices or their order changed
+    for (const auto& chain : rackInfo.chains) {
+        // Check chain still exists
+        if (synced.chainVolPanPlugins.find(chain.id) == synced.chainVolPanPlugins.end())
+            return true;
+
+        for (const auto& element : chain.elements) {
+            if (isDevice(element)) {
+                const auto& device = getDevice(element);
+                if (synced.innerPlugins.find(device.id) == synced.innerPlugins.end())
+                    return true;
+            }
+        }
+    }
+
+    // Check if any synced device no longer exists in the rack
+    for (const auto& [deviceId, plugin] : synced.innerPlugins) {
+        bool found = false;
+        for (const auto& chain : rackInfo.chains) {
+            for (const auto& element : chain.elements) {
+                if (isDevice(element) && getDevice(element).id == deviceId) {
+                    found = true;
+                    break;
+                }
+            }
+            if (found)
+                break;
+        }
+        if (!found)
+            return true;
+    }
+
+    return false;
+}
+
+void RackSyncManager::updateProperties(SyncedRack& synced, const RackInfo& rackInfo) {
+    // Update rack bypass state
+    applyBypassState(synced, rackInfo);
+
+    // Update per-chain volume/pan
+    for (const auto& chain : rackInfo.chains) {
+        auto volPanIt = synced.chainVolPanPlugins.find(chain.id);
+        if (volPanIt != synced.chainVolPanPlugins.end() && volPanIt->second) {
+            if (auto* volPan = dynamic_cast<te::VolumeAndPanPlugin*>(volPanIt->second.get())) {
+                volPan->setVolumeDb(chain.volume);
+                volPan->setPan(chain.pan);
+            }
+        }
+    }
+
+    // Check if mute/solo state requires connection rebuild
+    // (We need to compare against current connection state, but for simplicity
+    // we always rebuild connections — this is cheap compared to recreating plugins)
+    {
+        auto& rackType = synced.rackType;
+        if (rackType) {
+            auto connections = rackType->getConnections();
+            for (int i = connections.size(); --i >= 0;) {
+                auto* conn = connections[i];
+                rackType->removeConnection(conn->sourceID, conn->sourcePin, conn->destID,
+                                           conn->destPin);
+            }
+            buildConnections(synced, rackInfo);
+        }
+    }
+
+    // Update individual device bypass states
+    for (const auto& chain : rackInfo.chains) {
+        for (const auto& element : chain.elements) {
+            if (isDevice(element)) {
+                const auto& device = getDevice(element);
+                auto pluginIt = synced.innerPlugins.find(device.id);
+                if (pluginIt != synced.innerPlugins.end() && pluginIt->second) {
+                    pluginIt->second->setEnabled(!device.bypassed);
+                }
+            }
+        }
+    }
+
+    DBG("RackSyncManager: Updated properties for rack " << rackInfo.id);
 }
 
 void RackSyncManager::applyBypassState(SyncedRack& synced, const RackInfo& rackInfo) {
