@@ -530,9 +530,18 @@ void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo
 
     // Remove existing TE modifiers before recreating
     for (auto& [modId, mod] : synced.innerModifiers) {
-        if (mod) {
-            modList.state.removeChild(mod->state, nullptr);
+        if (!mod)
+            continue;
+
+        // Remove modifier assignments from all inner plugin parameters
+        for (auto& [pluginId, plugin] : synced.innerPlugins) {
+            if (plugin) {
+                for (auto* param : plugin->getAutomatableParameters())
+                    param->removeModifier(*mod);
+            }
         }
+
+        modList.state.removeChild(mod->state, nullptr);
     }
     synced.innerModifiers.clear();
 

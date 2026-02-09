@@ -607,11 +607,32 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
 
         // Remove existing TE modifiers for this device before recreating
         auto& existingMods = deviceModifiers_[device.id];
-        for (auto& mod : existingMods) {
-            if (mod && modList) {
-                // Remove the modifier's ValueTree from the ModifierList state
-                // This triggers ModifierList::deleteObject() which destroys the modifier
-                modList->state.removeChild(mod->state, nullptr);
+        if (!existingMods.empty()) {
+            // Find target plugin to clean up modifier assignments from its parameters
+            te::Plugin::Ptr targetPlugin;
+            {
+                juce::ScopedLock lock(pluginLock_);
+                auto it = deviceToPlugin_.find(device.id);
+                if (it != deviceToPlugin_.end())
+                    targetPlugin = it->second;
+            }
+            if (!targetPlugin && device.isInstrument)
+                if (auto* inner = instrumentRackManager_.getInnerPlugin(device.id))
+                    targetPlugin = inner;
+
+            for (auto& mod : existingMods) {
+                if (!mod)
+                    continue;
+
+                // Remove modifier assignments from all target parameters
+                if (targetPlugin) {
+                    for (auto* param : targetPlugin->getAutomatableParameters())
+                        param->removeModifier(*mod);
+                }
+
+                // Remove the modifier from the ModifierList
+                if (modList)
+                    modList->state.removeChild(mod->state, nullptr);
             }
         }
         existingMods.clear();

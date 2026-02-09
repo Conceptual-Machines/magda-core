@@ -916,6 +916,7 @@ void DeviceSlotComponent::onAddModRequestedInternal(int slotIndex, magda::ModTyp
 
 void DeviceSlotComponent::onModRemoveRequestedInternal(int modIndex) {
     magda::TrackManager::getInstance().removeDeviceMod(nodePath_, modIndex);
+    updateModsPanel();
 }
 
 void DeviceSlotComponent::onModEnableToggledInternal(int modIndex, bool enabled) {

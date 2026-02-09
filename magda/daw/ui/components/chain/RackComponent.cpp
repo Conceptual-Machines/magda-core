@@ -668,6 +668,7 @@ void RackComponent::onAddModRequestedInternal(int slotIndex, magda::ModType type
 
 void RackComponent::onModRemoveRequestedInternal(int modIndex) {
     magda::TrackManager::getInstance().removeRackMod(rackPath_, modIndex);
+    updateModsPanel();
 }
 
 void RackComponent::onModEnableToggledInternal(int modIndex, bool enabled) {
