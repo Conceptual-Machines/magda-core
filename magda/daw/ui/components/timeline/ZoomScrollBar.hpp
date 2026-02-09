@@ -12,7 +12,7 @@ namespace magda {
  * - Drag the start/end edges to zoom (shrink = zoom in, expand = zoom out)
  * - Supports both horizontal (timeline) and vertical (tracks) orientations
  */
-class ZoomScrollBar : public juce::Component, private juce::Timer {
+class ZoomScrollBar : public juce::Component {
   public:
     enum class Orientation { Horizontal, Vertical };
 
@@ -27,8 +27,6 @@ class ZoomScrollBar : public juce::Component, private juce::Timer {
     void mouseDrag(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
-    void mouseEnter(const juce::MouseEvent& event) override;
-    void mouseExit(const juce::MouseEvent& event) override;
 
     // Set the visible range (0.0 to 1.0 representing portion of content)
     void setVisibleRange(double start, double end);
@@ -54,12 +52,6 @@ class ZoomScrollBar : public juce::Component, private juce::Timer {
 
     // Callbacks
     std::function<void(double start, double end)> onRangeChanged;
-    std::function<void(bool hovered)> onHoverChanged;
-
-    // Check if currently hovered/expanded
-    bool isExpanded() const {
-        return expandAmount_ > 0.5f;
-    }
 
   private:
     Orientation orientation;
@@ -81,17 +73,6 @@ class ZoomScrollBar : public juce::Component, private juce::Timer {
     // Layout
     static constexpr int EDGE_HANDLE_SIZE = 8;
     static constexpr int MIN_THUMB_SIZE = 20;
-    static constexpr float COLLAPSED_SIZE = 6.0f;  // Thin size when not hovered
-    static constexpr float EXPANDED_SIZE = 1.0f;   // Full size (multiplier of bounds)
-
-    // Hover state and animation
-    bool isHovered_ = false;
-    float expandAmount_ = 0.0f;  // 0.0 = collapsed (hidden), 1.0 = expanded (visible)
-    float targetExpand_ = 0.0f;  // Animation target
-    static constexpr float ANIM_SPEED = 0.15f;  // Per frame blend factor
-
-    // Timer for animation
-    void timerCallback() override;
 
     // Helper methods
     juce::Rectangle<int> getThumbBounds() const;
