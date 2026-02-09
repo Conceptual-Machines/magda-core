@@ -273,8 +273,11 @@ void TrackManager::removeRackMod(const ChainNodePath& rackPath, int modIndex) {
 
             // Notify asynchronously so the UI callback can unwind before rebuild
             auto trackId = rackPath.trackId;
-            juce::MessageManager::callAsync(
-                [trackId]() { TrackManager::getInstance().notifyTrackDevicesChanged(trackId); });
+            juce::MessageManager::callAsync([trackId]() {
+                if (juce::JUCEApplicationBase::getInstance() == nullptr)
+                    return;
+                TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
+            });
         }
     }
 }
@@ -472,8 +475,11 @@ void TrackManager::removeDeviceMod(const ChainNodePath& devicePath, int modIndex
 
             // Notify asynchronously so the UI callback can unwind before rebuild
             auto trackId = devicePath.trackId;
-            juce::MessageManager::callAsync(
-                [trackId]() { TrackManager::getInstance().notifyTrackDevicesChanged(trackId); });
+            juce::MessageManager::callAsync([trackId]() {
+                if (juce::JUCEApplicationBase::getInstance() == nullptr)
+                    return;
+                TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
+            });
         }
     }
 }
