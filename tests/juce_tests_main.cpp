@@ -1,6 +1,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_events/juce_events.h>
 
+#include <cstdlib>
 #include <iostream>
 
 #include "SharedTestEngine.hpp"
@@ -49,8 +50,9 @@ int main(int argc, char* argv[]) {
 
     std::cout << "========================================\n";
 
-    // Use _exit() to avoid SIGSEGV during static destruction of TE/JUCE singletons.
+    // Use std::_Exit() to avoid SIGSEGV during static destruction of TE/JUCE singletons.
     // All test results have already been collected and printed above.
+    std::cout.flush();
     int exitCode = numFailures > 0 ? 1 : 0;
-    _exit(exitCode);
+    std::_Exit(exitCode);
 }

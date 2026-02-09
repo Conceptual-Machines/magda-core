@@ -119,9 +119,10 @@ jobs:
         JUCE_TEST_BIN=$(find build -name "magda_juce_tests" -type f | head -1)
         if [ -n "$JUCE_TEST_BIN" ]; then
           echo "Running JUCE integration tests..."
-          xvfb-run "$JUCE_TEST_BIN"
+          xvfb-run -a "$JUCE_TEST_BIN"
         else
-          echo "⚠️  magda_juce_tests executable not found, skipping"
+          echo "❌ magda_juce_tests executable not found"
+          exit 1
         fi
 
     - name: Show ccache statistics

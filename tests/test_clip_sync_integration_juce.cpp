@@ -395,29 +395,33 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         double sr = result.sampleRate;
         auto& buf = result.buffer;
 
+        auto renderedDuration = static_cast<double>(buf.getNumSamples()) / sr;
+        expect(renderedDuration >= 2.9, "Rendered buffer too short for verification, duration=" +
+                                            juce::String(renderedDuration, 3) + "s");
+
         // First loop cycle: [0s - 2s]
         {
             int startSample = static_cast<int>(0.1 * sr);
             int numSamples = static_cast<int>(1.8 * sr);
-            if (startSample + numSamples <= buf.getNumSamples()) {
-                float rms = buf.getRMSLevel(0, startSample, numSamples);
-                expect(rms > 0.01f,
-                       "First loop cycle (0.1-1.9s) should have audio, RMS=" + juce::String(rms));
-            }
+            expect(startSample + numSamples <= buf.getNumSamples(),
+                   "Buffer too short for first loop cycle check");
+            float rms = buf.getRMSLevel(0, startSample, numSamples);
+            expect(rms > 0.01f,
+                   "First loop cycle (0.1-1.9s) should have audio, RMS=" + juce::String(rms));
         }
 
         // Partial second loop cycle: [2s - 3s] — THIS IS THE BAR THAT GOES SILENT
         {
             int startSample = static_cast<int>(2.1 * sr);
             int numSamples = static_cast<int>(0.8 * sr);
-            if (startSample + numSamples <= buf.getNumSamples()) {
-                float rms = buf.getRMSLevel(0, startSample, numSamples);
-                expect(rms > 0.01f,
-                       "Second loop cycle (2.1-2.9s) should have audio, RMS=" + juce::String(rms));
-            }
+            expect(startSample + numSamples <= buf.getNumSamples(),
+                   "Buffer too short for second loop cycle check");
+            float rms = buf.getRMSLevel(0, startSample, numSamples);
+            expect(rms > 0.01f,
+                   "Second loop cycle (2.1-2.9s) should have audio, RMS=" + juce::String(rms));
         }
 
-        // Silence after clip end (3.1s+)
+        // Silence after clip end (3.1s+) — only check if buffer extends past clip
         {
             int startSample = static_cast<int>(3.1 * sr);
             int numSamples = buf.getNumSamples() - startSample;
@@ -631,29 +635,32 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         double sr = result.sampleRate;
         auto& buf = result.buffer;
 
+        auto renderedDuration = static_cast<double>(buf.getNumSamples()) / sr;
+        expect(renderedDuration >= 2.9, "Rendered buffer too short for verification, duration=" +
+                                            juce::String(renderedDuration, 3) + "s");
+
         // Check silence in [0, 0.9s] — small margin to avoid boundary artifacts
         {
             int startSample = 0;
             int numSamples = static_cast<int>(0.9 * sr);
-            if (numSamples > 0 && numSamples <= buf.getNumSamples()) {
-                float rms = buf.getRMSLevel(0, startSample, numSamples);
-                expect(rms < 0.01f,
-                       "Should be silence before clip (0-0.9s), RMS=" + juce::String(rms));
-            }
+            expect(numSamples <= buf.getNumSamples(),
+                   "Buffer too short for pre-clip silence check");
+            float rms = buf.getRMSLevel(0, startSample, numSamples);
+            expect(rms < 0.01f, "Should be silence before clip (0-0.9s), RMS=" + juce::String(rms));
         }
 
         // Check non-silence in [1.1s, 2.9s]
         {
             int startSample = static_cast<int>(1.1 * sr);
             int numSamples = static_cast<int>(1.8 * sr);
-            if (startSample + numSamples <= buf.getNumSamples()) {
-                float rms = buf.getRMSLevel(0, startSample, numSamples);
-                expect(rms > 0.01f,
-                       "Should have audio during clip (1.1-2.9s), RMS=" + juce::String(rms));
-            }
+            expect(startSample + numSamples <= buf.getNumSamples(),
+                   "Buffer too short for audio-during-clip check");
+            float rms = buf.getRMSLevel(0, startSample, numSamples);
+            expect(rms > 0.01f,
+                   "Should have audio during clip (1.1-2.9s), RMS=" + juce::String(rms));
         }
 
-        // Check silence after [3.1s, end]
+        // Check silence after [3.1s, end] — only if buffer extends past clip
         {
             int startSample = static_cast<int>(3.1 * sr);
             int numSamples = buf.getNumSamples() - startSample;
