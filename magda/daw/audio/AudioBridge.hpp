@@ -361,7 +361,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // =========================================================================
 
     /**
-     * @brief Trigger MIDI activity for a track (audio thread safe)
+     * @brief Trigger MIDI activity for a track (MIDI thread safe)
      * @param trackId The track that received MIDI
      */
     void triggerMidiActivity(TrackId trackId) {
@@ -369,12 +369,12 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     }
 
     /**
-     * @brief Check and clear MIDI activity flag for a track (UI thread)
+     * @brief Get the monotonic MIDI activity counter for a track (UI thread)
      * @param trackId The track to check
-     * @return true if MIDI activity occurred since last check
+     * @return Counter value — compare with previous to detect new activity
      */
-    bool consumeMidiActivity(TrackId trackId) {
-        return midiActivity_.consumeActivity(trackId);
+    uint32_t getMidiActivityCounter(TrackId trackId) const {
+        return midiActivity_.getActivityCounter(trackId);
     }
 
     // =========================================================================

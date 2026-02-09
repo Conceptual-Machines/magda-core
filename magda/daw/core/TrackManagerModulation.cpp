@@ -220,6 +220,7 @@ void TrackManager::setRackModTriggerMode(const ChainNodePath& rackPath, int modI
             return;
         }
         rack->mods[modIndex].triggerMode = mode;
+        notifyDeviceModifiersChanged(rackPath.trackId);
     }
 }
 
@@ -418,6 +419,7 @@ void TrackManager::setDeviceModTriggerMode(const ChainNodePath& devicePath, int 
                                            LFOTriggerMode mode) {
     if (auto* mod = getDeviceMod(devicePath, modIndex)) {
         mod->triggerMode = mode;
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
 }
 
@@ -495,14 +497,37 @@ void TrackManager::removeDeviceModPage(const ChainNodePath& devicePath) {
     }
 }
 
+void TrackManager::triggerMidiNoteOn(TrackId trackId) {
+    std::lock_guard<std::mutex> lock(midiTriggerMutex_);
+    pendingMidiTriggers_.insert(trackId);
+    midiHeldNoteCount_[trackId]++;
+}
+
+void TrackManager::triggerMidiNoteOff(TrackId trackId) {
+    std::lock_guard<std::mutex> lock(midiTriggerMutex_);
+    auto& count = midiHeldNoteCount_[trackId];
+    if (count > 0)
+        count--;
+}
+
 // ============================================================================
 // Mod Updates
 // ============================================================================
 
 void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJustStarted,
                                  bool transportJustLooped) {
+    // Snapshot MIDI state (thread-safe)
+    std::set<TrackId> midiTriggeredTracks;
+    std::map<TrackId, int> heldNoteCounts;
+    {
+        std::lock_guard<std::mutex> lock(midiTriggerMutex_);
+        midiTriggeredTracks.swap(pendingMidiTriggers_);
+        heldNoteCounts = midiHeldNoteCount_;
+    }
+
     // Lambda to update a single mod's phase and value
-    auto updateMod = [deltaTime, bpm, transportJustStarted, transportJustLooped](ModInfo& mod) {
+    auto updateMod = [deltaTime, bpm, transportJustStarted,
+                      transportJustLooped](ModInfo& mod, bool midiTriggered, bool midiGateOpen) {
         // Skip disabled mods - set value to 0 so they don't affect modulation
         if (!mod.enabled) {
             mod.value = 0.0f;
@@ -515,27 +540,33 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             bool shouldTrigger = false;
             switch (mod.triggerMode) {
                 case LFOTriggerMode::Free:
-                    // Never reset
                     break;
                 case LFOTriggerMode::Transport:
-                    // Reset on transport start or loop
-                    if (transportJustStarted || transportJustLooped) {
+                    if (transportJustStarted || transportJustLooped)
                         shouldTrigger = true;
-                    }
                     break;
                 case LFOTriggerMode::MIDI:
-                    // STUB: Will trigger on MIDI note-on when infrastructure ready
+                    if (midiTriggered)
+                        shouldTrigger = true;
                     break;
                 case LFOTriggerMode::Audio:
-                    // STUB: Will trigger on audio transient when infrastructure ready
                     break;
             }
 
             if (shouldTrigger) {
-                mod.phase = 0.0f;  // Reset to start
+                mod.phase = 0.0f;
                 mod.triggered = true;
+                mod.triggerCount++;
             } else {
                 mod.triggered = false;
+            }
+
+            // In MIDI trigger mode, LFO only runs while notes are held (gate open).
+            // Exception: if we just triggered this frame, the gate is open regardless
+            // (handles fast note-on/note-off within a single update cycle).
+            if (mod.triggerMode == LFOTriggerMode::MIDI && !midiGateOpen && !shouldTrigger) {
+                mod.value = 0.0f;
+                return;
             }
 
             // Calculate effective rate (Hz or tempo-synced)
@@ -551,44 +582,39 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             }
             // Apply phase offset when generating waveform
             float effectivePhase = std::fmod(mod.phase + mod.phaseOffset, 1.0f);
-            // Generate waveform output using ModulatorEngine (handles Custom curves too)
             mod.value = ModulatorEngine::generateWaveformForMod(mod, effectivePhase);
         }
     };
 
     // Recursive lambda to update mods in chain elements
-    std::function<void(ChainElement&)> updateElementMods = [&](ChainElement& element) {
-        if (isDevice(element)) {
-            // Update device mods
-            DeviceInfo& device = magda::getDevice(element);
-            for (auto& mod : device.mods) {
-                updateMod(mod);
-            }
-        } else if (isRack(element)) {
-            // Update rack mods
-            RackInfo& rack = magda::getRack(element);
-            for (auto& mod : rack.mods) {
-                updateMod(mod);
-            }
-            // Recursively update mods in nested chains
-            for (auto& chain : rack.chains) {
-                for (auto& chainElement : chain.elements) {
-                    updateElementMods(chainElement);
+    std::function<void(ChainElement&, bool, bool)> updateElementMods =
+        [&](ChainElement& element, bool midiTriggered, bool midiGateOpen) {
+            if (isDevice(element)) {
+                DeviceInfo& device = magda::getDevice(element);
+                for (auto& mod : device.mods) {
+                    updateMod(mod, midiTriggered, midiGateOpen);
+                }
+            } else if (isRack(element)) {
+                RackInfo& rack = magda::getRack(element);
+                for (auto& mod : rack.mods) {
+                    updateMod(mod, midiTriggered, midiGateOpen);
+                }
+                for (auto& chain : rack.chains) {
+                    for (auto& chainElement : chain.elements) {
+                        updateElementMods(chainElement, midiTriggered, midiGateOpen);
+                    }
                 }
             }
-        }
-    };
+        };
 
     // Update mods in all tracks
     for (auto& track : tracks_) {
-        // Update mods in all chain elements
+        bool trackMidiTriggered = midiTriggeredTracks.count(track.id) > 0;
+        bool trackMidiGateOpen = heldNoteCounts.count(track.id) > 0 && heldNoteCounts[track.id] > 0;
         for (auto& element : track.chainElements) {
-            updateElementMods(element);
+            updateElementMods(element, trackMidiTriggered, trackMidiGateOpen);
         }
     }
-
-    // DO NOT call notifyModulationChanged() here - that causes 60 FPS UI rebuilds
-    // ParamSlotComponent will read mod.value directly during its paint cycle
 }
 
 // ============================================================================

@@ -425,9 +425,16 @@ void ModulatorEditorPanel::paint(juce::Graphics& g) {
         juce::Rectangle<float>(static_cast<float>(dotArea.getX()), dotArea.getCentreY() - dotRadius,
                                dotRadius * 2, dotRadius * 2);
 
-    // Use live mod pointer for real-time trigger state
+    // Use trigger counter to detect triggers across frame boundaries.
+    // The triggered bool is only true for one 60fps tick — the 30fps paint
+    // misses ~50% of them. The counter never misses.
     const magda::ModInfo* mod = liveModPtr_ ? liveModPtr_ : &currentMod_;
-    if (mod->triggered) {
+    if (mod->triggerCount != lastSeenTriggerCount_) {
+        lastSeenTriggerCount_ = mod->triggerCount;
+        triggerHoldFrames_ = 4;  // Show for ~130ms at 30fps
+    }
+
+    if (triggerHoldFrames_ > 0) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
         g.fillEllipse(dotBounds);
     } else {
@@ -514,7 +521,8 @@ void ModulatorEditorPanel::mouseUp(const juce::MouseEvent& /*e*/) {
 }
 
 void ModulatorEditorPanel::timerCallback() {
-    // Repaint for trigger indicator animation
+    if (triggerHoldFrames_ > 0)
+        triggerHoldFrames_--;
     repaint();
 }
 

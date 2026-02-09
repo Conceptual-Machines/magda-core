@@ -92,9 +92,15 @@ class RackSyncManager {
     void setMacroValue(RackId rackId, int macroIndex, float value);
 
     /**
-     * @brief Resync only modifiers for all racks on a track (property changes only)
+     * @brief Resync only modifiers for all racks on a track (full rebuild)
      */
     void resyncAllModifiers(TrackId trackId);
+
+    /**
+     * @brief Update existing modifier properties in-place (rate, waveform, sync)
+     * without destroying/recreating modifiers
+     */
+    void updateAllModifierProperties(TrackId trackId);
 
   private:
     /**

@@ -2,6 +2,7 @@
 
 #include <iostream>
 
+#include "ModifierHelpers.hpp"
 #include "PluginManager.hpp"
 #include "core/TrackManager.hpp"
 
@@ -214,6 +215,41 @@ void RackSyncManager::resyncAllModifiers(TrackId trackId) {
                     if (*rackPtr && (*rackPtr)->id == rackId) {
                         syncModifiers(synced, **rackPtr);
                         syncMacros(synced, **rackPtr);
+                    }
+                }
+            }
+        }
+    }
+}
+
+void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
+    auto& tm = TrackManager::getInstance();
+    for (auto& [rackId, synced] : syncedRacks_) {
+        if (synced.trackId != trackId)
+            continue;
+
+        // Find the current RackInfo for this rack
+        for (const auto& track : tm.getTracks()) {
+            if (track.id != trackId)
+                continue;
+            for (const auto& element : track.chainElements) {
+                if (auto* rackPtr = std::get_if<std::unique_ptr<RackInfo>>(&element)) {
+                    if (!*rackPtr || (*rackPtr)->id != rackId)
+                        continue;
+                    const auto& rackInfo = **rackPtr;
+
+                    // Update existing TE modifiers in-place
+                    for (const auto& modInfo : rackInfo.mods) {
+                        if (!modInfo.enabled || modInfo.links.empty())
+                            continue;
+
+                        auto modIt = synced.innerModifiers.find(modInfo.id);
+                        if (modIt == synced.innerModifiers.end() || !modIt->second)
+                            continue;
+
+                        if (auto* lfo = dynamic_cast<te::LFOModifier*>(modIt->second.get())) {
+                            applyLFOProperties(lfo, modInfo);
+                        }
                     }
                 }
             }
@@ -515,83 +551,7 @@ void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo
                     break;
 
                 if (auto* lfo = dynamic_cast<te::LFOModifier*>(lfoMod.get())) {
-                    // Map waveform
-                    float waveVal = 0.0f;  // sine
-                    switch (modInfo.waveform) {
-                        case LFOWaveform::Sine:
-                            waveVal = 0.0f;
-                            break;
-                        case LFOWaveform::Triangle:
-                            waveVal = 1.0f;
-                            break;
-                        case LFOWaveform::Saw:
-                            waveVal = 2.0f;
-                            break;
-                        case LFOWaveform::ReverseSaw:
-                            waveVal = 3.0f;
-                            break;
-                        case LFOWaveform::Square:
-                            waveVal = 4.0f;
-                            break;
-                        case LFOWaveform::Custom:
-                            waveVal = 0.0f;
-                            break;  // Fallback to sine
-                    }
-                    lfo->wave = waveVal;
-                    lfo->rate = modInfo.rate;
-                    lfo->depth = 1.0f;  // Depth controlled per-assignment via link.amount
-                    lfo->phase = modInfo.phaseOffset;
-
-                    // Sync type: 0 = free, 1 = transport
-                    lfo->syncType = modInfo.tempoSync ? 1.0f : 0.0f;
-
-                    if (modInfo.tempoSync) {
-                        // TE RateType enum: 0=hz, 1=4bar, 2=2bar, 3=bar,
-                        // 4=halfT, 5=half, 6=halfD, 7=quarterT, 8=quarter,
-                        // 9=quarterD, 10=eighthT, 11=eighth, 12=eighthD,
-                        // 13=sixteenthT, 14=sixteenth, 15=sixteenthD,
-                        // 16=thirtySecondT, 17=thirtySecond, 18=thirtySecondD
-                        float rateType = 8.0f;  // quarter note default
-                        switch (modInfo.syncDivision) {
-                            case SyncDivision::Whole:
-                                rateType = 3.0f;
-                                break;
-                            case SyncDivision::Half:
-                                rateType = 5.0f;
-                                break;
-                            case SyncDivision::Quarter:
-                                rateType = 8.0f;
-                                break;
-                            case SyncDivision::Eighth:
-                                rateType = 11.0f;
-                                break;
-                            case SyncDivision::Sixteenth:
-                                rateType = 14.0f;
-                                break;
-                            case SyncDivision::ThirtySecond:
-                                rateType = 17.0f;
-                                break;
-                            case SyncDivision::DottedHalf:
-                                rateType = 6.0f;
-                                break;
-                            case SyncDivision::DottedQuarter:
-                                rateType = 9.0f;
-                                break;
-                            case SyncDivision::DottedEighth:
-                                rateType = 12.0f;
-                                break;
-                            case SyncDivision::TripletHalf:
-                                rateType = 4.0f;
-                                break;
-                            case SyncDivision::TripletQuarter:
-                                rateType = 7.0f;
-                                break;
-                            case SyncDivision::TripletEighth:
-                                rateType = 10.0f;
-                                break;
-                        }
-                        lfo->rateType = rateType;
-                    }
+                    applyLFOProperties(lfo, modInfo);
                 }
                 modifier = lfoMod;
                 break;

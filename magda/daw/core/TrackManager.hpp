@@ -1,6 +1,10 @@
 #pragma once
 
+#include <atomic>
+#include <map>
 #include <memory>
+#include <mutex>
+#include <set>
 #include <vector>
 
 #include "SelectionManager.hpp"
@@ -321,6 +325,15 @@ class TrackManager {
     void updateAllMods(double deltaTime, double bpm = 120.0, bool transportJustStarted = false,
                        bool transportJustLooped = false);
 
+    /**
+     * @brief Signal that a MIDI note-on was received on a track
+     *
+     * Called from MidiBridge when MIDI arrives. The next updateAllMods() tick
+     * will reset phase on any mods with LFOTriggerMode::MIDI on this track.
+     */
+    void triggerMidiNoteOn(TrackId trackId);
+    void triggerMidiNoteOff(TrackId trackId);
+
     // Macro management for devices (path-based for nested device support)
     void setDeviceMacroValue(const ChainNodePath& devicePath, int macroIndex, float value);
     void setDeviceMacroTarget(const ChainNodePath& devicePath, int macroIndex, MacroTarget target);
@@ -436,6 +449,12 @@ class TrackManager {
     TrackId selectedChainTrackId_ = INVALID_TRACK_ID;
     RackId selectedChainRackId_ = INVALID_RACK_ID;
     ChainId selectedChainId_ = INVALID_CHAIN_ID;
+
+    // MIDI state for modulator triggers, protected by midiTriggerMutex_
+    // Written from MIDI thread, read from timer thread
+    std::set<TrackId> pendingMidiTriggers_;     // note-on events (consumed each tick)
+    std::map<TrackId, int> midiHeldNoteCount_;  // per-track count of held notes (gate)
+    std::mutex midiTriggerMutex_;
 
     void notifyTracksChanged();
     void notifyTrackPropertyChanged(int trackId);

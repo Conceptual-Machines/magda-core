@@ -6,6 +6,7 @@
 #include "../core/RackInfo.hpp"
 #include "../core/TrackManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
+#include "ModifierHelpers.hpp"
 #include "PluginWindowBridge.hpp"
 #include "TrackController.hpp"
 #include "TransportStateManager.hpp"
@@ -526,6 +527,48 @@ void PluginManager::ensureVolumePluginPosition(te::AudioTrack* track) const {
 // Device-Level Modifier Sync
 // =============================================================================
 
+void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
+    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (!trackInfo)
+        return;
+
+    DBG("updateDeviceModifierProperties: trackId=" << trackId);
+
+    // Update properties on existing TE modifiers without removing/recreating them
+    int modOffset = 0;
+    for (const auto& element : trackInfo->chainElements) {
+        if (!isDevice(element))
+            continue;
+
+        const auto& device = getDevice(element);
+        auto it = deviceModifiers_.find(device.id);
+        if (it == deviceModifiers_.end())
+            continue;
+
+        auto& existingMods = it->second;
+        size_t modIdx = 0;
+
+        for (const auto& modInfo : device.mods) {
+            if (!modInfo.enabled || modInfo.links.empty())
+                continue;
+
+            if (modIdx >= existingMods.size())
+                break;
+
+            auto& modifier = existingMods[modIdx];
+            if (!modifier) {
+                ++modIdx;
+                continue;
+            }
+
+            if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
+                applyLFOProperties(lfo, modInfo);
+            }
+            ++modIdx;
+        }
+    }
+}
+
 void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack) {
     auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
     if (!trackInfo || !teTrack)
@@ -613,81 +656,7 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                         break;
 
                     if (auto* lfo = dynamic_cast<te::LFOModifier*>(lfoMod.get())) {
-                        // Map waveform
-                        float waveVal = 0.0f;
-                        switch (modInfo.waveform) {
-                            case LFOWaveform::Sine:
-                                waveVal = 0.0f;
-                                break;
-                            case LFOWaveform::Triangle:
-                                waveVal = 1.0f;
-                                break;
-                            case LFOWaveform::Saw:
-                                waveVal = 2.0f;
-                                break;
-                            case LFOWaveform::ReverseSaw:
-                                waveVal = 3.0f;
-                                break;
-                            case LFOWaveform::Square:
-                                waveVal = 4.0f;
-                                break;
-                            case LFOWaveform::Custom:
-                                waveVal = 0.0f;
-                                break;
-                        }
-                        lfo->wave = waveVal;
-                        lfo->rate = modInfo.rate;
-                        lfo->depth = 1.0f;
-                        lfo->phase = modInfo.phaseOffset;
-                        lfo->syncType = modInfo.tempoSync ? 1.0f : 0.0f;
-
-                        if (modInfo.tempoSync) {
-                            // TE RateType enum: 0=hz, 1=4bar, 2=2bar, 3=bar,
-                            // 4=halfT, 5=half, 6=halfD, 7=quarterT, 8=quarter,
-                            // 9=quarterD, 10=eighthT, 11=eighth, 12=eighthD,
-                            // 13=sixteenthT, 14=sixteenth, 15=sixteenthD,
-                            // 16=thirtySecondT, 17=thirtySecond, 18=thirtySecondD
-                            float rateType = 8.0f;  // quarter note default
-                            switch (modInfo.syncDivision) {
-                                case SyncDivision::Whole:
-                                    rateType = 3.0f;
-                                    break;
-                                case SyncDivision::Half:
-                                    rateType = 5.0f;
-                                    break;
-                                case SyncDivision::Quarter:
-                                    rateType = 8.0f;
-                                    break;
-                                case SyncDivision::Eighth:
-                                    rateType = 11.0f;
-                                    break;
-                                case SyncDivision::Sixteenth:
-                                    rateType = 14.0f;
-                                    break;
-                                case SyncDivision::ThirtySecond:
-                                    rateType = 17.0f;
-                                    break;
-                                case SyncDivision::DottedHalf:
-                                    rateType = 6.0f;
-                                    break;
-                                case SyncDivision::DottedQuarter:
-                                    rateType = 9.0f;
-                                    break;
-                                case SyncDivision::DottedEighth:
-                                    rateType = 12.0f;
-                                    break;
-                                case SyncDivision::TripletHalf:
-                                    rateType = 4.0f;
-                                    break;
-                                case SyncDivision::TripletQuarter:
-                                    rateType = 7.0f;
-                                    break;
-                                case SyncDivision::TripletEighth:
-                                    rateType = 10.0f;
-                                    break;
-                            }
-                            lfo->rateType = rateType;
-                        }
+                        applyLFOProperties(lfo, modInfo);
                     }
                     modifier = lfoMod;
                     break;
@@ -714,6 +683,14 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
 
             existingMods.push_back(modifier);
 
+            // If this modifier is inside an instrument rack, add a MIDI connection
+            // from the rack input to the modifier so it receives MIDI note-on events
+            // (needed for syncType=note / MIDI retrigger)
+            if (instrumentRackType && modifier) {
+                auto rackIOId = te::EditItemID();  // Default = rack I/O
+                instrumentRackType->addConnection(rackIOId, 0, modifier->itemID, 0);
+            }
+
             // Create modifier assignments for each link
             for (const auto& link : modInfo.links) {
                 if (!link.isValid())
@@ -736,8 +713,13 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                 if (link.target.paramIndex >= 0 &&
                     link.target.paramIndex < static_cast<int>(params.size())) {
                     auto* param = params[static_cast<size_t>(link.target.paramIndex)];
-                    if (param)
+                    if (param) {
                         param->addModifier(*modifier, link.amount);
+                        DBG("syncDeviceModifiers: linked mod to '"
+                            << param->getParameterName() << "' amount=" << juce::String(link.amount)
+                            << " modType=" << (int)modInfo.type
+                            << " numAssignments=" << (int)param->getAssignments().size());
+                    }
                 }
             }
         }
@@ -746,11 +728,9 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
 
 // =============================================================================
 void PluginManager::resyncDeviceModifiers(TrackId trackId) {
-    auto* teTrack = trackController_.getAudioTrack(trackId);
-    if (!teTrack)
-        return;
-    syncDeviceModifiers(trackId, teTrack);
-    rackSyncManager_.resyncAllModifiers(trackId);
+    // Update properties on existing modifiers in-place (no destroy/recreate)
+    updateDeviceModifierProperties(trackId);
+    rackSyncManager_.updateAllModifierProperties(trackId);
 }
 
 // Utilities

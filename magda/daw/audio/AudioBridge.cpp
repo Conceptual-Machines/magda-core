@@ -190,18 +190,27 @@ void AudioBridge::updateMidiRoutingForSelection() {
 
         bool shouldReceiveMidi = (track.id == lastSelectedTrack_) || track.recordArmed;
 
-        // Check if this track has an instrument (only route MIDI to tracks with instruments)
-        bool hasInstrument = false;
+        // Check if this track needs MIDI (has an instrument or a MIDI-triggered mod)
+        bool needsMidi = false;
         for (const auto& element : track.chainElements) {
             if (std::holds_alternative<DeviceInfo>(element)) {
-                if (std::get<DeviceInfo>(element).isInstrument) {
-                    hasInstrument = true;
+                const auto& device = std::get<DeviceInfo>(element);
+                if (device.isInstrument) {
+                    needsMidi = true;
                     break;
                 }
+                for (const auto& mod : device.mods) {
+                    if (mod.enabled && mod.triggerMode == LFOTriggerMode::MIDI) {
+                        needsMidi = true;
+                        break;
+                    }
+                }
+                if (needsMidi)
+                    break;
             }
         }
 
-        if (!hasInstrument)
+        if (!needsMidi)
             continue;
 
         // Check current MIDI routing state
@@ -226,8 +235,11 @@ void AudioBridge::trackDevicesChanged(TrackId trackId) {
 }
 
 void AudioBridge::deviceModifiersChanged(TrackId trackId) {
-    // Modifier properties changed (rate, waveform, sync) - resync only modifiers
+    // Modifier properties changed (rate, waveform, sync, trigger mode) - resync only modifiers
     pluginManager_.resyncDeviceModifiers(trackId);
+
+    // Re-check MIDI routing in case trigger mode changed to/from MIDI
+    updateMidiRoutingForSelection();
 }
 
 void AudioBridge::masterChannelChanged() {

@@ -132,7 +132,9 @@ class TrackHeadersPanel : public juce::Component,
         // Meter levels
         float meterLevelL = 0.0f;
         float meterLevelR = 0.0f;
-        float midiActivity = 0.0f;  // 0-1, decays over time
+        float midiActivity = 0.0f;     // 0-1, decays over time
+        uint32_t lastMidiCounter = 0;  // last-seen activity counter
+        int midiHoldFrames = 0;        // frames to hold at full brightness
 
         TrackHeader(const juce::String& trackName);
         ~TrackHeader() = default;

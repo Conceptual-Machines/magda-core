@@ -234,9 +234,12 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
             // native InputDeviceInstance -> MidiInputDeviceNode system.
             // MidiBridge only monitors MIDI activity for UI visualization.
 
-            // Trigger MIDI activity indicator (only for notes)
-            if (audioBridge_ && message.isNoteOn()) {
-                audioBridge_->triggerMidiActivity(trackId);
+            if (message.isNoteOn()) {
+                if (audioBridge_)
+                    audioBridge_->triggerMidiActivity(trackId);
+                TrackManager::getInstance().triggerMidiNoteOn(trackId);
+            } else if (message.isNoteOff()) {
+                TrackManager::getInstance().triggerMidiNoteOff(trackId);
             }
 
             // Check if monitoring is enabled for this track for callbacks

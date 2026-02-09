@@ -287,20 +287,9 @@ TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(au
     AutomationManager::getInstance().addListener(this);
 
     // Set up MIDI activity monitoring
-    if (audioEngine_) {
-        auto* midiBridge = audioEngine_->getMidiBridge();
-        if (midiBridge) {
-            midiBridge->onNoteEvent = [this](TrackId trackId, const MidiNoteEvent& event) {
-                // Find the track header and trigger MIDI activity
-                for (auto& header : trackHeaders) {
-                    if (header->trackId == trackId) {
-                        header->midiActivity = 1.0f;  // Full activity on note event
-                        break;
-                    }
-                }
-            };
-        }
-    }
+    // MIDI activity is handled via the lock-free MidiActivityMonitor
+    // (triggerMidiActivity → getMidiActivityCounter in timerCallback).
+    // No onNoteEvent callback needed here.
 
     // Build tracks from TrackManager
     tracksChanged();
@@ -335,7 +324,7 @@ void TrackHeadersPanel::timerCallback() {
     auto& meteringBuffer = bridge->getMeteringBuffer();
 
     // Decay rate for MIDI activity (fade out over time)
-    const float midiDecayRate = 0.92f;  // Per frame decay (fast fade)
+    const float midiDecayRate = 0.7f;  // Per frame decay (~100ms to near-zero at 30fps)
 
     // Check for MIDI device changes every 60 frames (2 seconds at 30 FPS)
     static int midiDeviceCheckCounter = 0;
@@ -365,18 +354,25 @@ void TrackHeadersPanel::timerCallback() {
             }
         }
 
-        // Check for MIDI activity from audio thread
-        if (bridge->consumeMidiActivity(header->trackId)) {
-            header->midiActivity = 1.0f;  // Trigger full brightness
+        // Check for new MIDI note-on (counter comparison)
+        auto counter = bridge->getMidiActivityCounter(header->trackId);
+        if (counter != header->lastMidiCounter) {
+            header->lastMidiCounter = counter;
+            header->midiActivity = 1.0f;
+            header->midiHoldFrames = 4;  // Hold bright for ~130ms at 30fps
         }
 
-        // Decay MIDI activity indicator
-        if (header->midiActivity > 0.01f) {
+        // Decay only after hold expires
+        if (header->midiHoldFrames > 0) {
+            header->midiHoldFrames--;
+        } else if (header->midiActivity > 0.01f) {
             header->midiActivity *= midiDecayRate;
-            if (header->midiIndicator) {
-                static_cast<MidiActivityIndicator*>(header->midiIndicator.get())
-                    ->setActivity(header->midiActivity);
-            }
+        }
+
+        // Update indicator
+        if (header->midiIndicator) {
+            static_cast<MidiActivityIndicator*>(header->midiIndicator.get())
+                ->setActivity(header->midiActivity);
         }
     }
 }

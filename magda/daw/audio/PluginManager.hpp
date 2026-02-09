@@ -222,6 +222,10 @@ class PluginManager {
     // Device-level modifier sync (for standalone devices, not inside MAGDA racks)
     void syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack);
 
+    // Update existing modifier properties in-place (rate, waveform, sync, phase)
+    // without destroying/recreating modifiers. Used for non-structural changes.
+    void updateDeviceModifierProperties(TrackId trackId);
+
     // Plugin/device mappings and processors
     std::map<DeviceId, te::Plugin::Ptr> deviceToPlugin_;
     std::map<te::Plugin*, DeviceId> pluginToDevice_;
