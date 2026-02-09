@@ -564,6 +564,45 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
             if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
                 applyLFOProperties(lfo, modInfo);
             }
+
+            // Update assignment values (mod depth) for each link
+            for (const auto& link : modInfo.links) {
+                if (!link.isValid())
+                    continue;
+
+                te::Plugin::Ptr linkTarget;
+                if (link.target.deviceId == device.id) {
+                    juce::ScopedLock lock(pluginLock_);
+                    auto pit = deviceToPlugin_.find(device.id);
+                    if (pit != deviceToPlugin_.end())
+                        linkTarget = pit->second;
+                    if (!linkTarget && device.isInstrument)
+                        if (auto* inner = instrumentRackManager_.getInnerPlugin(device.id))
+                            linkTarget = inner;
+                } else {
+                    juce::ScopedLock lock(pluginLock_);
+                    auto pit = deviceToPlugin_.find(link.target.deviceId);
+                    if (pit != deviceToPlugin_.end())
+                        linkTarget = pit->second;
+                }
+                if (!linkTarget)
+                    continue;
+
+                auto params = linkTarget->getAutomatableParameters();
+                if (link.target.paramIndex >= 0 &&
+                    link.target.paramIndex < static_cast<int>(params.size())) {
+                    auto* param = params[static_cast<size_t>(link.target.paramIndex)];
+                    if (param) {
+                        for (auto* assignment : param->getAssignments()) {
+                            if (assignment->isForModifierSource(*modifier)) {
+                                assignment->value = link.amount;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
             ++modIdx;
         }
     }

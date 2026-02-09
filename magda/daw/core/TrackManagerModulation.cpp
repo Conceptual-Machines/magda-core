@@ -127,10 +127,7 @@ void TrackManager::setRackModLinkAmount(const ChainNodePath& rackPath, int modIn
         if (rack->mods[modIndex].target == target) {
             rack->mods[modIndex].amount = amount;
         }
-        // Notify when a new link is created (needs TE modifier assignment)
-        if (created) {
-            notifyDeviceModifiersChanged(rackPath.trackId);
-        }
+        notifyDeviceModifiersChanged(rackPath.trackId);
     }
 }
 
@@ -357,11 +354,11 @@ void TrackManager::setDeviceModLinkAmount(const ChainNodePath& devicePath, int m
             link->amount = amount;
         } else {
             mod->links.push_back({target, amount});
-            notifyDeviceModifiersChanged(devicePath.trackId);
         }
         if (mod->target == target) {
             mod->amount = amount;
         }
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
 }
 

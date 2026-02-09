@@ -247,8 +247,34 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
                         if (modIt == synced.innerModifiers.end() || !modIt->second)
                             continue;
 
-                        if (auto* lfo = dynamic_cast<te::LFOModifier*>(modIt->second.get())) {
+                        auto& modifier = modIt->second;
+
+                        if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
                             applyLFOProperties(lfo, modInfo);
+                        }
+
+                        // Update assignment values (mod depth) for each link
+                        for (const auto& link : modInfo.links) {
+                            if (!link.isValid())
+                                continue;
+
+                            auto pluginIt = synced.innerPlugins.find(link.target.deviceId);
+                            if (pluginIt == synced.innerPlugins.end() || !pluginIt->second)
+                                continue;
+
+                            auto params = pluginIt->second->getAutomatableParameters();
+                            if (link.target.paramIndex >= 0 &&
+                                link.target.paramIndex < static_cast<int>(params.size())) {
+                                auto* param = params[static_cast<size_t>(link.target.paramIndex)];
+                                if (param) {
+                                    for (auto* assignment : param->getAssignments()) {
+                                        if (assignment->isForModifierSource(*modifier)) {
+                                            assignment->value = link.amount;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

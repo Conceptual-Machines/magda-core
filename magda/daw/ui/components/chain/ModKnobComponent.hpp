@@ -38,15 +38,12 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
             return;
         }
 
-        // Debug: log curvePoints size on each paint
-        if (mod_->waveform == magda::LFOWaveform::Custom && !mod_->curvePoints.empty()) {
-            DBG("MiniWaveformDisplay::paint - curvePoints[0].value=" +
-                juce::String(mod_->curvePoints[0].value));
-        }
-
         auto bounds = getLocalBounds().toFloat();
         const float width = bounds.getWidth();
         const float height = bounds.getHeight();
+
+        if (width < 1.0f || height < 1.0f)
+            return;
         const float centerY = height * 0.5f;
 
         // Draw waveform path
