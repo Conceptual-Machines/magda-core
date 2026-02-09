@@ -187,18 +187,22 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         // Wire up mod/macro linking callbacks
         paramSlots_[i]->onModLinked =
             [safeThis = juce::Component::SafePointer(this)](int modIndex, magda::ModTarget target) {
-                if (!safeThis)
+                auto self = safeThis;
+                if (!self)
                     return;
-                safeThis->onModTargetChangedInternal(modIndex, target);
-                if (safeThis)
-                    safeThis->updateParamModulation();
+                self->onModTargetChangedInternal(modIndex, target);
+                if (self)
+                    self->updateParamModulation();
             };
         paramSlots_[i]->onModLinkedWithAmount = [safeThis = juce::Component::SafePointer(this)](
                                                     int modIndex, magda::ModTarget target,
                                                     float amount) {
-            if (!safeThis)
+            // Copy SafePointer to a local so it survives if the lambda's storage
+            // is freed during a UI rebuild triggered by the calls below.
+            auto self = safeThis;
+            if (!self)
                 return;
-            auto nodePath = safeThis->nodePath_;
+            auto nodePath = self->nodePath_;
             // Check if the active mod is from this device or a parent rack
             auto activeModSelection = magda::LinkModeManager::getInstance().getModInLinkMode();
             if (activeModSelection.isValid() && activeModSelection.parentPath == nodePath) {
@@ -206,15 +210,15 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                 magda::TrackManager::getInstance().setDeviceModTarget(nodePath, modIndex, target);
                 magda::TrackManager::getInstance().setDeviceModLinkAmount(nodePath, modIndex,
                                                                           target, amount);
-                if (!safeThis)
+                if (!self)
                     return;
-                safeThis->updateModsPanel();
+                self->updateModsPanel();
 
                 // Auto-expand mods panel and select the linked mod
-                if (!safeThis->modPanelVisible_) {
-                    safeThis->modButton_->setToggleState(true, juce::dontSendNotification);
-                    safeThis->modButton_->setActive(true);
-                    safeThis->setModPanelVisible(true);
+                if (!self->modPanelVisible_) {
+                    self->modButton_->setToggleState(true, juce::dontSendNotification);
+                    self->modButton_->setActive(true);
+                    self->setModPanelVisible(true);
                 }
                 magda::SelectionManager::getInstance().selectMod(nodePath, modIndex);
             } else if (activeModSelection.isValid()) {
@@ -224,87 +228,90 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                 magda::TrackManager::getInstance().setRackModLinkAmount(
                     activeModSelection.parentPath, modIndex, target, amount);
             }
-            if (safeThis)
-                safeThis->updateParamModulation();
+            if (self)
+                self->updateParamModulation();
         };
         paramSlots_[i]->onModUnlinked =
             [safeThis = juce::Component::SafePointer(this)](int modIndex, magda::ModTarget target) {
-                if (!safeThis)
+                auto self = safeThis;
+                if (!self)
                     return;
-                auto nodePath = safeThis->nodePath_;
+                auto nodePath = self->nodePath_;
                 magda::TrackManager::getInstance().removeDeviceModLink(nodePath, modIndex, target);
-                if (!safeThis)
+                if (!self)
                     return;
-                safeThis->updateParamModulation();
-                safeThis->updateModsPanel();
+                self->updateParamModulation();
+                self->updateModsPanel();
             };
         paramSlots_[i]->onModAmountChanged =
             [safeThis = juce::Component::SafePointer(this)](int modIndex, magda::ModTarget target,
                                                             float amount) {
-                if (!safeThis)
+                auto self = safeThis;
+                if (!self)
                     return;
-                auto nodePath = safeThis->nodePath_;
+                auto nodePath = self->nodePath_;
                 // Check if the active mod is from this device or a parent rack
                 auto activeModSelection = magda::LinkModeManager::getInstance().getModInLinkMode();
                 if (activeModSelection.isValid() && activeModSelection.parentPath == nodePath) {
                     // Device-level mod
                     magda::TrackManager::getInstance().setDeviceModLinkAmount(nodePath, modIndex,
                                                                               target, amount);
-                    if (safeThis)
-                        safeThis->updateModsPanel();
+                    if (self)
+                        self->updateModsPanel();
                 } else if (activeModSelection.isValid()) {
                     // Rack-level mod (use the parent path from the active selection)
                     magda::TrackManager::getInstance().setRackModLinkAmount(
                         activeModSelection.parentPath, modIndex, target, amount);
                 }
-                if (safeThis)
-                    safeThis->updateParamModulation();
+                if (self)
+                    self->updateParamModulation();
             };
         paramSlots_[i]->onMacroLinked = [safeThis = juce::Component::SafePointer(this)](
                                             int macroIndex, magda::MacroTarget target) {
-            if (!safeThis)
+            auto self = safeThis;
+            if (!self)
                 return;
-            safeThis->onMacroTargetChangedInternal(macroIndex, target);
-            if (!safeThis)
+            self->onMacroTargetChangedInternal(macroIndex, target);
+            if (!self)
                 return;
-            safeThis->updateParamModulation();
+            self->updateParamModulation();
 
             // Auto-expand macros panel and select the linked macro
             if (target.isValid()) {
                 auto activeMacroSelection =
                     magda::LinkModeManager::getInstance().getMacroInLinkMode();
                 if (activeMacroSelection.isValid() &&
-                    activeMacroSelection.parentPath == safeThis->nodePath_) {
-                    if (!safeThis->paramPanelVisible_) {
-                        safeThis->macroButton_->setToggleState(true, juce::dontSendNotification);
-                        safeThis->macroButton_->setActive(true);
-                        safeThis->setParamPanelVisible(true);
+                    activeMacroSelection.parentPath == self->nodePath_) {
+                    if (!self->paramPanelVisible_) {
+                        self->macroButton_->setToggleState(true, juce::dontSendNotification);
+                        self->macroButton_->setActive(true);
+                        self->setParamPanelVisible(true);
                     }
-                    magda::SelectionManager::getInstance().selectMacro(safeThis->nodePath_,
-                                                                       macroIndex);
+                    magda::SelectionManager::getInstance().selectMacro(self->nodePath_, macroIndex);
                 }
             }
         };
         paramSlots_[i]->onMacroLinkedWithAmount = [safeThis = juce::Component::SafePointer(this)](
                                                       int macroIndex, magda::MacroTarget target,
                                                       float amount) {
-            if (!safeThis)
+            auto self = safeThis;
+            if (!self)
                 return;
-            auto nodePath = safeThis->nodePath_;
+            auto nodePath = self->nodePath_;
             auto activeMacroSelection = magda::LinkModeManager::getInstance().getMacroInLinkMode();
             if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == nodePath) {
                 magda::TrackManager::getInstance().setDeviceMacroTarget(nodePath, macroIndex,
                                                                         target);
                 magda::TrackManager::getInstance().setDeviceMacroLinkAmount(nodePath, macroIndex,
                                                                             target, amount);
-                if (!safeThis)
+                if (!self)
                     return;
-                safeThis->updateMacroPanel();
+                self->updateMacroPanel();
 
-                if (!safeThis->paramPanelVisible_) {
-                    safeThis->macroButton_->setToggleState(true, juce::dontSendNotification);
-                    safeThis->macroButton_->setActive(true);
-                    safeThis->setParamPanelVisible(true);
+                if (!self->paramPanelVisible_) {
+                    self->macroButton_->setToggleState(true, juce::dontSendNotification);
+                    self->macroButton_->setActive(true);
+                    self->setParamPanelVisible(true);
                 }
                 magda::SelectionManager::getInstance().selectMacro(nodePath, macroIndex);
             } else if (activeMacroSelection.isValid()) {
@@ -313,36 +320,38 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                 magda::TrackManager::getInstance().setRackMacroLinkAmount(
                     activeMacroSelection.parentPath, macroIndex, target, amount);
             }
-            if (safeThis)
-                safeThis->updateParamModulation();
+            if (self)
+                self->updateParamModulation();
         };
         paramSlots_[i]->onMacroAmountChanged = [safeThis = juce::Component::SafePointer(this)](
                                                    int macroIndex, magda::MacroTarget target,
                                                    float amount) {
-            if (!safeThis)
+            auto self = safeThis;
+            if (!self)
                 return;
-            auto nodePath = safeThis->nodePath_;
+            auto nodePath = self->nodePath_;
             auto activeMacroSelection = magda::LinkModeManager::getInstance().getMacroInLinkMode();
             if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == nodePath) {
                 magda::TrackManager::getInstance().setDeviceMacroLinkAmount(nodePath, macroIndex,
                                                                             target, amount);
-                if (safeThis)
-                    safeThis->updateMacroPanel();
+                if (self)
+                    self->updateMacroPanel();
             } else if (activeMacroSelection.isValid()) {
                 magda::TrackManager::getInstance().setRackMacroLinkAmount(
                     activeMacroSelection.parentPath, macroIndex, target, amount);
             }
-            if (safeThis)
-                safeThis->updateParamModulation();
+            if (self)
+                self->updateParamModulation();
         };
         paramSlots_[i]->onMacroValueChanged =
             [safeThis = juce::Component::SafePointer(this)](int macroIndex, float value) {
-                if (!safeThis)
+                auto self = safeThis;
+                if (!self)
                     return;
-                magda::TrackManager::getInstance().setDeviceMacroValue(safeThis->nodePath_,
-                                                                       macroIndex, value);
-                if (safeThis)
-                    safeThis->updateParamModulation();
+                magda::TrackManager::getInstance().setDeviceMacroValue(self->nodePath_, macroIndex,
+                                                                       value);
+                if (self)
+                    self->updateParamModulation();
             };
 
         addAndMakeVisible(*paramSlots_[i]);

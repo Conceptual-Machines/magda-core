@@ -235,11 +235,10 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
             // MidiBridge only monitors MIDI activity for UI visualization.
 
             if (message.isNoteOn()) {
+                DBG("MidiBridge: triggerMidiNoteOn for trackId=" << trackId);
                 if (audioBridge_)
                     audioBridge_->triggerMidiActivity(trackId);
                 TrackManager::getInstance().triggerMidiNoteOn(trackId);
-            } else if (message.isNoteOff()) {
-                TrackManager::getInstance().triggerMidiNoteOff(trackId);
             }
 
             // Check if monitoring is enabled for this track for callbacks

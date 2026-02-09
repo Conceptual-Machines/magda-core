@@ -498,16 +498,9 @@ void TrackManager::removeDeviceModPage(const ChainNodePath& devicePath) {
 }
 
 void TrackManager::triggerMidiNoteOn(TrackId trackId) {
+    DBG("TrackManager::triggerMidiNoteOn trackId=" << trackId);
     std::lock_guard<std::mutex> lock(midiTriggerMutex_);
     pendingMidiTriggers_.insert(trackId);
-    midiHeldNoteCount_[trackId]++;
-}
-
-void TrackManager::triggerMidiNoteOff(TrackId trackId) {
-    std::lock_guard<std::mutex> lock(midiTriggerMutex_);
-    auto& count = midiHeldNoteCount_[trackId];
-    if (count > 0)
-        count--;
 }
 
 // ============================================================================
@@ -516,18 +509,20 @@ void TrackManager::triggerMidiNoteOff(TrackId trackId) {
 
 void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJustStarted,
                                  bool transportJustLooped) {
-    // Snapshot MIDI state (thread-safe)
+    // Snapshot MIDI triggers (thread-safe)
     std::set<TrackId> midiTriggeredTracks;
-    std::map<TrackId, int> heldNoteCounts;
     {
         std::lock_guard<std::mutex> lock(midiTriggerMutex_);
         midiTriggeredTracks.swap(pendingMidiTriggers_);
-        heldNoteCounts = midiHeldNoteCount_;
+    }
+    if (!midiTriggeredTracks.empty()) {
+        for (auto tid : midiTriggeredTracks)
+            DBG("updateAllMods: MIDI trigger consumed for trackId=" << tid);
     }
 
     // Lambda to update a single mod's phase and value
     auto updateMod = [deltaTime, bpm, transportJustStarted,
-                      transportJustLooped](ModInfo& mod, bool midiTriggered, bool midiGateOpen) {
+                      transportJustLooped](ModInfo& mod, bool midiTriggered) {
         // Skip disabled mods - set value to 0 so they don't affect modulation
         if (!mod.enabled) {
             mod.value = 0.0f;
@@ -546,8 +541,11 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                         shouldTrigger = true;
                     break;
                 case LFOTriggerMode::MIDI:
-                    if (midiTriggered)
+                    if (midiTriggered) {
+                        DBG("updateAllMods: MIDI trigger FIRING for mod '"
+                            << mod.name << "' midiTriggered=" << (int)midiTriggered);
                         shouldTrigger = true;
+                    }
                     break;
                 case LFOTriggerMode::Audio:
                     break;
@@ -556,17 +554,8 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             if (shouldTrigger) {
                 mod.phase = 0.0f;
                 mod.triggered = true;
-                mod.triggerCount++;
             } else {
                 mod.triggered = false;
-            }
-
-            // In MIDI trigger mode, LFO only runs while notes are held (gate open).
-            // Exception: if we just triggered this frame, the gate is open regardless
-            // (handles fast note-on/note-off within a single update cycle).
-            if (mod.triggerMode == LFOTriggerMode::MIDI && !midiGateOpen && !shouldTrigger) {
-                mod.value = 0.0f;
-                return;
             }
 
             // Calculate effective rate (Hz or tempo-synced)
@@ -587,32 +576,31 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
     };
 
     // Recursive lambda to update mods in chain elements
-    std::function<void(ChainElement&, bool, bool)> updateElementMods =
-        [&](ChainElement& element, bool midiTriggered, bool midiGateOpen) {
-            if (isDevice(element)) {
-                DeviceInfo& device = magda::getDevice(element);
-                for (auto& mod : device.mods) {
-                    updateMod(mod, midiTriggered, midiGateOpen);
-                }
-            } else if (isRack(element)) {
-                RackInfo& rack = magda::getRack(element);
-                for (auto& mod : rack.mods) {
-                    updateMod(mod, midiTriggered, midiGateOpen);
-                }
-                for (auto& chain : rack.chains) {
-                    for (auto& chainElement : chain.elements) {
-                        updateElementMods(chainElement, midiTriggered, midiGateOpen);
-                    }
+    std::function<void(ChainElement&, bool)> updateElementMods = [&](ChainElement& element,
+                                                                     bool midiTriggered) {
+        if (isDevice(element)) {
+            DeviceInfo& device = magda::getDevice(element);
+            for (auto& mod : device.mods) {
+                updateMod(mod, midiTriggered);
+            }
+        } else if (isRack(element)) {
+            RackInfo& rack = magda::getRack(element);
+            for (auto& mod : rack.mods) {
+                updateMod(mod, midiTriggered);
+            }
+            for (auto& chain : rack.chains) {
+                for (auto& chainElement : chain.elements) {
+                    updateElementMods(chainElement, midiTriggered);
                 }
             }
-        };
+        }
+    };
 
     // Update mods in all tracks
     for (auto& track : tracks_) {
         bool trackMidiTriggered = midiTriggeredTracks.count(track.id) > 0;
-        bool trackMidiGateOpen = heldNoteCounts.count(track.id) > 0 && heldNoteCounts[track.id] > 0;
         for (auto& element : track.chainElements) {
-            updateElementMods(element, trackMidiTriggered, trackMidiGateOpen);
+            updateElementMods(element, trackMidiTriggered);
         }
     }
 }

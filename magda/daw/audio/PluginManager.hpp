@@ -197,6 +197,14 @@ class PluginManager {
      */
     void resyncDeviceModifiers(TrackId trackId);
 
+    /**
+     * @brief Trigger note-on resync on all TE LFO modifiers for a track
+     *
+     * Thread-safe: can be called from MIDI thread. The actual resync happens
+     * on the next audio block. Only affects LFOs with syncType == note.
+     */
+    void triggerLFONoteOn(TrackId trackId);
+
   private:
     // Internal device → plugin conversion (used by syncTrackPlugins)
     te::Plugin::Ptr loadDeviceAsPlugin(TrackId trackId, const DeviceInfo& device);

@@ -366,6 +366,8 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     void triggerMidiActivity(TrackId trackId) {
         midiActivity_.triggerActivity(trackId);
+        // Programmatically trigger resync on TE LFO modifiers (thread-safe atomic flag)
+        pluginManager_.triggerLFONoteOn(trackId);
     }
 
     /**

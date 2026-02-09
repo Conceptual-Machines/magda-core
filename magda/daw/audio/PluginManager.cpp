@@ -590,23 +590,20 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
             }
         }
 
-        // Determine which ModifierList to use:
-        // - Instruments are wrapped in InstrumentRackManager's RackType → use rackType's
-        // ModifierList
-        // - Effects are directly on the track → use the track's ModifierList
+        // Choose the right ModifierList scope for parameter assignment.
+        // Instruments are wrapped in an InstrumentRack — modifiers must live on
+        // the rack's ModifierList to reach the inner plugin's parameters.
+        // Standalone plugins live directly on the track, so use the track's list.
+        // MIDI retrigger is handled programmatically via LFOModifier::triggerNoteOn()
+        // rather than relying on MIDI flowing through applyToBuffer().
         te::ModifierList* modList = nullptr;
-        te::RackType::Ptr instrumentRackType;
-
         if (device.isInstrument) {
-            instrumentRackType = instrumentRackManager_.getRackType(device.id);
-            if (instrumentRackType) {
-                modList = &instrumentRackType->getModifierList();
-            }
+            auto rackType = instrumentRackManager_.getRackType(device.id);
+            if (rackType)
+                modList = &rackType->getModifierList();
         }
-
-        if (!modList) {
+        if (!modList)
             modList = teTrack->getModifierList();
-        }
 
         // Remove existing TE modifiers for this device before recreating
         auto& existingMods = deviceModifiers_[device.id];
@@ -683,14 +680,6 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
 
             existingMods.push_back(modifier);
 
-            // If this modifier is inside an instrument rack, add a MIDI connection
-            // from the rack input to the modifier so it receives MIDI note-on events
-            // (needed for syncType=note / MIDI retrigger)
-            if (instrumentRackType && modifier) {
-                auto rackIOId = te::EditItemID();  // Default = rack I/O
-                instrumentRackType->addConnection(rackIOId, 0, modifier->itemID, 0);
-            }
-
             // Create modifier assignments for each link
             for (const auto& link : modInfo.links) {
                 if (!link.isValid())
@@ -724,6 +713,33 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
             }
         }
     }
+}
+
+// =============================================================================
+void PluginManager::triggerLFONoteOn(TrackId trackId) {
+    // Trigger resync on all TE LFO modifiers associated with devices on this track
+    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (!trackInfo)
+        return;
+
+    for (const auto& element : trackInfo->chainElements) {
+        if (!isDevice(element))
+            continue;
+
+        const auto& device = getDevice(element);
+        auto it = deviceModifiers_.find(device.id);
+        if (it == deviceModifiers_.end())
+            continue;
+
+        for (auto& mod : it->second) {
+            if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get())) {
+                lfo->triggerNoteOn();
+            }
+        }
+    }
+
+    // Also trigger LFOs inside MAGDA racks on this track
+    rackSyncManager_.triggerLFONoteOn(trackId);
 }
 
 // =============================================================================

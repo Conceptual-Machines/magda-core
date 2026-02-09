@@ -332,7 +332,6 @@ class TrackManager {
      * will reset phase on any mods with LFOTriggerMode::MIDI on this track.
      */
     void triggerMidiNoteOn(TrackId trackId);
-    void triggerMidiNoteOff(TrackId trackId);
 
     // Macro management for devices (path-based for nested device support)
     void setDeviceMacroValue(const ChainNodePath& devicePath, int macroIndex, float value);
@@ -452,8 +451,7 @@ class TrackManager {
 
     // MIDI state for modulator triggers, protected by midiTriggerMutex_
     // Written from MIDI thread, read from timer thread
-    std::set<TrackId> pendingMidiTriggers_;     // note-on events (consumed each tick)
-    std::map<TrackId, int> midiHeldNoteCount_;  // per-track count of held notes (gate)
+    std::set<TrackId> pendingMidiTriggers_;  // note-on events (consumed each tick)
     std::mutex midiTriggerMutex_;
 
     void notifyTracksChanged();

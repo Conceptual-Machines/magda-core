@@ -667,4 +667,17 @@ void RackSyncManager::syncMacros(SyncedRack& synced, const RackInfo& rackInfo) {
     }
 }
 
+void RackSyncManager::triggerLFONoteOn(TrackId trackId) {
+    for (auto& [rackId, synced] : syncedRacks_) {
+        if (synced.trackId != trackId)
+            continue;
+
+        for (auto& [modId, modifier] : synced.innerModifiers) {
+            if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
+                lfo->triggerNoteOn();
+            }
+        }
+    }
+}
+
 }  // namespace magda

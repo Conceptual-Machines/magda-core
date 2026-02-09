@@ -102,6 +102,12 @@ class RackSyncManager {
      */
     void updateAllModifierProperties(TrackId trackId);
 
+    /**
+     * @brief Trigger note-on resync on all TE LFO modifiers inside racks on a track
+     * Thread-safe: can be called from MIDI thread.
+     */
+    void triggerLFONoteOn(TrackId trackId);
+
   private:
     /**
      * @brief Internal state for a synced rack
