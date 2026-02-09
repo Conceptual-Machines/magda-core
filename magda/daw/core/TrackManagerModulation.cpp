@@ -100,13 +100,8 @@ void TrackManager::setRackModTarget(const ChainNodePath& rackPath, int modIndex,
             return;
         }
         rack->mods[modIndex].target = target;
-        // Notify asynchronously so the UI callback can unwind before rebuild
-        auto tid = rackPath.trackId;
-        juce::MessageManager::callAsync([tid]() {
-            if (juce::JUCEApplicationBase::getInstance() == nullptr)
-                return;
-            TrackManager::getInstance().notifyTrackDevicesChanged(tid);
-        });
+        // Use modifier-only notify to avoid full UI rebuild (panel stays open)
+        notifyDeviceModifiersChanged(rackPath.trackId);
     }
 }
 
@@ -134,7 +129,7 @@ void TrackManager::setRackModLinkAmount(const ChainNodePath& rackPath, int modIn
         }
         // Notify when a new link is created (needs TE modifier assignment)
         if (created) {
-            notifyTrackDevicesChanged(rackPath.trackId);
+            notifyDeviceModifiersChanged(rackPath.trackId);
         }
     }
 }
@@ -339,13 +334,8 @@ void TrackManager::setDeviceModTarget(const ChainNodePath& devicePath, int modIn
             mod->addLink(target, 0.5f);
         }
         mod->target = target;
-        // Notify asynchronously so the UI callback can unwind before rebuild
-        auto tid = devicePath.trackId;
-        juce::MessageManager::callAsync([tid]() {
-            if (juce::JUCEApplicationBase::getInstance() == nullptr)
-                return;
-            TrackManager::getInstance().notifyTrackDevicesChanged(tid);
-        });
+        // Use modifier-only notify to avoid full UI rebuild (panel stays open)
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
 }
 
@@ -356,7 +346,7 @@ void TrackManager::removeDeviceModLink(const ChainNodePath& devicePath, int modI
         if (mod->target == target) {
             mod->target = ModTarget{};
         }
-        notifyTrackDevicesChanged(devicePath.trackId);
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
 }
 
@@ -367,7 +357,7 @@ void TrackManager::setDeviceModLinkAmount(const ChainNodePath& devicePath, int m
             link->amount = amount;
         } else {
             mod->links.push_back({target, amount});
-            notifyTrackDevicesChanged(devicePath.trackId);
+            notifyDeviceModifiersChanged(devicePath.trackId);
         }
         if (mod->target == target) {
             mod->amount = amount;

@@ -765,9 +765,40 @@ void PluginManager::triggerLFONoteOn(TrackId trackId) {
 
 // =============================================================================
 void PluginManager::resyncDeviceModifiers(TrackId trackId) {
-    // Update properties on existing modifiers in-place (no destroy/recreate)
-    updateDeviceModifierProperties(trackId);
-    rackSyncManager_.updateAllModifierProperties(trackId);
+    // Check if any device has new links that don't have TE modifiers yet
+    bool needsFullSync = false;
+    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (trackInfo) {
+        for (const auto& element : trackInfo->chainElements) {
+            if (!isDevice(element))
+                continue;
+            const auto& device = getDevice(element);
+            int activeModCount = 0;
+            for (const auto& mod : device.mods) {
+                if (mod.enabled && !mod.links.empty())
+                    activeModCount++;
+            }
+            auto it = deviceModifiers_.find(device.id);
+            int existingCount =
+                (it != deviceModifiers_.end()) ? static_cast<int>(it->second.size()) : 0;
+            if (activeModCount != existingCount) {
+                needsFullSync = true;
+                break;
+            }
+        }
+    }
+
+    if (needsFullSync) {
+        // New links added or removed — need full modifier rebuild
+        auto* teTrack = trackController_.getAudioTrack(trackId);
+        if (teTrack)
+            syncDeviceModifiers(trackId, teTrack);
+        rackSyncManager_.resyncAllModifiers(trackId);
+    } else {
+        // Just update properties on existing modifiers in-place
+        updateDeviceModifierProperties(trackId);
+        rackSyncManager_.updateAllModifierProperties(trackId);
+    }
 }
 
 // Utilities
