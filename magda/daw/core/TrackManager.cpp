@@ -1313,6 +1313,12 @@ void TrackManager::notifyTrackDevicesChanged(TrackId trackId) {
     }
 }
 
+void TrackManager::notifyDeviceModifiersChanged(TrackId trackId) {
+    for (auto* listener : listeners_) {
+        listener->deviceModifiersChanged(trackId);
+    }
+}
+
 void TrackManager::notifyDevicePropertyChanged(DeviceId deviceId) {
     for (auto* listener : listeners_) {
         listener->devicePropertyChanged(deviceId);

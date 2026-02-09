@@ -225,6 +225,11 @@ void AudioBridge::trackDevicesChanged(TrackId trackId) {
     syncTrackPlugins(trackId);
 }
 
+void AudioBridge::deviceModifiersChanged(TrackId trackId) {
+    // Modifier properties changed (rate, waveform, sync) - resync only modifiers
+    pluginManager_.resyncDeviceModifiers(trackId);
+}
+
 void AudioBridge::masterChannelChanged() {
     // Master channel property changed - sync to Tracktion Engine
     const auto& master = TrackManager::getInstance().getMasterChannel();

@@ -642,43 +642,48 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                         lfo->syncType = modInfo.tempoSync ? 1.0f : 0.0f;
 
                         if (modInfo.tempoSync) {
-                            float rateType = 2.0f;
+                            // TE RateType enum: 0=hz, 1=4bar, 2=2bar, 3=bar,
+                            // 4=halfT, 5=half, 6=halfD, 7=quarterT, 8=quarter,
+                            // 9=quarterD, 10=eighthT, 11=eighth, 12=eighthD,
+                            // 13=sixteenthT, 14=sixteenth, 15=sixteenthD,
+                            // 16=thirtySecondT, 17=thirtySecond, 18=thirtySecondD
+                            float rateType = 8.0f;  // quarter note default
                             switch (modInfo.syncDivision) {
                                 case SyncDivision::Whole:
-                                    rateType = 0.0f;
+                                    rateType = 3.0f;
                                     break;
                                 case SyncDivision::Half:
-                                    rateType = 1.0f;
-                                    break;
-                                case SyncDivision::Quarter:
-                                    rateType = 2.0f;
-                                    break;
-                                case SyncDivision::Eighth:
-                                    rateType = 3.0f;
-                                    break;
-                                case SyncDivision::Sixteenth:
-                                    rateType = 4.0f;
-                                    break;
-                                case SyncDivision::ThirtySecond:
                                     rateType = 5.0f;
                                     break;
+                                case SyncDivision::Quarter:
+                                    rateType = 8.0f;
+                                    break;
+                                case SyncDivision::Eighth:
+                                    rateType = 11.0f;
+                                    break;
+                                case SyncDivision::Sixteenth:
+                                    rateType = 14.0f;
+                                    break;
+                                case SyncDivision::ThirtySecond:
+                                    rateType = 17.0f;
+                                    break;
                                 case SyncDivision::DottedHalf:
-                                    rateType = 1.0f;
+                                    rateType = 6.0f;
                                     break;
                                 case SyncDivision::DottedQuarter:
-                                    rateType = 2.0f;
+                                    rateType = 9.0f;
                                     break;
                                 case SyncDivision::DottedEighth:
-                                    rateType = 3.0f;
+                                    rateType = 12.0f;
                                     break;
                                 case SyncDivision::TripletHalf:
-                                    rateType = 1.0f;
+                                    rateType = 4.0f;
                                     break;
                                 case SyncDivision::TripletQuarter:
-                                    rateType = 2.0f;
+                                    rateType = 7.0f;
                                     break;
                                 case SyncDivision::TripletEighth:
-                                    rateType = 3.0f;
+                                    rateType = 10.0f;
                                     break;
                             }
                             lfo->rateType = rateType;
@@ -740,6 +745,14 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
 }
 
 // =============================================================================
+void PluginManager::resyncDeviceModifiers(TrackId trackId) {
+    auto* teTrack = trackController_.getAudioTrack(trackId);
+    if (!teTrack)
+        return;
+    syncDeviceModifiers(trackId, teTrack);
+    rackSyncManager_.resyncAllModifiers(trackId);
+}
+
 // Utilities
 // =============================================================================
 

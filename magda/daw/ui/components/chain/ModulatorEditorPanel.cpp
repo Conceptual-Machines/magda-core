@@ -112,17 +112,21 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
                     onRateChanged(rate);
                 }
             };
-            curveEditorWindow_->onTempoSyncChanged = [this](bool synced) {
-                currentMod_.tempoSync = synced;
-                syncToggle_.setToggleState(synced, juce::dontSendNotification);
-                syncToggle_.setButtonText(synced ? "Sync" : "Free");
-                rateSlider_.setVisible(!synced);
-                syncDivisionCombo_.setVisible(synced);
-                if (onTempoSyncChanged) {
-                    onTempoSyncChanged(synced);
-                }
-                resized();
-            };
+            curveEditorWindow_->onTempoSyncChanged =
+                [safeThis = juce::Component::SafePointer(this)](bool synced) {
+                    if (!safeThis)
+                        return;
+                    safeThis->currentMod_.tempoSync = synced;
+                    safeThis->syncToggle_.setToggleState(synced, juce::dontSendNotification);
+                    safeThis->syncToggle_.setButtonText(synced ? "Sync" : "Free");
+                    safeThis->rateSlider_.setVisible(!synced);
+                    safeThis->syncDivisionCombo_.setVisible(synced);
+                    if (safeThis->onTempoSyncChanged) {
+                        safeThis->onTempoSyncChanged(synced);
+                    }
+                    if (safeThis)
+                        safeThis->resized();
+                };
             curveEditorWindow_->onSyncDivisionChanged = [this](magda::SyncDivision div) {
                 currentMod_.syncDivision = div;
                 syncDivisionCombo_.setSelectedId(static_cast<int>(div) + 100,
@@ -197,18 +201,21 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
                           DarkTheme::getColour(DarkTheme::BACKGROUND));
     syncToggle_.setClickingTogglesState(true);
     syncToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    syncToggle_.onClick = [this]() {
-        bool synced = syncToggle_.getToggleState();
-        currentMod_.tempoSync = synced;
+    syncToggle_.onClick = [safeThis = juce::Component::SafePointer(this)]() {
+        if (!safeThis)
+            return;
+        bool synced = safeThis->syncToggle_.getToggleState();
+        safeThis->currentMod_.tempoSync = synced;
         // Update button text
-        syncToggle_.setButtonText(synced ? "Sync" : "Free");
+        safeThis->syncToggle_.setButtonText(synced ? "Sync" : "Free");
         // Show/hide appropriate control
-        rateSlider_.setVisible(!synced);
-        syncDivisionCombo_.setVisible(synced);
-        if (onTempoSyncChanged) {
-            onTempoSyncChanged(synced);
+        safeThis->rateSlider_.setVisible(!synced);
+        safeThis->syncDivisionCombo_.setVisible(synced);
+        if (safeThis->onTempoSyncChanged) {
+            safeThis->onTempoSyncChanged(synced);
         }
-        resized();  // Re-layout
+        if (safeThis)
+            safeThis->resized();  // Re-layout
     };
     addAndMakeVisible(syncToggle_);
 

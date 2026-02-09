@@ -56,6 +56,11 @@ class TrackManagerListener {
         juce::ignoreUnused(trackId);
     }
 
+    // Called when modifier properties change (rate, waveform, sync, etc.) but not structure
+    virtual void deviceModifiersChanged(TrackId trackId) {
+        juce::ignoreUnused(trackId);
+    }
+
     // Called when a device parameter changes (gain, level, etc.)
     virtual void devicePropertyChanged(DeviceId deviceId) {
         juce::ignoreUnused(deviceId);
@@ -437,6 +442,7 @@ class TrackManager {
     void notifyMasterChannelChanged();
     void notifyTrackSelectionChanged(TrackId trackId);
     void notifyTrackDevicesChanged(TrackId trackId);
+    void notifyDeviceModifiersChanged(TrackId trackId);
     void notifyDevicePropertyChanged(DeviceId deviceId);
     void notifyDeviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue);
 

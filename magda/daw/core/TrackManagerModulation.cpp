@@ -166,7 +166,7 @@ void TrackManager::setRackModWaveform(const ChainNodePath& rackPath, int modInde
             return;
         }
         rack->mods[modIndex].waveform = waveform;
-        notifyTrackDevicesChanged(rackPath.trackId);
+        notifyDeviceModifiersChanged(rackPath.trackId);
     }
 }
 
@@ -176,7 +176,7 @@ void TrackManager::setRackModRate(const ChainNodePath& rackPath, int modIndex, f
             return;
         }
         rack->mods[modIndex].rate = rate;
-        notifyTrackDevicesChanged(rackPath.trackId);
+        notifyDeviceModifiersChanged(rackPath.trackId);
     }
 }
 
@@ -187,7 +187,7 @@ void TrackManager::setRackModPhaseOffset(const ChainNodePath& rackPath, int modI
             return;
         }
         rack->mods[modIndex].phaseOffset = juce::jlimit(0.0f, 1.0f, phaseOffset);
-        notifyTrackDevicesChanged(rackPath.trackId);
+        notifyDeviceModifiersChanged(rackPath.trackId);
     }
 }
 
@@ -198,7 +198,7 @@ void TrackManager::setRackModTempoSync(const ChainNodePath& rackPath, int modInd
             return;
         }
         rack->mods[modIndex].tempoSync = tempoSync;
-        notifyTrackDevicesChanged(rackPath.trackId);
+        notifyDeviceModifiersChanged(rackPath.trackId);
     }
 }
 
@@ -209,7 +209,7 @@ void TrackManager::setRackModSyncDivision(const ChainNodePath& rackPath, int mod
             return;
         }
         rack->mods[modIndex].syncDivision = division;
-        notifyTrackDevicesChanged(rackPath.trackId);
+        notifyDeviceModifiersChanged(rackPath.trackId);
     }
 }
 
@@ -379,14 +379,14 @@ void TrackManager::setDeviceModWaveform(const ChainNodePath& devicePath, int mod
                                         LFOWaveform waveform) {
     if (auto* mod = getDeviceMod(devicePath, modIndex)) {
         mod->waveform = waveform;
-        notifyTrackDevicesChanged(devicePath.trackId);
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
 }
 
 void TrackManager::setDeviceModRate(const ChainNodePath& devicePath, int modIndex, float rate) {
     if (auto* mod = getDeviceMod(devicePath, modIndex)) {
         mod->rate = rate;
-        notifyTrackDevicesChanged(devicePath.trackId);
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
 }
 
@@ -394,7 +394,7 @@ void TrackManager::setDeviceModPhaseOffset(const ChainNodePath& devicePath, int 
                                            float phaseOffset) {
     if (auto* mod = getDeviceMod(devicePath, modIndex)) {
         mod->phaseOffset = juce::jlimit(0.0f, 1.0f, phaseOffset);
-        notifyTrackDevicesChanged(devicePath.trackId);
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
 }
 
@@ -402,7 +402,7 @@ void TrackManager::setDeviceModTempoSync(const ChainNodePath& devicePath, int mo
                                          bool tempoSync) {
     if (auto* mod = getDeviceMod(devicePath, modIndex)) {
         mod->tempoSync = tempoSync;
-        notifyTrackDevicesChanged(devicePath.trackId);
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
 }
 
@@ -410,7 +410,7 @@ void TrackManager::setDeviceModSyncDivision(const ChainNodePath& devicePath, int
                                             SyncDivision division) {
     if (auto* mod = getDeviceMod(devicePath, modIndex)) {
         mod->syncDivision = division;
-        notifyTrackDevicesChanged(devicePath.trackId);
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
 }
 

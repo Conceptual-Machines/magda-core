@@ -189,6 +189,14 @@ class PluginManager {
      */
     void updateTransportSyncedProcessors(bool isPlaying);
 
+    /**
+     * @brief Resync only device-level modifiers (LFO, Random, etc.) for a track
+     *
+     * Lighter than full syncTrackPlugins — only rebuilds TE modifier assignments.
+     * Used when modifier properties change (rate, waveform, sync) without structural changes.
+     */
+    void resyncDeviceModifiers(TrackId trackId);
+
   private:
     // Internal device → plugin conversion (used by syncTrackPlugins)
     te::Plugin::Ptr loadDeviceAsPlugin(TrackId trackId, const DeviceInfo& device);

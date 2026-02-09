@@ -578,9 +578,14 @@ void ExternalPluginProcessor::parameterChanged(te::AutomatableParameter& param, 
     if (parameterIndex < 0)
         return;
 
+    // When modifiers are active, use the base value (without modulation) to prevent
+    // modulated values from overwriting the base parameter value in the data model.
+    float valueToStore =
+        param.hasActiveModifierAssignments() ? param.getCurrentBaseValue() : newValue;
+
     // Update TrackManager on the message thread to avoid threading issues
     // Use callAsync to ensure we're on the message thread
-    juce::MessageManager::callAsync([this, parameterIndex, newValue]() {
+    juce::MessageManager::callAsync([this, parameterIndex, valueToStore]() {
         // Find this device in TrackManager and update its parameter
         // Use a special method that doesn't trigger AudioBridge notification
         auto& tm = TrackManager::getInstance();
@@ -598,7 +603,7 @@ void ExternalPluginProcessor::parameterChanged(te::AutomatableParameter& param, 
                         // Note: For top-level devices, no steps needed
 
                         // Update parameter without triggering audio bridge notification
-                        tm.setDeviceParameterValueFromPlugin(path, parameterIndex, newValue);
+                        tm.setDeviceParameterValueFromPlugin(path, parameterIndex, valueToStore);
                         return;
                     }
                 }
