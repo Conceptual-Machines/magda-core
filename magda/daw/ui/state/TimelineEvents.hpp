@@ -116,10 +116,12 @@ struct StartPlaybackEvent {};
 struct StopPlaybackEvent {};
 
 /**
- * @brief Toggle record-arm on the selected track
+ * @brief Start recording on armed tracks
  *
- * Does NOT start the transport. When a track is armed and the user presses Play,
- * recording will start automatically via StartPlaybackEvent.
+ * If no tracks are armed, this is a no-op.
+ * If not already playing, starts both playback and recording.
+ * If already playing, punch-in records from the current position.
+ * If already recording, punch-out (stops recording, keeps playing).
  */
 struct StartRecordEvent {};
 

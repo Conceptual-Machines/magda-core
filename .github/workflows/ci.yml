@@ -60,7 +60,8 @@ jobs:
           libxrender-dev \
           libwebkit2gtk-4.1-dev \
           libglu1-mesa-dev \
-          mesa-common-dev
+          mesa-common-dev \
+          xvfb
 
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
@@ -110,6 +111,17 @@ jobs:
           echo "❌ Tests executable not found at build/tests/magda_tests"
           echo "Build directory contents:"
           find build -type f -name "*test*" || true
+          exit 1
+        fi
+
+    - name: Run JUCE integration tests
+      run: |
+        JUCE_TEST_BIN=$(find build -name "magda_juce_tests" -type f | head -1)
+        if [ -n "$JUCE_TEST_BIN" ]; then
+          echo "Running JUCE integration tests..."
+          xvfb-run -a "$JUCE_TEST_BIN"
+        else
+          echo "❌ magda_juce_tests executable not found"
           exit 1
         fi
 
