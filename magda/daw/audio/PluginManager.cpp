@@ -287,6 +287,9 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
         }
     }
 
+    // Sync device-level modifiers (LFOs, etc. assigned to plugin parameters)
+    syncDeviceModifiers(trackId, teTrack);
+
     // Ensure VolumeAndPan is near the end of the chain (before LevelMeter)
     // This is the track's fader control - it should come AFTER audio sources
     ensureVolumePluginPosition(teTrack);
@@ -520,6 +523,223 @@ void PluginManager::ensureVolumePluginPosition(te::AudioTrack* track) const {
 }
 
 // =============================================================================
+// Device-Level Modifier Sync
+// =============================================================================
+
+void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack) {
+    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (!trackInfo || !teTrack)
+        return;
+
+    // Collect all top-level devices (not inside MAGDA racks) that have active mod links
+    for (const auto& element : trackInfo->chainElements) {
+        if (!isDevice(element))
+            continue;
+
+        const auto& device = getDevice(element);
+
+        // Check if any mod has active links
+        bool hasActiveMods = false;
+        for (const auto& mod : device.mods) {
+            if (mod.enabled && !mod.links.empty()) {
+                hasActiveMods = true;
+                break;
+            }
+        }
+
+        // Determine which ModifierList to use:
+        // - Instruments are wrapped in InstrumentRackManager's RackType → use rackType's
+        // ModifierList
+        // - Effects are directly on the track → use the track's ModifierList
+        te::ModifierList* modList = nullptr;
+        te::RackType::Ptr instrumentRackType;
+
+        if (device.isInstrument) {
+            instrumentRackType = instrumentRackManager_.getRackType(device.id);
+            if (instrumentRackType) {
+                modList = &instrumentRackType->getModifierList();
+            }
+        }
+
+        if (!modList) {
+            modList = teTrack->getModifierList();
+        }
+
+        // Remove existing TE modifiers for this device before recreating
+        auto& existingMods = deviceModifiers_[device.id];
+        for (auto& mod : existingMods) {
+            if (mod && modList) {
+                // Remove the modifier's ValueTree from the ModifierList state
+                // This triggers ModifierList::deleteObject() which destroys the modifier
+                modList->state.removeChild(mod->state, nullptr);
+            }
+        }
+        existingMods.clear();
+
+        if (!hasActiveMods || !modList)
+            continue;
+
+        // Find the TE plugin for this device
+        te::Plugin::Ptr targetPlugin;
+        {
+            juce::ScopedLock lock(pluginLock_);
+            auto it = deviceToPlugin_.find(device.id);
+            if (it != deviceToPlugin_.end())
+                targetPlugin = it->second;
+        }
+
+        // For instruments, the inner plugin inside the rack is what we need
+        if (!targetPlugin && device.isInstrument) {
+            auto* inner = instrumentRackManager_.getInnerPlugin(device.id);
+            if (inner)
+                targetPlugin = inner;
+        }
+
+        if (!targetPlugin)
+            continue;
+
+        // Create TE modifiers for each active mod
+        for (const auto& modInfo : device.mods) {
+            if (!modInfo.enabled || modInfo.links.empty())
+                continue;
+
+            te::Modifier::Ptr modifier;
+
+            switch (modInfo.type) {
+                case ModType::LFO: {
+                    juce::ValueTree lfoState(te::IDs::LFO);
+                    auto lfoMod = modList->insertModifier(lfoState, -1, nullptr);
+                    if (!lfoMod)
+                        break;
+
+                    if (auto* lfo = dynamic_cast<te::LFOModifier*>(lfoMod.get())) {
+                        // Map waveform
+                        float waveVal = 0.0f;
+                        switch (modInfo.waveform) {
+                            case LFOWaveform::Sine:
+                                waveVal = 0.0f;
+                                break;
+                            case LFOWaveform::Triangle:
+                                waveVal = 1.0f;
+                                break;
+                            case LFOWaveform::Saw:
+                                waveVal = 2.0f;
+                                break;
+                            case LFOWaveform::ReverseSaw:
+                                waveVal = 3.0f;
+                                break;
+                            case LFOWaveform::Square:
+                                waveVal = 4.0f;
+                                break;
+                            case LFOWaveform::Custom:
+                                waveVal = 0.0f;
+                                break;
+                        }
+                        lfo->wave = waveVal;
+                        lfo->rate = modInfo.rate;
+                        lfo->depth = 1.0f;
+                        lfo->phase = modInfo.phaseOffset;
+                        lfo->syncType = modInfo.tempoSync ? 1.0f : 0.0f;
+
+                        if (modInfo.tempoSync) {
+                            float rateType = 2.0f;
+                            switch (modInfo.syncDivision) {
+                                case SyncDivision::Whole:
+                                    rateType = 0.0f;
+                                    break;
+                                case SyncDivision::Half:
+                                    rateType = 1.0f;
+                                    break;
+                                case SyncDivision::Quarter:
+                                    rateType = 2.0f;
+                                    break;
+                                case SyncDivision::Eighth:
+                                    rateType = 3.0f;
+                                    break;
+                                case SyncDivision::Sixteenth:
+                                    rateType = 4.0f;
+                                    break;
+                                case SyncDivision::ThirtySecond:
+                                    rateType = 5.0f;
+                                    break;
+                                case SyncDivision::DottedHalf:
+                                    rateType = 1.0f;
+                                    break;
+                                case SyncDivision::DottedQuarter:
+                                    rateType = 2.0f;
+                                    break;
+                                case SyncDivision::DottedEighth:
+                                    rateType = 3.0f;
+                                    break;
+                                case SyncDivision::TripletHalf:
+                                    rateType = 1.0f;
+                                    break;
+                                case SyncDivision::TripletQuarter:
+                                    rateType = 2.0f;
+                                    break;
+                                case SyncDivision::TripletEighth:
+                                    rateType = 3.0f;
+                                    break;
+                            }
+                            lfo->rateType = rateType;
+                        }
+                    }
+                    modifier = lfoMod;
+                    break;
+                }
+
+                case ModType::Random: {
+                    juce::ValueTree randomState(te::IDs::RANDOM);
+                    modifier = modList->insertModifier(randomState, -1, nullptr);
+                    break;
+                }
+
+                case ModType::Follower: {
+                    juce::ValueTree envState(te::IDs::ENVELOPEFOLLOWER);
+                    modifier = modList->insertModifier(envState, -1, nullptr);
+                    break;
+                }
+
+                case ModType::Envelope:
+                    break;
+            }
+
+            if (!modifier)
+                continue;
+
+            existingMods.push_back(modifier);
+
+            // Create modifier assignments for each link
+            for (const auto& link : modInfo.links) {
+                if (!link.isValid())
+                    continue;
+
+                // Device-level mods target parameters on the same device
+                // (link.target.deviceId should match device.id)
+                te::Plugin::Ptr linkTarget = targetPlugin;
+                if (link.target.deviceId != device.id) {
+                    // Cross-device link — look up the other device
+                    juce::ScopedLock lock(pluginLock_);
+                    auto it = deviceToPlugin_.find(link.target.deviceId);
+                    if (it != deviceToPlugin_.end())
+                        linkTarget = it->second;
+                    else
+                        continue;
+                }
+
+                auto params = linkTarget->getAutomatableParameters();
+                if (link.target.paramIndex >= 0 &&
+                    link.target.paramIndex < static_cast<int>(params.size())) {
+                    auto* param = params[static_cast<size_t>(link.target.paramIndex)];
+                    if (param)
+                        param->addModifier(*modifier, link.amount);
+                }
+            }
+        }
+    }
+}
+
+// =============================================================================
 // Utilities
 // =============================================================================
 
@@ -527,6 +747,7 @@ void PluginManager::clearAllMappings() {
     juce::ScopedLock lock(pluginLock_);
     instrumentRackManager_.clear();
     rackSyncManager_.clear();
+    deviceModifiers_.clear();
     deviceToPlugin_.clear();
     pluginToDevice_.clear();
     deviceProcessors_.clear();

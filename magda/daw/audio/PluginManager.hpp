@@ -211,10 +211,16 @@ class PluginManager {
     // Rack audio routing (MAGDA RackInfo → TE RackType)
     RackSyncManager rackSyncManager_;
 
+    // Device-level modifier sync (for standalone devices, not inside MAGDA racks)
+    void syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack);
+
     // Plugin/device mappings and processors
     std::map<DeviceId, te::Plugin::Ptr> deviceToPlugin_;
     std::map<te::Plugin*, DeviceId> pluginToDevice_;
     std::map<DeviceId, std::unique_ptr<DeviceProcessor>> deviceProcessors_;
+
+    // Device-level TE modifiers (created by syncDeviceModifiers)
+    std::map<DeviceId, std::vector<te::Modifier::Ptr>> deviceModifiers_;
 
     // Thread safety
     mutable juce::CriticalSection pluginLock_;

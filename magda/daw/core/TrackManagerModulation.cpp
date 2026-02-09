@@ -303,165 +303,128 @@ void TrackManager::removeRackModPage(const ChainNodePath& rackPath) {
 // Device Mod Management
 // ============================================================================
 
-void TrackManager::setDeviceModAmount(const ChainNodePath& devicePath, int modIndex, float amount) {
+// Helper: get a ModInfo from device path + index, returns {mod, trackId} or {nullptr, invalid}
+ModInfo* TrackManager::getDeviceMod(const ChainNodePath& devicePath, int modIndex) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
+        if (modIndex >= 0 && modIndex < static_cast<int>(device->mods.size())) {
+            return &device->mods[modIndex];
         }
-        device->mods[modIndex].amount = juce::jlimit(0.0f, 1.0f, amount);
-        // Don't notify - simple value change doesn't need UI rebuild
+    }
+    return nullptr;
+}
+
+void TrackManager::setDeviceModAmount(const ChainNodePath& devicePath, int modIndex, float amount) {
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->amount = juce::jlimit(0.0f, 1.0f, amount);
     }
 }
 
 void TrackManager::setDeviceModTarget(const ChainNodePath& devicePath, int modIndex,
                                       ModTarget target) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
         if (target.isValid()) {
-            // Add link with default amount
-            device->mods[modIndex].addLink(target, 0.5f);
+            mod->addLink(target, 0.5f);
         }
-        // Also set legacy target for backward compatibility
-        device->mods[modIndex].target = target;
-        // Don't notify - simple value change doesn't need UI rebuild
+        mod->target = target;
+        notifyTrackDevicesChanged(devicePath.trackId);
     }
 }
 
 void TrackManager::removeDeviceModLink(const ChainNodePath& devicePath, int modIndex,
                                        ModTarget target) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->removeLink(target);
+        if (mod->target == target) {
+            mod->target = ModTarget{};
         }
-        device->mods[modIndex].removeLink(target);
-        // Clear legacy target if it matches
-        if (device->mods[modIndex].target == target) {
-            device->mods[modIndex].target = ModTarget{};
-        }
+        notifyTrackDevicesChanged(devicePath.trackId);
     }
 }
 
 void TrackManager::setDeviceModLinkAmount(const ChainNodePath& devicePath, int modIndex,
                                           ModTarget target, float amount) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        // Update amount in links vector (or create link if it doesn't exist)
-        if (auto* link = device->mods[modIndex].getLink(target)) {
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        if (auto* link = mod->getLink(target)) {
             link->amount = amount;
         } else {
-            // Link doesn't exist - create it
-            ModLink newLink;
-            newLink.target = target;
-            newLink.amount = amount;
-            device->mods[modIndex].links.push_back(newLink);
+            mod->links.push_back({target, amount});
+            notifyTrackDevicesChanged(devicePath.trackId);
         }
-        // Also update legacy amount if target matches
-        if (device->mods[modIndex].target == target) {
-            device->mods[modIndex].amount = amount;
+        if (mod->target == target) {
+            mod->amount = amount;
         }
     }
 }
 
 void TrackManager::setDeviceModName(const ChainNodePath& devicePath, int modIndex,
                                     const juce::String& name) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        device->mods[modIndex].name = name;
-        // Don't notify - simple value change doesn't need UI rebuild
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->name = name;
     }
 }
 
 void TrackManager::setDeviceModType(const ChainNodePath& devicePath, int modIndex, ModType type) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        auto oldType = device->mods[modIndex].type;
-        device->mods[modIndex].type = type;
-        // Update name to default for new type if it was default
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        auto oldType = mod->type;
+        mod->type = type;
         auto defaultOldName = ModInfo::getDefaultName(modIndex, oldType);
-        if (device->mods[modIndex].name == defaultOldName) {
-            device->mods[modIndex].name = ModInfo::getDefaultName(modIndex, type);
+        if (mod->name == defaultOldName) {
+            mod->name = ModInfo::getDefaultName(modIndex, type);
         }
-        // Don't notify - simple value change doesn't need UI rebuild
+        notifyTrackDevicesChanged(devicePath.trackId);
     }
 }
 
 void TrackManager::setDeviceModWaveform(const ChainNodePath& devicePath, int modIndex,
                                         LFOWaveform waveform) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        device->mods[modIndex].waveform = waveform;
-        // Don't notify - simple value change doesn't need UI rebuild
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->waveform = waveform;
+        notifyTrackDevicesChanged(devicePath.trackId);
     }
 }
 
 void TrackManager::setDeviceModRate(const ChainNodePath& devicePath, int modIndex, float rate) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        device->mods[modIndex].rate = rate;
-        // Don't notify - simple value change doesn't need UI rebuild
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->rate = rate;
+        notifyTrackDevicesChanged(devicePath.trackId);
     }
 }
 
 void TrackManager::setDeviceModPhaseOffset(const ChainNodePath& devicePath, int modIndex,
                                            float phaseOffset) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        device->mods[modIndex].phaseOffset = juce::jlimit(0.0f, 1.0f, phaseOffset);
-        // Don't notify - simple value change doesn't need UI rebuild
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->phaseOffset = juce::jlimit(0.0f, 1.0f, phaseOffset);
+        notifyTrackDevicesChanged(devicePath.trackId);
     }
 }
 
 void TrackManager::setDeviceModTempoSync(const ChainNodePath& devicePath, int modIndex,
                                          bool tempoSync) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        device->mods[modIndex].tempoSync = tempoSync;
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->tempoSync = tempoSync;
+        notifyTrackDevicesChanged(devicePath.trackId);
     }
 }
 
 void TrackManager::setDeviceModSyncDivision(const ChainNodePath& devicePath, int modIndex,
                                             SyncDivision division) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        device->mods[modIndex].syncDivision = division;
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->syncDivision = division;
+        notifyTrackDevicesChanged(devicePath.trackId);
     }
 }
 
 void TrackManager::setDeviceModTriggerMode(const ChainNodePath& devicePath, int modIndex,
                                            LFOTriggerMode mode) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        device->mods[modIndex].triggerMode = mode;
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->triggerMode = mode;
     }
 }
 
 void TrackManager::setDeviceModCurvePreset(const ChainNodePath& devicePath, int modIndex,
                                            CurvePreset preset) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        device->mods[modIndex].curvePreset = preset;
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->curvePreset = preset;
     }
 }
 

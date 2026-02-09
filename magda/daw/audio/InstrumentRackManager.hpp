@@ -60,6 +60,13 @@ class InstrumentRackManager {
     te::Plugin* getInnerPlugin(DeviceId deviceId) const;
 
     /**
+     * @brief Get the RackType wrapping an instrument (for modifier/macro support)
+     * @param deviceId The MAGDA device ID
+     * @return The RackType, or nullptr if not wrapped
+     */
+    te::RackType::Ptr getRackType(DeviceId deviceId) const;
+
+    /**
      * @brief Check if a TE plugin on a track is one of our wrapper racks
      * @param plugin The TE plugin to check
      * @return true if this is a wrapper RackInstance managed by us

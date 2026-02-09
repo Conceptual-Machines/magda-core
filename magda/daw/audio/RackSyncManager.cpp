@@ -18,10 +18,8 @@ te::Plugin::Ptr RackSyncManager::syncRack(TrackId trackId, const RackInfo& rackI
     auto it = syncedRacks_.find(rackInfo.id);
     if (it != syncedRacks_.end()) {
         if (structureChanged(it->second, rackInfo)) {
-            // Structure changed — full rebuild
             resyncRack(trackId, rackInfo);
         } else {
-            // Only properties changed — lightweight update (no plugin destruction)
             updateProperties(it->second, rackInfo);
         }
         return it->second.rackInstance;
@@ -465,14 +463,19 @@ void RackSyncManager::applyBypassState(SyncedRack& synced, const RackInfo& rackI
 // =============================================================================
 
 void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo) {
-    // Clear existing modifiers
-    synced.innerModifiers.clear();
-
     auto& rackType = synced.rackType;
     if (!rackType)
         return;
 
     auto& modList = rackType->getModifierList();
+
+    // Remove existing TE modifiers before recreating
+    for (auto& [modId, mod] : synced.innerModifiers) {
+        if (mod) {
+            modList.state.removeChild(mod->state, nullptr);
+        }
+    }
+    synced.innerModifiers.clear();
 
     for (const auto& modInfo : rackInfo.mods) {
         if (!modInfo.enabled || modInfo.links.empty())
@@ -608,9 +611,6 @@ void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo
                 auto* param = params[static_cast<size_t>(link.target.paramIndex)];
                 if (param) {
                     param->addModifier(*modifier, link.amount);
-                    DBG("RackSyncManager: Linked mod "
-                        << modInfo.id << " to device " << link.target.deviceId << " param "
-                        << link.target.paramIndex << " amount=" << link.amount);
                 }
             }
         }

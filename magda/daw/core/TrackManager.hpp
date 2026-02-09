@@ -440,6 +440,9 @@ class TrackManager {
     void notifyDevicePropertyChanged(DeviceId deviceId);
     void notifyDeviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue);
 
+    // Helper: get a ModInfo from device path + index
+    ModInfo* getDeviceMod(const ChainNodePath& devicePath, int modIndex);
+
     // Helper for recursive mod updates
     void updateRackMods(const RackInfo& rack, double deltaTime);
 
