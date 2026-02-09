@@ -679,6 +679,9 @@ void TrackInspector::populateRoutingSelectors() {
         if (selectedId == 1) {
             // Master
             magda::TrackManager::getInstance().setTrackAudioOutput(selectedTrackId_, "master");
+        } else if (selectedId == 2) {
+            // None
+            magda::TrackManager::getInstance().setTrackAudioOutput(selectedTrackId_, "");
         } else if (selectedId >= 200 && selectedId < 400) {
             // Group or Aux track destination
             auto it = outputTrackMapping_.find(selectedId);

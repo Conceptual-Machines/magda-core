@@ -522,6 +522,9 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
         if (selectedId == 1) {
             // Master
             TrackManager::getInstance().setTrackAudioOutput(trackId, "master");
+        } else if (selectedId == 2) {
+            // None
+            TrackManager::getInstance().setTrackAudioOutput(trackId, "");
         } else if (selectedId >= 200 && selectedId < 400) {
             // Group or Aux track destination
             auto it = mapping.find(selectedId);

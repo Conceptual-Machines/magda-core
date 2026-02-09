@@ -82,6 +82,7 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
 
     std::vector<RoutingSelector::RoutingOption> options;
     options.push_back({1, "Master"});
+    options.push_back({2, "None"});
 
     auto& trackManager = TrackManager::getInstance();
     const auto& allTracks = trackManager.getTracks();
