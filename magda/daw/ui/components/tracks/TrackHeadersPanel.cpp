@@ -731,14 +731,17 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
         }
     };
 
-    header.outputSelector->onSelectionChanged = [this, trackId](int selectedId) {
+    // Capture outputTrackMapping_ by value so each header has its own snapshot
+    // (the shared member is rebuilt per-header in populateAudioOutputOptions)
+    header.outputSelector->onSelectionChanged = [this, trackId,
+                                                 mapping = outputTrackMapping_](int selectedId) {
         if (selectedId == 1) {
             // Master
             TrackManager::getInstance().setTrackAudioOutput(trackId, "master");
         } else if (selectedId >= 200 && selectedId < 400) {
             // Group or Aux track destination
-            auto it = outputTrackMapping_.find(selectedId);
-            if (it != outputTrackMapping_.end()) {
+            auto it = mapping.find(selectedId);
+            if (it != mapping.end()) {
                 TrackManager::getInstance().setTrackAudioOutput(
                     trackId, "track:" + juce::String(it->second));
             }
@@ -1099,11 +1102,7 @@ void TrackHeadersPanel::setTrackHeight(int trackIndex, int height) {
 
         // Persist to TrackManager so height survives tracksChanged() rebuilds
         TrackId trackId = trackHeaders[trackIndex]->trackId;
-        auto& trackManager = TrackManager::getInstance();
-        auto* track = const_cast<TrackInfo*>(trackManager.getTrack(trackId));
-        if (track) {
-            track->viewSettings.setHeight(currentViewMode_, height);
-        }
+        TrackManager::getInstance().setTrackHeight(trackId, currentViewMode_, height);
 
         updateTrackHeaderLayout();
         repaint();
@@ -1911,6 +1910,12 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                 }
             }
             if (!alreadyConnected) {
+                if (t.id >= 100) {
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon, "Limit Reached",
+                        "Cannot create more than 100 aux tracks.");
+                    break;
+                }
                 sendMenu.addItem(sendItemId + t.id, t.name);
                 hasAuxOptions = true;
             }
@@ -1969,6 +1974,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                                TrackManager::getInstance().removeSend(trackId, busIndex);
                            } else if (result >= 500) {
                                // Add send (aux trackId = result - 500)
+                               // Note: checked after >= 600 to avoid collision when trackId >= 100
                                TrackId auxId = result - 500;
                                TrackManager::getInstance().addSend(trackId, auxId);
                            } else if (result >= 100) {

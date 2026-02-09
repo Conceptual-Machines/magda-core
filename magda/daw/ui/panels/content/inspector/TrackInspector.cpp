@@ -562,10 +562,13 @@ void TrackInspector::showAddSendMenu() {
         menu.addItem(-1, "(No available aux tracks)", false);
     }
 
+    // Capture selectedTrackId_ by value to avoid stale reference if selection
+    // changes while the async menu is open
+    TrackId sourceTrackId = selectedTrackId_;
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&addSendButton_),
-                       [this, auxTrackIds](int result) {
+                       [sourceTrackId, auxTrackIds](int result) {
                            if (result > 0 && result <= static_cast<int>(auxTrackIds.size())) {
-                               magda::TrackManager::getInstance().addSend(selectedTrackId_,
+                               magda::TrackManager::getInstance().addSend(sourceTrackId,
                                                                           auxTrackIds[result - 1]);
                            }
                        });

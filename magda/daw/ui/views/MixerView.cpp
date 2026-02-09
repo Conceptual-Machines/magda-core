@@ -990,8 +990,11 @@ void MixerView::ChannelResizeHandle::mouseUp(const juce::MouseEvent& /*event*/) 
 }
 
 void MixerView::selectChannel(int index, bool isMaster) {
-    // Deselect all channel strips
+    // Deselect all channel strips (including aux)
     for (auto& strip : channelStrips) {
+        strip->setSelected(false);
+    }
+    for (auto& strip : auxChannelStrips) {
         strip->setSelected(false);
     }
 
@@ -1029,6 +1032,16 @@ void MixerView::trackSelectionChanged(TrackId trackId) {
     selectedChannelIndex = -1;
 
     if (trackId == INVALID_TRACK_ID) {
+        return;
+    }
+
+    // Handle master track selection
+    if (trackId == MASTER_TRACK_ID) {
+        selectedIsMaster = true;
+        selectedChannelIndex = -1;
+        if (onChannelSelected) {
+            onChannelSelected(selectedChannelIndex, selectedIsMaster);
+        }
         return;
     }
 

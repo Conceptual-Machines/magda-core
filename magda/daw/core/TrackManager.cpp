@@ -1222,6 +1222,7 @@ void TrackManager::clearAllTracks() {
     nextDeviceId_ = 1;
     nextRackId_ = 1;
     nextChainId_ = 1;
+    nextAuxBusIndex_ = 0;
     notifyTracksChanged();
 }
 
@@ -1254,9 +1255,15 @@ void TrackManager::refreshIdCountersFromTracks() {
         }
     };
 
+    int maxAuxBusIndex = -1;
+
     // Scan all tracks
     for (const auto& track : tracks_) {
         maxTrackId = std::max(maxTrackId, track.id);
+
+        if (track.auxBusIndex >= 0) {
+            maxAuxBusIndex = std::max(maxAuxBusIndex, track.auxBusIndex);
+        }
 
         // Scan the track's chain elements
         for (const auto& element : track.chainElements) {
@@ -1269,6 +1276,7 @@ void TrackManager::refreshIdCountersFromTracks() {
     nextDeviceId_ = maxDeviceId + 1;
     nextRackId_ = maxRackId + 1;
     nextChainId_ = maxChainId + 1;
+    nextAuxBusIndex_ = maxAuxBusIndex + 1;
 }
 
 // ============================================================================
