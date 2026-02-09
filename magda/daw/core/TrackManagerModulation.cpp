@@ -1,7 +1,6 @@
-#include "TrackManager.hpp"
-
 #include "ModulatorEngine.hpp"
 #include "RackInfo.hpp"
+#include "TrackManager.hpp"
 
 namespace magda {
 
@@ -26,7 +25,7 @@ void TrackManager::setRackMacroTarget(const ChainNodePath& rackPath, int macroIn
             return;
         }
         rack->macros[macroIndex].target = target;
-        // Don't notify - simple value change doesn't need UI rebuild
+        notifyTrackDevicesChanged(rackPath.trackId);
     }
 }
 
@@ -48,6 +47,7 @@ void TrackManager::setRackMacroLinkAmount(const ChainNodePath& rackPath, int mac
             return;
         }
         // Update amount in links vector (or create link if it doesn't exist)
+        bool created = false;
         if (auto* link = rack->macros[macroIndex].getLink(target)) {
             link->amount = amount;
         } else {
@@ -56,8 +56,12 @@ void TrackManager::setRackMacroLinkAmount(const ChainNodePath& rackPath, int mac
             newLink.target = target;
             newLink.amount = amount;
             rack->macros[macroIndex].links.push_back(newLink);
+            created = true;
         }
-        // Don't notify - simple value change doesn't need UI rebuild
+        // Notify when a new link is created (needs TE modifier assignment)
+        if (created) {
+            notifyTrackDevicesChanged(rackPath.trackId);
+        }
     }
 }
 
@@ -96,7 +100,7 @@ void TrackManager::setRackModTarget(const ChainNodePath& rackPath, int modIndex,
             return;
         }
         rack->mods[modIndex].target = target;
-        // Don't notify - simple value change doesn't need UI rebuild
+        notifyTrackDevicesChanged(rackPath.trackId);
     }
 }
 
@@ -107,6 +111,7 @@ void TrackManager::setRackModLinkAmount(const ChainNodePath& rackPath, int modIn
             return;
         }
         // Update amount in links vector (or create link if it doesn't exist)
+        bool created = false;
         if (auto* link = rack->mods[modIndex].getLink(target)) {
             link->amount = amount;
         } else {
@@ -115,10 +120,15 @@ void TrackManager::setRackModLinkAmount(const ChainNodePath& rackPath, int modIn
             newLink.target = target;
             newLink.amount = amount;
             rack->mods[modIndex].links.push_back(newLink);
+            created = true;
         }
         // Also update legacy amount if target matches
         if (rack->mods[modIndex].target == target) {
             rack->mods[modIndex].amount = amount;
+        }
+        // Notify when a new link is created (needs TE modifier assignment)
+        if (created) {
+            notifyTrackDevicesChanged(rackPath.trackId);
         }
     }
 }
@@ -145,7 +155,7 @@ void TrackManager::setRackModType(const ChainNodePath& rackPath, int modIndex, M
         if (rack->mods[modIndex].name == defaultOldName) {
             rack->mods[modIndex].name = ModInfo::getDefaultName(modIndex, type);
         }
-        // Don't notify - simple value change doesn't need UI rebuild
+        notifyTrackDevicesChanged(rackPath.trackId);
     }
 }
 
@@ -156,7 +166,7 @@ void TrackManager::setRackModWaveform(const ChainNodePath& rackPath, int modInde
             return;
         }
         rack->mods[modIndex].waveform = waveform;
-        // Don't notify - simple value change doesn't need UI rebuild
+        notifyTrackDevicesChanged(rackPath.trackId);
     }
 }
 
@@ -166,7 +176,7 @@ void TrackManager::setRackModRate(const ChainNodePath& rackPath, int modIndex, f
             return;
         }
         rack->mods[modIndex].rate = rate;
-        // Don't notify - simple value change doesn't need UI rebuild
+        notifyTrackDevicesChanged(rackPath.trackId);
     }
 }
 
@@ -177,7 +187,7 @@ void TrackManager::setRackModPhaseOffset(const ChainNodePath& rackPath, int modI
             return;
         }
         rack->mods[modIndex].phaseOffset = juce::jlimit(0.0f, 1.0f, phaseOffset);
-        // Don't notify - simple value change doesn't need UI rebuild
+        notifyTrackDevicesChanged(rackPath.trackId);
     }
 }
 
@@ -188,6 +198,7 @@ void TrackManager::setRackModTempoSync(const ChainNodePath& rackPath, int modInd
             return;
         }
         rack->mods[modIndex].tempoSync = tempoSync;
+        notifyTrackDevicesChanged(rackPath.trackId);
     }
 }
 
@@ -198,6 +209,7 @@ void TrackManager::setRackModSyncDivision(const ChainNodePath& rackPath, int mod
             return;
         }
         rack->mods[modIndex].syncDivision = division;
+        notifyTrackDevicesChanged(rackPath.trackId);
     }
 }
 

@@ -419,6 +419,11 @@ void RackSyncManager::updateProperties(SyncedRack& synced, const RackInfo& rackI
         }
     }
 
+    // Resync modifiers and macros (lightweight — just rebuilds TE modifier
+    // assignments, no plugin state is lost)
+    syncModifiers(synced, rackInfo);
+    syncMacros(synced, rackInfo);
+
     DBG("RackSyncManager: Updated properties for rack " << rackInfo.id);
 }
 
