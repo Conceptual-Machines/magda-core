@@ -480,9 +480,6 @@ void TrackManager::setDeviceParameterValueFromPlugin(const ChainNodePath& device
 
             // Notify listeners about parameter change (for UI updates)
             notifyDeviceParameterChanged(device->id, paramIndex, value);
-
-            // Also notify modulation system for display updates
-            notifyModulationChanged();
         }
     }
 }
