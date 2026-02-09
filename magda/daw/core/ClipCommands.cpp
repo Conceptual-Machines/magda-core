@@ -1,5 +1,7 @@
 #include "ClipCommands.hpp"
 
+#include <juce_gui_basics/juce_gui_basics.h>
+
 #include <iostream>
 
 #include "../audio/AudioBridge.hpp"
@@ -10,6 +12,54 @@
 namespace magda {
 
 namespace te = tracktion;
+
+namespace {
+
+/**
+ * Progress window for offline rendering that runs on a background thread
+ * while pumping the message loop (via runThread()) so the UI stays responsive.
+ */
+class RenderProgressWindow : public juce::ThreadWithProgressWindow {
+  public:
+    RenderProgressWindow(const juce::String& title, const te::Renderer::Parameters& params)
+        : ThreadWithProgressWindow(title, true, true), params_(params) {
+        setStatusMessage("Preparing to render...");
+    }
+
+    void run() override {
+        std::atomic<float> progress{0.0f};
+        auto renderTask =
+            std::make_unique<te::Renderer::RenderTask>("Render", params_, &progress, nullptr);
+
+        setStatusMessage("Rendering...");
+
+        while (!threadShouldExit()) {
+            auto status = renderTask->runJob();
+            setProgress(static_cast<double>(progress.load()));
+
+            if (status == juce::ThreadPoolJob::jobHasFinished) {
+                success_ = params_.destFile.existsAsFile() && params_.destFile.getSize() > 0;
+                setProgress(1.0);
+                break;
+            }
+
+            if (status != juce::ThreadPoolJob::jobNeedsRunningAgain)
+                break;
+
+            juce::Thread::sleep(1);
+        }
+    }
+
+    bool wasSuccessful() const {
+        return success_;
+    }
+
+  private:
+    te::Renderer::Parameters params_;
+    bool success_ = false;
+};
+
+}  // namespace
 
 // ============================================================================
 // SplitClipCommand
@@ -705,24 +755,13 @@ void RenderClipCommand::execute() {
     params.tracksToDo = trackBits;
     params.allowedClips.add(teClip);
 
-    // Run render synchronously
-    std::atomic<float> progress{0.0f};
-    auto renderTask =
-        std::make_unique<te::Renderer::RenderTask>("Render Clip", params, &progress, nullptr);
+    // Run render on background thread with progress UI
+    RenderProgressWindow progressWindow("Rendering Clip...", params);
+    bool userCancelled = !progressWindow.runThread();
 
-    while (true) {
-        auto status = renderTask->runJob();
-        if (status == juce::ThreadPoolJob::jobHasFinished)
-            break;
-        if (status != juce::ThreadPoolJob::jobNeedsRunningAgain)
-            break;
-    }
-
-    renderTask.reset();
-
-    // Verify render succeeded
-    if (!renderedFile_.existsAsFile() || renderedFile_.getSize() == 0) {
-        std::cerr << "RenderClipCommand: render failed, no output file" << std::endl;
+    if (userCancelled || !progressWindow.wasSuccessful()) {
+        if (renderedFile_.existsAsFile())
+            renderedFile_.deleteFile();
         restoreTransport();
         return;
     }
@@ -895,23 +934,19 @@ void RenderTimeSelectionCommand::execute() {
         params.tracksToDo = trackBits;
         // allowedClips empty = all clips on track in range
 
-        // Run render synchronously
-        std::atomic<float> progress{0.0f};
-        auto renderTask = std::make_unique<te::Renderer::RenderTask>("Render Time Selection",
-                                                                     params, &progress, nullptr);
-        while (true) {
-            auto status = renderTask->runJob();
-            if (status == juce::ThreadPoolJob::jobHasFinished)
-                break;
-            if (status != juce::ThreadPoolJob::jobNeedsRunningAgain)
-                break;
-        }
-        renderTask.reset();
+        // Run render on background thread with progress UI
+        int trackNum = static_cast<int>(trackStates_.size()) + 1;
+        int trackTotal = static_cast<int>(trackIds_.size());
+        juce::String title =
+            "Rendering track " + juce::String(trackNum) + " of " + juce::String(trackTotal) + "...";
+        RenderProgressWindow progressWindow(title, params);
+        bool userCancelled = !progressWindow.runThread();
 
-        // Verify render succeeded
-        if (!trackState.renderedFile.existsAsFile() || trackState.renderedFile.getSize() == 0) {
-            std::cerr << "RenderTimeSelectionCommand: render failed for track " << trackId
-                      << std::endl;
+        if (userCancelled || !progressWindow.wasSuccessful()) {
+            if (trackState.renderedFile.existsAsFile())
+                trackState.renderedFile.deleteFile();
+            if (userCancelled)
+                break;
             continue;
         }
 
