@@ -2,10 +2,12 @@
 
 #include <juce_audio_devices/juce_audio_devices.h>
 
+#include <algorithm>
 #include <map>
+#include <utility>
 #include <vector>
 
-#include "../../audio/MidiBridge.hpp"
+#include "../../../audio/MidiBridge.hpp"
 #include "RoutingSelector.hpp"
 #include "core/TrackInfo.hpp"
 #include "core/TrackManager.hpp"
