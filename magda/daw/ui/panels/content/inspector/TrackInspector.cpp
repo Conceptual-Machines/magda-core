@@ -4,6 +4,7 @@
 
 #include "../../../audio/MidiBridge.hpp"
 #include "../../../engine/AudioEngine.hpp"
+#include "../../components/mixer/RoutingSyncHelper.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -720,343 +721,54 @@ void TrackInspector::populateRoutingSelectors() {
 }
 
 void TrackInspector::populateAudioInputOptions() {
-    if (!audioInputSelector_ || !audioEngine_) {
+    if (!audioInputSelector_ || !audioEngine_)
         return;
-    }
-
     auto* deviceManager = audioEngine_->getDeviceManager();
-    if (!deviceManager) {
+    if (!deviceManager)
         return;
-    }
-
-    std::vector<magda::RoutingSelector::RoutingOption> options;
-
-    // Get current audio device
-    auto* currentDevice = deviceManager->getCurrentAudioDevice();
-    if (currentDevice) {
-        // Get only the ACTIVE/ENABLED input channels
-        auto activeInputChannels = currentDevice->getActiveInputChannels();
-
-        // Add "None" option
-        options.push_back({1, "None"});
-
-        // Count how many channels are actually enabled
-        int numActiveChannels = activeInputChannels.countNumberOfSetBits();
-
-        if (numActiveChannels > 0) {
-            options.push_back({0, "", true});  // separator
-
-            // Build list of active channel indices
-            juce::Array<int> activeIndices;
-            for (int i = 0; i < activeInputChannels.getHighestBit() + 1; ++i) {
-                if (activeInputChannels[i]) {
-                    activeIndices.add(i);
-                }
-            }
-
-            // Add stereo pairs first (starting from ID 10)
-            int id = 10;
-            for (int i = 0; i < activeIndices.size(); i += 2) {
-                if (i + 1 < activeIndices.size()) {
-                    // Stereo pair - show as "1-2", "3-4", etc.
-                    int ch1 = activeIndices[i] + 1;
-                    int ch2 = activeIndices[i + 1] + 1;
-                    juce::String pairName = juce::String(ch1) + "-" + juce::String(ch2);
-                    options.push_back({id++, pairName});
-                }
-            }
-
-            // Add separator before mono channels (only if we have multiple channels)
-            if (activeIndices.size() > 1) {
-                options.push_back({0, "", true});  // separator
-            }
-
-            // Add individual mono channels (starting from ID 100 to avoid conflicts)
-            id = 100;
-            for (int i = 0; i < activeIndices.size(); ++i) {
-                int channelNum = activeIndices[i] + 1;
-                options.push_back({id++, juce::String(channelNum) + " (mono)"});
-            }
-        }
-    } else {
-        options.push_back({1, "None"});
-        options.push_back({2, "(No Device Active)"});
-    }
-
-    audioInputSelector_->setOptions(options);
+    magda::RoutingSyncHelper::populateAudioInputOptions(audioInputSelector_.get(),
+                                                        deviceManager->getCurrentAudioDevice());
 }
 
 void TrackInspector::populateAudioOutputOptions() {
-    if (!outputSelector_ || !audioEngine_) {
+    if (!outputSelector_ || !audioEngine_)
         return;
-    }
-
     auto* deviceManager = audioEngine_->getDeviceManager();
-    if (!deviceManager) {
+    if (!deviceManager)
         return;
-    }
-
-    std::vector<magda::RoutingSelector::RoutingOption> options;
-
-    // Add "Master" as default output
-    options.push_back({1, "Master"});
-
-    // Add Group and Aux tracks as routing destinations
-    auto& trackManager = magda::TrackManager::getInstance();
-    const auto& allTracks = trackManager.getTracks();
-
-    // Collect descendants to prevent routing cycles
-    std::vector<magda::TrackId> descendants;
-    if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-        descendants = trackManager.getAllDescendants(selectedTrackId_);
-    }
-
-    // Group tracks (ID 200+)
-    {
-        std::vector<magda::RoutingSelector::RoutingOption> groupOptions;
-        int id = 200;
-        for (const auto& t : allTracks) {
-            if (t.type == magda::TrackType::Group && t.id != selectedTrackId_) {
-                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
-                    continue;
-                groupOptions.push_back({id++, t.name});
-            }
-        }
-        if (!groupOptions.empty()) {
-            options.push_back({0, "", true});
-            for (auto& opt : groupOptions)
-                options.push_back(std::move(opt));
-        }
-    }
-
-    // Aux tracks (ID 300+)
-    {
-        std::vector<magda::RoutingSelector::RoutingOption> auxOptions;
-        int id = 300;
-        for (const auto& t : allTracks) {
-            if (t.type == magda::TrackType::Aux && t.id != selectedTrackId_) {
-                auxOptions.push_back({id++, t.name});
-            }
-        }
-        if (!auxOptions.empty()) {
-            options.push_back({0, "", true});
-            for (auto& opt : auxOptions)
-                options.push_back(std::move(opt));
-        }
-    }
-
-    // Store track mapping for output selection callbacks
-    outputTrackMapping_.clear();
-    {
-        int id = 200;
-        for (const auto& t : allTracks) {
-            if (t.type == magda::TrackType::Group && t.id != selectedTrackId_) {
-                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
-                    continue;
-                outputTrackMapping_[id++] = t.id;
-            }
-        }
-        id = 300;
-        for (const auto& t : allTracks) {
-            if (t.type == magda::TrackType::Aux && t.id != selectedTrackId_) {
-                outputTrackMapping_[id++] = t.id;
-            }
-        }
-    }
-
-    // Hardware output channels
-    auto* currentDevice = deviceManager->getCurrentAudioDevice();
-    if (currentDevice) {
-        auto activeOutputChannels = currentDevice->getActiveOutputChannels();
-        int numActiveChannels = activeOutputChannels.countNumberOfSetBits();
-
-        if (numActiveChannels > 0) {
-            options.push_back({0, "", true});
-
-            juce::Array<int> activeIndices;
-            for (int i = 0; i < activeOutputChannels.getHighestBit() + 1; ++i) {
-                if (activeOutputChannels[i]) {
-                    activeIndices.add(i);
-                }
-            }
-
-            int id = 10;
-            for (int i = 0; i < activeIndices.size(); i += 2) {
-                if (i + 1 < activeIndices.size()) {
-                    int ch1 = activeIndices[i] + 1;
-                    int ch2 = activeIndices[i + 1] + 1;
-                    juce::String pairName = juce::String(ch1) + "-" + juce::String(ch2);
-                    options.push_back({id++, pairName});
-                }
-            }
-
-            if (activeIndices.size() > 1) {
-                options.push_back({0, "", true});
-            }
-
-            id = 100;
-            for (int i = 0; i < activeIndices.size(); ++i) {
-                int channelNum = activeIndices[i] + 1;
-                options.push_back({id++, juce::String(channelNum) + " (mono)"});
-            }
-        }
-    }
-
-    outputSelector_->setOptions(options);
+    magda::RoutingSyncHelper::populateAudioOutputOptions(outputSelector_.get(), selectedTrackId_,
+                                                         deviceManager->getCurrentAudioDevice(),
+                                                         outputTrackMapping_);
 }
 
 void TrackInspector::populateMidiInputOptions() {
-    if (!inputSelector_ || !audioEngine_) {
+    if (!inputSelector_ || !audioEngine_)
         return;
-    }
-
-    auto* midiBridge = audioEngine_->getMidiBridge();
-    if (!midiBridge) {
-        return;
-    }
-
-    // Get available MIDI inputs from MidiBridge
-    auto midiInputs = midiBridge->getAvailableMidiInputs();
-
-    // Build options list
-    std::vector<magda::RoutingSelector::RoutingOption> options;
-    options.push_back({1, "All Inputs"});  // ID 1 = all inputs
-    options.push_back({2, "None"});        // ID 2 = no input
-
-    if (!midiInputs.empty()) {
-        options.push_back({0, "", true});  // separator
-
-        // Add each MIDI device as an option (starting from ID 10)
-        int id = 10;
-        for (const auto& device : midiInputs) {
-            options.push_back({id++, device.name});
-        }
-    }
-
-    inputSelector_->setOptions(options);
+    magda::RoutingSyncHelper::populateMidiInputOptions(inputSelector_.get(),
+                                                       audioEngine_->getMidiBridge());
 }
 
 void TrackInspector::populateMidiOutputOptions() {
-    if (!midiOutputSelector_ || !audioEngine_) {
+    if (!midiOutputSelector_ || !audioEngine_)
         return;
-    }
-
-    auto* midiBridge = audioEngine_->getMidiBridge();
-    if (!midiBridge) {
-        return;
-    }
-
-    auto midiOutputs = midiBridge->getAvailableMidiOutputs();
-
-    std::vector<magda::RoutingSelector::RoutingOption> options;
-    options.push_back({1, "None"});
-
-    if (!midiOutputs.empty()) {
-        options.push_back({0, "", true});  // separator
-
-        int id = 10;
-        for (const auto& device : midiOutputs) {
-            options.push_back({id++, device.name});
-        }
-    }
-
-    midiOutputSelector_->setOptions(options);
+    magda::RoutingSyncHelper::populateMidiOutputOptions(midiOutputSelector_.get(),
+                                                        audioEngine_->getMidiBridge());
 }
 
 void TrackInspector::updateRoutingSelectorsFromTrack() {
-    if (selectedTrackId_ == magda::INVALID_TRACK_ID || !audioEngine_) {
+    if (selectedTrackId_ == magda::INVALID_TRACK_ID || !audioEngine_)
         return;
-    }
 
     const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
-    if (!track) {
+    if (!track)
         return;
-    }
 
-    auto* midiBridge = audioEngine_->getMidiBridge();
-
-    bool hasAudioInput = !track->audioInputDevice.isEmpty();
-    bool hasMidiInput = !track->midiInputDevice.isEmpty();
-
-    // Update Audio Input selector
-    if (hasAudioInput) {
-        int currentId = audioInputSelector_->getSelectedId();
-        populateAudioInputOptions();
-        if (currentId < 10) {
-            int firstChannel = audioInputSelector_->getFirstChannelOptionId();
-            audioInputSelector_->setSelectedId(firstChannel > 0 ? firstChannel : 1);
-        }
-        audioInputSelector_->setEnabled(true);
-    } else {
-        audioInputSelector_->setSelectedId(1);  // "None"
-        audioInputSelector_->setEnabled(false);
-    }
-
-    // Update MIDI Input selector
-    if (!hasMidiInput) {
-        inputSelector_->setSelectedId(2);  // "None"
-        inputSelector_->setEnabled(false);
-    } else if (track->midiInputDevice == "all") {
-        inputSelector_->setSelectedId(1);  // "All Inputs"
-        inputSelector_->setEnabled(true);
-    } else if (midiBridge) {
-        auto midiInputs = midiBridge->getAvailableMidiInputs();
-        int selectedId = 2;
-        for (size_t i = 0; i < midiInputs.size(); ++i) {
-            if (midiInputs[i].id == track->midiInputDevice) {
-                selectedId = 10 + static_cast<int>(i);
-                break;
-            }
-        }
-        inputSelector_->setSelectedId(selectedId);
-        inputSelector_->setEnabled(selectedId != 2);
-    }
-
-    // Update Audio Output selector — repopulate to rebuild outputTrackMapping_ for this track
-    populateAudioOutputOptions();
-    juce::String currentAudioOutput = track->audioOutputDevice;
-    if (currentAudioOutput.isEmpty()) {
-        outputSelector_->setSelectedId(2);  // "None"
-        outputSelector_->setEnabled(false);
-    } else if (currentAudioOutput == "master") {
-        outputSelector_->setSelectedId(1);  // Master
-        outputSelector_->setEnabled(true);
-    } else if (currentAudioOutput.startsWith("track:")) {
-        // Track-to-track routing — find the option ID for this destination
-        magda::TrackId destId =
-            currentAudioOutput.fromFirstOccurrenceOf("track:", false, false).getIntValue();
-        int optionId = -1;
-        for (const auto& [oid, tid] : outputTrackMapping_) {
-            if (tid == destId) {
-                optionId = oid;
-                break;
-            }
-        }
-        if (optionId > 0) {
-            outputSelector_->setSelectedId(optionId);
-        }
-        outputSelector_->setEnabled(true);
-    } else {
-        outputSelector_->setEnabled(true);
-    }
-
-    // Update MIDI Output selector
-    juce::String currentMidiOutput = track->midiOutputDevice;
-    if (currentMidiOutput.isEmpty()) {
-        midiOutputSelector_->setSelectedId(1);  // "None"
-        // Don't force-disable — user may have just enabled the toggle
-    } else if (midiBridge) {
-        auto midiOutputs = midiBridge->getAvailableMidiOutputs();
-        int selectedId = 1;  // Default to "None"
-        for (size_t i = 0; i < midiOutputs.size(); ++i) {
-            if (midiOutputs[i].id == currentMidiOutput) {
-                selectedId = 10 + static_cast<int>(i);
-                break;
-            }
-        }
-        midiOutputSelector_->setSelectedId(selectedId);
-        midiOutputSelector_->setEnabled(true);
-    }
+    auto* deviceManager = audioEngine_->getDeviceManager();
+    auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;
+    magda::RoutingSyncHelper::syncSelectorsFromTrack(
+        *track, audioInputSelector_.get(), inputSelector_.get(), outputSelector_.get(),
+        midiOutputSelector_.get(), audioEngine_->getMidiBridge(), device, selectedTrackId_,
+        outputTrackMapping_);
 }
 
 }  // namespace magda::daw::ui
