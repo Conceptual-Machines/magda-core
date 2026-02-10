@@ -616,16 +616,10 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
         uint64_t currentNoteOn = bus.getNoteOnCounter(track.id);
         uint64_t currentNoteOff = bus.getNoteOffCounter(track.id);
         if (currentNoteOn != lastBusNoteOn_[track.id]) {
-            DBG("updateAllMods - bus noteOn detected on track "
-                << track.id << " (counter " << lastBusNoteOn_[track.id] << " -> " << currentNoteOn
-                << ")");
             midiTriggeredTracks.insert(track.id);
             lastBusNoteOn_[track.id] = currentNoteOn;
         }
         if (currentNoteOff != lastBusNoteOff_[track.id]) {
-            DBG("updateAllMods - bus noteOff detected on track "
-                << track.id << " (counter " << lastBusNoteOff_[track.id] << " -> " << currentNoteOff
-                << ")");
             midiNoteOffTracks.insert(track.id);
             lastBusNoteOff_[track.id] = currentNoteOff;
         }

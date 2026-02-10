@@ -1,6 +1,5 @@
 #include "SidechainMonitorPlugin.hpp"
 
-#include "../core/TrackManager.hpp"
 #include "PluginManager.hpp"
 #include "SidechainTriggerBus.hpp"
 
@@ -44,7 +43,8 @@ void SidechainMonitorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
         if (hasNoteOn) {
             SidechainTriggerBus::getInstance().triggerNoteOn(sourceTrackId_);
-            forwardToDestinationTracks();
+            if (pluginManager_)
+                pluginManager_->triggerSidechainNoteOn(sourceTrackId_);
         }
         if (hasNoteOff) {
             SidechainTriggerBus::getInstance().triggerNoteOff(sourceTrackId_);
@@ -62,34 +62,6 @@ void SidechainMonitorPlugin::restorePluginStateFromValueTree(const juce::ValueTr
 void SidechainMonitorPlugin::setSourceTrackId(TrackId trackId) {
     sourceTrackId_ = trackId;
     sourceTrackIdValue = trackId;
-}
-
-void SidechainMonitorPlugin::forwardToDestinationTracks() {
-    if (!pluginManager_ || sourceTrackId_ == INVALID_TRACK_ID)
-        return;
-
-    // Iterate all tracks, find devices with MIDI sidechain sourced from this track
-    auto& tm = TrackManager::getInstance();
-    for (const auto& track : tm.getTracks()) {
-        if (track.id == sourceTrackId_)
-            continue;
-
-        bool shouldTrigger = false;
-        for (const auto& element : track.chainElements) {
-            if (isDevice(element)) {
-                const auto& device = getDevice(element);
-                if (device.sidechain.type == SidechainConfig::Type::MIDI &&
-                    device.sidechain.sourceTrackId == sourceTrackId_) {
-                    shouldTrigger = true;
-                    break;
-                }
-            }
-        }
-
-        if (shouldTrigger) {
-            pluginManager_->triggerLFONoteOn(track.id);
-        }
-    }
 }
 
 }  // namespace magda

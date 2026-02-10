@@ -4,6 +4,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <map>
+#include <vector>
 
 #include "../core/DeviceInfo.hpp"
 #include "../core/RackInfo.hpp"
@@ -107,6 +108,12 @@ class RackSyncManager {
      * Thread-safe: can be called from MIDI thread.
      */
     void triggerLFONoteOn(TrackId trackId);
+
+    /**
+     * @brief Collect all te::LFOModifier* from racks on a given track
+     * Used by PluginManager::rebuildSidechainLFOCache() to populate the cache.
+     */
+    void collectLFOModifiers(TrackId trackId, std::vector<te::LFOModifier*>& out) const;
 
   private:
     /**

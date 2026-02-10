@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <array>
 #include <functional>
 #include <map>
 #include <memory>
@@ -206,6 +207,24 @@ class PluginManager {
     void triggerLFONoteOn(TrackId trackId);
 
     /**
+     * @brief Trigger note-on on all cached sidechain LFO modifiers for a source track
+     *
+     * Thread-safe: can be called from audio or MIDI thread.
+     * Uses a pre-computed cache of LFO modifier pointers, so no TrackManager
+     * scan is needed. Handles both self-track and cross-track LFO triggering.
+     */
+    void triggerSidechainNoteOn(TrackId sourceTrackId);
+
+    /**
+     * @brief Rebuild the sidechain LFO cache for all tracks
+     *
+     * Must be called on the message thread after sidechain config, modifier,
+     * or track structure changes. Collects te::LFOModifier* pointers from
+     * deviceModifiers_ and RackSyncManager into a flat per-track array.
+     */
+    void rebuildSidechainLFOCache();
+
+    /**
      * @brief Route a macro value change to the appropriate TE infrastructure
      * @param trackId The track containing the macro
      * @param isRack true = rack macro (id is RackId), false = device macro (id is DeviceId)
@@ -298,6 +317,17 @@ class PluginManager {
 
     // Sidechain monitor plugins (sourceTrackId → SidechainMonitorPlugin)
     std::map<TrackId, te::Plugin::Ptr> sidechainMonitors_;
+
+    // Pre-computed sidechain LFO cache: indexed by source TrackId.
+    // Audio/MIDI threads read under cacheLock_; message thread writes during rebuild.
+    struct PerTrackEntry {
+        static constexpr int kMaxLFOs = 64;
+        std::array<te::LFOModifier*, kMaxLFOs> lfos{};
+        int count = 0;
+    };
+    static constexpr int kMaxCacheTracks = 512;
+    std::array<PerTrackEntry, kMaxCacheTracks> sidechainLFOCache_{};
+    juce::SpinLock cacheLock_;
 
     // Thread safety
     mutable juce::CriticalSection pluginLock_;

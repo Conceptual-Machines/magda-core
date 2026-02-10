@@ -11,15 +11,14 @@ namespace te = tracktion;
 class PluginManager;
 
 /**
- * @brief Lightweight te::Plugin that monitors MIDI and audio on the audio thread for sidechain
- * triggering.
+ * @brief Lightweight te::Plugin that monitors MIDI on the audio thread for sidechain triggering.
  *
- * Inserted at position 0 on source tracks that are sidechain sources.
- * Transparent — passes audio and MIDI through unchanged. In applyToBuffer(),
- * scans bufferForMidiMessages for note-on/off and writes to SidechainTriggerBus
- * (lock-free atomic counters). Also writes audio peak levels to the bus for
- * audio-triggered modulators. Directly triggers TE LFO modifiers on
- * destination tracks for buffer-accurate latency.
+ * Inserted at position 0 on source tracks that are sidechain sources or have
+ * MIDI/Audio-triggered mods. Transparent — passes audio and MIDI through unchanged.
+ * In applyToBuffer(), scans bufferForMidiMessages for note-on/off, writes to
+ * SidechainTriggerBus (lock-free atomic counters), and calls
+ * PluginManager::triggerSidechainNoteOn() to reset LFO phases via a pre-computed
+ * cache (no TrackManager scan on audio thread).
  *
  * Registered via MagdaEngineBehaviour::createCustomPlugin() so TE handles
  * serialization/deserialization.
@@ -91,8 +90,6 @@ class SidechainMonitorPlugin : public te::Plugin {
   private:
     TrackId sourceTrackId_ = INVALID_TRACK_ID;
     PluginManager* pluginManager_ = nullptr;
-
-    void forwardToDestinationTracks();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SidechainMonitorPlugin)
 };

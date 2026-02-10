@@ -747,6 +747,18 @@ void RackSyncManager::syncMacros(SyncedRack& synced, const RackInfo& rackInfo) {
     }
 }
 
+void RackSyncManager::collectLFOModifiers(TrackId trackId,
+                                          std::vector<te::LFOModifier*>& out) const {
+    for (const auto& [rackId, synced] : syncedRacks_) {
+        if (synced.trackId != trackId)
+            continue;
+        for (const auto& [modId, modifier] : synced.innerModifiers) {
+            if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get()))
+                out.push_back(lfo);
+        }
+    }
+}
+
 void RackSyncManager::triggerLFONoteOn(TrackId trackId) {
     for (auto& [rackId, synced] : syncedRacks_) {
         if (synced.trackId != trackId)

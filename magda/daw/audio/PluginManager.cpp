@@ -366,6 +366,9 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
 
     // Ensure LevelMeter is at the end of the plugin chain for metering
     addLevelMeterToTrack(trackId);
+
+    // Rebuild sidechain LFO cache so audio/MIDI threads see current state
+    rebuildSidechainLFOCache();
 }
 
 // =============================================================================
@@ -882,6 +885,96 @@ void PluginManager::triggerLFONoteOn(TrackId trackId) {
 }
 
 // =============================================================================
+void PluginManager::triggerSidechainNoteOn(TrackId sourceTrackId) {
+    if (sourceTrackId < 0 || sourceTrackId >= kMaxCacheTracks)
+        return;
+
+    const juce::SpinLock::ScopedLockType lock(cacheLock_);
+    auto& entry = sidechainLFOCache_[static_cast<size_t>(sourceTrackId)];
+    for (int i = 0; i < entry.count; ++i)
+        entry.lfos[static_cast<size_t>(i)]->triggerNoteOn();
+}
+
+void PluginManager::rebuildSidechainLFOCache() {
+    auto& tm = TrackManager::getInstance();
+
+    // Build new cache on the stack, then swap under lock
+    std::array<PerTrackEntry, kMaxCacheTracks> newCache{};
+
+    for (const auto& track : tm.getTracks()) {
+        if (track.id < 0 || track.id >= kMaxCacheTracks)
+            continue;
+
+        auto& entry = newCache[static_cast<size_t>(track.id)];
+        std::vector<te::LFOModifier*> lfos;
+
+        // 1. Self-track LFOs: collect from deviceModifiers_ for this track's devices
+        for (const auto& element : track.chainElements) {
+            if (!isDevice(element))
+                continue;
+            const auto& device = getDevice(element);
+            auto it = deviceModifiers_.find(device.id);
+            if (it == deviceModifiers_.end())
+                continue;
+            for (auto& mod : it->second) {
+                if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get()))
+                    lfos.push_back(lfo);
+            }
+        }
+
+        // Also collect from racks on this track
+        rackSyncManager_.collectLFOModifiers(track.id, lfos);
+
+        // 2. Cross-track LFOs: for each OTHER track that has a device sidechained
+        //    from this track, collect that destination track's LFO modifiers
+        for (const auto& otherTrack : tm.getTracks()) {
+            if (otherTrack.id == track.id)
+                continue;
+            bool isDestination = false;
+            for (const auto& element : otherTrack.chainElements) {
+                if (isDevice(element)) {
+                    const auto& device = getDevice(element);
+                    if ((device.sidechain.type == SidechainConfig::Type::MIDI ||
+                         device.sidechain.type == SidechainConfig::Type::Audio) &&
+                        device.sidechain.sourceTrackId == track.id) {
+                        isDestination = true;
+                        break;
+                    }
+                }
+            }
+            if (!isDestination)
+                continue;
+
+            // Collect all LFO modifiers from the destination track
+            for (const auto& element : otherTrack.chainElements) {
+                if (!isDevice(element))
+                    continue;
+                const auto& device = getDevice(element);
+                auto it = deviceModifiers_.find(device.id);
+                if (it == deviceModifiers_.end())
+                    continue;
+                for (auto& mod : it->second) {
+                    if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get()))
+                        lfos.push_back(lfo);
+                }
+            }
+            rackSyncManager_.collectLFOModifiers(otherTrack.id, lfos);
+        }
+
+        // Write to cache entry (capped at kMaxLFOs)
+        entry.count = std::min(static_cast<int>(lfos.size()), PerTrackEntry::kMaxLFOs);
+        for (int i = 0; i < entry.count; ++i)
+            entry.lfos[static_cast<size_t>(i)] = lfos[static_cast<size_t>(i)];
+    }
+
+    // Swap under lock
+    {
+        const juce::SpinLock::ScopedLockType lock(cacheLock_);
+        sidechainLFOCache_ = newCache;
+    }
+}
+
+// =============================================================================
 void PluginManager::resyncDeviceModifiers(TrackId trackId) {
     // Check if any device has new links that don't have TE modifiers yet
     bool needsFullSync = false;
@@ -917,6 +1010,8 @@ void PluginManager::resyncDeviceModifiers(TrackId trackId) {
         updateDeviceModifierProperties(trackId);
         rackSyncManager_.updateAllModifierProperties(trackId);
     }
+
+    rebuildSidechainLFOCache();
 }
 
 // =============================================================================
@@ -1137,6 +1232,8 @@ void PluginManager::checkSidechainMonitor(TrackId trackId) {
         ensureSidechainMonitor(trackId);
     else
         removeSidechainMonitor(trackId);
+
+    rebuildSidechainLFOCache();
 }
 
 void PluginManager::ensureSidechainMonitor(TrackId sourceTrackId) {
