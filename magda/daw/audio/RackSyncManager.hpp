@@ -115,6 +115,16 @@ class RackSyncManager {
      */
     void collectLFOModifiers(TrackId trackId, std::vector<te::LFOModifier*>& out) const;
 
+    /**
+     * @brief Check if any rack on a track needs a full modifier resync
+     *
+     * Compares the number of active rack mods (enabled + has links) against
+     * the number of existing TE modifiers in innerModifiers. Returns true
+     * if there's a mismatch, meaning new modifiers need to be created or
+     * old ones removed.
+     */
+    bool needsModifierResync(TrackId trackId) const;
+
   private:
     /**
      * @brief Internal state for a synced rack

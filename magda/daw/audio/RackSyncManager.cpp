@@ -750,6 +750,38 @@ void RackSyncManager::syncMacros(SyncedRack& synced, const RackInfo& rackInfo) {
     }
 }
 
+bool RackSyncManager::needsModifierResync(TrackId trackId) const {
+    auto& tm = TrackManager::getInstance();
+    auto* trackInfo = tm.getTrack(trackId);
+    if (!trackInfo)
+        return false;
+
+    for (const auto& element : trackInfo->chainElements) {
+        if (!isRack(element))
+            continue;
+
+        const auto& rack = getRack(element);
+        auto it = syncedRacks_.find(rack.id);
+        if (it == syncedRacks_.end())
+            continue;
+
+        const auto& synced = it->second;
+
+        // Count active rack mods (enabled + has links)
+        int activeModCount = 0;
+        for (const auto& mod : rack.mods) {
+            if (mod.enabled && !mod.links.empty())
+                activeModCount++;
+        }
+
+        int existingCount = static_cast<int>(synced.innerModifiers.size());
+        if (activeModCount != existingCount)
+            return true;
+    }
+
+    return false;
+}
+
 void RackSyncManager::collectLFOModifiers(TrackId trackId,
                                           std::vector<te::LFOModifier*>& out) const {
     for (const auto& [rackId, synced] : syncedRacks_) {

@@ -938,7 +938,7 @@ void PluginManager::rebuildSidechainLFOCache() {
 
 // =============================================================================
 void PluginManager::resyncDeviceModifiers(TrackId trackId) {
-    // Check if any device has new links that don't have TE modifiers yet
+    // Check if any device or rack has new links that don't have TE modifiers yet
     bool needsFullSync = false;
     auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
     if (trackInfo) {
@@ -960,6 +960,10 @@ void PluginManager::resyncDeviceModifiers(TrackId trackId) {
             }
         }
     }
+
+    // Also check rack mods for structural changes (new/removed links)
+    if (!needsFullSync)
+        needsFullSync = rackSyncManager_.needsModifierResync(trackId);
 
     if (needsFullSync) {
         // New links added or removed — need full modifier rebuild
