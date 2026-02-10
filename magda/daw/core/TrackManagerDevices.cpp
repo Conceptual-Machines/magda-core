@@ -11,6 +11,12 @@ namespace magda {
 
 DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,
                                         const DeviceInfo& device) {
+    if (auto* track = getTrack(trackId)) {
+        if (track->type == TrackType::Group && device.isInstrument) {
+            DBG("Cannot add instrument plugin to group track");
+            return INVALID_DEVICE_ID;
+        }
+    }
     if (auto* chain = getChain(trackId, rackId, chainId)) {
         DeviceInfo newDevice = device;
         newDevice.id = nextDeviceId_++;
@@ -25,6 +31,12 @@ DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId 
 
 DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
                                               const DeviceInfo& device) {
+    if (auto* track = getTrack(chainPath.trackId)) {
+        if (track->type == TrackType::Group && device.isInstrument) {
+            DBG("Cannot add instrument plugin to group track");
+            return INVALID_DEVICE_ID;
+        }
+    }
     // The chainPath should end with a Chain step
     DBG("addDeviceToChainByPath called with path steps=" << chainPath.steps.size());
 
@@ -81,6 +93,12 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
 
 DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
                                               const DeviceInfo& device, int insertIndex) {
+    if (auto* track = getTrack(chainPath.trackId)) {
+        if (track->type == TrackType::Group && device.isInstrument) {
+            DBG("Cannot add instrument plugin to group track");
+            return INVALID_DEVICE_ID;
+        }
+    }
     // Similar to the non-indexed version but inserts at a specific position
     if (chainPath.steps.empty()) {
         DBG("addDeviceToChainByPath (indexed) FAILED - empty path!");
