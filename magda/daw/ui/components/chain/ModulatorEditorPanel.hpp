@@ -177,8 +177,6 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
     int selectedModIndex_ = -1;
     magda::ModInfo currentMod_;
     const magda::ModInfo* liveModPtr_ = nullptr;  // Pointer to live mod for waveform animation
-    uint32_t lastSeenTriggerCount_ = 0;           // For detecting new triggers across frames
-    int triggerHoldFrames_ = 0;                   // Frames remaining to show trigger dot
 
     // UI Components
     juce::Label nameLabel_;

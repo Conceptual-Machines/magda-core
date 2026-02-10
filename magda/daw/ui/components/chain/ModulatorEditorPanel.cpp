@@ -284,6 +284,10 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
         if (id > 0) {
             auto mode = static_cast<magda::LFOTriggerMode>(id - 1);
             currentMod_.triggerMode = mode;
+            // Enable config button only for MIDI/Audio sidechain modes
+            bool hasSidechainConfig =
+                (mode == magda::LFOTriggerMode::MIDI || mode == magda::LFOTriggerMode::Audio);
+            advancedButton_->setEnabled(hasSidechainConfig);
             // Show/hide audio envelope sliders based on trigger mode
             bool isAudioTrigger = (mode == magda::LFOTriggerMode::Audio);
             audioAttackSlider_.setVisible(isAudioTrigger);
@@ -364,7 +368,7 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
         triggerModeCombo_.setEnabled(true);
         audioAttackSlider_.setEnabled(true);
         audioReleaseSlider_.setEnabled(true);
-        advancedButton_->setEnabled(true);
+        // advancedButton_ enabled state is set in updateFromMod() based on trigger mode
     }
 }
 
@@ -409,6 +413,11 @@ void ModulatorEditorPanel::updateFromMod() {
     triggerModeCombo_.setSelectedId(static_cast<int>(currentMod_.triggerMode) + 1,
                                     juce::dontSendNotification);
 
+    // Advanced (config) button only enabled for MIDI/Audio sidechain modes
+    bool hasSidechainConfig = (currentMod_.triggerMode == magda::LFOTriggerMode::MIDI ||
+                               currentMod_.triggerMode == magda::LFOTriggerMode::Audio);
+    advancedButton_->setEnabled(hasSidechainConfig);
+
     // Audio envelope sliders (only visible when trigger mode = Audio)
     bool isAudioTrigger = (currentMod_.triggerMode == magda::LFOTriggerMode::Audio);
     audioAttackSlider_.setVisible(isAudioTrigger);
@@ -452,38 +461,8 @@ void ModulatorEditorPanel::paint(juce::Graphics& g) {
     // "Trigger" label
     g.drawText("Trigger", bounds.removeFromTop(12), juce::Justification::centredLeft);
 
-    // Skip to trigger row for monitor dot
-    auto triggerRow = bounds.removeFromTop(18);
-    // Layout: [dropdown] [monitor dot] [advanced button]
-    int advButtonWidth = 20;
-    int dotDiameter = 8;
-    triggerRow.removeFromRight(advButtonWidth);  // Skip advanced button
-    triggerRow.removeFromRight(4);               // Skip gap before advanced
-    auto dotArea = triggerRow.removeFromRight(dotDiameter);
-    triggerRow.removeFromRight(4);  // Skip gap before dot
-
-    // Draw trigger indicator dot
-    constexpr float dotRadius = 3.0f;
-    auto dotBounds =
-        juce::Rectangle<float>(static_cast<float>(dotArea.getX()), dotArea.getCentreY() - dotRadius,
-                               dotRadius * 2, dotRadius * 2);
-
-    // Use trigger counter to detect triggers across frame boundaries.
-    // The triggered bool is only true for one 60fps tick — the 30fps paint
-    // misses ~50% of them. The counter never misses.
-    const magda::ModInfo* mod = liveModPtr_ ? liveModPtr_ : &currentMod_;
-    if (mod->triggerCount != lastSeenTriggerCount_) {
-        lastSeenTriggerCount_ = mod->triggerCount;
-        triggerHoldFrames_ = 4;  // Show for ~130ms at 30fps
-    }
-
-    if (triggerHoldFrames_ > 0) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-        g.fillEllipse(dotBounds);
-    } else {
-        g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
-        g.drawEllipse(dotBounds, 1.0f);
-    }
+    // Skip trigger row (no dot painted here — waveform display handles the indicator)
+    bounds.removeFromTop(18);
 
     // Audio envelope labels (when trigger mode = Audio)
     if (audioAttackSlider_.isVisible()) {
@@ -560,7 +539,7 @@ void ModulatorEditorPanel::resized() {
     syncDivisionCombo_.setBounds(rateRow);
     bounds.removeFromTop(8);
 
-    // Trigger row: [dropdown] [monitor dot] [advanced button]
+    // Trigger row: [dropdown] [advanced button]
     bounds.removeFromTop(12);  // "Trigger" label
     auto triggerRow = bounds.removeFromTop(18);
 
@@ -568,11 +547,6 @@ void ModulatorEditorPanel::resized() {
     int advButtonWidth = 20;
     advancedButton_->setBounds(triggerRow.removeFromRight(advButtonWidth));
     triggerRow.removeFromRight(4);  // Gap before advanced
-
-    // Leave space for monitor dot (painted in paint())
-    int dotDiameter = 8;
-    triggerRow.removeFromRight(dotDiameter);  // Monitor dot space
-    triggerRow.removeFromRight(4);            // Gap before dot
 
     // Trigger combo takes remaining space
     triggerModeCombo_.setBounds(triggerRow);
@@ -601,8 +575,6 @@ void ModulatorEditorPanel::mouseUp(const juce::MouseEvent& /*e*/) {
 }
 
 void ModulatorEditorPanel::timerCallback() {
-    if (triggerHoldFrames_ > 0)
-        triggerHoldFrames_--;
     repaint();
 }
 
