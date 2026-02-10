@@ -639,8 +639,10 @@ void TrackManager::moveNode(TrackId trackId, int fromIndex, int toIndex) {
 
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device) {
     if (auto* track = getTrack(trackId)) {
-        if (track->type == TrackType::Aux && device.isInstrument) {
-            DBG("Cannot add instrument plugin to aux track");
+        if ((track->type == TrackType::Aux || track->type == TrackType::Group) &&
+            device.isInstrument) {
+            DBG("Cannot add instrument plugin to "
+                << (track->type == TrackType::Aux ? "aux" : "group") << " track");
             return INVALID_DEVICE_ID;
         }
         DeviceInfo newDevice = device;
@@ -657,8 +659,10 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device,
                                         int insertIndex) {
     if (auto* track = getTrack(trackId)) {
-        if (track->type == TrackType::Aux && device.isInstrument) {
-            DBG("Cannot add instrument plugin to aux track");
+        if ((track->type == TrackType::Aux || track->type == TrackType::Group) &&
+            device.isInstrument) {
+            DBG("Cannot add instrument plugin to "
+                << (track->type == TrackType::Aux ? "aux" : "group") << " track");
             return INVALID_DEVICE_ID;
         }
         DeviceInfo newDevice = device;
@@ -1313,6 +1317,12 @@ void TrackManager::notifyTrackDevicesChanged(TrackId trackId) {
     }
 }
 
+void TrackManager::notifyDeviceModifiersChanged(TrackId trackId) {
+    for (auto* listener : listeners_) {
+        listener->deviceModifiersChanged(trackId);
+    }
+}
+
 void TrackManager::notifyDevicePropertyChanged(DeviceId deviceId) {
     for (auto* listener : listeners_) {
         listener->devicePropertyChanged(deviceId);
@@ -1322,6 +1332,13 @@ void TrackManager::notifyDevicePropertyChanged(DeviceId deviceId) {
 void TrackManager::notifyDeviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue) {
     for (auto* listener : listeners_) {
         listener->deviceParameterChanged(deviceId, paramIndex, newValue);
+    }
+}
+
+void TrackManager::notifyMacroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
+                                           float value) {
+    for (auto* listener : listeners_) {
+        listener->macroValueChanged(trackId, isRack, id, macroIndex, value);
     }
 }
 

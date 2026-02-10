@@ -155,15 +155,21 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
     }
 
     void itemDropped(const SourceDetails& details) override {
+        // Capture everything we need before touching owner_, because
+        // addDeviceToChainByPath triggers a UI rebuild that may destroy
+        // this container and the owning ChainPanel (use-after-free crash).
+        magda::DeviceInfo device;
+        bool validDrop = false;
+        auto chainPath = owner_.chainPath_;
+        int insertIndex = owner_.dropInsertIndex_ >= 0 ? owner_.dropInsertIndex_
+                                                       : static_cast<int>(elementSlots_->size());
+
         if (auto* obj = details.description.getDynamicObject()) {
-            // Create DeviceInfo from dropped plugin
-            magda::DeviceInfo device;
             device.name = obj->getProperty("name").toString().toStdString();
             device.manufacturer = obj->getProperty("manufacturer").toString().toStdString();
             device.pluginId = obj->getProperty("name").toString().toStdString() + "_" +
                               obj->getProperty("format").toString().toStdString();
             device.isInstrument = static_cast<bool>(obj->getProperty("isInstrument"));
-            // External plugin identification - critical for loading
             device.uniqueId = obj->getProperty("uniqueId").toString();
             device.fileOrIdentifier = obj->getProperty("fileOrIdentifier").toString();
 
@@ -177,20 +183,24 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
             } else if (format == "Internal") {
                 device.format = magda::PluginFormat::Internal;
             }
-
-            // Insert at the drop position
-            int insertIndex = owner_.dropInsertIndex_ >= 0
-                                  ? owner_.dropInsertIndex_
-                                  : static_cast<int>(elementSlots_->size());
-            magda::TrackManager::getInstance().addDeviceToChainByPath(owner_.chainPath_, device,
-                                                                      insertIndex);
-
-            DBG("Dropped plugin: " + juce::String(device.name) + " into chain at index " +
-                juce::String(insertIndex));
+            validDrop = true;
         }
+
+        // Clear drop state before the TrackManager call (which triggers rebuild)
         owner_.dropInsertIndex_ = -1;
         owner_.stopTimer();
-        owner_.resized();  // Trigger relayout to remove left padding
+
+        if (validDrop) {
+            DBG("Dropped plugin: " + juce::String(device.name) + " into chain at index " +
+                juce::String(insertIndex));
+            // This may destroy 'this' and owner_ — do not access any members after
+            magda::TrackManager::getInstance().addDeviceToChainByPath(chainPath, device,
+                                                                      insertIndex);
+            return;
+        }
+
+        // Only reached if drop was not valid
+        owner_.resized();
         repaint();
     }
 

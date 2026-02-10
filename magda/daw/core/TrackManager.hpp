@@ -1,6 +1,10 @@
 #pragma once
 
+#include <atomic>
+#include <map>
 #include <memory>
+#include <mutex>
+#include <set>
 #include <vector>
 
 #include "SelectionManager.hpp"
@@ -56,6 +60,11 @@ class TrackManagerListener {
         juce::ignoreUnused(trackId);
     }
 
+    // Called when modifier properties change (rate, waveform, sync, etc.) but not structure
+    virtual void deviceModifiersChanged(TrackId trackId) {
+        juce::ignoreUnused(trackId);
+    }
+
     // Called when a device parameter changes (gain, level, etc.)
     virtual void devicePropertyChanged(DeviceId deviceId) {
         juce::ignoreUnused(deviceId);
@@ -64,6 +73,13 @@ class TrackManagerListener {
     // Called when a device parameter value changes (for live parameter updates)
     virtual void deviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue) {
         juce::ignoreUnused(deviceId, paramIndex, newValue);
+    }
+
+    // Called when a macro knob value changes (for audio engine sync)
+    // isRack: true = rack macro (id is RackId), false = device macro (id is DeviceId)
+    virtual void macroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
+                                   float value) {
+        juce::ignoreUnused(trackId, isRack, id, macroIndex, value);
     }
 };
 
@@ -222,6 +238,10 @@ class TrackManager {
                                   DeviceId deviceId, bool bypassed);
     void setDeviceInChainBypassedByPath(const ChainNodePath& devicePath, bool bypassed);
 
+    // Sidechain configuration
+    void setSidechainSource(DeviceId targetDevice, TrackId sourceTrack, SidechainConfig::Type type);
+    void clearSidechain(DeviceId targetDevice);
+
     // Device parameter setters (notify listeners for audio sync)
     void setDeviceGainDb(const ChainNodePath& devicePath, float gainDb);
     void setDeviceLevel(const ChainNodePath& devicePath, float level);  // 0-1 linear
@@ -310,7 +330,35 @@ class TrackManager {
     // bpm parameter is used for tempo-synced LFOs (default 120 if not provided)
     // transportJustStarted/Looped flags trigger phase reset for Transport trigger mode
     void updateAllMods(double deltaTime, double bpm = 120.0, bool transportJustStarted = false,
-                       bool transportJustLooped = false);
+                       bool transportJustLooped = false, bool transportJustStopped = false);
+
+    /**
+     * @brief Signal that a MIDI note-on was received on a track
+     *
+     * Called from MidiBridge when MIDI arrives. The next updateAllMods() tick
+     * will reset phase on any mods with LFOTriggerMode::MIDI on this track.
+     */
+    void triggerMidiNoteOn(TrackId trackId);
+    void triggerMidiNoteOff(TrackId trackId);
+
+    /** Look up a ModInfo by its id across all devices and racks on a track. */
+    const ModInfo* getModById(TrackId trackId, ModId modId) const;
+
+    /**
+     * @brief Update transport state for LFO trigger sync
+     *
+     * Called from TracktionEngineWrapper's timer callback with the current
+     * transport state. The next updateAllMods() tick will use these values.
+     */
+    void updateTransportState(bool playing, double bpm, bool justStarted, bool justLooped);
+
+    struct TransportSnapshot {
+        double bpm;
+        bool justStarted;
+        bool justLooped;
+        bool justStopped;
+    };
+    TransportSnapshot consumeTransportState();
 
     // Macro management for devices (path-based for nested device support)
     void setDeviceMacroValue(const ChainNodePath& devicePath, int macroIndex, float value);
@@ -428,13 +476,31 @@ class TrackManager {
     RackId selectedChainRackId_ = INVALID_RACK_ID;
     ChainId selectedChainId_ = INVALID_CHAIN_ID;
 
+    // MIDI state for modulator triggers, protected by midiTriggerMutex_
+    // Written from MIDI thread, read from timer thread
+    std::set<TrackId> pendingMidiTriggers_;  // note-on events (consumed each tick)
+    std::set<TrackId> pendingMidiNoteOffs_;  // note-off events (consumed each tick)
+    std::mutex midiTriggerMutex_;
+
+    // Transport state for LFO trigger sync (written from engine timer, read by mod timer)
+    std::atomic<bool> transportPlaying_{false};
+    std::atomic<double> transportBpm_{120.0};
+    std::atomic<bool> transportJustStarted_{false};
+    std::atomic<bool> transportJustLooped_{false};
+    std::atomic<bool> transportJustStopped_{false};
+
     void notifyTracksChanged();
     void notifyTrackPropertyChanged(int trackId);
     void notifyMasterChannelChanged();
     void notifyTrackSelectionChanged(TrackId trackId);
     void notifyTrackDevicesChanged(TrackId trackId);
+    void notifyDeviceModifiersChanged(TrackId trackId);
     void notifyDevicePropertyChanged(DeviceId deviceId);
     void notifyDeviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue);
+    void notifyMacroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex, float value);
+
+    // Helper: get a ModInfo from device path + index
+    ModInfo* getDeviceMod(const ChainNodePath& devicePath, int modIndex);
 
     // Helper for recursive mod updates
     void updateRackMods(const RackInfo& rack, double deltaTime);

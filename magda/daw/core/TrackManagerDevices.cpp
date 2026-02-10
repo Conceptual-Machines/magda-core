@@ -1,8 +1,7 @@
-#include "TrackManager.hpp"
-
 #include "../audio/AudioBridge.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "RackInfo.hpp"
+#include "TrackManager.hpp"
 
 namespace magda {
 
@@ -12,6 +11,12 @@ namespace magda {
 
 DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,
                                         const DeviceInfo& device) {
+    if (auto* track = getTrack(trackId)) {
+        if (track->type == TrackType::Group && device.isInstrument) {
+            DBG("Cannot add instrument plugin to group track");
+            return INVALID_DEVICE_ID;
+        }
+    }
     if (auto* chain = getChain(trackId, rackId, chainId)) {
         DeviceInfo newDevice = device;
         newDevice.id = nextDeviceId_++;
@@ -26,6 +31,12 @@ DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId 
 
 DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
                                               const DeviceInfo& device) {
+    if (auto* track = getTrack(chainPath.trackId)) {
+        if (track->type == TrackType::Group && device.isInstrument) {
+            DBG("Cannot add instrument plugin to group track");
+            return INVALID_DEVICE_ID;
+        }
+    }
     // The chainPath should end with a Chain step
     DBG("addDeviceToChainByPath called with path steps=" << chainPath.steps.size());
 
@@ -82,6 +93,12 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
 
 DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
                                               const DeviceInfo& device, int insertIndex) {
+    if (auto* track = getTrack(chainPath.trackId)) {
+        if (track->type == TrackType::Group && device.isInstrument) {
+            DBG("Cannot add instrument plugin to group track");
+            return INVALID_DEVICE_ID;
+        }
+    }
     // Similar to the non-indexed version but inserts at a specific position
     if (chainPath.steps.empty()) {
         DBG("addDeviceToChainByPath (indexed) FAILED - empty path!");
@@ -251,7 +268,6 @@ void TrackManager::setDeviceInChainBypassed(TrackId trackId, RackId rackId, Chai
         notifyTrackDevicesChanged(trackId);
     }
 }
-
 
 // Helper to get chain from a path that ends with Chain step
 static ChainInfo* getChainFromPath(TrackManager& tm, const ChainNodePath& chainPath) {
@@ -482,9 +498,6 @@ void TrackManager::setDeviceParameterValueFromPlugin(const ChainNodePath& device
 
             // Notify listeners about parameter change (for UI updates)
             notifyDeviceParameterChanged(device->id, paramIndex, value);
-
-            // Also notify modulation system for display updates
-            notifyModulationChanged();
         }
     }
 }
@@ -659,6 +672,49 @@ void TrackManager::removeRackFromChainByPath(const ChainNodePath& rackPath) {
     } else {
         DBG("  FAILED: chain not found via path!");
     }
+}
+
+// ============================================================================
+// Sidechain Configuration
+// ============================================================================
+
+void TrackManager::setSidechainSource(DeviceId targetDevice, TrackId sourceTrack,
+                                      SidechainConfig::Type type) {
+    // Search all tracks for the target device
+    for (auto& track : tracks_) {
+        // Search top-level chain elements
+        for (auto& element : track.chainElements) {
+            if (magda::isDevice(element)) {
+                auto& device = magda::getDevice(element);
+                if (device.id == targetDevice) {
+                    device.sidechain.type = type;
+                    device.sidechain.sourceTrackId = sourceTrack;
+                    notifyDevicePropertyChanged(targetDevice);
+                    return;
+                }
+            } else if (magda::isRack(element)) {
+                // Search inside racks
+                auto& rack = magda::getRack(element);
+                for (auto& chain : rack.chains) {
+                    for (auto& chainElement : chain.elements) {
+                        if (magda::isDevice(chainElement)) {
+                            auto& device = magda::getDevice(chainElement);
+                            if (device.id == targetDevice) {
+                                device.sidechain.type = type;
+                                device.sidechain.sourceTrackId = sourceTrack;
+                                notifyDevicePropertyChanged(targetDevice);
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void TrackManager::clearSidechain(DeviceId targetDevice) {
+    setSidechainSource(targetDevice, INVALID_TRACK_ID, SidechainConfig::Type::None);
 }
 
 }  // namespace magda

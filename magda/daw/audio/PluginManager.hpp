@@ -11,6 +11,7 @@
 #include "../core/TypeIds.hpp"
 #include "DeviceProcessor.hpp"
 #include "InstrumentRackManager.hpp"
+#include "RackSyncManager.hpp"
 
 namespace magda {
 
@@ -143,6 +144,33 @@ class PluginManager {
     std::function<void(DeviceId, const juce::String&)> onPluginLoadFailed;
 
     // =========================================================================
+    // Rack Plugin Creation
+    // =========================================================================
+
+    /**
+     * @brief Create a plugin from DeviceInfo without inserting it onto a track
+     *
+     * Same creation logic as loadDeviceAsPlugin() but returns the plugin without
+     * inserting it into a track's plugin list. Used for loading plugins inside racks.
+     *
+     * @param trackId The MAGDA track ID (for context, e.g. finding the track for instrument
+     * wrapping)
+     * @param device The device info describing the plugin to create
+     * @return The created plugin, or nullptr on failure
+     */
+    te::Plugin::Ptr createPluginOnly(TrackId trackId, const DeviceInfo& device);
+
+    /**
+     * @brief Get the RackSyncManager for rack audio routing
+     */
+    RackSyncManager& getRackSyncManager() {
+        return rackSyncManager_;
+    }
+    const RackSyncManager& getRackSyncManager() const {
+        return rackSyncManager_;
+    }
+
+    // =========================================================================
     // Utilities
     // =========================================================================
 
@@ -160,6 +188,44 @@ class PluginManager {
      * processors that need to sync with transport (bypass when stopped)
      */
     void updateTransportSyncedProcessors(bool isPlaying);
+
+    /**
+     * @brief Resync only device-level modifiers (LFO, Random, etc.) for a track
+     *
+     * Lighter than full syncTrackPlugins — only rebuilds TE modifier assignments.
+     * Used when modifier properties change (rate, waveform, sync) without structural changes.
+     */
+    void resyncDeviceModifiers(TrackId trackId);
+
+    /**
+     * @brief Trigger note-on resync on all TE LFO modifiers for a track
+     *
+     * Thread-safe: can be called from MIDI thread. The actual resync happens
+     * on the next audio block. Only affects LFOs with syncType == note.
+     */
+    void triggerLFONoteOn(TrackId trackId);
+
+    /**
+     * @brief Route a macro value change to the appropriate TE infrastructure
+     * @param trackId The track containing the macro
+     * @param isRack true = rack macro (id is RackId), false = device macro (id is DeviceId)
+     * @param id RackId or DeviceId depending on isRack
+     * @param macroIndex Index into the macro array
+     * @param value Normalized value (0.0 to 1.0)
+     */
+    void setMacroValue(TrackId trackId, bool isRack, int id, int macroIndex, float value);
+
+    /**
+     * @brief Sync device-level macros to TE MacroParameters
+     * Creates TE MacroParameters and assignments for all device macros on a track.
+     * Called from syncTrackPlugins after devices are created.
+     */
+    void syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack);
+
+    /**
+     * @brief Set a device macro parameter value on the TE MacroParameter
+     */
+    void setDeviceMacroValue(DeviceId deviceId, int macroIndex, float value);
 
   private:
     // Internal device → plugin conversion (used by syncTrackPlugins)
@@ -180,10 +246,26 @@ class PluginManager {
     // Instrument rack wrapping (synth + audio passthrough)
     InstrumentRackManager instrumentRackManager_;
 
+    // Rack audio routing (MAGDA RackInfo → TE RackType)
+    RackSyncManager rackSyncManager_;
+
+    // Device-level modifier sync (for standalone devices, not inside MAGDA racks)
+    void syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack);
+
+    // Update existing modifier properties in-place (rate, waveform, sync, phase)
+    // without destroying/recreating modifiers. Used for non-structural changes.
+    void updateDeviceModifierProperties(TrackId trackId);
+
     // Plugin/device mappings and processors
     std::map<DeviceId, te::Plugin::Ptr> deviceToPlugin_;
     std::map<te::Plugin*, DeviceId> pluginToDevice_;
     std::map<DeviceId, std::unique_ptr<DeviceProcessor>> deviceProcessors_;
+
+    // Device-level TE modifiers (created by syncDeviceModifiers)
+    std::map<DeviceId, std::vector<te::Modifier::Ptr>> deviceModifiers_;
+
+    // Device-level TE macro parameters (created by syncDeviceMacros)
+    std::map<DeviceId, std::map<int, te::MacroParameter*>> deviceMacroParams_;
 
     // Thread safety
     mutable juce::CriticalSection pluginLock_;

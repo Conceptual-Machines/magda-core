@@ -37,6 +37,11 @@ class ParamSlotComponent : public juce::Component,
     void setFonts(const juce::Font& labelFont, const juce::Font& valueFont);
     bool isBeingDragged() const;  // Check if user is actively dragging this parameter
 
+    // Set the actual parameter index (mapped from visibility filter)
+    void setParamIndex(int paramIndex) {
+        paramIndex_ = paramIndex;
+    }
+
     // Set the device this param belongs to (for mod/macro lookups)
     void setDeviceId(magda::DeviceId deviceId) {
         deviceId_ = deviceId;

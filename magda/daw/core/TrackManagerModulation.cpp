@@ -1,7 +1,6 @@
-#include "TrackManager.hpp"
-
 #include "ModulatorEngine.hpp"
 #include "RackInfo.hpp"
+#include "TrackManager.hpp"
 
 namespace magda {
 
@@ -14,8 +13,9 @@ void TrackManager::setRackMacroValue(const ChainNodePath& rackPath, int macroInd
         if (macroIndex < 0 || macroIndex >= static_cast<int>(rack->macros.size())) {
             return;
         }
-        rack->macros[macroIndex].value = juce::jlimit(0.0f, 1.0f, value);
-        // Don't notify - simple value change doesn't need UI rebuild
+        float clampedValue = juce::jlimit(0.0f, 1.0f, value);
+        rack->macros[macroIndex].value = clampedValue;
+        notifyMacroValueChanged(rackPath.trackId, true, rack->id, macroIndex, clampedValue);
     }
 }
 
@@ -26,7 +26,7 @@ void TrackManager::setRackMacroTarget(const ChainNodePath& rackPath, int macroIn
             return;
         }
         rack->macros[macroIndex].target = target;
-        // Don't notify - simple value change doesn't need UI rebuild
+        notifyTrackDevicesChanged(rackPath.trackId);
     }
 }
 
@@ -48,6 +48,7 @@ void TrackManager::setRackMacroLinkAmount(const ChainNodePath& rackPath, int mac
             return;
         }
         // Update amount in links vector (or create link if it doesn't exist)
+        bool created = false;
         if (auto* link = rack->macros[macroIndex].getLink(target)) {
             link->amount = amount;
         } else {
@@ -56,8 +57,15 @@ void TrackManager::setRackMacroLinkAmount(const ChainNodePath& rackPath, int mac
             newLink.target = target;
             newLink.amount = amount;
             rack->macros[macroIndex].links.push_back(newLink);
+            created = true;
         }
-        // Don't notify - simple value change doesn't need UI rebuild
+        // Notify when a new link is created (needs TE modifier assignment)
+        if (created) {
+            notifyTrackDevicesChanged(rackPath.trackId);
+        } else {
+            // Existing link amount changed — resync TE assignments
+            notifyDeviceModifiersChanged(rackPath.trackId);
+        }
     }
 }
 
@@ -96,7 +104,8 @@ void TrackManager::setRackModTarget(const ChainNodePath& rackPath, int modIndex,
             return;
         }
         rack->mods[modIndex].target = target;
-        // Don't notify - simple value change doesn't need UI rebuild
+        // Use modifier-only notify to avoid full UI rebuild (panel stays open)
+        notifyDeviceModifiersChanged(rackPath.trackId);
     }
 }
 
@@ -110,7 +119,6 @@ void TrackManager::setRackModLinkAmount(const ChainNodePath& rackPath, int modIn
         if (auto* link = rack->mods[modIndex].getLink(target)) {
             link->amount = amount;
         } else {
-            // Link doesn't exist - create it
             ModLink newLink;
             newLink.target = target;
             newLink.amount = amount;
@@ -120,6 +128,7 @@ void TrackManager::setRackModLinkAmount(const ChainNodePath& rackPath, int modIn
         if (rack->mods[modIndex].target == target) {
             rack->mods[modIndex].amount = amount;
         }
+        notifyDeviceModifiersChanged(rackPath.trackId);
     }
 }
 
@@ -145,7 +154,7 @@ void TrackManager::setRackModType(const ChainNodePath& rackPath, int modIndex, M
         if (rack->mods[modIndex].name == defaultOldName) {
             rack->mods[modIndex].name = ModInfo::getDefaultName(modIndex, type);
         }
-        // Don't notify - simple value change doesn't need UI rebuild
+        notifyTrackDevicesChanged(rackPath.trackId);
     }
 }
 
@@ -156,7 +165,7 @@ void TrackManager::setRackModWaveform(const ChainNodePath& rackPath, int modInde
             return;
         }
         rack->mods[modIndex].waveform = waveform;
-        // Don't notify - simple value change doesn't need UI rebuild
+        notifyDeviceModifiersChanged(rackPath.trackId);
     }
 }
 
@@ -166,7 +175,7 @@ void TrackManager::setRackModRate(const ChainNodePath& rackPath, int modIndex, f
             return;
         }
         rack->mods[modIndex].rate = rate;
-        // Don't notify - simple value change doesn't need UI rebuild
+        notifyDeviceModifiersChanged(rackPath.trackId);
     }
 }
 
@@ -177,7 +186,7 @@ void TrackManager::setRackModPhaseOffset(const ChainNodePath& rackPath, int modI
             return;
         }
         rack->mods[modIndex].phaseOffset = juce::jlimit(0.0f, 1.0f, phaseOffset);
-        // Don't notify - simple value change doesn't need UI rebuild
+        notifyDeviceModifiersChanged(rackPath.trackId);
     }
 }
 
@@ -188,6 +197,7 @@ void TrackManager::setRackModTempoSync(const ChainNodePath& rackPath, int modInd
             return;
         }
         rack->mods[modIndex].tempoSync = tempoSync;
+        notifyDeviceModifiersChanged(rackPath.trackId);
     }
 }
 
@@ -198,6 +208,7 @@ void TrackManager::setRackModSyncDivision(const ChainNodePath& rackPath, int mod
             return;
         }
         rack->mods[modIndex].syncDivision = division;
+        notifyDeviceModifiersChanged(rackPath.trackId);
     }
 }
 
@@ -208,6 +219,7 @@ void TrackManager::setRackModTriggerMode(const ChainNodePath& rackPath, int modI
             return;
         }
         rack->mods[modIndex].triggerMode = mode;
+        notifyDeviceModifiersChanged(rackPath.trackId);
     }
 }
 
@@ -258,7 +270,13 @@ void TrackManager::removeRackMod(const ChainNodePath& rackPath, int modIndex) {
                 rack->mods[i].name = ModInfo::getDefaultName(i, rack->mods[i].type);
             }
 
-            notifyTrackDevicesChanged(rackPath.trackId);
+            // Notify asynchronously so the UI callback can unwind before rebuild
+            auto trackId = rackPath.trackId;
+            juce::MessageManager::callAsync([trackId]() {
+                if (juce::JUCEApplicationBase::getInstance() == nullptr)
+                    return;
+                TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
+            });
         }
     }
 }
@@ -291,165 +309,130 @@ void TrackManager::removeRackModPage(const ChainNodePath& rackPath) {
 // Device Mod Management
 // ============================================================================
 
-void TrackManager::setDeviceModAmount(const ChainNodePath& devicePath, int modIndex, float amount) {
+// Helper: get a ModInfo from device path + index, returns {mod, trackId} or {nullptr, invalid}
+ModInfo* TrackManager::getDeviceMod(const ChainNodePath& devicePath, int modIndex) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
+        if (modIndex >= 0 && modIndex < static_cast<int>(device->mods.size())) {
+            return &device->mods[modIndex];
         }
-        device->mods[modIndex].amount = juce::jlimit(0.0f, 1.0f, amount);
-        // Don't notify - simple value change doesn't need UI rebuild
+    }
+    return nullptr;
+}
+
+void TrackManager::setDeviceModAmount(const ChainNodePath& devicePath, int modIndex, float amount) {
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->amount = juce::jlimit(0.0f, 1.0f, amount);
     }
 }
 
 void TrackManager::setDeviceModTarget(const ChainNodePath& devicePath, int modIndex,
                                       ModTarget target) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
         if (target.isValid()) {
-            // Add link with default amount
-            device->mods[modIndex].addLink(target, 0.5f);
+            mod->addLink(target, 0.5f);
         }
-        // Also set legacy target for backward compatibility
-        device->mods[modIndex].target = target;
-        // Don't notify - simple value change doesn't need UI rebuild
+        mod->target = target;
+        // Use modifier-only notify to avoid full UI rebuild (panel stays open)
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
 }
 
 void TrackManager::removeDeviceModLink(const ChainNodePath& devicePath, int modIndex,
                                        ModTarget target) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->removeLink(target);
+        if (mod->target == target) {
+            mod->target = ModTarget{};
         }
-        device->mods[modIndex].removeLink(target);
-        // Clear legacy target if it matches
-        if (device->mods[modIndex].target == target) {
-            device->mods[modIndex].target = ModTarget{};
-        }
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
 }
 
 void TrackManager::setDeviceModLinkAmount(const ChainNodePath& devicePath, int modIndex,
                                           ModTarget target, float amount) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        // Update amount in links vector (or create link if it doesn't exist)
-        if (auto* link = device->mods[modIndex].getLink(target)) {
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        if (auto* link = mod->getLink(target)) {
             link->amount = amount;
         } else {
-            // Link doesn't exist - create it
-            ModLink newLink;
-            newLink.target = target;
-            newLink.amount = amount;
-            device->mods[modIndex].links.push_back(newLink);
+            mod->links.push_back({target, amount});
         }
-        // Also update legacy amount if target matches
-        if (device->mods[modIndex].target == target) {
-            device->mods[modIndex].amount = amount;
+        if (mod->target == target) {
+            mod->amount = amount;
         }
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
 }
 
 void TrackManager::setDeviceModName(const ChainNodePath& devicePath, int modIndex,
                                     const juce::String& name) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        device->mods[modIndex].name = name;
-        // Don't notify - simple value change doesn't need UI rebuild
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->name = name;
     }
 }
 
 void TrackManager::setDeviceModType(const ChainNodePath& devicePath, int modIndex, ModType type) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        auto oldType = device->mods[modIndex].type;
-        device->mods[modIndex].type = type;
-        // Update name to default for new type if it was default
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        auto oldType = mod->type;
+        mod->type = type;
         auto defaultOldName = ModInfo::getDefaultName(modIndex, oldType);
-        if (device->mods[modIndex].name == defaultOldName) {
-            device->mods[modIndex].name = ModInfo::getDefaultName(modIndex, type);
+        if (mod->name == defaultOldName) {
+            mod->name = ModInfo::getDefaultName(modIndex, type);
         }
-        // Don't notify - simple value change doesn't need UI rebuild
+        notifyTrackDevicesChanged(devicePath.trackId);
     }
 }
 
 void TrackManager::setDeviceModWaveform(const ChainNodePath& devicePath, int modIndex,
                                         LFOWaveform waveform) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        device->mods[modIndex].waveform = waveform;
-        // Don't notify - simple value change doesn't need UI rebuild
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->waveform = waveform;
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
 }
 
 void TrackManager::setDeviceModRate(const ChainNodePath& devicePath, int modIndex, float rate) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        device->mods[modIndex].rate = rate;
-        // Don't notify - simple value change doesn't need UI rebuild
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->rate = rate;
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
 }
 
 void TrackManager::setDeviceModPhaseOffset(const ChainNodePath& devicePath, int modIndex,
                                            float phaseOffset) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        device->mods[modIndex].phaseOffset = juce::jlimit(0.0f, 1.0f, phaseOffset);
-        // Don't notify - simple value change doesn't need UI rebuild
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->phaseOffset = juce::jlimit(0.0f, 1.0f, phaseOffset);
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
 }
 
 void TrackManager::setDeviceModTempoSync(const ChainNodePath& devicePath, int modIndex,
                                          bool tempoSync) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        device->mods[modIndex].tempoSync = tempoSync;
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->tempoSync = tempoSync;
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
 }
 
 void TrackManager::setDeviceModSyncDivision(const ChainNodePath& devicePath, int modIndex,
                                             SyncDivision division) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        device->mods[modIndex].syncDivision = division;
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->syncDivision = division;
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
 }
 
 void TrackManager::setDeviceModTriggerMode(const ChainNodePath& devicePath, int modIndex,
                                            LFOTriggerMode mode) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        device->mods[modIndex].triggerMode = mode;
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->triggerMode = mode;
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
 }
 
 void TrackManager::setDeviceModCurvePreset(const ChainNodePath& devicePath, int modIndex,
                                            CurvePreset preset) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (modIndex < 0 || modIndex >= static_cast<int>(device->mods.size())) {
-            return;
-        }
-        device->mods[modIndex].curvePreset = preset;
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->curvePreset = preset;
     }
 }
 
@@ -490,7 +473,13 @@ void TrackManager::removeDeviceMod(const ChainNodePath& devicePath, int modIndex
                 device->mods[i].name = ModInfo::getDefaultName(i, device->mods[i].type);
             }
 
-            notifyTrackDevicesChanged(devicePath.trackId);
+            // Notify asynchronously so the UI callback can unwind before rebuild
+            auto trackId = devicePath.trackId;
+            juce::MessageManager::callAsync([trackId]() {
+                if (juce::JUCEApplicationBase::getInstance() == nullptr)
+                    return;
+                TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
+            });
         }
     }
 }
@@ -520,19 +509,83 @@ void TrackManager::removeDeviceModPage(const ChainNodePath& devicePath) {
     }
 }
 
+void TrackManager::triggerMidiNoteOn(TrackId trackId) {
+    std::lock_guard<std::mutex> lock(midiTriggerMutex_);
+    pendingMidiTriggers_.insert(trackId);
+}
+
+const ModInfo* TrackManager::getModById(TrackId trackId, ModId modId) const {
+    const auto* track = getTrack(trackId);
+    if (!track)
+        return nullptr;
+    for (const auto& element : track->chainElements) {
+        if (std::holds_alternative<DeviceInfo>(element)) {
+            for (const auto& mod : std::get<DeviceInfo>(element).mods) {
+                if (mod.id == modId)
+                    return &mod;
+            }
+        } else if (std::holds_alternative<std::unique_ptr<RackInfo>>(element)) {
+            const auto& rackPtr = std::get<std::unique_ptr<RackInfo>>(element);
+            if (rackPtr) {
+                for (const auto& mod : rackPtr->mods) {
+                    if (mod.id == modId)
+                        return &mod;
+                }
+            }
+        }
+    }
+    return nullptr;
+}
+
+void TrackManager::triggerMidiNoteOff(TrackId trackId) {
+    std::lock_guard<std::mutex> lock(midiTriggerMutex_);
+    pendingMidiNoteOffs_.insert(trackId);
+}
+
+TrackManager::TransportSnapshot TrackManager::consumeTransportState() {
+    return {transportBpm_.load(std::memory_order_acquire),
+            transportJustStarted_.exchange(false, std::memory_order_acq_rel),
+            transportJustLooped_.exchange(false, std::memory_order_acq_rel),
+            transportJustStopped_.exchange(false, std::memory_order_acq_rel)};
+}
+
+void TrackManager::updateTransportState(bool playing, double bpm, bool justStarted,
+                                        bool justLooped) {
+    bool wasPlaying = transportPlaying_.exchange(playing, std::memory_order_acq_rel);
+    transportBpm_.store(bpm, std::memory_order_release);
+    if (justStarted)
+        transportJustStarted_.store(true, std::memory_order_release);
+    if (justLooped)
+        transportJustLooped_.store(true, std::memory_order_release);
+    if (wasPlaying && !playing)
+        transportJustStopped_.store(true, std::memory_order_release);
+}
+
 // ============================================================================
 // Mod Updates
 // ============================================================================
 
 void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJustStarted,
-                                 bool transportJustLooped) {
-    // Lambda to update a single mod's phase and value
-    auto updateMod = [deltaTime, bpm, transportJustStarted, transportJustLooped](ModInfo& mod) {
+                                 bool transportJustLooped, bool transportJustStopped) {
+    // Snapshot MIDI triggers (thread-safe)
+    std::set<TrackId> midiTriggeredTracks;
+    std::set<TrackId> midiNoteOffTracks;
+    {
+        std::lock_guard<std::mutex> lock(midiTriggerMutex_);
+        midiTriggeredTracks.swap(pendingMidiTriggers_);
+        midiNoteOffTracks.swap(pendingMidiNoteOffs_);
+    }
+    // Lambda to update a single mod's phase and value.
+    // Returns true if 'running' state changed (needs TE assignment sync).
+    auto updateMod = [deltaTime, bpm, transportJustStarted, transportJustLooped,
+                      transportJustStopped](ModInfo& mod, bool midiTriggered,
+                                            bool midiNoteOff) -> bool {
+        bool wasRunning = mod.running;
         // Skip disabled mods - set value to 0 so they don't affect modulation
         if (!mod.enabled) {
             mod.value = 0.0f;
             mod.triggered = false;
-            return;
+            return false;
         }
 
         if (mod.type == ModType::LFO) {
@@ -540,80 +593,105 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             bool shouldTrigger = false;
             switch (mod.triggerMode) {
                 case LFOTriggerMode::Free:
-                    // Never reset
                     break;
                 case LFOTriggerMode::Transport:
-                    // Reset on transport start or loop
-                    if (transportJustStarted || transportJustLooped) {
+                    if (transportJustStarted || transportJustLooped)
                         shouldTrigger = true;
-                    }
                     break;
                 case LFOTriggerMode::MIDI:
-                    // STUB: Will trigger on MIDI note-on when infrastructure ready
+                    if (midiTriggered)
+                        shouldTrigger = true;
                     break;
                 case LFOTriggerMode::Audio:
-                    // STUB: Will trigger on audio transient when infrastructure ready
                     break;
             }
 
+            // Handle note-off: stop MIDI-triggered LFOs
+            if (mod.triggerMode == LFOTriggerMode::MIDI && midiNoteOff && mod.running)
+                mod.running = false;
+
+            // Handle transport stop: stop Transport-triggered LFOs and reset phase
+            if (mod.triggerMode == LFOTriggerMode::Transport && transportJustStopped &&
+                mod.running) {
+                mod.running = false;
+                mod.phase = 0.0f;
+            }
+
             if (shouldTrigger) {
-                mod.phase = 0.0f;  // Reset to start
+                mod.phase = 0.0f;
                 mod.triggered = true;
+                mod.triggerCount++;
+                mod.running = true;
             } else {
                 mod.triggered = false;
             }
 
-            // Calculate effective rate (Hz or tempo-synced)
-            float effectiveRate = mod.rate;
-            if (mod.tempoSync) {
-                effectiveRate = ModulatorEngine::calculateSyncRateHz(mod.syncDivision, bpm);
-            }
+            // Gate: only advance phase for Free mode, or when running for triggered modes
+            bool shouldAdvance = (mod.triggerMode == LFOTriggerMode::Free) || mod.running;
 
-            // Update phase (wraps at 1.0)
-            mod.phase += static_cast<float>(effectiveRate * deltaTime);
-            while (mod.phase >= 1.0f) {
-                mod.phase -= 1.0f;
+            if (shouldAdvance) {
+                // Calculate effective rate (Hz or tempo-synced)
+                float effectiveRate = mod.rate;
+                if (mod.tempoSync) {
+                    effectiveRate = ModulatorEngine::calculateSyncRateHz(mod.syncDivision, bpm);
+                }
+
+                // Update phase (wraps at 1.0)
+                mod.phase += static_cast<float>(effectiveRate * deltaTime);
+                while (mod.phase >= 1.0f) {
+                    mod.phase -= 1.0f;
+                }
+                // Apply phase offset when generating waveform
+                float effectivePhase = std::fmod(mod.phase + mod.phaseOffset, 1.0f);
+                mod.value = ModulatorEngine::generateWaveformForMod(mod, effectivePhase);
+            } else {
+                mod.value = 0.0f;  // No output when not running
             }
-            // Apply phase offset when generating waveform
-            float effectivePhase = std::fmod(mod.phase + mod.phaseOffset, 1.0f);
-            // Generate waveform output using ModulatorEngine (handles Custom curves too)
-            mod.value = ModulatorEngine::generateWaveformForMod(mod, effectivePhase);
         }
+        return mod.running != wasRunning;
     };
 
     // Recursive lambda to update mods in chain elements
-    std::function<void(ChainElement&)> updateElementMods = [&](ChainElement& element) {
+    // Returns true if any mod's running state changed
+    std::function<bool(ChainElement&, bool, bool)> updateElementMods =
+        [&](ChainElement& element, bool midiTriggered, bool midiNoteOff) -> bool {
+        bool changed = false;
         if (isDevice(element)) {
-            // Update device mods
             DeviceInfo& device = magda::getDevice(element);
             for (auto& mod : device.mods) {
-                updateMod(mod);
+                changed |= updateMod(mod, midiTriggered, midiNoteOff);
             }
         } else if (isRack(element)) {
-            // Update rack mods
             RackInfo& rack = magda::getRack(element);
             for (auto& mod : rack.mods) {
-                updateMod(mod);
+                changed |= updateMod(mod, midiTriggered, midiNoteOff);
             }
-            // Recursively update mods in nested chains
             for (auto& chain : rack.chains) {
                 for (auto& chainElement : chain.elements) {
-                    updateElementMods(chainElement);
+                    changed |= updateElementMods(chainElement, midiTriggered, midiNoteOff);
                 }
             }
         }
+        return changed;
     };
 
-    // Update mods in all tracks
+    // Update mods in all tracks, collect those needing TE assignment sync
+    std::vector<TrackId> tracksNeedingSync;
     for (auto& track : tracks_) {
-        // Update mods in all chain elements
+        bool trackMidiTriggered = midiTriggeredTracks.count(track.id) > 0;
+        bool trackMidiNoteOff = midiNoteOffTracks.count(track.id) > 0;
+        bool trackChanged = false;
         for (auto& element : track.chainElements) {
-            updateElementMods(element);
+            trackChanged |= updateElementMods(element, trackMidiTriggered, trackMidiNoteOff);
         }
+        if (trackChanged)
+            tracksNeedingSync.push_back(track.id);
     }
 
-    // DO NOT call notifyModulationChanged() here - that causes 60 FPS UI rebuilds
-    // ParamSlotComponent will read mod.value directly during its paint cycle
+    // Notify TE to sync assignment values for tracks where running state changed
+    for (auto trackId : tracksNeedingSync) {
+        notifyDeviceModifiersChanged(trackId);
+    }
 }
 
 // ============================================================================
@@ -626,8 +704,9 @@ void TrackManager::setDeviceMacroValue(const ChainNodePath& devicePath, int macr
         if (macroIndex < 0 || macroIndex >= static_cast<int>(device->macros.size())) {
             return;
         }
-        device->macros[macroIndex].value = juce::jlimit(0.0f, 1.0f, value);
-        // Don't notify - simple value change doesn't need UI rebuild
+        float clampedValue = juce::jlimit(0.0f, 1.0f, value);
+        device->macros[macroIndex].value = clampedValue;
+        notifyMacroValueChanged(devicePath.trackId, false, device->id, macroIndex, clampedValue);
     }
 }
 
@@ -644,8 +723,8 @@ void TrackManager::setDeviceMacroTarget(const ChainNodePath& devicePath, int mac
             newLink.target = target;
             newLink.amount = 0.5f;  // Default amount
             device->macros[macroIndex].links.push_back(newLink);
+            notifyTrackDevicesChanged(devicePath.trackId);
         }
-        // Don't notify - simple value change doesn't need UI rebuild
     }
 }
 
@@ -666,6 +745,7 @@ void TrackManager::setDeviceMacroLinkAmount(const ChainNodePath& devicePath, int
             return;
         }
         // Update amount in links vector (or create link if it doesn't exist)
+        bool created = false;
         if (auto* link = device->macros[macroIndex].getLink(target)) {
             link->amount = amount;
         } else {
@@ -674,6 +754,13 @@ void TrackManager::setDeviceMacroLinkAmount(const ChainNodePath& devicePath, int
             newLink.target = target;
             newLink.amount = amount;
             device->macros[macroIndex].links.push_back(newLink);
+            created = true;
+        }
+        if (created) {
+            notifyTrackDevicesChanged(devicePath.trackId);
+        } else {
+            // Existing link amount changed — resync TE assignments
+            notifyDeviceModifiersChanged(devicePath.trackId);
         }
     }
 }

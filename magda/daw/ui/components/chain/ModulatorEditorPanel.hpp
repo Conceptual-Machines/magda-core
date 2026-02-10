@@ -93,12 +93,18 @@ class WaveformDisplay : public juce::Component, private juce::Timer {
             bounds.getRight() - triggerDotRadius * 2 - 4.0f, bounds.getY() + 4.0f,
             triggerDotRadius * 2, triggerDotRadius * 2);
 
-        if (mod_->triggered) {
-            // Lit up when triggered
+        // Use trigger counter to detect triggers across frame boundaries.
+        // The triggered bool is only true for one 60fps tick — the 30fps paint
+        // misses ~50% of them. The counter never misses.
+        if (mod_->triggerCount != lastSeenTriggerCount_) {
+            lastSeenTriggerCount_ = mod_->triggerCount;
+            triggerHoldFrames_ = 4;  // Show for ~130ms at 30fps
+        }
+
+        if (triggerHoldFrames_ > 0) {
             g.setColour(juce::Colours::orange);
             g.fillEllipse(triggerDotBounds);
         } else {
-            // Outline only when not triggered
             g.setColour(juce::Colours::orange.withAlpha(0.3f));
             g.drawEllipse(triggerDotBounds, 1.0f);
         }
@@ -106,10 +112,14 @@ class WaveformDisplay : public juce::Component, private juce::Timer {
 
   private:
     void timerCallback() override {
+        if (triggerHoldFrames_ > 0)
+            triggerHoldFrames_--;
         repaint();
     }
 
     const magda::ModInfo* mod_ = nullptr;
+    mutable uint32_t lastSeenTriggerCount_ = 0;
+    mutable int triggerHoldFrames_ = 0;
 };
 
 /**
@@ -164,6 +174,8 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
     int selectedModIndex_ = -1;
     magda::ModInfo currentMod_;
     const magda::ModInfo* liveModPtr_ = nullptr;  // Pointer to live mod for waveform animation
+    uint32_t lastSeenTriggerCount_ = 0;           // For detecting new triggers across frames
+    int triggerHoldFrames_ = 0;                   // Frames remaining to show trigger dot
 
     // UI Components
     juce::Label nameLabel_;

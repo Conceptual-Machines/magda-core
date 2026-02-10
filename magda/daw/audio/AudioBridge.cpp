@@ -4,11 +4,41 @@
 #include <unordered_set>
 
 #include "../core/ClipOperations.hpp"
+#include "../core/RackInfo.hpp"
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
 
 namespace magda {
+
+namespace {
+
+/**
+ * @brief Recursively search chain elements for a DeviceInfo with the given ID
+ *
+ * Searches top-level devices and recurses into RackInfo.chains[].elements[].
+ */
+const DeviceInfo* findDeviceRecursive(const std::vector<ChainElement>& elements,
+                                      DeviceId deviceId) {
+    for (const auto& element : elements) {
+        if (isDevice(element)) {
+            const auto& device = getDevice(element);
+            if (device.id == deviceId) {
+                return &device;
+            }
+        } else if (isRack(element)) {
+            const auto& rack = getRack(element);
+            for (const auto& chain : rack.chains) {
+                auto* found = findDeviceRecursive(chain.elements, deviceId);
+                if (found)
+                    return found;
+            }
+        }
+    }
+    return nullptr;
+}
+
+}  // namespace
 
 AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
     : engine_(engine),
@@ -160,18 +190,39 @@ void AudioBridge::updateMidiRoutingForSelection() {
 
         bool shouldReceiveMidi = (track.id == lastSelectedTrack_) || track.recordArmed;
 
-        // Check if this track has an instrument (only route MIDI to tracks with instruments)
-        bool hasInstrument = false;
-        for (const auto& element : track.chainElements) {
-            if (std::holds_alternative<DeviceInfo>(element)) {
-                if (std::get<DeviceInfo>(element).isInstrument) {
-                    hasInstrument = true;
-                    break;
+        // Check if this track needs MIDI (has an instrument or a MIDI-triggered mod)
+        // Recurse into racks to find instruments/mods inside rack chains
+        bool needsMidi = false;
+        std::function<bool(const std::vector<ChainElement>&)> checkElements;
+        checkElements = [&](const std::vector<ChainElement>& elements) -> bool {
+            for (const auto& element : elements) {
+                if (isDevice(element)) {
+                    const auto& device = getDevice(element);
+                    if (device.isInstrument)
+                        return true;
+                    for (const auto& mod : device.mods) {
+                        if (mod.enabled && mod.triggerMode == LFOTriggerMode::MIDI)
+                            return true;
+                    }
+                } else if (isRack(element)) {
+                    const auto& rack = getRack(element);
+                    // Check rack-level mods
+                    for (const auto& mod : rack.mods) {
+                        if (mod.enabled && mod.triggerMode == LFOTriggerMode::MIDI)
+                            return true;
+                    }
+                    // Recurse into rack chains
+                    for (const auto& chain : rack.chains) {
+                        if (checkElements(chain.elements))
+                            return true;
+                    }
                 }
             }
-        }
+            return false;
+        };
+        needsMidi = checkElements(track.chainElements);
 
-        if (!hasInstrument)
+        if (!needsMidi)
             continue;
 
         // Check current MIDI routing state
@@ -193,6 +244,19 @@ void AudioBridge::updateMidiRoutingForSelection() {
 void AudioBridge::trackDevicesChanged(TrackId trackId) {
     // Devices on a track changed - resync that track's plugins
     syncTrackPlugins(trackId);
+}
+
+void AudioBridge::deviceModifiersChanged(TrackId trackId) {
+    // Modifier properties changed (rate, waveform, sync, trigger mode) - resync only modifiers
+    pluginManager_.resyncDeviceModifiers(trackId);
+
+    // Re-check MIDI routing in case trigger mode changed to/from MIDI
+    updateMidiRoutingForSelection();
+}
+
+void AudioBridge::macroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
+                                    float value) {
+    pluginManager_.setMacroValue(trackId, isRack, id, macroIndex, value);
 }
 
 void AudioBridge::masterChannelChanged() {
@@ -228,19 +292,14 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
     }
 
     // Find the DeviceInfo to get updated values
-    // We need to search through all tracks to find this device
+    // Search through all tracks, recursing into racks
     auto& tm = TrackManager::getInstance();
     for (const auto& track : tm.getTracks()) {
-        for (const auto& element : track.chainElements) {
-            if (std::holds_alternative<DeviceInfo>(element)) {
-                const auto& device = std::get<DeviceInfo>(element);
-                if (device.id == deviceId) {
-                    DBG("  Found device in track " << track.id << ", syncing...");
-                    // Sync processor from the updated DeviceInfo
-                    processor->syncFromDeviceInfo(device);
-                    return;
-                }
-            }
+        auto* device = findDeviceRecursive(track.chainElements, deviceId);
+        if (device) {
+            DBG("  Found device in track " << track.id << ", syncing...");
+            processor->syncFromDeviceInfo(*device);
+            return;
         }
     }
     DBG("  Device not found in any track!");

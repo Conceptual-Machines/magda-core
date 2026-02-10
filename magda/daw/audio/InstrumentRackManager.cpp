@@ -134,6 +134,14 @@ DeviceId InstrumentRackManager::getDeviceIdForRack(te::Plugin* plugin) const {
     return INVALID_DEVICE_ID;
 }
 
+te::RackType::Ptr InstrumentRackManager::getRackType(DeviceId deviceId) const {
+    auto it = wrapped_.find(deviceId);
+    if (it != wrapped_.end()) {
+        return it->second.rackType;
+    }
+    return nullptr;
+}
+
 void InstrumentRackManager::clear() {
     wrapped_.clear();
 }

@@ -63,8 +63,11 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     void trackPropertyChanged(int trackId) override;
     void trackSelectionChanged(TrackId trackId) override;
     void trackDevicesChanged(TrackId trackId) override;
+    void deviceModifiersChanged(TrackId trackId) override;
     void devicePropertyChanged(DeviceId deviceId) override;
     void deviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue) override;
+    void macroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
+                           float value) override;
     void masterChannelChanged() override;
 
     // =========================================================================
@@ -360,20 +363,22 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // =========================================================================
 
     /**
-     * @brief Trigger MIDI activity for a track (audio thread safe)
+     * @brief Trigger MIDI activity for a track (MIDI thread safe)
      * @param trackId The track that received MIDI
      */
     void triggerMidiActivity(TrackId trackId) {
         midiActivity_.triggerActivity(trackId);
+        // Programmatically trigger resync on TE LFO modifiers (thread-safe atomic flag)
+        pluginManager_.triggerLFONoteOn(trackId);
     }
 
     /**
-     * @brief Check and clear MIDI activity flag for a track (UI thread)
+     * @brief Get the monotonic MIDI activity counter for a track (UI thread)
      * @param trackId The track to check
-     * @return true if MIDI activity occurred since last check
+     * @return Counter value — compare with previous to detect new activity
      */
-    bool consumeMidiActivity(TrackId trackId) {
-        return midiActivity_.consumeActivity(trackId);
+    uint32_t getMidiActivityCounter(TrackId trackId) const {
+        return midiActivity_.getActivityCounter(trackId);
     }
 
     // =========================================================================
