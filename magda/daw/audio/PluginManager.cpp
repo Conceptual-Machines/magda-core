@@ -538,7 +538,6 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
     DBG("updateDeviceModifierProperties: trackId=" << trackId);
 
     // Update properties on existing TE modifiers without removing/recreating them
-    int modOffset = 0;
     for (const auto& element : trackInfo->chainElements) {
         if (!isDevice(element))
             continue;
@@ -885,16 +884,44 @@ void PluginManager::syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack) {
     if (!trackInfo || !teTrack)
         return;
 
-    // Clear existing device macro params for all devices on this track
+    // Get the track's MacroParameterList (used for both cleanup and creation)
+    auto& macroList = teTrack->getMacroParameterListForWriting();
+
+    // Remove existing TE MacroParameters before recreating
     for (const auto& element : trackInfo->chainElements) {
         if (!isDevice(element))
             continue;
         const auto& device = getDevice(element);
-        deviceMacroParams_.erase(device.id);
-    }
 
-    // Get the track's MacroParameterList for creating macro parameters
-    auto& macroList = teTrack->getMacroParameterListForWriting();
+        auto it = deviceMacroParams_.find(device.id);
+        if (it != deviceMacroParams_.end()) {
+            for (auto& [macroIdx, macroParam] : it->second) {
+                if (!macroParam)
+                    continue;
+
+                // Remove modifier assignments from all plugin params on this track
+                for (const auto& el : trackInfo->chainElements) {
+                    if (!isDevice(el))
+                        continue;
+                    const auto& dev = getDevice(el);
+                    te::Plugin::Ptr plugin;
+                    {
+                        juce::ScopedLock lock(pluginLock_);
+                        auto pit = deviceToPlugin_.find(dev.id);
+                        if (pit != deviceToPlugin_.end())
+                            plugin = pit->second;
+                    }
+                    if (plugin) {
+                        for (auto* param : plugin->getAutomatableParameters())
+                            param->removeModifier(*macroParam);
+                    }
+                }
+
+                macroList.removeMacroParameter(*macroParam);
+            }
+            deviceMacroParams_.erase(it);
+        }
+    }
 
     for (const auto& element : trackInfo->chainElements) {
         if (!isDevice(element))

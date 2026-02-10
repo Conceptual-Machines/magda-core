@@ -185,6 +185,27 @@ RackId RackSyncManager::getRackIdForInstance(te::Plugin* plugin) const {
 }
 
 void RackSyncManager::clear() {
+    for (auto& [rackId, synced] : syncedRacks_) {
+        if (!synced.rackType)
+            continue;
+
+        auto& macroList = synced.rackType->getMacroParameterListForWriting();
+
+        // Remove TE MacroParameters and their modifier assignments
+        for (auto& [macroIdx, macroParam] : synced.innerMacroParams) {
+            if (!macroParam)
+                continue;
+
+            for (auto& [pluginId, plugin] : synced.innerPlugins) {
+                if (plugin) {
+                    for (auto* param : plugin->getAutomatableParameters())
+                        param->removeModifier(*macroParam);
+                }
+            }
+
+            macroList.removeMacroParameter(*macroParam);
+        }
+    }
     syncedRacks_.clear();
 }
 
@@ -649,13 +670,28 @@ void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo
 }
 
 void RackSyncManager::syncMacros(SyncedRack& synced, const RackInfo& rackInfo) {
-    synced.innerMacroParams.clear();
-
     auto& rackType = synced.rackType;
     if (!rackType)
         return;
 
     auto& macroList = rackType->getMacroParameterListForWriting();
+
+    // Remove existing TE MacroParameters before recreating
+    for (auto& [macroIdx, macroParam] : synced.innerMacroParams) {
+        if (!macroParam)
+            continue;
+
+        // Remove modifier assignments from all inner plugin parameters
+        for (auto& [pluginId, plugin] : synced.innerPlugins) {
+            if (plugin) {
+                for (auto* param : plugin->getAutomatableParameters())
+                    param->removeModifier(*macroParam);
+            }
+        }
+
+        macroList.removeMacroParameter(*macroParam);
+    }
+    synced.innerMacroParams.clear();
 
     for (int i = 0; i < static_cast<int>(rackInfo.macros.size()); ++i) {
         const auto& macroInfo = rackInfo.macros[static_cast<size_t>(i)];

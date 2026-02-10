@@ -191,24 +191,36 @@ void AudioBridge::updateMidiRoutingForSelection() {
         bool shouldReceiveMidi = (track.id == lastSelectedTrack_) || track.recordArmed;
 
         // Check if this track needs MIDI (has an instrument or a MIDI-triggered mod)
+        // Recurse into racks to find instruments/mods inside rack chains
         bool needsMidi = false;
-        for (const auto& element : track.chainElements) {
-            if (std::holds_alternative<DeviceInfo>(element)) {
-                const auto& device = std::get<DeviceInfo>(element);
-                if (device.isInstrument) {
-                    needsMidi = true;
-                    break;
-                }
-                for (const auto& mod : device.mods) {
-                    if (mod.enabled && mod.triggerMode == LFOTriggerMode::MIDI) {
-                        needsMidi = true;
-                        break;
+        std::function<bool(const std::vector<ChainElement>&)> checkElements;
+        checkElements = [&](const std::vector<ChainElement>& elements) -> bool {
+            for (const auto& element : elements) {
+                if (isDevice(element)) {
+                    const auto& device = getDevice(element);
+                    if (device.isInstrument)
+                        return true;
+                    for (const auto& mod : device.mods) {
+                        if (mod.enabled && mod.triggerMode == LFOTriggerMode::MIDI)
+                            return true;
+                    }
+                } else if (isRack(element)) {
+                    const auto& rack = getRack(element);
+                    // Check rack-level mods
+                    for (const auto& mod : rack.mods) {
+                        if (mod.enabled && mod.triggerMode == LFOTriggerMode::MIDI)
+                            return true;
+                    }
+                    // Recurse into rack chains
+                    for (const auto& chain : rack.chains) {
+                        if (checkElements(chain.elements))
+                            return true;
                     }
                 }
-                if (needsMidi)
-                    break;
             }
-        }
+            return false;
+        };
+        needsMidi = checkElements(track.chainElements);
 
         if (!needsMidi)
             continue;
