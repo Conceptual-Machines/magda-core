@@ -43,14 +43,10 @@ void MidiSidechainMonitorPlugin::applyToBuffer(const te::PluginRenderContext& fc
     }
 
     if (hasNoteOn) {
-        DBG("MidiSidechainMonitorPlugin::applyToBuffer - noteOn detected on track "
-            << sourceTrackId_);
         SidechainTriggerBus::getInstance().triggerNoteOn(sourceTrackId_);
         forwardToDestinationTracks();
     }
     if (hasNoteOff) {
-        DBG("MidiSidechainMonitorPlugin::applyToBuffer - noteOff detected on track "
-            << sourceTrackId_);
         SidechainTriggerBus::getInstance().triggerNoteOff(sourceTrackId_);
     }
 }
@@ -87,8 +83,6 @@ void MidiSidechainMonitorPlugin::forwardToDestinationTracks() {
         }
 
         if (shouldTrigger) {
-            DBG("MidiSidechainMonitorPlugin::forwardToDestinationTracks - triggering LFO on track "
-                << track.id << " from source track " << sourceTrackId_);
             pluginManager_->triggerLFONoteOn(track.id);
         }
     }
