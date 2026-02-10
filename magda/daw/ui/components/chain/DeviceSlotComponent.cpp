@@ -1270,8 +1270,15 @@ int DeviceSlotComponent::getDynamicSlotWidth() const {
 void DeviceSlotComponent::showSidechainMenu() {
     juce::PopupMenu menu;
 
+    // Read live sidechain state from TrackManager (device_ may be stale)
+    magda::SidechainConfig currentSidechain;
+    if (auto* currentDevice =
+            magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
+        currentSidechain = currentDevice->sidechain;
+    }
+
     // "None" option to clear sidechain
-    bool isNone = !device_.sidechain.isActive();
+    bool isNone = !currentSidechain.isActive();
     menu.addItem(1, "None", true, isNone);
     menu.addSeparator();
 
@@ -1291,16 +1298,16 @@ void DeviceSlotComponent::showSidechainMenu() {
         if (track.id == nodePath_.trackId)
             continue;
 
-        bool isSelected =
-            device_.sidechain.isActive() && device_.sidechain.sourceTrackId == track.id;
+        bool isSelected = currentSidechain.isActive() && currentSidechain.sourceTrackId == track.id;
         menu.addItem(itemId, track.name, true, isSelected);
         trackEntries->push_back({track.id, track.name});
         ++itemId;
     }
 
     auto deviceId = device_.id;
+    auto safeThis = juce::Component::SafePointer(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(scButton_.get()),
-                       [deviceId, trackEntries](int result) {
+                       [deviceId, trackEntries, safeThis](int result) {
                            if (result == 0)
                                return;
 
@@ -1313,6 +1320,16 @@ void DeviceSlotComponent::showSidechainMenu() {
                                        deviceId, (*trackEntries)[static_cast<size_t>(index)].id,
                                        magda::SidechainConfig::Type::Audio);
                                }
+                           }
+
+                           // Refresh local copy so button state and next menu open are correct
+                           if (safeThis) {
+                               if (auto* dev =
+                                       magda::TrackManager::getInstance().getDeviceInChainByPath(
+                                           safeThis->nodePath_)) {
+                                   safeThis->device_.sidechain = dev->sidechain;
+                               }
+                               safeThis->updateScButtonState();
                            }
                        });
 }
