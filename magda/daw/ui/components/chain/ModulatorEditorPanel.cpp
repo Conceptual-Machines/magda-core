@@ -148,6 +148,9 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
             curveEditorWindow_->setVisible(false);
             curveEditorButton_->setActive(false);
         } else {
+            // Re-sync curve data from ModInfo before showing
+            curveEditorWindow_->getCurveEditor().setModInfo(
+                const_cast<magda::ModInfo*>(liveModPtr_ ? liveModPtr_ : &currentMod_));
             curveEditorWindow_->setVisible(true);
             curveEditorWindow_->toFront(true);
             curveEditorButton_->setActive(true);

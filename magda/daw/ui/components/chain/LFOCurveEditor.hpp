@@ -149,6 +149,10 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
     float lastPhase_ = 0.0f;
     float lastValue_ = 0.0f;
 
+    // Trigger indicator state
+    int lastSeenTriggerCount_ = 0;
+    int triggerHoldFrames_ = 0;
+
     // Grid settings
     int gridDivisionsX_ = 4;  // Vertical lines (phase divisions)
     int gridDivisionsY_ = 4;  // Horizontal lines (value divisions)
