@@ -608,6 +608,11 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
 
     obj->setProperty("currentParameterPage", device.currentParameterPage);
 
+    // Sidechain capability
+    if (device.canSidechain) {
+        obj->setProperty("canSidechain", true);
+    }
+
     // Sidechain
     if (device.sidechain.isActive()) {
         auto* scObj = new juce::DynamicObject();
@@ -697,6 +702,12 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     }
 
     outDevice.currentParameterPage = obj->getProperty("currentParameterPage");
+
+    // Sidechain capability
+    auto canSidechainVar = obj->getProperty("canSidechain");
+    if (!canSidechainVar.isVoid()) {
+        outDevice.canSidechain = static_cast<bool>(canSidechainVar);
+    }
 
     // Sidechain
     auto sidechainVar = obj->getProperty("sidechain");

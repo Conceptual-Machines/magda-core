@@ -114,6 +114,17 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     };
     addAndMakeVisible(gainSlider_);
 
+    // Sidechain button (only visible when plugin supports sidechain)
+    scButton_ = std::make_unique<juce::TextButton>("SC");
+    scButton_->setColour(juce::TextButton::buttonColourId,
+                         DarkTheme::getColour(DarkTheme::SURFACE));
+    scButton_->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+    scButton_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    scButton_->onClick = [this]() { showSidechainMenu(); };
+    scButton_->setVisible(device_.canSidechain);
+    addAndMakeVisible(*scButton_);
+    updateScButtonState();
+
     // UI button (toggle plugin window) - open in new icon
     uiButton_ = std::make_unique<magda::SvgButton>("UI", BinaryData::open_in_new_svg,
                                                    BinaryData::open_in_new_svgSize);
@@ -484,6 +495,12 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     onButton_->setActive(!device.bypassed);
     gainSlider_.setValue(device.gainDb, juce::dontSendNotification);
 
+    // Update sidechain button visibility and state
+    if (scButton_) {
+        scButton_->setVisible(device_.canSidechain);
+        updateScButtonState();
+    }
+
     // Apply saved parameter configuration if parameters are now available
     if (!device_.uniqueId.isEmpty() && !device_.parameters.empty()) {
         magda::DeviceInfo tempDevice = device_;
@@ -709,6 +726,15 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     // UI button
     uiButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
     headerArea.removeFromRight(4);
+
+    // Sidechain button (only if plugin supports it)
+    if (device_.canSidechain && scButton_) {
+        scButton_->setBounds(headerArea.removeFromRight(20));
+        scButton_->setVisible(true);
+        headerArea.removeFromRight(2);
+    } else if (scButton_) {
+        scButton_->setVisible(false);
+    }
 
     // Gain slider takes some space on the right
     gainSlider_.setBounds(headerArea.removeFromRight(50));
@@ -1235,6 +1261,99 @@ int DeviceSlotComponent::getParamsPerPage() const {
 int DeviceSlotComponent::getDynamicSlotWidth() const {
     int paramsPerRow = getParamsPerRow();
     return PARAM_CELL_WIDTH * paramsPerRow;
+}
+
+// =============================================================================
+// Sidechain Menu
+// =============================================================================
+
+void DeviceSlotComponent::showSidechainMenu() {
+    juce::PopupMenu menu;
+
+    // Read live sidechain state from TrackManager (device_ may be stale)
+    magda::SidechainConfig currentSidechain;
+    if (auto* currentDevice =
+            magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
+        currentSidechain = currentDevice->sidechain;
+    }
+
+    // "None" option to clear sidechain
+    bool isNone = !currentSidechain.isActive();
+    menu.addItem(1, "None", true, isNone);
+    menu.addSeparator();
+
+    // Build list of candidate tracks (excluding this device's own track)
+    // Store id→name pairs for the async callback
+    struct TrackEntry {
+        magda::TrackId id;
+        juce::String name;
+    };
+    auto trackEntries = std::make_shared<std::vector<TrackEntry>>();
+
+    auto& tm = magda::TrackManager::getInstance();
+    const auto& tracks = tm.getTracks();
+    int itemId = 100;
+
+    for (const auto& track : tracks) {
+        if (track.id == nodePath_.trackId)
+            continue;
+
+        bool isSelected = currentSidechain.isActive() && currentSidechain.sourceTrackId == track.id;
+        menu.addItem(itemId, track.name, true, isSelected);
+        trackEntries->push_back({track.id, track.name});
+        ++itemId;
+    }
+
+    auto deviceId = device_.id;
+    auto safeThis = juce::Component::SafePointer(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(scButton_.get()),
+                       [deviceId, trackEntries, safeThis](int result) {
+                           if (result == 0)
+                               return;
+
+                           if (result == 1) {
+                               magda::TrackManager::getInstance().clearSidechain(deviceId);
+                           } else {
+                               int index = result - 100;
+                               if (index >= 0 && index < static_cast<int>(trackEntries->size())) {
+                                   magda::TrackManager::getInstance().setSidechainSource(
+                                       deviceId, (*trackEntries)[static_cast<size_t>(index)].id,
+                                       magda::SidechainConfig::Type::Audio);
+                               }
+                           }
+
+                           // Refresh local copy so button state and next menu open are correct
+                           if (safeThis) {
+                               if (auto* dev =
+                                       magda::TrackManager::getInstance().getDeviceInChainByPath(
+                                           safeThis->nodePath_)) {
+                                   safeThis->device_.sidechain = dev->sidechain;
+                               }
+                               safeThis->updateScButtonState();
+                           }
+                       });
+}
+
+void DeviceSlotComponent::updateScButtonState() {
+    if (!scButton_)
+        return;
+
+    if (device_.sidechain.isActive()) {
+        // Show source track name and highlight
+        auto* sourceTrack =
+            magda::TrackManager::getInstance().getTrack(device_.sidechain.sourceTrackId);
+        juce::String label = sourceTrack ? "SC" : "SC";
+        scButton_->setButtonText(label);
+        scButton_->setColour(juce::TextButton::buttonColourId,
+                             DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).darker(0.3f));
+        scButton_->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    } else {
+        scButton_->setButtonText("SC");
+        scButton_->setColour(juce::TextButton::buttonColourId,
+                             DarkTheme::getColour(DarkTheme::SURFACE));
+        scButton_->setColour(juce::TextButton::textColourOffId,
+                             DarkTheme::getSecondaryTextColour());
+    }
 }
 
 }  // namespace magda::daw::ui

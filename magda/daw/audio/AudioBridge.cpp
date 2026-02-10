@@ -299,6 +299,22 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
         if (device) {
             DBG("  Found device in track " << track.id << ", syncing...");
             processor->syncFromDeviceInfo(*device);
+
+            // Sync sidechain routing if changed
+            auto* tePlugin = pluginManager_.getPlugin(deviceId).get();
+            if (tePlugin && tePlugin->canSidechain()) {
+                if (device->sidechain.isActive() &&
+                    device->sidechain.type == SidechainConfig::Type::Audio) {
+                    auto* sourceTrack =
+                        trackController_.getAudioTrack(device->sidechain.sourceTrackId);
+                    if (sourceTrack) {
+                        tePlugin->setSidechainSourceID(sourceTrack->itemID);
+                        tePlugin->guessSidechainRouting();
+                    }
+                } else {
+                    tePlugin->setSidechainSourceID({});
+                }
+            }
             return;
         }
     }

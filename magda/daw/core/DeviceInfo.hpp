@@ -73,6 +73,7 @@ struct DeviceInfo {
 
     // Sidechain configuration (e.g., compressor key input)
     SidechainConfig sidechain;
+    bool canSidechain = false;  // true if TE plugin supports sidechain input
 
     // UI state
     int currentParameterPage = 0;  // Current parameter page (for multi-page param display)

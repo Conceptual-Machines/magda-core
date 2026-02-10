@@ -223,6 +223,14 @@ class PluginManager {
     void syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack);
 
     /**
+     * @brief Sync sidechain routing for devices on a track
+     * For each device with an active sidechain config, sets the TE plugin's
+     * sidechain source to the corresponding TE track.
+     * Called from syncTrackPlugins after devices are created.
+     */
+    void syncSidechains(TrackId trackId, te::AudioTrack* teTrack);
+
+    /**
      * @brief Set a device macro parameter value on the TE MacroParameter
      */
     void setDeviceMacroValue(DeviceId deviceId, int macroIndex, float value);
