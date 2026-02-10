@@ -162,6 +162,18 @@ class PluginManager {
     te::Plugin::Ptr createPluginOnly(TrackId trackId, const DeviceInfo& device);
 
     /**
+     * @brief Register a DeviceProcessor for a plugin inside a rack
+     *
+     * Creates an ExternalPluginProcessor (for external plugins), calls
+     * populateParameters(), and stores it in deviceProcessors_ so parameter
+     * enumeration works the same as for standalone plugins.
+     *
+     * @param deviceId The MAGDA device ID inside the rack
+     * @param plugin The TE plugin created for this device
+     */
+    void registerRackPluginProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    /**
      * @brief Get the RackSyncManager for rack audio routing
      */
     RackSyncManager& getRackSyncManager() {

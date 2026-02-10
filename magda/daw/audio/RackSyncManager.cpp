@@ -327,6 +327,9 @@ void RackSyncManager::loadChainPlugins(SyncedRack& synced, TrackId trackId,
                     if (synced.rackType->addPlugin(plugin, {0.5f, 0.5f}, false)) {
                         synced.innerPlugins[device.id] = plugin;
 
+                        // Register processor for parameter enumeration
+                        pluginManager_.registerRackPluginProcessor(device.id, plugin);
+
                         // Apply bypass state
                         plugin->setEnabled(!device.bypassed);
 

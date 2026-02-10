@@ -444,12 +444,19 @@ void TrackManager::updateDeviceParameters(DeviceId deviceId,
     // Search all tracks for the device and update its parameters
     for (auto& track : tracks_) {
         for (auto& element : track.chainElements) {
-            if (std::holds_alternative<DeviceInfo>(element)) {
-                auto& device = std::get<DeviceInfo>(element);
-                if (device.id == deviceId) {
-                    device.parameters = params;
-                    // Don't notify - this is called during device loading, not user interaction
-                    return;
+            if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
+                magda::getDevice(element).parameters = params;
+                return;
+            }
+            if (magda::isRack(element)) {
+                for (auto& chain : magda::getRack(element).chains) {
+                    for (auto& chainElement : chain.elements) {
+                        if (magda::isDevice(chainElement) &&
+                            magda::getDevice(chainElement).id == deviceId) {
+                            magda::getDevice(chainElement).parameters = params;
+                            return;
+                        }
+                    }
                 }
             }
         }
@@ -461,12 +468,19 @@ void TrackManager::setDeviceVisibleParameters(DeviceId deviceId,
     // Search all tracks for the device and update visible parameters
     for (auto& track : tracks_) {
         for (auto& element : track.chainElements) {
-            if (std::holds_alternative<DeviceInfo>(element)) {
-                auto& device = std::get<DeviceInfo>(element);
-                if (device.id == deviceId) {
-                    device.visibleParameters = visibleParams;
-                    // Don't notify - this is called during device loading, not user interaction
-                    return;
+            if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
+                magda::getDevice(element).visibleParameters = visibleParams;
+                return;
+            }
+            if (magda::isRack(element)) {
+                for (auto& chain : magda::getRack(element).chains) {
+                    for (auto& chainElement : chain.elements) {
+                        if (magda::isDevice(chainElement) &&
+                            magda::getDevice(chainElement).id == deviceId) {
+                            magda::getDevice(chainElement).visibleParameters = visibleParams;
+                            return;
+                        }
+                    }
                 }
             }
         }

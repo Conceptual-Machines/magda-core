@@ -884,7 +884,25 @@ void PluginManager::rebuildSidechainLFOCache() {
                         isDestination = true;
                         break;
                     }
+                } else if (isRack(element)) {
+                    for (const auto& chain : getRack(element).chains) {
+                        for (const auto& ce : chain.elements) {
+                            if (isDevice(ce)) {
+                                const auto& device = getDevice(ce);
+                                if ((device.sidechain.type == SidechainConfig::Type::MIDI ||
+                                     device.sidechain.type == SidechainConfig::Type::Audio) &&
+                                    device.sidechain.sourceTrackId == track.id) {
+                                    isDestination = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (isDestination)
+                            break;
+                    }
                 }
+                if (isDestination)
+                    break;
             }
             if (!isDestination)
                 continue;
@@ -1147,6 +1165,18 @@ bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) const {
                     device.sidechain.sourceTrackId == trackId) {
                     return true;
                 }
+            } else if (isRack(element)) {
+                for (const auto& chain : getRack(element).chains) {
+                    for (const auto& ce : chain.elements) {
+                        if (isDevice(ce)) {
+                            const auto& device = getDevice(ce);
+                            if (device.sidechain.type == SidechainConfig::Type::MIDI &&
+                                device.sidechain.sourceTrackId == trackId) {
+                                return true;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1347,6 +1377,32 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
     }
 
     return plugin;
+}
+
+// =============================================================================
+// Rack Plugin Processor Registration
+// =============================================================================
+
+void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::Ptr plugin) {
+    if (!plugin)
+        return;
+
+    // Only create processors for external plugins (they need parameter enumeration)
+    if (dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+        auto processor = std::make_unique<ExternalPluginProcessor>(deviceId, plugin);
+        processor->startParameterListening();
+
+        // Populate parameters back to TrackManager
+        DeviceInfo tempInfo;
+        processor->populateParameters(tempInfo);
+        TrackManager::getInstance().updateDeviceParameters(deviceId, tempInfo.parameters);
+
+        juce::ScopedLock lock(pluginLock_);
+        deviceProcessors_[deviceId] = std::move(processor);
+
+        DBG("PluginManager::registerRackPluginProcessor: Registered processor for device "
+            << deviceId << " with " << tempInfo.parameters.size() << " parameters");
+    }
 }
 
 // =============================================================================
