@@ -8,6 +8,7 @@
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
+#include "SidechainTriggerBus.hpp"
 
 namespace magda {
 
@@ -668,6 +669,10 @@ void AudioBridge::timerCallback() {
                 data.rmsR = data.peakR * 0.7f;
 
                 meteringBuffer_.pushLevels(trackId, data);
+
+                // Write audio peak to sidechain bus for Audio-triggered modulators
+                float peak = std::max(data.peakL, data.peakR);
+                SidechainTriggerBus::getInstance().setAudioPeakLevel(trackId, peak);
             }
         });
     });

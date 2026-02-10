@@ -749,6 +749,7 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             DeviceInfo& device = magda::getDevice(element);
             bool deviceMidiTriggered = midiTriggered;
             bool deviceMidiNoteOff = midiNoteOff;
+            float deviceAudioPeak = audioPeak;
 
             // Cross-track MIDI sidechain: trigger from source track
             if (device.sidechain.type == SidechainConfig::Type::MIDI &&
@@ -759,8 +760,16 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                     deviceMidiNoteOff = true;
             }
 
+            // Cross-track Audio sidechain: use source track's audio peak
+            if (device.sidechain.type == SidechainConfig::Type::Audio &&
+                device.sidechain.sourceTrackId != INVALID_TRACK_ID) {
+                auto it = audioPeakLevels.find(device.sidechain.sourceTrackId);
+                if (it != audioPeakLevels.end())
+                    deviceAudioPeak = it->second;
+            }
+
             for (auto& mod : device.mods) {
-                changed |= updateMod(mod, deviceMidiTriggered, deviceMidiNoteOff, audioPeak);
+                changed |= updateMod(mod, deviceMidiTriggered, deviceMidiNoteOff, deviceAudioPeak);
             }
         } else if (isRack(element)) {
             RackInfo& rack = magda::getRack(element);

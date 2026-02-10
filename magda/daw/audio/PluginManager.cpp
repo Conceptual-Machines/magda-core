@@ -332,7 +332,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
             }
         }
 
-        // Check if this track is a MIDI sidechain source for any other track
+        // Check if this track is a sidechain source (MIDI or Audio) for any other track
         if (!needsMonitor) {
             for (const auto& track : TrackManager::getInstance().getTracks()) {
                 if (needsMonitor)
@@ -340,7 +340,8 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                 for (const auto& element : track.chainElements) {
                     if (isDevice(element)) {
                         const auto& device = getDevice(element);
-                        if (device.sidechain.type == SidechainConfig::Type::MIDI &&
+                        if ((device.sidechain.type == SidechainConfig::Type::MIDI ||
+                             device.sidechain.type == SidechainConfig::Type::Audio) &&
                             device.sidechain.sourceTrackId == trackId) {
                             needsMonitor = true;
                             DBG("PluginManager::syncTrackPlugins - track "
@@ -1110,7 +1111,7 @@ void PluginManager::checkSidechainMonitor(TrackId trackId) {
         }
     }
 
-    // Check if this track is a MIDI sidechain source for any other track
+    // Check if this track is a sidechain source (MIDI or Audio) for any other track
     if (!needsMonitor) {
         for (const auto& track : TrackManager::getInstance().getTracks()) {
             if (needsMonitor)
@@ -1118,7 +1119,8 @@ void PluginManager::checkSidechainMonitor(TrackId trackId) {
             for (const auto& element : track.chainElements) {
                 if (isDevice(element)) {
                     const auto& device = getDevice(element);
-                    if (device.sidechain.type == SidechainConfig::Type::MIDI &&
+                    if ((device.sidechain.type == SidechainConfig::Type::MIDI ||
+                         device.sidechain.type == SidechainConfig::Type::Audio) &&
                         device.sidechain.sourceTrackId == trackId) {
                         needsMonitor = true;
                         DBG("PluginManager::checkSidechainMonitor - track "
@@ -1177,12 +1179,11 @@ void PluginManager::ensureSidechainMonitor(TrackId sourceTrackId) {
             mon->setSourceTrackId(sourceTrackId);
             mon->setPluginManager(this);
         }
-        // Insert at end of chain (-1) to avoid interfering with TE's audio graph.
-        // MIDI flows through all plugins regardless of position, and audio peak
-        // detection benefits from being after the instrument.
-        teTrack->pluginList.insertPlugin(plugin, -1, nullptr);
+        // Insert at position 0 so it sees MIDI before the instrument consumes it.
+        // Audio peak detection is handled separately via LevelMeterPlugin.
+        teTrack->pluginList.insertPlugin(plugin, 0, nullptr);
         sidechainMonitors_[sourceTrackId] = plugin;
-        DBG("PluginManager::ensureSidechainMonitor - inserted monitor at end of chain on track "
+        DBG("PluginManager::ensureSidechainMonitor - inserted monitor at position 0 on track "
             << sourceTrackId);
     } else {
         DBG("PluginManager::ensureSidechainMonitor - FAILED to create monitor plugin for track "

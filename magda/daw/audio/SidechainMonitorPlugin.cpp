@@ -51,11 +51,8 @@ void SidechainMonitorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         }
     }
 
-    // --- Audio peak detection ---
-    if (fc.destBuffer) {
-        float peak = fc.destBuffer->getMagnitude(0, fc.bufferNumSamples);
-        SidechainTriggerBus::getInstance().setAudioPeakLevel(sourceTrackId_, peak);
-    }
+    // Audio peak detection is handled by AudioBridge reading from TE's LevelMeterPlugin,
+    // since this monitor is at position 0 (before instruments generate audio).
 }
 
 void SidechainMonitorPlugin::restorePluginStateFromValueTree(const juce::ValueTree&) {
