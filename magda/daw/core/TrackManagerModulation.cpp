@@ -13,8 +13,9 @@ void TrackManager::setRackMacroValue(const ChainNodePath& rackPath, int macroInd
         if (macroIndex < 0 || macroIndex >= static_cast<int>(rack->macros.size())) {
             return;
         }
-        rack->macros[macroIndex].value = juce::jlimit(0.0f, 1.0f, value);
-        // Don't notify - simple value change doesn't need UI rebuild
+        float clampedValue = juce::jlimit(0.0f, 1.0f, value);
+        rack->macros[macroIndex].value = clampedValue;
+        notifyMacroValueChanged(rackPath.trackId, true, rack->id, macroIndex, clampedValue);
     }
 }
 
@@ -61,6 +62,9 @@ void TrackManager::setRackMacroLinkAmount(const ChainNodePath& rackPath, int mac
         // Notify when a new link is created (needs TE modifier assignment)
         if (created) {
             notifyTrackDevicesChanged(rackPath.trackId);
+        } else {
+            // Existing link amount changed — resync TE assignments
+            notifyDeviceModifiersChanged(rackPath.trackId);
         }
     }
 }
@@ -700,8 +704,9 @@ void TrackManager::setDeviceMacroValue(const ChainNodePath& devicePath, int macr
         if (macroIndex < 0 || macroIndex >= static_cast<int>(device->macros.size())) {
             return;
         }
-        device->macros[macroIndex].value = juce::jlimit(0.0f, 1.0f, value);
-        // Don't notify - simple value change doesn't need UI rebuild
+        float clampedValue = juce::jlimit(0.0f, 1.0f, value);
+        device->macros[macroIndex].value = clampedValue;
+        notifyMacroValueChanged(devicePath.trackId, false, device->id, macroIndex, clampedValue);
     }
 }
 
@@ -718,8 +723,8 @@ void TrackManager::setDeviceMacroTarget(const ChainNodePath& devicePath, int mac
             newLink.target = target;
             newLink.amount = 0.5f;  // Default amount
             device->macros[macroIndex].links.push_back(newLink);
+            notifyTrackDevicesChanged(devicePath.trackId);
         }
-        // Don't notify - simple value change doesn't need UI rebuild
     }
 }
 
@@ -740,6 +745,7 @@ void TrackManager::setDeviceMacroLinkAmount(const ChainNodePath& devicePath, int
             return;
         }
         // Update amount in links vector (or create link if it doesn't exist)
+        bool created = false;
         if (auto* link = device->macros[macroIndex].getLink(target)) {
             link->amount = amount;
         } else {
@@ -748,6 +754,13 @@ void TrackManager::setDeviceMacroLinkAmount(const ChainNodePath& devicePath, int
             newLink.target = target;
             newLink.amount = amount;
             device->macros[macroIndex].links.push_back(newLink);
+            created = true;
+        }
+        if (created) {
+            notifyTrackDevicesChanged(devicePath.trackId);
+        } else {
+            // Existing link amount changed — resync TE assignments
+            notifyDeviceModifiersChanged(devicePath.trackId);
         }
     }
 }

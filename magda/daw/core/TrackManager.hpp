@@ -74,6 +74,13 @@ class TrackManagerListener {
     virtual void deviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue) {
         juce::ignoreUnused(deviceId, paramIndex, newValue);
     }
+
+    // Called when a macro knob value changes (for audio engine sync)
+    // isRack: true = rack macro (id is RackId), false = device macro (id is DeviceId)
+    virtual void macroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
+                                   float value) {
+        juce::ignoreUnused(trackId, isRack, id, macroIndex, value);
+    }
 };
 
 /**
@@ -490,6 +497,7 @@ class TrackManager {
     void notifyDeviceModifiersChanged(TrackId trackId);
     void notifyDevicePropertyChanged(DeviceId deviceId);
     void notifyDeviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue);
+    void notifyMacroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex, float value);
 
     // Helper: get a ModInfo from device path + index
     ModInfo* getDeviceMod(const ChainNodePath& devicePath, int modIndex);

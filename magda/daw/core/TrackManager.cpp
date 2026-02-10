@@ -1331,6 +1331,13 @@ void TrackManager::notifyDeviceParameterChanged(DeviceId deviceId, int paramInde
     }
 }
 
+void TrackManager::notifyMacroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
+                                           float value) {
+    for (auto* listener : listeners_) {
+        listener->macroValueChanged(trackId, isRack, id, macroIndex, value);
+    }
+}
+
 void TrackManager::updateRackMods(const RackInfo& rack, double deltaTime) {
     // TODO: Recursively update mods in rack, chains, and nested racks
     (void)rack;

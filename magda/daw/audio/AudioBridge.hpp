@@ -66,6 +66,8 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     void deviceModifiersChanged(TrackId trackId) override;
     void devicePropertyChanged(DeviceId deviceId) override;
     void deviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue) override;
+    void macroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
+                           float value) override;
     void masterChannelChanged() override;
 
     // =========================================================================

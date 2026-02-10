@@ -242,6 +242,11 @@ void AudioBridge::deviceModifiersChanged(TrackId trackId) {
     updateMidiRoutingForSelection();
 }
 
+void AudioBridge::macroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
+                                    float value) {
+    pluginManager_.setMacroValue(trackId, isRack, id, macroIndex, value);
+}
+
 void AudioBridge::masterChannelChanged() {
     // Master channel property changed - sync to Tracktion Engine
     const auto& master = TrackManager::getInstance().getMasterChannel();

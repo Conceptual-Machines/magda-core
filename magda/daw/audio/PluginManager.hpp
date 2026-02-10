@@ -205,6 +205,28 @@ class PluginManager {
      */
     void triggerLFONoteOn(TrackId trackId);
 
+    /**
+     * @brief Route a macro value change to the appropriate TE infrastructure
+     * @param trackId The track containing the macro
+     * @param isRack true = rack macro (id is RackId), false = device macro (id is DeviceId)
+     * @param id RackId or DeviceId depending on isRack
+     * @param macroIndex Index into the macro array
+     * @param value Normalized value (0.0 to 1.0)
+     */
+    void setMacroValue(TrackId trackId, bool isRack, int id, int macroIndex, float value);
+
+    /**
+     * @brief Sync device-level macros to TE MacroParameters
+     * Creates TE MacroParameters and assignments for all device macros on a track.
+     * Called from syncTrackPlugins after devices are created.
+     */
+    void syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack);
+
+    /**
+     * @brief Set a device macro parameter value on the TE MacroParameter
+     */
+    void setDeviceMacroValue(DeviceId deviceId, int macroIndex, float value);
+
   private:
     // Internal device → plugin conversion (used by syncTrackPlugins)
     te::Plugin::Ptr loadDeviceAsPlugin(TrackId trackId, const DeviceInfo& device);
@@ -241,6 +263,9 @@ class PluginManager {
 
     // Device-level TE modifiers (created by syncDeviceModifiers)
     std::map<DeviceId, std::vector<te::Modifier::Ptr>> deviceModifiers_;
+
+    // Device-level TE macro parameters (created by syncDeviceMacros)
+    std::map<DeviceId, std::map<int, te::MacroParameter*>> deviceMacroParams_;
 
     // Thread safety
     mutable juce::CriticalSection pluginLock_;

@@ -291,6 +291,9 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     // Sync device-level modifiers (LFOs, etc. assigned to plugin parameters)
     syncDeviceModifiers(trackId, teTrack);
 
+    // Sync device-level macros (macro knobs assigned to plugin parameters)
+    syncDeviceMacros(trackId, teTrack);
+
     // Ensure VolumeAndPan is near the end of the chain (before LevelMeter)
     // This is the track's fader control - it should come AFTER audio sources
     ensureVolumePluginPosition(teTrack);
@@ -851,6 +854,101 @@ void PluginManager::resyncDeviceModifiers(TrackId trackId) {
     }
 }
 
+// =============================================================================
+// Macro Value Routing
+// =============================================================================
+
+void PluginManager::setMacroValue(TrackId trackId, bool isRack, int id, int macroIndex,
+                                  float value) {
+    if (isRack) {
+        // Rack macro — delegate to RackSyncManager
+        rackSyncManager_.setMacroValue(static_cast<RackId>(id), macroIndex, value);
+    } else {
+        // Device macro — use device macro params
+        setDeviceMacroValue(static_cast<DeviceId>(id), macroIndex, value);
+    }
+}
+
+void PluginManager::setDeviceMacroValue(DeviceId deviceId, int macroIndex, float value) {
+    auto it = deviceMacroParams_.find(deviceId);
+    if (it == deviceMacroParams_.end())
+        return;
+
+    auto macroIt = it->second.find(macroIndex);
+    if (macroIt != it->second.end() && macroIt->second != nullptr) {
+        macroIt->second->setParameter(value, juce::sendNotificationSync);
+    }
+}
+
+void PluginManager::syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack) {
+    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (!trackInfo || !teTrack)
+        return;
+
+    // Clear existing device macro params for all devices on this track
+    for (const auto& element : trackInfo->chainElements) {
+        if (!isDevice(element))
+            continue;
+        const auto& device = getDevice(element);
+        deviceMacroParams_.erase(device.id);
+    }
+
+    // Get the track's MacroParameterList for creating macro parameters
+    auto& macroList = teTrack->getMacroParameterListForWriting();
+
+    for (const auto& element : trackInfo->chainElements) {
+        if (!isDevice(element))
+            continue;
+
+        const auto& device = getDevice(element);
+
+        for (int i = 0; i < static_cast<int>(device.macros.size()); ++i) {
+            const auto& macroInfo = device.macros[static_cast<size_t>(i)];
+            if (!macroInfo.isLinked())
+                continue;
+
+            // Create a TE MacroParameter
+            auto* macroParam = macroList.createMacroParameter();
+            if (!macroParam)
+                continue;
+
+            macroParam->macroName = macroInfo.name;
+            macroParam->setParameter(macroInfo.value, juce::dontSendNotification);
+
+            deviceMacroParams_[device.id][i] = macroParam;
+
+            // Create assignments for each link
+            for (const auto& link : macroInfo.links) {
+                if (!link.target.isValid())
+                    continue;
+
+                // Find the TE plugin for the link target device
+                te::Plugin::Ptr linkTarget;
+                {
+                    juce::ScopedLock lock(pluginLock_);
+                    auto pit = deviceToPlugin_.find(link.target.deviceId);
+                    if (pit != deviceToPlugin_.end())
+                        linkTarget = pit->second;
+                }
+                if (!linkTarget)
+                    continue;
+
+                auto params = linkTarget->getAutomatableParameters();
+                if (link.target.paramIndex >= 0 &&
+                    link.target.paramIndex < static_cast<int>(params.size())) {
+                    auto* param = params[static_cast<size_t>(link.target.paramIndex)];
+                    if (param) {
+                        param->addModifier(*macroParam, link.amount);
+                        DBG("syncDeviceMacros: Linked macro "
+                            << i << " on device " << device.id << " to device "
+                            << link.target.deviceId << " param " << link.target.paramIndex);
+                    }
+                }
+            }
+        }
+    }
+}
+
 // Utilities
 // =============================================================================
 
@@ -859,6 +957,7 @@ void PluginManager::clearAllMappings() {
     instrumentRackManager_.clear();
     rackSyncManager_.clear();
     deviceModifiers_.clear();
+    deviceMacroParams_.clear();
     deviceToPlugin_.clear();
     pluginToDevice_.clear();
     deviceProcessors_.clear();
