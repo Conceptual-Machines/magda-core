@@ -296,6 +296,12 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
                                             if (modInfo.triggerMode != LFOTriggerMode::Free &&
                                                 !modInfo.running)
                                                 effectiveAmount = 0.0f;
+                                            if (effectiveAmount != assignment->value)
+                                                DBG("RackSyncManager::updateModProperties - modId="
+                                                    << modInfo.id << " assignment "
+                                                    << assignment->value.get() << " -> "
+                                                    << effectiveAmount
+                                                    << " running=" << (int)modInfo.running);
                                             assignment->value = effectiveAmount;
                                             break;
                                         }
@@ -619,6 +625,9 @@ void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo
                     applyLFOProperties(lfo, modInfo);
                 }
                 modifier = lfoMod;
+                DBG("RackSyncManager::syncModifiers - created LFO for rackId="
+                    << synced.rackId << " modId=" << modInfo.id << " triggerMode="
+                    << (int)modInfo.triggerMode << " links=" << (int)modInfo.links.size());
                 break;
             }
 
@@ -787,10 +796,16 @@ void RackSyncManager::collectLFOModifiers(TrackId trackId,
     for (const auto& [rackId, synced] : syncedRacks_) {
         if (synced.trackId != trackId)
             continue;
+        int collected = 0;
         for (const auto& [modId, modifier] : synced.innerModifiers) {
-            if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get()))
+            if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
                 out.push_back(lfo);
+                ++collected;
+            }
         }
+        if (collected > 0)
+            DBG("RackSyncManager::collectLFOModifiers - rackId=" << rackId << " trackId=" << trackId
+                                                                 << " collected=" << collected);
     }
 }
 

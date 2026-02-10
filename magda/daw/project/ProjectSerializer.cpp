@@ -752,6 +752,14 @@ juce::var ProjectSerializer::serializeRackInfo(const RackInfo& rack) {
     }
     obj->setProperty("mods", juce::var(modsArray));
 
+    // Sidechain
+    if (rack.sidechain.isActive()) {
+        auto* scObj = new juce::DynamicObject();
+        scObj->setProperty("type", static_cast<int>(rack.sidechain.type));
+        scObj->setProperty("sourceTrackId", rack.sidechain.sourceTrackId);
+        obj->setProperty("sidechain", juce::var(scObj));
+    }
+
     return juce::var(obj);
 }
 
@@ -810,6 +818,15 @@ bool ProjectSerializer::deserializeRackInfo(const juce::var& json, RackInfo& out
             }
             outRack.mods.push_back(mod);
         }
+    }
+
+    // Sidechain
+    auto sidechainVar = obj->getProperty("sidechain");
+    if (sidechainVar.isObject()) {
+        auto* scObj = sidechainVar.getDynamicObject();
+        outRack.sidechain.type =
+            static_cast<SidechainConfig::Type>(static_cast<int>(scObj->getProperty("type")));
+        outRack.sidechain.sourceTrackId = scObj->getProperty("sourceTrackId");
     }
 
     return true;

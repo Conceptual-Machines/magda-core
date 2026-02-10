@@ -731,4 +731,18 @@ void TrackManager::clearSidechain(DeviceId targetDevice) {
     setSidechainSource(targetDevice, INVALID_TRACK_ID, SidechainConfig::Type::None);
 }
 
+void TrackManager::setRackSidechainSource(const ChainNodePath& rackPath, TrackId sourceTrack,
+                                          SidechainConfig::Type type) {
+    auto* rack = getRackByPath(rackPath);
+    if (!rack)
+        return;
+    rack->sidechain.type = type;
+    rack->sidechain.sourceTrackId = sourceTrack;
+    notifyDeviceModifiersChanged(rackPath.trackId);
+}
+
+void TrackManager::clearRackSidechain(const ChainNodePath& rackPath) {
+    setRackSidechainSource(rackPath, INVALID_TRACK_ID, SidechainConfig::Type::None);
+}
+
 }  // namespace magda

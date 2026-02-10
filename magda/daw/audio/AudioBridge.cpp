@@ -251,8 +251,11 @@ void AudioBridge::deviceModifiersChanged(TrackId trackId) {
     // Modifier properties changed (rate, waveform, sync, trigger mode) - resync only modifiers
     pluginManager_.resyncDeviceModifiers(trackId);
 
-    // Re-check sidechain monitor in case trigger mode changed to/from MIDI
-    pluginManager_.checkSidechainMonitor(trackId);
+    // Re-check sidechain monitor on this track and all other tracks
+    // (a sidechain source change on this track may affect the source track's monitor)
+    for (const auto& track : magda::TrackManager::getInstance().getTracks()) {
+        pluginManager_.checkSidechainMonitor(track.id);
+    }
 
     // Re-check MIDI routing in case trigger mode changed to/from MIDI
     updateMidiRoutingForSelection();

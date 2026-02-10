@@ -240,9 +240,14 @@ class TrackManager {
                                   DeviceId deviceId, bool bypassed);
     void setDeviceInChainBypassedByPath(const ChainNodePath& devicePath, bool bypassed);
 
-    // Sidechain configuration
+    // Sidechain configuration (device-level)
     void setSidechainSource(DeviceId targetDevice, TrackId sourceTrack, SidechainConfig::Type type);
     void clearSidechain(DeviceId targetDevice);
+
+    // Sidechain configuration (rack-level)
+    void setRackSidechainSource(const ChainNodePath& rackPath, TrackId sourceTrack,
+                                SidechainConfig::Type type);
+    void clearRackSidechain(const ChainNodePath& rackPath);
 
     // Device parameter setters (notify listeners for audio sync)
     void setDeviceGainDb(const ChainNodePath& devicePath, float gainDb);

@@ -835,6 +835,9 @@ void PluginManager::triggerSidechainNoteOn(TrackId sourceTrackId) {
 
     const juce::SpinLock::ScopedLockType lock(cacheLock_);
     auto& entry = sidechainLFOCache_[static_cast<size_t>(sourceTrackId)];
+    if (entry.count > 0)
+        DBG("triggerSidechainNoteOn: sourceTrackId=" << sourceTrackId
+                                                     << " lfoCount=" << entry.count);
     for (int i = 0; i < entry.count; ++i)
         entry.lfos[static_cast<size_t>(i)]->triggerNoteOn();
 }
@@ -885,7 +888,15 @@ void PluginManager::rebuildSidechainLFOCache() {
                         break;
                     }
                 } else if (isRack(element)) {
-                    for (const auto& chain : getRack(element).chains) {
+                    const auto& rack = getRack(element);
+                    // Check rack-level sidechain
+                    if ((rack.sidechain.type == SidechainConfig::Type::MIDI ||
+                         rack.sidechain.type == SidechainConfig::Type::Audio) &&
+                        rack.sidechain.sourceTrackId == track.id) {
+                        isDestination = true;
+                        break;
+                    }
+                    for (const auto& chain : rack.chains) {
                         for (const auto& ce : chain.elements) {
                             if (isDevice(ce)) {
                                 const auto& device = getDevice(ce);
@@ -927,6 +938,8 @@ void PluginManager::rebuildSidechainLFOCache() {
         entry.count = std::min(static_cast<int>(lfos.size()), PerTrackEntry::kMaxLFOs);
         for (int i = 0; i < entry.count; ++i)
             entry.lfos[static_cast<size_t>(i)] = lfos[static_cast<size_t>(i)];
+        if (entry.count > 0)
+            DBG("rebuildSidechainLFOCache: trackId=" << track.id << " lfoCount=" << entry.count);
     }
 
     // Swap under lock
@@ -1153,9 +1166,21 @@ bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) const {
                     return true;
             }
         } else if (isRack(element)) {
-            for (const auto& mod : getRack(element).mods) {
-                if (mod.triggerMode == LFOTriggerMode::MIDI)
+            const auto& rack = getRack(element);
+            DBG("trackNeedsSidechainMonitor: track "
+                << trackId << " checking rack id=" << rack.id
+                << " mods=" << static_cast<int>(rack.mods.size()));
+            for (size_t i = 0; i < rack.mods.size(); ++i) {
+                const auto& mod = rack.mods[i];
+                DBG("  rack mod[" << static_cast<int>(i)
+                                  << "] triggerMode=" << static_cast<int>(mod.triggerMode)
+                                  << " enabled=" << static_cast<int>(mod.enabled)
+                                  << " links=" << static_cast<int>(mod.links.size()));
+                if (mod.triggerMode == LFOTriggerMode::MIDI) {
+                    DBG("trackNeedsSidechainMonitor: track " << trackId
+                                                             << " has rack mod with MIDI trigger");
                     return true;
+                }
             }
         }
     }
@@ -1170,7 +1195,13 @@ bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) const {
                     return true;
                 }
             } else if (isRack(element)) {
-                for (const auto& chain : getRack(element).chains) {
+                const auto& rack = getRack(element);
+                // Check rack-level sidechain
+                if (rack.sidechain.type == SidechainConfig::Type::MIDI &&
+                    rack.sidechain.sourceTrackId == trackId) {
+                    return true;
+                }
+                for (const auto& chain : rack.chains) {
                     for (const auto& ce : chain.elements) {
                         if (isDevice(ce)) {
                             const auto& device = getDevice(ce);
@@ -1189,7 +1220,9 @@ bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) const {
 }
 
 void PluginManager::checkSidechainMonitor(TrackId trackId) {
-    if (trackNeedsSidechainMonitor(trackId))
+    bool needed = trackNeedsSidechainMonitor(trackId);
+    DBG("checkSidechainMonitor: trackId=" << trackId << " needed=" << static_cast<int>(needed));
+    if (needed)
         ensureSidechainMonitor(trackId);
     else
         removeSidechainMonitor(trackId);

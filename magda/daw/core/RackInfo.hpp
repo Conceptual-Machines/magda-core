@@ -160,6 +160,9 @@ struct RackInfo {
     // Modulators for rack-wide modulation
     ModArray mods = createDefaultMods(0);
 
+    // Sidechain config for rack-level MIDI/Audio triggering (cross-track source)
+    SidechainConfig sidechain;
+
     // Default constructor
     RackInfo() = default;
 
@@ -177,7 +180,8 @@ struct RackInfo {
           volume(other.volume),
           pan(other.pan),
           macros(other.macros),
-          mods(other.mods) {}
+          mods(other.mods),
+          sidechain(other.sidechain) {}
 
     // Copy assignment
     RackInfo& operator=(const RackInfo& other) {
@@ -191,6 +195,7 @@ struct RackInfo {
             pan = other.pan;
             macros = other.macros;
             mods = other.mods;
+            sidechain = other.sidechain;
         }
         return *this;
     }

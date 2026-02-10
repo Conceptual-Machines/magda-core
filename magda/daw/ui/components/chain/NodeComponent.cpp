@@ -1000,14 +1000,18 @@ void NodeComponent::initializeModsMacrosPanels() {
         }
     };
     modulatorEditorPanel_->onAdvancedClicked = [this]() {
+        // Try device first, then rack
         auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
-        if (!device)
+        auto* rack = device ? nullptr : magda::TrackManager::getInstance().getRackByPath(nodePath_);
+        if (!device && !rack)
             return;
+
+        const auto& sidechain = device ? device->sidechain : rack->sidechain;
 
         juce::PopupMenu menu;
 
-        bool hasMidiSidechain = device->sidechain.type == magda::SidechainConfig::Type::MIDI &&
-                                device->sidechain.sourceTrackId != magda::INVALID_TRACK_ID;
+        bool hasMidiSidechain = sidechain.type == magda::SidechainConfig::Type::MIDI &&
+                                sidechain.sourceTrackId != magda::INVALID_TRACK_ID;
 
         menu.addSectionHeader("MIDI Trigger Source");
         menu.addItem(1, "Self", true, !hasMidiSidechain);
@@ -1022,25 +1026,37 @@ void NodeComponent::initializeModsMacrosPanels() {
         for (const auto& track : magda::TrackManager::getInstance().getTracks()) {
             if (track.id == nodePath_.trackId)
                 continue;
-            bool isCurrent = hasMidiSidechain && device->sidechain.sourceTrackId == track.id;
+            bool isCurrent = hasMidiSidechain && sidechain.sourceTrackId == track.id;
             menu.addItem(itemId, track.name, true, isCurrent);
             trackEntries->push_back({track.id, track.name});
             itemId++;
         }
 
         auto safeThis = juce::Component::SafePointer(this);
-        auto deviceId = device->id;
-        menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, deviceId,
-                                                        trackEntries](int result) {
+        auto isDeviceTarget = device != nullptr;
+        auto deviceId = device ? device->id : magda::INVALID_DEVICE_ID;
+        auto rackPath = nodePath_;
+        menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, isDeviceTarget, deviceId,
+                                                        rackPath, trackEntries](int result) {
             if (!safeThis || result == 0)
                 return;
             if (result == 1) {
-                magda::TrackManager::getInstance().clearSidechain(deviceId);
+                if (isDeviceTarget)
+                    magda::TrackManager::getInstance().clearSidechain(deviceId);
+                else
+                    magda::TrackManager::getInstance().clearRackSidechain(rackPath);
             } else {
                 int index = result - 10;
                 if (index >= 0 && index < (int)trackEntries->size()) {
-                    magda::TrackManager::getInstance().setSidechainSource(
-                        deviceId, (*trackEntries)[index].id, magda::SidechainConfig::Type::MIDI);
+                    if (isDeviceTarget) {
+                        magda::TrackManager::getInstance().setSidechainSource(
+                            deviceId, (*trackEntries)[index].id,
+                            magda::SidechainConfig::Type::MIDI);
+                    } else {
+                        magda::TrackManager::getInstance().setRackSidechainSource(
+                            rackPath, (*trackEntries)[index].id,
+                            magda::SidechainConfig::Type::MIDI);
+                    }
                 }
             }
         });

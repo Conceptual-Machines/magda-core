@@ -28,9 +28,8 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
 
     void setModInfo(const magda::ModInfo* mod) {
         mod_ = mod;
-        DBG("MiniWaveformDisplay::setModInfo - mod_ ptr: " +
-            juce::String::toHexString((juce::int64)mod_));
-        repaint();
+        if (getWidth() > 0 && getHeight() > 0)
+            repaint();
     }
 
     void paint(juce::Graphics& g) override {
@@ -80,7 +79,8 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
 
   private:
     void timerCallback() override {
-        repaint();
+        if (getWidth() > 0 && getHeight() > 0)
+            repaint();
     }
 
     const magda::ModInfo* mod_ = nullptr;

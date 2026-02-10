@@ -90,6 +90,7 @@ class SidechainMonitorPlugin : public te::Plugin {
   private:
     TrackId sourceTrackId_ = INVALID_TRACK_ID;
     PluginManager* pluginManager_ = nullptr;
+    int heartbeatCount_ = 0;  // debug: per-instance heartbeat counter
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SidechainMonitorPlugin)
 };

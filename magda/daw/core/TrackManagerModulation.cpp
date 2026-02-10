@@ -767,6 +767,17 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             bool rackMidiNoteOff = midiNoteOff;
             float rackAudioPeak = audioPeak;
 
+            // Check rack-level sidechain source
+            if (rack.sidechain.sourceTrackId != INVALID_TRACK_ID) {
+                auto srcId = rack.sidechain.sourceTrackId;
+                if (midiTriggeredTracks.count(srcId) > 0)
+                    rackMidiTriggered = true;
+                if (midiNoteOffTracks.count(srcId) > 0)
+                    rackMidiNoteOff = true;
+                if (srcId >= 0 && srcId < kMaxBusTracks)
+                    rackAudioPeak = audioPeakLevels[srcId];
+            }
+
             // Check devices inside the rack for sidechain sources
             for (const auto& chain : rack.chains) {
                 for (const auto& chainElement : chain.elements) {
@@ -787,7 +798,12 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             }
 
             for (auto& mod : rack.mods) {
+                bool wasRunningBefore = mod.running;
                 changed |= updateMod(mod, rackMidiTriggered, rackMidiNoteOff, rackAudioPeak);
+                if (mod.running && !wasRunningBefore)
+                    DBG("updateAllMods: rack mod "
+                        << mod.id << " triggered! rackId=" << rack.id
+                        << " rackMidiTriggered=" << (int)rackMidiTriggered);
             }
             for (auto& chain : rack.chains) {
                 for (auto& chainElement : chain.elements) {
