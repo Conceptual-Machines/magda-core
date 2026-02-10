@@ -1227,6 +1227,8 @@ void TrackManager::clearAllTracks() {
     nextRackId_ = 1;
     nextChainId_ = 1;
     nextAuxBusIndex_ = 0;
+    lastBusNoteOn_.fill(0);
+    lastBusNoteOff_.fill(0);
     notifyTracksChanged();
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <map>
@@ -495,8 +496,10 @@ class TrackManager {
     std::atomic<bool> transportJustStopped_{false};
 
     // SidechainTriggerBus counter tracking (read from mod timer, compared to detect new events)
-    std::map<TrackId, uint64_t> lastBusNoteOn_;
-    std::map<TrackId, uint64_t> lastBusNoteOff_;
+    // Fixed-size arrays indexed by TrackId to avoid heap allocation on the mod timer path.
+    static constexpr int kMaxBusTracks = 512;
+    std::array<uint64_t, kMaxBusTracks> lastBusNoteOn_{};
+    std::array<uint64_t, kMaxBusTracks> lastBusNoteOff_{};
 
     void notifyTracksChanged();
     void notifyTrackPropertyChanged(int trackId);

@@ -1,5 +1,4 @@
 #include <cmath>
-#include <map>
 
 #include "../audio/SidechainTriggerBus.hpp"
 #include "ModulatorEngine.hpp"
@@ -612,7 +611,10 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
 
     // Read audio-thread sidechain triggers from the lock-free bus
     auto& bus = SidechainTriggerBus::getInstance();
+    std::array<float, kMaxBusTracks> audioPeakLevels{};
     for (const auto& track : tracks_) {
+        if (track.id < 0 || track.id >= kMaxBusTracks)
+            continue;
         uint64_t currentNoteOn = bus.getNoteOnCounter(track.id);
         uint64_t currentNoteOff = bus.getNoteOffCounter(track.id);
         if (currentNoteOn != lastBusNoteOn_[track.id]) {
@@ -623,10 +625,6 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             midiNoteOffTracks.insert(track.id);
             lastBusNoteOff_[track.id] = currentNoteOff;
         }
-    }
-    // Read audio peak levels for all tracks from the lock-free bus
-    std::map<TrackId, float> audioPeakLevels;
-    for (const auto& track : tracks_) {
         audioPeakLevels[track.id] = bus.getAudioPeakLevel(track.id);
     }
 
@@ -748,16 +746,16 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
 
             // Cross-track sidechain: use source track's MIDI and audio
             if (device.sidechain.sourceTrackId != INVALID_TRACK_ID) {
+                auto srcId = device.sidechain.sourceTrackId;
                 // MIDI triggers from source track
-                if (midiTriggeredTracks.count(device.sidechain.sourceTrackId) > 0)
+                if (midiTriggeredTracks.count(srcId) > 0)
                     deviceMidiTriggered = true;
-                if (midiNoteOffTracks.count(device.sidechain.sourceTrackId) > 0)
+                if (midiNoteOffTracks.count(srcId) > 0)
                     deviceMidiNoteOff = true;
 
                 // Audio peak from source track (for Audio-triggered mods)
-                auto it = audioPeakLevels.find(device.sidechain.sourceTrackId);
-                if (it != audioPeakLevels.end())
-                    deviceAudioPeak = it->second;
+                if (srcId >= 0 && srcId < kMaxBusTracks)
+                    deviceAudioPeak = audioPeakLevels[srcId];
             }
 
             for (auto& mod : device.mods) {
@@ -775,13 +773,13 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                     if (isDevice(chainElement)) {
                         const auto& dev = magda::getDevice(chainElement);
                         if (dev.sidechain.sourceTrackId != INVALID_TRACK_ID) {
-                            if (midiTriggeredTracks.count(dev.sidechain.sourceTrackId) > 0)
+                            auto srcId = dev.sidechain.sourceTrackId;
+                            if (midiTriggeredTracks.count(srcId) > 0)
                                 rackMidiTriggered = true;
-                            if (midiNoteOffTracks.count(dev.sidechain.sourceTrackId) > 0)
+                            if (midiNoteOffTracks.count(srcId) > 0)
                                 rackMidiNoteOff = true;
-                            auto it = audioPeakLevels.find(dev.sidechain.sourceTrackId);
-                            if (it != audioPeakLevels.end())
-                                rackAudioPeak = it->second;
+                            if (srcId >= 0 && srcId < kMaxBusTracks)
+                                rackAudioPeak = audioPeakLevels[srcId];
                             break;
                         }
                     }
@@ -804,6 +802,8 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
     // Update mods in all tracks, collect those needing TE assignment sync
     std::vector<TrackId> tracksNeedingSync;
     for (auto& track : tracks_) {
+        if (track.id < 0 || track.id >= kMaxBusTracks)
+            continue;
         bool trackMidiTriggered = midiTriggeredTracks.count(track.id) > 0;
         bool trackMidiNoteOff = midiNoteOffTracks.count(track.id) > 0;
         float trackAudioPeak = audioPeakLevels[track.id];

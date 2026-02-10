@@ -304,6 +304,10 @@ class PluginManager {
     // without destroying/recreating modifiers. Used for non-structural changes.
     void updateDeviceModifierProperties(TrackId trackId);
 
+    // Check whether a track needs a SidechainMonitorPlugin.
+    // Only MIDI-triggered mods need the monitor (audio peaks come from LevelMeterPlugin).
+    bool trackNeedsSidechainMonitor(TrackId trackId) const;
+
     // Plugin/device mappings and processors
     std::map<DeviceId, te::Plugin::Ptr> deviceToPlugin_;
     std::map<te::Plugin*, DeviceId> pluginToDevice_;

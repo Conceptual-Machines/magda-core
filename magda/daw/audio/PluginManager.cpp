@@ -298,67 +298,11 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     // Sync sidechain routing for plugins that support it
     syncSidechains(trackId, teTrack);
 
-    // Sidechain monitor: insert on tracks that need audio-thread MIDI detection.
-    // This includes:
-    // 1. Tracks that are MIDI sidechain sources for other tracks
-    // 2. Tracks that have any device mod with LFOTriggerMode::MIDI (self-trigger)
-    {
-        bool needsMonitor = false;
-
-        // Check if this track has any MIDI or Audio triggered mods (self-trigger)
-        for (const auto& element : trackInfo->chainElements) {
-            if (needsMonitor)
-                break;
-            if (isDevice(element)) {
-                for (const auto& mod : getDevice(element).mods) {
-                    if (mod.triggerMode == LFOTriggerMode::MIDI ||
-                        mod.triggerMode == LFOTriggerMode::Audio) {
-                        needsMonitor = true;
-                        DBG("PluginManager::syncTrackPlugins - track "
-                            << trackId << " needs monitor for self-trigger mod");
-                        break;
-                    }
-                }
-            } else if (isRack(element)) {
-                for (const auto& mod : getRack(element).mods) {
-                    if (mod.triggerMode == LFOTriggerMode::MIDI ||
-                        mod.triggerMode == LFOTriggerMode::Audio) {
-                        needsMonitor = true;
-                        DBG("PluginManager::syncTrackPlugins - track "
-                            << trackId << " needs monitor for rack mod");
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Check if this track is a sidechain source (MIDI or Audio) for any other track
-        if (!needsMonitor) {
-            for (const auto& track : TrackManager::getInstance().getTracks()) {
-                if (needsMonitor)
-                    break;
-                for (const auto& element : track.chainElements) {
-                    if (isDevice(element)) {
-                        const auto& device = getDevice(element);
-                        if ((device.sidechain.type == SidechainConfig::Type::MIDI ||
-                             device.sidechain.type == SidechainConfig::Type::Audio) &&
-                            device.sidechain.sourceTrackId == trackId) {
-                            needsMonitor = true;
-                            DBG("PluginManager::syncTrackPlugins - track "
-                                << trackId << " needs monitor as sidechain source for track "
-                                << track.id);
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        if (needsMonitor)
-            ensureSidechainMonitor(trackId);
-        else
-            removeSidechainMonitor(trackId);
-    }
+    // Sidechain monitor: insert on tracks that need audio-thread MIDI detection
+    if (trackNeedsSidechainMonitor(trackId))
+        ensureSidechainMonitor(trackId);
+    else
+        removeSidechainMonitor(trackId);
 
     // Ensure VolumeAndPan is near the end of the chain (before LevelMeter)
     // This is the track's fader control - it should come AFTER audio sources
@@ -1172,63 +1116,46 @@ void PluginManager::syncSidechains(TrackId trackId, te::AudioTrack* teTrack) {
 // Sidechain Monitor Lifecycle
 // =============================================================================
 
-void PluginManager::checkSidechainMonitor(TrackId trackId) {
+bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) const {
     auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
     if (!trackInfo)
-        return;
+        return false;
 
-    bool needsMonitor = false;
-
-    // Check if this track has any MIDI or Audio triggered mods (self-trigger)
+    // Check if this track has any MIDI-triggered mods (self-trigger).
+    // Audio-triggered mods don't need the monitor — audio peaks come from
+    // LevelMeterPlugin via AudioBridge timer, not from this plugin.
     for (const auto& element : trackInfo->chainElements) {
-        if (needsMonitor)
-            break;
         if (isDevice(element)) {
             for (const auto& mod : getDevice(element).mods) {
-                if (mod.triggerMode == LFOTriggerMode::MIDI ||
-                    mod.triggerMode == LFOTriggerMode::Audio) {
-                    needsMonitor = true;
-                    DBG("PluginManager::checkSidechainMonitor - track "
-                        << trackId << " needs monitor for self-trigger mod");
-                    break;
-                }
+                if (mod.triggerMode == LFOTriggerMode::MIDI)
+                    return true;
             }
         } else if (isRack(element)) {
             for (const auto& mod : getRack(element).mods) {
-                if (mod.triggerMode == LFOTriggerMode::MIDI ||
-                    mod.triggerMode == LFOTriggerMode::Audio) {
-                    needsMonitor = true;
-                    DBG("PluginManager::checkSidechainMonitor - track "
-                        << trackId << " needs monitor for rack mod");
-                    break;
+                if (mod.triggerMode == LFOTriggerMode::MIDI)
+                    return true;
+            }
+        }
+    }
+
+    // Check if this track is a MIDI sidechain source for any other track
+    for (const auto& track : TrackManager::getInstance().getTracks()) {
+        for (const auto& element : track.chainElements) {
+            if (isDevice(element)) {
+                const auto& device = getDevice(element);
+                if (device.sidechain.type == SidechainConfig::Type::MIDI &&
+                    device.sidechain.sourceTrackId == trackId) {
+                    return true;
                 }
             }
         }
     }
 
-    // Check if this track is a sidechain source (MIDI or Audio) for any other track
-    if (!needsMonitor) {
-        for (const auto& track : TrackManager::getInstance().getTracks()) {
-            if (needsMonitor)
-                break;
-            for (const auto& element : track.chainElements) {
-                if (isDevice(element)) {
-                    const auto& device = getDevice(element);
-                    if ((device.sidechain.type == SidechainConfig::Type::MIDI ||
-                         device.sidechain.type == SidechainConfig::Type::Audio) &&
-                        device.sidechain.sourceTrackId == trackId) {
-                        needsMonitor = true;
-                        DBG("PluginManager::checkSidechainMonitor - track "
-                            << trackId << " needs monitor as sidechain source for track "
-                            << track.id);
-                        break;
-                    }
-                }
-            }
-        }
-    }
+    return false;
+}
 
-    if (needsMonitor)
+void PluginManager::checkSidechainMonitor(TrackId trackId) {
+    if (trackNeedsSidechainMonitor(trackId))
         ensureSidechainMonitor(trackId);
     else
         removeSidechainMonitor(trackId);

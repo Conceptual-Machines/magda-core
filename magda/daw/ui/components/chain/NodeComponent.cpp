@@ -1006,10 +1006,11 @@ void NodeComponent::initializeModsMacrosPanels() {
 
         juce::PopupMenu menu;
 
-        bool isSelf = device->sidechain.type != magda::SidechainConfig::Type::MIDI;
+        bool hasMidiSidechain = device->sidechain.type == magda::SidechainConfig::Type::MIDI &&
+                                device->sidechain.sourceTrackId != magda::INVALID_TRACK_ID;
 
         menu.addSectionHeader("MIDI Trigger Source");
-        menu.addItem(1, "Self", true, isSelf);
+        menu.addItem(1, "Self", true, !hasMidiSidechain);
         menu.addSeparator();
 
         struct TrackEntry {
@@ -1021,7 +1022,7 @@ void NodeComponent::initializeModsMacrosPanels() {
         for (const auto& track : magda::TrackManager::getInstance().getTracks()) {
             if (track.id == nodePath_.trackId)
                 continue;
-            bool isCurrent = !isSelf && device->sidechain.sourceTrackId == track.id;
+            bool isCurrent = hasMidiSidechain && device->sidechain.sourceTrackId == track.id;
             menu.addItem(itemId, track.name, true, isCurrent);
             trackEntries->push_back({track.id, track.name});
             itemId++;
