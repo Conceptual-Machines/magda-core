@@ -586,7 +586,7 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
                 applyLFOProperties(lfo, modInfo, snapHolder.get());
                 // TE LFO in note mode needs triggerNoteOn() to start oscillating
                 if (modInfo.running && modInfo.triggerMode != LFOTriggerMode::Free)
-                    lfo->triggerNoteOn();
+                    triggerLFONoteOnWithReset(lfo);
             }
 
             // Update assignment values (mod depth) for each link
@@ -848,7 +848,7 @@ void PluginManager::triggerSidechainNoteOn(TrackId sourceTrackId) {
 
     auto& entry = sidechainLFOCache_[static_cast<size_t>(sourceTrackId)];
     for (int i = 0; i < entry.count; ++i)
-        entry.lfos[static_cast<size_t>(i)]->triggerNoteOn();
+        triggerLFONoteOnWithReset(entry.lfos[static_cast<size_t>(i)]);
 }
 
 void PluginManager::rebuildSidechainLFOCache() {

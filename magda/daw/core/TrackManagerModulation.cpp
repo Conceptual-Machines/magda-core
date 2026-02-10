@@ -728,13 +728,25 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                     effectiveRate = ModulatorEngine::calculateSyncRateHz(mod.syncDivision, bpm);
                 }
 
-                // Update phase (wraps at 1.0)
+                // Update phase
                 mod.phase += static_cast<float>(effectiveRate * deltaTime);
-                while (mod.phase >= 1.0f) {
-                    mod.phase -= 1.0f;
+                if (mod.oneShot) {
+                    // One-shot: clamp at end of cycle, hold final value
+                    if (mod.phase >= 1.0f) {
+                        mod.phase = 1.0f;
+                        mod.running = false;
+                    }
+                } else {
+                    // Loop: wrap at 1.0
+                    while (mod.phase >= 1.0f)
+                        mod.phase -= 1.0f;
                 }
                 // Apply phase offset when generating waveform
-                float effectivePhase = std::fmod(mod.phase + mod.phaseOffset, 1.0f);
+                // Use 0.999999f for one-shot end so curve evaluation stays in the
+                // last segment rather than wrapping to the first point.
+                float effectivePhase = mod.oneShot && mod.phase >= 1.0f
+                                           ? 0.999999f
+                                           : std::fmod(mod.phase + mod.phaseOffset, 1.0f);
                 mod.value = ModulatorEngine::generateWaveformForMod(mod, effectivePhase);
             } else {
                 mod.value = 0.0f;  // No output when not running

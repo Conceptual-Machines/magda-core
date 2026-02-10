@@ -277,7 +277,7 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
                                 snapHolder = std::make_unique<CurveSnapshotHolder>();
                             applyLFOProperties(lfo, modInfo, snapHolder.get());
                             if (modInfo.running && modInfo.triggerMode != LFOTriggerMode::Free)
-                                lfo->triggerNoteOn();
+                                triggerLFONoteOnWithReset(lfo);
                         }
 
                         // Update assignment values (mod depth) for each link
@@ -818,7 +818,7 @@ void RackSyncManager::triggerLFONoteOn(TrackId trackId) {
 
         for (auto& [modId, modifier] : synced.innerModifiers) {
             if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
-                lfo->triggerNoteOn();
+                triggerLFONoteOnWithReset(lfo);
             }
         }
     }

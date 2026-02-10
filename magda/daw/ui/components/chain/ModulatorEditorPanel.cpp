@@ -135,6 +135,12 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
                     onSyncDivisionChanged(div);
                 }
             };
+            curveEditorWindow_->onOneShotChanged = [this](bool /*oneShot*/) {
+                // oneShot is already written to ModInfo by the toggle.
+                // Trigger curve resync so CurveSnapshotHolder picks it up.
+                if (onCurveChanged)
+                    onCurveChanged();
+            };
             curveEditorWindow_->onWindowClosed = [this]() { curveEditorButton_->setActive(false); };
 
             curveEditorButton_->setActive(true);

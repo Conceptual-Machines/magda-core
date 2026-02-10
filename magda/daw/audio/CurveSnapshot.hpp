@@ -28,6 +28,7 @@ struct CurveSnapshot {
     int count = 0;
     CurvePreset preset = CurvePreset::Triangle;
     bool hasCustomPoints = false;
+    bool oneShot = false;
 
     /**
      * @brief Generate a preset curve value (no custom points).
@@ -134,6 +135,10 @@ struct CurveSnapshotHolder {
     CurveSnapshot buffers[2];
     std::atomic<CurveSnapshot*> active{&buffers[0]};
 
+    // One-shot state: audio thread tracks phase to detect cycle completion
+    std::atomic<float> previousPhase_{-1.0f};
+    std::atomic<bool> oneShotCompleted_{false};
+
     /**
      * @brief Message thread: copy curve data from ModInfo into the inactive
      *        buffer, then swap active pointer.
@@ -146,6 +151,7 @@ struct CurveSnapshotHolder {
         // Fill the back buffer
         back->preset = modInfo.curvePreset;
         back->hasCustomPoints = !modInfo.curvePoints.empty();
+        back->oneShot = modInfo.oneShot;
         back->count =
             std::min(static_cast<int>(modInfo.curvePoints.size()), CurveSnapshot::kMaxPoints);
 
@@ -159,6 +165,21 @@ struct CurveSnapshotHolder {
 
         // Swap: audio thread will now read from the newly written buffer
         active.store(back, std::memory_order_release);
+
+        // If oneShot was turned off, reset completed state
+        if (!modInfo.oneShot)
+            oneShotCompleted_.store(false, std::memory_order_release);
+    }
+
+    /**
+     * @brief Reset one-shot state so the LFO plays through one more cycle.
+     *
+     * Call this alongside LFOModifier::triggerNoteOn() when retriggering.
+     * Safe to call from any thread (uses relaxed atomics).
+     */
+    void resetOneShot() {
+        oneShotCompleted_.store(false, std::memory_order_release);
+        previousPhase_.store(-1.0f, std::memory_order_release);
     }
 
     /**
@@ -166,10 +187,30 @@ struct CurveSnapshotHolder {
      *
      * Called on the audio thread once per block. userData points to this holder.
      * Loads the active snapshot and evaluates the curve at the given phase.
+     * In one-shot mode, holds the end value after the first complete cycle.
      */
     static float evaluateCallback(float phase, void* userData) {
         auto* holder = static_cast<CurveSnapshotHolder*>(userData);
         const CurveSnapshot* snap = holder->active.load(std::memory_order_acquire);
+
+        if (snap->oneShot) {
+            // Use 0.999999f so curve evaluation stays in the last segment
+            // rather than wrapping to the first point.
+            constexpr float kEndPhase = 0.999999f;
+
+            if (holder->oneShotCompleted_.load(std::memory_order_acquire))
+                return snap->evaluate(kEndPhase);
+
+            float prev = holder->previousPhase_.load(std::memory_order_relaxed);
+            holder->previousPhase_.store(phase, std::memory_order_relaxed);
+
+            // Detect phase wrap-around: phase jumped back significantly
+            if (prev >= 0.0f && phase < prev - 0.5f) {
+                holder->oneShotCompleted_.store(true, std::memory_order_release);
+                return snap->evaluate(kEndPhase);
+            }
+        }
+
         return snap->evaluate(phase);
     }
 };

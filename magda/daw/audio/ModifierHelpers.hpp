@@ -99,4 +99,18 @@ inline void applyLFOProperties(te::LFOModifier* lfo, const ModInfo& modInfo,
     lfo->rateTypeParam->setParameter(rateType, juce::dontSendNotification);
 }
 
+/**
+ * @brief Trigger note-on on an LFO, also resetting one-shot state if applicable.
+ *
+ * Use this instead of calling lfo->triggerNoteOn() directly so that one-shot
+ * custom waveforms restart from the beginning.
+ */
+inline void triggerLFONoteOnWithReset(te::LFOModifier* lfo) {
+    auto* holder =
+        static_cast<CurveSnapshotHolder*>(lfo->customWaveUserData.load(std::memory_order_acquire));
+    if (holder)
+        holder->resetOneShot();
+    lfo->triggerNoteOn();
+}
+
 }  // namespace magda
