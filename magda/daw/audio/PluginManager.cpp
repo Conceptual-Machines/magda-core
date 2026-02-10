@@ -842,11 +842,11 @@ void PluginManager::triggerSidechainNoteOn(TrackId sourceTrackId) {
     if (sourceTrackId < 0 || sourceTrackId >= kMaxCacheTracks)
         return;
 
-    const juce::SpinLock::ScopedLockType lock(cacheLock_);
+    const juce::SpinLock::ScopedTryLockType lock(cacheLock_);
+    if (!lock.isLocked())
+        return;  // Cache is being rebuilt — skip this trigger
+
     auto& entry = sidechainLFOCache_[static_cast<size_t>(sourceTrackId)];
-    if (entry.count > 0)
-        DBG("triggerSidechainNoteOn: sourceTrackId=" << sourceTrackId
-                                                     << " lfoCount=" << entry.count);
     for (int i = 0; i < entry.count; ++i)
         entry.lfos[static_cast<size_t>(i)]->triggerNoteOn();
 }
@@ -1176,20 +1176,9 @@ bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) const {
             }
         } else if (isRack(element)) {
             const auto& rack = getRack(element);
-            DBG("trackNeedsSidechainMonitor: track "
-                << trackId << " checking rack id=" << rack.id
-                << " mods=" << static_cast<int>(rack.mods.size()));
-            for (size_t i = 0; i < rack.mods.size(); ++i) {
-                const auto& mod = rack.mods[i];
-                DBG("  rack mod[" << static_cast<int>(i)
-                                  << "] triggerMode=" << static_cast<int>(mod.triggerMode)
-                                  << " enabled=" << static_cast<int>(mod.enabled)
-                                  << " links=" << static_cast<int>(mod.links.size()));
-                if (mod.triggerMode == LFOTriggerMode::MIDI) {
-                    DBG("trackNeedsSidechainMonitor: track " << trackId
-                                                             << " has rack mod with MIDI trigger");
+            for (const auto& mod : rack.mods) {
+                if (mod.triggerMode == LFOTriggerMode::MIDI)
                     return true;
-                }
             }
         }
     }

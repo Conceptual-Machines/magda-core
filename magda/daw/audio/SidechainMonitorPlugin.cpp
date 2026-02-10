@@ -27,12 +27,8 @@ void SidechainMonitorPlugin::reset() {}
 void SidechainMonitorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     // Transparent passthrough — don't modify audio or MIDI
 
-    // Periodic heartbeat to verify plugin is processing (per-instance counter)
-    int bufSize = fc.bufferForMidiMessages ? fc.bufferForMidiMessages->size() : -1;
-    if (++heartbeatCount_ % 500 == 1)
-        DBG("SidechainMonitorPlugin::applyToBuffer - heartbeat sourceTrackId=" +
-            juce::String(sourceTrackId_) + " midiBufSize=" + juce::String(bufSize) +
-            " pluginMgr=" + juce::String(pluginManager_ != nullptr ? 1 : 0));
+    // Periodic heartbeat counter (no logging — this runs on the audio thread)
+    ++heartbeatCount_;
 
     // --- MIDI detection ---
     if (fc.bufferForMidiMessages) {
@@ -40,11 +36,8 @@ void SidechainMonitorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         bool hasNoteOff = false;
 
         for (auto& msg : *fc.bufferForMidiMessages) {
-            if (msg.isNoteOn()) {
+            if (msg.isNoteOn())
                 hasNoteOn = true;
-                DBG("SidechainMonitorPlugin: NOTE ON detected sourceTrackId=" +
-                    juce::String(sourceTrackId_));
-            }
             if (msg.isNoteOff())
                 hasNoteOff = true;
             if (hasNoteOn && hasNoteOff)
@@ -55,8 +48,6 @@ void SidechainMonitorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
             SidechainTriggerBus::getInstance().triggerNoteOn(sourceTrackId_);
             if (pluginManager_)
                 pluginManager_->triggerSidechainNoteOn(sourceTrackId_);
-            else
-                DBG("SidechainMonitorPlugin: WARNING - pluginManager_ is null");
         }
         if (hasNoteOff) {
             SidechainTriggerBus::getInstance().triggerNoteOff(sourceTrackId_);
