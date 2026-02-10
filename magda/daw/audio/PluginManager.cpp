@@ -294,6 +294,9 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     // Sync device-level macros (macro knobs assigned to plugin parameters)
     syncDeviceMacros(trackId, teTrack);
 
+    // Sync sidechain routing for plugins that support it
+    syncSidechains(trackId, teTrack);
+
     // Ensure VolumeAndPan is near the end of the chain (before LevelMeter)
     // This is the track's fader control - it should come AFTER audio sources
     ensureVolumePluginPosition(teTrack);
@@ -976,6 +979,37 @@ void PluginManager::syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack) {
     }
 }
 
+// =============================================================================
+// Sidechain Routing Sync
+// =============================================================================
+
+void PluginManager::syncSidechains(TrackId trackId, te::AudioTrack* teTrack) {
+    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (!trackInfo || !teTrack)
+        return;
+
+    for (const auto& element : trackInfo->chainElements) {
+        if (!isDevice(element))
+            continue;
+
+        const auto& device = getDevice(element);
+        auto plugin = getPlugin(device.id);
+        if (!plugin || !plugin->canSidechain())
+            continue;
+
+        if (device.sidechain.isActive() && device.sidechain.type == SidechainConfig::Type::Audio) {
+            auto* sourceTrack = trackController_.getAudioTrack(device.sidechain.sourceTrackId);
+            if (sourceTrack) {
+                plugin->setSidechainSourceID(sourceTrack->itemID);
+                plugin->guessSidechainRouting();
+            }
+        } else {
+            // Clear sidechain if not active
+            plugin->setSidechainSourceID({});
+        }
+    }
+}
+
 // Utilities
 // =============================================================================
 
@@ -1261,6 +1295,13 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
     }
 
     if (plugin) {
+        // Update canSidechain flag on the DeviceInfo in TrackManager
+        if (plugin->canSidechain()) {
+            if (auto* devInfo = TrackManager::getInstance().getDevice(trackId, device.id)) {
+                devInfo->canSidechain = true;
+            }
+        }
+
         // Store the processor if we created one
         if (processor) {
             // Initialize defaults first if DeviceInfo has no parameters
