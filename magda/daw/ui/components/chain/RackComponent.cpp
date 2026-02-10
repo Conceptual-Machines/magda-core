@@ -637,6 +637,12 @@ void RackComponent::onModAudioReleaseChangedInternal(int modIndex, float ms) {
     magda::TrackManager::getInstance().setRackModAudioRelease(rackPath_, modIndex, ms);
 }
 
+void RackComponent::onModCurveChangedInternal(int /*modIndex*/) {
+    // Curve points are already written directly to ModInfo by LFOCurveEditor.
+    // Just notify the audio thread to pick up the new data.
+    magda::TrackManager::getInstance().notifyRackModCurveChanged(rackPath_);
+}
+
 void RackComponent::onMacroValueChangedInternal(int macroIndex, float value) {
     magda::TrackManager::getInstance().setRackMacroValue(rackPath_, macroIndex, value);
 

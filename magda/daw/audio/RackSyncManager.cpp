@@ -2,6 +2,7 @@
 
 #include <iostream>
 
+#include "CurveSnapshot.hpp"
 #include "ModifierHelpers.hpp"
 #include "PluginManager.hpp"
 #include "core/TrackManager.hpp"
@@ -271,7 +272,10 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
                         auto& modifier = modIt->second;
 
                         if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
-                            applyLFOProperties(lfo, modInfo);
+                            auto& snapHolder = synced.curveSnapshots[modInfo.id];
+                            if (!snapHolder)
+                                snapHolder = std::make_unique<CurveSnapshotHolder>();
+                            applyLFOProperties(lfo, modInfo, snapHolder.get());
                             if (modInfo.running && modInfo.triggerMode != LFOTriggerMode::Free)
                                 lfo->triggerNoteOn();
                         }
@@ -296,13 +300,8 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
                                             if (modInfo.triggerMode != LFOTriggerMode::Free &&
                                                 !modInfo.running)
                                                 effectiveAmount = 0.0f;
-                                            if (effectiveAmount != assignment->value)
-                                                DBG("RackSyncManager::updateModProperties - modId="
-                                                    << modInfo.id << " assignment "
-                                                    << assignment->value.get() << " -> "
-                                                    << effectiveAmount
-                                                    << " running=" << (int)modInfo.running);
                                             assignment->value = effectiveAmount;
+                                            assignment->offset = 0.0f;
                                             break;
                                         }
                                     }
@@ -622,7 +621,10 @@ void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo
                     break;
 
                 if (auto* lfo = dynamic_cast<te::LFOModifier*>(lfoMod.get())) {
-                    applyLFOProperties(lfo, modInfo);
+                    auto& snapHolder = synced.curveSnapshots[modInfo.id];
+                    if (!snapHolder)
+                        snapHolder = std::make_unique<CurveSnapshotHolder>();
+                    applyLFOProperties(lfo, modInfo, snapHolder.get());
                 }
                 modifier = lfoMod;
                 DBG("RackSyncManager::syncModifiers - created LFO for rackId="

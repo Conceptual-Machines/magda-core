@@ -233,7 +233,12 @@ void TrackManager::setRackModCurvePreset(const ChainNodePath& rackPath, int modI
             return;
         }
         rack->mods[modIndex].curvePreset = preset;
+        notifyDeviceModifiersChanged(rackPath.trackId);
     }
+}
+
+void TrackManager::notifyRackModCurveChanged(const ChainNodePath& rackPath) {
+    notifyDeviceModifiersChanged(rackPath.trackId);
 }
 
 void TrackManager::setRackModAudioAttack(const ChainNodePath& rackPath, int modIndex, float ms) {
@@ -452,7 +457,12 @@ void TrackManager::setDeviceModCurvePreset(const ChainNodePath& devicePath, int 
                                            CurvePreset preset) {
     if (auto* mod = getDeviceMod(devicePath, modIndex)) {
         mod->curvePreset = preset;
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
+}
+
+void TrackManager::notifyDeviceModCurveChanged(const ChainNodePath& devicePath) {
+    notifyDeviceModifiersChanged(devicePath.trackId);
 }
 
 void TrackManager::setDeviceModAudioAttack(const ChainNodePath& devicePath, int modIndex,

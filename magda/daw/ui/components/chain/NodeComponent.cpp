@@ -998,6 +998,10 @@ void NodeComponent::initializeModsMacrosPanels() {
         if (modsPanel_) {
             modsPanel_->repaintWaveforms();
         }
+        // Notify audio thread so CurveSnapshot is updated in real time
+        if (selectedModIndex_ >= 0) {
+            onModCurveChangedInternal(selectedModIndex_);
+        }
     };
     modulatorEditorPanel_->onAdvancedClicked = [this]() {
         // Try device first, then rack

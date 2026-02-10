@@ -302,6 +302,7 @@ class TrackManager {
     void setRackModSyncDivision(const ChainNodePath& rackPath, int modIndex, SyncDivision division);
     void setRackModTriggerMode(const ChainNodePath& rackPath, int modIndex, LFOTriggerMode mode);
     void setRackModCurvePreset(const ChainNodePath& rackPath, int modIndex, CurvePreset preset);
+    void notifyRackModCurveChanged(const ChainNodePath& rackPath);
     void setRackModAudioAttack(const ChainNodePath& rackPath, int modIndex, float ms);
     void setRackModAudioRelease(const ChainNodePath& rackPath, int modIndex, float ms);
     void addRackMod(const ChainNodePath& rackPath, int slotIndex, ModType type,
@@ -328,6 +329,7 @@ class TrackManager {
     void setDeviceModTriggerMode(const ChainNodePath& devicePath, int modIndex,
                                  LFOTriggerMode mode);
     void setDeviceModCurvePreset(const ChainNodePath& devicePath, int modIndex, CurvePreset preset);
+    void notifyDeviceModCurveChanged(const ChainNodePath& devicePath);
     void setDeviceModAudioAttack(const ChainNodePath& devicePath, int modIndex, float ms);
     void setDeviceModAudioRelease(const ChainNodePath& devicePath, int modIndex, float ms);
     void addDeviceMod(const ChainNodePath& devicePath, int slotIndex, ModType type,

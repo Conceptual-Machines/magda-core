@@ -852,6 +852,12 @@ void DeviceSlotComponent::onModAudioReleaseChangedInternal(int modIndex, float m
     magda::TrackManager::getInstance().setDeviceModAudioRelease(nodePath_, modIndex, ms);
 }
 
+void DeviceSlotComponent::onModCurveChangedInternal(int /*modIndex*/) {
+    // Curve points are already written directly to ModInfo by LFOCurveEditor.
+    // Just notify the audio thread to pick up the new data.
+    magda::TrackManager::getInstance().notifyDeviceModCurveChanged(nodePath_);
+}
+
 void DeviceSlotComponent::onMacroValueChangedInternal(int macroIndex, float value) {
     magda::TrackManager::getInstance().setDeviceMacroValue(nodePath_, macroIndex, value);
     updateParamModulation();  // Refresh param indicators to show new value

@@ -533,10 +533,10 @@ TEST_CASE("Device mod property changes fire deviceModifiersChanged", "[mod][noti
         REQUIRE(dev->mods[0].name == "My LFO");
     }
 
-    SECTION("setDeviceModCurvePreset does NOT fire notification") {
+    SECTION("setDeviceModCurvePreset fires modifiers notification") {
         fixture.tm().setDeviceModCurvePreset(devicePath, 0, CurvePreset::Exponential);
 
-        REQUIRE(spy.modifiersChangedCount == 0);
+        REQUIRE(spy.modifiersChangedCount == 1);
         REQUIRE(spy.devicesChangedCount == 0);
     }
 

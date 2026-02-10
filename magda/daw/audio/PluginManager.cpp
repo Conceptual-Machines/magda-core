@@ -6,6 +6,7 @@
 #include "../core/RackInfo.hpp"
 #include "../core/TrackManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
+#include "CurveSnapshot.hpp"
 #include "ModifierHelpers.hpp"
 #include "PluginWindowBridge.hpp"
 #include "SidechainMonitorPlugin.hpp"
@@ -577,7 +578,12 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
             }
 
             if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
-                applyLFOProperties(lfo, modInfo);
+                // Ensure CurveSnapshotHolder exists for this mod
+                auto& snapHolder = curveSnapshots_[modInfo.id];
+                if (!snapHolder)
+                    snapHolder = std::make_unique<CurveSnapshotHolder>();
+
+                applyLFOProperties(lfo, modInfo, snapHolder.get());
                 // TE LFO in note mode needs triggerNoteOn() to start oscillating
                 if (modInfo.running && modInfo.triggerMode != LFOTriggerMode::Free)
                     lfo->triggerNoteOn();
@@ -613,11 +619,11 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
                     if (param) {
                         for (auto* assignment : param->getAssignments()) {
                             if (assignment->isForModifierSource(*modifier)) {
-                                // Gate triggered LFOs: 0 when not running
                                 float effectiveAmount = link.amount;
                                 if (modInfo.triggerMode != LFOTriggerMode::Free && !modInfo.running)
                                     effectiveAmount = 0.0f;
                                 assignment->value = effectiveAmount;
+                                assignment->offset = 0.0f;
                                 break;
                             }
                         }
@@ -735,7 +741,10 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                         break;
 
                     if (auto* lfo = dynamic_cast<te::LFOModifier*>(lfoMod.get())) {
-                        applyLFOProperties(lfo, modInfo);
+                        auto& snapHolder = curveSnapshots_[modInfo.id];
+                        if (!snapHolder)
+                            snapHolder = std::make_unique<CurveSnapshotHolder>();
+                        applyLFOProperties(lfo, modInfo, snapHolder.get());
                     }
                     modifier = lfoMod;
                     break;
@@ -1304,6 +1313,7 @@ void PluginManager::clearAllMappings() {
     rackSyncManager_.clear();
     deviceModifiers_.clear();
     deviceMacroParams_.clear();
+    curveSnapshots_.clear();
     deviceToPlugin_.clear();
     pluginToDevice_.clear();
     deviceProcessors_.clear();

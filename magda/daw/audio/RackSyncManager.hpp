@@ -4,11 +4,14 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <map>
+#include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include "../core/DeviceInfo.hpp"
 #include "../core/RackInfo.hpp"
 #include "../core/TypeIds.hpp"
+#include "CurveSnapshot.hpp"
 
 namespace magda {
 
@@ -140,6 +143,9 @@ class RackSyncManager {
         // Phase 2: modulation
         std::map<ModId, te::Modifier::Ptr> innerModifiers;
         std::map<int, te::MacroParameter*> innerMacroParams;  // index → TE MacroParameter
+
+        // Double-buffered curve snapshots for custom LFO waveforms (keyed by ModId)
+        std::unordered_map<int, std::unique_ptr<CurveSnapshotHolder>> curveSnapshots;
     };
 
     /**
