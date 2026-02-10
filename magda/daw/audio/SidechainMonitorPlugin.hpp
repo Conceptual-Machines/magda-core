@@ -11,24 +11,26 @@ namespace te = tracktion;
 class PluginManager;
 
 /**
- * @brief Lightweight te::Plugin that monitors MIDI on the audio thread for sidechain triggering.
+ * @brief Lightweight te::Plugin that monitors MIDI and audio on the audio thread for sidechain
+ * triggering.
  *
- * Inserted at position 0 on source tracks that are MIDI sidechain sources.
+ * Inserted at position 0 on source tracks that are sidechain sources.
  * Transparent — passes audio and MIDI through unchanged. In applyToBuffer(),
  * scans bufferForMidiMessages for note-on/off and writes to SidechainTriggerBus
- * (lock-free atomic counters). Also directly triggers TE LFO modifiers on
+ * (lock-free atomic counters). Also writes audio peak levels to the bus for
+ * audio-triggered modulators. Directly triggers TE LFO modifiers on
  * destination tracks for buffer-accurate latency.
  *
  * Registered via MagdaEngineBehaviour::createCustomPlugin() so TE handles
  * serialization/deserialization.
  */
-class MidiSidechainMonitorPlugin : public te::Plugin {
+class SidechainMonitorPlugin : public te::Plugin {
   public:
-    MidiSidechainMonitorPlugin(const te::PluginCreationInfo& info);
-    ~MidiSidechainMonitorPlugin() override;
+    SidechainMonitorPlugin(const te::PluginCreationInfo& info);
+    ~SidechainMonitorPlugin() override;
 
     static const char* getPluginName() {
-        return "MIDI Sidechain Monitor";
+        return "Sidechain Monitor";
     }
     static const char* xmlTypeName;
 
@@ -39,7 +41,7 @@ class MidiSidechainMonitorPlugin : public te::Plugin {
         return xmlTypeName;
     }
     juce::String getShortName(int) override {
-        return "MidiSCMon";
+        return "SCMon";
     }
     juce::String getSelectableDescription() override {
         return getName();
@@ -92,7 +94,7 @@ class MidiSidechainMonitorPlugin : public te::Plugin {
 
     void forwardToDestinationTracks();
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiSidechainMonitorPlugin)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SidechainMonitorPlugin)
 };
 
 }  // namespace magda

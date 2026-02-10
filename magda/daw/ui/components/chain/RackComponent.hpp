@@ -128,6 +128,8 @@ class RackComponent : public NodeComponent {
     void onModTempoSyncChangedInternal(int modIndex, bool tempoSync) override;
     void onModSyncDivisionChangedInternal(int modIndex, magda::SyncDivision division) override;
     void onModTriggerModeChangedInternal(int modIndex, magda::LFOTriggerMode mode) override;
+    void onModAudioAttackChangedInternal(int modIndex, float ms) override;
+    void onModAudioReleaseChangedInternal(int modIndex, float ms) override;
     void onMacroValueChangedInternal(int macroIndex, float value) override;
     void onMacroTargetChangedInternal(int macroIndex, magda::MacroTarget target) override;
     void onMacroNameChangedInternal(int macroIndex, const juce::String& name) override;

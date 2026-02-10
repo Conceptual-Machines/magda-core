@@ -1518,6 +1518,8 @@ juce::var ProjectSerializer::serializeModInfo(const ModInfo& mod) {
     obj->setProperty("loopEnd", mod.loopEnd);
     obj->setProperty("midiChannel", mod.midiChannel);
     obj->setProperty("midiNote", mod.midiNote);
+    obj->setProperty("audioAttackMs", mod.audioAttackMs);
+    obj->setProperty("audioReleaseMs", mod.audioReleaseMs);
     obj->setProperty("curvePreset", static_cast<int>(mod.curvePreset));
 
     // Curve points
@@ -1582,6 +1584,10 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
     outMod.loopEnd = obj->getProperty("loopEnd");
     outMod.midiChannel = obj->getProperty("midiChannel");
     outMod.midiNote = obj->getProperty("midiNote");
+    if (obj->hasProperty("audioAttackMs"))
+        outMod.audioAttackMs = obj->getProperty("audioAttackMs");
+    if (obj->hasProperty("audioReleaseMs"))
+        outMod.audioReleaseMs = obj->getProperty("audioReleaseMs");
     outMod.curvePreset =
         static_cast<CurvePreset>(static_cast<int>(obj->getProperty("curvePreset")));
 

@@ -231,21 +231,21 @@ class PluginManager {
     void syncSidechains(TrackId trackId, te::AudioTrack* teTrack);
 
     /**
-     * @brief Check if a track needs a MidiSidechainMonitorPlugin and insert/remove accordingly.
+     * @brief Check if a track needs a SidechainMonitorPlugin and insert/remove accordingly.
      * Call when trigger mode or sidechain source changes.
      * @param trackId The track to check
      */
     void checkSidechainMonitor(TrackId trackId);
 
     /**
-     * @brief Ensure a MidiSidechainMonitorPlugin exists on a source track
+     * @brief Ensure a SidechainMonitorPlugin exists on a source track
      * Inserts the monitor at position 0 if not already present.
      * @param sourceTrackId The track that is a MIDI sidechain source
      */
     void ensureSidechainMonitor(TrackId sourceTrackId);
 
     /**
-     * @brief Remove the MidiSidechainMonitorPlugin from a source track
+     * @brief Remove the SidechainMonitorPlugin from a source track
      * Called when no devices reference this track as a MIDI sidechain source.
      * @param sourceTrackId The track to remove the monitor from
      */
@@ -296,7 +296,7 @@ class PluginManager {
     // Device-level TE macro parameters (created by syncDeviceMacros)
     std::map<DeviceId, std::map<int, te::MacroParameter*>> deviceMacroParams_;
 
-    // Sidechain monitor plugins (sourceTrackId → MidiSidechainMonitorPlugin)
+    // Sidechain monitor plugins (sourceTrackId → SidechainMonitorPlugin)
     std::map<TrackId, te::Plugin::Ptr> sidechainMonitors_;
 
     // Thread safety

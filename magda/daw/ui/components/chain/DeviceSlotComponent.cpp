@@ -844,6 +844,14 @@ void DeviceSlotComponent::onModTriggerModeChangedInternal(int modIndex,
     magda::TrackManager::getInstance().setDeviceModTriggerMode(nodePath_, modIndex, mode);
 }
 
+void DeviceSlotComponent::onModAudioAttackChangedInternal(int modIndex, float ms) {
+    magda::TrackManager::getInstance().setDeviceModAudioAttack(nodePath_, modIndex, ms);
+}
+
+void DeviceSlotComponent::onModAudioReleaseChangedInternal(int modIndex, float ms) {
+    magda::TrackManager::getInstance().setDeviceModAudioRelease(nodePath_, modIndex, ms);
+}
+
 void DeviceSlotComponent::onMacroValueChangedInternal(int macroIndex, float value) {
     magda::TrackManager::getInstance().setDeviceMacroValue(nodePath_, macroIndex, value);
     updateParamModulation();  // Refresh param indicators to show new value

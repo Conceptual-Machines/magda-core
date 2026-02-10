@@ -11,7 +11,7 @@ namespace magda {
 /**
  * @brief Lock-free per-track MIDI sidechain trigger bus.
  *
- * Written on the audio thread (by MidiSidechainMonitorPlugin) when MIDI note-on/off
+ * Written on the audio thread (by SidechainMonitorPlugin) when MIDI note-on/off
  * events are detected. Read on the message thread (by updateAllMods) to detect new
  * sidechain triggers without scanning clips.
  *
@@ -73,12 +73,35 @@ class SidechainTriggerBus {
     }
 
     /**
-     * @brief Clear all counters. Call only when audio is stopped.
+     * @brief Set the audio peak level for a track (audio thread safe)
+     * @param trackId The source track
+     * @param peak Peak amplitude (0.0 to 1.0+)
+     */
+    void setAudioPeakLevel(TrackId trackId, float peak) {
+        if (trackId < 0 || trackId >= kMaxTracks)
+            return;
+        tracks_[trackId].audioPeakLevel.store(peak, std::memory_order_release);
+    }
+
+    /**
+     * @brief Get the audio peak level for a track (message thread)
+     * @param trackId The track to check
+     * @return Current peak level
+     */
+    float getAudioPeakLevel(TrackId trackId) const {
+        if (trackId < 0 || trackId >= kMaxTracks)
+            return 0.0f;
+        return tracks_[trackId].audioPeakLevel.load(std::memory_order_acquire);
+    }
+
+    /**
+     * @brief Clear all counters and peak levels. Call only when audio is stopped.
      */
     void clearAll() {
         for (auto& track : tracks_) {
             track.noteOnCounter.store(0, std::memory_order_relaxed);
             track.noteOffCounter.store(0, std::memory_order_relaxed);
+            track.audioPeakLevel.store(0.0f, std::memory_order_relaxed);
         }
     }
 
@@ -90,6 +113,7 @@ class SidechainTriggerBus {
     struct TrackTriggerState {
         std::atomic<uint64_t> noteOnCounter{0};
         std::atomic<uint64_t> noteOffCounter{0};
+        std::atomic<float> audioPeakLevel{0.0f};
     };
 
     std::array<TrackTriggerState, kMaxTracks> tracks_;

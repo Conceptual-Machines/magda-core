@@ -163,7 +163,7 @@ set(DAW_CORE_SOURCES
     audio/InstrumentRackManager.cpp
     audio/RackSyncManager.cpp
     audio/ClipSynchronizer.cpp
-    audio/MidiSidechainMonitorPlugin.cpp
+    audio/SidechainMonitorPlugin.cpp
     # Project serialization
     project/ProjectSerializer.cpp
     project/ProjectManager.cpp
@@ -408,7 +408,7 @@ set(DAW_HEADERS
     audio/RackSyncManager.hpp
     audio/ClipSynchronizer.hpp
     audio/SidechainTriggerBus.hpp
-    audio/MidiSidechainMonitorPlugin.hpp
+    audio/SidechainMonitorPlugin.hpp
     # Views
     ui/views/MainView.hpp
     ui/views/SessionView.hpp

@@ -983,6 +983,16 @@ void NodeComponent::initializeModsMacrosPanels() {
             onModTriggerModeChangedInternal(selectedModIndex_, mode);
         }
     };
+    modulatorEditorPanel_->onAudioAttackChanged = [this](float ms) {
+        if (selectedModIndex_ >= 0) {
+            onModAudioAttackChangedInternal(selectedModIndex_, ms);
+        }
+    };
+    modulatorEditorPanel_->onAudioReleaseChanged = [this](float ms) {
+        if (selectedModIndex_ >= 0) {
+            onModAudioReleaseChangedInternal(selectedModIndex_, ms);
+        }
+    };
     modulatorEditorPanel_->onCurveChanged = [this]() {
         // Force repaint of waveform displays for immediate curve editor sync
         if (modsPanel_) {

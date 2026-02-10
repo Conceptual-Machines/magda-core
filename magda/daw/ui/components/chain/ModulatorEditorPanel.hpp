@@ -162,6 +162,8 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
     std::function<void(magda::LFOTriggerMode mode)> onTriggerModeChanged;
     std::function<void()> onCurveChanged;  // Fires when curve points are edited
     std::function<void()> onAdvancedClicked;
+    std::function<void(float ms)> onAudioAttackChanged;
+    std::function<void(float ms)> onAudioReleaseChanged;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -193,6 +195,8 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
     TextSlider rateSlider_{TextSlider::Format::Decimal};
     juce::ComboBox triggerModeCombo_;
     std::unique_ptr<magda::SvgButton> advancedButton_;
+    TextSlider audioAttackSlider_{TextSlider::Format::Decimal};
+    TextSlider audioReleaseSlider_{TextSlider::Format::Decimal};
 
     void updateFromMod();
     void timerCallback() override;

@@ -6,9 +6,9 @@
 #include "../core/RackInfo.hpp"
 #include "../core/TrackManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
-#include "MidiSidechainMonitorPlugin.hpp"
 #include "ModifierHelpers.hpp"
 #include "PluginWindowBridge.hpp"
+#include "SidechainMonitorPlugin.hpp"
 #include "TrackController.hpp"
 #include "TransportStateManager.hpp"
 
@@ -305,25 +305,27 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     {
         bool needsMonitor = false;
 
-        // Check if this track has any MIDI-triggered mods (self-trigger)
+        // Check if this track has any MIDI or Audio triggered mods (self-trigger)
         for (const auto& element : trackInfo->chainElements) {
             if (needsMonitor)
                 break;
             if (isDevice(element)) {
                 for (const auto& mod : getDevice(element).mods) {
-                    if (mod.triggerMode == LFOTriggerMode::MIDI) {
+                    if (mod.triggerMode == LFOTriggerMode::MIDI ||
+                        mod.triggerMode == LFOTriggerMode::Audio) {
                         needsMonitor = true;
                         DBG("PluginManager::syncTrackPlugins - track "
-                            << trackId << " needs monitor for self-trigger MIDI mod");
+                            << trackId << " needs monitor for self-trigger mod");
                         break;
                     }
                 }
             } else if (isRack(element)) {
                 for (const auto& mod : getRack(element).mods) {
-                    if (mod.triggerMode == LFOTriggerMode::MIDI) {
+                    if (mod.triggerMode == LFOTriggerMode::MIDI ||
+                        mod.triggerMode == LFOTriggerMode::Audio) {
                         needsMonitor = true;
                         DBG("PluginManager::syncTrackPlugins - track "
-                            << trackId << " needs monitor for rack MIDI mod");
+                            << trackId << " needs monitor for rack mod");
                         break;
                     }
                 }
@@ -1081,25 +1083,27 @@ void PluginManager::checkSidechainMonitor(TrackId trackId) {
 
     bool needsMonitor = false;
 
-    // Check if this track has any MIDI-triggered mods (self-trigger)
+    // Check if this track has any MIDI or Audio triggered mods (self-trigger)
     for (const auto& element : trackInfo->chainElements) {
         if (needsMonitor)
             break;
         if (isDevice(element)) {
             for (const auto& mod : getDevice(element).mods) {
-                if (mod.triggerMode == LFOTriggerMode::MIDI) {
+                if (mod.triggerMode == LFOTriggerMode::MIDI ||
+                    mod.triggerMode == LFOTriggerMode::Audio) {
                     needsMonitor = true;
                     DBG("PluginManager::checkSidechainMonitor - track "
-                        << trackId << " needs monitor for self-trigger MIDI mod");
+                        << trackId << " needs monitor for self-trigger mod");
                     break;
                 }
             }
         } else if (isRack(element)) {
             for (const auto& mod : getRack(element).mods) {
-                if (mod.triggerMode == LFOTriggerMode::MIDI) {
+                if (mod.triggerMode == LFOTriggerMode::MIDI ||
+                    mod.triggerMode == LFOTriggerMode::Audio) {
                     needsMonitor = true;
                     DBG("PluginManager::checkSidechainMonitor - track "
-                        << trackId << " needs monitor for rack MIDI mod");
+                        << trackId << " needs monitor for rack mod");
                     break;
                 }
             }
@@ -1148,13 +1152,13 @@ void PluginManager::ensureSidechainMonitor(TrackId sourceTrackId) {
         return;
     }
 
-    // Check if a MidiSidechainMonitorPlugin already exists on the track
+    // Check if a SidechainMonitorPlugin already exists on the track
     for (int i = 0; i < teTrack->pluginList.size(); ++i) {
-        if (dynamic_cast<MidiSidechainMonitorPlugin*>(teTrack->pluginList[i])) {
+        if (dynamic_cast<SidechainMonitorPlugin*>(teTrack->pluginList[i])) {
             DBG("PluginManager::ensureSidechainMonitor - track "
                 << sourceTrackId << " found existing monitor plugin on TE track");
             sidechainMonitors_[sourceTrackId] = teTrack->pluginList[i];
-            auto* mon = dynamic_cast<MidiSidechainMonitorPlugin*>(teTrack->pluginList[i]);
+            auto* mon = dynamic_cast<SidechainMonitorPlugin*>(teTrack->pluginList[i]);
             mon->setSourceTrackId(sourceTrackId);
             mon->setPluginManager(this);
             return;
@@ -1163,20 +1167,22 @@ void PluginManager::ensureSidechainMonitor(TrackId sourceTrackId) {
 
     // Create a new monitor plugin via TE's plugin cache (uses createCustomPlugin)
     juce::ValueTree pluginState(te::IDs::PLUGIN);
-    pluginState.setProperty(te::IDs::type, MidiSidechainMonitorPlugin::xmlTypeName, nullptr);
+    pluginState.setProperty(te::IDs::type, SidechainMonitorPlugin::xmlTypeName, nullptr);
     pluginState.setProperty(juce::Identifier("sourceTrackId"), sourceTrackId, nullptr);
 
     DBG("PluginManager::ensureSidechainMonitor - creating new monitor for track " << sourceTrackId);
     auto plugin = edit_.getPluginCache().createNewPlugin(pluginState);
     if (plugin) {
-        if (auto* mon = dynamic_cast<MidiSidechainMonitorPlugin*>(plugin.get())) {
+        if (auto* mon = dynamic_cast<SidechainMonitorPlugin*>(plugin.get())) {
             mon->setSourceTrackId(sourceTrackId);
             mon->setPluginManager(this);
         }
-        // Insert at position 0 so it sees all MIDI before other plugins
-        teTrack->pluginList.insertPlugin(plugin, 0, nullptr);
+        // Insert at end of chain (-1) to avoid interfering with TE's audio graph.
+        // MIDI flows through all plugins regardless of position, and audio peak
+        // detection benefits from being after the instrument.
+        teTrack->pluginList.insertPlugin(plugin, -1, nullptr);
         sidechainMonitors_[sourceTrackId] = plugin;
-        DBG("PluginManager::ensureSidechainMonitor - inserted monitor at position 0 on track "
+        DBG("PluginManager::ensureSidechainMonitor - inserted monitor at end of chain on track "
             << sourceTrackId);
     } else {
         DBG("PluginManager::ensureSidechainMonitor - FAILED to create monitor plugin for track "

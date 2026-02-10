@@ -284,12 +284,41 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
         if (id > 0) {
             auto mode = static_cast<magda::LFOTriggerMode>(id - 1);
             currentMod_.triggerMode = mode;
+            // Show/hide audio envelope sliders based on trigger mode
+            bool isAudioTrigger = (mode == magda::LFOTriggerMode::Audio);
+            audioAttackSlider_.setVisible(isAudioTrigger);
+            audioReleaseSlider_.setVisible(isAudioTrigger);
+            resized();
             if (onTriggerModeChanged) {
                 onTriggerModeChanged(mode);
             }
         }
     };
     addAndMakeVisible(triggerModeCombo_);
+
+    // Audio attack slider (shown only when trigger mode = Audio)
+    audioAttackSlider_.setRange(0.1, 500.0, 0.1);
+    audioAttackSlider_.setValue(1.0, juce::dontSendNotification);
+    audioAttackSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    audioAttackSlider_.onValueChanged = [this](double value) {
+        currentMod_.audioAttackMs = static_cast<float>(value);
+        if (onAudioAttackChanged) {
+            onAudioAttackChanged(currentMod_.audioAttackMs);
+        }
+    };
+    addChildComponent(audioAttackSlider_);
+
+    // Audio release slider (shown only when trigger mode = Audio)
+    audioReleaseSlider_.setRange(1.0, 2000.0, 1.0);
+    audioReleaseSlider_.setValue(100.0, juce::dontSendNotification);
+    audioReleaseSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    audioReleaseSlider_.onValueChanged = [this](double value) {
+        currentMod_.audioReleaseMs = static_cast<float>(value);
+        if (onAudioReleaseChanged) {
+            onAudioReleaseChanged(currentMod_.audioReleaseMs);
+        }
+    };
+    addChildComponent(audioReleaseSlider_);
 
     // Advanced settings button
     advancedButton_ = std::make_unique<magda::SvgButton>("Advanced", BinaryData::settings_nobg_svg,
@@ -324,6 +353,8 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
         syncDivisionCombo_.setEnabled(false);
         rateSlider_.setEnabled(false);
         triggerModeCombo_.setEnabled(false);
+        audioAttackSlider_.setEnabled(false);
+        audioReleaseSlider_.setEnabled(false);
         advancedButton_->setEnabled(false);
     } else {
         waveformCombo_.setEnabled(true);
@@ -331,6 +362,8 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
         syncDivisionCombo_.setEnabled(true);
         rateSlider_.setEnabled(true);
         triggerModeCombo_.setEnabled(true);
+        audioAttackSlider_.setEnabled(true);
+        audioReleaseSlider_.setEnabled(true);
         advancedButton_->setEnabled(true);
     }
 }
@@ -375,6 +408,15 @@ void ModulatorEditorPanel::updateFromMod() {
     // Trigger mode
     triggerModeCombo_.setSelectedId(static_cast<int>(currentMod_.triggerMode) + 1,
                                     juce::dontSendNotification);
+
+    // Audio envelope sliders (only visible when trigger mode = Audio)
+    bool isAudioTrigger = (currentMod_.triggerMode == magda::LFOTriggerMode::Audio);
+    audioAttackSlider_.setVisible(isAudioTrigger);
+    audioReleaseSlider_.setVisible(isAudioTrigger);
+    if (isAudioTrigger) {
+        audioAttackSlider_.setValue(currentMod_.audioAttackMs, juce::dontSendNotification);
+        audioReleaseSlider_.setValue(currentMod_.audioReleaseMs, juce::dontSendNotification);
+    }
 
     // Update layout since curve/LFO mode affects component positions
     resized();
@@ -441,6 +483,29 @@ void ModulatorEditorPanel::paint(juce::Graphics& g) {
     } else {
         g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
         g.drawEllipse(dotBounds, 1.0f);
+    }
+
+    // Audio envelope labels (when trigger mode = Audio)
+    if (audioAttackSlider_.isVisible()) {
+        auto labelBounds = getLocalBounds().reduced(6);
+        // Skip to position after trigger row
+        labelBounds.removeFromTop(18 + 6);  // name + gap
+        if (isCurveMode_) {
+            labelBounds.removeFromTop(18 + 4);  // preset combo + gap
+        } else {
+            labelBounds.removeFromTop(10 + 18 + 4);  // label + waveform + gap
+        }
+        int displayHeight = isCurveMode_ ? 70 : 46;
+        labelBounds.removeFromTop(displayHeight + 6);  // display + gap
+        labelBounds.removeFromTop(18 + 8);             // rate row + gap
+        labelBounds.removeFromTop(12 + 18);            // trigger label + trigger row
+        labelBounds.removeFromTop(6);                  // gap
+
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setFont(FontManager::getInstance().getUIFont(8.0f));
+        g.drawText("Attack (ms)", labelBounds.removeFromTop(10), juce::Justification::centredLeft);
+        labelBounds.removeFromTop(18 + 4);  // slider + gap
+        g.drawText("Release (ms)", labelBounds.removeFromTop(10), juce::Justification::centredLeft);
     }
 }
 
@@ -511,6 +576,20 @@ void ModulatorEditorPanel::resized() {
 
     // Trigger combo takes remaining space
     triggerModeCombo_.setBounds(triggerRow);
+
+    // Audio attack/release sliders (below trigger row, only when Audio mode)
+    if (audioAttackSlider_.isVisible()) {
+        bounds.removeFromTop(6);
+
+        // "Attack" label + slider
+        bounds.removeFromTop(10);  // Label space
+        audioAttackSlider_.setBounds(bounds.removeFromTop(18));
+        bounds.removeFromTop(4);
+
+        // "Release" label + slider
+        bounds.removeFromTop(10);  // Label space
+        audioReleaseSlider_.setBounds(bounds.removeFromTop(18));
+    }
 }
 
 void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& /*e*/) {
