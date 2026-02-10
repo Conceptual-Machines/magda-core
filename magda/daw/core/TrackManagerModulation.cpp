@@ -606,9 +606,12 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             if (mod.triggerMode == LFOTriggerMode::MIDI && midiNoteOff && mod.running)
                 mod.running = false;
 
-            // Handle transport stop: stop Transport-triggered LFOs
-            if (mod.triggerMode == LFOTriggerMode::Transport && transportJustStopped && mod.running)
+            // Handle transport stop: stop Transport-triggered LFOs and reset phase
+            if (mod.triggerMode == LFOTriggerMode::Transport && transportJustStopped &&
+                mod.running) {
                 mod.running = false;
+                mod.phase = 0.0f;
+            }
 
             if (shouldTrigger) {
                 mod.phase = 0.0f;
