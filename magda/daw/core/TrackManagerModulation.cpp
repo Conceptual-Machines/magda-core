@@ -679,12 +679,13 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                     else
                         mod.audioEnvLevel += releaseCoeff * (audioPeakLevel - mod.audioEnvLevel);
 
-                    // Gate with hysteresis (~-40dB threshold)
-                    constexpr float threshold = 0.01f;
-                    if (!mod.audioGateOpen && mod.audioEnvLevel > threshold) {
+                    // Transient detection: trigger when raw peak crosses above threshold,
+                    // re-arm when it drops back below the same threshold.
+                    constexpr float threshold = 0.1f;  // ~-20dB
+                    if (!mod.audioGateOpen && audioPeakLevel > threshold) {
                         mod.audioGateOpen = true;
                         shouldTrigger = true;
-                    } else if (mod.audioGateOpen && mod.audioEnvLevel < threshold * 0.5f) {
+                    } else if (mod.audioGateOpen && audioPeakLevel < threshold) {
                         mod.audioGateOpen = false;
                     }
                     break;
@@ -751,18 +752,15 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             bool deviceMidiNoteOff = midiNoteOff;
             float deviceAudioPeak = audioPeak;
 
-            // Cross-track MIDI sidechain: trigger from source track
-            if (device.sidechain.type == SidechainConfig::Type::MIDI &&
-                device.sidechain.sourceTrackId != INVALID_TRACK_ID) {
+            // Cross-track sidechain: use source track's MIDI and audio
+            if (device.sidechain.sourceTrackId != INVALID_TRACK_ID) {
+                // MIDI triggers from source track
                 if (midiTriggeredTracks.count(device.sidechain.sourceTrackId) > 0)
                     deviceMidiTriggered = true;
                 if (midiNoteOffTracks.count(device.sidechain.sourceTrackId) > 0)
                     deviceMidiNoteOff = true;
-            }
 
-            // Cross-track Audio sidechain: use source track's audio peak
-            if (device.sidechain.type == SidechainConfig::Type::Audio &&
-                device.sidechain.sourceTrackId != INVALID_TRACK_ID) {
+                // Audio peak from source track (for Audio-triggered mods)
                 auto it = audioPeakLevels.find(device.sidechain.sourceTrackId);
                 if (it != audioPeakLevels.end())
                     deviceAudioPeak = it->second;
@@ -773,13 +771,36 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             }
         } else if (isRack(element)) {
             RackInfo& rack = magda::getRack(element);
+            bool rackMidiTriggered = midiTriggered;
+            bool rackMidiNoteOff = midiNoteOff;
+            float rackAudioPeak = audioPeak;
+
+            // Check devices inside the rack for sidechain sources
+            for (const auto& chain : rack.chains) {
+                for (const auto& chainElement : chain.elements) {
+                    if (isDevice(chainElement)) {
+                        const auto& dev = magda::getDevice(chainElement);
+                        if (dev.sidechain.sourceTrackId != INVALID_TRACK_ID) {
+                            if (midiTriggeredTracks.count(dev.sidechain.sourceTrackId) > 0)
+                                rackMidiTriggered = true;
+                            if (midiNoteOffTracks.count(dev.sidechain.sourceTrackId) > 0)
+                                rackMidiNoteOff = true;
+                            auto it = audioPeakLevels.find(dev.sidechain.sourceTrackId);
+                            if (it != audioPeakLevels.end())
+                                rackAudioPeak = it->second;
+                            break;
+                        }
+                    }
+                }
+            }
+
             for (auto& mod : rack.mods) {
-                changed |= updateMod(mod, midiTriggered, midiNoteOff, audioPeak);
+                changed |= updateMod(mod, rackMidiTriggered, rackMidiNoteOff, rackAudioPeak);
             }
             for (auto& chain : rack.chains) {
                 for (auto& chainElement : chain.elements) {
-                    changed |=
-                        updateElementMods(chainElement, midiTriggered, midiNoteOff, audioPeak);
+                    changed |= updateElementMods(chainElement, rackMidiTriggered, rackMidiNoteOff,
+                                                 rackAudioPeak);
                 }
             }
         }
