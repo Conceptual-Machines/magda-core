@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -488,6 +489,10 @@ class TrackManager {
     std::atomic<bool> transportJustStarted_{false};
     std::atomic<bool> transportJustLooped_{false};
     std::atomic<bool> transportJustStopped_{false};
+
+    // SidechainTriggerBus counter tracking (read from mod timer, compared to detect new events)
+    std::map<TrackId, uint64_t> lastBusNoteOn_;
+    std::map<TrackId, uint64_t> lastBusNoteOff_;
 
     void notifyTracksChanged();
     void notifyTrackPropertyChanged(int trackId);

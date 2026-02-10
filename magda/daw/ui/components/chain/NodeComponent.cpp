@@ -7,6 +7,7 @@
 #include "ModsPanelComponent.hpp"
 #include "ModulatorEditorPanel.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackManager.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -987,6 +988,51 @@ void NodeComponent::initializeModsMacrosPanels() {
         if (modsPanel_) {
             modsPanel_->repaintWaveforms();
         }
+    };
+    modulatorEditorPanel_->onAdvancedClicked = [this]() {
+        auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
+        if (!device)
+            return;
+
+        juce::PopupMenu menu;
+
+        bool isSelf = device->sidechain.type != magda::SidechainConfig::Type::MIDI;
+
+        menu.addSectionHeader("MIDI Trigger Source");
+        menu.addItem(1, "Self", true, isSelf);
+        menu.addSeparator();
+
+        struct TrackEntry {
+            magda::TrackId id;
+            juce::String name;
+        };
+        auto trackEntries = std::make_shared<std::vector<TrackEntry>>();
+        int itemId = 10;
+        for (const auto& track : magda::TrackManager::getInstance().getTracks()) {
+            if (track.id == nodePath_.trackId)
+                continue;
+            bool isCurrent = !isSelf && device->sidechain.sourceTrackId == track.id;
+            menu.addItem(itemId, track.name, true, isCurrent);
+            trackEntries->push_back({track.id, track.name});
+            itemId++;
+        }
+
+        auto safeThis = juce::Component::SafePointer(this);
+        auto deviceId = device->id;
+        menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, deviceId,
+                                                        trackEntries](int result) {
+            if (!safeThis || result == 0)
+                return;
+            if (result == 1) {
+                magda::TrackManager::getInstance().clearSidechain(deviceId);
+            } else {
+                int index = result - 10;
+                if (index >= 0 && index < (int)trackEntries->size()) {
+                    magda::TrackManager::getInstance().setSidechainSource(
+                        deviceId, (*trackEntries)[index].id, magda::SidechainConfig::Type::MIDI);
+                }
+            }
+        });
     };
     addChildComponent(*modulatorEditorPanel_);
 

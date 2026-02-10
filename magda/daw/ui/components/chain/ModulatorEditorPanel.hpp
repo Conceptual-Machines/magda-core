@@ -161,6 +161,7 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
     std::function<void(magda::SyncDivision division)> onSyncDivisionChanged;
     std::function<void(magda::LFOTriggerMode mode)> onTriggerModeChanged;
     std::function<void()> onCurveChanged;  // Fires when curve points are edited
+    std::function<void()> onAdvancedClicked;
 
     void paint(juce::Graphics& g) override;
     void resized() override;

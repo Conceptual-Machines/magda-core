@@ -18,6 +18,7 @@
 #include "ParameterQueue.hpp"
 #include "PluginManager.hpp"
 #include "PluginWindowBridge.hpp"
+#include "SidechainTriggerBus.hpp"
 #include "TrackController.hpp"
 #include "TransportStateManager.hpp"
 #include "WarpMarkerManager.hpp"
@@ -370,6 +371,25 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
         midiActivity_.triggerActivity(trackId);
         // Programmatically trigger resync on TE LFO modifiers (thread-safe atomic flag)
         pluginManager_.triggerLFONoteOn(trackId);
+        // Write to sidechain trigger bus so updateAllMods() picks up live MIDI too
+        DBG("AudioBridge::triggerMidiActivity - live MIDI noteOn on track " << trackId);
+        SidechainTriggerBus::getInstance().triggerNoteOn(trackId);
+
+        // Cross-track MIDI sidechain: trigger TE LFOs on destination tracks
+        for (const auto& track : TrackManager::getInstance().getTracks()) {
+            if (track.id == trackId)
+                continue;
+            for (const auto& element : track.chainElements) {
+                if (isDevice(element)) {
+                    const auto& device = getDevice(element);
+                    if (device.sidechain.type == SidechainConfig::Type::MIDI &&
+                        device.sidechain.sourceTrackId == trackId) {
+                        pluginManager_.triggerLFONoteOn(track.id);
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     /**

@@ -1,3 +1,4 @@
+#include "../audio/SidechainTriggerBus.hpp"
 #include "ModulatorEngine.hpp"
 #include "RackInfo.hpp"
 #include "TrackManager.hpp"
@@ -575,6 +576,27 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
         midiTriggeredTracks.swap(pendingMidiTriggers_);
         midiNoteOffTracks.swap(pendingMidiNoteOffs_);
     }
+
+    // Read audio-thread sidechain triggers from the lock-free bus
+    auto& bus = SidechainTriggerBus::getInstance();
+    for (const auto& track : tracks_) {
+        uint64_t currentNoteOn = bus.getNoteOnCounter(track.id);
+        uint64_t currentNoteOff = bus.getNoteOffCounter(track.id);
+        if (currentNoteOn != lastBusNoteOn_[track.id]) {
+            DBG("updateAllMods - bus noteOn detected on track "
+                << track.id << " (counter " << lastBusNoteOn_[track.id] << " -> " << currentNoteOn
+                << ")");
+            midiTriggeredTracks.insert(track.id);
+            lastBusNoteOn_[track.id] = currentNoteOn;
+        }
+        if (currentNoteOff != lastBusNoteOff_[track.id]) {
+            DBG("updateAllMods - bus noteOff detected on track "
+                << track.id << " (counter " << lastBusNoteOff_[track.id] << " -> " << currentNoteOff
+                << ")");
+            midiNoteOffTracks.insert(track.id);
+            lastBusNoteOff_[track.id] = currentNoteOff;
+        }
+    }
     // Lambda to update a single mod's phase and value.
     // Returns true if 'running' state changed (needs TE assignment sync).
     auto updateMod = [deltaTime, bpm, transportJustStarted, transportJustLooped,
@@ -658,8 +680,20 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
         bool changed = false;
         if (isDevice(element)) {
             DeviceInfo& device = magda::getDevice(element);
+            bool deviceMidiTriggered = midiTriggered;
+            bool deviceMidiNoteOff = midiNoteOff;
+
+            // Cross-track MIDI sidechain: trigger from source track
+            if (device.sidechain.type == SidechainConfig::Type::MIDI &&
+                device.sidechain.sourceTrackId != INVALID_TRACK_ID) {
+                if (midiTriggeredTracks.count(device.sidechain.sourceTrackId) > 0)
+                    deviceMidiTriggered = true;
+                if (midiNoteOffTracks.count(device.sidechain.sourceTrackId) > 0)
+                    deviceMidiNoteOff = true;
+            }
+
             for (auto& mod : device.mods) {
-                changed |= updateMod(mod, midiTriggered, midiNoteOff);
+                changed |= updateMod(mod, deviceMidiTriggered, deviceMidiNoteOff);
             }
         } else if (isRack(element)) {
             RackInfo& rack = magda::getRack(element);

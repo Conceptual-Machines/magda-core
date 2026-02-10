@@ -163,7 +163,7 @@ set(DAW_CORE_SOURCES
     audio/InstrumentRackManager.cpp
     audio/RackSyncManager.cpp
     audio/ClipSynchronizer.cpp
-    # TODO: Custom synth library (SimpleSynthPlugin.cpp) - for future implementation
+    audio/MidiSidechainMonitorPlugin.cpp
     # Project serialization
     project/ProjectSerializer.cpp
     project/ProjectManager.cpp
@@ -407,6 +407,8 @@ set(DAW_HEADERS
     audio/InstrumentRackManager.hpp
     audio/RackSyncManager.hpp
     audio/ClipSynchronizer.hpp
+    audio/SidechainTriggerBus.hpp
+    audio/MidiSidechainMonitorPlugin.hpp
     # Views
     ui/views/MainView.hpp
     ui/views/SessionView.hpp

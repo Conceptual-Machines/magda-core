@@ -296,8 +296,9 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
                                                          BinaryData::settings_nobg_svgSize);
     advancedButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     advancedButton_->setHoverColor(DarkTheme::getTextColour());
-    advancedButton_->onClick = []() {
-        // TODO: Show advanced trigger settings popup
+    advancedButton_->onClick = [this]() {
+        if (onAdvancedClicked)
+            onAdvancedClicked();
     };
     addAndMakeVisible(advancedButton_.get());
 }

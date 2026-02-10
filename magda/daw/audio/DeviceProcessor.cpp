@@ -76,8 +76,6 @@ void DeviceProcessor::syncFromDeviceInfo(const DeviceInfo& info) {
     for (size_t i = 0; i < info.parameters.size(); ++i) {
         const auto& param = info.parameters[i];
         if (i < names.size()) {
-            DBG("  Syncing param " << i << " (" << names[i] << ") = " << param.currentValue << " "
-                                   << param.unit);
             setParameter(names[i], param.currentValue);
         }
     }

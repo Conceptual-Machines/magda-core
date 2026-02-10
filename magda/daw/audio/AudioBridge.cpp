@@ -250,6 +250,9 @@ void AudioBridge::deviceModifiersChanged(TrackId trackId) {
     // Modifier properties changed (rate, waveform, sync, trigger mode) - resync only modifiers
     pluginManager_.resyncDeviceModifiers(trackId);
 
+    // Re-check sidechain monitor in case trigger mode changed to/from MIDI
+    pluginManager_.checkSidechainMonitor(trackId);
+
     // Re-check MIDI routing in case trigger mode changed to/from MIDI
     updateMidiRoutingForSelection();
 }
@@ -283,13 +286,9 @@ void AudioBridge::deviceParameterChanged(DeviceId deviceId, int paramIndex, floa
 
 void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
     // A device property changed (gain, bypass, etc.) - sync to processor
-    DBG("AudioBridge::devicePropertyChanged deviceId=" << deviceId);
-
     auto* processor = getDeviceProcessor(deviceId);
-    if (!processor) {
-        DBG("  No processor found for deviceId=" << deviceId);
+    if (!processor)
         return;
-    }
 
     // Find the DeviceInfo to get updated values
     // Search through all tracks, recursing into racks
@@ -297,7 +296,6 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
     for (const auto& track : tm.getTracks()) {
         auto* device = findDeviceRecursive(track.chainElements, deviceId);
         if (device) {
-            DBG("  Found device in track " << track.id << ", syncing...");
             processor->syncFromDeviceInfo(*device);
 
             // Sync sidechain routing if changed
@@ -315,10 +313,21 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
                     tePlugin->setSidechainSourceID({});
                 }
             }
+
+            // Re-check MIDI sidechain monitor on both source and current track
+            if (device->sidechain.type == SidechainConfig::Type::MIDI &&
+                device->sidechain.sourceTrackId != INVALID_TRACK_ID) {
+                DBG("AudioBridge::devicePropertyChanged - MIDI sidechain set, checking monitor on "
+                    "source track "
+                    << device->sidechain.sourceTrackId);
+                pluginManager_.checkSidechainMonitor(device->sidechain.sourceTrackId);
+            }
+            // Also re-check the track this device is on (may no longer need monitor)
+            pluginManager_.checkSidechainMonitor(track.id);
+
             return;
         }
     }
-    DBG("  Device not found in any track!");
 }
 
 // =============================================================================
