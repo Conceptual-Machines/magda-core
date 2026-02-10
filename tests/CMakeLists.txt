@@ -15,6 +15,7 @@ set(TEST_SOURCES
     test_nested_racks.cpp
     test_rack_audio.cpp
     test_modulation.cpp
+    test_group_tracks_and_macros.cpp
     test_parameter_utils.cpp
     test_plugin_loading.cpp
     test_plugin_format.cpp
