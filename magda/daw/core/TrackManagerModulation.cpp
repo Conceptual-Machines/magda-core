@@ -112,16 +112,13 @@ void TrackManager::setRackModLinkAmount(const ChainNodePath& rackPath, int modIn
             return;
         }
         // Update amount in links vector (or create link if it doesn't exist)
-        bool created = false;
         if (auto* link = rack->mods[modIndex].getLink(target)) {
             link->amount = amount;
         } else {
-            // Link doesn't exist - create it
             ModLink newLink;
             newLink.target = target;
             newLink.amount = amount;
             rack->mods[modIndex].links.push_back(newLink);
-            created = true;
         }
         // Also update legacy amount if target matches
         if (rack->mods[modIndex].target == target) {
@@ -513,6 +510,29 @@ void TrackManager::triggerMidiNoteOn(TrackId trackId) {
     pendingMidiTriggers_.insert(trackId);
 }
 
+const ModInfo* TrackManager::getModById(TrackId trackId, ModId modId) const {
+    const auto* track = getTrack(trackId);
+    if (!track)
+        return nullptr;
+    for (const auto& element : track->chainElements) {
+        if (std::holds_alternative<DeviceInfo>(element)) {
+            for (const auto& mod : std::get<DeviceInfo>(element).mods) {
+                if (mod.id == modId)
+                    return &mod;
+            }
+        } else if (std::holds_alternative<std::unique_ptr<RackInfo>>(element)) {
+            const auto& rackPtr = std::get<std::unique_ptr<RackInfo>>(element);
+            if (rackPtr) {
+                for (const auto& mod : rackPtr->mods) {
+                    if (mod.id == modId)
+                        return &mod;
+                }
+            }
+        }
+    }
+    return nullptr;
+}
+
 void TrackManager::triggerMidiNoteOff(TrackId trackId) {
     std::lock_guard<std::mutex> lock(midiTriggerMutex_);
     pendingMidiNoteOffs_.insert(trackId);
@@ -521,18 +541,20 @@ void TrackManager::triggerMidiNoteOff(TrackId trackId) {
 TrackManager::TransportSnapshot TrackManager::consumeTransportState() {
     return {transportBpm_.load(std::memory_order_acquire),
             transportJustStarted_.exchange(false, std::memory_order_acq_rel),
-            transportJustLooped_.exchange(false, std::memory_order_acq_rel)};
+            transportJustLooped_.exchange(false, std::memory_order_acq_rel),
+            transportJustStopped_.exchange(false, std::memory_order_acq_rel)};
 }
 
 void TrackManager::updateTransportState(bool playing, double bpm, bool justStarted,
                                         bool justLooped) {
-    transportPlaying_.store(playing, std::memory_order_release);
+    bool wasPlaying = transportPlaying_.exchange(playing, std::memory_order_acq_rel);
     transportBpm_.store(bpm, std::memory_order_release);
-    // Use exchange so each flag is consumed only once
     if (justStarted)
         transportJustStarted_.store(true, std::memory_order_release);
     if (justLooped)
         transportJustLooped_.store(true, std::memory_order_release);
+    if (wasPlaying && !playing)
+        transportJustStopped_.store(true, std::memory_order_release);
 }
 
 // ============================================================================
@@ -540,7 +562,7 @@ void TrackManager::updateTransportState(bool playing, double bpm, bool justStart
 // ============================================================================
 
 void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJustStarted,
-                                 bool transportJustLooped) {
+                                 bool transportJustLooped, bool transportJustStopped) {
     // Snapshot MIDI triggers (thread-safe)
     std::set<TrackId> midiTriggeredTracks;
     std::set<TrackId> midiNoteOffTracks;
@@ -549,14 +571,17 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
         midiTriggeredTracks.swap(pendingMidiTriggers_);
         midiNoteOffTracks.swap(pendingMidiNoteOffs_);
     }
-    // Lambda to update a single mod's phase and value
-    auto updateMod = [deltaTime, bpm, transportJustStarted,
-                      transportJustLooped](ModInfo& mod, bool midiTriggered, bool midiNoteOff) {
+    // Lambda to update a single mod's phase and value.
+    // Returns true if 'running' state changed (needs TE assignment sync).
+    auto updateMod = [deltaTime, bpm, transportJustStarted, transportJustLooped,
+                      transportJustStopped](ModInfo& mod, bool midiTriggered,
+                                            bool midiNoteOff) -> bool {
+        bool wasRunning = mod.running;
         // Skip disabled mods - set value to 0 so they don't affect modulation
         if (!mod.enabled) {
             mod.value = 0.0f;
             mod.triggered = false;
-            return;
+            return false;
         }
 
         if (mod.type == ModType::LFO) {
@@ -579,6 +604,10 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
 
             // Handle note-off: stop MIDI-triggered LFOs
             if (mod.triggerMode == LFOTriggerMode::MIDI && midiNoteOff && mod.running)
+                mod.running = false;
+
+            // Handle transport stop: stop Transport-triggered LFOs
+            if (mod.triggerMode == LFOTriggerMode::Transport && transportJustStopped && mod.running)
                 mod.running = false;
 
             if (shouldTrigger) {
@@ -612,36 +641,49 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                 mod.value = 0.0f;  // No output when not running
             }
         }
+        return mod.running != wasRunning;
     };
 
     // Recursive lambda to update mods in chain elements
-    std::function<void(ChainElement&, bool, bool)> updateElementMods =
-        [&](ChainElement& element, bool midiTriggered, bool midiNoteOff) {
-            if (isDevice(element)) {
-                DeviceInfo& device = magda::getDevice(element);
-                for (auto& mod : device.mods) {
-                    updateMod(mod, midiTriggered, midiNoteOff);
-                }
-            } else if (isRack(element)) {
-                RackInfo& rack = magda::getRack(element);
-                for (auto& mod : rack.mods) {
-                    updateMod(mod, midiTriggered, midiNoteOff);
-                }
-                for (auto& chain : rack.chains) {
-                    for (auto& chainElement : chain.elements) {
-                        updateElementMods(chainElement, midiTriggered, midiNoteOff);
-                    }
+    // Returns true if any mod's running state changed
+    std::function<bool(ChainElement&, bool, bool)> updateElementMods =
+        [&](ChainElement& element, bool midiTriggered, bool midiNoteOff) -> bool {
+        bool changed = false;
+        if (isDevice(element)) {
+            DeviceInfo& device = magda::getDevice(element);
+            for (auto& mod : device.mods) {
+                changed |= updateMod(mod, midiTriggered, midiNoteOff);
+            }
+        } else if (isRack(element)) {
+            RackInfo& rack = magda::getRack(element);
+            for (auto& mod : rack.mods) {
+                changed |= updateMod(mod, midiTriggered, midiNoteOff);
+            }
+            for (auto& chain : rack.chains) {
+                for (auto& chainElement : chain.elements) {
+                    changed |= updateElementMods(chainElement, midiTriggered, midiNoteOff);
                 }
             }
-        };
+        }
+        return changed;
+    };
 
-    // Update mods in all tracks
+    // Update mods in all tracks, collect those needing TE assignment sync
+    std::vector<TrackId> tracksNeedingSync;
     for (auto& track : tracks_) {
         bool trackMidiTriggered = midiTriggeredTracks.count(track.id) > 0;
         bool trackMidiNoteOff = midiNoteOffTracks.count(track.id) > 0;
+        bool trackChanged = false;
         for (auto& element : track.chainElements) {
-            updateElementMods(element, trackMidiTriggered, trackMidiNoteOff);
+            trackChanged |= updateElementMods(element, trackMidiTriggered, trackMidiNoteOff);
         }
+        if (trackChanged)
+            tracksNeedingSync.push_back(track.id);
+    }
+
+    // Notify TE to sync assignment values for tracks where running state changed
+    for (auto trackId : tracksNeedingSync) {
+        notifyDeviceModifiersChanged(trackId);
     }
 }
 

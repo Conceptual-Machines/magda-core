@@ -251,6 +251,8 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
 
                         if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
                             applyLFOProperties(lfo, modInfo);
+                            if (modInfo.running && modInfo.triggerMode != LFOTriggerMode::Free)
+                                lfo->triggerNoteOn();
                         }
 
                         // Update assignment values (mod depth) for each link
@@ -269,7 +271,11 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
                                 if (param) {
                                     for (auto* assignment : param->getAssignments()) {
                                         if (assignment->isForModifierSource(*modifier)) {
-                                            assignment->value = link.amount;
+                                            float effectiveAmount = link.amount;
+                                            if (modInfo.triggerMode != LFOTriggerMode::Free &&
+                                                !modInfo.running)
+                                                effectiveAmount = 0.0f;
+                                            assignment->value = effectiveAmount;
                                             break;
                                         }
                                     }
@@ -632,7 +638,10 @@ void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo
                 link.target.paramIndex < static_cast<int>(params.size())) {
                 auto* param = params[static_cast<size_t>(link.target.paramIndex)];
                 if (param) {
-                    param->addModifier(*modifier, link.amount);
+                    float initialAmount = link.amount;
+                    if (modInfo.triggerMode != LFOTriggerMode::Free && !modInfo.running)
+                        initialAmount = 0.0f;
+                    param->addModifier(*modifier, initialAmount);
                 }
             }
         }

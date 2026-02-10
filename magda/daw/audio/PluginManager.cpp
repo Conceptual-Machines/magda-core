@@ -563,6 +563,9 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
 
             if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
                 applyLFOProperties(lfo, modInfo);
+                // TE LFO in note mode needs triggerNoteOn() to start oscillating
+                if (modInfo.running && modInfo.triggerMode != LFOTriggerMode::Free)
+                    lfo->triggerNoteOn();
             }
 
             // Update assignment values (mod depth) for each link
@@ -595,7 +598,11 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
                     if (param) {
                         for (auto* assignment : param->getAssignments()) {
                             if (assignment->isForModifierSource(*modifier)) {
-                                assignment->value = link.amount;
+                                // Gate triggered LFOs: 0 when not running
+                                float effectiveAmount = link.amount;
+                                if (modInfo.triggerMode != LFOTriggerMode::Free && !modInfo.running)
+                                    effectiveAmount = 0.0f;
+                                assignment->value = effectiveAmount;
                                 break;
                             }
                         }
@@ -763,7 +770,11 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                     link.target.paramIndex < static_cast<int>(params.size())) {
                     auto* param = params[static_cast<size_t>(link.target.paramIndex)];
                     if (param) {
-                        param->addModifier(*modifier, link.amount);
+                        // Gate triggered LFOs: start with 0 until triggered
+                        float initialAmount = link.amount;
+                        if (modInfo.triggerMode != LFOTriggerMode::Free && !modInfo.running)
+                            initialAmount = 0.0f;
+                        param->addModifier(*modifier, initialAmount);
                         DBG("syncDeviceModifiers: linked mod to '"
                             << param->getParameterName() << "' amount=" << juce::String(link.amount)
                             << " modType=" << (int)modInfo.type

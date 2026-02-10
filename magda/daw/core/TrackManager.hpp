@@ -323,7 +323,7 @@ class TrackManager {
     // bpm parameter is used for tempo-synced LFOs (default 120 if not provided)
     // transportJustStarted/Looped flags trigger phase reset for Transport trigger mode
     void updateAllMods(double deltaTime, double bpm = 120.0, bool transportJustStarted = false,
-                       bool transportJustLooped = false);
+                       bool transportJustLooped = false, bool transportJustStopped = false);
 
     /**
      * @brief Signal that a MIDI note-on was received on a track
@@ -333,6 +333,9 @@ class TrackManager {
      */
     void triggerMidiNoteOn(TrackId trackId);
     void triggerMidiNoteOff(TrackId trackId);
+
+    /** Look up a ModInfo by its id across all devices and racks on a track. */
+    const ModInfo* getModById(TrackId trackId, ModId modId) const;
 
     /**
      * @brief Update transport state for LFO trigger sync
@@ -346,6 +349,7 @@ class TrackManager {
         double bpm;
         bool justStarted;
         bool justLooped;
+        bool justStopped;
     };
     TransportSnapshot consumeTransportState();
 
@@ -476,6 +480,7 @@ class TrackManager {
     std::atomic<double> transportBpm_{120.0};
     std::atomic<bool> transportJustStarted_{false};
     std::atomic<bool> transportJustLooped_{false};
+    std::atomic<bool> transportJustStopped_{false};
 
     void notifyTracksChanged();
     void notifyTrackPropertyChanged(int trackId);
