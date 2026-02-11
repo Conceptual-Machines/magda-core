@@ -1,8 +1,7 @@
-#include "TracktionEngineWrapper.hpp"
-
 #include <iostream>
 
 #include "PluginScanCoordinator.hpp"
+#include "TracktionEngineWrapper.hpp"
 
 namespace magda {
 
@@ -132,17 +131,24 @@ void TracktionEngineWrapper::abortPluginScan() {
     isScanning_ = false;
 }
 
-void TracktionEngineWrapper::clearPluginScanCrashFiles() {
-    // Clear the blacklist in the coordinator
+void TracktionEngineWrapper::clearPluginExclusions() {
+    // Clear the exclusion list in the coordinator
     if (pluginScanCoordinator_) {
-        pluginScanCoordinator_->clearBlacklist();
+        pluginScanCoordinator_->clearExclusions();
     } else {
-        // Create a temporary coordinator just to clear the blacklist
+        // Create a temporary coordinator just to clear the exclusion list
         PluginScanCoordinator tempCoordinator;
-        tempCoordinator.clearBlacklist();
+        tempCoordinator.clearExclusions();
     }
-    std::cout << "Plugin blacklist cleared. Previously problematic plugins will be scanned again."
-              << std::endl;
+    std::cout
+        << "Plugin exclusion list cleared. Previously problematic plugins will be scanned again."
+        << std::endl;
+}
+
+PluginScanCoordinator* TracktionEngineWrapper::getPluginScanCoordinator() {
+    if (!pluginScanCoordinator_)
+        pluginScanCoordinator_ = std::make_unique<PluginScanCoordinator>();
+    return pluginScanCoordinator_.get();
 }
 
 juce::KnownPluginList& TracktionEngineWrapper::getKnownPluginList() {

@@ -5,7 +5,7 @@
 namespace magda {
 
 PluginScanner::PluginScanner() : juce::Thread("Plugin Scanner") {
-    loadBlacklist();
+    loadExclusions();
 }
 
 PluginScanner::~PluginScanner() {
@@ -42,7 +42,10 @@ void PluginScanner::run() {
         return;
     }
 
-    auto blacklist = getBlacklistedPlugins();
+    // Extract paths for the scanning exclusion check
+    juce::StringArray excluded;
+    for (const auto& entry : excludedPlugins_)
+        excluded.add(entry.path);
     juce::KnownPluginList tempKnownList;
 
     // Scan each format
@@ -81,10 +84,10 @@ void PluginScanner::run() {
         // Check if there's a dead man's pedal from a previous crash
         if (deadMansPedal.existsAsFile()) {
             juce::String crashedPlugin = deadMansPedal.loadFileAsString().trim();
-            if (crashedPlugin.isNotEmpty() && !blacklist.contains(crashedPlugin)) {
+            if (crashedPlugin.isNotEmpty() && !excluded.contains(crashedPlugin)) {
                 std::cout << "Previous crash detected on: " << crashedPlugin << std::endl;
-                blacklistPlugin(crashedPlugin);
-                blacklist.add(crashedPlugin);
+                excludePlugin(crashedPlugin, "crash");
+                excluded.add(crashedPlugin);
             }
         }
 
@@ -97,9 +100,9 @@ void PluginScanner::run() {
         int scanned = 0;
 
         while (scanner.scanNextFile(true, nextPlugin) && !threadShouldExit()) {
-            // Skip blacklisted plugins
-            if (blacklist.contains(nextPlugin)) {
-                std::cout << "Skipping blacklisted: " << nextPlugin << std::endl;
+            // Skip excluded plugins
+            if (excluded.contains(nextPlugin)) {
+                std::cout << "Skipping excluded: " << nextPlugin << std::endl;
                 continue;
             }
 
@@ -130,6 +133,7 @@ void PluginScanner::run() {
         for (const auto& failedFile : failed) {
             std::cout << "Failed: " << failedFile << std::endl;
             failedPlugins_.add(failedFile);
+            excludePlugin(failedFile, "scan_failed");
         }
 
         // Clean up dead man's pedal
@@ -156,47 +160,43 @@ void PluginScanner::run() {
     });
 }
 
-juce::StringArray PluginScanner::getBlacklistedPlugins() const {
-    return blacklistedPlugins_;
+const std::vector<ExcludedPlugin>& PluginScanner::getExcludedPlugins() const {
+    return excludedPlugins_;
 }
 
-void PluginScanner::clearBlacklist() {
-    blacklistedPlugins_.clear();
-    saveBlacklist();
+void PluginScanner::clearExclusions() {
+    excludedPlugins_.clear();
+    saveExclusions();
 }
 
-void PluginScanner::blacklistPlugin(const juce::String& pluginPath) {
-    if (!blacklistedPlugins_.contains(pluginPath)) {
-        blacklistedPlugins_.add(pluginPath);
-        saveBlacklist();
+void PluginScanner::excludePlugin(const juce::String& pluginPath, const juce::String& reason) {
+    // Check if already excluded
+    for (const auto& entry : excludedPlugins_) {
+        if (entry.path == pluginPath)
+            return;
     }
+
+    ExcludedPlugin entry;
+    entry.path = pluginPath;
+    entry.reason = reason;
+    entry.timestamp = juce::Time::getCurrentTime().toISO8601(true);
+    excludedPlugins_.push_back(entry);
+    saveExclusions();
 }
 
-juce::File PluginScanner::getBlacklistFile() const {
+juce::File PluginScanner::getExclusionFile() const {
     return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
         .getChildFile("MAGDA")
-        .getChildFile("plugin_blacklist.txt");
+        .getChildFile("plugin_exclusions.txt");
 }
 
-void PluginScanner::loadBlacklist() {
-    auto file = getBlacklistFile();
-    if (file.existsAsFile()) {
-        juce::StringArray lines;
-        file.readLines(lines);
-        for (const auto& line : lines) {
-            auto trimmed = line.trim();
-            if (trimmed.isNotEmpty()) {
-                blacklistedPlugins_.add(trimmed);
-            }
-        }
-        std::cout << "Loaded " << blacklistedPlugins_.size() << " blacklisted plugins" << std::endl;
-    }
+void PluginScanner::loadExclusions() {
+    excludedPlugins_ = loadExclusionList(getExclusionFile());
+    std::cout << "Loaded " << excludedPlugins_.size() << " excluded plugins" << std::endl;
 }
 
-void PluginScanner::saveBlacklist() {
-    auto file = getBlacklistFile();
-    (void)file.getParentDirectory().createDirectory();
-    (void)file.replaceWithText(blacklistedPlugins_.joinIntoString("\n"));
+void PluginScanner::saveExclusions() {
+    saveExclusionList(getExclusionFile(), excludedPlugins_);
 }
 
 }  // namespace magda

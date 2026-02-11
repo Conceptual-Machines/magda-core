@@ -2,6 +2,7 @@
 #include "../../core/ClipManager.hpp"
 #include "../dialogs/AudioSettingsDialog.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
+#include "../dialogs/PluginSettingsDialog.hpp"
 #include "../dialogs/PreferencesDialog.hpp"
 #include "../dialogs/TrackManagerDialog.hpp"
 #include "../state/TimelineController.hpp"
@@ -659,53 +660,13 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     // Settings menu callbacks
-    callbacks.onPluginScan = [this]() {
+    callbacks.onPluginSettings = [this]() {
         if (!mainComponent)
             return;
         auto* engine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
         if (!engine)
             return;
-        // Trigger plugin scan
-        engine->startPluginScan([](float progress, const juce::String& plugin) {
-            DBG("Scanning: " << plugin << " (" << (int)(progress * 100) << "%)");
-        });
-    };
-
-    callbacks.onPluginClear = [this]() {
-        // Confirm before clearing
-        auto options = juce::MessageBoxOptions()
-                           .withTitle("Clear Plugin List")
-                           .withMessage("This will remove all scanned plugins from the list.\n\n"
-                                        "You'll need to scan again to rediscover your plugins.")
-                           .withButton("Clear")
-                           .withButton("Cancel")
-                           .withIconType(juce::MessageBoxIconType::QuestionIcon);
-
-        juce::AlertWindow::showAsync(options, [this](int result) {
-            if (result == 1) {  // "Clear" button
-                if (!mainComponent)
-                    return;
-                auto* engine =
-                    dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
-                if (!engine)
-                    return;
-                engine->clearPluginList();
-                juce::AlertWindow::showMessageBoxAsync(
-                    juce::AlertWindow::InfoIcon, "Plugin List Cleared",
-                    "The plugin list has been cleared.\n\n"
-                    "Use Settings > Plugins > Scan for Plugins to rediscover your plugins.");
-            }
-        });
-    };
-
-    callbacks.onPluginOpenFolder = [this]() {
-        if (!mainComponent)
-            return;
-        auto* engine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
-        if (!engine)
-            return;
-        auto pluginListFile = engine->getPluginListFile();
-        pluginListFile.getParentDirectory().revealToUser();
+        PluginSettingsDialog::showDialog(engine, this);
     };
 
     // Initialize the menu manager with callbacks

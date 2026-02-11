@@ -256,7 +256,7 @@ class TracktionEngineWrapper : public AudioEngine,
      * was being scanned, so it will be skipped on the next scan attempt.
      *
      * Crash files are stored in: ~/Library/Application Support/MAGDA/
-     * Call clearPluginScanCrashFiles() to retry scanning problematic plugins.
+     * Call clearPluginExclusions() to retry scanning problematic plugins.
      */
     void startPluginScan(
         std::function<void(float, const juce::String&)> progressCallback = nullptr);
@@ -267,12 +267,17 @@ class TracktionEngineWrapper : public AudioEngine,
     void abortPluginScan();
 
     /**
-     * @brief Clear the dead man's pedal crash files to retry scanning problematic plugins
+     * @brief Clear the plugin exclusion list to retry scanning problematic plugins
      *
-     * Call this if you want to give previously-crashed plugins another chance.
+     * Call this if you want to give previously-excluded plugins another chance.
      * After clearing, the next scan will attempt all plugins again.
      */
-    void clearPluginScanCrashFiles();
+    void clearPluginExclusions();
+
+    /**
+     * @brief Get the plugin scan coordinator for accessing exclusion data
+     */
+    PluginScanCoordinator* getPluginScanCoordinator();
 
     /**
      * @brief Check if a plugin scan is currently in progress

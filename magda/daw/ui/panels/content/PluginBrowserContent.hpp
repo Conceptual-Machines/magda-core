@@ -81,8 +81,6 @@ class PluginBrowserContent : public PanelContent, public juce::TreeViewItem {
     juce::TextEditor searchBox_;
     juce::TreeView pluginTree_;
     juce::ComboBox viewModeSelector_;
-    juce::TextButton scanButton_;
-    juce::TextButton clearButton_;
 
     // View modes
     enum class ViewMode {
@@ -97,22 +95,11 @@ class PluginBrowserContent : public PanelContent, public juce::TreeViewItem {
     std::vector<PluginBrowserInfo> plugins_;
     magda::TracktionEngineWrapper* engine_ = nullptr;  // For plugin scanning
 
-    // Progress display during scan
-    std::unique_ptr<juce::Label> scanProgressLabel_;
-    float scanProgress_ = 0.0f;
-    bool isScanningPlugins_ = false;
-
     // Tree building
     void buildInternalPluginList();
     void loadExternalPlugins();
     void rebuildTree();
     void filterBySearch(const juce::String& searchText);
-
-    // Plugin scanning
-    void startPluginScan();
-    void onScanProgress(float progress, const juce::String& currentPlugin);
-    void onScanComplete(bool success, int numPlugins, const juce::StringArray& failedPlugins);
-    void showFailedPluginsDialog(const juce::StringArray& failedPlugins);
 
     // Context menu
     void showPluginContextMenu(const PluginBrowserInfo& plugin, juce::Point<int> position);

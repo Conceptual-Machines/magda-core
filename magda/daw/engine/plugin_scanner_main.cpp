@@ -3,8 +3,9 @@
  * @brief Out-of-process plugin scanner executable
  *
  * This executable is launched by the main MAGDA application to scan
- * plugins in a separate process. If a plugin crashes during scanning,
- * only this process dies and the main app can recover gracefully.
+ * plugins in a separate process. Each instance scans a single plugin
+ * file, then exits. If a plugin crashes during scanning, only this
+ * process dies and the main app continues with the next plugin.
  */
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -16,10 +17,20 @@
 
 // Global log file for debugging - scanner stdout isn't visible when run as child process
 static std::ofstream g_logFile;
+static std::string g_logFilePath;
 
 static void initLog() {
-    // Use /tmp for immediate accessibility - always writable
-    g_logFile.open("/tmp/magda_scanner_debug.log", std::ios::out | std::ios::trunc);
+    // Use a unique temp file per instance (random suffix)
+    auto suffix = juce::String(juce::Random::getSystemRandom().nextInt64());
+    g_logFilePath = "/tmp/magda_scanner_" + suffix.toStdString() + ".log";
+    g_logFile.open(g_logFilePath, std::ios::out | std::ios::trunc);
+}
+
+static void cleanupLog() {
+    if (g_logFile.is_open())
+        g_logFile.close();
+    if (!g_logFilePath.empty())
+        juce::File(g_logFilePath).deleteFile();
 }
 
 static void log(const std::string& msg) {
@@ -32,12 +43,11 @@ static void log(const std::string& msg) {
 }
 
 namespace ScannerIPC {
-constexpr const char* MSG_SCAN_FORMAT = "SCAN";
+constexpr const char* MSG_SCAN_ONE = "SCNO";
 constexpr const char* MSG_PROGRESS = "PROG";
 constexpr const char* MSG_PLUGIN_FOUND = "PLUG";
 constexpr const char* MSG_SCAN_COMPLETE = "DONE";
 constexpr const char* MSG_ERROR = "ERR";
-constexpr const char* MSG_CURRENT_FILE = "FILE";
 constexpr const char* MSG_QUIT = "QUIT";
 }  // namespace ScannerIPC
 
@@ -46,7 +56,6 @@ class PluginScannerWorker : public juce::ChildProcessWorker {
     PluginScannerWorker() {
         log("[Scanner] PluginScannerWorker constructor starting...");
 
-        // Register plugin formats
 #if JUCE_PLUGINHOST_VST3
         log("[Scanner] About to register VST3 format...");
         formatManager_.addFormat(std::make_unique<juce::VST3PluginFormat>());
@@ -71,25 +80,30 @@ class PluginScannerWorker : public juce::ChildProcessWorker {
                 log("[Scanner] Received QUIT message, exiting gracefully");
                 juce::JUCEApplicationBase::quit();
                 return;
-            } else if (msgType == ScannerIPC::MSG_SCAN_FORMAT) {
+            } else if (msgType == ScannerIPC::MSG_SCAN_ONE) {
                 juce::String formatName = stream.readString();
-                juce::String searchPathStr = stream.readString();
+                juce::String pluginPath = stream.readString();
 
-                // Read blacklist
-                int blacklistSize = stream.readInt();
-                juce::StringArray blacklist;
-                for (int i = 0; i < blacklistSize; ++i) {
-                    blacklist.add(stream.readString());
-                }
+                log("[Scanner] Scanning single plugin: " + pluginPath.toStdString() +
+                    " (format: " + formatName.toStdString() + ")");
 
-                log("[Scanner] Scanning format: " + formatName.toStdString());
-                log("[Scanner] Search path length: " + std::to_string(searchPathStr.length()));
-                log("[Scanner] Blacklist size: " + std::to_string(blacklistSize));
-                log("[Scanner] Calling scanFormat...");
-
-                scanFormat(formatName, searchPathStr, blacklist);
-
-                log("[Scanner] scanFormat returned, waiting for next message...");
+                // Dispatch to the message thread — many plugins (especially VST3)
+                // expect to be loaded on the message thread and will crash if
+                // their factory code is called from the IPC thread.
+                juce::MessageManager::callAsync([this, formatName, pluginPath]() {
+                    try {
+                        scanOnePlugin(formatName, pluginPath);
+                    } catch (const std::exception& e) {
+                        log(std::string("[Scanner] Message thread exception: ") + e.what());
+                        sendError(pluginPath,
+                                  juce::String("Message thread exception: ") + e.what());
+                        sendComplete();
+                    } catch (...) {
+                        log("[Scanner] Message thread unknown exception");
+                        sendError(pluginPath, "Unknown exception on message thread");
+                        sendComplete();
+                    }
+                });
             }
         } catch (const std::exception& e) {
             log(std::string("[Scanner] EXCEPTION: ") + e.what());
@@ -109,22 +123,13 @@ class PluginScannerWorker : public juce::ChildProcessWorker {
 
   private:
     juce::AudioPluginFormatManager formatManager_;
-    juce::KnownPluginList knownList_;
 
-    void scanFormat(const juce::String& formatName, const juce::String& searchPathStr,
-                    const juce::StringArray& blacklist) {
+    void scanOnePlugin(const juce::String& formatName, const juce::String& pluginPath) {
         try {
-            log("[Scanner] scanFormat() started for: " + formatName.toStdString());
-
             // Find the format
-            log("[Scanner] Looking for format in " +
-                std::to_string(formatManager_.getNumFormats()) + " registered formats");
-
             juce::AudioPluginFormat* format = nullptr;
             for (int i = 0; i < formatManager_.getNumFormats(); ++i) {
                 auto* fmt = formatManager_.getFormat(i);
-                log("[Scanner] Checking format " + std::to_string(i) + ": " +
-                    (fmt ? fmt->getName().toStdString() : "null"));
                 if (fmt && fmt->getName() == formatName) {
                     format = fmt;
                     break;
@@ -133,114 +138,38 @@ class PluginScannerWorker : public juce::ChildProcessWorker {
 
             if (!format) {
                 log("[Scanner] Format not found: " + formatName.toStdString());
-                sendError("", "Format not found: " + formatName);
+                sendError(pluginPath, "Format not found: " + formatName);
                 sendComplete();
                 return;
             }
 
-            log("[Scanner] Using format: " + format->getName().toStdString());
+            // Scan single file
+            juce::OwnedArray<juce::PluginDescription> results;
+            format->findAllTypesForFile(results, pluginPath);
 
-            juce::FileSearchPath searchPath(searchPathStr);
-            log("[Scanner] Search path has " + std::to_string(searchPath.getNumPaths()) +
-                " directories");
+            log("[Scanner] Found " + std::to_string(results.size()) + " plugins in " +
+                pluginPath.toStdString());
 
-            for (int i = 0; i < searchPath.getNumPaths(); ++i) {
-                log("[Scanner]   Path " + std::to_string(i) + ": " +
-                    searchPath[i].getFullPathName().toStdString());
+            // Report results
+            for (auto* desc : results) {
+                sendPluginFound(*desc);
             }
 
-            log("[Scanner] Creating dead mans pedal file...");
-
-            // Use a dead mans pedal file to track current plugin
-            juce::File deadMansPedal =
-                juce::File::getSpecialLocation(juce::File::tempDirectory)
-                    .getChildFile("magda_scanner_current_" + formatName + ".txt");
-
-            log("[Scanner] Dead mans pedal: " + deadMansPedal.getFullPathName().toStdString());
-
-            knownList_.clear();
-            log("[Scanner] Cleared known list, about to create PluginDirectoryScanner...");
-
-            juce::PluginDirectoryScanner scanner(knownList_, *format, searchPath, true,
-                                                 deadMansPedal, false);
-
-            log("[Scanner] PluginDirectoryScanner created successfully!");
-            juce::String nextPlugin;
-            int scanned = 0;
-            int skipped = 0;
-
-            while (scanner.getNextPluginFileThatWillBeScanned().isNotEmpty()) {
-                juce::String fileToScan = scanner.getNextPluginFileThatWillBeScanned();
-
-                // Check blacklist BEFORE scanning
-                if (blacklist.contains(fileToScan)) {
-                    log("[Scanner] Skipping blacklisted: " + fileToScan.toStdString());
-                    scanner.skipNextFile();
-                    skipped++;
-                    continue;
-                }
-
-                // Report current file BEFORE scanning (this gets sent to coordinator before
-                // potential crash)
-                sendCurrentFile(fileToScan);
-                log("[Scanner] Scanning: " + fileToScan.toStdString());
-
-                // Now actually scan the file
-                if (!scanner.scanNextFile(true, nextPlugin)) {
-                    break;  // No more files
-                }
-
-                // Report progress
-                sendProgress(scanner.getProgress());
-                scanned++;
+            if (results.isEmpty()) {
+                sendError(pluginPath, "No plugins found in file");
             }
 
-            log("[Scanner] Scanned " + std::to_string(scanned) + " plugins, skipped " +
-                std::to_string(skipped));
-
-            // Send all found plugins
-            auto types = knownList_.getTypes();
-            log("[Scanner] Found " + std::to_string(types.size()) + " valid plugins");
-
-            for (const auto& desc : types) {
-                sendPluginFound(desc);
-            }
-
-            // Report failed files
-            auto failed = scanner.getFailedFiles();
-            for (const auto& failedFile : failed) {
-                log("[Scanner] Failed: " + failedFile.toStdString());
-                sendError(failedFile, "Failed to scan");
-            }
-
-            log("[Scanner] Sending DONE message");
             sendComplete();
-            log("[Scanner] DONE message sent, returning from scanFormat");
+            log("[Scanner] DONE sent, waiting for QUIT");
         } catch (const std::exception& e) {
-            log(std::string("[Scanner] scanFormat EXCEPTION: ") + e.what());
-            sendError("", juce::String("Exception: ") + e.what());
+            log(std::string("[Scanner] scanOnePlugin EXCEPTION: ") + e.what());
+            sendError(pluginPath, juce::String("Exception: ") + e.what());
             sendComplete();
         } catch (...) {
-            log("[Scanner] scanFormat UNKNOWN EXCEPTION");
-            sendError("", "Unknown exception");
+            log("[Scanner] scanOnePlugin UNKNOWN EXCEPTION");
+            sendError(pluginPath, "Unknown exception");
             sendComplete();
         }
-    }
-
-    void sendProgress(float progress) {
-        juce::MemoryBlock msg;
-        juce::MemoryOutputStream stream(msg, false);
-        stream.writeString(ScannerIPC::MSG_PROGRESS);
-        stream.writeFloat(progress);
-        sendMessageToCoordinator(msg);
-    }
-
-    void sendCurrentFile(const juce::String& file) {
-        juce::MemoryBlock msg;
-        juce::MemoryOutputStream stream(msg, false);
-        stream.writeString(ScannerIPC::MSG_CURRENT_FILE);
-        stream.writeString(file);
-        sendMessageToCoordinator(msg);
     }
 
     void sendPluginFound(const juce::PluginDescription& desc) {
@@ -289,7 +218,7 @@ class PluginScannerApplication : public juce::JUCEApplicationBase {
     }
 
     void initialise(const juce::String& commandLine) override {
-        initLog();  // Initialize log file first
+        initLog();
         log("[Scanner] Starting with args: " + commandLine.toStdString());
 
         worker_ = std::make_unique<PluginScannerWorker>();
@@ -307,6 +236,7 @@ class PluginScannerApplication : public juce::JUCEApplicationBase {
     void shutdown() override {
         log("[Scanner] Shutting down");
         worker_.reset();
+        cleanupLog();
     }
 
     void systemRequestedQuit() override {
