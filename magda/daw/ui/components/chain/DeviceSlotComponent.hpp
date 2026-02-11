@@ -64,6 +64,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::function<void(bool)> onDeviceBypassChanged;
 
   protected:
+    void paint(juce::Graphics& g) override;
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override;
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
@@ -138,6 +139,7 @@ class DeviceSlotComponent : public NodeComponent,
 
   private:
     magda::DeviceInfo device_;
+    bool isDrumGrid_ = false;  // Track if this is a drum grid for custom header painting
 
     // Header controls
     std::unique_ptr<magda::SvgButton> modButton_;

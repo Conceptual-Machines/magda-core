@@ -27,11 +27,10 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     magda::TrackManager::getInstance().addListener(this);
 
     // Custom name and font for drum grid (MPC-style with Microgramma)
-    bool isDrumGrid = device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
-    if (isDrumGrid) {
-        setNodeName("MDG2000 - MAGDA Drum Grid");
-        // Load Microgramma D Extended Bold from FontManager
-        setNodeNameFont(FontManager::getInstance().getMicrogrammaFont(11.0f));
+    isDrumGrid_ = device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
+    if (isDrumGrid_) {
+        // Set empty name - we'll draw custom two-color text in paint()
+        setNodeName("");
     } else {
         setNodeName(device.name);
     }
@@ -507,11 +506,10 @@ int DeviceSlotComponent::getPreferredWidth() const {
 void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     device_ = device;
     // Custom name and font for drum grid (MPC-style with Microgramma)
-    bool isDrumGrid = device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
-    if (isDrumGrid) {
-        setNodeName("MDG2000 - MAGDA Drum Grid");
-        // Load Microgramma D Extended Bold from FontManager
-        setNodeNameFont(FontManager::getInstance().getMicrogrammaFont(11.0f));
+    isDrumGrid_ = device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
+    if (isDrumGrid_) {
+        // Set empty name - we'll draw custom two-color text in paint()
+        setNodeName("");
     } else {
         setNodeName(device.name);
         setNodeNameFont(FontManager::getInstance().getUIFontBold(10.0f));
@@ -635,6 +633,43 @@ void DeviceSlotComponent::updateParamModulation() {
         paramSlots_[i]->setSelectedModIndex(selectedModIndex);
         paramSlots_[i]->setSelectedMacroIndex(selectedMacroIndex);
         paramSlots_[i]->repaint();
+    }
+}
+
+void DeviceSlotComponent::paint(juce::Graphics& g) {
+    // Call base class paint for standard rendering
+    NodeComponent::paint(g);
+
+    // Custom header text for drum grid (two-color text)
+    if (isDrumGrid_ && !collapsed_ && getHeaderHeight() > 0) {
+        auto bounds = getLocalBounds();
+        auto headerArea = bounds.removeFromTop(getHeaderHeight());
+
+        // Calculate text area (skip left padding for bypass button area)
+        int textStartX = headerArea.getX() + BUTTON_SIZE + 4;  // After bypass button
+        int textY = headerArea.getY();
+        int textHeight = headerArea.getHeight();
+
+        // Get the font
+        auto font = FontManager::getInstance().getMicrogrammaFont(11.0f);
+        g.setFont(font);
+
+        // Measure "MDG2000" width using GlyphArrangement
+        juce::GlyphArrangement glyphs;
+        juce::String part1 = "MDG2000";
+        glyphs.addLineOfText(font, part1, 0.0f, 0.0f);
+        int part1Width = static_cast<int>(glyphs.getBoundingBox(0, -1, true).getWidth());
+
+        // Draw "MDG2000" in orange (left-aligned)
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        g.drawText(part1, textStartX, textY, part1Width, textHeight,
+                   juce::Justification::centredLeft, true);
+
+        // Draw " - MAGDA Drum Grid" in white (immediately after)
+        juce::String part2 = " - MAGDA Drum Grid";
+        g.setColour(juce::Colours::white);
+        g.drawText(part2, textStartX + part1Width, textY, headerArea.getWidth() - part1Width,
+                   textHeight, juce::Justification::centredLeft, true);
     }
 }
 
