@@ -646,8 +646,8 @@ int DrumGridUI::getPreferredContentWidth() const {
     if (chainsPanelVisible_)
         width += kGap + kChainsPanelWidth;
     if (showDetailPanel)
-        width += kGap + padChainPanel_.getContentWidth();
-    return width + 12;  // reduced(6) padding on each side
+        width += kGap + padChainPanel_.getContentWidth();  // Already includes padding
+    return width;  // No extra padding - padChainPanel_.getContentWidth() already has it
 }
 
 void DrumGridUI::setChainsPanelVisible(bool visible) {
