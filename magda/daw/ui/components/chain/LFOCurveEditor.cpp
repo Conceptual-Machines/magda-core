@@ -314,6 +314,19 @@ void LFOCurveEditor::timerCallback() {
     if (!modInfo_)
         return;
 
+    bool needsRepaint = false;
+
+    // Track trigger events
+    if (modInfo_->triggerCount != lastSeenTriggerCount_) {
+        lastSeenTriggerCount_ = modInfo_->triggerCount;
+        triggerHoldFrames_ = 4;  // Show for ~130ms at 30fps
+        needsRepaint = true;
+    }
+    if (triggerHoldFrames_ > 0) {
+        triggerHoldFrames_--;
+        needsRepaint = true;
+    }
+
     // Only repaint if phase/value changed (and only the indicator region)
     float newPhase = modInfo_->phase;
     float newValue = modInfo_->value;
@@ -326,7 +339,11 @@ void LFOCurveEditor::timerCallback() {
         lastPhase_ = newPhase;
         lastValue_ = newValue;
         repaint(getIndicatorBounds());
+        needsRepaint = false;  // Already repainted
     }
+
+    if (needsRepaint)
+        repaint();
 }
 
 juce::Rectangle<int> LFOCurveEditor::getIndicatorBounds() const {
@@ -378,6 +395,20 @@ void LFOCurveEditor::paintPhaseIndicator(juce::Graphics& g) {
     g.setColour(juce::Colours::white);
     g.drawEllipse(static_cast<float>(x) - dotRadius, static_cast<float>(y) - dotRadius, dotSize,
                   dotSize, 1.0f);
+
+    // Draw trigger indicator dot in top-right corner
+    constexpr float trigDotRadius = 3.0f;
+    auto trigBounds = juce::Rectangle<float>(
+        static_cast<float>(content.getRight()) - trigDotRadius * 2 - 4.0f,
+        static_cast<float>(content.getY()) + 4.0f, trigDotRadius * 2, trigDotRadius * 2);
+
+    if (triggerHoldFrames_ > 0) {
+        g.setColour(curveColour_);
+        g.fillEllipse(trigBounds);
+    } else {
+        g.setColour(curveColour_.withAlpha(0.3f));
+        g.drawEllipse(trigBounds, 1.0f);
+    }
 }
 
 void LFOCurveEditor::paintGrid(juce::Graphics& g) {

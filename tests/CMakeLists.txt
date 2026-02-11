@@ -27,6 +27,8 @@ set(TEST_SOURCES
     test_looped_waveform_tile.cpp
     test_project_serialization.cpp
     test_session_clip_playback.cpp
+    test_sidechain_triggers.cpp
+    test_curve_snapshot.cpp
 )
 
 # Create test executable

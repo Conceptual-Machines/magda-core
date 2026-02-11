@@ -126,9 +126,6 @@ void NoteComponent::mouseDrag(const juce::MouseEvent& e) {
     auto gridScreenPos = parentGrid_->localPointToGlobal(juce::Point<int>());
     auto parentPos = absoluteMousePos.toInt() - gridScreenPos;
 
-    DBG("DESKTOP: mouse=" << absoluteMousePos.toInt().toString() << " grid="
-                          << gridScreenPos.toString() << " parent=" << parentPos.toString());
-
     int deltaX = parentPos.x - dragStartPos_.x;
     int deltaY = parentPos.y - dragStartPos_.y;
 

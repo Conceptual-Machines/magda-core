@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <atomic>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -238,9 +240,14 @@ class TrackManager {
                                   DeviceId deviceId, bool bypassed);
     void setDeviceInChainBypassedByPath(const ChainNodePath& devicePath, bool bypassed);
 
-    // Sidechain configuration
+    // Sidechain configuration (device-level)
     void setSidechainSource(DeviceId targetDevice, TrackId sourceTrack, SidechainConfig::Type type);
     void clearSidechain(DeviceId targetDevice);
+
+    // Sidechain configuration (rack-level)
+    void setRackSidechainSource(const ChainNodePath& rackPath, TrackId sourceTrack,
+                                SidechainConfig::Type type);
+    void clearRackSidechain(const ChainNodePath& rackPath);
 
     // Device parameter setters (notify listeners for audio sync)
     void setDeviceGainDb(const ChainNodePath& devicePath, float gainDb);
@@ -295,6 +302,9 @@ class TrackManager {
     void setRackModSyncDivision(const ChainNodePath& rackPath, int modIndex, SyncDivision division);
     void setRackModTriggerMode(const ChainNodePath& rackPath, int modIndex, LFOTriggerMode mode);
     void setRackModCurvePreset(const ChainNodePath& rackPath, int modIndex, CurvePreset preset);
+    void notifyRackModCurveChanged(const ChainNodePath& rackPath);
+    void setRackModAudioAttack(const ChainNodePath& rackPath, int modIndex, float ms);
+    void setRackModAudioRelease(const ChainNodePath& rackPath, int modIndex, float ms);
     void addRackMod(const ChainNodePath& rackPath, int slotIndex, ModType type,
                     LFOWaveform waveform = LFOWaveform::Sine);
     void removeRackMod(const ChainNodePath& rackPath, int modIndex);
@@ -319,6 +329,9 @@ class TrackManager {
     void setDeviceModTriggerMode(const ChainNodePath& devicePath, int modIndex,
                                  LFOTriggerMode mode);
     void setDeviceModCurvePreset(const ChainNodePath& devicePath, int modIndex, CurvePreset preset);
+    void notifyDeviceModCurveChanged(const ChainNodePath& devicePath);
+    void setDeviceModAudioAttack(const ChainNodePath& devicePath, int modIndex, float ms);
+    void setDeviceModAudioRelease(const ChainNodePath& devicePath, int modIndex, float ms);
     void addDeviceMod(const ChainNodePath& devicePath, int slotIndex, ModType type,
                       LFOWaveform waveform = LFOWaveform::Sine);
     void removeDeviceMod(const ChainNodePath& devicePath, int modIndex);
@@ -488,6 +501,12 @@ class TrackManager {
     std::atomic<bool> transportJustStarted_{false};
     std::atomic<bool> transportJustLooped_{false};
     std::atomic<bool> transportJustStopped_{false};
+
+    // SidechainTriggerBus counter tracking (read from mod timer, compared to detect new events)
+    // Fixed-size arrays indexed by TrackId to avoid heap allocation on the mod timer path.
+    static constexpr int kMaxBusTracks = 512;
+    std::array<uint64_t, kMaxBusTracks> lastBusNoteOn_{};
+    std::array<uint64_t, kMaxBusTracks> lastBusNoteOff_{};
 
     void notifyTracksChanged();
     void notifyTrackPropertyChanged(int trackId);

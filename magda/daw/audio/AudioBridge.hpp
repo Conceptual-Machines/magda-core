@@ -18,6 +18,7 @@
 #include "ParameterQueue.hpp"
 #include "PluginManager.hpp"
 #include "PluginWindowBridge.hpp"
+#include "SidechainTriggerBus.hpp"
 #include "TrackController.hpp"
 #include "TransportStateManager.hpp"
 #include "WarpMarkerManager.hpp"
@@ -368,8 +369,10 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     void triggerMidiActivity(TrackId trackId) {
         midiActivity_.triggerActivity(trackId);
-        // Programmatically trigger resync on TE LFO modifiers (thread-safe atomic flag)
-        pluginManager_.triggerLFONoteOn(trackId);
+        // Write to sidechain trigger bus so updateAllMods() picks up live MIDI too
+        SidechainTriggerBus::getInstance().triggerNoteOn(trackId);
+        // Trigger all cached sidechain LFOs (self-track + cross-track) via pre-computed cache
+        pluginManager_.triggerSidechainNoteOn(trackId);
     }
 
     /**

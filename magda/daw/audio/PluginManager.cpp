@@ -6,8 +6,10 @@
 #include "../core/RackInfo.hpp"
 #include "../core/TrackManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
+#include "CurveSnapshot.hpp"
 #include "ModifierHelpers.hpp"
 #include "PluginWindowBridge.hpp"
+#include "SidechainMonitorPlugin.hpp"
 #include "TrackController.hpp"
 #include "TransportStateManager.hpp"
 
@@ -297,12 +299,21 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     // Sync sidechain routing for plugins that support it
     syncSidechains(trackId, teTrack);
 
+    // Sidechain monitor: insert on tracks that need audio-thread MIDI detection
+    if (trackNeedsSidechainMonitor(trackId))
+        ensureSidechainMonitor(trackId);
+    else
+        removeSidechainMonitor(trackId);
+
     // Ensure VolumeAndPan is near the end of the chain (before LevelMeter)
     // This is the track's fader control - it should come AFTER audio sources
     ensureVolumePluginPosition(teTrack);
 
     // Ensure LevelMeter is at the end of the plugin chain for metering
     addLevelMeterToTrack(trackId);
+
+    // Rebuild sidechain LFO cache so audio/MIDI threads see current state
+    rebuildSidechainLFOCache();
 }
 
 // =============================================================================
@@ -567,10 +578,15 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
             }
 
             if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
-                applyLFOProperties(lfo, modInfo);
+                // Ensure CurveSnapshotHolder exists for this mod
+                auto& snapHolder = curveSnapshots_[modInfo.id];
+                if (!snapHolder)
+                    snapHolder = std::make_unique<CurveSnapshotHolder>();
+
+                applyLFOProperties(lfo, modInfo, snapHolder.get());
                 // TE LFO in note mode needs triggerNoteOn() to start oscillating
                 if (modInfo.running && modInfo.triggerMode != LFOTriggerMode::Free)
-                    lfo->triggerNoteOn();
+                    triggerLFONoteOnWithReset(lfo);
             }
 
             // Update assignment values (mod depth) for each link
@@ -603,11 +619,11 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
                     if (param) {
                         for (auto* assignment : param->getAssignments()) {
                             if (assignment->isForModifierSource(*modifier)) {
-                                // Gate triggered LFOs: 0 when not running
                                 float effectiveAmount = link.amount;
                                 if (modInfo.triggerMode != LFOTriggerMode::Free && !modInfo.running)
                                     effectiveAmount = 0.0f;
                                 assignment->value = effectiveAmount;
+                                assignment->offset = 0.0f;
                                 break;
                             }
                         }
@@ -725,7 +741,10 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                         break;
 
                     if (auto* lfo = dynamic_cast<te::LFOModifier*>(lfoMod.get())) {
-                        applyLFOProperties(lfo, modInfo);
+                        auto& snapHolder = curveSnapshots_[modInfo.id];
+                        if (!snapHolder)
+                            snapHolder = std::make_unique<CurveSnapshotHolder>();
+                        applyLFOProperties(lfo, modInfo, snapHolder.get());
                     }
                     modifier = lfoMod;
                     break;
@@ -819,8 +838,129 @@ void PluginManager::triggerLFONoteOn(TrackId trackId) {
 }
 
 // =============================================================================
+void PluginManager::triggerSidechainNoteOn(TrackId sourceTrackId) {
+    if (sourceTrackId < 0 || sourceTrackId >= kMaxCacheTracks)
+        return;
+
+    const juce::SpinLock::ScopedTryLockType lock(cacheLock_);
+    if (!lock.isLocked())
+        return;  // Cache is being rebuilt — skip this trigger
+
+    auto& entry = sidechainLFOCache_[static_cast<size_t>(sourceTrackId)];
+    for (int i = 0; i < entry.count; ++i)
+        triggerLFONoteOnWithReset(entry.lfos[static_cast<size_t>(i)]);
+}
+
+void PluginManager::rebuildSidechainLFOCache() {
+    auto& tm = TrackManager::getInstance();
+
+    // Build new cache on the stack, then swap under lock
+    std::array<PerTrackEntry, kMaxCacheTracks> newCache{};
+
+    for (const auto& track : tm.getTracks()) {
+        if (track.id < 0 || track.id >= kMaxCacheTracks)
+            continue;
+
+        auto& entry = newCache[static_cast<size_t>(track.id)];
+        std::vector<te::LFOModifier*> lfos;
+
+        // 1. Self-track LFOs: collect from deviceModifiers_ for this track's devices
+        for (const auto& element : track.chainElements) {
+            if (!isDevice(element))
+                continue;
+            const auto& device = getDevice(element);
+            auto it = deviceModifiers_.find(device.id);
+            if (it == deviceModifiers_.end())
+                continue;
+            for (auto& mod : it->second) {
+                if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get()))
+                    lfos.push_back(lfo);
+            }
+        }
+
+        // Also collect from racks on this track
+        rackSyncManager_.collectLFOModifiers(track.id, lfos);
+
+        // 2. Cross-track LFOs: for each OTHER track that has a device sidechained
+        //    from this track, collect that destination track's LFO modifiers
+        for (const auto& otherTrack : tm.getTracks()) {
+            if (otherTrack.id == track.id)
+                continue;
+            bool isDestination = false;
+            for (const auto& element : otherTrack.chainElements) {
+                if (isDevice(element)) {
+                    const auto& device = getDevice(element);
+                    if ((device.sidechain.type == SidechainConfig::Type::MIDI ||
+                         device.sidechain.type == SidechainConfig::Type::Audio) &&
+                        device.sidechain.sourceTrackId == track.id) {
+                        isDestination = true;
+                        break;
+                    }
+                } else if (isRack(element)) {
+                    const auto& rack = getRack(element);
+                    // Check rack-level sidechain
+                    if ((rack.sidechain.type == SidechainConfig::Type::MIDI ||
+                         rack.sidechain.type == SidechainConfig::Type::Audio) &&
+                        rack.sidechain.sourceTrackId == track.id) {
+                        isDestination = true;
+                        break;
+                    }
+                    for (const auto& chain : rack.chains) {
+                        for (const auto& ce : chain.elements) {
+                            if (isDevice(ce)) {
+                                const auto& device = getDevice(ce);
+                                if ((device.sidechain.type == SidechainConfig::Type::MIDI ||
+                                     device.sidechain.type == SidechainConfig::Type::Audio) &&
+                                    device.sidechain.sourceTrackId == track.id) {
+                                    isDestination = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (isDestination)
+                            break;
+                    }
+                }
+                if (isDestination)
+                    break;
+            }
+            if (!isDestination)
+                continue;
+
+            // Collect all LFO modifiers from the destination track
+            for (const auto& element : otherTrack.chainElements) {
+                if (!isDevice(element))
+                    continue;
+                const auto& device = getDevice(element);
+                auto it = deviceModifiers_.find(device.id);
+                if (it == deviceModifiers_.end())
+                    continue;
+                for (auto& mod : it->second) {
+                    if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get()))
+                        lfos.push_back(lfo);
+                }
+            }
+            rackSyncManager_.collectLFOModifiers(otherTrack.id, lfos);
+        }
+
+        // Write to cache entry (capped at kMaxLFOs)
+        entry.count = std::min(static_cast<int>(lfos.size()), PerTrackEntry::kMaxLFOs);
+        for (int i = 0; i < entry.count; ++i)
+            entry.lfos[static_cast<size_t>(i)] = lfos[static_cast<size_t>(i)];
+        if (entry.count > 0)
+            DBG("rebuildSidechainLFOCache: trackId=" << track.id << " lfoCount=" << entry.count);
+    }
+
+    // Swap under lock
+    {
+        const juce::SpinLock::ScopedLockType lock(cacheLock_);
+        sidechainLFOCache_ = newCache;
+    }
+}
+
+// =============================================================================
 void PluginManager::resyncDeviceModifiers(TrackId trackId) {
-    // Check if any device has new links that don't have TE modifiers yet
+    // Check if any device or rack has new links that don't have TE modifiers yet
     bool needsFullSync = false;
     auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
     if (trackInfo) {
@@ -843,6 +983,10 @@ void PluginManager::resyncDeviceModifiers(TrackId trackId) {
         }
     }
 
+    // Also check rack mods for structural changes (new/removed links)
+    if (!needsFullSync)
+        needsFullSync = rackSyncManager_.needsModifierResync(trackId);
+
     if (needsFullSync) {
         // New links added or removed — need full modifier rebuild
         auto* teTrack = trackController_.getAudioTrack(trackId);
@@ -854,6 +998,8 @@ void PluginManager::resyncDeviceModifiers(TrackId trackId) {
         updateDeviceModifierProperties(trackId);
         rackSyncManager_.updateAllModifierProperties(trackId);
     }
+
+    rebuildSidechainLFOCache();
 }
 
 // =============================================================================
@@ -1010,6 +1156,143 @@ void PluginManager::syncSidechains(TrackId trackId, te::AudioTrack* teTrack) {
     }
 }
 
+// =============================================================================
+// Sidechain Monitor Lifecycle
+// =============================================================================
+
+bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) const {
+    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (!trackInfo)
+        return false;
+
+    // Check if this track has any MIDI-triggered mods (self-trigger).
+    // Audio-triggered mods don't need the monitor — audio peaks come from
+    // LevelMeterPlugin via AudioBridge timer, not from this plugin.
+    for (const auto& element : trackInfo->chainElements) {
+        if (isDevice(element)) {
+            for (const auto& mod : getDevice(element).mods) {
+                if (mod.triggerMode == LFOTriggerMode::MIDI)
+                    return true;
+            }
+        } else if (isRack(element)) {
+            const auto& rack = getRack(element);
+            for (const auto& mod : rack.mods) {
+                if (mod.triggerMode == LFOTriggerMode::MIDI)
+                    return true;
+            }
+        }
+    }
+
+    // Check if this track is a MIDI sidechain source for any other track
+    for (const auto& track : TrackManager::getInstance().getTracks()) {
+        for (const auto& element : track.chainElements) {
+            if (isDevice(element)) {
+                const auto& device = getDevice(element);
+                if (device.sidechain.type == SidechainConfig::Type::MIDI &&
+                    device.sidechain.sourceTrackId == trackId) {
+                    return true;
+                }
+            } else if (isRack(element)) {
+                const auto& rack = getRack(element);
+                // Check rack-level sidechain
+                if (rack.sidechain.type == SidechainConfig::Type::MIDI &&
+                    rack.sidechain.sourceTrackId == trackId) {
+                    return true;
+                }
+                for (const auto& chain : rack.chains) {
+                    for (const auto& ce : chain.elements) {
+                        if (isDevice(ce)) {
+                            const auto& device = getDevice(ce);
+                            if (device.sidechain.type == SidechainConfig::Type::MIDI &&
+                                device.sidechain.sourceTrackId == trackId) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+void PluginManager::checkSidechainMonitor(TrackId trackId) {
+    bool needed = trackNeedsSidechainMonitor(trackId);
+    DBG("checkSidechainMonitor: trackId=" << trackId << " needed=" << static_cast<int>(needed));
+    if (needed)
+        ensureSidechainMonitor(trackId);
+    else
+        removeSidechainMonitor(trackId);
+
+    rebuildSidechainLFOCache();
+}
+
+void PluginManager::ensureSidechainMonitor(TrackId sourceTrackId) {
+    // Already have a monitor for this track?
+    if (sidechainMonitors_.count(sourceTrackId) > 0) {
+        DBG("PluginManager::ensureSidechainMonitor - track " << sourceTrackId
+                                                             << " already has monitor");
+        return;
+    }
+
+    auto* teTrack = trackController_.getAudioTrack(sourceTrackId);
+    if (!teTrack) {
+        DBG("PluginManager::ensureSidechainMonitor - track " << sourceTrackId
+                                                             << " has no TE AudioTrack");
+        return;
+    }
+
+    // Check if a SidechainMonitorPlugin already exists on the track
+    for (int i = 0; i < teTrack->pluginList.size(); ++i) {
+        if (dynamic_cast<SidechainMonitorPlugin*>(teTrack->pluginList[i])) {
+            DBG("PluginManager::ensureSidechainMonitor - track "
+                << sourceTrackId << " found existing monitor plugin on TE track");
+            sidechainMonitors_[sourceTrackId] = teTrack->pluginList[i];
+            auto* mon = dynamic_cast<SidechainMonitorPlugin*>(teTrack->pluginList[i]);
+            mon->setSourceTrackId(sourceTrackId);
+            mon->setPluginManager(this);
+            return;
+        }
+    }
+
+    // Create a new monitor plugin via TE's plugin cache (uses createCustomPlugin)
+    juce::ValueTree pluginState(te::IDs::PLUGIN);
+    pluginState.setProperty(te::IDs::type, SidechainMonitorPlugin::xmlTypeName, nullptr);
+    pluginState.setProperty(juce::Identifier("sourceTrackId"), sourceTrackId, nullptr);
+
+    DBG("PluginManager::ensureSidechainMonitor - creating new monitor for track " << sourceTrackId);
+    auto plugin = edit_.getPluginCache().createNewPlugin(pluginState);
+    if (plugin) {
+        if (auto* mon = dynamic_cast<SidechainMonitorPlugin*>(plugin.get())) {
+            mon->setSourceTrackId(sourceTrackId);
+            mon->setPluginManager(this);
+        }
+        // Insert at position 0 so it sees MIDI before the instrument consumes it.
+        // Audio peak detection is handled separately via LevelMeterPlugin.
+        teTrack->pluginList.insertPlugin(plugin, 0, nullptr);
+        sidechainMonitors_[sourceTrackId] = plugin;
+        DBG("PluginManager::ensureSidechainMonitor - inserted monitor at position 0 on track "
+            << sourceTrackId);
+    } else {
+        DBG("PluginManager::ensureSidechainMonitor - FAILED to create monitor plugin for track "
+            << sourceTrackId);
+    }
+}
+
+void PluginManager::removeSidechainMonitor(TrackId sourceTrackId) {
+    auto it = sidechainMonitors_.find(sourceTrackId);
+    if (it == sidechainMonitors_.end())
+        return;
+
+    DBG("PluginManager::removeSidechainMonitor - removing monitor from track " << sourceTrackId);
+    auto plugin = it->second;
+    sidechainMonitors_.erase(it);
+
+    if (plugin)
+        plugin->deleteFromParent();
+}
+
 // Utilities
 // =============================================================================
 
@@ -1019,9 +1302,11 @@ void PluginManager::clearAllMappings() {
     rackSyncManager_.clear();
     deviceModifiers_.clear();
     deviceMacroParams_.clear();
+    curveSnapshots_.clear();
     deviceToPlugin_.clear();
     pluginToDevice_.clear();
     deviceProcessors_.clear();
+    sidechainMonitors_.clear();
 }
 
 void PluginManager::updateTransportSyncedProcessors(bool isPlaying) {
@@ -1128,6 +1413,32 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
     }
 
     return plugin;
+}
+
+// =============================================================================
+// Rack Plugin Processor Registration
+// =============================================================================
+
+void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::Ptr plugin) {
+    if (!plugin)
+        return;
+
+    // Only create processors for external plugins (they need parameter enumeration)
+    if (dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+        auto processor = std::make_unique<ExternalPluginProcessor>(deviceId, plugin);
+        processor->startParameterListening();
+
+        // Populate parameters back to TrackManager
+        DeviceInfo tempInfo;
+        processor->populateParameters(tempInfo);
+        TrackManager::getInstance().updateDeviceParameters(deviceId, tempInfo.parameters);
+
+        juce::ScopedLock lock(pluginLock_);
+        deviceProcessors_[deviceId] = std::move(processor);
+
+        DBG("PluginManager::registerRackPluginProcessor: Registered processor for device "
+            << deviceId << " with " << tempInfo.parameters.size() << " parameters");
+    }
 }
 
 // =============================================================================

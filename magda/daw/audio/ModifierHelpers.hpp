@@ -5,6 +5,7 @@
 #include <unordered_map>
 
 #include "../core/ModInfo.hpp"
+#include "CurveSnapshot.hpp"
 
 namespace magda {
 
@@ -66,8 +67,8 @@ inline float mapSyncType(const ModInfo& modInfo) {
     return 0.0f;
 }
 
-inline void applyLFOProperties(te::LFOModifier* lfo, const ModInfo& modInfo) {
-    float wave = mapWaveform(modInfo.waveform);
+inline void applyLFOProperties(te::LFOModifier* lfo, const ModInfo& modInfo,
+                               CurveSnapshotHolder* holder = nullptr) {
     float syncType = mapSyncType(modInfo);
 
     // rateType determines Hz vs musical divisions in TE's LFO timer.
@@ -77,24 +78,39 @@ inline void applyLFOProperties(te::LFOModifier* lfo, const ModInfo& modInfo) {
     float rateType = modInfo.tempoSync ? mapSyncDivision(modInfo.syncDivision)
                                        : static_cast<float>(te::ModifierCommon::hertz);
 
-    DBG("applyLFOProperties: wave="
-        << wave << " rate=" << modInfo.rate << " syncType=" << syncType << " rateType=" << rateType
-        << " tempoSync=" << (int)modInfo.tempoSync << " triggerMode=" << (int)modInfo.triggerMode
-        << " depth=1.0 phase=" << modInfo.phaseOffset);
+    if (modInfo.waveform == LFOWaveform::Custom && holder) {
+        // Custom waveform: update double-buffered curve data, wire callback
+        holder->update(modInfo);
+        lfo->waveParam->setParameter(static_cast<float>(te::LFOModifier::waveCustomCallback),
+                                     juce::dontSendNotification);
+        lfo->customWaveFunction.store(&CurveSnapshotHolder::evaluateCallback,
+                                      std::memory_order_release);
+        lfo->customWaveUserData.store(holder, std::memory_order_release);
+        lfo->depthParam->setParameter(1.0f, juce::dontSendNotification);
+    } else {
+        lfo->waveParam->setParameter(mapWaveform(modInfo.waveform), juce::dontSendNotification);
+        lfo->customWaveFunction.store(nullptr, std::memory_order_release);
+        lfo->depthParam->setParameter(1.0f, juce::dontSendNotification);
+    }
 
-    lfo->waveParam->setParameter(wave, juce::dontSendNotification);
     lfo->rateParam->setParameter(modInfo.rate, juce::dontSendNotification);
-    lfo->depthParam->setParameter(1.0f, juce::dontSendNotification);
     lfo->phaseParam->setParameter(modInfo.phaseOffset, juce::dontSendNotification);
     lfo->syncTypeParam->setParameter(syncType, juce::dontSendNotification);
     lfo->rateTypeParam->setParameter(rateType, juce::dontSendNotification);
+}
 
-    DBG("  readback: wave=" << lfo->waveParam->getCurrentValue()
-                            << " rate=" << lfo->rateParam->getCurrentValue()
-                            << " syncType=" << lfo->syncTypeParam->getCurrentValue()
-                            << " rateType=" << lfo->rateTypeParam->getCurrentValue()
-                            << " depth=" << lfo->depthParam->getCurrentValue()
-                            << " phase=" << lfo->phaseParam->getCurrentValue());
+/**
+ * @brief Trigger note-on on an LFO, also resetting one-shot state if applicable.
+ *
+ * Use this instead of calling lfo->triggerNoteOn() directly so that one-shot
+ * custom waveforms restart from the beginning.
+ */
+inline void triggerLFONoteOnWithReset(te::LFOModifier* lfo) {
+    auto* holder =
+        static_cast<CurveSnapshotHolder*>(lfo->customWaveUserData.load(std::memory_order_acquire));
+    if (holder)
+        holder->resetOneShot();
+    lfo->triggerNoteOn();
 }
 
 }  // namespace magda

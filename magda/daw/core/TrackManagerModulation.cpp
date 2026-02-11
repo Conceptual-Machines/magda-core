@@ -1,3 +1,6 @@
+#include <cmath>
+
+#include "../audio/SidechainTriggerBus.hpp"
 #include "ModulatorEngine.hpp"
 #include "RackInfo.hpp"
 #include "TrackManager.hpp"
@@ -230,6 +233,27 @@ void TrackManager::setRackModCurvePreset(const ChainNodePath& rackPath, int modI
             return;
         }
         rack->mods[modIndex].curvePreset = preset;
+        notifyDeviceModifiersChanged(rackPath.trackId);
+    }
+}
+
+void TrackManager::notifyRackModCurveChanged(const ChainNodePath& rackPath) {
+    notifyDeviceModifiersChanged(rackPath.trackId);
+}
+
+void TrackManager::setRackModAudioAttack(const ChainNodePath& rackPath, int modIndex, float ms) {
+    if (auto* rack = getRackByPath(rackPath)) {
+        if (modIndex >= 0 && modIndex < static_cast<int>(rack->mods.size())) {
+            rack->mods[modIndex].audioAttackMs = juce::jlimit(0.1f, 500.0f, ms);
+        }
+    }
+}
+
+void TrackManager::setRackModAudioRelease(const ChainNodePath& rackPath, int modIndex, float ms) {
+    if (auto* rack = getRackByPath(rackPath)) {
+        if (modIndex >= 0 && modIndex < static_cast<int>(rack->mods.size())) {
+            rack->mods[modIndex].audioReleaseMs = juce::jlimit(1.0f, 2000.0f, ms);
+        }
     }
 }
 
@@ -433,6 +457,25 @@ void TrackManager::setDeviceModCurvePreset(const ChainNodePath& devicePath, int 
                                            CurvePreset preset) {
     if (auto* mod = getDeviceMod(devicePath, modIndex)) {
         mod->curvePreset = preset;
+        notifyDeviceModifiersChanged(devicePath.trackId);
+    }
+}
+
+void TrackManager::notifyDeviceModCurveChanged(const ChainNodePath& devicePath) {
+    notifyDeviceModifiersChanged(devicePath.trackId);
+}
+
+void TrackManager::setDeviceModAudioAttack(const ChainNodePath& devicePath, int modIndex,
+                                           float ms) {
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->audioAttackMs = juce::jlimit(0.1f, 500.0f, ms);
+    }
+}
+
+void TrackManager::setDeviceModAudioRelease(const ChainNodePath& devicePath, int modIndex,
+                                            float ms) {
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        mod->audioReleaseMs = juce::jlimit(1.0f, 2000.0f, ms);
     }
 }
 
@@ -575,11 +618,31 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
         midiTriggeredTracks.swap(pendingMidiTriggers_);
         midiNoteOffTracks.swap(pendingMidiNoteOffs_);
     }
+
+    // Read audio-thread sidechain triggers from the lock-free bus
+    auto& bus = SidechainTriggerBus::getInstance();
+    std::array<float, kMaxBusTracks> audioPeakLevels{};
+    for (const auto& track : tracks_) {
+        if (track.id < 0 || track.id >= kMaxBusTracks)
+            continue;
+        uint64_t currentNoteOn = bus.getNoteOnCounter(track.id);
+        uint64_t currentNoteOff = bus.getNoteOffCounter(track.id);
+        if (currentNoteOn != lastBusNoteOn_[track.id]) {
+            midiTriggeredTracks.insert(track.id);
+            lastBusNoteOn_[track.id] = currentNoteOn;
+        }
+        if (currentNoteOff != lastBusNoteOff_[track.id]) {
+            midiNoteOffTracks.insert(track.id);
+            lastBusNoteOff_[track.id] = currentNoteOff;
+        }
+        audioPeakLevels[track.id] = bus.getAudioPeakLevel(track.id);
+    }
+
     // Lambda to update a single mod's phase and value.
     // Returns true if 'running' state changed (needs TE assignment sync).
     auto updateMod = [deltaTime, bpm, transportJustStarted, transportJustLooped,
-                      transportJustStopped](ModInfo& mod, bool midiTriggered,
-                                            bool midiNoteOff) -> bool {
+                      transportJustStopped](ModInfo& mod, bool midiTriggered, bool midiNoteOff,
+                                            float audioPeakLevel) -> bool {
         bool wasRunning = mod.running;
         // Skip disabled mods - set value to 0 so they don't affect modulation
         if (!mod.enabled) {
@@ -602,12 +665,41 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                     if (midiTriggered)
                         shouldTrigger = true;
                     break;
-                case LFOTriggerMode::Audio:
+                case LFOTriggerMode::Audio: {
+                    // Envelope follower: smooth peak level with attack/release
+                    float attackCoeff = 1.0f;
+                    float releaseCoeff = 1.0f;
+                    if (mod.audioAttackMs > 0.0f)
+                        attackCoeff = 1.0f - std::exp(-static_cast<float>(deltaTime) /
+                                                      (mod.audioAttackMs * 0.001f));
+                    if (mod.audioReleaseMs > 0.0f)
+                        releaseCoeff = 1.0f - std::exp(-static_cast<float>(deltaTime) /
+                                                       (mod.audioReleaseMs * 0.001f));
+
+                    if (audioPeakLevel > mod.audioEnvLevel)
+                        mod.audioEnvLevel += attackCoeff * (audioPeakLevel - mod.audioEnvLevel);
+                    else
+                        mod.audioEnvLevel += releaseCoeff * (audioPeakLevel - mod.audioEnvLevel);
+
+                    // Transient detection: trigger when raw peak crosses above threshold,
+                    // re-arm when it drops back below the same threshold.
+                    constexpr float threshold = 0.1f;  // ~-20dB
+                    if (!mod.audioGateOpen && audioPeakLevel > threshold) {
+                        mod.audioGateOpen = true;
+                        shouldTrigger = true;
+                    } else if (mod.audioGateOpen && audioPeakLevel < threshold) {
+                        mod.audioGateOpen = false;
+                    }
                     break;
+                }
             }
 
             // Handle note-off: stop MIDI-triggered LFOs
             if (mod.triggerMode == LFOTriggerMode::MIDI && midiNoteOff && mod.running)
+                mod.running = false;
+
+            // Handle audio gate close: stop Audio-triggered LFOs
+            if (mod.triggerMode == LFOTriggerMode::Audio && !mod.audioGateOpen && mod.running)
                 mod.running = false;
 
             // Handle transport stop: stop Transport-triggered LFOs and reset phase
@@ -636,13 +728,25 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                     effectiveRate = ModulatorEngine::calculateSyncRateHz(mod.syncDivision, bpm);
                 }
 
-                // Update phase (wraps at 1.0)
+                // Update phase
                 mod.phase += static_cast<float>(effectiveRate * deltaTime);
-                while (mod.phase >= 1.0f) {
-                    mod.phase -= 1.0f;
+                if (mod.oneShot) {
+                    // One-shot: clamp at end of cycle, hold final value
+                    if (mod.phase >= 1.0f) {
+                        mod.phase = 1.0f;
+                        mod.running = false;
+                    }
+                } else {
+                    // Loop: wrap at 1.0
+                    while (mod.phase >= 1.0f)
+                        mod.phase -= 1.0f;
                 }
                 // Apply phase offset when generating waveform
-                float effectivePhase = std::fmod(mod.phase + mod.phaseOffset, 1.0f);
+                // Use 0.999999f for one-shot end so curve evaluation stays in the
+                // last segment rather than wrapping to the first point.
+                float effectivePhase = mod.oneShot && mod.phase >= 1.0f
+                                           ? 0.999999f
+                                           : std::fmod(mod.phase + mod.phaseOffset, 1.0f);
                 mod.value = ModulatorEngine::generateWaveformForMod(mod, effectivePhase);
             } else {
                 mod.value = 0.0f;  // No output when not running
@@ -653,22 +757,80 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
 
     // Recursive lambda to update mods in chain elements
     // Returns true if any mod's running state changed
-    std::function<bool(ChainElement&, bool, bool)> updateElementMods =
-        [&](ChainElement& element, bool midiTriggered, bool midiNoteOff) -> bool {
+    std::function<bool(ChainElement&, bool, bool, float)> updateElementMods =
+        [&](ChainElement& element, bool midiTriggered, bool midiNoteOff, float audioPeak) -> bool {
         bool changed = false;
         if (isDevice(element)) {
             DeviceInfo& device = magda::getDevice(element);
+            bool deviceMidiTriggered = midiTriggered;
+            bool deviceMidiNoteOff = midiNoteOff;
+            float deviceAudioPeak = audioPeak;
+
+            // Cross-track sidechain: use source track's MIDI and audio
+            if (device.sidechain.sourceTrackId != INVALID_TRACK_ID) {
+                auto srcId = device.sidechain.sourceTrackId;
+                // MIDI triggers from source track
+                if (midiTriggeredTracks.count(srcId) > 0)
+                    deviceMidiTriggered = true;
+                if (midiNoteOffTracks.count(srcId) > 0)
+                    deviceMidiNoteOff = true;
+
+                // Audio peak from source track (for Audio-triggered mods)
+                if (srcId >= 0 && srcId < kMaxBusTracks)
+                    deviceAudioPeak = audioPeakLevels[srcId];
+            }
+
             for (auto& mod : device.mods) {
-                changed |= updateMod(mod, midiTriggered, midiNoteOff);
+                changed |= updateMod(mod, deviceMidiTriggered, deviceMidiNoteOff, deviceAudioPeak);
             }
         } else if (isRack(element)) {
             RackInfo& rack = magda::getRack(element);
+            bool rackMidiTriggered = midiTriggered;
+            bool rackMidiNoteOff = midiNoteOff;
+            float rackAudioPeak = audioPeak;
+
+            // Check rack-level sidechain source
+            if (rack.sidechain.sourceTrackId != INVALID_TRACK_ID) {
+                auto srcId = rack.sidechain.sourceTrackId;
+                if (midiTriggeredTracks.count(srcId) > 0)
+                    rackMidiTriggered = true;
+                if (midiNoteOffTracks.count(srcId) > 0)
+                    rackMidiNoteOff = true;
+                if (srcId >= 0 && srcId < kMaxBusTracks)
+                    rackAudioPeak = audioPeakLevels[srcId];
+            }
+
+            // Check devices inside the rack for sidechain sources
+            for (const auto& chain : rack.chains) {
+                for (const auto& chainElement : chain.elements) {
+                    if (isDevice(chainElement)) {
+                        const auto& dev = magda::getDevice(chainElement);
+                        if (dev.sidechain.sourceTrackId != INVALID_TRACK_ID) {
+                            auto srcId = dev.sidechain.sourceTrackId;
+                            if (midiTriggeredTracks.count(srcId) > 0)
+                                rackMidiTriggered = true;
+                            if (midiNoteOffTracks.count(srcId) > 0)
+                                rackMidiNoteOff = true;
+                            if (srcId >= 0 && srcId < kMaxBusTracks)
+                                rackAudioPeak = audioPeakLevels[srcId];
+                            break;
+                        }
+                    }
+                }
+            }
+
             for (auto& mod : rack.mods) {
-                changed |= updateMod(mod, midiTriggered, midiNoteOff);
+                bool wasRunningBefore = mod.running;
+                changed |= updateMod(mod, rackMidiTriggered, rackMidiNoteOff, rackAudioPeak);
+                if (mod.running && !wasRunningBefore)
+                    DBG("updateAllMods: rack mod "
+                        << mod.id << " triggered! rackId=" << rack.id
+                        << " rackMidiTriggered=" << (int)rackMidiTriggered);
             }
             for (auto& chain : rack.chains) {
                 for (auto& chainElement : chain.elements) {
-                    changed |= updateElementMods(chainElement, midiTriggered, midiNoteOff);
+                    changed |= updateElementMods(chainElement, rackMidiTriggered, rackMidiNoteOff,
+                                                 rackAudioPeak);
                 }
             }
         }
@@ -678,11 +840,15 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
     // Update mods in all tracks, collect those needing TE assignment sync
     std::vector<TrackId> tracksNeedingSync;
     for (auto& track : tracks_) {
+        if (track.id < 0 || track.id >= kMaxBusTracks)
+            continue;
         bool trackMidiTriggered = midiTriggeredTracks.count(track.id) > 0;
         bool trackMidiNoteOff = midiNoteOffTracks.count(track.id) > 0;
+        float trackAudioPeak = audioPeakLevels[track.id];
         bool trackChanged = false;
         for (auto& element : track.chainElements) {
-            trackChanged |= updateElementMods(element, trackMidiTriggered, trackMidiNoteOff);
+            trackChanged |=
+                updateElementMods(element, trackMidiTriggered, trackMidiNoteOff, trackAudioPeak);
         }
         if (trackChanged)
             tracksNeedingSync.push_back(track.id);

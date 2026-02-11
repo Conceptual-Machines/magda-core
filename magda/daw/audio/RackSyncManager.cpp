@@ -2,6 +2,7 @@
 
 #include <iostream>
 
+#include "CurveSnapshot.hpp"
 #include "ModifierHelpers.hpp"
 #include "PluginManager.hpp"
 #include "core/TrackManager.hpp"
@@ -271,9 +272,12 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
                         auto& modifier = modIt->second;
 
                         if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
-                            applyLFOProperties(lfo, modInfo);
+                            auto& snapHolder = synced.curveSnapshots[modInfo.id];
+                            if (!snapHolder)
+                                snapHolder = std::make_unique<CurveSnapshotHolder>();
+                            applyLFOProperties(lfo, modInfo, snapHolder.get());
                             if (modInfo.running && modInfo.triggerMode != LFOTriggerMode::Free)
-                                lfo->triggerNoteOn();
+                                triggerLFONoteOnWithReset(lfo);
                         }
 
                         // Update assignment values (mod depth) for each link
@@ -297,6 +301,7 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
                                                 !modInfo.running)
                                                 effectiveAmount = 0.0f;
                                             assignment->value = effectiveAmount;
+                                            assignment->offset = 0.0f;
                                             break;
                                         }
                                     }
@@ -326,6 +331,9 @@ void RackSyncManager::loadChainPlugins(SyncedRack& synced, TrackId trackId,
                     // Add plugin to the RackType
                     if (synced.rackType->addPlugin(plugin, {0.5f, 0.5f}, false)) {
                         synced.innerPlugins[device.id] = plugin;
+
+                        // Register processor for parameter enumeration
+                        pluginManager_.registerRackPluginProcessor(device.id, plugin);
 
                         // Apply bypass state
                         plugin->setEnabled(!device.bypassed);
@@ -613,9 +621,15 @@ void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo
                     break;
 
                 if (auto* lfo = dynamic_cast<te::LFOModifier*>(lfoMod.get())) {
-                    applyLFOProperties(lfo, modInfo);
+                    auto& snapHolder = synced.curveSnapshots[modInfo.id];
+                    if (!snapHolder)
+                        snapHolder = std::make_unique<CurveSnapshotHolder>();
+                    applyLFOProperties(lfo, modInfo, snapHolder.get());
                 }
                 modifier = lfoMod;
+                DBG("RackSyncManager::syncModifiers - created LFO for rackId="
+                    << synced.rackId << " modId=" << modInfo.id << " triggerMode="
+                    << (int)modInfo.triggerMode << " links=" << (int)modInfo.links.size());
                 break;
             }
 
@@ -747,6 +761,56 @@ void RackSyncManager::syncMacros(SyncedRack& synced, const RackInfo& rackInfo) {
     }
 }
 
+bool RackSyncManager::needsModifierResync(TrackId trackId) const {
+    auto& tm = TrackManager::getInstance();
+    auto* trackInfo = tm.getTrack(trackId);
+    if (!trackInfo)
+        return false;
+
+    for (const auto& element : trackInfo->chainElements) {
+        if (!isRack(element))
+            continue;
+
+        const auto& rack = getRack(element);
+        auto it = syncedRacks_.find(rack.id);
+        if (it == syncedRacks_.end())
+            continue;
+
+        const auto& synced = it->second;
+
+        // Count active rack mods (enabled + has links)
+        int activeModCount = 0;
+        for (const auto& mod : rack.mods) {
+            if (mod.enabled && !mod.links.empty())
+                activeModCount++;
+        }
+
+        int existingCount = static_cast<int>(synced.innerModifiers.size());
+        if (activeModCount != existingCount)
+            return true;
+    }
+
+    return false;
+}
+
+void RackSyncManager::collectLFOModifiers(TrackId trackId,
+                                          std::vector<te::LFOModifier*>& out) const {
+    for (const auto& [rackId, synced] : syncedRacks_) {
+        if (synced.trackId != trackId)
+            continue;
+        int collected = 0;
+        for (const auto& [modId, modifier] : synced.innerModifiers) {
+            if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
+                out.push_back(lfo);
+                ++collected;
+            }
+        }
+        if (collected > 0)
+            DBG("RackSyncManager::collectLFOModifiers - rackId=" << rackId << " trackId=" << trackId
+                                                                 << " collected=" << collected);
+    }
+}
+
 void RackSyncManager::triggerLFONoteOn(TrackId trackId) {
     for (auto& [rackId, synced] : syncedRacks_) {
         if (synced.trackId != trackId)
@@ -754,7 +818,7 @@ void RackSyncManager::triggerLFONoteOn(TrackId trackId) {
 
         for (auto& [modId, modifier] : synced.innerModifiers) {
             if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
-                lfo->triggerNoteOn();
+                triggerLFONoteOnWithReset(lfo);
             }
         }
     }

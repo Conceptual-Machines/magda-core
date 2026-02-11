@@ -4,10 +4,14 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <map>
+#include <memory>
+#include <unordered_map>
+#include <vector>
 
 #include "../core/DeviceInfo.hpp"
 #include "../core/RackInfo.hpp"
 #include "../core/TypeIds.hpp"
+#include "CurveSnapshot.hpp"
 
 namespace magda {
 
@@ -108,6 +112,22 @@ class RackSyncManager {
      */
     void triggerLFONoteOn(TrackId trackId);
 
+    /**
+     * @brief Collect all te::LFOModifier* from racks on a given track
+     * Used by PluginManager::rebuildSidechainLFOCache() to populate the cache.
+     */
+    void collectLFOModifiers(TrackId trackId, std::vector<te::LFOModifier*>& out) const;
+
+    /**
+     * @brief Check if any rack on a track needs a full modifier resync
+     *
+     * Compares the number of active rack mods (enabled + has links) against
+     * the number of existing TE modifiers in innerModifiers. Returns true
+     * if there's a mismatch, meaning new modifiers need to be created or
+     * old ones removed.
+     */
+    bool needsModifierResync(TrackId trackId) const;
+
   private:
     /**
      * @brief Internal state for a synced rack
@@ -123,6 +143,9 @@ class RackSyncManager {
         // Phase 2: modulation
         std::map<ModId, te::Modifier::Ptr> innerModifiers;
         std::map<int, te::MacroParameter*> innerMacroParams;  // index → TE MacroParameter
+
+        // Double-buffered curve snapshots for custom LFO waveforms (keyed by ModId)
+        std::unordered_map<int, std::unique_ptr<CurveSnapshotHolder>> curveSnapshots;
     };
 
     /**

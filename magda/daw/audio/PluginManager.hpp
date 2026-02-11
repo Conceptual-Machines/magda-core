@@ -3,12 +3,15 @@
 #include <juce_core/juce_core.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <array>
 #include <functional>
 #include <map>
 #include <memory>
+#include <unordered_map>
 
 #include "../core/DeviceInfo.hpp"
 #include "../core/TypeIds.hpp"
+#include "CurveSnapshot.hpp"
 #include "DeviceProcessor.hpp"
 #include "InstrumentRackManager.hpp"
 #include "RackSyncManager.hpp"
@@ -161,6 +164,18 @@ class PluginManager {
     te::Plugin::Ptr createPluginOnly(TrackId trackId, const DeviceInfo& device);
 
     /**
+     * @brief Register a DeviceProcessor for a plugin inside a rack
+     *
+     * Creates an ExternalPluginProcessor (for external plugins), calls
+     * populateParameters(), and stores it in deviceProcessors_ so parameter
+     * enumeration works the same as for standalone plugins.
+     *
+     * @param deviceId The MAGDA device ID inside the rack
+     * @param plugin The TE plugin created for this device
+     */
+    void registerRackPluginProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    /**
      * @brief Get the RackSyncManager for rack audio routing
      */
     RackSyncManager& getRackSyncManager() {
@@ -206,6 +221,24 @@ class PluginManager {
     void triggerLFONoteOn(TrackId trackId);
 
     /**
+     * @brief Trigger note-on on all cached sidechain LFO modifiers for a source track
+     *
+     * Thread-safe: can be called from audio or MIDI thread.
+     * Uses a pre-computed cache of LFO modifier pointers, so no TrackManager
+     * scan is needed. Handles both self-track and cross-track LFO triggering.
+     */
+    void triggerSidechainNoteOn(TrackId sourceTrackId);
+
+    /**
+     * @brief Rebuild the sidechain LFO cache for all tracks
+     *
+     * Must be called on the message thread after sidechain config, modifier,
+     * or track structure changes. Collects te::LFOModifier* pointers from
+     * deviceModifiers_ and RackSyncManager into a flat per-track array.
+     */
+    void rebuildSidechainLFOCache();
+
+    /**
      * @brief Route a macro value change to the appropriate TE infrastructure
      * @param trackId The track containing the macro
      * @param isRack true = rack macro (id is RackId), false = device macro (id is DeviceId)
@@ -229,6 +262,27 @@ class PluginManager {
      * Called from syncTrackPlugins after devices are created.
      */
     void syncSidechains(TrackId trackId, te::AudioTrack* teTrack);
+
+    /**
+     * @brief Check if a track needs a SidechainMonitorPlugin and insert/remove accordingly.
+     * Call when trigger mode or sidechain source changes.
+     * @param trackId The track to check
+     */
+    void checkSidechainMonitor(TrackId trackId);
+
+    /**
+     * @brief Ensure a SidechainMonitorPlugin exists on a source track
+     * Inserts the monitor at position 0 if not already present.
+     * @param sourceTrackId The track that is a MIDI sidechain source
+     */
+    void ensureSidechainMonitor(TrackId sourceTrackId);
+
+    /**
+     * @brief Remove the SidechainMonitorPlugin from a source track
+     * Called when no devices reference this track as a MIDI sidechain source.
+     * @param sourceTrackId The track to remove the monitor from
+     */
+    void removeSidechainMonitor(TrackId sourceTrackId);
 
     /**
      * @brief Set a device macro parameter value on the TE MacroParameter
@@ -264,6 +318,10 @@ class PluginManager {
     // without destroying/recreating modifiers. Used for non-structural changes.
     void updateDeviceModifierProperties(TrackId trackId);
 
+    // Check whether a track needs a SidechainMonitorPlugin.
+    // Only MIDI-triggered mods need the monitor (audio peaks come from LevelMeterPlugin).
+    bool trackNeedsSidechainMonitor(TrackId trackId) const;
+
     // Plugin/device mappings and processors
     std::map<DeviceId, te::Plugin::Ptr> deviceToPlugin_;
     std::map<te::Plugin*, DeviceId> pluginToDevice_;
@@ -272,8 +330,25 @@ class PluginManager {
     // Device-level TE modifiers (created by syncDeviceModifiers)
     std::map<DeviceId, std::vector<te::Modifier::Ptr>> deviceModifiers_;
 
+    // Double-buffered curve snapshots for custom LFO waveforms (keyed by ModId)
+    std::unordered_map<int, std::unique_ptr<CurveSnapshotHolder>> curveSnapshots_;
+
     // Device-level TE macro parameters (created by syncDeviceMacros)
     std::map<DeviceId, std::map<int, te::MacroParameter*>> deviceMacroParams_;
+
+    // Sidechain monitor plugins (sourceTrackId → SidechainMonitorPlugin)
+    std::map<TrackId, te::Plugin::Ptr> sidechainMonitors_;
+
+    // Pre-computed sidechain LFO cache: indexed by source TrackId.
+    // Audio/MIDI threads read under cacheLock_; message thread writes during rebuild.
+    struct PerTrackEntry {
+        static constexpr int kMaxLFOs = 64;
+        std::array<te::LFOModifier*, kMaxLFOs> lfos{};
+        int count = 0;
+    };
+    static constexpr int kMaxCacheTracks = 512;
+    std::array<PerTrackEntry, kMaxCacheTracks> sidechainLFOCache_{};
+    juce::SpinLock cacheLock_;
 
     // Thread safety
     mutable juce::CriticalSection pluginLock_;

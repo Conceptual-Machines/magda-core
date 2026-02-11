@@ -752,6 +752,14 @@ juce::var ProjectSerializer::serializeRackInfo(const RackInfo& rack) {
     }
     obj->setProperty("mods", juce::var(modsArray));
 
+    // Sidechain
+    if (rack.sidechain.isActive()) {
+        auto* scObj = new juce::DynamicObject();
+        scObj->setProperty("type", static_cast<int>(rack.sidechain.type));
+        scObj->setProperty("sourceTrackId", rack.sidechain.sourceTrackId);
+        obj->setProperty("sidechain", juce::var(scObj));
+    }
+
     return juce::var(obj);
 }
 
@@ -810,6 +818,15 @@ bool ProjectSerializer::deserializeRackInfo(const juce::var& json, RackInfo& out
             }
             outRack.mods.push_back(mod);
         }
+    }
+
+    // Sidechain
+    auto sidechainVar = obj->getProperty("sidechain");
+    if (sidechainVar.isObject()) {
+        auto* scObj = sidechainVar.getDynamicObject();
+        outRack.sidechain.type =
+            static_cast<SidechainConfig::Type>(static_cast<int>(scObj->getProperty("type")));
+        outRack.sidechain.sourceTrackId = scObj->getProperty("sourceTrackId");
     }
 
     return true;
@@ -1518,6 +1535,8 @@ juce::var ProjectSerializer::serializeModInfo(const ModInfo& mod) {
     obj->setProperty("loopEnd", mod.loopEnd);
     obj->setProperty("midiChannel", mod.midiChannel);
     obj->setProperty("midiNote", mod.midiNote);
+    obj->setProperty("audioAttackMs", mod.audioAttackMs);
+    obj->setProperty("audioReleaseMs", mod.audioReleaseMs);
     obj->setProperty("curvePreset", static_cast<int>(mod.curvePreset));
 
     // Curve points
@@ -1582,6 +1601,10 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
     outMod.loopEnd = obj->getProperty("loopEnd");
     outMod.midiChannel = obj->getProperty("midiChannel");
     outMod.midiNote = obj->getProperty("midiNote");
+    if (obj->hasProperty("audioAttackMs"))
+        outMod.audioAttackMs = obj->getProperty("audioAttackMs");
+    if (obj->hasProperty("audioReleaseMs"))
+        outMod.audioReleaseMs = obj->getProperty("audioReleaseMs");
     outMod.curvePreset =
         static_cast<CurvePreset>(static_cast<int>(obj->getProperty("curvePreset")));
 

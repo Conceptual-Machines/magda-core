@@ -236,6 +236,9 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
                                                   magda::SyncDivision /*division*/) {}
     virtual void onModTriggerModeChangedInternal(int /*modIndex*/, magda::LFOTriggerMode /*mode*/) {
     }
+    virtual void onModAudioAttackChangedInternal(int /*modIndex*/, float /*ms*/) {}
+    virtual void onModAudioReleaseChangedInternal(int /*modIndex*/, float /*ms*/) {}
+    virtual void onModCurveChangedInternal(int /*modIndex*/) {}
     // Contextual link callbacks (when param is selected and mod amount slider is used)
     virtual void onModLinkAmountChangedInternal(int /*modIndex*/, magda::ModTarget /*target*/,
                                                 float /*amount*/) {}

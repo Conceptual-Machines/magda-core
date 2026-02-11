@@ -7,6 +7,7 @@
 #include "ModsPanelComponent.hpp"
 #include "ModulatorEditorPanel.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackManager.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -982,11 +983,87 @@ void NodeComponent::initializeModsMacrosPanels() {
             onModTriggerModeChangedInternal(selectedModIndex_, mode);
         }
     };
+    modulatorEditorPanel_->onAudioAttackChanged = [this](float ms) {
+        if (selectedModIndex_ >= 0) {
+            onModAudioAttackChangedInternal(selectedModIndex_, ms);
+        }
+    };
+    modulatorEditorPanel_->onAudioReleaseChanged = [this](float ms) {
+        if (selectedModIndex_ >= 0) {
+            onModAudioReleaseChangedInternal(selectedModIndex_, ms);
+        }
+    };
     modulatorEditorPanel_->onCurveChanged = [this]() {
         // Force repaint of waveform displays for immediate curve editor sync
         if (modsPanel_) {
             modsPanel_->repaintWaveforms();
         }
+        // Notify audio thread so CurveSnapshot is updated in real time
+        if (selectedModIndex_ >= 0) {
+            onModCurveChangedInternal(selectedModIndex_);
+        }
+    };
+    modulatorEditorPanel_->onAdvancedClicked = [this]() {
+        // Try device first, then rack
+        auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
+        auto* rack = device ? nullptr : magda::TrackManager::getInstance().getRackByPath(nodePath_);
+        if (!device && !rack)
+            return;
+
+        const auto& sidechain = device ? device->sidechain : rack->sidechain;
+
+        juce::PopupMenu menu;
+
+        bool hasMidiSidechain = sidechain.type == magda::SidechainConfig::Type::MIDI &&
+                                sidechain.sourceTrackId != magda::INVALID_TRACK_ID;
+
+        menu.addSectionHeader("MIDI Trigger Source");
+        menu.addItem(1, "Self", true, !hasMidiSidechain);
+        menu.addSeparator();
+
+        struct TrackEntry {
+            magda::TrackId id;
+            juce::String name;
+        };
+        auto trackEntries = std::make_shared<std::vector<TrackEntry>>();
+        int itemId = 10;
+        for (const auto& track : magda::TrackManager::getInstance().getTracks()) {
+            if (track.id == nodePath_.trackId)
+                continue;
+            bool isCurrent = hasMidiSidechain && sidechain.sourceTrackId == track.id;
+            menu.addItem(itemId, track.name, true, isCurrent);
+            trackEntries->push_back({track.id, track.name});
+            itemId++;
+        }
+
+        auto safeThis = juce::Component::SafePointer(this);
+        auto isDeviceTarget = device != nullptr;
+        auto deviceId = device ? device->id : magda::INVALID_DEVICE_ID;
+        auto rackPath = nodePath_;
+        menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, isDeviceTarget, deviceId,
+                                                        rackPath, trackEntries](int result) {
+            if (!safeThis || result == 0)
+                return;
+            if (result == 1) {
+                if (isDeviceTarget)
+                    magda::TrackManager::getInstance().clearSidechain(deviceId);
+                else
+                    magda::TrackManager::getInstance().clearRackSidechain(rackPath);
+            } else {
+                int index = result - 10;
+                if (index >= 0 && index < (int)trackEntries->size()) {
+                    if (isDeviceTarget) {
+                        magda::TrackManager::getInstance().setSidechainSource(
+                            deviceId, (*trackEntries)[index].id,
+                            magda::SidechainConfig::Type::MIDI);
+                    } else {
+                        magda::TrackManager::getInstance().setRackSidechainSource(
+                            rackPath, (*trackEntries)[index].id,
+                            magda::SidechainConfig::Type::MIDI);
+                    }
+                }
+            }
+        });
     };
     addChildComponent(*modulatorEditorPanel_);
 

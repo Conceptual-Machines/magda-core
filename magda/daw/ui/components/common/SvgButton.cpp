@@ -89,20 +89,25 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
     // Determine the color based on button state
     juce::Colour iconColor = normalColor;
 
-    // Check both active flag and toggle state for toggleable buttons
-    bool isActive = active || (getToggleState() && isToggleable());
+    if (isEnabled()) {
+        // Check both active flag and toggle state for toggleable buttons
+        bool isActive = active || (getToggleState() && isToggleable());
 
-    if (isActive) {
-        iconColor = activeColor;
-    } else if (shouldDrawButtonAsDown) {
-        iconColor = pressedColor;
-    } else if (shouldDrawButtonAsHighlighted) {
-        iconColor = hoverColor;
+        if (isActive) {
+            iconColor = activeColor;
+        } else if (shouldDrawButtonAsDown) {
+            iconColor = pressedColor;
+        } else if (shouldDrawButtonAsHighlighted) {
+            iconColor = hoverColor;
+        }
     }
 
     // Corner radius: proportional to smaller dimension, capped
     float cornerRadius = juce::jmin(getWidth(), getHeight()) * 0.15f;
     cornerRadius = juce::jlimit(2.0f, 8.0f, cornerRadius);
+
+    // Check active state (only when enabled)
+    bool isActive = isEnabled() && (active || (getToggleState() && isToggleable()));
 
     // Draw background
     if (isActive && hasActiveBackgroundColor) {
@@ -141,8 +146,9 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
         iconCopy->replaceColour(juce::Colour(0xFF000000), iconColor);
     }
 
-    // Draw the icon
-    iconCopy->drawWithin(g, bounds.toFloat(), juce::RectanglePlacement::centred, 1.0f);
+    // Draw the icon (dimmed when disabled)
+    float opacity = isEnabled() ? 1.0f : 0.25f;
+    iconCopy->drawWithin(g, bounds.toFloat(), juce::RectanglePlacement::centred, opacity);
 }
 
 }  // namespace magda

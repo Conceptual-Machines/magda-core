@@ -153,6 +153,14 @@ struct ModInfo {
     int midiChannel = 0;  // 0 = any, 1-16 = specific
     int midiNote = -1;    // -1 = any, 0-127 = specific
 
+    // Audio trigger envelope settings (serialized)
+    float audioAttackMs = 1.0f;     // Envelope follower attack time (ms)
+    float audioReleaseMs = 100.0f;  // Envelope follower release time (ms)
+
+    // Audio trigger runtime state (not serialized)
+    float audioEnvLevel = 0.0f;  // Current smoothed envelope level
+    bool audioGateOpen = false;  // Gate state for this mod
+
     // Custom curve settings (when waveform == Custom)
     CurvePreset curvePreset = CurvePreset::Triangle;
     std::vector<CurvePointData> curvePoints;  // User-defined curve points
