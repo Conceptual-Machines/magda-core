@@ -668,9 +668,9 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
         g.drawText(part1, textStartX, textY, part1Width, textHeight,
                    juce::Justification::centredLeft, false);
 
-        // Draw " - MAGDA Drum Grid" in white (immediately after)
+        // Draw " - MAGDA Drum Grid" in dimmed white (immediately after)
         juce::String part2 = " - MAGDA Drum Grid";
-        g.setColour(juce::Colours::white);
+        g.setColour(juce::Colours::white.withAlpha(0.5f));
         g.drawText(part2, textStartX + part1Width, textY, availableWidth - part1Width, textHeight,
                    juce::Justification::centredLeft, false);
     }
