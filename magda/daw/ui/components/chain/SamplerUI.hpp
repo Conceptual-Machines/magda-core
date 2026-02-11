@@ -82,6 +82,7 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
   private:
     // Timer
@@ -101,6 +102,15 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     bool hasWaveform_ = false;
     double sampleLength_ = 0.0;
     double playheadPosition_ = 0.0;
+
+    // Waveform source data (kept for rebuilding on zoom)
+    const juce::AudioBuffer<float>* waveformBuffer_ = nullptr;
+    double waveformSampleRate_ = 0.0;
+
+    // Zoom & scroll state
+    double pixelsPerSecond_ = 0.0;
+    double scrollOffsetSeconds_ = 0.0;
+    static constexpr double kMaxPixelsPerSecond = 5000.0;
 
     // Sample start / Loop controls
     TextSlider startSlider_{TextSlider::Format::Decimal};
@@ -127,8 +137,9 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     juce::Label pitchLabel_, fineLabel_, levelLabel_;
 
     // Dragging state
-    enum class DragTarget { None, SampleStart, LoopStart, LoopEnd };
+    enum class DragTarget { None, SampleStart, LoopStart, LoopEnd, Scroll };
     DragTarget currentDrag_ = DragTarget::None;
+    double scrollDragStartOffset_ = 0.0;
 
     void setupLabel(juce::Label& label, const juce::String& text);
     void buildWaveformPath(const juce::AudioBuffer<float>* buffer, int width, int height);

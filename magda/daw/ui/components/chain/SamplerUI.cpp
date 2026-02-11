@@ -184,13 +184,16 @@ void SamplerUI::updateParameters(float attack, float decay, float sustain, float
     }
 }
 
-void SamplerUI::setWaveformData(const juce::AudioBuffer<float>* buffer, double /*sampleRate*/,
+void SamplerUI::setWaveformData(const juce::AudioBuffer<float>* buffer, double sampleRate,
                                 double sampleLengthSeconds) {
     sampleLength_ = sampleLengthSeconds;
+    waveformBuffer_ = buffer;
+    waveformSampleRate_ = sampleRate;
 
     if (buffer == nullptr || buffer->getNumSamples() == 0) {
         hasWaveform_ = false;
         waveformPath_.clear();
+        waveformBuffer_ = nullptr;
         stopTimer();
         repaint();
         return;
@@ -202,7 +205,16 @@ void SamplerUI::setWaveformData(const juce::AudioBuffer<float>* buffer, double /
     loopEndSlider_.setRange(0.0, sampleLengthSeconds, 0.001);
 
     hasWaveform_ = true;
-    buildWaveformPath(buffer, getWidth() > 0 ? getWidth() - 16 : 200, 40);
+
+    // Zoom-to-fit: entire sample fills the waveform width
+    auto waveArea = getWaveformBounds();
+    int waveWidth = waveArea.getWidth() > 0 ? waveArea.getWidth() : 200;
+    pixelsPerSecond_ =
+        (sampleLength_ > 0.0) ? static_cast<double>(waveWidth) / sampleLength_ : 100.0;
+    scrollOffsetSeconds_ = 0.0;
+
+    int waveHeight = juce::jmax(30, waveArea.getHeight() - 4);
+    buildWaveformPath(buffer, waveWidth, waveHeight);
 
     if (!isTimerRunning())
         startTimerHz(30);
@@ -212,19 +224,27 @@ void SamplerUI::setWaveformData(const juce::AudioBuffer<float>* buffer, double /
 
 void SamplerUI::buildWaveformPath(const juce::AudioBuffer<float>* buffer, int width, int height) {
     waveformPath_.clear();
-    if (buffer == nullptr || width <= 0 || height <= 0)
+    if (buffer == nullptr || width <= 0 || height <= 0 || sampleLength_ <= 0.0)
         return;
 
     const float* data = buffer->getReadPointer(0);
     int numSamples = buffer->getNumSamples();
-    float samplesPerPixel = static_cast<float>(numSamples) / static_cast<float>(width);
     float halfHeight = static_cast<float>(height) * 0.5f;
+
+    // Visible time range
+    double visibleStart = scrollOffsetSeconds_;
+
+    // Convert visible range to sample indices
+    double samplesPerSecond = static_cast<double>(numSamples) / sampleLength_;
 
     waveformPath_.startNewSubPath(0.0f, halfHeight);
 
     for (int x = 0; x < width; ++x) {
-        int startSample = static_cast<int>(x * samplesPerPixel);
-        int endSample = juce::jmin(static_cast<int>((x + 1) * samplesPerPixel), numSamples);
+        double timeAtPixel = visibleStart + static_cast<double>(x) / pixelsPerSecond_;
+        int startSample = static_cast<int>(timeAtPixel * samplesPerSecond);
+        int endSample = static_cast<int>((timeAtPixel + 1.0 / pixelsPerSecond_) * samplesPerSecond);
+        startSample = juce::jlimit(0, numSamples, startSample);
+        endSample = juce::jlimit(0, numSamples, endSample);
 
         float maxVal = 0.0f;
         for (int s = startSample; s < endSample; ++s) {
@@ -239,8 +259,11 @@ void SamplerUI::buildWaveformPath(const juce::AudioBuffer<float>* buffer, int wi
 
     // Mirror for bottom half
     for (int x = width - 1; x >= 0; --x) {
-        int startSample = static_cast<int>(x * samplesPerPixel);
-        int endSample = juce::jmin(static_cast<int>((x + 1) * samplesPerPixel), numSamples);
+        double timeAtPixel = visibleStart + static_cast<double>(x) / pixelsPerSecond_;
+        int startSample = static_cast<int>(timeAtPixel * samplesPerSecond);
+        int endSample = static_cast<int>((timeAtPixel + 1.0 / pixelsPerSecond_) * samplesPerSecond);
+        startSample = juce::jlimit(0, numSamples, startSample);
+        endSample = juce::jlimit(0, numSamples, endSample);
 
         float maxVal = 0.0f;
         for (int s = startSample; s < endSample; ++s) {
@@ -282,22 +305,27 @@ void SamplerUI::filesDropped(const juce::StringArray& files, int /*x*/, int /*y*
 
 juce::Rectangle<int> SamplerUI::getWaveformBounds() const {
     auto area = getLocalBounds().reduced(8);
-    area.removeFromTop(26);  // Skip sample name row
-    return area.removeFromTop(44);
+    area.removeFromTop(26);  // Skip sample name row (22 + 4 gap)
+    // Controls below waveform: 3 label+slider rows (12+22 each) + 3 gaps (4 each) + trailing gap =
+    // 114
+    static constexpr int kControlsHeight = 114;
+    int waveHeight = juce::jmax(30, area.getHeight() - kControlsHeight);
+    return area.removeFromTop(waveHeight);
 }
 
 float SamplerUI::secondsToPixelX(double seconds, juce::Rectangle<int> waveArea) const {
     if (sampleLength_ <= 0.0)
         return static_cast<float>(waveArea.getX());
-    double fraction = seconds / sampleLength_;
-    return static_cast<float>(waveArea.getX()) + static_cast<float>(fraction * waveArea.getWidth());
+    return static_cast<float>(waveArea.getX() +
+                              (seconds - scrollOffsetSeconds_) * pixelsPerSecond_);
 }
 
 double SamplerUI::pixelXToSeconds(float pixelX, juce::Rectangle<int> waveArea) const {
-    if (waveArea.getWidth() <= 0 || sampleLength_ <= 0.0)
+    if (waveArea.getWidth() <= 0 || sampleLength_ <= 0.0 || pixelsPerSecond_ <= 0.0)
         return 0.0;
-    double fraction = static_cast<double>(pixelX - waveArea.getX()) / waveArea.getWidth();
-    return juce::jlimit(0.0, sampleLength_, fraction * sampleLength_);
+    double seconds =
+        scrollOffsetSeconds_ + static_cast<double>(pixelX - waveArea.getX()) / pixelsPerSecond_;
+    return juce::jlimit(0.0, sampleLength_, seconds);
 }
 
 // =============================================================================
@@ -308,6 +336,13 @@ void SamplerUI::mouseDown(const juce::MouseEvent& e) {
     auto waveArea = getWaveformBounds();
     if (!waveArea.contains(e.getPosition()) || !hasWaveform_) {
         Component::mouseDown(e);
+        return;
+    }
+
+    // Alt+click or middle-click => scroll
+    if (e.mods.isAltDown() || e.mods.isMiddleButtonDown()) {
+        currentDrag_ = DragTarget::Scroll;
+        scrollDragStartOffset_ = scrollOffsetSeconds_;
         return;
     }
 
@@ -344,6 +379,19 @@ void SamplerUI::mouseDrag(const juce::MouseEvent& e) {
         return;
     }
 
+    if (currentDrag_ == DragTarget::Scroll) {
+        double pixelDelta = static_cast<double>(e.getDistanceFromDragStartX());
+        double timeDelta = pixelDelta / pixelsPerSecond_;
+        double visibleDuration = static_cast<double>(waveArea.getWidth()) / pixelsPerSecond_;
+        double maxScroll = juce::jmax(0.0, sampleLength_ - visibleDuration);
+        scrollOffsetSeconds_ = juce::jlimit(0.0, maxScroll, scrollDragStartOffset_ - timeDelta);
+
+        if (waveformBuffer_ != nullptr)
+            buildWaveformPath(waveformBuffer_, waveArea.getWidth(), waveArea.getHeight() - 4);
+        repaint();
+        return;
+    }
+
     double seconds = pixelXToSeconds(static_cast<float>(e.getPosition().x), waveArea);
 
     switch (currentDrag_) {
@@ -364,6 +412,40 @@ void SamplerUI::mouseDrag(const juce::MouseEvent& e) {
 
 void SamplerUI::mouseUp(const juce::MouseEvent&) {
     currentDrag_ = DragTarget::None;
+}
+
+void SamplerUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) {
+    auto waveArea = getWaveformBounds();
+    if (!waveArea.contains(e.getPosition()) || !hasWaveform_ || sampleLength_ <= 0.0) {
+        Component::mouseWheelMove(e, wheel);
+        return;
+    }
+
+    // Minimum zoom: entire sample fits in view
+    double minPPS = static_cast<double>(waveArea.getWidth()) / sampleLength_;
+
+    // Anchor time under the cursor before zoom
+    double anchorTime = pixelXToSeconds(static_cast<float>(e.getPosition().x), waveArea);
+
+    // Apply zoom factor
+    double zoomFactor = 1.0 + static_cast<double>(wheel.deltaY) * 0.15;
+    double newPPS = pixelsPerSecond_ * zoomFactor;
+    newPPS = juce::jlimit(minPPS, kMaxPixelsPerSecond, newPPS);
+    pixelsPerSecond_ = newPPS;
+
+    // Recalculate scroll so anchor time stays under cursor
+    double anchorPixelOffset = static_cast<double>(e.getPosition().x - waveArea.getX());
+    scrollOffsetSeconds_ = anchorTime - anchorPixelOffset / pixelsPerSecond_;
+
+    // Clamp scroll
+    double visibleDuration = static_cast<double>(waveArea.getWidth()) / pixelsPerSecond_;
+    double maxScroll = juce::jmax(0.0, sampleLength_ - visibleDuration);
+    scrollOffsetSeconds_ = juce::jlimit(0.0, maxScroll, scrollOffsetSeconds_);
+
+    // Rebuild waveform at new zoom
+    if (waveformBuffer_ != nullptr)
+        buildWaveformPath(waveformBuffer_, waveArea.getWidth(), waveArea.getHeight() - 4);
+    repaint();
 }
 
 // =============================================================================
@@ -395,6 +477,10 @@ void SamplerUI::paint(juce::Graphics& g) {
     auto waveformArea = getWaveformBounds();
 
     if (hasWaveform_) {
+        // Clip all waveform drawing to waveform bounds
+        g.saveState();
+        g.reduceClipRegion(waveformArea);
+
         // Draw waveform
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
         auto pathBounds = waveformArea.reduced(0, 2).toFloat();
@@ -446,6 +532,8 @@ void SamplerUI::paint(juce::Graphics& g) {
             g.drawVerticalLine(static_cast<int>(phX), static_cast<float>(waveformArea.getY()),
                                static_cast<float>(waveformArea.getBottom()));
         }
+
+        g.restoreState();  // Restore clip region
     } else {
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
         g.fillRect(waveformArea);
@@ -469,8 +557,10 @@ void SamplerUI::resized() {
     sampleNameLabel_.setBounds(sampleRow);
     area.removeFromTop(4);
 
-    // Row 2: Waveform display (painted, not a component)
-    area.removeFromTop(44);
+    // Row 2: Waveform display (painted, not a component) — absorbs remaining space
+    static constexpr int kControlsHeight = 114;
+    int waveHeight = juce::jmax(30, area.getHeight() - kControlsHeight);
+    area.removeFromTop(waveHeight);
     area.removeFromTop(4);
 
     // Row 3: START | [Loop toggle] | L.START | L.END labels
@@ -518,6 +608,18 @@ void SamplerUI::resized() {
     pitchSlider_.setBounds(pitchRow.removeFromLeft(thirdWidth).reduced(2, 0));
     fineSlider_.setBounds(pitchRow.removeFromLeft(thirdWidth).reduced(2, 0));
     levelSlider_.setBounds(pitchRow.reduced(2, 0));
+
+    // Rebuild waveform path at new size
+    if (hasWaveform_ && waveformBuffer_ != nullptr) {
+        auto waveBounds = getWaveformBounds();
+        // Update zoom-to-fit minimum if we're at or below it
+        double minPPS = (sampleLength_ > 0.0)
+                            ? static_cast<double>(waveBounds.getWidth()) / sampleLength_
+                            : 100.0;
+        if (pixelsPerSecond_ < minPPS)
+            pixelsPerSecond_ = minPPS;
+        buildWaveformPath(waveformBuffer_, waveBounds.getWidth(), waveBounds.getHeight() - 4);
+    }
 }
 
 }  // namespace magda::daw::ui
