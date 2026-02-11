@@ -469,7 +469,7 @@ void DrumGridUI::resized() {
         area.removeFromLeft(kGap);
 
     // Limit detail panel to preferred width of its content (avoid huge gaps)
-    int preferredDetailWidth = padChainPanel_.getContentWidth();
+    int preferredDetailWidth = padChainPanel_.getContentWidth() + 8;  // +8 for button margin
     int detailWidth = juce::jmin(preferredDetailWidth, area.getWidth());
     auto detailArea = area.removeFromLeft(detailWidth);
     DBG("  -> detailArea width: " + juce::String(detailArea.getWidth()) +
