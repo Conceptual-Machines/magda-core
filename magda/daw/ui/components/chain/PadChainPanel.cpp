@@ -188,29 +188,38 @@ void PadChainPanel::resized() {
     auto area = getLocalBounds();
     viewport_.setBounds(area);
 
-    // Layout slots horizontally in container
-    int x = 4;
-    int height = area.getHeight() - 8;  // leave room for scrollbar
+    int height = area.getHeight() - 8;
+    int viewportWidth = area.getWidth();
 
+    // Calculate total preferred content width
+    int totalPreferred = 4;
     for (size_t i = 0; i < slots_.size(); ++i) {
-        auto& slot = slots_[i];
-        int slotWidth = slot->getPreferredWidth();
+        if (i > 0)
+            totalPreferred += ARROW_WIDTH;
+        totalPreferred += slots_[i]->getPreferredWidth();
+    }
+    totalPreferred += ARROW_WIDTH + ADD_BUTTON_WIDTH + 4;
 
-        // Draw arrow space before slot (except first)
+    // Stretch slots to fill viewport when content is narrower
+    int extraPerSlot = 0;
+    if (!slots_.empty() && totalPreferred < viewportWidth)
+        extraPerSlot = (viewportWidth - totalPreferred) / static_cast<int>(slots_.size());
+
+    int x = 4;
+    for (size_t i = 0; i < slots_.size(); ++i) {
         if (i > 0)
             x += ARROW_WIDTH;
-
-        slot->setBounds(x, 4, slotWidth, height);
+        int slotWidth = slots_[i]->getPreferredWidth() + extraPerSlot;
+        slots_[i]->setBounds(x, 4, slotWidth, height);
         x += slotWidth;
     }
 
-    // Add button after last slot
     x += ARROW_WIDTH;
     addButton_.setBounds(x, (area.getHeight() - ADD_BUTTON_WIDTH) / 2, ADD_BUTTON_WIDTH,
                          ADD_BUTTON_WIDTH);
     x += ADD_BUTTON_WIDTH + 4;
 
-    container_.setSize(x, area.getHeight());
+    container_.setSize(juce::jmax(x, viewportWidth), area.getHeight());
 }
 
 int PadChainPanel::calculateInsertIndex(int mouseX) const {
