@@ -194,6 +194,7 @@ void PadDeviceSlot::setupForExternalPlugin(te::Plugin* plugin) {
 
     // Populate param slots
     auto params = plugin->getAutomatableParameters();
+    int visibleParamCount = 0;
     for (int i = 0; i < PLUGIN_PARAM_SLOTS; ++i) {
         auto& slot = paramSlots_[static_cast<size_t>(i)];
         if (i < params.size()) {
@@ -204,10 +205,17 @@ void PadDeviceSlot::setupForExternalPlugin(te::Plugin* plugin) {
                 param->setParameter(static_cast<float>(value), juce::sendNotificationSync);
             };
             slot->setVisible(true);
+            visibleParamCount++;
         } else {
             slot->setVisible(false);
         }
     }
+
+    // Calculate dynamic width based on parameter count (like DeviceSlotComponent)
+    // 4 columns for <= 16 params, 8 columns for 17-32 params
+    int paramsPerRow = (visibleParamCount <= 16) ? 4 : 8;
+    constexpr int PARAM_CELL_WIDTH = 48;
+    preferredWidth_ = PARAM_CELL_WIDTH * paramsPerRow;
 }
 
 void PadDeviceSlot::paint(juce::Graphics& g) {
