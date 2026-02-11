@@ -8,6 +8,7 @@
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
+#include "MagdaSamplerPlugin.hpp"
 #include "SidechainTriggerBus.hpp"
 
 namespace magda {
@@ -285,6 +286,8 @@ void AudioBridge::deviceParameterChanged(DeviceId deviceId, int paramIndex, floa
     // For ExternalPluginProcessor, use setParameterByIndex for efficient single-param sync
     if (auto* extProcessor = dynamic_cast<ExternalPluginProcessor*>(processor)) {
         extProcessor->setParameterByIndex(paramIndex, newValue);
+    } else if (auto* samplerProc = dynamic_cast<MagdaSamplerProcessor*>(processor)) {
+        samplerProc->setParameterByIndex(paramIndex, newValue);
     }
 }
 
@@ -1026,6 +1029,17 @@ bool AudioBridge::togglePluginWindow(DeviceId deviceId) {
     auto plugin = getPlugin(deviceId);
     if (plugin) {
         return pluginWindowBridge_.togglePluginWindow(deviceId, plugin);
+    }
+    return false;
+}
+
+bool AudioBridge::loadSamplerSample(DeviceId deviceId, const juce::File& file) {
+    auto plugin = getPlugin(deviceId);
+    if (plugin) {
+        if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+            sampler->loadSample(file);
+            return true;
+        }
     }
     return false;
 }

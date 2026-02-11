@@ -166,6 +166,7 @@ set(DAW_CORE_SOURCES
     audio/RackSyncManager.cpp
     audio/ClipSynchronizer.cpp
     audio/SidechainMonitorPlugin.cpp
+    audio/MagdaSamplerPlugin.cpp
     # Project serialization
     project/ProjectSerializer.cpp
     project/ProjectManager.cpp
@@ -290,6 +291,7 @@ set(DAW_UI_SOURCES
     ui/components/chain/ChainPanel.cpp
     ui/components/chain/DeviceSlotComponent.cpp
     ui/components/chain/ToneGeneratorUI.cpp
+    ui/components/chain/SamplerUI.cpp
     ui/components/chain/ParamSlotComponent.cpp
     ui/components/chain/ParamLinkResolver.cpp
     ui/components/chain/ParamModulationPainter.cpp
@@ -413,6 +415,7 @@ set(DAW_HEADERS
     audio/ClipSynchronizer.hpp
     audio/SidechainTriggerBus.hpp
     audio/SidechainMonitorPlugin.hpp
+    audio/MagdaSamplerPlugin.hpp
     # Views
     ui/views/MainView.hpp
     ui/views/SessionView.hpp

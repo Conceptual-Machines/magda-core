@@ -209,6 +209,23 @@ class VolumeProcessor : public DeviceProcessor {
 };
 
 /**
+ * @brief Processor for the built-in Magda Sampler device
+ *
+ * Sets parameters directly on the MagdaSamplerPlugin's automatable parameters by index.
+ */
+class MagdaSamplerProcessor : public DeviceProcessor {
+  public:
+    MagdaSamplerProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    int getParameterCount() const override;
+    ParameterInfo getParameterInfo(int index) const override;
+    void populateParameters(DeviceInfo& info) const override;
+
+    void setParameterByIndex(int paramIndex, float value);
+    float getParameterByIndex(int paramIndex) const;
+};
+
+/**
  * @brief Processor for external VST3/AU plugins
  *
  * Maps plugin parameters to DeviceInfo.parameters and handles

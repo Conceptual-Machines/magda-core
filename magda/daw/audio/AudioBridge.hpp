@@ -593,6 +593,14 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     bool togglePluginWindow(DeviceId deviceId);
 
+    /**
+     * @brief Load a sample file into a MagdaSamplerPlugin device
+     * @param deviceId MAGDA device ID of the sampler plugin
+     * @param file Audio file to load
+     * @return true if sample was loaded successfully
+     */
+    bool loadSamplerSample(DeviceId deviceId, const juce::File& file);
+
   private:
     // Timer callback for metering updates (runs on message thread)
     void timerCallback() override;

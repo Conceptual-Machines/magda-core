@@ -4,6 +4,7 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallComboBoxLookAndFeel.hpp"
+#include "audio/MagdaSamplerPlugin.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
@@ -289,7 +290,8 @@ void PluginBrowserContent::buildInternalPluginList() {
     // Add built-in MAGDA/Tracktion plugins
     plugins_.push_back(PluginBrowserInfo::createInternal("Test Tone", "tone", false));
     plugins_.push_back(PluginBrowserInfo::createInternal("4OSC Synth", "4osc", true));
-    // TODO: Add more internal plugins as they become available
+    plugins_.push_back(PluginBrowserInfo::createInternal(
+        audio::MagdaSamplerPlugin::getPluginName(), audio::MagdaSamplerPlugin::xmlTypeName, true));
 }
 
 void PluginBrowserContent::loadExternalPlugins() {
