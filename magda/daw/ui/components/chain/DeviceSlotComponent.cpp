@@ -677,7 +677,13 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             samplerUI_->setVisible(true);
         }
         if (drumGridUI_) {
-            drumGridUI_->setBounds(contentArea.reduced(4));
+            // Minimum height: grid width 250px → 60px pads (250-9gaps)/4
+            // = 4×60px + 3×3px gaps + 24px pagination + 12px margins = 285px
+            constexpr int minDrumGridHeight = 285;
+            auto drumGridArea = contentArea.reduced(4);
+            if (drumGridArea.getHeight() < minDrumGridHeight)
+                drumGridArea.setHeight(minDrumGridHeight);
+            drumGridUI_->setBounds(drumGridArea);
             drumGridUI_->setVisible(true);
         }
 

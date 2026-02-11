@@ -476,8 +476,10 @@ void DrumGridUI::resized() {
     gridArea.removeFromBottom(2);
 
     constexpr int padGap = 3;
+    constexpr int minPadSize = 40;  // Minimum pad button size
     int padSize = juce::jmin((gridArea.getWidth() - padGap * (kGridCols - 1)) / kGridCols,
                              (gridArea.getHeight() - padGap * (kGridRows - 1)) / kGridRows);
+    padSize = juce::jmax(padSize, minPadSize);
 
     for (int i = 0; i < kPadsPerPage; ++i) {
         int row = i / kGridCols;
