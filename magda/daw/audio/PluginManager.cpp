@@ -7,6 +7,7 @@
 #include "../core/TrackManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "CurveSnapshot.hpp"
+#include "DrumGridPlugin.hpp"
 #include "MagdaSamplerPlugin.hpp"
 #include "ModifierHelpers.hpp"
 #include "PluginWindowBridge.hpp"
@@ -339,6 +340,12 @@ te::Plugin::Ptr PluginManager::loadBuiltInPlugin(TrackId trackId, const juce::St
         juce::ValueTree pluginState(te::IDs::PLUGIN);
         pluginState.setProperty(te::IDs::type, daw::audio::MagdaSamplerPlugin::xmlTypeName,
                                 nullptr);
+        plugin = edit_.getPluginCache().createNewPlugin(pluginState);
+        if (plugin)
+            track->pluginList.insertPlugin(plugin, -1, nullptr);
+    } else if (type.equalsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName)) {
+        juce::ValueTree pluginState(te::IDs::PLUGIN);
+        pluginState.setProperty(te::IDs::type, daw::audio::DrumGridPlugin::xmlTypeName, nullptr);
         plugin = edit_.getPluginCache().createNewPlugin(pluginState);
         if (plugin)
             track->pluginList.insertPlugin(plugin, -1, nullptr);
@@ -1361,6 +1368,10 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
             juce::ValueTree ps(te::IDs::PLUGIN);
             ps.setProperty(te::IDs::type, daw::audio::MagdaSamplerPlugin::xmlTypeName, nullptr);
             plugin = edit_.getPluginCache().createNewPlugin(ps);
+        } else if (device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName)) {
+            juce::ValueTree ps(te::IDs::PLUGIN);
+            ps.setProperty(te::IDs::type, daw::audio::DrumGridPlugin::xmlTypeName, nullptr);
+            plugin = edit_.getPluginCache().createNewPlugin(ps);
         }
     } else {
         // External plugin — same lookup logic as loadDeviceAsPlugin but without track insertion
@@ -1486,6 +1497,15 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
                 processor = std::make_unique<MagdaSamplerProcessor>(device.id, plugin);
+            }
+        } else if (device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName)) {
+            juce::ValueTree pluginState(te::IDs::PLUGIN);
+            pluginState.setProperty(te::IDs::type, daw::audio::DrumGridPlugin::xmlTypeName,
+                                    nullptr);
+            plugin = edit_.getPluginCache().createNewPlugin(pluginState);
+            if (plugin) {
+                track->pluginList.insertPlugin(plugin, -1, nullptr);
+                processor = std::make_unique<DrumGridProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("4osc")) {
             plugin = createFourOscSynth(track);

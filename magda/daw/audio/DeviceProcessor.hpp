@@ -226,6 +226,21 @@ class MagdaSamplerProcessor : public DeviceProcessor {
 };
 
 /**
+ * @brief Processor for the built-in Drum Grid device
+ *
+ * Minimal processor — the drum grid has no top-level automatable params initially.
+ * Per-pad parameters live on child plugins inside DrumGridPlugin.
+ */
+class DrumGridProcessor : public DeviceProcessor {
+  public:
+    DrumGridProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    int getParameterCount() const override;
+    ParameterInfo getParameterInfo(int index) const override;
+    void populateParameters(DeviceInfo& info) const override;
+};
+
+/**
  * @brief Processor for external VST3/AU plugins
  *
  * Maps plugin parameters to DeviceInfo.parameters and handles
