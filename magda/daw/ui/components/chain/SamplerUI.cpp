@@ -47,6 +47,7 @@ SamplerUI::SamplerUI() {
         slider.onValueChanged = [this, paramIndex](double value) {
             if (onParameterChanged)
                 onParameterChanged(paramIndex, static_cast<float>(value));
+            repaint();
         };
         addAndMakeVisible(slider);
     };
@@ -67,6 +68,7 @@ SamplerUI::SamplerUI() {
     loopButton_.onClick = [this]() {
         if (onLoopEnabledChanged)
             onLoopEnabledChanged(loopButton_.getToggleState());
+        repaint();
     };
     addAndMakeVisible(loopButton_);
 
