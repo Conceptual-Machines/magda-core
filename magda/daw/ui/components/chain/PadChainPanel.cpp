@@ -56,7 +56,7 @@ int PadChainPanel::getContentWidth() const {
         width += slot->getPreferredWidth();
     }
     width += ARROW_WIDTH + ADD_BUTTON_WIDTH;
-    return juce::jmax(350, width + 12);
+    return width + 12;  // No minimum - size to actual content
 }
 
 void PadChainPanel::rebuildSlots() {
