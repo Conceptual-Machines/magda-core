@@ -17,12 +17,20 @@
 
 // Global log file for debugging - scanner stdout isn't visible when run as child process
 static std::ofstream g_logFile;
+static std::string g_logFilePath;
 
 static void initLog() {
     // Use a unique temp file per instance (random suffix)
     auto suffix = juce::String(juce::Random::getSystemRandom().nextInt64());
-    auto path = "/tmp/magda_scanner_" + suffix.toStdString() + ".log";
-    g_logFile.open(path, std::ios::out | std::ios::trunc);
+    g_logFilePath = "/tmp/magda_scanner_" + suffix.toStdString() + ".log";
+    g_logFile.open(g_logFilePath, std::ios::out | std::ios::trunc);
+}
+
+static void cleanupLog() {
+    if (g_logFile.is_open())
+        g_logFile.close();
+    if (!g_logFilePath.empty())
+        juce::File(g_logFilePath).deleteFile();
 }
 
 static void log(const std::string& msg) {
@@ -228,6 +236,7 @@ class PluginScannerApplication : public juce::JUCEApplicationBase {
     void shutdown() override {
         log("[Scanner] Shutting down");
         worker_.reset();
+        cleanupLog();
     }
 
     void systemRequestedQuit() override {

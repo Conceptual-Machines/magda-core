@@ -5,6 +5,7 @@
 #include <juce_events/juce_events.h>
 
 #include <array>
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -91,7 +92,7 @@ class PluginScanCoordinator : private juce::Timer {
     void saveExclusions();
 
     // State
-    bool isScanning_ = false;
+    std::atomic<bool> isScanning_{false};
     juce::AudioPluginFormatManager* formatManager_ = nullptr;
     ProgressCallback progressCallback_;
     CompletionCallback completionCallback_;

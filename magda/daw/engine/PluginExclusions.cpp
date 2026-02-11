@@ -23,10 +23,17 @@ std::vector<ExcludedPlugin> loadExclusionList(const juce::File& file) {
         if (trimmed.isEmpty())
             continue;
 
-        // New format: path|reason|timestamp
-        if (trimmed.contains("|")) {
+        // Current format: path\treason\ttimestamp (tab-delimited)
+        // Also supports legacy pipe-delimited format and plain paths
+        juce::String delimiter;
+        if (trimmed.contains("\t"))
+            delimiter = "\t";
+        else if (trimmed.contains("|"))
+            delimiter = "|";
+
+        if (delimiter.isNotEmpty()) {
             juce::StringArray parts;
-            parts.addTokens(trimmed, "|", "");
+            parts.addTokens(trimmed, delimiter, "");
 
             ExcludedPlugin entry;
             entry.path = parts[0].trim();
@@ -47,7 +54,7 @@ void saveExclusionList(const juce::File& file, const std::vector<ExcludedPlugin>
 
     juce::String content;
     for (const auto& entry : entries) {
-        content += entry.path + "|" + entry.reason + "|" + entry.timestamp + "\n";
+        content += entry.path + "\t" + entry.reason + "\t" + entry.timestamp + "\n";
     }
 
     (void)file.replaceWithText(content);

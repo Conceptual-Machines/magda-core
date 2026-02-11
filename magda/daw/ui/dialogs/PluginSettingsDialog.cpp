@@ -193,22 +193,28 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
         scanProgressBar_.setVisible(true);
         scanStatusLabel_.setVisible(true);
 
-        engine_->startPluginScan([this](float progress, const juce::String& pluginName) {
-            juce::MessageManager::callAsync([this, progress, pluginName]() {
-                scanProgress_ = static_cast<double>(progress);
+        auto safeThis = juce::Component::SafePointer<PluginSettingsDialog>(this);
+
+        engine_->startPluginScan([safeThis](float progress, const juce::String& pluginName) {
+            juce::MessageManager::callAsync([safeThis, progress, pluginName]() {
+                if (safeThis == nullptr)
+                    return;
+                safeThis->scanProgress_ = static_cast<double>(progress);
                 juce::File f(pluginName);
-                scanStatusLabel_.setText("Scanning: " + f.getFileName(),
-                                         juce::dontSendNotification);
+                safeThis->scanStatusLabel_.setText("Scanning: " + f.getFileName(),
+                                                   juce::dontSendNotification);
             });
         });
 
-        engine_->onPluginScanComplete = [this](bool /*success*/, int numPlugins,
-                                               const juce::StringArray& failedPlugins) {
-            juce::MessageManager::callAsync([this, numPlugins, failedPlugins]() {
-                scanButton_.setEnabled(true);
-                scanProgress_ = -1.0;
-                scanProgressBar_.setVisible(false);
-                scanStatusLabel_.setText(
+        engine_->onPluginScanComplete = [safeThis](bool /*success*/, int numPlugins,
+                                                   const juce::StringArray& failedPlugins) {
+            juce::MessageManager::callAsync([safeThis, numPlugins, failedPlugins]() {
+                if (safeThis == nullptr)
+                    return;
+                safeThis->scanButton_.setEnabled(true);
+                safeThis->scanProgress_ = -1.0;
+                safeThis->scanProgressBar_.setVisible(false);
+                safeThis->scanStatusLabel_.setText(
                     "Found " + juce::String(numPlugins) + " plugins" +
                         (failedPlugins.size() > 0
                              ? ", " + juce::String(failedPlugins.size()) + " failed"
@@ -216,12 +222,12 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
                     juce::dontSendNotification);
 
                 // Refresh excluded plugins list
-                if (engine_) {
-                    auto* coordinator = engine_->getPluginScanCoordinator();
+                if (safeThis->engine_) {
+                    auto* coordinator = safeThis->engine_->getPluginScanCoordinator();
                     if (coordinator)
-                        excludedPlugins_ = coordinator->getExcludedPlugins();
-                    excludedTable_.updateContent();
-                    excludedTable_.repaint();
+                        safeThis->excludedPlugins_ = coordinator->getExcludedPlugins();
+                    safeThis->excludedTable_.updateContent();
+                    safeThis->excludedTable_.repaint();
                 }
             });
         };

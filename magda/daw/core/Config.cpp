@@ -27,12 +27,12 @@ void Config::saveToFile(const std::string& filename) {
     file << "zoomInSensitivityShift=" << zoomInSensitivityShift << std::endl;
     file << "zoomOutSensitivityShift=" << zoomOutSensitivityShift << std::endl;
     file << "scrollbarOnLeft=" << (scrollbarOnLeft ? 1 : 0) << std::endl;
-    // Save custom plugin paths as semicolon-delimited string
+    // Save custom plugin paths as tab-delimited string (tab cannot appear in paths)
     {
         std::string joined;
         for (size_t i = 0; i < customPluginPaths.size(); ++i) {
             if (i > 0)
-                joined += ";";
+                joined += "\t";
             joined += customPluginPaths[i];
         }
         file << "customPluginPaths=" << joined << std::endl;
@@ -77,9 +77,11 @@ void Config::parseConfigLine(const std::string& key, const std::string& value) {
         if (key == "customPluginPaths") {
             customPluginPaths.clear();
             if (!value.empty()) {
+                // Support both tab-delimited (current) and semicolon-delimited (legacy)
+                char delimiter = (value.find('\t') != std::string::npos) ? '\t' : ';';
                 std::string remaining = value;
                 while (!remaining.empty()) {
-                    auto pos = remaining.find(';');
+                    auto pos = remaining.find(delimiter);
                     std::string path;
                     if (pos == std::string::npos) {
                         path = remaining;
