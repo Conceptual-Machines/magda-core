@@ -660,18 +660,6 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     // Settings menu callbacks
-    callbacks.onPluginScan = [this]() {
-        if (!mainComponent)
-            return;
-        auto* engine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
-        if (!engine)
-            return;
-        // Trigger plugin scan
-        engine->startPluginScan([](float progress, const juce::String& plugin) {
-            DBG("Scanning: " << plugin << " (" << (int)(progress * 100) << "%)");
-        });
-    };
-
     callbacks.onPluginSettings = [this]() {
         if (!mainComponent)
             return;

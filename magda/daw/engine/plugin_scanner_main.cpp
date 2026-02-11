@@ -79,7 +79,23 @@ class PluginScannerWorker : public juce::ChildProcessWorker {
                 log("[Scanner] Scanning single plugin: " + pluginPath.toStdString() +
                     " (format: " + formatName.toStdString() + ")");
 
-                scanOnePlugin(formatName, pluginPath);
+                // Dispatch to the message thread — many plugins (especially VST3)
+                // expect to be loaded on the message thread and will crash if
+                // their factory code is called from the IPC thread.
+                juce::MessageManager::callAsync([this, formatName, pluginPath]() {
+                    try {
+                        scanOnePlugin(formatName, pluginPath);
+                    } catch (const std::exception& e) {
+                        log(std::string("[Scanner] Message thread exception: ") + e.what());
+                        sendError(pluginPath,
+                                  juce::String("Message thread exception: ") + e.what());
+                        sendComplete();
+                    } catch (...) {
+                        log("[Scanner] Message thread unknown exception");
+                        sendError(pluginPath, "Unknown exception on message thread");
+                        sendComplete();
+                    }
+                });
             }
         } catch (const std::exception& e) {
             log(std::string("[Scanner] EXCEPTION: ") + e.what());

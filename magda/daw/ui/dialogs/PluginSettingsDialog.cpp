@@ -1,5 +1,7 @@
 #include "PluginSettingsDialog.hpp"
 
+#include <algorithm>
+
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/Config.hpp"
@@ -92,7 +94,8 @@ juce::Component* PluginSettingsDialog::ExcludedTableModel::refreshComponentForCe
 // PluginSettingsDialog
 // =============================================================================
 
-PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine) : engine_(engine) {
+PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
+    : scanProgressBar_(scanProgress_), engine_(engine) {
     // Load current data
     customPaths_ = Config::getInstance().getCustomPluginPaths();
 
@@ -102,9 +105,41 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine) : eng
             excludedPlugins_ = coordinator->getExcludedPlugins();
     }
 
+    // Populate system plugin directories from format manager
+    if (engine_ && engine_->getEngine()) {
+        auto& formatManager = engine_->getEngine()->getPluginManager().pluginFormatManager;
+        for (int i = 0; i < formatManager.getNumFormats(); ++i) {
+            auto* format = formatManager.getFormat(i);
+            if (!format)
+                continue;
+            juce::String formatName = format->getName();
+            if (!formatName.containsIgnoreCase("VST3") &&
+                !formatName.containsIgnoreCase("AudioUnit"))
+                continue;
+            auto searchPaths = format->getDefaultLocationsToSearch();
+            for (int j = 0; j < searchPaths.getNumPaths(); ++j) {
+                auto path = searchPaths[j].getFullPathName().toStdString();
+                if (std::find(systemPaths_.begin(), systemPaths_.end(), path) == systemPaths_.end())
+                    systemPaths_.push_back(path);
+            }
+        }
+    }
+
     // Wire up models
+    systemDirListModel_.paths = &systemPaths_;
     dirListModel_.paths = &customPaths_;
     excludedTableModel_.entries = &excludedPlugins_;
+
+    // System directories section (read-only)
+    setupSectionHeader(systemDirsHeader_, "System Plugin Directories");
+
+    systemDirsList_.setModel(&systemDirListModel_);
+    systemDirsList_.setColour(juce::ListBox::backgroundColourId,
+                              DarkTheme::getColour(DarkTheme::SURFACE));
+    systemDirsList_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+    systemDirsList_.setOutlineThickness(1);
+    systemDirsList_.setRowHeight(22);
+    addAndMakeVisible(systemDirsList_);
 
     // Custom directories section
     setupSectionHeader(directoriesHeader_, "Custom Plugin Directories");
@@ -143,6 +178,78 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine) : eng
         }
     };
     addAndMakeVisible(removeDirButton_);
+
+    // Scan section
+    scanButton_.setButtonText("Scan for Plugins");
+    scanButton_.onClick = [this]() {
+        if (!engine_)
+            return;
+        // Apply settings first so custom paths are used during scan
+        applySettings();
+
+        scanButton_.setEnabled(false);
+        scanProgress_ = 0.0;
+        scanStatusLabel_.setText("Starting scan...", juce::dontSendNotification);
+        scanProgressBar_.setVisible(true);
+        scanStatusLabel_.setVisible(true);
+
+        engine_->startPluginScan([this](float progress, const juce::String& pluginName) {
+            juce::MessageManager::callAsync([this, progress, pluginName]() {
+                scanProgress_ = static_cast<double>(progress);
+                juce::File f(pluginName);
+                scanStatusLabel_.setText("Scanning: " + f.getFileName(),
+                                         juce::dontSendNotification);
+            });
+        });
+
+        engine_->onPluginScanComplete = [this](bool /*success*/, int numPlugins,
+                                               const juce::StringArray& failedPlugins) {
+            juce::MessageManager::callAsync([this, numPlugins, failedPlugins]() {
+                scanButton_.setEnabled(true);
+                scanProgress_ = -1.0;
+                scanProgressBar_.setVisible(false);
+                scanStatusLabel_.setText(
+                    "Found " + juce::String(numPlugins) + " plugins" +
+                        (failedPlugins.size() > 0
+                             ? ", " + juce::String(failedPlugins.size()) + " failed"
+                             : ""),
+                    juce::dontSendNotification);
+
+                // Refresh excluded plugins list
+                if (engine_) {
+                    auto* coordinator = engine_->getPluginScanCoordinator();
+                    if (coordinator)
+                        excludedPlugins_ = coordinator->getExcludedPlugins();
+                    excludedTable_.updateContent();
+                    excludedTable_.repaint();
+                }
+            });
+        };
+    };
+    addAndMakeVisible(scanButton_);
+
+    viewReportButton_.setButtonText("View Scan Report");
+    viewReportButton_.onClick = [this]() {
+        if (engine_) {
+            auto* coordinator = engine_->getPluginScanCoordinator();
+            if (coordinator) {
+                auto reportFile = coordinator->getScanReportFile();
+                if (reportFile.existsAsFile())
+                    reportFile.startAsProcess();
+            }
+        }
+    };
+    addAndMakeVisible(viewReportButton_);
+
+    scanProgressBar_.setPercentageDisplay(true);
+    scanProgressBar_.setVisible(false);
+    addAndMakeVisible(scanProgressBar_);
+
+    scanStatusLabel_.setColour(juce::Label::textColourId,
+                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    scanStatusLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    scanStatusLabel_.setVisible(false);
+    addAndMakeVisible(scanStatusLabel_);
 
     // Excluded plugins section
     setupSectionHeader(excludedHeader_, "Excluded Plugins");
@@ -204,10 +311,11 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine) : eng
     };
     addAndMakeVisible(cancelButton_);
 
-    setSize(550, 500);
+    setSize(550, 650);
 }
 
 PluginSettingsDialog::~PluginSettingsDialog() {
+    systemDirsList_.setModel(nullptr);
     directoriesList_.setModel(nullptr);
     excludedTable_.setModel(nullptr);
 }
@@ -223,11 +331,20 @@ void PluginSettingsDialog::resized() {
     const int buttonWidth = 90;
     const int spacing = 8;
 
+    // System directories section
+    systemDirsHeader_.setBounds(bounds.removeFromTop(headerHeight));
+    bounds.removeFromTop(4);
+
+    int systemDirsHeight = std::max(44, static_cast<int>(systemPaths_.size()) * 22 + 2);
+    systemDirsList_.setBounds(bounds.removeFromTop(systemDirsHeight));
+
+    bounds.removeFromTop(spacing);
+
     // Custom directories section
     directoriesHeader_.setBounds(bounds.removeFromTop(headerHeight));
     bounds.removeFromTop(4);
 
-    auto dirArea = bounds.removeFromTop(110);
+    auto dirArea = bounds.removeFromTop(88);
     auto dirButtons = dirArea.removeFromRight(buttonWidth + 4);
     directoriesList_.setBounds(dirArea);
     addDirButton_.setBounds(dirButtons.removeFromTop(buttonHeight));
@@ -235,6 +352,19 @@ void PluginSettingsDialog::resized() {
     removeDirButton_.setBounds(dirButtons.removeFromTop(buttonHeight));
 
     bounds.removeFromTop(spacing * 2);
+
+    // Scan section
+    auto scanRow = bounds.removeFromTop(buttonHeight);
+    scanButton_.setBounds(scanRow.removeFromLeft(140));
+    scanRow.removeFromLeft(spacing);
+    viewReportButton_.setBounds(scanRow.removeFromLeft(130));
+    scanRow.removeFromLeft(spacing);
+    scanProgressBar_.setBounds(scanRow);
+
+    bounds.removeFromTop(2);
+    scanStatusLabel_.setBounds(bounds.removeFromTop(18));
+
+    bounds.removeFromTop(spacing);
 
     // Excluded plugins section
     excludedHeader_.setBounds(bounds.removeFromTop(headerHeight));

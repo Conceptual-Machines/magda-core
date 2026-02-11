@@ -14,6 +14,16 @@
 
 namespace magda {
 
+struct PluginScanResult {
+    juce::String pluginPath;
+    juce::String formatName;
+    bool success = false;
+    juce::String errorMessage;
+    juce::int64 durationMs = 0;
+    int workerIndex = -1;
+    juce::StringArray pluginNames;
+};
+
 class PluginScanCoordinator : private juce::Timer {
   public:
     PluginScanCoordinator();
@@ -52,6 +62,8 @@ class PluginScanCoordinator : private juce::Timer {
         return pluginTimeoutMs_;
     }
 
+    juce::File getScanReportFile() const;
+
   private:
     static constexpr int NUM_WORKERS = 4;
     static constexpr int DEFAULT_PLUGIN_TIMEOUT_MS = 120000;
@@ -68,6 +80,7 @@ class PluginScanCoordinator : private juce::Timer {
     void onWorkerResult(int workerIndex, const ScanWorker::Result& result);
     void checkIfAllDone();
     void finishScan(bool success);
+    void writeScanReport();
 
     // Find the scanner executable
     juce::File getScannerExecutable() const;
@@ -98,6 +111,11 @@ class PluginScanCoordinator : private juce::Timer {
     // Timeout tracking per worker
     std::array<juce::int64, NUM_WORKERS> workerStartTimes_{};
     std::array<juce::String, NUM_WORKERS> workerCurrentPlugin_;
+    std::array<juce::String, NUM_WORKERS> workerCurrentFormat_;
+
+    // Scan report
+    juce::int64 scanStartTime_ = 0;
+    std::vector<PluginScanResult> scanResults_;
 
     // Results
     juce::Array<juce::PluginDescription> foundPlugins_;

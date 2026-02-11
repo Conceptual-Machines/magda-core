@@ -60,6 +60,9 @@ void PluginScanCoordinator::startScan(juce::AudioPluginFormatManager& formatMana
     workers_.clear();
     workerStartTimes_.fill(0);
     workerCurrentPlugin_.fill({});
+    workerCurrentFormat_.fill({});
+    scanStartTime_ = juce::Time::currentTimeMillis();
+    scanResults_.clear();
 
     // Discover all plugins to scan
     discoverPlugins();
@@ -163,6 +166,7 @@ void PluginScanCoordinator::assignNextPlugin(int workerIndex) {
 
     workerStartTimes_[static_cast<size_t>(workerIndex)] = juce::Time::currentTimeMillis();
     workerCurrentPlugin_[static_cast<size_t>(workerIndex)] = plugin.pluginPath;
+    workerCurrentFormat_[static_cast<size_t>(workerIndex)] = plugin.formatName;
     workers_[static_cast<size_t>(workerIndex)]->scanPlugin(plugin.formatName, plugin.pluginPath);
 }
 
@@ -171,6 +175,21 @@ void PluginScanCoordinator::onWorkerResult(int workerIndex, const ScanWorker::Re
         return;
 
     completedCount_++;
+
+    // Record scan result
+    {
+        PluginScanResult scanResult;
+        scanResult.pluginPath = result.pluginPath;
+        scanResult.formatName = workerCurrentFormat_[static_cast<size_t>(workerIndex)];
+        scanResult.success = result.success;
+        scanResult.errorMessage = result.errorMessage;
+        scanResult.durationMs =
+            juce::Time::currentTimeMillis() - workerStartTimes_[static_cast<size_t>(workerIndex)];
+        scanResult.workerIndex = workerIndex;
+        for (const auto& desc : result.foundPlugins)
+            scanResult.pluginNames.add(desc.name);
+        scanResults_.push_back(scanResult);
+    }
 
     if (result.success) {
         for (const auto& desc : result.foundPlugins)
@@ -232,6 +251,19 @@ void PluginScanCoordinator::timerCallback() {
             // won't fire a result). We handle the timeout result here manually.
             workers_[i]->abort();
 
+            // Record timeout result
+            {
+                PluginScanResult scanResult;
+                scanResult.pluginPath = timedOutPlugin;
+                scanResult.formatName = workerCurrentFormat_[i];
+                scanResult.success = false;
+                scanResult.errorMessage =
+                    "timeout (" + juce::String(pluginTimeoutMs_ / 1000) + "s)";
+                scanResult.durationMs = elapsed;
+                scanResult.workerIndex = static_cast<int>(i);
+                scanResults_.push_back(scanResult);
+            }
+
             if (timedOutPlugin.isNotEmpty()) {
                 excludePlugin(timedOutPlugin, "timeout");
                 failedPlugins_.add(timedOutPlugin);
@@ -273,6 +305,8 @@ void PluginScanCoordinator::finishScan(bool success) {
     isScanning_ = false;
     stopTimer();
     workers_.clear();
+
+    writeScanReport();
 
     std::cout << "[ScanCoordinator] Scan finished. Found " << foundPlugins_.size() << " plugins, "
               << failedPlugins_.size() << " failed." << std::endl;
@@ -323,6 +357,100 @@ void PluginScanCoordinator::loadExclusions() {
 
 void PluginScanCoordinator::saveExclusions() {
     saveExclusionList(getExclusionFile(), excludedPlugins_);
+}
+
+juce::File PluginScanCoordinator::getScanReportFile() const {
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+        .getChildFile("MAGDA")
+        .getChildFile("last_scan_report.txt");
+}
+
+void PluginScanCoordinator::writeScanReport() {
+    auto reportFile = getScanReportFile();
+    reportFile.getParentDirectory().createDirectory();
+
+    juce::int64 totalDurationMs = juce::Time::currentTimeMillis() - scanStartTime_;
+    double totalDurationSec = static_cast<double>(totalDurationMs) / 1000.0;
+
+    int successCount = 0;
+    int failCount = 0;
+    int totalPluginsFound = 0;
+    for (const auto& r : scanResults_) {
+        if (r.success) {
+            successCount++;
+            totalPluginsFound += r.pluginNames.size();
+        } else {
+            failCount++;
+        }
+    }
+
+    juce::String report;
+    report << "=== MAGDA Plugin Scan Report ===" << juce::newLine;
+    report << "Date: " << juce::Time::getCurrentTime().toString(true, true) << juce::newLine;
+    report << "Duration: " << juce::String(totalDurationSec, 1) << "s" << juce::newLine;
+    report << "Workers: " << static_cast<int>(workers_.size() > 0 ? workers_.size() : NUM_WORKERS)
+           << juce::newLine;
+    report << "Plugins scanned: " << static_cast<int>(scanResults_.size()) << juce::newLine;
+    report << "Succeeded: " << successCount << " (found " << totalPluginsFound << " plugins)"
+           << juce::newLine;
+    report << "Failed: " << failCount << juce::newLine;
+    report << juce::newLine;
+
+    // Failed plugins section
+    if (failCount > 0) {
+        report << "--- Failed Plugins ---" << juce::newLine;
+        for (const auto& r : scanResults_) {
+            if (r.success)
+                continue;
+
+            juce::String tag;
+            if (r.errorMessage.containsIgnoreCase("timeout"))
+                tag = "TIMEOUT";
+            else if (r.errorMessage.containsIgnoreCase("crash"))
+                tag = "CRASH";
+            else
+                tag = "ERROR";
+
+            report << "[" << tag << "] " << r.pluginPath;
+            if (r.errorMessage.isNotEmpty() && tag == "ERROR")
+                report << " - " << r.errorMessage;
+            report << " (worker " << r.workerIndex << ", "
+                   << juce::String(static_cast<double>(r.durationMs) / 1000.0, 1) << "s)"
+                   << juce::newLine;
+        }
+        report << juce::newLine;
+    }
+
+    // All results section
+    report << "--- All Results ---" << juce::newLine;
+    for (const auto& r : scanResults_) {
+        if (r.success) {
+            juce::String names = r.pluginNames.joinIntoString(", ");
+            report << "[OK]      " << names << " (" << r.formatName << ") - " << r.pluginPath
+                   << " (worker " << r.workerIndex << ", "
+                   << juce::String(static_cast<double>(r.durationMs) / 1000.0, 1) << "s)"
+                   << juce::newLine;
+        } else {
+            juce::String tag;
+            if (r.errorMessage.containsIgnoreCase("timeout"))
+                tag = "TIMEOUT";
+            else if (r.errorMessage.containsIgnoreCase("crash"))
+                tag = "CRASH";
+            else
+                tag = "ERROR";
+
+            report << "[" << tag << "]   " << r.pluginPath;
+            if (r.errorMessage.isNotEmpty() && tag == "ERROR")
+                report << " - " << r.errorMessage;
+            report << " (worker " << r.workerIndex << ", "
+                   << juce::String(static_cast<double>(r.durationMs) / 1000.0, 1) << "s)"
+                   << juce::newLine;
+        }
+    }
+
+    reportFile.replaceWithText(report);
+    std::cout << "[ScanCoordinator] Scan report written to: " << reportFile.getFullPathName()
+              << std::endl;
 }
 
 }  // namespace magda

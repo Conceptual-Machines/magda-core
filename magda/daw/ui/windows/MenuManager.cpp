@@ -146,11 +146,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addItem(AudioSettings, "Audio/MIDI Settings...", true, false);
         menu.addSeparator();
 
-        // Plugin submenu
-        juce::PopupMenu pluginMenu;
-        pluginMenu.addItem(PluginScan, "Scan for Plugins...", true, false);
-        pluginMenu.addItem(PluginSettings, "Plugin Settings...", true, false);
-        menu.addSubMenu("Plugins", pluginMenu);
+        menu.addItem(PluginSettings, "Plugin Settings...", true, false);
     } else if (menuName == "View") {
         menu.addItem(ToggleLeftPanel, "Show Left Panel", true, leftPanelVisible_);
         menu.addItem(ToggleRightPanel, "Show Right Panel", true, rightPanelVisible_);
@@ -313,10 +309,6 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case AudioSettings:
             if (callbacks_.onAudioSettings)
                 callbacks_.onAudioSettings();
-            break;
-        case PluginScan:
-            if (callbacks_.onPluginScan)
-                callbacks_.onPluginScan();
             break;
         case PluginSettings:
             if (callbacks_.onPluginSettings)

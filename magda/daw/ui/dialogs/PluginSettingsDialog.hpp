@@ -50,8 +50,14 @@ class PluginSettingsDialog : public juce::Component {
             juce::Component* existingComponentToUpdate) override;
     };
 
+    DirectoryListModel systemDirListModel_;
     DirectoryListModel dirListModel_;
     ExcludedTableModel excludedTableModel_;
+
+    // System directories section (read-only)
+    juce::Label systemDirsHeader_;
+    juce::ListBox systemDirsList_;
+    std::vector<std::string> systemPaths_;
 
     // Custom directories section
     juce::Label directoriesHeader_;
@@ -60,6 +66,13 @@ class PluginSettingsDialog : public juce::Component {
     juce::TextButton removeDirButton_;
     std::vector<std::string> customPaths_;
     std::unique_ptr<juce::FileChooser> fileChooser_;
+
+    // Scan section
+    juce::TextButton scanButton_;
+    juce::TextButton viewReportButton_;
+    juce::ProgressBar scanProgressBar_;
+    double scanProgress_ = -1.0;
+    juce::Label scanStatusLabel_;
 
     // Excluded plugins section
     juce::Label excludedHeader_;
