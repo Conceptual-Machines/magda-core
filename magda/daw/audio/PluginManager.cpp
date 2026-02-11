@@ -1485,7 +1485,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             plugin = edit_.getPluginCache().createNewPlugin(pluginState);
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
-                processor = std::make_unique<DeviceProcessor>(device.id, plugin);
+                processor = std::make_unique<MagdaSamplerProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("4osc")) {
             plugin = createFourOscSynth(track);

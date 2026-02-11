@@ -18,32 +18,27 @@ namespace magda::daw::ui {
  *
  * Compact layout with:
  * - Sample file display + load button
+ * - Waveform thumbnail with markers and playhead
+ * - Sample start, loop start/end controls
  * - ADSR knobs (Attack, Decay, Sustain, Release)
  * - Pitch/Fine tuning
  * - Level control
- * - Waveform thumbnail
  *
  * Parameter indices (matching MagdaSamplerPlugin::addParam order):
- *   0=attack, 1=decay, 2=sustain, 3=release, 4=pitch, 5=fine, 6=level
+ *   0=attack, 1=decay, 2=sustain, 3=release, 4=pitch, 5=fine, 6=level,
+ *   7=sampleStart, 8=loopStart, 9=loopEnd
  */
-class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget {
+class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, private juce::Timer {
   public:
     SamplerUI();
-    ~SamplerUI() override = default;
+    ~SamplerUI() override;
 
     /**
      * @brief Update all UI controls from device parameters
-     * @param attack Attack time in seconds
-     * @param decay Decay time in seconds
-     * @param sustain Sustain level (0-1)
-     * @param release Release time in seconds
-     * @param pitch Pitch offset in semitones (-24 to +24)
-     * @param fine Fine tuning in cents (-100 to +100)
-     * @param level Level in dB (-60 to +12)
-     * @param sampleName Display name of loaded sample (empty = none)
      */
     void updateParameters(float attack, float decay, float sustain, float release, float pitch,
-                          float fine, float level, const juce::String& sampleName);
+                          float fine, float level, float sampleStart, bool loopEnabled,
+                          float loopStart, float loopEnd, const juce::String& sampleName);
 
     /**
      * @brief Callback when a parameter changes (paramIndex, actualValue)
@@ -61,9 +56,20 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget {
     std::function<void(const juce::File&)> onFileDropped;
 
     /**
+     * @brief Callback when loop enabled state changes
+     */
+    std::function<void(bool)> onLoopEnabledChanged;
+
+    /**
+     * @brief Callback to read current playback position from plugin
+     */
+    std::function<double()> getPlaybackPosition;
+
+    /**
      * @brief Set the waveform thumbnail data for display
      */
-    void setWaveformData(const juce::AudioBuffer<float>* buffer, double sampleRate);
+    void setWaveformData(const juce::AudioBuffer<float>* buffer, double sampleRate,
+                         double sampleLengthSeconds);
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -72,7 +78,20 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget {
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
 
+    // Mouse interaction on waveform
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent& e) override;
+
   private:
+    // Timer
+    void timerCallback() override;
+
+    // Coordinate mapping
+    float secondsToPixelX(double seconds, juce::Rectangle<int> waveArea) const;
+    double pixelXToSeconds(float pixelX, juce::Rectangle<int> waveArea) const;
+    juce::Rectangle<int> getWaveformBounds() const;
+
     // Sample info
     juce::Label sampleNameLabel_;
     juce::TextButton loadButton_{"Load"};
@@ -80,6 +99,15 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget {
     // Waveform thumbnail
     juce::Path waveformPath_;
     bool hasWaveform_ = false;
+    double sampleLength_ = 0.0;
+    double playheadPosition_ = 0.0;
+
+    // Sample start / Loop controls
+    TextSlider startSlider_{TextSlider::Format::Decimal};
+    juce::ToggleButton loopButton_{"Loop"};
+    TextSlider loopStartSlider_{TextSlider::Format::Decimal};
+    TextSlider loopEndSlider_{TextSlider::Format::Decimal};
+    juce::Label startLabel_, loopStartLabel_, loopEndLabel_;
 
     // ADSR
     TextSlider attackSlider_{TextSlider::Format::Decimal};
@@ -97,6 +125,10 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget {
     // Labels
     juce::Label attackLabel_, decayLabel_, sustainLabel_, releaseLabel_;
     juce::Label pitchLabel_, fineLabel_, levelLabel_;
+
+    // Dragging state
+    enum class DragTarget { None, SampleStart, LoopStart, LoopEnd };
+    DragTarget currentDrag_ = DragTarget::None;
 
     void setupLabel(juce::Label& label, const juce::String& text);
     void buildWaveformPath(const juce::AudioBuffer<float>* buffer, int width, int height);

@@ -541,7 +541,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     }
 
     // Update custom UI if available
-    if (toneGeneratorUI_) {
+    if (toneGeneratorUI_ || samplerUI_) {
         updateCustomUI();
     }
 
@@ -1241,6 +1241,36 @@ void DeviceSlotComponent::createCustomUI() {
             magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
                                                                        value);
         };
+
+        // Loop enabled toggle callback (non-automatable, writes directly to plugin state)
+        samplerUI_->onLoopEnabledChanged = [this](bool enabled) {
+            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+            if (!audioEngine)
+                return;
+            auto* bridge = audioEngine->getAudioBridge();
+            if (!bridge)
+                return;
+            auto plugin = bridge->getPlugin(device_.id);
+            if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+                sampler->loopEnabledValue = enabled;
+            }
+        };
+
+        // Playhead position callback
+        samplerUI_->getPlaybackPosition = [this]() -> double {
+            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+            if (!audioEngine)
+                return 0.0;
+            auto* bridge = audioEngine->getAudioBridge();
+            if (!bridge)
+                return 0.0;
+            auto plugin = bridge->getPlugin(device_.id);
+            if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+                return sampler->getPlaybackPosition();
+            }
+            return 0.0;
+        };
+
         // Shared logic for loading a sample file and refreshing the UI
         auto loadFile = [this](const juce::File& file) {
             auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
@@ -1256,8 +1286,11 @@ void DeviceSlotComponent::createCustomUI() {
                         sampler->attackValue.get(), sampler->decayValue.get(),
                         sampler->sustainValue.get(), sampler->releaseValue.get(),
                         sampler->pitchValue.get(), sampler->fineValue.get(),
-                        sampler->levelValue.get(), file.getFileNameWithoutExtension());
-                    samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate());
+                        sampler->levelValue.get(), sampler->sampleStartValue.get(),
+                        sampler->loopEnabledValue.get(), sampler->loopStartValue.get(),
+                        sampler->loopEndValue.get(), file.getFileNameWithoutExtension());
+                    samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
+                                                sampler->getSampleLengthSeconds());
                     repaint();
                 }
             }
@@ -1306,9 +1339,12 @@ void DeviceSlotComponent::updateCustomUI() {
 
     if (samplerUI_ &&
         device_.pluginId.containsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
-        // Param order: 0=attack, 1=decay, 2=sustain, 3=release, 4=pitch, 5=fine, 6=level
+        // Param order: 0=attack, 1=decay, 2=sustain, 3=release, 4=pitch, 5=fine, 6=level,
+        //              7=sampleStart, 8=loopStart, 9=loopEnd
         float attack = 0.001f, decay = 0.1f, sustain = 1.0f, release = 0.1f;
         float pitch = 0.0f, fine = 0.0f, level = 0.0f;
+        float sampleStart = 0.0f, loopStart = 0.0f, loopEnd = 0.0f;
+        bool loopEnabled = false;
         juce::String sampleName;
 
         if (device_.parameters.size() >= 7) {
@@ -1320,8 +1356,13 @@ void DeviceSlotComponent::updateCustomUI() {
             fine = device_.parameters[5].currentValue;
             level = device_.parameters[6].currentValue;
         }
+        if (device_.parameters.size() >= 10) {
+            sampleStart = device_.parameters[7].currentValue;
+            loopStart = device_.parameters[8].currentValue;
+            loopEnd = device_.parameters[9].currentValue;
+        }
 
-        // Get sample name and waveform from plugin state
+        // Get sample name, waveform, and loop state from plugin state
         auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
         if (audioEngine) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
@@ -1330,13 +1371,15 @@ void DeviceSlotComponent::updateCustomUI() {
                     auto file = sampler->getSampleFile();
                     if (file.existsAsFile())
                         sampleName = file.getFileNameWithoutExtension();
-                    samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate());
+                    loopEnabled = sampler->loopEnabledValue.get();
+                    samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
+                                                sampler->getSampleLengthSeconds());
                 }
             }
         }
 
         samplerUI_->updateParameters(attack, decay, sustain, release, pitch, fine, level,
-                                     sampleName);
+                                     sampleStart, loopEnabled, loopStart, loopEnd, sampleName);
     }
 }
 

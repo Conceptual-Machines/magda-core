@@ -37,6 +37,8 @@ class SamplerVoice : public juce::SynthesiserVoice {
 
     void setADSR(float attack, float decay, float sustain, float release);
     void setPitchOffset(float semitones, float cents);
+    void setPlaybackRegion(double startOffsetSeconds, bool loop, double loopStartSeconds,
+                           double loopEndSeconds, double sourceSampleRate);
 
     bool canPlaySound(juce::SynthesiserSound* sound) override;
     void startNote(int midiNoteNumber, float velocity, juce::SynthesiserSound*,
@@ -48,6 +50,10 @@ class SamplerVoice : public juce::SynthesiserVoice {
     void pitchWheelMoved(int) override {}
     void controllerMoved(int, int) override {}
 
+    double getSourceSamplePosition() const {
+        return sourceSamplePosition;
+    }
+
   private:
     juce::ADSR adsr;
     juce::ADSR::Parameters adsrParams;
@@ -56,6 +62,11 @@ class SamplerVoice : public juce::SynthesiserVoice {
     float velocityGain = 0.0f;
     float pitchSemitones = 0.0f;
     float fineCents = 0.0f;
+
+    double sampleStartOffset = 0.0;
+    bool loopEnabled = false;
+    double loopStartSample = 0.0;
+    double loopEndSample = 0.0;
 };
 
 //==============================================================================
@@ -124,13 +135,22 @@ class MagdaSamplerPlugin : public te::Plugin {
     // Automatable parameters
     juce::CachedValue<float> attackValue, decayValue, sustainValue, releaseValue;
     juce::CachedValue<float> pitchValue, fineValue, levelValue;
+    juce::CachedValue<float> sampleStartValue, loopStartValue, loopEndValue;
 
     te::AutomatableParameter::Ptr attackParam, decayParam, sustainParam, releaseParam;
     te::AutomatableParameter::Ptr pitchParam, fineParam, levelParam;
+    te::AutomatableParameter::Ptr sampleStartParam, loopStartParam, loopEndParam;
 
     // Non-parameter state
     juce::CachedValue<juce::String> samplePathValue;
     juce::CachedValue<int> rootNoteValue;
+    juce::CachedValue<bool> loopEnabledValue;
+
+    // Playhead position (written by audio thread, read by UI)
+    std::atomic<double> currentPlaybackPosition{0.0};
+    double getPlaybackPosition() const {
+        return currentPlaybackPosition.load(std::memory_order_relaxed);
+    }
 
   private:
     //==============================================================================
