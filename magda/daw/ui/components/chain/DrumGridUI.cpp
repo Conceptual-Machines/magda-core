@@ -504,11 +504,7 @@ void DrumGridUI::resized() {
     panLabel_.setVisible(false);
 
     if (showDetailPanel) {
-        auto headerRow = detailArea.removeFromTop(18);
-        detailPadNameLabel_.setBounds(headerRow);
-        detailPadNameLabel_.setVisible(true);
-        detailArea.removeFromTop(4);
-
+        detailPadNameLabel_.setVisible(false);
         padChainPanel_.setBounds(detailArea);
         padChainPanel_.setVisible(true);
     } else {
@@ -643,8 +639,8 @@ int DrumGridUI::getPreferredContentWidth() const {
     if (chainsPanelVisible_)
         width += kGap + kChainsPanelWidth;
     if (showDetailPanel)
-        width += kGap + 800;  // Large width for detail panel to allow expansion
-    return width + 12;        // reduced(6) padding on each side
+        width += kGap + 2000;  // Request large width so detail panel gets maximum space
+    return width + 12;         // reduced(6) padding on each side
 }
 
 void DrumGridUI::setChainsPanelVisible(bool visible) {

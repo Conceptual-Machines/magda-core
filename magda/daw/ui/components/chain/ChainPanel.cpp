@@ -285,22 +285,15 @@ void ChainPanel::resizedContent(juce::Rectangle<int> contentArea) {
 
     // Calculate total width needed for all element slots
     int totalWidth = calculateTotalContentWidth();
-    int viewportWidth = contentArea.getWidth();
     int containerHeight = contentArea.getHeight();
 
     // Account for horizontal scrollbar if needed
-    if (totalWidth > viewportWidth) {
+    if (totalWidth > contentArea.getWidth()) {
         containerHeight = contentArea.getHeight() - 8;  // Space for scrollbar
     }
 
-    // Stretch slots to fill viewport when content is narrower
-    int extraPerSlot = 0;
-    if (!elementSlots_.empty() && totalWidth < viewportWidth) {
-        extraPerSlot = (viewportWidth - totalWidth) / static_cast<int>(elementSlots_.size());
-    }
-
     // Set container size and update element slots reference for arrow painting
-    elementSlotsContainer_->setSize(juce::jmax(totalWidth, viewportWidth), containerHeight);
+    elementSlotsContainer_->setSize(totalWidth, containerHeight);
     elementSlotsContainer_->setElementSlots(&elementSlots_);
 
     // Add left padding during drag/drop to show insertion indicator before first element
@@ -310,7 +303,7 @@ void ChainPanel::resizedContent(juce::Rectangle<int> contentArea) {
     // Layout element slots inside the container with zoom applied
     int scaledArrowWidth = getScaledWidth(ARROW_WIDTH);
     for (auto& slot : elementSlots_) {
-        int slotWidth = getScaledWidth(slot->getPreferredWidth()) + extraPerSlot;
+        int slotWidth = getScaledWidth(slot->getPreferredWidth());
         slot->setBounds(x, 0, slotWidth, containerHeight);
         x += slotWidth + scaledArrowWidth;
     }

@@ -1517,8 +1517,8 @@ void DeviceSlotComponent::createCustomUI() {
         };
 
         // FX plugin drop onto chain area
-        padChain.onPluginDropped = [getDrumGrid](int padIndex, const juce::DynamicObject& obj,
-                                                 int insertIdx) {
+        padChain.onPluginDropped = [this, getDrumGrid](int padIndex, const juce::DynamicObject& obj,
+                                                       int insertIdx) {
             auto* dg = getDrumGrid();
             if (!dg)
                 return;
@@ -1538,6 +1538,7 @@ void DeviceSlotComponent::createCustomUI() {
                 if (desc.fileOrIdentifier == fileOrId ||
                     (uniqueId.isNotEmpty() && juce::String(desc.uniqueId) == uniqueId)) {
                     dg->addPluginToPad(padIndex, desc, insertIdx);
+                    drumGridUI_->getPadChainPanel().refresh();
                     return;
                 }
             }

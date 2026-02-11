@@ -15,11 +15,14 @@ PadChainPanel::PadChainPanel() {
     addButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     addButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addButton_.setTooltip("Drop a plugin here to add FX");
-    addAndMakeVisible(addButton_);
+    container_.addAndMakeVisible(addButton_);
 
     viewport_.setScrollBarsShown(false, true);
     viewport_.setViewedComponent(&container_, false);
     addAndMakeVisible(viewport_);
+
+    // Allow drag events to pass through container to this component
+    container_.setInterceptsMouseClicks(false, true);
 }
 
 PadChainPanel::~PadChainPanel() {
@@ -62,9 +65,15 @@ void PadChainPanel::rebuildSlots() {
         return;
 
     auto slotInfos = getPluginSlots(currentPadIndex_);
+    DBG("PadChainPanel::rebuildSlots - pad " + juce::String(currentPadIndex_) + " has " +
+        juce::String((int)slotInfos.size()) + " plugins");
 
     for (size_t i = 0; i < slotInfos.size(); ++i) {
         auto& info = slotInfos[i];
+        DBG("  Slot " + juce::String((int)i) + ": " + info.name +
+            " isSampler=" + juce::String(info.isSampler ? "true" : "false") +
+            " plugin=" + juce::String::toHexString((juce::pointer_sized_int)info.plugin));
+
         auto slot = std::make_unique<PadDeviceSlot>();
 
         int pluginIndex = static_cast<int>(i);
@@ -93,8 +102,10 @@ void PadChainPanel::rebuildSlots() {
 
         // Set plugin content
         if (info.isSampler) {
+            DBG("    Setting up as sampler");
             slot->setSampler(dynamic_cast<daw::audio::MagdaSamplerPlugin*>(info.plugin));
         } else if (info.plugin) {
+            DBG("    Setting up as external plugin");
             slot->setPlugin(info.plugin);
         }
 
@@ -141,12 +152,18 @@ void PadChainPanel::itemDropped(const SourceDetails& details) {
     int insertIdx = dropInsertIndex_;
     dropInsertIndex_ = -1;
 
+    DBG("PadChainPanel::itemDropped - padIndex=" + juce::String(currentPadIndex_) +
+        " insertIdx=" + juce::String(insertIdx));
+
     if (currentPadIndex_ < 0) {
+        DBG("  Invalid pad index, ignoring drop");
         repaint();
         return;
     }
 
     if (auto* obj = details.description.getDynamicObject()) {
+        DBG("  Plugin drop: type=" + obj->getProperty("type").toString() +
+            " fileOrId=" + obj->getProperty("fileOrIdentifier").toString());
         if (onPluginDropped)
             onPluginDropped(currentPadIndex_, *obj, insertIdx);
     }
@@ -189,37 +206,22 @@ void PadChainPanel::resized() {
     viewport_.setBounds(area);
 
     int height = area.getHeight() - 8;
-    int viewportWidth = area.getWidth();
-
-    // Calculate total preferred content width
-    int totalPreferred = 4;
-    for (size_t i = 0; i < slots_.size(); ++i) {
-        if (i > 0)
-            totalPreferred += ARROW_WIDTH;
-        totalPreferred += slots_[i]->getPreferredWidth();
-    }
-    totalPreferred += ARROW_WIDTH + ADD_BUTTON_WIDTH + 4;
-
-    // Stretch slots to fill viewport when content is narrower
-    int extraPerSlot = 0;
-    if (!slots_.empty() && totalPreferred < viewportWidth)
-        extraPerSlot = (viewportWidth - totalPreferred) / static_cast<int>(slots_.size());
 
     int x = 4;
     for (size_t i = 0; i < slots_.size(); ++i) {
         if (i > 0)
             x += ARROW_WIDTH;
-        int slotWidth = slots_[i]->getPreferredWidth() + extraPerSlot;
+        int slotWidth = slots_[i]->getPreferredWidth();
         slots_[i]->setBounds(x, 4, slotWidth, height);
         x += slotWidth;
     }
 
     x += ARROW_WIDTH;
-    addButton_.setBounds(x, (area.getHeight() - ADD_BUTTON_WIDTH) / 2, ADD_BUTTON_WIDTH,
+    addButton_.setBounds(x, (height - ADD_BUTTON_WIDTH) / 2 + 4, ADD_BUTTON_WIDTH,
                          ADD_BUTTON_WIDTH);
     x += ADD_BUTTON_WIDTH + 4;
 
-    container_.setSize(juce::jmax(x, viewportWidth), area.getHeight());
+    container_.setSize(x, height + 8);
 }
 
 int PadChainPanel::calculateInsertIndex(int mouseX) const {
