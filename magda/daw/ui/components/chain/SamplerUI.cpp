@@ -308,9 +308,8 @@ void SamplerUI::filesDropped(const juce::StringArray& files, int /*x*/, int /*y*
 juce::Rectangle<int> SamplerUI::getWaveformBounds() const {
     auto area = getLocalBounds().reduced(8);
     area.removeFromTop(26);  // Skip sample name row (22 + 4 gap)
-    // Controls below waveform: 3 label+slider rows (12+22 each) + 3 gaps (4 each) + trailing gap =
-    // 114
-    static constexpr int kControlsHeight = 114;
+    // Controls below: header(14) + gap(2) + 2 rows of label(12)+slider(20)+gap(2) = 84
+    static constexpr int kControlsHeight = 84;
     int waveHeight = juce::jmax(30, area.getHeight() - kControlsHeight);
     return area.removeFromTop(waveHeight);
 }
@@ -635,6 +634,33 @@ void SamplerUI::paint(juce::Graphics& g) {
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.drawText("Drop sample or click Load", waveformArea, juce::Justification::centred);
     }
+
+    // --- Column headers and separators below waveform ---
+    auto ctrlArea = getLocalBounds().reduced(8);
+    ctrlArea.removeFromTop(26);  // sample name row
+    auto waveBounds = getWaveformBounds();
+    ctrlArea.removeFromTop(waveBounds.getHeight() + 4);  // waveform + gap
+
+    auto headerArea = ctrlArea.removeFromTop(14);
+    int totalW = headerArea.getWidth();
+    int col1W = totalW * 3 / 8;
+    int col2W = totalW * 2 / 8;
+
+    // Header text
+    g.setFont(FontManager::getInstance().getUIFont(10.0f));
+    g.setColour(DarkTheme::getSecondaryTextColour().brighter(0.3f));
+    g.drawText("START / LOOP", headerArea.removeFromLeft(col1W), juce::Justification::centred);
+    g.drawText("PITCH", headerArea.removeFromLeft(col2W), juce::Justification::centred);
+    g.drawText("AMP", headerArea, juce::Justification::centred);
+
+    // Vertical separators
+    int sep1X = ctrlArea.getX() + col1W;
+    int sep2X = ctrlArea.getX() + col1W + col2W;
+    int sepTop = ctrlArea.getY() + 2;
+    int sepBottom = ctrlArea.getBottom();
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.drawVerticalLine(sep1X, static_cast<float>(sepTop), static_cast<float>(sepBottom));
+    g.drawVerticalLine(sep2X, static_cast<float>(sepTop), static_cast<float>(sepBottom));
 }
 
 // =============================================================================
@@ -652,56 +678,93 @@ void SamplerUI::resized() {
     area.removeFromTop(4);
 
     // Row 2: Waveform display (painted, not a component) — absorbs remaining space
-    static constexpr int kControlsHeight = 114;
+    // Controls below: header(14) + gap(2) + 2 rows of label(12)+slider(20)+gap(2) = 84
+    static constexpr int kControlsHeight = 84;
     int waveHeight = juce::jmax(30, area.getHeight() - kControlsHeight);
     area.removeFromTop(waveHeight);
     area.removeFromTop(4);
 
-    // Row 3: START | [Loop toggle] | L.START | L.END labels
-    auto startLabelRow = area.removeFromTop(12);
-    int quarterWidth = area.getWidth() / 4;
-    startLabel_.setBounds(startLabelRow.removeFromLeft(quarterWidth));
-    // Loop toggle label space (handled by the button itself)
-    startLabelRow.removeFromLeft(quarterWidth);
-    loopStartLabel_.setBounds(startLabelRow.removeFromLeft(quarterWidth));
-    loopEndLabel_.setBounds(startLabelRow);
+    // --- Three-column control layout ---
+    // Column headers are painted in paint(), reserve space here
+    auto controlsArea = area;
+    controlsArea.removeFromTop(14);  // header height
+    controlsArea.removeFromTop(2);   // gap
 
-    // Row 4: startSlider | [loop toggle] | loopStartSlider | loopEndSlider
-    auto startRow = area.removeFromTop(22);
-    startSlider_.setBounds(startRow.removeFromLeft(quarterWidth).reduced(2, 0));
-    loopButton_.setBounds(startRow.removeFromLeft(quarterWidth).reduced(2, 0));
-    loopStartSlider_.setBounds(startRow.removeFromLeft(quarterWidth).reduced(2, 0));
-    loopEndSlider_.setBounds(startRow.reduced(2, 0));
-    area.removeFromTop(4);
+    // Split into 3 columns: Start/Loop (3/8) | Pitch (2/8) | Amp (3/8)
+    int totalW = controlsArea.getWidth();
+    int col1W = totalW * 3 / 8;
+    int col2W = totalW * 2 / 8;
+    int col3W = totalW - col1W - col2W;
 
-    // Row 5: ADSR labels
-    auto adsrLabelRow = area.removeFromTop(12);
-    int colWidth = area.getWidth() / 4;
-    attackLabel_.setBounds(adsrLabelRow.removeFromLeft(colWidth));
-    decayLabel_.setBounds(adsrLabelRow.removeFromLeft(colWidth));
-    sustainLabel_.setBounds(adsrLabelRow.removeFromLeft(colWidth));
-    releaseLabel_.setBounds(adsrLabelRow);
+    auto col1 = controlsArea.removeFromLeft(col1W).reduced(2, 0);
+    auto col2 = controlsArea.removeFromLeft(col2W).reduced(2, 0);
+    auto col3 = controlsArea.reduced(2, 0);
 
-    // Row 6: ADSR sliders
-    auto adsrRow = area.removeFromTop(22);
-    attackSlider_.setBounds(adsrRow.removeFromLeft(colWidth).reduced(2, 0));
-    decaySlider_.setBounds(adsrRow.removeFromLeft(colWidth).reduced(2, 0));
-    sustainSlider_.setBounds(adsrRow.removeFromLeft(colWidth).reduced(2, 0));
-    releaseSlider_.setBounds(adsrRow.reduced(2, 0));
-    area.removeFromTop(4);
+    // --- Column 1: Start / Loop ---
+    // Row 1: START label | Loop toggle
+    auto c1LabelRow1 = col1.removeFromTop(12);
+    int halfCol1 = col1.getWidth() / 2;
+    startLabel_.setBounds(c1LabelRow1.removeFromLeft(halfCol1));
+    // Loop toggle placed in slider row below
 
-    // Row 7: Pitch / Fine / Level labels
-    auto pitchLabelRow = area.removeFromTop(12);
-    int thirdWidth = area.getWidth() / 3;
-    pitchLabel_.setBounds(pitchLabelRow.removeFromLeft(thirdWidth));
-    fineLabel_.setBounds(pitchLabelRow.removeFromLeft(thirdWidth));
-    levelLabel_.setBounds(pitchLabelRow);
+    // Row 1: start slider | loop toggle
+    auto c1Row1 = col1.removeFromTop(20);
+    startSlider_.setBounds(c1Row1.removeFromLeft(halfCol1).reduced(1, 0));
+    loopButton_.setBounds(c1Row1.reduced(1, 0));
+    col1.removeFromTop(2);
 
-    // Row 8: Pitch / Fine / Level sliders
-    auto pitchRow = area.removeFromTop(22);
-    pitchSlider_.setBounds(pitchRow.removeFromLeft(thirdWidth).reduced(2, 0));
-    fineSlider_.setBounds(pitchRow.removeFromLeft(thirdWidth).reduced(2, 0));
-    levelSlider_.setBounds(pitchRow.reduced(2, 0));
+    // Row 2: L.START label | L.END label
+    auto c1LabelRow2 = col1.removeFromTop(12);
+    loopStartLabel_.setBounds(c1LabelRow2.removeFromLeft(halfCol1));
+    loopEndLabel_.setBounds(c1LabelRow2);
+
+    // Row 2: loop start slider | loop end slider
+    auto c1Row2 = col1.removeFromTop(20);
+    loopStartSlider_.setBounds(c1Row2.removeFromLeft(halfCol1).reduced(1, 0));
+    loopEndSlider_.setBounds(c1Row2.reduced(1, 0));
+
+    // --- Column 2: Pitch ---
+    // Row 1: PITCH label
+    auto c2LabelRow1 = col2.removeFromTop(12);
+    pitchLabel_.setBounds(c2LabelRow1);
+
+    // Row 1: pitch slider
+    auto c2Row1 = col2.removeFromTop(20);
+    pitchSlider_.setBounds(c2Row1.reduced(1, 0));
+    col2.removeFromTop(2);
+
+    // Row 2: FINE label
+    auto c2LabelRow2 = col2.removeFromTop(12);
+    fineLabel_.setBounds(c2LabelRow2);
+
+    // Row 2: fine slider
+    auto c2Row2 = col2.removeFromTop(20);
+    fineSlider_.setBounds(c2Row2.reduced(1, 0));
+
+    // --- Column 3: Amp ---
+    // Row 1: ATK | DEC | SUS | REL labels
+    auto c3LabelRow1 = col3.removeFromTop(12);
+    int quarterCol3 = col3.getWidth() / 4;
+    attackLabel_.setBounds(c3LabelRow1.removeFromLeft(quarterCol3));
+    decayLabel_.setBounds(c3LabelRow1.removeFromLeft(quarterCol3));
+    sustainLabel_.setBounds(c3LabelRow1.removeFromLeft(quarterCol3));
+    releaseLabel_.setBounds(c3LabelRow1);
+
+    // Row 1: ATK | DEC | SUS | REL sliders
+    auto c3Row1 = col3.removeFromTop(20);
+    attackSlider_.setBounds(c3Row1.removeFromLeft(quarterCol3).reduced(1, 0));
+    decaySlider_.setBounds(c3Row1.removeFromLeft(quarterCol3).reduced(1, 0));
+    sustainSlider_.setBounds(c3Row1.removeFromLeft(quarterCol3).reduced(1, 0));
+    releaseSlider_.setBounds(c3Row1.reduced(1, 0));
+    col3.removeFromTop(2);
+
+    // Row 2: LEVEL label (full width)
+    auto c3LabelRow2 = col3.removeFromTop(12);
+    levelLabel_.setBounds(c3LabelRow2);
+
+    // Row 2: LEVEL slider (full width)
+    auto c3Row2 = col3.removeFromTop(20);
+    levelSlider_.setBounds(c3Row2.reduced(1, 0));
 
     // Rebuild waveform path at new size
     if (hasWaveform_ && waveformBuffer_ != nullptr) {
