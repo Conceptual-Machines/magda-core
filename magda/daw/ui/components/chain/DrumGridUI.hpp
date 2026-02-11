@@ -5,9 +5,19 @@
 
 #include <array>
 #include <functional>
+#include <memory>
 
+#include "PadChainRowComponent.hpp"
+#include "ParamSlotComponent.hpp"
 #include "SamplerUI.hpp"
+#include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
+
+namespace tracktion {
+inline namespace engine {
+class Plugin;
+}
+}  // namespace tracktion
 
 namespace magda::daw::audio {
 class MagdaSamplerPlugin;
@@ -35,6 +45,7 @@ class DrumGridUI : public juce::Component,
     static constexpr int kGridRows = 4;
     static constexpr int kTotalPads = 64;
     static constexpr int kNumPages = kTotalPads / kPadsPerPage;
+    static constexpr int kPluginParamSlots = 16;
 
     DrumGridUI();
     ~DrumGridUI() override = default;
@@ -84,8 +95,31 @@ class DrumGridUI : public juce::Component,
     /** Callback to get the MagdaSamplerPlugin for a given pad (returns nullptr if not a sampler) */
     std::function<daw::audio::MagdaSamplerPlugin*(int padIndex)> getPadSampler;
 
+    /** Callback to get the te::Plugin for a given pad (any plugin type) */
+    std::function<tracktion::engine::Plugin*(int padIndex)> getPadPlugin;
+
+    /** Called when delete is clicked on a chain row. (padIndex) */
+    std::function<void(int)> onPadDeleteRequested;
+
+    /** Called when layout changes (e.g., chains panel toggled) so parent can resize. */
+    std::function<void()> onLayoutChanged;
+
     /** Update the embedded SamplerUI for the given pad index */
     void updatePadSamplerUI(int padIndex);
+
+    /** Populate param slots from a non-sampler plugin on the given pad */
+    void refreshPluginParams(int padIndex);
+
+    /** Rebuild visible chain rows from padInfos_. */
+    void rebuildChainRows();
+
+    /** Show or hide the chains panel. */
+    void setChainsPanelVisible(bool visible);
+
+    /** Whether the chains panel is currently visible. */
+    bool isChainsPanelVisible() const {
+        return chainsPanelVisible_;
+    }
 
     //==============================================================================
     // Component overrides
@@ -99,6 +133,7 @@ class DrumGridUI : public juce::Component,
     // DragAndDropTarget (for plugin drops)
     bool isInterestedInDragSource(const SourceDetails& details) override;
     void itemDragEnter(const SourceDetails& details) override;
+    void itemDragMove(const SourceDetails& details) override;
     void itemDragExit(const SourceDetails& details) override;
     void itemDropped(const SourceDetails& details) override;
 
@@ -170,6 +205,19 @@ class DrumGridUI : public juce::Component,
 
     // Embedded SamplerUI for selected pad
     SamplerUI padSamplerUI_;
+
+    // Plugin parameter grid (for non-sampler plugins)
+    std::array<std::unique_ptr<ParamSlotComponent>, kPluginParamSlots> pluginParamSlots_;
+    std::unique_ptr<magda::SvgButton> pluginUIButton_;
+    juce::Label pluginNameLabel_;
+
+    // Chains panel
+    bool chainsPanelVisible_ = true;
+    juce::Label chainsLabel_;
+    juce::Viewport chainsViewport_;
+    juce::Component chainsContainer_;
+    std::vector<std::unique_ptr<PadChainRowComponent>> chainRows_;
+    std::unique_ptr<magda::SvgButton> chainsToggleButton_;
 
     // Plugin drop highlight
     int dropHighlightPad_ = -1;

@@ -487,8 +487,12 @@ int DeviceSlotComponent::getPreferredWidth() const {
     if (collapsed_) {
         return getLeftPanelsWidth() + COLLAPSED_WIDTH + getRightPanelsWidth();
     }
-    if (samplerUI_ || drumGridUI_) {
+    if (samplerUI_) {
         return getTotalWidth(BASE_SLOT_WIDTH * 2);
+    }
+    if (drumGridUI_) {
+        float multiplier = drumGridUI_->isChainsPanelVisible() ? 3.0f : 2.25f;
+        return getTotalWidth(static_cast<int>(BASE_SLOT_WIDTH * multiplier));
     }
     return getTotalWidth(getDynamicSlotWidth());
 }
@@ -1439,6 +1443,15 @@ void DeviceSlotComponent::createCustomUI() {
             return nullptr;
         };
 
+        // Provide access to per-pad plugin for plugin param display
+        drumGridUI_->getPadPlugin = [getDrumGrid](int padIndex) -> tracktion::engine::Plugin* {
+            if (auto* dg = getDrumGrid()) {
+                const auto& pad = dg->getPad(padIndex);
+                return pad.plugin.get();
+            }
+            return nullptr;
+        };
+
         // Plugin drag & drop onto pads
         drumGridUI_->onPluginDropped = [this, getDrumGrid](int padIndex,
                                                            const juce::DynamicObject& obj) {
@@ -1464,24 +1477,38 @@ void DeviceSlotComponent::createCustomUI() {
                 if (desc.fileOrIdentifier == fileOrId ||
                     (uniqueId.isNotEmpty() && juce::String(desc.uniqueId) == uniqueId)) {
                     dg->loadPluginToPad(padIndex, desc);
-                    // Refresh pad info
+                    // Refresh pad info - show plugin name on pad
                     const auto& pad = dg->getPad(padIndex);
-                    juce::String sampleName;
+                    juce::String displayName = desc.name;
                     if (pad.plugin != nullptr) {
                         if (auto* sampler =
                                 dynamic_cast<daw::audio::MagdaSamplerPlugin*>(pad.plugin.get())) {
                             auto f = sampler->getSampleFile();
                             if (f.existsAsFile())
-                                sampleName = f.getFileNameWithoutExtension();
+                                displayName = f.getFileNameWithoutExtension();
                         }
                     }
-                    drumGridUI_->updatePadInfo(padIndex, sampleName, pad.mute.get(), pad.solo.get(),
-                                               pad.level.get(), pad.pan.get());
+                    drumGridUI_->updatePadInfo(padIndex, displayName, pad.mute.get(),
+                                               pad.solo.get(), pad.level.get(), pad.pan.get());
                     drumGridUI_->updatePadSamplerUI(padIndex);
                     return;
                 }
             }
             DBG("DrumGridUI: Plugin not found in KnownPluginList: " + fileOrId);
+        };
+
+        // Layout change notification (e.g., chains panel toggled)
+        drumGridUI_->onLayoutChanged = [this]() {
+            if (onDeviceLayoutChanged)
+                onDeviceLayoutChanged();
+        };
+
+        // Delete from chain row — same as clear
+        drumGridUI_->onPadDeleteRequested = [this, getDrumGrid](int padIndex) {
+            if (auto* dg = getDrumGrid()) {
+                dg->clearPad(padIndex);
+                drumGridUI_->updatePadInfo(padIndex, "", false, false, 0.0f, 0.0f);
+            }
         };
 
         addAndMakeVisible(*drumGridUI_);
@@ -1570,16 +1597,20 @@ void DeviceSlotComponent::updateCustomUI() {
                 if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get())) {
                     for (int i = 0; i < daw::audio::DrumGridPlugin::maxPads; ++i) {
                         const auto& pad = dg->getPad(i);
-                        juce::String sampleName;
+                        juce::String displayName;
                         if (pad.plugin != nullptr) {
                             if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(
                                     pad.plugin.get())) {
                                 auto file = sampler->getSampleFile();
                                 if (file.existsAsFile())
-                                    sampleName = file.getFileNameWithoutExtension();
+                                    displayName = file.getFileNameWithoutExtension();
+                                else
+                                    displayName = "Sampler";
+                            } else {
+                                displayName = pad.plugin->getName();
                             }
                         }
-                        drumGridUI_->updatePadInfo(i, sampleName, pad.mute.get(), pad.solo.get(),
+                        drumGridUI_->updatePadInfo(i, displayName, pad.mute.get(), pad.solo.get(),
                                                    pad.level.get(), pad.pan.get());
                     }
                     // Refresh embedded SamplerUI for selected pad
