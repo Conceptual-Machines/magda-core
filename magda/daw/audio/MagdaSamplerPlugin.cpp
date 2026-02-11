@@ -1,5 +1,7 @@
 #include "MagdaSamplerPlugin.hpp"
 
+#include <cmath>
+
 namespace magda::daw::audio {
 
 namespace te = tracktion::engine;
@@ -54,9 +56,10 @@ void SamplerVoice::startNote(int midiNoteNumber, float velocity, juce::Synthesis
 
     // Compute pitch ratio: (target freq / root freq) * (source SR / playback SR)
     double noteWithOffset = midiNoteNumber + pitchSemitones + fineCents / 100.0;
-    double noteHz = juce::MidiMessage::getMidiNoteInHertz(static_cast<int>(noteWithOffset));
+    auto baseNote = static_cast<int>(std::floor(noteWithOffset));
+    double noteHz = juce::MidiMessage::getMidiNoteInHertz(baseNote);
     // For fractional semitones, use exponential calculation
-    double fractional = noteWithOffset - std::floor(noteWithOffset);
+    double fractional = noteWithOffset - static_cast<double>(baseNote);
     if (fractional != 0.0)
         noteHz *= std::pow(2.0, fractional / 12.0);
 
@@ -247,6 +250,7 @@ MagdaSamplerPlugin::MagdaSamplerPlugin(const te::PluginCreationInfo& info) : Plu
     rootNoteValue.referTo(state, te::IDs::rootNote, um, 60);
     static const juce::Identifier loopEnabledId("loopEnabled");
     loopEnabledValue.referTo(state, loopEnabledId, um, false);
+    loopEnabledAtomic.store(loopEnabledValue.get(), std::memory_order_relaxed);
 
     // Initialize synthesiser
     synthesiser.clearVoices();
@@ -342,12 +346,14 @@ void MagdaSamplerPlugin::loadSample(const juce::File& file) {
 
     // Reset sample start and update loop end to sample length
     double lengthSeconds = static_cast<double>(newSound->audioData.getNumSamples()) / sourceSR;
+    float loopEndClamped =
+        juce::jmin(static_cast<float>(lengthSeconds), loopEndParam->getValueRange().getEnd());
     sampleStartParam->setParameter(0.0f, juce::dontSendNotification);
     sampleStartValue = 0.0f;
     loopStartParam->setParameter(0.0f, juce::dontSendNotification);
     loopStartValue = 0.0f;
-    loopEndParam->setParameter(static_cast<float>(lengthSeconds), juce::dontSendNotification);
-    loopEndValue = static_cast<float>(lengthSeconds);
+    loopEndParam->setParameter(loopEndClamped, juce::dontSendNotification);
+    loopEndValue = loopEndClamped;
 }
 
 juce::File MagdaSamplerPlugin::getSampleFile() const {
@@ -400,7 +406,7 @@ void MagdaSamplerPlugin::updateVoiceParameters() {
     float maxSec = static_cast<float>(lengthSeconds);
 
     float sStart = juce::jlimit(0.0f, maxSec, sampleStartParam->getCurrentValue());
-    bool loopOn = loopEnabledValue.get();
+    bool loopOn = loopEnabledAtomic.load(std::memory_order_relaxed);
     float lStart = juce::jlimit(0.0f, maxSec, loopStartParam->getCurrentValue());
     float lEnd = juce::jlimit(0.0f, maxSec, loopEndParam->getCurrentValue());
 
@@ -430,20 +436,29 @@ void MagdaSamplerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     // Deduplicate MIDI events (multiple input devices can route the same message)
     juce::MidiBuffer midiBuffer;
     if (fc.bufferForMidiMessages != nullptr && !fc.bufferForMidiMessages->isEmpty()) {
-        int noteOnsSeen[128] = {};
-        int noteOffsSeen[128] = {};
+        // Deduplicate: only drop events that match note number AND sample position
+        // (multiple input devices can route the same message at the same time)
+        struct SeenKey {
+            int note;
+            int samplePos;
+            bool isNoteOn;
+            bool operator==(const SeenKey& o) const {
+                return note == o.note && samplePos == o.samplePos && isNoteOn == o.isNoteOn;
+            }
+        };
+        juce::Array<SeenKey> seen;
 
         for (auto& m : *fc.bufferForMidiMessages) {
-            if (m.isNoteOn()) {
-                if (noteOnsSeen[m.getNoteNumber()]++)
-                    continue;
-            } else if (m.isNoteOff()) {
-                if (noteOffsSeen[m.getNoteNumber()]++)
-                    continue;
-            }
-
             int midiPos = juce::roundToInt(m.getTimeStamp() * sampleRate);
             midiPos = juce::jlimit(0, fc.bufferNumSamples - 1, midiPos);
+
+            if (m.isNoteOn() || m.isNoteOff()) {
+                SeenKey key{m.getNoteNumber(), midiPos, m.isNoteOn()};
+                if (seen.contains(key))
+                    continue;
+                seen.add(key);
+            }
+
             midiBuffer.addEvent(m, midiPos + fc.bufferStartSample);
         }
     }
@@ -474,7 +489,8 @@ void MagdaSamplerPlugin::restorePluginStateFromValueTree(const juce::ValueTree& 
     te::copyPropertiesToCachedValues(v, attackValue, decayValue, sustainValue, releaseValue,
                                      pitchValue, fineValue, levelValue, sampleStartValue,
                                      loopStartValue, loopEndValue, samplePathValue, rootNoteValue,
-                                     loopEnabledValue);
+                                     loopEnabledValue, velAmountValue);
+    loopEnabledAtomic.store(loopEnabledValue.get(), std::memory_order_relaxed);
 
     for (auto p : getAutomatableParameters())
         p->updateFromAttachedValue();

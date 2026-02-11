@@ -150,7 +150,8 @@ class MagdaSamplerPlugin : public te::Plugin {
     // Non-parameter state
     juce::CachedValue<juce::String> samplePathValue;
     juce::CachedValue<int> rootNoteValue;
-    juce::CachedValue<bool> loopEnabledValue;
+    juce::CachedValue<bool> loopEnabledValue;    // persisted state (message thread only)
+    std::atomic<bool> loopEnabledAtomic{false};  // audio-thread-safe mirror
 
     // Playhead position (written by audio thread, read by UI)
     std::atomic<double> currentPlaybackPosition{0.0};

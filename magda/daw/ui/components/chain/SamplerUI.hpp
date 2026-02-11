@@ -4,6 +4,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <memory>
 
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
@@ -27,7 +28,10 @@ namespace magda::daw::ui {
  *
  * Parameter indices (matching MagdaSamplerPlugin::addParam order):
  *   0=attack, 1=decay, 2=sustain, 3=release, 4=pitch, 5=fine, 6=level,
- *   7=sampleStart, 8=loopStart, 9=loopEnd
+ *   7=sampleStart, 8=loopStart, 9=loopEnd, 10=velAmount
+ *
+ * Note: loopEnabled is non-automatable state controlled via onLoopEnabledChanged
+ * and does not have a parameter index.
  */
 class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, private juce::Timer {
   public:

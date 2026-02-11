@@ -1252,6 +1252,7 @@ void DeviceSlotComponent::createCustomUI() {
                 return;
             auto plugin = bridge->getPlugin(device_.id);
             if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+                sampler->loopEnabledAtomic.store(enabled, std::memory_order_relaxed);
                 sampler->loopEnabledValue = enabled;
             }
         };
