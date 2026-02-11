@@ -4,6 +4,7 @@
 
 #include "NodeComponent.hpp"
 #include "ParamSlotComponent.hpp"
+#include "SamplerUI.hpp"
 #include "ToneGeneratorUI.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/TrackManager.hpp"
@@ -157,6 +158,7 @@ class DeviceSlotComponent : public NodeComponent,
 
     // Custom UI for internal devices
     std::unique_ptr<ToneGeneratorUI> toneGeneratorUI_;
+    std::unique_ptr<SamplerUI> samplerUI_;
 
     void updatePageControls();
     void updateParamModulation();  // Update mod/macro pointers for params

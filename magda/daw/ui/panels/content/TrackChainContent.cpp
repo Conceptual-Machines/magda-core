@@ -367,8 +367,10 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
             magda::DeviceInfo device;
             device.name = obj->getProperty("name").toString().toStdString();
             device.manufacturer = obj->getProperty("manufacturer").toString().toStdString();
-            device.pluginId = obj->getProperty("name").toString().toStdString() + "_" +
-                              obj->getProperty("format").toString().toStdString();
+            auto uniqueId = obj->getProperty("uniqueId").toString();
+            device.pluginId = uniqueId.isNotEmpty() ? uniqueId
+                                                    : obj->getProperty("name").toString() + "_" +
+                                                          obj->getProperty("format").toString();
             device.isInstrument = static_cast<bool>(obj->getProperty("isInstrument"));
             // External plugin identification - critical for loading
             device.uniqueId = obj->getProperty("uniqueId").toString();

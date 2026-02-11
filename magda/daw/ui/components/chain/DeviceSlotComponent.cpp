@@ -6,6 +6,7 @@
 #include "ModsPanelComponent.hpp"
 #include "ParamSlotComponent.hpp"
 #include "audio/AudioBridge.hpp"
+#include "audio/MagdaSamplerPlugin.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/SelectionManager.hpp"
@@ -532,7 +533,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     updatePageControls();
 
     // Create custom UI if this is an internal device and we don't have one yet
-    if (isInternalDevice() && !toneGeneratorUI_) {
+    if (isInternalDevice() && !toneGeneratorUI_ && !samplerUI_) {
         createCustomUI();
     }
 
@@ -635,6 +636,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
         gainSlider_.setVisible(false);
         if (toneGeneratorUI_)
             toneGeneratorUI_->setVisible(false);
+        if (samplerUI_)
+            samplerUI_->setVisible(false);
         return;
     }
 
@@ -649,10 +652,16 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
 
     // Check if this is an internal device with custom UI
-    if (isInternalDevice() && toneGeneratorUI_) {
+    if (isInternalDevice() && (toneGeneratorUI_ || samplerUI_)) {
         // Show custom minimal UI
-        toneGeneratorUI_->setBounds(contentArea.reduced(4));
-        toneGeneratorUI_->setVisible(true);
+        if (toneGeneratorUI_) {
+            toneGeneratorUI_->setBounds(contentArea.reduced(4));
+            toneGeneratorUI_->setVisible(true);
+        }
+        if (samplerUI_) {
+            samplerUI_->setBounds(contentArea.reduced(4));
+            samplerUI_->setVisible(true);
+        }
 
         // Hide parameter grid and pagination
         for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
@@ -665,6 +674,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
         // External plugin or internal device without custom UI - show 4x4 parameter grid
         if (toneGeneratorUI_)
             toneGeneratorUI_->setVisible(false);
+        if (samplerUI_)
+            samplerUI_->setVisible(false);
 
         // Pagination area
         auto paginationArea = contentArea.removeFromTop(PAGINATION_HEIGHT);
@@ -1217,9 +1228,37 @@ void DeviceSlotComponent::createCustomUI() {
         };
         addAndMakeVisible(*toneGeneratorUI_);
         updateCustomUI();
+    } else if (device_.pluginId.containsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
+        samplerUI_ = std::make_unique<SamplerUI>();
+        samplerUI_->onParameterChanged = [this](int paramIndex, float value) {
+            if (!nodePath_.isValid()) {
+                DBG("ERROR: nodePath_ is invalid, cannot set parameter!");
+                return;
+            }
+            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
+                                                                       value);
+        };
+        samplerUI_->onLoadSampleRequested = [this]() {
+            // Open a file chooser for audio files
+            auto chooser = std::make_shared<juce::FileChooser>(
+                "Load Sample", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
+            chooser->launchAsync(
+                juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                [this, chooser](const juce::FileChooser&) {
+                    auto result = chooser->getResult();
+                    if (result.existsAsFile()) {
+                        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+                        if (audioEngine) {
+                            if (auto* bridge = audioEngine->getAudioBridge()) {
+                                bridge->loadSamplerSample(device_.id, result);
+                            }
+                        }
+                    }
+                });
+        };
+        addAndMakeVisible(*samplerUI_);
+        updateCustomUI();
     }
-    // Future: Add other internal device custom UIs here
-    // else if (device_.pluginId.containsIgnoreCase("volume")) { ... }
 }
 
 void DeviceSlotComponent::updateCustomUI() {
@@ -1242,6 +1281,40 @@ void DeviceSlotComponent::updateCustomUI() {
         }
 
         toneGeneratorUI_->updateParameters(frequency, level, waveform);
+    }
+
+    if (samplerUI_ &&
+        device_.pluginId.containsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
+        // Param order: 0=attack, 1=decay, 2=sustain, 3=release, 4=pitch, 5=fine, 6=level
+        float attack = 0.001f, decay = 0.1f, sustain = 1.0f, release = 0.1f;
+        float pitch = 0.0f, fine = 0.0f, level = 0.0f;
+        juce::String sampleName;
+
+        if (device_.parameters.size() >= 7) {
+            attack = device_.parameters[0].currentValue;
+            decay = device_.parameters[1].currentValue;
+            sustain = device_.parameters[2].currentValue;
+            release = device_.parameters[3].currentValue;
+            pitch = device_.parameters[4].currentValue;
+            fine = device_.parameters[5].currentValue;
+            level = device_.parameters[6].currentValue;
+        }
+
+        // Get sample name from plugin state if available
+        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+        if (audioEngine) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(device_.id);
+                if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+                    auto file = sampler->getSampleFile();
+                    if (file.existsAsFile())
+                        sampleName = file.getFileNameWithoutExtension();
+                }
+            }
+        }
+
+        samplerUI_->updateParameters(attack, decay, sustain, release, pitch, fine, level,
+                                     sampleName);
     }
 }
 

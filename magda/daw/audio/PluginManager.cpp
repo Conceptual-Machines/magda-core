@@ -7,6 +7,7 @@
 #include "../core/TrackManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "CurveSnapshot.hpp"
+#include "MagdaSamplerPlugin.hpp"
 #include "ModifierHelpers.hpp"
 #include "PluginWindowBridge.hpp"
 #include "SidechainMonitorPlugin.hpp"
@@ -334,7 +335,12 @@ te::Plugin::Ptr PluginManager::loadBuiltInPlugin(TrackId trackId, const juce::St
 
     te::Plugin::Ptr plugin;
 
-    if (type.equalsIgnoreCase("tone") || type.equalsIgnoreCase("tonegenerator")) {
+    if (type.equalsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
+        plugin =
+            edit_.getPluginCache().createNewPlugin(daw::audio::MagdaSamplerPlugin::xmlTypeName, {});
+        if (plugin)
+            track->pluginList.insertPlugin(plugin, -1, nullptr);
+    } else if (type.equalsIgnoreCase("tone") || type.equalsIgnoreCase("tonegenerator")) {
         plugin = createToneGenerator(track);
         // Note: "volume" is NOT a device type - track volume is separate infrastructure
         // managed by ensureVolumePluginPosition() and controlled via TrackManager
@@ -1348,6 +1354,10 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
                 edit_.getPluginCache().createNewPlugin(te::ToneGeneratorPlugin::xmlTypeName, {});
         } else if (device.pluginId.containsIgnoreCase("4osc")) {
             plugin = edit_.getPluginCache().createNewPlugin(te::FourOscPlugin::xmlTypeName, {});
+        } else if (device.pluginId.containsIgnoreCase(
+                       daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
+            plugin = edit_.getPluginCache().createNewPlugin(
+                daw::audio::MagdaSamplerPlugin::xmlTypeName, {});
         }
     } else {
         // External plugin — same lookup logic as loadDeviceAsPlugin but without track insertion
@@ -1463,6 +1473,14 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             plugin = createToneGenerator(track);
             if (plugin) {
                 processor = std::make_unique<ToneGeneratorProcessor>(device.id, plugin);
+            }
+        } else if (device.pluginId.containsIgnoreCase(
+                       daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
+            plugin = edit_.getPluginCache().createNewPlugin(
+                daw::audio::MagdaSamplerPlugin::xmlTypeName, {});
+            if (plugin) {
+                track->pluginList.insertPlugin(plugin, -1, nullptr);
+                processor = std::make_unique<DeviceProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("4osc")) {
             plugin = createFourOscSynth(track);

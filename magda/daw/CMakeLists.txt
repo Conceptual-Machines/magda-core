@@ -291,6 +291,7 @@ set(DAW_UI_SOURCES
     ui/components/chain/ChainPanel.cpp
     ui/components/chain/DeviceSlotComponent.cpp
     ui/components/chain/ToneGeneratorUI.cpp
+    ui/components/chain/SamplerUI.cpp
     ui/components/chain/ParamSlotComponent.cpp
     ui/components/chain/ParamLinkResolver.cpp
     ui/components/chain/ParamModulationPainter.cpp

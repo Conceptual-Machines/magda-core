@@ -167,8 +167,10 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
         if (auto* obj = details.description.getDynamicObject()) {
             device.name = obj->getProperty("name").toString().toStdString();
             device.manufacturer = obj->getProperty("manufacturer").toString().toStdString();
-            device.pluginId = obj->getProperty("name").toString().toStdString() + "_" +
-                              obj->getProperty("format").toString().toStdString();
+            auto uniqueId = obj->getProperty("uniqueId").toString();
+            device.pluginId = uniqueId.isNotEmpty() ? uniqueId
+                                                    : obj->getProperty("name").toString() + "_" +
+                                                          obj->getProperty("format").toString();
             device.isInstrument = static_cast<bool>(obj->getProperty("isInstrument"));
             device.uniqueId = obj->getProperty("uniqueId").toString();
             device.fileOrIdentifier = obj->getProperty("fileOrIdentifier").toString();
