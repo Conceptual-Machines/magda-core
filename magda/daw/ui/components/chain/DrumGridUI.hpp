@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 
+#include "PadChainPanel.hpp"
 #include "PadChainRowComponent.hpp"
 #include "ParamSlotComponent.hpp"
 #include "SamplerUI.hpp"
@@ -46,6 +47,13 @@ class DrumGridUI : public juce::Component,
     static constexpr int kTotalPads = 64;
     static constexpr int kNumPages = kTotalPads / kPadsPerPage;
     static constexpr int kPluginParamSlots = 16;
+
+    // Fixed panel widths
+    static constexpr int kToggleColWidth = 20;
+    static constexpr int kPadGridWidth = 250;
+    static constexpr int kChainsPanelWidth = 220;
+    static constexpr int kDetailPanelWidth = 400;
+    static constexpr int kGap = 6;
 
     DrumGridUI();
     ~DrumGridUI() override = default;
@@ -92,23 +100,16 @@ class DrumGridUI : public juce::Component,
     /** Called when a plugin is dropped onto a pad. (padIndex, DynamicObject with plugin info) */
     std::function<void(int, const juce::DynamicObject&)> onPluginDropped;
 
-    /** Callback to get the MagdaSamplerPlugin for a given pad (returns nullptr if not a sampler) */
-    std::function<daw::audio::MagdaSamplerPlugin*(int padIndex)> getPadSampler;
-
-    /** Callback to get the te::Plugin for a given pad (any plugin type) */
-    std::function<tracktion::engine::Plugin*(int padIndex)> getPadPlugin;
-
     /** Called when delete is clicked on a chain row. (padIndex) */
     std::function<void(int)> onPadDeleteRequested;
 
     /** Called when layout changes (e.g., chains panel toggled) so parent can resize. */
     std::function<void()> onLayoutChanged;
 
-    /** Update the embedded SamplerUI for the given pad index */
-    void updatePadSamplerUI(int padIndex);
-
-    /** Populate param slots from a non-sampler plugin on the given pad */
-    void refreshPluginParams(int padIndex);
+    /** Get the PadChainPanel for wiring callbacks from DeviceSlotComponent. */
+    PadChainPanel& getPadChainPanel() {
+        return padChainPanel_;
+    }
 
     /** Rebuild visible chain rows from padInfos_. */
     void rebuildChainRows();
@@ -120,6 +121,9 @@ class DrumGridUI : public juce::Component,
     bool isChainsPanelVisible() const {
         return chainsPanelVisible_;
     }
+
+    /** Compute preferred content width based on visible panels. */
+    int getPreferredContentWidth() const;
 
     //==============================================================================
     // Component overrides
@@ -203,13 +207,8 @@ class DrumGridUI : public juce::Component,
     juce::TextButton loadButton_{"Load"};
     juce::TextButton clearButton_{"Clear"};
 
-    // Embedded SamplerUI for selected pad
-    SamplerUI padSamplerUI_;
-
-    // Plugin parameter grid (for non-sampler plugins)
-    std::array<std::unique_ptr<ParamSlotComponent>, kPluginParamSlots> pluginParamSlots_;
-    std::unique_ptr<magda::SvgButton> pluginUIButton_;
-    juce::Label pluginNameLabel_;
+    // Per-pad FX chain panel (replaces old SamplerUI + param grid)
+    PadChainPanel padChainPanel_;
 
     // Chains panel
     bool chainsPanelVisible_ = true;

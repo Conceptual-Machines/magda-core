@@ -238,27 +238,8 @@ DrumGridUI::DrumGridUI() {
     };
     addAndMakeVisible(clearButton_);
 
-    // Embedded SamplerUI (initially hidden, shown when pad has MagdaSamplerPlugin)
-    addChildComponent(padSamplerUI_);
-
-    // Plugin parameter grid (for non-sampler child plugins)
-    for (int i = 0; i < kPluginParamSlots; ++i) {
-        pluginParamSlots_[static_cast<size_t>(i)] = std::make_unique<ParamSlotComponent>(i);
-        addChildComponent(*pluginParamSlots_[static_cast<size_t>(i)]);
-    }
-
-    // UI button to open plugin native window
-    pluginUIButton_ = std::make_unique<magda::SvgButton>("UI", BinaryData::open_in_new_svg,
-                                                         BinaryData::open_in_new_svgSize);
-    pluginUIButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    pluginUIButton_->setHoverColor(DarkTheme::getTextColour());
-    addChildComponent(*pluginUIButton_);
-
-    // Plugin name label for param area header
-    pluginNameLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    pluginNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-    pluginNameLabel_.setJustificationType(juce::Justification::centredLeft);
-    addChildComponent(pluginNameLabel_);
+    // Per-pad FX chain panel
+    addAndMakeVisible(padChainPanel_);
 
     // Chains panel
     chainsLabel_.setText("Chains:", juce::dontSendNotification);
@@ -317,8 +298,10 @@ void DrumGridUI::updatePadInfo(int padIndex, const juce::String& sampleName, boo
     }
 
     // Update detail panel if this is the selected pad
-    if (padIndex == selectedPad_)
+    if (padIndex == selectedPad_) {
         refreshDetailPanel();
+        padChainPanel_.refresh();
+    }
 
     // Rebuild chain rows to reflect updated pad state
     rebuildChainRows();
@@ -344,16 +327,16 @@ void DrumGridUI::setSelectedPad(int padIndex) {
     }
 
     refreshDetailPanel();
-    updatePadSamplerUI(padIndex);
-
-    // If SamplerUI is not showing, try to show plugin params instead
-    if (!padSamplerUI_.isVisible())
-        refreshPluginParams(padIndex);
+    padChainPanel_.showPadChain(padIndex);
 
     // Update chain row selection highlights
     for (auto& row : chainRows_) {
         row->setSelected(row->getPadIndex() == selectedPad_);
     }
+
+    resized();
+    if (onLayoutChanged)
+        onLayoutChanged();
 }
 
 // =============================================================================
@@ -399,23 +382,29 @@ void DrumGridUI::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
     g.fillRect(getLocalBounds().reduced(1));
 
-    // Dividers
-    auto area = getLocalBounds().reduced(4);
-    float gridFrac = chainsPanelVisible_ ? 0.25f : 0.3f;
-    int gridWidth = static_cast<int>(area.getWidth() * gridFrac);
-    int dividerX = area.getX() + gridWidth;
+    // Dividers — fixed positions matching layout
+    bool selectedPadHasContent =
+        padInfos_[static_cast<size_t>(selectedPad_)].sampleName.isNotEmpty();
+    bool showDetailPanel = selectedPadHasContent;
+
+    auto divArea = getLocalBounds().reduced(6);
+    float top = static_cast<float>(divArea.getY());
+    float bottom = static_cast<float>(divArea.getBottom());
+    int afterGrid = divArea.getX() + kToggleColWidth + kPadGridWidth;
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawVerticalLine(dividerX, static_cast<float>(area.getY()),
-                       static_cast<float>(area.getBottom()));
 
     if (chainsPanelVisible_) {
-        // Second divider between chains and detail
-        int afterGrid = dividerX + 6;  // gap
-        int remainingWidth = area.getRight() - afterGrid;
-        int chainsWidth = static_cast<int>(remainingWidth * 0.4f);
-        int divider2X = afterGrid + chainsWidth;
-        g.drawVerticalLine(divider2X, static_cast<float>(area.getY()),
-                           static_cast<float>(area.getBottom()));
+        // Divider after pad grid
+        g.drawVerticalLine(afterGrid, top, bottom);
+
+        if (showDetailPanel) {
+            // Divider after chains panel
+            int afterChains = afterGrid + kGap + kChainsPanelWidth;
+            g.drawVerticalLine(afterChains, top, bottom);
+        }
+    } else if (showDetailPanel) {
+        // Divider after pad grid (no chains)
+        g.drawVerticalLine(afterGrid, top, bottom);
     }
 
     // Plugin drop highlight on pad
@@ -437,30 +426,32 @@ void DrumGridUI::paint(juce::Graphics& g) {
 void DrumGridUI::resized() {
     auto area = getLocalBounds().reduced(6);
 
-    // Grid fraction depends on whether chains panel is visible
-    float gridFrac = chainsPanelVisible_ ? 0.25f : 0.3f;
-    int gridWidth = static_cast<int>(area.getWidth() * gridFrac);
-    auto gridArea = area.removeFromLeft(gridWidth);
-    area.removeFromLeft(6);  // gap after divider
+    bool selectedPadHasContent =
+        padInfos_[static_cast<size_t>(selectedPad_)].sampleName.isNotEmpty();
+    bool showDetailPanel = selectedPadHasContent;
 
-    // Chains panel (if visible)
+    // --- Layout: [ToggleCol] [PadGrid] | [Chains] | [Detail] ---
+
+    // Left column: toggle button
+    auto toggleCol = area.removeFromLeft(kToggleColWidth);
+    chainsToggleButton_->setBounds(toggleCol.removeFromTop(18).withSizeKeepingCentre(16, 16));
+
+    // Pad grid
+    auto gridArea = area.removeFromLeft(juce::jmin(kPadGridWidth, area.getWidth()));
+
+    // Chains panel (always visible when toggled on)
     if (chainsPanelVisible_) {
-        int chainsWidth = static_cast<int>(area.getWidth() * 0.4f);
-        auto chainsArea = area.removeFromLeft(chainsWidth);
-        area.removeFromLeft(6);  // gap after divider
+        area.removeFromLeft(kGap);
+        auto chainsArea = area.removeFromLeft(juce::jmin(kChainsPanelWidth, area.getWidth()));
 
-        // Toggle button in the chains header
         auto chainsHeader = chainsArea.removeFromTop(18);
-        chainsToggleButton_->setBounds(chainsHeader.removeFromRight(16));
         chainsLabel_.setBounds(chainsHeader);
         chainsLabel_.setVisible(true);
         chainsArea.removeFromTop(2);
 
-        // Viewport with chain rows
         chainsViewport_.setBounds(chainsArea);
         chainsViewport_.setVisible(true);
 
-        // Size container and layout rows
         int scrollbarWidth = chainsViewport_.getScrollBarThickness();
         int containerWidth = chainsViewport_.getWidth() - scrollbarWidth;
         int y = 0;
@@ -472,16 +463,17 @@ void DrumGridUI::resized() {
     } else {
         chainsLabel_.setVisible(false);
         chainsViewport_.setVisible(false);
-        // Place toggle button in the pagination area (handled below)
     }
+
+    if (showDetailPanel)
+        area.removeFromLeft(kGap);
 
     auto detailArea = area;
 
-    // --- Pad Grid ---
+    // --- Pad Grid layout ---
     auto paginationRow = gridArea.removeFromBottom(22);
     gridArea.removeFromBottom(2);
 
-    // Position pad buttons in 4x4 grid (square pads, fill grid area)
     constexpr int padGap = 3;
     int padSize = juce::jmin((gridArea.getWidth() - padGap * (kGridCols - 1)) / kGridCols,
                              (gridArea.getHeight() - padGap * (kGridRows - 1)) / kGridRows);
@@ -494,222 +486,40 @@ void DrumGridUI::resized() {
         padButtons_[static_cast<size_t>(i)].setBounds(x, y, padSize, padSize);
     }
 
-    // Pagination
     int btnW = 22;
     prevPageButton_.setBounds(paginationRow.removeFromLeft(btnW));
     nextPageButton_.setBounds(paginationRow.removeFromRight(btnW));
-
-    // When chains panel is hidden, put the toggle button in pagination row
-    if (!chainsPanelVisible_) {
-        chainsToggleButton_->setBounds(paginationRow.removeFromRight(16));
-        paginationRow.removeFromRight(2);
-    }
-
     pageLabel_.setBounds(paginationRow);
 
     // --- Detail Panel ---
-    // Row 1: pad name + sample name
-    detailPadNameLabel_.setBounds(detailArea.removeFromTop(14));
-    detailArea.removeFromTop(1);
-    detailSampleNameLabel_.setBounds(detailArea.removeFromTop(12));
-    detailArea.removeFromTop(4);
+    // Hide old header controls — not needed anymore
+    detailSampleNameLabel_.setVisible(false);
+    levelSlider_.setVisible(false);
+    panSlider_.setVisible(false);
+    muteButton_.setVisible(false);
+    soloButton_.setVisible(false);
+    loadButton_.setVisible(false);
+    clearButton_.setVisible(false);
+    levelLabel_.setVisible(false);
+    panLabel_.setVisible(false);
 
-    // Row 2: compact controls — Level, Pan, M, S, Load, Clear all in one row
-    auto controlsRow = detailArea.removeFromTop(20);
-    int controlW = controlsRow.getWidth() / 6;
-    levelSlider_.setBounds(controlsRow.removeFromLeft(controlW).reduced(1, 0));
-    panSlider_.setBounds(controlsRow.removeFromLeft(controlW).reduced(1, 0));
-    muteButton_.setBounds(controlsRow.removeFromLeft(controlW).reduced(1, 0));
-    soloButton_.setBounds(controlsRow.removeFromLeft(controlW).reduced(1, 0));
-    loadButton_.setBounds(controlsRow.removeFromLeft(controlW).reduced(1, 0));
-    clearButton_.setBounds(controlsRow.reduced(1, 0));
-
-    // Hide level/pan labels (compact mode)
-    levelLabel_.setBounds(0, 0, 0, 0);
-    panLabel_.setBounds(0, 0, 0, 0);
-
-    detailArea.removeFromTop(4);
-
-    // Remaining space: embedded SamplerUI or plugin param grid
-    padSamplerUI_.setBounds(detailArea);
-
-    if (!padSamplerUI_.isVisible() && pluginParamSlots_[0] && pluginParamSlots_[0]->isVisible()) {
-        // Header row: plugin name + UI button
+    if (showDetailPanel) {
         auto headerRow = detailArea.removeFromTop(18);
-        int uiBtnSize = 18;
-        pluginUIButton_->setBounds(headerRow.removeFromRight(uiBtnSize));
-        headerRow.removeFromRight(4);
-        pluginNameLabel_.setBounds(headerRow);
-
+        detailPadNameLabel_.setBounds(headerRow);
+        detailPadNameLabel_.setVisible(true);
         detailArea.removeFromTop(4);
 
-        // 4x4 grid of ParamSlotComponents
-        auto contentArea = detailArea.reduced(2, 0);
-        constexpr int paramCols = 4;
-        constexpr int paramRows = 4;
-        int cellWidth = contentArea.getWidth() / paramCols;
-        int cellHeight = contentArea.getHeight() / paramRows;
-
-        auto labelFont = FontManager::getInstance().getUIFont(
-            DebugSettings::getInstance().getParamLabelFontSize());
-        auto valueFont = FontManager::getInstance().getUIFont(
-            DebugSettings::getInstance().getParamValueFontSize());
-
-        for (int i = 0; i < kPluginParamSlots; ++i) {
-            int row = i / paramCols;
-            int col = i % paramCols;
-            int x = contentArea.getX() + col * cellWidth;
-            int y = contentArea.getY() + row * cellHeight;
-            pluginParamSlots_[static_cast<size_t>(i)]->setFonts(labelFont, valueFont);
-            pluginParamSlots_[static_cast<size_t>(i)]->setBounds(x, y, cellWidth - 2, cellHeight);
-        }
+        padChainPanel_.setBounds(detailArea);
+        padChainPanel_.setVisible(true);
+    } else {
+        detailPadNameLabel_.setVisible(false);
+        padChainPanel_.setVisible(false);
     }
 }
 
 // =============================================================================
-// SamplerUI embedding
+// PadChainPanel detail (wired from DeviceSlotComponent)
 // =============================================================================
-
-void DrumGridUI::updatePadSamplerUI(int padIndex) {
-    if (!getPadSampler) {
-        padSamplerUI_.setVisible(false);
-        return;
-    }
-
-    auto* sampler = getPadSampler(padIndex);
-    if (!sampler) {
-        padSamplerUI_.setVisible(false);
-        return;
-    }
-
-    // Wire parameter changes to the sampler's AutomatableParameters
-    padSamplerUI_.onParameterChanged = [this, padIndex](int paramIndex, float value) {
-        if (!getPadSampler)
-            return;
-        auto* s = getPadSampler(padIndex);
-        if (!s)
-            return;
-        auto params = s->getAutomatableParameters();
-        if (paramIndex >= 0 && paramIndex < params.size()) {
-            params[paramIndex]->setParameter(value, juce::sendNotification);
-        }
-    };
-
-    padSamplerUI_.onLoopEnabledChanged = [this, padIndex](bool enabled) {
-        if (!getPadSampler)
-            return;
-        auto* s = getPadSampler(padIndex);
-        if (!s)
-            return;
-        s->loopEnabledAtomic.store(enabled, std::memory_order_relaxed);
-        s->loopEnabledValue = enabled;
-    };
-
-    padSamplerUI_.getPlaybackPosition = [this, padIndex]() -> double {
-        if (!getPadSampler)
-            return 0.0;
-        auto* s = getPadSampler(padIndex);
-        if (!s)
-            return 0.0;
-        return s->getPlaybackPosition();
-    };
-
-    padSamplerUI_.onFileDropped = [this, padIndex](const juce::File& file) {
-        if (onSampleDropped)
-            onSampleDropped(padIndex, file);
-    };
-
-    padSamplerUI_.onLoadSampleRequested = [this, padIndex]() {
-        if (onLoadRequested)
-            onLoadRequested(padIndex);
-    };
-
-    // Update parameters from sampler state
-    juce::String sampleName;
-    auto file = sampler->getSampleFile();
-    if (file.existsAsFile())
-        sampleName = file.getFileNameWithoutExtension();
-
-    padSamplerUI_.updateParameters(
-        sampler->attackValue.get(), sampler->decayValue.get(), sampler->sustainValue.get(),
-        sampler->releaseValue.get(), sampler->pitchValue.get(), sampler->fineValue.get(),
-        sampler->levelValue.get(), sampler->sampleStartValue.get(), sampler->loopEnabledValue.get(),
-        sampler->loopStartValue.get(), sampler->loopEndValue.get(), sampler->velAmountValue.get(),
-        sampleName);
-
-    padSamplerUI_.setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
-                                  sampler->getSampleLengthSeconds());
-
-    padSamplerUI_.setVisible(true);
-
-    // Hide plugin param slots when SamplerUI is shown
-    for (auto& slot : pluginParamSlots_)
-        if (slot)
-            slot->setVisible(false);
-    pluginUIButton_->setVisible(false);
-    pluginNameLabel_.setVisible(false);
-}
-
-// =============================================================================
-// Plugin parameter display
-// =============================================================================
-
-void DrumGridUI::refreshPluginParams(int padIndex) {
-    if (!getPadPlugin) {
-        for (auto& slot : pluginParamSlots_)
-            if (slot)
-                slot->setVisible(false);
-        pluginUIButton_->setVisible(false);
-        pluginNameLabel_.setVisible(false);
-        return;
-    }
-
-    auto* plugin = getPadPlugin(padIndex);
-
-    // Hide if no plugin, or if it's a MagdaSamplerPlugin (SamplerUI handles that)
-    if (!plugin || dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin) != nullptr) {
-        for (auto& slot : pluginParamSlots_)
-            if (slot)
-                slot->setVisible(false);
-        pluginUIButton_->setVisible(false);
-        pluginNameLabel_.setVisible(false);
-        return;
-    }
-
-    auto params = plugin->getAutomatableParameters();
-
-    for (int i = 0; i < kPluginParamSlots; ++i) {
-        auto& slot = pluginParamSlots_[static_cast<size_t>(i)];
-        if (i < params.size()) {
-            auto* param = params[i];
-            slot->setParamName(param->getParameterName());
-            slot->setParamValue(param->getCurrentNormalisedValue());
-            slot->onValueChanged = [param](double value) {
-                param->setParameter(static_cast<float>(value), juce::sendNotificationSync);
-            };
-            slot->setVisible(true);
-        } else {
-            slot->setVisible(false);
-        }
-    }
-
-    // Show UI button wired to open plugin native editor
-    pluginUIButton_->setVisible(true);
-    pluginUIButton_->onClick = [plugin]() {
-        if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin)) {
-            if (ext->windowState) {
-                ext->windowState->showWindowExplicitly();
-            }
-        } else {
-            plugin->showWindowExplicitly();
-        }
-    };
-
-    pluginNameLabel_.setText(plugin->getName(), juce::dontSendNotification);
-    pluginNameLabel_.setVisible(true);
-
-    resized();
-}
 
 // =============================================================================
 // DragAndDropTarget (plugin drops)
@@ -820,6 +630,21 @@ void DrumGridUI::rebuildChainRows() {
 
     resized();
     repaint();
+    if (onLayoutChanged)
+        onLayoutChanged();
+}
+
+int DrumGridUI::getPreferredContentWidth() const {
+    bool selectedPadHasContent =
+        padInfos_[static_cast<size_t>(selectedPad_)].sampleName.isNotEmpty();
+    bool showDetailPanel = selectedPadHasContent;
+
+    int width = kToggleColWidth + kPadGridWidth;
+    if (chainsPanelVisible_)
+        width += kGap + kChainsPanelWidth;
+    if (showDetailPanel)
+        width += kGap + padChainPanel_.getContentWidth();
+    return width + 12;  // reduced(6) padding on each side
 }
 
 void DrumGridUI::setChainsPanelVisible(bool visible) {

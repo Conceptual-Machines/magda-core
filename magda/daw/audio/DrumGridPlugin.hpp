@@ -43,7 +43,7 @@ class DrumGridPlugin : public te::Plugin {
     //==============================================================================
     struct Pad {
         int triggerNote = -1;
-        te::Plugin::Ptr plugin;
+        std::vector<te::Plugin::Ptr> plugins;
         juce::CachedValue<float> level;
         juce::CachedValue<float> pan;
         juce::CachedValue<bool> mute;
@@ -77,11 +77,18 @@ class DrumGridPlugin : public te::Plugin {
     void restorePluginStateFromValueTree(const juce::ValueTree&) override;
 
     //==============================================================================
-    // Pad management
+    // Pad management — instrument slot (replaces all plugins with a single instrument)
     void loadSampleToPad(int padIndex, const juce::File& file);
     void loadPluginToPad(int padIndex, const juce::PluginDescription& desc);
     void clearPad(int padIndex);
     const Pad& getPad(int padIndex) const;
+
+    // FX chain management — add/remove/reorder effects after the instrument
+    void addPluginToPad(int padIndex, const juce::PluginDescription& desc, int insertIndex = -1);
+    void removePluginFromPad(int padIndex, int pluginIndex);
+    void movePluginInPad(int padIndex, int fromIndex, int toIndex);
+    int getPadPluginCount(int padIndex) const;
+    te::Plugin* getPadPlugin(int padIndex, int pluginIndex) const;
 
   private:
     std::array<Pad, maxPads> pads_;
