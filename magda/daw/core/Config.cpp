@@ -27,6 +27,16 @@ void Config::saveToFile(const std::string& filename) {
     file << "zoomInSensitivityShift=" << zoomInSensitivityShift << std::endl;
     file << "zoomOutSensitivityShift=" << zoomOutSensitivityShift << std::endl;
     file << "scrollbarOnLeft=" << (scrollbarOnLeft ? 1 : 0) << std::endl;
+    // Save custom plugin paths as semicolon-delimited string
+    {
+        std::string joined;
+        for (size_t i = 0; i < customPluginPaths.size(); ++i) {
+            if (i > 0)
+                joined += ";";
+            joined += customPluginPaths[i];
+        }
+        file << "customPluginPaths=" << joined << std::endl;
+    }
     file << "renderFolder=" << renderFolder << std::endl;
     file << "preferredAudioDevice=" << preferredAudioDevice << std::endl;
     file << "preferredInputDevice=" << preferredInputDevice << std::endl;
@@ -64,6 +74,26 @@ void Config::loadFromFile(const std::string& filename) {
 void Config::parseConfigLine(const std::string& key, const std::string& value) {
     try {
         // Handle string values
+        if (key == "customPluginPaths") {
+            customPluginPaths.clear();
+            if (!value.empty()) {
+                std::string remaining = value;
+                while (!remaining.empty()) {
+                    auto pos = remaining.find(';');
+                    std::string path;
+                    if (pos == std::string::npos) {
+                        path = remaining;
+                        remaining.clear();
+                    } else {
+                        path = remaining.substr(0, pos);
+                        remaining = remaining.substr(pos + 1);
+                    }
+                    if (!path.empty())
+                        customPluginPaths.push_back(path);
+                }
+            }
+            return;
+        }
         if (key == "renderFolder") {
             renderFolder = value;
             return;

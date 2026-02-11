@@ -270,12 +270,30 @@ PluginBrowserContent::PluginBrowserContent() {
     };
     addAndMakeVisible(clearButton_);
 
-    // Progress label for scan
-    scanProgressLabel_ = std::make_unique<juce::Label>();
-    scanProgressLabel_->setFont(FontManager::getInstance().getUIFont(9.0f));
-    scanProgressLabel_->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    scanProgressLabel_->setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(*scanProgressLabel_);
+    // Progress bar for scan
+    scanProgressBar_ = std::make_unique<juce::ProgressBar>(scanProgress_);
+    scanProgressBar_->setColour(juce::ProgressBar::backgroundColourId,
+                                DarkTheme::getColour(DarkTheme::SURFACE));
+    scanProgressBar_->setColour(juce::ProgressBar::foregroundColourId,
+                                DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    scanProgressBar_->setVisible(false);
+    addAndMakeVisible(*scanProgressBar_);
+
+    // Plugin name label (shown below progress bar during scan)
+    scanPluginLabel_ = std::make_unique<juce::Label>();
+    scanPluginLabel_->setFont(FontManager::getInstance().getUIFont(10.0f));
+    scanPluginLabel_->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    scanPluginLabel_->setJustificationType(juce::Justification::centredLeft);
+    scanPluginLabel_->setVisible(false);
+    addAndMakeVisible(*scanPluginLabel_);
+
+    // Count label (e.g. "45 / 125")
+    scanCountLabel_ = std::make_unique<juce::Label>();
+    scanCountLabel_->setFont(FontManager::getInstance().getUIFont(10.0f));
+    scanCountLabel_->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    scanCountLabel_->setJustificationType(juce::Justification::centredRight);
+    scanCountLabel_->setVisible(false);
+    addAndMakeVisible(*scanCountLabel_);
 
     // Setup tree view
     pluginTree_.setColour(juce::TreeView::backgroundColourId,
@@ -308,9 +326,15 @@ void PluginBrowserContent::resized() {
 
     bounds.removeFromTop(6);
 
-    // Progress label (shows during scan)
-    if (scanProgressLabel_) {
-        scanProgressLabel_->setBounds(bounds.removeFromTop(16));
+    // Progress bar + labels (shown during scan)
+    if (isScanningPlugins_) {
+        auto progressRow = bounds.removeFromTop(14);
+        scanProgressBar_->setBounds(progressRow);
+        bounds.removeFromTop(2);
+
+        auto labelRow = bounds.removeFromTop(14);
+        scanCountLabel_->setBounds(labelRow.removeFromRight(60));
+        scanPluginLabel_->setBounds(labelRow);
         bounds.removeFromTop(4);
     }
 
@@ -378,8 +402,17 @@ void PluginBrowserContent::startPluginScan() {
     }
 
     isScanningPlugins_ = true;
+    scanProgress_ = 0.0;
     scanButton_.setEnabled(false);
     scanButton_.setButtonText("Scanning...");
+
+    // Show progress UI
+    scanProgressBar_->setVisible(true);
+    scanPluginLabel_->setVisible(true);
+    scanCountLabel_->setVisible(true);
+    scanPluginLabel_->setText("Discovering plugins...", juce::dontSendNotification);
+    scanCountLabel_->setText("0%", juce::dontSendNotification);
+    resized();
 
     // Set up callbacks
     engine_->onPluginScanComplete = [this](bool success, int numPlugins,
@@ -397,11 +430,20 @@ void PluginBrowserContent::startPluginScan() {
 }
 
 void PluginBrowserContent::onScanProgress(float progress, const juce::String& currentPlugin) {
-    scanProgress_ = progress;
-    if (scanProgressLabel_) {
-        juce::String progressText =
-            juce::String(static_cast<int>(progress * 100)) + "% - " + currentPlugin;
-        scanProgressLabel_->setText(progressText, juce::dontSendNotification);
+    scanProgress_ = static_cast<double>(progress);
+
+    // Extract just the filename from the full path for display
+    juce::File pluginFile(currentPlugin);
+    juce::String displayName = pluginFile.getFileNameWithoutExtension();
+    if (displayName.isEmpty())
+        displayName = currentPlugin;
+
+    if (scanPluginLabel_)
+        scanPluginLabel_->setText(displayName, juce::dontSendNotification);
+
+    if (scanCountLabel_) {
+        int percent = static_cast<int>(progress * 100.0f);
+        scanCountLabel_->setText(juce::String(percent) + "%", juce::dontSendNotification);
     }
 }
 
@@ -411,14 +453,25 @@ void PluginBrowserContent::onScanComplete(bool /*success*/, int numPlugins,
     scanButton_.setEnabled(true);
     scanButton_.setButtonText("Scan");
 
-    juce::String statusText = "Found " + juce::String(numPlugins) + " plugins";
-    if (failedPlugins.size() > 0) {
-        statusText += " (" + juce::String(failedPlugins.size()) + " failed)";
-    }
+    // Hide progress bar, show result in plugin label briefly
+    scanProgressBar_->setVisible(false);
+    scanCountLabel_->setVisible(false);
 
-    if (scanProgressLabel_) {
-        scanProgressLabel_->setText(statusText, juce::dontSendNotification);
-    }
+    juce::String statusText = "Found " + juce::String(numPlugins) + " plugins";
+    if (failedPlugins.size() > 0)
+        statusText += " (" + juce::String(failedPlugins.size()) + " failed)";
+
+    scanPluginLabel_->setText(statusText, juce::dontSendNotification);
+    scanPluginLabel_->setVisible(true);
+    resized();
+
+    // Hide the status label after 5 seconds
+    juce::Timer::callAfterDelay(5000, [this]() {
+        if (!isScanningPlugins_ && scanPluginLabel_) {
+            scanPluginLabel_->setVisible(false);
+            resized();
+        }
+    });
 
     // Refresh the plugin list
     refreshPluginList();
@@ -431,7 +484,7 @@ void PluginBrowserContent::onScanComplete(bool /*success*/, int numPlugins,
 
 void PluginBrowserContent::showFailedPluginsDialog(const juce::StringArray& failedPlugins) {
     juce::String message =
-        "The following plugins failed or crashed during scanning and have been blacklisted:\n\n";
+        "The following plugins failed or crashed during scanning and have been excluded:\n\n";
 
     for (const auto& plugin : failedPlugins) {
         // Extract just the plugin name from the path for readability
@@ -444,7 +497,7 @@ void PluginBrowserContent::showFailedPluginsDialog(const juce::StringArray& fail
     }
 
     message += "\nThese plugins will be skipped in future scans. To retry them, use:\n";
-    message += "Help > Clear Plugin Blacklist";
+    message += "Settings > Plugins > Plugin Settings...";
 
     juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Plugin Scan Issues",
                                            message, "OK");

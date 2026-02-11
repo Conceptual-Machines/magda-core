@@ -5,6 +5,8 @@
 
 #include <functional>
 
+#include "PluginExclusions.hpp"
+
 namespace magda {
 
 /**
@@ -60,17 +62,17 @@ class PluginScanner : private juce::Thread {
      * @brief Get list of plugins that failed during scanning
      * These are persisted and will be skipped on future scans
      */
-    juce::StringArray getBlacklistedPlugins() const;
+    const std::vector<ExcludedPlugin>& getExcludedPlugins() const;
 
     /**
-     * @brief Clear the blacklist to retry problematic plugins
+     * @brief Clear the exclusion list to retry problematic plugins
      */
-    void clearBlacklist();
+    void clearExclusions();
 
     /**
-     * @brief Add a plugin to the blacklist manually
+     * @brief Add a plugin to the exclusion list manually
      */
-    void blacklistPlugin(const juce::String& pluginPath);
+    void excludePlugin(const juce::String& pluginPath, const juce::String& reason = "unknown");
 
   private:
     void run() override;
@@ -83,11 +85,11 @@ class PluginScanner : private juce::Thread {
     juce::Array<juce::PluginDescription> foundPlugins_;
     juce::StringArray failedPlugins_;
 
-    // Blacklist management
-    juce::File getBlacklistFile() const;
-    void loadBlacklist();
-    void saveBlacklist();
-    juce::StringArray blacklistedPlugins_;
+    // Exclusion management
+    juce::File getExclusionFile() const;
+    void loadExclusions();
+    void saveExclusions();
+    std::vector<ExcludedPlugin> excludedPlugins_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginScanner)
 };

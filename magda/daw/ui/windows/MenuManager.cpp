@@ -149,9 +149,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         // Plugin submenu
         juce::PopupMenu pluginMenu;
         pluginMenu.addItem(PluginScan, "Scan for Plugins...", true, false);
-        pluginMenu.addItem(PluginClear, "Clear Plugin List", true, false);
-        pluginMenu.addSeparator();
-        pluginMenu.addItem(PluginOpenFolder, "Open Plugin List Folder", true, false);
+        pluginMenu.addItem(PluginSettings, "Plugin Settings...", true, false);
         menu.addSubMenu("Plugins", pluginMenu);
     } else if (menuName == "View") {
         menu.addItem(ToggleLeftPanel, "Show Left Panel", true, leftPanelVisible_);
@@ -320,13 +318,9 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
             if (callbacks_.onPluginScan)
                 callbacks_.onPluginScan();
             break;
-        case PluginClear:
-            if (callbacks_.onPluginClear)
-                callbacks_.onPluginClear();
-            break;
-        case PluginOpenFolder:
-            if (callbacks_.onPluginOpenFolder)
-                callbacks_.onPluginOpenFolder();
+        case PluginSettings:
+            if (callbacks_.onPluginSettings)
+                callbacks_.onPluginSettings();
             break;
 
         // View menu

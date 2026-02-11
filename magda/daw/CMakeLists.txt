@@ -141,8 +141,10 @@ set(DAW_CORE_SOURCES
     engine/TracktionEngineWrapperRecording.cpp
     engine/TracktionEngineWrapperPlugins.cpp
     engine/MagdaUIBehaviour.cpp
+    engine/PluginExclusions.cpp
     engine/PluginScanner.cpp
     engine/PluginScanCoordinator.cpp
+    engine/ScanWorker.cpp
     engine/PluginWindowManager.cpp
     # Audio integration
     audio/AudioBridge.cpp
@@ -196,6 +198,7 @@ set(DAW_UI_SOURCES
     ui/dialogs/ChainTreeDialog.cpp
     ui/dialogs/ExportAudioDialog.cpp
     ui/dialogs/ParameterConfigDialog.cpp
+    ui/dialogs/PluginSettingsDialog.cpp
     ui/dialogs/PreferencesDialog.cpp
     ui/dialogs/TrackManagerDialog.cpp
     # Debug
@@ -353,6 +356,7 @@ set(DAW_HEADERS
     ui/dialogs/ChainTreeDialog.hpp
     ui/dialogs/ExportAudioDialog.hpp
     ui/dialogs/ParameterConfigDialog.hpp
+    ui/dialogs/PluginSettingsDialog.hpp
     ui/dialogs/PreferencesDialog.hpp
     ui/dialogs/TrackManagerDialog.hpp
     # Panels

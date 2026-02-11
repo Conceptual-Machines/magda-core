@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace magda {
 
@@ -153,6 +154,14 @@ class Config {
         preferredOutputChannels = channels;
     }
 
+    // Custom Plugin Paths
+    std::vector<std::string> getCustomPluginPaths() const {
+        return customPluginPaths;
+    }
+    void setCustomPluginPaths(const std::vector<std::string>& paths) {
+        customPluginPaths = paths;
+    }
+
     // Render Configuration
     std::string getRenderFolder() const {
         return renderFolder;
@@ -196,6 +205,9 @@ class Config {
 
     // Layout settings
     bool scrollbarOnLeft = false;  // Scrollbar on right by default
+
+    // Custom plugin paths
+    std::vector<std::string> customPluginPaths;
 
     // Render settings
     std::string renderFolder = "";  // Custom render output folder (empty = renders/ beside source)

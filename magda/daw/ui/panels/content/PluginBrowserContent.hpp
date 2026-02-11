@@ -98,8 +98,10 @@ class PluginBrowserContent : public PanelContent, public juce::TreeViewItem {
     magda::TracktionEngineWrapper* engine_ = nullptr;  // For plugin scanning
 
     // Progress display during scan
-    std::unique_ptr<juce::Label> scanProgressLabel_;
-    float scanProgress_ = 0.0f;
+    double scanProgress_ = 0.0;
+    std::unique_ptr<juce::ProgressBar> scanProgressBar_;
+    std::unique_ptr<juce::Label> scanPluginLabel_;
+    std::unique_ptr<juce::Label> scanCountLabel_;
     bool isScanningPlugins_ = false;
 
     // Tree building
