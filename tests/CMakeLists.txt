@@ -29,6 +29,7 @@ set(TEST_SOURCES
     test_session_clip_playback.cpp
     test_sidechain_triggers.cpp
     test_curve_snapshot.cpp
+    test_scan_report.cpp
 )
 
 # Create test executable

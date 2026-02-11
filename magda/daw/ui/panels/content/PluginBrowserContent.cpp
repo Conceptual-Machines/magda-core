@@ -3,6 +3,7 @@
 #include "../../dialogs/ParameterConfigDialog.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../../themes/SmallComboBoxLookAndFeel.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
@@ -230,70 +231,12 @@ PluginBrowserContent::PluginBrowserContent() {
                                 DarkTheme::getColour(DarkTheme::SURFACE));
     viewModeSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
     viewModeSelector_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getBorderColour());
+    viewModeSelector_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
     viewModeSelector_.onChange = [this]() {
         currentViewMode_ = static_cast<ViewMode>(viewModeSelector_.getSelectedId() - 1);
         rebuildTree();
     };
     addAndMakeVisible(viewModeSelector_);
-
-    // Setup scan button
-    scanButton_.setButtonText("Scan");
-    scanButton_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    scanButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-    scanButton_.onClick = [this]() { startPluginScan(); };
-    addAndMakeVisible(scanButton_);
-
-    // Setup clear button
-    clearButton_.setButtonText("Clear");
-    clearButton_.setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    clearButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-    clearButton_.onClick = [this]() {
-        // Confirm before clearing
-        auto options = juce::MessageBoxOptions()
-                           .withTitle("Clear Plugin List")
-                           .withMessage("This will remove all scanned plugins from the list.\n\n"
-                                        "You'll need to scan again to rediscover your plugins.")
-                           .withButton("Clear")
-                           .withButton("Cancel")
-                           .withIconType(juce::MessageBoxIconType::QuestionIcon);
-
-        juce::AlertWindow::showAsync(options, [this](int result) {
-            if (result == 1) {  // "Clear" button
-                if (engine_) {
-                    engine_->clearPluginList();
-                    refreshPluginList();
-                }
-            }
-        });
-    };
-    addAndMakeVisible(clearButton_);
-
-    // Progress bar for scan
-    scanProgressBar_ = std::make_unique<juce::ProgressBar>(scanProgress_);
-    scanProgressBar_->setColour(juce::ProgressBar::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
-    scanProgressBar_->setColour(juce::ProgressBar::foregroundColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    scanProgressBar_->setVisible(false);
-    addAndMakeVisible(*scanProgressBar_);
-
-    // Plugin name label (shown below progress bar during scan)
-    scanPluginLabel_ = std::make_unique<juce::Label>();
-    scanPluginLabel_->setFont(FontManager::getInstance().getUIFont(10.0f));
-    scanPluginLabel_->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    scanPluginLabel_->setJustificationType(juce::Justification::centredLeft);
-    scanPluginLabel_->setVisible(false);
-    addAndMakeVisible(*scanPluginLabel_);
-
-    // Count label (e.g. "45 / 125")
-    scanCountLabel_ = std::make_unique<juce::Label>();
-    scanCountLabel_->setFont(FontManager::getInstance().getUIFont(10.0f));
-    scanCountLabel_->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    scanCountLabel_->setJustificationType(juce::Justification::centredRight);
-    scanCountLabel_->setVisible(false);
-    addAndMakeVisible(*scanCountLabel_);
 
     // Setup tree view
     pluginTree_.setColour(juce::TreeView::backgroundColourId,
@@ -316,30 +259,11 @@ void PluginBrowserContent::paint(juce::Graphics& g) {
 void PluginBrowserContent::resized() {
     auto bounds = getLocalBounds().reduced(8);
 
-    // Top row: view selector, clear button, and scan button
+    // Top row: search box and view mode selector
     auto topRow = bounds.removeFromTop(28);
-    scanButton_.setBounds(topRow.removeFromRight(60));
-    topRow.removeFromRight(4);
-    clearButton_.setBounds(topRow.removeFromRight(50));
+    viewModeSelector_.setBounds(topRow.removeFromRight(130));
     topRow.removeFromRight(6);
-    viewModeSelector_.setBounds(topRow);
-
-    bounds.removeFromTop(6);
-
-    // Progress bar + labels (shown during scan)
-    if (isScanningPlugins_) {
-        auto progressRow = bounds.removeFromTop(14);
-        scanProgressBar_->setBounds(progressRow);
-        bounds.removeFromTop(2);
-
-        auto labelRow = bounds.removeFromTop(14);
-        scanCountLabel_->setBounds(labelRow.removeFromRight(60));
-        scanPluginLabel_->setBounds(labelRow);
-        bounds.removeFromTop(4);
-    }
-
-    // Search box
-    searchBox_.setBounds(bounds.removeFromTop(28));
+    searchBox_.setBounds(topRow);
 
     bounds.removeFromTop(6);
 
@@ -394,113 +318,6 @@ void PluginBrowserContent::refreshPluginList() {
     buildInternalPluginList();
     loadExternalPlugins();
     rebuildTree();
-}
-
-void PluginBrowserContent::startPluginScan() {
-    if (!engine_ || engine_->isScanning()) {
-        return;
-    }
-
-    isScanningPlugins_ = true;
-    scanProgress_ = 0.0;
-    scanButton_.setEnabled(false);
-    scanButton_.setButtonText("Scanning...");
-
-    // Show progress UI
-    scanProgressBar_->setVisible(true);
-    scanPluginLabel_->setVisible(true);
-    scanCountLabel_->setVisible(true);
-    scanPluginLabel_->setText("Discovering plugins...", juce::dontSendNotification);
-    scanCountLabel_->setText("0%", juce::dontSendNotification);
-    resized();
-
-    // Set up callbacks
-    engine_->onPluginScanComplete = [this](bool success, int numPlugins,
-                                           const juce::StringArray& failedPlugins) {
-        // Copy the failed plugins for the async call
-        auto failed = failedPlugins;
-        juce::MessageManager::callAsync(
-            [this, success, numPlugins, failed]() { onScanComplete(success, numPlugins, failed); });
-    };
-
-    engine_->startPluginScan([this](float progress, const juce::String& currentPlugin) {
-        juce::MessageManager::callAsync(
-            [this, progress, currentPlugin]() { onScanProgress(progress, currentPlugin); });
-    });
-}
-
-void PluginBrowserContent::onScanProgress(float progress, const juce::String& currentPlugin) {
-    scanProgress_ = static_cast<double>(progress);
-
-    // Extract just the filename from the full path for display
-    juce::File pluginFile(currentPlugin);
-    juce::String displayName = pluginFile.getFileNameWithoutExtension();
-    if (displayName.isEmpty())
-        displayName = currentPlugin;
-
-    if (scanPluginLabel_)
-        scanPluginLabel_->setText(displayName, juce::dontSendNotification);
-
-    if (scanCountLabel_) {
-        int percent = static_cast<int>(progress * 100.0f);
-        scanCountLabel_->setText(juce::String(percent) + "%", juce::dontSendNotification);
-    }
-}
-
-void PluginBrowserContent::onScanComplete(bool /*success*/, int numPlugins,
-                                          const juce::StringArray& failedPlugins) {
-    isScanningPlugins_ = false;
-    scanButton_.setEnabled(true);
-    scanButton_.setButtonText("Scan");
-
-    // Hide progress bar, show result in plugin label briefly
-    scanProgressBar_->setVisible(false);
-    scanCountLabel_->setVisible(false);
-
-    juce::String statusText = "Found " + juce::String(numPlugins) + " plugins";
-    if (failedPlugins.size() > 0)
-        statusText += " (" + juce::String(failedPlugins.size()) + " failed)";
-
-    scanPluginLabel_->setText(statusText, juce::dontSendNotification);
-    scanPluginLabel_->setVisible(true);
-    resized();
-
-    // Hide the status label after 5 seconds
-    juce::Timer::callAfterDelay(5000, [this]() {
-        if (!isScanningPlugins_ && scanPluginLabel_) {
-            scanPluginLabel_->setVisible(false);
-            resized();
-        }
-    });
-
-    // Refresh the plugin list
-    refreshPluginList();
-
-    // Show dialog for failed plugins
-    if (failedPlugins.size() > 0) {
-        showFailedPluginsDialog(failedPlugins);
-    }
-}
-
-void PluginBrowserContent::showFailedPluginsDialog(const juce::StringArray& failedPlugins) {
-    juce::String message =
-        "The following plugins failed or crashed during scanning and have been excluded:\n\n";
-
-    for (const auto& plugin : failedPlugins) {
-        // Extract just the plugin name from the path for readability
-        juce::File pluginFile(plugin);
-        juce::String displayName = pluginFile.getFileNameWithoutExtension();
-        if (displayName.isEmpty()) {
-            displayName = plugin;
-        }
-        message += "  - " + displayName + "\n";
-    }
-
-    message += "\nThese plugins will be skipped in future scans. To retry them, use:\n";
-    message += "Settings > Plugins > Plugin Settings...";
-
-    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Plugin Scan Issues",
-                                           message, "OK");
 }
 
 void PluginBrowserContent::rebuildTree() {
