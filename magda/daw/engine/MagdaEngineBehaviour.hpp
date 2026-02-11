@@ -1,6 +1,7 @@
 #pragma once
 #include <tracktion_engine/tracktion_engine.h>
 
+#include "../audio/MagdaSamplerPlugin.hpp"
 #include "../audio/SidechainMonitorPlugin.hpp"
 
 namespace magda {
@@ -17,6 +18,10 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
 
     tracktion::Plugin::Ptr createCustomPlugin(tracktion::PluginCreationInfo info) override {
         auto type = info.state[tracktion::IDs::type].toString();
+        if (type == daw::audio::MagdaSamplerPlugin::xmlTypeName) {
+            DBG("MagdaEngineBehaviour::createCustomPlugin - creating MagdaSamplerPlugin");
+            return new daw::audio::MagdaSamplerPlugin(info);
+        }
         if (type == SidechainMonitorPlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating SidechainMonitorPlugin");
             return new SidechainMonitorPlugin(info);

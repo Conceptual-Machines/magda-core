@@ -166,6 +166,7 @@ set(DAW_CORE_SOURCES
     audio/RackSyncManager.cpp
     audio/ClipSynchronizer.cpp
     audio/SidechainMonitorPlugin.cpp
+    audio/MagdaSamplerPlugin.cpp
     # Project serialization
     project/ProjectSerializer.cpp
     project/ProjectManager.cpp
@@ -413,6 +414,7 @@ set(DAW_HEADERS
     audio/ClipSynchronizer.hpp
     audio/SidechainTriggerBus.hpp
     audio/SidechainMonitorPlugin.hpp
+    audio/MagdaSamplerPlugin.hpp
     # Views
     ui/views/MainView.hpp
     ui/views/SessionView.hpp
