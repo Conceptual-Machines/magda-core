@@ -48,6 +48,15 @@ bool FontManager::initialize() {
         success = false;
     }
 
+    // Load Microgramma D Extended Bold
+    microgrammaBold =
+        juce::Typeface::createSystemTypefaceFor(BinaryData::Microgramma_D_Extended_Bold_otf,
+                                                BinaryData::Microgramma_D_Extended_Bold_otfSize);
+    if (!microgrammaBold) {
+        std::cerr << "Failed to load Microgramma D Extended Bold" << std::endl;
+        success = false;
+    }
+
     initialized = success;
 
     if (initialized) {
@@ -65,6 +74,7 @@ void FontManager::shutdown() {
     interMedium = nullptr;
     interSemiBold = nullptr;
     interBold = nullptr;
+    microgrammaBold = nullptr;
     initialized = false;
 }
 
@@ -126,6 +136,15 @@ juce::Font FontManager::getButtonFont(float size) const {
 
 juce::Font FontManager::getTimeFont(float size) const {
     return getInterFont(size, Weight::SemiBold);
+}
+
+juce::Font FontManager::getMicrogrammaFont(float size) const {
+    if (microgrammaBold) {
+        return juce::Font(microgrammaBold).withHeight(size);
+    }
+
+    // Fallback to monospace font if Microgramma isn't loaded
+    return juce::Font(juce::Font::getDefaultMonospacedFontName(), size, juce::Font::bold);
 }
 
 }  // namespace magda

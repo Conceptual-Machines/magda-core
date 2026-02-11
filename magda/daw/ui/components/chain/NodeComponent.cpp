@@ -457,6 +457,10 @@ void NodeComponent::setNodeName(const juce::String& name) {
     nameLabel_.setText(name, juce::dontSendNotification);
 }
 
+void NodeComponent::setNodeNameFont(const juce::Font& font) {
+    nameLabel_.setFont(font);
+}
+
 juce::String NodeComponent::getNodeName() const {
     return nameLabel_.getText();
 }

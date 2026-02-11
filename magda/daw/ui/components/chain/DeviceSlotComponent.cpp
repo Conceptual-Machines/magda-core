@@ -26,7 +26,15 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Register as TrackManager listener for parameter updates from plugin
     magda::TrackManager::getInstance().addListener(this);
 
-    setNodeName(device.name);
+    // Custom name and font for drum grid (MPC-style with Microgramma)
+    bool isDrumGrid = device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
+    if (isDrumGrid) {
+        setNodeName("MDG2000 - MAGDA Drum Grid");
+        // Load Microgramma D Extended Bold from FontManager
+        setNodeNameFont(FontManager::getInstance().getMicrogrammaFont(11.0f));
+    } else {
+        setNodeName(device.name);
+    }
     setBypassed(device.bypassed);
 
     // Restore panel visibility from device state
@@ -498,7 +506,16 @@ int DeviceSlotComponent::getPreferredWidth() const {
 
 void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     device_ = device;
-    setNodeName(device.name);
+    // Custom name and font for drum grid (MPC-style with Microgramma)
+    bool isDrumGrid = device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
+    if (isDrumGrid) {
+        setNodeName("MDG2000 - MAGDA Drum Grid");
+        // Load Microgramma D Extended Bold from FontManager
+        setNodeNameFont(FontManager::getInstance().getMicrogrammaFont(11.0f));
+    } else {
+        setNodeName(device.name);
+        setNodeNameFont(FontManager::getInstance().getUIFontBold(10.0f));
+    }
     setBypassed(device.bypassed);
     onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);
     onButton_->setActive(!device.bypassed);

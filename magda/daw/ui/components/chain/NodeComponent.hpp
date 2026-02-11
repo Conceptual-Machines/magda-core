@@ -53,6 +53,7 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
 
     // Header accessors
     void setNodeName(const juce::String& name);
+    void setNodeNameFont(const juce::Font& font);
     juce::String getNodeName() const;
     void setBypassed(bool bypassed);
     bool isBypassed() const;
