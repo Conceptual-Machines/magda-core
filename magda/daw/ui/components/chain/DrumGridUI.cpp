@@ -469,6 +469,7 @@ void DrumGridUI::resized() {
         area.removeFromLeft(kGap);
 
     auto detailArea = area;
+    DBG("  -> detailArea width: " + juce::String(detailArea.getWidth()));
 
     // --- Pad Grid layout ---
     auto paginationRow = gridArea.removeFromBottom(22);
@@ -639,8 +640,8 @@ int DrumGridUI::getPreferredContentWidth() const {
     if (chainsPanelVisible_)
         width += kGap + kChainsPanelWidth;
     if (showDetailPanel)
-        width += kGap + 2000;  // Request large width so detail panel gets maximum space
-    return width + 12;         // reduced(6) padding on each side
+        width += kGap + kDetailPanelWidth;
+    return width + 12;  // reduced(6) padding on each side
 }
 
 void DrumGridUI::setChainsPanelVisible(bool visible) {

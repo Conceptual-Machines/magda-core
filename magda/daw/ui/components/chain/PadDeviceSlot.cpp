@@ -110,10 +110,11 @@ void PadDeviceSlot::clear() {
 }
 
 int PadDeviceSlot::getPreferredWidth() const {
-    return SLOT_WIDTH;
+    return preferredWidth_;
 }
 
 void PadDeviceSlot::setupForSampler(daw::audio::MagdaSamplerPlugin* sampler) {
+    preferredWidth_ = SAMPLER_SLOT_WIDTH;
     // Hide param slots
     for (auto& slot : paramSlots_)
         if (slot)
@@ -223,6 +224,8 @@ void PadDeviceSlot::paint(juce::Graphics& g) {
 
 void PadDeviceSlot::resized() {
     auto area = getLocalBounds().reduced(2);
+    DBG("PadDeviceSlot::resized - width=" + juce::String(getWidth()) +
+        " preferredWidth=" + juce::String(preferredWidth_));
 
     // Header
     auto headerRow = area.removeFromTop(HEADER_HEIGHT);
@@ -252,6 +255,8 @@ void PadDeviceSlot::resized() {
         constexpr int paramRows = 4;
         int cellWidth = contentArea.getWidth() / paramCols;
         int cellHeight = contentArea.getHeight() / paramRows;
+        DBG("  -> FX params: contentArea.width=" + juce::String(contentArea.getWidth()) +
+            " cellWidth=" + juce::String(cellWidth));
 
         auto labelFont = FontManager::getInstance().getUIFont(
             DebugSettings::getInstance().getParamLabelFontSize());

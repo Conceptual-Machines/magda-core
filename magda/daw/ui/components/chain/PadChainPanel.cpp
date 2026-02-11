@@ -30,6 +30,7 @@ PadChainPanel::~PadChainPanel() {
 }
 
 void PadChainPanel::showPadChain(int padIndex) {
+    DBG("PadChainPanel::showPadChain - setting currentPadIndex=" + juce::String(padIndex));
     currentPadIndex_ = padIndex;
     rebuildSlots();
 }
@@ -42,6 +43,7 @@ void PadChainPanel::clear() {
 }
 
 void PadChainPanel::refresh() {
+    DBG("PadChainPanel::refresh() called, currentPadIndex=" + juce::String(currentPadIndex_));
     if (currentPadIndex_ >= 0)
         rebuildSlots();
 }
@@ -204,6 +206,8 @@ void PadChainPanel::paint(juce::Graphics& g) {
 void PadChainPanel::resized() {
     auto area = getLocalBounds();
     viewport_.setBounds(area);
+    DBG("PadChainPanel::resized - area=" + area.toString() +
+        " numSlots=" + juce::String(slots_.size()));
 
     int height = area.getHeight() - 8;
 
@@ -222,6 +226,7 @@ void PadChainPanel::resized() {
     x += ADD_BUTTON_WIDTH + 4;
 
     container_.setSize(x, height + 8);
+    DBG("  -> container size: " + juce::String(x) + " x " + juce::String(height + 8));
 }
 
 int PadChainPanel::calculateInsertIndex(int mouseX) const {

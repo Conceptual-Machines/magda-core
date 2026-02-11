@@ -633,6 +633,8 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
 }
 
 void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
+    DBG("DeviceSlotComponent::resizedContent - width=" + juce::String(getWidth()) +
+        " contentArea.width=" + juce::String(contentArea.getWidth()));
     // When collapsed, hide all content controls
     if (collapsed_) {
         for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
@@ -1706,7 +1708,14 @@ void DeviceSlotComponent::updateCustomUI() {
                                                    pad.level.get(), pad.pan.get());
                     }
                     // Refresh PadChainPanel for selected pad
-                    drumGridUI_->getPadChainPanel().refresh();
+                    int selectedPad = drumGridUI_->getSelectedPad();
+                    DBG("updateCustomUI: refreshing PadChainPanel for selectedPad=" +
+                        juce::String(selectedPad));
+                    if (selectedPad >= 0) {
+                        const auto& selectedPadData = dg->getPad(selectedPad);
+                        if (!selectedPadData.plugins.empty())
+                            drumGridUI_->getPadChainPanel().showPadChain(selectedPad);
+                    }
                 }
             }
         }
