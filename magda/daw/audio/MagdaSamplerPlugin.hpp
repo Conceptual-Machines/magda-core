@@ -39,6 +39,9 @@ class SamplerVoice : public juce::SynthesiserVoice {
     void setPitchOffset(float semitones, float cents);
     void setPlaybackRegion(double startOffsetSeconds, bool loop, double loopStartSeconds,
                            double loopEndSeconds, double sourceSampleRate);
+    void setVelocityAmount(float amount) {
+        velAmount = amount;
+    }
 
     bool canPlaySound(juce::SynthesiserSound* sound) override;
     void startNote(int midiNoteNumber, float velocity, juce::SynthesiserSound*,
@@ -60,6 +63,7 @@ class SamplerVoice : public juce::SynthesiserVoice {
     double pitchRatio = 1.0;
     double sourceSamplePosition = 0.0;
     float velocityGain = 0.0f;
+    float velAmount = 1.0f;
     float pitchSemitones = 0.0f;
     float fineCents = 0.0f;
 
@@ -136,10 +140,12 @@ class MagdaSamplerPlugin : public te::Plugin {
     juce::CachedValue<float> attackValue, decayValue, sustainValue, releaseValue;
     juce::CachedValue<float> pitchValue, fineValue, levelValue;
     juce::CachedValue<float> sampleStartValue, loopStartValue, loopEndValue;
+    juce::CachedValue<float> velAmountValue;
 
     te::AutomatableParameter::Ptr attackParam, decayParam, sustainParam, releaseParam;
     te::AutomatableParameter::Ptr pitchParam, fineParam, levelParam;
     te::AutomatableParameter::Ptr sampleStartParam, loopStartParam, loopEndParam;
+    te::AutomatableParameter::Ptr velAmountParam;
 
     // Non-parameter state
     juce::CachedValue<juce::String> samplePathValue;

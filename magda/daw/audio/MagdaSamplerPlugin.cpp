@@ -50,7 +50,7 @@ void SamplerVoice::startNote(int midiNoteNumber, float velocity, juce::Synthesis
         return;
 
     sourceSamplePosition = sampleStartOffset;
-    velocityGain = velocity;
+    velocityGain = 1.0f - velAmount * (1.0f - velocity);
 
     // Compute pitch ratio: (target freq / root freq) * (source SR / playback SR)
     double noteWithOffset = midiNoteNumber + pitchSemitones + fineCents / 100.0;
@@ -228,6 +228,20 @@ MagdaSamplerPlugin::MagdaSamplerPlugin(const te::PluginCreationInfo& info) : Plu
             return s.upToFirstOccurrenceOf(" ", false, false).getFloatValue();
         });
 
+    // Velocity amount (0 = no velocity sensitivity, 1 = full)
+    static const juce::Identifier velAmountId("velAmount");
+    velAmountValue.referTo(state, velAmountId, um, 1.0f);
+    velAmountParam = addParam(
+        "velAmount", "Vel Amount", {0.0f, 1.0f, 1.0f},
+        [](float v) { return juce::String(static_cast<int>(v * 100)) + "%"; },
+        [](const juce::String& s) {
+            juce::String t = s.trim();
+            if (t.endsWithIgnoreCase("%"))
+                t = t.dropLastCharacters(1).trim();
+            float v = t.getFloatValue();
+            return v > 1.0f ? v / 100.0f : v;
+        });
+
     // Non-parameter state
     samplePathValue.referTo(state, te::IDs::source, um, juce::String());
     rootNoteValue.referTo(state, te::IDs::rootNote, um, 60);
@@ -257,6 +271,7 @@ MagdaSamplerPlugin::MagdaSamplerPlugin(const te::PluginCreationInfo& info) : Plu
     sampleStartParam->setParameter(sampleStartValue.get(), juce::dontSendNotification);
     loopStartParam->setParameter(loopStartValue.get(), juce::dontSendNotification);
     loopEndParam->setParameter(loopEndValue.get(), juce::dontSendNotification);
+    velAmountParam->setParameter(velAmountValue.get(), juce::dontSendNotification);
 
     // Restore sample from saved state
     juce::String savedPath = samplePathValue.get();
@@ -389,11 +404,14 @@ void MagdaSamplerPlugin::updateVoiceParameters() {
     float lStart = juce::jlimit(0.0f, maxSec, loopStartParam->getCurrentValue());
     float lEnd = juce::jlimit(0.0f, maxSec, loopEndParam->getCurrentValue());
 
+    float velAmt = juce::jlimit(0.0f, 1.0f, velAmountParam->getCurrentValue());
+
     for (int i = 0; i < synthesiser.getNumVoices(); ++i) {
         if (auto* voice = dynamic_cast<SamplerVoice*>(synthesiser.getVoice(i))) {
             voice->setADSR(attack, decay, sustain, release);
             voice->setPitchOffset(pitch, fine);
             voice->setPlaybackRegion(sStart, loopOn, lStart, lEnd, sourceSR);
+            voice->setVelocityAmount(velAmt);
         }
     }
 }

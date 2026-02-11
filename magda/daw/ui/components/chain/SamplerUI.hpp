@@ -5,6 +5,7 @@
 
 #include <functional>
 
+#include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::audio {
@@ -38,7 +39,8 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
      */
     void updateParameters(float attack, float decay, float sustain, float release, float pitch,
                           float fine, float level, float sampleStart, bool loopEnabled,
-                          float loopStart, float loopEnd, const juce::String& sampleName);
+                          float loopStart, float loopEnd, float velAmount,
+                          const juce::String& sampleName);
 
     /**
      * @brief Callback when a parameter changes (paramIndex, actualValue)
@@ -115,7 +117,7 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
 
     // Sample start / Loop controls
     TextSlider startSlider_{TextSlider::Format::Decimal};
-    juce::ToggleButton loopButton_{"Loop"};
+    std::unique_ptr<magda::SvgButton> loopButton_;
     TextSlider loopStartSlider_{TextSlider::Format::Decimal};
     TextSlider loopEndSlider_{TextSlider::Format::Decimal};
     juce::Label startLabel_, loopStartLabel_, loopEndLabel_;
@@ -133,9 +135,12 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     // Level
     TextSlider levelSlider_{TextSlider::Format::Decibels};
 
+    // Velocity amount
+    TextSlider velAmountSlider_{TextSlider::Format::Decimal};
+
     // Labels
     juce::Label attackLabel_, decayLabel_, sustainLabel_, releaseLabel_;
-    juce::Label pitchLabel_, fineLabel_, levelLabel_;
+    juce::Label pitchLabel_, fineLabel_, levelLabel_, velAmountLabel_;
 
     // Dragging state
     enum class DragTarget { None, SampleStart, LoopStart, LoopEnd, LoopRegion, Scroll };

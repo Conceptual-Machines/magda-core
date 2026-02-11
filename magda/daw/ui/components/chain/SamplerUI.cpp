@@ -1,5 +1,7 @@
 #include "SamplerUI.hpp"
 
+#include <BinaryData.h>
+
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -61,16 +63,18 @@ SamplerUI::SamplerUI() {
     // --- Loop end slider (param index 9) ---
     setupTimeSlider(loopEndSlider_, 9, 0.0, 300.0, 0.0);
 
-    // --- Loop toggle button ---
-    loopButton_.setColour(juce::ToggleButton::textColourId, DarkTheme::getSecondaryTextColour());
-    loopButton_.setColour(juce::ToggleButton::tickColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
-    loopButton_.onClick = [this]() {
+    // --- Loop toggle button (SVG icon) ---
+    loopButton_ = std::make_unique<magda::SvgButton>(
+        "Loop", BinaryData::loop_off_svg, BinaryData::loop_off_svgSize, BinaryData::loop_on_svg,
+        BinaryData::loop_on_svgSize);
+    loopButton_->onClick = [this]() {
+        bool newState = !loopButton_->isActive();
+        loopButton_->setActive(newState);
         if (onLoopEnabledChanged)
-            onLoopEnabledChanged(loopButton_.getToggleState());
+            onLoopEnabledChanged(newState);
         repaint();
     };
-    addAndMakeVisible(loopButton_);
+    addAndMakeVisible(*loopButton_);
 
     // --- ADSR sliders ---
     setupTimeSlider(attackSlider_, 0, 0.001, 5.0, 0.001);
@@ -135,6 +139,25 @@ SamplerUI::SamplerUI() {
     };
     addAndMakeVisible(levelSlider_);
 
+    // --- Velocity amount slider (0-100%) ---
+    velAmountSlider_.setRange(0.0, 1.0, 0.01);
+    velAmountSlider_.setValue(1.0, juce::dontSendNotification);
+    velAmountSlider_.setValueFormatter(
+        [](double v) { return juce::String(static_cast<int>(v * 100)) + "%"; });
+    velAmountSlider_.setValueParser([](const juce::String& text) {
+        juce::String t = text.trim();
+        if (t.endsWithIgnoreCase("%"))
+            t = t.dropLastCharacters(1).trim();
+        double v = t.getDoubleValue();
+        return v > 1.0 ? v / 100.0 : v;
+    });
+    velAmountSlider_.onValueChanged = [this](double value) {
+        if (onParameterChanged)
+            onParameterChanged(10, static_cast<float>(value));
+        repaint();
+    };
+    addAndMakeVisible(velAmountSlider_);
+
     // --- Labels ---
     setupLabel(startLabel_, "START");
     setupLabel(loopStartLabel_, "L.START");
@@ -146,6 +169,7 @@ SamplerUI::SamplerUI() {
     setupLabel(pitchLabel_, "PITCH");
     setupLabel(fineLabel_, "FINE");
     setupLabel(levelLabel_, "LEVEL");
+    setupLabel(velAmountLabel_, "VEL");
 }
 
 SamplerUI::~SamplerUI() {
@@ -162,7 +186,7 @@ void SamplerUI::setupLabel(juce::Label& label, const juce::String& text) {
 
 void SamplerUI::updateParameters(float attack, float decay, float sustain, float release,
                                  float pitch, float fine, float level, float sampleStart,
-                                 bool loopEnabled, float loopStart, float loopEnd,
+                                 bool loopEnabled, float loopStart, float loopEnd, float velAmount,
                                  const juce::String& sampleName) {
     attackSlider_.setValue(attack, juce::dontSendNotification);
     decaySlider_.setValue(decay, juce::dontSendNotification);
@@ -171,9 +195,10 @@ void SamplerUI::updateParameters(float attack, float decay, float sustain, float
     pitchSlider_.setValue(pitch, juce::dontSendNotification);
     fineSlider_.setValue(fine, juce::dontSendNotification);
     levelSlider_.setValue(level, juce::dontSendNotification);
+    velAmountSlider_.setValue(velAmount, juce::dontSendNotification);
 
     startSlider_.setValue(sampleStart, juce::dontSendNotification);
-    loopButton_.setToggleState(loopEnabled, juce::dontSendNotification);
+    loopButton_->setActive(loopEnabled);
     loopStartSlider_.setValue(loopStart, juce::dontSendNotification);
     loopEndSlider_.setValue(loopEnd, juce::dontSendNotification);
 
@@ -309,7 +334,7 @@ juce::Rectangle<int> SamplerUI::getWaveformBounds() const {
     auto area = getLocalBounds().reduced(8);
     area.removeFromTop(26);  // Skip sample name row (22 + 4 gap)
     // Controls below: header(14) + gap(2) + 2 rows of label(12)+slider(20)+gap(2) = 84
-    static constexpr int kControlsHeight = 84;
+    static constexpr int kControlsHeight = 48;
     int waveHeight = juce::jmax(30, area.getHeight() - kControlsHeight);
     return area.removeFromTop(waveHeight);
 }
@@ -346,7 +371,7 @@ SamplerUI::DragTarget SamplerUI::markerHitTest(const juce::MouseEvent& e,
     if (std::abs(mx - startX) <= kMarkerHitPixels)
         return DragTarget::SampleStart;
 
-    if (loopButton_.getToggleState()) {
+    if (loopButton_->isActive()) {
         float lStartX = secondsToPixelX(loopStartSlider_.getValue(), waveArea);
         float lEndX = secondsToPixelX(loopEndSlider_.getValue(), waveArea);
 
@@ -580,7 +605,7 @@ void SamplerUI::paint(juce::Graphics& g) {
         g.restoreState();
 
         // Loop region highlight (semi-transparent green) + top drag bar
-        if (loopButton_.getToggleState() && sampleLength_ > 0.0) {
+        if (loopButton_->isActive() && sampleLength_ > 0.0) {
             float lStartX = secondsToPixelX(loopStartSlider_.getValue(), waveformArea);
             float lEndX = secondsToPixelX(loopEndSlider_.getValue(), waveformArea);
             if (lEndX > lStartX) {
@@ -604,7 +629,7 @@ void SamplerUI::paint(juce::Graphics& g) {
         }
 
         // Loop start/end markers (green vertical lines)
-        if (loopButton_.getToggleState() && sampleLength_ > 0.0) {
+        if (loopButton_->isActive() && sampleLength_ > 0.0) {
             auto green = DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
 
             float lStartX = secondsToPixelX(loopStartSlider_.getValue(), waveformArea);
@@ -679,7 +704,7 @@ void SamplerUI::resized() {
 
     // Row 2: Waveform display (painted, not a component) — absorbs remaining space
     // Controls below: header(14) + gap(2) + 2 rows of label(12)+slider(20)+gap(2) = 84
-    static constexpr int kControlsHeight = 84;
+    static constexpr int kControlsHeight = 48;
     int waveHeight = juce::jmax(30, area.getHeight() - kControlsHeight);
     area.removeFromTop(waveHeight);
     area.removeFromTop(4);
@@ -701,70 +726,55 @@ void SamplerUI::resized() {
     auto col3 = controlsArea.reduced(2, 0);
 
     // --- Column 1: Start / Loop ---
-    // Row 1: START label | Loop toggle
-    auto c1LabelRow1 = col1.removeFromTop(12);
-    int halfCol1 = col1.getWidth() / 2;
-    startLabel_.setBounds(c1LabelRow1.removeFromLeft(halfCol1));
-    // Loop toggle placed in slider row below
+    // Labels: START | (icon) L.START | L.END
+    auto c1LabelRow = col1.removeFromTop(12);
+    int startW = col1.getWidth() / 3;
+    int loopW = col1.getWidth() - startW;
+    int iconW = 20;
+    startLabel_.setBounds(c1LabelRow.removeFromLeft(startW));
+    c1LabelRow.removeFromLeft(iconW);  // loop icon space
+    int halfLoop = (loopW - iconW) / 2;
+    loopStartLabel_.setBounds(c1LabelRow.removeFromLeft(halfLoop));
+    loopEndLabel_.setBounds(c1LabelRow);
 
-    // Row 1: start slider | loop toggle
-    auto c1Row1 = col1.removeFromTop(20);
-    startSlider_.setBounds(c1Row1.removeFromLeft(halfCol1).reduced(1, 0));
-    loopButton_.setBounds(c1Row1.reduced(1, 0));
-    col1.removeFromTop(2);
-
-    // Row 2: L.START label | L.END label
-    auto c1LabelRow2 = col1.removeFromTop(12);
-    loopStartLabel_.setBounds(c1LabelRow2.removeFromLeft(halfCol1));
-    loopEndLabel_.setBounds(c1LabelRow2);
-
-    // Row 2: loop start slider | loop end slider
-    auto c1Row2 = col1.removeFromTop(20);
-    loopStartSlider_.setBounds(c1Row2.removeFromLeft(halfCol1).reduced(1, 0));
-    loopEndSlider_.setBounds(c1Row2.reduced(1, 0));
+    // Sliders: [start] | [icon][lstart] | [lend]
+    auto c1Row = col1.removeFromTop(20);
+    startSlider_.setBounds(c1Row.removeFromLeft(startW).reduced(1, 0));
+    loopButton_->setBounds(c1Row.removeFromLeft(iconW));
+    loopStartSlider_.setBounds(c1Row.removeFromLeft(halfLoop).reduced(1, 0));
+    loopEndSlider_.setBounds(c1Row.reduced(1, 0));
 
     // --- Column 2: Pitch ---
-    // Row 1: PITCH label
-    auto c2LabelRow1 = col2.removeFromTop(12);
-    pitchLabel_.setBounds(c2LabelRow1);
+    // Labels: PITCH | FINE
+    auto c2LabelRow = col2.removeFromTop(12);
+    int halfCol2 = col2.getWidth() / 2;
+    pitchLabel_.setBounds(c2LabelRow.removeFromLeft(halfCol2));
+    fineLabel_.setBounds(c2LabelRow);
 
-    // Row 1: pitch slider
-    auto c2Row1 = col2.removeFromTop(20);
-    pitchSlider_.setBounds(c2Row1.reduced(1, 0));
-    col2.removeFromTop(2);
-
-    // Row 2: FINE label
-    auto c2LabelRow2 = col2.removeFromTop(12);
-    fineLabel_.setBounds(c2LabelRow2);
-
-    // Row 2: fine slider
-    auto c2Row2 = col2.removeFromTop(20);
-    fineSlider_.setBounds(c2Row2.reduced(1, 0));
+    // Sliders: [pitch] | [fine]
+    auto c2Row = col2.removeFromTop(20);
+    pitchSlider_.setBounds(c2Row.removeFromLeft(halfCol2).reduced(1, 0));
+    fineSlider_.setBounds(c2Row.reduced(1, 0));
 
     // --- Column 3: Amp ---
-    // Row 1: ATK | DEC | SUS | REL labels
-    auto c3LabelRow1 = col3.removeFromTop(12);
-    int quarterCol3 = col3.getWidth() / 4;
-    attackLabel_.setBounds(c3LabelRow1.removeFromLeft(quarterCol3));
-    decayLabel_.setBounds(c3LabelRow1.removeFromLeft(quarterCol3));
-    sustainLabel_.setBounds(c3LabelRow1.removeFromLeft(quarterCol3));
-    releaseLabel_.setBounds(c3LabelRow1);
+    // Labels: ATK | DEC | SUS | REL | LEVEL | VEL
+    auto c3LabelRow = col3.removeFromTop(12);
+    int sixthCol3 = col3.getWidth() / 6;
+    attackLabel_.setBounds(c3LabelRow.removeFromLeft(sixthCol3));
+    decayLabel_.setBounds(c3LabelRow.removeFromLeft(sixthCol3));
+    sustainLabel_.setBounds(c3LabelRow.removeFromLeft(sixthCol3));
+    releaseLabel_.setBounds(c3LabelRow.removeFromLeft(sixthCol3));
+    levelLabel_.setBounds(c3LabelRow.removeFromLeft(sixthCol3));
+    velAmountLabel_.setBounds(c3LabelRow);
 
-    // Row 1: ATK | DEC | SUS | REL sliders
-    auto c3Row1 = col3.removeFromTop(20);
-    attackSlider_.setBounds(c3Row1.removeFromLeft(quarterCol3).reduced(1, 0));
-    decaySlider_.setBounds(c3Row1.removeFromLeft(quarterCol3).reduced(1, 0));
-    sustainSlider_.setBounds(c3Row1.removeFromLeft(quarterCol3).reduced(1, 0));
-    releaseSlider_.setBounds(c3Row1.reduced(1, 0));
-    col3.removeFromTop(2);
-
-    // Row 2: LEVEL label (full width)
-    auto c3LabelRow2 = col3.removeFromTop(12);
-    levelLabel_.setBounds(c3LabelRow2);
-
-    // Row 2: LEVEL slider (full width)
-    auto c3Row2 = col3.removeFromTop(20);
-    levelSlider_.setBounds(c3Row2.reduced(1, 0));
+    // Sliders: [atk] | [dec] | [sus] | [rel] | [level] | [vel]
+    auto c3Row = col3.removeFromTop(20);
+    attackSlider_.setBounds(c3Row.removeFromLeft(sixthCol3).reduced(1, 0));
+    decaySlider_.setBounds(c3Row.removeFromLeft(sixthCol3).reduced(1, 0));
+    sustainSlider_.setBounds(c3Row.removeFromLeft(sixthCol3).reduced(1, 0));
+    releaseSlider_.setBounds(c3Row.removeFromLeft(sixthCol3).reduced(1, 0));
+    levelSlider_.setBounds(c3Row.removeFromLeft(sixthCol3).reduced(1, 0));
+    velAmountSlider_.setBounds(c3Row.reduced(1, 0));
 
     // Rebuild waveform path at new size
     if (hasWaveform_ && waveformBuffer_ != nullptr) {

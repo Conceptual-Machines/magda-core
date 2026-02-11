@@ -1288,7 +1288,8 @@ void DeviceSlotComponent::createCustomUI() {
                         sampler->pitchValue.get(), sampler->fineValue.get(),
                         sampler->levelValue.get(), sampler->sampleStartValue.get(),
                         sampler->loopEnabledValue.get(), sampler->loopStartValue.get(),
-                        sampler->loopEndValue.get(), file.getFileNameWithoutExtension());
+                        sampler->loopEndValue.get(), sampler->velAmountValue.get(),
+                        file.getFileNameWithoutExtension());
                     samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
                                                 sampler->getSampleLengthSeconds());
                     repaint();
@@ -1340,10 +1341,11 @@ void DeviceSlotComponent::updateCustomUI() {
     if (samplerUI_ &&
         device_.pluginId.containsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
         // Param order: 0=attack, 1=decay, 2=sustain, 3=release, 4=pitch, 5=fine, 6=level,
-        //              7=sampleStart, 8=loopStart, 9=loopEnd
+        //              7=sampleStart, 8=loopStart, 9=loopEnd, 10=velAmount
         float attack = 0.001f, decay = 0.1f, sustain = 1.0f, release = 0.1f;
         float pitch = 0.0f, fine = 0.0f, level = 0.0f;
         float sampleStart = 0.0f, loopStart = 0.0f, loopEnd = 0.0f;
+        float velAmount = 1.0f;
         bool loopEnabled = false;
         juce::String sampleName;
 
@@ -1360,6 +1362,9 @@ void DeviceSlotComponent::updateCustomUI() {
             sampleStart = device_.parameters[7].currentValue;
             loopStart = device_.parameters[8].currentValue;
             loopEnd = device_.parameters[9].currentValue;
+        }
+        if (device_.parameters.size() >= 11) {
+            velAmount = device_.parameters[10].currentValue;
         }
 
         // Get sample name, waveform, and loop state from plugin state
@@ -1379,7 +1384,8 @@ void DeviceSlotComponent::updateCustomUI() {
         }
 
         samplerUI_->updateParameters(attack, decay, sustain, release, pitch, fine, level,
-                                     sampleStart, loopEnabled, loopStart, loopEnd, sampleName);
+                                     sampleStart, loopEnabled, loopStart, loopEnd, velAmount,
+                                     sampleName);
     }
 }
 
