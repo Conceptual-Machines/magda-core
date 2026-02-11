@@ -13,6 +13,7 @@
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "engine/TracktionEngineWrapper.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/dialogs/ParameterConfigDialog.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -542,7 +543,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     }
 
     // Update custom UI if available
-    if (toneGeneratorUI_ || samplerUI_) {
+    if (toneGeneratorUI_ || samplerUI_ || drumGridUI_) {
         updateCustomUI();
     }
 
@@ -1427,6 +1428,62 @@ void DeviceSlotComponent::createCustomUI() {
             }
         };
 
+        // Provide access to per-pad MagdaSamplerPlugin for embedded SamplerUI
+        drumGridUI_->getPadSampler =
+            [getDrumGrid](int padIndex) -> daw::audio::MagdaSamplerPlugin* {
+            if (auto* dg = getDrumGrid()) {
+                const auto& pad = dg->getPad(padIndex);
+                if (pad.plugin != nullptr)
+                    return dynamic_cast<daw::audio::MagdaSamplerPlugin*>(pad.plugin.get());
+            }
+            return nullptr;
+        };
+
+        // Plugin drag & drop onto pads
+        drumGridUI_->onPluginDropped = [this, getDrumGrid](int padIndex,
+                                                           const juce::DynamicObject& obj) {
+            auto* dg = getDrumGrid();
+            if (!dg)
+                return;
+
+            // Build a PluginDescription from the drag data
+            juce::String fileOrId = obj.getProperty("fileOrIdentifier").toString();
+            juce::String uniqueId = obj.getProperty("uniqueId").toString();
+
+            // Try to find the full PluginDescription from the known plugin list
+            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+            if (!audioEngine)
+                return;
+
+            auto* teWrapper = dynamic_cast<magda::TracktionEngineWrapper*>(audioEngine);
+            if (!teWrapper)
+                return;
+
+            auto& knownPlugins = teWrapper->getKnownPluginList();
+            for (const auto& desc : knownPlugins.getTypes()) {
+                if (desc.fileOrIdentifier == fileOrId ||
+                    (uniqueId.isNotEmpty() && juce::String(desc.uniqueId) == uniqueId)) {
+                    dg->loadPluginToPad(padIndex, desc);
+                    // Refresh pad info
+                    const auto& pad = dg->getPad(padIndex);
+                    juce::String sampleName;
+                    if (pad.plugin != nullptr) {
+                        if (auto* sampler =
+                                dynamic_cast<daw::audio::MagdaSamplerPlugin*>(pad.plugin.get())) {
+                            auto f = sampler->getSampleFile();
+                            if (f.existsAsFile())
+                                sampleName = f.getFileNameWithoutExtension();
+                        }
+                    }
+                    drumGridUI_->updatePadInfo(padIndex, sampleName, pad.mute.get(), pad.solo.get(),
+                                               pad.level.get(), pad.pan.get());
+                    drumGridUI_->updatePadSamplerUI(padIndex);
+                    return;
+                }
+            }
+            DBG("DrumGridUI: Plugin not found in KnownPluginList: " + fileOrId);
+        };
+
         addAndMakeVisible(*drumGridUI_);
         updateCustomUI();
     }
@@ -1525,6 +1582,8 @@ void DeviceSlotComponent::updateCustomUI() {
                         drumGridUI_->updatePadInfo(i, sampleName, pad.mute.get(), pad.solo.get(),
                                                    pad.level.get(), pad.pan.get());
                     }
+                    // Refresh embedded SamplerUI for selected pad
+                    drumGridUI_->updatePadSamplerUI(drumGridUI_->getSelectedPad());
                 }
             }
         }

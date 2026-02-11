@@ -6,7 +6,12 @@
 #include <array>
 #include <functional>
 
+#include "SamplerUI.hpp"
 #include "ui/components/common/TextSlider.hpp"
+
+namespace magda::daw::audio {
+class MagdaSamplerPlugin;
+}
 
 namespace magda::daw::ui {
 
@@ -14,14 +19,16 @@ namespace magda::daw::ui {
  * @brief Custom inline UI for the Drum Grid plugin
  *
  * Layout:
- *   Left ~65%: 4x4 pad grid (16 pads visible per page, 4 pages = 64 pads)
- *   Right ~35%: Selected pad detail with level, pan, mute, solo, load, clear
+ *   Left ~45%: 4x4 pad grid (16 pads visible per page, 4 pages = 64 pads)
+ *   Right ~55%: Quick controls row + SamplerUI for selected pad
  *
  * Pads display note name + truncated sample name.
- * Pads are drop targets for audio files.
+ * Pads are drop targets for audio files and plugins.
  * Click selects; selected pad highlighted.
  */
-class DrumGridUI : public juce::Component, public juce::FileDragAndDropTarget {
+class DrumGridUI : public juce::Component,
+                   public juce::FileDragAndDropTarget,
+                   public juce::DragAndDropTarget {
   public:
     static constexpr int kPadsPerPage = 16;
     static constexpr int kGridCols = 4;
@@ -41,6 +48,11 @@ class DrumGridUI : public juce::Component, public juce::FileDragAndDropTarget {
 
     /** Set which pad is selected and populate the detail panel. */
     void setSelectedPad(int padIndex);
+
+    /** Get the currently selected pad index. */
+    int getSelectedPad() const {
+        return selectedPad_;
+    }
 
     //==============================================================================
     // Callbacks (wired by DeviceSlotComponent)
@@ -66,6 +78,15 @@ class DrumGridUI : public juce::Component, public juce::FileDragAndDropTarget {
     /** Called when pad solo changes. (padIndex, soloed) */
     std::function<void(int, bool)> onPadSoloChanged;
 
+    /** Called when a plugin is dropped onto a pad. (padIndex, DynamicObject with plugin info) */
+    std::function<void(int, const juce::DynamicObject&)> onPluginDropped;
+
+    /** Callback to get the MagdaSamplerPlugin for a given pad (returns nullptr if not a sampler) */
+    std::function<daw::audio::MagdaSamplerPlugin*(int padIndex)> getPadSampler;
+
+    /** Update the embedded SamplerUI for the given pad index */
+    void updatePadSamplerUI(int padIndex);
+
     //==============================================================================
     // Component overrides
     void paint(juce::Graphics& g) override;
@@ -74,6 +95,12 @@ class DrumGridUI : public juce::Component, public juce::FileDragAndDropTarget {
     // FileDragAndDropTarget
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
+
+    // DragAndDropTarget (for plugin drops)
+    bool isInterestedInDragSource(const SourceDetails& details) override;
+    void itemDragEnter(const SourceDetails& details) override;
+    void itemDragExit(const SourceDetails& details) override;
+    void itemDropped(const SourceDetails& details) override;
 
   private:
     //==============================================================================
@@ -129,7 +156,7 @@ class DrumGridUI : public juce::Component, public juce::FileDragAndDropTarget {
     juce::TextButton nextPageButton_{">"};
     juce::Label pageLabel_;
 
-    // Detail panel
+    // Detail panel (compact quick controls row)
     juce::Label detailPadNameLabel_;
     juce::Label detailSampleNameLabel_;
     juce::Label levelLabel_;
@@ -140,6 +167,12 @@ class DrumGridUI : public juce::Component, public juce::FileDragAndDropTarget {
     juce::TextButton soloButton_{"S"};
     juce::TextButton loadButton_{"Load"};
     juce::TextButton clearButton_{"Clear"};
+
+    // Embedded SamplerUI for selected pad
+    SamplerUI padSamplerUI_;
+
+    // Plugin drop highlight
+    int dropHighlightPad_ = -1;
 
     //==============================================================================
     void refreshPadButtons();

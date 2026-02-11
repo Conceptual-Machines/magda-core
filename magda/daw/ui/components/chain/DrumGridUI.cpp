@@ -1,5 +1,6 @@
 #include "DrumGridUI.hpp"
 
+#include "audio/MagdaSamplerPlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -219,6 +220,9 @@ DrumGridUI::DrumGridUI() {
     };
     addAndMakeVisible(clearButton_);
 
+    // Embedded SamplerUI (initially hidden, shown when pad has MagdaSamplerPlugin)
+    addChildComponent(padSamplerUI_);
+
     // Initialize
     refreshPadButtons();
     refreshDetailPanel();
@@ -272,6 +276,7 @@ void DrumGridUI::setSelectedPad(int padIndex) {
     }
 
     refreshDetailPanel();
+    updatePadSamplerUI(padIndex);
 }
 
 // =============================================================================
@@ -319,11 +324,22 @@ void DrumGridUI::paint(juce::Graphics& g) {
 
     // Divider between grid and detail panel
     auto area = getLocalBounds().reduced(4);
-    int gridWidth = static_cast<int>(area.getWidth() * 0.65f);
+    int gridWidth = static_cast<int>(area.getWidth() * 0.45f);
     int dividerX = area.getX() + gridWidth;
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawVerticalLine(dividerX, static_cast<float>(area.getY()),
                        static_cast<float>(area.getBottom()));
+
+    // Plugin drop highlight on pad
+    if (dropHighlightPad_ >= 0) {
+        int pageStart = currentPage_ * kPadsPerPage;
+        int btnIdx = dropHighlightPad_ - pageStart;
+        if (btnIdx >= 0 && btnIdx < kPadsPerPage) {
+            auto padBounds = padButtons_[static_cast<size_t>(btnIdx)].getBounds();
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+            g.fillRoundedRectangle(padBounds.toFloat(), 3.0f);
+        }
+    }
 }
 
 // =============================================================================
@@ -333,8 +349,8 @@ void DrumGridUI::paint(juce::Graphics& g) {
 void DrumGridUI::resized() {
     auto area = getLocalBounds().reduced(6);
 
-    // Split: 65% grid, 35% detail
-    int gridWidth = static_cast<int>(area.getWidth() * 0.65f);
+    // Split: 45% grid, 55% detail
+    int gridWidth = static_cast<int>(area.getWidth() * 0.45f);
     auto gridArea = area.removeFromLeft(gridWidth);
     area.removeFromLeft(6);  // gap after divider
     auto detailArea = area;
@@ -362,35 +378,186 @@ void DrumGridUI::resized() {
     pageLabel_.setBounds(paginationRow);
 
     // --- Detail Panel ---
-    detailPadNameLabel_.setBounds(detailArea.removeFromTop(16));
-    detailArea.removeFromTop(2);
-    detailSampleNameLabel_.setBounds(detailArea.removeFromTop(14));
-    detailArea.removeFromTop(8);
+    // Row 1: pad name + sample name
+    detailPadNameLabel_.setBounds(detailArea.removeFromTop(14));
+    detailArea.removeFromTop(1);
+    detailSampleNameLabel_.setBounds(detailArea.removeFromTop(12));
+    detailArea.removeFromTop(4);
 
-    // Level row
-    auto levelRow = detailArea.removeFromTop(12);
-    auto panLabelRow = levelRow;
-    levelLabel_.setBounds(levelRow.removeFromLeft(levelRow.getWidth() / 2));
-    panLabel_.setBounds(panLabelRow.removeFromRight(panLabelRow.getWidth() / 2));
-    detailArea.removeFromTop(2);
+    // Row 2: compact controls — Level, Pan, M, S, Load, Clear all in one row
+    auto controlsRow = detailArea.removeFromTop(20);
+    int controlW = controlsRow.getWidth() / 6;
+    levelSlider_.setBounds(controlsRow.removeFromLeft(controlW).reduced(1, 0));
+    panSlider_.setBounds(controlsRow.removeFromLeft(controlW).reduced(1, 0));
+    muteButton_.setBounds(controlsRow.removeFromLeft(controlW).reduced(1, 0));
+    soloButton_.setBounds(controlsRow.removeFromLeft(controlW).reduced(1, 0));
+    loadButton_.setBounds(controlsRow.removeFromLeft(controlW).reduced(1, 0));
+    clearButton_.setBounds(controlsRow.reduced(1, 0));
 
-    auto sliderRow = detailArea.removeFromTop(20);
-    levelSlider_.setBounds(sliderRow.removeFromLeft(sliderRow.getWidth() / 2).reduced(1, 0));
-    panSlider_.setBounds(sliderRow.reduced(1, 0));
-    detailArea.removeFromTop(8);
+    // Hide level/pan labels (compact mode)
+    levelLabel_.setBounds(0, 0, 0, 0);
+    panLabel_.setBounds(0, 0, 0, 0);
 
-    // Mute/Solo row
-    auto msRow = detailArea.removeFromTop(22);
-    int halfW = msRow.getWidth() / 2;
-    muteButton_.setBounds(msRow.removeFromLeft(halfW).reduced(2, 0));
-    soloButton_.setBounds(msRow.reduced(2, 0));
-    detailArea.removeFromTop(8);
+    detailArea.removeFromTop(4);
 
-    // Load/Clear row
-    auto lcRow = detailArea.removeFromTop(22);
-    halfW = lcRow.getWidth() / 2;
-    loadButton_.setBounds(lcRow.removeFromLeft(halfW).reduced(2, 0));
-    clearButton_.setBounds(lcRow.reduced(2, 0));
+    // Remaining space: embedded SamplerUI
+    padSamplerUI_.setBounds(detailArea);
+}
+
+// =============================================================================
+// SamplerUI embedding
+// =============================================================================
+
+void DrumGridUI::updatePadSamplerUI(int padIndex) {
+    if (!getPadSampler) {
+        padSamplerUI_.setVisible(false);
+        return;
+    }
+
+    auto* sampler = getPadSampler(padIndex);
+    if (!sampler) {
+        padSamplerUI_.setVisible(false);
+        return;
+    }
+
+    // Wire parameter changes to the sampler
+    padSamplerUI_.onParameterChanged = [this, padIndex](int paramIndex, float value) {
+        if (!getPadSampler)
+            return;
+        auto* s = getPadSampler(padIndex);
+        if (!s)
+            return;
+        // Write directly to sampler CachedValues based on param index
+        switch (paramIndex) {
+            case 0:
+                s->attackValue = value;
+                break;
+            case 1:
+                s->decayValue = value;
+                break;
+            case 2:
+                s->sustainValue = value;
+                break;
+            case 3:
+                s->releaseValue = value;
+                break;
+            case 4:
+                s->pitchValue = value;
+                break;
+            case 5:
+                s->fineValue = value;
+                break;
+            case 6:
+                s->levelValue = value;
+                break;
+            case 7:
+                s->sampleStartValue = value;
+                break;
+            case 8:
+                s->loopStartValue = value;
+                break;
+            case 9:
+                s->loopEndValue = value;
+                break;
+            case 10:
+                s->velAmountValue = value;
+                break;
+            default:
+                break;
+        }
+    };
+
+    padSamplerUI_.onLoopEnabledChanged = [this, padIndex](bool enabled) {
+        if (!getPadSampler)
+            return;
+        auto* s = getPadSampler(padIndex);
+        if (!s)
+            return;
+        s->loopEnabledAtomic.store(enabled, std::memory_order_relaxed);
+        s->loopEnabledValue = enabled;
+    };
+
+    padSamplerUI_.getPlaybackPosition = [this, padIndex]() -> double {
+        if (!getPadSampler)
+            return 0.0;
+        auto* s = getPadSampler(padIndex);
+        if (!s)
+            return 0.0;
+        return s->getPlaybackPosition();
+    };
+
+    padSamplerUI_.onFileDropped = [this, padIndex](const juce::File& file) {
+        if (onSampleDropped)
+            onSampleDropped(padIndex, file);
+    };
+
+    padSamplerUI_.onLoadSampleRequested = [this, padIndex]() {
+        if (onLoadRequested)
+            onLoadRequested(padIndex);
+    };
+
+    // Update parameters from sampler state
+    juce::String sampleName;
+    auto file = sampler->getSampleFile();
+    if (file.existsAsFile())
+        sampleName = file.getFileNameWithoutExtension();
+
+    padSamplerUI_.updateParameters(
+        sampler->attackValue.get(), sampler->decayValue.get(), sampler->sustainValue.get(),
+        sampler->releaseValue.get(), sampler->pitchValue.get(), sampler->fineValue.get(),
+        sampler->levelValue.get(), sampler->sampleStartValue.get(), sampler->loopEnabledValue.get(),
+        sampler->loopStartValue.get(), sampler->loopEndValue.get(), sampler->velAmountValue.get(),
+        sampleName);
+
+    padSamplerUI_.setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
+                                  sampler->getSampleLengthSeconds());
+
+    padSamplerUI_.setVisible(true);
+}
+
+// =============================================================================
+// DragAndDropTarget (plugin drops)
+// =============================================================================
+
+bool DrumGridUI::isInterestedInDragSource(const SourceDetails& details) {
+    if (auto* obj = details.description.getDynamicObject()) {
+        return obj->getProperty("type").toString() == "plugin";
+    }
+    return false;
+}
+
+void DrumGridUI::itemDragEnter(const SourceDetails& details) {
+    int btnIdx = padButtonIndexAtPoint(details.localPosition.toInt());
+    if (btnIdx >= 0)
+        dropHighlightPad_ = currentPage_ * kPadsPerPage + btnIdx;
+    else
+        dropHighlightPad_ = -1;
+    repaint();
+}
+
+void DrumGridUI::itemDragExit(const SourceDetails&) {
+    dropHighlightPad_ = -1;
+    repaint();
+}
+
+void DrumGridUI::itemDropped(const SourceDetails& details) {
+    dropHighlightPad_ = -1;
+
+    int btnIdx = padButtonIndexAtPoint(details.localPosition.toInt());
+    if (btnIdx < 0) {
+        repaint();
+        return;
+    }
+
+    int padIndex = currentPage_ * kPadsPerPage + btnIdx;
+    setSelectedPad(padIndex);
+
+    if (auto* obj = details.description.getDynamicObject()) {
+        if (onPluginDropped)
+            onPluginDropped(padIndex, *obj);
+    }
+
+    repaint();
 }
 
 // =============================================================================
