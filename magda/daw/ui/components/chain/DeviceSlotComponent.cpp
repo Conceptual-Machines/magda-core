@@ -485,6 +485,9 @@ int DeviceSlotComponent::getPreferredWidth() const {
     if (collapsed_) {
         return getLeftPanelsWidth() + COLLAPSED_WIDTH + getRightPanelsWidth();
     }
+    if (samplerUI_) {
+        return getTotalWidth(BASE_SLOT_WIDTH * 2);
+    }
     return getTotalWidth(getDynamicSlotWidth());
 }
 
@@ -1238,24 +1241,42 @@ void DeviceSlotComponent::createCustomUI() {
             magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
                                                                        value);
         };
-        samplerUI_->onLoadSampleRequested = [this]() {
-            // Open a file chooser for audio files
+        // Shared logic for loading a sample file and refreshing the UI
+        auto loadFile = [this](const juce::File& file) {
+            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+            if (!audioEngine)
+                return;
+            auto* bridge = audioEngine->getAudioBridge();
+            if (!bridge)
+                return;
+            if (bridge->loadSamplerSample(device_.id, file)) {
+                auto plugin = bridge->getPlugin(device_.id);
+                if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+                    samplerUI_->updateParameters(
+                        sampler->attackValue.get(), sampler->decayValue.get(),
+                        sampler->sustainValue.get(), sampler->releaseValue.get(),
+                        sampler->pitchValue.get(), sampler->fineValue.get(),
+                        sampler->levelValue.get(), file.getFileNameWithoutExtension());
+                    samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate());
+                    repaint();
+                }
+            }
+        };
+
+        samplerUI_->onLoadSampleRequested = [loadFile]() {
             auto chooser = std::make_shared<juce::FileChooser>(
                 "Load Sample", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
-            chooser->launchAsync(
-                juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-                [this, chooser](const juce::FileChooser&) {
-                    auto result = chooser->getResult();
-                    if (result.existsAsFile()) {
-                        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-                        if (audioEngine) {
-                            if (auto* bridge = audioEngine->getAudioBridge()) {
-                                bridge->loadSamplerSample(device_.id, result);
-                            }
-                        }
-                    }
-                });
+            chooser->launchAsync(juce::FileBrowserComponent::openMode |
+                                     juce::FileBrowserComponent::canSelectFiles,
+                                 [loadFile, chooser](const juce::FileChooser&) {
+                                     auto result = chooser->getResult();
+                                     if (result.existsAsFile())
+                                         loadFile(result);
+                                 });
         };
+
+        samplerUI_->onFileDropped = loadFile;
+
         addAndMakeVisible(*samplerUI_);
         updateCustomUI();
     }
@@ -1300,7 +1321,7 @@ void DeviceSlotComponent::updateCustomUI() {
             level = device_.parameters[6].currentValue;
         }
 
-        // Get sample name from plugin state if available
+        // Get sample name and waveform from plugin state
         auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
         if (audioEngine) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
@@ -1309,6 +1330,7 @@ void DeviceSlotComponent::updateCustomUI() {
                     auto file = sampler->getSampleFile();
                     if (file.existsAsFile())
                         sampleName = file.getFileNameWithoutExtension();
+                    samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate());
                 }
             }
         }

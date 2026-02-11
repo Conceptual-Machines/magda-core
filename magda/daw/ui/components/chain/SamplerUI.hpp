@@ -26,7 +26,7 @@ namespace magda::daw::ui {
  * Parameter indices (matching MagdaSamplerPlugin::addParam order):
  *   0=attack, 1=decay, 2=sustain, 3=release, 4=pitch, 5=fine, 6=level
  */
-class SamplerUI : public juce::Component {
+class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget {
   public:
     SamplerUI();
     ~SamplerUI() override = default;
@@ -56,12 +56,21 @@ class SamplerUI : public juce::Component {
     std::function<void()> onLoadSampleRequested;
 
     /**
+     * @brief Callback when a file is dropped onto the sampler UI
+     */
+    std::function<void(const juce::File&)> onFileDropped;
+
+    /**
      * @brief Set the waveform thumbnail data for display
      */
     void setWaveformData(const juce::AudioBuffer<float>* buffer, double sampleRate);
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+
+    // FileDragAndDropTarget
+    bool isInterestedInFileDrag(const juce::StringArray& files) override;
+    void filesDropped(const juce::StringArray& files, int x, int y) override;
 
   private:
     // Sample info

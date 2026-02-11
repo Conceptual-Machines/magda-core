@@ -116,6 +116,7 @@ class MagdaSamplerPlugin : public te::Plugin {
     juce::File getSampleFile() const;
     const juce::AudioBuffer<float>* getWaveform() const;
     double getSampleLengthSeconds() const;
+    double getSampleRate() const;
     int getRootNote() const;
     void setRootNote(int note);
 

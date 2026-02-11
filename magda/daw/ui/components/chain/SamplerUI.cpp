@@ -211,6 +211,26 @@ void SamplerUI::buildWaveformPath(const juce::AudioBuffer<float>* buffer, int wi
     waveformPath_.closeSubPath();
 }
 
+bool SamplerUI::isInterestedInFileDrag(const juce::StringArray& files) {
+    for (const auto& f : files) {
+        if (f.endsWithIgnoreCase(".wav") || f.endsWithIgnoreCase(".aif") ||
+            f.endsWithIgnoreCase(".aiff") || f.endsWithIgnoreCase(".flac") ||
+            f.endsWithIgnoreCase(".ogg") || f.endsWithIgnoreCase(".mp3"))
+            return true;
+    }
+    return false;
+}
+
+void SamplerUI::filesDropped(const juce::StringArray& files, int /*x*/, int /*y*/) {
+    for (const auto& f : files) {
+        juce::File file(f);
+        if (file.existsAsFile() && onFileDropped) {
+            onFileDropped(file);
+            break;
+        }
+    }
+}
+
 void SamplerUI::paint(juce::Graphics& g) {
     // Background
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));

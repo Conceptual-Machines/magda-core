@@ -284,6 +284,12 @@ double MagdaSamplerPlugin::getSampleLengthSeconds() const {
     return 0.0;
 }
 
+double MagdaSamplerPlugin::getSampleRate() const {
+    if (currentSound != nullptr && currentSound->hasData())
+        return currentSound->sourceSampleRate;
+    return 44100.0;
+}
+
 int MagdaSamplerPlugin::getRootNote() const {
     return rootNoteValue.get();
 }
@@ -322,13 +328,14 @@ void MagdaSamplerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     float levelLinear = juce::Decibels::decibelsToGain(levelDb);
 
     // Convert MidiMessageArray to juce::MidiBuffer for synthesiser
+    // TE timestamps are in seconds — convert to sample positions within the buffer range
     juce::MidiBuffer midiBuffer;
     if (fc.bufferForMidiMessages != nullptr && !fc.bufferForMidiMessages->isEmpty()) {
         for (auto& m : *fc.bufferForMidiMessages) {
-            int samplePos = juce::roundToInt(m.getTimeStamp() * sampleRate);
-            samplePos = juce::jlimit(fc.bufferStartSample,
-                                     fc.bufferStartSample + fc.bufferNumSamples - 1, samplePos);
-            midiBuffer.addEvent(m, samplePos);
+            int midiPos = juce::roundToInt(m.getTimeStamp() * sampleRate);
+            midiPos = juce::jlimit(fc.bufferStartSample,
+                                   fc.bufferStartSample + fc.bufferNumSamples - 1, midiPos);
+            midiBuffer.addEvent(m, midiPos);
         }
     }
 

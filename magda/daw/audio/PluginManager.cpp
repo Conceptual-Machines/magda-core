@@ -336,8 +336,10 @@ te::Plugin::Ptr PluginManager::loadBuiltInPlugin(TrackId trackId, const juce::St
     te::Plugin::Ptr plugin;
 
     if (type.equalsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
-        plugin =
-            edit_.getPluginCache().createNewPlugin(daw::audio::MagdaSamplerPlugin::xmlTypeName, {});
+        juce::ValueTree pluginState(te::IDs::PLUGIN);
+        pluginState.setProperty(te::IDs::type, daw::audio::MagdaSamplerPlugin::xmlTypeName,
+                                nullptr);
+        plugin = edit_.getPluginCache().createNewPlugin(pluginState);
         if (plugin)
             track->pluginList.insertPlugin(plugin, -1, nullptr);
     } else if (type.equalsIgnoreCase("tone") || type.equalsIgnoreCase("tonegenerator")) {
@@ -1356,8 +1358,9 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
             plugin = edit_.getPluginCache().createNewPlugin(te::FourOscPlugin::xmlTypeName, {});
         } else if (device.pluginId.containsIgnoreCase(
                        daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
-            plugin = edit_.getPluginCache().createNewPlugin(
-                daw::audio::MagdaSamplerPlugin::xmlTypeName, {});
+            juce::ValueTree ps(te::IDs::PLUGIN);
+            ps.setProperty(te::IDs::type, daw::audio::MagdaSamplerPlugin::xmlTypeName, nullptr);
+            plugin = edit_.getPluginCache().createNewPlugin(ps);
         }
     } else {
         // External plugin — same lookup logic as loadDeviceAsPlugin but without track insertion
@@ -1476,8 +1479,10 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             }
         } else if (device.pluginId.containsIgnoreCase(
                        daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
-            plugin = edit_.getPluginCache().createNewPlugin(
-                daw::audio::MagdaSamplerPlugin::xmlTypeName, {});
+            juce::ValueTree pluginState(te::IDs::PLUGIN);
+            pluginState.setProperty(te::IDs::type, daw::audio::MagdaSamplerPlugin::xmlTypeName,
+                                    nullptr);
+            plugin = edit_.getPluginCache().createNewPlugin(pluginState);
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
                 processor = std::make_unique<DeviceProcessor>(device.id, plugin);
