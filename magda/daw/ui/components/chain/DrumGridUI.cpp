@@ -468,8 +468,12 @@ void DrumGridUI::resized() {
     if (showDetailPanel)
         area.removeFromLeft(kGap);
 
-    auto detailArea = area;
-    DBG("  -> detailArea width: " + juce::String(detailArea.getWidth()));
+    // Limit detail panel to preferred width of its content (avoid huge gaps)
+    int preferredDetailWidth = padChainPanel_.getContentWidth();
+    int detailWidth = juce::jmin(preferredDetailWidth, area.getWidth());
+    auto detailArea = area.removeFromLeft(detailWidth);
+    DBG("  -> detailArea width: " + juce::String(detailArea.getWidth()) +
+        " (preferred: " + juce::String(preferredDetailWidth) + ")");
 
     // --- Pad Grid layout ---
     auto paginationRow = gridArea.removeFromBottom(22);
