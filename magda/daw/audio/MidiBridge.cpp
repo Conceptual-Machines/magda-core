@@ -208,26 +208,12 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
         globalEventQueue_.push(entry);
     }
 
-    // Debug: Log MIDI message receipt
-    if (message.isNoteOn()) {
-        DBG("MidiBridge: Note ON received - note="
-            << message.getNoteNumber() << " vel=" << message.getVelocity() << " from '"
-            << source->getName() << "' (id='" << sourceDeviceId << "')"
-            << " trackRoutings=" << trackMidiInputs_.size());
-    }
-
     // Find all tracks routing this MIDI input
     juce::ScopedLock lock(routingLock_);
 
     for (const auto& [trackId, deviceId] : trackMidiInputs_) {
         // Check if this track is routing this device (or "all" inputs)
         bool matches = (deviceId == sourceDeviceId || deviceId == "all");
-
-        if (message.isNoteOn()) {
-            DBG("  -> Checking track " << trackId << ": routing='" << deviceId << "' vs source='"
-                                       << sourceDeviceId << "' -> "
-                                       << (matches ? "MATCH" : "no match"));
-        }
 
         if (matches) {
             // NOTE: MIDI routing to plugins is now handled by Tracktion Engine's

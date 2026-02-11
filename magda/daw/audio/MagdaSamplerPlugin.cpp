@@ -199,6 +199,16 @@ MagdaSamplerPlugin::MagdaSamplerPlugin(const te::PluginCreationInfo& info) : Plu
     for (int i = 0; i < numVoices; ++i)
         synthesiser.addVoice(new SamplerVoice());
 
+    // Initialize automatable parameters to their default values.
+    // addParam() defaults to range minimum; we must explicitly set the intended defaults.
+    attackParam->setParameter(attackValue.get(), juce::dontSendNotification);
+    decayParam->setParameter(decayValue.get(), juce::dontSendNotification);
+    sustainParam->setParameter(sustainValue.get(), juce::dontSendNotification);
+    releaseParam->setParameter(releaseValue.get(), juce::dontSendNotification);
+    pitchParam->setParameter(pitchValue.get(), juce::dontSendNotification);
+    fineParam->setParameter(fineValue.get(), juce::dontSendNotification);
+    levelParam->setParameter(levelValue.get(), juce::dontSendNotification);
+
     // Restore sample from saved state
     juce::String savedPath = samplePathValue.get();
     if (savedPath.isNotEmpty()) {
@@ -328,14 +338,25 @@ void MagdaSamplerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     float levelLinear = juce::Decibels::decibelsToGain(levelDb);
 
     // Convert MidiMessageArray to juce::MidiBuffer for synthesiser
-    // TE timestamps are in seconds — convert to sample positions within the buffer range
+    // TE timestamps are block-relative seconds — convert to sample offset within the block
+    // Deduplicate MIDI events (multiple input devices can route the same message)
     juce::MidiBuffer midiBuffer;
     if (fc.bufferForMidiMessages != nullptr && !fc.bufferForMidiMessages->isEmpty()) {
+        int noteOnsSeen[128] = {};
+        int noteOffsSeen[128] = {};
+
         for (auto& m : *fc.bufferForMidiMessages) {
+            if (m.isNoteOn()) {
+                if (noteOnsSeen[m.getNoteNumber()]++)
+                    continue;
+            } else if (m.isNoteOff()) {
+                if (noteOffsSeen[m.getNoteNumber()]++)
+                    continue;
+            }
+
             int midiPos = juce::roundToInt(m.getTimeStamp() * sampleRate);
-            midiPos = juce::jlimit(fc.bufferStartSample,
-                                   fc.bufferStartSample + fc.bufferNumSamples - 1, midiPos);
-            midiBuffer.addEvent(m, midiPos);
+            midiPos = juce::jlimit(0, fc.bufferNumSamples - 1, midiPos);
+            midiBuffer.addEvent(m, midiPos + fc.bufferStartSample);
         }
     }
 
