@@ -649,6 +649,8 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
         int textStartX = headerArea.getX() + BUTTON_SIZE + 4;  // After bypass button
         int textY = headerArea.getY();
         int textHeight = headerArea.getHeight();
+        int availableWidth =
+            headerArea.getWidth() - (BUTTON_SIZE + 4);  // Remaining width after bypass button
 
         // Get the font
         auto font = FontManager::getInstance().getMicrogrammaFont(11.0f);
@@ -658,18 +660,19 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
         juce::GlyphArrangement glyphs;
         juce::String part1 = "MDG2000";
         glyphs.addLineOfText(font, part1, 0.0f, 0.0f);
-        int part1Width = static_cast<int>(glyphs.getBoundingBox(0, -1, true).getWidth());
+        int part1Width = static_cast<int>(glyphs.getBoundingBox(0, -1, true).getWidth()) +
+                         2;  // Add small padding
 
         // Draw "MDG2000" in orange (left-aligned)
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
         g.drawText(part1, textStartX, textY, part1Width, textHeight,
-                   juce::Justification::centredLeft, true);
+                   juce::Justification::centredLeft, false);
 
         // Draw " - MAGDA Drum Grid" in white (immediately after)
         juce::String part2 = " - MAGDA Drum Grid";
         g.setColour(juce::Colours::white);
-        g.drawText(part2, textStartX + part1Width, textY, headerArea.getWidth() - part1Width,
-                   textHeight, juce::Justification::centredLeft, true);
+        g.drawText(part2, textStartX + part1Width, textY, availableWidth - part1Width, textHeight,
+                   juce::Justification::centredLeft, false);
     }
 }
 
