@@ -334,6 +334,38 @@ double SamplerUI::pixelXToSeconds(float pixelX, juce::Rectangle<int> waveArea) c
 // Mouse Interaction on Waveform
 // =============================================================================
 
+SamplerUI::DragTarget SamplerUI::markerHitTest(const juce::MouseEvent& e,
+                                               juce::Rectangle<int> waveArea) const {
+    if (!hasWaveform_ || sampleLength_ <= 0.0)
+        return DragTarget::None;
+
+    float mx = static_cast<float>(e.getPosition().x);
+    int my = e.getPosition().y;
+
+    // Check sample start marker
+    float startX = secondsToPixelX(startSlider_.getValue(), waveArea);
+    if (std::abs(mx - startX) <= kMarkerHitPixels)
+        return DragTarget::SampleStart;
+
+    if (loopButton_.getToggleState()) {
+        float lStartX = secondsToPixelX(loopStartSlider_.getValue(), waveArea);
+        float lEndX = secondsToPixelX(loopEndSlider_.getValue(), waveArea);
+
+        // Check loop start/end markers (prioritise over region)
+        if (std::abs(mx - lStartX) <= kMarkerHitPixels)
+            return DragTarget::LoopStart;
+        if (std::abs(mx - lEndX) <= kMarkerHitPixels)
+            return DragTarget::LoopEnd;
+
+        // Check loop top bar (drag entire region)
+        if (lEndX > lStartX && mx >= lStartX && mx <= lEndX && my >= waveArea.getY() &&
+            my < waveArea.getY() + kLoopBarHeight)
+            return DragTarget::LoopRegion;
+    }
+
+    return DragTarget::None;
+}
+
 void SamplerUI::mouseDown(const juce::MouseEvent& e) {
     auto waveArea = getWaveformBounds();
     if (!waveArea.contains(e.getPosition()) || !hasWaveform_) {
@@ -348,12 +380,24 @@ void SamplerUI::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    if (e.mods.isShiftDown()) {
-        currentDrag_ = DragTarget::LoopStart;
-    } else if (e.mods.isCommandDown()) {
-        currentDrag_ = DragTarget::LoopEnd;
-    } else {
-        currentDrag_ = DragTarget::SampleStart;
+    // Try hit-testing existing markers/loop bar first
+    currentDrag_ = markerHitTest(e, waveArea);
+
+    if (currentDrag_ == DragTarget::LoopRegion) {
+        loopDragStartL_ = loopStartSlider_.getValue();
+        loopDragStartR_ = loopEndSlider_.getValue();
+        return;
+    }
+
+    // Modifier-based placement (shift = loop start, cmd = loop end)
+    if (currentDrag_ == DragTarget::None) {
+        if (e.mods.isShiftDown()) {
+            currentDrag_ = DragTarget::LoopStart;
+        } else if (e.mods.isCommandDown()) {
+            currentDrag_ = DragTarget::LoopEnd;
+        } else {
+            currentDrag_ = DragTarget::SampleStart;
+        }
     }
 
     double seconds = pixelXToSeconds(static_cast<float>(e.getPosition().x), waveArea);
@@ -394,6 +438,24 @@ void SamplerUI::mouseDrag(const juce::MouseEvent& e) {
         return;
     }
 
+    if (currentDrag_ == DragTarget::LoopRegion) {
+        double pixelDelta = static_cast<double>(e.getDistanceFromDragStartX());
+        double timeDelta = pixelDelta / pixelsPerSecond_;
+        double regionLen = loopDragStartR_ - loopDragStartL_;
+
+        // Clamp so region stays within sample bounds
+        double newL = loopDragStartL_ + timeDelta;
+        if (newL < 0.0)
+            newL = 0.0;
+        if (newL + regionLen > sampleLength_)
+            newL = sampleLength_ - regionLen;
+
+        loopStartSlider_.setValue(newL, juce::sendNotificationSync);
+        loopEndSlider_.setValue(newL + regionLen, juce::sendNotificationSync);
+        repaint();
+        return;
+    }
+
     double seconds = pixelXToSeconds(static_cast<float>(e.getPosition().x), waveArea);
 
     switch (currentDrag_) {
@@ -412,8 +474,33 @@ void SamplerUI::mouseDrag(const juce::MouseEvent& e) {
     repaint();
 }
 
-void SamplerUI::mouseUp(const juce::MouseEvent&) {
+void SamplerUI::mouseUp(const juce::MouseEvent& e) {
     currentDrag_ = DragTarget::None;
+    // Update cursor for whatever is now under the mouse
+    mouseMove(e);
+}
+
+void SamplerUI::mouseMove(const juce::MouseEvent& e) {
+    auto waveArea = getWaveformBounds();
+    if (!waveArea.contains(e.getPosition()) || !hasWaveform_) {
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+        return;
+    }
+
+    auto target = markerHitTest(e, waveArea);
+    switch (target) {
+        case DragTarget::SampleStart:
+        case DragTarget::LoopStart:
+        case DragTarget::LoopEnd:
+            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+            break;
+        case DragTarget::LoopRegion:
+            setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+            break;
+        default:
+            setMouseCursor(juce::MouseCursor::NormalCursor);
+            break;
+    }
 }
 
 void SamplerUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) {
@@ -478,7 +565,7 @@ void SamplerUI::paint(juce::Graphics& g) {
     // Waveform area
     auto waveformArea = getWaveformBounds();
 
-    if (hasWaveform_) {
+    if (hasWaveform_ && !waveformArea.isEmpty()) {
         // Clip all waveform drawing to waveform bounds
         g.saveState();
         g.reduceClipRegion(waveformArea);
@@ -493,7 +580,7 @@ void SamplerUI::paint(juce::Graphics& g) {
         g.strokePath(waveformPath_, juce::PathStrokeType(0.5f));
         g.restoreState();
 
-        // Loop region highlight (semi-transparent green)
+        // Loop region highlight (semi-transparent green) + top drag bar
         if (loopButton_.getToggleState() && sampleLength_ > 0.0) {
             float lStartX = secondsToPixelX(loopStartSlider_.getValue(), waveformArea);
             float lEndX = secondsToPixelX(loopEndSlider_.getValue(), waveformArea);
@@ -501,6 +588,11 @@ void SamplerUI::paint(juce::Graphics& g) {
                 g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.15f));
                 g.fillRect(lStartX, static_cast<float>(waveformArea.getY()), lEndX - lStartX,
                            static_cast<float>(waveformArea.getHeight()));
+
+                // Top drag bar
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.5f));
+                g.fillRect(lStartX, static_cast<float>(waveformArea.getY()), lEndX - lStartX,
+                           static_cast<float>(kLoopBarHeight));
             }
         }
 

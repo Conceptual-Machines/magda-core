@@ -82,6 +82,7 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
+    void mouseMove(const juce::MouseEvent& e) override;
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
   private:
@@ -137,9 +138,16 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     juce::Label pitchLabel_, fineLabel_, levelLabel_;
 
     // Dragging state
-    enum class DragTarget { None, SampleStart, LoopStart, LoopEnd, Scroll };
+    enum class DragTarget { None, SampleStart, LoopStart, LoopEnd, LoopRegion, Scroll };
     DragTarget currentDrag_ = DragTarget::None;
     double scrollDragStartOffset_ = 0.0;
+    double loopDragStartL_ = 0.0;
+    double loopDragStartR_ = 0.0;
+
+    // Hit-testing helpers
+    static constexpr int kMarkerHitPixels = 5;
+    static constexpr int kLoopBarHeight = 8;
+    DragTarget markerHitTest(const juce::MouseEvent& e, juce::Rectangle<int> waveArea) const;
 
     void setupLabel(juce::Label& label, const juce::String& text);
     void buildWaveformPath(const juce::AudioBuffer<float>* buffer, int width, int height);
