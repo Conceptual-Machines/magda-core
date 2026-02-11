@@ -61,7 +61,7 @@ class PadDeviceSlot : public juce::Component {
   private:
     static constexpr int HEADER_HEIGHT = 18;
     static constexpr int SLOT_WIDTH = 200;  // 4 cols × 48px PARAM_CELL_WIDTH + padding
-    static constexpr int SAMPLER_SLOT_WIDTH = 750;
+    static constexpr int SAMPLER_SLOT_WIDTH = 650;
     static constexpr int PLUGIN_PARAM_SLOTS = 16;
 
     tracktion::engine::Plugin* plugin_ = nullptr;
