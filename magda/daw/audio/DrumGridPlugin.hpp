@@ -2,6 +2,9 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <array>
+#include <atomic>
+
 namespace magda::daw::audio {
 
 namespace te = tracktion::engine;
@@ -103,6 +106,9 @@ class DrumGridPlugin : public te::Plugin {
     int getChainPluginCount(int chainIndex) const;
     te::Plugin* getChainPlugin(int chainIndex, int pluginIndex) const;
 
+    // Pad trigger flags (set by audio thread, consumed by UI)
+    bool consumePadTrigger(int padIndex);
+
     // Legacy pad-level FX API (delegates to chain-based methods)
     void addPluginToPad(int padIndex, const juce::PluginDescription& desc, int insertIndex = -1);
     void removePluginFromPad(int padIndex, int pluginIndex);
@@ -118,6 +124,7 @@ class DrumGridPlugin : public te::Plugin {
     double sampleRate_ = 44100.0;
     int blockSize_ = 512;
     bool wasPlaying_ = false;
+    std::array<std::atomic<bool>, maxPads> padTriggered_{};
 
     static const juce::Identifier chainTreeId;
     static const juce::Identifier chainIndexId;

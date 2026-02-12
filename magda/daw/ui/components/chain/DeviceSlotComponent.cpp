@@ -1562,6 +1562,23 @@ void DeviceSlotComponent::createCustomUI() {
             }
         };
 
+        // Set plugin pointer for trigger polling
+        drumGridUI_->setDrumGridPlugin(getDrumGrid());
+
+        // Play button callback — preview note via TrackManager
+        drumGridUI_->onPlayClicked = [this, getDrumGrid](int padIndex) {
+            auto* dg = getDrumGrid();
+            if (!dg || !nodePath_.isValid())
+                return;
+            int noteNumber = daw::audio::DrumGridPlugin::baseNote + padIndex;
+            magda::TrackManager::getInstance().previewNote(nodePath_.trackId, noteNumber, 100,
+                                                           true);
+            auto trackId = nodePath_.trackId;
+            juce::Timer::callAfterDelay(200, [trackId, noteNumber]() {
+                magda::TrackManager::getInstance().previewNote(trackId, noteNumber, 0, false);
+            });
+        };
+
         // =========================================================================
         // PadChainPanel callbacks — per-pad FX chain management
         // =========================================================================

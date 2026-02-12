@@ -21,8 +21,9 @@ class Plugin;
 }  // namespace tracktion
 
 namespace magda::daw::audio {
+class DrumGridPlugin;
 class MagdaSamplerPlugin;
-}
+}  // namespace magda::daw::audio
 
 namespace magda::daw::ui {
 
@@ -39,7 +40,8 @@ namespace magda::daw::ui {
  */
 class DrumGridUI : public juce::Component,
                    public juce::FileDragAndDropTarget,
-                   public juce::DragAndDropTarget {
+                   public juce::DragAndDropTarget,
+                   public juce::Timer {
   public:
     static constexpr int kPadsPerPage = 16;
     static constexpr int kGridCols = 4;
@@ -57,7 +59,7 @@ class DrumGridUI : public juce::Component,
     static constexpr int kGap = 6;
 
     DrumGridUI();
-    ~DrumGridUI() override = default;
+    ~DrumGridUI() override;
 
     //==============================================================================
     // Data update
@@ -104,6 +106,12 @@ class DrumGridUI : public juce::Component,
     /** Called when delete is clicked on a chain row. (padIndex) */
     std::function<void(int)> onPadDeleteRequested;
 
+    /** Called when play button is clicked on a pad. (padIndex) */
+    std::function<void(int)> onPlayClicked;
+
+    /** Set the DrumGridPlugin pointer for trigger polling. Starts timer. */
+    void setDrumGridPlugin(daw::audio::DrumGridPlugin* plugin);
+
     /** Called when layout changes (e.g., chains panel toggled) so parent can resize. */
     std::function<void()> onLayoutChanged;
 
@@ -130,6 +138,7 @@ class DrumGridUI : public juce::Component,
     // Component overrides
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void timerCallback() override;
 
     // FileDragAndDropTarget
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
@@ -156,10 +165,13 @@ class DrumGridUI : public juce::Component,
         void setHasSample(bool has);
         void setMuted(bool muted);
         void setSoloed(bool soloed);
+        void setTriggered(bool triggered);
 
         std::function<void(int)> onClicked;
+        std::function<void(int)> onPlayClicked;
 
         void paint(juce::Graphics& g) override;
+        void resized() override;
         void mouseDown(const juce::MouseEvent& e) override;
 
       private:
@@ -170,6 +182,8 @@ class DrumGridUI : public juce::Component,
         bool hasSample_ = false;
         bool muted_ = false;
         bool soloed_ = false;
+        bool triggered_ = false;
+        std::unique_ptr<magda::SvgButton> playButton_;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PadButton)
     };
@@ -222,6 +236,9 @@ class DrumGridUI : public juce::Component,
 
     // Plugin drop highlight
     int dropHighlightPad_ = -1;
+
+    // DrumGridPlugin pointer for trigger polling
+    daw::audio::DrumGridPlugin* drumGridPlugin_ = nullptr;
 
     //==============================================================================
     void refreshPadButtons();

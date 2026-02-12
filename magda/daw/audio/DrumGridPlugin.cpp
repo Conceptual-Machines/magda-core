@@ -142,6 +142,11 @@ void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                 if (msg.isNoteOnOrOff()) {
                     int note = msg.getNoteNumber();
                     if (note >= chain->lowNote && note <= chain->highNote) {
+                        if (msg.isNoteOn()) {
+                            int padIdx = note - baseNote;
+                            if (padIdx >= 0 && padIdx < maxPads)
+                                padTriggered_[padIdx].store(true, std::memory_order_relaxed);
+                        }
                         auto remapped = msg;
                         remapped.setNoteNumber(chain->rootNote + (note - chain->lowNote));
                         padMidi_.add(remapped);
@@ -563,6 +568,12 @@ te::Plugin* DrumGridPlugin::getPadPlugin(int padIndex, int pluginIndex) const {
             return chain->plugins[static_cast<size_t>(pluginIndex)].get();
     }
     return nullptr;
+}
+
+bool DrumGridPlugin::consumePadTrigger(int padIndex) {
+    if (padIndex < 0 || padIndex >= maxPads)
+        return false;
+    return padTriggered_[padIndex].exchange(false, std::memory_order_relaxed);
 }
 
 //==============================================================================

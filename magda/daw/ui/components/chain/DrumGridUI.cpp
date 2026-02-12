@@ -5,6 +5,7 @@
 
 #include <set>
 
+#include "audio/DrumGridPlugin.hpp"
 #include "audio/MagdaSamplerPlugin.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -18,7 +19,16 @@ namespace magda::daw::ui {
 // PadButton
 // =============================================================================
 
-DrumGridUI::PadButton::PadButton() {}
+DrumGridUI::PadButton::PadButton() {
+    playButton_ = std::make_unique<magda::SvgButton>("Play", BinaryData::play_bare_svg,
+                                                     BinaryData::play_bare_svgSize);
+    playButton_->setSize(16, 16);
+    playButton_->onClick = [this]() {
+        if (onPlayClicked)
+            onPlayClicked(padIndex_);
+    };
+    addChildComponent(*playButton_);
+}
 
 void DrumGridUI::PadButton::setPadIndex(int index) {
     padIndex_ = index;
@@ -48,6 +58,8 @@ void DrumGridUI::PadButton::setSelected(bool selected) {
 void DrumGridUI::PadButton::setHasSample(bool has) {
     if (hasSample_ != has) {
         hasSample_ = has;
+        if (playButton_)
+            playButton_->setVisible(hasSample_);
         repaint();
     }
 }
@@ -66,13 +78,31 @@ void DrumGridUI::PadButton::setSoloed(bool soloed) {
     }
 }
 
+void DrumGridUI::PadButton::setTriggered(bool triggered) {
+    if (triggered_ != triggered) {
+        triggered_ = triggered;
+        repaint();
+    }
+}
+
+void DrumGridUI::PadButton::resized() {
+    if (playButton_) {
+        constexpr int btnSize = 16;
+        playButton_->setBounds(getWidth() - btnSize - 3, getHeight() - btnSize - 3, btnSize,
+                               btnSize);
+    }
+}
+
 void DrumGridUI::PadButton::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().reduced(2);
 
     // Background colour
     juce::Colour bg;
     float borderThickness;
-    if (selected_) {
+    if (triggered_) {
+        bg = juce::Colour(0xFF5A5A2A);
+        borderThickness = 1.5f;
+    } else if (selected_) {
         bg = DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.4f);
         borderThickness = 1.5f;
     } else if (hasSample_) {
@@ -142,6 +172,10 @@ DrumGridUI::DrumGridUI() {
     for (int i = 0; i < kPadsPerPage; ++i) {
         padButtons_[static_cast<size_t>(i)].onClicked = [this](int padIndex) {
             setSelectedPad(padIndex);
+        };
+        padButtons_[static_cast<size_t>(i)].onPlayClicked = [this](int padIndex) {
+            if (onPlayClicked)
+                onPlayClicked(padIndex);
         };
         addAndMakeVisible(padButtons_[static_cast<size_t>(i)]);
     }
@@ -274,6 +308,40 @@ DrumGridUI::DrumGridUI() {
     // Initialize
     refreshPadButtons();
     refreshDetailPanel();
+}
+
+DrumGridUI::~DrumGridUI() {
+    stopTimer();
+}
+
+void DrumGridUI::setDrumGridPlugin(daw::audio::DrumGridPlugin* plugin) {
+    drumGridPlugin_ = plugin;
+    if (drumGridPlugin_)
+        startTimer(50);  // 20fps polling
+}
+
+void DrumGridUI::timerCallback() {
+    if (!drumGridPlugin_)
+        return;
+
+    int pageStart = currentPage_ * kPadsPerPage;
+    for (int i = 0; i < kTotalPads; ++i) {
+        if (drumGridPlugin_->consumePadTrigger(i)) {
+            // Only flash pads on the current page
+            int btnIdx = i - pageStart;
+            if (btnIdx >= 0 && btnIdx < kPadsPerPage) {
+                padButtons_[static_cast<size_t>(btnIdx)].setTriggered(true);
+
+                auto safeThis = juce::Component::SafePointer<DrumGridUI>(this);
+                int capturedBtnIdx = btnIdx;
+                juce::Timer::callAfterDelay(100, [safeThis, capturedBtnIdx]() {
+                    if (safeThis)
+                        safeThis->padButtons_[static_cast<size_t>(capturedBtnIdx)].setTriggered(
+                            false);
+                });
+            }
+        }
+    }
 }
 
 void DrumGridUI::updatePadInfo(int padIndex, const juce::String& sampleName, bool mute, bool solo,
