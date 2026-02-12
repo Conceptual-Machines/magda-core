@@ -3,6 +3,8 @@
 #include <BinaryData.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <set>
+
 #include "audio/MagdaSamplerPlugin.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -275,7 +277,7 @@ DrumGridUI::DrumGridUI() {
 }
 
 void DrumGridUI::updatePadInfo(int padIndex, const juce::String& sampleName, bool mute, bool solo,
-                               float levelDb, float pan) {
+                               float levelDb, float pan, int chainIndex) {
     if (padIndex < 0 || padIndex >= kTotalPads)
         return;
 
@@ -285,6 +287,7 @@ void DrumGridUI::updatePadInfo(int padIndex, const juce::String& sampleName, boo
     info.solo = solo;
     info.level = levelDb;
     info.pan = pan;
+    info.chainIndex = chainIndex;
 
     // Update visible pad buttons if this pad is on the current page
     int pageStart = currentPage_ * kPadsPerPage;
@@ -329,9 +332,12 @@ void DrumGridUI::setSelectedPad(int padIndex) {
     refreshDetailPanel();
     padChainPanel_.showPadChain(padIndex);
 
-    // Update chain row selection highlights
+    // Update chain row selection highlights — select the row whose chain covers the selected pad
+    int selectedChainIdx = padInfos_[static_cast<size_t>(selectedPad_)].chainIndex;
     for (auto& row : chainRows_) {
-        row->setSelected(row->getPadIndex() == selectedPad_);
+        int rowPad = row->getPadIndex();
+        int rowChainIdx = padInfos_[static_cast<size_t>(rowPad)].chainIndex;
+        row->setSelected(rowChainIdx >= 0 && rowChainIdx == selectedChainIdx);
     }
 
     resized();
@@ -589,9 +595,16 @@ void DrumGridUI::rebuildChainRows() {
     chainRows_.clear();
     chainsContainer_.removeAllChildren();
 
+    // Build rows from padInfos — one row per pad that has a chain
+    // (A chain may cover multiple pads; we show the row for the lowest pad in the range)
+    std::set<int> seenChains;
     for (int i = 0; i < kTotalPads; ++i) {
         auto& info = padInfos_[static_cast<size_t>(i)];
-        if (info.sampleName.isEmpty())
+        if (info.sampleName.isEmpty() || info.chainIndex < 0)
+            continue;
+
+        // Skip if we already created a row for this chain
+        if (!seenChains.insert(info.chainIndex).second)
             continue;
 
         auto row = std::make_unique<PadChainRowComponent>(i);

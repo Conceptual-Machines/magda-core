@@ -64,7 +64,7 @@ class DrumGridUI : public juce::Component,
 
     /** Update cached info for a single pad. Called from DeviceSlotComponent::updateCustomUI. */
     void updatePadInfo(int padIndex, const juce::String& sampleName, bool mute, bool solo,
-                       float levelDb, float pan);
+                       float levelDb, float pan, int chainIndex = -1);
 
     /** Set which pad is selected and populate the detail panel. */
     void setSelectedPad(int padIndex);
@@ -175,13 +175,14 @@ class DrumGridUI : public juce::Component,
     };
 
     //==============================================================================
-    // Cached pad data
+    // Cached pad data (populated from chains by DeviceSlotComponent)
     struct PadInfo {
         juce::String sampleName;
         bool mute = false;
         bool solo = false;
         float level = 0.0f;
         float pan = 0.0f;
+        int chainIndex = -1;  // Index of the chain covering this pad, or -1 if empty
     };
 
     std::array<PadInfo, kTotalPads> padInfos_;

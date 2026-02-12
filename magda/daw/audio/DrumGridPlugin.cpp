@@ -8,8 +8,12 @@ namespace te = tracktion::engine;
 
 const char* DrumGridPlugin::xmlTypeName = "drumgrid";
 
-const juce::Identifier DrumGridPlugin::padTreeId("PAD");
-const juce::Identifier DrumGridPlugin::triggerNoteId("triggerNote");
+const juce::Identifier DrumGridPlugin::chainTreeId("CHAIN");
+const juce::Identifier DrumGridPlugin::chainIndexId("index");
+const juce::Identifier DrumGridPlugin::lowNoteId("lowNote");
+const juce::Identifier DrumGridPlugin::highNoteId("highNote");
+const juce::Identifier DrumGridPlugin::rootNoteId("rootNote");
+const juce::Identifier DrumGridPlugin::chainNameId("name");
 const juce::Identifier DrumGridPlugin::padLevelId("padLevel");
 const juce::Identifier DrumGridPlugin::padPanId("padPan");
 const juce::Identifier DrumGridPlugin::padMuteId("padMute");
@@ -17,43 +21,34 @@ const juce::Identifier DrumGridPlugin::padSoloId("padSolo");
 
 //==============================================================================
 DrumGridPlugin::DrumGridPlugin(const te::PluginCreationInfo& info) : Plugin(info) {
-    initPadValueTrees();
+    // Restore chains from existing ValueTree state (if any)
+    for (int i = 0; i < state.getNumChildren(); ++i) {
+        auto childTree = state.getChild(i);
+        if (!childTree.hasType(chainTreeId))
+            continue;
+
+        auto chain = std::make_unique<Chain>();
+        chain->index = childTree.getProperty(chainIndexId, 0);
+        chain->lowNote = childTree.getProperty(lowNoteId, 60);
+        chain->highNote = childTree.getProperty(highNoteId, 60);
+        chain->rootNote = childTree.getProperty(rootNoteId, 60);
+        chain->name = childTree.getProperty(chainNameId, "").toString();
+
+        auto um = getUndoManager();
+        chain->level.referTo(childTree, padLevelId, um, 0.0f);
+        chain->pan.referTo(childTree, padPanId, um, 0.0f);
+        chain->mute.referTo(childTree, padMuteId, um, false);
+        chain->solo.referTo(childTree, padSoloId, um, false);
+
+        if (chain->index >= nextChainIndex_)
+            nextChainIndex_ = chain->index + 1;
+
+        chains_.push_back(std::move(chain));
+    }
 }
 
 DrumGridPlugin::~DrumGridPlugin() {
     notifyListenersOfDeletion();
-}
-
-void DrumGridPlugin::initPadValueTrees() {
-    auto um = getUndoManager();
-
-    // Ensure we have PAD child ValueTrees in state for each pad
-    // On first creation they won't exist; on restore they will
-    for (int i = 0; i < maxPads; ++i) {
-        juce::ValueTree padTree = state.getChildWithProperty(triggerNoteId, 36 + i);
-
-        if (!padTree.isValid()) {
-            // Check if there's a PAD at this index position
-            if (i < state.getNumChildren() && state.getChild(i).hasType(padTreeId)) {
-                padTree = state.getChild(i);
-            } else {
-                padTree = juce::ValueTree(padTreeId);
-                padTree.setProperty(triggerNoteId, 36 + i, nullptr);
-                padTree.setProperty(padLevelId, 0.0f, nullptr);
-                padTree.setProperty(padPanId, 0.0f, nullptr);
-                padTree.setProperty(padMuteId, false, nullptr);
-                padTree.setProperty(padSoloId, false, nullptr);
-                state.addChild(padTree, i, nullptr);
-            }
-        }
-
-        pads_[static_cast<size_t>(i)].triggerNote =
-            static_cast<int>(padTree.getProperty(triggerNoteId, 36 + i));
-        pads_[static_cast<size_t>(i)].level.referTo(padTree, padLevelId, um, 0.0f);
-        pads_[static_cast<size_t>(i)].pan.referTo(padTree, padPanId, um, 0.0f);
-        pads_[static_cast<size_t>(i)].mute.referTo(padTree, padMuteId, um, false);
-        pads_[static_cast<size_t>(i)].solo.referTo(padTree, padSoloId, um, false);
-    }
 }
 
 //==============================================================================
@@ -62,9 +57,8 @@ void DrumGridPlugin::initialise(const te::PluginInitialisationInfo& info) {
     blockSize_ = info.blockSizeSamples;
     scratchBuffer_.setSize(2, blockSize_);
 
-    // Initialise any child plugins that are loaded
-    for (auto& pad : pads_) {
-        for (auto& plugin : pad.plugins) {
+    for (auto& chain : chains_) {
+        for (auto& plugin : chain->plugins) {
             if (plugin != nullptr)
                 initChildPlugin(*plugin);
         }
@@ -72,8 +66,8 @@ void DrumGridPlugin::initialise(const te::PluginInitialisationInfo& info) {
 }
 
 void DrumGridPlugin::deinitialise() {
-    for (auto& pad : pads_) {
-        for (auto& plugin : pad.plugins) {
+    for (auto& chain : chains_) {
+        for (auto& plugin : chain->plugins) {
             if (plugin != nullptr)
                 deinitChildPlugin(*plugin);
         }
@@ -81,8 +75,8 @@ void DrumGridPlugin::deinitialise() {
 }
 
 void DrumGridPlugin::reset() {
-    for (auto& pad : pads_) {
-        for (auto& plugin : pad.plugins) {
+    for (auto& chain : chains_) {
+        for (auto& plugin : chain->plugins) {
             if (plugin != nullptr)
                 plugin->reset();
         }
@@ -109,82 +103,66 @@ void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     const int numSamples = fc.bufferNumSamples;
     const int startSample = fc.bufferStartSample;
 
-    // Clear output region
     destBuffer.clear(startSample, numSamples);
 
-    // Check if any pad is soloed
     bool anySoloed = false;
-    for (const auto& pad : pads_) {
-        if (!pad.plugins.empty() && pad.solo.get()) {
+    for (const auto& chain : chains_) {
+        if (!chain->plugins.empty() && chain->solo.get()) {
             anySoloed = true;
             break;
         }
     }
 
-    for (int i = 0; i < maxPads; ++i) {
-        auto& pad = pads_[static_cast<size_t>(i)];
-        if (pad.plugins.empty())
+    for (auto& chain : chains_) {
+        if (chain->plugins.empty())
             continue;
 
-        // Solo/mute logic
-        if (pad.mute.get())
+        if (chain->mute.get())
             continue;
-        if (anySoloed && !pad.solo.get())
+        if (anySoloed && !chain->solo.get())
             continue;
 
-        // Filter MIDI: copy only events matching this pad's trigger note
+        // Filter MIDI: copy events within this chain's note range
         padMidi_.clear();
         if (fc.bufferForMidiMessages != nullptr) {
             for (auto& msg : *fc.bufferForMidiMessages) {
-                if (msg.isNoteOnOrOff() && msg.getNoteNumber() == pad.triggerNote) {
-                    padMidi_.add(msg);
-                } else if (!msg.isNoteOnOrOff()) {
-                    // Pass through non-note events (CC, pitch bend, etc.)
+                if (msg.isNoteOnOrOff()) {
+                    int note = msg.getNoteNumber();
+                    if (note >= chain->lowNote && note <= chain->highNote) {
+                        auto remapped = msg;
+                        remapped.setNoteNumber(chain->rootNote + (note - chain->lowNote));
+                        padMidi_.add(remapped);
+                    }
+                } else {
                     padMidi_.add(msg);
                 }
             }
         }
 
-        // Skip if no MIDI and first plugin doesn't produce audio when idle
-        if (padMidi_.isEmpty() && pad.plugins[0] != nullptr &&
-            !pad.plugins[0]->producesAudioWhenNoAudioInput())
+        if (padMidi_.isEmpty() && chain->plugins[0] != nullptr &&
+            !chain->plugins[0]->producesAudioWhenNoAudioInput())
             continue;
 
-        // Clear scratch buffer
         scratchBuffer_.clear(0, numSamples);
 
-        // Build child render context
-        te::PluginRenderContext padContext(&scratchBuffer_,                  // destBuffer
-                                           juce::AudioChannelSet::stereo(),  // destBufferChannels
-                                           0,                                // bufferStartSample
-                                           numSamples,                       // bufferNumSamples
-                                           &padMidi_,       // bufferForMidiMessages
-                                           0.0,             // midiBufferOffset
-                                           fc.editTime,     // editTime
-                                           fc.isPlaying,    // playing
-                                           fc.isScrubbing,  // scrubbing
-                                           fc.isRendering,  // rendering
-                                           false            // allowBypassedProcessing
-        );
+        te::PluginRenderContext padContext(&scratchBuffer_, juce::AudioChannelSet::stereo(), 0,
+                                           numSamples, &padMidi_, 0.0, fc.editTime, fc.isPlaying,
+                                           fc.isScrubbing, fc.isRendering, false);
 
-        // Process plugins in sequence (instrument → FX chain)
-        for (auto& plugin : pad.plugins) {
+        for (auto& plugin : chain->plugins) {
             if (plugin != nullptr)
                 plugin->applyToBuffer(padContext);
         }
 
-        // Apply per-pad level and pan, then mix into dest
-        float levelDb = pad.level.get();
+        float levelDb = chain->level.get();
         float levelLinear = juce::Decibels::decibelsToGain(levelDb);
-        float panValue = pad.pan.get();  // -1..1
+        float panValue = chain->pan.get();
 
-        // Simple equal-power pan law
         float leftGain =
             levelLinear * std::cos((panValue + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
         float rightGain =
             levelLinear * std::sin((panValue + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
 
-        // Mix scratch into dest
         if (destBuffer.getNumChannels() >= 1)
             destBuffer.addFrom(0, startSample, scratchBuffer_, 0, 0, numSamples, leftGain);
         if (destBuffer.getNumChannels() >= 2)
@@ -195,13 +173,139 @@ void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 }
 
 //==============================================================================
+// Chain management
+//==============================================================================
+
+int DrumGridPlugin::addChain(int lowNote, int highNote, int rootNote, const juce::String& name) {
+    int idx = nextChainIndex_++;
+
+    juce::ValueTree chainTree(chainTreeId);
+    chainTree.setProperty(chainIndexId, idx, nullptr);
+    chainTree.setProperty(lowNoteId, lowNote, nullptr);
+    chainTree.setProperty(highNoteId, highNote, nullptr);
+    chainTree.setProperty(rootNoteId, rootNote, nullptr);
+    chainTree.setProperty(chainNameId, name, nullptr);
+    chainTree.setProperty(padLevelId, 0.0f, nullptr);
+    chainTree.setProperty(padPanId, 0.0f, nullptr);
+    chainTree.setProperty(padMuteId, false, nullptr);
+    chainTree.setProperty(padSoloId, false, nullptr);
+    state.addChild(chainTree, -1, nullptr);
+
+    auto chain = std::make_unique<Chain>();
+    chain->index = idx;
+    chain->lowNote = lowNote;
+    chain->highNote = highNote;
+    chain->rootNote = rootNote;
+    chain->name = name;
+
+    auto um = getUndoManager();
+    chain->level.referTo(chainTree, padLevelId, um, 0.0f);
+    chain->pan.referTo(chainTree, padPanId, um, 0.0f);
+    chain->mute.referTo(chainTree, padMuteId, um, false);
+    chain->solo.referTo(chainTree, padSoloId, um, false);
+
+    chains_.push_back(std::move(chain));
+    return idx;
+}
+
+void DrumGridPlugin::removeChain(int chainIndex) {
+    for (auto it = chains_.begin(); it != chains_.end(); ++it) {
+        if ((*it)->index == chainIndex) {
+            for (auto& plugin : (*it)->plugins) {
+                if (plugin != nullptr)
+                    deinitChildPlugin(*plugin);
+            }
+            chains_.erase(it);
+            break;
+        }
+    }
+    removeChainFromState(chainIndex);
+}
+
+const std::vector<std::unique_ptr<DrumGridPlugin::Chain>>& DrumGridPlugin::getChains() const {
+    return chains_;
+}
+
+const DrumGridPlugin::Chain* DrumGridPlugin::getChainForNote(int midiNote) const {
+    for (const auto& chain : chains_) {
+        if (midiNote >= chain->lowNote && midiNote <= chain->highNote)
+            return chain.get();
+    }
+    return nullptr;
+}
+
+const DrumGridPlugin::Chain* DrumGridPlugin::getChainByIndex(int chainIndex) const {
+    for (const auto& chain : chains_) {
+        if (chain->index == chainIndex)
+            return chain.get();
+    }
+    return nullptr;
+}
+
+DrumGridPlugin::Chain* DrumGridPlugin::getChainByIndexMutable(int chainIndex) {
+    for (auto& chain : chains_) {
+        if (chain->index == chainIndex)
+            return chain.get();
+    }
+    return nullptr;
+}
+
+DrumGridPlugin::Chain* DrumGridPlugin::findChainForNote(int midiNote) {
+    for (auto& chain : chains_) {
+        if (midiNote >= chain->lowNote && midiNote <= chain->highNote)
+            return chain.get();
+    }
+    return nullptr;
+}
+
+DrumGridPlugin::Chain* DrumGridPlugin::findOrCreateChainForPad(int padIndex) {
+    if (padIndex < 0 || padIndex >= maxPads)
+        return nullptr;
+
+    int midiNote = baseNote + padIndex;
+
+    if (auto* existing = findChainForNote(midiNote))
+        return existing;
+
+    int idx = addChain(midiNote, midiNote, midiNote, "");
+    return getChainByIndexMutable(idx);
+}
+
+void DrumGridPlugin::removeChainFromState(int chainIndex) {
+    for (int i = 0; i < state.getNumChildren(); ++i) {
+        auto child = state.getChild(i);
+        if (child.hasType(chainTreeId) &&
+            static_cast<int>(child.getProperty(chainIndexId)) == chainIndex) {
+            state.removeChild(i, nullptr);
+            return;
+        }
+    }
+}
+
+juce::ValueTree DrumGridPlugin::findChainTree(int chainIndex) const {
+    for (int i = 0; i < state.getNumChildren(); ++i) {
+        auto child = state.getChild(i);
+        if (child.hasType(chainTreeId) &&
+            static_cast<int>(child.getProperty(chainIndexId)) == chainIndex)
+            return child;
+    }
+    return {};
+}
+
+//==============================================================================
+// Convenience pad-level API
+//==============================================================================
+
 void DrumGridPlugin::loadSampleToPad(int padIndex, const juce::File& file) {
     if (padIndex < 0 || padIndex >= maxPads)
         return;
 
-    auto& pad = pads_[static_cast<size_t>(padIndex)];
+    auto* chain = findOrCreateChainForPad(padIndex);
+    if (!chain)
+        return;
 
-    // Create a MagdaSamplerPlugin via plugin cache
+    int midiNote = baseNote + padIndex;
+
     juce::ValueTree pluginState(te::IDs::PLUGIN);
     pluginState.setProperty(te::IDs::type, MagdaSamplerPlugin::xmlTypeName, nullptr);
 
@@ -214,29 +318,26 @@ void DrumGridPlugin::loadSampleToPad(int padIndex, const juce::File& file) {
         return;
 
     sampler->loadSample(file);
-    sampler->setRootNote(pad.triggerNote);
+    sampler->setRootNote(midiNote);
 
-    // If we're already initialised, init the child plugin
     if (sampleRate_ > 0 && blockSize_ > 0)
         initChildPlugin(*plugin);
 
-    // Clear existing plugins
-    for (auto& p : pad.plugins) {
+    for (auto& p : chain->plugins) {
         if (p != nullptr)
             deinitChildPlugin(*p);
     }
-    pad.plugins.clear();
+    chain->plugins.clear();
 
-    // Store as first plugin (instrument slot)
-    pad.plugins.push_back(plugin);
+    chain->name = file.getFileNameWithoutExtension();
+    chain->plugins.push_back(plugin);
 
-    // Store child plugin state in the pad's ValueTree
-    auto padTree = state.getChild(padIndex);
-    if (padTree.isValid()) {
-        // Remove all old plugin states
-        while (padTree.getChildWithName(te::IDs::PLUGIN).isValid())
-            padTree.removeChild(padTree.getChildWithName(te::IDs::PLUGIN), nullptr);
-        padTree.addChild(plugin->state, -1, nullptr);
+    auto chainTree = findChainTree(chain->index);
+    if (chainTree.isValid()) {
+        chainTree.setProperty(chainNameId, chain->name, nullptr);
+        while (chainTree.getChildWithName(te::IDs::PLUGIN).isValid())
+            chainTree.removeChild(chainTree.getChildWithName(te::IDs::PLUGIN), nullptr);
+        chainTree.addChild(plugin->state, -1, nullptr);
     }
 }
 
@@ -244,7 +345,9 @@ void DrumGridPlugin::loadPluginToPad(int padIndex, const juce::PluginDescription
     if (padIndex < 0 || padIndex >= maxPads)
         return;
 
-    auto& pad = pads_[static_cast<size_t>(padIndex)];
+    auto* chain = findOrCreateChainForPad(padIndex);
+    if (!chain)
+        return;
 
     auto plugin = edit.getPluginCache().createNewPlugin(te::ExternalPlugin::xmlTypeName, desc);
     if (!plugin)
@@ -253,22 +356,21 @@ void DrumGridPlugin::loadPluginToPad(int padIndex, const juce::PluginDescription
     if (sampleRate_ > 0 && blockSize_ > 0)
         initChildPlugin(*plugin);
 
-    // Clear existing plugins
-    for (auto& p : pad.plugins) {
+    for (auto& p : chain->plugins) {
         if (p != nullptr)
             deinitChildPlugin(*p);
     }
-    pad.plugins.clear();
+    chain->plugins.clear();
 
-    // Store as first plugin (instrument slot)
-    pad.plugins.push_back(plugin);
+    chain->name = desc.name;
+    chain->plugins.push_back(plugin);
 
-    auto padTree = state.getChild(padIndex);
-    if (padTree.isValid()) {
-        // Remove all old plugin states
-        while (padTree.getChildWithName(te::IDs::PLUGIN).isValid())
-            padTree.removeChild(padTree.getChildWithName(te::IDs::PLUGIN), nullptr);
-        padTree.addChild(plugin->state, -1, nullptr);
+    auto chainTree = findChainTree(chain->index);
+    if (chainTree.isValid()) {
+        chainTree.setProperty(chainNameId, chain->name, nullptr);
+        while (chainTree.getChildWithName(te::IDs::PLUGIN).isValid())
+            chainTree.removeChild(chainTree.getChildWithName(te::IDs::PLUGIN), nullptr);
+        chainTree.addChild(plugin->state, -1, nullptr);
     }
 }
 
@@ -276,82 +378,25 @@ void DrumGridPlugin::clearPad(int padIndex) {
     if (padIndex < 0 || padIndex >= maxPads)
         return;
 
-    auto& pad = pads_[static_cast<size_t>(padIndex)];
-
-    for (auto& plugin : pad.plugins) {
-        if (plugin != nullptr)
-            deinitChildPlugin(*plugin);
-    }
-    pad.plugins.clear();
-
-    auto padTree = state.getChild(padIndex);
-    if (padTree.isValid()) {
-        while (padTree.getChildWithName(te::IDs::PLUGIN).isValid())
-            padTree.removeChild(padTree.getChildWithName(te::IDs::PLUGIN), nullptr);
-    }
-}
-
-const DrumGridPlugin::Pad& DrumGridPlugin::getPad(int padIndex) const {
-    jassert(padIndex >= 0 && padIndex < maxPads);
-    return pads_[static_cast<size_t>(padIndex)];
-}
-
-//==============================================================================
-void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
-    // Copy properties to state
-    for (int i = 0; i < v.getNumProperties(); ++i) {
-        auto propName = v.getPropertyName(i);
-        state.setProperty(propName, v.getProperty(propName), nullptr);
-    }
-
-    // Restore PAD child trees and recreate child plugins
-    for (int i = 0; i < v.getNumChildren(); ++i) {
-        auto childTree = v.getChild(i);
-        if (!childTree.hasType(padTreeId))
-            continue;
-
-        int note = childTree.getProperty(triggerNoteId, -1);
-        if (note < 0)
-            continue;
-
-        // Find the pad index for this note
-        int padIdx = note - 36;
-        if (padIdx < 0 || padIdx >= maxPads)
-            continue;
-
-        auto& pad = pads_[static_cast<size_t>(padIdx)];
-
-        // Update cached values
-        pad.level.forceUpdateOfCachedValue();
-        pad.pan.forceUpdateOfCachedValue();
-        pad.mute.forceUpdateOfCachedValue();
-        pad.solo.forceUpdateOfCachedValue();
-
-        // Recreate child plugins from saved state (supports multiple per pad)
-        for (int p = 0; p < childTree.getNumChildren(); ++p) {
-            auto pluginState = childTree.getChild(p);
-            if (!pluginState.hasType(te::IDs::PLUGIN))
-                continue;
-            auto plugin = edit.getPluginCache().getOrCreatePluginFor(pluginState);
-            if (plugin) {
-                pad.plugins.push_back(plugin);
-                if (sampleRate_ > 0 && blockSize_ > 0)
-                    initChildPlugin(*plugin);
-            }
-        }
-    }
-}
-
-//==============================================================================
-// FX chain management
-//==============================================================================
-
-void DrumGridPlugin::addPluginToPad(int padIndex, const juce::PluginDescription& desc,
-                                    int insertIndex) {
-    if (padIndex < 0 || padIndex >= maxPads)
+    int midiNote = baseNote + padIndex;
+    auto* chain = findChainForNote(midiNote);
+    if (!chain)
         return;
 
-    auto& pad = pads_[static_cast<size_t>(padIndex)];
+    if (chain->lowNote == midiNote && chain->highNote == midiNote) {
+        removeChain(chain->index);
+    }
+}
+
+//==============================================================================
+// FX chain management on chains
+//==============================================================================
+
+void DrumGridPlugin::addPluginToChain(int chainIndex, const juce::PluginDescription& desc,
+                                      int insertIndex) {
+    auto* chain = getChainByIndexMutable(chainIndex);
+    if (!chain)
+        return;
 
     auto plugin = edit.getPluginCache().createNewPlugin(te::ExternalPlugin::xmlTypeName, desc);
     if (!plugin)
@@ -360,25 +405,20 @@ void DrumGridPlugin::addPluginToPad(int padIndex, const juce::PluginDescription&
     if (sampleRate_ > 0 && blockSize_ > 0)
         initChildPlugin(*plugin);
 
-    // Insert at position or append
-    if (insertIndex < 0 || insertIndex >= static_cast<int>(pad.plugins.size()))
-        pad.plugins.push_back(plugin);
+    if (insertIndex < 0 || insertIndex >= static_cast<int>(chain->plugins.size()))
+        chain->plugins.push_back(plugin);
     else
-        pad.plugins.insert(pad.plugins.begin() + insertIndex, plugin);
+        chain->plugins.insert(chain->plugins.begin() + insertIndex, plugin);
 
-    // Add plugin state to pad ValueTree at corresponding position
-    auto padTree = state.getChild(padIndex);
-    if (padTree.isValid()) {
-        // Find the correct child index for insertion
-        // Count existing PLUGIN children to find the right position
-        if (insertIndex < 0 || insertIndex >= static_cast<int>(pad.plugins.size()) - 1)
-            padTree.addChild(plugin->state, -1, nullptr);
+    auto chainTree = findChainTree(chainIndex);
+    if (chainTree.isValid()) {
+        if (insertIndex < 0 || insertIndex >= static_cast<int>(chain->plugins.size()) - 1)
+            chainTree.addChild(plugin->state, -1, nullptr);
         else {
-            // Find the nth PLUGIN child to insert before
             int pluginChildIdx = 0;
             int count = 0;
-            for (int c = 0; c < padTree.getNumChildren(); ++c) {
-                if (padTree.getChild(c).hasType(te::IDs::PLUGIN)) {
+            for (int c = 0; c < chainTree.getNumChildren(); ++c) {
+                if (chainTree.getChild(c).hasType(te::IDs::PLUGIN)) {
                     if (count == insertIndex) {
                         pluginChildIdx = c;
                         break;
@@ -386,32 +426,29 @@ void DrumGridPlugin::addPluginToPad(int padIndex, const juce::PluginDescription&
                     ++count;
                 }
             }
-            padTree.addChild(plugin->state, pluginChildIdx, nullptr);
+            chainTree.addChild(plugin->state, pluginChildIdx, nullptr);
         }
     }
 }
 
-void DrumGridPlugin::removePluginFromPad(int padIndex, int pluginIndex) {
-    if (padIndex < 0 || padIndex >= maxPads)
+void DrumGridPlugin::removePluginFromChain(int chainIndex, int pluginIndex) {
+    auto* chain = getChainByIndexMutable(chainIndex);
+    if (!chain)
+        return;
+    if (pluginIndex < 0 || pluginIndex >= static_cast<int>(chain->plugins.size()))
         return;
 
-    auto& pad = pads_[static_cast<size_t>(padIndex)];
-    if (pluginIndex < 0 || pluginIndex >= static_cast<int>(pad.plugins.size()))
-        return;
-
-    auto& plugin = pad.plugins[static_cast<size_t>(pluginIndex)];
+    auto& plugin = chain->plugins[static_cast<size_t>(pluginIndex)];
     if (plugin != nullptr)
         deinitChildPlugin(*plugin);
 
-    // Remove from ValueTree
-    auto padTree = state.getChild(padIndex);
-    if (padTree.isValid()) {
-        // Find the nth PLUGIN child
+    auto chainTree = findChainTree(chainIndex);
+    if (chainTree.isValid()) {
         int count = 0;
-        for (int c = 0; c < padTree.getNumChildren(); ++c) {
-            if (padTree.getChild(c).hasType(te::IDs::PLUGIN)) {
+        for (int c = 0; c < chainTree.getNumChildren(); ++c) {
+            if (chainTree.getChild(c).hasType(te::IDs::PLUGIN)) {
                 if (count == pluginIndex) {
-                    padTree.removeChild(c, nullptr);
+                    chainTree.removeChild(c, nullptr);
                     break;
                 }
                 ++count;
@@ -419,55 +456,139 @@ void DrumGridPlugin::removePluginFromPad(int padIndex, int pluginIndex) {
         }
     }
 
-    pad.plugins.erase(pad.plugins.begin() + pluginIndex);
+    chain->plugins.erase(chain->plugins.begin() + pluginIndex);
 }
 
-void DrumGridPlugin::movePluginInPad(int padIndex, int fromIndex, int toIndex) {
-    if (padIndex < 0 || padIndex >= maxPads)
+void DrumGridPlugin::movePluginInChain(int chainIndex, int fromIndex, int toIndex) {
+    auto* chain = getChainByIndexMutable(chainIndex);
+    if (!chain)
         return;
 
-    auto& pad = pads_[static_cast<size_t>(padIndex)];
-    int count = static_cast<int>(pad.plugins.size());
+    int count = static_cast<int>(chain->plugins.size());
     if (fromIndex < 0 || fromIndex >= count || toIndex < 0 || toIndex >= count ||
         fromIndex == toIndex)
         return;
 
-    // Move in vector
-    auto plugin = pad.plugins[static_cast<size_t>(fromIndex)];
-    pad.plugins.erase(pad.plugins.begin() + fromIndex);
-    pad.plugins.insert(pad.plugins.begin() + toIndex, plugin);
+    auto plugin = chain->plugins[static_cast<size_t>(fromIndex)];
+    chain->plugins.erase(chain->plugins.begin() + fromIndex);
+    chain->plugins.insert(chain->plugins.begin() + toIndex, plugin);
 
-    // Move in ValueTree — find the actual child indices for PLUGIN children
-    auto padTree = state.getChild(padIndex);
-    if (padTree.isValid()) {
-        // Collect PLUGIN child indices
+    auto chainTree = findChainTree(chainIndex);
+    if (chainTree.isValid()) {
         std::vector<int> pluginChildIndices;
-        for (int c = 0; c < padTree.getNumChildren(); ++c) {
-            if (padTree.getChild(c).hasType(te::IDs::PLUGIN))
+        for (int c = 0; c < chainTree.getNumChildren(); ++c) {
+            if (chainTree.getChild(c).hasType(te::IDs::PLUGIN))
                 pluginChildIndices.push_back(c);
         }
 
         if (fromIndex < static_cast<int>(pluginChildIndices.size()) &&
             toIndex < static_cast<int>(pluginChildIndices.size())) {
-            padTree.moveChild(pluginChildIndices[static_cast<size_t>(fromIndex)],
-                              pluginChildIndices[static_cast<size_t>(toIndex)], nullptr);
+            chainTree.moveChild(pluginChildIndices[static_cast<size_t>(fromIndex)],
+                                pluginChildIndices[static_cast<size_t>(toIndex)], nullptr);
         }
     }
+}
+
+int DrumGridPlugin::getChainPluginCount(int chainIndex) const {
+    if (auto* chain = getChainByIndex(chainIndex))
+        return static_cast<int>(chain->plugins.size());
+    return 0;
+}
+
+te::Plugin* DrumGridPlugin::getChainPlugin(int chainIndex, int pluginIndex) const {
+    if (auto* chain = getChainByIndex(chainIndex)) {
+        if (pluginIndex >= 0 && pluginIndex < static_cast<int>(chain->plugins.size()))
+            return chain->plugins[static_cast<size_t>(pluginIndex)].get();
+    }
+    return nullptr;
+}
+
+//==============================================================================
+// Legacy pad-level FX API
+//==============================================================================
+
+void DrumGridPlugin::addPluginToPad(int padIndex, const juce::PluginDescription& desc,
+                                    int insertIndex) {
+    if (padIndex < 0 || padIndex >= maxPads)
+        return;
+    int midiNote = baseNote + padIndex;
+    if (auto* chain = findChainForNote(midiNote))
+        addPluginToChain(chain->index, desc, insertIndex);
+}
+
+void DrumGridPlugin::removePluginFromPad(int padIndex, int pluginIndex) {
+    if (padIndex < 0 || padIndex >= maxPads)
+        return;
+    int midiNote = baseNote + padIndex;
+    if (auto* chain = findChainForNote(midiNote))
+        removePluginFromChain(chain->index, pluginIndex);
+}
+
+void DrumGridPlugin::movePluginInPad(int padIndex, int fromIndex, int toIndex) {
+    if (padIndex < 0 || padIndex >= maxPads)
+        return;
+    int midiNote = baseNote + padIndex;
+    if (auto* chain = findChainForNote(midiNote))
+        movePluginInChain(chain->index, fromIndex, toIndex);
 }
 
 int DrumGridPlugin::getPadPluginCount(int padIndex) const {
     if (padIndex < 0 || padIndex >= maxPads)
         return 0;
-    return static_cast<int>(pads_[static_cast<size_t>(padIndex)].plugins.size());
+    int midiNote = baseNote + padIndex;
+    if (auto* chain = getChainForNote(midiNote))
+        return static_cast<int>(chain->plugins.size());
+    return 0;
 }
 
 te::Plugin* DrumGridPlugin::getPadPlugin(int padIndex, int pluginIndex) const {
     if (padIndex < 0 || padIndex >= maxPads)
         return nullptr;
-    auto& plugins = pads_[static_cast<size_t>(padIndex)].plugins;
-    if (pluginIndex < 0 || pluginIndex >= static_cast<int>(plugins.size()))
-        return nullptr;
-    return plugins[static_cast<size_t>(pluginIndex)].get();
+    int midiNote = baseNote + padIndex;
+    if (auto* chain = getChainForNote(midiNote)) {
+        if (pluginIndex >= 0 && pluginIndex < static_cast<int>(chain->plugins.size()))
+            return chain->plugins[static_cast<size_t>(pluginIndex)].get();
+    }
+    return nullptr;
+}
+
+//==============================================================================
+void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
+    for (int i = 0; i < v.getNumProperties(); ++i) {
+        auto propName = v.getPropertyName(i);
+        state.setProperty(propName, v.getProperty(propName), nullptr);
+    }
+
+    for (int i = 0; i < v.getNumChildren(); ++i) {
+        auto childTree = v.getChild(i);
+        if (!childTree.hasType(chainTreeId))
+            continue;
+
+        int chainIdx = childTree.getProperty(chainIndexId, -1);
+        if (chainIdx < 0)
+            continue;
+
+        auto* chain = getChainByIndexMutable(chainIdx);
+        if (!chain)
+            continue;
+
+        chain->level.forceUpdateOfCachedValue();
+        chain->pan.forceUpdateOfCachedValue();
+        chain->mute.forceUpdateOfCachedValue();
+        chain->solo.forceUpdateOfCachedValue();
+
+        for (int p = 0; p < childTree.getNumChildren(); ++p) {
+            auto pluginState = childTree.getChild(p);
+            if (!pluginState.hasType(te::IDs::PLUGIN))
+                continue;
+            auto plugin = edit.getPluginCache().getOrCreatePluginFor(pluginState);
+            if (plugin) {
+                chain->plugins.push_back(plugin);
+                if (sampleRate_ > 0 && blockSize_ > 0)
+                    initChildPlugin(*plugin);
+            }
+        }
+    }
 }
 
 }  // namespace magda::daw::audio
