@@ -1206,7 +1206,14 @@ void TrackManager::addListener(TrackManagerListener* listener) {
 }
 
 void TrackManager::removeListener(TrackManagerListener* listener) {
-    listeners_.erase(std::remove(listeners_.begin(), listeners_.end(), listener), listeners_.end());
+    if (notifyDepth_ > 0) {
+        // During iteration — nullify instead of erasing to keep iterators valid
+        std::replace(listeners_.begin(), listeners_.end(), listener,
+                     static_cast<TrackManagerListener*>(nullptr));
+    } else {
+        listeners_.erase(std::remove(listeners_.begin(), listeners_.end(), listener),
+                         listeners_.end());
+    }
 }
 
 // ============================================================================
@@ -1290,57 +1297,75 @@ void TrackManager::refreshIdCountersFromTracks() {
 // ============================================================================
 
 void TrackManager::notifyTracksChanged() {
+    ScopedNotifyGuard guard(*this);
     for (auto* listener : listeners_) {
-        listener->tracksChanged();
+        if (listener)
+            listener->tracksChanged();
     }
 }
 
 void TrackManager::notifyTrackPropertyChanged(int trackId) {
+    ScopedNotifyGuard guard(*this);
     for (auto* listener : listeners_) {
-        listener->trackPropertyChanged(trackId);
+        if (listener)
+            listener->trackPropertyChanged(trackId);
     }
 }
 
 void TrackManager::notifyMasterChannelChanged() {
+    ScopedNotifyGuard guard(*this);
     for (auto* listener : listeners_) {
-        listener->masterChannelChanged();
+        if (listener)
+            listener->masterChannelChanged();
     }
 }
 
 void TrackManager::notifyTrackSelectionChanged(TrackId trackId) {
+    ScopedNotifyGuard guard(*this);
     for (auto* listener : listeners_) {
-        listener->trackSelectionChanged(trackId);
+        if (listener)
+            listener->trackSelectionChanged(trackId);
     }
 }
 
 void TrackManager::notifyTrackDevicesChanged(TrackId trackId) {
+    ScopedNotifyGuard guard(*this);
     for (auto* listener : listeners_) {
-        listener->trackDevicesChanged(trackId);
+        if (listener)
+            listener->trackDevicesChanged(trackId);
     }
 }
 
 void TrackManager::notifyDeviceModifiersChanged(TrackId trackId) {
+    ScopedNotifyGuard guard(*this);
     for (auto* listener : listeners_) {
-        listener->deviceModifiersChanged(trackId);
+        if (listener)
+            listener->deviceModifiersChanged(trackId);
     }
 }
 
 void TrackManager::notifyDevicePropertyChanged(DeviceId deviceId) {
+    ScopedNotifyGuard guard(*this);
     for (auto* listener : listeners_) {
-        listener->devicePropertyChanged(deviceId);
+        if (listener)
+            listener->devicePropertyChanged(deviceId);
     }
 }
 
 void TrackManager::notifyDeviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue) {
+    ScopedNotifyGuard guard(*this);
     for (auto* listener : listeners_) {
-        listener->deviceParameterChanged(deviceId, paramIndex, newValue);
+        if (listener)
+            listener->deviceParameterChanged(deviceId, paramIndex, newValue);
     }
 }
 
 void TrackManager::notifyMacroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
                                            float value) {
+    ScopedNotifyGuard guard(*this);
     for (auto* listener : listeners_) {
-        listener->macroValueChanged(trackId, isRack, id, macroIndex, value);
+        if (listener)
+            listener->macroValueChanged(trackId, isRack, id, macroIndex, value);
     }
 }
 
