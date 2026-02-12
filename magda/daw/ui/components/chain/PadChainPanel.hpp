@@ -29,7 +29,7 @@ namespace magda::daw::ui {
  * with a "+" button to add new FX plugins via drag-and-drop.
  *
  * Layout:
- *   [Slot0 (Instrument)] → [Slot1 (FX1)] → [Slot2 (FX2)] → [+]
+ *   [Viewport: Slot0 → Slot1 → Slot2 → ...] [+ stripe]
  */
 class PadChainPanel : public juce::Component, public juce::DragAndDropTarget {
   public:

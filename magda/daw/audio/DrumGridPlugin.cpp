@@ -105,6 +105,19 @@ void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
     destBuffer.clear(startSample, numSamples);
 
+    // When transport stops, silence all child plugins immediately
+    if (!fc.isPlaying && wasPlaying_) {
+        for (auto& chain : chains_) {
+            for (auto& plugin : chain->plugins) {
+                if (plugin != nullptr)
+                    plugin->reset();
+            }
+        }
+        wasPlaying_ = false;
+        return;
+    }
+    wasPlaying_ = fc.isPlaying;
+
     bool anySoloed = false;
     for (const auto& chain : chains_) {
         if (!chain->plugins.empty() && chain->solo.get()) {

@@ -117,6 +117,7 @@ class DrumGridPlugin : public te::Plugin {
     te::MidiMessageArray padMidi_;
     double sampleRate_ = 44100.0;
     int blockSize_ = 512;
+    bool wasPlaying_ = false;
 
     static const juce::Identifier chainTreeId;
     static const juce::Identifier chainIndexId;

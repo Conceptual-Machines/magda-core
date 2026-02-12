@@ -127,6 +127,10 @@ class MagdaSamplerPlugin : public te::Plugin {
     void restorePluginStateFromValueTree(const juce::ValueTree&) override;
 
     //==============================================================================
+    // Sync CachedValue from current AutomatableParameter value (for persistence)
+    void syncCachedValueFromParam(int paramIndex);
+
+    //==============================================================================
     // Sample loading
     void loadSample(const juce::File& file);
     juce::File getSampleFile() const;

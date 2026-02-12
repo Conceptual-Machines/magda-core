@@ -1790,17 +1790,9 @@ void DeviceSlotComponent::updateCustomUI() {
                         }
                     }
 
-                    // Refresh PadChainPanel for selected pad
+                    // Always refresh PadChainPanel for selected pad (even if empty)
                     int selectedPad = drumGridUI_->getSelectedPad();
-                    DBG("updateCustomUI: refreshing PadChainPanel for selectedPad=" +
-                        juce::String(selectedPad));
-                    if (selectedPad >= 0) {
-                        int midiNote = daw::audio::DrumGridPlugin::baseNote + selectedPad;
-                        if (auto* chain = dg->getChainForNote(midiNote)) {
-                            if (!chain->plugins.empty())
-                                drumGridUI_->getPadChainPanel().showPadChain(selectedPad);
-                        }
-                    }
+                    drumGridUI_->getPadChainPanel().showPadChain(selectedPad);
                 }
             }
         }

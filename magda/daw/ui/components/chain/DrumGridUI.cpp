@@ -388,7 +388,7 @@ void DrumGridUI::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
     g.fillRect(getLocalBounds().reduced(1));
 
-    // Dividers — fixed positions matching layout
+    // Dividers — positioned to match right-to-left layout
     bool selectedPadHasContent =
         padInfos_[static_cast<size_t>(selectedPad_)].sampleName.isNotEmpty();
     bool showDetailPanel = selectedPadHasContent;
@@ -396,21 +396,16 @@ void DrumGridUI::paint(juce::Graphics& g) {
     auto divArea = getLocalBounds().reduced(6);
     float top = static_cast<float>(divArea.getY());
     float bottom = static_cast<float>(divArea.getBottom());
-    int afterGrid = divArea.getX() + kToggleColWidth + kPadGridWidth;
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
 
+    // Draw dividers between panels
+    if (showDetailPanel) {
+        int detailLeft = padChainPanel_.getX() - kGap / 2;
+        g.drawVerticalLine(detailLeft, top, bottom);
+    }
     if (chainsPanelVisible_) {
-        // Divider after pad grid
-        g.drawVerticalLine(afterGrid, top, bottom);
-
-        if (showDetailPanel) {
-            // Divider after chains panel
-            int afterChains = afterGrid + kGap + kChainsPanelWidth;
-            g.drawVerticalLine(afterChains, top, bottom);
-        }
-    } else if (showDetailPanel) {
-        // Divider after pad grid (no chains)
-        g.drawVerticalLine(afterGrid, top, bottom);
+        int chainsLeft = chainsViewport_.getX() - kGap / 2;
+        g.drawVerticalLine(chainsLeft, top, bottom);
     }
 
     // Plugin drop highlight on pad
@@ -436,30 +431,68 @@ void DrumGridUI::resized() {
         padInfos_[static_cast<size_t>(selectedPad_)].sampleName.isNotEmpty();
     bool showDetailPanel = selectedPadHasContent;
 
-    // --- Layout: [ToggleCol] [PadGrid] | [Chains] | [Detail] ---
+    // --- Layout (right-to-left): [Pads] | [Chains] | [Detail] ---
+    // Allocate from the right: detail → chains → toggle+pads get remainder
 
-    // Left column: toggle button
+    // Left column: toggle button (always present)
     auto toggleCol = area.removeFromLeft(kToggleColWidth);
     chainsToggleButton_->setBounds(toggleCol.removeFromTop(18).withSizeKeepingCentre(16, 16));
 
-    // Pad grid
-    auto gridArea = area.removeFromLeft(juce::jmin(kPadGridWidth, area.getWidth()));
+    // Right side allocation
+    auto rightBounds = area;
 
-    // Chains panel (always visible when toggled on)
+    // 1. DETAIL — from the right
+    juce::Rectangle<int> detailArea;
+    if (showDetailPanel) {
+        int preferredDetailWidth = padChainPanel_.getContentWidth();
+        int detailWidth =
+            juce::jmin(preferredDetailWidth, rightBounds.getWidth() - kPadGridWidth - kGap);
+        detailArea = rightBounds.removeFromRight(juce::jmax(detailWidth, 0));
+        rightBounds.removeFromRight(kGap);
+    }
+
+    // 2. CHAINS — fixed width from the right
+    juce::Rectangle<int> chainsArea;
     if (chainsPanelVisible_) {
-        area.removeFromLeft(kGap);
-        auto chainsArea = area.removeFromLeft(juce::jmin(kChainsPanelWidth, area.getWidth()));
+        chainsArea =
+            rightBounds.removeFromRight(juce::jmin(kChainsPanelWidth, rightBounds.getWidth()));
+        rightBounds.removeFromRight(kGap);
+    }
 
-        auto chainsHeader = chainsArea.removeFromTop(18);
-        chainsLabel_.setBounds(chainsHeader);
+    // 3. PADS — everything remaining
+    auto gridArea = rightBounds;
+
+    // --- Chains panel layout (FlexBox column) ---
+    if (chainsPanelVisible_) {
+        juce::FlexBox chainList;
+        chainList.flexDirection = juce::FlexBox::Direction::column;
+
+        // Header label
+        chainList.items.add(juce::FlexItem(chainsLabel_).withHeight(18));
+
+        // Chain rows
+        for (auto& row : chainRows_)
+            chainList.items.add(juce::FlexItem(*row)
+                                    .withHeight(PadChainRowComponent::ROW_HEIGHT)
+                                    .withMargin({1, 0, 1, 0}));
+
+        // Perform layout into a scrollable area
+        int totalHeight = 18;
+        for (auto& row : chainRows_)
+            totalHeight += PadChainRowComponent::ROW_HEIGHT + 2;
+
         chainsLabel_.setVisible(true);
-        chainsArea.removeFromTop(2);
-
         chainsViewport_.setBounds(chainsArea);
         chainsViewport_.setVisible(true);
 
         int scrollbarWidth = chainsViewport_.getScrollBarThickness();
         int containerWidth = chainsViewport_.getWidth() - scrollbarWidth;
+
+        // Layout header above viewport
+        auto chainsHeader = chainsArea.removeFromTop(20);
+        chainsLabel_.setBounds(chainsHeader);
+        chainsViewport_.setBounds(chainsArea);
+
         int y = 0;
         for (auto& row : chainRows_) {
             row->setBounds(0, y, containerWidth, PadChainRowComponent::ROW_HEIGHT);
@@ -471,22 +504,12 @@ void DrumGridUI::resized() {
         chainsViewport_.setVisible(false);
     }
 
-    if (showDetailPanel)
-        area.removeFromLeft(kGap);
-
-    // Limit detail panel to preferred width of its content (avoid huge gaps)
-    int preferredDetailWidth = padChainPanel_.getContentWidth() + 8;  // +8 for button margin
-    int detailWidth = juce::jmin(preferredDetailWidth, area.getWidth());
-    auto detailArea = area.removeFromLeft(detailWidth);
-    DBG("  -> detailArea width: " + juce::String(detailArea.getWidth()) +
-        " (preferred: " + juce::String(preferredDetailWidth) + ")");
-
     // --- Pad Grid layout ---
     auto paginationRow = gridArea.removeFromBottom(22);
     gridArea.removeFromBottom(2);
 
     constexpr int padGap = 3;
-    constexpr int minPadSize = 40;  // Minimum pad button size
+    constexpr int minPadSize = 40;
     int padSize = juce::jmin((gridArea.getWidth() - padGap * (kGridCols - 1)) / kGridCols,
                              (gridArea.getHeight() - padGap * (kGridRows - 1)) / kGridRows);
     padSize = juce::jmax(padSize, minPadSize);
@@ -505,7 +528,6 @@ void DrumGridUI::resized() {
     pageLabel_.setBounds(paginationRow);
 
     // --- Detail Panel ---
-    // Hide old header controls — not needed anymore
     detailSampleNameLabel_.setVisible(false);
     levelSlider_.setVisible(false);
     panSlider_.setVisible(false);
@@ -515,13 +537,12 @@ void DrumGridUI::resized() {
     clearButton_.setVisible(false);
     levelLabel_.setVisible(false);
     panLabel_.setVisible(false);
+    detailPadNameLabel_.setVisible(false);
 
     if (showDetailPanel) {
-        detailPadNameLabel_.setVisible(false);
         padChainPanel_.setBounds(detailArea);
         padChainPanel_.setVisible(true);
     } else {
-        detailPadNameLabel_.setVisible(false);
         padChainPanel_.setVisible(false);
     }
 }
@@ -659,8 +680,13 @@ int DrumGridUI::getPreferredContentWidth() const {
     if (chainsPanelVisible_)
         width += kGap + kChainsPanelWidth;
     if (showDetailPanel)
-        width += kGap + padChainPanel_.getContentWidth();  // Already includes padding
-    return width;  // No extra padding - padChainPanel_.getContentWidth() already has it
+        width += kGap + padChainPanel_.getContentWidth();
+
+    // Cap at screen width so PadChainPanel's viewport scrolls instead of expanding forever
+    if (auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+        width = juce::jmin(width, display->userArea.getWidth());
+
+    return width;
 }
 
 void DrumGridUI::setChainsPanelVisible(bool visible) {

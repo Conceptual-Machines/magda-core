@@ -15,7 +15,7 @@ PadChainPanel::PadChainPanel() {
     addButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     addButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addButton_.setTooltip("Drop a plugin here to add FX");
-    container_.addAndMakeVisible(addButton_);
+    addAndMakeVisible(addButton_);
 
     viewport_.setScrollBarsShown(false, true);
     viewport_.setViewedComponent(&container_, false);
@@ -55,8 +55,9 @@ int PadChainPanel::getContentWidth() const {
             width += ARROW_WIDTH;
         width += slot->getPreferredWidth();
     }
-    width += ARROW_WIDTH + ADD_BUTTON_WIDTH;
-    return width + 12;  // No minimum - size to actual content
+    // Add stripe width (button + margin) + padding
+    width += ADD_BUTTON_WIDTH + 4 + 12;
+    return width;
 }
 
 void PadChainPanel::rebuildSlots() {
@@ -115,9 +116,18 @@ void PadChainPanel::rebuildSlots() {
         slots_.push_back(std::move(slot));
     }
 
-    container_.addAndMakeVisible(addButton_);
     resized();
+
+    // Scroll to show the last slot (most recently added plugin)
+    if (!slots_.empty()) {
+        auto& lastSlot = slots_.back();
+        viewport_.setViewPosition(lastSlot->getRight() - viewport_.getWidth(), 0);
+    }
+
     repaint();
+
+    if (onLayoutChanged)
+        onLayoutChanged();
 }
 
 // =============================================================================
@@ -182,13 +192,16 @@ void PadChainPanel::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
     g.fillRect(getLocalBounds());
 
+    // "+" stripe background
+    auto stripeArea = getLocalBounds().removeFromRight(ADD_BUTTON_WIDTH + 4);
+    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).darker(0.05f));
+    g.fillRect(stripeArea);
+
     // Draw drop insertion indicator
     if (dropInsertIndex_ >= 0) {
         int insertX = 0;
         if (dropInsertIndex_ < static_cast<int>(slots_.size())) {
-            // Find position of slot at insertIndex
             auto* slot = slots_[static_cast<size_t>(dropInsertIndex_)].get();
-            // Convert from container coords to our local coords
             auto slotBounds = container_.getLocalArea(slot, slot->getLocalBounds());
             insertX = viewport_.getX() + slotBounds.getX() - viewport_.getViewPositionX() - 2;
         } else if (!slots_.empty()) {
@@ -205,9 +218,13 @@ void PadChainPanel::paint(juce::Graphics& g) {
 
 void PadChainPanel::resized() {
     auto area = getLocalBounds();
+
+    // Fixed "+" stripe on the right
+    auto addStripe = area.removeFromRight(ADD_BUTTON_WIDTH + 4);
+    addButton_.setBounds(addStripe.withSizeKeepingCentre(ADD_BUTTON_WIDTH, ADD_BUTTON_WIDTH));
+
+    // Viewport fills the rest
     viewport_.setBounds(area);
-    DBG("PadChainPanel::resized - area=" + area.toString() +
-        " numSlots=" + juce::String(slots_.size()));
 
     int height = area.getHeight() - 8;
 
@@ -220,13 +237,8 @@ void PadChainPanel::resized() {
         x += slotWidth;
     }
 
-    x += ARROW_WIDTH;
-    addButton_.setBounds(x, (height - ADD_BUTTON_WIDTH) / 2 + 4, ADD_BUTTON_WIDTH,
-                         ADD_BUTTON_WIDTH);
-    x += ADD_BUTTON_WIDTH + 4;
-
-    container_.setSize(x, height + 8);
-    DBG("  -> container size: " + juce::String(x) + " x " + juce::String(height + 8));
+    x += 4;
+    container_.setSize(juce::jmax(x, area.getWidth()), height + 8);
 }
 
 int PadChainPanel::calculateInsertIndex(int mouseX) const {

@@ -20,9 +20,12 @@ PadDeviceSlot::PadDeviceSlot() {
     addAndMakeVisible(nameLabel_);
 
     deleteButton_.setButtonText(juce::CharPointer_UTF8("\xc3\x97"));  // multiplication sign
-    deleteButton_.setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
-    deleteButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+    deleteButton_.setColour(
+        juce::TextButton::buttonColourId,
+        DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
+            .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
+            .darker(0.2f));
+    deleteButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     deleteButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     deleteButton_.onClick = [this]() {
         if (onDeleteClicked)
@@ -132,8 +135,11 @@ void PadDeviceSlot::setupForSampler(daw::audio::MagdaSamplerPlugin* sampler) {
     // Wire SamplerUI callbacks
     samplerUI_->onParameterChanged = [sampler](int paramIndex, float value) {
         auto params = sampler->getAutomatableParameters();
-        if (paramIndex >= 0 && paramIndex < params.size())
+        if (paramIndex >= 0 && paramIndex < params.size()) {
             params[paramIndex]->setParameter(value, juce::sendNotification);
+            // Sync CachedValue for persistence (param and CachedValue are independent)
+            sampler->syncCachedValueFromParam(paramIndex);
+        }
     };
 
     samplerUI_->onLoopEnabledChanged = [sampler](bool enabled) {

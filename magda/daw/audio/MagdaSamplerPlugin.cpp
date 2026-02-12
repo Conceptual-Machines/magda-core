@@ -410,6 +410,58 @@ void MagdaSamplerPlugin::setRootNote(int note) {
         currentSound->rootNote = rootNoteValue.get();
 }
 
+void MagdaSamplerPlugin::syncCachedValueFromParam(int paramIndex) {
+    auto params = getAutomatableParameters();
+    if (paramIndex < 0 || paramIndex >= params.size())
+        return;
+
+    float value = params[paramIndex]->getCurrentValue();
+
+    // Map param index to the corresponding CachedValue
+    // Order: attack(0), decay(1), sustain(2), release(3), pitch(4), fine(5), level(6),
+    //        sampleStart(7), sampleEnd(8), loopStart(9), loopEnd(10), velAmount(11)
+    switch (paramIndex) {
+        case 0:
+            attackValue = value;
+            break;
+        case 1:
+            decayValue = value;
+            break;
+        case 2:
+            sustainValue = value;
+            break;
+        case 3:
+            releaseValue = value;
+            break;
+        case 4:
+            pitchValue = value;
+            break;
+        case 5:
+            fineValue = value;
+            break;
+        case 6:
+            levelValue = value;
+            break;
+        case 7:
+            sampleStartValue = value;
+            break;
+        case 8:
+            sampleEndValue = value;
+            break;
+        case 9:
+            loopStartValue = value;
+            break;
+        case 10:
+            loopEndValue = value;
+            break;
+        case 11:
+            velAmountValue = value;
+            break;
+        default:
+            break;
+    }
+}
+
 void MagdaSamplerPlugin::updateVoiceParameters() {
     float attack = juce::jlimit(0.001f, 5.0f, attackParam->getCurrentValue());
     float decay = juce::jlimit(0.001f, 5.0f, decayParam->getCurrentValue());
