@@ -57,11 +57,14 @@ SamplerUI::SamplerUI() {
     // --- Sample start slider (param index 7) ---
     setupTimeSlider(startSlider_, 7, 0.0, 300.0, 0.0);
 
-    // --- Loop start slider (param index 8) ---
-    setupTimeSlider(loopStartSlider_, 8, 0.0, 300.0, 0.0);
+    // --- Sample end slider (param index 8) ---
+    setupTimeSlider(endSlider_, 8, 0.0, 300.0, 0.0);
 
-    // --- Loop end slider (param index 9) ---
-    setupTimeSlider(loopEndSlider_, 9, 0.0, 300.0, 0.0);
+    // --- Loop start slider (param index 9) ---
+    setupTimeSlider(loopStartSlider_, 9, 0.0, 300.0, 0.0);
+
+    // --- Loop end slider (param index 10) ---
+    setupTimeSlider(loopEndSlider_, 10, 0.0, 300.0, 0.0);
 
     // --- Loop toggle button (SVG icon) ---
     loopButton_ = std::make_unique<magda::SvgButton>(
@@ -153,13 +156,14 @@ SamplerUI::SamplerUI() {
     });
     velAmountSlider_.onValueChanged = [this](double value) {
         if (onParameterChanged)
-            onParameterChanged(10, static_cast<float>(value));
+            onParameterChanged(11, static_cast<float>(value));
         repaint();
     };
     addAndMakeVisible(velAmountSlider_);
 
     // --- Labels ---
     setupLabel(startLabel_, "START");
+    setupLabel(endLabel_, "END");
     setupLabel(loopStartLabel_, "L.START");
     setupLabel(loopEndLabel_, "L.END");
     setupLabel(attackLabel_, "ATK");
@@ -186,8 +190,8 @@ void SamplerUI::setupLabel(juce::Label& label, const juce::String& text) {
 
 void SamplerUI::updateParameters(float attack, float decay, float sustain, float release,
                                  float pitch, float fine, float level, float sampleStart,
-                                 bool loopEnabled, float loopStart, float loopEnd, float velAmount,
-                                 const juce::String& sampleName) {
+                                 float sampleEnd, bool loopEnabled, float loopStart, float loopEnd,
+                                 float velAmount, const juce::String& sampleName) {
     attackSlider_.setValue(attack, juce::dontSendNotification);
     decaySlider_.setValue(decay, juce::dontSendNotification);
     sustainSlider_.setValue(sustain, juce::dontSendNotification);
@@ -198,6 +202,7 @@ void SamplerUI::updateParameters(float attack, float decay, float sustain, float
     velAmountSlider_.setValue(velAmount, juce::dontSendNotification);
 
     startSlider_.setValue(sampleStart, juce::dontSendNotification);
+    endSlider_.setValue(sampleEnd, juce::dontSendNotification);
     loopButton_->setActive(loopEnabled);
     loopStartSlider_.setValue(loopStart, juce::dontSendNotification);
     loopEndSlider_.setValue(loopEnd, juce::dontSendNotification);
@@ -228,8 +233,13 @@ void SamplerUI::setWaveformData(const juce::AudioBuffer<float>* buffer, double s
 
     // Update slider ranges to match sample length
     startSlider_.setRange(0.0, sampleLengthSeconds, 0.001);
+    endSlider_.setRange(0.0, sampleLengthSeconds, 0.001);
     loopStartSlider_.setRange(0.0, sampleLengthSeconds, 0.001);
     loopEndSlider_.setRange(0.0, sampleLengthSeconds, 0.001);
+
+    // Default end to sample length if not yet set
+    if (endSlider_.getValue() < 0.001)
+        endSlider_.setValue(sampleLengthSeconds, juce::dontSendNotification);
 
     hasWaveform_ = true;
 
@@ -371,6 +381,11 @@ SamplerUI::DragTarget SamplerUI::markerHitTest(const juce::MouseEvent& e,
     if (std::abs(mx - startX) <= kMarkerHitPixels)
         return DragTarget::SampleStart;
 
+    // Check sample end marker
+    float endX = secondsToPixelX(endSlider_.getValue(), waveArea);
+    if (std::abs(mx - endX) <= kMarkerHitPixels)
+        return DragTarget::SampleEnd;
+
     if (loopButton_->isActive()) {
         float lStartX = secondsToPixelX(loopStartSlider_.getValue(), waveArea);
         float lEndX = secondsToPixelX(loopEndSlider_.getValue(), waveArea);
@@ -430,6 +445,9 @@ void SamplerUI::mouseDown(const juce::MouseEvent& e) {
         case DragTarget::SampleStart:
             startSlider_.setValue(seconds, juce::sendNotificationSync);
             break;
+        case DragTarget::SampleEnd:
+            endSlider_.setValue(seconds, juce::sendNotificationSync);
+            break;
         case DragTarget::LoopStart:
             loopStartSlider_.setValue(seconds, juce::sendNotificationSync);
             break;
@@ -486,6 +504,9 @@ void SamplerUI::mouseDrag(const juce::MouseEvent& e) {
         case DragTarget::SampleStart:
             startSlider_.setValue(seconds, juce::sendNotificationSync);
             break;
+        case DragTarget::SampleEnd:
+            endSlider_.setValue(seconds, juce::sendNotificationSync);
+            break;
         case DragTarget::LoopStart:
             loopStartSlider_.setValue(seconds, juce::sendNotificationSync);
             break;
@@ -514,6 +535,7 @@ void SamplerUI::mouseMove(const juce::MouseEvent& e) {
     auto target = markerHitTest(e, waveArea);
     switch (target) {
         case DragTarget::SampleStart:
+        case DragTarget::SampleEnd:
         case DragTarget::LoopStart:
         case DragTarget::LoopEnd:
             setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
@@ -628,6 +650,14 @@ void SamplerUI::paint(juce::Graphics& g) {
                                static_cast<float>(waveformArea.getBottom()));
         }
 
+        // Sample end marker (red vertical line)
+        if (sampleLength_ > 0.0) {
+            float endX = secondsToPixelX(endSlider_.getValue(), waveformArea);
+            g.setColour(juce::Colour(0xFFE53935));  // Red
+            g.drawVerticalLine(static_cast<int>(endX), static_cast<float>(waveformArea.getY()),
+                               static_cast<float>(waveformArea.getBottom()));
+        }
+
         // Loop start/end markers (green vertical lines)
         if (loopButton_->isActive() && sampleLength_ > 0.0) {
             auto green = DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
@@ -674,7 +704,8 @@ void SamplerUI::paint(juce::Graphics& g) {
     // Header text
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
     g.setColour(DarkTheme::getSecondaryTextColour().brighter(0.3f));
-    g.drawText("START / LOOP", headerArea.removeFromLeft(col1W), juce::Justification::centred);
+    g.drawText("START / END / LOOP", headerArea.removeFromLeft(col1W),
+               juce::Justification::centred);
     g.drawText("PITCH", headerArea.removeFromLeft(col2W), juce::Justification::centred);
     g.drawText("AMP", headerArea, juce::Justification::centred);
 
@@ -725,23 +756,24 @@ void SamplerUI::resized() {
     auto col2 = controlsArea.removeFromLeft(col2W).reduced(2, 0);
     auto col3 = controlsArea.reduced(2, 0);
 
-    // --- Column 1: Start / Loop ---
-    // Labels: START | (icon) L.START | L.END
+    // --- Column 1: Start / End / Loop ---
+    // Labels: START | END | (icon) L.START | L.END
     auto c1LabelRow = col1.removeFromTop(12);
-    int startW = col1.getWidth() / 3;
-    int loopW = col1.getWidth() - startW;
+    int quarterC1 = col1.getWidth() / 4;
     int iconW = 20;
-    startLabel_.setBounds(c1LabelRow.removeFromLeft(startW));
+    int loopSliderW = (col1.getWidth() - 2 * quarterC1 - iconW) / 2;
+    startLabel_.setBounds(c1LabelRow.removeFromLeft(quarterC1));
+    endLabel_.setBounds(c1LabelRow.removeFromLeft(quarterC1));
     c1LabelRow.removeFromLeft(iconW);  // loop icon space
-    int halfLoop = (loopW - iconW) / 2;
-    loopStartLabel_.setBounds(c1LabelRow.removeFromLeft(halfLoop));
+    loopStartLabel_.setBounds(c1LabelRow.removeFromLeft(loopSliderW));
     loopEndLabel_.setBounds(c1LabelRow);
 
-    // Sliders: [start] | [icon][lstart] | [lend]
+    // Sliders: [start] | [end] | [icon][lstart] | [lend]
     auto c1Row = col1.removeFromTop(20);
-    startSlider_.setBounds(c1Row.removeFromLeft(startW).reduced(1, 0));
+    startSlider_.setBounds(c1Row.removeFromLeft(quarterC1).reduced(1, 0));
+    endSlider_.setBounds(c1Row.removeFromLeft(quarterC1).reduced(1, 0));
     loopButton_->setBounds(c1Row.removeFromLeft(iconW));
-    loopStartSlider_.setBounds(c1Row.removeFromLeft(halfLoop).reduced(1, 0));
+    loopStartSlider_.setBounds(c1Row.removeFromLeft(loopSliderW).reduced(1, 0));
     loopEndSlider_.setBounds(c1Row.reduced(1, 0));
 
     // --- Column 2: Pitch ---
