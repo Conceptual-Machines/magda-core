@@ -33,9 +33,11 @@ void SamplerVoice::setPitchOffset(float semitones, float cents) {
     fineCents = cents;
 }
 
-void SamplerVoice::setPlaybackRegion(double startOffsetSeconds, bool loop, double loopStartSeconds,
-                                     double loopEndSeconds, double sourceSampleRate) {
+void SamplerVoice::setPlaybackRegion(double startOffsetSeconds, double endSeconds, bool loop,
+                                     double loopStartSeconds, double loopEndSeconds,
+                                     double sourceSampleRate) {
     sampleStartOffset = startOffsetSeconds * sourceSampleRate;
+    sampleEndSample = (endSeconds > 0.0) ? endSeconds * sourceSampleRate : 0.0;
     loopEnabled = loop;
     loopStartSample = loopStartSeconds * sourceSampleRate;
     loopEndSample = loopEndSeconds * sourceSampleRate;
@@ -101,7 +103,10 @@ void SamplerVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int s
         int pos0 = static_cast<int>(sourceSamplePosition);
         float frac = static_cast<float>(sourceSamplePosition - pos0);
 
-        if (pos0 >= totalSamples - 1) {
+        // Stop at sample end (if set) or end of file
+        int endLimit =
+            (sampleEndSample > 0.0) ? static_cast<int>(sampleEndSample) : totalSamples - 1;
+        if (pos0 >= endLimit) {
             clearCurrentNote();
             return;
         }
@@ -213,6 +218,15 @@ MagdaSamplerPlugin::MagdaSamplerPlugin(const te::PluginCreationInfo& info) : Plu
             return s.upToFirstOccurrenceOf(" ", false, false).getFloatValue();
         });
 
+    static const juce::Identifier sampleEndId("sampleEnd");
+    sampleEndValue.referTo(state, sampleEndId, um, 0.0f);
+    sampleEndParam = addParam(
+        "sampleEnd", "Sample End", {0.0f, 300.0f, 0.0f},
+        [](float v) { return juce::String(v, 3) + " s"; },
+        [](const juce::String& s) {
+            return s.upToFirstOccurrenceOf(" ", false, false).getFloatValue();
+        });
+
     static const juce::Identifier loopStartId("loopStart");
     loopStartValue.referTo(state, loopStartId, um, 0.0f);
     loopStartParam = addParam(
@@ -273,6 +287,7 @@ MagdaSamplerPlugin::MagdaSamplerPlugin(const te::PluginCreationInfo& info) : Plu
     fineParam->setParameter(fineValue.get(), juce::dontSendNotification);
     levelParam->setParameter(levelValue.get(), juce::dontSendNotification);
     sampleStartParam->setParameter(sampleStartValue.get(), juce::dontSendNotification);
+    sampleEndParam->setParameter(sampleEndValue.get(), juce::dontSendNotification);
     loopStartParam->setParameter(loopStartValue.get(), juce::dontSendNotification);
     loopEndParam->setParameter(loopEndValue.get(), juce::dontSendNotification);
     velAmountParam->setParameter(velAmountValue.get(), juce::dontSendNotification);
@@ -348,8 +363,12 @@ void MagdaSamplerPlugin::loadSample(const juce::File& file) {
     double lengthSeconds = static_cast<double>(newSound->audioData.getNumSamples()) / sourceSR;
     float loopEndClamped =
         juce::jmin(static_cast<float>(lengthSeconds), loopEndParam->getValueRange().getEnd());
+    float endClamped =
+        juce::jmin(static_cast<float>(lengthSeconds), sampleEndParam->getValueRange().getEnd());
     sampleStartParam->setParameter(0.0f, juce::dontSendNotification);
     sampleStartValue = 0.0f;
+    sampleEndParam->setParameter(endClamped, juce::dontSendNotification);
+    sampleEndValue = endClamped;
     loopStartParam->setParameter(0.0f, juce::dontSendNotification);
     loopStartValue = 0.0f;
     loopEndParam->setParameter(loopEndClamped, juce::dontSendNotification);
@@ -406,6 +425,7 @@ void MagdaSamplerPlugin::updateVoiceParameters() {
     float maxSec = static_cast<float>(lengthSeconds);
 
     float sStart = juce::jlimit(0.0f, maxSec, sampleStartParam->getCurrentValue());
+    float sEnd = juce::jlimit(0.0f, maxSec, sampleEndParam->getCurrentValue());
     bool loopOn = loopEnabledAtomic.load(std::memory_order_relaxed);
     float lStart = juce::jlimit(0.0f, maxSec, loopStartParam->getCurrentValue());
     float lEnd = juce::jlimit(0.0f, maxSec, loopEndParam->getCurrentValue());
@@ -416,7 +436,7 @@ void MagdaSamplerPlugin::updateVoiceParameters() {
         if (auto* voice = dynamic_cast<SamplerVoice*>(synthesiser.getVoice(i))) {
             voice->setADSR(attack, decay, sustain, release);
             voice->setPitchOffset(pitch, fine);
-            voice->setPlaybackRegion(sStart, loopOn, lStart, lEnd, sourceSR);
+            voice->setPlaybackRegion(sStart, sEnd, loopOn, lStart, lEnd, sourceSR);
             voice->setVelocityAmount(velAmt);
         }
     }
@@ -488,8 +508,8 @@ void MagdaSamplerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 void MagdaSamplerPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
     te::copyPropertiesToCachedValues(v, attackValue, decayValue, sustainValue, releaseValue,
                                      pitchValue, fineValue, levelValue, sampleStartValue,
-                                     loopStartValue, loopEndValue, samplePathValue, rootNoteValue,
-                                     loopEnabledValue, velAmountValue);
+                                     sampleEndValue, loopStartValue, loopEndValue, samplePathValue,
+                                     rootNoteValue, loopEnabledValue, velAmountValue);
     loopEnabledAtomic.store(loopEnabledValue.get(), std::memory_order_relaxed);
 
     for (auto p : getAutomatableParameters())
