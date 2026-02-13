@@ -738,10 +738,9 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             return;
         auto& pc = daw::ui::PanelController::getInstance();
         pc.setCollapsed(daw::ui::PanelLocation::Bottom, false);
-        if (c->type == ClipType::MIDI) {
-            pc.setActiveTabByType(daw::ui::PanelLocation::Bottom,
-                                  daw::ui::PanelContentType::PianoRoll);
-        } else {
+        // Don't force a specific MIDI editor tab — BottomPanel's clipSelectionChanged
+        // handles the PianoRoll vs DrumGrid choice, respecting the user's preference.
+        if (c->type == ClipType::Audio) {
             pc.setActiveTabByType(daw::ui::PanelLocation::Bottom,
                                   daw::ui::PanelContentType::WaveformEditor);
         }
