@@ -1,5 +1,7 @@
 #include "DrumGridClipContent.hpp"
 
+#include <algorithm>
+
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "AudioBridge.hpp"
@@ -595,6 +597,14 @@ void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
         }
         return;
     }
+
+    // Regular scroll — forward to viewport for vertical/horizontal scrolling
+    if (viewport_) {
+        int deltaX = static_cast<int>(-wheel.deltaX * 100.0f);
+        int deltaY = static_cast<int>(-wheel.deltaY * 100.0f);
+        viewport_->setViewPosition(viewport_->getViewPositionX() + deltaX,
+                                   viewport_->getViewPositionY() + deltaY);
+    }
 }
 
 void DrumGridClipContent::onActivated() {
@@ -788,6 +798,9 @@ void DrumGridClipContent::buildPadRows() {
             padRows_.push_back(row);
         }
     }
+
+    // Reverse so lower notes appear at the bottom (higher notes at the top)
+    std::reverse(padRows_.begin(), padRows_.end());
 }
 
 void DrumGridClipContent::updateGridSize() {
@@ -855,7 +868,16 @@ void DrumGridClipContent::updateTimeRuler() {
         timeRuler_->setClipLength(0.0);
     }
 
-    timeRuler_->setRelativeMode(false);
+    timeRuler_->setRelativeMode(relativeTimeMode_);
+}
+
+void DrumGridClipContent::setRelativeTimeMode(bool relative) {
+    if (relativeTimeMode_ != relative) {
+        relativeTimeMode_ = relative;
+        updateGridSize();
+        updateTimeRuler();
+        repaint();
+    }
 }
 
 }  // namespace magda::daw::ui

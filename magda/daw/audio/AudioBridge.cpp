@@ -608,6 +608,15 @@ void AudioBridge::timerCallback() {
     // Apply any pending MIDI routes now that playback context may be available
     applyPendingMidiRoutes();
 
+    // Detect playback context recreation (e.g. after edit.restartPlayback())
+    // and re-establish MIDI routing which is lost when the context is rebuilt
+    auto* currentContext = edit_.getCurrentPlaybackContext();
+    if (currentContext != lastPlaybackContext_) {
+        lastPlaybackContext_ = currentContext;
+        if (currentContext != nullptr)
+            updateMidiRoutingForSelection();
+    }
+
     // Poll for reversed proxy file completion (delegated to ClipSynchronizer)
     ClipId pendingClipId = clipSynchronizer_.getPendingReverseClipId();
     if (pendingClipId != INVALID_CLIP_ID) {

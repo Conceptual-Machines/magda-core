@@ -64,6 +64,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/infinito.svg
     ../../assets/icons/position.svg
     ../../assets/icons/Offset.svg
+    ../../assets/icons/piano_roll.svg
+    ../../assets/icons/drum_grid.svg
     # Footer view mode icons
     ../../assets/icons/footer/Session.svg
     ../../assets/icons/footer/Arrangement.svg

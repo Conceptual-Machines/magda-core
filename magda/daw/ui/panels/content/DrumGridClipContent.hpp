@@ -67,6 +67,12 @@ class DrumGridClipContent : public PanelContent,
         return editingClipId_;
     }
 
+    // Timeline mode
+    void setRelativeTimeMode(bool relative);
+    bool isRelativeTimeMode() const {
+        return relativeTimeMode_;
+    }
+
     // Row model (public so grid/label components can access)
     struct PadRow {
         int noteNumber = 0;
@@ -77,6 +83,9 @@ class DrumGridClipContent : public PanelContent,
   private:
     magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
     daw::audio::DrumGridPlugin* drumGrid_ = nullptr;
+
+    // Timeline mode (absolute vs relative)
+    bool relativeTimeMode_ = false;
 
     // Layout constants
     static constexpr int LABEL_WIDTH = 120;
