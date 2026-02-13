@@ -37,8 +37,8 @@ class SamplerVoice : public juce::SynthesiserVoice {
 
     void setADSR(float attack, float decay, float sustain, float release);
     void setPitchOffset(float semitones, float cents);
-    void setPlaybackRegion(double startOffsetSeconds, bool loop, double loopStartSeconds,
-                           double loopEndSeconds, double sourceSampleRate);
+    void setPlaybackRegion(double startOffsetSeconds, double endSeconds, bool loop,
+                           double loopStartSeconds, double loopEndSeconds, double sourceSampleRate);
     void setVelocityAmount(float amount) {
         velAmount = amount;
     }
@@ -68,6 +68,7 @@ class SamplerVoice : public juce::SynthesiserVoice {
     float fineCents = 0.0f;
 
     double sampleStartOffset = 0.0;
+    double sampleEndSample = 0.0;  // 0 = play to end of file
     bool loopEnabled = false;
     double loopStartSample = 0.0;
     double loopEndSample = 0.0;
@@ -126,6 +127,10 @@ class MagdaSamplerPlugin : public te::Plugin {
     void restorePluginStateFromValueTree(const juce::ValueTree&) override;
 
     //==============================================================================
+    // Sync CachedValue from current AutomatableParameter value (for persistence)
+    void syncCachedValueFromParam(int paramIndex);
+
+    //==============================================================================
     // Sample loading
     void loadSample(const juce::File& file);
     juce::File getSampleFile() const;
@@ -139,12 +144,12 @@ class MagdaSamplerPlugin : public te::Plugin {
     // Automatable parameters
     juce::CachedValue<float> attackValue, decayValue, sustainValue, releaseValue;
     juce::CachedValue<float> pitchValue, fineValue, levelValue;
-    juce::CachedValue<float> sampleStartValue, loopStartValue, loopEndValue;
+    juce::CachedValue<float> sampleStartValue, sampleEndValue, loopStartValue, loopEndValue;
     juce::CachedValue<float> velAmountValue;
 
     te::AutomatableParameter::Ptr attackParam, decayParam, sustainParam, releaseParam;
     te::AutomatableParameter::Ptr pitchParam, fineParam, levelParam;
-    te::AutomatableParameter::Ptr sampleStartParam, loopStartParam, loopEndParam;
+    te::AutomatableParameter::Ptr sampleStartParam, sampleEndParam, loopStartParam, loopEndParam;
     te::AutomatableParameter::Ptr velAmountParam;
 
     // Non-parameter state

@@ -457,6 +457,10 @@ void NodeComponent::setNodeName(const juce::String& name) {
     nameLabel_.setText(name, juce::dontSendNotification);
 }
 
+void NodeComponent::setNodeNameFont(const juce::Font& font) {
+    nameLabel_.setFont(font);
+}
+
 juce::String NodeComponent::getNodeName() const {
     return nameLabel_.getText();
 }
@@ -870,9 +874,6 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
 
 void NodeComponent::mouseWheelMove(const juce::MouseEvent& e,
                                    const juce::MouseWheelDetails& wheel) {
-    DBG("NodeComponent::mouseWheelMove - deltaY=" << wheel.deltaY << " isCommandDown="
-                                                  << (e.mods.isCommandDown() ? "yes" : "no"));
-
     // Cmd/Ctrl + scroll wheel = zoom (forward to parent chain panel)
     if (e.mods.isCommandDown() && onZoomDelta) {
         float delta = wheel.deltaY > 0 ? 0.1f : -0.1f;

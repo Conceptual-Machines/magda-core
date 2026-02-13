@@ -477,6 +477,22 @@ class TrackManager {
 
     std::vector<TrackInfo> tracks_;
     std::vector<TrackManagerListener*> listeners_;
+    int notifyDepth_ = 0;
+
+    // RAII guard for safe listener iteration. While active, removeListener()
+    // nullifies entries instead of erasing. On destruction, compacts the list.
+    struct ScopedNotifyGuard {
+        TrackManager& tm;
+        ScopedNotifyGuard(TrackManager& t) : tm(t) {
+            ++tm.notifyDepth_;
+        }
+        ~ScopedNotifyGuard() {
+            if (--tm.notifyDepth_ == 0)
+                tm.listeners_.erase(
+                    std::remove(tm.listeners_.begin(), tm.listeners_.end(), nullptr),
+                    tm.listeners_.end());
+        }
+    };
     AudioEngine* audioEngine_ = nullptr;  // Non-owning pointer for routing operations
     int nextTrackId_ = 1;
     int nextDeviceId_ = 1;

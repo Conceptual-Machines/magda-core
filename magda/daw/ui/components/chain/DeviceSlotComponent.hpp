@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "DrumGridUI.hpp"
 #include "NodeComponent.hpp"
 #include "ParamSlotComponent.hpp"
 #include "SamplerUI.hpp"
@@ -63,6 +64,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::function<void(bool)> onDeviceBypassChanged;
 
   protected:
+    void paint(juce::Graphics& g) override;
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override;
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
@@ -137,6 +139,7 @@ class DeviceSlotComponent : public NodeComponent,
 
   private:
     magda::DeviceInfo device_;
+    bool isDrumGrid_ = false;  // Track if this is a drum grid for custom header painting
 
     // Header controls
     std::unique_ptr<magda::SvgButton> modButton_;
@@ -159,6 +162,7 @@ class DeviceSlotComponent : public NodeComponent,
     // Custom UI for internal devices
     std::unique_ptr<ToneGeneratorUI> toneGeneratorUI_;
     std::unique_ptr<SamplerUI> samplerUI_;
+    std::unique_ptr<DrumGridUI> drumGridUI_;
 
     void updatePageControls();
     void updateParamModulation();  // Update mod/macro pointers for params

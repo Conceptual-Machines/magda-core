@@ -15,6 +15,9 @@ Build/
 .DS_Store
 *.dSYM/
 
+# Clangd
+.cache/
+
 # Prerequisites
 *.d
 

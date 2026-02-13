@@ -31,6 +31,9 @@ class FontManager {
     juce::Font getButtonFont(float size = 13.0f) const;    // Medium
     juce::Font getTimeFont(float size = 16.0f) const;      // SemiBold (for time displays)
 
+    // Get Microgramma D Extended Bold font (for MPC-style displays)
+    juce::Font getMicrogrammaFont(float size = 11.0f) const;
+
     // Check if Inter fonts are loaded
     bool isInitialized() const {
         return initialized;
@@ -51,6 +54,7 @@ class FontManager {
     juce::Typeface::Ptr interMedium;
     juce::Typeface::Ptr interSemiBold;
     juce::Typeface::Ptr interBold;
+    juce::Typeface::Ptr microgrammaBold;
 
     // Fallback system font name
     static constexpr const char* FALLBACK_FONT = "Helvetica";

@@ -28,7 +28,7 @@ namespace magda::daw::ui {
  *
  * Parameter indices (matching MagdaSamplerPlugin::addParam order):
  *   0=attack, 1=decay, 2=sustain, 3=release, 4=pitch, 5=fine, 6=level,
- *   7=sampleStart, 8=loopStart, 9=loopEnd, 10=velAmount
+ *   7=sampleStart, 8=sampleEnd, 9=loopStart, 10=loopEnd, 11=velAmount
  *
  * Note: loopEnabled is non-automatable state controlled via onLoopEnabledChanged
  * and does not have a parameter index.
@@ -42,8 +42,8 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
      * @brief Update all UI controls from device parameters
      */
     void updateParameters(float attack, float decay, float sustain, float release, float pitch,
-                          float fine, float level, float sampleStart, bool loopEnabled,
-                          float loopStart, float loopEnd, float velAmount,
+                          float fine, float level, float sampleStart, float sampleEnd,
+                          bool loopEnabled, float loopStart, float loopEnd, float velAmount,
                           const juce::String& sampleName);
 
     /**
@@ -119,12 +119,13 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     double scrollOffsetSeconds_ = 0.0;
     static constexpr double kMaxPixelsPerSecond = 5000.0;
 
-    // Sample start / Loop controls
+    // Sample start/end / Loop controls
     TextSlider startSlider_{TextSlider::Format::Decimal};
+    TextSlider endSlider_{TextSlider::Format::Decimal};
     std::unique_ptr<magda::SvgButton> loopButton_;
     TextSlider loopStartSlider_{TextSlider::Format::Decimal};
     TextSlider loopEndSlider_{TextSlider::Format::Decimal};
-    juce::Label startLabel_, loopStartLabel_, loopEndLabel_;
+    juce::Label startLabel_, endLabel_, loopStartLabel_, loopEndLabel_;
 
     // ADSR
     TextSlider attackSlider_{TextSlider::Format::Decimal};
@@ -147,7 +148,7 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     juce::Label pitchLabel_, fineLabel_, levelLabel_, velAmountLabel_;
 
     // Dragging state
-    enum class DragTarget { None, SampleStart, LoopStart, LoopEnd, LoopRegion, Scroll };
+    enum class DragTarget { None, SampleStart, SampleEnd, LoopStart, LoopEnd, LoopRegion, Scroll };
     DragTarget currentDrag_ = DragTarget::None;
     double scrollDragStartOffset_ = 0.0;
     double loopDragStartL_ = 0.0;

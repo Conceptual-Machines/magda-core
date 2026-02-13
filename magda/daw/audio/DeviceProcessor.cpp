@@ -413,6 +413,26 @@ float MagdaSamplerProcessor::getParameterByIndex(int paramIndex) const {
 }
 
 // =============================================================================
+// DrumGridProcessor
+// =============================================================================
+
+DrumGridProcessor::DrumGridProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
+    : DeviceProcessor(deviceId, std::move(plugin)) {}
+
+int DrumGridProcessor::getParameterCount() const {
+    // No top-level automatable parameters; per-pad params live on child plugins
+    return 0;
+}
+
+ParameterInfo DrumGridProcessor::getParameterInfo(int /*index*/) const {
+    return {};
+}
+
+void DrumGridProcessor::populateParameters(DeviceInfo& info) const {
+    info.parameters.clear();
+}
+
+// =============================================================================
 // ExternalPluginProcessor
 // =============================================================================
 

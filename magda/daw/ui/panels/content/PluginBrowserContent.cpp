@@ -4,6 +4,7 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallComboBoxLookAndFeel.hpp"
+#include "audio/DrumGridPlugin.hpp"
 #include "audio/MagdaSamplerPlugin.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/TrackManager.hpp"
@@ -292,6 +293,8 @@ void PluginBrowserContent::buildInternalPluginList() {
     plugins_.push_back(PluginBrowserInfo::createInternal("4OSC Synth", "4osc", true));
     plugins_.push_back(PluginBrowserInfo::createInternal(
         audio::MagdaSamplerPlugin::getPluginName(), audio::MagdaSamplerPlugin::xmlTypeName, true));
+    plugins_.push_back(PluginBrowserInfo::createInternal(audio::DrumGridPlugin::getPluginName(),
+                                                         audio::DrumGridPlugin::xmlTypeName, true));
 }
 
 void PluginBrowserContent::loadExternalPlugins() {

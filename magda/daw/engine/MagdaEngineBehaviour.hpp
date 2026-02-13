@@ -1,6 +1,7 @@
 #pragma once
 #include <tracktion_engine/tracktion_engine.h>
 
+#include "../audio/DrumGridPlugin.hpp"
 #include "../audio/MagdaSamplerPlugin.hpp"
 #include "../audio/SidechainMonitorPlugin.hpp"
 
@@ -21,6 +22,10 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         if (type == daw::audio::MagdaSamplerPlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating MagdaSamplerPlugin");
             return new daw::audio::MagdaSamplerPlugin(info);
+        }
+        if (type == daw::audio::DrumGridPlugin::xmlTypeName) {
+            DBG("MagdaEngineBehaviour::createCustomPlugin - creating DrumGridPlugin");
+            return new daw::audio::DrumGridPlugin(info);
         }
         if (type == SidechainMonitorPlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating SidechainMonitorPlugin");

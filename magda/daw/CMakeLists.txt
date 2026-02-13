@@ -9,6 +9,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/fonts/Inter-Medium.ttf
     ../../assets/fonts/Inter-SemiBold.ttf
     ../../assets/fonts/Inter-Bold.ttf
+    "../../assets/fonts/Microgramma D Extended Bold.otf"
     # Transport icons (off/on states)
     ../../assets/icons/play_off.svg
     ../../assets/icons/play_on.svg
@@ -52,6 +53,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/sine-wave.svg
     ../../assets/icons/sine-wave-bright.svg
     ../../assets/icons/bare_sine.svg
+    ../../assets/icons/play_bare.svg
     ../../assets/icons/open_in_new.svg
     ../../assets/icons/power_on.svg
     ../../assets/icons/rack.svg
@@ -167,6 +169,7 @@ set(DAW_CORE_SOURCES
     audio/ClipSynchronizer.cpp
     audio/SidechainMonitorPlugin.cpp
     audio/MagdaSamplerPlugin.cpp
+    audio/DrumGridPlugin.cpp
     # Project serialization
     project/ProjectSerializer.cpp
     project/ProjectManager.cpp
@@ -292,6 +295,10 @@ set(DAW_UI_SOURCES
     ui/components/chain/DeviceSlotComponent.cpp
     ui/components/chain/ToneGeneratorUI.cpp
     ui/components/chain/SamplerUI.cpp
+    ui/components/chain/DrumGridUI.cpp
+    ui/components/chain/PadChainPanel.cpp
+    ui/components/chain/PadDeviceSlot.cpp
+    ui/components/chain/PadChainRowComponent.cpp
     ui/components/chain/ParamSlotComponent.cpp
     ui/components/chain/ParamLinkResolver.cpp
     ui/components/chain/ParamModulationPainter.cpp
@@ -416,6 +423,7 @@ set(DAW_HEADERS
     audio/SidechainTriggerBus.hpp
     audio/SidechainMonitorPlugin.hpp
     audio/MagdaSamplerPlugin.hpp
+    audio/DrumGridPlugin.hpp
     # Views
     ui/views/MainView.hpp
     ui/views/SessionView.hpp
@@ -463,6 +471,8 @@ set(DAW_HEADERS
     ui/components/chain/ChainRowComponent.hpp
     ui/components/chain/RackComponent.hpp
     ui/components/chain/ChainPanel.hpp
+    ui/components/chain/PadChainPanel.hpp
+    ui/components/chain/PadDeviceSlot.hpp
     ui/components/chain/ToneGeneratorUI.hpp
     ui/components/chain/PagedControlPanel.hpp
     ui/components/chain/MacroKnobComponent.hpp

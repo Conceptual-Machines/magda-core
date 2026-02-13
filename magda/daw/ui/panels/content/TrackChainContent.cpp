@@ -448,9 +448,6 @@ class TrackChainContent::ZoomableViewport : public juce::Viewport {
 
     void mouseWheelMove(const juce::MouseEvent& event,
                         const juce::MouseWheelDetails& wheel) override {
-        DBG("!!!!! ZoomableViewport::mouseWheelMove CALLED - deltaY="
-            << wheel.deltaY << " isAltDown=" << (event.mods.isAltDown() ? "yes" : "no"));
-
         // Alt/Option + scroll wheel = zoom
         if (event.mods.isAltDown()) {
             float delta =
