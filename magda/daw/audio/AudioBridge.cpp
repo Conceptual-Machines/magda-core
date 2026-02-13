@@ -185,12 +185,23 @@ void AudioBridge::updateMidiRoutingForSelection() {
 
     bool anyChanged = false;
 
+    // Determine which track should receive MIDI: the selected track,
+    // or the track owning the selected clip (clip selection clears track selection)
+    TrackId midiTrackId = lastSelectedTrack_;
+    if (midiTrackId == INVALID_TRACK_ID) {
+        auto selectedClipId = ClipManager::getInstance().getSelectedClip();
+        if (selectedClipId != INVALID_CLIP_ID) {
+            if (auto* clip = ClipManager::getInstance().getClip(selectedClipId))
+                midiTrackId = clip->trackId;
+        }
+    }
+
     for (const auto& track : tracks) {
         // Aux tracks never receive MIDI
         if (track.type == TrackType::Aux)
             continue;
 
-        bool shouldReceiveMidi = (track.id == lastSelectedTrack_) || track.recordArmed;
+        bool shouldReceiveMidi = (track.id == midiTrackId) || track.recordArmed;
 
         // Check if this track needs MIDI (has an instrument or a MIDI-triggered mod)
         // Recurse into racks to find instruments/mods inside rack chains
