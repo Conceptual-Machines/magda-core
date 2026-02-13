@@ -130,18 +130,12 @@ void BottomPanel::updateContentBasedOnSelection() {
         const auto* clip = clipManager.getClip(selectedClip);
         if (clip) {
             if (clip->type == ClipType::MIDI) {
-                // Check if this track has a DrumGridPlugin
                 if (trackHasDrumGrid(clip->trackId)) {
                     needsTabs = true;
-                    // Default to Drum Grid for DrumGrid tracks,
-                    // but preserve user's tab choice if tabs were already showing
-                    if (showEditorTabs_ && editorTabBar_) {
-                        int tabIdx = editorTabBar_->getCurrentTabIndex();
-                        targetContent = (tabIdx == 1) ? daw::ui::PanelContentType::DrumGridClipView
-                                                      : daw::ui::PanelContentType::PianoRoll;
-                    } else {
-                        targetContent = daw::ui::PanelContentType::DrumGridClipView;
-                    }
+                    // Restore user's last tab choice for DrumGrid tracks
+                    targetContent = (lastDrumGridTabChoice_ == 1)
+                                        ? daw::ui::PanelContentType::DrumGridClipView
+                                        : daw::ui::PanelContentType::PianoRoll;
                 } else {
                     targetContent = daw::ui::PanelContentType::PianoRoll;
                 }
@@ -154,18 +148,17 @@ void BottomPanel::updateContentBasedOnSelection() {
     }
 
     // Update tab bar visibility
-    if (needsTabs != showEditorTabs_) {
-        showEditorTabs_ = needsTabs;
-        if (editorTabBar_) {
-            editorTabBar_->setVisible(showEditorTabs_);
-            if (showEditorTabs_) {
-                // Set initial tab based on target content
-                int tabIdx = (targetContent == daw::ui::PanelContentType::DrumGridClipView) ? 1 : 0;
-                editorTabBar_->setCurrentTabIndex(tabIdx, false);
-            }
+    showEditorTabs_ = needsTabs;
+    if (editorTabBar_) {
+        editorTabBar_->setVisible(showEditorTabs_);
+        if (showEditorTabs_) {
+            // Set tab bar to match target content, with guard to prevent re-entrancy
+            updatingTabs_ = true;
+            editorTabBar_->setCurrentTabIndex(lastDrumGridTabChoice_, false);
+            updatingTabs_ = false;
         }
-        resized();
     }
+    resized();
 
     // Switch to the appropriate content via PanelController
     daw::ui::PanelController::getInstance().setActiveTabByType(daw::ui::PanelLocation::Bottom,
@@ -195,6 +188,11 @@ juce::Rectangle<int> BottomPanel::getContentBounds() {
 }
 
 void BottomPanel::onEditorTabChanged(int tabIndex) {
+    if (updatingTabs_)
+        return;
+
+    lastDrumGridTabChoice_ = tabIndex;
+
     auto targetType = (tabIndex == 1) ? daw::ui::PanelContentType::DrumGridClipView
                                       : daw::ui::PanelContentType::PianoRoll;
     daw::ui::PanelController::getInstance().setActiveTabByType(daw::ui::PanelLocation::Bottom,

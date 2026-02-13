@@ -53,7 +53,13 @@ class BottomPanel : public daw::ui::TabbedPanel,
     class EditorTabBar;
     std::unique_ptr<EditorTabBar> editorTabBar_;
     bool showEditorTabs_ = false;
+    bool updatingTabs_ = false;  // Guard against re-entrancy
     static constexpr int EDITOR_TAB_HEIGHT = 28;
+
+    // Persisted user preference: which editor view for DrumGrid tracks
+    // 0 = Piano Roll, 1 = Drum Grid (default)
+    int lastDrumGridTabChoice_ = 1;
+
     void onEditorTabChanged(int tabIndex);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BottomPanel)
