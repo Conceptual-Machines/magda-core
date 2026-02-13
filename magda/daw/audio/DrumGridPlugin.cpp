@@ -55,7 +55,6 @@ DrumGridPlugin::~DrumGridPlugin() {
 void DrumGridPlugin::initialise(const te::PluginInitialisationInfo& info) {
     sampleRate_ = info.sampleRate;
     blockSize_ = info.blockSizeSamples;
-    scratchBuffer_.setSize(2, blockSize_);
 
     for (auto& chain : chains_) {
         for (auto& plugin : chain->plugins) {
@@ -102,20 +101,8 @@ void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     auto& destBuffer = *fc.destBuffer;
     const int numSamples = fc.bufferNumSamples;
     const int startSample = fc.bufferStartSample;
+    const int numChannels = destBuffer.getNumChannels();
 
-    destBuffer.clear(startSample, numSamples);
-
-    // When transport stops, silence all child plugins immediately
-    if (!fc.isPlaying && wasPlaying_) {
-        for (auto& chain : chains_) {
-            for (auto& plugin : chain->plugins) {
-                if (plugin != nullptr)
-                    plugin->reset();
-            }
-        }
-        wasPlaying_ = false;
-        return;
-    }
     wasPlaying_ = fc.isPlaying;
 
     bool anySoloed = false;
@@ -135,9 +122,12 @@ void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         if (anySoloed && !chain->solo.get())
             continue;
 
-        // Filter MIDI: copy events within this chain's note range
+        // Filter MIDI: copy events within this chain's note range, remap notes.
         padMidi_.clear();
         if (fc.bufferForMidiMessages != nullptr) {
+            // Propagate the all-notes-off flag so child ExternalPlugins can
+            // reset their active-note tracking on transport stop / playhead jump.
+            padMidi_.isAllNotesOff = fc.bufferForMidiMessages->isAllNotesOff;
             for (auto& msg : *fc.bufferForMidiMessages) {
                 if (msg.isNoteOnOrOff()) {
                     int note = msg.getNoteNumber();
@@ -148,7 +138,8 @@ void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                                 padTriggered_[padIdx].store(true, std::memory_order_relaxed);
                         }
                         auto remapped = msg;
-                        remapped.setNoteNumber(chain->rootNote + (note - chain->lowNote));
+                        int remappedNote = chain->rootNote + (note - chain->lowNote);
+                        remapped.setNoteNumber(remappedNote);
                         padMidi_.add(remapped);
                     }
                 } else {
@@ -161,6 +152,8 @@ void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
             !chain->plugins[0]->producesAudioWhenNoAudioInput())
             continue;
 
+        // Use offset 0 in scratch buffer; copy to destBuffer at startSample
+        scratchBuffer_.setSize(numChannels, numSamples, false, false, true);
         scratchBuffer_.clear(0, numSamples);
 
         te::PluginRenderContext padContext(&scratchBuffer_, juce::AudioChannelSet::stereo(), 0,
