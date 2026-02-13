@@ -18,9 +18,12 @@ const juce::Identifier DrumGridPlugin::padLevelId("padLevel");
 const juce::Identifier DrumGridPlugin::padPanId("padPan");
 const juce::Identifier DrumGridPlugin::padMuteId("padMute");
 const juce::Identifier DrumGridPlugin::padSoloId("padSolo");
+const juce::Identifier DrumGridPlugin::mixerExpandedId("mixerExpanded");
 
 //==============================================================================
 DrumGridPlugin::DrumGridPlugin(const te::PluginCreationInfo& info) : Plugin(info) {
+    mixerExpanded_.referTo(state, mixerExpandedId, getUndoManager(), false);
+
     // Restore chains from existing ValueTree state (if any)
     for (int i = 0; i < state.getNumChildren(); ++i) {
         auto childTree = state.getChild(i);
@@ -166,6 +169,22 @@ void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& rc) {
             levelLinear * std::cos((panValue + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
         float rightGain =
             levelLinear * std::sin((panValue + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
+
+        // Measure post-gain peak from scratch buffer
+        float peakL = scratchBuffer.getMagnitude(0, 0, numSamples) * leftGain;
+        float peakR =
+            (numChannels >= 2 ? scratchBuffer.getMagnitude(1, 0, numSamples) : peakL) * rightGain;
+
+        // Store as running max (UI thread resets via consumeChainPeak)
+        if (chain->index >= 0 && chain->index < maxPads) {
+            auto& meter = chainMeters_[static_cast<size_t>(chain->index)];
+            auto prevL = meter.peakL.load(std::memory_order_relaxed);
+            if (peakL > prevL)
+                meter.peakL.store(peakL, std::memory_order_relaxed);
+            auto prevR = meter.peakR.load(std::memory_order_relaxed);
+            if (peakR > prevR)
+                meter.peakR.store(peakR, std::memory_order_relaxed);
+        }
 
         if (numChannels >= 1)
             outputBuffer.addFrom(0, rc.bufferStartSample, scratchBuffer, 0, 0, numSamples,
@@ -601,6 +620,15 @@ bool DrumGridPlugin::consumePadTrigger(int padIndex) {
     return padTriggered_[padIndex].exchange(false, std::memory_order_relaxed);
 }
 
+std::pair<float, float> DrumGridPlugin::consumeChainPeak(int chainIndex) {
+    if (chainIndex < 0 || chainIndex >= maxPads)
+        return {0.0f, 0.0f};
+    auto& m = chainMeters_[static_cast<size_t>(chainIndex)];
+    float l = m.peakL.exchange(0.0f, std::memory_order_relaxed);
+    float r = m.peakR.exchange(0.0f, std::memory_order_relaxed);
+    return {l, r};
+}
+
 void DrumGridPlugin::notifyGraphRebuildNeeded() {
     edit.restartPlayback();
 }
@@ -611,6 +639,8 @@ void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
         auto propName = v.getPropertyName(i);
         state.setProperty(propName, v.getProperty(propName), nullptr);
     }
+
+    mixerExpanded_.forceUpdateOfCachedValue();
 
     for (int i = 0; i < v.getNumChildren(); ++i) {
         auto childTree = v.getChild(i);

@@ -342,6 +342,58 @@ void DrumGridUI::timerCallback() {
             }
         }
     }
+
+    // Sync chain properties (level/pan/mute/solo) back into padInfos_ and UI
+    // so that external changes (e.g. mixer sub-channel faders) are reflected
+    bool detailNeedsRefresh = false;
+    for (int i = 0; i < kTotalPads; ++i) {
+        auto& info = padInfos_[static_cast<size_t>(i)];
+        if (info.chainIndex < 0)
+            continue;
+
+        const auto* chain = drumGridPlugin_->getChainByIndex(info.chainIndex);
+        if (!chain)
+            continue;
+
+        float chainLevel = chain->level.get();
+        float chainPan = chain->pan.get();
+        bool chainMute = chain->mute.get();
+        bool chainSolo = chain->solo.get();
+
+        bool changed = false;
+        if (std::abs(info.level - chainLevel) > 0.01f) {
+            info.level = chainLevel;
+            changed = true;
+        }
+        if (std::abs(info.pan - chainPan) > 0.001f) {
+            info.pan = chainPan;
+            changed = true;
+        }
+        if (info.mute != chainMute) {
+            info.mute = chainMute;
+            changed = true;
+        }
+        if (info.solo != chainSolo) {
+            info.solo = chainSolo;
+            changed = true;
+        }
+
+        if (changed) {
+            // Update chain row if visible
+            for (auto& row : chainRows_) {
+                if (row->getPadIndex() == i) {
+                    juce::String displayName = getNoteName(i) + " " + info.sampleName;
+                    row->updateFromPad(displayName, info.level, info.pan, info.mute, info.solo);
+                    break;
+                }
+            }
+            if (i == selectedPad_)
+                detailNeedsRefresh = true;
+        }
+    }
+
+    if (detailNeedsRefresh)
+        refreshDetailPanel();
 }
 
 void DrumGridUI::updatePadInfo(int padIndex, const juce::String& sampleName, bool mute, bool solo,

@@ -110,6 +110,21 @@ class DrumGridPlugin : public te::Plugin {
     void setPadTriggered(int padIndex);
     bool consumePadTrigger(int padIndex);
 
+    // Per-chain peak metering (set by audio thread, consumed by UI)
+    struct ChainMeterData {
+        std::atomic<float> peakL{0.0f};
+        std::atomic<float> peakR{0.0f};
+    };
+    std::pair<float, float> consumeChainPeak(int chainIndex);
+
+    // Mixer expand/collapse state (persisted in ValueTree)
+    bool isMixerExpanded() const {
+        return mixerExpanded_.get();
+    }
+    void setMixerExpanded(bool expanded) {
+        mixerExpanded_ = expanded;
+    }
+
     // Trigger graph rebuild when chain configuration changes
     void notifyGraphRebuildNeeded();
 
@@ -124,6 +139,8 @@ class DrumGridPlugin : public te::Plugin {
     std::vector<std::unique_ptr<Chain>> chains_;
     int nextChainIndex_ = 0;
     std::array<std::atomic<bool>, maxPads> padTriggered_{};
+    std::array<ChainMeterData, maxPads> chainMeters_{};
+    juce::CachedValue<bool> mixerExpanded_;
 
     // Audio processing state
     te::MidiMessageArray chainMidi_;
@@ -140,6 +157,7 @@ class DrumGridPlugin : public te::Plugin {
     static const juce::Identifier padPanId;
     static const juce::Identifier padMuteId;
     static const juce::Identifier padSoloId;
+    static const juce::Identifier mixerExpandedId;
 
     Chain* findChainForNote(int midiNote);
     Chain* findOrCreateChainForPad(int padIndex);

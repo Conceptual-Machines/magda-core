@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "../../audio/AudioBridge.hpp"
+#include "../../audio/DrumGridPlugin.hpp"
 #include "../../audio/MeteringBuffer.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "../../engine/TracktionEngineWrapper.hpp"
@@ -505,6 +506,12 @@ void MixerView::ChannelStrip::resized() {
     // Color indicator space
     bounds.removeFromTop(6);
 
+    // Expand toggle at top (only for tracks with DrumGridPlugin)
+    if (expandToggle_) {
+        expandToggle_->setBounds(bounds.removeFromTop(18));
+        bounds.removeFromTop(2);
+    }
+
     // Track label at top
     trackLabel->setBounds(bounds.removeFromTop(24));
     bounds.removeFromTop(metrics.controlSpacing);
@@ -652,6 +659,448 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& /*event*/) {
     }
 }
 
+//==============================================================================
+// DrumSubChannelStrip - LevelMeter (same as ChannelStrip::LevelMeter)
+//==============================================================================
+class MixerView::DrumSubChannelStrip::LevelMeter : public juce::Component {
+  public:
+    LevelMeter() = default;
+
+    void setLevels(float left, float right) {
+        leftLevel_ = juce::jlimit(0.0f, 2.0f, left);
+        rightLevel_ = juce::jlimit(0.0f, 2.0f, right);
+        repaint();
+    }
+
+    void paint(juce::Graphics& g) override {
+        auto bounds = getLocalBounds().toFloat();
+        const auto& metrics = MixerMetrics::getInstance();
+        auto effectiveBounds = bounds.reduced(0.0f, metrics.thumbRadius());
+        const float gap = 1.0f;
+        float barWidth = (effectiveBounds.getWidth() - gap) / 2.0f;
+        auto leftBounds = effectiveBounds.withWidth(barWidth);
+        auto rightBounds =
+            effectiveBounds.withWidth(barWidth).withX(effectiveBounds.getX() + barWidth + gap);
+        drawMeterBar(g, leftBounds, leftLevel_);
+        drawMeterBar(g, rightBounds, rightLevel_);
+    }
+
+  private:
+    float leftLevel_ = 0.0f;
+    float rightLevel_ = 0.0f;
+
+    void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level) {
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.fillRoundedRectangle(bounds, 1.0f);
+        float displayLevel = dbToMeterPos(gainToDb(level));
+        float meterHeight = bounds.getHeight() * displayLevel;
+        auto fillBounds = bounds;
+        fillBounds = fillBounds.removeFromBottom(meterHeight);
+        g.setColour(getMeterColour(level));
+        g.fillRoundedRectangle(fillBounds, 1.0f);
+    }
+
+    static juce::Colour getMeterColour(float level) {
+        float dbLevel = gainToDb(level);
+        juce::Colour green(0xFF55AA55);
+        juce::Colour yellow(0xFFAAAA55);
+        juce::Colour red(0xFFAA5555);
+        if (dbLevel < -12.0f)
+            return green;
+        else if (dbLevel < 0.0f)
+            return green.interpolatedWith(yellow, (dbLevel + 12.0f) / 12.0f);
+        else if (dbLevel < 3.0f)
+            return yellow.interpolatedWith(red, dbLevel / 3.0f);
+        else
+            return red;
+    }
+};
+
+//==============================================================================
+// DrumSubChannelStrip implementation
+//==============================================================================
+MixerView::DrumSubChannelStrip::DrumSubChannelStrip(daw::audio::DrumGridPlugin* dg, int chainIndex,
+                                                    const juce::String& name,
+                                                    juce::Colour parentColour,
+                                                    juce::LookAndFeel* faderLookAndFeel)
+    : drumGrid_(dg),
+      chainIndex_(chainIndex),
+      parentColour_(parentColour),
+      chainName_(name),
+      faderLookAndFeel_(faderLookAndFeel) {
+    setupControls();
+    updateFromChain();
+}
+
+MixerView::DrumSubChannelStrip::~DrumSubChannelStrip() {
+    if (volumeFader)
+        volumeFader->setLookAndFeel(nullptr);
+    if (panKnob)
+        panKnob->setLookAndFeel(nullptr);
+}
+
+void MixerView::DrumSubChannelStrip::setupControls() {
+    // Track label
+    trackLabel = std::make_unique<juce::Label>();
+    trackLabel->setText(chainName_, juce::dontSendNotification);
+    trackLabel->setJustificationType(juce::Justification::centred);
+    trackLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    trackLabel->setColour(juce::Label::backgroundColourId,
+                          DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    trackLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
+    addAndMakeVisible(*trackLabel);
+
+    // Pan knob
+    panKnob = std::make_unique<juce::Slider>(juce::Slider::RotaryHorizontalVerticalDrag,
+                                             juce::Slider::NoTextBox);
+    panKnob->setRange(-1.0, 1.0, 0.01);
+    panKnob->setValue(0.0);
+    panKnob->setColour(juce::Slider::rotarySliderFillColourId,
+                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    panKnob->setColour(juce::Slider::rotarySliderOutlineColourId,
+                       DarkTheme::getColour(DarkTheme::SURFACE));
+    panKnob->setColour(juce::Slider::thumbColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    panKnob->onValueChange = [this]() {
+        if (auto* chain = drumGrid_->getChainByIndexMutable(chainIndex_))
+            chain->pan = static_cast<float>(panKnob->getValue());
+        if (panValueLabel) {
+            float pan = static_cast<float>(panKnob->getValue());
+            juce::String panText;
+            if (std::abs(pan) < 0.01f)
+                panText = "C";
+            else if (pan < 0)
+                panText = juce::String(static_cast<int>(std::abs(pan) * 100)) + "L";
+            else
+                panText = juce::String(static_cast<int>(pan * 100)) + "R";
+            panValueLabel->setText(panText, juce::dontSendNotification);
+        }
+    };
+    if (faderLookAndFeel_)
+        panKnob->setLookAndFeel(faderLookAndFeel_);
+    addAndMakeVisible(*panKnob);
+
+    // Pan value label
+    panValueLabel = std::make_unique<juce::Label>();
+    panValueLabel->setText("C", juce::dontSendNotification);
+    panValueLabel->setJustificationType(juce::Justification::centred);
+    panValueLabel->setColour(juce::Label::textColourId,
+                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    panValueLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
+    addAndMakeVisible(*panValueLabel);
+
+    // Level meter
+    levelMeter = std::make_unique<LevelMeter>();
+    addAndMakeVisible(*levelMeter);
+
+    // Peak label
+    peakLabel = std::make_unique<juce::Label>();
+    peakLabel->setText("-inf", juce::dontSendNotification);
+    peakLabel->setJustificationType(juce::Justification::centred);
+    peakLabel->setColour(juce::Label::textColourId,
+                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    peakLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
+    addAndMakeVisible(*peakLabel);
+
+    // Volume fader
+    volumeFader =
+        std::make_unique<juce::Slider>(juce::Slider::LinearVertical, juce::Slider::NoTextBox);
+    volumeFader->setRange(0.0, 1.0, 0.001);
+    volumeFader->setValue(0.75);
+    volumeFader->setSliderSnapsToMousePosition(false);
+    volumeFader->setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+    volumeFader->setColour(juce::Slider::backgroundColourId,
+                           DarkTheme::getColour(DarkTheme::SURFACE));
+    volumeFader->setColour(juce::Slider::thumbColourId,
+                           DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    volumeFader->onValueChange = [this]() {
+        float faderPos = static_cast<float>(volumeFader->getValue());
+        float db = meterPosToDb(faderPos);
+        if (auto* chain = drumGrid_->getChainByIndexMutable(chainIndex_))
+            chain->level = db;
+        if (faderValueLabel) {
+            juce::String dbText;
+            if (db <= MIN_DB)
+                dbText = "-inf";
+            else
+                dbText = juce::String(db, 1) + " dB";
+            faderValueLabel->setText(dbText, juce::dontSendNotification);
+        }
+    };
+    if (faderLookAndFeel_)
+        volumeFader->setLookAndFeel(faderLookAndFeel_);
+    addAndMakeVisible(*volumeFader);
+
+    // Fader value label
+    faderValueLabel = std::make_unique<juce::Label>();
+    faderValueLabel->setText("0.0 dB", juce::dontSendNotification);
+    faderValueLabel->setJustificationType(juce::Justification::centred);
+    faderValueLabel->setColour(juce::Label::textColourId,
+                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    faderValueLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
+    addAndMakeVisible(*faderValueLabel);
+
+    // Mute button
+    muteButton = std::make_unique<juce::TextButton>("M");
+    muteButton->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+                                  juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    muteButton->setColour(juce::TextButton::buttonColourId,
+                          DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+    muteButton->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFFAA8855));
+    muteButton->setColour(juce::TextButton::textColourOffId,
+                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    muteButton->setColour(juce::TextButton::textColourOnId,
+                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    muteButton->setClickingTogglesState(true);
+    muteButton->onClick = [this]() {
+        if (auto* chain = drumGrid_->getChainByIndexMutable(chainIndex_))
+            chain->mute = muteButton->getToggleState();
+    };
+    addAndMakeVisible(*muteButton);
+
+    // Solo button
+    soloButton = std::make_unique<juce::TextButton>("S");
+    soloButton->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+                                  juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    soloButton->setColour(juce::TextButton::buttonColourId,
+                          DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+    soloButton->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFFAAAA55));
+    soloButton->setColour(juce::TextButton::textColourOffId,
+                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    soloButton->setColour(juce::TextButton::textColourOnId,
+                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    soloButton->setClickingTogglesState(true);
+    soloButton->onClick = [this]() {
+        if (auto* chain = drumGrid_->getChainByIndexMutable(chainIndex_))
+            chain->solo = soloButton->getToggleState();
+    };
+    addAndMakeVisible(*soloButton);
+}
+
+void MixerView::DrumSubChannelStrip::updateFromChain() {
+    const auto* chain = drumGrid_->getChainByIndex(chainIndex_);
+    if (!chain)
+        return;
+
+    if (trackLabel)
+        trackLabel->setText(chain->name.isNotEmpty() ? chain->name : chainName_,
+                            juce::dontSendNotification);
+    if (volumeFader && !volumeFader->isMouseButtonDown()) {
+        float db = chain->level.get();
+        float faderPos = dbToMeterPos(db);
+        volumeFader->setValue(faderPos, juce::dontSendNotification);
+    }
+    if (panKnob && !panKnob->isMouseButtonDown())
+        panKnob->setValue(chain->pan.get(), juce::dontSendNotification);
+    if (muteButton)
+        muteButton->setToggleState(chain->mute.get(), juce::dontSendNotification);
+    if (soloButton)
+        soloButton->setToggleState(chain->solo.get(), juce::dontSendNotification);
+}
+
+void MixerView::DrumSubChannelStrip::setMeterLevels(float l, float r) {
+    if (levelMeter)
+        levelMeter->setLevels(l, r);
+
+    float maxLevel = std::max(l, r);
+    if (maxLevel > peakValue_) {
+        peakValue_ = maxLevel;
+        if (peakLabel) {
+            float db = gainToDb(peakValue_);
+            juce::String peakText;
+            if (db <= MIN_DB)
+                peakText = "-inf";
+            else
+                peakText = juce::String(db, 1);
+            peakLabel->setText(peakText, juce::dontSendNotification);
+        }
+    }
+}
+
+void MixerView::DrumSubChannelStrip::paint(juce::Graphics& g) {
+    auto bounds = getLocalBounds();
+
+    // Slightly dimmer background for sub-channels
+    g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND).darker(0.15f));
+    g.fillRect(bounds);
+
+    // Border on right side (separator)
+    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    g.fillRect(bounds.getRight() - 1, 0, 1, bounds.getHeight());
+
+    // Indented color bar at top matching parent track colour
+    g.setColour(parentColour_.withAlpha(0.6f));
+    g.fillRect(4, 0, getWidth() - 5, 3);
+
+    // Draw fader region border
+    if (!faderRegion_.isEmpty()) {
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.fillRect(faderRegion_.getX(), faderRegion_.getY(), faderRegion_.getWidth(), 1);
+        g.fillRect(faderRegion_.getX(), faderRegion_.getBottom() - 1, faderRegion_.getWidth(), 1);
+    }
+
+    drawDbLabels(g);
+}
+
+void MixerView::DrumSubChannelStrip::drawDbLabels(juce::Graphics& g) {
+    if (labelArea_.isEmpty() || !volumeFader)
+        return;
+
+    const auto& metrics = MixerMetrics::getInstance();
+    const std::vector<float> dbValues = {6.0f,   3.0f,   0.0f,   -3.0f,  -6.0f, -12.0f,
+                                         -18.0f, -24.0f, -36.0f, -48.0f, -60.0f};
+
+    float thumbRadius = metrics.thumbRadius();
+    float effectiveTop = faderArea_.getY() + thumbRadius;
+    float effectiveHeight = faderArea_.getHeight() - 2.0f * thumbRadius;
+
+    g.setFont(FontManager::getInstance().getUIFont(metrics.labelFontSize));
+
+    for (float db : dbValues) {
+        float faderPos = dbToMeterPos(db);
+        float yNorm = 1.0f - faderPos;
+        float y = effectiveTop + yNorm * effectiveHeight;
+
+        float tickHeight = metrics.tickHeight();
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+
+        float leftTickX = static_cast<float>(leftTickArea_.getRight()) - metrics.tickWidth();
+        g.fillRect(leftTickX, y - tickHeight / 2.0f, metrics.tickWidth(), tickHeight);
+
+        float rightTickX = static_cast<float>(rightTickArea_.getX());
+        g.fillRect(rightTickX, y - tickHeight / 2.0f, metrics.tickWidth(), tickHeight);
+
+        juce::String labelText;
+        int dbInt = static_cast<int>(db);
+        if (db <= MIN_DB)
+            labelText = juce::String::charToString(0x221E);
+        else
+            labelText = juce::String(std::abs(dbInt));
+
+        float textWidth = metrics.labelTextWidth;
+        float textHeight = metrics.labelTextHeight;
+        float textX = labelArea_.getCentreX() - textWidth / 2.0f;
+        float textY = y - textHeight / 2.0f;
+
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        g.drawText(labelText, static_cast<int>(textX), static_cast<int>(textY),
+                   static_cast<int>(textWidth), static_cast<int>(textHeight),
+                   juce::Justification::centred, false);
+    }
+}
+
+void MixerView::DrumSubChannelStrip::resized() {
+    const auto& metrics = MixerMetrics::getInstance();
+    auto bounds = getLocalBounds().reduced(metrics.channelPadding);
+
+    // Color indicator space
+    bounds.removeFromTop(5);
+
+    // Track label at top
+    trackLabel->setBounds(bounds.removeFromTop(24));
+    bounds.removeFromTop(metrics.controlSpacing);
+
+    // Pan knob
+    auto panArea = bounds.removeFromTop(metrics.knobSize);
+    panKnob->setBounds(panArea.withSizeKeepingCentre(metrics.knobSize, metrics.knobSize));
+
+    // Pan value label
+    auto panLabelArea = bounds.removeFromTop(14);
+    panValueLabel->setBounds(panLabelArea);
+    bounds.removeFromTop(metrics.controlSpacing);
+
+    // M/S buttons at bottom (no record button for sub-channels)
+    auto buttonArea = bounds.removeFromBottom(metrics.buttonSize);
+    int buttonWidth = (buttonArea.getWidth() - 2) / 2;
+    muteButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
+    buttonArea.removeFromLeft(2);
+    soloButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
+
+    bounds.removeFromBottom(metrics.controlSpacing);
+
+    // Fader region
+    int faderHeight = static_cast<int>(bounds.getHeight() * metrics.faderHeightRatio / 100.0f);
+    int extraSpace = bounds.getHeight() - faderHeight;
+    bounds.removeFromTop(extraSpace / 2);
+    bounds.setHeight(faderHeight);
+
+    int faderWidth = metrics.faderWidth;
+    int meterWidthVal = metrics.meterWidth;
+    int tickWidth = static_cast<int>(std::ceil(metrics.tickWidth()));
+    int gap = metrics.tickToFaderGap;
+
+    faderRegion_ = bounds;
+
+    const int labelHeight = 12;
+    auto valueLabelArea =
+        juce::Rectangle<int>(faderRegion_.getX(), faderRegion_.getY() - labelHeight,
+                             faderRegion_.getWidth(), labelHeight);
+    faderValueLabel->setBounds(valueLabelArea.removeFromLeft(valueLabelArea.getWidth() / 2));
+    peakLabel->setBounds(valueLabelArea);
+
+    const int borderPadding = 6;
+    bounds.removeFromTop(borderPadding);
+    bounds.removeFromBottom(borderPadding);
+
+    auto layoutArea = bounds;
+
+    faderArea_ = layoutArea.removeFromLeft(faderWidth);
+    volumeFader->setBounds(faderArea_);
+
+    meterArea_ = layoutArea.removeFromRight(meterWidthVal);
+    levelMeter->setBounds(meterArea_);
+
+    int meterGap = metrics.tickToMeterGap;
+    leftTickArea_ = juce::Rectangle<int>(faderArea_.getRight() + gap, layoutArea.getY(), tickWidth,
+                                         layoutArea.getHeight());
+    rightTickArea_ = juce::Rectangle<int>(meterArea_.getX() - tickWidth - meterGap,
+                                          layoutArea.getY(), tickWidth, layoutArea.getHeight());
+
+    int tickToLabelGap = metrics.tickToLabelGap;
+    int labelLeft = leftTickArea_.getRight() + tickToLabelGap;
+    int labelRight = rightTickArea_.getX() - tickToLabelGap;
+    labelArea_ = juce::Rectangle<int>(labelLeft, layoutArea.getY(), labelRight - labelLeft,
+                                      layoutArea.getHeight());
+}
+
+void MixerView::DrumSubChannelStrip::mouseDown(const juce::MouseEvent& /*event*/) {
+    if (onClicked)
+        onClicked();
+}
+
+//==============================================================================
+// Helper: find DrumGridPlugin for a track via TE plugin list
+//==============================================================================
+namespace {
+daw::audio::DrumGridPlugin* findDrumGridForTrack(const TrackInfo& track, AudioEngine* audioEngine) {
+    if (!audioEngine)
+        return nullptr;
+    auto* bridge = audioEngine->getAudioBridge();
+    if (!bridge)
+        return nullptr;
+
+    auto* teTrack = bridge->getAudioTrack(track.id);
+    if (!teTrack)
+        return nullptr;
+
+    for (auto* plugin : teTrack->pluginList) {
+        // Direct match (not rack-wrapped)
+        if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin))
+            return dg;
+
+        // Check inside rack instances (DrumGridPlugin is rack-wrapped)
+        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
+            if (rackInstance->type != nullptr) {
+                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
+                    if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(innerPlugin))
+                        return dg;
+                }
+            }
+        }
+    }
+    return nullptr;
+}
+}  // namespace
+
 // MixerView implementation
 MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     // Get current view mode
@@ -714,6 +1163,8 @@ MixerView::~MixerView() {
     // Explicitly clear all UI components before automatic member destruction
     // This ensures components release their LookAndFeel references before
     // mixerLookAndFeel_ is destroyed (member destruction happens in reverse order)
+    drumSubStrips_.clear();
+    orderedStrips_.clear();
     channelStrips.clear();
     auxChannelStrips.clear();
     masterStrip.reset();
@@ -726,6 +1177,8 @@ MixerView::~MixerView() {
 
 void MixerView::rebuildChannelStrips() {
     // Clear existing strips
+    drumSubStrips_.clear();
+    orderedStrips_.clear();
     channelStrips.clear();
 
     const auto& tracks = TrackManager::getInstance().getTracks();
@@ -749,8 +1202,52 @@ void MixerView::rebuildChannelStrips() {
                 }
             }
         };
+
+        // Check if this track has a DrumGridPlugin
+        auto* drumGrid = findDrumGridForTrack(track, audioEngine_);
+        if (drumGrid) {
+            strip->drumGrid_ = drumGrid;
+
+            // Create expand toggle button
+            strip->expandToggle_ = std::make_unique<juce::TextButton>(
+                drumGrid->isMixerExpanded() ? juce::String::charToString(0x25BC)    // ▼
+                                            : juce::String::charToString(0x25B6));  // ▶
+            strip->expandToggle_->setConnectedEdges(
+                juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+                juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+            strip->expandToggle_->setColour(juce::TextButton::buttonColourId,
+                                            DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+            strip->expandToggle_->setColour(juce::TextButton::textColourOffId,
+                                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            strip->expandToggle_->onClick = [this, drumGrid]() {
+                drumGrid->setMixerExpanded(!drumGrid->isMixerExpanded());
+                rebuildChannelStrips();
+            };
+            strip->addAndMakeVisible(*strip->expandToggle_);
+        }
+
         channelContainer->addAndMakeVisible(*strip);
+        orderedStrips_.push_back(strip.get());
         channelStrips.push_back(std::move(strip));
+
+        // If DrumGrid is expanded, create sub-strips for non-empty chains
+        if (drumGrid && drumGrid->isMixerExpanded()) {
+            for (const auto& chain : drumGrid->getChains()) {
+                if (chain->plugins.empty())
+                    continue;
+
+                juce::String name = chain->name.isNotEmpty()
+                                        ? chain->name
+                                        : juce::String("Pad ") + juce::String(chain->index);
+
+                auto subStrip = std::make_unique<DrumSubChannelStrip>(
+                    drumGrid, chain->index, name, track.colour, &mixerLookAndFeel_);
+
+                channelContainer->addAndMakeVisible(*subStrip);
+                orderedStrips_.push_back(subStrip.get());
+                drumSubStrips_.push_back(std::move(subStrip));
+            }
+        }
     }
 
     // Build aux channel strips separately
@@ -865,16 +1362,22 @@ void MixerView::resized() {
     // Channel viewport takes remaining space
     channelViewport->setBounds(bounds);
 
-    // Size the channel container
-    int numChannels = static_cast<int>(channelStrips.size());
-    int containerWidth = numChannels * metrics.channelWidth;
+    // If orderedStrips_ hasn't been populated yet, fall back to channelStrips
+    if (orderedStrips_.empty() && !channelStrips.empty()) {
+        for (auto& s : channelStrips)
+            orderedStrips_.push_back(s.get());
+    }
+
+    // Size the channel container using flat ordered strips list
+    int numOrdered = static_cast<int>(orderedStrips_.size());
+    int containerWidth = numOrdered * metrics.channelWidth;
     int containerHeight = bounds.getHeight();
     channelContainer->setSize(containerWidth, containerHeight);
 
-    // Position channel strips
-    for (int i = 0; i < numChannels; ++i) {
-        channelStrips[i]->setBounds(i * metrics.channelWidth, 0, metrics.channelWidth,
-                                    containerHeight);
+    // Position all strips (channel + drum sub-channel) in flat order
+    for (int i = 0; i < numOrdered; ++i) {
+        orderedStrips_[static_cast<size_t>(i)]->setBounds(i * metrics.channelWidth, 0,
+                                                          metrics.channelWidth, containerHeight);
     }
 }
 
@@ -909,6 +1412,13 @@ void MixerView::timerCallback() {
         if (meteringBuffer.popLevels(trackId, data)) {
             strip->setMeterLevels(data.peakL, data.peakR);
         }
+    }
+
+    // Update drum sub-channel strip meters and sync controls (two-way sync)
+    for (auto& strip : drumSubStrips_) {
+        auto [peakL, peakR] = strip->getDrumGrid()->consumeChainPeak(strip->getChainIndex());
+        strip->setMeterLevels(peakL, peakR);
+        strip->updateFromChain();
     }
 
     // Update master strip meters
