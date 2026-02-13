@@ -241,6 +241,7 @@ set(DAW_UI_SOURCES
     ui/panels/content/AIChatConsoleContent.cpp
     ui/panels/content/ScriptingConsoleContent.cpp
     ui/panels/content/TrackChainContent.cpp
+    ui/panels/content/MidiEditorContent.cpp
     ui/panels/content/PianoRollContent.cpp
     ui/panels/content/DrumGridClipContent.cpp
     ui/panels/content/WaveformEditorContent.cpp

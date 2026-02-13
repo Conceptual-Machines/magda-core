@@ -52,34 +52,6 @@ daw::audio::DrumGridPlugin* findDrumGridForTrack(magda::TrackId trackId) {
 }  // namespace
 
 //==============================================================================
-// Custom viewport that notifies on scroll
-//==============================================================================
-class DrumGridScrollViewport : public juce::Viewport {
-  public:
-    std::function<void(int, int)> onScrolled;
-    juce::Component* timeRulerToRepaint = nullptr;
-    juce::Component* labelsToRepaint = nullptr;
-
-    void visibleAreaChanged(const juce::Rectangle<int>& newVisibleArea) override {
-        juce::Viewport::visibleAreaChanged(newVisibleArea);
-        if (onScrolled)
-            onScrolled(getViewPositionX(), getViewPositionY());
-        if (timeRulerToRepaint)
-            timeRulerToRepaint->repaint();
-        if (labelsToRepaint)
-            labelsToRepaint->repaint();
-    }
-
-    void scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStart) override {
-        juce::Viewport::scrollBarMoved(scrollBar, newRangeStart);
-        if (timeRulerToRepaint)
-            timeRulerToRepaint->repaint();
-        if (labelsToRepaint)
-            labelsToRepaint->repaint();
-    }
-};
-
-//==============================================================================
 // DrumGridClipGrid - the actual grid that renders drum hits
 //==============================================================================
 class DrumGridClipGrid : public juce::Component {
@@ -431,28 +403,13 @@ class DrumGridRowLabels : public juce::Component {
 DrumGridClipContent::DrumGridClipContent() {
     setName("DrumGridClipContent");
 
-    // Create time ruler
-    timeRuler_ = std::make_unique<magda::TimeRuler>();
-    timeRuler_->setDisplayMode(magda::TimeRuler::DisplayMode::BarsBeats);
-    timeRuler_->setLeftPadding(GRID_LEFT_PADDING);
-    addAndMakeVisible(timeRuler_.get());
-
     // Create row labels
     rowLabels_ = std::make_unique<DrumGridRowLabels>();
     rowLabels_->setRowHeight(ROW_HEIGHT);
     addAndMakeVisible(rowLabels_.get());
 
-    // Create viewport
-    auto scrollViewport = std::make_unique<DrumGridScrollViewport>();
-    scrollViewport->onScrolled = [this](int x, int y) {
-        timeRuler_->setScrollOffset(x);
-        rowLabels_->setScrollOffset(y);
-    };
-    scrollViewport->timeRulerToRepaint = timeRuler_.get();
-    scrollViewport->labelsToRepaint = rowLabels_.get();
-    scrollViewport->setScrollBarsShown(true, true);
-    viewport_ = std::move(scrollViewport);
-    addAndMakeVisible(viewport_.get());
+    // Add DrumGrid-specific components to viewport repaint list
+    viewport_->componentsToRepaint.push_back(rowLabels_.get());
 
     // Create grid component
     gridComponent_ = std::make_unique<DrumGridClipGrid>();
@@ -482,62 +439,35 @@ DrumGridClipContent::DrumGridClipContent() {
 
     viewport_->setViewedComponent(gridComponent_.get(), false);
 
-    // Link TimeRuler to viewport
-    timeRuler_->setLinkedViewport(viewport_.get());
-
-    // TimeRuler zoom callback
-    timeRuler_->onZoomChanged = [this](double newZoom, double anchorTime, int anchorScreenX) {
-        double tempo = 120.0;
-        if (auto* controller = magda::TimelineController::getCurrent()) {
-            tempo = controller->getState().tempo.bpm;
-        }
-        double secondsPerBeat = 60.0 / tempo;
-
-        // newZoom is already pixels-per-beat from TimeRuler
-        double newPixelsPerBeat = juce::jlimit(MIN_HORIZONTAL_ZOOM, MAX_HORIZONTAL_ZOOM, newZoom);
-
-        if (newPixelsPerBeat != horizontalZoom_) {
-            double anchorBeat = anchorTime / secondsPerBeat;
-            horizontalZoom_ = newPixelsPerBeat;
-            gridComponent_->setPixelsPerBeat(horizontalZoom_);
-            updateGridSize();
-            updateTimeRuler();
-
-            int newAnchorX = static_cast<int>(anchorBeat * horizontalZoom_) + GRID_LEFT_PADDING;
-            int newScrollX = newAnchorX - anchorScreenX;
-            newScrollX = juce::jmax(0, newScrollX);
-            viewport_->setViewPosition(newScrollX, viewport_->getViewPositionY());
-        }
-    };
-
-    timeRuler_->onScrollRequested = [this](int deltaX) {
-        int newScrollX = viewport_->getViewPositionX() + deltaX;
-        newScrollX = juce::jmax(0, newScrollX);
-        viewport_->setViewPosition(newScrollX, viewport_->getViewPositionY());
-    };
-
-    // Register as listeners
-    magda::ClipManager::getInstance().addListener(this);
-    if (auto* controller = magda::TimelineController::getCurrent()) {
-        controller->addListener(this);
-    }
-
-    // Check for already-selected clip
-    magda::ClipId selectedClip = magda::ClipManager::getInstance().getSelectedClip();
-    if (selectedClip != magda::INVALID_CLIP_ID) {
-        const auto* clip = magda::ClipManager::getInstance().getClip(selectedClip);
-        if (clip && clip->type == magda::ClipType::MIDI) {
-            setClip(selectedClip);
-        }
+    // If base found a selected clip, set it up
+    if (editingClipId_ != magda::INVALID_CLIP_ID) {
+        setClip(editingClipId_);
     }
 }
 
-DrumGridClipContent::~DrumGridClipContent() {
-    magda::ClipManager::getInstance().removeListener(this);
-    if (auto* controller = magda::TimelineController::getCurrent()) {
-        controller->removeListener(this);
-    }
+DrumGridClipContent::~DrumGridClipContent() = default;
+
+// ============================================================================
+// MidiEditorContent virtual implementations
+// ============================================================================
+
+void DrumGridClipContent::setGridPixelsPerBeat(double ppb) {
+    if (gridComponent_)
+        gridComponent_->setPixelsPerBeat(ppb);
 }
+
+void DrumGridClipContent::setGridPlayheadPosition(double position) {
+    if (gridComponent_)
+        gridComponent_->setPlayheadPosition(position);
+}
+
+void DrumGridClipContent::onScrollPositionChanged(int /*scrollX*/, int scrollY) {
+    rowLabels_->setScrollOffset(scrollY);
+}
+
+// ============================================================================
+// Paint / Layout
+// ============================================================================
 
 void DrumGridClipContent::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getPanelBackgroundColour());
@@ -562,29 +492,17 @@ void DrumGridClipContent::resized() {
     updateTimeRuler();
 }
 
+// ============================================================================
+// Mouse
+// ============================================================================
+
 void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
                                          const juce::MouseWheelDetails& wheel) {
-    // Cmd/Ctrl + scroll = horizontal zoom
+    // Cmd/Ctrl + scroll = horizontal zoom (uses shared base method)
     if (e.mods.isCommandDown()) {
         double zoomFactor = 1.0 + (wheel.deltaY * 0.1);
-        int mouseXInContent = e.x - LABEL_WIDTH + viewport_->getViewPositionX();
-        double anchorBeat =
-            static_cast<double>(mouseXInContent - GRID_LEFT_PADDING) / horizontalZoom_;
-
-        double newZoom = horizontalZoom_ * zoomFactor;
-        newZoom = juce::jlimit(MIN_HORIZONTAL_ZOOM, MAX_HORIZONTAL_ZOOM, newZoom);
-
-        if (newZoom != horizontalZoom_) {
-            horizontalZoom_ = newZoom;
-            gridComponent_->setPixelsPerBeat(horizontalZoom_);
-            updateGridSize();
-            updateTimeRuler();
-
-            int newAnchorX = static_cast<int>(anchorBeat * horizontalZoom_) + GRID_LEFT_PADDING;
-            int newScrollX = newAnchorX - (e.x - LABEL_WIDTH);
-            newScrollX = juce::jmax(0, newScrollX);
-            viewport_->setViewPosition(newScrollX, viewport_->getViewPositionY());
-        }
+        int mouseXInViewport = e.x - LABEL_WIDTH;
+        performWheelZoom(zoomFactor, mouseXInViewport);
         return;
     }
 
@@ -608,6 +526,10 @@ void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
     }
 }
 
+// ============================================================================
+// Activation
+// ============================================================================
+
 void DrumGridClipContent::onActivated() {
     magda::ClipId selectedClip = magda::ClipManager::getInstance().getSelectedClip();
     if (selectedClip != magda::INVALID_CLIP_ID) {
@@ -623,30 +545,18 @@ void DrumGridClipContent::onDeactivated() {
     // Nothing to do
 }
 
+// ============================================================================
+// ClipManagerListener
+// ============================================================================
+
 void DrumGridClipContent::clipsChanged() {
     if (editingClipId_ != magda::INVALID_CLIP_ID) {
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
         if (!clip) {
-            editingClipId_ = magda::INVALID_CLIP_ID;
             gridComponent_->setClipId(magda::INVALID_CLIP_ID);
         }
     }
-    updateGridSize();
-    updateTimeRuler();
-    repaint();
-}
-
-void DrumGridClipContent::clipPropertyChanged(magda::ClipId clipId) {
-    if (clipId == editingClipId_) {
-        juce::Component::SafePointer<DrumGridClipContent> safeThis(this);
-        juce::MessageManager::callAsync([safeThis]() {
-            if (auto* self = safeThis.getComponent()) {
-                self->updateGridSize();
-                self->updateTimeRuler();
-                self->repaint();
-            }
-        });
-    }
+    MidiEditorContent::clipsChanged();
 }
 
 void DrumGridClipContent::clipSelectionChanged(magda::ClipId clipId) {
@@ -667,22 +577,9 @@ void DrumGridClipContent::clipSelectionChanged(magda::ClipId clipId) {
     }
 }
 
-void DrumGridClipContent::timelineStateChanged(const magda::TimelineState& state,
-                                               magda::ChangeFlags changes) {
-    if (magda::hasFlag(changes, magda::ChangeFlags::Playhead)) {
-        if (gridComponent_)
-            gridComponent_->setPlayheadPosition(state.playhead.playbackPosition);
-    }
-
-    if (magda::hasFlag(changes, magda::ChangeFlags::Tempo) ||
-        magda::hasFlag(changes, magda::ChangeFlags::Display) ||
-        magda::hasFlag(changes, magda::ChangeFlags::Timeline) ||
-        magda::hasFlag(changes, magda::ChangeFlags::Zoom)) {
-        updateTimeRuler();
-        updateGridSize();
-        repaint();
-    }
-}
+// ============================================================================
+// Public methods
+// ============================================================================
 
 void DrumGridClipContent::setClip(magda::ClipId clipId) {
     if (editingClipId_ == clipId && drumGrid_ != nullptr)
@@ -700,6 +597,47 @@ void DrumGridClipContent::setClip(magda::ClipId clipId) {
     updateTimeRuler();
     repaint();
 }
+
+// ============================================================================
+// Grid sizing (DrumGrid-specific)
+// ============================================================================
+
+void DrumGridClipContent::updateGridSize() {
+    auto& clipManager = magda::ClipManager::getInstance();
+    const auto* clip =
+        editingClipId_ != magda::INVALID_CLIP_ID ? clipManager.getClip(editingClipId_) : nullptr;
+
+    double tempo = 120.0;
+    double timelineLength = 300.0;
+    if (auto* controller = magda::TimelineController::getCurrent()) {
+        const auto& state = controller->getState();
+        tempo = state.tempo.bpm;
+        timelineLength = state.timelineLength;
+    }
+    double secondsPerBeat = 60.0 / tempo;
+    double displayLengthBeats = timelineLength / secondsPerBeat;
+
+    double clipStartBeats = 0.0;
+    double clipLengthBeats = 0.0;
+    if (clip) {
+        clipStartBeats = clip->startTime / secondsPerBeat;
+        clipLengthBeats = clip->length / secondsPerBeat;
+    }
+
+    int numRows = juce::jmax(1, static_cast<int>(padRows_.size()));
+    int gridWidth = juce::jmax(viewport_->getWidth(),
+                               static_cast<int>(displayLengthBeats * horizontalZoom_) + 100);
+    int gridHeight = numRows * ROW_HEIGHT;
+
+    gridComponent_->setSize(gridWidth, gridHeight);
+    gridComponent_->setClipStartBeats(clipStartBeats);
+    gridComponent_->setClipLengthBeats(clipLengthBeats);
+    gridComponent_->setTimelineLengthBeats(displayLengthBeats);
+}
+
+// ============================================================================
+// DrumGrid-specific helpers
+// ============================================================================
 
 void DrumGridClipContent::findDrumGrid() {
     drumGrid_ = nullptr;
@@ -802,83 +740,6 @@ void DrumGridClipContent::buildPadRows() {
 
     // Reverse so lower notes appear at the bottom (higher notes at the top)
     std::reverse(padRows_.begin(), padRows_.end());
-}
-
-void DrumGridClipContent::updateGridSize() {
-    auto& clipManager = magda::ClipManager::getInstance();
-    const auto* clip =
-        editingClipId_ != magda::INVALID_CLIP_ID ? clipManager.getClip(editingClipId_) : nullptr;
-
-    double tempo = 120.0;
-    double timelineLength = 300.0;
-    if (auto* controller = magda::TimelineController::getCurrent()) {
-        const auto& state = controller->getState();
-        tempo = state.tempo.bpm;
-        timelineLength = state.timelineLength;
-    }
-    double secondsPerBeat = 60.0 / tempo;
-    double displayLengthBeats = timelineLength / secondsPerBeat;
-
-    double clipStartBeats = 0.0;
-    double clipLengthBeats = 0.0;
-    if (clip) {
-        clipStartBeats = clip->startTime / secondsPerBeat;
-        clipLengthBeats = clip->length / secondsPerBeat;
-    }
-
-    int numRows = juce::jmax(1, static_cast<int>(padRows_.size()));
-    int gridWidth = juce::jmax(viewport_->getWidth(),
-                               static_cast<int>(displayLengthBeats * horizontalZoom_) + 100);
-    int gridHeight = numRows * ROW_HEIGHT;
-
-    gridComponent_->setSize(gridWidth, gridHeight);
-    gridComponent_->setClipStartBeats(clipStartBeats);
-    gridComponent_->setClipLengthBeats(clipLengthBeats);
-    gridComponent_->setTimelineLengthBeats(displayLengthBeats);
-}
-
-void DrumGridClipContent::updateTimeRuler() {
-    if (!timeRuler_)
-        return;
-
-    const auto* clip = editingClipId_ != magda::INVALID_CLIP_ID
-                           ? magda::ClipManager::getInstance().getClip(editingClipId_)
-                           : nullptr;
-
-    double tempo = 120.0;
-    if (auto* controller = magda::TimelineController::getCurrent()) {
-        const auto& state = controller->getState();
-        tempo = state.tempo.bpm;
-        timeRuler_->setTimeSignature(state.tempo.timeSignatureNumerator,
-                                     state.tempo.timeSignatureDenominator);
-    }
-    timeRuler_->setTempo(tempo);
-
-    double timelineLength = 300.0;
-    if (auto* controller = magda::TimelineController::getCurrent()) {
-        timelineLength = controller->getState().timelineLength;
-    }
-    timeRuler_->setTimelineLength(timelineLength);
-    timeRuler_->setZoom(horizontalZoom_);
-
-    if (clip) {
-        timeRuler_->setTimeOffset(clip->startTime);
-        timeRuler_->setClipLength(clip->length);
-    } else {
-        timeRuler_->setTimeOffset(0.0);
-        timeRuler_->setClipLength(0.0);
-    }
-
-    timeRuler_->setRelativeMode(relativeTimeMode_);
-}
-
-void DrumGridClipContent::setRelativeTimeMode(bool relative) {
-    if (relativeTimeMode_ != relative) {
-        relativeTimeMode_ = relative;
-        updateGridSize();
-        updateTimeRuler();
-        repaint();
-    }
 }
 
 }  // namespace magda::daw::ui
