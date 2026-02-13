@@ -667,6 +667,14 @@ void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
             auto plugin = edit.getPluginCache().getOrCreatePluginFor(pluginState);
             if (plugin) {
                 chain->plugins.push_back(plugin);
+
+                if (sampleRate_ > 0.0) {
+                    te::PluginInitialisationInfo initInfo;
+                    initInfo.startTime = tracktion::TimePosition();
+                    initInfo.sampleRate = sampleRate_;
+                    initInfo.blockSizeSamples = blockSize_;
+                    plugin->baseClassInitialise(initInfo);
+                }
             }
         }
     }
