@@ -357,7 +357,7 @@ void BottomPanel::trackSelectionChanged(TrackId /*trackId*/) {
 
 void BottomPanel::timelineStateChanged(const TimelineState& state, ChangeFlags changes) {
     if (hasFlag(changes, ChangeFlags::Display)) {
-        // If a MIDI editor is active, the controls reflect clip state — skip arrangement sync
+        // If a MIDI editor is active, the controls reflect clip state -- skip arrangement sync
         auto* content = getActiveContent();
         auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
         if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
@@ -389,6 +389,7 @@ void BottomPanel::timelineStateChanged(const TimelineState& state, ChangeFlags c
         gridSlashLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
     }
 }
+
 
 void BottomPanel::updateContentBasedOnSelection() {
     // Lazy registration: BottomPanel may be constructed before TimelineController
