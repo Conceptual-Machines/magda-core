@@ -492,8 +492,9 @@ DrumGridClipContent::DrumGridClipContent() {
             tempo = controller->getState().tempo.bpm;
         }
         double secondsPerBeat = 60.0 / tempo;
-        double newPixelsPerBeat = newZoom * secondsPerBeat;
-        newPixelsPerBeat = juce::jlimit(MIN_HORIZONTAL_ZOOM, MAX_HORIZONTAL_ZOOM, newPixelsPerBeat);
+
+        // newZoom is already pixels-per-beat from TimeRuler
+        double newPixelsPerBeat = juce::jlimit(MIN_HORIZONTAL_ZOOM, MAX_HORIZONTAL_ZOOM, newZoom);
 
         if (newPixelsPerBeat != horizontalZoom_) {
             double anchorBeat = anchorTime / secondsPerBeat;
@@ -503,7 +504,7 @@ DrumGridClipContent::DrumGridClipContent() {
             updateTimeRuler();
 
             int newAnchorX = static_cast<int>(anchorBeat * horizontalZoom_) + GRID_LEFT_PADDING;
-            int newScrollX = newAnchorX - (anchorScreenX - LABEL_WIDTH);
+            int newScrollX = newAnchorX - anchorScreenX;
             newScrollX = juce::jmax(0, newScrollX);
             viewport_->setViewPosition(newScrollX, viewport_->getViewPositionY());
         }
