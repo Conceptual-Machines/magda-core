@@ -56,6 +56,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
 
   private:
     void updateContentBasedOnSelection();
+    bool trackHasDrumGrid(TrackId trackId) const;
 
     // Editor tab icons for switching between Piano Roll and Drum Grid
     std::unique_ptr<SvgButton> pianoRollTab_;

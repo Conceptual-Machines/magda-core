@@ -182,7 +182,7 @@ class DrumGridClipGrid : public juce::Component,
         repaint();
     }
 
-    // ── NoteGridHost overrides ──────────────────────────────────────────────
+    // -- NoteGridHost overrides --
 
     double getPixelsPerBeat() const override {
         return pixelsPerBeat_;
@@ -256,7 +256,7 @@ class DrumGridClipGrid : public juce::Component,
         repaint();
     }
 
-    // ── ClipManagerListener ─────────────────────────────────────────────────
+    // -- ClipManagerListener --
 
     void clipsChanged() override {}
     void clipPropertyChanged(magda::ClipId clipId) override {
@@ -273,7 +273,7 @@ class DrumGridClipGrid : public juce::Component,
     }
     void clipSelectionChanged(magda::ClipId) override {}
 
-    // ── Component overrides ─────────────────────────────────────────────────
+    // -- Component overrides --
 
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds();
@@ -456,7 +456,7 @@ class DrumGridClipGrid : public juce::Component,
         }
 
         if (emptyClickRow_ >= 0) {
-            // Plain click on empty cell — add a note
+            // Plain click on empty cell -- add a note
             double addBeat = emptyClickBeat_;
             if (snapEnabled_ && gridResolutionBeats_ > 0.0)
                 addBeat = std::floor(addBeat / gridResolutionBeats_) * gridResolutionBeats_;
@@ -468,7 +468,7 @@ class DrumGridClipGrid : public juce::Component,
                 nc->setSelected(false);
             fireSelectionChanged();
         } else {
-            // Click on grid background — deselect all
+            // Click on grid background -- deselect all
             if (!e.mods.isCommandDown() && !e.mods.isShiftDown()) {
                 for (auto& nc : noteComponents_)
                     nc->setSelected(false);
@@ -1094,7 +1094,7 @@ void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
         return;
     }
 
-    // Regular scroll — forward to viewport for vertical/horizontal scrolling
+    // Regular scroll -- forward to viewport for vertical/horizontal scrolling
     if (viewport_) {
         int deltaX = static_cast<int>(-wheel.deltaX * 100.0f);
         int deltaY = static_cast<int>(-wheel.deltaY * 100.0f);
