@@ -1204,11 +1204,13 @@ void SessionView::openClipEditor(int trackIndex, int sceneIndex) {
             panelController.setCollapsed(daw::ui::PanelLocation::Bottom, false);
         }
 
-        // Show the appropriate editor based on clip type
-        auto contentType = (clip->type == ClipType::MIDI)
-                               ? daw::ui::PanelContentType::PianoRoll
-                               : daw::ui::PanelContentType::WaveformEditor;
-        panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom, contentType);
+        // For audio clips, explicitly switch to waveform editor.
+        // For MIDI clips, BottomPanel's clipSelectionChanged handles the
+        // PianoRoll vs DrumGrid choice, respecting the user's preference.
+        if (clip->type == ClipType::Audio) {
+            panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
+                                               daw::ui::PanelContentType::WaveformEditor);
+        }
     }
 }
 

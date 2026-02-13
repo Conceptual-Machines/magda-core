@@ -64,6 +64,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/infinito.svg
     ../../assets/icons/position.svg
     ../../assets/icons/Offset.svg
+    ../../assets/icons/piano_roll.svg
+    ../../assets/icons/drum_grid.svg
     # Footer view mode icons
     ../../assets/icons/footer/Session.svg
     ../../assets/icons/footer/Arrangement.svg
@@ -240,6 +242,7 @@ set(DAW_UI_SOURCES
     ui/panels/content/ScriptingConsoleContent.cpp
     ui/panels/content/TrackChainContent.cpp
     ui/panels/content/PianoRollContent.cpp
+    ui/panels/content/DrumGridClipContent.cpp
     ui/panels/content/WaveformEditorContent.cpp
     # Audio
     audio/AudioEngineOptimizer.cpp

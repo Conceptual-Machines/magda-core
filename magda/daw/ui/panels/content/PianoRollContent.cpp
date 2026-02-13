@@ -17,21 +17,6 @@
 
 namespace magda::daw::ui {
 
-// Custom LookAndFeel for buttons that use Inter font with minimal styling
-class ButtonLookAndFeel : public juce::LookAndFeel_V4 {
-  public:
-    juce::Font getTextButtonFont(juce::TextButton&, int /*buttonHeight*/) override {
-        return magda::FontManager::getInstance().getButtonFont(11.0f);
-    }
-
-    void drawButtonBackground(juce::Graphics& g, juce::Button& /*button*/, const juce::Colour&,
-                              bool /*isMouseOverButton*/, bool /*isButtonDown*/) override {
-        // Only draw top border
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.drawLine(0.0f, 0.0f, static_cast<float>(g.getClipBounds().getWidth()), 0.0f, 1.0f);
-    }
-};
-
 // Custom viewport that notifies on scroll with real-time tracking
 class ScrollNotifyingViewport : public juce::Viewport {
   public:
@@ -76,21 +61,6 @@ PianoRollContent::PianoRollContent() {
     timeRuler_->setRelativeMode(relativeTimeMode_);
     timeRuler_->setLeftPadding(GRID_LEFT_PADDING);
     addAndMakeVisible(timeRuler_.get());
-
-    // Create custom LookAndFeel for buttons
-    buttonLookAndFeel_ = std::make_unique<ButtonLookAndFeel>();
-
-    // Create time mode toggle button
-    timeModeButton_ = std::make_unique<juce::TextButton>("ABS");
-    timeModeButton_->setTooltip("Toggle between Relative (clip) and Absolute (project) time");
-    timeModeButton_->setClickingTogglesState(true);
-    timeModeButton_->setToggleState(relativeTimeMode_, juce::dontSendNotification);
-    timeModeButton_->setConnectedEdges(
-        juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-        juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-    timeModeButton_->setLookAndFeel(buttonLookAndFeel_.get());
-    timeModeButton_->onClick = [this]() { setRelativeTimeMode(timeModeButton_->getToggleState()); };
-    addAndMakeVisible(timeModeButton_.get());
 
     // Create chord toggle button for sidebar
     chordToggle_ = std::make_unique<magda::SvgButton>("ChordToggle", BinaryData::Chords2_svg,
@@ -217,10 +187,9 @@ PianoRollContent::PianoRollContent() {
             tempo = controller->getState().tempo.bpm;
         }
         double secondsPerBeat = 60.0 / tempo;
-        double newPixelsPerBeat = newZoom * secondsPerBeat;
 
-        // Clamp to our limits
-        newPixelsPerBeat = juce::jlimit(MIN_HORIZONTAL_ZOOM, MAX_HORIZONTAL_ZOOM, newPixelsPerBeat);
+        // newZoom is already pixels-per-beat from TimeRuler
+        double newPixelsPerBeat = juce::jlimit(MIN_HORIZONTAL_ZOOM, MAX_HORIZONTAL_ZOOM, newZoom);
 
         if (newPixelsPerBeat != horizontalZoom_) {
             // Calculate anchor beat position
@@ -235,7 +204,7 @@ PianoRollContent::PianoRollContent() {
 
             // Adjust scroll to keep anchor position under mouse
             int newAnchorX = static_cast<int>(anchorBeat * horizontalZoom_) + GRID_LEFT_PADDING;
-            int newScrollX = newAnchorX - (anchorScreenX - KEYBOARD_WIDTH);
+            int newScrollX = newAnchorX - anchorScreenX;
             newScrollX = juce::jmax(0, newScrollX);
             viewport_->setViewPosition(newScrollX, viewport_->getViewPositionY());
         }
@@ -274,7 +243,6 @@ PianoRollContent::PianoRollContent() {
 }
 
 PianoRollContent::~PianoRollContent() {
-    timeModeButton_->setLookAndFeel(nullptr);
     magda::ClipManager::getInstance().removeListener(this);
     magda::SelectionManager::getInstance().removeListener(this);
 
@@ -460,10 +428,9 @@ void PianoRollContent::resized() {
         velocityLane_->setVisible(false);
     }
 
-    // Ruler row with time mode button
+    // Ruler row
     auto headerArea = bounds.removeFromTop(RULER_HEIGHT);
-    auto timeModeArea = headerArea.removeFromLeft(KEYBOARD_WIDTH);
-    timeModeButton_->setBounds(timeModeArea.reduced(4, 2));
+    headerArea.removeFromLeft(KEYBOARD_WIDTH);  // Empty space where button used to be
     timeRuler_->setBounds(headerArea);
 
     // Keyboard on the left
@@ -729,8 +696,6 @@ void PianoRollContent::updateTimeRuler() {
 void PianoRollContent::setRelativeTimeMode(bool relative) {
     if (relativeTimeMode_ != relative) {
         relativeTimeMode_ = relative;
-        timeModeButton_->setButtonText(relative ? "REL" : "ABS");
-        timeModeButton_->setToggleState(relative, juce::dontSendNotification);
 
         // Reload clips based on new mode
         if (editingClipId_ != magda::INVALID_CLIP_ID) {
@@ -818,14 +783,6 @@ void PianoRollContent::onActivated() {
             bool forceRelative = (clip->view == magda::ClipView::Session) || clip->loopEnabled;
             if (forceRelative) {
                 setRelativeTimeMode(true);
-                timeModeButton_->setEnabled(false);
-                timeModeButton_->setTooltip(clip->loopEnabled
-                                                ? "Looping clips use relative time"
-                                                : "Session clips always use relative time");
-            } else {
-                timeModeButton_->setEnabled(true);
-                timeModeButton_->setTooltip(
-                    "Toggle between Relative (clip) and Absolute (project) time");
             }
 
             updateGridSize();
@@ -913,14 +870,6 @@ void PianoRollContent::clipPropertyChanged(magda::ClipId clipId) {
                         (clip->view == magda::ClipView::Session) || clip->loopEnabled;
                     if (forceRelative) {
                         self->setRelativeTimeMode(true);
-                        self->timeModeButton_->setEnabled(false);
-                        self->timeModeButton_->setTooltip(
-                            clip->loopEnabled ? "Looping clips use relative time"
-                                              : "Session clips always use relative time");
-                    } else {
-                        self->timeModeButton_->setEnabled(true);
-                        self->timeModeButton_->setTooltip(
-                            "Toggle between Relative (clip) and Absolute (project) time");
                     }
                 }
 
@@ -1001,12 +950,6 @@ void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
             bool forceRelative = (clip->view == magda::ClipView::Session);
             if (forceRelative) {
                 setRelativeTimeMode(true);
-                timeModeButton_->setEnabled(false);
-                timeModeButton_->setTooltip("Session clips always use relative time");
-            } else {
-                timeModeButton_->setEnabled(true);
-                timeModeButton_->setTooltip(
-                    "Toggle between Relative (clip) and Absolute (project) time");
             }
 
             updateGridSize();
@@ -1127,11 +1070,6 @@ void PianoRollContent::multiClipSelectionChanged(const std::unordered_set<magda:
     bool forceRelative = (firstClip->view == magda::ClipView::Session);
     if (forceRelative) {
         setRelativeTimeMode(true);
-        timeModeButton_->setEnabled(false);
-        timeModeButton_->setTooltip("Session clips always use relative time");
-    } else {
-        timeModeButton_->setEnabled(true);
-        timeModeButton_->setTooltip("Toggle between Relative (clip) and Absolute (project) time");
     }
 
     gridComponent_->setClips(trackId, selectedMidiClips, selectedMidiClips);

@@ -1338,12 +1338,10 @@ void TrackContentPanel::rebuildClipComponents() {
 
             auto& panelController = daw::ui::PanelController::getInstance();
 
-            // Open bottom panel and switch to the right editor
+            // Open bottom panel — BottomPanel's clipSelectionChanged handles
+            // the PianoRoll vs DrumGrid choice, respecting the user's preference.
             panelController.setCollapsed(daw::ui::PanelLocation::Bottom, false);
-            if (clip->type == ClipType::MIDI) {
-                panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
-                                                   daw::ui::PanelContentType::PianoRoll);
-            } else {
+            if (clip->type == ClipType::Audio) {
                 panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
                                                    daw::ui::PanelContentType::WaveformEditor);
             }
@@ -1361,10 +1359,7 @@ void TrackContentPanel::rebuildClipComponents() {
             if (isCollapsed) {
                 // If somehow collapsed, open it
                 panelController.setCollapsed(daw::ui::PanelLocation::Bottom, false);
-                if (clip->type == ClipType::MIDI) {
-                    panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
-                                                       daw::ui::PanelContentType::PianoRoll);
-                } else {
+                if (clip->type == ClipType::Audio) {
                     panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
                                                        daw::ui::PanelContentType::WaveformEditor);
                 }
@@ -1503,10 +1498,7 @@ void TrackContentPanel::finishMarqueeSelection(bool addToSelection) {
             if (clip) {
                 auto& panelController = daw::ui::PanelController::getInstance();
                 panelController.setCollapsed(daw::ui::PanelLocation::Bottom, false);
-                if (clip->type == ClipType::MIDI) {
-                    panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
-                                                       daw::ui::PanelContentType::PianoRoll);
-                } else {
+                if (clip->type == ClipType::Audio) {
                     panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
                                                        daw::ui::PanelContentType::WaveformEditor);
                 }

@@ -637,8 +637,10 @@ void DrumGridUI::resized() {
     for (int i = 0; i < kPadsPerPage; ++i) {
         int row = i / kGridCols;
         int col = i % kGridCols;
+        // Flip rows so lowest pads (row 3) are at the bottom, like a drum machine
+        int flippedRow = (kGridRows - 1) - row;
         int x = gridArea.getX() + col * (padSize + padGap);
-        int y = gridArea.getY() + row * (padSize + padGap);
+        int y = gridArea.getY() + flippedRow * (padSize + padGap);
         padButtons_[static_cast<size_t>(i)].setBounds(x, y, padSize, padSize);
     }
 

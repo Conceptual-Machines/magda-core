@@ -130,8 +130,6 @@ class PianoRollContent : public PanelContent,
     std::unique_ptr<magda::PianoRollGridComponent> gridComponent_;
     std::unique_ptr<magda::PianoRollKeyboard> keyboard_;
     std::unique_ptr<magda::TimeRuler> timeRuler_;
-    std::unique_ptr<juce::TextButton> timeModeButton_;
-    std::unique_ptr<juce::LookAndFeel> buttonLookAndFeel_;
     std::unique_ptr<magda::SvgButton> chordToggle_;
     std::unique_ptr<magda::SvgButton> velocityToggle_;
     std::unique_ptr<magda::VelocityLaneComponent> velocityLane_;

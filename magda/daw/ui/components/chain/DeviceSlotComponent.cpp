@@ -665,13 +665,7 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
 
         // Draw "MDG2000" in orange (left-aligned)
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-        g.drawText(part1, textStartX, textY, part1Width, textHeight,
-                   juce::Justification::centredLeft, false);
-
-        // Draw " - MAGDA Drum Grid" in dimmed white (immediately after)
-        juce::String part2 = " - MAGDA Drum Grid";
-        g.setColour(juce::Colours::white.withAlpha(0.5f));
-        g.drawText(part2, textStartX + part1Width, textY, availableWidth - part1Width, textHeight,
+        g.drawText(part1, textStartX, textY, availableWidth, textHeight,
                    juce::Justification::centredLeft, false);
     }
 }
@@ -682,9 +676,18 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
     auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
                                    : DarkTheme::getSecondaryTextColour();
     g.setColour(textColour);
-    g.setFont(FontManager::getInstance().getUIFont(9.0f));
-    juce::String headerText = device_.manufacturer + " / " + device_.name;
-    g.drawText(headerText, headerArea.reduced(2, 0), juce::Justification::centredLeft);
+
+    if (isDrumGrid_) {
+        // Drum grid: use Microgramma font, aligned with the header row's text start
+        g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
+        auto textArea = headerArea;
+        textArea.setLeft(headerArea.getX() + BUTTON_SIZE + 4);  // Match header text offset
+        g.drawText("MAGDA Drum Grid", textArea, juce::Justification::centredLeft);
+    } else {
+        g.setFont(FontManager::getInstance().getUIFont(9.0f));
+        juce::String headerText = device_.manufacturer + " / " + device_.name;
+        g.drawText(headerText, headerArea.reduced(2, 0), juce::Justification::centredLeft);
+    }
 }
 
 void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {

@@ -661,6 +661,9 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     std::vector<std::pair<TrackId, juce::String>> pendingMidiRoutes_;
     void applyPendingMidiRoutes();
 
+    // Track playback context to detect restarts that drop MIDI routing
+    te::EditPlaybackContext* lastPlaybackContext_ = nullptr;
+
     // Engine wrapper (owns this AudioBridge, used for ClipInterface access)
     TracktionEngineWrapper* engineWrapper_ = nullptr;
 

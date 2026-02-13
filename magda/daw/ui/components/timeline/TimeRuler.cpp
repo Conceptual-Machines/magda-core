@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "CursorManager.hpp"
 #include "DarkTheme.hpp"
 #include "LayoutConfig.hpp"
 
@@ -187,6 +188,12 @@ void TimeRuler::mouseDrag(const juce::MouseEvent& event) {
         // Clamp zoom to reasonable limits (pixels per beat)
         newZoom = juce::jlimit(1.0, 2000.0, newZoom);
 
+        if (yDelta > 0) {
+            setMouseCursor(CursorManager::getInstance().getZoomInCursor());
+        } else if (yDelta < 0) {
+            setMouseCursor(CursorManager::getInstance().getZoomOutCursor());
+        }
+
         if (onZoomChanged) {
             onZoomChanged(newZoom, zoomAnchorTime, mouseDownX);
         }
@@ -218,6 +225,15 @@ void TimeRuler::mouseUp(const juce::MouseEvent& event) {
     }
 
     dragMode = DragMode::None;
+    setMouseCursor(CursorManager::getInstance().getZoomCursor());
+}
+
+void TimeRuler::mouseMove(const juce::MouseEvent& /*event*/) {
+    setMouseCursor(CursorManager::getInstance().getZoomCursor());
+}
+
+void TimeRuler::mouseExit(const juce::MouseEvent& /*event*/) {
+    setMouseCursor(juce::MouseCursor::NormalCursor);
 }
 
 void TimeRuler::mouseWheelMove(const juce::MouseEvent& /*event*/,
