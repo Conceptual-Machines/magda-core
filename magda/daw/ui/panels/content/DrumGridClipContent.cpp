@@ -93,6 +93,7 @@ class DrumGridClipGrid : public juce::Component {
     std::function<void(magda::ClipId, double, int, int)> onNoteAdded;
     std::function<void(magda::ClipId, size_t)> onNoteDeleted;
     std::function<void(magda::ClipId, size_t, double, int)> onNoteMoved;
+    std::function<void(magda::ClipId, size_t, double)> onNoteResized;
 
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds();
@@ -199,16 +200,30 @@ class DrumGridClipGrid : public juce::Component {
         }
     }
 
+    void mouseMove(const juce::MouseEvent& e) override {
+        if (!padRows_ || padRows_->empty() || clipId_ == magda::INVALID_CLIP_ID) {
+            setMouseCursor(juce::MouseCursor::NormalCursor);
+            return;
+        }
+
+        auto [noteIndex, row, beat, noteRightEdgeX] = hitTestNote(e);
+        if (noteIndex >= 0 && noteRightEdgeX >= 0 && e.x >= noteRightEdgeX - RESIZE_HANDLE_WIDTH) {
+            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+        } else {
+            setMouseCursor(juce::MouseCursor::NormalCursor);
+        }
+    }
+
     void mouseDown(const juce::MouseEvent& e) override {
         if (!padRows_ || padRows_->empty() || clipId_ == magda::INVALID_CLIP_ID)
             return;
 
         dragState_ = {};
 
-        auto [noteIndex, row, beat] = hitTestNote(e);
+        auto [noteIndex, row, beat, noteRightEdgeX] = hitTestNote(e);
 
         if (noteIndex >= 0) {
-            // Clicked on an existing note — prepare for potential drag
+            const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
             dragState_.active = true;
             dragState_.noteIndex = static_cast<size_t>(noteIndex);
             dragState_.originalBeat = beat;
@@ -216,6 +231,15 @@ class DrumGridClipGrid : public juce::Component {
             dragState_.currentBeat = beat;
             dragState_.currentRow = row;
             dragState_.hasMoved = false;
+
+            // Check if click is near the right edge → resize mode
+            if (noteRightEdgeX >= 0 && e.x >= noteRightEdgeX - RESIZE_HANDLE_WIDTH) {
+                dragState_.dragMode = DragMode::ResizeRight;
+                if (clip && dragState_.noteIndex < clip->midiNotes.size())
+                    dragState_.originalLength = clip->midiNotes[dragState_.noteIndex].lengthBeats;
+            } else {
+                dragState_.dragMode = DragMode::Move;
+            }
         } else if (row >= 0) {
             // Clicked on empty cell — add a new note
             if (onNoteAdded)
@@ -234,21 +258,41 @@ class DrumGridClipGrid : public juce::Component {
             return;
         }
 
-        int row = juce::jlimit(0, static_cast<int>(padRows_->size()) - 1, e.y / rowHeight_);
-        double beat = static_cast<double>(e.x - GRID_LEFT_PADDING) / pixelsPerBeat_;
-        if (beat < 0.0)
-            beat = 0.0;
-        double subdivision = 0.25;
-        beat = std::floor(beat / subdivision) * subdivision;
+        if (dragState_.dragMode == DragMode::ResizeRight) {
+            // Calculate new length from mouse X position
+            const auto& note = clip->midiNotes[dragState_.noteIndex];
+            double mouseBeats = static_cast<double>(e.x - GRID_LEFT_PADDING) / pixelsPerBeat_;
+            double newLength = mouseBeats - note.startBeat;
 
-        if (row != dragState_.currentRow || std::abs(beat - dragState_.currentBeat) > 0.001) {
-            dragState_.currentBeat = beat;
-            dragState_.currentRow = row;
-            dragState_.hasMoved = true;
+            // Snap to grid
+            double subdivision = 0.25;
+            newLength = std::round(newLength / subdivision) * subdivision;
 
-            int newNoteNumber = (*padRows_)[row].noteNumber;
-            if (onNoteMoved)
-                onNoteMoved(clipId_, dragState_.noteIndex, beat, newNoteNumber);
+            // Enforce minimum length (16th note)
+            newLength = juce::jmax(subdivision, newLength);
+
+            if (std::abs(newLength - note.lengthBeats) > 0.001) {
+                dragState_.hasMoved = true;
+                if (onNoteResized)
+                    onNoteResized(clipId_, dragState_.noteIndex, newLength);
+            }
+        } else if (dragState_.dragMode == DragMode::Move) {
+            int row = juce::jlimit(0, static_cast<int>(padRows_->size()) - 1, e.y / rowHeight_);
+            double beat = static_cast<double>(e.x - GRID_LEFT_PADDING) / pixelsPerBeat_;
+            if (beat < 0.0)
+                beat = 0.0;
+            double subdivision = 0.25;
+            beat = std::floor(beat / subdivision) * subdivision;
+
+            if (row != dragState_.currentRow || std::abs(beat - dragState_.currentBeat) > 0.001) {
+                dragState_.currentBeat = beat;
+                dragState_.currentRow = row;
+                dragState_.hasMoved = true;
+
+                int newNoteNumber = (*padRows_)[row].noteNumber;
+                if (onNoteMoved)
+                    onNoteMoved(clipId_, dragState_.noteIndex, beat, newNoteNumber);
+            }
         }
     }
 
@@ -263,9 +307,10 @@ class DrumGridClipGrid : public juce::Component {
         // Cancel any active drag — the note is about to be deleted
         dragState_ = {};
 
-        auto [noteIndex, row, beat] = hitTestNote(e);
+        auto [noteIndex, row, beat, noteRightEdgeX] = hitTestNote(e);
         (void)row;
         (void)beat;
+        (void)noteRightEdgeX;
 
         if (noteIndex >= 0) {
             if (onNoteDeleted)
@@ -274,46 +319,59 @@ class DrumGridClipGrid : public juce::Component {
     }
 
   private:
+    enum class DragMode { None, Move, ResizeRight };
+
+    static constexpr int RESIZE_HANDLE_WIDTH = 6;
+
     struct HitResult {
         int noteIndex;  // -1 if no note hit
         int row;
         double beat;
+        int noteRightEdgeX;  // pixel X of the note's right edge (-1 if no hit)
     };
 
     HitResult hitTestNote(const juce::MouseEvent& e) {
         int row = e.y / rowHeight_;
         if (row < 0 || row >= static_cast<int>(padRows_->size()))
-            return {-1, -1, 0.0};
+            return {-1, -1, 0.0, -1};
 
         int noteNumber = (*padRows_)[row].noteNumber;
-        double beat = static_cast<double>(e.x - GRID_LEFT_PADDING) / pixelsPerBeat_;
-        if (beat < 0.0)
-            beat = 0.0;
+        double rawBeat = static_cast<double>(e.x - GRID_LEFT_PADDING) / pixelsPerBeat_;
+        if (rawBeat < 0.0)
+            rawBeat = 0.0;
         double subdivision = 0.25;
-        beat = std::floor(beat / subdivision) * subdivision;
+        double snappedBeat = std::floor(rawBeat / subdivision) * subdivision;
 
         const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
         if (!clip)
-            return {-1, row, beat};
+            return {-1, row, snappedBeat, -1};
 
         for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
             const auto& note = clip->midiNotes[i];
-            if (note.noteNumber == noteNumber && note.startBeat <= beat &&
-                note.startBeat + note.lengthBeats > beat) {
-                return {static_cast<int>(i), row, beat};
+            if (note.noteNumber == noteNumber) {
+                int noteLeftX =
+                    static_cast<int>(note.startBeat * pixelsPerBeat_) + GRID_LEFT_PADDING;
+                int noteW = juce::jmax(4, static_cast<int>(note.lengthBeats * pixelsPerBeat_));
+                int noteRightX = noteLeftX + noteW;
+
+                if (e.x >= noteLeftX && e.x < noteRightX) {
+                    return {static_cast<int>(i), row, snappedBeat, noteRightX};
+                }
             }
         }
-        return {-1, row, beat};
+        return {-1, row, snappedBeat, -1};
     }
 
     struct DragState {
         bool active = false;
+        DragMode dragMode = DragMode::None;
         size_t noteIndex = 0;
         double originalBeat = 0.0;
         int originalRow = 0;
         double currentBeat = 0.0;
         int currentRow = 0;
         bool hasMoved = false;
+        double originalLength = 0.0;
     };
     DragState dragState_;
     static constexpr int GRID_LEFT_PADDING = 2;
@@ -434,6 +492,11 @@ DrumGridClipContent::DrumGridClipContent() {
                                      int newNoteNumber) {
         auto cmd =
             std::make_unique<magda::MoveMidiNoteCommand>(clipId, noteIndex, newBeat, newNoteNumber);
+        magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+    };
+
+    gridComponent_->onNoteResized = [](magda::ClipId clipId, size_t noteIndex, double newLength) {
+        auto cmd = std::make_unique<magda::ResizeMidiNoteCommand>(clipId, noteIndex, newLength);
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
     };
 
