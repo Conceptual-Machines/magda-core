@@ -107,7 +107,11 @@ class DrumGridPlugin : public te::Plugin {
     te::Plugin* getChainPlugin(int chainIndex, int pluginIndex) const;
 
     // Pad trigger flags (set by audio thread, consumed by UI)
+    void setPadTriggered(int padIndex);
     bool consumePadTrigger(int padIndex);
+
+    // Trigger graph rebuild when chain configuration changes
+    void notifyGraphRebuildNeeded();
 
     // Legacy pad-level FX API (delegates to chain-based methods)
     void addPluginToPad(int padIndex, const juce::PluginDescription& desc, int insertIndex = -1);
@@ -119,12 +123,12 @@ class DrumGridPlugin : public te::Plugin {
   private:
     std::vector<std::unique_ptr<Chain>> chains_;
     int nextChainIndex_ = 0;
-    juce::AudioBuffer<float> scratchBuffer_;
-    te::MidiMessageArray padMidi_;
+    std::array<std::atomic<bool>, maxPads> padTriggered_{};
+
+    // Audio processing state
+    te::MidiMessageArray chainMidi_;
     double sampleRate_ = 44100.0;
     int blockSize_ = 512;
-    bool wasPlaying_ = false;
-    std::array<std::atomic<bool>, maxPads> padTriggered_{};
 
     static const juce::Identifier chainTreeId;
     static const juce::Identifier chainIndexId;
@@ -141,8 +145,6 @@ class DrumGridPlugin : public te::Plugin {
     Chain* findOrCreateChainForPad(int padIndex);
     void removeChainFromState(int chainIndex);
     juce::ValueTree findChainTree(int chainIndex) const;
-    void initChildPlugin(te::Plugin& childPlugin);
-    void deinitChildPlugin(te::Plugin& childPlugin);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumGridPlugin)
 };

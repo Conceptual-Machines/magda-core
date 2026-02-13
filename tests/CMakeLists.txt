@@ -30,6 +30,7 @@ set(TEST_SOURCES
     test_sidechain_triggers.cpp
     test_curve_snapshot.cpp
     test_scan_report.cpp
+    test_drum_grid_plugin.cpp
 )
 
 # Create test executable
