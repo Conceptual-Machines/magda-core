@@ -14,6 +14,10 @@
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
 
+namespace magda::daw::audio {
+class DrumGridPlugin;
+}
+
 namespace magda {
 
 // Forward declarations
@@ -146,15 +150,81 @@ class MixerView : public juce::Component,
         juce::Rectangle<int> rightTickArea_;
         juce::Rectangle<int> meterArea_;
 
+        // DrumGrid expand toggle (only visible when track has DrumGridPlugin)
+        std::unique_ptr<juce::TextButton> expandToggle_;
+        daw::audio::DrumGridPlugin* drumGrid_ = nullptr;
+        std::function<void()> onExpandToggled;
+
+        friend class MixerView;
+
         void setupControls();
         void drawDbLabels(juce::Graphics& g);
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChannelStrip)
     };
 
+    // Drum sub-channel strip (simplified ChannelStrip for DrumGrid chains)
+    class DrumSubChannelStrip : public juce::Component {
+      public:
+        DrumSubChannelStrip(daw::audio::DrumGridPlugin* dg, int chainIndex,
+                            const juce::String& name, juce::Colour parentColour,
+                            juce::LookAndFeel* faderLookAndFeel);
+        ~DrumSubChannelStrip() override;
+
+        void paint(juce::Graphics& g) override;
+        void resized() override;
+        void mouseDown(const juce::MouseEvent& event) override;
+
+        void updateFromChain();
+        void setMeterLevels(float l, float r);
+
+        int getChainIndex() const {
+            return chainIndex_;
+        }
+        daw::audio::DrumGridPlugin* getDrumGrid() const {
+            return drumGrid_;
+        }
+
+        std::function<void()> onClicked;
+
+      private:
+        daw::audio::DrumGridPlugin* drumGrid_;
+        int chainIndex_;
+        juce::Colour parentColour_;
+        juce::String chainName_;
+        juce::LookAndFeel* faderLookAndFeel_ = nullptr;
+
+        std::unique_ptr<juce::Label> trackLabel;
+        std::unique_ptr<juce::Slider> panKnob;
+        std::unique_ptr<juce::Label> panValueLabel;
+        std::unique_ptr<juce::Slider> volumeFader;
+        std::unique_ptr<juce::Label> faderValueLabel;
+        std::unique_ptr<juce::TextButton> muteButton;
+        std::unique_ptr<juce::TextButton> soloButton;
+
+        class LevelMeter;
+        std::unique_ptr<LevelMeter> levelMeter;
+        std::unique_ptr<juce::Label> peakLabel;
+        float peakValue_ = 0.0f;
+
+        juce::Rectangle<int> faderRegion_;
+        juce::Rectangle<int> faderArea_;
+        juce::Rectangle<int> leftTickArea_;
+        juce::Rectangle<int> labelArea_;
+        juce::Rectangle<int> rightTickArea_;
+        juce::Rectangle<int> meterArea_;
+
+        void setupControls();
+        void drawDbLabels(juce::Graphics& g);
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumSubChannelStrip)
+    };
+
     // Channel strips (dynamic based on TrackManager)
     std::vector<std::unique_ptr<ChannelStrip>> channelStrips;
     std::vector<std::unique_ptr<ChannelStrip>> auxChannelStrips;
+    std::vector<std::unique_ptr<DrumSubChannelStrip>> drumSubStrips_;
+    std::vector<juce::Component*> orderedStrips_;  // flat layout order for channel container
     std::unique_ptr<MasterChannelStrip> masterStrip;
 
     // Scrollable area for channels

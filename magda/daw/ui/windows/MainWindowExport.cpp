@@ -1,6 +1,5 @@
-#include "MainWindow.hpp"
-
 #include "../dialogs/ExportAudioDialog.hpp"
+#include "MainWindow.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda {
@@ -17,10 +16,12 @@ namespace {
 class ExportProgressWindow : public juce::ThreadWithProgressWindow {
   public:
     ExportProgressWindow(const tracktion::Renderer::Parameters& params,
-                         const juce::File& outputFile)
+                         const juce::File& outputFile,
+                         tracktion::engine::TransportControl& transport)
         : ThreadWithProgressWindow("Exporting Audio...", true, true),
           params_(params),
-          outputFile_(outputFile) {
+          outputFile_(outputFile),
+          reallocationInhibitor_(transport) {
         setStatusMessage("Preparing to export...");
     }
 
@@ -70,24 +71,33 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
     }
 
     void threadComplete(bool userPressedCancel) override {
-        if (userPressedCancel) {
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Export Cancelled",
-                                                   "Export was cancelled.");
-        } else if (success_) {
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Export Complete",
-                                                   "Audio exported successfully to:\n" +
-                                                       outputFile_.getFullPathName());
-        } else {
-            juce::AlertWindow::showMessageBoxAsync(
-                juce::AlertWindow::WarningIcon, "Export Failed",
-                errorMessage_.isEmpty() ? "Unknown error occurred during export" : errorMessage_);
-        }
+        // Capture state before delete. We must defer alert window creation to a
+        // separate message-loop iteration because threadComplete() is called from
+        // a JUCE timer callback, and creating a top-level window (AlertWindow)
+        // inside a timer callback triggers a macOS CVDisplayLink refresh that
+        // crashes (EXC_BREAKPOINT in CVDisplayLinkStop).
+        auto success = success_;
+        auto errorMessage = errorMessage_;
+        auto outputFile = outputFile_;
 
-        // ExportProgressWindow uses self-owned lifecycle pattern:
-        // Created with 'new', manages itself, and deletes with 'delete this' in threadComplete().
-        // This is safe because: 1) threadComplete() is the final callback, 2) JUCE guarantees
-        // no further virtual method calls after this, 3) no external code retains ownership.
+        // Delete self first — safe because we've captured everything we need
+        // and JUCE guarantees no further callbacks after threadComplete().
         delete this;
+
+        juce::MessageManager::callAsync([=]() {
+            if (userPressedCancel) {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
+                                                       "Export Cancelled", "Export was cancelled.");
+            } else if (success) {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::InfoIcon, "Export Complete",
+                    "Audio exported successfully to:\n" + outputFile.getFullPathName());
+            } else {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::WarningIcon, "Export Failed",
+                    errorMessage.isEmpty() ? "Unknown error occurred during export" : errorMessage);
+            }
+        });
     }
 
     bool wasSuccessful() const {
@@ -103,6 +113,7 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
   private:
     tracktion::Renderer::Parameters params_;
     juce::File outputFile_;
+    tracktion::engine::TransportControl::ReallocationInhibitor reallocationInhibitor_;
     std::unique_ptr<tracktion::Renderer::RenderTask> renderTask_;
     bool success_ = false;
     juce::String errorMessage_;
@@ -154,12 +165,18 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
                 transport.stop(false, false);  // Stop immediately without fading
             }
 
+            // Inhibit playback context reallocation for the entire export setup phase.
+            // Plugin enabling (below) can trigger edit.restartPlayback() via
+            // notifyGraphRebuildNeeded(), which would recreate the playback context
+            // and cause a race with the render graph, leading to SIGSEGV.
+            te::TransportControl::ReallocationInhibitor setupInhibitor(transport);
+
             // Free the playback context if not recording
             // This is essential - the assertion checks isPlayContextActive() which
             // returns (playbackContext != nullptr), so we must free it
             te::freePlaybackContextIfNotRecording(transport);
 
-            // CRITICAL: Enable all plugins for offline rendering
+            // Enable all plugins for offline rendering
             // When transport stops, AudioBridge bypasses generator plugins (like test tone)
             // but we need them enabled for export to work properly
             for (auto track : te::getAudioTracks(*edit)) {
@@ -222,8 +239,10 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
             }
 
             // Launch progress window with background rendering (non-blocking)
-            // The window will delete itself via threadComplete() callback
-            auto* progressWindow = new ExportProgressWindow(params, file);
+            // The window will delete itself via threadComplete() callback.
+            // ExportProgressWindow holds a ReallocationInhibitor to prevent
+            // edit.restartPlayback() from recreating the playback context during render.
+            auto* progressWindow = new ExportProgressWindow(params, file, transport);
             progressWindow->launchThread();
 
             fileChooser_.reset();

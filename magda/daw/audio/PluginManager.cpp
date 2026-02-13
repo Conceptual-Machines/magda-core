@@ -1681,7 +1681,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
         plugin->setEnabled(!device.bypassed);
 
         // Wrap instruments in a RackType with audio passthrough so both synth
-        // output and audio clips on the same track are summed together
+        // output and audio clips on the same track are summed together.
         if (device.isInstrument) {
             auto rackPlugin = instrumentRackManager_.wrapInstrument(plugin);
             if (rackPlugin) {

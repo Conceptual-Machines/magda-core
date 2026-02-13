@@ -1,5 +1,3 @@
-#include "MainWindow.hpp"
-
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/SelectionManager.hpp"
@@ -11,6 +9,7 @@
 #include "../state/TimelineEvents.hpp"
 #include "../views/MainView.hpp"
 #include "../views/MixerView.hpp"
+#include "MainWindow.hpp"
 #include "audio/AudioBridge.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/ViewModeController.hpp"
@@ -112,7 +111,71 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
                                                juce::ModifierKeys::shiftModifier);
             break;
 
-        // Add other commands as needed...
+        // File menu
+        case newProject:
+            result.setInfo("New Project", "Create a new project", "File", 0);
+            break;
+        case openProject:
+            result.setInfo("Open Project", "Open an existing project", "File", 0);
+            break;
+        case saveProject:
+            result.setInfo("Save Project", "Save the current project", "File", 0);
+            result.addDefaultKeypress('s', juce::ModifierKeys::commandModifier);
+            break;
+        case saveProjectAs:
+            result.setInfo("Save As", "Save the project with a new name", "File", 0);
+            result.addDefaultKeypress('s', juce::ModifierKeys::commandModifier |
+                                               juce::ModifierKeys::shiftModifier);
+            break;
+        case exportAudio:
+            result.setInfo("Export Audio", "Export project to audio file", "File", 0);
+            break;
+
+        // Transport
+        case play:
+            result.setInfo("Play", "Start playback", "Transport", 0);
+            break;
+        case stop:
+            result.setInfo("Stop", "Stop playback", "Transport", 0);
+            break;
+        case record:
+            result.setInfo("Record", "Start recording", "Transport", 0);
+            break;
+        case goToStart:
+            result.setInfo("Go to Start", "Move playhead to start", "Transport", 0);
+            break;
+        case goToEnd:
+            result.setInfo("Go to End", "Move playhead to end", "Transport", 0);
+            break;
+
+        // Track
+        case newAudioTrack:
+            result.setInfo("New Audio Track", "Add a new audio track", "Track", 0);
+            break;
+        case newMidiTrack:
+            result.setInfo("New MIDI Track", "Add a new MIDI track", "Track", 0);
+            break;
+        case deleteTrack:
+            result.setInfo("Delete Track", "Delete selected track", "Track", 0);
+            break;
+
+        // View
+        case zoom:
+            result.setInfo("Zoom", "Zoom controls", "View", 0);
+            break;
+        case toggleArrangeSession:
+            result.setInfo("Toggle Arrange/Session", "Switch between arrange and session view",
+                           "View", 0);
+            break;
+
+        // Help
+        case showHelp:
+            result.setInfo("Help", "Show help documentation", "Help", 0);
+            break;
+        case about:
+            result.setInfo("About", "About this application", "Help", 0);
+            break;
+
         default:
             break;
     }
