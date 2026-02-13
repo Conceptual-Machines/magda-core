@@ -115,6 +115,12 @@ class MagdaDAWApplication : public JUCEApplication {
         std::cout << "👋 MAGDA shutdown complete" << std::endl;
         std::cout << "=== SHUTDOWN END ===" << std::endl;
         std::cout.flush();
+
+        // Use _exit() to skip static destructors of loaded plugin dylibs.
+        // Some third-party plugins (e.g. "Kick 3") have buggy static destructors
+        // that cause heap corruption during normal exit(). Since all our own
+        // cleanup is already done above, _exit() is safe here.
+        _exit(0);
     }
 
     void systemRequestedQuit() override {
