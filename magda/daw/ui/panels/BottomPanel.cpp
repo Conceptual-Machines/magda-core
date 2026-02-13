@@ -75,6 +75,12 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
 BottomPanel::~BottomPanel() {
     ClipManager::getInstance().removeListener(this);
     TrackManager::getInstance().removeListener(this);
+
+    // Explicitly destroy before base class teardown to avoid repaint during partial destruction
+    if (editorTabBar_) {
+        removeChildComponent(editorTabBar_.get());
+        editorTabBar_.reset();
+    }
 }
 
 void BottomPanel::setCollapsed(bool collapsed) {

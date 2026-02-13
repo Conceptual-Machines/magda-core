@@ -253,6 +253,13 @@ class DrumGridClipGrid : public juce::Component {
         if (!dragState_.active || !padRows_ || padRows_->empty())
             return;
 
+        // Validate note index is still in range (could be stale after a delete)
+        const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
+        if (!clip || dragState_.noteIndex >= clip->midiNotes.size()) {
+            dragState_ = {};
+            return;
+        }
+
         int row = juce::jlimit(0, static_cast<int>(padRows_->size()) - 1, e.y / rowHeight_);
         double beat = static_cast<double>(e.x - GRID_LEFT_PADDING) / pixelsPerBeat_;
         if (beat < 0.0)
@@ -278,6 +285,9 @@ class DrumGridClipGrid : public juce::Component {
     void mouseDoubleClick(const juce::MouseEvent& e) override {
         if (!padRows_ || padRows_->empty() || clipId_ == magda::INVALID_CLIP_ID)
             return;
+
+        // Cancel any active drag — the note is about to be deleted
+        dragState_ = {};
 
         auto [noteIndex, row, beat] = hitTestNote(e);
         (void)row;
