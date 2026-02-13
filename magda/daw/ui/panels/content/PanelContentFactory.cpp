@@ -2,6 +2,7 @@
 
 // Include all content implementations for registration
 #include "AIChatConsoleContent.hpp"
+#include "DrumGridClipContent.hpp"
 #include "EmptyContent.hpp"
 #include "MediaExplorerContent.hpp"
 #include "PianoRollContent.hpp"
@@ -53,6 +54,9 @@ void PanelContentFactory::registerBuiltinTypes() {
 
     registerContentType(PanelContentType::WaveformEditor,
                         []() { return std::make_unique<WaveformEditorContent>(); });
+
+    registerContentType(PanelContentType::DrumGridClipView,
+                        []() { return std::make_unique<DrumGridClipContent>(); });
 }
 
 void PanelContentFactory::registerContentType(PanelContentType type, ContentCreator creator) {

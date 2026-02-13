@@ -34,6 +34,8 @@ SvgIconData getSvgForContentType(PanelContentType type) {
             return {BinaryData::script_svg, BinaryData::script_svgSize};
         case PanelContentType::WaveformEditor:
             return {BinaryData::sinewave_svg, BinaryData::sinewave_svgSize};
+        case PanelContentType::DrumGridClipView:
+            return {BinaryData::script_svg, BinaryData::script_svgSize};
         case PanelContentType::Empty:
             break;
     }
@@ -58,12 +60,12 @@ void PanelTabBar::resized() {
     if (currentTabs_.empty())
         return;
 
-    auto numTabs = static_cast<int>(currentTabs_.size());
+    auto numTabs = juce::jmin(static_cast<int>(currentTabs_.size()), MAX_TABS);
     int totalWidth = numTabs * BUTTON_SIZE + (numTabs - 1) * BUTTON_SPACING;
     int startX = (getWidth() - totalWidth) / 2;
     int buttonY = (getHeight() - BUTTON_SIZE) / 2;
 
-    for (size_t i = 0; i < currentTabs_.size(); ++i) {
+    for (size_t i = 0; i < currentTabs_.size() && i < MAX_TABS; ++i) {
         if (tabButtons_[i]) {
             int buttonX = startX + static_cast<int>(i) * (BUTTON_SIZE + BUTTON_SPACING);
             tabButtons_[i]->setBounds(buttonX, buttonY, BUTTON_SIZE, BUTTON_SIZE);
@@ -127,7 +129,7 @@ void PanelTabBar::setupButton(size_t index, PanelContentType type) {
 }
 
 void PanelTabBar::updateButtonStates() {
-    for (size_t i = 0; i < currentTabs_.size(); ++i) {
+    for (size_t i = 0; i < currentTabs_.size() && i < MAX_TABS; ++i) {
         if (tabButtons_[i]) {
             tabButtons_[i]->setActive(static_cast<int>(i) == activeTabIndex_);
         }

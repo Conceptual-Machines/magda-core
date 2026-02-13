@@ -17,7 +17,8 @@ enum class PanelContentType {
     ScriptingConsole,
     TrackChain,
     PianoRoll,
-    WaveformEditor
+    WaveformEditor,
+    DrumGridClipView
 };
 
 /**
@@ -93,6 +94,8 @@ inline juce::String getContentTypeName(PanelContentType type) {
             return "Piano Roll";
         case PanelContentType::WaveformEditor:
             return "Waveform";
+        case PanelContentType::DrumGridClipView:
+            return "Drum Grid";
     }
     return "Unknown";
 }
@@ -122,6 +125,8 @@ inline juce::String getContentTypeIcon(PanelContentType type) {
             return "PianoRoll";
         case PanelContentType::WaveformEditor:
             return "Waveform";
+        case PanelContentType::DrumGridClipView:
+            return "DrumGrid";
     }
     return "Unknown";
 }

@@ -17,6 +17,7 @@ namespace magda {
  * - TrackChain when a track is selected (no clip)
  * - PianoRoll when a MIDI clip is selected
  * - WaveformEditor when an audio clip is selected
+ * - Tab bar with "Piano Roll" | "Drum Grid" when MIDI clip on DrumGrid track
  */
 class BottomPanel : public daw::ui::TabbedPanel,
                     public ClipManagerListener,
@@ -46,6 +47,14 @@ class BottomPanel : public daw::ui::TabbedPanel,
 
   private:
     void updateContentBasedOnSelection();
+    bool trackHasDrumGrid(TrackId trackId) const;
+
+    // Editor tab bar for switching between Piano Roll and Drum Grid
+    class EditorTabBar;
+    std::unique_ptr<EditorTabBar> editorTabBar_;
+    bool showEditorTabs_ = false;
+    static constexpr int EDITOR_TAB_HEIGHT = 28;
+    void onEditorTabChanged(int tabIndex);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BottomPanel)
 };
