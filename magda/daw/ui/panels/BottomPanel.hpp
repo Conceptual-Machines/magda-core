@@ -17,7 +17,7 @@ namespace magda {
  * - TrackChain when a track is selected (no clip)
  * - PianoRoll when a MIDI clip is selected
  * - WaveformEditor when an audio clip is selected
- * - Tab bar with "Piano Roll" | "Drum Grid" when MIDI clip on DrumGrid track
+ * - Tab bar with "Piano Roll" | "Drum Grid" for any MIDI clip
  */
 class BottomPanel : public daw::ui::TabbedPanel,
                     public ClipManagerListener,
@@ -47,7 +47,6 @@ class BottomPanel : public daw::ui::TabbedPanel,
 
   private:
     void updateContentBasedOnSelection();
-    bool trackHasDrumGrid(TrackId trackId) const;
 
     // Editor tab bar for switching between Piano Roll and Drum Grid
     class EditorTabBar;
@@ -56,9 +55,10 @@ class BottomPanel : public daw::ui::TabbedPanel,
     bool updatingTabs_ = false;  // Guard against re-entrancy
     static constexpr int EDITOR_TAB_HEIGHT = 28;
 
-    // Persisted user preference: which editor view for DrumGrid tracks
-    // 0 = Piano Roll, 1 = Drum Grid (default)
-    int lastDrumGridTabChoice_ = 1;
+    // Persisted user preference: which MIDI editor view
+    // 0 = Piano Roll (default), 1 = Drum Grid
+    int lastEditorTabChoice_ = 0;
+    ClipId lastEditorClipId_ = INVALID_CLIP_ID;  // Track which clip we auto-defaulted for
 
     void onEditorTabChanged(int tabIndex);
 

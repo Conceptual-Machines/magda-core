@@ -2,11 +2,40 @@
 
 #include "AudioBridge.hpp"
 #include "AudioEngine.hpp"
-#include "PanelTabBar.hpp"
 #include "audio/DrumGridPlugin.hpp"
 #include "state/PanelController.hpp"
 
 namespace magda {
+
+namespace {
+namespace te = tracktion::engine;
+
+bool trackHasDrumGrid(TrackId trackId) {
+    auto* audioEngine = TrackManager::getInstance().getAudioEngine();
+    if (!audioEngine)
+        return false;
+    auto* bridge = audioEngine->getAudioBridge();
+    if (!bridge)
+        return false;
+    auto* teTrack = bridge->getAudioTrack(trackId);
+    if (!teTrack)
+        return false;
+
+    for (auto* plugin : teTrack->pluginList) {
+        if (dynamic_cast<daw::audio::DrumGridPlugin*>(plugin))
+            return true;
+        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
+            if (rackInstance->type != nullptr) {
+                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
+                    if (dynamic_cast<daw::audio::DrumGridPlugin*>(innerPlugin))
+                        return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+}  // namespace
 
 //==============================================================================
 // EditorTabBar - subclass to capture tab changes
@@ -23,36 +52,6 @@ class BottomPanel::EditorTabBar : public juce::TabbedButtonBar {
   private:
     BottomPanel& owner_;
 };
-
-namespace {
-namespace te = tracktion::engine;
-
-daw::audio::DrumGridPlugin* findDrumGridOnTrack(TrackId trackId) {
-    auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine)
-        return nullptr;
-    auto* bridge = audioEngine->getAudioBridge();
-    if (!bridge)
-        return nullptr;
-    auto* teTrack = bridge->getAudioTrack(trackId);
-    if (!teTrack)
-        return nullptr;
-
-    for (auto* plugin : teTrack->pluginList) {
-        if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin))
-            return dg;
-        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
-            if (rackInstance->type != nullptr) {
-                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
-                    if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(innerPlugin))
-                        return dg;
-                }
-            }
-        }
-    }
-    return nullptr;
-}
-}  // namespace
 
 BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     setName("Bottom Panel");
@@ -118,10 +117,6 @@ void BottomPanel::trackSelectionChanged(TrackId /*trackId*/) {
     updateContentBasedOnSelection();
 }
 
-bool BottomPanel::trackHasDrumGrid(TrackId trackId) const {
-    return findDrumGridOnTrack(trackId) != nullptr;
-}
-
 void BottomPanel::updateContentBasedOnSelection() {
     auto& clipManager = ClipManager::getInstance();
     auto& trackManager = TrackManager::getInstance();
@@ -136,15 +131,20 @@ void BottomPanel::updateContentBasedOnSelection() {
         const auto* clip = clipManager.getClip(selectedClip);
         if (clip) {
             if (clip->type == ClipType::MIDI) {
-                if (trackHasDrumGrid(clip->trackId)) {
-                    needsTabs = true;
-                    // Restore user's last tab choice for DrumGrid tracks
-                    targetContent = (lastDrumGridTabChoice_ == 1)
-                                        ? daw::ui::PanelContentType::DrumGridClipView
-                                        : daw::ui::PanelContentType::PianoRoll;
-                } else {
-                    targetContent = daw::ui::PanelContentType::PianoRoll;
+                needsTabs = true;
+
+                // Auto-default to Drum Grid for DrumGrid tracks (on first selection)
+                if (selectedClip != lastEditorClipId_) {
+                    lastEditorClipId_ = selectedClip;
+                    if (trackHasDrumGrid(clip->trackId))
+                        lastEditorTabChoice_ = 1;  // Drum Grid
+                    else
+                        lastEditorTabChoice_ = 0;  // Piano Roll
                 }
+
+                targetContent = (lastEditorTabChoice_ == 1)
+                                    ? daw::ui::PanelContentType::DrumGridClipView
+                                    : daw::ui::PanelContentType::PianoRoll;
             } else if (clip->type == ClipType::Audio) {
                 targetContent = daw::ui::PanelContentType::WaveformEditor;
             }
@@ -160,7 +160,7 @@ void BottomPanel::updateContentBasedOnSelection() {
         if (showEditorTabs_) {
             // Set tab bar to match target content, with guard to prevent re-entrancy
             updatingTabs_ = true;
-            editorTabBar_->setCurrentTabIndex(lastDrumGridTabChoice_, false);
+            editorTabBar_->setCurrentTabIndex(lastEditorTabChoice_, false);
             updatingTabs_ = false;
         }
     }
@@ -197,7 +197,7 @@ void BottomPanel::onEditorTabChanged(int tabIndex) {
     if (updatingTabs_)
         return;
 
-    lastDrumGridTabChoice_ = tabIndex;
+    lastEditorTabChoice_ = tabIndex;
 
     auto targetType = (tabIndex == 1) ? daw::ui::PanelContentType::DrumGridClipView
                                       : daw::ui::PanelContentType::PianoRoll;

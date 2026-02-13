@@ -37,6 +37,7 @@ void TrackContentPanel::createClipFromTimeSelection() {
     }
 
     // Create a clip for each track in the selection through the undo system
+    ClipId lastCreatedClip = INVALID_CLIP_ID;
     for (int trackIndex : selection.trackIndices) {
         if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
             TrackId trackId = visibleTrackIds_[trackIndex];
@@ -49,12 +50,23 @@ void TrackContentPanel::createClipFromTimeSelection() {
                 auto cmd = std::make_unique<CreateClipCommand>(ClipType::MIDI, trackId,
                                                                selection.startTime, length);
                 UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                // Find the newly created clip to select it
+                auto clipId =
+                    ClipManager::getInstance().getClipAtPosition(trackId, selection.startTime);
+                if (clipId != INVALID_CLIP_ID)
+                    lastCreatedClip = clipId;
             }
         }
     }
 
     if (clipCount > 1) {
         UndoManager::getInstance().endCompoundOperation();
+    }
+
+    // Auto-select the last created clip so the editor opens immediately
+    if (lastCreatedClip != INVALID_CLIP_ID) {
+        SelectionManager::getInstance().selectClip(lastCreatedClip);
     }
 }
 
