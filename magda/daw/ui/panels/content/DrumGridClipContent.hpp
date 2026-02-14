@@ -84,8 +84,8 @@ class DrumGridClipContent : public MidiEditorContent {
     static constexpr int VELOCITY_HEADER_HEIGHT = 20;
 
     // Drum grid note range
-    int baseNote_ = 36;
-    int numPads_ = 16;
+    int baseNote_ = 0;
+    int numPads_ = 128;
 
     std::vector<PadRow> padRows_;
 

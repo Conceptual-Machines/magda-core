@@ -1170,19 +1170,7 @@ void DrumGridClipContent::findDrumGrid() {
     drumGrid_ = findDrumGridForTrack(clip->trackId);
     if (drumGrid_) {
         baseNote_ = daw::audio::DrumGridPlugin::baseNote;
-        // Count active pads
-        numPads_ = 16;  // Default to 16 visible rows
-        const auto& chains = drumGrid_->getChains();
-        if (!chains.empty()) {
-            // Find the highest pad index used
-            int maxPadIdx = 0;
-            for (const auto& chain : chains) {
-                int padIdx = chain->lowNote - baseNote_;
-                if (padIdx > maxPadIdx)
-                    maxPadIdx = padIdx;
-            }
-            numPads_ = juce::jmax(16, maxPadIdx + 1);
-        }
+        numPads_ = daw::audio::DrumGridPlugin::maxPads;
     }
 }
 
@@ -1218,16 +1206,6 @@ juce::String DrumGridClipContent::resolvePadName(int padIndex) const {
 void DrumGridClipContent::buildPadRows() {
     padRows_.clear();
 
-    // Also check clip notes for any notes outside the default range
-    std::set<int> notesInClip;
-    if (editingClipId_ != magda::INVALID_CLIP_ID) {
-        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-        if (clip) {
-            for (const auto& note : clip->midiNotes)
-                notesInClip.insert(note.noteNumber);
-        }
-    }
-
     for (int i = 0; i < numPads_; ++i) {
         int noteNumber = baseNote_ + i;
         bool hasChain = false;
@@ -1235,26 +1213,11 @@ void DrumGridClipContent::buildPadRows() {
             hasChain = (drumGrid_->getChainForNote(noteNumber) != nullptr);
         }
 
-        // Show row if it has a chain or has notes in the clip
-        bool hasNotes = notesInClip.count(noteNumber) > 0;
-        if (hasChain || hasNotes || i < 16) {
-            PadRow row;
-            row.noteNumber = noteNumber;
-            row.name = resolvePadName(i);
-            row.hasChain = hasChain;
-            padRows_.push_back(row);
-        }
-    }
-
-    // Also add any notes outside the pad range that exist in the clip
-    for (int noteNum : notesInClip) {
-        if (noteNum < baseNote_ || noteNum >= baseNote_ + numPads_) {
-            PadRow row;
-            row.noteNumber = noteNum;
-            row.name = juce::MidiMessage::getMidiNoteName(noteNum, true, true, 3);
-            row.hasChain = false;
-            padRows_.push_back(row);
-        }
+        PadRow row;
+        row.noteNumber = noteNumber;
+        row.name = resolvePadName(i);
+        row.hasChain = hasChain;
+        padRows_.push_back(row);
     }
 
     // Reverse so lower notes appear at the bottom (higher notes at the top)

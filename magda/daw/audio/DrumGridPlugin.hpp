@@ -28,8 +28,8 @@ class DrumGridPlugin : public te::Plugin {
     }
     static const char* xmlTypeName;
 
-    static constexpr int maxPads = 64;
-    static constexpr int baseNote = 36;  // Pad 0 = MIDI note 36 (C2)
+    static constexpr int maxPads = 128;
+    static constexpr int baseNote = 0;  // Pad 0 = MIDI note 0 (C-2)
 
     juce::String getName() const override {
         return getPluginName();
