@@ -389,8 +389,7 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
     double beatsPerSecond = tempo / 60.0;
     double displayLength = (isDragging_ && previewLength_ > 0.0) ? previewLength_ : clip.length;
     double clipLengthInBeats = displayLength * beatsPerSecond;
-    double midiOffset =
-        (clip.view == ClipView::Session || clip.loopEnabled) ? clip.midiOffset : 0.0;
+    double midiOffset = clip.midiOffset;
 
     // Draw MIDI notes if we have them
     if (!clip.midiNotes.empty() && noteArea.getHeight() > 5) {

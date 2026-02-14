@@ -234,9 +234,20 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
                                              magda::ChangeFlags changes) {
     // Playhead changes
     if (magda::hasFlag(changes, magda::ChangeFlags::Playhead)) {
-        setGridPlayheadPosition(state.playhead.playbackPosition);
+        double playPos = state.playhead.playbackPosition;
+
+        // Offset playhead so it starts from the midiOffset position
+        if (editingClipId_ != magda::INVALID_CLIP_ID) {
+            const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+            if (clip && clip->midiOffset > 0.0) {
+                double secondsPerBeat = 60.0 / state.tempo.bpm;
+                playPos += clip->midiOffset * secondsPerBeat;
+            }
+        }
+
+        setGridPlayheadPosition(playPos);
         if (timeRuler_) {
-            timeRuler_->setPlayheadPosition(state.playhead.playbackPosition);
+            timeRuler_->setPlayheadPosition(playPos);
         }
     }
 

@@ -452,21 +452,24 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
 
         auto* midiClipPtr = clipRef.get();
 
-        // Force offset to 0
+        // Force offset to 0 — note shifting is handled manually below
         midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
 
         // Add MIDI notes (skip/truncate at loop boundary to prevent stuck notes)
+        // Apply midiOffset: exclude notes before offset, shift remaining notes
         auto& sequence = midiClipPtr->getSequence();
         double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
         double srcLength = clip->getSourceLength();
         double loopStartBeat = clip->loopStart * (bpm / 60.0);
         double loopLengthBeats = srcLength * (bpm / 60.0);
         double loopEndBeat = loopStartBeat + loopLengthBeats;
+        double effectiveOffset = clip->midiOffset;
 
         for (const auto& note : clip->midiNotes) {
             double start = note.startBeat;
             double length = note.lengthBeats;
 
+            // Apply loop boundary first (on original positions)
             if (clip->loopEnabled && loopLengthBeats > 0.0) {
                 if (start >= loopEndBeat)
                     continue;
@@ -475,8 +478,20 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
                     length = loopEndBeat - start;
             }
 
-            sequence.addNote(note.noteNumber, te::BeatPosition::fromBeats(start),
-                             te::BeatDuration::fromBeats(length), note.velocity, 0, nullptr);
+            // Skip notes entirely before the offset
+            if (start + length <= effectiveOffset)
+                continue;
+
+            // Shift note start by offset
+            double shiftedStart = start - effectiveOffset;
+            if (shiftedStart < 0.0) {
+                length += shiftedStart;  // Trim the beginning
+                shiftedStart = 0.0;
+            }
+
+            if (length > 0.0)
+                sequence.addNote(note.noteNumber, te::BeatPosition::fromBeats(shiftedStart),
+                                 te::BeatDuration::fromBeats(length), note.velocity, 0, nullptr);
         }
 
         // Set looping if enabled
@@ -708,7 +723,7 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     midiClipPtr->setStart(te::TimePosition::fromSeconds(clip->startTime), true, false);
     midiClipPtr->setEnd(te::TimePosition::fromSeconds(clip->startTime + clip->length), false);
 
-    // Force offset to 0 to ensure notes play from clip start
+    // Force offset to 0 — note shifting is handled manually below
     midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
 
     // Set up internal looping on the TE clip
@@ -737,9 +752,8 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     double contentLengthBeats = (clip->loopEnabled && clip->loopLengthBeats > 0.0)
                                     ? clip->loopLengthBeats
                                     : clipLengthBeats;
-    // Only session clips use midiOffset; arrangement clips play all their notes
-    double effectiveOffset =
-        (clip->view == ClipView::Session || clip->loopEnabled) ? clip->midiOffset : 0.0;
+    // Apply midiOffset in all modes so arrangement clips also respect the offset
+    double effectiveOffset = clip->midiOffset;
     double visibleStart = effectiveOffset;  // Where the clip's "view window" starts
     double visibleEnd = effectiveOffset + contentLengthBeats;
 
