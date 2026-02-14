@@ -287,10 +287,13 @@ void PianoRollContent::setupGridCallbacks() {
     };
 
     // Handle batch note selection changes (lasso, deselect-all)
-    gridComponent_->onNoteSelectionChanged = [](magda::ClipId clipId,
-                                                std::vector<size_t> noteIndices) {
+    gridComponent_->onNoteSelectionChanged = [this](magda::ClipId clipId,
+                                                    std::vector<size_t> noteIndices) {
         if (noteIndices.empty()) {
-            magda::SelectionManager::getInstance().clearSelection();
+            // Only clear note selection in the velocity lane — preserve clip selection
+            if (velocityLane_) {
+                velocityLane_->setSelectedNoteIndices({});
+            }
         } else {
             magda::SelectionManager::getInstance().selectNotes(clipId, noteIndices);
         }
