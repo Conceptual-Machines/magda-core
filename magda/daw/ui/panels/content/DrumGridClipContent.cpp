@@ -352,7 +352,9 @@ class DrumGridClipGrid : public juce::Component,
             {
                 double pixelsPerBar = pixelsPerBeat_ * tsNum;
                 double pixelsPerSubdiv = pixelsPerBeat_ * gridResolutionBeats_;
-                int labelY = 2;
+                // Use clip bounds to find visible top (grid may be scrolled)
+                auto clipBounds = g.getClipBounds();
+                int labelY = clipBounds.getY() + 2;
                 int labelHeight = 14;
 
                 // Determine bar label interval (show every Nth bar when zoomed out)

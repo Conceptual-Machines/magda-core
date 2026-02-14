@@ -359,7 +359,9 @@ void PianoRollGridComponent::paintBeatLines(juce::Graphics& g, juce::Rectangle<i
     {
         double pixelsPerBar = pixelsPerBeat_ * tsNum;
         double pixelsPerSubdiv = pixelsPerBeat_ * gridRes;
-        int labelY = area.getY() + 2;
+        // Use clip bounds to find the visible top (grid is inside a scrollable viewport)
+        auto clipBounds = g.getClipBounds();
+        int labelY = clipBounds.getY() + 2;
         int labelHeight = 14;
 
         // Determine bar label interval (show every Nth bar when zoomed out)
