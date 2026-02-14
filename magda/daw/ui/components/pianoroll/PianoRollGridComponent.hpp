@@ -143,7 +143,7 @@ class PianoRollGridComponent : public juce::Component,
     void updateNotePosition(NoteComponent* note, double beat, int noteNumber,
                             double length) override;
     void setCopyDragPreview(double beat, int noteNumber, double length, juce::Colour colour,
-                            bool active) override;
+                            bool active, size_t sourceNoteIndex) override;
 
     // Refresh note components from clip data
     void refreshNotes();
@@ -237,8 +237,8 @@ class PianoRollGridComponent : public juce::Component,
         int noteNumber = 60;
         double length = 1.0;
         juce::Colour colour;
-        bool active = false;
-    } copyDragGhost_;
+    };
+    std::vector<CopyDragGhost> copyDragGhosts_;
 
     // Painting helpers
     void paintGrid(juce::Graphics& g, juce::Rectangle<int> area);

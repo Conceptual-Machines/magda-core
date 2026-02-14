@@ -213,12 +213,45 @@ class DrumGridClipGrid : public juce::Component,
     }
 
     void setCopyDragPreview(double beat, int noteNumber, double length, juce::Colour colour,
-                            bool active) override {
-        copyDragGhost_.beat = beat;
-        copyDragGhost_.noteNumber = noteNumber;
-        copyDragGhost_.length = length;
-        copyDragGhost_.colour = colour;
-        copyDragGhost_.active = active;
+                            bool active, size_t sourceNoteIndex) override {
+        copyDragGhosts_.clear();
+        if (!active) {
+            repaint();
+            return;
+        }
+
+        // Find the source note to compute the delta
+        const auto* srcClip = magda::ClipManager::getInstance().getClip(clipId_);
+        if (!srcClip || sourceNoteIndex >= srcClip->midiNotes.size()) {
+            copyDragGhosts_.push_back({beat, noteNumber, length, colour});
+            repaint();
+            return;
+        }
+
+        const auto& sourceNote = srcClip->midiNotes[sourceNoteIndex];
+        double beatDelta = beat - sourceNote.startBeat;
+        int noteDelta = noteNumber - sourceNote.noteNumber;
+
+        // Ghost for the dragged note
+        copyDragGhosts_.push_back({beat, noteNumber, length, colour});
+
+        // Ghosts for other selected notes
+        for (auto& nc : noteComponents_) {
+            if (nc->getNoteIndex() == sourceNoteIndex)
+                continue;
+            if (!nc->isSelected())
+                continue;
+
+            size_t idx = nc->getNoteIndex();
+            if (idx >= srcClip->midiNotes.size())
+                continue;
+
+            const auto& otherNote = srcClip->midiNotes[idx];
+            double ghostBeat = juce::jmax(0.0, otherNote.startBeat + beatDelta);
+            int ghostNote = juce::jlimit(0, 127, otherNote.noteNumber + noteDelta);
+            copyDragGhosts_.push_back({ghostBeat, ghostNote, otherNote.lengthBeats, colour});
+        }
+
         repaint();
     }
 
@@ -321,19 +354,19 @@ class DrumGridClipGrid : public juce::Component,
                 g.fillRect(clipEndX, 0, bounds.getWidth() - clipEndX, numRows * rowHeight_);
         }
 
-        // Draw copy drag ghost preview
-        if (copyDragGhost_.active) {
-            int rowIndex = findRowForNote(copyDragGhost_.noteNumber);
+        // Draw copy drag ghost previews
+        for (const auto& ghost : copyDragGhosts_) {
+            int rowIndex = findRowForNote(ghost.noteNumber);
             if (rowIndex >= 0) {
-                int gx = static_cast<int>(copyDragGhost_.beat * pixelsPerBeat_) + GRID_LEFT_PADDING;
+                int gx = static_cast<int>(ghost.beat * pixelsPerBeat_) + GRID_LEFT_PADDING;
                 int gy = rowIndex * rowHeight_;
-                int gw = juce::jmax(4, static_cast<int>(copyDragGhost_.length * pixelsPerBeat_));
+                int gw = juce::jmax(4, static_cast<int>(ghost.length * pixelsPerBeat_));
                 int gh = rowHeight_ - 2;
 
-                g.setColour(copyDragGhost_.colour.withAlpha(0.35f));
+                g.setColour(ghost.colour.withAlpha(0.35f));
                 g.fillRoundedRectangle(static_cast<float>(gx), static_cast<float>(gy + 1),
                                        static_cast<float>(gw), static_cast<float>(gh), 2.0f);
-                g.setColour(copyDragGhost_.colour.withAlpha(0.6f));
+                g.setColour(ghost.colour.withAlpha(0.6f));
                 g.drawRoundedRectangle(static_cast<float>(gx), static_cast<float>(gy + 1),
                                        static_cast<float>(gw), static_cast<float>(gh), 2.0f, 1.0f);
             }
@@ -449,8 +482,8 @@ class DrumGridClipGrid : public juce::Component,
         int noteNumber = 60;
         double length = 1.0;
         juce::Colour colour;
-        bool active = false;
-    } copyDragGhost_;
+    };
+    std::vector<CopyDragGhost> copyDragGhosts_;
 
     // Rubber band selection state
     bool isDragSelecting_ = false;

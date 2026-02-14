@@ -158,7 +158,7 @@ void NoteComponent::mouseDrag(const juce::MouseEvent& e) {
             // For copy drag, keep original in place and show ghost at destination
             if (isCopyDrag_) {
                 parentGrid_->setCopyDragPreview(previewStartBeat_, previewNoteNumber_,
-                                                dragStartLength_, colour_, true);
+                                                dragStartLength_, colour_, true, noteIndex_);
             } else {
                 parentGrid_->updateNotePosition(this, previewStartBeat_, previewNoteNumber_,
                                                 dragStartLength_);
@@ -265,7 +265,7 @@ void NoteComponent::mouseUp(const juce::MouseEvent& /*e*/) {
 
     // Clear copy drag ghost
     if (isCopyDrag_ && parentGrid_) {
-        parentGrid_->setCopyDragPreview(0, 0, 0, {}, false);
+        parentGrid_->setCopyDragPreview(0, 0, 0, {}, false, 0);
     }
 
     // Notify that drag has ended

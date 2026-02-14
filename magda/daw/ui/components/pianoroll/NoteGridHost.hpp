@@ -15,7 +15,7 @@ class NoteGridHost {
     virtual void updateNotePosition(NoteComponent* note, double beat, int noteNumber,
                                     double length) = 0;
     virtual void setCopyDragPreview(double beat, int noteNumber, double length, juce::Colour colour,
-                                    bool active) = 0;
+                                    bool active, size_t sourceNoteIndex) = 0;
 };
 
 }  // namespace magda

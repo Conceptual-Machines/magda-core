@@ -210,16 +210,16 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     }
 
     // Draw copy drag ghost preview
-    if (copyDragGhost_.active) {
-        int gx = beatToPixel(copyDragGhost_.beat);
-        int gy = noteNumberToY(copyDragGhost_.noteNumber);
-        int gw = juce::jmax(8, static_cast<int>(copyDragGhost_.length * pixelsPerBeat_));
+    for (const auto& ghost : copyDragGhosts_) {
+        int gx = beatToPixel(ghost.beat);
+        int gy = noteNumberToY(ghost.noteNumber);
+        int gw = juce::jmax(8, static_cast<int>(ghost.length * pixelsPerBeat_));
         int gh = noteHeight_ - 2;
 
-        g.setColour(copyDragGhost_.colour.withAlpha(0.35f));
+        g.setColour(ghost.colour.withAlpha(0.35f));
         g.fillRoundedRectangle(static_cast<float>(gx), static_cast<float>(gy + 1),
                                static_cast<float>(gw), static_cast<float>(gh), 2.0f);
-        g.setColour(copyDragGhost_.colour.withAlpha(0.6f));
+        g.setColour(ghost.colour.withAlpha(0.6f));
         g.drawRoundedRectangle(static_cast<float>(gx), static_cast<float>(gy + 1),
                                static_cast<float>(gw), static_cast<float>(gh), 2.0f, 1.0f);
     }
@@ -688,12 +688,46 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
 }
 
 void PianoRollGridComponent::setCopyDragPreview(double beat, int noteNumber, double length,
-                                                juce::Colour colour, bool active) {
-    copyDragGhost_.beat = beat;
-    copyDragGhost_.noteNumber = noteNumber;
-    copyDragGhost_.length = length;
-    copyDragGhost_.colour = colour;
-    copyDragGhost_.active = active;
+                                                juce::Colour colour, bool active,
+                                                size_t sourceNoteIndex) {
+    copyDragGhosts_.clear();
+    if (!active) {
+        repaint();
+        return;
+    }
+
+    // Find the source note to compute the delta
+    const auto* srcClip = ClipManager::getInstance().getClip(clipId_);
+    if (!srcClip || sourceNoteIndex >= srcClip->midiNotes.size()) {
+        copyDragGhosts_.push_back({beat, noteNumber, length, colour});
+        repaint();
+        return;
+    }
+
+    const auto& sourceNote = srcClip->midiNotes[sourceNoteIndex];
+    double beatDelta = beat - sourceNote.startBeat;
+    int noteDelta = noteNumber - sourceNote.noteNumber;
+
+    // Ghost for the dragged note
+    copyDragGhosts_.push_back({beat, noteNumber, length, colour});
+
+    // Ghosts for other selected notes
+    for (auto& nc : noteComponents_) {
+        if (nc->getNoteIndex() == sourceNoteIndex)
+            continue;
+        if (!nc->isSelected())
+            continue;
+
+        size_t idx = nc->getNoteIndex();
+        if (idx >= srcClip->midiNotes.size())
+            continue;
+
+        const auto& otherNote = srcClip->midiNotes[idx];
+        double ghostBeat = juce::jmax(0.0, otherNote.startBeat + beatDelta);
+        int ghostNote = juce::jlimit(MIN_NOTE, MAX_NOTE, otherNote.noteNumber + noteDelta);
+        copyDragGhosts_.push_back({ghostBeat, ghostNote, otherNote.lengthBeats, colour});
+    }
+
     repaint();
 }
 
