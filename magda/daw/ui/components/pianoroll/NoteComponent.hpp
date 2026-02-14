@@ -7,7 +7,7 @@
 namespace magda {
 
 // Forward declarations
-class PianoRollGridComponent;
+class NoteGridHost;
 
 /**
  * @brief Visual representation of a MIDI note in the piano roll
@@ -26,7 +26,7 @@ class NoteComponent : public juce::Component, private juce::Timer {
      * @param parent The parent grid component
      * @param sourceClipId The ID of the clip this note belongs to
      */
-    NoteComponent(size_t noteIndex, PianoRollGridComponent* parent, ClipId sourceClipId);
+    NoteComponent(size_t noteIndex, NoteGridHost* parent, ClipId sourceClipId);
     ~NoteComponent() override = default;
 
     size_t getNoteIndex() const {
@@ -75,7 +75,7 @@ class NoteComponent : public juce::Component, private juce::Timer {
   private:
     size_t noteIndex_;
     ClipId sourceClipId_;
-    PianoRollGridComponent* parentGrid_;
+    NoteGridHost* parentGrid_;
     bool isSelected_ = false;
 
     // Note data cache

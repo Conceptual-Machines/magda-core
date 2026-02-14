@@ -1,10 +1,10 @@
 #include "NoteComponent.hpp"
 
-#include "PianoRollGridComponent.hpp"
+#include "NoteGridHost.hpp"
 
 namespace magda {
 
-NoteComponent::NoteComponent(size_t noteIndex, PianoRollGridComponent* parent, ClipId sourceClipId)
+NoteComponent::NoteComponent(size_t noteIndex, NoteGridHost* parent, ClipId sourceClipId)
     : noteIndex_(noteIndex), sourceClipId_(sourceClipId), parentGrid_(parent) {
     setName("NoteComponent");
 }
@@ -74,9 +74,10 @@ void NoteComponent::mouseDown(const juce::MouseEvent& e) {
         onNoteSelected(noteIndex_, false);
     }
 
-    // Store drag start info
+    // Store drag start info (in grid-relative coordinates)
     if (parentGrid_) {
-        dragStartPos_ = e.getEventRelativeTo(parentGrid_).getPosition();
+        auto screenPos = e.getScreenPosition();
+        dragStartPos_ = screenPos - parentGrid_->getGridScreenPosition();
     } else {
         dragStartPos_ = e.getPosition();
     }
@@ -123,7 +124,7 @@ void NoteComponent::mouseDrag(const juce::MouseEvent& e) {
     // Use Desktop mouse position to avoid component-relative constraints
     auto& desktop = juce::Desktop::getInstance();
     auto absoluteMousePos = desktop.getMainMouseSource().getScreenPosition();
-    auto gridScreenPos = parentGrid_->localPointToGlobal(juce::Point<int>());
+    auto gridScreenPos = parentGrid_->getGridScreenPosition();
     auto parentPos = absoluteMousePos.toInt() - gridScreenPos;
 
     int deltaX = parentPos.x - dragStartPos_.x;

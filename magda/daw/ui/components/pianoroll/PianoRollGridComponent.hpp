@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "NoteComponent.hpp"
+#include "NoteGridHost.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
 #include "core/ClipTypes.hpp"
@@ -22,7 +23,9 @@ namespace magda {
  * - Grid snap settings
  * - Coordinate conversion (beat <-> pixel, noteNumber <-> y)
  */
-class PianoRollGridComponent : public juce::Component, public ClipManagerListener {
+class PianoRollGridComponent : public juce::Component,
+                               public ClipManagerListener,
+                               public NoteGridHost {
   public:
     PianoRollGridComponent();
     ~PianoRollGridComponent() override;
@@ -59,12 +62,12 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
 
     // Zoom settings
     void setPixelsPerBeat(double ppb);
-    double getPixelsPerBeat() const {
+    double getPixelsPerBeat() const override {
         return pixelsPerBeat_;
     }
 
     void setNoteHeight(int height);
-    int getNoteHeight() const {
+    int getNoteHeight() const override {
         return noteHeight_;
     }
 
@@ -133,12 +136,14 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
     int noteNumberToY(int noteNumber) const;
     int yToNoteNumber(int y) const;
 
-    // Called by NoteComponent to update visual position during drag
-    void updateNotePosition(NoteComponent* note, double beat, int noteNumber, double length);
-
-    // Copy drag ghost preview
+    // NoteGridHost overrides
+    juce::Point<int> getGridScreenPosition() const override {
+        return localPointToGlobal(juce::Point<int>());
+    }
+    void updateNotePosition(NoteComponent* note, double beat, int noteNumber,
+                            double length) override;
     void setCopyDragPreview(double beat, int noteNumber, double length, juce::Colour colour,
-                            bool active);
+                            bool active) override;
 
     // Refresh note components from clip data
     void refreshNotes();
