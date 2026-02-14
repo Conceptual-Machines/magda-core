@@ -2,7 +2,6 @@
 
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
-#include "../../themes/FontManager.hpp"
 #include "core/ClipManager.hpp"
 
 namespace magda {
@@ -353,87 +352,6 @@ void PianoRollGridComponent::paintBeatLines(juce::Graphics& g, juce::Rectangle<i
         int x = beatToPixel(static_cast<double>(bar * tsNum));
         if (x >= left && x <= right)
             g.drawVerticalLine(x, top, bottom);
-    }
-
-    // Pass 4: Labels at grid line positions (bar, beat, subdivision)
-    {
-        double pixelsPerBar = pixelsPerBeat_ * tsNum;
-        double pixelsPerSubdiv = pixelsPerBeat_ * gridRes;
-        // Use clip bounds to find the visible top (grid is inside a scrollable viewport)
-        auto clipBounds = g.getClipBounds();
-        int labelY = clipBounds.getY() + 2;
-        int labelHeight = 14;
-
-        // Determine bar label interval (show every Nth bar when zoomed out)
-        int barLabelInterval = 1;
-        if (pixelsPerBar < 40)
-            barLabelInterval = 8;
-        else if (pixelsPerBar < 60)
-            barLabelInterval = 4;
-        else if (pixelsPerBar < 90)
-            barLabelInterval = 2;
-
-        // Calculate subdivisions per beat for labeling
-        int subdivsPerBeat = (gridRes > 0.0) ? static_cast<int>(std::round(1.0 / gridRes)) : 1;
-
-        // Bar labels
-        for (int bar = 0; bar * tsNum <= static_cast<int>(lengthBeats); bar++) {
-            if (bar % barLabelInterval != 0)
-                continue;
-            int x = beatToPixel(static_cast<double>(bar * tsNum));
-            if (x >= left && x <= right) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.7f));
-                g.setFont(FontManager::getInstance().getUIFont(11.0f).boldened());
-                g.drawText(juce::String(bar + 1), x + 3, labelY, 40, labelHeight,
-                           juce::Justification::centredLeft);
-            }
-        }
-
-        // Beat labels (shown when zoomed in enough)
-        if (pixelsPerBeat_ >= 50) {
-            for (int b = 1; b <= static_cast<int>(lengthBeats); b++) {
-                if (b % tsNum == 0)
-                    continue;
-                int x = beatToPixel(static_cast<double>(b));
-                if (x >= left && x <= right) {
-                    int bar = b / tsNum + 1;
-                    int beatInBar = (b % tsNum) + 1;
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
-                    g.setFont(FontManager::getInstance().getUIFont(9.0f));
-                    g.drawText(juce::String(bar) + "." + juce::String(beatInBar), x + 3, labelY, 40,
-                               labelHeight, juce::Justification::centredLeft);
-                }
-            }
-        }
-
-        // Subdivision labels (shown when zoomed in enough)
-        if (gridRes > 0.0 && pixelsPerSubdiv >= 30) {
-            int numLines = static_cast<int>(std::ceil(lengthBeats / gridRes));
-            for (int i = 0; i <= numLines; i++) {
-                double beat = i * gridRes;
-                if (beat > lengthBeats)
-                    break;
-                // Skip positions on whole beats (already labeled)
-                double nearest = std::round(beat);
-                if (std::abs(beat - nearest) < 0.001)
-                    continue;
-                int x = beatToPixel(beat);
-                if (x >= left && x <= right) {
-                    int wholeBeat = static_cast<int>(std::floor(beat));
-                    int bar = wholeBeat / tsNum + 1;
-                    int beatInBar = (wholeBeat % tsNum) + 1;
-                    double subdivInBeat = std::fmod(beat, 1.0);
-                    int subdivIndex =
-                        static_cast<int>(std::round(subdivInBeat * subdivsPerBeat)) + 1;
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM).withAlpha(0.4f));
-                    g.setFont(FontManager::getInstance().getUIFont(8.0f));
-                    g.drawText(juce::String(bar) + "." + juce::String(beatInBar) + "." +
-                                   juce::String(subdivIndex),
-                               x + 2, labelY + 1, 50, labelHeight,
-                               juce::Justification::centredLeft);
-                }
-            }
-        }
     }
 }
 

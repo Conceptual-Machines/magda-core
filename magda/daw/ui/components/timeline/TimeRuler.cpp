@@ -4,6 +4,7 @@
 
 #include "CursorManager.hpp"
 #include "DarkTheme.hpp"
+#include "FontManager.hpp"
 #include "LayoutConfig.hpp"
 
 namespace magda {
@@ -302,20 +303,44 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     double secondsPerBeat = 60.0 / tempo;
     double secondsPerBar = secondsPerBeat * timeSigNumerator;
     double pixelsPerBar = zoom * timeSigNumerator;
-    bool showBeats = pixelsPerBar > 60;  // Only show beats if bars are wide enough
+    double pixelsPerBeat = zoom;
+    bool showBeats = pixelsPerBar > 60;
 
-    // In ABS mode: bar numbers are absolute (1, 2, 3...), grid starts at project time 0
-    // In REL mode: bar numbers relative to clip (1, 2, 3...), grid starts at clip time 0
-    // No barOffset needed since grid coordinate system matches display
+    // Find appropriate subdivision interval based on zoom
+    // Beat fractions: 1/128, 1/64, 1/32, 1/16, 1/8, 1/4, 1/2, 1
+    const double beatFractions[] = {0.0078125, 0.015625, 0.03125, 0.0625, 0.125, 0.25, 0.5, 1.0};
+    double subdivBeats = 1.0;
+    for (double fraction : beatFractions) {
+        if (fraction * zoom >= 12.0) {  // min 12px per subdivision tick
+            subdivBeats = fraction;
+            break;
+        }
+    }
+    double pixelsPerSubdiv = subdivBeats * zoom;
+    double secondsPerSubdiv = secondsPerBeat * subdivBeats;
+    bool showSubdivs = subdivBeats < 1.0 && pixelsPerSubdiv >= 12.0;
+    int subdivsPerBeat = static_cast<int>(std::round(1.0 / subdivBeats));
+
+    int labelY = LABEL_MARGIN;
+    int labelHeight = height - TICK_HEIGHT_MAJOR - LABEL_MARGIN * 2;
+    int mediumTickHeight = TICK_HEIGHT_MAJOR * 2 / 3;
+    int subdivTickHeight = TICK_HEIGHT_MINOR / 2 + 1;
 
     // Find first visible bar (offset by barOriginSeconds)
     double startTime = pixelToTime(0);
     int startBar = juce::jmax(
         1, static_cast<int>(std::floor((startTime - barOriginSeconds) / secondsPerBar)) + 1);
 
-    g.setFont(11.0f);
+    // Determine bar label interval (show every Nth bar when zoomed out)
+    int barLabelInterval = 1;
+    if (pixelsPerBar < 40)
+        barLabelInterval = 8;
+    else if (pixelsPerBar < 60)
+        barLabelInterval = 4;
+    else if (pixelsPerBar < 90)
+        barLabelInterval = 2;
 
-    // Draw bar lines and optionally beat lines
+    // Draw bar lines, beat lines, subdivision lines, and labels
     for (int bar = startBar;; bar++) {
         double barTime = barOriginSeconds + (bar - 1) * secondsPerBar;
         int barX = timeToPixel(barTime);
@@ -326,28 +351,67 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             break;
 
         if (barX >= 0) {
-            // Draw bar line (major tick)
+            // Bar tick
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
             g.drawVerticalLine(barX, static_cast<float>(height - TICK_HEIGHT_MAJOR),
                                static_cast<float>(height));
 
-            // Draw bar number (always 1, 2, 3... from the left edge)
-            juce::String label = juce::String(bar);
-            g.drawText(label, barX - 20, LABEL_MARGIN, 40,
-                       height - TICK_HEIGHT_MAJOR - LABEL_MARGIN * 2, juce::Justification::centred,
-                       false);
+            // Bar label
+            if ((bar - 1) % barLabelInterval == 0) {
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
+                g.drawText(juce::String(bar), barX - 20, labelY, 40, labelHeight,
+                           juce::Justification::centred, false);
+            }
         }
 
-        // Draw beat lines within this bar
+        // Beat ticks and labels within this bar
         if (showBeats) {
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
             for (int beat = 2; beat <= timeSigNumerator; beat++) {
                 double beatTime = barTime + (beat - 1) * secondsPerBeat;
                 int beatX = timeToPixel(beatTime);
 
                 if (beatX >= 0 && beatX <= width && beatTime <= timelineLength) {
-                    g.drawVerticalLine(beatX, static_cast<float>(height - TICK_HEIGHT_MINOR),
+                    // Beat tick (medium height)
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
+                    g.drawVerticalLine(beatX, static_cast<float>(height - mediumTickHeight),
                                        static_cast<float>(height));
+
+                    // Beat label (e.g. "1.2", "1.3")
+                    if (pixelsPerBeat >= 50) {
+                        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                        g.setFont(FontManager::getInstance().getUIFont(10.0f));
+                        g.drawText(juce::String(bar) + "." + juce::String(beat), beatX - 25, labelY,
+                                   50, labelHeight, juce::Justification::centred, false);
+                    }
+                }
+            }
+        }
+
+        // Subdivision ticks and labels within this bar
+        if (showSubdivs) {
+            for (int beat = 1; beat <= timeSigNumerator; beat++) {
+                double beatStartTime = barTime + (beat - 1) * secondsPerBeat;
+                for (int s = 2; s <= subdivsPerBeat; s++) {
+                    double subdivTime = beatStartTime + (s - 1) * secondsPerSubdiv;
+                    int subdivX = timeToPixel(subdivTime);
+
+                    if (subdivX >= 0 && subdivX <= width && subdivTime <= timelineLength) {
+                        // Subdivision tick
+                        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                        g.drawVerticalLine(subdivX, static_cast<float>(height - subdivTickHeight),
+                                           static_cast<float>(height));
+
+                        // Subdivision label (e.g. "1.1.2")
+                        if (pixelsPerSubdiv >= 30) {
+                            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                            g.setFont(FontManager::getInstance().getUIFont(8.0f));
+                            g.drawText(juce::String(bar) + "." + juce::String(beat) + "." +
+                                           juce::String(s),
+                                       subdivX - 30, labelY + 2, 60, labelHeight,
+                                       juce::Justification::centred, false);
+                        }
+                    }
                 }
             }
         }
