@@ -383,8 +383,8 @@ class DrumGridClipGrid : public juce::Component,
             int playheadX = static_cast<int>(playheadBeat * pixelsPerBeat_) + GRID_LEFT_PADDING;
 
             if (playheadX >= 0 && playheadX <= bounds.getWidth()) {
-                g.setColour(juce::Colours::white);
-                g.drawVerticalLine(playheadX, 0.0f, static_cast<float>(numRows * rowHeight_));
+                g.setColour(juce::Colour(0xFFFF4444));
+                g.fillRect(playheadX - 1, 0, 2, numRows * rowHeight_);
             }
         }
 
