@@ -2,6 +2,7 @@
 
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
+#include "VelocityLaneUtils.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
 
@@ -99,29 +100,19 @@ void VelocityLaneComponent::setSelectedNoteIndices(const std::vector<size_t>& in
 }
 
 int VelocityLaneComponent::beatToPixel(double beat) const {
-    // In absolute mode, the beat is already absolute
-    // In relative mode, we draw starting from 0
-    return static_cast<int>(beat * pixelsPerBeat_) + leftPadding_ - scrollOffsetX_;
+    return velocity_lane::beatToPixel(beat, pixelsPerBeat_, leftPadding_, scrollOffsetX_);
 }
 
 double VelocityLaneComponent::pixelToBeat(int x) const {
-    return (x + scrollOffsetX_ - leftPadding_) / pixelsPerBeat_;
+    return velocity_lane::pixelToBeat(x, pixelsPerBeat_, leftPadding_, scrollOffsetX_);
 }
 
 int VelocityLaneComponent::velocityToY(int velocity) const {
-    // Velocity 127 = top, velocity 0 = bottom
-    // Leave a small margin at top and bottom
-    int margin = 2;
-    int usableHeight = getHeight() - (margin * 2);
-    int y = margin + usableHeight - (velocity * usableHeight / 127);
-    return y;
+    return velocity_lane::velocityToY(velocity, getHeight());
 }
 
 int VelocityLaneComponent::yToVelocity(int y) const {
-    int margin = 2;
-    int usableHeight = getHeight() - (margin * 2);
-    int velocity = 127 - ((y - margin) * 127 / usableHeight);
-    return juce::jlimit(0, 127, velocity);
+    return velocity_lane::yToVelocity(y, getHeight());
 }
 
 size_t VelocityLaneComponent::findNoteAtX(int x) const {
@@ -154,18 +145,8 @@ juce::Colour VelocityLaneComponent::getClipColour() const {
 }
 
 int VelocityLaneComponent::interpolateVelocity(float t) const {
-    if (std::abs(curveAmount_) < 0.001f) {
-        // Linear
-        return juce::jlimit(0, 127,
-                            rampStartVelocity_ +
-                                static_cast<int>(t * (rampEndVelocity_ - rampStartVelocity_)));
-    }
-    // Quadratic bezier: control point velocity
-    float controlVel = (rampStartVelocity_ + rampEndVelocity_) * 0.5f + curveAmount_ * 127.0f;
-    controlVel = juce::jlimit(0.0f, 127.0f, controlVel);
-    float v = (1 - t) * (1 - t) * rampStartVelocity_ + 2 * (1 - t) * t * controlVel +
-              t * t * rampEndVelocity_;
-    return juce::jlimit(0, 127, static_cast<int>(std::round(v)));
+    return velocity_lane::interpolateVelocity(t, rampStartVelocity_, rampEndVelocity_,
+                                              curveAmount_);
 }
 
 std::vector<std::pair<size_t, int>> VelocityLaneComponent::computeRampVelocities() const {
