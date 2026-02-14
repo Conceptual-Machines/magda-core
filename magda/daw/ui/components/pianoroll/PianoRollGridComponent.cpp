@@ -395,6 +395,18 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
         }
 
         isDragSelecting_ = false;
+
+        // Notify with all selected note indices
+        if (onNoteSelectionChanged) {
+            std::vector<size_t> selectedIndices;
+            for (auto& nc : noteComponents_) {
+                if (nc->isSelected()) {
+                    selectedIndices.push_back(nc->getNoteIndex());
+                }
+            }
+            onNoteSelectionChanged(clipId_, selectedIndices);
+        }
+
         repaint();
     } else {
         // Plain click on empty space — deselect all notes
@@ -403,6 +415,10 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
                 noteComp->setSelected(false);
             }
             selectedNoteIndex_ = -1;
+
+            if (onNoteSelectionChanged) {
+                onNoteSelectionChanged(clipId_, {});
+            }
         }
     }
 }

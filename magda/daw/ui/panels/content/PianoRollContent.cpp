@@ -278,9 +278,22 @@ void PianoRollContent::setupGridCallbacks() {
     };
 
     // Handle note selection - update SelectionManager
-    gridComponent_->onNoteSelected = [](magda::ClipId clipId, size_t noteIndex,
-                                        bool /*isAdditive*/) {
-        magda::SelectionManager::getInstance().selectNote(clipId, noteIndex);
+    gridComponent_->onNoteSelected = [](magda::ClipId clipId, size_t noteIndex, bool isAdditive) {
+        if (isAdditive) {
+            magda::SelectionManager::getInstance().addNoteToSelection(clipId, noteIndex);
+        } else {
+            magda::SelectionManager::getInstance().selectNote(clipId, noteIndex);
+        }
+    };
+
+    // Handle batch note selection changes (lasso, deselect-all)
+    gridComponent_->onNoteSelectionChanged = [](magda::ClipId clipId,
+                                                std::vector<size_t> noteIndices) {
+        if (noteIndices.empty()) {
+            magda::SelectionManager::getInstance().clearSelection();
+        } else {
+            magda::SelectionManager::getInstance().selectNotes(clipId, noteIndices);
+        }
     };
 
     // Forward note drag preview to velocity lane for position sync
