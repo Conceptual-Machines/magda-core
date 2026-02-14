@@ -1165,6 +1165,8 @@ void DrumGridClipContent::onGridResolutionChanged() {
                 controller->getState().tempo.timeSignatureNumerator);
         }
     }
+    if (timeRuler_)
+        timeRuler_->setGridResolution(gridResolutionBeats_);
 }
 
 // ============================================================================

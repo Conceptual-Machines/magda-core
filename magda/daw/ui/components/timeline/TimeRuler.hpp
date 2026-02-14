@@ -36,6 +36,12 @@ class TimeRuler : public juce::Component, private juce::Timer {
         return timeSigNumerator;
     }
 
+    // Grid resolution for subdivision alignment (in beats, e.g. 0.25 = 1/16)
+    void setGridResolution(double beatsPerGridLine);
+    double getGridResolution() const {
+        return gridResolutionBeats;
+    }
+
     // Time offset for piano roll (absolute vs relative mode)
     // When set, displayed times are offset by this amount (e.g., clip starts at bar 5)
     void setTimeOffset(double offsetSeconds);
@@ -119,6 +125,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     double tempo = 120.0;  // BPM
     int timeSigNumerator = 4;
     int timeSigDenominator = 4;
+    double gridResolutionBeats = 0.0;  // 0 = auto-compute from zoom
 
     // Offset and relative mode (for piano roll)
     double timeOffset = 0.0;        // seconds - absolute position of content start

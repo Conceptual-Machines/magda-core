@@ -74,6 +74,13 @@ void TimeRuler::setTimeSignature(int numerator, int denominator) {
     repaint();
 }
 
+void TimeRuler::setGridResolution(double beatsPerGridLine) {
+    if (gridResolutionBeats != beatsPerGridLine) {
+        gridResolutionBeats = beatsPerGridLine;
+        repaint();
+    }
+}
+
 void TimeRuler::setTimeOffset(double offsetSeconds) {
     timeOffset = offsetSeconds;
     repaint();
@@ -301,27 +308,33 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
     double secondsPerBeat = 60.0 / tempo;
 
-    // Find appropriate tick interval based on zoom level (same logic as TimelineComponent)
-    const double beatFractions[] = {0.0078125, 0.015625, 0.03125, 0.0625, 0.125, 0.25, 0.5, 1.0};
-    const int barMultiples[] = {1, 2, 4, 8, 16, 32};
-    const int minPixelSpacing = 12;
-
+    // Use grid resolution if provided, otherwise compute from zoom level
     double markerIntervalBeats = 1.0;
-    bool foundInterval = false;
 
-    for (double fraction : beatFractions) {
-        if (fraction * zoom >= minPixelSpacing) {
-            markerIntervalBeats = fraction;
-            foundInterval = true;
-            break;
-        }
-    }
+    if (gridResolutionBeats > 0.0) {
+        markerIntervalBeats = gridResolutionBeats;
+    } else {
+        // Auto-compute from zoom (same logic as TimelineComponent)
+        const double beatFractions[] = {0.0078125, 0.015625, 0.03125, 0.0625,
+                                        0.125,     0.25,     0.5,     1.0};
+        const int barMultiples[] = {1, 2, 4, 8, 16, 32};
+        const int minPixelSpacing = 12;
+        bool foundInterval = false;
 
-    if (!foundInterval) {
-        for (int mult : barMultiples) {
-            if (static_cast<double>(timeSigNumerator * mult) * zoom >= minPixelSpacing) {
-                markerIntervalBeats = timeSigNumerator * mult;
+        for (double fraction : beatFractions) {
+            if (fraction * zoom >= minPixelSpacing) {
+                markerIntervalBeats = fraction;
+                foundInterval = true;
                 break;
+            }
+        }
+
+        if (!foundInterval) {
+            for (int mult : barMultiples) {
+                if (static_cast<double>(timeSigNumerator * mult) * zoom >= minPixelSpacing) {
+                    markerIntervalBeats = timeSigNumerator * mult;
+                    break;
+                }
             }
         }
     }
