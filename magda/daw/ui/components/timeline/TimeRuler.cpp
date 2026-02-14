@@ -299,20 +299,41 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     const int height = getHeight();
     const int width = getWidth();
 
-    // zoom is ppb, so pixelsPerBar = zoom * beatsPerBar (no BPM dependency!)
     double secondsPerBeat = 60.0 / tempo;
-    double secondsPerBar = secondsPerBeat * timeSigNumerator;
-    double pixelsPerBar = zoom * timeSigNumerator;
+
+    // Find appropriate tick interval based on zoom level (same logic as TimelineComponent)
+    const double beatFractions[] = {0.0078125, 0.015625, 0.03125, 0.0625, 0.125, 0.25, 0.5, 1.0};
+    const int barMultiples[] = {1, 2, 4, 8, 16, 32};
+    const int minPixelSpacing = 12;
+
+    double markerIntervalBeats = 1.0;
+    bool foundInterval = false;
+
+    for (double fraction : beatFractions) {
+        if (fraction * zoom >= minPixelSpacing) {
+            markerIntervalBeats = fraction;
+            foundInterval = true;
+            break;
+        }
+    }
+
+    if (!foundInterval) {
+        for (int mult : barMultiples) {
+            if (static_cast<double>(timeSigNumerator * mult) * zoom >= minPixelSpacing) {
+                markerIntervalBeats = timeSigNumerator * mult;
+                break;
+            }
+        }
+    }
+
+    double markerIntervalSeconds = secondsPerBeat * markerIntervalBeats;
     double pixelsPerBeat = zoom;
-    bool showBeats = pixelsPerBar > 60;
+    double pixelsPerBar = zoom * timeSigNumerator;
+    double pixelsPerSubdiv = markerIntervalBeats * zoom;
 
     int labelY = LABEL_MARGIN;
     int labelHeight = height - TICK_HEIGHT_MAJOR - LABEL_MARGIN * 2;
-
-    // Find first visible bar (offset by barOriginSeconds)
-    double startTime = pixelToTime(0);
-    int startBar = juce::jmax(
-        1, static_cast<int>(std::floor((startTime - barOriginSeconds) / secondsPerBar)) + 1);
+    int mediumTickHeight = TICK_HEIGHT_MAJOR * 2 / 3;
 
     // Determine bar label interval (show every Nth bar when zoomed out)
     int barLabelInterval = 1;
@@ -323,52 +344,70 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     else if (pixelsPerBar < 90)
         barLabelInterval = 2;
 
-    // Draw bar lines, beat lines, and labels
-    for (int bar = startBar;; bar++) {
-        double barTime = barOriginSeconds + (bar - 1) * secondsPerBar;
-        int barX = timeToPixel(barTime);
+    int subdivsPerBeat = static_cast<int>(std::round(1.0 / markerIntervalBeats));
 
-        if (barX > width)
-            break;
-        if (barTime > timelineLength)
-            break;
+    // Find start time aligned to marker interval
+    double startTime = pixelToTime(0);
+    if (startTime < barOriginSeconds)
+        startTime = barOriginSeconds;
+    startTime =
+        std::floor((startTime - barOriginSeconds) / markerIntervalSeconds) * markerIntervalSeconds +
+        barOriginSeconds;
 
-        if (barX >= 0) {
-            // Bar tick
+    // Iterate at the finest subdivision level (same pattern as TimelineComponent)
+    for (double time = startTime; time <= timelineLength; time += markerIntervalSeconds) {
+        int x = timeToPixel(time);
+        if (x > width)
+            break;
+        if (x < 0)
+            continue;
+
+        double totalBeats = (time - barOriginSeconds) / secondsPerBeat;
+        int bar = static_cast<int>(totalBeats / timeSigNumerator) + 1;
+        double beatInBarFractional = std::fmod(totalBeats, static_cast<double>(timeSigNumerator));
+        if (beatInBarFractional < 0)
+            beatInBarFractional += timeSigNumerator;
+        int beatInBar = static_cast<int>(beatInBarFractional) + 1;
+
+        bool isBarStart = beatInBarFractional < 0.001;
+        bool isBeatStart = std::fmod(beatInBarFractional, 1.0) < 0.001;
+
+        // Tick drawing: three tiers
+        if (isBarStart) {
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-            g.drawVerticalLine(barX, static_cast<float>(height - TICK_HEIGHT_MAJOR),
+            g.drawVerticalLine(x, static_cast<float>(height - TICK_HEIGHT_MAJOR),
                                static_cast<float>(height));
-
-            // Bar label
-            if ((bar - 1) % barLabelInterval == 0) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-                g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
-                g.drawText(juce::String(bar), barX - 20, labelY, 40, labelHeight,
-                           juce::Justification::centred, false);
-            }
+        } else if (isBeatStart) {
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
+            g.drawVerticalLine(x, static_cast<float>(height - mediumTickHeight),
+                               static_cast<float>(height));
+        } else {
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+            g.drawVerticalLine(x, static_cast<float>(height - TICK_HEIGHT_MINOR),
+                               static_cast<float>(height));
         }
 
-        // Beat ticks and labels within this bar
-        if (showBeats) {
-            for (int beat = 2; beat <= timeSigNumerator; beat++) {
-                double beatTime = barTime + (beat - 1) * secondsPerBeat;
-                int beatX = timeToPixel(beatTime);
+        // Label drawing: three tiers (same as TimelineComponent)
+        double subdivInBeat = std::fmod(beatInBarFractional, 1.0);
+        int subdivIndex = static_cast<int>(std::round(subdivInBeat * subdivsPerBeat)) + 1;
+        bool isSubdivisionNotBeat = !isBeatStart && subdivIndex > 1;
 
-                if (beatX >= 0 && beatX <= width && beatTime <= timelineLength) {
-                    // Beat tick (same as before)
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
-                    g.drawVerticalLine(beatX, static_cast<float>(height - TICK_HEIGHT_MINOR),
-                                       static_cast<float>(height));
-
-                    // Beat label (e.g. "1.2", "1.3")
-                    if (pixelsPerBeat >= 50) {
-                        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-                        g.setFont(FontManager::getInstance().getUIFont(10.0f));
-                        g.drawText(juce::String(bar) + "." + juce::String(beat), beatX - 25, labelY,
-                                   50, labelHeight, juce::Justification::centred, false);
-                    }
-                }
-            }
+        if (isBarStart && (bar - 1) % barLabelInterval == 0) {
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
+            g.drawText(juce::String(bar), x - 35, labelY, 70, labelHeight,
+                       juce::Justification::centred);
+        } else if (isBeatStart && !isBarStart && pixelsPerBeat >= 50) {
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            g.setFont(FontManager::getInstance().getUIFont(10.0f));
+            g.drawText(juce::String(bar) + "." + juce::String(beatInBar), x - 25, labelY, 50,
+                       labelHeight, juce::Justification::centred);
+        } else if (isSubdivisionNotBeat && pixelsPerSubdiv >= 30) {
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+            g.setFont(FontManager::getInstance().getUIFont(8.0f));
+            g.drawText(juce::String(bar) + "." + juce::String(beatInBar) + "." +
+                           juce::String(subdivIndex),
+                       x - 30, labelY + 2, 60, labelHeight, juce::Justification::centred);
         }
     }
 
