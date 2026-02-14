@@ -427,6 +427,19 @@ class DrumGridClipGrid : public juce::Component,
             }
         }
 
+        // Draw content offset marker (yellow vertical line)
+        if (clipId_ != magda::INVALID_CLIP_ID) {
+            const auto* offsetClip = magda::ClipManager::getInstance().getClip(clipId_);
+            if (offsetClip && offsetClip->midiOffset > 0.0) {
+                int offsetX =
+                    static_cast<int>(offsetClip->midiOffset * pixelsPerBeat_) + GRID_LEFT_PADDING;
+                if (offsetX >= 0 && offsetX <= bounds.getWidth()) {
+                    g.setColour(DarkTheme::getColour(DarkTheme::OFFSET_MARKER));
+                    g.fillRect(offsetX - 1, 0, 2, numRows * rowHeight_);
+                }
+            }
+        }
+
         // Draw copy drag ghost previews
         for (const auto& ghost : copyDragGhosts_) {
             int rowIndex = findRowForNote(ghost.noteNumber);

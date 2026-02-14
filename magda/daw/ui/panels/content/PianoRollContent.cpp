@@ -20,7 +20,7 @@ namespace magda::daw::ui {
 PianoRollContent::PianoRollContent() {
     setName("PianoRoll");
 
-    // Create chord toggle button
+    // Create chord toggle button (hidden — chord feature disabled for now)
     chordToggle_ = std::make_unique<magda::SvgButton>("ChordToggle", BinaryData::chord_svg,
                                                       BinaryData::chord_svgSize);
     chordToggle_->setTooltip("Toggle chord detection row");
@@ -30,7 +30,6 @@ PianoRollContent::PianoRollContent() {
         setChordRowVisible(!showChordRow_);
         chordToggle_->setActive(showChordRow_);
     };
-    addAndMakeVisible(chordToggle_.get());
 
     // Create velocity toggle button (bar chart icon for controls drawer)
     velocityToggle_ = std::make_unique<magda::SvgButton>(
@@ -382,10 +381,9 @@ void PianoRollContent::resized() {
     // Skip sidebar (painted in paint())
     bounds.removeFromLeft(SIDEBAR_WIDTH);
 
-    // Position sidebar icons: chord at top, velocity at bottom
+    // Position sidebar icons: velocity at bottom (chord toggle hidden)
     int iconSize = 22;
     int padding = (SIDEBAR_WIDTH - iconSize) / 2;
-    chordToggle_->setBounds(padding, padding, iconSize, iconSize);
     velocityToggle_->setBounds(padding, getHeight() - iconSize - padding, iconSize, iconSize);
 
     // Skip chord row space if visible (drawn in paint)

@@ -71,20 +71,15 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipStartValue_;
     juce::Label clipEndLabel_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipEndValue_;
-    juce::Label clipLengthLabel_;
-    std::unique_ptr<magda::BarsBeatsTicksLabel> clipLengthValue_;
-
-    // Content offset section
-    juce::Label clipOffsetRowLabel_;
-    std::unique_ptr<magda::SvgButton> clipContentOffsetIcon_;
+    juce::Label clipOffsetLabel_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipContentOffsetValue_;
 
     // Loop section
     std::unique_ptr<magda::SvgButton> clipLoopToggle_;
     juce::Label clipLoopStartLabel_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopStartValue_;
-    juce::Label clipLoopLengthLabel_;
-    std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopLengthValue_;
+    juce::Label clipLoopEndLabel_;
+    std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopEndValue_;
     juce::Label clipLoopPhaseLabel_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopPhaseValue_;
 

@@ -104,7 +104,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     int noteHeight_ = DEFAULT_NOTE_HEIGHT;
 
     // Chord row visibility
-    bool showChordRow_ = true;
+    bool showChordRow_ = false;
 
     // Velocity drawer visibility
     bool velocityDrawerOpen_ = false;
