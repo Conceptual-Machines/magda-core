@@ -732,7 +732,7 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     sequence.clear(nullptr);
 
     // Calculate the beat range visible in this clip based on midiOffset
-    const double beatsPerSecond = 2.0;  // TODO: Get from tempo
+    const double beatsPerSecond = edit_.tempoSequence.getBpmAt(te::TimePosition()) / 60.0;
     double clipLengthBeats = clip->length * beatsPerSecond;
     // Only session clips use midiOffset; arrangement clips play all their notes
     double effectiveOffset =

@@ -787,7 +787,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
         // First pass: update all seconds from beats
         std::vector<ClipId> updatedClipIds;
         for (const auto& clip : allClips) {
-            if (clip.autoTempo && clip.type == ClipType::Audio) {
+            if (clip.type == ClipType::MIDI || (clip.autoTempo && clip.type == ClipType::Audio)) {
                 auto* mutableClip = clipManager.getClip(clip.id);
                 if (!mutableClip) {
                     continue;
