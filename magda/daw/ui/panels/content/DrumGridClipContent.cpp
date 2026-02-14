@@ -129,6 +129,18 @@ class DrumGridClipGrid : public juce::Component,
 
     // Refresh note components from clip data
     void refreshNotes() {
+        // Preserve selection: pending positions take priority, else keep current indices
+        std::set<size_t> selectedIndices;
+        if (pendingSelectPositions_.empty()) {
+            for (const auto& nc : noteComponents_) {
+                if (nc->isSelected())
+                    selectedIndices.insert(nc->getNoteIndex());
+            }
+        }
+
+        auto pendingPositions = std::move(pendingSelectPositions_);
+        pendingSelectPositions_.clear();
+
         clearNoteComponents();
 
         if (clipId_ == magda::INVALID_CLIP_ID || !padRows_ || padRows_->empty()) {
@@ -138,6 +150,34 @@ class DrumGridClipGrid : public juce::Component,
 
         createNoteComponents();
         updateNoteComponentBounds();
+
+        // Restore selection
+        if (!pendingPositions.empty()) {
+            // Select notes matching pending copy destinations
+            const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
+            if (clip) {
+                for (auto& nc : noteComponents_) {
+                    size_t idx = nc->getNoteIndex();
+                    if (idx >= clip->midiNotes.size())
+                        continue;
+                    const auto& note = clip->midiNotes[idx];
+                    for (const auto& pos : pendingPositions) {
+                        if (std::abs(note.startBeat - pos.beat) < 0.001 &&
+                            note.noteNumber == pos.noteNumber) {
+                            nc->setSelected(true);
+                            break;
+                        }
+                    }
+                }
+            }
+        } else {
+            // Restore previous index-based selection
+            for (auto& nc : noteComponents_) {
+                if (selectedIndices.count(nc->getNoteIndex()) > 0)
+                    nc->setSelected(true);
+            }
+        }
+
         repaint();
     }
 
@@ -435,6 +475,13 @@ class DrumGridClipGrid : public juce::Component,
     // Note components
     std::vector<std::unique_ptr<magda::NoteComponent>> noteComponents_;
 
+    // Pending selection for copy operations (matched by position after refresh)
+    struct PendingSelectPos {
+        double beat;
+        int noteNumber;
+    };
+    std::vector<PendingSelectPos> pendingSelectPositions_;
+
     int findRowForNote(int noteNumber) const {
         if (!padRows_)
             return -1;
@@ -484,6 +531,7 @@ class DrumGridClipGrid : public juce::Component,
                 const auto* srcClip = magda::ClipManager::getInstance().getClip(clipId_);
                 if (!srcClip || index >= srcClip->midiNotes.size()) {
                     onNoteCopied(clipId_, index, destBeat, destNoteNumber);
+                    pendingSelectPositions_.push_back({destBeat, destNoteNumber});
                     return;
                 }
 
@@ -493,6 +541,7 @@ class DrumGridClipGrid : public juce::Component,
 
                 // Copy the dragged note
                 onNoteCopied(clipId_, index, destBeat, destNoteNumber);
+                pendingSelectPositions_.push_back({destBeat, destNoteNumber});
 
                 // Copy other selected notes with the same delta
                 for (auto& nc : noteComponents_) {
@@ -510,6 +559,7 @@ class DrumGridClipGrid : public juce::Component,
                     int otherDestNote = juce::jlimit(0, 127, otherNote.noteNumber + noteDelta);
 
                     onNoteCopied(clipId_, otherIndex, otherDestBeat, otherDestNote);
+                    pendingSelectPositions_.push_back({otherDestBeat, otherDestNote});
                 }
             };
 
