@@ -367,8 +367,8 @@ void BottomPanel::timelineStateChanged(const TimelineState& state, ChangeFlags c
         const auto& gq = state.display.gridQuantize;
         // Sync grid controls from timeline state (e.g. changed from TransportPanel)
         isAutoGrid_ = gq.autoGrid;
-        gridNumerator_ = gq.autoGrid ? gq.autoEffectiveNumerator : gq.numerator;
-        gridDenominator_ = gq.autoGrid ? gq.autoEffectiveDenominator : gq.denominator;
+        gridNumerator_ = gq.numerator;
+        gridDenominator_ = gq.denominator;
         isSnapEnabled_ = state.display.snapEnabled;
 
         autoGridButton_->setToggleState(isAutoGrid_, juce::dontSendNotification);
@@ -563,8 +563,8 @@ void BottomPanel::syncGridStateFromTimeline() {
         const auto& state = controller->getState();
         const auto& gq = state.display.gridQuantize;
         isAutoGrid_ = gq.autoGrid;
-        gridNumerator_ = gq.autoGrid ? gq.autoEffectiveNumerator : gq.numerator;
-        gridDenominator_ = gq.autoGrid ? gq.autoEffectiveDenominator : gq.denominator;
+        gridNumerator_ = gq.numerator;
+        gridDenominator_ = gq.denominator;
         isSnapEnabled_ = state.display.snapEnabled;
     }
 }
