@@ -473,7 +473,7 @@ void ClipInspector::initClipPropertiesSection() {
             // AutoTempo: beats are in source BPM domain, convert directly
             newLoopLengthSeconds = (newLoopLengthBeats * 60.0) / clip->sourceBPM;
         } else {
-            // Manual: convert beats to timeline seconds, then to source seconds
+            // Manual/MIDI: convert beats to timeline seconds, then to source seconds
             double timelineSeconds = magda::TimelineUtils::beatsToSeconds(newLoopLengthBeats, bpm);
             newLoopLengthSeconds = timelineSeconds * clip->speedRatio;
         }
@@ -499,7 +499,7 @@ void ClipInspector::initClipPropertiesSection() {
             }
         }
 
-        // Set loopLength (in seconds) — pass BPM to update beat values in autoTempo mode
+        // Set loopLength — also updates loopLengthBeats for MIDI/autoTempo clips
         magda::ClipManager::getInstance().setLoopLength(selectedClipId_, newLoopLengthSeconds, bpm);
     };
     clipPropsContainer_.addChildComponent(*clipLoopLengthValue_);

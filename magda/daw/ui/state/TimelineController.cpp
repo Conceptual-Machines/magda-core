@@ -809,6 +809,12 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
                 mutableClip->length =
                     magda::TimelineUtils::beatsToSeconds(mutableClip->lengthBeats, newBpm);
 
+                // Keep loopLength in sync for MIDI clips
+                if (mutableClip->type == ClipType::MIDI && mutableClip->loopLengthBeats > 0.0) {
+                    mutableClip->loopLength =
+                        magda::TimelineUtils::beatsToSeconds(mutableClip->loopLengthBeats, newBpm);
+                }
+
                 updatedClipIds.push_back(clip.id);
             }
         }
