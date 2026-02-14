@@ -62,9 +62,6 @@ void NoteComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Only allow copy drag if note was already selected
-    bool wasAlreadySelected = isSelected_;
-
     // Single click - select this note
     if (!isSelected_) {
         setSelected(true);
@@ -102,8 +99,8 @@ void NoteComponent::mouseDown(const juce::MouseEvent& e) {
         dragMode_ = DragMode::ResizeRight;
     } else {
         dragMode_ = DragMode::Move;
-        // Shift+drag on an already-selected note starts a copy operation
-        isCopyDrag_ = wasAlreadySelected && e.mods.isShiftDown();
+        // Shift+drag starts a copy operation
+        isCopyDrag_ = e.mods.isShiftDown();
     }
 
     repaint();
