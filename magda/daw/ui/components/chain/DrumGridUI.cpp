@@ -891,7 +891,7 @@ void DrumGridUI::goToNextPage() {
 }
 
 juce::String DrumGridUI::getNoteName(int padIndex) {
-    int midiNote = 36 + padIndex;  // Pad 0 = MIDI 36 = C2
+    int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
     return juce::MidiMessage::getMidiNoteName(midiNote, true, true, 3);
 }
 
