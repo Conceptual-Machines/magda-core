@@ -597,24 +597,7 @@ void PianoRollContent::updateGridSize() {
     }
 }
 
-// ============================================================================
-// TimeRuler (extends base to add loop region)
-// ============================================================================
-
-void PianoRollContent::updateTimeRuler() {
-    MidiEditorContent::updateTimeRuler();
-
-    // Add loop region data (PianoRoll-specific)
-    const auto* clip = editingClipId_ != magda::INVALID_CLIP_ID
-                           ? magda::ClipManager::getInstance().getClip(editingClipId_)
-                           : nullptr;
-    if (clip) {
-        timeRuler_->setLoopRegion(clip->offset - clip->loopStart, clip->loopLength,
-                                  clip->loopEnabled);
-    } else {
-        timeRuler_->setLoopRegion(0.0, 0.0, false);
-    }
-}
+// Loop region is now handled by MidiEditorContent::updateTimeRuler()
 
 // ============================================================================
 // Relative time mode (PianoRoll-specific multi-clip handling)

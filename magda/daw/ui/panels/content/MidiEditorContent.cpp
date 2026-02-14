@@ -173,6 +173,14 @@ void MidiEditorContent::updateTimeRuler() {
 
     // Update relative mode
     timeRuler_->setRelativeMode(relativeTimeMode_);
+
+    // Set loop region markers
+    if (clip) {
+        timeRuler_->setLoopRegion(clip->offset - clip->loopStart, clip->loopLength,
+                                  clip->loopEnabled);
+    } else {
+        timeRuler_->setLoopRegion(0.0, 0.0, false);
+    }
 }
 
 // ============================================================================

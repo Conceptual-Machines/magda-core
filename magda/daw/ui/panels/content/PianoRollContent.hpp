@@ -80,7 +80,6 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
         return SIDEBAR_WIDTH + KEYBOARD_WIDTH;
     }
     void updateGridSize() override;
-    void updateTimeRuler() override;
     void setGridPixelsPerBeat(double ppb) override;
     void setGridPlayheadPosition(double position) override;
     void onScrollPositionChanged(int scrollX, int scrollY) override;
