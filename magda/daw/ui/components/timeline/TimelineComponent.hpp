@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 
+#include "../../../utils/ScopedListener.hpp"
 #include "../../layout/LayoutConfig.hpp"
 #include "../../state/TimelineController.hpp"
 
@@ -29,7 +30,7 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     // Set the controller reference (called by MainView after construction)
     void setController(TimelineController* controller);
     TimelineController* getController() const {
-        return timelineController;
+        return timelineListener_.get();
     }
 
     // Timeline controls
@@ -129,8 +130,8 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
         onZoomToFitRequested;  // Callback to zoom to fit a time range (startTime, endTime)
 
   private:
-    // Controller reference (not owned)
-    TimelineController* timelineController = nullptr;
+    // RAII listener guard — destroyed before cached state below
+    ScopedListener<TimelineController, TimelineStateListener> timelineListener_{this};
 
     // Layout constants - use shared constant from LayoutConfig
     static constexpr int LEFT_PADDING = LayoutConfig::TIMELINE_LEFT_PADDING;
