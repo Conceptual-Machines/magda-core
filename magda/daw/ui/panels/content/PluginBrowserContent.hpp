@@ -45,7 +45,12 @@ struct PluginBrowserInfo {
 class PluginBrowserContent : public PanelContent, public juce::TreeViewItem {
   public:
     PluginBrowserContent();
-    ~PluginBrowserContent() override = default;
+    ~PluginBrowserContent() override {
+        // Clear root item before TreeView destructor runs, since TreeView::~TreeView()
+        // calls setOwnerView(nullptr) on items — rootItem_ would be freed first
+        // (reverse declaration order) causing use-after-free.
+        pluginTree_.setRootItem(nullptr);
+    }
 
     PanelContentType getContentType() const override {
         return PanelContentType::PluginBrowser;
