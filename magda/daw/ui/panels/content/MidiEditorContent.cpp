@@ -288,20 +288,14 @@ void MidiEditorContent::applyClipGridSettings() {
                 constexpr int minPixelSpacing = 20;
                 double frac =
                     magda::GridConstants::findBeatSubdivision(horizontalZoom_, minPixelSpacing);
-                double newResolution = (frac > 0.0) ? frac : 1.0;
-                if (newResolution != gridResolutionBeats_) {
-                    gridResolutionBeats_ = newResolution;
-                    onGridResolutionChanged();
-                }
+                gridResolutionBeats_ = (frac > 0.0) ? frac : 1.0;
             } else {
                 // Manual: compute from numerator/denominator
-                double newResolution =
+                gridResolutionBeats_ =
                     (4.0 * clip->gridNumerator) / static_cast<double>(clip->gridDenominator);
-                if (newResolution != gridResolutionBeats_) {
-                    gridResolutionBeats_ = newResolution;
-                    onGridResolutionChanged();
-                }
             }
+            // Always push to grid component (snap or resolution may have changed)
+            onGridResolutionChanged();
             return;
         }
     }
@@ -310,6 +304,7 @@ void MidiEditorContent::applyClipGridSettings() {
     constexpr int minPixelSpacing = 20;
     double frac = magda::GridConstants::findBeatSubdivision(horizontalZoom_, minPixelSpacing);
     gridResolutionBeats_ = (frac > 0.0) ? frac : 1.0;
+    onGridResolutionChanged();
 }
 
 void MidiEditorContent::setGridSettingsFromUI(bool autoGrid, int numerator, int denominator) {
