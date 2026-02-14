@@ -777,6 +777,7 @@ void PianoRollContent::clipPropertyChanged(magda::ClipId clipId) {
                     }
                 }
 
+                self->applyClipGridSettings();
                 self->updateGridSize();
                 self->updateTimeRuler();
                 self->updateVelocityLane();
