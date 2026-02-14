@@ -126,6 +126,7 @@ class DrumGridClipGrid : public juce::Component,
     std::function<void(magda::ClipId, size_t, double)> onNoteResized;
     std::function<void(magda::ClipId, size_t, double, int)> onNoteCopied;
     std::function<void(magda::ClipId, size_t, bool)> onNoteSelected;
+    std::function<void(magda::ClipId, std::vector<size_t>)> onNoteSelectionChanged;
 
     // Refresh note components from clip data
     void refreshNotes() {
@@ -449,6 +450,7 @@ class DrumGridClipGrid : public juce::Component,
 
             isDragSelecting_ = false;
             emptyClickRow_ = -1;
+            fireSelectionChanged();
             repaint();
             return;
         }
@@ -464,11 +466,13 @@ class DrumGridClipGrid : public juce::Component,
 
             for (auto& nc : noteComponents_)
                 nc->setSelected(false);
+            fireSelectionChanged();
         } else {
             // Click on grid background — deselect all
             if (!e.mods.isCommandDown() && !e.mods.isShiftDown()) {
                 for (auto& nc : noteComponents_)
                     nc->setSelected(false);
+                fireSelectionChanged();
             }
         }
 
@@ -525,6 +529,17 @@ class DrumGridClipGrid : public juce::Component,
         return -1;
     }
 
+    void fireSelectionChanged() {
+        if (!onNoteSelectionChanged)
+            return;
+        std::vector<size_t> selected;
+        for (const auto& nc : noteComponents_) {
+            if (nc->isSelected())
+                selected.push_back(nc->getNoteIndex());
+        }
+        onNoteSelectionChanged(clipId_, selected);
+    }
+
     double snapBeatToGrid(double beat) const {
         if (!snapEnabled_ || gridResolutionBeats_ <= 0.0)
             return beat;
@@ -550,6 +565,7 @@ class DrumGridClipGrid : public juce::Component,
                 }
                 if (onNoteSelected)
                     onNoteSelected(clipId_, index, isAdditive);
+                fireSelectionChanged();
             };
 
             noteComp->onNoteMoved = [this](size_t index, double newBeat, int newNoteNumber) {
@@ -865,6 +881,13 @@ DrumGridClipContent::DrumGridClipContent() {
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
         velocityLane_->refreshNotes();
     };
+    velocityLane_->onMultiVelocityChanged = [this](magda::ClipId clipId,
+                                                   std::vector<std::pair<size_t, int>> velocities) {
+        auto cmd = std::make_unique<magda::SetMultipleNoteVelocitiesCommand>(clipId,
+                                                                             std::move(velocities));
+        magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+        velocityLane_->refreshNotes();
+    };
     addChildComponent(velocityLane_.get());  // Start hidden
 
     // Create row labels
@@ -930,6 +953,12 @@ DrumGridClipContent::DrumGridClipContent() {
         auto cmd = std::make_unique<magda::AddMidiNoteCommand>(
             clipId, destBeat, destNoteNumber, srcNote.lengthBeats, srcNote.velocity);
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+    };
+
+    gridComponent_->onNoteSelectionChanged = [this](magda::ClipId /*clipId*/,
+                                                    std::vector<size_t> noteIndices) {
+        if (velocityLane_)
+            velocityLane_->setSelectedNoteIndices(noteIndices);
     };
 
     viewport_->setViewedComponent(gridComponent_.get(), false);

@@ -88,6 +88,7 @@ void VelocityLaneComponent::setNotePreviewPosition(size_t noteIndex, double prev
 }
 
 void VelocityLaneComponent::setSelectedNoteIndices(const std::vector<size_t>& indices) {
+    DBG("VelocityLane::setSelectedNoteIndices - count=" << indices.size());
     selectedNoteIndices_ = indices;
     // Reset curve state when selection changes
     isCurveHandleVisible_ = false;
@@ -499,6 +500,11 @@ void VelocityLaneComponent::mouseDown(const juce::MouseEvent& e) {
     }
 
     // Alt+click with 2+ selected notes: start ramp drag
+    DBG("VelocityLane::mouseDown - alt="
+        << (e.mods.isAltDown() ? "YES" : "NO") << " cmd=" << (e.mods.isCommandDown() ? "YES" : "NO")
+        << " shift=" << (e.mods.isShiftDown() ? "YES" : "NO")
+        << " ctrl=" << (e.mods.isCtrlDown() ? "YES" : "NO") << " rawFlags=" << e.mods.getRawFlags()
+        << " selectedNotes=" << selectedNoteIndices_.size() << " clipId=" << clipId_);
     if (e.mods.isAltDown() && selectedNoteIndices_.size() >= 2) {
         const auto* clip = ClipManager::getInstance().getClip(clipId_);
         if (clip && clip->type == ClipType::MIDI) {
@@ -519,6 +525,12 @@ void VelocityLaneComponent::mouseDown(const juce::MouseEvent& e) {
             return;
         }
     }
+
+    // Clear ramp/curve visual state
+    isCurveHandleVisible_ = false;
+    isCurveHandleDragging_ = false;
+    curveAmount_ = 0.0f;
+    previewVelocities_.clear();
 
     // Normal single-note drag
     size_t noteIndex = findNoteAtX(e.x);
