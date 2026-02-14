@@ -282,6 +282,17 @@ struct SetGridQuantizeEvent {
     int denominator;
 };
 
+/**
+ * @brief Update auto-grid effective display values (from MIDI editor zoom)
+ *
+ * Only updates the display numerator/denominator shown in the BottomPanel
+ * when auto-grid is active. Does not affect the arrangement grid.
+ */
+struct SetAutoGridDisplayEvent {
+    int effectiveNumerator;
+    int effectiveDenominator;
+};
+
 // ===== Section Events =====
 
 /**
@@ -369,6 +380,7 @@ using TimelineEvent = std::variant<
     SetTempoEvent, SetTimeSignatureEvent,
     // Display events
     SetTimeDisplayModeEvent, SetSnapEnabledEvent, SetArrangementLockedEvent, SetGridQuantizeEvent,
+    SetAutoGridDisplayEvent,
     // Section events
     AddSectionEvent, RemoveSectionEvent, MoveSectionEvent, ResizeSectionEvent, SelectSectionEvent,
     // Viewport events

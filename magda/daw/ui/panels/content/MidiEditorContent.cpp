@@ -56,8 +56,20 @@ MidiEditorContent::MidiEditorContent() {
         }
     }
 
-    // Initialize grid resolution from current state
-    updateGridResolution();
+    // Initialize grid resolution state (no dispatch — vtable not ready yet)
+    if (auto* controller = magda::TimelineController::getCurrent()) {
+        const auto& state = controller->getState();
+        snapEnabled_ = state.display.snapEnabled;
+        const auto& gq = state.display.gridQuantize;
+        if (gq.autoGrid) {
+            constexpr int minPixelSpacing = 20;
+            double frac =
+                magda::GridConstants::findBeatSubdivision(horizontalZoom_, minPixelSpacing);
+            gridResolutionBeats_ = (frac > 0.0) ? frac : 1.0;
+        } else {
+            gridResolutionBeats_ = gq.toBeatFraction();
+        }
+    }
 }
 
 MidiEditorContent::~MidiEditorContent() {
@@ -90,6 +102,7 @@ void MidiEditorContent::performAnchorPointZoom(double newZoom, double anchorTime
         updateGridResolution();
         updateGridSize();
         updateTimeRuler();
+        pushAutoGridDisplay();
 
         // Adjust scroll to keep anchor position under mouse
         int newAnchorX = static_cast<int>(anchorBeat * horizontalZoom_) + GRID_LEFT_PADDING;
@@ -112,6 +125,7 @@ void MidiEditorContent::performWheelZoom(double zoomFactor, int mouseXInViewport
         updateGridResolution();
         updateGridSize();
         updateTimeRuler();
+        pushAutoGridDisplay();
 
         // Adjust scroll position to keep anchor point under mouse
         int newAnchorX = static_cast<int>(anchorBeat * horizontalZoom_) + GRID_LEFT_PADDING;
@@ -250,11 +264,13 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
 void MidiEditorContent::updateGridResolution() {
     double newResolution = 0.25;  // Default 1/16
     bool newSnap = true;
+    bool isAuto = true;
 
     if (auto* controller = magda::TimelineController::getCurrent()) {
         const auto& state = controller->getState();
         newSnap = state.display.snapEnabled;
         const auto& gq = state.display.gridQuantize;
+        isAuto = gq.autoGrid;
 
         if (gq.autoGrid) {
             // Auto grid: pick subdivision based on zoom level (same logic as arrangement grid)
@@ -287,6 +303,23 @@ double MidiEditorContent::snapBeatToGrid(double beat) const {
         return beat;
     }
     return std::round(beat / gridResolutionBeats_) * gridResolutionBeats_;
+}
+
+void MidiEditorContent::pushAutoGridDisplay() {
+    if (auto* controller = magda::TimelineController::getCurrent()) {
+        const auto& gq = controller->getState().display.gridQuantize;
+        if (!gq.autoGrid)
+            return;
+
+        int num = 1;
+        int denom = static_cast<int>(std::round(4.0 / gridResolutionBeats_));
+        denom = juce::jlimit(1, 64, denom);
+        if (gridResolutionBeats_ > 4.0) {
+            num = static_cast<int>(std::round(gridResolutionBeats_ / 4.0));
+            denom = 1;
+        }
+        controller->dispatch(magda::SetAutoGridDisplayEvent{num, denom});
+    }
 }
 
 }  // namespace magda::daw::ui

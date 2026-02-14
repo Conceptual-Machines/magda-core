@@ -286,30 +286,48 @@ void PianoRollGridComponent::paintBeatLines(juce::Graphics& g, juce::Rectangle<i
     if (gridRes <= 0.0)
         return;
 
-    for (double beat = 0; beat <= lengthBeats; beat += gridRes) {
-        int x = beatToPixel(beat);
-        if (x < area.getX() || x > area.getRight()) {
+    const float top = static_cast<float>(area.getY());
+    const float bottom = static_cast<float>(area.getBottom());
+    const int left = area.getX();
+    const int right = area.getRight();
+    const int tsNum = timeSignatureNumerator_;
+
+    // Pass 1: Subdivision lines at grid resolution (finest, drawn first)
+    // Use integer counter to avoid floating-point drift (important for triplets etc.)
+    {
+        g.setColour(juce::Colour(0xFF505050));
+        int numLines = static_cast<int>(std::ceil(lengthBeats / gridRes));
+        for (int i = 0; i <= numLines; i++) {
+            double beat = i * gridRes;
+            if (beat > lengthBeats)
+                break;
+            // Skip positions on whole beats (drawn in pass 2/3)
+            double nearest = std::round(beat);
+            if (std::abs(beat - nearest) < 0.001)
+                continue;
+            int x = beatToPixel(beat);
+            if (x >= left && x <= right)
+                g.drawVerticalLine(x, top, bottom);
+        }
+    }
+
+    // Pass 2: Beat lines (always visible)
+    g.setColour(juce::Colour(0xFF585858));
+    for (int b = 1; b <= static_cast<int>(lengthBeats); b++) {
+        // Skip bar boundaries (drawn in pass 3)
+        if (b % tsNum == 0)
             continue;
-        }
+        int x = beatToPixel(static_cast<double>(b));
+        if (x >= left && x <= right)
+            g.drawVerticalLine(x, top, bottom);
+    }
 
-        // Determine line style based on beat position
-        bool isBar = (static_cast<int>(std::round(beat)) % timeSignatureNumerator_ == 0) &&
-                     (std::abs(beat - std::round(beat)) < 0.001);
-        bool isBeat = (std::abs(beat - std::round(beat)) < 0.001);
-
-        if (isBar) {
-            // Bar lines - brightest
-            g.setColour(juce::Colour(0xFF707070));
-        } else if (isBeat) {
-            // Beat lines - medium
-            g.setColour(juce::Colour(0xFF585858));
-        } else {
-            // Sub-beat lines - subtle
-            g.setColour(juce::Colour(0xFF454545));
-        }
-
-        g.drawVerticalLine(x, static_cast<float>(area.getY()),
-                           static_cast<float>(area.getBottom()));
+    // Pass 3: Bar lines (brightest, always visible, drawn last)
+    g.setColour(juce::Colour(0xFF707070));
+    for (int bar = 0; bar * tsNum <= static_cast<int>(lengthBeats); bar++) {
+        int x = beatToPixel(static_cast<double>(bar * tsNum));
+        if (x >= left && x <= right)
+            g.drawVerticalLine(x, top, bottom);
     }
 }
 

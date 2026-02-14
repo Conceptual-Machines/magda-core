@@ -79,8 +79,10 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     TrackManager::getInstance().addListener(this);
 
     // Register as TimelineStateListener for grid sync
+    // Note: TimelineController may not exist yet at construction time.
+    // Registration is retried lazily in updateContentBasedOnSelection().
     if (auto* controller = TimelineController::getCurrent()) {
-        controller->addListener(this);
+        timelineListenerGuard_.reset(controller);
     }
 
     // Sync initial grid state from timeline
@@ -101,10 +103,7 @@ BottomPanel::~BottomPanel() {
 
     ClipManager::getInstance().removeListener(this);
     TrackManager::getInstance().removeListener(this);
-
-    if (auto* controller = TimelineController::getCurrent()) {
-        controller->removeListener(this);
-    }
+    // TimelineController listener removed automatically by timelineListenerGuard_
 
     // Explicitly destroy before base class teardown to avoid repaint during partial destruction
     pianoRollTab_.reset();
@@ -149,9 +148,9 @@ void BottomPanel::setupHeaderControls() {
     gridNumeratorLabel_->setDoubleClickResetsValue(true);
     gridNumeratorLabel_->setDrawBorder(false);
     gridNumeratorLabel_->setEnabled(!isAutoGrid_);
-    gridNumeratorLabel_->setAlpha(isAutoGrid_ ? 0.4f : 1.0f);
+    gridNumeratorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
     gridNumeratorLabel_->onValueChange = [this]() {
-        gridNumerator_ = static_cast<int>(gridNumeratorLabel_->getValue());
+        gridNumerator_ = static_cast<int>(std::round(gridNumeratorLabel_->getValue()));
         if (!isAutoGrid_) {
             if (auto* controller = TimelineController::getCurrent()) {
                 controller->dispatch(
@@ -169,7 +168,7 @@ void BottomPanel::setupHeaderControls() {
                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     gridSlashLabel_->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     gridSlashLabel_->setJustificationType(juce::Justification::centred);
-    gridSlashLabel_->setAlpha(isAutoGrid_ ? 0.4f : 1.0f);
+    gridSlashLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
     addChildComponent(gridSlashLabel_.get());
 
     // Grid denominator
@@ -184,10 +183,10 @@ void BottomPanel::setupHeaderControls() {
     gridDenominatorLabel_->setDoubleClickResetsValue(true);
     gridDenominatorLabel_->setDrawBorder(false);
     gridDenominatorLabel_->setEnabled(!isAutoGrid_);
-    gridDenominatorLabel_->setAlpha(isAutoGrid_ ? 0.4f : 1.0f);
+    gridDenominatorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
     gridDenominatorLabel_->onValueChange = [this]() {
         // Constrain to nearest power of 2
-        int raw = static_cast<int>(gridDenominatorLabel_->getValue());
+        int raw = static_cast<int>(std::round(gridDenominatorLabel_->getValue()));
         int pow2 = 1;
         while (pow2 * 2 <= raw)
             pow2 *= 2;
@@ -225,9 +224,9 @@ void BottomPanel::setupHeaderControls() {
         isAutoGrid_ = autoGridButton_->getToggleState();
         gridNumeratorLabel_->setEnabled(!isAutoGrid_);
         gridDenominatorLabel_->setEnabled(!isAutoGrid_);
-        gridNumeratorLabel_->setAlpha(isAutoGrid_ ? 0.4f : 1.0f);
-        gridDenominatorLabel_->setAlpha(isAutoGrid_ ? 0.4f : 1.0f);
-        gridSlashLabel_->setAlpha(isAutoGrid_ ? 0.4f : 1.0f);
+        gridNumeratorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
+        gridDenominatorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
+        gridSlashLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
         if (auto* controller = TimelineController::getCurrent()) {
             controller->dispatch(
                 SetGridQuantizeEvent{isAutoGrid_, gridNumerator_, gridDenominator_});
@@ -341,29 +340,40 @@ void BottomPanel::trackSelectionChanged(TrackId /*trackId*/) {
 void BottomPanel::timelineStateChanged(const TimelineState& state, ChangeFlags changes) {
     if (hasFlag(changes, ChangeFlags::Display)) {
         const auto& gq = state.display.gridQuantize;
-
         // Sync grid controls from timeline state (e.g. changed from TransportPanel)
         isAutoGrid_ = gq.autoGrid;
-        gridNumerator_ = gq.numerator;
-        gridDenominator_ = gq.denominator;
+        gridNumerator_ = gq.autoGrid ? gq.autoEffectiveNumerator : gq.numerator;
+        gridDenominator_ = gq.autoGrid ? gq.autoEffectiveDenominator : gq.denominator;
         isSnapEnabled_ = state.display.snapEnabled;
 
         autoGridButton_->setToggleState(isAutoGrid_, juce::dontSendNotification);
-        gridNumeratorLabel_->setValue(static_cast<double>(gridNumerator_),
-                                      juce::dontSendNotification);
-        gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
-                                        juce::dontSendNotification);
+        // Don't overwrite labels while the user is actively dragging them
+        // (our own dispatch triggers this callback synchronously)
+        if (!gridNumeratorLabel_->isDragging())
+            gridNumeratorLabel_->setValue(static_cast<double>(gridNumerator_),
+                                          juce::dontSendNotification);
+        if (!gridDenominatorLabel_->isDragging())
+            gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
+                                            juce::dontSendNotification);
         snapButton_->setToggleState(isSnapEnabled_, juce::dontSendNotification);
 
         gridNumeratorLabel_->setEnabled(!isAutoGrid_);
         gridDenominatorLabel_->setEnabled(!isAutoGrid_);
-        gridNumeratorLabel_->setAlpha(isAutoGrid_ ? 0.4f : 1.0f);
-        gridDenominatorLabel_->setAlpha(isAutoGrid_ ? 0.4f : 1.0f);
-        gridSlashLabel_->setAlpha(isAutoGrid_ ? 0.4f : 1.0f);
+        gridNumeratorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
+        gridDenominatorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
+        gridSlashLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
     }
 }
 
 void BottomPanel::updateContentBasedOnSelection() {
+    // Lazy registration: BottomPanel may be constructed before TimelineController
+    if (!timelineListenerGuard_.get()) {
+        if (auto* controller = TimelineController::getCurrent()) {
+            timelineListenerGuard_.reset(controller);
+            syncGridStateFromTimeline();
+        }
+    }
+
     auto& clipManager = ClipManager::getInstance();
     auto& trackManager = TrackManager::getInstance();
 
@@ -490,9 +500,10 @@ void BottomPanel::applyTimeModeToContent() {
 void BottomPanel::syncGridStateFromTimeline() {
     if (auto* controller = TimelineController::getCurrent()) {
         const auto& state = controller->getState();
-        isAutoGrid_ = state.display.gridQuantize.autoGrid;
-        gridNumerator_ = state.display.gridQuantize.numerator;
-        gridDenominator_ = state.display.gridQuantize.denominator;
+        const auto& gq = state.display.gridQuantize;
+        isAutoGrid_ = gq.autoGrid;
+        gridNumerator_ = gq.autoGrid ? gq.autoEffectiveNumerator : gq.numerator;
+        gridDenominator_ = gq.autoGrid ? gq.autoEffectiveDenominator : gq.denominator;
         isSnapEnabled_ = state.display.snapEnabled;
     }
 }

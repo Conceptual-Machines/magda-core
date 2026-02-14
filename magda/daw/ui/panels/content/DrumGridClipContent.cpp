@@ -125,34 +125,60 @@ class DrumGridClipGrid : public juce::Component {
         int numRows = static_cast<int>(padRows_->size());
 
         // Draw horizontal row lines
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
         for (int i = 0; i <= numRows; ++i) {
             int y = i * rowHeight_;
             g.drawHorizontalLine(y, 0.0f, static_cast<float>(bounds.getWidth()));
         }
 
-        // Draw vertical grid lines at the current grid resolution
-        if (gridResolutionBeats_ > 0.0) {
+        // Draw vertical grid lines in three passes: subdivisions, beats, bars
+        {
             double beatsVisible =
                 static_cast<double>(bounds.getWidth() - GRID_LEFT_PADDING) / pixelsPerBeat_;
-            for (double beat = 0.0; beat <= beatsVisible + 1.0; beat += gridResolutionBeats_) {
-                int x = static_cast<int>(beat * pixelsPerBeat_) + GRID_LEFT_PADDING;
-                if (x > bounds.getWidth())
-                    break;
+            float gridBottom = static_cast<float>(numRows * rowHeight_);
+            int maxX = bounds.getWidth();
+            int tsNum = timeSigNumerator_;
 
-                // Determine line style: bar > beat > subdivision
-                bool isBar = (static_cast<int>(std::round(beat)) % timeSigNumerator_ == 0) &&
-                             (std::abs(beat - std::round(beat)) < 0.001);
-                bool isBeat = (std::abs(beat - std::round(beat)) < 0.001);
-
-                if (isBar) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
-                } else if (isBeat) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.25f));
-                } else {
-                    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.12f));
+            // Pass 1: Subdivision lines at grid resolution (finest, drawn first)
+            // Use integer counter to avoid floating-point drift (important for triplets etc.)
+            if (gridResolutionBeats_ > 0.0) {
+                g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.35f));
+                int numLines =
+                    static_cast<int>(std::ceil((beatsVisible + 1.0) / gridResolutionBeats_));
+                for (int i = 0; i <= numLines; i++) {
+                    double beat = i * gridResolutionBeats_;
+                    if (beat > beatsVisible + 1.0)
+                        break;
+                    // Skip whole beats (drawn in pass 2/3)
+                    if (std::abs(beat - std::round(beat)) < 0.001)
+                        continue;
+                    int x = static_cast<int>(beat * pixelsPerBeat_) + GRID_LEFT_PADDING;
+                    if (x > maxX)
+                        break;
+                    g.drawVerticalLine(x, 0.0f, gridBottom);
                 }
-                g.drawVerticalLine(x, 0.0f, static_cast<float>(numRows * rowHeight_));
+            }
+
+            // Pass 2: Beat lines (always visible)
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
+            for (int b = 1; b <= static_cast<int>(beatsVisible) + 1; b++) {
+                if (b % tsNum == 0)
+                    continue;
+                int x =
+                    static_cast<int>(static_cast<double>(b) * pixelsPerBeat_) + GRID_LEFT_PADDING;
+                if (x > maxX)
+                    break;
+                g.drawVerticalLine(x, 0.0f, gridBottom);
+            }
+
+            // Pass 3: Bar lines (brightest, always visible, drawn last)
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.7f));
+            for (int bar = 0; bar * tsNum <= static_cast<int>(beatsVisible) + 1; bar++) {
+                int x = static_cast<int>(static_cast<double>(bar * tsNum) * pixelsPerBeat_) +
+                        GRID_LEFT_PADDING;
+                if (x > maxX)
+                    break;
+                g.drawVerticalLine(x, 0.0f, gridBottom);
             }
         }
 
