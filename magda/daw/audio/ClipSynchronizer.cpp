@@ -712,17 +712,16 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
 
     // Set up internal looping on the TE clip
-    if (clip->loopEnabled) {
-        // For MIDI clips, use clip length as loop region
-        const double beatsPerSecond = edit_.tempoSequence.getBpmAt(te::TimePosition()) / 60.0;
-        double clipLengthBeats = clip->length * beatsPerSecond;
+    if (clip->loopEnabled && clip->loopLengthBeats > 0.0) {
+        // Use the stored loop region length, not the clip container length
+        double loopBeats = clip->loopLengthBeats;
         auto& tempoSeq = edit_.tempoSequence;
         auto loopStartTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(0.0));
-        auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(clipLengthBeats));
+        auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopBeats));
 
         midiClipPtr->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
         midiClipPtr->setLoopRangeBeats(
-            {te::BeatPosition::fromBeats(0.0), te::BeatPosition::fromBeats(clipLengthBeats)});
+            {te::BeatPosition::fromBeats(0.0), te::BeatPosition::fromBeats(loopBeats)});
     } else {
         midiClipPtr->disableLooping();
     }
@@ -734,15 +733,21 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     // Calculate the beat range visible in this clip based on midiOffset
     const double beatsPerSecond = edit_.tempoSequence.getBpmAt(te::TimePosition()) / 60.0;
     double clipLengthBeats = clip->length * beatsPerSecond;
+    // When looping, notes only span the loop region — TE handles repetition
+    double contentLengthBeats = (clip->loopEnabled && clip->loopLengthBeats > 0.0)
+                                    ? clip->loopLengthBeats
+                                    : clipLengthBeats;
     // Only session clips use midiOffset; arrangement clips play all their notes
     double effectiveOffset =
         (clip->view == ClipView::Session || clip->loopEnabled) ? clip->midiOffset : 0.0;
     double visibleStart = effectiveOffset;  // Where the clip's "view window" starts
-    double visibleEnd = effectiveOffset + clipLengthBeats;
+    double visibleEnd = effectiveOffset + contentLengthBeats;
 
     DBG("MIDI SYNC clip " << clipId << ":");
     DBG("  midiOffset=" << clip->midiOffset << ", clipLength=" << clipLengthBeats << " beats");
-    DBG("  loopEnabled=" << (int)clip->loopEnabled);
+    DBG("  loopEnabled=" << (int)clip->loopEnabled
+                         << ", loopLengthBeats=" << clip->loopLengthBeats);
+    DBG("  contentLengthBeats=" << contentLengthBeats);
     DBG("  Visible range: [" << visibleStart << ", " << visibleEnd << ")");
     DBG("  Total notes: " << clip->midiNotes.size());
 
@@ -758,14 +763,12 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
             continue;
         }
 
-        // When looping, truncate notes at clip boundary to prevent stuck notes
+        // Truncate notes at content boundary to prevent stuck notes
         double adjustedLength = note.lengthBeats;
-        if (clip->loopEnabled) {
-            if (noteStart >= clipLengthBeats)
-                continue;
-            if (noteEnd > clipLengthBeats)
-                adjustedLength = clipLengthBeats - noteStart;
-        }
+        if (noteStart >= contentLengthBeats)
+            continue;
+        if (noteEnd > contentLengthBeats)
+            adjustedLength = contentLengthBeats - noteStart;
 
         // Calculate position relative to clip start (subtract midiOffset for session clips only)
         double adjustedStart = noteStart - effectiveOffset;
@@ -776,9 +779,9 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
             adjustedStart = 0.0;
         }
 
-        // Truncate note if it extends past the visible range
-        if (adjustedStart + adjustedLength > clipLengthBeats) {
-            adjustedLength = clipLengthBeats - adjustedStart;
+        // Truncate note if it extends past the content boundary
+        if (adjustedStart + adjustedLength > contentLengthBeats) {
+            adjustedLength = contentLengthBeats - adjustedStart;
         }
 
         // Add note to Tracktion (all positions are now non-negative)

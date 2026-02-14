@@ -357,6 +357,13 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
     if (auto* clip = getClip(clipId)) {
         clip->loopEnabled = enabled;
 
+        // When enabling loop on MIDI clips, capture current length as loop region
+        if (enabled && clip->type == ClipType::MIDI) {
+            if (clip->loopLengthBeats <= 0.0) {
+                clip->loopLengthBeats = clip->lengthBeats;
+            }
+        }
+
         // When enabling loop on audio clips, transfer offset → loopStart
         // The user's current offset becomes the loop start point (phase resets to 0)
         if (enabled && clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty()) {
