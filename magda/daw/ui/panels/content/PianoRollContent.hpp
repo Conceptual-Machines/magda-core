@@ -91,8 +91,8 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     static constexpr int DEFAULT_NOTE_HEIGHT = 12;
     static constexpr int CHORD_ROW_HEIGHT = 24;
     static constexpr int HEADER_HEIGHT = CHORD_ROW_HEIGHT + RULER_HEIGHT;
-    static constexpr int MIN_NOTE = 21;   // A0
-    static constexpr int MAX_NOTE = 108;  // C8
+    static constexpr int MIN_NOTE = 0;    // C-2
+    static constexpr int MAX_NOTE = 127;  // G9
     static constexpr int VELOCITY_LANE_HEIGHT = 80;
     static constexpr int VELOCITY_HEADER_HEIGHT = 20;
 

@@ -182,8 +182,8 @@ class PianoRollGridComponent : public juce::Component,
     TrackId trackId_ = INVALID_TRACK_ID;
 
     // Note range
-    static constexpr int MIN_NOTE = 21;   // A0
-    static constexpr int MAX_NOTE = 108;  // C8
+    static constexpr int MIN_NOTE = 0;    // C-2
+    static constexpr int MAX_NOTE = 127;  // G9
     static constexpr int NOTE_COUNT = MAX_NOTE - MIN_NOTE + 1;
 
     // Left padding (0 by default for piano roll since keyboard provides context)
