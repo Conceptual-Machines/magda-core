@@ -223,6 +223,14 @@ class PianoRollGridComponent : public juce::Component,
     ClipId pendingSelectClipId_ = INVALID_CLIP_ID;
     int pendingSelectNoteIndex_ = -1;
 
+    // Pending position-based selection for copy operations
+    struct PendingSelectPos {
+        ClipId clipId;
+        double beat;
+        int noteNumber;
+    };
+    std::vector<PendingSelectPos> pendingSelectPositions_;
+
     // Copy drag ghost preview state
     struct CopyDragGhost {
         double beat = 0.0;

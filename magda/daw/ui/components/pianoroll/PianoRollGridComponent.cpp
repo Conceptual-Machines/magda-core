@@ -703,14 +703,30 @@ void PianoRollGridComponent::selectNoteAfterRefresh(ClipId clipId, int noteIndex
 }
 
 void PianoRollGridComponent::refreshNotes() {
-    // Pending selection takes priority, otherwise preserve current selection
-    int selectNoteIndex =
-        pendingSelectNoteIndex_ >= 0 ? pendingSelectNoteIndex_ : selectedNoteIndex_;
+    // Pending single-note selection (e.g. after add)
+    int selectNoteIndex = pendingSelectNoteIndex_ >= 0 ? pendingSelectNoteIndex_ : -1;
     ClipId selectClipId = pendingSelectClipId_ != INVALID_CLIP_ID ? pendingSelectClipId_ : clipId_;
 
-    // Clear pending
+    // Clear pending single-note
     pendingSelectClipId_ = INVALID_CLIP_ID;
     pendingSelectNoteIndex_ = -1;
+
+    // Take pending copy positions
+    auto pendingPositions = std::move(pendingSelectPositions_);
+    pendingSelectPositions_.clear();
+
+    // Preserve multi-selection by index (when no pending overrides)
+    struct SavedSel {
+        ClipId clipId;
+        size_t index;
+    };
+    std::vector<SavedSel> savedSelection;
+    if (selectNoteIndex < 0 && pendingPositions.empty()) {
+        for (const auto& nc : noteComponents_) {
+            if (nc->isSelected())
+                savedSelection.push_back({nc->getSourceClipId(), nc->getNoteIndex()});
+        }
+    }
 
     clearNoteComponents();
 
@@ -722,14 +738,45 @@ void PianoRollGridComponent::refreshNotes() {
     createNoteComponents();
     updateNoteComponentBounds();
 
-    // Restore selection if the note still exists
-    if (selectNoteIndex >= 0 && selectClipId != INVALID_CLIP_ID) {
+    // Apply selection
+    if (!pendingPositions.empty()) {
+        // Select notes matching copy destinations by position
+        auto& clipManager = ClipManager::getInstance();
+        for (auto& noteComp : noteComponents_) {
+            ClipId ncClipId = noteComp->getSourceClipId();
+            size_t idx = noteComp->getNoteIndex();
+            const auto* clip = clipManager.getClip(ncClipId);
+            if (!clip || idx >= clip->midiNotes.size())
+                continue;
+            const auto& note = clip->midiNotes[idx];
+            for (const auto& pos : pendingPositions) {
+                if (pos.clipId == ncClipId && std::abs(note.startBeat - pos.beat) < 0.001 &&
+                    note.noteNumber == pos.noteNumber) {
+                    noteComp->setSelected(true);
+                    selectedNoteIndex_ = static_cast<int>(idx);
+                    break;
+                }
+            }
+        }
+    } else if (selectNoteIndex >= 0) {
+        // Restore single pending selection
         for (auto& noteComp : noteComponents_) {
             if (noteComp->getSourceClipId() == selectClipId &&
                 noteComp->getNoteIndex() == static_cast<size_t>(selectNoteIndex)) {
                 noteComp->setSelected(true);
                 selectedNoteIndex_ = selectNoteIndex;
                 break;
+            }
+        }
+    } else if (!savedSelection.empty()) {
+        // Restore previous multi-selection
+        for (auto& noteComp : noteComponents_) {
+            for (const auto& sel : savedSelection) {
+                if (noteComp->getSourceClipId() == sel.clipId &&
+                    noteComp->getNoteIndex() == sel.index) {
+                    noteComp->setSelected(true);
+                    break;
+                }
             }
         }
     }
@@ -820,6 +867,7 @@ void PianoRollGridComponent::createNoteComponents() {
                 const auto* srcClip = ClipManager::getInstance().getClip(clipId);
                 if (!srcClip || index >= srcClip->midiNotes.size()) {
                     onNoteCopied(clipId, index, destBeat, destNoteNumber);
+                    pendingSelectPositions_.push_back({clipId, destBeat, destNoteNumber});
                     return;
                 }
 
@@ -829,6 +877,7 @@ void PianoRollGridComponent::createNoteComponents() {
 
                 // Copy the dragged note
                 onNoteCopied(clipId, index, destBeat, destNoteNumber);
+                pendingSelectPositions_.push_back({clipId, destBeat, destNoteNumber});
 
                 // Copy other selected notes with the same delta
                 for (auto& nc : noteComponents_) {
@@ -849,6 +898,7 @@ void PianoRollGridComponent::createNoteComponents() {
                         juce::jlimit(MIN_NOTE, MAX_NOTE, otherNote.noteNumber + noteDelta);
 
                     onNoteCopied(clipId, otherIndex, otherDestBeat, otherDestNote);
+                    pendingSelectPositions_.push_back({clipId, otherDestBeat, otherDestNote});
                 }
             };
 
