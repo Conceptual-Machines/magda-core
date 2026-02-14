@@ -240,7 +240,7 @@ WaveformEditorContent::WaveformEditorContent() {
 
     gridDenominatorLabel_ =
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Integer);
-    gridDenominatorLabel_->setRange(1.0, 64.0, 4.0);
+    gridDenominatorLabel_->setRange(2.0, 32.0, 4.0);
     gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
                                     juce::dontSendNotification);
     gridDenominatorLabel_->setTextColour(DarkTheme::getSecondaryTextColour());
@@ -248,13 +248,20 @@ WaveformEditorContent::WaveformEditorContent() {
     gridDenominatorLabel_->setFontSize(11.0f);
     gridDenominatorLabel_->setDoubleClickResetsValue(true);
     gridDenominatorLabel_->onValueChange = [this, applyGridBeats]() {
-        int raw = static_cast<int>(gridDenominatorLabel_->getValue());
-        int pow2 = 1;
-        while (pow2 * 2 <= raw)
-            pow2 *= 2;
-        if (raw - pow2 > pow2 * 2 - raw && pow2 * 2 <= 64)
-            pow2 *= 2;
-        gridDenominator_ = pow2;
+        // Constrain to nearest allowed value (multiples of 2 and 3)
+        static constexpr int allowed[] = {2, 3, 4, 6, 8, 12, 16, 24, 32};
+        static constexpr int numAllowed = 9;
+        int raw = static_cast<int>(std::round(gridDenominatorLabel_->getValue()));
+        int best = allowed[0];
+        int bestDist = std::abs(raw - best);
+        for (int i = 1; i < numAllowed; ++i) {
+            int dist = std::abs(raw - allowed[i]);
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = allowed[i];
+            }
+        }
+        gridDenominator_ = best;
         gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
                                         juce::dontSendNotification);
         applyGridBeats();
