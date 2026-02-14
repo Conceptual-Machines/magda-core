@@ -704,6 +704,9 @@ class DrumGridRowLabels : public juce::Component {
         repaint();
     }
 
+    // Callback: noteNumber, isNoteOn
+    std::function<void(int, bool)> onNotePreview;
+
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds();
 
@@ -732,13 +735,36 @@ class DrumGridRowLabels : public juce::Component {
             g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
             g.drawHorizontalLine(y + rowHeight_, 0.0f, static_cast<float>(bounds.getWidth()));
 
-            // Pad name
             const auto& padRow = (*padRows_)[i];
+
+            // Play button (small triangle on the left)
+            auto btnBounds = getPlayButtonBounds(i);
+            bool isPlaying = (playingNoteNumber_ == padRow.noteNumber);
+            bool isHovered = (hoverRow_ == i);
+
+            if (isPlaying) {
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+            } else if (isHovered) {
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.7f));
+            } else {
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.4f));
+            }
+
+            // Draw play triangle
+            auto triArea = btnBounds.toFloat().reduced(3.0f, 4.0f);
+            juce::Path triangle;
+            triangle.addTriangle(triArea.getX(), triArea.getY(), triArea.getX(),
+                                 triArea.getBottom(), triArea.getRight(), triArea.getCentreY());
+            g.fillPath(triangle);
+
+            // Pad name (offset right to make room for play button)
+            int textX = PLAY_BTN_WIDTH + 2;
             g.setColour(padRow.hasChain ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)
                                         : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-            g.drawText(padRow.name,
-                       juce::Rectangle<int>(4, y + 1, bounds.getWidth() - 8, rowHeight_ - 2),
-                       juce::Justification::centredLeft, true);
+            g.drawText(
+                padRow.name,
+                juce::Rectangle<int>(textX, y + 1, bounds.getWidth() - textX - 4, rowHeight_ - 2),
+                juce::Justification::centredLeft, true);
         }
 
         // Right border
@@ -746,10 +772,67 @@ class DrumGridRowLabels : public juce::Component {
         g.drawVerticalLine(bounds.getWidth() - 1, 0.0f, static_cast<float>(bounds.getHeight()));
     }
 
+    void mouseDown(const juce::MouseEvent& e) override {
+        int row = getRowAtY(e.y);
+        if (row < 0 || !padRows_)
+            return;
+
+        auto btnBounds = getPlayButtonBounds(row);
+        if (btnBounds.contains(e.getPosition())) {
+            int noteNumber = (*padRows_)[row].noteNumber;
+            playingNoteNumber_ = noteNumber;
+            if (onNotePreview)
+                onNotePreview(noteNumber, true);
+            repaint();
+        }
+    }
+
+    void mouseUp(const juce::MouseEvent& /*e*/) override {
+        if (playingNoteNumber_ >= 0) {
+            if (onNotePreview)
+                onNotePreview(playingNoteNumber_, false);
+            playingNoteNumber_ = -1;
+            repaint();
+        }
+    }
+
+    void mouseMove(const juce::MouseEvent& e) override {
+        int row = getRowAtY(e.y);
+        if (row != hoverRow_) {
+            hoverRow_ = row;
+            repaint();
+        }
+    }
+
+    void mouseExit(const juce::MouseEvent& /*e*/) override {
+        if (hoverRow_ >= 0) {
+            hoverRow_ = -1;
+            repaint();
+        }
+    }
+
   private:
+    static constexpr int PLAY_BTN_WIDTH = 16;
+
     const std::vector<DrumGridClipContent::PadRow>* padRows_ = nullptr;
     int rowHeight_ = 24;
     int scrollOffsetY_ = 0;
+    int playingNoteNumber_ = -1;
+    int hoverRow_ = -1;
+
+    int getRowAtY(int y) const {
+        if (!padRows_ || padRows_->empty())
+            return -1;
+        int row = (y + scrollOffsetY_) / rowHeight_;
+        if (row < 0 || row >= static_cast<int>(padRows_->size()))
+            return -1;
+        return row;
+    }
+
+    juce::Rectangle<int> getPlayButtonBounds(int row) const {
+        int y = row * rowHeight_ - scrollOffsetY_;
+        return {0, y, PLAY_BTN_WIDTH, rowHeight_};
+    }
 };
 
 //==============================================================================
@@ -788,6 +871,15 @@ DrumGridClipContent::DrumGridClipContent() {
     // Create row labels
     rowLabels_ = std::make_unique<DrumGridRowLabels>();
     rowLabels_->setRowHeight(ROW_HEIGHT);
+    rowLabels_->onNotePreview = [this](int noteNumber, bool isNoteOn) {
+        if (editingClipId_ == magda::INVALID_CLIP_ID)
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (clip && clip->trackId != magda::INVALID_TRACK_ID) {
+            magda::TrackManager::getInstance().previewNote(clip->trackId, noteNumber,
+                                                           isNoteOn ? 100 : 0, isNoteOn);
+        }
+    };
     addAndMakeVisible(rowLabels_.get());
 
     // Add DrumGrid-specific components to viewport repaint list
