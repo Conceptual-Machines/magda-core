@@ -589,8 +589,15 @@ void PianoRollContent::updateGridSize() {
             tempo = controller->getState().tempo.bpm;
         }
         double beatsPerSecond = tempo / 60.0;
-        double loopPhaseBeats = (clip->offset - clip->loopStart) * beatsPerSecond;
-        double sourceLengthBeats = clip->loopLength * beatsPerSecond;
+        double loopPhaseBeats;
+        double sourceLengthBeats;
+        if (clip->type == magda::ClipType::MIDI) {
+            loopPhaseBeats = clip->midiOffset;
+            sourceLengthBeats = clip->loopLengthBeats;
+        } else {
+            loopPhaseBeats = (clip->offset - clip->loopStart) * beatsPerSecond;
+            sourceLengthBeats = clip->loopLength * beatsPerSecond;
+        }
         gridComponent_->setLoopRegion(loopPhaseBeats, sourceLengthBeats, clip->loopEnabled);
     } else {
         gridComponent_->setLoopRegion(0.0, 0.0, false);
@@ -609,8 +616,20 @@ void PianoRollContent::updateTimeRuler() {
                            ? magda::ClipManager::getInstance().getClip(editingClipId_)
                            : nullptr;
     if (clip) {
-        timeRuler_->setLoopRegion(clip->offset - clip->loopStart, clip->loopLength,
-                                  clip->loopEnabled);
+        double loopOffsetSeconds;
+        double loopLengthSeconds;
+        if (clip->type == magda::ClipType::MIDI) {
+            double tempo = 120.0;
+            if (auto* controller = magda::TimelineController::getCurrent()) {
+                tempo = controller->getState().tempo.bpm;
+            }
+            loopOffsetSeconds = clip->midiOffset * 60.0 / tempo;
+            loopLengthSeconds = clip->loopLengthBeats * 60.0 / tempo;
+        } else {
+            loopOffsetSeconds = clip->offset - clip->loopStart;
+            loopLengthSeconds = clip->loopLength;
+        }
+        timeRuler_->setLoopRegion(loopOffsetSeconds, loopLengthSeconds, clip->loopEnabled);
     } else {
         timeRuler_->setLoopRegion(0.0, 0.0, false);
     }

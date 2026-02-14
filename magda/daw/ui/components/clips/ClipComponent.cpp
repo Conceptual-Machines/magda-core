@@ -402,13 +402,18 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
         double beatRange = juce::jmax(1.0, clipLengthInBeats);
 
         // For MIDI clips, convert source region to beats
-        double midiSrcLength =
-            clip.loopLength > 0.0 ? clip.loopLength : clip.length * clip.speedRatio;
-        double loopLengthBeats =
-            midiSrcLength > 0 ? midiSrcLength * beatsPerSecond : clipLengthInBeats;
+        double loopLengthBeats;
+        if (clip.type == ClipType::MIDI && clip.loopLengthBeats > 0.0) {
+            loopLengthBeats = clip.loopLengthBeats;
+        } else {
+            double midiSrcLength =
+                clip.loopLength > 0.0 ? clip.loopLength : clip.length * clip.speedRatio;
+            loopLengthBeats =
+                midiSrcLength > 0 ? midiSrcLength * beatsPerSecond : clipLengthInBeats;
+        }
         if (clip.loopEnabled && loopLengthBeats > 0.0) {
             // Looping: draw notes repeating across the full clip length
-            double loopStart = clip.loopStart * beatsPerSecond;
+            double loopStart = clip.type == ClipType::MIDI ? 0.0 : clip.loopStart * beatsPerSecond;
             double loopEnd = loopStart + loopLengthBeats;
             int numRepetitions = static_cast<int>(std::ceil(clipLengthInBeats / loopLengthBeats));
 
