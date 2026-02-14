@@ -6,11 +6,14 @@
 #include "../../themes/FontManager.hpp"
 #include "AudioBridge.hpp"
 #include "AudioEngine.hpp"
+#include "BinaryData.h"
 #include "audio/DrumGridPlugin.hpp"
 #include "audio/MagdaSamplerPlugin.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "ui/components/common/SvgButton.hpp"
+#include "ui/components/pianoroll/VelocityLaneComponent.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
 #include "ui/state/TimelineController.hpp"
 
@@ -167,9 +170,10 @@ class DrumGridClipGrid : public juce::Component {
                     int w = juce::jmax(4, static_cast<int>(note.lengthBeats * pixelsPerBeat_));
                     int h = rowHeight_ - 2;
 
-                    // Color based on velocity
-                    float alpha = 0.5f + 0.5f * (note.velocity / 127.0f);
-                    auto noteColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(alpha);
+                    // Color based on velocity — darker for lower velocity
+                    float velocityRatio = note.velocity / 127.0f;
+                    auto baseColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+                    auto noteColour = baseColour.darker(1.0f - velocityRatio);
 
                     g.setColour(noteColour);
                     g.fillRoundedRectangle(static_cast<float>(x), static_cast<float>(y + 1),
@@ -461,6 +465,33 @@ class DrumGridRowLabels : public juce::Component {
 DrumGridClipContent::DrumGridClipContent() {
     setName("DrumGridClipContent");
 
+    // Create controls toggle button (bar chart icon)
+    controlsToggle_ = std::make_unique<magda::SvgButton>(
+        "ControlsToggle", BinaryData::bar_chart_svg, BinaryData::bar_chart_svgSize);
+    controlsToggle_->setTooltip("Toggle velocity lane");
+    controlsToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    controlsToggle_->setActive(velocityDrawerOpen_);
+    controlsToggle_->onClick = [this]() {
+        velocityDrawerOpen_ = !velocityDrawerOpen_;
+        controlsToggle_->setActive(velocityDrawerOpen_);
+        updateVelocityLane();
+        resized();
+        repaint();
+    };
+    addAndMakeVisible(controlsToggle_.get());
+
+    // Create velocity lane component
+    velocityLane_ = std::make_unique<magda::VelocityLaneComponent>();
+    velocityLane_->setLeftPadding(GRID_LEFT_PADDING);
+    velocityLane_->onVelocityChanged = [this](magda::ClipId clipId, size_t noteIndex,
+                                              int newVelocity) {
+        auto cmd =
+            std::make_unique<magda::SetMidiNoteVelocityCommand>(clipId, noteIndex, newVelocity);
+        magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+        velocityLane_->refreshNotes();
+    };
+    addChildComponent(velocityLane_.get());  // Start hidden
+
     // Create row labels
     rowLabels_ = std::make_unique<DrumGridRowLabels>();
     rowLabels_->setRowHeight(ROW_HEIGHT);
@@ -524,8 +555,11 @@ void DrumGridClipContent::setGridPlayheadPosition(double position) {
         gridComponent_->setPlayheadPosition(position);
 }
 
-void DrumGridClipContent::onScrollPositionChanged(int /*scrollX*/, int scrollY) {
+void DrumGridClipContent::onScrollPositionChanged(int scrollX, int scrollY) {
     rowLabels_->setScrollOffset(scrollY);
+    if (velocityLane_) {
+        velocityLane_->setScrollOffset(scrollX);
+    }
 }
 
 // ============================================================================
@@ -534,10 +568,47 @@ void DrumGridClipContent::onScrollPositionChanged(int /*scrollX*/, int scrollY) 
 
 void DrumGridClipContent::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getPanelBackgroundColour());
+
+    if (getWidth() <= 0 || getHeight() <= 0)
+        return;
+
+    // Draw sidebar on the left
+    auto sidebarArea = getLocalBounds().removeFromLeft(SIDEBAR_WIDTH);
+    drawSidebar(g, sidebarArea);
+
+    // Draw velocity drawer header (if open)
+    if (velocityDrawerOpen_) {
+        auto drawerHeaderArea = getLocalBounds();
+        drawerHeaderArea.removeFromLeft(SIDEBAR_WIDTH);
+        drawerHeaderArea =
+            drawerHeaderArea.removeFromBottom(VELOCITY_LANE_HEIGHT + VELOCITY_HEADER_HEIGHT);
+        drawerHeaderArea = drawerHeaderArea.removeFromTop(VELOCITY_HEADER_HEIGHT);
+        drawVelocityHeader(g, drawerHeaderArea);
+    }
 }
 
 void DrumGridClipContent::resized() {
     auto bounds = getLocalBounds();
+
+    // Skip sidebar (painted in paint())
+    bounds.removeFromLeft(SIDEBAR_WIDTH);
+
+    // Position sidebar icon at the bottom of the sidebar
+    int iconSize = 22;
+    int iconPadding = (SIDEBAR_WIDTH - iconSize) / 2;
+    controlsToggle_->setBounds(iconPadding, getHeight() - iconSize - iconPadding, iconSize,
+                               iconSize);
+
+    // Velocity drawer at bottom (if open)
+    if (velocityDrawerOpen_) {
+        auto drawerArea = bounds.removeFromBottom(VELOCITY_LANE_HEIGHT + VELOCITY_HEADER_HEIGHT);
+        drawerArea.removeFromTop(VELOCITY_HEADER_HEIGHT);
+        drawerArea.removeFromLeft(LABEL_WIDTH);
+        velocityLane_->setBounds(drawerArea);
+        velocityLane_->setVisible(true);
+    } else {
+        velocityLane_->setVisible(false);
+    }
 
     // Time ruler at top
     auto headerArea = bounds.removeFromTop(RULER_HEIGHT);
@@ -553,6 +624,7 @@ void DrumGridClipContent::resized() {
 
     updateGridSize();
     updateTimeRuler();
+    updateVelocityLane();
 }
 
 // ============================================================================
@@ -564,13 +636,13 @@ void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
     // Cmd/Ctrl + scroll = horizontal zoom (uses shared base method)
     if (e.mods.isCommandDown()) {
         double zoomFactor = 1.0 + (wheel.deltaY * 0.1);
-        int mouseXInViewport = e.x - LABEL_WIDTH;
+        int mouseXInViewport = e.x - SIDEBAR_WIDTH - LABEL_WIDTH;
         performWheelZoom(zoomFactor, mouseXInViewport);
         return;
     }
 
     // Forward to time ruler area for horizontal scroll
-    if (e.y < RULER_HEIGHT && e.x >= LABEL_WIDTH) {
+    if (e.y < RULER_HEIGHT && e.x >= SIDEBAR_WIDTH + LABEL_WIDTH) {
         if (timeRuler_->onScrollRequested) {
             float delta = (wheel.deltaX != 0.0f) ? wheel.deltaX : wheel.deltaY;
             int scrollAmount = static_cast<int>(-delta * 100.0f);
@@ -617,9 +689,11 @@ void DrumGridClipContent::clipsChanged() {
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
         if (!clip) {
             gridComponent_->setClipId(magda::INVALID_CLIP_ID);
+            velocityLane_->setClip(magda::INVALID_CLIP_ID);
         }
     }
     MidiEditorContent::clipsChanged();
+    updateVelocityLane();
 }
 
 void DrumGridClipContent::clipSelectionChanged(magda::ClipId clipId) {
@@ -658,6 +732,7 @@ void DrumGridClipContent::setClip(magda::ClipId clipId) {
 
     updateGridSize();
     updateTimeRuler();
+    updateVelocityLane();
     repaint();
 }
 
@@ -696,6 +771,64 @@ void DrumGridClipContent::updateGridSize() {
     gridComponent_->setClipStartBeats(clipStartBeats);
     gridComponent_->setClipLengthBeats(clipLengthBeats);
     gridComponent_->setTimelineLengthBeats(displayLengthBeats);
+}
+
+// ============================================================================
+// Drawing helpers
+// ============================================================================
+
+void DrumGridClipContent::drawSidebar(juce::Graphics& g, juce::Rectangle<int> area) {
+    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+    g.fillRect(area);
+
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.drawVerticalLine(area.getRight() - 1, static_cast<float>(area.getY()),
+                       static_cast<float>(area.getBottom()));
+}
+
+void DrumGridClipContent::drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area) {
+    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+    g.fillRect(area);
+
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.drawHorizontalLine(area.getY(), static_cast<float>(area.getX()),
+                         static_cast<float>(area.getRight()));
+
+    auto labelArea = area.removeFromLeft(LABEL_WIDTH);
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    g.setFont(magda::FontManager::getInstance().getUIFont(11.0f));
+    g.drawText("Velocity", labelArea.reduced(4, 0), juce::Justification::centredLeft, true);
+}
+
+void DrumGridClipContent::updateVelocityLane() {
+    if (!velocityLane_)
+        return;
+
+    velocityLane_->setClip(editingClipId_);
+    velocityLane_->setPixelsPerBeat(horizontalZoom_);
+    velocityLane_->setRelativeMode(true);
+    velocityLane_->setClipStartBeats(0.0);
+
+    const auto* clip = editingClipId_ != magda::INVALID_CLIP_ID
+                           ? magda::ClipManager::getInstance().getClip(editingClipId_)
+                           : nullptr;
+    if (clip) {
+        double tempo = 120.0;
+        if (auto* controller = magda::TimelineController::getCurrent()) {
+            tempo = controller->getState().tempo.bpm;
+        }
+        double secondsPerBeat = 60.0 / tempo;
+        double clipStartBeats = clip->startTime / secondsPerBeat;
+        double clipLengthBeats = clip->length / secondsPerBeat;
+        velocityLane_->setClipStartBeats(clipStartBeats);
+        velocityLane_->setClipLengthBeats(clipLengthBeats);
+    }
+
+    if (viewport_) {
+        velocityLane_->setScrollOffset(viewport_->getViewPositionX());
+    }
+
+    velocityLane_->refreshNotes();
 }
 
 // ============================================================================

@@ -21,20 +21,15 @@ void NoteComponent::paint(juce::Graphics& g) {
         return;
     }
 
-    // Background fill
-    auto fillColour = isSelected_ ? colour_.brighter(0.3f) : colour_;
+    // Background fill — gradient based on velocity
+    float velocityRatio = velocity_ / 127.0f;
+    auto baseColour = isSelected_ ? colour_.brighter(0.3f) : colour_;
+    auto fillColour = baseColour.darker(1.0f - velocityRatio);
     g.setColour(fillColour);
     g.fillRoundedRectangle(bounds, CORNER_RADIUS);
 
-    // Velocity indicator on the left side
-    float velocityRatio = velocity_ / 127.0f;
-    int velocityBarHeight = static_cast<int>((bounds.getHeight() - 4) * velocityRatio);
-    g.setColour(colour_.brighter(0.5f));
-    g.fillRect(static_cast<int>(bounds.getX()) + 2,
-               static_cast<int>(bounds.getBottom()) - velocityBarHeight - 2, 3, velocityBarHeight);
-
     // Border
-    g.setColour(isSelected_ ? juce::Colours::white : colour_.brighter(0.4f));
+    g.setColour(isSelected_ ? juce::Colours::white : fillColour.brighter(0.4f));
     float strokeWidth = isSelected_ ? 2.0f : 1.0f;
     g.drawRoundedRectangle(bounds.reduced(0.5f), CORNER_RADIUS, strokeWidth);
 

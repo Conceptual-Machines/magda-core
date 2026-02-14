@@ -20,9 +20,9 @@ namespace magda::daw::ui {
 PianoRollContent::PianoRollContent() {
     setName("PianoRoll");
 
-    // Create chord toggle button for sidebar
-    chordToggle_ = std::make_unique<magda::SvgButton>("ChordToggle", BinaryData::Chords2_svg,
-                                                      BinaryData::Chords2_svgSize);
+    // Create chord toggle button
+    chordToggle_ = std::make_unique<magda::SvgButton>("ChordToggle", BinaryData::chord_svg,
+                                                      BinaryData::chord_svgSize);
     chordToggle_->setTooltip("Toggle chord detection row");
     chordToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG fill color
     chordToggle_->setActive(showChordRow_);
@@ -32,9 +32,9 @@ PianoRollContent::PianoRollContent() {
     };
     addAndMakeVisible(chordToggle_.get());
 
-    // Create velocity toggle button for sidebar (using volume icon as placeholder)
+    // Create velocity toggle button (bar chart icon for controls drawer)
     velocityToggle_ = std::make_unique<magda::SvgButton>(
-        "VelocityToggle", BinaryData::volume_up_svg, BinaryData::volume_up_svgSize);
+        "VelocityToggle", BinaryData::bar_chart_svg, BinaryData::bar_chart_svgSize);
     velocityToggle_->setTooltip("Toggle velocity lane");
     velocityToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     velocityToggle_->setActive(velocityDrawerOpen_);
@@ -285,6 +285,9 @@ void PianoRollContent::onScrollPositionChanged(int scrollX, int scrollY) {
 void PianoRollContent::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getPanelBackgroundColour());
 
+    if (getWidth() <= 0 || getHeight() <= 0)
+        return;
+
     // Draw sidebar on the left
     auto sidebarArea = getLocalBounds().removeFromLeft(SIDEBAR_WIDTH);
     drawSidebar(g, sidebarArea);
@@ -292,16 +295,16 @@ void PianoRollContent::paint(juce::Graphics& g) {
     // Draw chord row at the top (if visible)
     if (showChordRow_) {
         auto chordArea = getLocalBounds();
-        chordArea.removeFromLeft(SIDEBAR_WIDTH);  // Skip sidebar
+        chordArea.removeFromLeft(SIDEBAR_WIDTH);
         chordArea = chordArea.removeFromTop(CHORD_ROW_HEIGHT);
-        chordArea.removeFromLeft(KEYBOARD_WIDTH);  // Skip the button area
+        chordArea.removeFromLeft(KEYBOARD_WIDTH);
         drawChordRow(g, chordArea);
     }
 
     // Draw velocity drawer header (if open)
     if (velocityDrawerOpen_) {
         auto drawerHeaderArea = getLocalBounds();
-        drawerHeaderArea.removeFromLeft(SIDEBAR_WIDTH);  // Skip sidebar
+        drawerHeaderArea.removeFromLeft(SIDEBAR_WIDTH);
         drawerHeaderArea =
             drawerHeaderArea.removeFromBottom(VELOCITY_LANE_HEIGHT + VELOCITY_HEADER_HEIGHT);
         drawerHeaderArea = drawerHeaderArea.removeFromTop(VELOCITY_HEADER_HEIGHT);
@@ -315,11 +318,11 @@ void PianoRollContent::resized() {
     // Skip sidebar (painted in paint())
     bounds.removeFromLeft(SIDEBAR_WIDTH);
 
-    // Position sidebar icons at the top of the sidebar
-    int iconSize = 24;
+    // Position sidebar icons: chord at top, velocity at bottom
+    int iconSize = 22;
     int padding = (SIDEBAR_WIDTH - iconSize) / 2;
     chordToggle_->setBounds(padding, padding, iconSize, iconSize);
-    velocityToggle_->setBounds(padding, padding + iconSize + 4, iconSize, iconSize);
+    velocityToggle_->setBounds(padding, getHeight() - iconSize - padding, iconSize, iconSize);
 
     // Skip chord row space if visible (drawn in paint)
     if (showChordRow_) {
@@ -341,7 +344,7 @@ void PianoRollContent::resized() {
 
     // Ruler row
     auto headerArea = bounds.removeFromTop(RULER_HEIGHT);
-    headerArea.removeFromLeft(KEYBOARD_WIDTH);  // Empty space where button used to be
+    headerArea.removeFromLeft(KEYBOARD_WIDTH);
     timeRuler_->setBounds(headerArea);
 
     // Keyboard on the left

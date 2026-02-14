@@ -231,26 +231,24 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
                 velocity = currentDragVelocity_;
             }
 
-            // Calculate bar height from velocity
+            // Calculate stem position from velocity
             int barHeight = velocity * usableHeight / 127;
             int barY = margin + usableHeight - barHeight;
+            int bottomY = margin + usableHeight;
+            int centerX = x;
+            float circleRadius = 3.0f;
 
-            // Draw the bar
-            auto barBounds = juce::Rectangle<int>(x, barY, barWidth - 1, barHeight);
+            // Draw stem line
+            g.setColour(noteColour.withAlpha(0.7f));
+            g.drawVerticalLine(centerX, static_cast<float>(barY) + circleRadius,
+                               static_cast<float>(bottomY));
 
-            // Fill
-            g.setColour(noteColour.withAlpha(0.8f));
-            g.fillRect(barBounds);
-
-            // Border
-            g.setColour(noteColour.brighter(0.2f));
-            g.drawRect(barBounds, 1);
-
-            // Highlight if being dragged
-            if (isDragging_ && isPrimaryClip && i == draggingNoteIndex_) {
-                g.setColour(juce::Colours::white.withAlpha(0.3f));
-                g.fillRect(barBounds);
-            }
+            // Draw circle on top
+            bool isBeingDragged = isDragging_ && isPrimaryClip && i == draggingNoteIndex_;
+            g.setColour(isBeingDragged ? noteColour.brighter(0.5f) : noteColour);
+            g.fillEllipse(static_cast<float>(centerX) - circleRadius,
+                          static_cast<float>(barY) - circleRadius, circleRadius * 2.0f,
+                          circleRadius * 2.0f);
         }
     }
 
@@ -285,15 +283,20 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
 
                     int barHeight = note.velocity * usableHeight / 127;
                     int barY = margin + usableHeight - barHeight;
-                    auto barBounds = juce::Rectangle<int>(x, barY, barWidth - 1, barHeight);
+                    int bottomY = margin + usableHeight;
+                    int centerX = x;
+                    float circleRadius = 3.0f;
 
-                    // Ghost fill at reduced alpha
-                    g.setColour(loopClip->colour.withAlpha(0.3f));
-                    g.fillRect(barBounds);
+                    // Ghost stem
+                    g.setColour(loopClip->colour.withAlpha(0.25f));
+                    g.drawVerticalLine(centerX, static_cast<float>(barY) + circleRadius,
+                                       static_cast<float>(bottomY));
 
-                    // Ghost border
-                    g.setColour(loopClip->colour.withAlpha(0.4f));
-                    g.drawRect(barBounds, 1);
+                    // Ghost circle
+                    g.setColour(loopClip->colour.withAlpha(0.35f));
+                    g.fillEllipse(static_cast<float>(centerX) - circleRadius,
+                                  static_cast<float>(barY) - circleRadius, circleRadius * 2.0f,
+                                  circleRadius * 2.0f);
                 }
             }
         }
