@@ -56,20 +56,10 @@ MidiEditorContent::MidiEditorContent() {
         }
     }
 
-    // Initialize grid resolution state (no dispatch — vtable not ready yet)
-    if (auto* controller = magda::TimelineController::getCurrent()) {
-        const auto& state = controller->getState();
-        snapEnabled_ = state.display.snapEnabled;
-        const auto& gq = state.display.gridQuantize;
-        if (gq.autoGrid) {
-            constexpr int minPixelSpacing = 20;
-            double frac =
-                magda::GridConstants::findBeatSubdivision(horizontalZoom_, minPixelSpacing);
-            gridResolutionBeats_ = (frac > 0.0) ? frac : 1.0;
-        } else {
-            gridResolutionBeats_ = gq.toBeatFraction();
-        }
-    }
+    // Initialize grid resolution from zoom level (fully independent of arrangement)
+    constexpr int minPixelSpacing = 20;
+    double frac = magda::GridConstants::findBeatSubdivision(horizontalZoom_, minPixelSpacing);
+    gridResolutionBeats_ = (frac > 0.0) ? frac : 1.0;
 }
 
 MidiEditorContent::~MidiEditorContent() {
@@ -243,14 +233,8 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
         }
     }
 
-    // Display changes — update grid resolution from BottomPanel controls
-    if (magda::hasFlag(changes, magda::ChangeFlags::Display)) {
-        updateGridResolution();
-    }
-
-    // Tempo, display, timeline, or zoom changes — update ruler and grid
+    // Tempo, timeline, or zoom changes — update ruler and grid
     if (magda::hasFlag(changes, magda::ChangeFlags::Tempo) ||
-        magda::hasFlag(changes, magda::ChangeFlags::Display) ||
         magda::hasFlag(changes, magda::ChangeFlags::Timeline) ||
         magda::hasFlag(changes, magda::ChangeFlags::Zoom)) {
         updateTimeRuler();
@@ -264,38 +248,14 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
 // ============================================================================
 
 void MidiEditorContent::updateGridResolution() {
-    double newResolution = 0.25;  // Default 1/16
-    bool newSnap = true;
-    bool isAuto = true;
+    // MIDI editor computes grid resolution from its own zoom level,
+    // fully independent of the arrangement.
+    constexpr int minPixelSpacing = 20;
+    double frac = magda::GridConstants::findBeatSubdivision(horizontalZoom_, minPixelSpacing);
+    double newResolution = (frac > 0.0) ? frac : 1.0;
 
-    if (auto* controller = magda::TimelineController::getCurrent()) {
-        const auto& state = controller->getState();
-        newSnap = state.display.snapEnabled;
-        const auto& gq = state.display.gridQuantize;
-        isAuto = gq.autoGrid;
-
-        if (gq.autoGrid) {
-            // Auto grid: pick subdivision based on zoom level (same logic as arrangement grid)
-            constexpr int minPixelSpacing = 20;
-            double frac =
-                magda::GridConstants::findBeatSubdivision(horizontalZoom_, minPixelSpacing);
-            if (frac > 0.0) {
-                newResolution = frac;
-            } else {
-                // Very zoomed out — fall back to 1 beat
-                newResolution = 1.0;
-            }
-        } else {
-            // Manual grid: use the user's numerator/denominator setting
-            newResolution = gq.toBeatFraction();
-        }
-    }
-
-    bool changed = (newResolution != gridResolutionBeats_) || (newSnap != snapEnabled_);
-    gridResolutionBeats_ = newResolution;
-    snapEnabled_ = newSnap;
-
-    if (changed) {
+    if (newResolution != gridResolutionBeats_) {
+        gridResolutionBeats_ = newResolution;
         onGridResolutionChanged();
     }
 }
