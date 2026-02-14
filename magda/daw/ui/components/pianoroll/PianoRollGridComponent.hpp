@@ -33,6 +33,8 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
 
     // Mouse handling
     void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
 
     // Keyboard handling
@@ -158,7 +160,7 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
         onNoteCopied;  // clipId, index, destBeat, destNoteNumber
     std::function<void(ClipId, size_t, double)> onNoteResized;  // clipId, index, newLength
     std::function<void(ClipId, size_t)> onNoteDeleted;          // clipId, index
-    std::function<void(ClipId, size_t)> onNoteSelected;         // clipId, index
+    std::function<void(ClipId, size_t, bool)> onNoteSelected;   // clipId, index, isAdditive
 
     // Callback for drag preview (for syncing velocity lane position)
     std::function<void(ClipId, size_t, double, bool)>
@@ -206,6 +208,11 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
 
     // Currently selected note index (or -1 for none)
     int selectedNoteIndex_ = -1;
+
+    // Drag selection (rubber band) state
+    bool isDragSelecting_ = false;
+    juce::Point<int> dragSelectStart_;
+    juce::Point<int> dragSelectEnd_;
 
     // Pending selection to apply after next refresh
     ClipId pendingSelectClipId_ = INVALID_CLIP_ID;

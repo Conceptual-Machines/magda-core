@@ -61,7 +61,7 @@ class NoteComponent : public juce::Component, private juce::Timer {
     void updateFromNote(const MidiNote& note, juce::Colour colour);
 
     // Callbacks
-    std::function<void(size_t)> onNoteSelected;            // noteIndex
+    std::function<void(size_t, bool)> onNoteSelected;      // noteIndex, isAdditive
     std::function<void(size_t, double, int)> onNoteMoved;  // noteIndex, newStartBeat, newNoteNumber
     std::function<void(size_t, double, int)> onNoteCopied;    // noteIndex, destBeat, destNoteNumber
     std::function<void(size_t, double, bool)> onNoteResized;  // noteIndex, newLength, fromStart

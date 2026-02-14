@@ -1,6 +1,7 @@
 #include "DrumGridClipContent.hpp"
 
 #include <algorithm>
+#include <set>
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -202,7 +203,8 @@ class DrumGridClipGrid : public juce::Component {
         if (clipId_ != magda::INVALID_CLIP_ID) {
             const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
             if (clip) {
-                for (const auto& note : clip->midiNotes) {
+                for (size_t ni = 0; ni < clip->midiNotes.size(); ++ni) {
+                    const auto& note = clip->midiNotes[ni];
                     // Find which row this note belongs to
                     int rowIndex = -1;
                     for (int r = 0; r < numRows; ++r) {
@@ -219,9 +221,13 @@ class DrumGridClipGrid : public juce::Component {
                     int w = juce::jmax(4, static_cast<int>(note.lengthBeats * pixelsPerBeat_));
                     int h = rowHeight_ - 2;
 
+                    bool isSelected = selectedNoteIndices_.count(ni) > 0;
+
                     // Color based on velocity — darker for lower velocity
                     float velocityRatio = note.velocity / 127.0f;
                     auto baseColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+                    if (isSelected)
+                        baseColour = baseColour.brighter(0.3f);
                     auto noteColour = baseColour.darker(1.0f - velocityRatio);
 
                     g.setColour(noteColour);
@@ -229,10 +235,11 @@ class DrumGridClipGrid : public juce::Component {
                                            static_cast<float>(w), static_cast<float>(h), 2.0f);
 
                     // Border
-                    g.setColour(noteColour.brighter(0.3f));
+                    g.setColour(isSelected ? juce::Colours::white : noteColour.brighter(0.3f));
+                    float strokeWidth = isSelected ? 2.0f : 1.0f;
                     g.drawRoundedRectangle(static_cast<float>(x), static_cast<float>(y + 1),
                                            static_cast<float>(w), static_cast<float>(h), 2.0f,
-                                           1.0f);
+                                           strokeWidth);
                 }
             }
         }
@@ -250,6 +257,15 @@ class DrumGridClipGrid : public juce::Component {
                 g.setColour(juce::Colours::white);
                 g.drawVerticalLine(playheadX, 0.0f, static_cast<float>(numRows * rowHeight_));
             }
+        }
+
+        // Draw rubber band selection rectangle
+        if (isDragSelecting_) {
+            auto selectionRect = juce::Rectangle<int>(dragSelectStart_, dragSelectEnd_).toFloat();
+            g.setColour(juce::Colour(0x306688CC));
+            g.fillRect(selectionRect);
+            g.setColour(juce::Colour(0xAA6688CC));
+            g.drawRect(selectionRect, 1.0f);
         }
     }
 
@@ -274,6 +290,7 @@ class DrumGridClipGrid : public juce::Component {
             return;
 
         dragState_ = {};
+        isDragSelecting_ = false;
 
         auto [noteIndex, row, beat, noteRightEdgeX] = hitTestNote(e);
 
@@ -297,18 +314,28 @@ class DrumGridClipGrid : public juce::Component {
                 dragState_.isCopyDrag = e.mods.isShiftDown();
             }
         } else if (row >= 0) {
-            // Clicked on empty cell — add a new note (snap beat position)
-            double addBeat = beat;
-            if (snapEnabled_ && gridResolutionBeats_ > 0.0) {
-                addBeat = std::floor(beat / gridResolutionBeats_) * gridResolutionBeats_;
-            }
-            if (onNoteAdded)
-                onNoteAdded(clipId_, addBeat, (*padRows_)[row].noteNumber, 100);
+            // Clicked on empty cell — store start point for potential drag selection
+            // Note-adding is deferred to mouseUp (only if no drag occurred)
+            emptyClickRow_ = row;
+            emptyClickBeat_ = beat;
+            dragSelectStart_ = e.getPosition();
+            dragSelectEnd_ = e.getPosition();
         }
     }
 
     void mouseDrag(const juce::MouseEvent& e) override {
-        if (!dragState_.active || !padRows_ || padRows_->empty())
+        if (!padRows_ || padRows_->empty())
+            return;
+
+        // If we started on empty space, do rubber band selection
+        if (!dragState_.active && emptyClickRow_ >= 0) {
+            isDragSelecting_ = true;
+            dragSelectEnd_ = e.getPosition();
+            repaint();
+            return;
+        }
+
+        if (!dragState_.active)
             return;
 
         // Validate note index is still in range (could be stale after a delete)
@@ -361,7 +388,50 @@ class DrumGridClipGrid : public juce::Component {
         }
     }
 
-    void mouseUp(const juce::MouseEvent& /*e*/) override {
+    void mouseUp(const juce::MouseEvent& e) override {
+        if (isDragSelecting_) {
+            // Rubber band selection: find notes intersecting the selection rectangle
+            auto selectionRect = juce::Rectangle<int>(dragSelectStart_, dragSelectEnd_);
+            bool isAdditive = e.mods.isCommandDown();
+
+            if (!isAdditive) {
+                selectedNoteIndices_.clear();
+            }
+
+            const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
+            if (clip && padRows_ && !padRows_->empty()) {
+                int numRows = static_cast<int>(padRows_->size());
+                for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
+                    const auto& note = clip->midiNotes[i];
+                    // Find row for this note
+                    int rowIndex = -1;
+                    for (int r = 0; r < numRows; ++r) {
+                        if ((*padRows_)[r].noteNumber == note.noteNumber) {
+                            rowIndex = r;
+                            break;
+                        }
+                    }
+                    if (rowIndex < 0)
+                        continue;
+
+                    int nx = static_cast<int>(note.startBeat * pixelsPerBeat_) + GRID_LEFT_PADDING;
+                    int ny = rowIndex * rowHeight_;
+                    int nw = juce::jmax(4, static_cast<int>(note.lengthBeats * pixelsPerBeat_));
+                    int nh = rowHeight_ - 2;
+                    auto noteBounds = juce::Rectangle<int>(nx, ny + 1, nw, nh);
+
+                    if (noteBounds.intersects(selectionRect)) {
+                        selectedNoteIndices_.insert(i);
+                    }
+                }
+            }
+
+            isDragSelecting_ = false;
+            emptyClickRow_ = -1;
+            repaint();
+            return;
+        }
+
         if (dragState_.active && dragState_.hasMoved && dragState_.isCopyDrag &&
             dragState_.dragMode == DragMode::Move && padRows_ && !padRows_->empty()) {
             // Copy drag: add a new note at the destination
@@ -375,8 +445,20 @@ class DrumGridClipGrid : public juce::Component {
                     onNoteCopied(clipId_, dragState_.currentBeat, destNoteNumber,
                                  sourceNote.lengthBeats, sourceNote.velocity);
             }
+        } else if (!dragState_.active && emptyClickRow_ >= 0) {
+            // Plain click on empty cell (no drag occurred) — add a note
+            double addBeat = emptyClickBeat_;
+            if (snapEnabled_ && gridResolutionBeats_ > 0.0) {
+                addBeat = std::floor(addBeat / gridResolutionBeats_) * gridResolutionBeats_;
+            }
+            if (onNoteAdded)
+                onNoteAdded(clipId_, addBeat, (*padRows_)[emptyClickRow_].noteNumber, 100);
+
+            selectedNoteIndices_.clear();
         }
+
         dragState_ = {};
+        emptyClickRow_ = -1;
     }
 
     void mouseDoubleClick(const juce::MouseEvent& e) override {
@@ -456,6 +538,15 @@ class DrumGridClipGrid : public juce::Component {
         bool isCopyDrag = false;
     };
     DragState dragState_;
+
+    // Rubber band / multi-selection state
+    std::set<size_t> selectedNoteIndices_;
+    bool isDragSelecting_ = false;
+    juce::Point<int> dragSelectStart_;
+    juce::Point<int> dragSelectEnd_;
+    int emptyClickRow_ = -1;
+    double emptyClickBeat_ = 0.0;
+
     static constexpr int GRID_LEFT_PADDING = 2;
     double pixelsPerBeat_ = 50.0;
     int rowHeight_ = 24;

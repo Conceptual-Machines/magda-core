@@ -246,6 +246,15 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
             g.fillRect(playheadX - 1, 0, 2, bounds.getHeight());
         }
     }
+
+    // Draw rubber band selection rectangle
+    if (isDragSelecting_) {
+        auto selectionRect = juce::Rectangle<int>(dragSelectStart_, dragSelectEnd_).toFloat();
+        g.setColour(juce::Colour(0x306688CC));
+        g.fillRect(selectionRect);
+        g.setColour(juce::Colour(0xAA6688CC));
+        g.drawRect(selectionRect, 1.0f);
+    }
 }
 
 void PianoRollGridComponent::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
@@ -351,12 +360,50 @@ void PianoRollGridComponent::resized() {
 }
 
 void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
-    // Click on empty space - deselect all notes
-    if (!e.mods.isCommandDown() && !e.mods.isShiftDown()) {
-        for (auto& noteComp : noteComponents_) {
-            noteComp->setSelected(false);
+    // Store drag start point for potential rubber band selection
+    dragSelectStart_ = e.getPosition();
+    dragSelectEnd_ = e.getPosition();
+    isDragSelecting_ = false;
+}
+
+void PianoRollGridComponent::mouseDrag(const juce::MouseEvent& e) {
+    isDragSelecting_ = true;
+    dragSelectEnd_ = e.getPosition();
+    repaint();
+}
+
+void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
+    if (isDragSelecting_) {
+        // Build normalized selection rectangle
+        auto selectionRect = juce::Rectangle<int>(dragSelectStart_, dragSelectEnd_);
+
+        bool isAdditive = e.mods.isCommandDown();
+
+        // If not additive, deselect all first
+        if (!isAdditive) {
+            for (auto& nc : noteComponents_) {
+                nc->setSelected(false);
+            }
+            selectedNoteIndex_ = -1;
         }
-        selectedNoteIndex_ = -1;
+
+        // Select notes whose bounds intersect the selection rectangle
+        for (auto& nc : noteComponents_) {
+            if (nc->getBounds().intersects(selectionRect)) {
+                nc->setSelected(true);
+            }
+        }
+
+        isDragSelecting_ = false;
+        repaint();
+    } else {
+        // Plain click on empty space — deselect all notes
+        if (!e.mods.isCommandDown() && !e.mods.isShiftDown()) {
+            for (auto& noteComp : noteComponents_) {
+                noteComp->setSelected(false);
+            }
+            selectedNoteIndex_ = -1;
+        }
     }
 }
 
@@ -741,17 +788,19 @@ void PianoRollGridComponent::createNoteComponents() {
         for (size_t i = 0; i < clip->midiNotes.size(); i++) {
             auto noteComp = std::make_unique<NoteComponent>(i, this, clipId);
 
-            noteComp->onNoteSelected = [this, clipId](size_t index) {
-                // Deselect other notes
-                for (auto& nc : noteComponents_) {
-                    if (nc->getSourceClipId() != clipId || nc->getNoteIndex() != index) {
-                        nc->setSelected(false);
+            noteComp->onNoteSelected = [this, clipId](size_t index, bool isAdditive) {
+                if (!isAdditive) {
+                    // Deselect other notes (exclusive selection)
+                    for (auto& nc : noteComponents_) {
+                        if (nc->getSourceClipId() != clipId || nc->getNoteIndex() != index) {
+                            nc->setSelected(false);
+                        }
                     }
                 }
                 selectedNoteIndex_ = static_cast<int>(index);
 
                 if (onNoteSelected) {
-                    onNoteSelected(clipId, index);
+                    onNoteSelected(clipId, index, isAdditive);
                 }
             };
 

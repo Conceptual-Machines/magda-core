@@ -270,7 +270,8 @@ void PianoRollContent::setupGridCallbacks() {
     };
 
     // Handle note selection - update SelectionManager
-    gridComponent_->onNoteSelected = [](magda::ClipId clipId, size_t noteIndex) {
+    gridComponent_->onNoteSelected = [](magda::ClipId clipId, size_t noteIndex,
+                                        bool /*isAdditive*/) {
         magda::SelectionManager::getInstance().selectNote(clipId, noteIndex);
     };
 

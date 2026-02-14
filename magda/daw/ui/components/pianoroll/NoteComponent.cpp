@@ -52,11 +52,11 @@ void NoteComponent::resized() {
 }
 
 void NoteComponent::mouseDown(const juce::MouseEvent& e) {
-    // Handle Cmd+click for toggle selection
+    // Handle Cmd+click for toggle selection (additive)
     if (e.mods.isCommandDown()) {
         setSelected(!isSelected_);
         if (onNoteSelected) {
-            onNoteSelected(noteIndex_);
+            onNoteSelected(noteIndex_, true);
         }
         dragMode_ = DragMode::None;
         return;
@@ -71,7 +71,7 @@ void NoteComponent::mouseDown(const juce::MouseEvent& e) {
     }
 
     if (onNoteSelected) {
-        onNoteSelected(noteIndex_);
+        onNoteSelected(noteIndex_, false);
     }
 
     // Store drag start info
