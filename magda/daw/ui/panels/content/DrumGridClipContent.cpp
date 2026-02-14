@@ -92,6 +92,21 @@ class DrumGridClipGrid : public juce::Component {
         playheadPosition_ = pos;
         repaint();
     }
+    void setGridResolutionBeats(double beats) {
+        if (gridResolutionBeats_ != beats) {
+            gridResolutionBeats_ = beats;
+            repaint();
+        }
+    }
+    void setSnapEnabled(bool enabled) {
+        snapEnabled_ = enabled;
+    }
+    void setTimeSignatureNumerator(int n) {
+        if (timeSigNumerator_ != n) {
+            timeSigNumerator_ = n;
+            repaint();
+        }
+    }
 
     std::function<void(magda::ClipId, double, int, int)> onNoteAdded;
     std::function<void(magda::ClipId, size_t)> onNoteDeleted;
@@ -109,12 +124,6 @@ class DrumGridClipGrid : public juce::Component {
 
         int numRows = static_cast<int>(padRows_->size());
 
-        // Get time signature
-        int timeSigNumerator = 4;
-        if (auto* controller = magda::TimelineController::getCurrent()) {
-            timeSigNumerator = controller->getState().tempo.timeSignatureNumerator;
-        }
-
         // Draw horizontal row lines
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
         for (int i = 0; i <= numRows; ++i) {
@@ -122,17 +131,29 @@ class DrumGridClipGrid : public juce::Component {
             g.drawHorizontalLine(y, 0.0f, static_cast<float>(bounds.getWidth()));
         }
 
-        // Draw vertical beat lines
-        double beatsVisible =
-            static_cast<double>(bounds.getWidth() - GRID_LEFT_PADDING) / pixelsPerBeat_;
-        for (int beat = 0; beat <= static_cast<int>(beatsVisible) + 1; ++beat) {
-            int x = static_cast<int>(beat * pixelsPerBeat_) + GRID_LEFT_PADDING;
-            if (x > bounds.getWidth())
-                break;
+        // Draw vertical grid lines at the current grid resolution
+        if (gridResolutionBeats_ > 0.0) {
+            double beatsVisible =
+                static_cast<double>(bounds.getWidth() - GRID_LEFT_PADDING) / pixelsPerBeat_;
+            for (double beat = 0.0; beat <= beatsVisible + 1.0; beat += gridResolutionBeats_) {
+                int x = static_cast<int>(beat * pixelsPerBeat_) + GRID_LEFT_PADDING;
+                if (x > bounds.getWidth())
+                    break;
 
-            bool isBar = (beat % timeSigNumerator) == 0;
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(isBar ? 0.5f : 0.15f));
-            g.drawVerticalLine(x, 0.0f, static_cast<float>(numRows * rowHeight_));
+                // Determine line style: bar > beat > subdivision
+                bool isBar = (static_cast<int>(std::round(beat)) % timeSigNumerator_ == 0) &&
+                             (std::abs(beat - std::round(beat)) < 0.001);
+                bool isBeat = (std::abs(beat - std::round(beat)) < 0.001);
+
+                if (isBar) {
+                    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+                } else if (isBeat) {
+                    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.25f));
+                } else {
+                    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.12f));
+                }
+                g.drawVerticalLine(x, 0.0f, static_cast<float>(numRows * rowHeight_));
+            }
         }
 
         // Draw clip boundaries
@@ -245,9 +266,13 @@ class DrumGridClipGrid : public juce::Component {
                 dragState_.dragMode = DragMode::Move;
             }
         } else if (row >= 0) {
-            // Clicked on empty cell — add a new note
+            // Clicked on empty cell — add a new note (snap beat position)
+            double addBeat = beat;
+            if (snapEnabled_ && gridResolutionBeats_ > 0.0) {
+                addBeat = std::floor(beat / gridResolutionBeats_) * gridResolutionBeats_;
+            }
             if (onNoteAdded)
-                onNoteAdded(clipId_, beat, (*padRows_)[row].noteNumber, 100);
+                onNoteAdded(clipId_, addBeat, (*padRows_)[row].noteNumber, 100);
         }
     }
 
@@ -269,10 +294,11 @@ class DrumGridClipGrid : public juce::Component {
             double newLength = mouseBeats - note.startBeat;
 
             // Snap to grid
-            double subdivision = 0.25;
+            double subdivision =
+                (snapEnabled_ && gridResolutionBeats_ > 0.0) ? gridResolutionBeats_ : 0.25;
             newLength = std::round(newLength / subdivision) * subdivision;
 
-            // Enforce minimum length (16th note)
+            // Enforce minimum length
             newLength = juce::jmax(subdivision, newLength);
 
             if (std::abs(newLength - note.lengthBeats) > 0.001) {
@@ -285,8 +311,9 @@ class DrumGridClipGrid : public juce::Component {
             double beat = static_cast<double>(e.x - GRID_LEFT_PADDING) / pixelsPerBeat_;
             if (beat < 0.0)
                 beat = 0.0;
-            double subdivision = 0.25;
-            beat = std::floor(beat / subdivision) * subdivision;
+            if (snapEnabled_ && gridResolutionBeats_ > 0.0) {
+                beat = std::floor(beat / gridResolutionBeats_) * gridResolutionBeats_;
+            }
 
             if (row != dragState_.currentRow || std::abs(beat - dragState_.currentBeat) > 0.001) {
                 dragState_.currentBeat = beat;
@@ -343,8 +370,10 @@ class DrumGridClipGrid : public juce::Component {
         double rawBeat = static_cast<double>(e.x - GRID_LEFT_PADDING) / pixelsPerBeat_;
         if (rawBeat < 0.0)
             rawBeat = 0.0;
-        double subdivision = 0.25;
-        double snappedBeat = std::floor(rawBeat / subdivision) * subdivision;
+        double snappedBeat = rawBeat;
+        if (snapEnabled_ && gridResolutionBeats_ > 0.0) {
+            snappedBeat = std::floor(rawBeat / gridResolutionBeats_) * gridResolutionBeats_;
+        }
 
         const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
         if (!clip)
@@ -387,6 +416,9 @@ class DrumGridClipGrid : public juce::Component {
     double clipLengthBeats_ = 0.0;
     double timelineLengthBeats_ = 0.0;
     double playheadPosition_ = -1.0;
+    double gridResolutionBeats_ = 0.25;
+    bool snapEnabled_ = true;
+    int timeSigNumerator_ = 4;
 };
 
 //==============================================================================
@@ -504,6 +536,12 @@ DrumGridClipContent::DrumGridClipContent() {
     gridComponent_ = std::make_unique<DrumGridClipGrid>();
     gridComponent_->setPixelsPerBeat(horizontalZoom_);
     gridComponent_->setRowHeight(ROW_HEIGHT);
+    gridComponent_->setGridResolutionBeats(gridResolutionBeats_);
+    gridComponent_->setSnapEnabled(snapEnabled_);
+    if (auto* controller = magda::TimelineController::getCurrent()) {
+        gridComponent_->setTimeSignatureNumerator(
+            controller->getState().tempo.timeSignatureNumerator);
+    }
 
     // Set up callbacks
     gridComponent_->onNoteAdded = [](magda::ClipId clipId, double beat, int noteNumber,
@@ -559,6 +597,18 @@ void DrumGridClipContent::onScrollPositionChanged(int scrollX, int scrollY) {
     rowLabels_->setScrollOffset(scrollY);
     if (velocityLane_) {
         velocityLane_->setScrollOffset(scrollX);
+    }
+}
+
+void DrumGridClipContent::onGridResolutionChanged() {
+    if (gridComponent_) {
+        gridComponent_->setGridResolutionBeats(gridResolutionBeats_);
+        gridComponent_->setSnapEnabled(snapEnabled_);
+
+        if (auto* controller = magda::TimelineController::getCurrent()) {
+            gridComponent_->setTimeSignatureNumerator(
+                controller->getState().tempo.timeSignatureNumerator);
+        }
     }
 }
 

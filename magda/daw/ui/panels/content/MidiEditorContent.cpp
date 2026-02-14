@@ -2,6 +2,7 @@
 
 #include "ui/components/timeline/TimeRuler.hpp"
 #include "ui/state/TimelineController.hpp"
+#include "ui/state/TimelineState.hpp"
 
 namespace magda::daw::ui {
 
@@ -54,6 +55,9 @@ MidiEditorContent::MidiEditorContent() {
             editingClipId_ = selectedClip;
         }
     }
+
+    // Initialize grid resolution from current state
+    updateGridResolution();
 }
 
 MidiEditorContent::~MidiEditorContent() {
@@ -83,6 +87,7 @@ void MidiEditorContent::performAnchorPointZoom(double newZoom, double anchorTime
 
         horizontalZoom_ = newPixelsPerBeat;
         setGridPixelsPerBeat(horizontalZoom_);
+        updateGridResolution();
         updateGridSize();
         updateTimeRuler();
 
@@ -104,6 +109,7 @@ void MidiEditorContent::performWheelZoom(double zoomFactor, int mouseXInViewport
     if (newZoom != horizontalZoom_) {
         horizontalZoom_ = newZoom;
         setGridPixelsPerBeat(horizontalZoom_);
+        updateGridResolution();
         updateGridSize();
         updateTimeRuler();
 
@@ -221,6 +227,11 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
         }
     }
 
+    // Display changes — update grid resolution from BottomPanel controls
+    if (magda::hasFlag(changes, magda::ChangeFlags::Display)) {
+        updateGridResolution();
+    }
+
     // Tempo, display, timeline, or zoom changes — update ruler and grid
     if (magda::hasFlag(changes, magda::ChangeFlags::Tempo) ||
         magda::hasFlag(changes, magda::ChangeFlags::Display) ||
@@ -230,6 +241,52 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
         updateGridSize();
         repaint();
     }
+}
+
+// ============================================================================
+// Grid resolution
+// ============================================================================
+
+void MidiEditorContent::updateGridResolution() {
+    double newResolution = 0.25;  // Default 1/16
+    bool newSnap = true;
+
+    if (auto* controller = magda::TimelineController::getCurrent()) {
+        const auto& state = controller->getState();
+        newSnap = state.display.snapEnabled;
+        const auto& gq = state.display.gridQuantize;
+
+        if (gq.autoGrid) {
+            // Auto grid: pick subdivision based on zoom level (same logic as arrangement grid)
+            constexpr int minPixelSpacing = 20;
+            double frac =
+                magda::GridConstants::findBeatSubdivision(horizontalZoom_, minPixelSpacing);
+            if (frac > 0.0) {
+                newResolution = frac;
+            } else {
+                // Very zoomed out — fall back to 1 beat
+                newResolution = 1.0;
+            }
+        } else {
+            // Manual grid: use the user's numerator/denominator setting
+            newResolution = gq.toBeatFraction();
+        }
+    }
+
+    bool changed = (newResolution != gridResolutionBeats_) || (newSnap != snapEnabled_);
+    gridResolutionBeats_ = newResolution;
+    snapEnabled_ = newSnap;
+
+    if (changed) {
+        onGridResolutionChanged();
+    }
+}
+
+double MidiEditorContent::snapBeatToGrid(double beat) const {
+    if (!snapEnabled_ || gridResolutionBeats_ <= 0.0) {
+        return beat;
+    }
+    return std::round(beat / gridResolutionBeats_) * gridResolutionBeats_;
 }
 
 }  // namespace magda::daw::ui

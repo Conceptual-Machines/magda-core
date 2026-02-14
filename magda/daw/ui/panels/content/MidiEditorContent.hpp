@@ -6,6 +6,7 @@
 #include "PanelContent.hpp"
 #include "core/ClipManager.hpp"
 #include "ui/state/TimelineController.hpp"
+#include "ui/state/TimelineState.hpp"
 
 namespace magda {
 class TimeRuler;
@@ -84,6 +85,16 @@ class MidiEditorContent : public PanelContent,
     double horizontalZoom_ = 50.0;  // pixels per beat
     bool relativeTimeMode_ = false;
 
+    // --- Grid resolution (from BottomPanel grid controls) ---
+    double gridResolutionBeats_ = 0.25;  // Current grid resolution in beats (default 1/16)
+    bool snapEnabled_ = true;            // Whether snap-to-grid is active
+
+    double getGridResolutionBeats() const {
+        return gridResolutionBeats_;
+    }
+    double snapBeatToGrid(double beat) const;
+    void updateGridResolution();
+
     // --- Layout constants ---
     static constexpr int RULER_HEIGHT = 36;
     static constexpr int GRID_LEFT_PADDING = 2;
@@ -109,6 +120,7 @@ class MidiEditorContent : public PanelContent,
 
     // --- Optional virtual hooks ---
     virtual void onScrollPositionChanged(int /*scrollX*/, int /*scrollY*/) {}
+    virtual void onGridResolutionChanged() {}
 };
 
 }  // namespace magda::daw::ui

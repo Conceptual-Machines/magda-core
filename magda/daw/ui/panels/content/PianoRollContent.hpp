@@ -83,6 +83,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     void setGridPixelsPerBeat(double ppb) override;
     void setGridPlayheadPosition(double position) override;
     void onScrollPositionChanged(int scrollX, int scrollY) override;
+    void onGridResolutionChanged() override;
 
     // Layout constants (PianoRoll-specific)
     static constexpr int SIDEBAR_WIDTH = 32;

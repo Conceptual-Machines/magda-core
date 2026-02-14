@@ -282,17 +282,20 @@ void PianoRollGridComponent::paintGrid(juce::Graphics& g, juce::Rectangle<int> a
 
 void PianoRollGridComponent::paintBeatLines(juce::Graphics& g, juce::Rectangle<int> area,
                                             double lengthBeats) {
-    double gridResolution = getGridResolutionBeats();
+    double gridRes = gridResolutionBeats_;
+    if (gridRes <= 0.0)
+        return;
 
-    for (double beat = 0; beat <= lengthBeats; beat += gridResolution) {
+    for (double beat = 0; beat <= lengthBeats; beat += gridRes) {
         int x = beatToPixel(beat);
         if (x < area.getX() || x > area.getRight()) {
             continue;
         }
 
         // Determine line style based on beat position
-        bool isBar = (static_cast<int>(beat) % 4 == 0) && (beat == std::floor(beat));
-        bool isBeat = (beat == std::floor(beat));
+        bool isBar = (static_cast<int>(std::round(beat)) % timeSignatureNumerator_ == 0) &&
+                     (std::abs(beat - std::round(beat)) < 0.001);
+        bool isBeat = (std::abs(beat - std::round(beat)) < 0.001);
 
         if (isBar) {
             // Bar lines - brightest
@@ -481,9 +484,22 @@ void PianoRollGridComponent::setNoteHeight(int height) {
     }
 }
 
-void PianoRollGridComponent::setGridResolution(GridResolution resolution) {
-    gridResolution_ = resolution;
-    repaint();
+void PianoRollGridComponent::setGridResolutionBeats(double beats) {
+    if (gridResolutionBeats_ != beats) {
+        gridResolutionBeats_ = beats;
+        repaint();
+    }
+}
+
+void PianoRollGridComponent::setSnapEnabled(bool enabled) {
+    snapEnabled_ = enabled;
+}
+
+void PianoRollGridComponent::setTimeSignatureNumerator(int numerator) {
+    if (timeSignatureNumerator_ != numerator) {
+        timeSignatureNumerator_ = numerator;
+        repaint();
+    }
 }
 
 int PianoRollGridComponent::beatToPixel(double beat) const {
@@ -627,29 +643,10 @@ void PianoRollGridComponent::clipPropertyChanged(ClipId clipId) {
 }
 
 double PianoRollGridComponent::snapBeatToGrid(double beat) const {
-    double resolution = getGridResolutionBeats();
-    if (resolution <= 0 || gridResolution_ == GridResolution::Off) {
+    if (!snapEnabled_ || gridResolutionBeats_ <= 0.0) {
         return beat;
     }
-    return std::round(beat / resolution) * resolution;
-}
-
-double PianoRollGridComponent::getGridResolutionBeats() const {
-    switch (gridResolution_) {
-        case GridResolution::Off:
-            return 0.0;
-        case GridResolution::Bar:
-            return 4.0;
-        case GridResolution::Beat:
-            return 1.0;
-        case GridResolution::Eighth:
-            return 0.5;
-        case GridResolution::Sixteenth:
-            return 0.25;
-        case GridResolution::ThirtySecond:
-            return 0.125;
-    }
-    return 0.25;  // Default to 1/16
+    return std::round(beat / gridResolutionBeats_) * gridResolutionBeats_;
 }
 
 void PianoRollGridComponent::createNoteComponents() {

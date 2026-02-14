@@ -115,19 +115,15 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
     }
 
     // Grid snap settings
-    enum class GridResolution {
-        Off,
-        Bar,          // 4 beats
-        Beat,         // 1 beat (quarter note)
-        Eighth,       // 1/8 note
-        Sixteenth,    // 1/16 note
-        ThirtySecond  // 1/32 note
-    };
-
-    void setGridResolution(GridResolution resolution);
-    GridResolution getGridResolution() const {
-        return gridResolution_;
+    void setGridResolutionBeats(double beats);
+    double getGridResolutionBeats() const {
+        return gridResolutionBeats_;
     }
+    void setSnapEnabled(bool enabled);
+    bool isSnapEnabled() const {
+        return snapEnabled_;
+    }
+    void setTimeSignatureNumerator(int numerator);
 
     // Coordinate conversion
     int beatToPixel(double beat) const;
@@ -178,7 +174,9 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
     int noteHeight_ = 12;
 
     // Grid snap
-    GridResolution gridResolution_ = GridResolution::Sixteenth;
+    double gridResolutionBeats_ = 0.25;  // Default 1/16 note
+    bool snapEnabled_ = true;
+    int timeSignatureNumerator_ = 4;
 
     // Clip position and display mode
     double clipStartBeats_ = 0.0;        // Clip's start position on timeline (in beats)
@@ -206,9 +204,6 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
 
     // Grid snap helper
     double snapBeatToGrid(double beat) const;
-
-    // Get note resolution in beats
-    double getGridResolutionBeats() const;
 
     // Note management
     void createNoteComponents();

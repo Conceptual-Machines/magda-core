@@ -72,6 +72,7 @@ class DrumGridClipContent : public MidiEditorContent {
     void setGridPixelsPerBeat(double ppb) override;
     void setGridPlayheadPosition(double position) override;
     void onScrollPositionChanged(int scrollX, int scrollY) override;
+    void onGridResolutionChanged() override;
 
     daw::audio::DrumGridPlugin* drumGrid_ = nullptr;
 

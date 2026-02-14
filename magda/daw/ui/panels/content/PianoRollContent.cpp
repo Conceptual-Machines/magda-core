@@ -120,6 +120,12 @@ PianoRollContent::PianoRollContent() {
     gridComponent_->setPixelsPerBeat(horizontalZoom_);
     gridComponent_->setNoteHeight(noteHeight_);
     gridComponent_->setLeftPadding(GRID_LEFT_PADDING);
+    gridComponent_->setGridResolutionBeats(gridResolutionBeats_);
+    gridComponent_->setSnapEnabled(snapEnabled_);
+    if (auto* controller = magda::TimelineController::getCurrent()) {
+        gridComponent_->setTimeSignatureNumerator(
+            controller->getState().tempo.timeSignatureNumerator);
+    }
     viewport_->setViewedComponent(gridComponent_.get(), false);
 
     setupGridCallbacks();
@@ -275,6 +281,19 @@ void PianoRollContent::onScrollPositionChanged(int scrollX, int scrollY) {
     keyboard_->setScrollOffset(scrollY);
     if (velocityLane_) {
         velocityLane_->setScrollOffset(scrollX);
+    }
+}
+
+void PianoRollContent::onGridResolutionChanged() {
+    if (gridComponent_) {
+        gridComponent_->setGridResolutionBeats(gridResolutionBeats_);
+        gridComponent_->setSnapEnabled(snapEnabled_);
+
+        // Sync time signature
+        if (auto* controller = magda::TimelineController::getCurrent()) {
+            gridComponent_->setTimeSignatureNumerator(
+                controller->getState().tempo.timeSignatureNumerator);
+        }
     }
 }
 
