@@ -111,6 +111,11 @@ class MainView : public juce::Component,
     void mouseExit(const juce::MouseEvent& event) override;
 
   private:
+    // Timeline state management (single source of truth)
+    // IMPORTANT: Must be declared before all components that register as listeners,
+    // so it is destroyed AFTER them (C++ reverse destruction order).
+    std::unique_ptr<TimelineController> timelineController;
+
     // Timeline viewport (horizontal scroll only)
     std::unique_ptr<juce::Viewport> timelineViewport;
     std::unique_ptr<TimelineComponent> timeline;
@@ -133,9 +138,6 @@ class MainView : public juce::Component,
     // Selection overlay component (for time selection and loop region in track area)
     class SelectionOverlayComponent;
     std::unique_ptr<SelectionOverlayComponent> selectionOverlay;
-
-    // Timeline state management (single source of truth)
-    std::unique_ptr<TimelineController> timelineController;
 
     // Zoom scroll bars
     std::unique_ptr<ZoomScrollBar> horizontalZoomScrollBar;

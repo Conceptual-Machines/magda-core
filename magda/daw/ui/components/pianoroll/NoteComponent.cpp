@@ -1,10 +1,10 @@
 #include "NoteComponent.hpp"
 
-#include "PianoRollGridComponent.hpp"
+#include "NoteGridHost.hpp"
 
 namespace magda {
 
-NoteComponent::NoteComponent(size_t noteIndex, PianoRollGridComponent* parent, ClipId sourceClipId)
+NoteComponent::NoteComponent(size_t noteIndex, NoteGridHost* parent, ClipId sourceClipId)
     : noteIndex_(noteIndex), sourceClipId_(sourceClipId), parentGrid_(parent) {
     setName("NoteComponent");
 }
@@ -21,20 +21,15 @@ void NoteComponent::paint(juce::Graphics& g) {
         return;
     }
 
-    // Background fill
-    auto fillColour = isSelected_ ? colour_.brighter(0.3f) : colour_;
+    // Background fill — gradient based on velocity
+    float velocityRatio = velocity_ / 127.0f;
+    auto baseColour = isSelected_ ? colour_.brighter(0.3f) : colour_;
+    auto fillColour = baseColour.darker(1.0f - velocityRatio);
     g.setColour(fillColour);
     g.fillRoundedRectangle(bounds, CORNER_RADIUS);
 
-    // Velocity indicator on the left side
-    float velocityRatio = velocity_ / 127.0f;
-    int velocityBarHeight = static_cast<int>((bounds.getHeight() - 4) * velocityRatio);
-    g.setColour(colour_.brighter(0.5f));
-    g.fillRect(static_cast<int>(bounds.getX()) + 2,
-               static_cast<int>(bounds.getBottom()) - velocityBarHeight - 2, 3, velocityBarHeight);
-
     // Border
-    g.setColour(isSelected_ ? juce::Colours::white : colour_.brighter(0.4f));
+    g.setColour(isSelected_ ? juce::Colours::white : fillColour.brighter(0.4f));
     float strokeWidth = isSelected_ ? 2.0f : 1.0f;
     g.drawRoundedRectangle(bounds.reduced(0.5f), CORNER_RADIUS, strokeWidth);
 
@@ -57,11 +52,11 @@ void NoteComponent::resized() {
 }
 
 void NoteComponent::mouseDown(const juce::MouseEvent& e) {
-    // Handle Cmd+click for toggle selection
+    // Handle Cmd+click for toggle selection (additive)
     if (e.mods.isCommandDown()) {
         setSelected(!isSelected_);
         if (onNoteSelected) {
-            onNoteSelected(noteIndex_);
+            onNoteSelected(noteIndex_, true);
         }
         dragMode_ = DragMode::None;
         return;
@@ -70,15 +65,20 @@ void NoteComponent::mouseDown(const juce::MouseEvent& e) {
     // Single click - select this note
     if (!isSelected_) {
         setSelected(true);
+        // Clicking an unselected note: deselect others immediately
+        if (onNoteSelected) {
+            onNoteSelected(noteIndex_, false);
+        }
+        deferredDeselect_ = false;
+    } else {
+        // Already selected: defer deselect-others to mouseUp so multi-drag works
+        deferredDeselect_ = true;
     }
 
-    if (onNoteSelected) {
-        onNoteSelected(noteIndex_);
-    }
-
-    // Store drag start info
+    // Store drag start info (in grid-relative coordinates)
     if (parentGrid_) {
-        dragStartPos_ = e.getEventRelativeTo(parentGrid_).getPosition();
+        auto screenPos = e.getScreenPosition();
+        dragStartPos_ = screenPos - parentGrid_->getGridScreenPosition();
     } else {
         dragStartPos_ = e.getPosition();
     }
@@ -99,6 +99,8 @@ void NoteComponent::mouseDown(const juce::MouseEvent& e) {
         dragMode_ = DragMode::ResizeRight;
     } else {
         dragMode_ = DragMode::Move;
+        // Shift+drag starts a copy operation
+        isCopyDrag_ = e.mods.isShiftDown();
     }
 
     repaint();
@@ -123,7 +125,7 @@ void NoteComponent::mouseDrag(const juce::MouseEvent& e) {
     // Use Desktop mouse position to avoid component-relative constraints
     auto& desktop = juce::Desktop::getInstance();
     auto absoluteMousePos = desktop.getMainMouseSource().getScreenPosition();
-    auto gridScreenPos = parentGrid_->localPointToGlobal(juce::Point<int>());
+    auto gridScreenPos = parentGrid_->getGridScreenPosition();
     auto parentPos = absoluteMousePos.toInt() - gridScreenPos;
 
     int deltaX = parentPos.x - dragStartPos_.x;
@@ -137,22 +139,22 @@ void NoteComponent::mouseDrag(const juce::MouseEvent& e) {
             double rawStartBeat = dragStartBeat_ + deltaBeat;
             int rawNoteNumber = juce::jlimit(0, 127, dragStartNoteNumber_ + deltaNote);
 
-            DBG("NOTE DRAG: dragStartBeat=" << dragStartBeat_ << ", deltaBeat=" << deltaBeat
-                                            << ", rawStartBeat=" << rawStartBeat);
-
             // Apply grid snap if available
             if (snapBeatToGrid) {
-                double snappedBeat = snapBeatToGrid(rawStartBeat);
-                DBG("  Grid snap: " << rawStartBeat << " -> " << snappedBeat);
-                rawStartBeat = snappedBeat;
+                rawStartBeat = snapBeatToGrid(rawStartBeat);
             }
 
             previewStartBeat_ = rawStartBeat;
             previewNoteNumber_ = rawNoteNumber;
 
-            // Update visual position
-            parentGrid_->updateNotePosition(this, previewStartBeat_, previewNoteNumber_,
-                                            dragStartLength_);
+            // For copy drag, keep original in place and show ghost at destination
+            if (isCopyDrag_) {
+                parentGrid_->setCopyDragPreview(previewStartBeat_, previewNoteNumber_,
+                                                dragStartLength_, colour_, true, noteIndex_);
+            } else {
+                parentGrid_->updateNotePosition(this, previewStartBeat_, previewNoteNumber_,
+                                                dragStartLength_);
+            }
 
             // Notify listeners of drag preview
             if (onNoteDragging) {
@@ -212,8 +214,15 @@ void NoteComponent::mouseUp(const juce::MouseEvent& /*e*/) {
         // Commit the change via callback
         switch (dragMode_) {
             case DragMode::Move:
-                if (onNoteMoved) {
-                    onNoteMoved(noteIndex_, previewStartBeat_, previewNoteNumber_);
+                if (isCopyDrag_) {
+                    // Copy: add a new note at destination, leave original in place
+                    if (onNoteCopied) {
+                        onNoteCopied(noteIndex_, previewStartBeat_, previewNoteNumber_);
+                    }
+                } else {
+                    if (onNoteMoved) {
+                        onNoteMoved(noteIndex_, previewStartBeat_, previewNoteNumber_);
+                    }
                 }
                 break;
 
@@ -238,6 +247,19 @@ void NoteComponent::mouseUp(const juce::MouseEvent& /*e*/) {
         }
     }
 
+    // Deferred deselect: click on already-selected note without dragging
+    if (deferredDeselect_ && !isDragging_) {
+        if (onNoteSelected) {
+            onNoteSelected(noteIndex_, false);
+        }
+    }
+    deferredDeselect_ = false;
+
+    // Clear copy drag ghost
+    if (isCopyDrag_ && parentGrid_) {
+        parentGrid_->setCopyDragPreview(0, 0, 0, {}, false, 0);
+    }
+
     // Notify that drag has ended
     if (onNoteDragging) {
         onNoteDragging(noteIndex_, previewStartBeat_, false);
@@ -245,6 +267,7 @@ void NoteComponent::mouseUp(const juce::MouseEvent& /*e*/) {
 
     dragMode_ = DragMode::None;
     isDragging_ = false;
+    isCopyDrag_ = false;
 }
 
 void NoteComponent::mouseMove(const juce::MouseEvent& e) {
@@ -262,6 +285,8 @@ void NoteComponent::mouseMove(const juce::MouseEvent& e) {
 }
 
 void NoteComponent::mouseExit(const juce::MouseEvent& /*e*/) {
+    mouseIsOver_ = false;
+    stopTimer();
     hoverLeftEdge_ = false;
     hoverRightEdge_ = false;
     updateCursor();
@@ -275,9 +300,16 @@ void NoteComponent::mouseDoubleClick(const juce::MouseEvent& /*e*/) {
     }
 }
 
+void NoteComponent::mouseEnter(const juce::MouseEvent& /*e*/) {
+    mouseIsOver_ = true;
+    startTimer(50);  // Poll modifiers at 20Hz while mouse is over
+    updateCursor();
+}
+
 void NoteComponent::setSelected(bool selected) {
     if (isSelected_ != selected) {
         isSelected_ = selected;
+        updateCursor();
         repaint();
     }
 }
@@ -298,6 +330,14 @@ void NoteComponent::updateFromNote(const MidiNote& note, juce::Colour colour) {
     repaint();
 }
 
+void NoteComponent::timerCallback() {
+    if (mouseIsOver_) {
+        updateCursor();
+    } else {
+        stopTimer();
+    }
+}
+
 bool NoteComponent::isOnLeftEdge(int x) const {
     return x < RESIZE_HANDLE_WIDTH && isSelected_;
 }
@@ -309,8 +349,8 @@ bool NoteComponent::isOnRightEdge(int x) const {
 void NoteComponent::updateCursor() {
     if (isSelected_ && (hoverLeftEdge_ || hoverRightEdge_)) {
         setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-    } else if (isSelected_) {
-        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+    } else if (isSelected_ && juce::ModifierKeys::currentModifiers.isShiftDown()) {
+        setMouseCursor(juce::MouseCursor::CopyingCursor);
     } else {
         setMouseCursor(juce::MouseCursor::NormalCursor);
     }

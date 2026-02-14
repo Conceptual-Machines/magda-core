@@ -7,7 +7,7 @@
 namespace magda {
 
 // Forward declarations
-class PianoRollGridComponent;
+class NoteGridHost;
 
 /**
  * @brief Visual representation of a MIDI note in the piano roll
@@ -18,7 +18,7 @@ class PianoRollGridComponent;
  * - Resize handles (left/right edges)
  * - Selection
  */
-class NoteComponent : public juce::Component {
+class NoteComponent : public juce::Component, private juce::Timer {
   public:
     /**
      * @brief Construct a note component
@@ -26,7 +26,7 @@ class NoteComponent : public juce::Component {
      * @param parent The parent grid component
      * @param sourceClipId The ID of the clip this note belongs to
      */
-    NoteComponent(size_t noteIndex, PianoRollGridComponent* parent, ClipId sourceClipId);
+    NoteComponent(size_t noteIndex, NoteGridHost* parent, ClipId sourceClipId);
     ~NoteComponent() override = default;
 
     size_t getNoteIndex() const {
@@ -48,6 +48,7 @@ class NoteComponent : public juce::Component {
     void mouseMove(const juce::MouseEvent& e) override;
     void mouseExit(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
+    void mouseEnter(const juce::MouseEvent& e) override;
 
     // Selection state
     bool isSelected() const {
@@ -60,8 +61,9 @@ class NoteComponent : public juce::Component {
     void updateFromNote(const MidiNote& note, juce::Colour colour);
 
     // Callbacks
-    std::function<void(size_t)> onNoteSelected;            // noteIndex
+    std::function<void(size_t, bool)> onNoteSelected;      // noteIndex, isAdditive
     std::function<void(size_t, double, int)> onNoteMoved;  // noteIndex, newStartBeat, newNoteNumber
+    std::function<void(size_t, double, int)> onNoteCopied;    // noteIndex, destBeat, destNoteNumber
     std::function<void(size_t, double, bool)> onNoteResized;  // noteIndex, newLength, fromStart
     std::function<void(size_t)> onNoteDeleted;                // noteIndex
     std::function<double(double)> snapBeatToGrid;             // Optional grid snapping
@@ -73,7 +75,7 @@ class NoteComponent : public juce::Component {
   private:
     size_t noteIndex_;
     ClipId sourceClipId_;
-    PianoRollGridComponent* parentGrid_;
+    NoteGridHost* parentGrid_;
     bool isSelected_ = false;
 
     // Note data cache
@@ -99,6 +101,8 @@ class NoteComponent : public juce::Component {
     double previewLengthBeats_ = 0.0;
     int previewNoteNumber_ = 60;
     bool isDragging_ = false;
+    bool isCopyDrag_ = false;
+    bool deferredDeselect_ = false;
 
     // Hover state for resize handles
     bool hoverLeftEdge_ = false;
@@ -108,6 +112,10 @@ class NoteComponent : public juce::Component {
     static constexpr int RESIZE_HANDLE_WIDTH = 6;
     static constexpr int CORNER_RADIUS = 2;
     static constexpr int MIN_WIDTH_PIXELS = 8;
+
+    // Modifier polling for cursor updates
+    bool mouseIsOver_ = false;
+    void timerCallback() override;
 
     // Interaction helpers
     bool isOnLeftEdge(int x) const;

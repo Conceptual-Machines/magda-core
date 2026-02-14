@@ -10,17 +10,17 @@ using DrumGridPlugin = magda::daw::audio::DrumGridPlugin;
 // ============================================================================
 
 TEST_CASE("DrumGridPlugin constants are consistent", "[drumgrid][constants]") {
-    REQUIRE(DrumGridPlugin::maxPads == 64);
-    REQUIRE(DrumGridPlugin::baseNote == 36);
+    REQUIRE(DrumGridPlugin::maxPads == 128);
+    REQUIRE(DrumGridPlugin::baseNote == 0);
 
-    SECTION("Pad 0 maps to MIDI note 36 (C2)") {
+    SECTION("Pad 0 maps to MIDI note 0 (C-2)") {
         int midiNote = DrumGridPlugin::baseNote + 0;
-        REQUIRE(midiNote == 36);
+        REQUIRE(midiNote == 0);
     }
 
-    SECTION("Last pad maps to MIDI note 99") {
+    SECTION("Last pad maps to MIDI note 127") {
         int midiNote = DrumGridPlugin::baseNote + (DrumGridPlugin::maxPads - 1);
-        REQUIRE(midiNote == 99);
+        REQUIRE(midiNote == 127);
     }
 }
 

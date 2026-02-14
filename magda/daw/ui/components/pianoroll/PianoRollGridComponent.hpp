@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "NoteComponent.hpp"
+#include "NoteGridHost.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
 #include "core/ClipTypes.hpp"
@@ -22,7 +23,9 @@ namespace magda {
  * - Grid snap settings
  * - Coordinate conversion (beat <-> pixel, noteNumber <-> y)
  */
-class PianoRollGridComponent : public juce::Component, public ClipManagerListener {
+class PianoRollGridComponent : public juce::Component,
+                               public ClipManagerListener,
+                               public NoteGridHost {
   public:
     PianoRollGridComponent();
     ~PianoRollGridComponent() override;
@@ -33,6 +36,8 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
 
     // Mouse handling
     void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
 
     // Keyboard handling
@@ -57,12 +62,12 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
 
     // Zoom settings
     void setPixelsPerBeat(double ppb);
-    double getPixelsPerBeat() const {
+    double getPixelsPerBeat() const override {
         return pixelsPerBeat_;
     }
 
     void setNoteHeight(int height);
-    int getNoteHeight() const {
+    int getNoteHeight() const override {
         return noteHeight_;
     }
 
@@ -115,19 +120,15 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
     }
 
     // Grid snap settings
-    enum class GridResolution {
-        Off,
-        Bar,          // 4 beats
-        Beat,         // 1 beat (quarter note)
-        Eighth,       // 1/8 note
-        Sixteenth,    // 1/16 note
-        ThirtySecond  // 1/32 note
-    };
-
-    void setGridResolution(GridResolution resolution);
-    GridResolution getGridResolution() const {
-        return gridResolution_;
+    void setGridResolutionBeats(double beats);
+    double getGridResolutionBeats() const {
+        return gridResolutionBeats_;
     }
+    void setSnapEnabled(bool enabled);
+    bool isSnapEnabled() const {
+        return snapEnabled_;
+    }
+    void setTimeSignatureNumerator(int numerator);
 
     // Coordinate conversion
     int beatToPixel(double beat) const;
@@ -135,11 +136,20 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
     int noteNumberToY(int noteNumber) const;
     int yToNoteNumber(int y) const;
 
-    // Called by NoteComponent to update visual position during drag
-    void updateNotePosition(NoteComponent* note, double beat, int noteNumber, double length);
+    // NoteGridHost overrides
+    juce::Point<int> getGridScreenPosition() const override {
+        return localPointToGlobal(juce::Point<int>());
+    }
+    void updateNotePosition(NoteComponent* note, double beat, int noteNumber,
+                            double length) override;
+    void setCopyDragPreview(double beat, int noteNumber, double length, juce::Colour colour,
+                            bool active, size_t sourceNoteIndex) override;
 
     // Refresh note components from clip data
     void refreshNotes();
+
+    // Request a note to be selected after the next refresh
+    void selectNoteAfterRefresh(ClipId clipId, int noteIndex);
 
     // ClipManagerListener
     void clipsChanged() override {}
@@ -151,9 +161,15 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
         onNoteAdded;  // clipId, beat, noteNumber, velocity
     std::function<void(ClipId, size_t, double, int)>
         onNoteMoved;  // clipId, index, newBeat, newNoteNumber
+    std::function<void(ClipId, size_t, double, int)>
+        onNoteCopied;  // clipId, index, destBeat, destNoteNumber
     std::function<void(ClipId, size_t, double)> onNoteResized;  // clipId, index, newLength
     std::function<void(ClipId, size_t)> onNoteDeleted;          // clipId, index
-    std::function<void(ClipId, size_t)> onNoteSelected;         // clipId, index
+    std::function<void(ClipId, size_t, bool)> onNoteSelected;   // clipId, index, isAdditive
+
+    // Callback when note selection changes (e.g. after lasso, deselect-all)
+    // Provides the full set of currently selected note indices for the primary clip
+    std::function<void(ClipId, std::vector<size_t>)> onNoteSelectionChanged;
 
     // Callback for drag preview (for syncing velocity lane position)
     std::function<void(ClipId, size_t, double, bool)>
@@ -178,7 +194,9 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
     int noteHeight_ = 12;
 
     // Grid snap
-    GridResolution gridResolution_ = GridResolution::Sixteenth;
+    double gridResolutionBeats_ = 0.25;  // Default 1/16 note
+    bool snapEnabled_ = true;
+    int timeSignatureNumerator_ = 4;
 
     // Clip position and display mode
     double clipStartBeats_ = 0.0;        // Clip's start position on timeline (in beats)
@@ -200,15 +218,38 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
     // Currently selected note index (or -1 for none)
     int selectedNoteIndex_ = -1;
 
+    // Drag selection (rubber band) state
+    bool isDragSelecting_ = false;
+    juce::Point<int> dragSelectStart_;
+    juce::Point<int> dragSelectEnd_;
+
+    // Pending selection to apply after next refresh
+    ClipId pendingSelectClipId_ = INVALID_CLIP_ID;
+    int pendingSelectNoteIndex_ = -1;
+
+    // Pending position-based selection for copy operations
+    struct PendingSelectPos {
+        ClipId clipId;
+        double beat;
+        int noteNumber;
+    };
+    std::vector<PendingSelectPos> pendingSelectPositions_;
+
+    // Copy drag ghost preview state
+    struct CopyDragGhost {
+        double beat = 0.0;
+        int noteNumber = 60;
+        double length = 1.0;
+        juce::Colour colour;
+    };
+    std::vector<CopyDragGhost> copyDragGhosts_;
+
     // Painting helpers
     void paintGrid(juce::Graphics& g, juce::Rectangle<int> area);
     void paintBeatLines(juce::Graphics& g, juce::Rectangle<int> area, double lengthBeats);
 
     // Grid snap helper
     double snapBeatToGrid(double beat) const;
-
-    // Get note resolution in beats
-    double getGridResolutionBeats() const;
 
     // Note management
     void createNoteComponents();

@@ -219,6 +219,10 @@ class ClipManager {
     void setLeftChannelActive(ClipId clipId, bool active);
     void setRightChannelActive(ClipId clipId, bool active);
 
+    // Per-clip grid settings (MIDI editor)
+    void setClipGridSettings(ClipId clipId, bool autoGrid, int numerator, int denominator);
+    void setClipSnapEnabled(ClipId clipId, bool enabled);
+
     // ========================================================================
     // Content-Level Operations (Editor Operations)
     // ========================================================================

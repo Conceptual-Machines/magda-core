@@ -45,7 +45,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/close.svg
     ../../assets/icons/check.svg
     ../../assets/icons/search.svg
-    ../../assets/icons/Chords2.svg
+    ../../assets/icons/chord.svg
+    ../../assets/icons/bar_chart.svg
     ../../assets/icons/link.svg
     ../../assets/icons/link_bright.svg
     ../../assets/icons/link_flat.svg
@@ -241,6 +242,7 @@ set(DAW_UI_SOURCES
     ui/panels/content/AIChatConsoleContent.cpp
     ui/panels/content/ScriptingConsoleContent.cpp
     ui/panels/content/TrackChainContent.cpp
+    ui/panels/content/MidiEditorContent.cpp
     ui/panels/content/PianoRollContent.cpp
     ui/panels/content/DrumGridClipContent.cpp
     ui/panels/content/WaveformEditorContent.cpp

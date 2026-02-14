@@ -47,8 +47,14 @@ class VelocityLaneComponent : public juce::Component {
     // Set preview position for a note during drag (for syncing with grid)
     void setNotePreviewPosition(size_t noteIndex, double previewBeat, bool isDragging);
 
+    // Selection awareness
+    void setSelectedNoteIndices(const std::vector<size_t>& indices);
+
     // Callback for velocity changes
     std::function<void(ClipId, size_t noteIndex, int newVelocity)> onVelocityChanged;
+
+    // Callback for batch velocity changes (Alt+drag ramp / curve)
+    std::function<void(ClipId, std::vector<std::pair<size_t, int>>)> onMultiVelocityChanged;
 
     // Component overrides
     void paint(juce::Graphics& g) override;
@@ -79,6 +85,35 @@ class VelocityLaneComponent : public juce::Component {
 
     // Preview positions for notes being dragged in the grid
     std::unordered_map<size_t, double> notePreviewPositions_;
+
+    // Selected note indices (synced from SelectionManager)
+    std::vector<size_t> selectedNoteIndices_;
+
+    // Alt+drag ramp state
+    bool isRampDragging_ = false;
+    int rampStartVelocity_ = 0;
+    int rampEndVelocity_ = 0;
+    std::vector<size_t> sortedSelectedIndices_;  // sorted by beat position
+
+    // Curve handle state
+    bool isCurveHandleVisible_ = false;
+    bool isCurveHandleDragging_ = false;
+    float curveAmount_ = 0.0f;  // -1.0 to 1.0 (0 = linear)
+    int curveHandleX_ = 0;
+    int curveHandleY_ = 0;
+    int curveHandleDragStartY_ = 0;
+    float curveHandleDragStartAmount_ = 0.0f;
+    static constexpr int CURVE_HANDLE_SIZE = 8;
+
+    // Preview velocities during ramp/curve drag
+    std::unordered_map<size_t, int> previewVelocities_;
+
+    // Internal helpers for ramp/curve
+    std::vector<std::pair<size_t, int>> computeRampVelocities() const;
+    int interpolateVelocity(float t) const;
+    bool hitTestCurveHandle(int x, int y) const;
+    void updateCurveHandle();
+    void updatePreviewVelocities();
 
     // Coordinate conversion
     int beatToPixel(double beat) const;

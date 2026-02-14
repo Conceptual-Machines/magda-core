@@ -885,6 +885,17 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetGridQua
     return ChangeFlags::Display;
 }
 
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetAutoGridDisplayEvent& e) {
+    auto& gq = state.display.gridQuantize;
+    if (gq.autoEffectiveNumerator == e.effectiveNumerator &&
+        gq.autoEffectiveDenominator == e.effectiveDenominator) {
+        return ChangeFlags::None;
+    }
+    gq.autoEffectiveNumerator = e.effectiveNumerator;
+    gq.autoEffectiveDenominator = e.effectiveDenominator;
+    return ChangeFlags::Display;
+}
+
 // ===== Section Event Handlers =====
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const AddSectionEvent& e) {

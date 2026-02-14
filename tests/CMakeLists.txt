@@ -31,6 +31,7 @@ set(TEST_SOURCES
     test_curve_snapshot.cpp
     test_scan_report.cpp
     test_drum_grid_plugin.cpp
+    test_velocity_lane_utils.cpp
 )
 
 # Create test executable

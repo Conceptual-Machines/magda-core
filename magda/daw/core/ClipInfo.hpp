@@ -167,6 +167,12 @@ struct ClipInfo {
     bool isPlaying = false;  // Currently playing in session
     bool isQueued = false;   // Queued to start
 
+    // Per-clip grid settings (MIDI editor)
+    bool gridAutoGrid = true;
+    int gridNumerator = 1;
+    int gridDenominator = 4;
+    bool gridSnapEnabled = true;
+
     // Session launch properties
     LaunchMode launchMode = LaunchMode::Trigger;
     LaunchQuantize launchQuantize = LaunchQuantize::None;

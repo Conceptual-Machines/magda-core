@@ -2,15 +2,12 @@
 
 #include <memory>
 
-#include "PanelContent.hpp"
-#include "core/ClipManager.hpp"
+#include "MidiEditorContent.hpp"
 #include "core/SelectionManager.hpp"
-#include "ui/state/TimelineController.hpp"
 
 namespace magda {
 class PianoRollGridComponent;
 class PianoRollKeyboard;
-class TimeRuler;
 class SvgButton;
 class VelocityLaneComponent;
 }  // namespace magda
@@ -25,10 +22,7 @@ namespace magda::daw::ui {
  * - Note rectangles in the grid representing MIDI notes (interactive)
  * - Time ruler along the top (switchable between absolute/relative)
  */
-class PianoRollContent : public PanelContent,
-                         public magda::ClipManagerListener,
-                         public magda::SelectionManagerListener,
-                         public magda::TimelineStateListener {
+class PianoRollContent : public MidiEditorContent, public magda::SelectionManagerListener {
   public:
     PianoRollContent();
     ~PianoRollContent() override;
@@ -48,7 +42,7 @@ class PianoRollContent : public PanelContent,
     void onActivated() override;
     void onDeactivated() override;
 
-    // ClipManagerListener
+    // ClipManagerListener overrides
     void clipsChanged() override;
     void clipPropertyChanged(magda::ClipId clipId) override;
     void clipSelectionChanged(magda::ClipId clipId) override;
@@ -58,22 +52,15 @@ class PianoRollContent : public PanelContent,
     // SelectionManagerListener
     void selectionTypeChanged(magda::SelectionType newType) override;
     void multiClipSelectionChanged(const std::unordered_set<magda::ClipId>& clipIds) override;
+    void noteSelectionChanged(const magda::NoteSelection& selection) override;
 
-    // TimelineStateListener
-    void timelineStateChanged(const magda::TimelineState& state,
-                              magda::ChangeFlags changes) override;
+    // TimelineStateListener — not overridden, base handles it
 
     // Set the clip to edit
     void setClip(magda::ClipId clipId);
-    magda::ClipId getEditingClipId() const {
-        return editingClipId_;
-    }
 
-    // Timeline mode
-    void setRelativeTimeMode(bool relative);
-    bool isRelativeTimeMode() const {
-        return relativeTimeMode_;
-    }
+    // Timeline mode (overrides base for multi-clip handling)
+    void setRelativeTimeMode(bool relative) override;
 
     // Chord row visibility
     void setChordRowVisible(bool visible);
@@ -88,56 +75,53 @@ class PianoRollContent : public PanelContent,
     }
 
   private:
-    magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
+    // MidiEditorContent virtual implementations
+    int getLeftPanelWidth() const override {
+        return SIDEBAR_WIDTH + KEYBOARD_WIDTH;
+    }
+    void updateGridSize() override;
+    void updateTimeRuler() override;
+    void setGridPixelsPerBeat(double ppb) override;
+    void setGridPlayheadPosition(double position) override;
+    void onScrollPositionChanged(int scrollX, int scrollY) override;
+    void onGridResolutionChanged() override;
 
-    // Layout constants
+    // Layout constants (PianoRoll-specific)
     static constexpr int SIDEBAR_WIDTH = 32;
     static constexpr int KEYBOARD_WIDTH = 60;
     static constexpr int DEFAULT_NOTE_HEIGHT = 12;
-    static constexpr int CHORD_ROW_HEIGHT = 24;                            // Chord detection row
-    static constexpr int RULER_HEIGHT = 36;                                // Time ruler height
-    static constexpr int HEADER_HEIGHT = CHORD_ROW_HEIGHT + RULER_HEIGHT;  // Total header
-    static constexpr int MIN_NOTE = 21;                                    // A0
-    static constexpr int MAX_NOTE = 108;                                   // C8
-    static constexpr int GRID_LEFT_PADDING = 2;  // Small padding for timeline label visibility
+    static constexpr int CHORD_ROW_HEIGHT = 24;
+    static constexpr int HEADER_HEIGHT = CHORD_ROW_HEIGHT + RULER_HEIGHT;
+    static constexpr int MIN_NOTE = 21;   // A0
+    static constexpr int MAX_NOTE = 108;  // C8
     static constexpr int VELOCITY_LANE_HEIGHT = 80;
     static constexpr int VELOCITY_HEADER_HEIGHT = 20;
 
-    // Zoom limits
-    static constexpr double MIN_HORIZONTAL_ZOOM = 10.0;   // pixels per beat
-    static constexpr double MAX_HORIZONTAL_ZOOM = 500.0;  // pixels per beat
+    // Vertical zoom limits
     static constexpr int MIN_NOTE_HEIGHT = 6;
     static constexpr int MAX_NOTE_HEIGHT = 40;
 
-    // Zoom state
-    double horizontalZoom_ = 50.0;  // pixels per beat
+    // Zoom state (vertical — horizontal is in base)
     int noteHeight_ = DEFAULT_NOTE_HEIGHT;
 
-    // Timeline mode (absolute vs relative)
-    bool relativeTimeMode_ = false;  // Default to absolute (timeline position)
-
     // Chord row visibility
-    bool showChordRow_ = true;  // Default to visible
+    bool showChordRow_ = true;
 
     // Velocity drawer visibility
-    bool velocityDrawerOpen_ = false;  // Default to closed
+    bool velocityDrawerOpen_ = false;
 
     // Initial centering flag
     bool needsInitialCentering_ = true;
 
-    // Components
-    std::unique_ptr<juce::Viewport> viewport_;
+    // Components (PianoRoll-specific)
     std::unique_ptr<magda::PianoRollGridComponent> gridComponent_;
     std::unique_ptr<magda::PianoRollKeyboard> keyboard_;
-    std::unique_ptr<magda::TimeRuler> timeRuler_;
     std::unique_ptr<magda::SvgButton> chordToggle_;
     std::unique_ptr<magda::SvgButton> velocityToggle_;
     std::unique_ptr<magda::VelocityLaneComponent> velocityLane_;
 
     // Grid component management
     void setupGridCallbacks();
-    void updateGridSize();
-    void updateTimeRuler();
     void drawSidebar(juce::Graphics& g, juce::Rectangle<int> area);
     void drawChordRow(juce::Graphics& g, juce::Rectangle<int> area);
     void drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area);

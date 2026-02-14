@@ -2,13 +2,12 @@
 
 #include <memory>
 
-#include "PanelContent.hpp"
-#include "core/ClipManager.hpp"
-#include "ui/state/TimelineController.hpp"
+#include "MidiEditorContent.hpp"
 
 namespace magda {
-class TimeRuler;
-}
+class SvgButton;
+class VelocityLaneComponent;
+}  // namespace magda
 
 namespace magda::daw::audio {
 class DrumGridPlugin;
@@ -29,9 +28,7 @@ class DrumGridRowLabels;
  * - Time ruler along the top
  * - Click cells to add/remove MIDI notes (toggle)
  */
-class DrumGridClipContent : public PanelContent,
-                            public magda::ClipManagerListener,
-                            public magda::TimelineStateListener {
+class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
   public:
     DrumGridClipContent();
     ~DrumGridClipContent() override;
@@ -52,26 +49,12 @@ class DrumGridClipContent : public PanelContent,
     void onActivated() override;
     void onDeactivated() override;
 
-    // ClipManagerListener
+    // ClipManagerListener overrides
     void clipsChanged() override;
-    void clipPropertyChanged(magda::ClipId clipId) override;
     void clipSelectionChanged(magda::ClipId clipId) override;
-
-    // TimelineStateListener
-    void timelineStateChanged(const magda::TimelineState& state,
-                              magda::ChangeFlags changes) override;
 
     // Set the clip to edit
     void setClip(magda::ClipId clipId);
-    magda::ClipId getEditingClipId() const {
-        return editingClipId_;
-    }
-
-    // Timeline mode
-    void setRelativeTimeMode(bool relative);
-    bool isRelativeTimeMode() const {
-        return relativeTimeMode_;
-    }
 
     // Row model (public so grid/label components can access)
     struct PadRow {
@@ -81,42 +64,52 @@ class DrumGridClipContent : public PanelContent,
     };
 
   private:
-    magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
+    // MidiEditorContent virtual implementations
+    int getLeftPanelWidth() const override {
+        return SIDEBAR_WIDTH + LABEL_WIDTH;
+    }
+    void updateGridSize() override;
+    void setGridPixelsPerBeat(double ppb) override;
+    void setGridPlayheadPosition(double position) override;
+    void onScrollPositionChanged(int scrollX, int scrollY) override;
+    void onGridResolutionChanged() override;
+
     daw::audio::DrumGridPlugin* drumGrid_ = nullptr;
 
-    // Timeline mode (absolute vs relative)
-    bool relativeTimeMode_ = false;
-
-    // Layout constants
+    // Layout constants (DrumGrid-specific)
+    static constexpr int SIDEBAR_WIDTH = 32;
     static constexpr int LABEL_WIDTH = 120;
-    static constexpr int RULER_HEIGHT = 36;
     static constexpr int ROW_HEIGHT = 24;
-    static constexpr int GRID_LEFT_PADDING = 2;
-
-    // Zoom limits
-    static constexpr double MIN_HORIZONTAL_ZOOM = 10.0;
-    static constexpr double MAX_HORIZONTAL_ZOOM = 500.0;
-
-    // Zoom state
-    double horizontalZoom_ = 50.0;  // pixels per beat
+    static constexpr int VELOCITY_LANE_HEIGHT = 80;
+    static constexpr int VELOCITY_HEADER_HEIGHT = 20;
 
     // Drum grid note range
-    int baseNote_ = 36;
-    int numPads_ = 16;  // Show 16 pads by default
+    int baseNote_ = 0;
+    int numPads_ = 128;
 
     std::vector<PadRow> padRows_;
 
-    // Components
-    std::unique_ptr<juce::Viewport> viewport_;
+    // Velocity drawer visibility
+    bool velocityDrawerOpen_ = false;
+
+    // Components (DrumGrid-specific)
     std::unique_ptr<DrumGridClipGrid> gridComponent_;
     std::unique_ptr<DrumGridRowLabels> rowLabels_;
-    std::unique_ptr<magda::TimeRuler> timeRuler_;
+    std::unique_ptr<magda::SvgButton> controlsToggle_;
+    std::unique_ptr<magda::VelocityLaneComponent> velocityLane_;
 
     void buildPadRows();
-    void updateGridSize();
-    void updateTimeRuler();
+    void refreshPadRowNames();
     void findDrumGrid();
+    void drawSidebar(juce::Graphics& g, juce::Rectangle<int> area);
+    void drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area);
+    void updateVelocityLane();
     juce::String resolvePadName(int padIndex) const;
+    void timerCallback() override;
+
+    int getDrawerHeight() const {
+        return velocityDrawerOpen_ ? (VELOCITY_LANE_HEIGHT + VELOCITY_HEADER_HEIGHT) : 0;
+    }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumGridClipContent)
 };

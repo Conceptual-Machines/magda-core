@@ -68,34 +68,37 @@ class MagdaDAWApplication : public JUCEApplication {
         std::cout << "=== SHUTDOWN START ===" << std::endl;
         std::cout.flush();
 
-        // Shutdown all singletons BEFORE JUCE cleanup to prevent static cleanup issues
-        // This clears all JUCE objects (Strings, Colours, etc.) while JUCE is still alive
+        // Stop timers first to prevent callbacks during destruction
         std::cout << "[1] ModulatorEngine shutdown..." << std::endl;
         std::cout.flush();
         magda::ModulatorEngine::getInstance().shutdown();  // Destroy timer
 
-        std::cout << "[2] TrackManager shutdown..." << std::endl;
-        std::cout.flush();
-        magda::TrackManager::getInstance().shutdown();  // Clear tracks with JUCE objects
-
-        std::cout << "[3] ClipManager shutdown..." << std::endl;
-        std::cout.flush();
-        magda::ClipManager::getInstance().shutdown();  // Clear clips with JUCE objects
-
-        std::cout << "[3b] AudioThumbnailManager shutdown..." << std::endl;
-        std::cout.flush();
-        magda::AudioThumbnailManager::getInstance().shutdown();  // Clear thumbnails
-
         // Clear default LookAndFeel BEFORE destroying windows
         // This ensures components switch away from our custom L&F before we delete them
-        std::cout << "[4] Clearing LookAndFeel..." << std::endl;
+        std::cout << "[2] Clearing LookAndFeel..." << std::endl;
         std::cout.flush();
         juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
 
-        // Graceful shutdown - destroy UI
-        std::cout << "[5] Destroying MainWindow..." << std::endl;
+        // Destroy UI FIRST while all singletons (ClipManager, TrackManager etc.)
+        // are still intact. Component destructors trigger removeChildComponent() →
+        // repaint() chains that need valid heap state. If singletons are cleared
+        // first, freed data + dangling listener references cause heap corruption.
+        std::cout << "[3] Destroying MainWindow..." << std::endl;
         std::cout.flush();
         mainWindow_.reset();
+
+        // Now shut down singletons — no live UI components reference them
+        std::cout << "[4] TrackManager shutdown..." << std::endl;
+        std::cout.flush();
+        magda::TrackManager::getInstance().shutdown();
+
+        std::cout << "[5] ClipManager shutdown..." << std::endl;
+        std::cout.flush();
+        magda::ClipManager::getInstance().shutdown();
+
+        std::cout << "[5b] AudioThumbnailManager shutdown..." << std::endl;
+        std::cout.flush();
+        magda::AudioThumbnailManager::getInstance().shutdown();
 
         // Now destroy engine
         std::cout << "[6] Destroying DAW engine..." << std::endl;

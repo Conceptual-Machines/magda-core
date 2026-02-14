@@ -716,6 +716,27 @@ void ClipManager::setRightChannelActive(ClipId clipId, bool active) {
 }
 
 // ============================================================================
+// Per-Clip Grid Settings
+// ============================================================================
+
+void ClipManager::setClipGridSettings(ClipId clipId, bool autoGrid, int numerator,
+                                      int denominator) {
+    if (auto* clip = getClip(clipId)) {
+        clip->gridAutoGrid = autoGrid;
+        clip->gridNumerator = numerator;
+        clip->gridDenominator = denominator;
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
+void ClipManager::setClipSnapEnabled(ClipId clipId, bool enabled) {
+    if (auto* clip = getClip(clipId)) {
+        clip->gridSnapEnabled = enabled;
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
+// ============================================================================
 // Content-Level Operations (Editor Operations)
 // ============================================================================
 

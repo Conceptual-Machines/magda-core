@@ -7,6 +7,7 @@
 #include "TabbedPanel.hpp"
 #include "core/ClipManager.hpp"
 #include "core/TrackManager.hpp"
+#include "utils/ScopedListener.hpp"
 
 namespace magda {
 
@@ -85,9 +86,13 @@ class BottomPanel : public daw::ui::TabbedPanel,
     int gridDenominator_ = 4;
     bool isSnapEnabled_ = true;
 
+    // RAII listener registration — handles late TimelineController availability
+    ScopedListener<TimelineController, TimelineStateListener> timelineListenerGuard_{this};
+
     void setupHeaderControls();
     void applyTimeModeToContent();
     void syncGridStateFromTimeline();
+    void syncGridControlsFromContent();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BottomPanel)
 };

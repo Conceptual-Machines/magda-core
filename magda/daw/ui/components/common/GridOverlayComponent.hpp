@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "../../../utils/ScopedListener.hpp"
 #include "../../layout/LayoutConfig.hpp"
 #include "../../state/TimelineController.hpp"
 
@@ -64,8 +65,8 @@ class GridOverlayComponent : public juce::Component, public TimelineStateListene
     void timelineStateChanged(const TimelineState& state, ChangeFlags changes) override;
 
   private:
-    // Controller reference (not owned)
-    TimelineController* timelineController = nullptr;
+    // RAII listener guard — destroyed before cached state below
+    ScopedListener<TimelineController, TimelineStateListener> timelineListener_{this};
 
     // Cached state
     double currentZoom = 1.0;

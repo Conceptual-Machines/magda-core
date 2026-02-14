@@ -9,24 +9,14 @@ GridOverlayComponent::GridOverlayComponent() {
     setInterceptsMouseClicks(false, false);
 }
 
-GridOverlayComponent::~GridOverlayComponent() {
-    if (timelineController) {
-        timelineController->removeListener(this);
-    }
-}
+GridOverlayComponent::~GridOverlayComponent() = default;
 
 void GridOverlayComponent::setController(TimelineController* controller) {
-    if (timelineController) {
-        timelineController->removeListener(this);
-    }
+    timelineListener_.reset(controller);
 
-    timelineController = controller;
-
-    if (timelineController) {
-        timelineController->addListener(this);
-
+    if (controller) {
         // Sync initial state
-        const auto& state = timelineController->getState();
+        const auto& state = controller->getState();
         currentZoom = state.zoom.horizontalZoom;
         timelineLength = state.timelineLength;
         displayMode = state.display.timeDisplayMode;

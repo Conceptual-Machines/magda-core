@@ -159,6 +159,12 @@ class DraggableValueLabel : public juce::Component {
     float fontSize_ = 10.0f;
     juce::String textOverride_;
 
+  public:
+    bool isDragging() const {
+        return isDragging_;
+    }
+
+  private:
     // Drag state
     bool isDragging_ = false;
     double dragStartValue_ = 0.0;

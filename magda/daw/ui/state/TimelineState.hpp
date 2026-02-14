@@ -21,6 +21,10 @@ struct GridQuantize {
     int numerator = 1;     // e.g. 1, 2, 3
     int denominator = 4;   // Must be power of 2: 1, 2, 4, 8, 16, 32
 
+    // Display-only: effective grid when in auto mode (set by MIDI editors)
+    int autoEffectiveNumerator = 1;
+    int autoEffectiveDenominator = 16;
+
     // Returns beat fraction: numerator/denominator relative to whole note (4 beats)
     // e.g. 1/4 = 1 beat, 1/8 = 0.5 beats, 3/8 = 1.5 beats
     double toBeatFraction() const {

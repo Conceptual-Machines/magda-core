@@ -24,27 +24,14 @@ TimelineComponent::TimelineComponent() {
     arrangementLocked = true;
 }
 
-TimelineComponent::~TimelineComponent() {
-    // Unregister from controller if we have one
-    if (timelineController) {
-        timelineController->removeListener(this);
-    }
-}
+TimelineComponent::~TimelineComponent() = default;
 
 void TimelineComponent::setController(TimelineController* controller) {
-    // Unregister from old controller
-    if (timelineController) {
-        timelineController->removeListener(this);
-    }
+    timelineListener_.reset(controller);
 
-    timelineController = controller;
-
-    // Register with new controller
-    if (timelineController) {
-        timelineController->addListener(this);
-
+    if (controller) {
         // Sync initial state
-        const auto& state = timelineController->getState();
+        const auto& state = controller->getState();
         timelineLength = state.timelineLength;
         zoom = state.zoom.horizontalZoom;
         playheadPosition = state.playhead.getPosition();
