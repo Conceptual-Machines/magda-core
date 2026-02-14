@@ -56,10 +56,8 @@ MidiEditorContent::MidiEditorContent() {
         }
     }
 
-    // Initialize grid resolution from zoom level (fully independent of arrangement)
-    constexpr int minPixelSpacing = 20;
-    double frac = magda::GridConstants::findBeatSubdivision(horizontalZoom_, minPixelSpacing);
-    gridResolutionBeats_ = (frac > 0.0) ? frac : 1.0;
+    // Initialize grid from clip settings (or auto-compute from zoom)
+    applyClipGridSettings();
 }
 
 MidiEditorContent::~MidiEditorContent() {
@@ -211,6 +209,7 @@ void MidiEditorContent::clipPropertyChanged(magda::ClipId clipId) {
         juce::Component::SafePointer<MidiEditorContent> safeThis(this);
         juce::MessageManager::callAsync([safeThis]() {
             if (auto* self = safeThis.getComponent()) {
+                self->applyClipGridSettings();
                 self->updateGridSize();
                 self->updateTimeRuler();
                 self->repaint();
@@ -248,8 +247,15 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
 // ============================================================================
 
 void MidiEditorContent::updateGridResolution() {
-    // MIDI editor computes grid resolution from its own zoom level,
-    // fully independent of the arrangement.
+    // Only auto-compute when the clip's autoGrid is enabled;
+    // otherwise leave gridResolutionBeats_ at the manual value set by applyClipGridSettings.
+    if (editingClipId_ != magda::INVALID_CLIP_ID) {
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (clip && !clip->gridAutoGrid) {
+            return;  // Manual grid — don't overwrite
+        }
+    }
+
     constexpr int minPixelSpacing = 20;
     double frac = magda::GridConstants::findBeatSubdivision(horizontalZoom_, minPixelSpacing);
     double newResolution = (frac > 0.0) ? frac : 1.0;
@@ -265,6 +271,60 @@ double MidiEditorContent::snapBeatToGrid(double beat) const {
         return beat;
     }
     return std::round(beat / gridResolutionBeats_) * gridResolutionBeats_;
+}
+
+// ============================================================================
+// Per-clip grid settings
+// ============================================================================
+
+void MidiEditorContent::applyClipGridSettings() {
+    if (editingClipId_ != magda::INVALID_CLIP_ID) {
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (clip) {
+            snapEnabled_ = clip->gridSnapEnabled;
+
+            if (clip->gridAutoGrid) {
+                // Auto-compute from zoom
+                constexpr int minPixelSpacing = 20;
+                double frac =
+                    magda::GridConstants::findBeatSubdivision(horizontalZoom_, minPixelSpacing);
+                double newResolution = (frac > 0.0) ? frac : 1.0;
+                if (newResolution != gridResolutionBeats_) {
+                    gridResolutionBeats_ = newResolution;
+                    onGridResolutionChanged();
+                }
+            } else {
+                // Manual: compute from numerator/denominator
+                double newResolution =
+                    (4.0 * clip->gridNumerator) / static_cast<double>(clip->gridDenominator);
+                if (newResolution != gridResolutionBeats_) {
+                    gridResolutionBeats_ = newResolution;
+                    onGridResolutionChanged();
+                }
+            }
+            return;
+        }
+    }
+
+    // No clip — fall back to auto-compute from zoom
+    constexpr int minPixelSpacing = 20;
+    double frac = magda::GridConstants::findBeatSubdivision(horizontalZoom_, minPixelSpacing);
+    gridResolutionBeats_ = (frac > 0.0) ? frac : 1.0;
+}
+
+void MidiEditorContent::setGridSettingsFromUI(bool autoGrid, int numerator, int denominator) {
+    if (editingClipId_ != magda::INVALID_CLIP_ID) {
+        magda::ClipManager::getInstance().setClipGridSettings(editingClipId_, autoGrid, numerator,
+                                                              denominator);
+        // applyClipGridSettings() will be called from clipPropertyChanged callback
+    }
+}
+
+void MidiEditorContent::setSnapEnabledFromUI(bool enabled) {
+    if (editingClipId_ != magda::INVALID_CLIP_ID) {
+        magda::ClipManager::getInstance().setClipSnapEnabled(editingClipId_, enabled);
+        snapEnabled_ = enabled;
+    }
 }
 
 }  // namespace magda::daw::ui

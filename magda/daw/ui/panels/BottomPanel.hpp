@@ -92,6 +92,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
     void setupHeaderControls();
     void applyTimeModeToContent();
     void syncGridStateFromTimeline();
+    void syncGridControlsFromContent();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BottomPanel)
 };

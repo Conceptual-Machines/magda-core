@@ -12,6 +12,7 @@
 #include "BinaryData.h"
 #include "audio/DrumGridPlugin.hpp"
 #include "content/DrumGridClipContent.hpp"
+#include "content/MidiEditorContent.hpp"
 #include "content/PianoRollContent.hpp"
 #include "state/PanelController.hpp"
 
@@ -152,7 +153,11 @@ void BottomPanel::setupHeaderControls() {
     gridNumeratorLabel_->onValueChange = [this]() {
         gridNumerator_ = static_cast<int>(std::round(gridNumeratorLabel_->getValue()));
         if (!isAutoGrid_) {
-            if (auto* controller = TimelineController::getCurrent()) {
+            auto* content = getActiveContent();
+            auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
+            if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
+                midiEditor->setGridSettingsFromUI(isAutoGrid_, gridNumerator_, gridDenominator_);
+            } else if (auto* controller = TimelineController::getCurrent()) {
                 controller->dispatch(
                     SetGridQuantizeEvent{isAutoGrid_, gridNumerator_, gridDenominator_});
             }
@@ -196,7 +201,11 @@ void BottomPanel::setupHeaderControls() {
         gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
                                         juce::dontSendNotification);
         if (!isAutoGrid_) {
-            if (auto* controller = TimelineController::getCurrent()) {
+            auto* content = getActiveContent();
+            auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
+            if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
+                midiEditor->setGridSettingsFromUI(isAutoGrid_, gridNumerator_, gridDenominator_);
+            } else if (auto* controller = TimelineController::getCurrent()) {
                 controller->dispatch(
                     SetGridQuantizeEvent{isAutoGrid_, gridNumerator_, gridDenominator_});
             }
@@ -227,7 +236,11 @@ void BottomPanel::setupHeaderControls() {
         gridNumeratorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
         gridDenominatorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
         gridSlashLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
-        if (auto* controller = TimelineController::getCurrent()) {
+        auto* content = getActiveContent();
+        auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
+        if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
+            midiEditor->setGridSettingsFromUI(isAutoGrid_, gridNumerator_, gridDenominator_);
+        } else if (auto* controller = TimelineController::getCurrent()) {
             controller->dispatch(
                 SetGridQuantizeEvent{isAutoGrid_, gridNumerator_, gridDenominator_});
         }
@@ -251,7 +264,11 @@ void BottomPanel::setupHeaderControls() {
     snapButton_->setLookAndFeel(&smallLF);
     snapButton_->onClick = [this]() {
         isSnapEnabled_ = snapButton_->getToggleState();
-        if (auto* controller = TimelineController::getCurrent()) {
+        auto* content = getActiveContent();
+        auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
+        if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
+            midiEditor->setSnapEnabledFromUI(isSnapEnabled_);
+        } else if (auto* controller = TimelineController::getCurrent()) {
             controller->dispatch(SetSnapEnabledEvent{isSnapEnabled_});
         }
     };
@@ -327,6 +344,7 @@ void BottomPanel::clipsChanged() {
 
 void BottomPanel::clipSelectionChanged(ClipId /*clipId*/) {
     updateContentBasedOnSelection();
+    syncGridControlsFromContent();
 }
 
 void BottomPanel::tracksChanged() {
@@ -339,6 +357,13 @@ void BottomPanel::trackSelectionChanged(TrackId /*trackId*/) {
 
 void BottomPanel::timelineStateChanged(const TimelineState& state, ChangeFlags changes) {
     if (hasFlag(changes, ChangeFlags::Display)) {
+        // If a MIDI editor is active, the controls reflect clip state — skip arrangement sync
+        auto* content = getActiveContent();
+        auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
+        if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
+            return;
+        }
+
         const auto& gq = state.display.gridQuantize;
         // Sync grid controls from timeline state (e.g. changed from TransportPanel)
         isAutoGrid_ = gq.autoGrid;
@@ -438,10 +463,11 @@ void BottomPanel::updateContentBasedOnSelection() {
     daw::ui::PanelController::getInstance().setActiveTabByType(daw::ui::PanelLocation::Bottom,
                                                                targetContent);
 
-    // Apply time mode to new content
+    // Apply time mode to new content and sync grid controls
     if (showEditorTabs_) {
         applyTimeModeToContent();
     }
+    syncGridControlsFromContent();
 }
 
 juce::Rectangle<int> BottomPanel::getCollapseButtonBounds() {
@@ -481,8 +507,9 @@ void BottomPanel::onEditorTabChanged(int tabIndex) {
     daw::ui::PanelController::getInstance().setActiveTabByType(daw::ui::PanelLocation::Bottom,
                                                                targetType);
 
-    // Apply time mode to the newly active content
+    // Apply time mode to the newly active content and sync grid controls
     applyTimeModeToContent();
+    syncGridControlsFromContent();
 }
 
 void BottomPanel::applyTimeModeToContent() {
@@ -495,6 +522,40 @@ void BottomPanel::applyTimeModeToContent() {
     } else if (auto* drumGrid = dynamic_cast<daw::ui::DrumGridClipContent*>(content)) {
         drumGrid->setRelativeTimeMode(relativeTimeMode_);
     }
+}
+
+void BottomPanel::syncGridControlsFromContent() {
+    auto* content = getActiveContent();
+    auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
+    if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
+        // Read grid state from the clip
+        const auto* clip = ClipManager::getInstance().getClip(midiEditor->getEditingClipId());
+        if (clip) {
+            isAutoGrid_ = clip->gridAutoGrid;
+            gridNumerator_ = clip->gridNumerator;
+            gridDenominator_ = clip->gridDenominator;
+            isSnapEnabled_ = clip->gridSnapEnabled;
+        }
+    } else {
+        // Read from arrangement (timeline state)
+        syncGridStateFromTimeline();
+    }
+
+    // Update UI controls
+    autoGridButton_->setToggleState(isAutoGrid_, juce::dontSendNotification);
+    if (!gridNumeratorLabel_->isDragging())
+        gridNumeratorLabel_->setValue(static_cast<double>(gridNumerator_),
+                                      juce::dontSendNotification);
+    if (!gridDenominatorLabel_->isDragging())
+        gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
+                                        juce::dontSendNotification);
+    snapButton_->setToggleState(isSnapEnabled_, juce::dontSendNotification);
+
+    gridNumeratorLabel_->setEnabled(!isAutoGrid_);
+    gridDenominatorLabel_->setEnabled(!isAutoGrid_);
+    gridNumeratorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
+    gridDenominatorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
+    gridSlashLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
 }
 
 void BottomPanel::syncGridStateFromTimeline() {

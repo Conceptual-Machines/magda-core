@@ -71,6 +71,11 @@ class MidiEditorContent : public PanelContent,
     // Timeline mode
     virtual void setRelativeTimeMode(bool relative);
 
+    // Per-clip grid settings
+    void applyClipGridSettings();
+    void setGridSettingsFromUI(bool autoGrid, int numerator, int denominator);
+    void setSnapEnabledFromUI(bool enabled);
+
     // ClipManagerListener — default implementations
     void clipsChanged() override;
     void clipPropertyChanged(magda::ClipId clipId) override;
