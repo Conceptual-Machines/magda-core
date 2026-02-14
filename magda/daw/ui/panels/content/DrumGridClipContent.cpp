@@ -295,9 +295,29 @@ class DrumGridClipGrid : public juce::Component {
         auto [noteIndex, row, beat, noteRightEdgeX] = hitTestNote(e);
 
         if (noteIndex >= 0) {
+            auto ni = static_cast<size_t>(noteIndex);
+
+            // Cmd+click: toggle selection, don't start drag
+            if (e.mods.isCommandDown()) {
+                if (selectedNoteIndices_.count(ni))
+                    selectedNoteIndices_.erase(ni);
+                else
+                    selectedNoteIndices_.insert(ni);
+                repaint();
+                return;
+            }
+
+            // Regular click on unselected note: clear selection, select this one
+            if (selectedNoteIndices_.count(ni) == 0) {
+                selectedNoteIndices_.clear();
+                selectedNoteIndices_.insert(ni);
+                repaint();
+            }
+            // Regular click on already-selected note: keep current selection (multi-drag)
+
             const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
             dragState_.active = true;
-            dragState_.noteIndex = static_cast<size_t>(noteIndex);
+            dragState_.noteIndex = ni;
             dragState_.originalBeat = beat;
             dragState_.originalRow = row;
             dragState_.currentBeat = beat;
@@ -434,16 +454,50 @@ class DrumGridClipGrid : public juce::Component {
 
         if (dragState_.active && dragState_.hasMoved && dragState_.isCopyDrag &&
             dragState_.dragMode == DragMode::Move && padRows_ && !padRows_->empty()) {
-            // Copy drag: add a new note at the destination
+            // Copy drag: add new note(s) at the destination
             const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
             if (clip && dragState_.noteIndex < clip->midiNotes.size()) {
-                const auto& sourceNote = clip->midiNotes[dragState_.noteIndex];
-                int destRow = dragState_.currentRow;
-                int destNoteNumber = (*padRows_)[destRow].noteNumber;
+                if (selectedNoteIndices_.size() > 1) {
+                    // Multi-note copy: compute delta and apply to all selected notes
+                    double beatDelta = dragState_.currentBeat - dragState_.originalBeat;
+                    int rowDelta = dragState_.currentRow - dragState_.originalRow;
 
-                if (onNoteCopied)
-                    onNoteCopied(clipId_, dragState_.currentBeat, destNoteNumber,
-                                 sourceNote.lengthBeats, sourceNote.velocity);
+                    for (size_t si : selectedNoteIndices_) {
+                        if (si >= clip->midiNotes.size())
+                            continue;
+                        const auto& note = clip->midiNotes[si];
+                        double destBeat = note.startBeat + beatDelta;
+                        if (destBeat < 0.0)
+                            destBeat = 0.0;
+
+                        // Find the row of this note, apply rowDelta
+                        int srcRow = -1;
+                        for (int r = 0; r < static_cast<int>(padRows_->size()); ++r) {
+                            if ((*padRows_)[r].noteNumber == note.noteNumber) {
+                                srcRow = r;
+                                break;
+                            }
+                        }
+                        if (srcRow < 0)
+                            continue;
+                        int destRow = juce::jlimit(0, static_cast<int>(padRows_->size()) - 1,
+                                                   srcRow + rowDelta);
+                        int destNoteNumber = (*padRows_)[destRow].noteNumber;
+
+                        if (onNoteCopied)
+                            onNoteCopied(clipId_, destBeat, destNoteNumber, note.lengthBeats,
+                                         note.velocity);
+                    }
+                } else {
+                    // Single note copy
+                    const auto& sourceNote = clip->midiNotes[dragState_.noteIndex];
+                    int destRow = dragState_.currentRow;
+                    int destNoteNumber = (*padRows_)[destRow].noteNumber;
+
+                    if (onNoteCopied)
+                        onNoteCopied(clipId_, dragState_.currentBeat, destNoteNumber,
+                                     sourceNote.lengthBeats, sourceNote.velocity);
+                }
             }
         } else if (!dragState_.active && emptyClickRow_ >= 0) {
             // Plain click on empty cell (no drag occurred) — add a note
