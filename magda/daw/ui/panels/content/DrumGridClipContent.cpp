@@ -1187,25 +1187,6 @@ DrumGridClipContent::DrumGridClipContent() {
     };
     addAndMakeVisible(controlsToggle_.get());
 
-    // Create velocity lane component
-    velocityLane_ = std::make_unique<magda::VelocityLaneComponent>();
-    velocityLane_->setLeftPadding(GRID_LEFT_PADDING);
-    velocityLane_->onVelocityChanged = [this](magda::ClipId clipId, size_t noteIndex,
-                                              int newVelocity) {
-        auto cmd =
-            std::make_unique<magda::SetMidiNoteVelocityCommand>(clipId, noteIndex, newVelocity);
-        magda::UndoManager::getInstance().executeCommand(std::move(cmd));
-        velocityLane_->refreshNotes();
-    };
-    velocityLane_->onMultiVelocityChanged = [this](magda::ClipId clipId,
-                                                   std::vector<std::pair<size_t, int>> velocities) {
-        auto cmd = std::make_unique<magda::SetMultipleNoteVelocitiesCommand>(clipId,
-                                                                             std::move(velocities));
-        magda::UndoManager::getInstance().executeCommand(std::move(cmd));
-        velocityLane_->refreshNotes();
-    };
-    addChildComponent(velocityLane_.get());  // Start hidden
-
     // Create row labels
     rowLabels_ = std::make_unique<DrumGridRowLabels>();
     rowLabels_->setRowHeight(ROW_HEIGHT);
@@ -1273,8 +1254,7 @@ DrumGridClipContent::DrumGridClipContent() {
 
     gridComponent_->onNoteSelectionChanged = [this](magda::ClipId /*clipId*/,
                                                     std::vector<size_t> noteIndices) {
-        if (velocityLane_)
-            velocityLane_->setSelectedNoteIndices(noteIndices);
+        setVelocityLaneSelectedNotes(noteIndices);
     };
 
     // Handle quantize from right-click context menu
@@ -1367,6 +1347,9 @@ DrumGridClipContent::DrumGridClipContent() {
     };
 
     viewport_->setViewedComponent(gridComponent_.get(), false);
+
+    // Setup velocity lane (call after grid component is created)
+    setupVelocityLane();
 
     // If base found a selected clip, set it up
     if (editingClipId_ != magda::INVALID_CLIP_ID) {
@@ -1670,11 +1653,13 @@ void DrumGridClipContent::updateVelocityLane() {
     if (!velocityLane_)
         return;
 
-    velocityLane_->setClip(editingClipId_);
-    velocityLane_->setPixelsPerBeat(horizontalZoom_);
+    // DrumGrid always uses relative mode
     velocityLane_->setRelativeMode(true);
-    velocityLane_->setClipStartBeats(0.0);
 
+    // Call base implementation for common setup
+    MidiEditorContent::updateVelocityLane();
+
+    // Set clip length (DrumGrid-specific)
     const auto* clip = editingClipId_ != magda::INVALID_CLIP_ID
                            ? magda::ClipManager::getInstance().getClip(editingClipId_)
                            : nullptr;
@@ -1684,17 +1669,9 @@ void DrumGridClipContent::updateVelocityLane() {
             tempo = controller->getState().tempo.bpm;
         }
         double secondsPerBeat = 60.0 / tempo;
-        double clipStartBeats = clip->startTime / secondsPerBeat;
         double clipLengthBeats = clip->length / secondsPerBeat;
-        velocityLane_->setClipStartBeats(clipStartBeats);
         velocityLane_->setClipLengthBeats(clipLengthBeats);
     }
-
-    if (viewport_) {
-        velocityLane_->setScrollOffset(viewport_->getViewPositionX());
-    }
-
-    velocityLane_->refreshNotes();
 }
 
 // ============================================================================
