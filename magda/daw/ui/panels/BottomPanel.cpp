@@ -281,6 +281,16 @@ void BottomPanel::setCollapsed(bool collapsed) {
 
 void BottomPanel::paint(juce::Graphics& g) {
     TabbedPanel::paint(g);
+
+    // Draw bottom border below the editor tab header and column dividers for tab icons
+    if (showEditorTabs_) {
+        g.setColour(DarkTheme::getBorderColour());
+        g.fillRect(0, EDITOR_TAB_HEIGHT - 1, getWidth(), 1);
+
+        // Sidebar column divider
+        int sidebarWidth = 32;
+        g.fillRect(sidebarWidth, 0, 1, EDITOR_TAB_HEIGHT - 1);
+    }
 }
 
 void BottomPanel::resized() {
@@ -325,10 +335,11 @@ void BottomPanel::resized() {
         x -= 36;
         timeModeButton_->setBounds(x, y + vPad, 36, h - vPad * 2);
 
-        // Tab icon buttons on the left
-        int iconSize = h - 4;
-        int tabX = headerBounds.getX() + 4;
+        // Tab icon buttons after the sidebar column
+        int sidebarWidth = 32;  // Match PianoRollContent/DrumGridClipContent SIDEBAR_WIDTH
+        int iconSize = h - 8;
         int tabY = y + (h - iconSize) / 2;
+        int tabX = headerBounds.getX() + sidebarWidth + 4;
         pianoRollTab_->setBounds(tabX, tabY, iconSize, iconSize);
         tabX += iconSize + 4;
         drumGridTab_->setBounds(tabX, tabY, iconSize, iconSize);
@@ -389,7 +400,6 @@ void BottomPanel::timelineStateChanged(const TimelineState& state, ChangeFlags c
         gridSlashLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
     }
 }
-
 
 void BottomPanel::updateContentBasedOnSelection() {
     // Lazy registration: BottomPanel may be constructed before TimelineController
