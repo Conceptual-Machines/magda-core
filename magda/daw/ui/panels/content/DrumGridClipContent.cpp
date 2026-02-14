@@ -1653,11 +1653,11 @@ void DrumGridClipContent::updateVelocityLane() {
     if (!velocityLane_)
         return;
 
-    // DrumGrid always uses relative mode
-    velocityLane_->setRelativeMode(true);
-
     // Call base implementation for common setup
     MidiEditorContent::updateVelocityLane();
+
+    // DrumGrid always uses relative mode (override base class setting)
+    velocityLane_->setRelativeMode(true);
 
     // Set clip length (DrumGrid-specific)
     const auto* clip = editingClipId_ != magda::INVALID_CLIP_ID
