@@ -793,13 +793,9 @@ class DrumGridRowLabels : public juce::Component {
             return;
 
         auto btnBounds = getPlayButtonBounds(row);
-        DBG("DrumGridRowLabels::mouseDown row=" << row << " btn=" << btnBounds.toString()
-                                                << " click=" << e.getPosition().toString());
         if (btnBounds.contains(e.getPosition())) {
             int noteNumber = (*padRows_)[row].noteNumber;
             playingNoteNumber_ = noteNumber;
-            DBG("  Preview note " << noteNumber
-                                  << " ON, callback=" << (onNotePreview ? "yes" : "NO"));
             if (onNotePreview)
                 onNotePreview(noteNumber, true);
             repaint();
