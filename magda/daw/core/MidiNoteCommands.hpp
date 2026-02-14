@@ -122,6 +122,27 @@ class SetMidiNoteVelocityCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for setting velocities of multiple MIDI notes at once
+ */
+class SetMultipleNoteVelocitiesCommand : public UndoableCommand {
+  public:
+    SetMultipleNoteVelocitiesCommand(ClipId clipId,
+                                     std::vector<std::pair<size_t, int>> noteVelocities);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Set Note Velocities";
+    }
+
+  private:
+    ClipId clipId_;
+    std::vector<std::pair<size_t, int>> newVelocities_;  // {index, newVel}
+    std::vector<std::pair<size_t, int>> oldVelocities_;  // captured on first execute
+    bool executed_ = false;
+};
+
+/**
  * @brief Command for moving a MIDI note between clips
  * Removes note from source clip and adds it to destination clip
  */

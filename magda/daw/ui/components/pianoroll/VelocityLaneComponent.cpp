@@ -87,6 +87,16 @@ void VelocityLaneComponent::setNotePreviewPosition(size_t noteIndex, double prev
     repaint();
 }
 
+void VelocityLaneComponent::setSelectedNoteIndices(const std::vector<size_t>& indices) {
+    selectedNoteIndices_ = indices;
+    // Reset curve state when selection changes
+    isCurveHandleVisible_ = false;
+    isCurveHandleDragging_ = false;
+    curveAmount_ = 0.0f;
+    previewVelocities_.clear();
+    repaint();
+}
+
 int VelocityLaneComponent::beatToPixel(double beat) const {
     // In absolute mode, the beat is already absolute
     // In relative mode, we draw starting from 0
@@ -140,6 +150,103 @@ size_t VelocityLaneComponent::findNoteAtX(int x) const {
 juce::Colour VelocityLaneComponent::getClipColour() const {
     const auto* clip = ClipManager::getInstance().getClip(clipId_);
     return clip ? clip->colour : DarkTheme::getAccentColour();
+}
+
+int VelocityLaneComponent::interpolateVelocity(float t) const {
+    if (std::abs(curveAmount_) < 0.001f) {
+        // Linear
+        return juce::jlimit(0, 127,
+                            rampStartVelocity_ +
+                                static_cast<int>(t * (rampEndVelocity_ - rampStartVelocity_)));
+    }
+    // Quadratic bezier: control point velocity
+    float controlVel = (rampStartVelocity_ + rampEndVelocity_) * 0.5f + curveAmount_ * 127.0f;
+    controlVel = juce::jlimit(0.0f, 127.0f, controlVel);
+    float v = (1 - t) * (1 - t) * rampStartVelocity_ + 2 * (1 - t) * t * controlVel +
+              t * t * rampEndVelocity_;
+    return juce::jlimit(0, 127, static_cast<int>(std::round(v)));
+}
+
+std::vector<std::pair<size_t, int>> VelocityLaneComponent::computeRampVelocities() const {
+    std::vector<std::pair<size_t, int>> result;
+    if (sortedSelectedIndices_.size() < 2) {
+        return result;
+    }
+
+    const auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI) {
+        return result;
+    }
+
+    // Get beat positions for normalization
+    double firstBeat = clip->midiNotes[sortedSelectedIndices_.front()].startBeat;
+    double lastBeat = clip->midiNotes[sortedSelectedIndices_.back()].startBeat;
+    double range = lastBeat - firstBeat;
+
+    for (size_t idx : sortedSelectedIndices_) {
+        if (idx >= clip->midiNotes.size())
+            continue;
+
+        float t = (range > 0.0)
+                      ? static_cast<float>((clip->midiNotes[idx].startBeat - firstBeat) / range)
+                      : 0.0f;
+        int vel = interpolateVelocity(t);
+        result.emplace_back(idx, vel);
+    }
+
+    return result;
+}
+
+bool VelocityLaneComponent::hitTestCurveHandle(int x, int y) const {
+    if (!isCurveHandleVisible_)
+        return false;
+    int half = CURVE_HANDLE_SIZE;
+    return std::abs(x - curveHandleX_) <= half && std::abs(y - curveHandleY_) <= half;
+}
+
+void VelocityLaneComponent::updateCurveHandle() {
+    if (sortedSelectedIndices_.size() < 2) {
+        isCurveHandleVisible_ = false;
+        return;
+    }
+
+    const auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI) {
+        isCurveHandleVisible_ = false;
+        return;
+    }
+
+    // Position at horizontal midpoint of selected notes
+    double firstBeat = clip->midiNotes[sortedSelectedIndices_.front()].startBeat;
+    double lastBeat = clip->midiNotes[sortedSelectedIndices_.back()].startBeat;
+    double midBeat = (firstBeat + lastBeat) * 0.5;
+
+    if (relativeMode_) {
+        curveHandleX_ = beatToPixel(midBeat);
+    } else {
+        double tempo = 120.0;
+        if (auto* controller = TimelineController::getCurrent()) {
+            tempo = controller->getState().tempo.bpm;
+        }
+        double clipAbsStartBeats = 0.0;
+        const auto* clipData = ClipManager::getInstance().getClip(clipId_);
+        if (clipData) {
+            clipAbsStartBeats = clipData->startTime * (tempo / 60.0);
+        }
+        curveHandleX_ = beatToPixel(midBeat + clipAbsStartBeats);
+    }
+
+    // Y at the interpolated velocity at t=0.5
+    int midVel = interpolateVelocity(0.5f);
+    curveHandleY_ = velocityToY(midVel);
+}
+
+void VelocityLaneComponent::updatePreviewVelocities() {
+    previewVelocities_.clear();
+    auto velocities = computeRampVelocities();
+    for (const auto& [idx, vel] : velocities) {
+        previewVelocities_[idx] = vel;
+    }
 }
 
 void VelocityLaneComponent::paint(juce::Graphics& g) {
@@ -230,6 +337,13 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
             if (isDragging_ && isPrimaryClip && i == draggingNoteIndex_) {
                 velocity = currentDragVelocity_;
             }
+            // Use preview velocity during ramp/curve editing
+            if (isPrimaryClip && !previewVelocities_.empty()) {
+                auto pvIt = previewVelocities_.find(i);
+                if (pvIt != previewVelocities_.end()) {
+                    velocity = pvIt->second;
+                }
+            }
 
             // Calculate stem position from velocity
             int barHeight = velocity * usableHeight / 127;
@@ -302,12 +416,111 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
         }
     }
 
+    // Draw ramp/curve line and handle when active
+    if ((isRampDragging_ || isCurveHandleVisible_) && sortedSelectedIndices_.size() >= 2 &&
+        clipId_ != INVALID_CLIP_ID) {
+        const auto* curveClip = clipManager.getClip(clipId_);
+        if (curveClip && curveClip->type == ClipType::MIDI) {
+            // Compute absolute offset for beat->pixel
+            double clipAbsOffset = 0.0;
+            if (!relativeMode_) {
+                double tempo = 120.0;
+                if (auto* controller = TimelineController::getCurrent()) {
+                    tempo = controller->getState().tempo.bpm;
+                }
+                clipAbsOffset = curveClip->startTime * (tempo / 60.0);
+            }
+
+            // Draw curve line through selected notes
+            juce::Path curvePath;
+            bool started = false;
+
+            double firstBeat = curveClip->midiNotes[sortedSelectedIndices_.front()].startBeat;
+            double lastBeat = curveClip->midiNotes[sortedSelectedIndices_.back()].startBeat;
+            double beatRange = lastBeat - firstBeat;
+
+            if (beatRange > 0.0) {
+                // Draw smooth curve with multiple segments
+                constexpr int numSegments = 40;
+                for (int seg = 0; seg <= numSegments; ++seg) {
+                    float t = static_cast<float>(seg) / static_cast<float>(numSegments);
+                    double beat = firstBeat + t * beatRange;
+                    int vel = interpolateVelocity(t);
+                    float px = static_cast<float>(beatToPixel(beat + clipAbsOffset));
+                    float py = static_cast<float>(velocityToY(vel));
+
+                    if (!started) {
+                        curvePath.startNewSubPath(px, py);
+                        started = true;
+                    } else {
+                        curvePath.lineTo(px, py);
+                    }
+                }
+
+                g.setColour(juce::Colours::white.withAlpha(0.6f));
+                g.strokePath(curvePath, juce::PathStrokeType(1.5f));
+            }
+
+            // Draw curve handle
+            if (isCurveHandleVisible_ && !isRampDragging_) {
+                float hx = static_cast<float>(curveHandleX_);
+                float hy = static_cast<float>(curveHandleY_);
+                float hs = static_cast<float>(CURVE_HANDLE_SIZE);
+
+                // Diamond shape
+                juce::Path diamond;
+                diamond.startNewSubPath(hx, hy - hs);
+                diamond.lineTo(hx + hs, hy);
+                diamond.lineTo(hx, hy + hs);
+                diamond.lineTo(hx - hs, hy);
+                diamond.closeSubPath();
+
+                g.setColour(isCurveHandleDragging_ ? juce::Colours::white
+                                                   : juce::Colours::white.withAlpha(0.8f));
+                g.fillPath(diamond);
+                g.setColour(juce::Colours::black.withAlpha(0.5f));
+                g.strokePath(diamond, juce::PathStrokeType(1.0f));
+            }
+        }
+    }
+
     // Draw top border
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawHorizontalLine(0, 0.0f, static_cast<float>(bounds.getWidth()));
 }
 
 void VelocityLaneComponent::mouseDown(const juce::MouseEvent& e) {
+    // Check for curve handle click first
+    if (isCurveHandleVisible_ && hitTestCurveHandle(e.x, e.y)) {
+        isCurveHandleDragging_ = true;
+        curveHandleDragStartY_ = e.y;
+        curveHandleDragStartAmount_ = curveAmount_;
+        return;
+    }
+
+    // Alt+click with 2+ selected notes: start ramp drag
+    if (e.mods.isAltDown() && selectedNoteIndices_.size() >= 2) {
+        const auto* clip = ClipManager::getInstance().getClip(clipId_);
+        if (clip && clip->type == ClipType::MIDI) {
+            // Sort selected indices by beat position
+            sortedSelectedIndices_ = selectedNoteIndices_;
+            std::sort(sortedSelectedIndices_.begin(), sortedSelectedIndices_.end(),
+                      [&clip](size_t a, size_t b) {
+                          return clip->midiNotes[a].startBeat < clip->midiNotes[b].startBeat;
+                      });
+
+            isRampDragging_ = true;
+            isCurveHandleVisible_ = false;
+            curveAmount_ = 0.0f;
+            rampStartVelocity_ = yToVelocity(e.y);
+            rampEndVelocity_ = rampStartVelocity_;
+            updatePreviewVelocities();
+            repaint();
+            return;
+        }
+    }
+
+    // Normal single-note drag
     size_t noteIndex = findNoteAtX(e.x);
 
     if (noteIndex != SIZE_MAX) {
@@ -323,6 +536,30 @@ void VelocityLaneComponent::mouseDown(const juce::MouseEvent& e) {
 }
 
 void VelocityLaneComponent::mouseDrag(const juce::MouseEvent& e) {
+    if (isRampDragging_) {
+        int newEnd = yToVelocity(e.y);
+        if (newEnd != rampEndVelocity_) {
+            rampEndVelocity_ = newEnd;
+            updatePreviewVelocities();
+            repaint();
+        }
+        return;
+    }
+
+    if (isCurveHandleDragging_) {
+        // Map Y delta to curve amount (-1..1)
+        int deltaY = curveHandleDragStartY_ - e.y;  // up = positive
+        float newAmount = curveHandleDragStartAmount_ + deltaY / 100.0f;
+        newAmount = juce::jlimit(-1.0f, 1.0f, newAmount);
+        if (newAmount != curveAmount_) {
+            curveAmount_ = newAmount;
+            updatePreviewVelocities();
+            updateCurveHandle();
+            repaint();
+        }
+        return;
+    }
+
     if (isDragging_ && draggingNoteIndex_ != SIZE_MAX) {
         int newVelocity = yToVelocity(e.y);
         if (newVelocity != currentDragVelocity_) {
@@ -333,6 +570,39 @@ void VelocityLaneComponent::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void VelocityLaneComponent::mouseUp(const juce::MouseEvent& e) {
+    if (isRampDragging_) {
+        rampEndVelocity_ = yToVelocity(e.y);
+        auto velocities = computeRampVelocities();
+
+        if (!velocities.empty() && onMultiVelocityChanged) {
+            onMultiVelocityChanged(clipId_, velocities);
+        }
+
+        isRampDragging_ = false;
+        previewVelocities_.clear();
+
+        // Show curve handle for post-ramp bezier adjustment
+        isCurveHandleVisible_ = true;
+        curveAmount_ = 0.0f;
+        updateCurveHandle();
+        repaint();
+        return;
+    }
+
+    if (isCurveHandleDragging_) {
+        isCurveHandleDragging_ = false;
+
+        auto velocities = computeRampVelocities();
+        if (!velocities.empty() && onMultiVelocityChanged) {
+            onMultiVelocityChanged(clipId_, velocities);
+        }
+
+        previewVelocities_.clear();
+        updateCurveHandle();
+        repaint();
+        return;
+    }
+
     if (isDragging_ && draggingNoteIndex_ != SIZE_MAX) {
         int finalVelocity = yToVelocity(e.y);
 

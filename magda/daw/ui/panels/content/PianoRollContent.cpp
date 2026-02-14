@@ -55,6 +55,14 @@ PianoRollContent::PianoRollContent() {
         velocityLane_->refreshNotes();
         gridComponent_->refreshNotes();
     };
+    velocityLane_->onMultiVelocityChanged = [this](magda::ClipId clipId,
+                                                   std::vector<std::pair<size_t, int>> velocities) {
+        auto cmd = std::make_unique<magda::SetMultipleNoteVelocitiesCommand>(clipId,
+                                                                             std::move(velocities));
+        magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+        velocityLane_->refreshNotes();
+        gridComponent_->refreshNotes();
+    };
     addChildComponent(velocityLane_.get());  // Start hidden
 
     // Create keyboard component
@@ -956,6 +964,12 @@ void PianoRollContent::multiClipSelectionChanged(const std::unordered_set<magda:
     updateTimeRuler();
     updateVelocityLane();
     repaint();
+}
+
+void PianoRollContent::noteSelectionChanged(const magda::NoteSelection& selection) {
+    if (velocityLane_) {
+        velocityLane_->setSelectedNoteIndices(selection.noteIndices);
+    }
 }
 
 // ============================================================================

@@ -52,6 +52,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     // SelectionManagerListener
     void selectionTypeChanged(magda::SelectionType newType) override;
     void multiClipSelectionChanged(const std::unordered_set<magda::ClipId>& clipIds) override;
+    void noteSelectionChanged(const magda::NoteSelection& selection) override;
 
     // TimelineStateListener — not overridden, base handles it
 

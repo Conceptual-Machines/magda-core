@@ -260,6 +260,66 @@ void SetMidiNoteVelocityCommand::mergeWith(const UndoableCommand* other) {
 }
 
 // ============================================================================
+// SetMultipleNoteVelocitiesCommand
+// ============================================================================
+
+SetMultipleNoteVelocitiesCommand::SetMultipleNoteVelocitiesCommand(
+    ClipId clipId, std::vector<std::pair<size_t, int>> noteVelocities)
+    : clipId_(clipId), newVelocities_(std::move(noteVelocities)) {}
+
+void SetMultipleNoteVelocitiesCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || clip->type != ClipType::MIDI) {
+        return;
+    }
+
+    // Capture old velocities on first execute
+    if (!executed_) {
+        oldVelocities_.clear();
+        oldVelocities_.reserve(newVelocities_.size());
+        for (const auto& [index, newVel] : newVelocities_) {
+            if (index < clip->midiNotes.size()) {
+                oldVelocities_.emplace_back(index, clip->midiNotes[index].velocity);
+            }
+        }
+    }
+
+    // Apply new velocities
+    for (const auto& [index, newVel] : newVelocities_) {
+        if (index < clip->midiNotes.size()) {
+            clip->midiNotes[index].velocity = newVel;
+        }
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void SetMultipleNoteVelocitiesCommand::undo() {
+    if (!executed_) {
+        return;
+    }
+
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || clip->type != ClipType::MIDI) {
+        return;
+    }
+
+    // Restore old velocities
+    for (const auto& [index, oldVel] : oldVelocities_) {
+        if (index < clip->midiNotes.size()) {
+            clip->midiNotes[index].velocity = oldVel;
+        }
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+// ============================================================================
 // MoveMidiNoteBetweenClipsCommand
 // ============================================================================
 
