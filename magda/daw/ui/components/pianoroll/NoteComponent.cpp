@@ -68,10 +68,14 @@ void NoteComponent::mouseDown(const juce::MouseEvent& e) {
     // Single click - select this note
     if (!isSelected_) {
         setSelected(true);
-    }
-
-    if (onNoteSelected) {
-        onNoteSelected(noteIndex_, false);
+        // Clicking an unselected note: deselect others immediately
+        if (onNoteSelected) {
+            onNoteSelected(noteIndex_, false);
+        }
+        deferredDeselect_ = false;
+    } else {
+        // Already selected: defer deselect-others to mouseUp so multi-drag works
+        deferredDeselect_ = true;
     }
 
     // Store drag start info (in grid-relative coordinates)
@@ -250,6 +254,14 @@ void NoteComponent::mouseUp(const juce::MouseEvent& /*e*/) {
                 break;
         }
     }
+
+    // Deferred deselect: click on already-selected note without dragging
+    if (deferredDeselect_ && !isDragging_) {
+        if (onNoteSelected) {
+            onNoteSelected(noteIndex_, false);
+        }
+    }
+    deferredDeselect_ = false;
 
     // Clear copy drag ghost
     if (isCopyDrag_ && parentGrid_) {

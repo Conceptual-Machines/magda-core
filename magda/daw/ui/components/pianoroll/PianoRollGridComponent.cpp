@@ -853,8 +853,41 @@ void PianoRollGridComponent::createNoteComponents() {
 
             noteComp->onNoteMoved = [this, clipId](size_t index, double newBeat,
                                                    int newNoteNumber) {
-                if (onNoteMoved) {
+                if (!onNoteMoved)
+                    return;
+
+                const auto* srcClip = ClipManager::getInstance().getClip(clipId);
+                if (!srcClip || index >= srcClip->midiNotes.size()) {
                     onNoteMoved(clipId, index, newBeat, newNoteNumber);
+                    return;
+                }
+
+                const auto& sourceNote = srcClip->midiNotes[index];
+                double beatDelta = newBeat - sourceNote.startBeat;
+                int noteDelta = newNoteNumber - sourceNote.noteNumber;
+
+                // Move the dragged note
+                onNoteMoved(clipId, index, newBeat, newNoteNumber);
+
+                // Move other selected notes with the same delta
+                for (auto& nc : noteComponents_) {
+                    if (nc->getSourceClipId() != clipId)
+                        continue;
+                    if (nc->getNoteIndex() == index)
+                        continue;
+                    if (!nc->isSelected())
+                        continue;
+
+                    size_t otherIndex = nc->getNoteIndex();
+                    if (otherIndex >= srcClip->midiNotes.size())
+                        continue;
+
+                    const auto& otherNote = srcClip->midiNotes[otherIndex];
+                    double otherNewBeat = juce::jmax(0.0, otherNote.startBeat + beatDelta);
+                    int otherNewNote =
+                        juce::jlimit(MIN_NOTE, MAX_NOTE, otherNote.noteNumber + noteDelta);
+
+                    onNoteMoved(clipId, otherIndex, otherNewBeat, otherNewNote);
                 }
             };
 

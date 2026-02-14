@@ -520,8 +520,39 @@ class DrumGridClipGrid : public juce::Component,
             };
 
             noteComp->onNoteMoved = [this](size_t index, double newBeat, int newNoteNumber) {
-                if (onNoteMoved)
+                if (!onNoteMoved)
+                    return;
+
+                const auto* srcClip = magda::ClipManager::getInstance().getClip(clipId_);
+                if (!srcClip || index >= srcClip->midiNotes.size()) {
                     onNoteMoved(clipId_, index, newBeat, newNoteNumber);
+                    return;
+                }
+
+                const auto& sourceNote = srcClip->midiNotes[index];
+                double beatDelta = newBeat - sourceNote.startBeat;
+                int noteDelta = newNoteNumber - sourceNote.noteNumber;
+
+                // Move the dragged note
+                onNoteMoved(clipId_, index, newBeat, newNoteNumber);
+
+                // Move other selected notes with the same delta
+                for (auto& nc : noteComponents_) {
+                    if (nc->getNoteIndex() == index)
+                        continue;
+                    if (!nc->isSelected())
+                        continue;
+
+                    size_t otherIndex = nc->getNoteIndex();
+                    if (otherIndex >= srcClip->midiNotes.size())
+                        continue;
+
+                    const auto& otherNote = srcClip->midiNotes[otherIndex];
+                    double otherNewBeat = juce::jmax(0.0, otherNote.startBeat + beatDelta);
+                    int otherNewNote = juce::jlimit(0, 127, otherNote.noteNumber + noteDelta);
+
+                    onNoteMoved(clipId_, otherIndex, otherNewBeat, otherNewNote);
+                }
             };
 
             noteComp->onNoteCopied = [this](size_t index, double destBeat, int destNoteNumber) {

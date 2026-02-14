@@ -102,6 +102,7 @@ class NoteComponent : public juce::Component, private juce::Timer {
     int previewNoteNumber_ = 60;
     bool isDragging_ = false;
     bool isCopyDrag_ = false;
+    bool deferredDeselect_ = false;
 
     // Hover state for resize handles
     bool hoverLeftEdge_ = false;
