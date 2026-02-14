@@ -1087,11 +1087,12 @@ void DrumGridClipContent::onActivated() {
             setClip(selectedClip);
         }
     }
+    startTimer(500);  // Poll pad names at 2Hz
     repaint();
 }
 
 void DrumGridClipContent::onDeactivated() {
-    // Nothing to do
+    stopTimer();
 }
 
 // ============================================================================
@@ -1314,6 +1315,33 @@ void DrumGridClipContent::buildPadRows() {
 
     // Reverse so lower notes appear at the bottom (higher notes at the top)
     std::reverse(padRows_.begin(), padRows_.end());
+}
+
+void DrumGridClipContent::refreshPadRowNames() {
+    bool changed = false;
+    for (auto& row : padRows_) {
+        int padIndex = row.noteNumber - baseNote_;
+        if (padIndex < 0 || padIndex >= numPads_)
+            continue;
+
+        juce::String newName = resolvePadName(padIndex);
+        bool newHasChain = false;
+        if (drumGrid_)
+            newHasChain = (drumGrid_->getChainForNote(row.noteNumber) != nullptr);
+
+        if (row.name != newName || row.hasChain != newHasChain) {
+            row.name = newName;
+            row.hasChain = newHasChain;
+            changed = true;
+        }
+    }
+
+    if (changed && rowLabels_)
+        rowLabels_->repaint();
+}
+
+void DrumGridClipContent::timerCallback() {
+    refreshPadRowNames();
 }
 
 }  // namespace magda::daw::ui

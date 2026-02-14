@@ -28,7 +28,7 @@ class DrumGridRowLabels;
  * - Time ruler along the top
  * - Click cells to add/remove MIDI notes (toggle)
  */
-class DrumGridClipContent : public MidiEditorContent {
+class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
   public:
     DrumGridClipContent();
     ~DrumGridClipContent() override;
@@ -99,11 +99,13 @@ class DrumGridClipContent : public MidiEditorContent {
     std::unique_ptr<magda::VelocityLaneComponent> velocityLane_;
 
     void buildPadRows();
+    void refreshPadRowNames();
     void findDrumGrid();
     void drawSidebar(juce::Graphics& g, juce::Rectangle<int> area);
     void drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area);
     void updateVelocityLane();
     juce::String resolvePadName(int padIndex) const;
+    void timerCallback() override;
 
     int getDrawerHeight() const {
         return velocityDrawerOpen_ ? (VELOCITY_LANE_HEIGHT + VELOCITY_HEADER_HEIGHT) : 0;
