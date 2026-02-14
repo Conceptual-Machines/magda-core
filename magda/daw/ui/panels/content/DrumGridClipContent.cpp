@@ -118,6 +118,12 @@ class DrumGridClipGrid : public juce::Component,
             repaint();
         }
     }
+    void setLoopRegion(double offsetBeats, double lengthBeats, bool enabled) {
+        loopOffsetBeats_ = offsetBeats;
+        loopLengthBeats_ = lengthBeats;
+        loopEnabled_ = enabled;
+        repaint();
+    }
 
     // Callbacks for parent
     std::function<void(magda::ClipId, double, int, int)> onNoteAdded;
@@ -355,6 +361,72 @@ class DrumGridClipGrid : public juce::Component,
                 g.fillRect(clipEndX, 0, bounds.getWidth() - clipEndX, numRows * rowHeight_);
         }
 
+        // Draw loop region markers
+        if (loopEnabled_ && loopLengthBeats_ > 0.0) {
+            int loopStartX =
+                static_cast<int>(loopOffsetBeats_ * pixelsPerBeat_) + GRID_LEFT_PADDING;
+            int loopEndX =
+                static_cast<int>((loopOffsetBeats_ + loopLengthBeats_) * pixelsPerBeat_) +
+                GRID_LEFT_PADDING;
+
+            juce::Colour loopColour = DarkTheme::getColour(DarkTheme::LOOP_MARKER);
+
+            if (loopStartX >= 0 && loopStartX <= bounds.getWidth()) {
+                g.setColour(loopColour);
+                g.fillRect(loopStartX - 1, 0, 2, numRows * rowHeight_);
+            }
+            if (loopEndX >= 0 && loopEndX <= bounds.getWidth()) {
+                g.setColour(loopColour);
+                g.fillRect(loopEndX - 1, 0, 2, numRows * rowHeight_);
+            }
+        }
+
+        // Draw ghost loop-repeating notes
+        if (loopEnabled_ && loopLengthBeats_ > 0.0 && padRows_ &&
+            clipId_ != magda::INVALID_CLIP_ID) {
+            const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
+            if (clip && clip->type == magda::ClipType::MIDI && clipLengthBeats_ > 0.0) {
+                int numRepetitions =
+                    static_cast<int>(std::ceil(clipLengthBeats_ / loopLengthBeats_));
+
+                for (int rep = 1; rep < numRepetitions; ++rep) {
+                    for (const auto& note : clip->midiNotes) {
+                        if (note.startBeat < loopOffsetBeats_ ||
+                            note.startBeat >= loopOffsetBeats_ + loopLengthBeats_) {
+                            continue;
+                        }
+
+                        double relStart =
+                            (note.startBeat - loopOffsetBeats_) + rep * loopLengthBeats_;
+
+                        double noteEnd = relStart + note.lengthBeats;
+                        double repEnd = (rep + 1) * loopLengthBeats_;
+                        noteEnd = juce::jmin(noteEnd, repEnd);
+                        noteEnd = juce::jmin(noteEnd, clipLengthBeats_);
+                        if (relStart >= clipLengthBeats_)
+                            continue;
+                        double displayLength = noteEnd - relStart;
+                        if (displayLength <= 0.0)
+                            continue;
+
+                        int rowIndex = findRowForNote(note.noteNumber);
+                        if (rowIndex < 0)
+                            continue;
+
+                        int gx = static_cast<int>(relStart * pixelsPerBeat_) + GRID_LEFT_PADDING;
+                        int gy = rowIndex * rowHeight_;
+                        int gw = juce::jmax(4, static_cast<int>(displayLength * pixelsPerBeat_));
+                        int gh = rowHeight_ - 2;
+
+                        g.setColour(clip->colour.withAlpha(0.35f));
+                        g.fillRoundedRectangle(static_cast<float>(gx), static_cast<float>(gy + 1),
+                                               static_cast<float>(gw), static_cast<float>(gh),
+                                               2.0f);
+                    }
+                }
+            }
+        }
+
         // Draw copy drag ghost previews
         for (const auto& ghost : copyDragGhosts_) {
             int rowIndex = findRowForNote(ghost.noteNumber);
@@ -508,6 +580,11 @@ class DrumGridClipGrid : public juce::Component,
     double gridResolutionBeats_ = 0.25;
     bool snapEnabled_ = true;
     int timeSigNumerator_ = 4;
+
+    // Loop region
+    double loopOffsetBeats_ = 0.0;
+    double loopLengthBeats_ = 0.0;
+    bool loopEnabled_ = false;
 
     // Note components
     std::vector<std::unique_ptr<magda::NoteComponent>> noteComponents_;
@@ -1215,6 +1292,16 @@ void DrumGridClipContent::updateGridSize() {
     gridComponent_->setClipStartBeats(clipStartBeats);
     gridComponent_->setClipLengthBeats(clipLengthBeats);
     gridComponent_->setTimelineLengthBeats(displayLengthBeats);
+
+    // Pass loop region data to grid
+    if (clip) {
+        double beatsPerSecond = tempo / 60.0;
+        double loopPhaseBeats = (clip->offset - clip->loopStart) * beatsPerSecond;
+        double sourceLengthBeats = clip->loopLength * beatsPerSecond;
+        gridComponent_->setLoopRegion(loopPhaseBeats, sourceLengthBeats, clip->loopEnabled);
+    } else {
+        gridComponent_->setLoopRegion(0.0, 0.0, false);
+    }
 }
 
 // ============================================================================
