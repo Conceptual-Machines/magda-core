@@ -134,8 +134,15 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
     // Called by NoteComponent to update visual position during drag
     void updateNotePosition(NoteComponent* note, double beat, int noteNumber, double length);
 
+    // Copy drag ghost preview
+    void setCopyDragPreview(double beat, int noteNumber, double length, juce::Colour colour,
+                            bool active);
+
     // Refresh note components from clip data
     void refreshNotes();
+
+    // Request a note to be selected after the next refresh
+    void selectNoteAfterRefresh(ClipId clipId, int noteIndex);
 
     // ClipManagerListener
     void clipsChanged() override {}
@@ -147,6 +154,8 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
         onNoteAdded;  // clipId, beat, noteNumber, velocity
     std::function<void(ClipId, size_t, double, int)>
         onNoteMoved;  // clipId, index, newBeat, newNoteNumber
+    std::function<void(ClipId, size_t, double, int)>
+        onNoteCopied;  // clipId, index, destBeat, destNoteNumber
     std::function<void(ClipId, size_t, double)> onNoteResized;  // clipId, index, newLength
     std::function<void(ClipId, size_t)> onNoteDeleted;          // clipId, index
     std::function<void(ClipId, size_t)> onNoteSelected;         // clipId, index
@@ -197,6 +206,19 @@ class PianoRollGridComponent : public juce::Component, public ClipManagerListene
 
     // Currently selected note index (or -1 for none)
     int selectedNoteIndex_ = -1;
+
+    // Pending selection to apply after next refresh
+    ClipId pendingSelectClipId_ = INVALID_CLIP_ID;
+    int pendingSelectNoteIndex_ = -1;
+
+    // Copy drag ghost preview state
+    struct CopyDragGhost {
+        double beat = 0.0;
+        int noteNumber = 60;
+        double length = 1.0;
+        juce::Colour colour;
+        bool active = false;
+    } copyDragGhost_;
 
     // Painting helpers
     void paintGrid(juce::Graphics& g, juce::Rectangle<int> area);

@@ -62,6 +62,9 @@ void NoteComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
+    // Only allow copy drag if note was already selected
+    bool wasAlreadySelected = isSelected_;
+
     // Single click - select this note
     if (!isSelected_) {
         setSelected(true);
@@ -94,6 +97,8 @@ void NoteComponent::mouseDown(const juce::MouseEvent& e) {
         dragMode_ = DragMode::ResizeRight;
     } else {
         dragMode_ = DragMode::Move;
+        // Shift+drag on an already-selected note starts a copy operation
+        isCopyDrag_ = wasAlreadySelected && e.mods.isShiftDown();
     }
 
     repaint();
@@ -145,9 +150,14 @@ void NoteComponent::mouseDrag(const juce::MouseEvent& e) {
             previewStartBeat_ = rawStartBeat;
             previewNoteNumber_ = rawNoteNumber;
 
-            // Update visual position
-            parentGrid_->updateNotePosition(this, previewStartBeat_, previewNoteNumber_,
-                                            dragStartLength_);
+            // For copy drag, keep original in place and show ghost at destination
+            if (isCopyDrag_) {
+                parentGrid_->setCopyDragPreview(previewStartBeat_, previewNoteNumber_,
+                                                dragStartLength_, colour_, true);
+            } else {
+                parentGrid_->updateNotePosition(this, previewStartBeat_, previewNoteNumber_,
+                                                dragStartLength_);
+            }
 
             // Notify listeners of drag preview
             if (onNoteDragging) {
@@ -207,8 +217,15 @@ void NoteComponent::mouseUp(const juce::MouseEvent& /*e*/) {
         // Commit the change via callback
         switch (dragMode_) {
             case DragMode::Move:
-                if (onNoteMoved) {
-                    onNoteMoved(noteIndex_, previewStartBeat_, previewNoteNumber_);
+                if (isCopyDrag_) {
+                    // Copy: add a new note at destination, leave original in place
+                    if (onNoteCopied) {
+                        onNoteCopied(noteIndex_, previewStartBeat_, previewNoteNumber_);
+                    }
+                } else {
+                    if (onNoteMoved) {
+                        onNoteMoved(noteIndex_, previewStartBeat_, previewNoteNumber_);
+                    }
                 }
                 break;
 
@@ -233,6 +250,11 @@ void NoteComponent::mouseUp(const juce::MouseEvent& /*e*/) {
         }
     }
 
+    // Clear copy drag ghost
+    if (isCopyDrag_ && parentGrid_) {
+        parentGrid_->setCopyDragPreview(0, 0, 0, {}, false);
+    }
+
     // Notify that drag has ended
     if (onNoteDragging) {
         onNoteDragging(noteIndex_, previewStartBeat_, false);
@@ -240,6 +262,7 @@ void NoteComponent::mouseUp(const juce::MouseEvent& /*e*/) {
 
     dragMode_ = DragMode::None;
     isDragging_ = false;
+    isCopyDrag_ = false;
 }
 
 void NoteComponent::mouseMove(const juce::MouseEvent& e) {
@@ -257,6 +280,8 @@ void NoteComponent::mouseMove(const juce::MouseEvent& e) {
 }
 
 void NoteComponent::mouseExit(const juce::MouseEvent& /*e*/) {
+    mouseIsOver_ = false;
+    stopTimer();
     hoverLeftEdge_ = false;
     hoverRightEdge_ = false;
     updateCursor();
@@ -270,9 +295,16 @@ void NoteComponent::mouseDoubleClick(const juce::MouseEvent& /*e*/) {
     }
 }
 
+void NoteComponent::mouseEnter(const juce::MouseEvent& /*e*/) {
+    mouseIsOver_ = true;
+    startTimer(50);  // Poll modifiers at 20Hz while mouse is over
+    updateCursor();
+}
+
 void NoteComponent::setSelected(bool selected) {
     if (isSelected_ != selected) {
         isSelected_ = selected;
+        updateCursor();
         repaint();
     }
 }
@@ -293,6 +325,14 @@ void NoteComponent::updateFromNote(const MidiNote& note, juce::Colour colour) {
     repaint();
 }
 
+void NoteComponent::timerCallback() {
+    if (mouseIsOver_) {
+        updateCursor();
+    } else {
+        stopTimer();
+    }
+}
+
 bool NoteComponent::isOnLeftEdge(int x) const {
     return x < RESIZE_HANDLE_WIDTH && isSelected_;
 }
@@ -304,8 +344,8 @@ bool NoteComponent::isOnRightEdge(int x) const {
 void NoteComponent::updateCursor() {
     if (isSelected_ && (hoverLeftEdge_ || hoverRightEdge_)) {
         setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-    } else if (isSelected_) {
-        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+    } else if (isSelected_ && juce::ModifierKeys::currentModifiers.isShiftDown()) {
+        setMouseCursor(juce::MouseCursor::CopyingCursor);
     } else {
         setMouseCursor(juce::MouseCursor::NormalCursor);
     }

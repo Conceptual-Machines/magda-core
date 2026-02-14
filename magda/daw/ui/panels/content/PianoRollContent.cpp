@@ -235,6 +235,26 @@ void PianoRollContent::setupGridCallbacks() {
         // Note: UI refresh handled via ClipManagerListener::clipPropertyChanged()
     };
 
+    // Handle note copy (shift+drag)
+    gridComponent_->onNoteCopied = [this](magda::ClipId clipId, size_t noteIndex, double destBeat,
+                                          int destNoteNumber) {
+        const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+        if (!clip || noteIndex >= clip->midiNotes.size())
+            return;
+
+        const auto& sourceNote = clip->midiNotes[noteIndex];
+        auto cmd = std::make_unique<magda::AddMidiNoteCommand>(
+            clipId, destBeat, destNoteNumber, sourceNote.lengthBeats, sourceNote.velocity);
+        magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+
+        // Select the newly copied note (appended at end) after the async refresh
+        const auto* updatedClip = magda::ClipManager::getInstance().getClip(clipId);
+        if (updatedClip && !updatedClip->midiNotes.empty()) {
+            int newNoteIndex = static_cast<int>(updatedClip->midiNotes.size()) - 1;
+            gridComponent_->selectNoteAfterRefresh(clipId, newNoteIndex);
+        }
+    };
+
     // Handle note resizing
     gridComponent_->onNoteResized = [](magda::ClipId clipId, size_t noteIndex, double newLength) {
         auto cmd = std::make_unique<magda::ResizeMidiNoteCommand>(clipId, noteIndex, newLength);

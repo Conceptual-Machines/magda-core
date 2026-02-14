@@ -209,6 +209,21 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         }
     }
 
+    // Draw copy drag ghost preview
+    if (copyDragGhost_.active) {
+        int gx = beatToPixel(copyDragGhost_.beat);
+        int gy = noteNumberToY(copyDragGhost_.noteNumber);
+        int gw = juce::jmax(8, static_cast<int>(copyDragGhost_.length * pixelsPerBeat_));
+        int gh = noteHeight_ - 2;
+
+        g.setColour(copyDragGhost_.colour.withAlpha(0.35f));
+        g.fillRoundedRectangle(static_cast<float>(gx), static_cast<float>(gy + 1),
+                               static_cast<float>(gw), static_cast<float>(gh), 2.0f);
+        g.setColour(copyDragGhost_.colour.withAlpha(0.6f));
+        g.drawRoundedRectangle(static_cast<float>(gx), static_cast<float>(gy + 1),
+                               static_cast<float>(gw), static_cast<float>(gh), 2.0f, 1.0f);
+    }
+
     // Draw playhead line if playing
     if (playheadPosition_ >= 0.0) {
         // Convert seconds to beats
@@ -625,7 +640,31 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
     note->setBounds(x, y + 1, width, height);
 }
 
+void PianoRollGridComponent::setCopyDragPreview(double beat, int noteNumber, double length,
+                                                juce::Colour colour, bool active) {
+    copyDragGhost_.beat = beat;
+    copyDragGhost_.noteNumber = noteNumber;
+    copyDragGhost_.length = length;
+    copyDragGhost_.colour = colour;
+    copyDragGhost_.active = active;
+    repaint();
+}
+
+void PianoRollGridComponent::selectNoteAfterRefresh(ClipId clipId, int noteIndex) {
+    pendingSelectClipId_ = clipId;
+    pendingSelectNoteIndex_ = noteIndex;
+}
+
 void PianoRollGridComponent::refreshNotes() {
+    // Pending selection takes priority, otherwise preserve current selection
+    int selectNoteIndex =
+        pendingSelectNoteIndex_ >= 0 ? pendingSelectNoteIndex_ : selectedNoteIndex_;
+    ClipId selectClipId = pendingSelectClipId_ != INVALID_CLIP_ID ? pendingSelectClipId_ : clipId_;
+
+    // Clear pending
+    pendingSelectClipId_ = INVALID_CLIP_ID;
+    pendingSelectNoteIndex_ = -1;
+
     clearNoteComponents();
 
     if (clipId_ == INVALID_CLIP_ID) {
@@ -635,6 +674,19 @@ void PianoRollGridComponent::refreshNotes() {
 
     createNoteComponents();
     updateNoteComponentBounds();
+
+    // Restore selection if the note still exists
+    if (selectNoteIndex >= 0 && selectClipId != INVALID_CLIP_ID) {
+        for (auto& noteComp : noteComponents_) {
+            if (noteComp->getSourceClipId() == selectClipId &&
+                noteComp->getNoteIndex() == static_cast<size_t>(selectNoteIndex)) {
+                noteComp->setSelected(true);
+                selectedNoteIndex_ = selectNoteIndex;
+                break;
+            }
+        }
+    }
+
     repaint();
 }
 
@@ -707,6 +759,13 @@ void PianoRollGridComponent::createNoteComponents() {
                                                    int newNoteNumber) {
                 if (onNoteMoved) {
                     onNoteMoved(clipId, index, newBeat, newNoteNumber);
+                }
+            };
+
+            noteComp->onNoteCopied = [this, clipId](size_t index, double destBeat,
+                                                    int destNoteNumber) {
+                if (onNoteCopied) {
+                    onNoteCopied(clipId, index, destBeat, destNoteNumber);
                 }
             };
 

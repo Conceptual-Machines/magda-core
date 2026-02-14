@@ -112,6 +112,8 @@ class DrumGridClipGrid : public juce::Component {
     std::function<void(magda::ClipId, size_t)> onNoteDeleted;
     std::function<void(magda::ClipId, size_t, double, int)> onNoteMoved;
     std::function<void(magda::ClipId, size_t, double)> onNoteResized;
+    std::function<void(magda::ClipId, double, int, double, int)>
+        onNoteCopied;  // clipId, destBeat, destNoteNumber, length, velocity
 
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds();
@@ -125,7 +127,7 @@ class DrumGridClipGrid : public juce::Component {
         int numRows = static_cast<int>(padRows_->size());
 
         // Draw horizontal row lines
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
         for (int i = 0; i <= numRows; ++i) {
             int y = i * rowHeight_;
             g.drawHorizontalLine(y, 0.0f, static_cast<float>(bounds.getWidth()));
@@ -142,7 +144,7 @@ class DrumGridClipGrid : public juce::Component {
             // Pass 1: Subdivision lines at grid resolution (finest, drawn first)
             // Use integer counter to avoid floating-point drift (important for triplets etc.)
             if (gridResolutionBeats_ > 0.0) {
-                g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.35f));
+                g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.45f));
                 int numLines =
                     static_cast<int>(std::ceil((beatsVisible + 1.0) / gridResolutionBeats_));
                 for (int i = 0; i <= numLines; i++) {
@@ -160,7 +162,7 @@ class DrumGridClipGrid : public juce::Component {
             }
 
             // Pass 2: Beat lines (always visible)
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.55f));
             for (int b = 1; b <= static_cast<int>(beatsVisible) + 1; b++) {
                 if (b % tsNum == 0)
                     continue;
@@ -172,7 +174,7 @@ class DrumGridClipGrid : public juce::Component {
             }
 
             // Pass 3: Bar lines (brightest, always visible, drawn last)
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.7f));
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.85f));
             for (int bar = 0; bar * tsNum <= static_cast<int>(beatsVisible) + 1; bar++) {
                 int x = static_cast<int>(static_cast<double>(bar * tsNum) * pixelsPerBeat_) +
                         GRID_LEFT_PADDING;
@@ -260,6 +262,8 @@ class DrumGridClipGrid : public juce::Component {
         auto [noteIndex, row, beat, noteRightEdgeX] = hitTestNote(e);
         if (noteIndex >= 0 && noteRightEdgeX >= 0 && e.x >= noteRightEdgeX - RESIZE_HANDLE_WIDTH) {
             setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+        } else if (noteIndex >= 0 && e.mods.isShiftDown()) {
+            setMouseCursor(juce::MouseCursor::CopyingCursor);
         } else {
             setMouseCursor(juce::MouseCursor::NormalCursor);
         }
@@ -290,6 +294,7 @@ class DrumGridClipGrid : public juce::Component {
                     dragState_.originalLength = clip->midiNotes[dragState_.noteIndex].lengthBeats;
             } else {
                 dragState_.dragMode = DragMode::Move;
+                dragState_.isCopyDrag = e.mods.isShiftDown();
             }
         } else if (row >= 0) {
             // Clicked on empty cell — add a new note (snap beat position)
@@ -346,14 +351,31 @@ class DrumGridClipGrid : public juce::Component {
                 dragState_.currentRow = row;
                 dragState_.hasMoved = true;
 
-                int newNoteNumber = (*padRows_)[row].noteNumber;
-                if (onNoteMoved)
-                    onNoteMoved(clipId_, dragState_.noteIndex, beat, newNoteNumber);
+                // For copy drags, don't move the original — just track the preview position
+                if (!dragState_.isCopyDrag) {
+                    int newNoteNumber = (*padRows_)[row].noteNumber;
+                    if (onNoteMoved)
+                        onNoteMoved(clipId_, dragState_.noteIndex, beat, newNoteNumber);
+                }
             }
         }
     }
 
     void mouseUp(const juce::MouseEvent& /*e*/) override {
+        if (dragState_.active && dragState_.hasMoved && dragState_.isCopyDrag &&
+            dragState_.dragMode == DragMode::Move && padRows_ && !padRows_->empty()) {
+            // Copy drag: add a new note at the destination
+            const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
+            if (clip && dragState_.noteIndex < clip->midiNotes.size()) {
+                const auto& sourceNote = clip->midiNotes[dragState_.noteIndex];
+                int destRow = dragState_.currentRow;
+                int destNoteNumber = (*padRows_)[destRow].noteNumber;
+
+                if (onNoteCopied)
+                    onNoteCopied(clipId_, dragState_.currentBeat, destNoteNumber,
+                                 sourceNote.lengthBeats, sourceNote.velocity);
+            }
+        }
         dragState_ = {};
     }
 
@@ -431,6 +453,7 @@ class DrumGridClipGrid : public juce::Component {
         int currentRow = 0;
         bool hasMoved = false;
         double originalLength = 0.0;
+        bool isCopyDrag = false;
     };
     DragState dragState_;
     static constexpr int GRID_LEFT_PADDING = 2;
@@ -592,6 +615,13 @@ DrumGridClipContent::DrumGridClipContent() {
 
     gridComponent_->onNoteResized = [](magda::ClipId clipId, size_t noteIndex, double newLength) {
         auto cmd = std::make_unique<magda::ResizeMidiNoteCommand>(clipId, noteIndex, newLength);
+        magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+    };
+
+    gridComponent_->onNoteCopied = [](magda::ClipId clipId, double destBeat, int destNoteNumber,
+                                      double length, int velocity) {
+        auto cmd = std::make_unique<magda::AddMidiNoteCommand>(clipId, destBeat, destNoteNumber,
+                                                               length, velocity);
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
     };
 
