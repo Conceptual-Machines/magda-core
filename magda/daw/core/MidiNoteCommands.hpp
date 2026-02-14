@@ -7,6 +7,11 @@
 namespace magda {
 
 /**
+ * @brief Mode for quantizing MIDI notes
+ */
+enum class QuantizeMode { StartOnly, LengthOnly, StartAndLength };
+
+/**
  * @brief Command for adding a MIDI note to a clip
  */
 class AddMidiNoteCommand : public UndoableCommand {
@@ -165,6 +170,34 @@ class MoveMidiNoteBetweenClipsCommand : public UndoableCommand {
     MidiNote movedNote_;
     double newStartBeat_;
     int newNoteNumber_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for quantizing multiple MIDI notes to grid
+ */
+class QuantizeMidiNotesCommand : public UndoableCommand {
+  public:
+    QuantizeMidiNotesCommand(ClipId clipId, std::vector<size_t> noteIndices, double gridResolution,
+                             QuantizeMode mode);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Quantize MIDI Notes";
+    }
+
+  private:
+    ClipId clipId_;
+    std::vector<size_t> noteIndices_;
+    double gridResolution_;
+    QuantizeMode mode_;
+
+    struct OldValues {
+        double startBeat;
+        double lengthBeats;
+    };
+    std::vector<OldValues> oldValues_;
     bool executed_ = false;
 };
 

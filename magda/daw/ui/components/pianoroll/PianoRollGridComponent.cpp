@@ -360,6 +360,38 @@ void PianoRollGridComponent::resized() {
 }
 
 void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
+    // Right-click context menu
+    if (e.mods.isPopupMenu()) {
+        // Collect selected note indices
+        std::vector<size_t> selectedIndices;
+        for (const auto& nc : noteComponents_) {
+            if (nc->isSelected()) {
+                selectedIndices.push_back(nc->getNoteIndex());
+            }
+        }
+
+        if (!selectedIndices.empty() && onQuantizeNotes && clipId_ != INVALID_CLIP_ID) {
+            juce::PopupMenu menu;
+            menu.addItem(1, "Quantize Start to Grid");
+            menu.addItem(2, "Quantize Length to Grid");
+            menu.addItem(3, "Quantize Start & Length to Grid");
+
+            menu.showMenuAsync(juce::PopupMenu::Options(),
+                               [this, indices = std::move(selectedIndices)](int result) {
+                                   if (result == 0)
+                                       return;
+                                   QuantizeMode mode = QuantizeMode::StartOnly;
+                                   if (result == 2)
+                                       mode = QuantizeMode::LengthOnly;
+                                   else if (result == 3)
+                                       mode = QuantizeMode::StartAndLength;
+                                   if (onQuantizeNotes)
+                                       onQuantizeNotes(clipId_, indices, mode);
+                               });
+        }
+        return;
+    }
+
     // Store drag start point for potential rubber band selection
     dragSelectStart_ = e.getPosition();
     dragSelectEnd_ = e.getPosition();

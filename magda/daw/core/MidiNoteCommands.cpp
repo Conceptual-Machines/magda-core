@@ -1,6 +1,7 @@
 #include "MidiNoteCommands.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace magda {
 
@@ -400,6 +401,85 @@ void MoveMidiNoteBetweenClipsCommand::undo() {
         sourceClip->midiNotes.begin() + static_cast<std::ptrdiff_t>(insertPos), movedNote_);
 
     clipManager.forceNotifyClipPropertyChanged(sourceClipId_);
+}
+
+// ============================================================================
+// QuantizeMidiNotesCommand
+// ============================================================================
+
+QuantizeMidiNotesCommand::QuantizeMidiNotesCommand(ClipId clipId, std::vector<size_t> noteIndices,
+                                                   double gridResolution, QuantizeMode mode)
+    : clipId_(clipId),
+      noteIndices_(std::move(noteIndices)),
+      gridResolution_(gridResolution),
+      mode_(mode) {}
+
+void QuantizeMidiNotesCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || clip->type != ClipType::MIDI) {
+        return;
+    }
+
+    // Capture old values on first execute
+    if (!executed_) {
+        oldValues_.clear();
+        oldValues_.reserve(noteIndices_.size());
+        for (size_t index : noteIndices_) {
+            if (index < clip->midiNotes.size()) {
+                oldValues_.push_back(
+                    {clip->midiNotes[index].startBeat, clip->midiNotes[index].lengthBeats});
+            }
+        }
+    }
+
+    // Apply quantization
+    for (size_t i = 0; i < noteIndices_.size(); ++i) {
+        size_t index = noteIndices_[i];
+        if (index >= clip->midiNotes.size()) {
+            continue;
+        }
+
+        auto& note = clip->midiNotes[index];
+
+        if (mode_ == QuantizeMode::StartOnly || mode_ == QuantizeMode::StartAndLength) {
+            note.startBeat = std::round(note.startBeat / gridResolution_) * gridResolution_;
+        }
+
+        if (mode_ == QuantizeMode::LengthOnly || mode_ == QuantizeMode::StartAndLength) {
+            double quantizedLength =
+                std::round(note.lengthBeats / gridResolution_) * gridResolution_;
+            note.lengthBeats = juce::jmax(gridResolution_, quantizedLength);
+        }
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void QuantizeMidiNotesCommand::undo() {
+    if (!executed_) {
+        return;
+    }
+
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || clip->type != ClipType::MIDI) {
+        return;
+    }
+
+    // Restore old values
+    for (size_t i = 0; i < noteIndices_.size() && i < oldValues_.size(); ++i) {
+        size_t index = noteIndices_[i];
+        if (index < clip->midiNotes.size()) {
+            clip->midiNotes[index].startBeat = oldValues_[i].startBeat;
+            clip->midiNotes[index].lengthBeats = oldValues_[i].lengthBeats;
+        }
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
 }
 
 }  // namespace magda

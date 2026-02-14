@@ -133,6 +133,7 @@ class DrumGridClipGrid : public juce::Component,
     std::function<void(magda::ClipId, size_t, double, int)> onNoteCopied;
     std::function<void(magda::ClipId, size_t, bool)> onNoteSelected;
     std::function<void(magda::ClipId, std::vector<size_t>)> onNoteSelectionChanged;
+    std::function<void(magda::ClipId, std::vector<size_t>, magda::QuantizeMode)> onQuantizeNotes;
 
     // Refresh note components from clip data
     void refreshNotes() {
@@ -490,6 +491,36 @@ class DrumGridClipGrid : public juce::Component,
     void mouseDown(const juce::MouseEvent& e) override {
         if (!padRows_ || padRows_->empty() || clipId_ == magda::INVALID_CLIP_ID)
             return;
+
+        // Right-click context menu
+        if (e.mods.isPopupMenu()) {
+            std::vector<size_t> selectedIndices;
+            for (const auto& nc : noteComponents_) {
+                if (nc->isSelected())
+                    selectedIndices.push_back(nc->getNoteIndex());
+            }
+
+            if (!selectedIndices.empty() && onQuantizeNotes) {
+                juce::PopupMenu menu;
+                menu.addItem(1, "Quantize Start to Grid");
+                menu.addItem(2, "Quantize Length to Grid");
+                menu.addItem(3, "Quantize Start & Length to Grid");
+
+                menu.showMenuAsync(juce::PopupMenu::Options(),
+                                   [this, indices = std::move(selectedIndices)](int result) {
+                                       if (result == 0)
+                                           return;
+                                       magda::QuantizeMode mode = magda::QuantizeMode::StartOnly;
+                                       if (result == 2)
+                                           mode = magda::QuantizeMode::LengthOnly;
+                                       else if (result == 3)
+                                           mode = magda::QuantizeMode::StartAndLength;
+                                       if (onQuantizeNotes)
+                                           onQuantizeNotes(clipId_, indices, mode);
+                                   });
+            }
+            return;
+        }
 
         isDragSelecting_ = false;
         emptyClickRow_ = -1;
@@ -1049,6 +1080,14 @@ DrumGridClipContent::DrumGridClipContent() {
                                                     std::vector<size_t> noteIndices) {
         if (velocityLane_)
             velocityLane_->setSelectedNoteIndices(noteIndices);
+    };
+
+    // Handle quantize from right-click context menu
+    gridComponent_->onQuantizeNotes = [this](magda::ClipId clipId, std::vector<size_t> noteIndices,
+                                             magda::QuantizeMode mode) {
+        auto cmd = std::make_unique<magda::QuantizeMidiNotesCommand>(clipId, std::move(noteIndices),
+                                                                     gridResolutionBeats_, mode);
+        magda::UndoManager::getInstance().executeCommand(std::move(cmd));
     };
 
     viewport_->setViewedComponent(gridComponent_.get(), false);

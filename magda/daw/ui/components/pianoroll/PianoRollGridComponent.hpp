@@ -10,6 +10,7 @@
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
 #include "core/ClipTypes.hpp"
+#include "core/MidiNoteCommands.hpp"
 
 namespace magda {
 
@@ -174,6 +175,9 @@ class PianoRollGridComponent : public juce::Component,
     // Callback for drag preview (for syncing velocity lane position)
     std::function<void(ClipId, size_t, double, bool)>
         onNoteDragging;  // clipId, index, previewBeat, isDragging
+
+    // Callback for quantize action from context menu
+    std::function<void(ClipId, std::vector<size_t>, QuantizeMode)> onQuantizeNotes;
 
   private:
     ClipId clipId_ = INVALID_CLIP_ID;      // Primary selected clip (for backward compatibility)
