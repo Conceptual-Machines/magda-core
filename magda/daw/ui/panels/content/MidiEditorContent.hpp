@@ -123,7 +123,6 @@ class MidiEditorContent : public PanelContent,
     virtual void onGridResolutionChanged() {}
 
     // Push auto-grid display values to BottomPanel (call from zoom methods only)
-    void pushAutoGridDisplay();
 };
 
 }  // namespace magda::daw::ui

@@ -737,7 +737,15 @@ class DrumGridRowLabels : public juce::Component {
 
             const auto& padRow = (*padRows_)[i];
 
-            // Play button (small triangle on the left)
+            // Pad name (on the left)
+            g.setColour(padRow.hasChain ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)
+                                        : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            g.drawText(padRow.name,
+                       juce::Rectangle<int>(4, y + 1, bounds.getWidth() - PLAY_BTN_WIDTH - 8,
+                                            rowHeight_ - 2),
+                       juce::Justification::centredLeft, true);
+
+            // Play button (small triangle on the right)
             auto btnBounds = getPlayButtonBounds(i);
             bool isPlaying = (playingNoteNumber_ == padRow.noteNumber);
             bool isHovered = (hoverRow_ == i);
@@ -747,24 +755,15 @@ class DrumGridRowLabels : public juce::Component {
             } else if (isHovered) {
                 g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.7f));
             } else {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.4f));
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.3f));
             }
 
             // Draw play triangle
-            auto triArea = btnBounds.toFloat().reduced(3.0f, 4.0f);
+            auto triArea = btnBounds.toFloat().reduced(4.0f, 5.0f);
             juce::Path triangle;
             triangle.addTriangle(triArea.getX(), triArea.getY(), triArea.getX(),
                                  triArea.getBottom(), triArea.getRight(), triArea.getCentreY());
             g.fillPath(triangle);
-
-            // Pad name (offset right to make room for play button)
-            int textX = PLAY_BTN_WIDTH + 2;
-            g.setColour(padRow.hasChain ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)
-                                        : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-            g.drawText(
-                padRow.name,
-                juce::Rectangle<int>(textX, y + 1, bounds.getWidth() - textX - 4, rowHeight_ - 2),
-                juce::Justification::centredLeft, true);
         }
 
         // Right border
@@ -778,9 +777,13 @@ class DrumGridRowLabels : public juce::Component {
             return;
 
         auto btnBounds = getPlayButtonBounds(row);
+        DBG("DrumGridRowLabels::mouseDown row=" << row << " btn=" << btnBounds.toString()
+                                                << " click=" << e.getPosition().toString());
         if (btnBounds.contains(e.getPosition())) {
             int noteNumber = (*padRows_)[row].noteNumber;
             playingNoteNumber_ = noteNumber;
+            DBG("  Preview note " << noteNumber
+                                  << " ON, callback=" << (onNotePreview ? "yes" : "NO"));
             if (onNotePreview)
                 onNotePreview(noteNumber, true);
             repaint();
@@ -831,7 +834,7 @@ class DrumGridRowLabels : public juce::Component {
 
     juce::Rectangle<int> getPlayButtonBounds(int row) const {
         int y = row * rowHeight_ - scrollOffsetY_;
-        return {0, y, PLAY_BTN_WIDTH, rowHeight_};
+        return {getWidth() - PLAY_BTN_WIDTH, y, PLAY_BTN_WIDTH, rowHeight_};
     }
 };
 
