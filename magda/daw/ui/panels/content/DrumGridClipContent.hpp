@@ -111,10 +111,6 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
         return velocityDrawerOpen_ ? (VELOCITY_LANE_HEIGHT + VELOCITY_HEADER_HEIGHT) : 0;
     }
 
-    int getDrawerHeight() const {
-        return velocityDrawerOpen_ ? (VELOCITY_LANE_HEIGHT + VELOCITY_HEADER_HEIGHT) : 0;
-    }
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumGridClipContent)
 };
 
