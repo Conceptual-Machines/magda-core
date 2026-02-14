@@ -405,6 +405,11 @@ void PianoRollGridComponent::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
+    // Don't deselect on right-click release (context menu was shown)
+    if (e.mods.isPopupMenu()) {
+        return;
+    }
+
     if (isDragSelecting_) {
         // Build normalized selection rectangle
         auto selectionRect = juce::Rectangle<int>(dragSelectStart_, dragSelectEnd_);
@@ -1040,6 +1045,38 @@ void PianoRollGridComponent::createNoteComponents() {
             };
 
             noteComp->snapBeatToGrid = [this](double beat) { return snapBeatToGrid(beat); };
+
+            noteComp->onRightClick = [this, clipId](size_t /*index*/,
+                                                    const juce::MouseEvent& /*event*/) {
+                // Collect all selected note indices
+                std::vector<size_t> selectedIndices;
+                for (const auto& nc : noteComponents_) {
+                    if (nc->isSelected()) {
+                        selectedIndices.push_back(nc->getNoteIndex());
+                    }
+                }
+
+                if (!selectedIndices.empty() && onQuantizeNotes) {
+                    juce::PopupMenu menu;
+                    menu.addItem(1, "Quantize Start to Grid");
+                    menu.addItem(2, "Quantize Length to Grid");
+                    menu.addItem(3, "Quantize Start & Length to Grid");
+
+                    menu.showMenuAsync(
+                        juce::PopupMenu::Options(),
+                        [this, clipId, indices = std::move(selectedIndices)](int result) {
+                            if (result == 0)
+                                return;
+                            QuantizeMode mode = QuantizeMode::StartOnly;
+                            if (result == 2)
+                                mode = QuantizeMode::LengthOnly;
+                            else if (result == 3)
+                                mode = QuantizeMode::StartAndLength;
+                            if (onQuantizeNotes)
+                                onQuantizeNotes(clipId, indices, mode);
+                        });
+                }
+            };
 
             noteComp->setGhost(!isClipSelected(clipId));
             noteComp->updateFromNote(clip->midiNotes[i], noteColour);

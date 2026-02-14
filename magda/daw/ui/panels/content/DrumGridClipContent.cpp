@@ -549,6 +549,11 @@ class DrumGridClipGrid : public juce::Component,
     }
 
     void mouseUp(const juce::MouseEvent& e) override {
+        // Don't deselect on right-click release (context menu was shown)
+        if (e.mods.isPopupMenu()) {
+            return;
+        }
+
         if (isDragSelecting_) {
             // Rubber band selection
             auto selectionRect = juce::Rectangle<int>(dragSelectStart_, dragSelectEnd_);
@@ -776,6 +781,35 @@ class DrumGridClipGrid : public juce::Component,
             };
 
             noteComp->snapBeatToGrid = [this](double beat) { return snapBeatToGrid(beat); };
+
+            noteComp->onRightClick = [this](size_t /*index*/, const juce::MouseEvent& /*event*/) {
+                std::vector<size_t> selectedIndices;
+                for (const auto& nc : noteComponents_) {
+                    if (nc->isSelected())
+                        selectedIndices.push_back(nc->getNoteIndex());
+                }
+
+                if (!selectedIndices.empty() && onQuantizeNotes) {
+                    juce::PopupMenu menu;
+                    menu.addItem(1, "Quantize Start to Grid");
+                    menu.addItem(2, "Quantize Length to Grid");
+                    menu.addItem(3, "Quantize Start & Length to Grid");
+
+                    menu.showMenuAsync(juce::PopupMenu::Options(),
+                                       [this, indices = std::move(selectedIndices)](int result) {
+                                           if (result == 0)
+                                               return;
+                                           magda::QuantizeMode mode =
+                                               magda::QuantizeMode::StartOnly;
+                                           if (result == 2)
+                                               mode = magda::QuantizeMode::LengthOnly;
+                                           else if (result == 3)
+                                               mode = magda::QuantizeMode::StartAndLength;
+                                           if (onQuantizeNotes)
+                                               onQuantizeNotes(clipId_, indices, mode);
+                                       });
+                }
+            };
 
             noteComp->updateFromNote(clip->midiNotes[i], noteColour);
             addAndMakeVisible(noteComp.get());
