@@ -139,14 +139,9 @@ void NoteComponent::mouseDrag(const juce::MouseEvent& e) {
             double rawStartBeat = dragStartBeat_ + deltaBeat;
             int rawNoteNumber = juce::jlimit(0, 127, dragStartNoteNumber_ + deltaNote);
 
-            DBG("NOTE DRAG: dragStartBeat=" << dragStartBeat_ << ", deltaBeat=" << deltaBeat
-                                            << ", rawStartBeat=" << rawStartBeat);
-
             // Apply grid snap if available
             if (snapBeatToGrid) {
-                double snappedBeat = snapBeatToGrid(rawStartBeat);
-                DBG("  Grid snap: " << rawStartBeat << " -> " << snappedBeat);
-                rawStartBeat = snappedBeat;
+                rawStartBeat = snapBeatToGrid(rawStartBeat);
             }
 
             previewStartBeat_ = rawStartBeat;
