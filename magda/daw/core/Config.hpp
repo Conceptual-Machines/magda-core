@@ -170,6 +170,21 @@ class Config {
         renderFolder = folder;
     }
 
+    // AI Configuration
+    std::string getOpenAIApiKey() const {
+        return openaiApiKey;
+    }
+    void setOpenAIApiKey(const std::string& key) {
+        openaiApiKey = key;
+    }
+
+    std::string getOpenAIModel() const {
+        return openaiModel;
+    }
+    void setOpenAIModel(const std::string& model) {
+        openaiModel = model;
+    }
+
     // Save/Load Configuration (for future use)
     void saveToFile(const std::string& filename);
     void loadFromFile(const std::string& filename);
@@ -218,6 +233,10 @@ class Config {
     std::string preferredOutputDevice = "";  // Preferred output device (empty = system default)
     int preferredInputChannels = 0;   // Preferred input channel count (0 = use device default)
     int preferredOutputChannels = 0;  // Preferred output channel count (0 = use device default)
+
+    // AI settings
+    std::string openaiApiKey = "";        // OpenAI API key (empty = not configured)
+    std::string openaiModel = "gpt-5.2";  // OpenAI model for DSL generation (requires CFG support)
 };
 
 }  // namespace magda

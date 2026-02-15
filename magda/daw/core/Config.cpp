@@ -43,6 +43,8 @@ void Config::saveToFile(const std::string& filename) {
     file << "preferredOutputDevice=" << preferredOutputDevice << std::endl;
     file << "preferredInputChannels=" << preferredInputChannels << std::endl;
     file << "preferredOutputChannels=" << preferredOutputChannels << std::endl;
+    file << "openaiApiKey=" << openaiApiKey << std::endl;
+    file << "openaiModel=" << openaiModel << std::endl;
 
     file.close();
     std::cout << "Config saved to: " << filename << std::endl;
@@ -110,6 +112,14 @@ void Config::parseConfigLine(const std::string& key, const std::string& value) {
         }
         if (key == "preferredOutputDevice") {
             preferredOutputDevice = value;
+            return;
+        }
+        if (key == "openaiApiKey") {
+            openaiApiKey = value;
+            return;
+        }
+        if (key == "openaiModel") {
+            openaiModel = value;
             return;
         }
 

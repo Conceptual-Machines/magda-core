@@ -52,6 +52,13 @@ class PreferencesDialog : public juce::Component {
     juce::TextButton renderFolderClearButton;
     std::unique_ptr<juce::FileChooser> fileChooser_;
 
+    // AI section
+    juce::Label aiHeader;
+    juce::Label aiApiKeyLabel;
+    juce::TextEditor aiApiKeyEditor;
+    juce::TextButton aiValidateButton;
+    juce::Label aiStatusLabel;
+
     // Keyboard shortcuts section (read-only display for now)
     juce::Label shortcutsHeader;
     juce::Label addTrackShortcut;

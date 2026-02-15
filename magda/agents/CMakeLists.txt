@@ -8,6 +8,13 @@ set(AGENTS_SOURCES
     agent_manager.cpp
     simple_agent.hpp
     simple_agent.cpp
+    openai_client.hpp
+    openai_client.cpp
+    dsl_grammar.hpp
+    dsl_interpreter.hpp
+    dsl_interpreter.cpp
+    daw_agent.hpp
+    daw_agent.cpp
 )
 
 # Create the agents library

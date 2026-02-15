@@ -1,5 +1,6 @@
 #include "AIChatConsoleContent.hpp"
 
+#include "../../../../agents/daw_agent.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 
@@ -21,7 +22,9 @@ AIChatConsoleContent::AIChatConsoleContent() {
                            DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
     chatHistory_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
     chatHistory_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
-    chatHistory_.setText("Welcome! Ask me anything about your project...\n");
+    chatHistory_.setText(
+        "Welcome! Ask me anything about your project...\n"
+        "Try: \"create a bass track\" or \"create a drums track and mute it\"\n\n");
     addAndMakeVisible(chatHistory_);
 
     // Input box
@@ -31,15 +34,69 @@ AIChatConsoleContent::AIChatConsoleContent() {
     inputBox_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
     inputBox_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
     inputBox_.onReturnKey = [this]() {
-        auto text = inputBox_.getText();
-        if (text.isNotEmpty()) {
-            chatHistory_.moveCaretToEnd();
-            chatHistory_.insertTextAtCaret("\nYou: " + text + "\n");
-            chatHistory_.insertTextAtCaret("AI: [Response would appear here]\n");
-            inputBox_.clear();
-        }
+        auto text = inputBox_.getText().trim();
+        if (text.isNotEmpty() && !processing_)
+            sendMessage(text);
     };
     addAndMakeVisible(inputBox_);
+
+    // Create and start the DAW agent
+    agent_ = std::make_unique<magda::DAWAgent>();
+    agent_->start();
+}
+
+AIChatConsoleContent::~AIChatConsoleContent() {
+    // Wait for any in-flight background processing to finish
+    while (processing_)
+        juce::Thread::sleep(10);
+
+    if (agent_)
+        agent_->stop();
+}
+
+void AIChatConsoleContent::sendMessage(const juce::String& text) {
+    processing_ = true;
+    inputBox_.clear();
+    inputBox_.setEnabled(false);
+
+    appendToChat("You: " + text);
+    appendToChat("AI: Thinking...");
+
+    // Run agent on background thread
+    auto safeThis = juce::Component::SafePointer<AIChatConsoleContent>(this);
+    auto messageText = text.toStdString();
+
+    juce::Thread::launch([safeThis, messageText]() {
+        if (!safeThis)
+            return;
+
+        auto response = safeThis->agent_->processMessage(messageText);
+
+        juce::MessageManager::callAsync([safeThis, response = std::move(response)]() {
+            if (!safeThis)
+                return;
+
+            // Remove "Thinking..." and show response
+            auto currentText = safeThis->chatHistory_.getText();
+            auto thinkingPos = currentText.lastIndexOf("AI: Thinking...");
+            if (thinkingPos >= 0) {
+                safeThis->chatHistory_.setText(currentText.substring(0, thinkingPos) +
+                                               "AI: " + juce::String(response) + "\n\n");
+            } else {
+                safeThis->appendToChat("AI: " + juce::String(response));
+            }
+
+            safeThis->chatHistory_.moveCaretToEnd();
+            safeThis->inputBox_.setEnabled(true);
+            safeThis->inputBox_.grabKeyboardFocus();
+            safeThis->processing_ = false;
+        });
+    });
+}
+
+void AIChatConsoleContent::appendToChat(const juce::String& text) {
+    chatHistory_.moveCaretToEnd();
+    chatHistory_.insertTextAtCaret(text + "\n");
 }
 
 void AIChatConsoleContent::paint(juce::Graphics& g) {

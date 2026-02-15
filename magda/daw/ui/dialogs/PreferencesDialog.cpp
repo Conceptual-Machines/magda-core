@@ -74,6 +74,91 @@ PreferencesDialog::PreferencesDialog() {
     };
     addAndMakeVisible(renderFolderClearButton);
 
+    // Setup AI section
+    setupSectionHeader(aiHeader, "AI Assistant");
+
+    aiApiKeyLabel.setText("OpenAI API Key", juce::dontSendNotification);
+    aiApiKeyLabel.setColour(juce::Label::textColourId,
+                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    aiApiKeyLabel.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(aiApiKeyLabel);
+
+    aiApiKeyEditor.setPasswordCharacter(juce::juce_wchar('*'));
+    aiApiKeyEditor.setTextToShowWhenEmpty("sk-...", DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    aiApiKeyEditor.setColour(juce::TextEditor::backgroundColourId,
+                             DarkTheme::getColour(DarkTheme::SURFACE));
+    aiApiKeyEditor.setColour(juce::TextEditor::textColourId,
+                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    aiApiKeyEditor.setColour(juce::TextEditor::outlineColourId,
+                             DarkTheme::getColour(DarkTheme::BORDER));
+    addAndMakeVisible(aiApiKeyEditor);
+
+    aiValidateButton.setButtonText("Validate");
+    aiValidateButton.onClick = [this]() {
+        auto key = aiApiKeyEditor.getText().trim();
+        if (key.isEmpty()) {
+            aiStatusLabel.setText("Enter an API key first", juce::dontSendNotification);
+            aiStatusLabel.setColour(juce::Label::textColourId, juce::Colours::orange);
+            return;
+        }
+
+        aiValidateButton.setEnabled(false);
+        aiStatusLabel.setText("Validating...", juce::dontSendNotification);
+        aiStatusLabel.setColour(juce::Label::textColourId,
+                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+
+        auto safeThis = juce::Component::SafePointer<PreferencesDialog>(this);
+        auto apiKey = key;
+
+        juce::Thread::launch([safeThis, apiKey]() {
+            // GET https://api.openai.com/v1/models with the key
+            juce::URL url("https://api.openai.com/v1/models");
+            juce::String headers = "Authorization: Bearer " + apiKey;
+
+            auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+                               .withExtraHeaders(headers)
+                               .withConnectionTimeoutMs(10000);
+
+            auto stream = url.createInputStream(options);
+
+            bool valid = false;
+            juce::String statusMsg;
+
+            if (stream) {
+                auto* webStream = dynamic_cast<juce::WebInputStream*>(stream.get());
+                if (webStream) {
+                    int code = webStream->getStatusCode();
+                    if (code == 200) {
+                        valid = true;
+                        statusMsg = "Valid";
+                    } else if (code == 401) {
+                        statusMsg = "Invalid API key";
+                    } else {
+                        statusMsg = "HTTP " + juce::String(code);
+                    }
+                }
+            } else {
+                statusMsg = "Connection failed";
+            }
+
+            juce::MessageManager::callAsync([safeThis, valid, statusMsg]() {
+                if (!safeThis)
+                    return;
+                safeThis->aiValidateButton.setEnabled(true);
+                safeThis->aiStatusLabel.setText(statusMsg, juce::dontSendNotification);
+                safeThis->aiStatusLabel.setColour(juce::Label::textColourId,
+                                                  valid ? juce::Colours::limegreen
+                                                        : juce::Colours::red);
+            });
+        });
+    };
+    addAndMakeVisible(aiValidateButton);
+
+    aiStatusLabel.setColour(juce::Label::textColourId,
+                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    aiStatusLabel.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(aiStatusLabel);
+
     // Setup keyboard shortcuts section
     setupSectionHeader(shortcutsHeader, "Keyboard Shortcuts");
 #if JUCE_MAC
@@ -115,7 +200,7 @@ PreferencesDialog::PreferencesDialog() {
     loadCurrentSettings();
 
     // Set preferred size (increased height for panels, layout, rendering and shortcuts sections)
-    setSize(450, 940);
+    setSize(450, 1150);
 }
 
 PreferencesDialog::~PreferencesDialog() = default;
@@ -248,6 +333,25 @@ void PreferencesDialog::resized() {
 
     bounds.removeFromTop(sectionSpacing);
 
+    // AI section
+    auto aiHeaderBounds = bounds.removeFromTop(headerHeight);
+    aiHeader.setBounds(aiHeaderBounds);
+    bounds.removeFromTop(4);
+
+    // API Key label
+    row = bounds.removeFromTop(rowHeight);
+    aiApiKeyLabel.setBounds(row.removeFromLeft(labelWidth));
+    aiApiKeyEditor.setBounds(row.reduced(0, 4));
+    bounds.removeFromTop(4);
+
+    // Validate button + status
+    row = bounds.removeFromTop(rowHeight);
+    aiValidateButton.setBounds(row.removeFromLeft(80).reduced(0, 4));
+    row.removeFromLeft(8);
+    aiStatusLabel.setBounds(row);
+
+    bounds.removeFromTop(sectionSpacing);
+
     // Keyboard Shortcuts section
     auto shortcutsHeaderBounds = bounds.removeFromTop(headerHeight);
     shortcutsHeader.setBounds(shortcutsHeaderBounds);
@@ -318,6 +422,9 @@ void PreferencesDialog::loadCurrentSettings() {
     // Load layout settings
     leftHandedLayoutToggle.setToggleState(config.getScrollbarOnLeft(), juce::dontSendNotification);
 
+    // Load AI settings
+    aiApiKeyEditor.setText(juce::String(config.getOpenAIApiKey()), juce::dontSendNotification);
+
     // Load render folder setting
     auto folder = config.getRenderFolder();
     if (folder.empty()) {
@@ -358,6 +465,9 @@ void PreferencesDialog::applySettings() {
     // Apply render folder setting (tooltip holds the real path; empty = default)
     auto folderPath = renderFolderValue.getTooltip();
     config.setRenderFolder(folderPath.toStdString());
+
+    // Apply AI settings
+    config.setOpenAIApiKey(aiApiKeyEditor.getText().toStdString());
 }
 
 void PreferencesDialog::showDialog(juce::Component* parent) {
