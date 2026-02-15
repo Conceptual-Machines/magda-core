@@ -135,6 +135,15 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     addAndMakeVisible(*scButton_);
     updateScButtonState();
 
+    // Multi-output routing button (only visible for multi-out plugins)
+    multiOutButton_ = std::make_unique<magda::SvgButton>("MultiOut", BinaryData::Output_svg,
+                                                         BinaryData::Output_svgSize);
+    multiOutButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    multiOutButton_->setActiveColor(juce::Colours::white);
+    multiOutButton_->onClick = [this]() { showMultiOutMenu(); };
+    multiOutButton_->setVisible(device_.multiOut.isMultiOut);
+    addAndMakeVisible(*multiOutButton_);
+
     // UI button (toggle plugin window) - open in new icon
     uiButton_ = std::make_unique<magda::SvgButton>("UI", BinaryData::open_in_new_svg,
                                                    BinaryData::open_in_new_svgSize);
@@ -525,6 +534,10 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
         updateScButtonState();
     }
 
+    // Update multi-out button visibility
+    if (multiOutButton_)
+        multiOutButton_->setVisible(device_.multiOut.isMultiOut);
+
     // Apply saved parameter configuration if parameters are now available
     if (!device_.uniqueId.isEmpty() && !device_.parameters.empty()) {
         magda::DeviceInfo tempDevice = device_;
@@ -831,6 +844,12 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
         scButton_->setVisible(false);
     }
 
+    // Multi-output button (only if plugin is multi-out)
+    if (device_.multiOut.isMultiOut && multiOutButton_) {
+        multiOutButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+        headerArea.removeFromRight(4);
+    }
+
     // Gain slider takes some space on the right
     gainSlider_.setBounds(headerArea.removeFromRight(50));
     headerArea.removeFromRight(4);
@@ -865,6 +884,14 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
     modButton_->setBounds(
         area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
     modButton_->setVisible(true);
+
+    // Multi-out button (only if plugin is multi-out)
+    if (device_.multiOut.isMultiOut && multiOutButton_) {
+        area.removeFromTop(4);
+        multiOutButton_->setBounds(
+            area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+        multiOutButton_->setVisible(true);
+    }
 }
 
 int DeviceSlotComponent::getModPanelWidth() const {
@@ -1284,11 +1311,7 @@ void DeviceSlotComponent::paramSelectionChanged(const magda::ParamSelection& sel
 void DeviceSlotComponent::mouseDown(const juce::MouseEvent& e) {
     // Right-click context menu
     if (e.mods.isPopupMenu()) {
-        if (device_.multiOut.isMultiOut) {
-            showMultiOutMenu();
-            return;
-        }
-        // Fall through to base class for other right-click handling
+        // Fall through to base class for right-click handling
         NodeComponent::mouseDown(e);
         return;
     }

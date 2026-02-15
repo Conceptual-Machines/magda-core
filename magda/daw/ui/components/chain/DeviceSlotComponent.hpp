@@ -145,7 +145,8 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<magda::SvgButton> modButton_;
     std::unique_ptr<magda::SvgButton> macroButton_;
     TextSlider gainSlider_{TextSlider::Format::Decibels};
-    std::unique_ptr<juce::TextButton> scButton_;  // Sidechain source selector
+    std::unique_ptr<juce::TextButton> scButton_;        // Sidechain source selector
+    std::unique_ptr<magda::SvgButton> multiOutButton_;  // Multi-output routing
     std::unique_ptr<magda::SvgButton> uiButton_;
     std::unique_ptr<magda::SvgButton> onButton_;
 
