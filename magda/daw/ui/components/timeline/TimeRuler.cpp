@@ -6,6 +6,7 @@
 #include "DarkTheme.hpp"
 #include "FontManager.hpp"
 #include "LayoutConfig.hpp"
+#include "TimelineState.hpp"
 
 namespace magda {
 
@@ -315,8 +316,6 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
     if (gridResolutionBeats > 0.0) {
         intervalBeats = gridResolutionBeats;
-        DBG("[TimeRuler] grid resolution: " + juce::String(intervalBeats, 6) +
-            " timeSig=" + juce::String(timeSigNumerator) + "/" + juce::String(timeSigDenominator));
     } else {
         // Auto-compute from zoom (same logic as TimelineComponent)
         const double beatFractions[] = {0.0078125, 0.015625, 0.03125, 0.0625,
@@ -349,12 +348,8 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     double barLengthBeats = static_cast<double>(timeSigNumerator);
 
     // Check if grid interval aligns with bar and beat boundaries
-    double barMod = std::fmod(barLengthBeats, intervalBeats);
-    bool alignsWithBars =
-        intervalBeats >= barLengthBeats || barMod < 0.001 || barMod > (intervalBeats - 0.001);
-    double beatMod = std::fmod(1.0, intervalBeats);
-    bool alignsWithBeats =
-        intervalBeats >= 1.0 || beatMod < 0.001 || beatMod > (intervalBeats - 0.001);
+    bool alignsWithBars = GridConstants::gridAlignsWithBars(intervalBeats, barLengthBeats);
+    bool alignsWithBeats = GridConstants::gridAlignsWithBeats(intervalBeats);
     bool gridAligned = alignsWithBars && alignsWithBeats;
 
     int labelY = LABEL_MARGIN;
@@ -404,9 +399,8 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             if (beatsInBar < 0)
                 beatsInBar += timeSigNumerator;
 
-            bool isBarStart = beatsInBar < 0.001 || beatsInBar > (barLengthBeats - 0.001);
-            double beatRemainder = std::fmod(beatsFromOrigin, 1.0);
-            bool isBeatStart = isBarStart || beatRemainder < 0.001 || beatRemainder > 0.999;
+            auto [isBarStart, isBeatStart] =
+                GridConstants::classifyBeatPosition(beatsFromOrigin, barLengthBeats);
 
             if (beatsInBar > (barLengthBeats - 0.001))
                 bar += 1;

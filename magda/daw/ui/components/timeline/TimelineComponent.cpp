@@ -906,47 +906,17 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
         double secondsPerBeat = 60.0 / tempoBPM;
         double secondsPerBar = secondsPerBeat * timeSignatureNumerator;
 
-        // Define musical intervals from 1/512 to 1/4 note
-        // Beat fractions: 1/512, 1/256, 1/128, 1/64, 1/32, 1/16, 1/8, 1/4
-        const double beatFractions[] = {0.0078125, 0.015625, 0.03125, 0.0625,
-                                        0.125,     0.25,     0.5,     1.0};
-        const int barMultiples[] = {1, 2, 4, 8, 16, 32};
-
-        double markerIntervalBeats = 1.0;
-
-        if (!gridQuantize.autoGrid) {
-            markerIntervalBeats = gridQuantize.toBeatFraction();
-        } else {
-            bool foundInterval = false;
-            for (double fraction : beatFractions) {
-                double intervalSeconds = secondsPerBeat * fraction;
-                if (timeDurationToPixels(intervalSeconds) >= minPixelSpacing) {
-                    markerIntervalBeats = fraction;
-                    foundInterval = true;
-                    break;
-                }
-            }
-            if (!foundInterval) {
-                for (int mult : barMultiples) {
-                    double intervalSeconds = secondsPerBar * mult;
-                    if (timeDurationToPixels(intervalSeconds) >= minPixelSpacing) {
-                        markerIntervalBeats = timeSignatureNumerator * mult;
-                        break;
-                    }
-                }
-            }
-        }
+        double pixelsPerBeatZoom = timeDurationToPixels(secondsPerBeat);
+        double markerIntervalBeats = GridConstants::computeGridInterval(
+            gridQuantize, pixelsPerBeatZoom, timeSignatureNumerator, minPixelSpacing);
 
         double markerIntervalSeconds = secondsPerBeat * markerIntervalBeats;
         double barLengthBeats = static_cast<double>(timeSignatureNumerator);
 
         // Check if grid interval aligns with bar and beat boundaries
-        double barMod = std::fmod(barLengthBeats, markerIntervalBeats);
-        bool alignsWithBars = markerIntervalBeats >= barLengthBeats || barMod < 0.001 ||
-                              barMod > (markerIntervalBeats - 0.001);
-        double beatMod = std::fmod(1.0, markerIntervalBeats);
-        bool alignsWithBeats = markerIntervalBeats >= 1.0 || beatMod < 0.001 ||
-                               beatMod > (markerIntervalBeats - 0.001);
+        bool alignsWithBars =
+            GridConstants::gridAlignsWithBars(markerIntervalBeats, barLengthBeats);
+        bool alignsWithBeats = GridConstants::gridAlignsWithBeats(markerIntervalBeats);
         bool gridAligned = alignsWithBars && alignsWithBeats;
 
         double pixelsPerBeat = timeDurationToPixels(secondsPerBeat);
@@ -980,14 +950,12 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                 double totalBeats = time / secondsPerBeat;
                 double beatInBarFractional = std::fmod(totalBeats, barLengthBeats);
 
-                double barRemainder = beatInBarFractional;
-                bool isBarStart = barRemainder < 0.001 || barRemainder > (barLengthBeats - 0.001);
-                double beatRemainder = std::fmod(beatInBarFractional, 1.0);
-                bool isBeatStart = isBarStart || beatRemainder < 0.001 || beatRemainder > 0.999;
+                auto [isBarStart, isBeatStart] =
+                    GridConstants::classifyBeatPosition(beatInBarFractional, barLengthBeats);
 
                 int bar = static_cast<int>(totalBeats / timeSignatureNumerator) + 1;
                 int beatInBar = static_cast<int>(beatInBarFractional) + 1;
-                if (barRemainder > (barLengthBeats - 0.001)) {
+                if (beatInBarFractional > (barLengthBeats - 0.001)) {
                     bar += 1;
                     beatInBar = 1;
                 }

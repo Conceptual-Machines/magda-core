@@ -94,10 +94,6 @@ void GridOverlayComponent::timelineStateChanged(const TimelineState& state, Chan
     if (gridQuantize.autoGrid != state.display.gridQuantize.autoGrid ||
         gridQuantize.numerator != state.display.gridQuantize.numerator ||
         gridQuantize.denominator != state.display.gridQuantize.denominator) {
-        DBG("[GridOverlay] gridQuantize changed: auto=" +
-            juce::String(state.display.gridQuantize.autoGrid ? 1 : 0) +
-            " num=" + juce::String(state.display.gridQuantize.numerator) +
-            " den=" + juce::String(state.display.gridQuantize.denominator));
         gridQuantize = state.display.gridQuantize;
         needsRepaint = true;
     }
@@ -182,36 +178,15 @@ void GridOverlayComponent::drawBarsBeatsGrid(juce::Graphics& g, juce::Rectangle<
 
     double markerIntervalBeats = 1.0;
 
-    if (!gridQuantize.autoGrid) {
-        markerIntervalBeats = gridQuantize.toBeatFraction();
-    } else {
-        double frac = GridConstants::findBeatSubdivision(currentZoom, minPixelSpacing);
-        if (frac > 0) {
-            markerIntervalBeats = frac;
-        } else {
-            int mult = GridConstants::findBarMultiple(currentZoom, timeSignatureNumerator,
-                                                      minPixelSpacing);
-            markerIntervalBeats = timeSignatureNumerator * mult;
-        }
-    }
+    markerIntervalBeats = GridConstants::computeGridInterval(
+        gridQuantize, currentZoom, timeSignatureNumerator, minPixelSpacing);
 
     double totalTimelineBeats = timelineLength * tempoBPM / 60.0;
     double barLengthBeats = static_cast<double>(timeSignatureNumerator);
 
     // Check if grid interval aligns with bar and beat boundaries
-    double barMod = std::fmod(barLengthBeats, markerIntervalBeats);
-    bool alignsWithBars = markerIntervalBeats >= barLengthBeats || barMod < 0.001 ||
-                          barMod > (markerIntervalBeats - 0.001);
-    double beatMod = std::fmod(1.0, markerIntervalBeats);
-    bool alignsWithBeats =
-        markerIntervalBeats >= 1.0 || beatMod < 0.001 || beatMod > (markerIntervalBeats - 0.001);
-
-    if (!gridQuantize.autoGrid) {
-        DBG("[GridOverlay] DRAW: interval=" + juce::String(markerIntervalBeats, 6) +
-            " num=" + juce::String(gridQuantize.numerator) +
-            " den=" + juce::String(gridQuantize.denominator) + " alignBar=" +
-            juce::String((int)alignsWithBars) + " alignBeat=" + juce::String((int)alignsWithBeats));
-    }
+    bool alignsWithBars = GridConstants::gridAlignsWithBars(markerIntervalBeats, barLengthBeats);
+    bool alignsWithBeats = GridConstants::gridAlignsWithBeats(markerIntervalBeats);
 
     // Draw grid lines
     for (double beat = 0.0; beat <= totalTimelineBeats; beat += markerIntervalBeats) {
@@ -221,10 +196,8 @@ void GridOverlayComponent::drawBarsBeatsGrid(juce::Graphics& g, juce::Rectangle<
 
         if (alignsWithBars && alignsWithBeats) {
             // Grid aligns with musical structure — classify normally
-            double barRemainder = std::fmod(beat, barLengthBeats);
-            bool isBarLine = barRemainder < 0.001 || barRemainder > (barLengthBeats - 0.001);
-            double beatRemainder = std::fmod(beat, 1.0);
-            bool isBeatLine = beatRemainder < 0.001 || beatRemainder > 0.999;
+            auto [isBarLine, isBeatLine] =
+                GridConstants::classifyBeatPosition(beat, barLengthBeats);
 
             if (isBarLine) {
                 g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.4f));
