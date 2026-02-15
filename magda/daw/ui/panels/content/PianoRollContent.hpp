@@ -9,7 +9,6 @@ namespace magda {
 class PianoRollGridComponent;
 class PianoRollKeyboard;
 class SvgButton;
-class VelocityLaneComponent;
 }  // namespace magda
 
 namespace magda::daw::ui {
@@ -86,6 +85,10 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     void onScrollPositionChanged(int scrollX, int scrollY) override;
     void onGridResolutionChanged() override;
 
+    // Override velocity lane methods
+    void updateVelocityLane() override;
+    void onVelocityEdited() override;
+
     // Layout constants (PianoRoll-specific)
     static constexpr int SIDEBAR_WIDTH = 32;
     static constexpr int KEYBOARD_WIDTH = 60;
@@ -94,8 +97,6 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     static constexpr int HEADER_HEIGHT = CHORD_ROW_HEIGHT + RULER_HEIGHT;
     static constexpr int MIN_NOTE = 0;    // C-2
     static constexpr int MAX_NOTE = 127;  // G9
-    static constexpr int VELOCITY_LANE_HEIGHT = 80;
-    static constexpr int VELOCITY_HEADER_HEIGHT = 20;
 
     // Vertical zoom limits
     static constexpr int MIN_NOTE_HEIGHT = 6;
@@ -107,9 +108,6 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     // Chord row visibility
     bool showChordRow_ = false;
 
-    // Velocity drawer visibility
-    bool velocityDrawerOpen_ = false;
-
     // Initial centering flag
     bool needsInitialCentering_ = true;
 
@@ -118,23 +116,16 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     std::unique_ptr<magda::PianoRollKeyboard> keyboard_;
     std::unique_ptr<magda::SvgButton> chordToggle_;
     std::unique_ptr<magda::SvgButton> velocityToggle_;
-    std::unique_ptr<magda::VelocityLaneComponent> velocityLane_;
 
     // Grid component management
     void setupGridCallbacks();
     void drawSidebar(juce::Graphics& g, juce::Rectangle<int> area);
     void drawChordRow(juce::Graphics& g, juce::Rectangle<int> area);
     void drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area);
-    void updateVelocityLane();
 
     // Helper to get current header height based on chord row visibility
     int getHeaderHeight() const {
         return showChordRow_ ? HEADER_HEIGHT : RULER_HEIGHT;
-    }
-
-    // Helper to get current drawer height
-    int getDrawerHeight() const {
-        return velocityDrawerOpen_ ? (VELOCITY_LANE_HEIGHT + VELOCITY_HEADER_HEIGHT) : 0;
     }
 
     // Center the view on middle C (C4)

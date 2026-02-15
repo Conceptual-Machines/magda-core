@@ -10,6 +10,7 @@
 
 namespace magda {
 class TimeRuler;
+class VelocityLaneComponent;
 }
 
 namespace magda::daw::ui {
@@ -119,10 +120,16 @@ class MidiEditorContent : public PanelContent,
     static constexpr int GRID_LEFT_PADDING = 2;
     static constexpr double MIN_HORIZONTAL_ZOOM = 10.0;
     static constexpr double MAX_HORIZONTAL_ZOOM = 500.0;
+    static constexpr int VELOCITY_LANE_HEIGHT = 80;
+    static constexpr int VELOCITY_HEADER_HEIGHT = 20;
 
     // --- Components (accessible to subclasses) ---
     std::unique_ptr<MidiEditorViewport> viewport_;
     std::unique_ptr<magda::TimeRuler> timeRuler_;
+    std::unique_ptr<magda::VelocityLaneComponent> velocityLane_;
+
+    // --- Velocity lane state ---
+    bool velocityDrawerOpen_ = false;
 
     // --- Shared zoom methods ---
     void performAnchorPointZoom(double newZoom, double anchorTime, int anchorScreenX);
@@ -143,6 +150,17 @@ class MidiEditorContent : public PanelContent,
     // --- Optional virtual hooks ---
     virtual void onScrollPositionChanged(int /*scrollX*/, int /*scrollY*/) {}
     virtual void onGridResolutionChanged() {}
+
+    // --- Velocity lane methods ---
+    void setupVelocityLane();
+    virtual void updateVelocityLane();
+    virtual void onVelocityEdited();
+    void setVelocityLaneSelectedNotes(const std::vector<size_t>& indices);
+
+    // Helper to get current drawer height
+    int getDrawerHeight() const {
+        return velocityDrawerOpen_ ? (VELOCITY_LANE_HEIGHT + VELOCITY_HEADER_HEIGHT) : 0;
+    }
 
     // --- Edit cursor blink state ---
     bool editCursorBlinkVisible_ = true;
