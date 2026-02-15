@@ -120,6 +120,9 @@ class PianoRollGridComponent : public juce::Component,
         return playheadPosition_;
     }
 
+    // Edit cursor position (for drawing blinking edit cursor line)
+    void setEditCursorPosition(double positionSeconds, bool blinkVisible);
+
     // Grid snap settings
     void setGridResolutionBeats(double beats);
     double getGridResolutionBeats() const {
@@ -176,8 +179,12 @@ class PianoRollGridComponent : public juce::Component,
     std::function<void(ClipId, size_t, double, bool)>
         onNoteDragging;  // clipId, index, previewBeat, isDragging
 
-    // Callback for quantize action from context menu
+    // Callbacks for edit operations from context menu
     std::function<void(ClipId, std::vector<size_t>, QuantizeMode)> onQuantizeNotes;
+    std::function<void(ClipId, std::vector<size_t>)> onCopyNotes;
+    std::function<void(ClipId)> onPasteNotes;
+    std::function<void(ClipId, std::vector<size_t>)> onDuplicateNotes;
+    std::function<void(ClipId, std::vector<size_t>)> onDeleteNotes;
 
   private:
     ClipId clipId_ = INVALID_CLIP_ID;      // Primary selected clip (for backward compatibility)
@@ -210,6 +217,10 @@ class PianoRollGridComponent : public juce::Component,
 
     // Playhead position (in seconds)
     double playheadPosition_ = -1.0;  // -1 = not playing, hide playhead
+
+    // Edit cursor position (in seconds)
+    double editCursorPosition_ = -1.0;  // -1 = hidden
+    bool editCursorVisible_ = true;     // blink state
 
     // Loop region (in beats)
     double loopOffsetBeats_ = 0.0;

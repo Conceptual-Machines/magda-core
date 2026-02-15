@@ -113,6 +113,12 @@ void TimeRuler::setPlayheadPosition(double positionSeconds) {
     }
 }
 
+void TimeRuler::setEditCursorPosition(double positionSeconds, bool blinkVisible) {
+    editCursorPosition_ = positionSeconds;
+    editCursorVisible_ = blinkVisible;
+    repaint();
+}
+
 void TimeRuler::setLeftPadding(int padding) {
     leftPadding = padding;
     repaint();
@@ -541,6 +547,20 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             float fx = static_cast<float>(phaseX);
             flag.addTriangle(fx - 5.0f, 2.0f, fx + 5.0f, 2.0f, fx, 10.0f);
             g.fillPath(flag);
+        }
+    }
+
+    // Draw edit cursor line (blinking white)
+    if (editCursorPosition_ >= 0.0 && editCursorVisible_) {
+        double displayTime =
+            relativeMode ? (editCursorPosition_ - timeOffset) : editCursorPosition_;
+        int cursorX = timeToPixel(displayTime);
+        if (cursorX >= 0 && cursorX <= width) {
+            g.setColour(juce::Colours::black.withAlpha(0.5f));
+            g.drawLine(float(cursorX - 1), 0.f, float(cursorX - 1), float(height), 1.f);
+            g.drawLine(float(cursorX + 1), 0.f, float(cursorX + 1), float(height), 1.f);
+            g.setColour(juce::Colours::white);
+            g.drawLine(float(cursorX), 0.f, float(cursorX), float(height), 2.f);
         }
     }
 

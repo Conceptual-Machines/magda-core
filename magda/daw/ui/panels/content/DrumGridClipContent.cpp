@@ -11,6 +11,7 @@
 #include "audio/DrumGridPlugin.hpp"
 #include "audio/MagdaSamplerPlugin.hpp"
 #include "core/MidiNoteCommands.hpp"
+#include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -124,6 +125,11 @@ class DrumGridClipGrid : public juce::Component,
         loopEnabled_ = enabled;
         repaint();
     }
+    void setEditCursorPosition(double positionSeconds, bool blinkVisible) {
+        editCursorPosition_ = positionSeconds;
+        editCursorVisible_ = blinkVisible;
+        repaint();
+    }
 
     // Callbacks for parent
     std::function<void(magda::ClipId, double, int, int)> onNoteAdded;
@@ -134,6 +140,10 @@ class DrumGridClipGrid : public juce::Component,
     std::function<void(magda::ClipId, size_t, bool)> onNoteSelected;
     std::function<void(magda::ClipId, std::vector<size_t>)> onNoteSelectionChanged;
     std::function<void(magda::ClipId, std::vector<size_t>, magda::QuantizeMode)> onQuantizeNotes;
+    std::function<void(magda::ClipId, std::vector<size_t>)> onCopyNotes;
+    std::function<void(magda::ClipId)> onPasteNotes;
+    std::function<void(magda::ClipId, std::vector<size_t>)> onDuplicateNotes;
+    std::function<void(magda::ClipId, std::vector<size_t>)> onDeleteNotes;
 
     // Refresh note components from clip data
     void refreshNotes() {
@@ -459,6 +469,27 @@ class DrumGridClipGrid : public juce::Component,
             }
         }
 
+        // Draw edit cursor line (blinking white)
+        if (editCursorPosition_ >= 0.0 && editCursorVisible_) {
+            double tempo = 120.0;
+            if (auto* controller = magda::TimelineController::getCurrent()) {
+                tempo = controller->getState().tempo.bpm;
+            }
+            double cursorBeat = editCursorPosition_ * (tempo / 60.0);
+            int cursorX = static_cast<int>(cursorBeat * pixelsPerBeat_) + GRID_LEFT_PADDING;
+
+            if (cursorX >= 0 && cursorX <= bounds.getWidth()) {
+                g.setColour(juce::Colours::black.withAlpha(0.5f));
+                g.drawLine(static_cast<float>(cursorX - 1), 0.f, static_cast<float>(cursorX - 1),
+                           static_cast<float>(numRows * rowHeight_), 1.f);
+                g.drawLine(static_cast<float>(cursorX + 1), 0.f, static_cast<float>(cursorX + 1),
+                           static_cast<float>(numRows * rowHeight_), 1.f);
+                g.setColour(juce::Colours::white);
+                g.drawLine(static_cast<float>(cursorX), 0.f, static_cast<float>(cursorX),
+                           static_cast<float>(numRows * rowHeight_), 2.f);
+            }
+        }
+
         // Draw playhead
         if (playheadPosition_ >= 0.0) {
             double tempo = 120.0;
@@ -500,25 +531,39 @@ class DrumGridClipGrid : public juce::Component,
                     selectedIndices.push_back(nc->getNoteIndex());
             }
 
-            if (!selectedIndices.empty() && onQuantizeNotes) {
-                juce::PopupMenu menu;
-                menu.addItem(1, "Quantize Start to Grid");
-                menu.addItem(2, "Quantize Length to Grid");
-                menu.addItem(3, "Quantize Start & Length to Grid");
+            juce::PopupMenu menu;
+            bool hasSelection = !selectedIndices.empty();
 
-                menu.showMenuAsync(juce::PopupMenu::Options(),
-                                   [this, indices = std::move(selectedIndices)](int result) {
-                                       if (result == 0)
-                                           return;
+            menu.addItem(10, "Copy", hasSelection);
+            menu.addItem(11, "Paste", magda::ClipManager::getInstance().hasNotesInClipboard());
+            menu.addItem(12, "Duplicate", hasSelection);
+            menu.addItem(13, "Delete", hasSelection);
+            menu.addSeparator();
+            menu.addItem(1, "Quantize Start to Grid", hasSelection);
+            menu.addItem(2, "Quantize Length to Grid", hasSelection);
+            menu.addItem(3, "Quantize Start & Length to Grid", hasSelection);
+
+            menu.showMenuAsync(juce::PopupMenu::Options(),
+                               [this, indices = std::move(selectedIndices)](int result) {
+                                   if (result == 0)
+                                       return;
+                                   if (result == 10 && onCopyNotes)
+                                       onCopyNotes(clipId_, indices);
+                                   else if (result == 11 && onPasteNotes)
+                                       onPasteNotes(clipId_);
+                                   else if (result == 12 && onDuplicateNotes)
+                                       onDuplicateNotes(clipId_, indices);
+                                   else if (result == 13 && onDeleteNotes)
+                                       onDeleteNotes(clipId_, indices);
+                                   else if (result >= 1 && result <= 3 && onQuantizeNotes) {
                                        magda::QuantizeMode mode = magda::QuantizeMode::StartOnly;
                                        if (result == 2)
                                            mode = magda::QuantizeMode::LengthOnly;
                                        else if (result == 3)
                                            mode = magda::QuantizeMode::StartAndLength;
-                                       if (onQuantizeNotes)
-                                           onQuantizeNotes(clipId_, indices, mode);
-                                   });
-            }
+                                       onQuantizeNotes(clipId_, indices, mode);
+                                   }
+                               });
             return;
         }
 
@@ -626,6 +671,8 @@ class DrumGridClipGrid : public juce::Component,
     double clipLengthBeats_ = 0.0;
     double timelineLengthBeats_ = 0.0;
     double playheadPosition_ = -1.0;
+    double editCursorPosition_ = -1.0;  // seconds, -1 = hidden
+    bool editCursorVisible_ = true;     // blink state
     double gridResolutionBeats_ = 0.25;
     bool snapEnabled_ = true;
     int timeSigNumerator_ = 4;
@@ -789,26 +836,40 @@ class DrumGridClipGrid : public juce::Component,
                         selectedIndices.push_back(nc->getNoteIndex());
                 }
 
-                if (!selectedIndices.empty() && onQuantizeNotes) {
-                    juce::PopupMenu menu;
-                    menu.addItem(1, "Quantize Start to Grid");
-                    menu.addItem(2, "Quantize Length to Grid");
-                    menu.addItem(3, "Quantize Start & Length to Grid");
+                juce::PopupMenu menu;
+                bool hasSelection = !selectedIndices.empty();
 
-                    menu.showMenuAsync(juce::PopupMenu::Options(),
-                                       [this, indices = std::move(selectedIndices)](int result) {
-                                           if (result == 0)
-                                               return;
+                menu.addItem(10, "Copy", hasSelection);
+                menu.addItem(11, "Paste", magda::ClipManager::getInstance().hasNotesInClipboard());
+                menu.addItem(12, "Duplicate", hasSelection);
+                menu.addItem(13, "Delete", hasSelection);
+                menu.addSeparator();
+                menu.addItem(1, "Quantize Start to Grid", hasSelection);
+                menu.addItem(2, "Quantize Length to Grid", hasSelection);
+                menu.addItem(3, "Quantize Start & Length to Grid", hasSelection);
+
+                menu.showMenuAsync(juce::PopupMenu::Options(),
+                                   [this, indices = std::move(selectedIndices)](int result) {
+                                       if (result == 0)
+                                           return;
+                                       if (result == 10 && onCopyNotes)
+                                           onCopyNotes(clipId_, indices);
+                                       else if (result == 11 && onPasteNotes)
+                                           onPasteNotes(clipId_);
+                                       else if (result == 12 && onDuplicateNotes)
+                                           onDuplicateNotes(clipId_, indices);
+                                       else if (result == 13 && onDeleteNotes)
+                                           onDeleteNotes(clipId_, indices);
+                                       else if (result >= 1 && result <= 3 && onQuantizeNotes) {
                                            magda::QuantizeMode mode =
                                                magda::QuantizeMode::StartOnly;
                                            if (result == 2)
                                                mode = magda::QuantizeMode::LengthOnly;
                                            else if (result == 3)
                                                mode = magda::QuantizeMode::StartAndLength;
-                                           if (onQuantizeNotes)
-                                               onQuantizeNotes(clipId_, indices, mode);
-                                       });
-                }
+                                           onQuantizeNotes(clipId_, indices, mode);
+                                       }
+                                   });
             };
 
             noteComp->updateFromNote(clip->midiNotes[i], noteColour);
@@ -1124,6 +1185,87 @@ DrumGridClipContent::DrumGridClipContent() {
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
     };
 
+    // Handle copy from context menu
+    gridComponent_->onCopyNotes = [](magda::ClipId clipId, std::vector<size_t> noteIndices) {
+        magda::ClipManager::getInstance().copyNotesToClipboard(clipId, noteIndices);
+    };
+
+    // Handle paste from context menu
+    gridComponent_->onPasteNotes = [](magda::ClipId clipId) {
+        auto& clipManager = magda::ClipManager::getInstance();
+        if (!clipManager.hasNotesInClipboard())
+            return;
+
+        const auto* clip = clipManager.getClip(clipId);
+        if (!clip || clip->type != magda::ClipType::MIDI)
+            return;
+
+        double pasteOffset = clipManager.getNoteClipboardMinBeat();
+        const auto& clipboard = clipManager.getNoteClipboard();
+        std::vector<magda::MidiNote> notesToPaste;
+        notesToPaste.reserve(clipboard.size());
+        for (const auto& note : clipboard) {
+            magda::MidiNote n = note;
+            n.startBeat += pasteOffset;
+            notesToPaste.push_back(n);
+        }
+
+        auto cmd = std::make_unique<magda::AddMultipleMidiNotesCommand>(
+            clipId, std::move(notesToPaste), "Paste MIDI Notes");
+        auto* cmdPtr = cmd.get();
+        magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+
+        const auto& inserted = cmdPtr->getInsertedIndices();
+        if (!inserted.empty()) {
+            magda::SelectionManager::getInstance().selectNotes(
+                clipId, std::vector<size_t>(inserted.begin(), inserted.end()));
+        }
+    };
+
+    // Handle duplicate from context menu
+    gridComponent_->onDuplicateNotes = [](magda::ClipId clipId, std::vector<size_t> noteIndices) {
+        auto& clipManager = magda::ClipManager::getInstance();
+        const auto* clip = clipManager.getClip(clipId);
+        if (!clip || clip->type != magda::ClipType::MIDI)
+            return;
+
+        double minStart = std::numeric_limits<double>::max();
+        double maxEnd = 0.0;
+        std::vector<magda::MidiNote> notesToDuplicate;
+        for (size_t idx : noteIndices) {
+            if (idx < clip->midiNotes.size()) {
+                const auto& note = clip->midiNotes[idx];
+                notesToDuplicate.push_back(note);
+                minStart = std::min(minStart, note.startBeat);
+                maxEnd = std::max(maxEnd, note.startBeat + note.lengthBeats);
+            }
+        }
+        if (!notesToDuplicate.empty()) {
+            double offset = maxEnd - minStart;
+            for (auto& note : notesToDuplicate) {
+                note.startBeat += offset;
+            }
+            auto cmd = std::make_unique<magda::AddMultipleMidiNotesCommand>(
+                clipId, std::move(notesToDuplicate), "Duplicate MIDI Notes");
+            auto* cmdPtr = cmd.get();
+            magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+
+            const auto& inserted = cmdPtr->getInsertedIndices();
+            if (!inserted.empty()) {
+                magda::SelectionManager::getInstance().selectNotes(
+                    clipId, std::vector<size_t>(inserted.begin(), inserted.end()));
+            }
+        }
+    };
+
+    // Handle delete from context menu
+    gridComponent_->onDeleteNotes = [](magda::ClipId clipId, std::vector<size_t> noteIndices) {
+        auto cmd =
+            std::make_unique<magda::DeleteMultipleMidiNotesCommand>(clipId, std::move(noteIndices));
+        magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+        magda::SelectionManager::getInstance().clearNoteSelection();
+    };
+
     viewport_->setViewedComponent(gridComponent_.get(), false);
 
     // If base found a selected clip, set it up
@@ -1146,6 +1288,11 @@ void DrumGridClipContent::setGridPixelsPerBeat(double ppb) {
 void DrumGridClipContent::setGridPlayheadPosition(double position) {
     if (gridComponent_)
         gridComponent_->setPlayheadPosition(position);
+}
+
+void DrumGridClipContent::setGridEditCursorPosition(double pos, bool visible) {
+    if (gridComponent_)
+        gridComponent_->setEditCursorPosition(pos, visible);
 }
 
 void DrumGridClipContent::onScrollPositionChanged(int scrollX, int scrollY) {

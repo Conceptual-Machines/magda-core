@@ -2,6 +2,7 @@
 
 #include "ui/components/timeline/TimeRuler.hpp"
 #include "ui/state/TimelineController.hpp"
+#include "ui/state/TimelineEvents.hpp"
 #include "ui/state/TimelineState.hpp"
 
 namespace magda::daw::ui {
@@ -39,6 +40,27 @@ MidiEditorContent::MidiEditorContent() {
         viewport_->setViewPosition(newScrollX, viewport_->getViewPositionY());
     };
 
+    // TimeRuler click callback — set edit cursor position
+    timeRuler_->onPositionClicked = [](double time) {
+        if (auto* controller = magda::TimelineController::getCurrent()) {
+            controller->dispatch(magda::SetEditCursorEvent{time});
+        }
+    };
+
+    // Edit cursor blink timer
+    blinkTimer_.callback = [this]() {
+        editCursorBlinkVisible_ = !editCursorBlinkVisible_;
+
+        if (auto* controller = magda::TimelineController::getCurrent()) {
+            double editPos = controller->getState().editCursorPosition;
+            bool visible = editPos >= 0.0;
+            setGridEditCursorPosition(editPos, visible && editCursorBlinkVisible_);
+            if (timeRuler_) {
+                timeRuler_->setEditCursorPosition(editPos, editCursorBlinkVisible_);
+            }
+        }
+    };
+
     // Register as ClipManager listener
     magda::ClipManager::getInstance().addListener(this);
 
@@ -61,6 +83,7 @@ MidiEditorContent::MidiEditorContent() {
 }
 
 MidiEditorContent::~MidiEditorContent() {
+    blinkTimer_.stopTimer();
     magda::ClipManager::getInstance().removeListener(this);
 
     if (auto* controller = magda::TimelineController::getCurrent()) {
@@ -249,6 +272,26 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
         setGridPlayheadPosition(playPos);
         if (timeRuler_) {
             timeRuler_->setPlayheadPosition(playPos);
+        }
+    }
+
+    // Edit cursor changes (SetEditCursorEvent returns Selection flag)
+    if (magda::hasFlag(changes, magda::ChangeFlags::Selection)) {
+        double editPos = state.editCursorPosition;
+        bool visible = editPos >= 0.0;
+
+        // Start/stop blink timer
+        if (visible && !blinkTimer_.isTimerRunning()) {
+            editCursorBlinkVisible_ = true;
+            blinkTimer_.startTimerHz(2);  // ~500ms blink
+        } else if (!visible && blinkTimer_.isTimerRunning()) {
+            blinkTimer_.stopTimer();
+            editCursorBlinkVisible_ = true;
+        }
+
+        setGridEditCursorPosition(editPos, visible && editCursorBlinkVisible_);
+        if (timeRuler_) {
+            timeRuler_->setEditCursorPosition(editPos, editCursorBlinkVisible_);
         }
     }
 

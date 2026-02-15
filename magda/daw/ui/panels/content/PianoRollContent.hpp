@@ -82,6 +82,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     void updateGridSize() override;
     void setGridPixelsPerBeat(double ppb) override;
     void setGridPlayheadPosition(double position) override;
+    void setGridEditCursorPosition(double positionSeconds, bool visible) override;
     void onScrollPositionChanged(int scrollX, int scrollY) override;
     void onGridResolutionChanged() override;
 

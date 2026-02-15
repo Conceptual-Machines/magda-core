@@ -85,6 +85,9 @@ class TimeRuler : public juce::Component, private juce::Timer {
         return playheadPosition;
     }
 
+    // Edit cursor position (for drawing blinking edit cursor line)
+    void setEditCursorPosition(double positionSeconds, bool blinkVisible);
+
     // Left padding (for alignment - can be set to 0 for piano roll)
     void setLeftPadding(int padding);
     int getLeftPadding() const {
@@ -135,6 +138,10 @@ class TimeRuler : public juce::Component, private juce::Timer {
     double clipContentOffset =
         0.0;  // seconds - source offset in timeline seconds (shifts boundaries)
     double playheadPosition = -1.0;  // seconds - current playback position (-1 = not playing)
+
+    // Edit cursor
+    double editCursorPosition_ = -1.0;  // seconds - edit cursor position (-1 = hidden)
+    bool editCursorVisible_ = true;     // blink state
 
     // Loop region
     double loopOffset = 0.0;   // seconds - loop start offset within clip

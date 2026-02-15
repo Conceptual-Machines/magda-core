@@ -313,6 +313,87 @@ void PianoRollContent::setupGridCallbacks() {
                                                                      gridResolutionBeats_, mode);
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
     };
+
+    // Handle copy from context menu
+    gridComponent_->onCopyNotes = [](magda::ClipId clipId, std::vector<size_t> noteIndices) {
+        magda::ClipManager::getInstance().copyNotesToClipboard(clipId, noteIndices);
+    };
+
+    // Handle paste from context menu
+    gridComponent_->onPasteNotes = [](magda::ClipId clipId) {
+        auto& clipManager = magda::ClipManager::getInstance();
+        if (!clipManager.hasNotesInClipboard())
+            return;
+
+        const auto* clip = clipManager.getClip(clipId);
+        if (!clip || clip->type != magda::ClipType::MIDI)
+            return;
+
+        double pasteOffset = clipManager.getNoteClipboardMinBeat();
+        const auto& clipboard = clipManager.getNoteClipboard();
+        std::vector<magda::MidiNote> notesToPaste;
+        notesToPaste.reserve(clipboard.size());
+        for (const auto& note : clipboard) {
+            magda::MidiNote n = note;
+            n.startBeat += pasteOffset;
+            notesToPaste.push_back(n);
+        }
+
+        auto cmd = std::make_unique<magda::AddMultipleMidiNotesCommand>(
+            clipId, std::move(notesToPaste), "Paste MIDI Notes");
+        auto* cmdPtr = cmd.get();
+        magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+
+        const auto& inserted = cmdPtr->getInsertedIndices();
+        if (!inserted.empty()) {
+            magda::SelectionManager::getInstance().selectNotes(
+                clipId, std::vector<size_t>(inserted.begin(), inserted.end()));
+        }
+    };
+
+    // Handle duplicate from context menu
+    gridComponent_->onDuplicateNotes = [](magda::ClipId clipId, std::vector<size_t> noteIndices) {
+        auto& clipManager = magda::ClipManager::getInstance();
+        const auto* clip = clipManager.getClip(clipId);
+        if (!clip || clip->type != magda::ClipType::MIDI)
+            return;
+
+        double minStart = std::numeric_limits<double>::max();
+        double maxEnd = 0.0;
+        std::vector<magda::MidiNote> notesToDuplicate;
+        for (size_t idx : noteIndices) {
+            if (idx < clip->midiNotes.size()) {
+                const auto& note = clip->midiNotes[idx];
+                notesToDuplicate.push_back(note);
+                minStart = std::min(minStart, note.startBeat);
+                maxEnd = std::max(maxEnd, note.startBeat + note.lengthBeats);
+            }
+        }
+        if (!notesToDuplicate.empty()) {
+            double offset = maxEnd - minStart;
+            for (auto& note : notesToDuplicate) {
+                note.startBeat += offset;
+            }
+            auto cmd = std::make_unique<magda::AddMultipleMidiNotesCommand>(
+                clipId, std::move(notesToDuplicate), "Duplicate MIDI Notes");
+            auto* cmdPtr = cmd.get();
+            magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+
+            const auto& inserted = cmdPtr->getInsertedIndices();
+            if (!inserted.empty()) {
+                magda::SelectionManager::getInstance().selectNotes(
+                    clipId, std::vector<size_t>(inserted.begin(), inserted.end()));
+            }
+        }
+    };
+
+    // Handle delete from context menu
+    gridComponent_->onDeleteNotes = [](magda::ClipId clipId, std::vector<size_t> noteIndices) {
+        auto cmd =
+            std::make_unique<magda::DeleteMultipleMidiNotesCommand>(clipId, std::move(noteIndices));
+        magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+        magda::SelectionManager::getInstance().clearNoteSelection();
+    };
 }
 
 // ============================================================================
@@ -327,6 +408,11 @@ void PianoRollContent::setGridPixelsPerBeat(double ppb) {
 void PianoRollContent::setGridPlayheadPosition(double position) {
     if (gridComponent_)
         gridComponent_->setPlayheadPosition(position);
+}
+
+void PianoRollContent::setGridEditCursorPosition(double pos, bool visible) {
+    if (gridComponent_)
+        gridComponent_->setEditCursorPosition(pos, visible);
 }
 
 void PianoRollContent::onScrollPositionChanged(int scrollX, int scrollY) {

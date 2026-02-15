@@ -123,9 +123,26 @@ class MidiEditorContent : public PanelContent,
     virtual void setGridPixelsPerBeat(double ppb) = 0;
     virtual void setGridPlayheadPosition(double position) = 0;
 
+    // --- Edit cursor (subclass must forward to its grid component) ---
+    virtual void setGridEditCursorPosition(double positionSeconds, bool visible) = 0;
+
     // --- Optional virtual hooks ---
     virtual void onScrollPositionChanged(int /*scrollX*/, int /*scrollY*/) {}
     virtual void onGridResolutionChanged() {}
+
+    // --- Edit cursor blink state ---
+    bool editCursorBlinkVisible_ = true;
+
+    // Inner timer for edit cursor blink (avoids juce::Timer diamond with subclasses)
+    class BlinkTimer : public juce::Timer {
+      public:
+        std::function<void()> callback;
+        void timerCallback() override {
+            if (callback)
+                callback();
+        }
+    };
+    BlinkTimer blinkTimer_;
 
   public:
     // Callback for BottomPanel to update num/den display when auto-grid changes
