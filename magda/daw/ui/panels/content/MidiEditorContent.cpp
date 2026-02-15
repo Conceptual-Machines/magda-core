@@ -154,8 +154,9 @@ void MidiEditorContent::updateTimeRuler() {
     }
     timeRuler_->setTimelineLength(timelineLength);
 
-    // Set zoom (pixels per beat)
+    // Set zoom and grid resolution (pixels per beat)
     timeRuler_->setZoom(horizontalZoom_);
+    timeRuler_->setGridResolution(gridResolutionBeats_);
 
     // Set clip info for boundary drawing
     if (clip) {
