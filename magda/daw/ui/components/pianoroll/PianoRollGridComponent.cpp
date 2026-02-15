@@ -4,6 +4,9 @@
 #include "../../state/TimelineEvents.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "core/ClipManager.hpp"
+#include "core/MidiNoteCommands.hpp"
+#include "core/SelectionManager.hpp"
+#include "core/UndoManager.hpp"
 
 namespace magda {
 
@@ -639,9 +642,43 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
     }
 }
 
-bool PianoRollGridComponent::keyPressed(const juce::KeyPress& /*key*/) {
-    // Let all key presses bubble up to the command manager (MainComponent)
-    // which handles Delete, Cmd+C/V/D etc. with note-aware dispatch
+bool PianoRollGridComponent::keyPressed(const juce::KeyPress& key) {
+    // Arrow up/down: move selected notes by semitone (or octave with Shift)
+    // Alt+arrows reserved for viewport scrolling
+    if (!key.getModifiers().isAltDown() && (key.getKeyCode() == juce::KeyPress::upKey ||
+                                            key.getKeyCode() == juce::KeyPress::downKey)) {
+        const auto& noteSel = SelectionManager::getInstance().getNoteSelection();
+        if (!noteSel.isValid())
+            return false;
+
+        int delta = (key.getKeyCode() == juce::KeyPress::upKey) ? 1 : -1;
+        if (key.getModifiers().isShiftDown())
+            delta *= 12;
+
+        const auto* clip = ClipManager::getInstance().getClip(noteSel.clipId);
+        if (!clip || clip->type != ClipType::MIDI)
+            return false;
+
+        // Check all notes stay within valid range
+        for (size_t idx : noteSel.noteIndices) {
+            if (idx >= clip->midiNotes.size())
+                return false;
+            int newNote = clip->midiNotes[idx].noteNumber + delta;
+            if (newNote < MIN_NOTE || newNote > MAX_NOTE)
+                return true;  // Consume but don't move
+        }
+
+        // Move each selected note
+        for (size_t idx : noteSel.noteIndices) {
+            const auto& note = clip->midiNotes[idx];
+            auto cmd = std::make_unique<MoveMidiNoteCommand>(noteSel.clipId, idx, note.startBeat,
+                                                             note.noteNumber + delta);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+        }
+        return true;
+    }
+
+    // Let other key presses bubble up to the command manager
     return false;
 }
 

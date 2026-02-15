@@ -68,6 +68,7 @@ class DrumGridClipGrid : public juce::Component,
   public:
     DrumGridClipGrid() {
         setName("DrumGridClipGrid");
+        setWantsKeyboardFocus(true);
         magda::ClipManager::getInstance().addListener(this);
     }
 
@@ -685,6 +686,43 @@ class DrumGridClipGrid : public juce::Component,
         }
 
         emptyClickRow_ = -1;
+    }
+
+    bool keyPressed(const juce::KeyPress& key) override {
+        // Arrow up/down: move selected notes by semitone (or octave with Shift)
+        // Alt+arrows reserved for viewport scrolling
+        if (!key.getModifiers().isAltDown() && (key.getKeyCode() == juce::KeyPress::upKey ||
+                                                key.getKeyCode() == juce::KeyPress::downKey)) {
+            const auto& noteSel = magda::SelectionManager::getInstance().getNoteSelection();
+            if (!noteSel.isValid())
+                return false;
+
+            int delta = (key.getKeyCode() == juce::KeyPress::upKey) ? 1 : -1;
+            if (key.getModifiers().isShiftDown())
+                delta *= 12;
+
+            const auto* clip = magda::ClipManager::getInstance().getClip(noteSel.clipId);
+            if (!clip || clip->type != magda::ClipType::MIDI)
+                return false;
+
+            for (size_t idx : noteSel.noteIndices) {
+                if (idx >= clip->midiNotes.size())
+                    return false;
+                int newNote = clip->midiNotes[idx].noteNumber + delta;
+                if (newNote < 0 || newNote > 127)
+                    return true;
+            }
+
+            for (size_t idx : noteSel.noteIndices) {
+                const auto& note = clip->midiNotes[idx];
+                auto cmd = std::make_unique<magda::MoveMidiNoteCommand>(
+                    noteSel.clipId, idx, note.startBeat, note.noteNumber + delta);
+                magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+            }
+            return true;
+        }
+
+        return false;
     }
 
   private:

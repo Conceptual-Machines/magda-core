@@ -24,6 +24,20 @@ class MidiEditorViewport : public juce::Viewport {
     std::function<void(int, int)> onScrolled;
     std::vector<juce::Component*> componentsToRepaint;
 
+    bool keyPressed(const juce::KeyPress& key) override {
+        // Alt/Option + arrow keys: allow viewport scrolling
+        // Plain arrow keys: don't handle, let grid component use them for note movement
+        if (key.getKeyCode() == juce::KeyPress::upKey ||
+            key.getKeyCode() == juce::KeyPress::downKey ||
+            key.getKeyCode() == juce::KeyPress::leftKey ||
+            key.getKeyCode() == juce::KeyPress::rightKey) {
+            if (key.getModifiers().isAltDown())
+                return juce::Viewport::keyPressed(key);
+            return false;
+        }
+        return juce::Viewport::keyPressed(key);
+    }
+
     void visibleAreaChanged(const juce::Rectangle<int>& newVisibleArea) override {
         juce::Viewport::visibleAreaChanged(newVisibleArea);
         if (onScrolled)
