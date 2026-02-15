@@ -198,7 +198,7 @@ PreferencesDialog::PreferencesDialog() {
     loadCurrentSettings();
 
     // Set preferred size (increased height for panels, layout, rendering and shortcuts sections)
-    setSize(450, 1050);
+    setSize(450, 1150);
 }
 
 PreferencesDialog::~PreferencesDialog() = default;

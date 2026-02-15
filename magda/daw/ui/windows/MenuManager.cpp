@@ -143,9 +143,10 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addItem(Preferences, "Preferences...", true, false);
 #endif
     } else if (menuName == "Settings") {
+        menu.addItem(Preferences, "Preferences...", true, false);
+        menu.addSeparator();
         menu.addItem(AudioSettings, "Audio/MIDI Settings...", true, false);
         menu.addSeparator();
-
         menu.addItem(PluginSettings, "Plugin Settings...", true, false);
     } else if (menuName == "View") {
         menu.addItem(ToggleLeftPanel, "Show Left Panel", true, leftPanelVisible_);
