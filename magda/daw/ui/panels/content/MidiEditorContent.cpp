@@ -454,8 +454,6 @@ void MidiEditorContent::updateVelocityLane() {
     if (viewport_) {
         velocityLane_->setScrollOffset(viewport_->getViewPositionX());
     }
-
-    velocityLane_->refreshNotes();
 }
 
 void MidiEditorContent::onVelocityEdited() {

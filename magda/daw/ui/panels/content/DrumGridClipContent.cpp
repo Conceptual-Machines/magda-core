@@ -1672,6 +1672,8 @@ void DrumGridClipContent::updateVelocityLane() {
         double clipLengthBeats = clip->length / secondsPerBeat;
         velocityLane_->setClipLengthBeats(clipLengthBeats);
     }
+
+    velocityLane_->refreshNotes();
 }
 
 // ============================================================================

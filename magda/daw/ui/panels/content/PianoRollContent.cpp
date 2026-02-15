@@ -1171,12 +1171,15 @@ void PianoRollContent::updateVelocityLane() {
     if (!velocityLane_)
         return;
 
+    // Call base implementation for common setup (sets clip, zoom, scroll, clipStartBeats)
+    MidiEditorContent::updateVelocityLane();
+
     // Pass multi-clip IDs for multi-clip velocity display
     if (gridComponent_) {
         velocityLane_->setClipIds(gridComponent_->getSelectedClipIds());
     }
 
-    // Get clip start beats for multi-clip mode
+    // Override clip start beats for multi-clip mode
     const auto& selectedClipIds =
         gridComponent_ ? gridComponent_->getSelectedClipIds() : std::vector<magda::ClipId>{};
     if (selectedClipIds.size() > 1) {
@@ -1198,9 +1201,6 @@ void PianoRollContent::updateVelocityLane() {
         }
     }
 
-    // Call base implementation for common setup
-    MidiEditorContent::updateVelocityLane();
-
     // Sync loop region and clip length (PianoRoll-specific)
     if (gridComponent_) {
         velocityLane_->setClipLengthBeats(gridComponent_->getClipLengthBeats());
@@ -1208,6 +1208,8 @@ void PianoRollContent::updateVelocityLane() {
                                      gridComponent_->getLoopLengthBeats(),
                                      gridComponent_->isLoopEnabled());
     }
+
+    velocityLane_->refreshNotes();
 }
 
 void PianoRollContent::onVelocityEdited() {
