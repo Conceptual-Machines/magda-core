@@ -41,6 +41,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
     // ClipManagerListener
     void clipsChanged() override;
     void clipSelectionChanged(ClipId clipId) override;
+    void clipPropertyChanged(ClipId clipId) override;
 
     // TrackManagerListener
     void tracksChanged() override;

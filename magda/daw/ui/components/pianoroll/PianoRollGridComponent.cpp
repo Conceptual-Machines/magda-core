@@ -165,54 +165,6 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         }
     }
 
-    // Draw ghost loop-repeating notes (paint-only, non-interactive)
-    if (loopEnabled_ && loopLengthBeats_ > 0.0 && clipIds_.size() <= 1) {
-        auto& clipManager = ClipManager::getInstance();
-        const auto* clip = clipManager.getClip(clipId_);
-        if (clip && clip->type == ClipType::MIDI && clipLengthBeats_ > 0.0) {
-            int numRepetitions = static_cast<int>(std::ceil(clipLengthBeats_ / loopLengthBeats_));
-
-            for (int rep = 1; rep < numRepetitions; ++rep) {
-                for (const auto& note : clip->midiNotes) {
-                    // Only draw notes within the loop region
-                    if (note.startBeat < loopOffsetBeats_ ||
-                        note.startBeat >= loopOffsetBeats_ + loopLengthBeats_) {
-                        continue;
-                    }
-
-                    double relStart = (note.startBeat - loopOffsetBeats_) + rep * loopLengthBeats_;
-
-                    // Clamp note end to repetition boundary and clip length
-                    double noteEnd = relStart + note.lengthBeats;
-                    double repEnd = (rep + 1) * loopLengthBeats_;
-                    noteEnd = juce::jmin(noteEnd, repEnd);
-                    noteEnd = juce::jmin(noteEnd, clipLengthBeats_);
-                    if (relStart >= clipLengthBeats_) {
-                        continue;
-                    }
-                    double displayLength = noteEnd - relStart;
-                    if (displayLength <= 0.0) {
-                        continue;
-                    }
-
-                    // Convert to display coordinates
-                    double displayBeat = relativeMode_ ? relStart : (clipStartBeats_ + relStart);
-
-                    int x = beatToPixel(displayBeat);
-                    int y = noteNumberToY(note.noteNumber);
-                    int width = juce::jmax(8, static_cast<int>(displayLength * pixelsPerBeat_));
-                    int height = noteHeight_ - 2;
-
-                    // Draw as ghost rectangle
-                    g.setColour(clip->colour.withAlpha(0.35f));
-                    g.fillRoundedRectangle(static_cast<float>(x), static_cast<float>(y + 1),
-                                           static_cast<float>(width), static_cast<float>(height),
-                                           2.0f);
-                }
-            }
-        }
-    }
-
     // Draw copy drag ghost preview
     for (const auto& ghost : copyDragGhosts_) {
         int gx = beatToPixel(ghost.beat);
@@ -261,6 +213,16 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         // In absolute mode, playhead is at absolute position
         // In relative mode, need to offset by clip start
         double displayBeat = relativeMode_ ? (playheadBeats - clipStartBeats_) : playheadBeats;
+
+        // Wrap playhead within loop region when looping is enabled
+        if (loopEnabled_ && loopLengthBeats_ > 0.0) {
+            double beatPos = relativeMode_ ? displayBeat : (displayBeat - clipStartBeats_);
+            beatPos = std::fmod(beatPos - loopOffsetBeats_, loopLengthBeats_);
+            if (beatPos < 0.0)
+                beatPos += loopLengthBeats_;
+            beatPos += loopOffsetBeats_;
+            displayBeat = relativeMode_ ? beatPos : (clipStartBeats_ + beatPos);
+        }
 
         int playheadX = beatToPixel(displayBeat);
         if (playheadX >= 0 && playheadX <= bounds.getRight()) {

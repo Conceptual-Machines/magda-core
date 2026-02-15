@@ -394,52 +394,6 @@ class DrumGridClipGrid : public juce::Component,
             }
         }
 
-        // Draw ghost loop-repeating notes
-        if (loopEnabled_ && loopLengthBeats_ > 0.0 && padRows_ &&
-            clipId_ != magda::INVALID_CLIP_ID) {
-            const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
-            if (clip && clip->type == magda::ClipType::MIDI && clipLengthBeats_ > 0.0) {
-                int numRepetitions =
-                    static_cast<int>(std::ceil(clipLengthBeats_ / loopLengthBeats_));
-
-                for (int rep = 1; rep < numRepetitions; ++rep) {
-                    for (const auto& note : clip->midiNotes) {
-                        if (note.startBeat < loopOffsetBeats_ ||
-                            note.startBeat >= loopOffsetBeats_ + loopLengthBeats_) {
-                            continue;
-                        }
-
-                        double relStart =
-                            (note.startBeat - loopOffsetBeats_) + rep * loopLengthBeats_;
-
-                        double noteEnd = relStart + note.lengthBeats;
-                        double repEnd = (rep + 1) * loopLengthBeats_;
-                        noteEnd = juce::jmin(noteEnd, repEnd);
-                        noteEnd = juce::jmin(noteEnd, clipLengthBeats_);
-                        if (relStart >= clipLengthBeats_)
-                            continue;
-                        double displayLength = noteEnd - relStart;
-                        if (displayLength <= 0.0)
-                            continue;
-
-                        int rowIndex = findRowForNote(note.noteNumber);
-                        if (rowIndex < 0)
-                            continue;
-
-                        int gx = static_cast<int>(relStart * pixelsPerBeat_) + GRID_LEFT_PADDING;
-                        int gy = rowIndex * rowHeight_;
-                        int gw = juce::jmax(4, static_cast<int>(displayLength * pixelsPerBeat_));
-                        int gh = rowHeight_ - 2;
-
-                        g.setColour(clip->colour.withAlpha(0.35f));
-                        g.fillRoundedRectangle(static_cast<float>(gx), static_cast<float>(gy + 1),
-                                               static_cast<float>(gw), static_cast<float>(gh),
-                                               2.0f);
-                    }
-                }
-            }
-        }
-
         // Draw content offset marker (yellow vertical line)
         if (clipId_ != magda::INVALID_CLIP_ID) {
             const auto* offsetClip = magda::ClipManager::getInstance().getClip(clipId_);
@@ -499,6 +453,15 @@ class DrumGridClipGrid : public juce::Component,
                 tempo = controller->getState().tempo.bpm;
             }
             double playheadBeat = playheadPosition_ * (tempo / 60.0);
+
+            // Wrap playhead within loop region when looping is enabled
+            if (loopEnabled_ && loopLengthBeats_ > 0.0) {
+                double beatPos = std::fmod(playheadBeat - loopOffsetBeats_, loopLengthBeats_);
+                if (beatPos < 0.0)
+                    beatPos += loopLengthBeats_;
+                playheadBeat = loopOffsetBeats_ + beatPos;
+            }
+
             int playheadX = static_cast<int>(playheadBeat * pixelsPerBeat_) + GRID_LEFT_PADDING;
 
             if (playheadX >= 0 && playheadX <= bounds.getWidth()) {

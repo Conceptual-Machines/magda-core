@@ -617,6 +617,16 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         // In absolute mode, playhead is at absolute position
         // In relative mode, playhead is relative to timeOffset
         double displayTime = relativeMode ? (playheadPosition - timeOffset) : playheadPosition;
+
+        // Wrap playhead within loop region when looping is active
+        if (loopEnabled && loopActive && loopLength > 0.0) {
+            double loopStart = relativeMode ? loopOffset : (timeOffset + loopOffset);
+            double wrapped = std::fmod(displayTime - loopStart, loopLength);
+            if (wrapped < 0.0)
+                wrapped += loopLength;
+            displayTime = loopStart + wrapped;
+        }
+
         int playheadX = timeToPixel(displayTime);
         if (playheadX >= 0 && playheadX <= width) {
             // Draw playhead line (red)

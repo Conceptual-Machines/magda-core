@@ -746,6 +746,12 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
             timeRuler_->setTimeOffset(0.0);
             timeRuler_->setClipLength(clip->length);
 
+            // For arrangement audio clips (non-loop), shift bar origin so bar
+            // numbers match the arrangement timeline position.
+            if (clip->view != magda::ClipView::Session && !clip->loopEnabled) {
+                timeRuler_->setBarOrigin(-clip->startTime);
+            }
+
             updateDisplayInfo(*clip);
         }
 
