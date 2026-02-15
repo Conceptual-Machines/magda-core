@@ -565,6 +565,7 @@ target_compile_definitions(magda_daw
 target_link_libraries(magda_daw_app
     PRIVATE
     magda_daw
+    magda_agents
     MagdaAssets
     juce::juce_gui_basics
     juce::juce_audio_devices
