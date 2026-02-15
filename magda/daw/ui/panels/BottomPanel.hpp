@@ -63,6 +63,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
     bool showEditorTabs_ = false;
     bool updatingTabs_ = false;  // Guard against re-entrancy
     static constexpr int EDITOR_TAB_HEIGHT = 28;
+    static constexpr int SIDEBAR_WIDTH = 32;
 
     // Persisted user preference: which MIDI editor view
     // 0 = Piano Roll (default), 1 = Drum Grid

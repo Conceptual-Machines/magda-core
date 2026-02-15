@@ -294,8 +294,7 @@ void BottomPanel::paint(juce::Graphics& g) {
         g.fillRect(0, EDITOR_TAB_HEIGHT - 1, getWidth(), 1);
 
         // Sidebar column divider
-        int sidebarWidth = 32;
-        g.fillRect(sidebarWidth, 0, 1, EDITOR_TAB_HEIGHT - 1);
+        g.fillRect(SIDEBAR_WIDTH, 0, 1, EDITOR_TAB_HEIGHT - 1);
     }
 }
 
@@ -342,10 +341,9 @@ void BottomPanel::resized() {
         timeModeButton_->setBounds(x, y + vPad, 36, h - vPad * 2);
 
         // Tab icon buttons after the sidebar column
-        int sidebarWidth = 32;  // Match PianoRollContent/DrumGridClipContent SIDEBAR_WIDTH
         int iconSize = h - 8;
         int tabY = y + (h - iconSize) / 2;
-        int tabX = headerBounds.getX() + sidebarWidth + 4;
+        int tabX = headerBounds.getX() + SIDEBAR_WIDTH + 4;
         pianoRollTab_->setBounds(tabX, tabY, iconSize, iconSize);
         tabX += iconSize + 4;
         drumGridTab_->setBounds(tabX, tabY, iconSize, iconSize);
