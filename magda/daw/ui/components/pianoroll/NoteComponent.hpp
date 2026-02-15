@@ -72,6 +72,9 @@ class NoteComponent : public juce::Component, private juce::Timer {
     std::function<void(size_t, double, bool)>
         onNoteDragging;  // noteIndex, previewStartBeat, isDragging
 
+    // Right-click callback for context menu
+    std::function<void(size_t, const juce::MouseEvent&)> onRightClick;
+
   private:
     size_t noteIndex_;
     ClipId sourceClipId_;

@@ -1065,6 +1065,15 @@ class SelectionManager {
                automationPointSelection_.isValid();
     }
 
+    /**
+     * @brief Clear note selection without clearing all selection state
+     *
+     * Unlike clearSelection(), this only clears the note selection and
+     * transitions back to Clip selection for the note's clip, keeping
+     * the MIDI editor open.
+     */
+    void clearNoteSelection();
+
     // ========================================================================
     // Clear
     // ========================================================================

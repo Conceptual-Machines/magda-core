@@ -32,6 +32,7 @@ set(TEST_SOURCES
     test_scan_report.cpp
     test_drum_grid_plugin.cpp
     test_velocity_lane_utils.cpp
+    test_grid_constants.cpp
 )
 
 # Create test executable

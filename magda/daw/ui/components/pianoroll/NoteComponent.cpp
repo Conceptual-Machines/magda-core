@@ -52,6 +52,14 @@ void NoteComponent::resized() {
 }
 
 void NoteComponent::mouseDown(const juce::MouseEvent& e) {
+    // Right-click: forward to parent for context menu
+    if (e.mods.isPopupMenu()) {
+        if (onRightClick) {
+            onRightClick(noteIndex_, e);
+        }
+        return;
+    }
+
     // Handle Cmd+click for toggle selection (additive)
     if (e.mods.isCommandDown()) {
         setSelected(!isSelected_);

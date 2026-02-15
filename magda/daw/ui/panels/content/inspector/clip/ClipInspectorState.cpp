@@ -138,7 +138,7 @@ void ClipInspector::updateFromSelectedClip() {
         clipStartValue_->setBeatsPerBar(beatsPerBar);
         clipEndValue_->setBeatsPerBar(beatsPerBar);
         clipContentOffsetValue_->setBeatsPerBar(beatsPerBar);
-        clipLoopLengthValue_->setBeatsPerBar(beatsPerBar);
+        clipLoopEndValue_->setBeatsPerBar(beatsPerBar);
 
         if (isSessionClip) {
             // Session clips: start is always 0, greyed out and non-interactive
@@ -157,27 +157,30 @@ void ClipInspector::updateFromSelectedClip() {
             clipEndValue_->setValue(clip->getEndBeats(bpm), juce::dontSendNotification);
         }
 
-        // Clip length (always visible)
-        clipLengthValue_->setBeatsPerBar(beatsPerBar);
-        clipLengthValue_->setValue(magda::TimelineUtils::secondsToBeats(clip->length, bpm),
-                                   juce::dontSendNotification);
+        // Offset value (always in position row, 3rd column)
+        if (clip->type == magda::ClipType::MIDI) {
+            clipContentOffsetValue_->setValue(clip->midiOffset, juce::dontSendNotification);
+        } else if (clip->type == magda::ClipType::Audio) {
+            double offsetBeats = magda::TimelineUtils::secondsToBeats(clip->offset, bpm);
+            clipContentOffsetValue_->setValue(offsetBeats, juce::dontSendNotification);
+        }
 
-        // Position icon visible, content offset icon hidden (replaced by grid column)
+        // Position icon visible
         clipPositionIcon_->setVisible(true);
-        clipContentOffsetIcon_->setVisible(false);
 
         clipLoopToggle_->setActive(clip->loopEnabled);
         // Beat mode forces loop on — disable the toggle so user can't turn it off
         clipLoopToggle_->setEnabled(!clip->autoTempo);
 
-        // Conditional Row 2 based on loop state
+        // Loop state determines offset interactivity and loop row visibility
         bool loopOn = isSessionClip || clip->loopEnabled;
 
         if (loopOn) {
-            // Loop ON: show loop start/length/phase, hide offset
-            clipOffsetRowLabel_.setVisible(false);
-            clipContentOffsetValue_->setVisible(false);
+            // Loop ON: offset in position row becomes disabled/greyed
+            clipContentOffsetValue_->setEnabled(false);
+            clipContentOffsetValue_->setAlpha(0.4f);
 
+            // Show loop row: lstart | lend | phase
             clipLoopStartLabel_.setVisible(true);
             clipLoopStartValue_->setVisible(true);
             clipLoopStartValue_->setBeatsPerBar(beatsPerBar);
@@ -187,7 +190,7 @@ void ClipInspector::updateFromSelectedClip() {
             clipLoopStartValue_->setAlpha(1.0f);
             clipLoopStartLabel_.setAlpha(1.0f);
 
-            // Display loop length in beats
+            // Display loop end (loopStart + loopLength) in beats
             double loopLengthDisplayBeats;
             if (clip->autoTempo && clip->loopLengthBeats > 0.0) {
                 loopLengthDisplayBeats = clip->loopLengthBeats;
@@ -196,12 +199,13 @@ void ClipInspector::updateFromSelectedClip() {
                     clip->loopLength > 0.0 ? clip->loopLength : clip->length * clip->speedRatio;
                 loopLengthDisplayBeats = magda::TimelineUtils::secondsToBeats(sourceLength, bpm);
             }
-            clipLoopLengthLabel_.setVisible(true);
-            clipLoopLengthValue_->setVisible(true);
-            clipLoopLengthValue_->setValue(loopLengthDisplayBeats, juce::dontSendNotification);
-            clipLoopLengthValue_->setEnabled(true);
-            clipLoopLengthValue_->setAlpha(1.0f);
-            clipLoopLengthLabel_.setAlpha(1.0f);
+            double loopEndBeats = loopStartBeats + loopLengthDisplayBeats;
+            clipLoopEndLabel_.setVisible(true);
+            clipLoopEndValue_->setVisible(true);
+            clipLoopEndValue_->setValue(loopEndBeats, juce::dontSendNotification);
+            clipLoopEndValue_->setEnabled(true);
+            clipLoopEndValue_->setAlpha(1.0f);
+            clipLoopEndLabel_.setAlpha(1.0f);
 
             clipLoopPhaseLabel_.setVisible(true);
             clipLoopPhaseValue_->setVisible(true);
@@ -213,23 +217,14 @@ void ClipInspector::updateFromSelectedClip() {
             clipLoopPhaseValue_->setAlpha(1.0f);
             clipLoopPhaseLabel_.setAlpha(1.0f);
         } else {
-            // Loop OFF: show offset, hide loop start/length/phase
-            clipOffsetRowLabel_.setVisible(true);
-            clipContentOffsetValue_->setVisible(true);
-
-            if (clip->type == magda::ClipType::MIDI) {
-                clipContentOffsetValue_->setValue(clip->midiOffset, juce::dontSendNotification);
-            } else if (clip->type == magda::ClipType::Audio) {
-                double offsetBeats = magda::TimelineUtils::secondsToBeats(clip->offset, bpm);
-                clipContentOffsetValue_->setValue(offsetBeats, juce::dontSendNotification);
-            }
+            // Loop OFF: offset is active, loop row hidden
             clipContentOffsetValue_->setEnabled(true);
             clipContentOffsetValue_->setAlpha(1.0f);
 
             clipLoopStartLabel_.setVisible(false);
             clipLoopStartValue_->setVisible(false);
-            clipLoopLengthLabel_.setVisible(false);
-            clipLoopLengthValue_->setVisible(false);
+            clipLoopEndLabel_.setVisible(false);
+            clipLoopEndValue_->setVisible(false);
             clipLoopPhaseLabel_.setVisible(false);
             clipLoopPhaseValue_->setVisible(false);
         }
@@ -379,19 +374,17 @@ void ClipInspector::showClipControls(bool show) {
         clipBpmValue_.setVisible(false);
         clipBeatsLengthValue_->setVisible(false);
         clipPositionIcon_->setVisible(false);
-        clipOffsetRowLabel_.setVisible(false);
         clipStartLabel_.setVisible(false);
         clipStartValue_->setVisible(false);
         clipEndLabel_.setVisible(false);
         clipEndValue_->setVisible(false);
-        clipLengthLabel_.setVisible(false);
-        clipLengthValue_->setVisible(false);
+        clipOffsetLabel_.setVisible(false);
         clipContentOffsetValue_->setVisible(false);
         clipLoopToggle_->setVisible(false);
         clipLoopStartLabel_.setVisible(false);
         clipLoopStartValue_->setVisible(false);
-        clipLoopLengthLabel_.setVisible(false);
-        clipLoopLengthValue_->setVisible(false);
+        clipLoopEndLabel_.setVisible(false);
+        clipLoopEndValue_->setVisible(false);
         clipLoopPhaseLabel_.setVisible(false);
         clipLoopPhaseValue_->setVisible(false);
         clipWarpToggle_.setVisible(false);
@@ -439,21 +432,20 @@ void ClipInspector::showClipControls(bool show) {
         rightChannelToggle_.setVisible(false);
     } else {
         // Show always-visible clip controls (viewport is shown, conditional
-        // Row 2 visibility is managed by updateFromSelectedClip)
+        // loop row visibility is managed by updateFromSelectedClip)
         clipPositionIcon_->setVisible(true);
         clipStartLabel_.setVisible(true);
         clipStartValue_->setVisible(true);
         clipEndLabel_.setVisible(true);
         clipEndValue_->setVisible(true);
-        clipLengthLabel_.setVisible(true);
-        clipLengthValue_->setVisible(true);
+        clipOffsetLabel_.setVisible(true);
+        clipContentOffsetValue_->setVisible(true);
         clipLoopToggle_->setVisible(true);
     }
 
     // Unused labels/icons always hidden
     playbackColumnLabel_.setVisible(false);
     loopColumnLabel_.setVisible(false);
-    clipContentOffsetIcon_->setVisible(false);
 }
 
 }  // namespace magda::daw::ui

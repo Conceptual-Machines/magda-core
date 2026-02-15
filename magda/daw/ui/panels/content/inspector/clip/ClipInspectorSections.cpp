@@ -194,48 +194,11 @@ void ClipInspector::initClipPropertiesSection() {
     };
     clipPropsContainer_.addChildComponent(*clipEndValue_);
 
-    // Clip length
-    clipLengthLabel_.setText("length", juce::dontSendNotification);
-    clipLengthLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipLengthLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    clipPropsContainer_.addChildComponent(clipLengthLabel_);
-
-    clipLengthValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
-    clipLengthValue_->setRange(0.0, 10000.0, 4.0);
-    clipLengthValue_->setDoubleClickResetsValue(false);
-    clipLengthValue_->setBarsBeatsIsPosition(false);
-    clipLengthValue_->onValueChange = [this]() {
-        if (selectedClipId_ == magda::INVALID_CLIP_ID)
-            return;
-        const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
-        if (!clip)
-            return;
-
-        double bpm = 120.0;
-        if (timelineController_) {
-            bpm = timelineController_->getState().tempo.bpm;
-        }
-        double newLengthBeats = clipLengthValue_->getValue();
-        if (newLengthBeats < 0.0)
-            newLengthBeats = 0.0;
-        double newLengthSeconds = magda::TimelineUtils::beatsToSeconds(newLengthBeats, bpm);
-        magda::ClipManager::getInstance().resizeClip(selectedClipId_, newLengthSeconds, false, bpm);
-    };
-    clipPropsContainer_.addChildComponent(*clipLengthValue_);
-
-    // Content offset icon (MIDI only - for non-destructive trim)
-    clipContentOffsetIcon_ = std::make_unique<magda::SvgButton>("Offset", BinaryData::Offset_svg,
-                                                                BinaryData::Offset_svgSize);
-    clipContentOffsetIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    clipContentOffsetIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    clipContentOffsetIcon_->setInterceptsMouseClicks(false, false);
-    clipContentOffsetIcon_->setTooltip("Content offset");
-    clipPropsContainer_.addChildComponent(*clipContentOffsetIcon_);
-
-    clipOffsetRowLabel_.setText("offset", juce::dontSendNotification);
-    clipOffsetRowLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipOffsetRowLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    clipPropsContainer_.addChildComponent(clipOffsetRowLabel_);
+    // Content offset (shown in position row, 3rd column)
+    clipOffsetLabel_.setText("offset", juce::dontSendNotification);
+    clipOffsetLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    clipOffsetLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipPropsContainer_.addChildComponent(clipOffsetLabel_);
 
     clipContentOffsetValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
     clipContentOffsetValue_->setRange(0.0, 10000.0, 0.0);
@@ -445,35 +408,38 @@ void ClipInspector::initClipPropertiesSection() {
     };
     clipPropsContainer_.addChildComponent(*clipLoopStartValue_);
 
-    // Loop length
-    clipLoopLengthLabel_.setText("length", juce::dontSendNotification);
-    clipLoopLengthLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipLoopLengthLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    clipPropsContainer_.addChildComponent(clipLoopLengthLabel_);
+    // Loop end (derived: loopStart + loopLength)
+    clipLoopEndLabel_.setText("end", juce::dontSendNotification);
+    clipLoopEndLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    clipLoopEndLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipPropsContainer_.addChildComponent(clipLoopEndLabel_);
 
-    clipLoopLengthValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
-    clipLoopLengthValue_->setRange(0.25, 10000.0, 4.0);
-    clipLoopLengthValue_->setDoubleClickResetsValue(false);
-    clipLoopLengthValue_->setBarsBeatsIsPosition(false);
-    clipLoopLengthValue_->onValueChange = [this]() {
+    clipLoopEndValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
+    clipLoopEndValue_->setRange(0.25, 10000.0, 4.0);
+    clipLoopEndValue_->setDoubleClickResetsValue(false);
+    clipLoopEndValue_->onValueChange = [this]() {
         if (selectedClipId_ == magda::INVALID_CLIP_ID)
             return;
         const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
         if (!clip)
             return;
 
-        double newLoopLengthBeats = clipLoopLengthValue_->getValue();
         double bpm = 120.0;
         if (timelineController_) {
             bpm = timelineController_->getState().tempo.bpm;
         }
 
+        // Compute new loop length from loop end - loop start
+        double newLoopEndBeats = clipLoopEndValue_->getValue();
+        double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip->loopStart, bpm);
+        double newLoopLengthBeats = newLoopEndBeats - loopStartBeats;
+        if (newLoopLengthBeats < 0.25)
+            newLoopLengthBeats = 0.25;
+
         double newLoopLengthSeconds;
         if (clip->autoTempo && clip->sourceBPM > 0.0) {
-            // AutoTempo: beats are in source BPM domain, convert directly
             newLoopLengthSeconds = (newLoopLengthBeats * 60.0) / clip->sourceBPM;
         } else {
-            // Manual: convert beats to timeline seconds, then to source seconds
             double timelineSeconds = magda::TimelineUtils::beatsToSeconds(newLoopLengthBeats, bpm);
             newLoopLengthSeconds = timelineSeconds * clip->speedRatio;
         }
@@ -481,28 +447,22 @@ void ClipInspector::initClipPropertiesSection() {
         if (clip->view == magda::ClipView::Session) {
             double clipEndSeconds = clip->length;
             double currentSourceEnd = clip->loopStart + clip->loopLength;
-
-            // Check if source end was aligned with clip end before the change
             bool sourceEndMatchedClipEnd = std::abs(currentSourceEnd - clipEndSeconds) < 0.001;
-
             double newSourceEnd = clip->loopStart + newLoopLengthSeconds;
 
             if (sourceEndMatchedClipEnd && newSourceEnd > clipEndSeconds) {
-                // Source end was aligned with clip end and is growing — extend clip to follow
                 magda::ClipManager::getInstance().resizeClip(selectedClipId_, newSourceEnd, false,
                                                              bpm);
             } else {
-                // Clamp source region so it doesn't exceed clip end
                 if (newSourceEnd > clipEndSeconds) {
                     newLoopLengthSeconds = clipEndSeconds - clip->loopStart;
                 }
             }
         }
 
-        // Set loopLength (in seconds) — pass BPM to update beat values in autoTempo mode
         magda::ClipManager::getInstance().setLoopLength(selectedClipId_, newLoopLengthSeconds, bpm);
     };
-    clipPropsContainer_.addChildComponent(*clipLoopLengthValue_);
+    clipPropsContainer_.addChildComponent(*clipLoopEndValue_);
 
     // Loop phase (offset into loop region)
     clipLoopPhaseLabel_.setText("phase", juce::dontSendNotification);

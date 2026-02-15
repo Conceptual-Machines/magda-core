@@ -353,9 +353,19 @@ void ClipManager::setClipColour(ClipId clipId, juce::Colour colour) {
 }
 
 void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double projectBPM) {
-    juce::ignoreUnused(projectBPM);
     if (auto* clip = getClip(clipId)) {
         clip->loopEnabled = enabled;
+
+        // When enabling loop on MIDI clips, capture current length as loop region
+        // Populate both beat and seconds fields so all existing code paths work
+        if (enabled && clip->type == ClipType::MIDI) {
+            double bpm = juce::jmax(1.0, projectBPM);
+            if (clip->loopLengthBeats <= 0.0) {
+                clip->loopLengthBeats =
+                    clip->lengthBeats > 0.0 ? clip->lengthBeats : clip->length * bpm / 60.0;
+            }
+            clip->loopLength = clip->loopLengthBeats * 60.0 / bpm;
+        }
 
         // When enabling loop on audio clips, transfer offset → loopStart
         // The user's current offset becomes the loop start point (phase resets to 0)
@@ -456,7 +466,10 @@ void ClipManager::setLoopStart(ClipId clipId, double loopStart, double bpm) {
 void ClipManager::setLoopLength(ClipId clipId, double loopLength, double bpm) {
     if (auto* clip = getClip(clipId)) {
         clip->loopLength = juce::jmax(0.0, loopLength);
-        if (clip->type == ClipType::Audio) {
+        if (clip->type == ClipType::MIDI) {
+            // MIDI: keep loopLengthBeats in sync using project BPM
+            clip->loopLengthBeats = (clip->loopLength * juce::jmax(1.0, bpm)) / 60.0;
+        } else if (clip->type == ClipType::Audio) {
             if (clip->autoTempo) {
                 // Use sourceBPM for beat conversion — loopLengthBeats is in source-beat domain
                 double convBpm = (clip->sourceBPM > 0.0) ? clip->sourceBPM : bpm;
@@ -1265,6 +1278,51 @@ bool ClipManager::hasClipsInClipboard() const {
 void ClipManager::clearClipboard() {
     clipboard_.clear();
     clipboardReferenceTime_ = 0.0;
+}
+
+// ============================================================================
+// Note Clipboard Operations
+// ============================================================================
+
+void ClipManager::copyNotesToClipboard(ClipId clipId, const std::vector<size_t>& noteIndices) {
+    noteClipboard_.clear();
+    noteClipboardMinBeat_ = 0.0;
+
+    const auto* clip = getClip(clipId);
+    if (!clip || clip->type != ClipType::MIDI || noteIndices.empty()) {
+        return;
+    }
+
+    // Copy selected notes
+    double minBeat = std::numeric_limits<double>::max();
+    for (size_t idx : noteIndices) {
+        if (idx < clip->midiNotes.size()) {
+            noteClipboard_.push_back(clip->midiNotes[idx]);
+            minBeat = std::min(minBeat, clip->midiNotes[idx].startBeat);
+        }
+    }
+
+    if (noteClipboard_.empty()) {
+        return;
+    }
+
+    // Store original earliest beat and normalise
+    noteClipboardMinBeat_ = minBeat;
+    for (auto& note : noteClipboard_) {
+        note.startBeat -= minBeat;
+    }
+}
+
+bool ClipManager::hasNotesInClipboard() const {
+    return !noteClipboard_.empty();
+}
+
+const std::vector<MidiNote>& ClipManager::getNoteClipboard() const {
+    return noteClipboard_;
+}
+
+double ClipManager::getNoteClipboardMinBeat() const {
+    return noteClipboardMinBeat_;
 }
 
 }  // namespace magda

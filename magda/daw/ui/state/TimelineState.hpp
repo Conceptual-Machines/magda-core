@@ -95,6 +95,53 @@ struct GridConstants {
         }
         return 1 << maxBarPow;
     }
+
+    // ===== Grid alignment and classification utilities =====
+
+    /** Check if grid interval evenly divides bars (or spans multiple bars). */
+    static bool gridAlignsWithBars(double intervalBeats, double barLengthBeats) {
+        double barMod = std::fmod(barLengthBeats, intervalBeats);
+        return intervalBeats >= barLengthBeats || barMod < 0.001 ||
+               barMod > (intervalBeats - 0.001);
+    }
+
+    /** Check if grid interval evenly divides beats (or spans multiple beats). */
+    static bool gridAlignsWithBeats(double intervalBeats) {
+        double beatMod = std::fmod(1.0, intervalBeats);
+        return intervalBeats >= 1.0 || beatMod < 0.001 || beatMod > (intervalBeats - 0.001);
+    }
+
+    /** Result of classifying a beat position within the bar/beat hierarchy. */
+    struct BeatClassification {
+        bool isBar;
+        bool isBeat;
+    };
+
+    /** Classify a beat position as bar start, beat start, or subdivision. */
+    static BeatClassification classifyBeatPosition(double beatPosition, double barLengthBeats) {
+        double barRemainder = std::fmod(beatPosition, barLengthBeats);
+        bool isBar = barRemainder < 0.001 || barRemainder > (barLengthBeats - 0.001);
+        double beatRemainder = std::fmod(beatPosition, 1.0);
+        bool isBeat = isBar || beatRemainder < 0.001 || beatRemainder > 0.999;
+        return {isBar, isBeat};
+    }
+
+    /**
+     * Compute grid interval in beats, respecting auto/manual mode.
+     * Returns the interval in beats (e.g. 0.5 for 1/8, 4.0 for 1 bar in 4/4).
+     */
+    static double computeGridInterval(const GridQuantize& gridQuantize, double zoom,
+                                      int timeSigNumerator, int minPixelSpacing) {
+        if (!gridQuantize.autoGrid) {
+            return gridQuantize.toBeatFraction();
+        }
+        double frac = findBeatSubdivision(zoom, minPixelSpacing);
+        if (frac > 0) {
+            return frac;
+        }
+        int mult = findBarMultiple(zoom, timeSigNumerator, minPixelSpacing);
+        return static_cast<double>(timeSigNumerator) * mult;
+    }
 };
 
 /**

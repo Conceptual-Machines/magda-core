@@ -2,6 +2,7 @@
 
 #include "ui/components/timeline/TimeRuler.hpp"
 #include "ui/state/TimelineController.hpp"
+#include "ui/state/TimelineEvents.hpp"
 #include "ui/state/TimelineState.hpp"
 
 namespace magda::daw::ui {
@@ -39,6 +40,27 @@ MidiEditorContent::MidiEditorContent() {
         viewport_->setViewPosition(newScrollX, viewport_->getViewPositionY());
     };
 
+    // TimeRuler click callback — set edit cursor position
+    timeRuler_->onPositionClicked = [](double time) {
+        if (auto* controller = magda::TimelineController::getCurrent()) {
+            controller->dispatch(magda::SetEditCursorEvent{time});
+        }
+    };
+
+    // Edit cursor blink timer
+    blinkTimer_.callback = [this]() {
+        editCursorBlinkVisible_ = !editCursorBlinkVisible_;
+
+        if (auto* controller = magda::TimelineController::getCurrent()) {
+            double editPos = controller->getState().editCursorPosition;
+            bool visible = editPos >= 0.0;
+            setGridEditCursorPosition(editPos, visible && editCursorBlinkVisible_);
+            if (timeRuler_) {
+                timeRuler_->setEditCursorPosition(editPos, editCursorBlinkVisible_);
+            }
+        }
+    };
+
     // Register as ClipManager listener
     magda::ClipManager::getInstance().addListener(this);
 
@@ -61,6 +83,7 @@ MidiEditorContent::MidiEditorContent() {
 }
 
 MidiEditorContent::~MidiEditorContent() {
+    blinkTimer_.stopTimer();
     magda::ClipManager::getInstance().removeListener(this);
 
     if (auto* controller = magda::TimelineController::getCurrent()) {
@@ -154,8 +177,9 @@ void MidiEditorContent::updateTimeRuler() {
     }
     timeRuler_->setTimelineLength(timelineLength);
 
-    // Set zoom (pixels per beat)
+    // Set zoom and grid resolution (pixels per beat)
     timeRuler_->setZoom(horizontalZoom_);
+    timeRuler_->setGridResolution(gridResolutionBeats_);
 
     // Set clip info for boundary drawing
     if (clip) {
@@ -173,6 +197,14 @@ void MidiEditorContent::updateTimeRuler() {
 
     // Update relative mode
     timeRuler_->setRelativeMode(relativeTimeMode_);
+
+    // Set loop region markers
+    if (clip) {
+        timeRuler_->setLoopRegion(clip->offset - clip->loopStart, clip->loopLength,
+                                  clip->loopEnabled);
+    } else {
+        timeRuler_->setLoopRegion(0.0, 0.0, false);
+    }
 }
 
 // ============================================================================
@@ -226,9 +258,47 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
                                              magda::ChangeFlags changes) {
     // Playhead changes
     if (magda::hasFlag(changes, magda::ChangeFlags::Playhead)) {
-        setGridPlayheadPosition(state.playhead.playbackPosition);
+        double playPos = state.playhead.playbackPosition;
+
+        // Auto-hide edit cursor when playback starts
+        if (state.playhead.isPlaying && state.editCursorPosition >= 0.0) {
+            if (auto* controller = magda::TimelineController::getCurrent()) {
+                controller->dispatch(magda::SetEditCursorEvent{-1.0});
+            }
+        }
+
+        // Offset playhead so it starts from the midiOffset position
+        if (editingClipId_ != magda::INVALID_CLIP_ID) {
+            const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+            if (clip && clip->midiOffset > 0.0) {
+                double secondsPerBeat = 60.0 / state.tempo.bpm;
+                playPos += clip->midiOffset * secondsPerBeat;
+            }
+        }
+
+        setGridPlayheadPosition(playPos);
         if (timeRuler_) {
-            timeRuler_->setPlayheadPosition(state.playhead.playbackPosition);
+            timeRuler_->setPlayheadPosition(playPos);
+        }
+    }
+
+    // Edit cursor changes (SetEditCursorEvent returns Selection flag)
+    if (magda::hasFlag(changes, magda::ChangeFlags::Selection)) {
+        double editPos = state.editCursorPosition;
+        bool visible = editPos >= 0.0;
+
+        // Start/stop blink timer
+        if (visible && !blinkTimer_.isTimerRunning()) {
+            editCursorBlinkVisible_ = true;
+            blinkTimer_.startTimerHz(2);  // ~500ms blink
+        } else if (!visible && blinkTimer_.isTimerRunning()) {
+            blinkTimer_.stopTimer();
+            editCursorBlinkVisible_ = true;
+        }
+
+        setGridEditCursorPosition(editPos, visible && editCursorBlinkVisible_);
+        if (timeRuler_) {
+            timeRuler_->setEditCursorPosition(editPos, editCursorBlinkVisible_);
         }
     }
 
@@ -263,6 +333,14 @@ void MidiEditorContent::updateGridResolution() {
     if (newResolution != gridResolutionBeats_) {
         gridResolutionBeats_ = newResolution;
         onGridResolutionChanged();
+
+        // Notify BottomPanel to update its num/den display
+        if (onAutoGridDisplayChanged) {
+            int den = static_cast<int>(std::round(4.0 / gridResolutionBeats_));
+            if (den < 1)
+                den = 1;
+            onAutoGridDisplayChanged(1, den);
+        }
     }
 }
 

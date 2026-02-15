@@ -1,8 +1,12 @@
 #include "PianoRollGridComponent.hpp"
 
 #include "../../state/TimelineController.hpp"
+#include "../../state/TimelineEvents.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "core/ClipManager.hpp"
+#include "core/MidiNoteCommands.hpp"
+#include "core/SelectionManager.hpp"
+#include "core/UndoManager.hpp"
 
 namespace magda {
 
@@ -224,6 +228,25 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
                                static_cast<float>(gw), static_cast<float>(gh), 2.0f, 1.0f);
     }
 
+    // Draw edit cursor line (blinking white)
+    if (editCursorPosition_ >= 0.0 && editCursorVisible_) {
+        double tempo = 120.0;
+        if (auto* controller = TimelineController::getCurrent()) {
+            tempo = controller->getState().tempo.bpm;
+        }
+        double secondsPerBeat = 60.0 / tempo;
+        double cursorBeats = editCursorPosition_ / secondsPerBeat;
+        double displayBeat = relativeMode_ ? (cursorBeats - clipStartBeats_) : cursorBeats;
+        int cursorX = beatToPixel(displayBeat);
+        if (cursorX >= 0 && cursorX <= bounds.getRight()) {
+            g.setColour(juce::Colours::black.withAlpha(0.5f));
+            g.drawLine(float(cursorX - 1), 0.f, float(cursorX - 1), float(bounds.getHeight()), 1.f);
+            g.drawLine(float(cursorX + 1), 0.f, float(cursorX + 1), float(bounds.getHeight()), 1.f);
+            g.setColour(juce::Colours::white);
+            g.drawLine(float(cursorX), 0.f, float(cursorX), float(bounds.getHeight()), 2.f);
+        }
+    }
+
     // Draw playhead line if playing
     if (playheadPosition_ >= 0.0) {
         // Convert seconds to beats
@@ -360,6 +383,65 @@ void PianoRollGridComponent::resized() {
 }
 
 void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
+    isEditCursorClick_ = false;
+
+    // Right-click context menu
+    if (e.mods.isPopupMenu()) {
+        // Collect selected note indices
+        std::vector<size_t> selectedIndices;
+        for (const auto& nc : noteComponents_) {
+            if (nc->isSelected()) {
+                selectedIndices.push_back(nc->getNoteIndex());
+            }
+        }
+
+        if (clipId_ != INVALID_CLIP_ID) {
+            juce::PopupMenu menu;
+            bool hasSelection = !selectedIndices.empty();
+
+            // Edit operations
+            menu.addItem(10, "Copy", hasSelection);
+            menu.addItem(11, "Paste", ClipManager::getInstance().hasNotesInClipboard());
+            menu.addItem(12, "Duplicate", hasSelection);
+            menu.addItem(13, "Delete", hasSelection);
+            menu.addSeparator();
+
+            // Quantize operations
+            menu.addItem(1, "Quantize Start to Grid", hasSelection);
+            menu.addItem(2, "Quantize Length to Grid", hasSelection);
+            menu.addItem(3, "Quantize Start & Length to Grid", hasSelection);
+
+            menu.showMenuAsync(juce::PopupMenu::Options(),
+                               [this, indices = std::move(selectedIndices)](int result) {
+                                   if (result == 0)
+                                       return;
+                                   if (result == 10 && onCopyNotes)
+                                       onCopyNotes(clipId_, indices);
+                                   else if (result == 11 && onPasteNotes)
+                                       onPasteNotes(clipId_);
+                                   else if (result == 12 && onDuplicateNotes)
+                                       onDuplicateNotes(clipId_, indices);
+                                   else if (result == 13 && onDeleteNotes)
+                                       onDeleteNotes(clipId_, indices);
+                                   else if (result >= 1 && result <= 3 && onQuantizeNotes) {
+                                       QuantizeMode mode = QuantizeMode::StartOnly;
+                                       if (result == 2)
+                                           mode = QuantizeMode::LengthOnly;
+                                       else if (result == 3)
+                                           mode = QuantizeMode::StartAndLength;
+                                       onQuantizeNotes(clipId_, indices, mode);
+                                   }
+                               });
+        }
+        return;
+    }
+
+    // Alt + click on a grid line -> set edit cursor
+    if (e.mods.isAltDown() && isNearGridLine(e.x)) {
+        isEditCursorClick_ = true;
+        return;
+    }
+
     // Store drag start point for potential rubber band selection
     dragSelectStart_ = e.getPosition();
     dragSelectEnd_ = e.getPosition();
@@ -367,12 +449,41 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
 }
 
 void PianoRollGridComponent::mouseDrag(const juce::MouseEvent& e) {
+    if (isEditCursorClick_)
+        return;
+
     isDragSelecting_ = true;
     dragSelectEnd_ = e.getPosition();
     repaint();
 }
 
 void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
+    // Don't deselect on right-click release (context menu was shown)
+    if (e.mods.isPopupMenu()) {
+        return;
+    }
+
+    // Grid line click -> set edit cursor position
+    if (isEditCursorClick_) {
+        isEditCursorClick_ = false;
+        double gridBeat = getNearestGridLineBeat(e.x);
+
+        // In relative mode, convert from relative beat to absolute beat
+        double absoluteBeat = relativeMode_ ? (gridBeat + clipStartBeats_) : gridBeat;
+
+        // Convert beats to seconds
+        double tempo = 120.0;
+        if (auto* controller = TimelineController::getCurrent()) {
+            tempo = controller->getState().tempo.bpm;
+        }
+        double positionSeconds = absoluteBeat * (60.0 / tempo);
+
+        if (auto* controller = TimelineController::getCurrent()) {
+            controller->dispatch(SetEditCursorEvent{positionSeconds});
+        }
+        return;
+    }
+
     if (isDragSelecting_) {
         // Build normalized selection rectangle
         auto selectionRect = juce::Rectangle<int>(dragSelectStart_, dragSelectEnd_);
@@ -421,6 +532,18 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
             }
         }
     }
+}
+
+void PianoRollGridComponent::mouseMove(const juce::MouseEvent& e) {
+    if (e.mods.isAltDown() && isNearGridLine(e.x)) {
+        setMouseCursor(juce::MouseCursor::IBeamCursor);
+    } else {
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+    }
+}
+
+void PianoRollGridComponent::mouseExit(const juce::MouseEvent& /*e*/) {
+    setMouseCursor(juce::MouseCursor::NormalCursor);
 }
 
 void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
@@ -520,15 +643,42 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
 }
 
 bool PianoRollGridComponent::keyPressed(const juce::KeyPress& key) {
-    // Delete key removes selected note
-    if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {
-        if (selectedNoteIndex_ >= 0 && onNoteDeleted && clipId_ != INVALID_CLIP_ID) {
-            onNoteDeleted(clipId_, static_cast<size_t>(selectedNoteIndex_));
-            selectedNoteIndex_ = -1;
-            return true;
+    // Arrow up/down: move selected notes by semitone (or octave with Shift)
+    // Alt+arrows reserved for viewport scrolling
+    if (!key.getModifiers().isAltDown() && (key.getKeyCode() == juce::KeyPress::upKey ||
+                                            key.getKeyCode() == juce::KeyPress::downKey)) {
+        const auto& noteSel = SelectionManager::getInstance().getNoteSelection();
+        if (!noteSel.isValid())
+            return false;
+
+        int delta = (key.getKeyCode() == juce::KeyPress::upKey) ? 1 : -1;
+        if (key.getModifiers().isShiftDown())
+            delta *= 12;
+
+        const auto* clip = ClipManager::getInstance().getClip(noteSel.clipId);
+        if (!clip || clip->type != ClipType::MIDI)
+            return false;
+
+        // Check all notes stay within valid range
+        for (size_t idx : noteSel.noteIndices) {
+            if (idx >= clip->midiNotes.size())
+                return false;
+            int newNote = clip->midiNotes[idx].noteNumber + delta;
+            if (newNote < MIN_NOTE || newNote > MAX_NOTE)
+                return true;  // Consume but don't move
         }
+
+        // Move each selected note
+        for (size_t idx : noteSel.noteIndices) {
+            const auto& note = clip->midiNotes[idx];
+            auto cmd = std::make_unique<MoveMidiNoteCommand>(noteSel.clipId, idx, note.startBeat,
+                                                             note.noteNumber + delta);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+        }
+        return true;
     }
 
+    // Let other key presses bubble up to the command manager
     return false;
 }
 
@@ -863,6 +1013,22 @@ double PianoRollGridComponent::snapBeatToGrid(double beat) const {
     return std::round(beat / gridResolutionBeats_) * gridResolutionBeats_;
 }
 
+bool PianoRollGridComponent::isNearGridLine(int mouseX) const {
+    if (gridResolutionBeats_ <= 0.0)
+        return false;
+    double beat = pixelToBeat(mouseX);
+    double nearestBeat = std::round(beat / gridResolutionBeats_) * gridResolutionBeats_;
+    int gridX = beatToPixel(nearestBeat);
+    return std::abs(mouseX - gridX) <= GRID_LINE_HIT_TOLERANCE;
+}
+
+double PianoRollGridComponent::getNearestGridLineBeat(int mouseX) const {
+    double beat = pixelToBeat(mouseX);
+    if (gridResolutionBeats_ <= 0.0)
+        return beat;
+    return std::round(beat / gridResolutionBeats_) * gridResolutionBeats_;
+}
+
 void PianoRollGridComponent::createNoteComponents() {
     auto& clipManager = ClipManager::getInstance();
 
@@ -1009,6 +1175,52 @@ void PianoRollGridComponent::createNoteComponents() {
 
             noteComp->snapBeatToGrid = [this](double beat) { return snapBeatToGrid(beat); };
 
+            noteComp->onRightClick = [this, clipId](size_t /*index*/,
+                                                    const juce::MouseEvent& /*event*/) {
+                // Collect all selected note indices
+                std::vector<size_t> selectedIndices;
+                for (const auto& nc : noteComponents_) {
+                    if (nc->isSelected()) {
+                        selectedIndices.push_back(nc->getNoteIndex());
+                    }
+                }
+
+                juce::PopupMenu menu;
+                bool hasSelection = !selectedIndices.empty();
+
+                menu.addItem(10, "Copy", hasSelection);
+                menu.addItem(11, "Paste", ClipManager::getInstance().hasNotesInClipboard());
+                menu.addItem(12, "Duplicate", hasSelection);
+                menu.addItem(13, "Delete", hasSelection);
+                menu.addSeparator();
+                menu.addItem(1, "Quantize Start to Grid", hasSelection);
+                menu.addItem(2, "Quantize Length to Grid", hasSelection);
+                menu.addItem(3, "Quantize Start & Length to Grid", hasSelection);
+
+                menu.showMenuAsync(
+                    juce::PopupMenu::Options(),
+                    [this, clipId, indices = std::move(selectedIndices)](int result) {
+                        if (result == 0)
+                            return;
+                        if (result == 10 && onCopyNotes)
+                            onCopyNotes(clipId, indices);
+                        else if (result == 11 && onPasteNotes)
+                            onPasteNotes(clipId);
+                        else if (result == 12 && onDuplicateNotes)
+                            onDuplicateNotes(clipId, indices);
+                        else if (result == 13 && onDeleteNotes)
+                            onDeleteNotes(clipId, indices);
+                        else if (result >= 1 && result <= 3 && onQuantizeNotes) {
+                            QuantizeMode mode = QuantizeMode::StartOnly;
+                            if (result == 2)
+                                mode = QuantizeMode::LengthOnly;
+                            else if (result == 3)
+                                mode = QuantizeMode::StartAndLength;
+                            onQuantizeNotes(clipId, indices, mode);
+                        }
+                    });
+            };
+
             noteComp->setGhost(!isClipSelected(clipId));
             noteComp->updateFromNote(clip->midiNotes[i], noteColour);
             addAndMakeVisible(noteComp.get());
@@ -1124,6 +1336,12 @@ void PianoRollGridComponent::setPlayheadPosition(double positionSeconds) {
         playheadPosition_ = positionSeconds;
         repaint();
     }
+}
+
+void PianoRollGridComponent::setEditCursorPosition(double positionSeconds, bool blinkVisible) {
+    editCursorPosition_ = positionSeconds;
+    editCursorVisible_ = blinkVisible;
+    repaint();
 }
 
 }  // namespace magda

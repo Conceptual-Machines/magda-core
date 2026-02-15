@@ -441,6 +441,22 @@ void SelectionManager::clearDeviceSelection() {
 }
 
 // ============================================================================
+// Clear Note Selection (keeps MIDI editor open)
+// ============================================================================
+
+void SelectionManager::clearNoteSelection() {
+    if (selectionType_ != SelectionType::Note) {
+        return;
+    }
+
+    ClipId savedClipId = noteSelection_.clipId;
+    noteSelection_ = NoteSelection{};
+
+    // Transition back to clip selection so the MIDI editor stays open
+    selectClip(savedClipId);
+}
+
+// ============================================================================
 // Clear
 // ============================================================================
 

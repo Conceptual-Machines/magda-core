@@ -2049,12 +2049,15 @@ void MainView::updateGridDivisionDisplay() {
     }
 
     // When Auto mode is on, push the smart grid values to the transport panel
+    // and update the state so auto→manual switch can seed from them
     const auto& state = timelineController->getState();
-    if (state.display.gridQuantize.autoGrid && onGridQuantizeChanged) {
+    if (state.display.gridQuantize.autoGrid) {
         int num = 0, den = 0;
         bool isBars = false;
         calculateSmartGridNumeratorDenominator(num, den, isBars);
-        onGridQuantizeChanged(true, num, den, isBars);
+        timelineController->dispatch(SetAutoGridDisplayEvent{num, den});
+        if (onGridQuantizeChanged)
+            onGridQuantizeChanged(true, num, den, isBars);
     }
 }
 

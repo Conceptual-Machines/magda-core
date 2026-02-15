@@ -7,6 +7,11 @@
 namespace magda {
 
 /**
+ * @brief Mode for quantizing MIDI notes
+ */
+enum class QuantizeMode { StartOnly, LengthOnly, StartAndLength };
+
+/**
  * @brief Command for adding a MIDI note to a clip
  */
 class AddMidiNoteCommand : public UndoableCommand {
@@ -165,6 +170,80 @@ class MoveMidiNoteBetweenClipsCommand : public UndoableCommand {
     MidiNote movedNote_;
     double newStartBeat_;
     int newNoteNumber_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for quantizing multiple MIDI notes to grid
+ */
+class QuantizeMidiNotesCommand : public UndoableCommand {
+  public:
+    QuantizeMidiNotesCommand(ClipId clipId, std::vector<size_t> noteIndices, double gridResolution,
+                             QuantizeMode mode);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Quantize MIDI Notes";
+    }
+
+  private:
+    ClipId clipId_;
+    std::vector<size_t> noteIndices_;
+    double gridResolution_;
+    QuantizeMode mode_;
+
+    struct OldValues {
+        double startBeat;
+        double lengthBeats;
+    };
+    std::vector<OldValues> oldValues_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for deleting multiple MIDI notes at once
+ */
+class DeleteMultipleMidiNotesCommand : public UndoableCommand {
+  public:
+    DeleteMultipleMidiNotesCommand(ClipId clipId, std::vector<size_t> noteIndices);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Delete MIDI Notes";
+    }
+
+  private:
+    ClipId clipId_;
+    std::vector<size_t> noteIndices_;  // Original indices (sorted descending for removal)
+    std::vector<std::pair<size_t, MidiNote>> deleted_;  // {originalIndex, note} for undo
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for adding multiple MIDI notes at once (used by paste/duplicate)
+ */
+class AddMultipleMidiNotesCommand : public UndoableCommand {
+  public:
+    AddMultipleMidiNotesCommand(ClipId clipId, std::vector<MidiNote> notes,
+                                juce::String description);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return description_;
+    }
+
+    const std::vector<size_t>& getInsertedIndices() const {
+        return insertedIndices_;
+    }
+
+  private:
+    ClipId clipId_;
+    std::vector<MidiNote> notes_;
+    juce::String description_;
+    std::vector<size_t> insertedIndices_;  // Indices of inserted notes after execute
     bool executed_ = false;
 };
 

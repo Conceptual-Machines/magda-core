@@ -711,7 +711,6 @@ juce::ApplicationCommandTarget* MainWindow::MainComponent::getNextCommandTarget(
     return nullptr;
 }
 
-
 void MainWindow::MainComponent::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getBackgroundColour());
 }
@@ -816,8 +815,9 @@ void MainWindow::MainComponent::viewModeChanged(ViewMode mode,
 void MainWindow::MainComponent::selectionTypeChanged(SelectionType newType) {
     // Update menu state based on selection
     auto& selectionManager = SelectionManager::getInstance();
-    bool hasSelection = (newType == SelectionType::Clip || newType == SelectionType::MultiClip) &&
-                        selectionManager.getSelectedClipCount() > 0;
+    bool hasSelection = ((newType == SelectionType::Clip || newType == SelectionType::MultiClip) &&
+                         selectionManager.getSelectedClipCount() > 0) ||
+                        (newType == SelectionType::Note && selectionManager.hasNoteSelection());
 
     // Get transport and edit cursor state (if available)
     bool isPlaying = false;
@@ -874,6 +874,5 @@ void MainWindow::setupMenuBar() {
     addAndMakeVisible(menuBar.get());
 #endif
 }
-
 
 }  // namespace magda

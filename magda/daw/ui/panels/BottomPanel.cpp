@@ -179,7 +179,7 @@ void BottomPanel::setupHeaderControls() {
     // Grid denominator
     gridDenominatorLabel_ =
         std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Integer);
-    gridDenominatorLabel_->setRange(1.0, 64.0, 4.0);
+    gridDenominatorLabel_->setRange(2.0, 32.0, 4.0);
     gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
                                     juce::dontSendNotification);
     gridDenominatorLabel_->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
@@ -190,14 +190,20 @@ void BottomPanel::setupHeaderControls() {
     gridDenominatorLabel_->setEnabled(!isAutoGrid_);
     gridDenominatorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
     gridDenominatorLabel_->onValueChange = [this]() {
-        // Constrain to nearest power of 2
+        // Constrain to nearest allowed value (multiples of 2 and 3)
+        static constexpr int allowed[] = {2, 3, 4, 6, 8, 12, 16, 24, 32};
+        static constexpr int numAllowed = 9;
         int raw = static_cast<int>(std::round(gridDenominatorLabel_->getValue()));
-        int pow2 = 1;
-        while (pow2 * 2 <= raw)
-            pow2 *= 2;
-        if (raw - pow2 > pow2 * 2 - raw && pow2 * 2 <= 64)
-            pow2 *= 2;
-        gridDenominator_ = pow2;
+        int best = allowed[0];
+        int bestDist = std::abs(raw - best);
+        for (int i = 1; i < numAllowed; ++i) {
+            int dist = std::abs(raw - allowed[i]);
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = allowed[i];
+            }
+        }
+        gridDenominator_ = best;
         gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
                                         juce::dontSendNotification);
         if (!isAutoGrid_) {
@@ -281,6 +287,15 @@ void BottomPanel::setCollapsed(bool collapsed) {
 
 void BottomPanel::paint(juce::Graphics& g) {
     TabbedPanel::paint(g);
+
+    // Draw bottom border below the editor tab header and column dividers for tab icons
+    if (showEditorTabs_) {
+        g.setColour(DarkTheme::getBorderColour());
+        g.fillRect(0, EDITOR_TAB_HEIGHT - 1, getWidth(), 1);
+
+        // Sidebar column divider
+        g.fillRect(SIDEBAR_WIDTH, 0, 1, EDITOR_TAB_HEIGHT - 1);
+    }
 }
 
 void BottomPanel::resized() {
@@ -325,10 +340,10 @@ void BottomPanel::resized() {
         x -= 36;
         timeModeButton_->setBounds(x, y + vPad, 36, h - vPad * 2);
 
-        // Tab icon buttons on the left
-        int iconSize = h - 4;
-        int tabX = headerBounds.getX() + 4;
+        // Tab icon buttons after the sidebar column
+        int iconSize = h - 8;
         int tabY = y + (h - iconSize) / 2;
+        int tabX = headerBounds.getX() + SIDEBAR_WIDTH + 4;
         pianoRollTab_->setBounds(tabX, tabY, iconSize, iconSize);
         tabX += iconSize + 4;
         drumGridTab_->setBounds(tabX, tabY, iconSize, iconSize);
@@ -357,7 +372,7 @@ void BottomPanel::trackSelectionChanged(TrackId /*trackId*/) {
 
 void BottomPanel::timelineStateChanged(const TimelineState& state, ChangeFlags changes) {
     if (hasFlag(changes, ChangeFlags::Display)) {
-        // If a MIDI editor is active, the controls reflect clip state — skip arrangement sync
+        // If a MIDI editor is active, the controls reflect clip state -- skip arrangement sync
         auto* content = getActiveContent();
         auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
         if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
@@ -468,6 +483,21 @@ void BottomPanel::updateContentBasedOnSelection() {
         applyTimeModeToContent();
     }
     syncGridControlsFromContent();
+
+    // Connect auto-grid display callback so num/den labels update during zoom
+    auto* content = getActiveContent();
+    if (auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content)) {
+        midiEditor->onAutoGridDisplayChanged = [this](int numerator, int denominator) {
+            gridNumerator_ = numerator;
+            gridDenominator_ = denominator;
+            if (!gridNumeratorLabel_->isDragging())
+                gridNumeratorLabel_->setValue(static_cast<double>(numerator),
+                                              juce::dontSendNotification);
+            if (!gridDenominatorLabel_->isDragging())
+                gridDenominatorLabel_->setValue(static_cast<double>(denominator),
+                                                juce::dontSendNotification);
+        };
+    }
 }
 
 juce::Rectangle<int> BottomPanel::getCollapseButtonBounds() {

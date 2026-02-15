@@ -4,7 +4,9 @@
 
 #include "CursorManager.hpp"
 #include "DarkTheme.hpp"
+#include "FontManager.hpp"
 #include "LayoutConfig.hpp"
+#include "TimelineState.hpp"
 
 namespace magda {
 
@@ -73,6 +75,11 @@ void TimeRuler::setTimeSignature(int numerator, int denominator) {
     repaint();
 }
 
+void TimeRuler::setGridResolution(double beatsPerGridLine) {
+    gridResolutionBeats = beatsPerGridLine;
+    repaint();
+}
+
 void TimeRuler::setTimeOffset(double offsetSeconds) {
     timeOffset = offsetSeconds;
     repaint();
@@ -105,6 +112,12 @@ void TimeRuler::setPlayheadPosition(double positionSeconds) {
         playheadPosition = positionSeconds;
         repaint();
     }
+}
+
+void TimeRuler::setEditCursorPosition(double positionSeconds, bool blinkVisible) {
+    editCursorPosition_ = positionSeconds;
+    editCursorVisible_ = blinkVisible;
+    repaint();
 }
 
 void TimeRuler::setLeftPadding(int padding) {
@@ -298,56 +311,193 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     const int height = getHeight();
     const int width = getWidth();
 
-    // zoom is ppb, so pixelsPerBar = zoom * beatsPerBar (no BPM dependency!)
-    double secondsPerBeat = 60.0 / tempo;
-    double secondsPerBar = secondsPerBeat * timeSigNumerator;
-    double pixelsPerBar = zoom * timeSigNumerator;
-    bool showBeats = pixelsPerBar > 60;  // Only show beats if bars are wide enough
+    // Use grid resolution if provided, otherwise compute from zoom level
+    double intervalBeats = 1.0;
 
-    // In ABS mode: bar numbers are absolute (1, 2, 3...), grid starts at project time 0
-    // In REL mode: bar numbers relative to clip (1, 2, 3...), grid starts at clip time 0
-    // No barOffset needed since grid coordinate system matches display
+    if (gridResolutionBeats > 0.0) {
+        intervalBeats = gridResolutionBeats;
+    } else {
+        // Auto-compute from zoom (same logic as TimelineComponent)
+        const double beatFractions[] = {0.0078125, 0.015625, 0.03125, 0.0625,
+                                        0.125,     0.25,     0.5,     1.0};
+        const int barMultiples[] = {1, 2, 4, 8, 16, 32};
+        const int minPixelSpacing = 12;
+        bool foundInterval = false;
 
-    // Find first visible bar (offset by barOriginSeconds)
-    double startTime = pixelToTime(0);
-    int startBar = juce::jmax(
-        1, static_cast<int>(std::floor((startTime - barOriginSeconds) / secondsPerBar)) + 1);
-
-    g.setFont(11.0f);
-
-    // Draw bar lines and optionally beat lines
-    for (int bar = startBar;; bar++) {
-        double barTime = barOriginSeconds + (bar - 1) * secondsPerBar;
-        int barX = timeToPixel(barTime);
-
-        if (barX > width)
-            break;
-        if (barTime > timelineLength)
-            break;
-
-        if (barX >= 0) {
-            // Draw bar line (major tick)
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-            g.drawVerticalLine(barX, static_cast<float>(height - TICK_HEIGHT_MAJOR),
-                               static_cast<float>(height));
-
-            // Draw bar number (always 1, 2, 3... from the left edge)
-            juce::String label = juce::String(bar);
-            g.drawText(label, barX - 20, LABEL_MARGIN, 40,
-                       height - TICK_HEIGHT_MAJOR - LABEL_MARGIN * 2, juce::Justification::centred,
-                       false);
+        for (double fraction : beatFractions) {
+            if (fraction * zoom >= minPixelSpacing) {
+                intervalBeats = fraction;
+                foundInterval = true;
+                break;
+            }
         }
 
-        // Draw beat lines within this bar
-        if (showBeats) {
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
-            for (int beat = 2; beat <= timeSigNumerator; beat++) {
-                double beatTime = barTime + (beat - 1) * secondsPerBeat;
-                int beatX = timeToPixel(beatTime);
+        if (!foundInterval) {
+            for (int mult : barMultiples) {
+                if (static_cast<double>(timeSigNumerator * mult) * zoom >= minPixelSpacing) {
+                    intervalBeats = timeSigNumerator * mult;
+                    break;
+                }
+            }
+        }
+    }
 
-                if (beatX >= 0 && beatX <= width && beatTime <= timelineLength) {
-                    g.drawVerticalLine(beatX, static_cast<float>(height - TICK_HEIGHT_MINOR),
-                                       static_cast<float>(height));
+    double pixelsPerBeat = zoom;
+    double pixelsPerBar = zoom * timeSigNumerator;
+    double pixelsPerSubdiv = intervalBeats * zoom;
+    double barLengthBeats = static_cast<double>(timeSigNumerator);
+
+    // Check if grid interval aligns with bar and beat boundaries
+    bool alignsWithBars = GridConstants::gridAlignsWithBars(intervalBeats, barLengthBeats);
+    bool alignsWithBeats = GridConstants::gridAlignsWithBeats(intervalBeats);
+    bool gridAligned = alignsWithBars && alignsWithBeats;
+
+    int labelY = LABEL_MARGIN;
+    int labelHeight = height - TICK_HEIGHT_MAJOR - LABEL_MARGIN * 2;
+    int mediumTickHeight = TICK_HEIGHT_MAJOR * 2 / 3;
+
+    // Determine bar label interval (show every Nth bar when zoomed out)
+    int barLabelInterval = 1;
+    if (pixelsPerBar < 40)
+        barLabelInterval = 8;
+    else if (pixelsPerBar < 60)
+        barLabelInterval = 4;
+    else if (pixelsPerBar < 90)
+        barLabelInterval = 2;
+
+    int currentScrollOffset = linkedViewport ? linkedViewport->getViewPositionX() : scrollOffset;
+    double barOriginBeats = barOriginSeconds * tempo / 60.0;
+
+    double firstVisibleBeat = (currentScrollOffset - leftPadding) / zoom + barOriginBeats;
+    if (firstVisibleBeat < barOriginBeats)
+        firstVisibleBeat = barOriginBeats;
+
+    long long startStep =
+        static_cast<long long>(std::floor((firstVisibleBeat - barOriginBeats) / intervalBeats));
+    if (startStep < 0)
+        startStep = 0;
+
+    double totalTimelineBeats = timelineLength * tempo / 60.0;
+
+    // Pass 1: Draw grid ticks
+    for (long long step = startStep;; ++step) {
+        double beat = barOriginBeats + step * intervalBeats;
+        if (beat > barOriginBeats + totalTimelineBeats)
+            break;
+
+        int x = static_cast<int>(beat * zoom) - currentScrollOffset + leftPadding;
+        if (x > width)
+            break;
+        if (x < 0)
+            continue;
+
+        if (gridAligned) {
+            // Grid aligns with musical structure — classify normally
+            double beatsFromOrigin = step * intervalBeats;
+            int bar = static_cast<int>(beatsFromOrigin / timeSigNumerator) + 1;
+            double beatsInBar = std::fmod(beatsFromOrigin, barLengthBeats);
+            if (beatsInBar < 0)
+                beatsInBar += timeSigNumerator;
+
+            auto [isBarStart, isBeatStart] =
+                GridConstants::classifyBeatPosition(beatsFromOrigin, barLengthBeats);
+
+            if (beatsInBar > (barLengthBeats - 0.001))
+                bar += 1;
+
+            int beatInBar = isBarStart ? 1 : (static_cast<int>(beatsInBar) + 1);
+
+            // Tick drawing
+            if (isBarStart) {
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.drawVerticalLine(x, static_cast<float>(height - TICK_HEIGHT_MAJOR),
+                                   static_cast<float>(height));
+            } else if (isBeatStart) {
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
+                g.drawVerticalLine(x, static_cast<float>(height - mediumTickHeight),
+                                   static_cast<float>(height));
+            } else {
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                g.drawVerticalLine(x, static_cast<float>(height - TICK_HEIGHT_MINOR),
+                                   static_cast<float>(height));
+            }
+
+            // Label drawing
+            double subdivInBeat = std::fmod(beatsInBar, 1.0);
+            int subdivsPerBeat = std::max(1, static_cast<int>(std::round(1.0 / intervalBeats)));
+            int subdivIndex = static_cast<int>(std::round(subdivInBeat * subdivsPerBeat)) + 1;
+            bool isPow2Subdiv = subdivsPerBeat > 0 && (subdivsPerBeat & (subdivsPerBeat - 1)) == 0;
+            bool isSubdivisionNotBeat = !isBeatStart && subdivIndex > 1 && isPow2Subdiv;
+
+            if (isBarStart && (bar - 1) % barLabelInterval == 0) {
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
+                g.drawText(juce::String(bar), x - 35, labelY, 70, labelHeight,
+                           juce::Justification::centred);
+            } else if (isBeatStart && !isBarStart && pixelsPerBeat >= 30) {
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.setFont(FontManager::getInstance().getUIFont(10.0f));
+                g.drawText(juce::String(bar) + "." + juce::String(beatInBar), x - 25, labelY, 50,
+                           labelHeight, juce::Justification::centred);
+            } else if (isSubdivisionNotBeat && pixelsPerSubdiv >= 18) {
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                g.setFont(FontManager::getInstance().getUIFont(8.0f));
+                g.drawText(juce::String(bar) + "." + juce::String(beatInBar) + "." +
+                               juce::String(subdivIndex),
+                           x - 30, labelY + 2, 60, labelHeight, juce::Justification::centred);
+            }
+        } else {
+            // Grid doesn't align — draw minor ticks only
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+            g.drawVerticalLine(x, static_cast<float>(height - TICK_HEIGHT_MINOR),
+                               static_cast<float>(height));
+        }
+    }
+
+    // Pass 2: For non-aligned grids, draw bar/beat reference ticks and labels on top
+    if (!gridAligned) {
+        // Find first visible beat boundary
+        long long startBeatStep =
+            static_cast<long long>(std::floor((firstVisibleBeat - barOriginBeats)));
+        if (startBeatStep < 0)
+            startBeatStep = 0;
+
+        for (long long beatStep = startBeatStep;; ++beatStep) {
+            double beat = barOriginBeats + static_cast<double>(beatStep);
+            if (beat > barOriginBeats + totalTimelineBeats)
+                break;
+
+            int x = static_cast<int>(beat * zoom) - currentScrollOffset + leftPadding;
+            if (x > width)
+                break;
+            if (x < 0)
+                continue;
+
+            double beatsFromOrigin = static_cast<double>(beatStep);
+            double barRemainder = std::fmod(beatsFromOrigin, barLengthBeats);
+            bool isBarStart = barRemainder < 0.001;
+            int bar = static_cast<int>(beatsFromOrigin / timeSigNumerator) + 1;
+            int beatInBar = static_cast<int>(barRemainder) + 1;
+
+            if (isBarStart) {
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.drawVerticalLine(x, static_cast<float>(height - TICK_HEIGHT_MAJOR),
+                                   static_cast<float>(height));
+                if ((bar - 1) % barLabelInterval == 0) {
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                    g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
+                    g.drawText(juce::String(bar), x - 35, labelY, 70, labelHeight,
+                               juce::Justification::centred);
+                }
+            } else {
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
+                g.drawVerticalLine(x, static_cast<float>(height - mediumTickHeight),
+                                   static_cast<float>(height));
+                if (pixelsPerBeat >= 30) {
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                    g.setFont(FontManager::getInstance().getUIFont(10.0f));
+                    g.drawText(juce::String(bar) + "." + juce::String(beatInBar), x - 25, labelY,
+                               50, labelHeight, juce::Justification::centred);
                 }
             }
         }
@@ -445,6 +595,20 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             float fx = static_cast<float>(phaseX);
             flag.addTriangle(fx - 5.0f, 2.0f, fx + 5.0f, 2.0f, fx, 10.0f);
             g.fillPath(flag);
+        }
+    }
+
+    // Draw edit cursor line (blinking white)
+    if (editCursorPosition_ >= 0.0 && editCursorVisible_) {
+        double displayTime =
+            relativeMode ? (editCursorPosition_ - timeOffset) : editCursorPosition_;
+        int cursorX = timeToPixel(displayTime);
+        if (cursorX >= 0 && cursorX <= width) {
+            g.setColour(juce::Colours::black.withAlpha(0.5f));
+            g.drawLine(float(cursorX - 1), 0.f, float(cursorX - 1), float(height), 1.f);
+            g.drawLine(float(cursorX + 1), 0.f, float(cursorX + 1), float(height), 1.f);
+            g.setColour(juce::Colours::white);
+            g.drawLine(float(cursorX), 0.f, float(cursorX), float(height), 2.f);
         }
     }
 

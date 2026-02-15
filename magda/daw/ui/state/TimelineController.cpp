@@ -787,7 +787,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
         // First pass: update all seconds from beats
         std::vector<ClipId> updatedClipIds;
         for (const auto& clip : allClips) {
-            if (clip.autoTempo && clip.type == ClipType::Audio) {
+            if (clip.type == ClipType::MIDI || (clip.autoTempo && clip.type == ClipType::Audio)) {
                 auto* mutableClip = clipManager.getClip(clip.id);
                 if (!mutableClip) {
                     continue;
@@ -808,6 +808,12 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
                     magda::TimelineUtils::beatsToSeconds(mutableClip->startBeats, newBpm);
                 mutableClip->length =
                     magda::TimelineUtils::beatsToSeconds(mutableClip->lengthBeats, newBpm);
+
+                // Keep loopLength in sync for MIDI clips
+                if (mutableClip->type == ClipType::MIDI && mutableClip->loopLengthBeats > 0.0) {
+                    mutableClip->loopLength =
+                        magda::TimelineUtils::beatsToSeconds(mutableClip->loopLengthBeats, newBpm);
+                }
 
                 updatedClipIds.push_back(clip.id);
             }
@@ -874,14 +880,31 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetGridQuantizeEvent& e) {
     auto& gq = state.display.gridQuantize;
-    if (gq.autoGrid == e.autoGrid && gq.numerator == e.numerator &&
-        gq.denominator == e.denominator) {
+
+    int newNum = e.numerator;
+    int newDen = e.denominator;
+
+    // When switching from auto to manual, seed from the last auto-computed value
+    if (gq.autoGrid && !e.autoGrid) {
+        if (gq.autoEffectiveDenominator > 0) {
+            // Note fraction (e.g. 1/8, 1/16)
+            newNum = gq.autoEffectiveNumerator;
+            newDen = gq.autoEffectiveDenominator;
+        } else {
+            // Bar multiple — convert to note fraction using time signature
+            // e.g. 1 bar in 4/4 → 4/1, 2 bars in 4/4 → 8/1
+            newNum = gq.autoEffectiveNumerator * state.tempo.timeSignatureNumerator;
+            newDen = 1;
+        }
+    }
+
+    if (gq.autoGrid == e.autoGrid && gq.numerator == newNum && gq.denominator == newDen) {
         return ChangeFlags::None;
     }
 
     gq.autoGrid = e.autoGrid;
-    gq.numerator = e.numerator;
-    gq.denominator = e.denominator;
+    gq.numerator = newNum;
+    gq.denominator = newDen;
     return ChangeFlags::Display;
 }
 

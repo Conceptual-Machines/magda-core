@@ -906,124 +906,149 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
         double secondsPerBeat = 60.0 / tempoBPM;
         double secondsPerBar = secondsPerBeat * timeSignatureNumerator;
 
-        // Define musical intervals from 1/512 to 1/4 note
-        // Beat fractions: 1/512, 1/256, 1/128, 1/64, 1/32, 1/16, 1/8, 1/4
-        const double beatFractions[] = {0.0078125, 0.015625, 0.03125, 0.0625,
-                                        0.125,     0.25,     0.5,     1.0};
-        const int barMultiples[] = {1, 2, 4, 8, 16, 32};
-
-        // Find appropriate tick interval based on zoom level
-        double markerIntervalBeats = 1.0;  // Default to quarter note
-        bool foundInterval = false;
-
-        // First try beat subdivisions
-        for (double fraction : beatFractions) {
-            double intervalSeconds = secondsPerBeat * fraction;
-            if (timeDurationToPixels(intervalSeconds) >= minPixelSpacing) {
-                markerIntervalBeats = fraction;
-                foundInterval = true;
-                break;
-            }
-        }
-
-        // If no beat subdivision fits, use bar multiples (for zoomed out views)
-        if (!foundInterval) {
-            for (int mult : barMultiples) {
-                double intervalSeconds = secondsPerBar * mult;
-                if (timeDurationToPixels(intervalSeconds) >= minPixelSpacing) {
-                    markerIntervalBeats = timeSignatureNumerator * mult;
-                    break;
-                }
-            }
-        }
+        double pixelsPerBeatZoom = timeDurationToPixels(secondsPerBeat);
+        double markerIntervalBeats = GridConstants::computeGridInterval(
+            gridQuantize, pixelsPerBeatZoom, timeSignatureNumerator, minPixelSpacing);
 
         double markerIntervalSeconds = secondsPerBeat * markerIntervalBeats;
+        double barLengthBeats = static_cast<double>(timeSignatureNumerator);
 
-        // Draw ticks and labels
+        // Check if grid interval aligns with bar and beat boundaries
+        bool alignsWithBars =
+            GridConstants::gridAlignsWithBars(markerIntervalBeats, barLengthBeats);
+        bool alignsWithBeats = GridConstants::gridAlignsWithBeats(markerIntervalBeats);
+        bool gridAligned = alignsWithBars && alignsWithBeats;
+
+        double pixelsPerBeat = timeDurationToPixels(secondsPerBeat);
+        double pixelsPerBar = timeDurationToPixels(secondsPerBar);
+        double pixelsPerSubdiv = timeDurationToPixels(markerIntervalSeconds);
+
+        // Determine bar label interval (show every Nth bar when zoomed out)
+        int barLabelInterval = 1;
+        if (pixelsPerBar < 40) {
+            barLabelInterval = 8;
+        } else if (pixelsPerBar < 60) {
+            barLabelInterval = 4;
+        } else if (pixelsPerBar < 90) {
+            barLabelInterval = 2;
+        }
+
+        // Pass 1: Draw grid ticks
         for (double time = 0.0; time <= timelineLength; time += markerIntervalSeconds) {
             int x = timeToPixel(time) + LEFT_PADDING;
-            if (x >= 0 && x < getWidth()) {
+            if (x < 0 || x >= getWidth())
+                continue;
+
+            bool isAtLoopMarker = (loopStartTime >= 0 && loopEndTime > loopStartTime) &&
+                                  (timeToPixel(time) == timeToPixel(loopStartTime) ||
+                                   timeToPixel(time) == timeToPixel(loopEndTime));
+            if (isAtLoopMarker)
+                continue;
+
+            if (gridAligned) {
+                // Grid aligns — classify and draw with hierarchy
                 double totalBeats = time / secondsPerBeat;
+                double beatInBarFractional = std::fmod(totalBeats, barLengthBeats);
+
+                auto [isBarStart, isBeatStart] =
+                    GridConstants::classifyBeatPosition(beatInBarFractional, barLengthBeats);
+
                 int bar = static_cast<int>(totalBeats / timeSignatureNumerator) + 1;
-                double beatInBarFractional = std::fmod(totalBeats, timeSignatureNumerator);
                 int beatInBar = static_cast<int>(beatInBarFractional) + 1;
-
-                bool isBarStart = beatInBarFractional < 0.001;
-                bool isBeatStart = std::fmod(beatInBarFractional, 1.0) < 0.001;
-
-                // Skip tick if it's at a loop marker position (loop markers draw their own ticks)
-                bool isAtLoopMarker = (loopStartTime >= 0 && loopEndTime > loopStartTime) &&
-                                      (timeToPixel(time) == timeToPixel(loopStartTime) ||
-                                       timeToPixel(time) == timeToPixel(loopEndTime));
+                if (beatInBarFractional > (barLengthBeats - 0.001)) {
+                    bar += 1;
+                    beatInBar = 1;
+                }
 
                 bool isMajor = isBarStart;
                 bool isMedium = !isBarStart && isBeatStart;
                 int tickHeight = isMajor ? majorTickHeight
                                          : (isMedium ? (majorTickHeight * 2 / 3) : minorTickHeight);
 
-                // Draw tick (unless at loop marker position)
-                // Use drawLine with 1.0f width to match grid lines in TrackContentPanel
-                if (!isAtLoopMarker) {
-                    if (isMajor) {
-                        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-                    } else if (isMedium) {
-                        g.setColour(
-                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
-                    } else {
-                        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
-                    }
-                    g.drawLine(static_cast<float>(x), static_cast<float>(rulerBottom - tickHeight),
-                               static_cast<float>(x), static_cast<float>(rulerBottom), 1.0f);
+                if (isMajor) {
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                } else if (isMedium) {
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
+                } else {
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
                 }
+                g.drawLine(static_cast<float>(x), static_cast<float>(rulerBottom - tickHeight),
+                           static_cast<float>(x), static_cast<float>(rulerBottom), 1.0f);
 
-                // Draw labels with three distinct styles: bars, beats, subdivisions
-                // Calculate pixel spacings for label decisions
-                double pixelsPerBeat = timeDurationToPixels(secondsPerBeat);
-                double pixelsPerBar = timeDurationToPixels(secondsPerBar);
-                double pixelsPerSubdiv = timeDurationToPixels(markerIntervalSeconds);
-
-                // Determine bar label interval (show every Nth bar when zoomed out)
-                int barLabelInterval = 1;
-                if (pixelsPerBar < 40) {
-                    barLabelInterval = 8;
-                } else if (pixelsPerBar < 60) {
-                    barLabelInterval = 4;
-                } else if (pixelsPerBar < 90) {
-                    barLabelInterval = 2;
-                }
-
-                // Calculate subdivision within beat (1-indexed position)
+                // Labels
                 double subdivInBeat = std::fmod(beatInBarFractional, 1.0);
                 int subdivsPerBeat = static_cast<int>(std::round(1.0 / markerIntervalBeats));
                 int subdivIndex = static_cast<int>(std::round(subdivInBeat * subdivsPerBeat)) + 1;
-
-                // Subdivision 1 is the beat itself, so only show subdiv labels for 2+
-                bool isSubdivisionNotBeat = !isBeatStart && subdivIndex > 1;
+                bool isPow2Subdiv =
+                    subdivsPerBeat > 0 && (subdivsPerBeat & (subdivsPerBeat - 1)) == 0;
+                bool isSubdivisionNotBeat = !isBeatStart && subdivIndex > 1 && isPow2Subdiv;
 
                 if (isBarStart && (bar - 1) % barLabelInterval == 0) {
-                    // === BAR LABEL: Large, bright ===
-                    // Format: "1", "2", "3"
                     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
                     g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
                     g.drawText(juce::String(bar), x - 35, labelY, 70, labelHeight,
                                juce::Justification::centred);
                 } else if (isBeatStart && !isBarStart && pixelsPerBeat >= 50) {
-                    // === BEAT LABEL: Medium, secondary color ===
-                    // Format: "1.2", "1.3", "1.4"
                     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
                     g.setFont(FontManager::getInstance().getUIFont(10.0f));
-                    juce::String labelStr = juce::String(bar) + "." + juce::String(beatInBar);
-                    g.drawText(labelStr, x - 25, labelY, 50, labelHeight,
-                               juce::Justification::centred);
+                    g.drawText(juce::String(bar) + "." + juce::String(beatInBar), x - 25, labelY,
+                               50, labelHeight, juce::Justification::centred);
                 } else if (isSubdivisionNotBeat && pixelsPerSubdiv >= 30) {
-                    // === SUBDIVISION LABEL: Small, dim ===
-                    // Format: "1.1.2", "1.1.3", "1.2.2"
                     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
                     g.setFont(FontManager::getInstance().getUIFont(8.0f));
-                    juce::String labelStr = juce::String(bar) + "." + juce::String(beatInBar) +
-                                            "." + juce::String(subdivIndex);
-                    g.drawText(labelStr, x - 30, labelY + 2, 60, labelHeight,
-                               juce::Justification::centred);
+                    g.drawText(juce::String(bar) + "." + juce::String(beatInBar) + "." +
+                                   juce::String(subdivIndex),
+                               x - 30, labelY + 2, 60, labelHeight, juce::Justification::centred);
+                }
+            } else {
+                // Grid doesn't align with bars/beats — draw minor ticks only
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                g.drawLine(static_cast<float>(x), static_cast<float>(rulerBottom - minorTickHeight),
+                           static_cast<float>(x), static_cast<float>(rulerBottom), 1.0f);
+            }
+        }
+
+        // Pass 2: For non-aligned grids, draw bar/beat reference ticks and labels on top
+        if (!gridAligned) {
+            for (double beat = 0.0; beat <= timelineLength / secondsPerBeat; beat += 1.0) {
+                double time = beat * secondsPerBeat;
+                int x = timeToPixel(time) + LEFT_PADDING;
+                if (x < 0 || x >= getWidth())
+                    continue;
+
+                bool isAtLoopMarker = (loopStartTime >= 0 && loopEndTime > loopStartTime) &&
+                                      (timeToPixel(time) == timeToPixel(loopStartTime) ||
+                                       timeToPixel(time) == timeToPixel(loopEndTime));
+                if (isAtLoopMarker)
+                    continue;
+
+                double barRemainder = std::fmod(beat, barLengthBeats);
+                bool isBarStart = barRemainder < 0.001;
+                int bar = static_cast<int>(beat / timeSignatureNumerator) + 1;
+                int beatInBar = static_cast<int>(barRemainder) + 1;
+
+                if (isBarStart) {
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                    g.drawLine(static_cast<float>(x),
+                               static_cast<float>(rulerBottom - majorTickHeight),
+                               static_cast<float>(x), static_cast<float>(rulerBottom), 1.0f);
+                    if ((bar - 1) % barLabelInterval == 0) {
+                        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                        g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
+                        g.drawText(juce::String(bar), x - 35, labelY, 70, labelHeight,
+                                   juce::Justification::centred);
+                    }
+                } else {
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
+                    int mediumTickH = majorTickHeight * 2 / 3;
+                    g.drawLine(static_cast<float>(x), static_cast<float>(rulerBottom - mediumTickH),
+                               static_cast<float>(x), static_cast<float>(rulerBottom), 1.0f);
+                    if (pixelsPerBeat >= 50) {
+                        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                        g.setFont(FontManager::getInstance().getUIFont(10.0f));
+                        g.drawText(juce::String(bar) + "." + juce::String(beatInBar), x - 25,
+                                   labelY, 50, labelHeight, juce::Justification::centred);
+                    }
                 }
             }
         }

@@ -36,6 +36,12 @@ class TimeRuler : public juce::Component, private juce::Timer {
         return timeSigNumerator;
     }
 
+    // Grid resolution for subdivision alignment (in beats, e.g. 0.25 = 1/16)
+    void setGridResolution(double beatsPerGridLine);
+    double getGridResolution() const {
+        return gridResolutionBeats;
+    }
+
     // Time offset for piano roll (absolute vs relative mode)
     // When set, displayed times are offset by this amount (e.g., clip starts at bar 5)
     void setTimeOffset(double offsetSeconds);
@@ -79,6 +85,9 @@ class TimeRuler : public juce::Component, private juce::Timer {
         return playheadPosition;
     }
 
+    // Edit cursor position (for drawing blinking edit cursor line)
+    void setEditCursorPosition(double positionSeconds, bool blinkVisible);
+
     // Left padding (for alignment - can be set to 0 for piano roll)
     void setLeftPadding(int padding);
     int getLeftPadding() const {
@@ -119,6 +128,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     double tempo = 120.0;  // BPM
     int timeSigNumerator = 4;
     int timeSigDenominator = 4;
+    double gridResolutionBeats = 0.0;  // 0 = auto-compute from zoom
 
     // Offset and relative mode (for piano roll)
     double timeOffset = 0.0;        // seconds - absolute position of content start
@@ -128,6 +138,10 @@ class TimeRuler : public juce::Component, private juce::Timer {
     double clipContentOffset =
         0.0;  // seconds - source offset in timeline seconds (shifts boundaries)
     double playheadPosition = -1.0;  // seconds - current playback position (-1 = not playing)
+
+    // Edit cursor
+    double editCursorPosition_ = -1.0;  // seconds - edit cursor position (-1 = hidden)
+    bool editCursorVisible_ = true;     // blink state
 
     // Loop region
     double loopOffset = 0.0;   // seconds - loop start offset within clip

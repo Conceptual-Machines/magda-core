@@ -24,6 +24,20 @@ class MidiEditorViewport : public juce::Viewport {
     std::function<void(int, int)> onScrolled;
     std::vector<juce::Component*> componentsToRepaint;
 
+    bool keyPressed(const juce::KeyPress& key) override {
+        // Alt/Option + arrow keys: allow viewport scrolling
+        // Plain arrow keys: don't handle, let grid component use them for note movement
+        if (key.getKeyCode() == juce::KeyPress::upKey ||
+            key.getKeyCode() == juce::KeyPress::downKey ||
+            key.getKeyCode() == juce::KeyPress::leftKey ||
+            key.getKeyCode() == juce::KeyPress::rightKey) {
+            if (key.getModifiers().isAltDown())
+                return juce::Viewport::keyPressed(key);
+            return false;
+        }
+        return juce::Viewport::keyPressed(key);
+    }
+
     void visibleAreaChanged(const juce::Rectangle<int>& newVisibleArea) override {
         juce::Viewport::visibleAreaChanged(newVisibleArea);
         if (onScrolled)
@@ -123,11 +137,30 @@ class MidiEditorContent : public PanelContent,
     virtual void setGridPixelsPerBeat(double ppb) = 0;
     virtual void setGridPlayheadPosition(double position) = 0;
 
+    // --- Edit cursor (subclass must forward to its grid component) ---
+    virtual void setGridEditCursorPosition(double positionSeconds, bool visible) = 0;
+
     // --- Optional virtual hooks ---
     virtual void onScrollPositionChanged(int /*scrollX*/, int /*scrollY*/) {}
     virtual void onGridResolutionChanged() {}
 
-    // Push auto-grid display values to BottomPanel (call from zoom methods only)
+    // --- Edit cursor blink state ---
+    bool editCursorBlinkVisible_ = true;
+
+    // Inner timer for edit cursor blink (avoids juce::Timer diamond with subclasses)
+    class BlinkTimer : public juce::Timer {
+      public:
+        std::function<void()> callback;
+        void timerCallback() override {
+            if (callback)
+                callback();
+        }
+    };
+    BlinkTimer blinkTimer_;
+
+  public:
+    // Callback for BottomPanel to update num/den display when auto-grid changes
+    std::function<void(int numerator, int denominator)> onAutoGridDisplayChanged;
 };
 
 }  // namespace magda::daw::ui

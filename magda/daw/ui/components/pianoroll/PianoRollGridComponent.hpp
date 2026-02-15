@@ -10,6 +10,7 @@
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
 #include "core/ClipTypes.hpp"
+#include "core/MidiNoteCommands.hpp"
 
 namespace magda {
 
@@ -38,6 +39,8 @@ class PianoRollGridComponent : public juce::Component,
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
 
     // Keyboard handling
@@ -119,6 +122,9 @@ class PianoRollGridComponent : public juce::Component,
         return playheadPosition_;
     }
 
+    // Edit cursor position (for drawing blinking edit cursor line)
+    void setEditCursorPosition(double positionSeconds, bool blinkVisible);
+
     // Grid snap settings
     void setGridResolutionBeats(double beats);
     double getGridResolutionBeats() const {
@@ -175,6 +181,13 @@ class PianoRollGridComponent : public juce::Component,
     std::function<void(ClipId, size_t, double, bool)>
         onNoteDragging;  // clipId, index, previewBeat, isDragging
 
+    // Callbacks for edit operations from context menu
+    std::function<void(ClipId, std::vector<size_t>, QuantizeMode)> onQuantizeNotes;
+    std::function<void(ClipId, std::vector<size_t>)> onCopyNotes;
+    std::function<void(ClipId)> onPasteNotes;
+    std::function<void(ClipId, std::vector<size_t>)> onDuplicateNotes;
+    std::function<void(ClipId, std::vector<size_t>)> onDeleteNotes;
+
   private:
     ClipId clipId_ = INVALID_CLIP_ID;      // Primary selected clip (for backward compatibility)
     std::vector<ClipId> selectedClipIds_;  // All selected clips (editable)
@@ -182,8 +195,8 @@ class PianoRollGridComponent : public juce::Component,
     TrackId trackId_ = INVALID_TRACK_ID;
 
     // Note range
-    static constexpr int MIN_NOTE = 21;   // A0
-    static constexpr int MAX_NOTE = 108;  // C8
+    static constexpr int MIN_NOTE = 0;    // C-2
+    static constexpr int MAX_NOTE = 127;  // G9
     static constexpr int NOTE_COUNT = MAX_NOTE - MIN_NOTE + 1;
 
     // Left padding (0 by default for piano roll since keyboard provides context)
@@ -207,6 +220,10 @@ class PianoRollGridComponent : public juce::Component,
     // Playhead position (in seconds)
     double playheadPosition_ = -1.0;  // -1 = not playing, hide playhead
 
+    // Edit cursor position (in seconds)
+    double editCursorPosition_ = -1.0;  // -1 = hidden
+    bool editCursorVisible_ = true;     // blink state
+
     // Loop region (in beats)
     double loopOffsetBeats_ = 0.0;
     double loopLengthBeats_ = 0.0;
@@ -217,6 +234,12 @@ class PianoRollGridComponent : public juce::Component,
 
     // Currently selected note index (or -1 for none)
     int selectedNoteIndex_ = -1;
+
+    // Edit cursor click on grid line
+    bool isEditCursorClick_ = false;
+    static constexpr int GRID_LINE_HIT_TOLERANCE = 3;
+    bool isNearGridLine(int mouseX) const;
+    double getNearestGridLineBeat(int mouseX) const;
 
     // Drag selection (rubber band) state
     bool isDragSelecting_ = false;
