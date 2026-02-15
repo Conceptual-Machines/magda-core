@@ -11,7 +11,8 @@ enum class TrackType {
     MIDI,        // MIDI only, routes to other tracks
     Group,       // Contains child tracks, routing hub
     Aux,         // Receives from sends
-    Master       // Final output
+    Master,      // Final output
+    MultiOut     // Output track for multi-out instrument pair
 };
 
 /**
@@ -31,6 +32,8 @@ inline const char* getTrackTypeName(TrackType type) {
             return "Aux";
         case TrackType::Master:
             return "Master";
+        case TrackType::MultiOut:
+            return "MultiOut";
     }
     return "Unknown";
 }
@@ -39,7 +42,7 @@ inline const char* getTrackTypeName(TrackType type) {
  * @brief Check if track type can have children
  */
 inline bool canHaveChildren(TrackType type) {
-    return type == TrackType::Group;
+    return type == TrackType::Group || type == TrackType::Instrument;
 }
 
 }  // namespace magda

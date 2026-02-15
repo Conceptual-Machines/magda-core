@@ -37,6 +37,30 @@ class InstrumentRackManager {
     te::Plugin::Ptr wrapInstrument(te::Plugin::Ptr instrument);
 
     /**
+     * @brief Wrap a multi-output instrument in a RackType with all output pins exposed
+     * @param instrument The instrument plugin to wrap
+     * @param numOutputChannels Total number of output channels (e.g. 32 for 16 stereo pairs)
+     * @return The main RackInstance plugin (outputs 1,2) to insert on the track
+     */
+    te::Plugin::Ptr wrapMultiOutInstrument(te::Plugin::Ptr instrument, int numOutputChannels);
+
+    /**
+     * @brief Create a RackInstance for a specific output pair from a multi-out instrument
+     * @param deviceId The MAGDA device ID of the instrument
+     * @param pairIndex 0-based pair index (1 = outputs 3,4; 2 = outputs 5,6; etc.)
+     * @return The RackInstance plugin to insert on the output track
+     */
+    te::Plugin::Ptr createOutputInstance(DeviceId deviceId, int pairIndex, int firstPin,
+                                         int numChannels);
+
+    /**
+     * @brief Remove a RackInstance for a specific output pair
+     * @param deviceId The MAGDA device ID of the instrument
+     * @param pairIndex The output pair index to remove
+     */
+    void removeOutputInstance(DeviceId deviceId, int pairIndex);
+
+    /**
      * @brief Unwrap an instrument when it's removed - cleans up the RackType
      * @param deviceId The MAGDA device ID of the instrument
      */
@@ -50,7 +74,8 @@ class InstrumentRackManager {
      * @param rackInstance The RackInstance plugin on the track
      */
     void recordWrapping(DeviceId deviceId, te::RackType::Ptr rackType, te::Plugin::Ptr innerPlugin,
-                        te::Plugin::Ptr rackInstance);
+                        te::Plugin::Ptr rackInstance, bool isMultiOut = false,
+                        int numOutputChannels = 2);
 
     /**
      * @brief Get the inner instrument plugin for parameter/window access
@@ -91,7 +116,10 @@ class InstrumentRackManager {
     struct WrappedInstrument {
         te::RackType::Ptr rackType;
         te::Plugin::Ptr innerPlugin;   // The actual synth
-        te::Plugin::Ptr rackInstance;  // The RackInstance on the track
+        te::Plugin::Ptr rackInstance;  // The RackInstance on the main track
+        bool isMultiOut = false;
+        int numOutputChannels = 2;
+        std::map<int, te::Plugin::Ptr> outputInstances;  // pairIndex → RackInstance
     };
 
     std::map<DeviceId, WrappedInstrument> wrapped_;

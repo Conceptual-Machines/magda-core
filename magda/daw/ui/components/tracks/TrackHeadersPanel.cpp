@@ -594,7 +594,8 @@ void TrackHeadersPanel::tracksChanged() {
         auto header = std::make_unique<TrackHeader>(track->name);
         header->trackId = trackId;
         header->depth = depth;
-        header->isGroup = track->isGroup();
+        header->isGroup = track->isGroup() || track->hasChildren();
+        header->isMultiOut = (track->type == TrackType::MultiOut);
         header->isCollapsed = track->isCollapsedIn(currentViewMode_);
         header->muted = track->muted;
         header->solo = track->soloed;
@@ -625,8 +626,8 @@ void TrackHeadersPanel::tracksChanged() {
         addAndMakeVisible(*header->meterComponent);
         addAndMakeVisible(*header->midiIndicator);
 
-        // Add collapse button for groups
-        if (header->isGroup) {
+        // Add collapse button for groups and tracks with multi-out children
+        if (header->isGroup || track->hasChildren()) {
             header->collapseButton->setButtonText(header->isCollapsed ? "▶" : "▼");
             header->collapseButton->onClick = [this, trackId]() { handleCollapseToggle(trackId); };
             addAndMakeVisible(*header->collapseButton);
@@ -641,8 +642,8 @@ void TrackHeadersPanel::tracksChanged() {
 
         trackHeaders.push_back(std::move(header));
 
-        // Add children if group is not collapsed
-        if (track->isGroup() && !track->isCollapsedIn(currentViewMode_)) {
+        // Add children if group/instrument is not collapsed
+        if (track->hasChildren() && !track->isCollapsedIn(currentViewMode_)) {
             for (auto childId : track->childIds) {
                 addTrackRecursive(childId, depth + 1);
             }
@@ -696,6 +697,22 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
 
         // Update routing selectors to match track state
         updateRoutingSelectorFromTrack(header, track);
+
+        // MultiOut children: show where audio actually goes (parent's output destination)
+        if (header.isMultiOut && track->hasParent()) {
+            juce::String outputName = "Master";
+            if (auto* parent = TrackManager::getInstance().getTrack(track->parentId)) {
+                if (parent->hasParent()) {
+                    if (auto* group = TrackManager::getInstance().getTrack(parent->parentId)) {
+                        if (group->isGroup())
+                            outputName = group->name;
+                    }
+                }
+            }
+            header.outputSelector->setOptions({{1, outputName}});
+            header.outputSelector->setSelectedId(1);
+            header.outputSelector->setEnabled(false);
+        }
 
         // Update send labels from track data
         if (track->sends.size() == header.sendLabels.size()) {
@@ -1283,9 +1300,13 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 buttonsRow.removeFromLeft(buttonGap);
                 header.soloButton->setBounds(buttonsRow.removeFromLeft(smallButtonSize));
                 buttonsRow.removeFromLeft(buttonGap);
-                header.recordButton->setBounds(buttonsRow.removeFromLeft(smallButtonSize));
-                header.recordButton->setVisible(true);
-                buttonsRow.removeFromLeft(buttonGap);
+                if (!header.isMultiOut) {
+                    header.recordButton->setBounds(buttonsRow.removeFromLeft(smallButtonSize));
+                    header.recordButton->setVisible(true);
+                    buttonsRow.removeFromLeft(buttonGap);
+                } else {
+                    header.recordButton->setVisible(false);
+                }
                 header.automationButton->setBounds(buttonsRow.removeFromLeft(smallButtonSize));
                 header.automationButton->setVisible(true);
 
@@ -1323,13 +1344,18 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 
                 tcpArea.removeFromTop(rowGap);
 
-                // Input row: [Audio In] [MIDI In]
+                // Input row: [Audio In] [MIDI In] — hidden for multi-out child tracks
                 auto inputRow = tcpArea.removeFromTop(contentRowHeight);
-                header.audioInputSelector->setBounds(inputRow.removeFromLeft(dropdownWidth));
-                header.audioInputSelector->setVisible(true);
-                inputRow.removeFromLeft(spacing);
-                header.inputSelector->setBounds(inputRow.removeFromLeft(dropdownWidth));
-                header.inputSelector->setVisible(true);
+                if (!header.isMultiOut) {
+                    header.audioInputSelector->setBounds(inputRow.removeFromLeft(dropdownWidth));
+                    header.audioInputSelector->setVisible(true);
+                    inputRow.removeFromLeft(spacing);
+                    header.inputSelector->setBounds(inputRow.removeFromLeft(dropdownWidth));
+                    header.inputSelector->setVisible(true);
+                } else {
+                    header.audioInputSelector->setVisible(false);
+                    header.inputSelector->setVisible(false);
+                }
                 tcpArea.removeFromTop(rowGap);
 
                 // Output row: [Audio Out] [MIDI Out]
@@ -1348,9 +1374,13 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 row1.removeFromLeft(spacing);
                 header.soloButton->setBounds(row1.removeFromLeft(smallButtonSize));
                 row1.removeFromLeft(spacing);
-                header.recordButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                header.recordButton->setVisible(true);
-                row1.removeFromLeft(spacing);
+                if (!header.isMultiOut) {
+                    header.recordButton->setBounds(row1.removeFromLeft(smallButtonSize));
+                    header.recordButton->setVisible(true);
+                    row1.removeFromLeft(spacing);
+                } else {
+                    header.recordButton->setVisible(false);
+                }
                 header.automationButton->setBounds(row1.removeFromLeft(smallButtonSize));
                 header.automationButton->setVisible(true);
                 row1.removeFromLeft(spacing + 2);
@@ -1372,9 +1402,13 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 row1.removeFromLeft(spacing);
                 header.soloButton->setBounds(row1.removeFromLeft(smallButtonSize));
                 row1.removeFromLeft(spacing);
-                header.recordButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                header.recordButton->setVisible(true);
-                row1.removeFromLeft(spacing);
+                if (!header.isMultiOut) {
+                    header.recordButton->setBounds(row1.removeFromLeft(smallButtonSize));
+                    header.recordButton->setVisible(true);
+                    row1.removeFromLeft(spacing);
+                } else {
+                    header.recordButton->setVisible(false);
+                }
                 header.automationButton->setBounds(row1.removeFromLeft(smallButtonSize));
                 header.automationButton->setVisible(true);
                 row1.removeFromLeft(spacing + 2);
@@ -1527,7 +1561,7 @@ void TrackHeadersPanel::setTrackPan(int trackIndex, float pan) {
 void TrackHeadersPanel::handleCollapseToggle(TrackId trackId) {
     auto& trackManager = TrackManager::getInstance();
     const auto* track = trackManager.getTrack(trackId);
-    if (track && track->isGroup()) {
+    if (track && (track->isGroup() || track->hasChildren())) {
         bool currentlyCollapsed = track->isCollapsedIn(currentViewMode_);
         trackManager.setTrackCollapsed(trackId, currentViewMode_, !currentlyCollapsed);
     }
@@ -1548,6 +1582,15 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     // Track type info
     menu.addSectionHeader(track->name);
     menu.addSeparator();
+
+    // MultiOut tracks have limited context menu (can't delete/move independently)
+    if (track->type == TrackType::MultiOut) {
+        menu.addItem(0, "Output track (managed by parent instrument)", false, false);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(localAreaToGlobal(
+                               juce::Rectangle<int>(position.x, position.y, 1, 1))),
+                           nullptr);
+        return;
+    }
 
     // Group operations
     if (track->isGroup()) {

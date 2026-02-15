@@ -15,6 +15,28 @@ namespace magda {
 enum class PluginFormat { VST3, AU, VST, Internal };
 
 /**
+ * @brief Describes a single stereo output pair from a multi-output plugin
+ */
+struct MultiOutOutputPair {
+    int outputIndex = 0;                 // 0-based pair index (0 = main 1,2)
+    juce::String name;                   // From plugin channel names, e.g. "St.3-4"
+    bool active = false;                 // User activated this pair
+    TrackId trackId = INVALID_TRACK_ID;  // Output track created for this pair
+    int firstPin = 1;                    // 1-based rack output pin for left channel
+    int numChannels = 2;                 // 1=mono, 2=stereo
+};
+
+/**
+ * @brief Multi-output configuration for instruments with >2 output channels
+ */
+struct MultiOutConfig {
+    bool isMultiOut = false;
+    int totalOutputChannels = 0;
+    std::vector<MultiOutOutputPair> outputPairs;
+    bool mixerChildrenCollapsed = false;  // Collapse child tracks in mixer
+};
+
+/**
  * @brief Sidechain routing configuration for a plugin
  *
  * Allows a plugin (e.g., compressor) to receive audio or MIDI from another track
@@ -74,6 +96,9 @@ struct DeviceInfo {
     // Sidechain configuration (e.g., compressor key input)
     SidechainConfig sidechain;
     bool canSidechain = false;  // true if TE plugin supports sidechain input
+
+    // Multi-output configuration (for instruments with >2 output channels)
+    MultiOutConfig multiOut;
 
     // UI state
     int currentParameterPage = 0;  // Current parameter page (for multi-page param display)

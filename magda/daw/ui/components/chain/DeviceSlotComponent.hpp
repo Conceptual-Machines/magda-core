@@ -145,7 +145,8 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<magda::SvgButton> modButton_;
     std::unique_ptr<magda::SvgButton> macroButton_;
     TextSlider gainSlider_{TextSlider::Format::Decibels};
-    std::unique_ptr<juce::TextButton> scButton_;  // Sidechain source selector
+    std::unique_ptr<juce::TextButton> scButton_;        // Sidechain source selector
+    std::unique_ptr<magda::SvgButton> multiOutButton_;  // Multi-output routing
     std::unique_ptr<magda::SvgButton> uiButton_;
     std::unique_ptr<magda::SvgButton> onButton_;
 
@@ -172,6 +173,7 @@ class DeviceSlotComponent : public NodeComponent,
     void goToNextPage();
     void showSidechainMenu();    // Show popup menu for sidechain source selection
     void updateScButtonState();  // Update SC button appearance based on sidechain config
+    void showMultiOutMenu();     // Show popup menu for multi-output routing
 
     // Helper to check if this is an internal device
     bool isInternalDevice() const {

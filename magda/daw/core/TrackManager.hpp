@@ -148,6 +148,11 @@ class TrackManager {
      */
     void previewNote(TrackId trackId, int noteNumber, int velocity, bool isNoteOn);
 
+    // Multi-output management
+    TrackId activateMultiOutPair(TrackId parentTrackId, DeviceId deviceId, int pairIndex);
+    void deactivateMultiOutPair(TrackId parentTrackId, DeviceId deviceId, int pairIndex);
+    void deactivateAllMultiOutPairs(TrackId parentTrackId, DeviceId deviceId);
+
     // Access
     const std::vector<TrackInfo>& getTracks() const {
         return tracks_;

@@ -20,6 +20,7 @@ namespace magda {
 
 // Forward declarations
 namespace te = tracktion;
+struct TrackInfo;
 class TrackController;
 class PluginWindowBridge;
 class TransportStateManager;
@@ -174,6 +175,21 @@ class PluginManager {
      * @param plugin The TE plugin created for this device
      */
     void registerRackPluginProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    /**
+     * @brief Sync a multi-output track's plugin chain
+     * Creates/manages the RackInstance for the output pair on the TE track.
+     * @param trackId The multi-out track ID
+     * @param trackInfo The TrackInfo for the multi-out track
+     */
+    void syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInfo);
+
+    /**
+     * @brief Get the InstrumentRackManager for multi-output access
+     */
+    InstrumentRackManager& getInstrumentRackManager() {
+        return instrumentRackManager_;
+    }
 
     /**
      * @brief Get the RackSyncManager for rack audio routing

@@ -84,9 +84,18 @@ void TrackManager::deleteTrack(TrackId trackId) {
         }
     }
 
-    // If this is a group, recursively delete all children
-    if (track->isGroup()) {
-        // Copy the children list since we'll be modifying it
+    // Clean up multi-out pairs for any instruments on this track
+    for (const auto& element : track->chainElements) {
+        if (isDevice(element)) {
+            const auto& device = magda::getDevice(element);
+            if (device.multiOut.isMultiOut) {
+                deactivateAllMultiOutPairs(trackId, device.id);
+            }
+        }
+    }
+
+    // If this is a group or instrument with children, recursively delete all children
+    if (track->hasChildren()) {
         auto childrenCopy = track->childIds;
         for (auto childId : childrenCopy) {
             deleteTrack(childId);
@@ -101,6 +110,119 @@ void TrackManager::deleteTrack(TrackId trackId) {
         DBG("Deleted track: " << it->name << " (id=" << trackId << ")");
         tracks_.erase(it);
         notifyTracksChanged();
+    }
+}
+
+// =============================================================================
+// Multi-Output Management
+// =============================================================================
+
+TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId deviceId,
+                                           int pairIndex) {
+    auto* parentTrack = getTrack(parentTrackId);
+    if (!parentTrack)
+        return INVALID_TRACK_ID;
+
+    // Find the device
+    DeviceInfo* device = getDevice(parentTrackId, deviceId);
+    if (!device || !device->multiOut.isMultiOut)
+        return INVALID_TRACK_ID;
+
+    // Validate pair index
+    if (pairIndex < 0 || pairIndex >= static_cast<int>(device->multiOut.outputPairs.size()))
+        return INVALID_TRACK_ID;
+
+    auto& pair = device->multiOut.outputPairs[static_cast<size_t>(pairIndex)];
+
+    // Already active?
+    if (pair.active && pair.trackId != INVALID_TRACK_ID)
+        return pair.trackId;
+
+    // Create the output track
+    TrackId newTrackId = nextTrackId_++;
+
+    TrackInfo newTrack;
+    newTrack.id = newTrackId;
+    newTrack.type = TrackType::MultiOut;
+    newTrack.name = device->name + ": " + pair.name;
+    newTrack.colour = parentTrack->colour;
+    newTrack.parentId = parentTrackId;
+    newTrack.audioOutputDevice = "master";
+
+    // Set the multi-out link
+    newTrack.multiOutLink = MultiOutTrackLink{parentTrackId, deviceId, pairIndex};
+
+    tracks_.push_back(std::move(newTrack));
+
+    // Re-fetch pointers after push_back (vector reallocation invalidates them)
+    parentTrack = getTrack(parentTrackId);
+    device = getDevice(parentTrackId, deviceId);
+    auto& pairRef = device->multiOut.outputPairs[static_cast<size_t>(pairIndex)];
+
+    // Add to parent's children
+    parentTrack->childIds.push_back(newTrackId);
+
+    // Update the output pair state
+    pairRef.active = true;
+    pairRef.trackId = newTrackId;
+
+    DBG("TrackManager: Activated multi-out pair " << pairIndex << " for device " << deviceId
+                                                  << " → track " << newTrackId);
+
+    notifyTracksChanged();
+    return newTrackId;
+}
+
+void TrackManager::deactivateMultiOutPair(TrackId parentTrackId, DeviceId deviceId, int pairIndex) {
+    auto* parentTrack = getTrack(parentTrackId);
+    if (!parentTrack)
+        return;
+
+    DeviceInfo* device = getDevice(parentTrackId, deviceId);
+    if (!device || !device->multiOut.isMultiOut)
+        return;
+
+    if (pairIndex < 0 || pairIndex >= static_cast<int>(device->multiOut.outputPairs.size()))
+        return;
+
+    auto& pair = device->multiOut.outputPairs[static_cast<size_t>(pairIndex)];
+    if (!pair.active || pair.trackId == INVALID_TRACK_ID)
+        return;
+
+    TrackId trackToRemove = pair.trackId;
+
+    // Remove from parent's children
+    auto& children = parentTrack->childIds;
+    children.erase(std::remove(children.begin(), children.end(), trackToRemove), children.end());
+
+    // Remove the track
+    auto it = std::find_if(tracks_.begin(), tracks_.end(),
+                           [trackToRemove](const TrackInfo& t) { return t.id == trackToRemove; });
+    if (it != tracks_.end()) {
+        tracks_.erase(it);
+    }
+
+    // Update pair state
+    pair.active = false;
+    pair.trackId = INVALID_TRACK_ID;
+
+    DBG("TrackManager: Deactivated multi-out pair " << pairIndex << " for device " << deviceId);
+
+    notifyTracksChanged();
+}
+
+void TrackManager::deactivateAllMultiOutPairs(TrackId parentTrackId, DeviceId deviceId) {
+    // Re-fetch device pointer each iteration since deactivateMultiOutPair
+    // calls tracks_.erase() which can invalidate pointers
+    for (int i = 0;; ++i) {
+        DeviceInfo* device = getDevice(parentTrackId, deviceId);
+        if (!device || !device->multiOut.isMultiOut)
+            break;
+        if (i >= static_cast<int>(device->multiOut.outputPairs.size()))
+            break;
+        if (device->multiOut.outputPairs[static_cast<size_t>(i)].active) {
+            deactivateMultiOutPair(parentTrackId, deviceId, i);
+        }
     }
 }
 
@@ -210,7 +332,10 @@ void TrackManager::addTrackToGroup(TrackId trackId, TrackId groupId) {
     group->childIds.push_back(trackId);
 
     // Auto-route child's audio output to the group track
-    track->audioOutputDevice = "track:" + juce::String(groupId);
+    // (but skip MultiOut tracks — they always route to master)
+    if (track->type != TrackType::MultiOut) {
+        track->audioOutputDevice = "track:" + juce::String(groupId);
+    }
     notifyTrackPropertyChanged(trackId);
 
     notifyTracksChanged();

@@ -61,6 +61,12 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     if (!trackInfo)
         return;
 
+    // MultiOut tracks have a special sync path
+    if (trackInfo->type == TrackType::MultiOut) {
+        syncMultiOutTrack(trackId, *trackInfo);
+        return;
+    }
+
     auto* teTrack = trackController_.getAudioTrack(trackId);
     if (!teTrack) {
         teTrack = trackController_.createAudioTrack(trackId, trackInfo->name);
@@ -1308,6 +1314,77 @@ void PluginManager::removeSidechainMonitor(TrackId sourceTrackId) {
         plugin->deleteFromParent();
 }
 
+// =============================================================================
+// Multi-Output Track Sync
+// =============================================================================
+
+void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInfo) {
+    if (!trackInfo.multiOutLink.has_value())
+        return;
+
+    const auto& link = *trackInfo.multiOutLink;
+
+    auto* teTrack = trackController_.getAudioTrack(trackId);
+    if (!teTrack) {
+        teTrack = trackController_.createAudioTrack(trackId, trackInfo.name);
+    }
+    if (!teTrack)
+        return;
+
+    // Look up the output pair's actual pin mapping
+    auto* device = TrackManager::getInstance().getDevice(link.sourceTrackId, link.sourceDeviceId);
+    if (!device || !device->multiOut.isMultiOut)
+        return;
+
+    if (link.outputPairIndex < 0 ||
+        link.outputPairIndex >= static_cast<int>(device->multiOut.outputPairs.size()))
+        return;
+
+    const auto& outPair = device->multiOut.outputPairs[static_cast<size_t>(link.outputPairIndex)];
+
+    // Get or create the RackInstance for this output pair
+    auto rackInstance = instrumentRackManager_.createOutputInstance(
+        link.sourceDeviceId, link.outputPairIndex, outPair.firstPin, outPair.numChannels);
+    if (!rackInstance)
+        return;
+
+    // Check if rack instance is already on the track
+    bool alreadyOnTrack = false;
+    for (int i = 0; i < teTrack->pluginList.size(); ++i) {
+        if (teTrack->pluginList[i] == rackInstance.get()) {
+            alreadyOnTrack = true;
+            break;
+        }
+    }
+
+    if (!alreadyOnTrack) {
+        teTrack->pluginList.insertPlugin(rackInstance, -1, nullptr);
+    }
+
+    // Sync user-added FX devices from chainElements (same as normal track path)
+    for (const auto& element : trackInfo.chainElements) {
+        if (isDevice(element)) {
+            const auto& device = getDevice(element);
+
+            juce::ScopedLock lock(pluginLock_);
+            if (deviceToPlugin_.find(device.id) == deviceToPlugin_.end()) {
+                auto plugin = loadDeviceAsPlugin(trackId, device);
+                if (plugin) {
+                    deviceToPlugin_[device.id] = plugin;
+                    pluginToDevice_[plugin.get()] = device.id;
+                }
+            }
+        }
+    }
+
+    // Ensure VolumeAndPan and LevelMeter are present
+    ensureVolumePluginPosition(teTrack);
+    addLevelMeterToTrack(trackId);
+
+    DBG("PluginManager::syncMultiOutTrack: trackId="
+        << trackId << " sourceDevice=" << link.sourceDeviceId << " pair=" << link.outputPairIndex);
+}
+
 // Utilities
 // =============================================================================
 
@@ -1683,12 +1760,90 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
         // Wrap instruments in a RackType with audio passthrough so both synth
         // output and audio clips on the same track are summed together.
         if (device.isInstrument) {
-            auto rackPlugin = instrumentRackManager_.wrapInstrument(plugin);
+            // Detect multi-output capability
+            int numOutputChannels = 2;
+            if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+                numOutputChannels = extPlugin->getNumOutputs();
+            }
+
+            te::Plugin::Ptr rackPlugin;
+            if (numOutputChannels > 2) {
+                rackPlugin =
+                    instrumentRackManager_.wrapMultiOutInstrument(plugin, numOutputChannels);
+            } else {
+                rackPlugin = instrumentRackManager_.wrapInstrument(plugin);
+            }
+
             if (rackPlugin) {
                 // Record the wrapping so we can look up the inner plugin later
                 auto* rackInstance = dynamic_cast<te::RackInstance*>(rackPlugin.get());
                 te::RackType::Ptr rackType = rackInstance ? rackInstance->type : nullptr;
-                instrumentRackManager_.recordWrapping(device.id, rackType, plugin, rackPlugin);
+                instrumentRackManager_.recordWrapping(device.id, rackType, plugin, rackPlugin,
+                                                      numOutputChannels > 2, numOutputChannels);
+
+                // Populate multi-out config on the DeviceInfo
+                if (numOutputChannels > 2) {
+                    // Populate MultiOutConfig on the DeviceInfo
+                    if (auto* devInfo = TrackManager::getInstance().getDevice(trackId, device.id)) {
+                        devInfo->multiOut.isMultiOut = true;
+                        devInfo->multiOut.totalOutputChannels = numOutputChannels;
+                        devInfo->multiOut.outputPairs.clear();
+
+                        // Build output pair names from plugin's output buses
+                        // Each bus typically represents a stereo pair with a meaningful name
+                        juce::AudioPluginInstance* pi = nullptr;
+                        if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+                            pi = extPlugin->getAudioPluginInstance();
+                        }
+
+                        int pairIndex = 0;
+                        int pinOffset = 1;  // 1-based rack output pin index
+                        if (pi != nullptr) {
+                            int numBuses = pi->getBusCount(false);
+                            for (int b = 0; b < numBuses; ++b) {
+                                if (auto* bus = pi->getBus(false, b)) {
+                                    int busChannels = bus->getNumberOfChannels();
+                                    int busPairs = std::max(1, busChannels / 2);
+                                    juce::String busName = bus->getName();
+                                    int channelsPerPair = std::max(1, busChannels / busPairs);
+
+                                    for (int bp = 0; bp < busPairs; ++bp) {
+                                        MultiOutOutputPair pair;
+                                        pair.outputIndex = pairIndex;
+                                        pair.firstPin = pinOffset;
+                                        pair.numChannels = channelsPerPair;
+                                        if (busPairs == 1) {
+                                            pair.name = busName;
+                                        } else {
+                                            pair.name = busName + " " + juce::String(bp + 1);
+                                        }
+                                        devInfo->multiOut.outputPairs.push_back(pair);
+                                        pinOffset += channelsPerPair;
+                                        ++pairIndex;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Fallback: if no buses found, generate generic names
+                        if (devInfo->multiOut.outputPairs.empty()) {
+                            int numPairs = numOutputChannels / 2;
+                            for (int p = 0; p < numPairs; ++p) {
+                                MultiOutOutputPair pair;
+                                pair.outputIndex = p;
+                                pair.firstPin = p * 2 + 1;
+                                pair.numChannels = 2;
+                                pair.name = "Out " + juce::String(p * 2 + 1) + "-" +
+                                            juce::String(p * 2 + 2);
+                                devInfo->multiOut.outputPairs.push_back(pair);
+                            }
+                        }
+
+                        DBG("PluginManager: Detected multi-out instrument with "
+                            << numOutputChannels << " outputs ("
+                            << devInfo->multiOut.outputPairs.size() << " stereo pairs)");
+                    }
+                }
 
                 // Insert the rack instance on the track
                 // The raw plugin is already inside the rack (added by wrapInstrument)

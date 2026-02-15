@@ -246,12 +246,14 @@ void TrackInspector::resized() {
     const int selectorHeight = 18;
     const int selectorGap = 4;
 
-    // Input row: [Audio In] [MIDI In]
-    auto inputRow = bounds.removeFromTop(selectorHeight);
-    audioInputSelector_->setBounds(inputRow.removeFromLeft(selectorWidth));
-    inputRow.removeFromLeft(selectorGap);
-    inputSelector_->setBounds(inputRow.removeFromLeft(selectorWidth));
-    bounds.removeFromTop(4);
+    // Input row: [Audio In] [MIDI In] — hidden for multi-out child tracks
+    if (audioInputSelector_->isVisible()) {
+        auto inputRow = bounds.removeFromTop(selectorHeight);
+        audioInputSelector_->setBounds(inputRow.removeFromLeft(selectorWidth));
+        inputRow.removeFromLeft(selectorGap);
+        inputSelector_->setBounds(inputRow.removeFromLeft(selectorWidth));
+        bounds.removeFromTop(4);
+    }
 
     // Output row: [Audio Out] [MIDI Out]
     auto outputRow = bounds.removeFromTop(selectorHeight);
@@ -386,6 +388,23 @@ void TrackInspector::updateFromSelectedTrack() {
         // Update routing selectors to match track state
         updateRoutingSelectorsFromTrack();
 
+        // MultiOut children: show where audio actually goes (parent's output destination)
+        if (track->type == magda::TrackType::MultiOut && track->hasParent()) {
+            juce::String outputName = "Master";
+            if (auto* parent = magda::TrackManager::getInstance().getTrack(track->parentId)) {
+                if (parent->hasParent()) {
+                    if (auto* group =
+                            magda::TrackManager::getInstance().getTrack(parent->parentId)) {
+                        if (group->isGroup())
+                            outputName = group->name;
+                    }
+                }
+            }
+            outputSelector_->setOptions({{1, outputName}});
+            outputSelector_->setSelectedId(1);
+            outputSelector_->setEnabled(false);
+        }
+
         // Update send level values in-place (don't rebuild — that destroys mid-drag labels)
         const auto& sends = track->sends;
         if (sends.size() == sendLevelLabels_.size()) {
@@ -410,26 +429,29 @@ void TrackInspector::updateFromSelectedTrack() {
 void TrackInspector::showTrackControls(bool show) {
     bool isMaster = show && selectedTrackId_ == magda::MASTER_TRACK_ID;
     bool isAux = false;
+    bool isMultiOut = false;
     if (show && selectedTrackId_ != magda::INVALID_TRACK_ID &&
         selectedTrackId_ != magda::MASTER_TRACK_ID) {
         const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
         if (track && track->type == magda::TrackType::Aux)
             isAux = true;
+        if (track && track->type == magda::TrackType::MultiOut)
+            isMultiOut = true;
     }
 
     trackNameLabel_.setVisible(show);
     trackNameValue_.setVisible(show);
     muteButton_.setVisible(show);
     soloButton_.setVisible(show && !isMaster);
-    recordButton_.setVisible(show && !isMaster && !isAux);
+    recordButton_.setVisible(show && !isMaster && !isAux && !isMultiOut);
     gainLabel_->setVisible(show);
     panLabel_->setVisible(show);
 
-    // Routing section — hidden for master and aux
+    // Routing section — hidden for master and aux; input selectors hidden for multi-out
     bool showRouting = show && !isMaster && !isAux;
     routingSectionLabel_.setVisible(showRouting);
-    audioInputSelector_->setVisible(showRouting);
-    inputSelector_->setVisible(showRouting);
+    audioInputSelector_->setVisible(showRouting && !isMultiOut);
+    inputSelector_->setVisible(showRouting && !isMultiOut);
     outputSelector_->setVisible(showRouting);
     midiOutputSelector_->setVisible(showRouting);
 

@@ -418,6 +418,15 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
     // Aux bus index (for aux tracks)
     obj->setProperty("auxBusIndex", track.auxBusIndex);
 
+    // Multi-out link (for MultiOut tracks)
+    if (track.multiOutLink.has_value()) {
+        auto* moLinkObj = new juce::DynamicObject();
+        moLinkObj->setProperty("sourceTrackId", track.multiOutLink->sourceTrackId);
+        moLinkObj->setProperty("sourceDeviceId", track.multiOutLink->sourceDeviceId);
+        moLinkObj->setProperty("outputPairIndex", track.multiOutLink->outputPairIndex);
+        obj->setProperty("multiOutLink", juce::var(moLinkObj));
+    }
+
     // Sends
     juce::Array<juce::var> sendsArray;
     for (const auto& send : track.sends) {
@@ -479,6 +488,17 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
     // Aux bus index (defaults to -1 if not present in older project files)
     if (obj->hasProperty("auxBusIndex")) {
         outTrack.auxBusIndex = obj->getProperty("auxBusIndex");
+    }
+
+    // Multi-out link (for MultiOut tracks)
+    auto multiOutLinkVar = obj->getProperty("multiOutLink");
+    if (multiOutLinkVar.isObject()) {
+        auto* moLinkObj = multiOutLinkVar.getDynamicObject();
+        MultiOutTrackLink link;
+        link.sourceTrackId = moLinkObj->getProperty("sourceTrackId");
+        link.sourceDeviceId = moLinkObj->getProperty("sourceDeviceId");
+        link.outputPairIndex = moLinkObj->getProperty("outputPairIndex");
+        outTrack.multiOutLink = link;
     }
 
     // Sends
@@ -608,6 +628,28 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
 
     obj->setProperty("currentParameterPage", device.currentParameterPage);
 
+    // Multi-output config
+    if (device.multiOut.isMultiOut) {
+        auto* multiOutObj = new juce::DynamicObject();
+        multiOutObj->setProperty("isMultiOut", true);
+        multiOutObj->setProperty("totalOutputChannels", device.multiOut.totalOutputChannels);
+        multiOutObj->setProperty("mixerChildrenCollapsed", device.multiOut.mixerChildrenCollapsed);
+
+        juce::Array<juce::var> pairsArray;
+        for (const auto& pair : device.multiOut.outputPairs) {
+            auto* pairObj = new juce::DynamicObject();
+            pairObj->setProperty("outputIndex", pair.outputIndex);
+            pairObj->setProperty("name", pair.name);
+            pairObj->setProperty("active", pair.active);
+            pairObj->setProperty("trackId", pair.trackId);
+            pairObj->setProperty("firstPin", pair.firstPin);
+            pairObj->setProperty("numChannels", pair.numChannels);
+            pairsArray.add(juce::var(pairObj));
+        }
+        multiOutObj->setProperty("outputPairs", juce::var(pairsArray));
+        obj->setProperty("multiOut", juce::var(multiOutObj));
+    }
+
     // Sidechain capability
     if (device.canSidechain) {
         obj->setProperty("canSidechain", true);
@@ -702,6 +744,36 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     }
 
     outDevice.currentParameterPage = obj->getProperty("currentParameterPage");
+
+    // Multi-output config
+    auto multiOutVar = obj->getProperty("multiOut");
+    if (multiOutVar.isObject()) {
+        auto* moObj = multiOutVar.getDynamicObject();
+        outDevice.multiOut.isMultiOut = moObj->getProperty("isMultiOut");
+        outDevice.multiOut.totalOutputChannels = moObj->getProperty("totalOutputChannels");
+        if (moObj->hasProperty("mixerChildrenCollapsed"))
+            outDevice.multiOut.mixerChildrenCollapsed =
+                moObj->getProperty("mixerChildrenCollapsed");
+
+        auto pairsVar = moObj->getProperty("outputPairs");
+        if (pairsVar.isArray()) {
+            auto* pairsArr = pairsVar.getArray();
+            for (const auto& pairVar : *pairsArr) {
+                if (auto* pairObj = pairVar.getDynamicObject()) {
+                    MultiOutOutputPair pair;
+                    pair.outputIndex = pairObj->getProperty("outputIndex");
+                    pair.name = pairObj->getProperty("name").toString();
+                    pair.active = pairObj->getProperty("active");
+                    pair.trackId = pairObj->getProperty("trackId");
+                    if (pairObj->hasProperty("firstPin"))
+                        pair.firstPin = pairObj->getProperty("firstPin");
+                    if (pairObj->hasProperty("numChannels"))
+                        pair.numChannels = pairObj->getProperty("numChannels");
+                    outDevice.multiOut.outputPairs.push_back(pair);
+                }
+            }
+        }
+    }
 
     // Sidechain capability
     auto canSidechainVar = obj->getProperty("canSidechain");
