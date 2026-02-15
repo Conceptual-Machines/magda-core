@@ -750,6 +750,8 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
             // numbers match the arrangement timeline position.
             if (clip->view != magda::ClipView::Session && !clip->loopEnabled) {
                 timeRuler_->setBarOrigin(-clip->startTime);
+            } else {
+                timeRuler_->setBarOrigin(0.0);
             }
 
             updateDisplayInfo(*clip);

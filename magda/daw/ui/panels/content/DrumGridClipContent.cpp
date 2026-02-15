@@ -458,7 +458,7 @@ class DrumGridClipGrid : public juce::Component,
             if (relBeat >= 0.0 && relBeat <= clipLengthBeats_) {
                 // Wrap playhead within loop region when looping is enabled
                 if (loopEnabled_ && loopLengthBeats_ > 0.0) {
-                    double beatPos = std::fmod(playheadBeat - loopOffsetBeats_, loopLengthBeats_);
+                    double beatPos = std::fmod(relBeat - loopOffsetBeats_, loopLengthBeats_);
                     if (beatPos < 0.0)
                         beatPos += loopLengthBeats_;
                     playheadBeat = loopOffsetBeats_ + beatPos;
