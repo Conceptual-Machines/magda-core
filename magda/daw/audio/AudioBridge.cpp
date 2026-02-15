@@ -188,6 +188,13 @@ void AudioBridge::updateMidiRoutingForSelection() {
     // Determine which track should receive MIDI: the selected track,
     // or the track owning the selected clip (clip selection clears track selection)
     TrackId midiTrackId = lastSelectedTrack_;
+    if (midiTrackId != INVALID_TRACK_ID) {
+        const auto* selectedTrack = tm.getTrack(midiTrackId);
+        if (selectedTrack && selectedTrack->type == TrackType::MultiOut &&
+            selectedTrack->hasParent()) {
+            midiTrackId = selectedTrack->parentId;
+        }
+    }
     if (midiTrackId == INVALID_TRACK_ID) {
         auto selectedClipId = ClipManager::getInstance().getSelectedClip();
         if (selectedClipId != INVALID_CLIP_ID) {
