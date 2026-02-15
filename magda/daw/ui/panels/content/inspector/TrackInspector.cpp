@@ -388,9 +388,19 @@ void TrackInspector::updateFromSelectedTrack() {
         // Update routing selectors to match track state
         updateRoutingSelectorsFromTrack();
 
-        // MultiOut children: override output selector to show Master
+        // MultiOut children: show where audio actually goes (parent's output destination)
         if (track->type == magda::TrackType::MultiOut && track->hasParent()) {
-            outputSelector_->setOptions({{1, "Master"}});
+            juce::String outputName = "Master";
+            if (auto* parent = magda::TrackManager::getInstance().getTrack(track->parentId)) {
+                if (parent->hasParent()) {
+                    if (auto* group =
+                            magda::TrackManager::getInstance().getTrack(parent->parentId)) {
+                        if (group->isGroup())
+                            outputName = group->name;
+                    }
+                }
+            }
+            outputSelector_->setOptions({{1, outputName}});
             outputSelector_->setSelectedId(1);
             outputSelector_->setEnabled(false);
         }

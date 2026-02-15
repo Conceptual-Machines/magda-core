@@ -698,9 +698,18 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
         // Update routing selectors to match track state
         updateRoutingSelectorFromTrack(header, track);
 
-        // MultiOut children: override output selector to show Master
+        // MultiOut children: show where audio actually goes (parent's output destination)
         if (header.isMultiOut && track->hasParent()) {
-            header.outputSelector->setOptions({{1, "Master"}});
+            juce::String outputName = "Master";
+            if (auto* parent = TrackManager::getInstance().getTrack(track->parentId)) {
+                if (parent->hasParent()) {
+                    if (auto* group = TrackManager::getInstance().getTrack(parent->parentId)) {
+                        if (group->isGroup())
+                            outputName = group->name;
+                    }
+                }
+            }
+            header.outputSelector->setOptions({{1, outputName}});
             header.outputSelector->setSelectedId(1);
             header.outputSelector->setEnabled(false);
         }
