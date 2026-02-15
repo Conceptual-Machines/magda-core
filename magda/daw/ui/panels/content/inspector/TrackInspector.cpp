@@ -388,13 +388,11 @@ void TrackInspector::updateFromSelectedTrack() {
         // Update routing selectors to match track state
         updateRoutingSelectorsFromTrack();
 
-        // MultiOut children: override output selector to show parent track name
+        // MultiOut children: override output selector to show Master
         if (track->type == magda::TrackType::MultiOut && track->hasParent()) {
-            if (auto* parent = magda::TrackManager::getInstance().getTrack(track->parentId)) {
-                outputSelector_->setOptions({{1, parent->name}});
-                outputSelector_->setSelectedId(1);
-                outputSelector_->setEnabled(false);
-            }
+            outputSelector_->setOptions({{1, "Master"}});
+            outputSelector_->setSelectedId(1);
+            outputSelector_->setEnabled(false);
         }
 
         // Update send level values in-place (don't rebuild — that destroys mid-drag labels)

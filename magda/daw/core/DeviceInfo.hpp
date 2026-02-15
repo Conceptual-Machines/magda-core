@@ -33,6 +33,7 @@ struct MultiOutConfig {
     bool isMultiOut = false;
     int totalOutputChannels = 0;
     std::vector<MultiOutOutputPair> outputPairs;
+    bool mixerChildrenCollapsed = false;  // Collapse child tracks in mixer
 };
 
 /**

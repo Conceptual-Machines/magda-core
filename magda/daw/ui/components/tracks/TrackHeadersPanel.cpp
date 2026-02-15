@@ -698,13 +698,11 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
         // Update routing selectors to match track state
         updateRoutingSelectorFromTrack(header, track);
 
-        // MultiOut children: override output selector to show parent track name
+        // MultiOut children: override output selector to show Master
         if (header.isMultiOut && track->hasParent()) {
-            if (auto* parent = TrackManager::getInstance().getTrack(track->parentId)) {
-                header.outputSelector->setOptions({{1, parent->name}});
-                header.outputSelector->setSelectedId(1);
-                header.outputSelector->setEnabled(false);
-            }
+            header.outputSelector->setOptions({{1, "Master"}});
+            header.outputSelector->setSelectedId(1);
+            header.outputSelector->setEnabled(false);
         }
 
         // Update send labels from track data

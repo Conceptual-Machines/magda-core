@@ -147,7 +147,7 @@ TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId devic
     newTrack.name = device->name + ": " + pair.name;
     newTrack.colour = parentTrack->colour;
     newTrack.parentId = parentTrackId;
-    newTrack.audioOutputDevice = parentTrack->audioOutputDevice;
+    newTrack.audioOutputDevice = "master";
 
     // Set the multi-out link
     newTrack.multiOutLink = MultiOutTrackLink{parentTrackId, deviceId, pairIndex};
@@ -329,7 +329,10 @@ void TrackManager::addTrackToGroup(TrackId trackId, TrackId groupId) {
     group->childIds.push_back(trackId);
 
     // Auto-route child's audio output to the group track
-    track->audioOutputDevice = "track:" + juce::String(groupId);
+    // (but skip MultiOut tracks — they always route to master)
+    if (track->type != TrackType::MultiOut) {
+        track->audioOutputDevice = "track:" + juce::String(groupId);
+    }
     notifyTrackPropertyChanged(trackId);
 
     notifyTracksChanged();
