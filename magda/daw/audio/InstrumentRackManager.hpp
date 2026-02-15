@@ -50,7 +50,8 @@ class InstrumentRackManager {
      * @param pairIndex 0-based pair index (1 = outputs 3,4; 2 = outputs 5,6; etc.)
      * @return The RackInstance plugin to insert on the output track
      */
-    te::Plugin::Ptr createOutputInstance(DeviceId deviceId, int pairIndex);
+    te::Plugin::Ptr createOutputInstance(DeviceId deviceId, int pairIndex, int firstPin,
+                                         int numChannels);
 
     /**
      * @brief Remove a RackInstance for a specific output pair
@@ -73,7 +74,8 @@ class InstrumentRackManager {
      * @param rackInstance The RackInstance plugin on the track
      */
     void recordWrapping(DeviceId deviceId, te::RackType::Ptr rackType, te::Plugin::Ptr innerPlugin,
-                        te::Plugin::Ptr rackInstance);
+                        te::Plugin::Ptr rackInstance, bool isMultiOut = false,
+                        int numOutputChannels = 2);
 
     /**
      * @brief Get the inner instrument plugin for parameter/window access

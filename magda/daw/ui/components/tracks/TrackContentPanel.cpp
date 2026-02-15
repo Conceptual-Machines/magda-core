@@ -98,7 +98,7 @@ void TrackContentPanel::tracksChanged() {
         trackLanes.push_back(std::move(lane));
 
         // Add children if group is not collapsed
-        if (track->isGroup() && !track->isCollapsedIn(currentViewMode_)) {
+        if (track->hasChildren() && !track->isCollapsedIn(currentViewMode_)) {
             for (auto childId : track->childIds) {
                 addTrackRecursive(childId, depth + 1);
             }

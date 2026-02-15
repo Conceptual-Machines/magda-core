@@ -22,6 +22,8 @@ struct MultiOutOutputPair {
     juce::String name;                   // From plugin channel names, e.g. "St.3-4"
     bool active = false;                 // User activated this pair
     TrackId trackId = INVALID_TRACK_ID;  // Output track created for this pair
+    int firstPin = 1;                    // 1-based rack output pin for left channel
+    int numChannels = 2;                 // 1=mono, 2=stereo
 };
 
 /**

@@ -138,7 +138,8 @@ te::Plugin::Ptr InstrumentRackManager::wrapMultiOutInstrument(te::Plugin::Ptr in
     return rackInstance;
 }
 
-te::Plugin::Ptr InstrumentRackManager::createOutputInstance(DeviceId deviceId, int pairIndex) {
+te::Plugin::Ptr InstrumentRackManager::createOutputInstance(DeviceId deviceId, int pairIndex,
+                                                            int firstPin, int numChannels) {
     auto it = wrapped_.find(deviceId);
     if (it == wrapped_.end() || !it->second.isMultiOut) {
         std::cerr << "InstrumentRackManager: Device " << deviceId
@@ -156,22 +157,20 @@ te::Plugin::Ptr InstrumentRackManager::createOutputInstance(DeviceId deviceId, i
 
     // Create new RackInstance with different output pins
     auto rackInstanceState = te::RackInstance::create(*wrapped.rackType);
+
+    // Set output pin mapping BEFORE plugin creation so CachedValues initialize correctly
+    // Use actual pin positions from MultiOutOutputPair (accounts for mono/stereo buses)
+    rackInstanceState.setProperty(te::IDs::leftFrom, firstPin, nullptr);
+    rackInstanceState.setProperty(te::IDs::rightFrom, firstPin + numChannels - 1, nullptr);
+    rackInstanceState.setProperty(te::IDs::leftTo, -1, nullptr);  // no audio input passthrough
+    rackInstanceState.setProperty(te::IDs::rightTo, -1, nullptr);
+
     auto rackInstance = edit_.getPluginCache().createNewPlugin(rackInstanceState);
 
     if (!rackInstance) {
         std::cerr << "InstrumentRackManager: Failed to create output instance for pair "
                   << pairIndex << std::endl;
         return nullptr;
-    }
-
-    // Set output pin mapping for this pair
-    // TE uses 1-based pin indices: pair 0 = pins 1,2; pair 1 = pins 3,4; etc.
-    if (auto* inst = dynamic_cast<te::RackInstance*>(rackInstance.get())) {
-        inst->leftOutputComesFrom = pairIndex * 2 + 1;
-        inst->rightOutputComesFrom = pairIndex * 2 + 2;
-        // Don't pass audio input through (output tracks don't have audio clips)
-        inst->leftInputGoesTo = -1;
-        inst->rightInputGoesTo = -1;
     }
 
     wrapped.outputInstances[pairIndex] = rackInstance;
@@ -237,8 +236,9 @@ void InstrumentRackManager::unwrap(DeviceId deviceId) {
 
 void InstrumentRackManager::recordWrapping(DeviceId deviceId, te::RackType::Ptr rackType,
                                            te::Plugin::Ptr innerPlugin,
-                                           te::Plugin::Ptr rackInstance) {
-    wrapped_[deviceId] = {rackType, innerPlugin, rackInstance};
+                                           te::Plugin::Ptr rackInstance, bool isMultiOut,
+                                           int numOutputChannels) {
+    wrapped_[deviceId] = {rackType, innerPlugin, rackInstance, isMultiOut, numOutputChannels, {}};
 }
 
 te::Plugin* InstrumentRackManager::getInnerPlugin(DeviceId deviceId) const {

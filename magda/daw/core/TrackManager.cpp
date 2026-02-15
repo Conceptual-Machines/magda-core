@@ -154,12 +154,17 @@ TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId devic
 
     tracks_.push_back(std::move(newTrack));
 
+    // Re-fetch pointers after push_back (vector reallocation invalidates them)
+    parentTrack = getTrack(parentTrackId);
+    device = getDevice(parentTrackId, deviceId);
+    auto& pairRef = device->multiOut.outputPairs[static_cast<size_t>(pairIndex)];
+
     // Add to parent's children
     parentTrack->childIds.push_back(newTrackId);
 
     // Update the output pair state
-    pair.active = true;
-    pair.trackId = newTrackId;
+    pairRef.active = true;
+    pairRef.trackId = newTrackId;
 
     DBG("TrackManager: Activated multi-out pair " << pairIndex << " for device " << deviceId
                                                   << " → track " << newTrackId);

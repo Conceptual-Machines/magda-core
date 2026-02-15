@@ -1331,9 +1331,20 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
     if (!teTrack)
         return;
 
+    // Look up the output pair's actual pin mapping
+    auto* device = TrackManager::getInstance().getDevice(link.sourceTrackId, link.sourceDeviceId);
+    if (!device || !device->multiOut.isMultiOut)
+        return;
+
+    if (link.outputPairIndex < 0 ||
+        link.outputPairIndex >= static_cast<int>(device->multiOut.outputPairs.size()))
+        return;
+
+    const auto& outPair = device->multiOut.outputPairs[static_cast<size_t>(link.outputPairIndex)];
+
     // Get or create the RackInstance for this output pair
-    auto rackInstance =
-        instrumentRackManager_.createOutputInstance(link.sourceDeviceId, link.outputPairIndex);
+    auto rackInstance = instrumentRackManager_.createOutputInstance(
+        link.sourceDeviceId, link.outputPairIndex, outPair.firstPin, outPair.numChannels);
     if (!rackInstance)
         return;
 
@@ -1751,9 +1762,10 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                 // Record the wrapping so we can look up the inner plugin later
                 auto* rackInstance = dynamic_cast<te::RackInstance*>(rackPlugin.get());
                 te::RackType::Ptr rackType = rackInstance ? rackInstance->type : nullptr;
-                instrumentRackManager_.recordWrapping(device.id, rackType, plugin, rackPlugin);
+                instrumentRackManager_.recordWrapping(device.id, rackType, plugin, rackPlugin,
+                                                      numOutputChannels > 2, numOutputChannels);
 
-                // Mark multi-out state in WrappedInstrument
+                // Populate multi-out config on the DeviceInfo
                 if (numOutputChannels > 2) {
                     // Populate MultiOutConfig on the DeviceInfo
                     if (auto* devInfo = TrackManager::getInstance().getDevice(trackId, device.id)) {
@@ -1769,6 +1781,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                         }
 
                         int pairIndex = 0;
+                        int pinOffset = 1;  // 1-based rack output pin index
                         if (pi != nullptr) {
                             int numBuses = pi->getBusCount(false);
                             for (int b = 0; b < numBuses; ++b) {
@@ -1776,16 +1789,20 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                                     int busChannels = bus->getNumberOfChannels();
                                     int busPairs = std::max(1, busChannels / 2);
                                     juce::String busName = bus->getName();
+                                    int channelsPerPair = std::max(1, busChannels / busPairs);
 
                                     for (int bp = 0; bp < busPairs; ++bp) {
                                         MultiOutOutputPair pair;
                                         pair.outputIndex = pairIndex;
+                                        pair.firstPin = pinOffset;
+                                        pair.numChannels = channelsPerPair;
                                         if (busPairs == 1) {
                                             pair.name = busName;
                                         } else {
                                             pair.name = busName + " " + juce::String(bp + 1);
                                         }
                                         devInfo->multiOut.outputPairs.push_back(pair);
+                                        pinOffset += channelsPerPair;
                                         ++pairIndex;
                                     }
                                 }
@@ -1798,6 +1815,8 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                             for (int p = 0; p < numPairs; ++p) {
                                 MultiOutOutputPair pair;
                                 pair.outputIndex = p;
+                                pair.firstPin = p * 2 + 1;
+                                pair.numChannels = 2;
                                 pair.name = "Out " + juce::String(p * 2 + 1) + "-" +
                                             juce::String(p * 2 + 2);
                                 devInfo->multiOut.outputPairs.push_back(pair);
