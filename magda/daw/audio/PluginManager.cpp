@@ -1761,27 +1761,52 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                         devInfo->multiOut.totalOutputChannels = numOutputChannels;
                         devInfo->multiOut.outputPairs.clear();
 
-                        // Get channel names from plugin
-                        juce::StringArray outputNames;
+                        // Build output pair names from plugin's output buses
+                        // Each bus typically represents a stereo pair with a meaningful name
+                        juce::AudioPluginInstance* pi = nullptr;
                         if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
-                            extPlugin->getChannelNames(nullptr, &outputNames);
+                            pi = extPlugin->getAudioPluginInstance();
                         }
 
-                        int numPairs = numOutputChannels / 2;
-                        for (int p = 0; p < numPairs; ++p) {
-                            MultiOutOutputPair pair;
-                            pair.outputIndex = p;
-                            if (p * 2 + 1 < outputNames.size()) {
-                                pair.name = outputNames[p * 2] + "/" + outputNames[p * 2 + 1];
-                            } else {
+                        int pairIndex = 0;
+                        if (pi != nullptr) {
+                            int numBuses = pi->getBusCount(false);
+                            for (int b = 0; b < numBuses; ++b) {
+                                if (auto* bus = pi->getBus(false, b)) {
+                                    int busChannels = bus->getNumberOfChannels();
+                                    int busPairs = std::max(1, busChannels / 2);
+                                    juce::String busName = bus->getName();
+
+                                    for (int bp = 0; bp < busPairs; ++bp) {
+                                        MultiOutOutputPair pair;
+                                        pair.outputIndex = pairIndex;
+                                        if (busPairs == 1) {
+                                            pair.name = busName;
+                                        } else {
+                                            pair.name = busName + " " + juce::String(bp + 1);
+                                        }
+                                        devInfo->multiOut.outputPairs.push_back(pair);
+                                        ++pairIndex;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Fallback: if no buses found, generate generic names
+                        if (devInfo->multiOut.outputPairs.empty()) {
+                            int numPairs = numOutputChannels / 2;
+                            for (int p = 0; p < numPairs; ++p) {
+                                MultiOutOutputPair pair;
+                                pair.outputIndex = p;
                                 pair.name = "Out " + juce::String(p * 2 + 1) + "-" +
                                             juce::String(p * 2 + 2);
+                                devInfo->multiOut.outputPairs.push_back(pair);
                             }
-                            devInfo->multiOut.outputPairs.push_back(pair);
                         }
 
                         DBG("PluginManager: Detected multi-out instrument with "
-                            << numOutputChannels << " outputs (" << numPairs << " stereo pairs)");
+                            << numOutputChannels << " outputs ("
+                            << devInfo->multiOut.outputPairs.size() << " stereo pairs)");
                     }
                 }
 
