@@ -132,6 +132,9 @@ class TransportPanel : public juce::Component {
     bool isAutoGrid = true;
     int gridNumerator = 1;
     int gridDenominator = 4;
+    int lastAutoNumerator = 1;
+    int lastAutoDenominator = 4;
+    bool lastAutoWasBars = false;
     bool isPunchInEnabled = false;
     bool isPunchOutEnabled = false;
     double currentTempo = 120.0;

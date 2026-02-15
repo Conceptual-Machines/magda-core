@@ -494,7 +494,23 @@ void TransportPanel::setupTempoAndQuantize() {
     autoGridButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
     autoGridButton->onClick = [this]() {
         isAutoGrid = autoGridButton->getToggleState();
-        // Enable/disable numerator/denominator labels
+
+        // When switching to manual, seed from last auto value if it was a valid note fraction
+        if (!isAutoGrid) {
+            if (!lastAutoWasBars && lastAutoDenominator > 0) {
+                gridNumerator = lastAutoNumerator;
+                gridDenominator = lastAutoDenominator;
+            } else {
+                gridNumerator = 1;
+                gridDenominator = 4;
+            }
+            gridNumeratorLabel->setValue(static_cast<double>(gridNumerator),
+                                         juce::dontSendNotification);
+            gridDenominatorLabel->clearTextOverride();
+            gridDenominatorLabel->setValue(static_cast<double>(gridDenominator),
+                                           juce::dontSendNotification);
+        }
+
         gridNumeratorLabel->setEnabled(!isAutoGrid);
         gridDenominatorLabel->setEnabled(!isAutoGrid);
         gridNumeratorLabel->setAlpha(isAutoGrid ? 0.4f : 1.0f);
@@ -514,10 +530,11 @@ void TransportPanel::setupTempoAndQuantize() {
     gridNumeratorLabel->setFontSize(12.0f);
     gridNumeratorLabel->setDoubleClickResetsValue(true);
     gridNumeratorLabel->setDrawBorder(false);
+    gridNumeratorLabel->setSnapToInteger(true);
     gridNumeratorLabel->setEnabled(!isAutoGrid);
     gridNumeratorLabel->setAlpha(isAutoGrid ? 0.4f : 1.0f);
     gridNumeratorLabel->onValueChange = [this]() {
-        gridNumerator = static_cast<int>(gridNumeratorLabel->getValue());
+        gridNumerator = static_cast<int>(std::round(gridNumeratorLabel->getValue()));
         if (!isAutoGrid && onGridQuantizeChange)
             onGridQuantizeChange(isAutoGrid, gridNumerator, gridDenominator);
     };
@@ -783,6 +800,12 @@ void TransportPanel::setGridQuantize(bool autoGrid, int numerator, int denominat
     isAutoGrid = autoGrid;
     gridNumerator = numerator;
     gridDenominator = denominator;
+
+    if (autoGrid) {
+        lastAutoNumerator = numerator;
+        lastAutoDenominator = denominator;
+        lastAutoWasBars = isBars;
+    }
 
     autoGridButton->setToggleState(autoGrid, juce::dontSendNotification);
     gridNumeratorLabel->setValue(static_cast<double>(numerator), juce::dontSendNotification);

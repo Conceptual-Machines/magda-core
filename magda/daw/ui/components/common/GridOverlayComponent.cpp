@@ -23,6 +23,7 @@ void GridOverlayComponent::setController(TimelineController* controller) {
         tempoBPM = state.tempo.bpm;
         timeSignatureNumerator = state.tempo.timeSignatureNumerator;
         timeSignatureDenominator = state.tempo.timeSignatureDenominator;
+        gridQuantize = state.display.gridQuantize;
 
         repaint();
     }
@@ -89,6 +90,17 @@ void GridOverlayComponent::timelineStateChanged(const TimelineState& state, Chan
     tempoBPM = state.tempo.bpm;
     timeSignatureNumerator = state.tempo.timeSignatureNumerator;
     timeSignatureDenominator = state.tempo.timeSignatureDenominator;
+
+    if (gridQuantize.autoGrid != state.display.gridQuantize.autoGrid ||
+        gridQuantize.numerator != state.display.gridQuantize.numerator ||
+        gridQuantize.denominator != state.display.gridQuantize.denominator) {
+        DBG("[GridOverlay] gridQuantize changed: auto=" +
+            juce::String(state.display.gridQuantize.autoGrid ? 1 : 0) +
+            " num=" + juce::String(state.display.gridQuantize.numerator) +
+            " den=" + juce::String(state.display.gridQuantize.denominator));
+        gridQuantize = state.display.gridQuantize;
+        needsRepaint = true;
+    }
 
     if (needsRepaint)
         repaint();
@@ -168,29 +180,51 @@ void GridOverlayComponent::drawBarsBeatsGrid(juce::Graphics& g, juce::Rectangle<
     auto& layout = LayoutConfig::getInstance();
     const int minPixelSpacing = layout.minGridPixelSpacing;
 
-    // Find grid interval using centralized power-of-2 logic
     double markerIntervalBeats = 1.0;
 
-    double frac = GridConstants::findBeatSubdivision(currentZoom, minPixelSpacing);
-    if (frac > 0) {
-        markerIntervalBeats = frac;
+    if (!gridQuantize.autoGrid) {
+        markerIntervalBeats = gridQuantize.toBeatFraction();
     } else {
-        // Bar multiples
-        int mult =
-            GridConstants::findBarMultiple(currentZoom, timeSignatureNumerator, minPixelSpacing);
-        markerIntervalBeats = timeSignatureNumerator * mult;
+        double frac = GridConstants::findBeatSubdivision(currentZoom, minPixelSpacing);
+        if (frac > 0) {
+            markerIntervalBeats = frac;
+        } else {
+            int mult = GridConstants::findBarMultiple(currentZoom, timeSignatureNumerator,
+                                                      minPixelSpacing);
+            markerIntervalBeats = timeSignatureNumerator * mult;
+        }
     }
 
-    // Convert timeline length to total beats for iteration
     double totalTimelineBeats = timelineLength * tempoBPM / 60.0;
+    double barLengthBeats = static_cast<double>(timeSignatureNumerator);
 
-    // Draw grid lines iterating in beats
+    // Check if grid interval aligns with bar and beat boundaries
+    double barMod = std::fmod(barLengthBeats, markerIntervalBeats);
+    bool alignsWithBars = markerIntervalBeats >= barLengthBeats || barMod < 0.001 ||
+                          barMod > (markerIntervalBeats - 0.001);
+    double beatMod = std::fmod(1.0, markerIntervalBeats);
+    bool alignsWithBeats =
+        markerIntervalBeats >= 1.0 || beatMod < 0.001 || beatMod > (markerIntervalBeats - 0.001);
+
+    if (!gridQuantize.autoGrid) {
+        DBG("[GridOverlay] DRAW: interval=" + juce::String(markerIntervalBeats, 6) +
+            " num=" + juce::String(gridQuantize.numerator) +
+            " den=" + juce::String(gridQuantize.denominator) + " alignBar=" +
+            juce::String((int)alignsWithBars) + " alignBeat=" + juce::String((int)alignsWithBeats));
+    }
+
+    // Draw grid lines
     for (double beat = 0.0; beat <= totalTimelineBeats; beat += markerIntervalBeats) {
         int x = static_cast<int>(beat * currentZoom) + leftPadding - scrollOffset;
-        if (x >= area.getX() && x <= area.getRight()) {
-            // Determine line style based on musical position
-            bool isBarLine = std::fmod(beat, static_cast<double>(timeSignatureNumerator)) < 0.001;
-            bool isBeatLine = std::fmod(beat, 1.0) < 0.001;
+        if (x < area.getX() || x > area.getRight())
+            continue;
+
+        if (alignsWithBars && alignsWithBeats) {
+            // Grid aligns with musical structure — classify normally
+            double barRemainder = std::fmod(beat, barLengthBeats);
+            bool isBarLine = barRemainder < 0.001 || barRemainder > (barLengthBeats - 0.001);
+            double beatRemainder = std::fmod(beat, 1.0);
+            bool isBeatLine = beatRemainder < 0.001 || beatRemainder > 0.999;
 
             if (isBarLine) {
                 g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.4f));
@@ -204,6 +238,33 @@ void GridOverlayComponent::drawBarsBeatsGrid(juce::Graphics& g, juce::Rectangle<
                 g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.05f));
                 g.drawLine(static_cast<float>(x), static_cast<float>(area.getY()),
                            static_cast<float>(x), static_cast<float>(area.getBottom()), 0.5f);
+            }
+        } else {
+            // Grid doesn't align — draw all grid lines as subdivision style
+            g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.05f));
+            g.drawLine(static_cast<float>(x), static_cast<float>(area.getY()),
+                       static_cast<float>(x), static_cast<float>(area.getBottom()), 0.5f);
+        }
+    }
+
+    // For non-aligned grids, draw bar/beat reference lines on top
+    if (!alignsWithBars || !alignsWithBeats) {
+        for (double beat = 0.0; beat <= totalTimelineBeats; beat += 1.0) {
+            int x = static_cast<int>(beat * currentZoom) + leftPadding - scrollOffset;
+            if (x < area.getX() || x > area.getRight())
+                continue;
+
+            double barRemainder = std::fmod(beat, barLengthBeats);
+            bool isBarLine = barRemainder < 0.001;
+
+            if (isBarLine) {
+                g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.4f));
+                g.drawLine(static_cast<float>(x), static_cast<float>(area.getY()),
+                           static_cast<float>(x), static_cast<float>(area.getBottom()), 1.5f);
+            } else {
+                g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.2f));
+                g.drawLine(static_cast<float>(x), static_cast<float>(area.getY()),
+                           static_cast<float>(x), static_cast<float>(area.getBottom()), 1.0f);
             }
         }
     }

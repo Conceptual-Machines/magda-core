@@ -75,6 +75,7 @@ class GridOverlayComponent : public juce::Component, public TimelineStateListene
     double tempoBPM = 120.0;
     int timeSignatureNumerator = 4;
     int timeSignatureDenominator = 4;
+    GridQuantize gridQuantize;
     int leftPadding = LayoutConfig::TIMELINE_LEFT_PADDING;  // Default to match timeline
     int scrollOffset = 0;  // Horizontal scroll offset for viewport-relative drawing
 
