@@ -200,35 +200,35 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     }
 
     // Draw playhead line if playing
-    if (playheadPosition_ >= 0.0) {
+    if (playheadPosition_ >= 0.0 && clipLengthBeats_ > 0.0) {
         // Convert seconds to beats
-        // Get tempo from TimelineController
-        double tempo = 120.0;  // Default
+        double tempo = 120.0;
         if (auto* controller = TimelineController::getCurrent()) {
             tempo = controller->getState().tempo.bpm;
         }
         double secondsPerBeat = 60.0 / tempo;
         double playheadBeats = playheadPosition_ / secondsPerBeat;
 
-        // In absolute mode, playhead is at absolute position
-        // In relative mode, need to offset by clip start
-        double displayBeat = relativeMode_ ? (playheadBeats - clipStartBeats_) : playheadBeats;
+        // Only draw when playhead falls within the clip's time range
+        double relBeat = playheadBeats - clipStartBeats_;
+        if (relBeat >= 0.0 && relBeat <= clipLengthBeats_) {
+            double displayBeat = relativeMode_ ? (playheadBeats - clipStartBeats_) : playheadBeats;
 
-        // Wrap playhead within loop region when looping is enabled
-        if (loopEnabled_ && loopLengthBeats_ > 0.0) {
-            double beatPos = relativeMode_ ? displayBeat : (displayBeat - clipStartBeats_);
-            beatPos = std::fmod(beatPos - loopOffsetBeats_, loopLengthBeats_);
-            if (beatPos < 0.0)
-                beatPos += loopLengthBeats_;
-            beatPos += loopOffsetBeats_;
-            displayBeat = relativeMode_ ? beatPos : (clipStartBeats_ + beatPos);
-        }
+            // Wrap playhead within loop region when looping is enabled
+            if (loopEnabled_ && loopLengthBeats_ > 0.0) {
+                double beatPos = relativeMode_ ? displayBeat : (displayBeat - clipStartBeats_);
+                beatPos = std::fmod(beatPos - loopOffsetBeats_, loopLengthBeats_);
+                if (beatPos < 0.0)
+                    beatPos += loopLengthBeats_;
+                beatPos += loopOffsetBeats_;
+                displayBeat = relativeMode_ ? beatPos : (clipStartBeats_ + beatPos);
+            }
 
-        int playheadX = beatToPixel(displayBeat);
-        if (playheadX >= 0 && playheadX <= bounds.getRight()) {
-            // Draw playhead line (red)
-            g.setColour(juce::Colour(0xFFFF4444));
-            g.fillRect(playheadX - 1, 0, 2, bounds.getHeight());
+            int playheadX = beatToPixel(displayBeat);
+            if (playheadX >= 0 && playheadX <= bounds.getRight()) {
+                g.setColour(juce::Colour(0xFFFF4444));
+                g.fillRect(playheadX - 1, 0, 2, bounds.getHeight());
+            }
         }
     }
 

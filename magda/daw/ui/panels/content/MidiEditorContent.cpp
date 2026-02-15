@@ -279,9 +279,11 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
             }
         }
 
-        setGridPlayheadPosition(playPos);
+        // Only show playhead during playback
+        double displayPos = state.playhead.isPlaying ? playPos : -1.0;
+        setGridPlayheadPosition(displayPos);
         if (timeRuler_) {
-            timeRuler_->setPlayheadPosition(playPos);
+            timeRuler_->setPlayheadPosition(displayPos);
         }
     }
 

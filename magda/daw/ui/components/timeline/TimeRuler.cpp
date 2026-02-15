@@ -612,26 +612,26 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         }
     }
 
-    // Draw playhead line if playing
-    if (playheadPosition >= 0.0) {
-        // In absolute mode, playhead is at absolute position
-        // In relative mode, playhead is relative to timeOffset
-        double displayTime = relativeMode ? (playheadPosition - timeOffset) : playheadPosition;
+    // Draw playhead line if playing — only when within the clip's time range
+    if (playheadPosition >= 0.0 && clipLength > 0.0) {
+        double relPos = playheadPosition - timeOffset;
+        if (relPos >= 0.0 && relPos <= clipLength) {
+            double displayTime = relativeMode ? (playheadPosition - timeOffset) : playheadPosition;
 
-        // Wrap playhead within loop region when looping is active
-        if (loopEnabled && loopActive && loopLength > 0.0) {
-            double loopStart = relativeMode ? loopOffset : (timeOffset + loopOffset);
-            double wrapped = std::fmod(displayTime - loopStart, loopLength);
-            if (wrapped < 0.0)
-                wrapped += loopLength;
-            displayTime = loopStart + wrapped;
-        }
+            // Wrap playhead within loop region when looping is active
+            if (loopEnabled && loopActive && loopLength > 0.0) {
+                double loopStart = relativeMode ? loopOffset : (timeOffset + loopOffset);
+                double wrapped = std::fmod(displayTime - loopStart, loopLength);
+                if (wrapped < 0.0)
+                    wrapped += loopLength;
+                displayTime = loopStart + wrapped;
+            }
 
-        int playheadX = timeToPixel(displayTime);
-        if (playheadX >= 0 && playheadX <= width) {
-            // Draw playhead line (red)
-            g.setColour(juce::Colour(0xFFFF4444));
-            g.fillRect(playheadX - 1, 0, 2, height);
+            int playheadX = timeToPixel(displayTime);
+            if (playheadX >= 0 && playheadX <= width) {
+                g.setColour(juce::Colour(0xFFFF4444));
+                g.fillRect(playheadX - 1, 0, 2, height);
+            }
         }
     }
 }

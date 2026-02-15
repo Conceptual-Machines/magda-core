@@ -446,27 +446,30 @@ class DrumGridClipGrid : public juce::Component,
             }
         }
 
-        // Draw playhead
-        if (playheadPosition_ >= 0.0) {
+        // Draw playhead — only when within the clip's time range
+        if (playheadPosition_ >= 0.0 && clipLengthBeats_ > 0.0) {
             double tempo = 120.0;
             if (auto* controller = magda::TimelineController::getCurrent()) {
                 tempo = controller->getState().tempo.bpm;
             }
             double playheadBeat = playheadPosition_ * (tempo / 60.0);
+            double relBeat = playheadBeat - clipStartBeats_;
 
-            // Wrap playhead within loop region when looping is enabled
-            if (loopEnabled_ && loopLengthBeats_ > 0.0) {
-                double beatPos = std::fmod(playheadBeat - loopOffsetBeats_, loopLengthBeats_);
-                if (beatPos < 0.0)
-                    beatPos += loopLengthBeats_;
-                playheadBeat = loopOffsetBeats_ + beatPos;
-            }
+            if (relBeat >= 0.0 && relBeat <= clipLengthBeats_) {
+                // Wrap playhead within loop region when looping is enabled
+                if (loopEnabled_ && loopLengthBeats_ > 0.0) {
+                    double beatPos = std::fmod(playheadBeat - loopOffsetBeats_, loopLengthBeats_);
+                    if (beatPos < 0.0)
+                        beatPos += loopLengthBeats_;
+                    playheadBeat = loopOffsetBeats_ + beatPos;
+                }
 
-            int playheadX = static_cast<int>(playheadBeat * pixelsPerBeat_) + GRID_LEFT_PADDING;
+                int playheadX = static_cast<int>(playheadBeat * pixelsPerBeat_) + GRID_LEFT_PADDING;
 
-            if (playheadX >= 0 && playheadX <= bounds.getWidth()) {
-                g.setColour(juce::Colour(0xFFFF4444));
-                g.fillRect(playheadX - 1, 0, 2, numRows * rowHeight_);
+                if (playheadX >= 0 && playheadX <= bounds.getWidth()) {
+                    g.setColour(juce::Colour(0xFFFF4444));
+                    g.fillRect(playheadX - 1, 0, 2, numRows * rowHeight_);
+                }
             }
         }
 
