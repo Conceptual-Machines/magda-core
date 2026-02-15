@@ -433,8 +433,8 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Check if clicking on a grid line -> set edit cursor
-    if (isNearGridLine(e.x)) {
+    // Alt + click on a grid line -> set edit cursor
+    if (e.mods.isAltDown() && isNearGridLine(e.x)) {
         isEditCursorClick_ = true;
         return;
     }
@@ -532,7 +532,7 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
 }
 
 void PianoRollGridComponent::mouseMove(const juce::MouseEvent& e) {
-    if (isNearGridLine(e.x)) {
+    if (e.mods.isAltDown() && isNearGridLine(e.x)) {
         setMouseCursor(juce::MouseCursor::IBeamCursor);
     } else {
         setMouseCursor(juce::MouseCursor::NormalCursor);

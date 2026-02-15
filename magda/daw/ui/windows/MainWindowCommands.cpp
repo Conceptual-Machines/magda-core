@@ -82,6 +82,7 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         case deleteCmd:
             result.setInfo("Delete", "Delete selected clips", "Edit", 0);
             result.addDefaultKeypress(juce::KeyPress::deleteKey, 0);
+            result.addDefaultKeypress(juce::KeyPress::backspaceKey, 0);
             break;
 
         case selectAll:
