@@ -365,6 +365,31 @@ class ClipManager {
     void clearClipboard();
 
     // ========================================================================
+    // Note Clipboard Operations (for MIDI note copy/paste)
+    // ========================================================================
+
+    /**
+     * @brief Copy selected notes to the note clipboard
+     * Notes are stored with startBeat normalised (earliest = 0)
+     */
+    void copyNotesToClipboard(ClipId clipId, const std::vector<size_t>& noteIndices);
+
+    /**
+     * @brief Check if note clipboard has notes
+     */
+    bool hasNotesInClipboard() const;
+
+    /**
+     * @brief Get notes from the clipboard
+     */
+    const std::vector<MidiNote>& getNoteClipboard() const;
+
+    /**
+     * @brief Get the original earliest startBeat before normalisation
+     */
+    double getNoteClipboardMinBeat() const;
+
+    // ========================================================================
     // Session View (Clip Launcher)
     // ========================================================================
 
@@ -427,6 +452,10 @@ class ClipManager {
     // Clipboard storage
     std::vector<ClipInfo> clipboard_;
     double clipboardReferenceTime_ = 0.0;  // For maintaining relative positions
+
+    // Note clipboard storage
+    std::vector<MidiNote> noteClipboard_;
+    double noteClipboardMinBeat_ = 0.0;  // Original earliest startBeat before normalisation
 
     std::vector<ClipManagerListener*> listeners_;
     int nextClipId_ = 1;

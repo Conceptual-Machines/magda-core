@@ -201,4 +201,50 @@ class QuantizeMidiNotesCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+/**
+ * @brief Command for deleting multiple MIDI notes at once
+ */
+class DeleteMultipleMidiNotesCommand : public UndoableCommand {
+  public:
+    DeleteMultipleMidiNotesCommand(ClipId clipId, std::vector<size_t> noteIndices);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Delete MIDI Notes";
+    }
+
+  private:
+    ClipId clipId_;
+    std::vector<size_t> noteIndices_;  // Original indices (sorted descending for removal)
+    std::vector<std::pair<size_t, MidiNote>> deleted_;  // {originalIndex, note} for undo
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for adding multiple MIDI notes at once (used by paste/duplicate)
+ */
+class AddMultipleMidiNotesCommand : public UndoableCommand {
+  public:
+    AddMultipleMidiNotesCommand(ClipId clipId, std::vector<MidiNote> notes,
+                                juce::String description);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return description_;
+    }
+
+    const std::vector<size_t>& getInsertedIndices() const {
+        return insertedIndices_;
+    }
+
+  private:
+    ClipId clipId_;
+    std::vector<MidiNote> notes_;
+    juce::String description_;
+    std::vector<size_t> insertedIndices_;  // Indices of inserted notes after execute
+    bool executed_ = false;
+};
+
 }  // namespace magda

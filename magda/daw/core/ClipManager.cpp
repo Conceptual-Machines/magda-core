@@ -1280,4 +1280,49 @@ void ClipManager::clearClipboard() {
     clipboardReferenceTime_ = 0.0;
 }
 
+// ============================================================================
+// Note Clipboard Operations
+// ============================================================================
+
+void ClipManager::copyNotesToClipboard(ClipId clipId, const std::vector<size_t>& noteIndices) {
+    noteClipboard_.clear();
+    noteClipboardMinBeat_ = 0.0;
+
+    const auto* clip = getClip(clipId);
+    if (!clip || clip->type != ClipType::MIDI || noteIndices.empty()) {
+        return;
+    }
+
+    // Copy selected notes
+    double minBeat = std::numeric_limits<double>::max();
+    for (size_t idx : noteIndices) {
+        if (idx < clip->midiNotes.size()) {
+            noteClipboard_.push_back(clip->midiNotes[idx]);
+            minBeat = std::min(minBeat, clip->midiNotes[idx].startBeat);
+        }
+    }
+
+    if (noteClipboard_.empty()) {
+        return;
+    }
+
+    // Store original earliest beat and normalise
+    noteClipboardMinBeat_ = minBeat;
+    for (auto& note : noteClipboard_) {
+        note.startBeat -= minBeat;
+    }
+}
+
+bool ClipManager::hasNotesInClipboard() const {
+    return !noteClipboard_.empty();
+}
+
+const std::vector<MidiNote>& ClipManager::getNoteClipboard() const {
+    return noteClipboard_;
+}
+
+double ClipManager::getNoteClipboardMinBeat() const {
+    return noteClipboardMinBeat_;
+}
+
 }  // namespace magda

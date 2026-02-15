@@ -482,4 +482,117 @@ void QuantizeMidiNotesCommand::undo() {
     clipManager.forceNotifyClipPropertyChanged(clipId_);
 }
 
+// ============================================================================
+// DeleteMultipleMidiNotesCommand
+// ============================================================================
+
+DeleteMultipleMidiNotesCommand::DeleteMultipleMidiNotesCommand(ClipId clipId,
+                                                               std::vector<size_t> noteIndices)
+    : clipId_(clipId), noteIndices_(std::move(noteIndices)) {
+    // Sort descending so we remove from the end first (avoids index shifting)
+    std::sort(noteIndices_.begin(), noteIndices_.end(), std::greater<size_t>());
+
+    // Capture note data for undo
+    const auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (clip && clip->type == ClipType::MIDI) {
+        for (size_t idx : noteIndices_) {
+            if (idx < clip->midiNotes.size()) {
+                deleted_.emplace_back(idx, clip->midiNotes[idx]);
+            }
+        }
+    }
+}
+
+void DeleteMultipleMidiNotesCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || clip->type != ClipType::MIDI) {
+        return;
+    }
+
+    // Remove in descending index order
+    for (size_t idx : noteIndices_) {
+        if (idx < clip->midiNotes.size()) {
+            clip->midiNotes.erase(clip->midiNotes.begin() + static_cast<std::ptrdiff_t>(idx));
+        }
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void DeleteMultipleMidiNotesCommand::undo() {
+    if (!executed_) {
+        return;
+    }
+
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || clip->type != ClipType::MIDI) {
+        return;
+    }
+
+    // Re-insert in reverse order (ascending index) to restore original positions
+    for (auto it = deleted_.rbegin(); it != deleted_.rend(); ++it) {
+        size_t insertPos = std::min(it->first, clip->midiNotes.size());
+        clip->midiNotes.insert(clip->midiNotes.begin() + static_cast<std::ptrdiff_t>(insertPos),
+                               it->second);
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+// ============================================================================
+// AddMultipleMidiNotesCommand
+// ============================================================================
+
+AddMultipleMidiNotesCommand::AddMultipleMidiNotesCommand(ClipId clipId, std::vector<MidiNote> notes,
+                                                         juce::String description)
+    : clipId_(clipId), notes_(std::move(notes)), description_(std::move(description)) {}
+
+void AddMultipleMidiNotesCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || clip->type != ClipType::MIDI) {
+        return;
+    }
+
+    insertedIndices_.clear();
+    for (const auto& note : notes_) {
+        size_t idx = clip->midiNotes.size();
+        clip->midiNotes.push_back(note);
+        insertedIndices_.push_back(idx);
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void AddMultipleMidiNotesCommand::undo() {
+    if (!executed_) {
+        return;
+    }
+
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || clip->type != ClipType::MIDI) {
+        return;
+    }
+
+    // Remove in descending index order
+    std::vector<size_t> sorted = insertedIndices_;
+    std::sort(sorted.begin(), sorted.end(), std::greater<size_t>());
+    for (size_t idx : sorted) {
+        if (idx < clip->midiNotes.size()) {
+            clip->midiNotes.erase(clip->midiNotes.begin() + static_cast<std::ptrdiff_t>(idx));
+        }
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
 }  // namespace magda

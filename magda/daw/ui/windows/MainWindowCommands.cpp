@@ -1,5 +1,6 @@
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
+#include "../../core/MidiNoteCommands.hpp"
 #include "../../core/SelectionManager.hpp"
 #include "../../core/TrackCommands.hpp"
 #include "../../core/TrackManager.hpp"
@@ -197,7 +198,17 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             UndoManager::getInstance().redo();
             return true;
 
-        case cut:
+        case cut: {
+            // Check note selection first
+            const auto& noteSel = selectionManager.getNoteSelection();
+            if (noteSel.isValid()) {
+                clipManager.copyNotesToClipboard(noteSel.clipId, noteSel.noteIndices);
+                auto cmd = std::make_unique<DeleteMultipleMidiNotesCommand>(noteSel.clipId,
+                                                                            noteSel.noteIndices);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+                selectionManager.clearNoteSelection();
+                return true;
+            }
             if (!selectedClips.empty()) {
                 clipManager.copyToClipboard(selectedClips);
                 if (selectedClips.size() > 1)
@@ -211,30 +222,81 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 selectionManager.clearSelection();
             }
             return true;
+        }
 
-        case copy:
+        case copy: {
+            const auto& noteSel = selectionManager.getNoteSelection();
+            if (noteSel.isValid()) {
+                clipManager.copyNotesToClipboard(noteSel.clipId, noteSel.noteIndices);
+                return true;
+            }
             if (!selectedClips.empty()) {
                 clipManager.copyToClipboard(selectedClips);
             }
             return true;
+        }
 
-        case paste:
+        case paste: {
+            // Note paste takes priority if we have notes in clipboard
+            if (clipManager.hasNotesInClipboard()) {
+                // Determine target clip: use the currently selected clip
+                ClipId targetClipId = clipManager.getSelectedClip();
+                if (targetClipId == INVALID_CLIP_ID) {
+                    // Try note selection's clip
+                    const auto& noteSel = selectionManager.getNoteSelection();
+                    if (noteSel.isValid()) {
+                        targetClipId = noteSel.clipId;
+                    }
+                }
+                const auto* targetClip = clipManager.getClip(targetClipId);
+                if (targetClip && targetClip->type == ClipType::MIDI) {
+                    // Determine paste position: use edit cursor if available, else original
+                    // position
+                    double pasteOffset = clipManager.getNoteClipboardMinBeat();
+                    if (mainView) {
+                        const auto& state = mainView->getTimelineController().getState();
+                        if (state.editCursorPosition >= 0) {
+                            double bpm = state.tempo.bpm;
+                            double editCursorBeats = state.editCursorPosition * bpm / 60.0;
+                            double clipStartBeats = targetClip->getStartBeats(bpm);
+                            pasteOffset = editCursorBeats - clipStartBeats;
+                            if (pasteOffset < 0)
+                                pasteOffset = 0;
+                        }
+                    }
+                    const auto& clipboard = clipManager.getNoteClipboard();
+                    std::vector<MidiNote> notesToPaste;
+                    notesToPaste.reserve(clipboard.size());
+                    for (const auto& note : clipboard) {
+                        MidiNote n = note;
+                        n.startBeat += pasteOffset;
+                        notesToPaste.push_back(n);
+                    }
+
+                    auto cmd = std::make_unique<AddMultipleMidiNotesCommand>(
+                        targetClipId, std::move(notesToPaste), "Paste MIDI Notes");
+                    auto* cmdPtr = cmd.get();
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                    // Select pasted notes
+                    const auto& inserted = cmdPtr->getInsertedIndices();
+                    if (!inserted.empty()) {
+                        selectionManager.selectNotes(
+                            targetClipId, std::vector<size_t>(inserted.begin(), inserted.end()));
+                    }
+                    return true;
+                }
+            }
             if (clipManager.hasClipsInClipboard()) {
                 double pasteTime = 0.0;
                 if (mainView) {
                     const auto& state = mainView->getTimelineController().getState();
-                    std::cout << "📍 Paste - editCursor: " << state.editCursorPosition
-                              << ", playhead: " << state.playhead.editPosition << std::endl;
                     pasteTime = state.editCursorPosition;
                     if (pasteTime < 0) {
                         pasteTime = state.playhead.editPosition;
-                        std::cout << "📍 Using playhead: " << pasteTime << std::endl;
-                    } else {
-                        std::cout << "📍 Using edit cursor: " << pasteTime << std::endl;
                     }
                     if (pasteTime < 0) {
                         pasteTime = 0.0;
-                        std::cout << "📍 Defaulting to 0.0" << std::endl;
                     }
                 }
 
@@ -251,8 +313,46 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 }
             }
             return true;
+        }
 
-        case duplicate:
+        case duplicate: {
+            const auto& noteSel = selectionManager.getNoteSelection();
+            if (noteSel.isValid()) {
+                const auto* clip = clipManager.getClip(noteSel.clipId);
+                if (clip && clip->type == ClipType::MIDI) {
+                    // Read selected notes and compute offset (place duplicates right after
+                    // originals)
+                    double minStart = std::numeric_limits<double>::max();
+                    double maxEnd = 0.0;
+                    std::vector<MidiNote> notesToDuplicate;
+                    for (size_t idx : noteSel.noteIndices) {
+                        if (idx < clip->midiNotes.size()) {
+                            const auto& note = clip->midiNotes[idx];
+                            notesToDuplicate.push_back(note);
+                            minStart = std::min(minStart, note.startBeat);
+                            maxEnd = std::max(maxEnd, note.startBeat + note.lengthBeats);
+                        }
+                    }
+                    if (!notesToDuplicate.empty()) {
+                        double offset = maxEnd - minStart;
+                        for (auto& note : notesToDuplicate) {
+                            note.startBeat += offset;
+                        }
+                        auto cmd = std::make_unique<AddMultipleMidiNotesCommand>(
+                            noteSel.clipId, std::move(notesToDuplicate), "Duplicate MIDI Notes");
+                        auto* cmdPtr = cmd.get();
+                        UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                        const auto& inserted = cmdPtr->getInsertedIndices();
+                        if (!inserted.empty()) {
+                            selectionManager.selectNotes(
+                                noteSel.clipId,
+                                std::vector<size_t>(inserted.begin(), inserted.end()));
+                        }
+                    }
+                }
+                return true;
+            }
             if (!selectedClips.empty()) {
                 std::vector<ClipId> newClips;
                 if (selectedClips.size() > 1) {
@@ -276,8 +376,17 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 }
             }
             return true;
+        }
 
-        case deleteCmd:
+        case deleteCmd: {
+            const auto& noteSel = selectionManager.getNoteSelection();
+            if (noteSel.isValid()) {
+                auto cmd = std::make_unique<DeleteMultipleMidiNotesCommand>(noteSel.clipId,
+                                                                            noteSel.noteIndices);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+                selectionManager.clearNoteSelection();
+                return true;
+            }
             if (!selectedClips.empty()) {
                 if (selectedClips.size() > 1) {
                     UndoManager::getInstance().beginCompoundOperation("Delete Clips");
@@ -292,6 +401,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 selectionManager.clearSelection();
             }
             return true;
+        }
 
         case selectAll: {
             const auto& allClips = clipManager.getArrangementClips();
