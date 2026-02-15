@@ -1361,6 +1361,22 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
         teTrack->pluginList.insertPlugin(rackInstance, -1, nullptr);
     }
 
+    // Sync user-added FX devices from chainElements (same as normal track path)
+    for (const auto& element : trackInfo.chainElements) {
+        if (isDevice(element)) {
+            const auto& device = getDevice(element);
+
+            juce::ScopedLock lock(pluginLock_);
+            if (deviceToPlugin_.find(device.id) == deviceToPlugin_.end()) {
+                auto plugin = loadDeviceAsPlugin(trackId, device);
+                if (plugin) {
+                    deviceToPlugin_[device.id] = plugin;
+                    pluginToDevice_[plugin.get()] = device.id;
+                }
+            }
+        }
+    }
+
     // Ensure VolumeAndPan and LevelMeter are present
     ensureVolumePluginPosition(teTrack);
     addLevelMeterToTrack(trackId);
