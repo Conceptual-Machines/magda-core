@@ -3,11 +3,22 @@
 #include <juce_core/juce_core.h>
 #include <juce_graphics/juce_graphics.h>
 
+#include <optional>
+
 #include "RackInfo.hpp"
 #include "TrackTypes.hpp"
 #include "TrackViewSettings.hpp"
 
 namespace magda {
+
+/**
+ * @brief Links a MultiOut track back to its source instrument
+ */
+struct MultiOutTrackLink {
+    TrackId sourceTrackId = INVALID_TRACK_ID;     // Parent track hosting the instrument
+    DeviceId sourceDeviceId = INVALID_DEVICE_ID;  // The multi-out instrument device
+    int outputPairIndex = 0;                      // Which stereo pair (0 = main, 1 = 3-4, etc.)
+};
 
 /**
  * @brief Describes a send from this track to an aux track
@@ -51,6 +62,9 @@ struct TrackInfo {
     // Aux bus index (assigned when type == Aux, used for AuxReturn/AuxSend bus matching)
     int auxBusIndex = -1;
 
+    // Multi-output link (set when type == MultiOut)
+    std::optional<MultiOutTrackLink> multiOutLink;
+
     // Signal chain - ordered list of nodes (devices or racks) on this track
     std::vector<ChainElement> chainElements;
 
@@ -83,6 +97,7 @@ struct TrackInfo {
           audioOutputDevice(other.audioOutputDevice),
           sends(other.sends),
           auxBusIndex(other.auxBusIndex),
+          multiOutLink(other.multiOutLink),
           viewSettings(other.viewSettings) {
         chainElements.reserve(other.chainElements.size());
         for (const auto& element : other.chainElements) {
@@ -110,6 +125,7 @@ struct TrackInfo {
             audioOutputDevice = other.audioOutputDevice;
             sends = other.sends;
             auxBusIndex = other.auxBusIndex;
+            multiOutLink = other.multiOutLink;
             viewSettings = other.viewSettings;
             chainElements.clear();
             chainElements.reserve(other.chainElements.size());

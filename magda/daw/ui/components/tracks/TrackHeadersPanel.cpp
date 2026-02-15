@@ -625,8 +625,8 @@ void TrackHeadersPanel::tracksChanged() {
         addAndMakeVisible(*header->meterComponent);
         addAndMakeVisible(*header->midiIndicator);
 
-        // Add collapse button for groups
-        if (header->isGroup) {
+        // Add collapse button for groups and tracks with multi-out children
+        if (header->isGroup || track->hasChildren()) {
             header->collapseButton->setButtonText(header->isCollapsed ? "▶" : "▼");
             header->collapseButton->onClick = [this, trackId]() { handleCollapseToggle(trackId); };
             addAndMakeVisible(*header->collapseButton);
@@ -641,8 +641,8 @@ void TrackHeadersPanel::tracksChanged() {
 
         trackHeaders.push_back(std::move(header));
 
-        // Add children if group is not collapsed
-        if (track->isGroup() && !track->isCollapsedIn(currentViewMode_)) {
+        // Add children if group/instrument is not collapsed
+        if (track->hasChildren() && !track->isCollapsedIn(currentViewMode_)) {
             for (auto childId : track->childIds) {
                 addTrackRecursive(childId, depth + 1);
             }
@@ -1548,6 +1548,15 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     // Track type info
     menu.addSectionHeader(track->name);
     menu.addSeparator();
+
+    // MultiOut tracks have limited context menu (can't delete/move independently)
+    if (track->type == TrackType::MultiOut) {
+        menu.addItem(0, "Output track (managed by parent instrument)", false, false);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(localAreaToGlobal(
+                               juce::Rectangle<int>(position.x, position.y, 1, 1))),
+                           nullptr);
+        return;
+    }
 
     // Group operations
     if (track->isGroup()) {

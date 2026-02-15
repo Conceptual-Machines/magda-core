@@ -172,6 +172,7 @@ class DeviceSlotComponent : public NodeComponent,
     void goToNextPage();
     void showSidechainMenu();    // Show popup menu for sidechain source selection
     void updateScButtonState();  // Update SC button appearance based on sidechain config
+    void showMultiOutMenu();     // Show popup menu for multi-output routing
 
     // Helper to check if this is an internal device
     bool isInternalDevice() const {

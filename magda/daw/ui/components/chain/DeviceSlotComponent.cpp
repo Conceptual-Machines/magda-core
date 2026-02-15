@@ -1282,6 +1282,17 @@ void DeviceSlotComponent::paramSelectionChanged(const magda::ParamSelection& sel
 // =============================================================================
 
 void DeviceSlotComponent::mouseDown(const juce::MouseEvent& e) {
+    // Right-click context menu
+    if (e.mods.isPopupMenu()) {
+        if (device_.multiOut.isMultiOut) {
+            showMultiOutMenu();
+            return;
+        }
+        // Fall through to base class for other right-click handling
+        NodeComponent::mouseDown(e);
+        return;
+    }
+
     // Check for double-click
     if (e.getNumberOfClicks() == 2) {
         // Toggle plugin window on double-click
@@ -1297,6 +1308,50 @@ void DeviceSlotComponent::mouseDown(const juce::MouseEvent& e) {
         // Pass to base class for normal click handling
         NodeComponent::mouseDown(e);
     }
+}
+
+void DeviceSlotComponent::showMultiOutMenu() {
+    juce::PopupMenu menu;
+    menu.addSectionHeader("Multi-Output Routing");
+
+    auto& tm = magda::TrackManager::getInstance();
+    auto trackId = nodePath_.trackId;
+
+    for (size_t i = 0; i < device_.multiOut.outputPairs.size(); ++i) {
+        const auto& pair = device_.multiOut.outputPairs[i];
+
+        // Skip the main pair (0) - it's always active on the main track
+        if (pair.outputIndex == 0)
+            continue;
+
+        menu.addItem(static_cast<int>(i + 1), pair.name, true, pair.active);
+    }
+
+    auto safeThis = juce::Component::SafePointer<DeviceSlotComponent>(this);
+    auto deviceId = device_.id;
+
+    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, trackId, deviceId](int result) {
+        if (!safeThis || result == 0)
+            return;
+
+        int pairIndex = result - 1;
+        auto& tm = magda::TrackManager::getInstance();
+
+        // Get fresh device info
+        auto* device = tm.getDevice(trackId, deviceId);
+        if (!device || !device->multiOut.isMultiOut)
+            return;
+
+        if (pairIndex < 0 || pairIndex >= static_cast<int>(device->multiOut.outputPairs.size()))
+            return;
+
+        const auto& pair = device->multiOut.outputPairs[static_cast<size_t>(pairIndex)];
+        if (pair.active) {
+            tm.deactivateMultiOutPair(trackId, deviceId, pairIndex);
+        } else {
+            tm.activateMultiOutPair(trackId, deviceId, pairIndex);
+        }
+    });
 }
 
 // =============================================================================
