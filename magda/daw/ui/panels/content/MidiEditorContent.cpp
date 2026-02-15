@@ -260,6 +260,13 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
     if (magda::hasFlag(changes, magda::ChangeFlags::Playhead)) {
         double playPos = state.playhead.playbackPosition;
 
+        // Auto-hide edit cursor when playback starts
+        if (state.playhead.isPlaying && state.editCursorPosition >= 0.0) {
+            if (auto* controller = magda::TimelineController::getCurrent()) {
+                controller->dispatch(magda::SetEditCursorEvent{-1.0});
+            }
+        }
+
         // Offset playhead so it starts from the midiOffset position
         if (editingClipId_ != magda::INVALID_CLIP_ID) {
             const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);

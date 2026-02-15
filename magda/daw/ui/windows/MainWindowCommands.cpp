@@ -649,9 +649,14 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
         return commandManager.invokeDirectly(commandID, false);
     }
 
-    // ESC: Exit link mode
+    // ESC: Exit link mode and clear edit cursor
     if (key == juce::KeyPress::escapeKey) {
         LinkModeManager::getInstance().exitAllLinkModes();
+        if (auto* controller = TimelineController::getCurrent()) {
+            if (controller->getState().editCursorPosition >= 0.0) {
+                controller->dispatch(SetEditCursorEvent{-1.0});
+            }
+        }
         return true;
     }
 
