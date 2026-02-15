@@ -92,6 +92,8 @@ Token Tokenizer::readString() {
     if (*pos_ == '"') {
         pos_++;
         col_++;
+    } else {
+        return Token(TokenType::ERROR, "Unterminated string", line_, startCol);
     }
 
     return Token(TokenType::STRING, value, line_, startCol);
@@ -369,20 +371,7 @@ bool Interpreter::parseTrackStatement(Tokenizer& tok) {
             ctx_.currentTrackId = existingId;
             DBG("MAGDA DSL: Found existing track '" + name + "'");
         } else {
-            // Determine track type
-            TrackType trackType = TrackType::Audio;
-            if (params.has("type")) {
-                std::string typeStr = params.get("type");
-                if (typeStr == "midi")
-                    trackType = TrackType::MIDI;
-                else if (typeStr == "instrument")
-                    trackType = TrackType::Instrument;
-                else if (typeStr == "group")
-                    trackType = TrackType::Group;
-                else if (typeStr == "aux")
-                    trackType = TrackType::Aux;
-            }
-
+            auto trackType = parseTrackType(params);
             auto trackId = tm.createTrack(name, trackType);
             ctx_.currentTrackId = trackId;
             ctx_.addResult("Created " + juce::String(getTrackTypeName(trackType)) + " track '" +
@@ -390,15 +379,7 @@ bool Interpreter::parseTrackStatement(Tokenizer& tok) {
         }
     } else {
         // track() with no params — create unnamed track
-        TrackType trackType = TrackType::Audio;
-        if (params.has("type")) {
-            std::string typeStr = params.get("type");
-            if (typeStr == "midi")
-                trackType = TrackType::MIDI;
-            else if (typeStr == "instrument")
-                trackType = TrackType::Instrument;
-        }
-
+        auto trackType = parseTrackType(params);
         auto trackId = tm.createTrack("", trackType);
         ctx_.currentTrackId = trackId;
         ctx_.addResult("Created " + juce::String(getTrackTypeName(trackType)) + " track");
@@ -592,6 +573,15 @@ bool Interpreter::executeNewClip(const Params& params) {
     int bar = params.getInt("bar", 1);
     int lengthBars = params.getInt("length_bars", 4);
 
+    if (bar < 1) {
+        ctx_.setError("Bar number must be positive, got " + juce::String(bar));
+        return false;
+    }
+    if (lengthBars < 1) {
+        ctx_.setError("Clip length must be positive, got " + juce::String(lengthBars));
+        return false;
+    }
+
     double startTime = barsToTime(bar);
     double length = barsToTime(bar + lengthBars) - startTime;
 
@@ -701,6 +691,22 @@ bool Interpreter::executeDeleteClip(const Params& params) {
     }
 
     return true;
+}
+
+TrackType Interpreter::parseTrackType(const Params& params) {
+    if (!params.has("type"))
+        return TrackType::Audio;
+
+    std::string typeStr = params.get("type");
+    if (typeStr == "midi")
+        return TrackType::MIDI;
+    if (typeStr == "instrument")
+        return TrackType::Instrument;
+    if (typeStr == "group")
+        return TrackType::Group;
+    if (typeStr == "aux")
+        return TrackType::Aux;
+    return TrackType::Audio;
 }
 
 int Interpreter::findTrackByName(const juce::String& name) const {

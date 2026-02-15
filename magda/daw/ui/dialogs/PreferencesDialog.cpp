@@ -102,6 +102,7 @@ PreferencesDialog::PreferencesDialog() {
             return;
         }
 
+        aiValidateButton.setEnabled(false);
         aiStatusLabel.setText("Validating...", juce::dontSendNotification);
         aiStatusLabel.setColour(juce::Label::textColourId,
                                 DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
@@ -143,6 +144,7 @@ PreferencesDialog::PreferencesDialog() {
             juce::MessageManager::callAsync([safeThis, valid, statusMsg]() {
                 if (!safeThis)
                     return;
+                safeThis->aiValidateButton.setEnabled(true);
                 safeThis->aiStatusLabel.setText(statusMsg, juce::dontSendNotification);
                 safeThis->aiStatusLabel.setColour(juce::Label::textColourId,
                                                   valid ? juce::Colours::limegreen

@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "../daw/core/TrackTypes.hpp"
+
 namespace magda::dsl {
 
 // ============================================================================
@@ -167,7 +169,8 @@ class Interpreter {
     bool parseParams(Tokenizer& tok, Params& outParams);
     bool parseValue(Tokenizer& tok, std::string& outValue);
 
-    // Track resolution
+    // Helpers
+    static TrackType parseTrackType(const Params& params);
     int findTrackByName(const juce::String& name) const;
 
     // Time conversion

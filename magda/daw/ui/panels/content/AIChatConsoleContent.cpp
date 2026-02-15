@@ -46,6 +46,10 @@ AIChatConsoleContent::AIChatConsoleContent() {
 }
 
 AIChatConsoleContent::~AIChatConsoleContent() {
+    // Wait for any in-flight background processing to finish
+    while (processing_)
+        juce::Thread::sleep(10);
+
     if (agent_)
         agent_->stop();
 }
@@ -68,7 +72,7 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
 
         auto response = safeThis->agent_->processMessage(messageText);
 
-        juce::MessageManager::callAsync([safeThis, response]() {
+        juce::MessageManager::callAsync([safeThis, response = std::move(response)]() {
             if (!safeThis)
                 return;
 

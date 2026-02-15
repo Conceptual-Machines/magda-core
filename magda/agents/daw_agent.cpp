@@ -11,7 +11,7 @@ std::map<std::string, std::string> DAWAgent::getCapabilities() const {
     return {
         {"track_management", "create, delete, modify tracks"},
         {"clip_management", "create, delete clips"},
-        {"llm_backend", "OpenAI GPT-4.1 with CFG grammar"},
+        {"llm_backend", "OpenAI GPT-5.2 with CFG grammar"},
     };
 }
 
