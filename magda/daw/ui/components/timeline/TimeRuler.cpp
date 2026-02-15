@@ -410,12 +410,12 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
             g.drawText(juce::String(bar), x - 35, labelY, 70, labelHeight,
                        juce::Justification::centred);
-        } else if (isBeatStart && !isBarStart && pixelsPerBeat >= 50) {
+        } else if (isBeatStart && !isBarStart && pixelsPerBeat >= 30) {
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
             g.drawText(juce::String(bar) + "." + juce::String(beatInBar), x - 25, labelY, 50,
                        labelHeight, juce::Justification::centred);
-        } else if (isSubdivisionNotBeat && pixelsPerSubdiv >= 30) {
+        } else if (isSubdivisionNotBeat && pixelsPerSubdiv >= 18) {
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
             g.setFont(FontManager::getInstance().getUIFont(8.0f));
             g.drawText(juce::String(bar) + "." + juce::String(beatInBar) + "." +
