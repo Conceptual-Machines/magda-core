@@ -45,8 +45,8 @@ void ClipInspector::resized() {
     const int valueHeight = 22;
     int fieldWidth = (containerWidth - iconSize - gap * 3) / 3;
 
-    // Position row: position icon — start, end, offset (always visible)
-    {
+    // Position row: position icon — start, end, offset (arrangement clips only)
+    if (clipPositionIcon_->isVisible()) {
         auto labelRow = addRow(labelHeight);
         labelRow.removeFromLeft(iconSize + gap);
         clipStartLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
@@ -63,14 +63,15 @@ void ClipInspector::resized() {
         clipEndValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
         valueRow.removeFromLeft(gap);
         clipContentOffsetValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
+
+        addSeparator();
     }
 
-    addSeparator();
-
-    // File path label (full width)
-    clipFilePathLabel_.setBounds(addRow(16));
-
-    addSeparator();
+    // File path label (full width) — hidden when empty (e.g. session MIDI clips)
+    if (clipFilePathLabel_.getText().isNotEmpty()) {
+        clipFilePathLabel_.setBounds(addRow(16));
+        addSeparator();
+    }
 
     // Loop row: loop toggle + lstart | lend | phase (only when loop is on)
     if (clipLoopToggle_->isVisible()) {

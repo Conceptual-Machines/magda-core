@@ -362,6 +362,16 @@ void BottomPanel::clipSelectionChanged(ClipId /*clipId*/) {
     syncGridControlsFromContent();
 }
 
+void BottomPanel::clipPropertyChanged(ClipId clipId) {
+    // Re-evaluate ABS/REL button state when clip properties change
+    // (e.g. loop toggled on/off)
+    auto* content = getActiveContent();
+    auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
+    if (midiEditor && midiEditor->getEditingClipId() == clipId) {
+        applyTimeModeToContent();
+    }
+}
+
 void BottomPanel::tracksChanged() {
     updateContentBasedOnSelection();
 }
@@ -551,6 +561,19 @@ void BottomPanel::applyTimeModeToContent() {
         pianoRoll->setRelativeTimeMode(relativeTimeMode_);
     } else if (auto* drumGrid = dynamic_cast<daw::ui::DrumGridClipContent*>(content)) {
         drumGrid->setRelativeTimeMode(relativeTimeMode_);
+    }
+
+    // Disable ABS/REL toggle when clip is in loop mode or session view
+    // (these always force relative mode)
+    auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
+    if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
+        const auto* clip = ClipManager::getInstance().getClip(midiEditor->getEditingClipId());
+        bool forceRelative = clip && (clip->view == ClipView::Session || clip->loopEnabled);
+        timeModeButton_->setEnabled(!forceRelative);
+        timeModeButton_->setAlpha(forceRelative ? 0.4f : 1.0f);
+    } else {
+        timeModeButton_->setEnabled(true);
+        timeModeButton_->setAlpha(1.0f);
     }
 }
 
