@@ -1,6 +1,7 @@
 #include "PianoRollGridComponent.hpp"
 
 #include "../../state/TimelineController.hpp"
+#include "../../state/TimelineEvents.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "core/ClipManager.hpp"
 
@@ -379,6 +380,8 @@ void PianoRollGridComponent::resized() {
 }
 
 void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
+    isEditCursorClick_ = false;
+
     // Right-click context menu
     if (e.mods.isPopupMenu()) {
         // Collect selected note indices
@@ -430,6 +433,12 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
+    // Check if clicking on a grid line -> set edit cursor
+    if (isNearGridLine(e.x)) {
+        isEditCursorClick_ = true;
+        return;
+    }
+
     // Store drag start point for potential rubber band selection
     dragSelectStart_ = e.getPosition();
     dragSelectEnd_ = e.getPosition();
@@ -437,6 +446,9 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
 }
 
 void PianoRollGridComponent::mouseDrag(const juce::MouseEvent& e) {
+    if (isEditCursorClick_)
+        return;
+
     isDragSelecting_ = true;
     dragSelectEnd_ = e.getPosition();
     repaint();
@@ -445,6 +457,27 @@ void PianoRollGridComponent::mouseDrag(const juce::MouseEvent& e) {
 void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
     // Don't deselect on right-click release (context menu was shown)
     if (e.mods.isPopupMenu()) {
+        return;
+    }
+
+    // Grid line click -> set edit cursor position
+    if (isEditCursorClick_) {
+        isEditCursorClick_ = false;
+        double gridBeat = getNearestGridLineBeat(e.x);
+
+        // In relative mode, convert from relative beat to absolute beat
+        double absoluteBeat = relativeMode_ ? (gridBeat + clipStartBeats_) : gridBeat;
+
+        // Convert beats to seconds
+        double tempo = 120.0;
+        if (auto* controller = TimelineController::getCurrent()) {
+            tempo = controller->getState().tempo.bpm;
+        }
+        double positionSeconds = absoluteBeat * (60.0 / tempo);
+
+        if (auto* controller = TimelineController::getCurrent()) {
+            controller->dispatch(SetEditCursorEvent{positionSeconds});
+        }
         return;
     }
 
@@ -496,6 +529,18 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
             }
         }
     }
+}
+
+void PianoRollGridComponent::mouseMove(const juce::MouseEvent& e) {
+    if (isNearGridLine(e.x)) {
+        setMouseCursor(juce::MouseCursor::IBeamCursor);
+    } else {
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+    }
+}
+
+void PianoRollGridComponent::mouseExit(const juce::MouseEvent& /*e*/) {
+    setMouseCursor(juce::MouseCursor::NormalCursor);
 }
 
 void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
@@ -928,6 +973,22 @@ double PianoRollGridComponent::snapBeatToGrid(double beat) const {
     if (!snapEnabled_ || gridResolutionBeats_ <= 0.0) {
         return beat;
     }
+    return std::round(beat / gridResolutionBeats_) * gridResolutionBeats_;
+}
+
+bool PianoRollGridComponent::isNearGridLine(int mouseX) const {
+    if (gridResolutionBeats_ <= 0.0)
+        return false;
+    double beat = pixelToBeat(mouseX);
+    double nearestBeat = std::round(beat / gridResolutionBeats_) * gridResolutionBeats_;
+    int gridX = beatToPixel(nearestBeat);
+    return std::abs(mouseX - gridX) <= GRID_LINE_HIT_TOLERANCE;
+}
+
+double PianoRollGridComponent::getNearestGridLineBeat(int mouseX) const {
+    double beat = pixelToBeat(mouseX);
+    if (gridResolutionBeats_ <= 0.0)
+        return beat;
     return std::round(beat / gridResolutionBeats_) * gridResolutionBeats_;
 }
 

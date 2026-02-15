@@ -20,6 +20,7 @@
 #include "ui/components/pianoroll/VelocityLaneComponent.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
 #include "ui/state/TimelineController.hpp"
+#include "ui/state/TimelineEvents.hpp"
 
 namespace magda::daw::ui {
 
@@ -519,7 +520,21 @@ class DrumGridClipGrid : public juce::Component,
         updateNoteComponentBounds();
     }
 
+    void mouseMove(const juce::MouseEvent& e) override {
+        if (isNearGridLine(e.x)) {
+            setMouseCursor(juce::MouseCursor::IBeamCursor);
+        } else {
+            setMouseCursor(juce::MouseCursor::NormalCursor);
+        }
+    }
+
+    void mouseExit(const juce::MouseEvent& /*e*/) override {
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+    }
+
     void mouseDown(const juce::MouseEvent& e) override {
+        isEditCursorClick_ = false;
+
         if (!padRows_ || padRows_->empty() || clipId_ == magda::INVALID_CLIP_ID)
             return;
 
@@ -567,6 +582,12 @@ class DrumGridClipGrid : public juce::Component,
             return;
         }
 
+        // Check if clicking on a grid line -> set edit cursor
+        if (isNearGridLine(e.x)) {
+            isEditCursorClick_ = true;
+            return;
+        }
+
         isDragSelecting_ = false;
         emptyClickRow_ = -1;
 
@@ -583,6 +604,9 @@ class DrumGridClipGrid : public juce::Component,
     }
 
     void mouseDrag(const juce::MouseEvent& e) override {
+        if (isEditCursorClick_)
+            return;
+
         if (!padRows_ || padRows_->empty())
             return;
 
@@ -596,6 +620,24 @@ class DrumGridClipGrid : public juce::Component,
     void mouseUp(const juce::MouseEvent& e) override {
         // Don't deselect on right-click release (context menu was shown)
         if (e.mods.isPopupMenu()) {
+            return;
+        }
+
+        // Grid line click -> set edit cursor position
+        if (isEditCursorClick_) {
+            isEditCursorClick_ = false;
+            double gridBeat = getNearestGridLineBeat(e.x);
+
+            // Drum grid is always relative mode, convert to absolute seconds
+            double tempo = 120.0;
+            if (auto* controller = magda::TimelineController::getCurrent()) {
+                tempo = controller->getState().tempo.bpm;
+            }
+            double positionSeconds = gridBeat * (60.0 / tempo);
+
+            if (auto* controller = magda::TimelineController::getCurrent()) {
+                controller->dispatch(magda::SetEditCursorEvent{positionSeconds});
+            }
             return;
         }
 
@@ -654,6 +696,26 @@ class DrumGridClipGrid : public juce::Component,
         juce::Colour colour;
     };
     std::vector<CopyDragGhost> copyDragGhosts_;
+
+    // Edit cursor click on grid line
+    bool isEditCursorClick_ = false;
+    static constexpr int GRID_LINE_HIT_TOLERANCE = 3;
+
+    bool isNearGridLine(int mouseX) const {
+        if (gridResolutionBeats_ <= 0.0)
+            return false;
+        double beat = static_cast<double>(mouseX - GRID_LEFT_PADDING) / pixelsPerBeat_;
+        double nearestBeat = std::round(beat / gridResolutionBeats_) * gridResolutionBeats_;
+        int gridX = static_cast<int>(nearestBeat * pixelsPerBeat_) + GRID_LEFT_PADDING;
+        return std::abs(mouseX - gridX) <= GRID_LINE_HIT_TOLERANCE;
+    }
+
+    double getNearestGridLineBeat(int mouseX) const {
+        double beat = static_cast<double>(mouseX - GRID_LEFT_PADDING) / pixelsPerBeat_;
+        if (gridResolutionBeats_ <= 0.0)
+            return beat;
+        return std::round(beat / gridResolutionBeats_) * gridResolutionBeats_;
+    }
 
     // Rubber band selection state
     bool isDragSelecting_ = false;

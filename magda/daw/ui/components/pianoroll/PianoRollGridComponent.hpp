@@ -39,6 +39,8 @@ class PianoRollGridComponent : public juce::Component,
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
 
     // Keyboard handling
@@ -232,6 +234,12 @@ class PianoRollGridComponent : public juce::Component,
 
     // Currently selected note index (or -1 for none)
     int selectedNoteIndex_ = -1;
+
+    // Edit cursor click on grid line
+    bool isEditCursorClick_ = false;
+    static constexpr int GRID_LINE_HIT_TOLERANCE = 3;
+    bool isNearGridLine(int mouseX) const;
+    double getNearestGridLineBeat(int mouseX) const;
 
     // Drag selection (rubber band) state
     bool isDragSelecting_ = false;
