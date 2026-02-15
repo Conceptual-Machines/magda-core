@@ -212,11 +212,14 @@ void TrackManager::deactivateMultiOutPair(TrackId parentTrackId, DeviceId device
 }
 
 void TrackManager::deactivateAllMultiOutPairs(TrackId parentTrackId, DeviceId deviceId) {
-    DeviceInfo* device = getDevice(parentTrackId, deviceId);
-    if (!device || !device->multiOut.isMultiOut)
-        return;
-
-    for (int i = 0; i < static_cast<int>(device->multiOut.outputPairs.size()); ++i) {
+    // Re-fetch device pointer each iteration since deactivateMultiOutPair
+    // calls tracks_.erase() which can invalidate pointers
+    for (int i = 0;; ++i) {
+        DeviceInfo* device = getDevice(parentTrackId, deviceId);
+        if (!device || !device->multiOut.isMultiOut)
+            break;
+        if (i >= static_cast<int>(device->multiOut.outputPairs.size()))
+            break;
         if (device->multiOut.outputPairs[static_cast<size_t>(i)].active) {
             deactivateMultiOutPair(parentTrackId, deviceId, i);
         }

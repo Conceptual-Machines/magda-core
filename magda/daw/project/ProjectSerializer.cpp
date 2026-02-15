@@ -633,6 +633,7 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
         auto* multiOutObj = new juce::DynamicObject();
         multiOutObj->setProperty("isMultiOut", true);
         multiOutObj->setProperty("totalOutputChannels", device.multiOut.totalOutputChannels);
+        multiOutObj->setProperty("mixerChildrenCollapsed", device.multiOut.mixerChildrenCollapsed);
 
         juce::Array<juce::var> pairsArray;
         for (const auto& pair : device.multiOut.outputPairs) {
@@ -641,6 +642,8 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
             pairObj->setProperty("name", pair.name);
             pairObj->setProperty("active", pair.active);
             pairObj->setProperty("trackId", pair.trackId);
+            pairObj->setProperty("firstPin", pair.firstPin);
+            pairObj->setProperty("numChannels", pair.numChannels);
             pairsArray.add(juce::var(pairObj));
         }
         multiOutObj->setProperty("outputPairs", juce::var(pairsArray));
@@ -748,6 +751,9 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
         auto* moObj = multiOutVar.getDynamicObject();
         outDevice.multiOut.isMultiOut = moObj->getProperty("isMultiOut");
         outDevice.multiOut.totalOutputChannels = moObj->getProperty("totalOutputChannels");
+        if (moObj->hasProperty("mixerChildrenCollapsed"))
+            outDevice.multiOut.mixerChildrenCollapsed =
+                moObj->getProperty("mixerChildrenCollapsed");
 
         auto pairsVar = moObj->getProperty("outputPairs");
         if (pairsVar.isArray()) {
@@ -759,6 +765,10 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
                     pair.name = pairObj->getProperty("name").toString();
                     pair.active = pairObj->getProperty("active");
                     pair.trackId = pairObj->getProperty("trackId");
+                    if (pairObj->hasProperty("firstPin"))
+                        pair.firstPin = pairObj->getProperty("firstPin");
+                    if (pairObj->hasProperty("numChannels"))
+                        pair.numChannels = pairObj->getProperty("numChannels");
                     outDevice.multiOut.outputPairs.push_back(pair);
                 }
             }

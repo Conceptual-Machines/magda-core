@@ -1201,7 +1201,8 @@ void MixerView::rebuildChannelStrips() {
                 for (const auto& elem : parent->chainElements) {
                     if (isDevice(elem)) {
                         const auto& dev = getDevice(elem);
-                        if (dev.multiOut.isMultiOut && dev.multiOut.mixerChildrenCollapsed) {
+                        if (dev.id == track.multiOutLink->sourceDeviceId &&
+                            dev.multiOut.isMultiOut && dev.multiOut.mixerChildrenCollapsed) {
                             skipTrack = true;
                             break;
                         }
@@ -1251,6 +1252,7 @@ void MixerView::rebuildChannelStrips() {
             bool hasActiveMultiOut = false;
             bool isCollapsed = false;
             TrackId trackId = track.id;
+            DeviceId multiOutDeviceId = INVALID_DEVICE_ID;
             for (const auto& elem : track.chainElements) {
                 if (isDevice(elem)) {
                     const auto& dev = getDevice(elem);
@@ -1262,6 +1264,7 @@ void MixerView::rebuildChannelStrips() {
                             }
                         }
                         if (hasActiveMultiOut) {
+                            multiOutDeviceId = dev.id;
                             isCollapsed = dev.multiOut.mixerChildrenCollapsed;
                             break;
                         }
@@ -1280,19 +1283,11 @@ void MixerView::rebuildChannelStrips() {
                                                 DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
                 strip->expandToggle_->setColour(juce::TextButton::textColourOffId,
                                                 DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-                strip->expandToggle_->onClick = [this, trackId]() {
-                    auto* t = TrackManager::getInstance().getTrack(trackId);
-                    if (!t)
-                        return;
-                    for (auto& elem : t->chainElements) {
-                        if (isDevice(elem)) {
-                            auto& dev = getDevice(elem);
-                            if (dev.multiOut.isMultiOut) {
-                                dev.multiOut.mixerChildrenCollapsed =
-                                    !dev.multiOut.mixerChildrenCollapsed;
-                                break;
-                            }
-                        }
+                strip->expandToggle_->onClick = [this, trackId, multiOutDeviceId]() {
+                    auto* dev = TrackManager::getInstance().getDevice(trackId, multiOutDeviceId);
+                    if (dev && dev->multiOut.isMultiOut) {
+                        dev->multiOut.mixerChildrenCollapsed =
+                            !dev->multiOut.mixerChildrenCollapsed;
                     }
                     rebuildChannelStrips();
                 };
