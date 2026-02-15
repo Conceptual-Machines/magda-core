@@ -74,14 +74,14 @@ void ClipInspector::updateFromSelectedClip() {
     if (clip) {
         clipNameValue_.setText(clip->name, juce::dontSendNotification);
 
-        // Update file path label (show filename only, full path in tooltip)
-        if (clip->type == magda::ClipType::Audio && clip->audioFilePath.isNotEmpty()) {
+        // File path label: show audio filename for arrangement audio clips only.
+        // MIDI clips don't have a meaningful file path, and session clips show
+        // the clip name in the header which is sufficient.
+        if (clip->type == magda::ClipType::Audio && clip->audioFilePath.isNotEmpty() &&
+            clip->view != magda::ClipView::Session) {
             juce::File audioFile(clip->audioFilePath);
             clipFilePathLabel_.setText(audioFile.getFileName(), juce::dontSendNotification);
             clipFilePathLabel_.setTooltip(clip->audioFilePath);
-        } else if (clip->type == magda::ClipType::MIDI) {
-            clipFilePathLabel_.setText("(MIDI)", juce::dontSendNotification);
-            clipFilePathLabel_.setTooltip("");
         } else {
             clipFilePathLabel_.setText("", juce::dontSendNotification);
             clipFilePathLabel_.setTooltip("");
@@ -141,32 +141,37 @@ void ClipInspector::updateFromSelectedClip() {
         clipLoopEndValue_->setBeatsPerBar(beatsPerBar);
 
         if (isSessionClip) {
-            // Session clips: start is always 0, greyed out and non-interactive
-            clipStartValue_->setValue(0.0, juce::dontSendNotification);
-            clipStartValue_->setEnabled(false);
-            clipStartValue_->setAlpha(0.4f);
-            clipEndValue_->setValue(magda::TimelineUtils::secondsToBeats(clip->length, bpm),
-                                    juce::dontSendNotification);
+            // Session clips: hide the position row entirely (no arrangement position)
+            clipPositionIcon_->setVisible(false);
+            clipStartLabel_.setVisible(false);
+            clipStartValue_->setVisible(false);
+            clipEndLabel_.setVisible(false);
+            clipEndValue_->setVisible(false);
+            clipOffsetLabel_.setVisible(false);
+            clipContentOffsetValue_->setVisible(false);
         } else {
             // Arrangement clips: start and end as positions in beats
+            clipPositionIcon_->setVisible(true);
+            clipStartLabel_.setVisible(true);
+            clipStartValue_->setVisible(true);
             clipStartValue_->setEnabled(true);
             clipStartValue_->setAlpha(1.0f);
+            clipEndLabel_.setVisible(true);
+            clipEndValue_->setVisible(true);
+            clipOffsetLabel_.setVisible(true);
+            clipContentOffsetValue_->setVisible(true);
 
-            // Use centralized methods (single source of truth)
             clipStartValue_->setValue(clip->getStartBeats(bpm), juce::dontSendNotification);
             clipEndValue_->setValue(clip->getEndBeats(bpm), juce::dontSendNotification);
-        }
 
-        // Offset value (always in position row, 3rd column)
-        if (clip->type == magda::ClipType::MIDI) {
-            clipContentOffsetValue_->setValue(clip->midiOffset, juce::dontSendNotification);
-        } else if (clip->type == magda::ClipType::Audio) {
-            double offsetBeats = magda::TimelineUtils::secondsToBeats(clip->offset, bpm);
-            clipContentOffsetValue_->setValue(offsetBeats, juce::dontSendNotification);
+            // Offset value
+            if (clip->type == magda::ClipType::MIDI) {
+                clipContentOffsetValue_->setValue(clip->midiOffset, juce::dontSendNotification);
+            } else if (clip->type == magda::ClipType::Audio) {
+                double offsetBeats = magda::TimelineUtils::secondsToBeats(clip->offset, bpm);
+                clipContentOffsetValue_->setValue(offsetBeats, juce::dontSendNotification);
+            }
         }
-
-        // Position icon visible
-        clipPositionIcon_->setVisible(true);
 
         clipLoopToggle_->setActive(clip->loopEnabled);
         // Beat mode forces loop on — disable the toggle so user can't turn it off
@@ -433,13 +438,16 @@ void ClipInspector::showClipControls(bool show) {
     } else {
         // Show always-visible clip controls (viewport is shown, conditional
         // loop row visibility is managed by updateFromSelectedClip)
-        clipPositionIcon_->setVisible(true);
-        clipStartLabel_.setVisible(true);
-        clipStartValue_->setVisible(true);
-        clipEndLabel_.setVisible(true);
-        clipEndValue_->setVisible(true);
-        clipOffsetLabel_.setVisible(true);
-        clipContentOffsetValue_->setVisible(true);
+        // Session clips have no arrangement position — hide the position row
+        const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
+        bool isSession = clip && clip->view == magda::ClipView::Session;
+        clipPositionIcon_->setVisible(!isSession);
+        clipStartLabel_.setVisible(!isSession);
+        clipStartValue_->setVisible(!isSession);
+        clipEndLabel_.setVisible(!isSession);
+        clipEndValue_->setVisible(!isSession);
+        clipOffsetLabel_.setVisible(!isSession);
+        clipContentOffsetValue_->setVisible(!isSession);
         clipLoopToggle_->setVisible(true);
     }
 
