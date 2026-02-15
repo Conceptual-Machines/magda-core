@@ -1,5 +1,8 @@
 #include "MidiEditorContent.hpp"
 
+#include "core/MidiNoteCommands.hpp"
+#include "core/UndoManager.hpp"
+#include "ui/components/pianoroll/VelocityLaneComponent.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
 #include "ui/state/TimelineController.hpp"
 #include "ui/state/TimelineEvents.hpp"
@@ -397,6 +400,71 @@ void MidiEditorContent::setSnapEnabledFromUI(bool enabled) {
     if (editingClipId_ != magda::INVALID_CLIP_ID) {
         magda::ClipManager::getInstance().setClipSnapEnabled(editingClipId_, enabled);
         snapEnabled_ = enabled;
+    }
+}
+
+// ============================================================================
+// Velocity lane
+// ============================================================================
+
+void MidiEditorContent::setupVelocityLane() {
+    velocityLane_ = std::make_unique<magda::VelocityLaneComponent>();
+    velocityLane_->setLeftPadding(GRID_LEFT_PADDING);
+    velocityLane_->onVelocityChanged = [this](magda::ClipId clipId, size_t noteIndex,
+                                              int newVelocity) {
+        auto cmd =
+            std::make_unique<magda::SetMidiNoteVelocityCommand>(clipId, noteIndex, newVelocity);
+        magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+        onVelocityEdited();
+    };
+    velocityLane_->onMultiVelocityChanged = [this](magda::ClipId clipId,
+                                                   std::vector<std::pair<size_t, int>> velocities) {
+        auto cmd = std::make_unique<magda::SetMultipleNoteVelocitiesCommand>(clipId,
+                                                                             std::move(velocities));
+        magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+        onVelocityEdited();
+    };
+    addChildComponent(velocityLane_.get());
+}
+
+void MidiEditorContent::updateVelocityLane() {
+    if (!velocityLane_)
+        return;
+
+    velocityLane_->setClip(editingClipId_);
+    velocityLane_->setPixelsPerBeat(horizontalZoom_);
+    velocityLane_->setRelativeMode(relativeTimeMode_);
+
+    const auto* clip = editingClipId_ != magda::INVALID_CLIP_ID
+                           ? magda::ClipManager::getInstance().getClip(editingClipId_)
+                           : nullptr;
+
+    if (clip) {
+        double tempo = 120.0;
+        if (auto* controller = magda::TimelineController::getCurrent()) {
+            tempo = controller->getState().tempo.bpm;
+        }
+        double secondsPerBeat = 60.0 / tempo;
+        double clipStartBeats = clip->startTime / secondsPerBeat;
+        velocityLane_->setClipStartBeats(clipStartBeats);
+    } else {
+        velocityLane_->setClipStartBeats(0.0);
+    }
+
+    if (viewport_) {
+        velocityLane_->setScrollOffset(viewport_->getViewPositionX());
+    }
+}
+
+void MidiEditorContent::onVelocityEdited() {
+    if (velocityLane_) {
+        velocityLane_->refreshNotes();
+    }
+}
+
+void MidiEditorContent::setVelocityLaneSelectedNotes(const std::vector<size_t>& indices) {
+    if (velocityLane_) {
+        velocityLane_->setSelectedNoteIndices(indices);
     }
 }
 

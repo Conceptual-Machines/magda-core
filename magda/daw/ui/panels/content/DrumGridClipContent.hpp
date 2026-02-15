@@ -6,7 +6,6 @@
 
 namespace magda {
 class SvgButton;
-class VelocityLaneComponent;
 }  // namespace magda
 
 namespace magda::daw::audio {
@@ -75,14 +74,15 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     void onScrollPositionChanged(int scrollX, int scrollY) override;
     void onGridResolutionChanged() override;
 
+    // Override velocity lane methods
+    void updateVelocityLane() override;
+
     daw::audio::DrumGridPlugin* drumGrid_ = nullptr;
 
     // Layout constants (DrumGrid-specific)
     static constexpr int SIDEBAR_WIDTH = 32;
     static constexpr int LABEL_WIDTH = 120;
     static constexpr int ROW_HEIGHT = 24;
-    static constexpr int VELOCITY_LANE_HEIGHT = 80;
-    static constexpr int VELOCITY_HEADER_HEIGHT = 20;
 
     // Drum grid note range
     int baseNote_ = 0;
@@ -90,27 +90,18 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
 
     std::vector<PadRow> padRows_;
 
-    // Velocity drawer visibility
-    bool velocityDrawerOpen_ = false;
-
     // Components (DrumGrid-specific)
     std::unique_ptr<DrumGridClipGrid> gridComponent_;
     std::unique_ptr<DrumGridRowLabels> rowLabels_;
     std::unique_ptr<magda::SvgButton> controlsToggle_;
-    std::unique_ptr<magda::VelocityLaneComponent> velocityLane_;
 
     void buildPadRows();
     void refreshPadRowNames();
     void findDrumGrid();
     void drawSidebar(juce::Graphics& g, juce::Rectangle<int> area);
     void drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area);
-    void updateVelocityLane();
     juce::String resolvePadName(int padIndex) const;
     void timerCallback() override;
-
-    int getDrawerHeight() const {
-        return velocityDrawerOpen_ ? (VELOCITY_LANE_HEIGHT + VELOCITY_HEADER_HEIGHT) : 0;
-    }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumGridClipContent)
 };
