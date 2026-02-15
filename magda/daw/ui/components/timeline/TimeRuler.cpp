@@ -75,10 +75,8 @@ void TimeRuler::setTimeSignature(int numerator, int denominator) {
 }
 
 void TimeRuler::setGridResolution(double beatsPerGridLine) {
-    if (gridResolutionBeats != beatsPerGridLine) {
-        gridResolutionBeats = beatsPerGridLine;
-        repaint();
-    }
+    gridResolutionBeats = beatsPerGridLine;
+    repaint();
 }
 
 void TimeRuler::setTimeOffset(double offsetSeconds) {
@@ -306,13 +304,11 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     const int height = getHeight();
     const int width = getWidth();
 
-    double secondsPerBeat = 60.0 / tempo;
-
     // Use grid resolution if provided, otherwise compute from zoom level
-    double markerIntervalBeats = 1.0;
+    double intervalBeats = 1.0;
 
     if (gridResolutionBeats > 0.0) {
-        markerIntervalBeats = gridResolutionBeats;
+        intervalBeats = gridResolutionBeats;
     } else {
         // Auto-compute from zoom (same logic as TimelineComponent)
         const double beatFractions[] = {0.0078125, 0.015625, 0.03125, 0.0625,
@@ -323,7 +319,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
         for (double fraction : beatFractions) {
             if (fraction * zoom >= minPixelSpacing) {
-                markerIntervalBeats = fraction;
+                intervalBeats = fraction;
                 foundInterval = true;
                 break;
             }
@@ -332,17 +328,16 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         if (!foundInterval) {
             for (int mult : barMultiples) {
                 if (static_cast<double>(timeSigNumerator * mult) * zoom >= minPixelSpacing) {
-                    markerIntervalBeats = timeSigNumerator * mult;
+                    intervalBeats = timeSigNumerator * mult;
                     break;
                 }
             }
         }
     }
 
-    double markerIntervalSeconds = secondsPerBeat * markerIntervalBeats;
     double pixelsPerBeat = zoom;
     double pixelsPerBar = zoom * timeSigNumerator;
-    double pixelsPerSubdiv = markerIntervalBeats * zoom;
+    double pixelsPerSubdiv = intervalBeats * zoom;
 
     int labelY = LABEL_MARGIN;
     int labelHeight = height - TICK_HEIGHT_MAJOR - LABEL_MARGIN * 2;
@@ -357,33 +352,65 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     else if (pixelsPerBar < 90)
         barLabelInterval = 2;
 
-    int subdivsPerBeat = static_cast<int>(std::round(1.0 / markerIntervalBeats));
+    // Work directly in beats — no seconds conversion needed.
+    // Pixel position from beat: beat * zoom - scrollOffset + leftPadding
+    int currentScrollOffset = linkedViewport ? linkedViewport->getViewPositionX() : scrollOffset;
+    double barOriginBeats = barOriginSeconds * tempo / 60.0;
 
-    // Find start time aligned to marker interval
-    double startTime = pixelToTime(0);
-    if (startTime < barOriginSeconds)
-        startTime = barOriginSeconds;
-    startTime =
-        std::floor((startTime - barOriginSeconds) / markerIntervalSeconds) * markerIntervalSeconds +
-        barOriginSeconds;
+    // Find first visible beat (at pixel 0)
+    double firstVisibleBeat = (currentScrollOffset - leftPadding) / zoom + barOriginBeats;
+    if (firstVisibleBeat < barOriginBeats)
+        firstVisibleBeat = barOriginBeats;
 
-    // Iterate at the finest subdivision level (same pattern as TimelineComponent)
-    for (double time = startTime; time <= timelineLength; time += markerIntervalSeconds) {
-        int x = timeToPixel(time);
+    // Align to interval boundary using integer step
+    long long startStep =
+        static_cast<long long>(std::floor((firstVisibleBeat - barOriginBeats) / intervalBeats));
+    if (startStep < 0)
+        startStep = 0;
+
+    double totalTimelineBeats = timelineLength * tempo / 60.0;
+
+    for (long long step = startStep;; ++step) {
+        // Exact beat position (integer step * interval avoids accumulation)
+        double beat = barOriginBeats + step * intervalBeats;
+
+        if (beat > barOriginBeats + totalTimelineBeats)
+            break;
+
+        // Beat to pixel directly
+        int x = static_cast<int>(beat * zoom) - currentScrollOffset + leftPadding;
         if (x > width)
             break;
         if (x < 0)
             continue;
 
-        double totalBeats = (time - barOriginSeconds) / secondsPerBeat;
-        int bar = static_cast<int>(totalBeats / timeSigNumerator) + 1;
-        double beatInBarFractional = std::fmod(totalBeats, static_cast<double>(timeSigNumerator));
-        if (beatInBarFractional < 0)
-            beatInBarFractional += timeSigNumerator;
-        int beatInBar = static_cast<int>(beatInBarFractional) + 1;
+        // Classification: which bar, beat, subdivision are we at?
+        double beatsFromOrigin = step * intervalBeats;
+        int bar = static_cast<int>(beatsFromOrigin / timeSigNumerator) + 1;
+        double beatsInBar = std::fmod(beatsFromOrigin, static_cast<double>(timeSigNumerator));
+        if (beatsInBar < 0)
+            beatsInBar += timeSigNumerator;
 
-        bool isBarStart = beatInBarFractional < 0.001;
-        bool isBeatStart = std::fmod(beatInBarFractional, 1.0) < 0.001;
+        // Use integer arithmetic for exact classification
+        // step % stepsPerBar == 0 means bar start, etc.
+        long long stepsPerBeat =
+            (intervalBeats < 1.0) ? static_cast<long long>(std::round(1.0 / intervalBeats)) : 1;
+        long long stepsPerBar = stepsPerBeat * timeSigNumerator;
+        // For intervals >= 1 beat, every step is at least a beat
+        if (intervalBeats >= 1.0) {
+            stepsPerBeat = 1;
+            stepsPerBar = static_cast<long long>(
+                std::round(static_cast<double>(timeSigNumerator) / intervalBeats));
+            if (stepsPerBar < 1)
+                stepsPerBar = 1;
+        }
+
+        long long stepInBar = step % stepsPerBar;
+        bool isBarStart = (stepInBar == 0);
+        bool isBeatStart = (intervalBeats >= 1.0) || (step % stepsPerBeat == 0);
+
+        int beatInBar = static_cast<int>(beatsInBar) + 1;
+        int subdivIndex = static_cast<int>(stepInBar % stepsPerBeat) + 1;
 
         // Tick drawing: three tiers
         if (isBarStart) {
@@ -400,9 +427,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
                                static_cast<float>(height));
         }
 
-        // Label drawing: three tiers (same as TimelineComponent)
-        double subdivInBeat = std::fmod(beatInBarFractional, 1.0);
-        int subdivIndex = static_cast<int>(std::round(subdivInBeat * subdivsPerBeat)) + 1;
+        // Label drawing: three tiers
         bool isSubdivisionNotBeat = !isBeatStart && subdivIndex > 1;
 
         if (isBarStart && (bar - 1) % barLabelInterval == 0) {

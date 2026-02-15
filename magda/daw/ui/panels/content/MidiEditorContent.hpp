@@ -127,7 +127,9 @@ class MidiEditorContent : public PanelContent,
     virtual void onScrollPositionChanged(int /*scrollX*/, int /*scrollY*/) {}
     virtual void onGridResolutionChanged() {}
 
-    // Push auto-grid display values to BottomPanel (call from zoom methods only)
+  public:
+    // Callback for BottomPanel to update num/den display when auto-grid changes
+    std::function<void(int numerator, int denominator)> onAutoGridDisplayChanged;
 };
 
 }  // namespace magda::daw::ui

@@ -485,6 +485,21 @@ void BottomPanel::updateContentBasedOnSelection() {
         applyTimeModeToContent();
     }
     syncGridControlsFromContent();
+
+    // Connect auto-grid display callback so num/den labels update during zoom
+    auto* content = getActiveContent();
+    if (auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content)) {
+        midiEditor->onAutoGridDisplayChanged = [this](int numerator, int denominator) {
+            gridNumerator_ = numerator;
+            gridDenominator_ = denominator;
+            if (!gridNumeratorLabel_->isDragging())
+                gridNumeratorLabel_->setValue(static_cast<double>(numerator),
+                                              juce::dontSendNotification);
+            if (!gridDenominatorLabel_->isDragging())
+                gridDenominatorLabel_->setValue(static_cast<double>(denominator),
+                                                juce::dontSendNotification);
+        };
+    }
 }
 
 juce::Rectangle<int> BottomPanel::getCollapseButtonBounds() {
