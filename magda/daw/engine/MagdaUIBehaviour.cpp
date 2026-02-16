@@ -1,6 +1,45 @@
 #include "MagdaUIBehaviour.hpp"
 
+#include <juce_gui_basics/juce_gui_basics.h>
+
 namespace magda {
+
+// =============================================================================
+// runTaskWithProgressBar — required for TE track freeze rendering
+// =============================================================================
+
+namespace {
+
+class TaskProgressWindow : public juce::ThreadWithProgressWindow {
+  public:
+    TaskProgressWindow(tracktion::ThreadPoolJobWithProgress& task)
+        : juce::ThreadWithProgressWindow(task.getJobName(), task.canCancel(), true), task_(task) {}
+
+    void run() override {
+        while (!threadShouldExit()) {
+            auto status = task_.runJob();
+            setProgress(static_cast<double>(task_.getCurrentTaskProgress()));
+
+            if (status == juce::ThreadPoolJob::jobHasFinished)
+                break;
+
+            if (status != juce::ThreadPoolJob::jobNeedsRunningAgain)
+                break;
+
+            juce::Thread::sleep(1);
+        }
+    }
+
+  private:
+    tracktion::ThreadPoolJobWithProgress& task_;
+};
+
+}  // namespace
+
+void MagdaUIBehaviour::runTaskWithProgressBar(tracktion::ThreadPoolJobWithProgress& task) {
+    TaskProgressWindow window(task);
+    window.runThread();
+}
 
 std::unique_ptr<juce::Component> MagdaUIBehaviour::createPluginWindow(
     tracktion::PluginWindowState& state) {

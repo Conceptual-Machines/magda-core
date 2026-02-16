@@ -29,6 +29,13 @@ class MagdaUIBehaviour : public tracktion::UIBehaviour {
      */
     std::unique_ptr<juce::Component> createPluginWindow(
         tracktion::PluginWindowState& state) override;
+
+    /**
+     * @brief Run a background task with a progress bar, blocking until complete.
+     *
+     * Required by TE for track freezing and other rendering operations.
+     */
+    void runTaskWithProgressBar(tracktion::ThreadPoolJobWithProgress& task) override;
 };
 
 /**
