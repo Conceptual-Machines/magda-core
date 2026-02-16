@@ -226,6 +226,21 @@ class MagdaSamplerProcessor : public DeviceProcessor {
 };
 
 /**
+ * @brief Processor for the built-in 4OSC synthesizer
+ *
+ * Enumerates parameters generically from plugin->getAutomatableParameters().
+ * The UI maps each control to its param index.
+ */
+class FourOscProcessor : public DeviceProcessor {
+  public:
+    FourOscProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    int getParameterCount() const override;
+    ParameterInfo getParameterInfo(int index) const override;
+    void populateParameters(DeviceInfo& info) const override;
+};
+
+/**
  * @brief Processor for the built-in Drum Grid device
  *
  * Minimal processor — the drum grid has no top-level automatable params initially.

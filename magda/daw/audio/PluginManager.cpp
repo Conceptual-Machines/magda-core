@@ -1593,8 +1593,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
         } else if (device.pluginId.containsIgnoreCase("4osc")) {
             plugin = createFourOscSynth(track);
             if (plugin) {
-                // TODO: Create FourOscProcessor to manage all 4 oscillators + ADSR + filter
-                processor = std::make_unique<DeviceProcessor>(device.id, plugin);
+                processor = std::make_unique<FourOscProcessor>(device.id, plugin);
             }
             // Note: "volume" devices are NOT created here - track volume is separate infrastructure
             // managed by ensureVolumePluginPosition() and controlled via

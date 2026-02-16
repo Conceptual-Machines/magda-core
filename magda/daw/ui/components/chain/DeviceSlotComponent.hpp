@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "DrumGridUI.hpp"
+#include "FourOscUI.hpp"
 #include "NodeComponent.hpp"
 #include "ParamSlotComponent.hpp"
 #include "SamplerUI.hpp"
@@ -164,6 +165,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<ToneGeneratorUI> toneGeneratorUI_;
     std::unique_ptr<SamplerUI> samplerUI_;
     std::unique_ptr<DrumGridUI> drumGridUI_;
+    std::unique_ptr<FourOscUI> fourOscUI_;
 
     void updatePageControls();
     void updateParamModulation();  // Update mod/macro pointers for params

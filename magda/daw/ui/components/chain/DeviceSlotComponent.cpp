@@ -503,6 +503,9 @@ int DeviceSlotComponent::getPreferredWidth() const {
     if (collapsed_) {
         return getLeftPanelsWidth() + COLLAPSED_WIDTH + getRightPanelsWidth();
     }
+    if (fourOscUI_) {
+        return getTotalWidth(500);
+    }
     if (samplerUI_) {
         return getTotalWidth(BASE_SLOT_WIDTH * 2);
     }
@@ -569,12 +572,12 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     updatePageControls();
 
     // Create custom UI if this is an internal device and we don't have one yet
-    if (isInternalDevice() && !toneGeneratorUI_ && !samplerUI_ && !drumGridUI_) {
+    if (isInternalDevice() && !toneGeneratorUI_ && !samplerUI_ && !drumGridUI_ && !fourOscUI_) {
         createCustomUI();
     }
 
     // Update custom UI if available
-    if (toneGeneratorUI_ || samplerUI_ || drumGridUI_) {
+    if (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_) {
         updateCustomUI();
     }
 
@@ -721,6 +724,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             samplerUI_->setVisible(false);
         if (drumGridUI_)
             drumGridUI_->setVisible(false);
+        if (fourOscUI_)
+            fourOscUI_->setVisible(false);
         return;
     }
 
@@ -737,7 +742,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
 
     // Check if this is an internal device with custom UI
-    if (isInternalDevice() && (toneGeneratorUI_ || samplerUI_ || drumGridUI_)) {
+    if (isInternalDevice() && (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_)) {
         // Show custom minimal UI
         if (toneGeneratorUI_) {
             toneGeneratorUI_->setBounds(contentArea.reduced(4));
@@ -757,6 +762,10 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             drumGridUI_->setBounds(drumGridArea);
             drumGridUI_->setVisible(true);
         }
+        if (fourOscUI_) {
+            fourOscUI_->setBounds(contentArea.reduced(4));
+            fourOscUI_->setVisible(true);
+        }
 
         // Hide parameter grid and pagination
         for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
@@ -773,6 +782,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             samplerUI_->setVisible(false);
         if (drumGridUI_)
             drumGridUI_->setVisible(false);
+        if (fourOscUI_)
+            fourOscUI_->setVisible(false);
 
         // Pagination area
         auto paginationArea = contentArea.removeFromTop(PAGINATION_HEIGHT);
@@ -1826,6 +1837,29 @@ void DeviceSlotComponent::createCustomUI() {
 
         addAndMakeVisible(*drumGridUI_);
         updateCustomUI();
+    } else if (device_.pluginId.containsIgnoreCase("4osc")) {
+        fourOscUI_ = std::make_unique<FourOscUI>();
+        fourOscUI_->onParameterChanged = [this](int paramIndex, float value) {
+            if (!nodePath_.isValid())
+                return;
+            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
+                                                                       value);
+        };
+        fourOscUI_->onPluginStateChanged = [this](const juce::String& propertyId, juce::var value) {
+            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+            if (!audioEngine)
+                return;
+            auto* bridge = audioEngine->getAudioBridge();
+            if (!bridge)
+                return;
+            auto plugin = bridge->getPlugin(device_.id);
+            if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get())) {
+                auto& state = fourOsc->state;
+                state.setProperty(juce::Identifier(propertyId), value, nullptr);
+            }
+        };
+        addAndMakeVisible(*fourOscUI_);
+        updateCustomUI();
     }
 }
 
@@ -1945,6 +1979,37 @@ void DeviceSlotComponent::updateCustomUI() {
                     // Always refresh PadChainPanel for selected pad (even if empty)
                     int selectedPad = drumGridUI_->getSelectedPad();
                     drumGridUI_->getPadChainPanel().showPadChain(selectedPad);
+                }
+            }
+        }
+    }
+
+    if (fourOscUI_ && device_.pluginId.containsIgnoreCase("4osc")) {
+        fourOscUI_->updateFromParameters(device_.parameters);
+
+        // Read non-automatable CachedValues from plugin state
+        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+        if (audioEngine) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(device_.id);
+                if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get())) {
+                    FourOscPluginState state;
+                    for (int i = 0; i < 4; ++i) {
+                        state.oscWaveShape[i] = fourOsc->oscParams[i]->waveShapeValue.get();
+                        state.oscVoices[i] = fourOsc->oscParams[i]->voicesValue.get();
+                    }
+                    state.filterType = fourOsc->filterTypeValue.get();
+                    state.filterSlope = fourOsc->filterSlopeValue.get();
+                    state.ampAnalog = fourOsc->ampAnalogValue.get();
+                    for (int i = 0; i < 2; ++i) {
+                        state.lfoWaveShape[i] = fourOsc->lfoParams[i]->waveShapeValue.get();
+                        state.lfoSync[i] = fourOsc->lfoParams[i]->syncValue.get();
+                    }
+                    state.distortionOn = fourOsc->distortionOnValue.get();
+                    state.reverbOn = fourOsc->reverbOnValue.get();
+                    state.delayOn = fourOsc->delayOnValue.get();
+                    state.chorusOn = fourOsc->chorusOnValue.get();
+                    fourOscUI_->updatePluginState(state);
                 }
             }
         }

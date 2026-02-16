@@ -301,6 +301,7 @@ set(DAW_UI_SOURCES
     ui/components/chain/ToneGeneratorUI.cpp
     ui/components/chain/SamplerUI.cpp
     ui/components/chain/DrumGridUI.cpp
+    ui/components/chain/FourOscUI.cpp
     ui/components/chain/PadChainPanel.cpp
     ui/components/chain/PadDeviceSlot.cpp
     ui/components/chain/PadChainRangeRowComponent.cpp
@@ -480,6 +481,7 @@ set(DAW_HEADERS
     ui/components/chain/PadChainPanel.hpp
     ui/components/chain/PadDeviceSlot.hpp
     ui/components/chain/ToneGeneratorUI.hpp
+    ui/components/chain/FourOscUI.hpp
     ui/components/chain/PagedControlPanel.hpp
     ui/components/chain/MacroKnobComponent.hpp
     ui/components/chain/MacroPanelComponent.hpp

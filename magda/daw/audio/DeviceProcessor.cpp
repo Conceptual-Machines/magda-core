@@ -413,6 +413,46 @@ float MagdaSamplerProcessor::getParameterByIndex(int paramIndex) const {
 }
 
 // =============================================================================
+// FourOscProcessor
+// =============================================================================
+
+FourOscProcessor::FourOscProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
+    : DeviceProcessor(deviceId, std::move(plugin)) {}
+
+int FourOscProcessor::getParameterCount() const {
+    if (plugin_)
+        return plugin_->getAutomatableParameters().size();
+    return 0;
+}
+
+ParameterInfo FourOscProcessor::getParameterInfo(int index) const {
+    ParameterInfo info;
+    if (!plugin_)
+        return info;
+
+    auto params = plugin_->getAutomatableParameters();
+    if (index < 0 || index >= params.size())
+        return info;
+
+    auto* param = params[index];
+    info.name = param->getParameterName();
+    info.currentValue = param->getCurrentValue();
+    auto range = param->getValueRange();
+    info.minValue = range.getStart();
+    info.maxValue = range.getEnd();
+    info.defaultValue = param->getDefaultValue().value_or(range.getStart());
+    return info;
+}
+
+void FourOscProcessor::populateParameters(DeviceInfo& info) const {
+    info.parameters.clear();
+    int count = getParameterCount();
+    for (int i = 0; i < count; ++i) {
+        info.parameters.push_back(getParameterInfo(i));
+    }
+}
+
+// =============================================================================
 // DrumGridProcessor
 // =============================================================================
 
