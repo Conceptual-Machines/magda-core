@@ -49,6 +49,7 @@ struct TrackInfo {
     bool muted = false;
     bool soloed = false;
     bool recordArmed = false;
+    bool frozen = false;  // Track is frozen (rendered to audio, plugins disabled)
 
     // Routing
     juce::String midiInputDevice;    // MIDI input device ID ("all", device ID, or empty for none)
@@ -91,6 +92,7 @@ struct TrackInfo {
           muted(other.muted),
           soloed(other.soloed),
           recordArmed(other.recordArmed),
+          frozen(other.frozen),
           midiInputDevice(other.midiInputDevice),
           midiOutputDevice(other.midiOutputDevice),
           audioInputDevice(other.audioInputDevice),
@@ -119,6 +121,7 @@ struct TrackInfo {
             muted = other.muted;
             soloed = other.soloed;
             recordArmed = other.recordArmed;
+            frozen = other.frozen;
             midiInputDevice = other.midiInputDevice;
             midiOutputDevice = other.midiOutputDevice;
             audioInputDevice = other.audioInputDevice;

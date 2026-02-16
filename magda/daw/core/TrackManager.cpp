@@ -539,6 +539,13 @@ void TrackManager::setTrackRecordArmed(TrackId trackId, bool armed) {
     }
 }
 
+void TrackManager::setTrackFrozen(TrackId trackId, bool frozen) {
+    if (auto* track = getTrack(trackId)) {
+        track->frozen = frozen;
+        notifyTrackPropertyChanged(trackId);
+    }
+}
+
 void TrackManager::setTrackType(TrackId trackId, TrackType type) {
     if (auto* track = getTrack(trackId)) {
         // Don't allow changing type if track has children (group tracks)

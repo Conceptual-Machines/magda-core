@@ -182,6 +182,7 @@ class TrackManager {
     void setTrackMuted(TrackId trackId, bool muted);
     void setTrackSoloed(TrackId trackId, bool soloed);
     void setTrackRecordArmed(TrackId trackId, bool armed);
+    void setTrackFrozen(TrackId trackId, bool frozen);
     void setTrackType(TrackId trackId, TrackType type);
 
     // Track routing setters (notify listeners and forward to bridges)
