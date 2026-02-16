@@ -4,6 +4,7 @@
 # Build directories
 BUILD_DIR = cmake-build-debug
 BUILD_DIR_RELEASE = cmake-build-release
+BUILD_DIR_ASAN = cmake-build-asan
 
 # Default target
 .PHONY: all
@@ -46,6 +47,28 @@ release:
 	@mkdir -p $(BUILD_DIR_RELEASE)
 	cd $(BUILD_DIR_RELEASE) && cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
 	cd $(BUILD_DIR_RELEASE) && ninja
+
+# ASAN (AddressSanitizer) build
+.PHONY: asan
+asan:
+	@echo "🔬 Building MAGDA DAW (Debug + AddressSanitizer)..."
+	@mkdir -p $(BUILD_DIR_ASAN)
+	@if [ ! -f $(BUILD_DIR_ASAN)/CMakeCache.txt ]; then \
+		echo "📝 Configuring project with ASAN..."; \
+		cd $(BUILD_DIR_ASAN) && cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+			-DCMAKE_CXX_FLAGS="-g -O1 -fno-omit-frame-pointer -fsanitize=address" \
+			-DCMAKE_C_FLAGS="-g -O1 -fno-omit-frame-pointer -fsanitize=address" \
+			-DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" \
+			-DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address" \
+			-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
+	fi
+	cd $(BUILD_DIR_ASAN) && ninja
+
+# Run with ASAN
+.PHONY: run-asan
+run-asan: asan
+	@echo "🔬 Running MAGDA DAW with AddressSanitizer..."
+	"$(BUILD_DIR_ASAN)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app/Contents/MacOS/MAGDA"
 
 # Run the application
 .PHONY: run
@@ -125,7 +148,7 @@ test-list: test-build
 .PHONY: clean
 clean:
 	@echo "🧹 Cleaning build artifacts..."
-	rm -rf $(BUILD_DIR) $(BUILD_DIR_RELEASE)
+	rm -rf $(BUILD_DIR) $(BUILD_DIR_RELEASE) $(BUILD_DIR_ASAN)
 	rm -rf build/
 
 # Clean and rebuild
@@ -246,6 +269,8 @@ help:
 	@echo "  run            - Build and run the application"
 	@echo "  run-console    - Run with console output visible"
 	@echo "  run-profile    - Run with performance profiling enabled"
+	@echo "  asan           - Build with AddressSanitizer"
+	@echo "  run-asan       - Build and run with AddressSanitizer"
 	@echo ""
 	@echo "Test targets:"
 	@echo "  test-build     - Build tests only"
@@ -271,3 +296,4 @@ help:
 	@echo "Build directories:"
 	@echo "  Debug:   $(BUILD_DIR)"
 	@echo "  Release: $(BUILD_DIR_RELEASE)"
+	@echo "  ASAN:    $(BUILD_DIR_ASAN)"

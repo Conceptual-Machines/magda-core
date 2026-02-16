@@ -101,6 +101,9 @@ class DrumGridPlugin : public te::Plugin {
     void loadPluginToPad(int padIndex, const juce::PluginDescription& desc);
     void clearPad(int padIndex);
 
+    // Swap the chains of two pads (or move if only one has a chain)
+    void swapPadChains(int padIndexA, int padIndexB);
+
     // FX chain management on chains
     void addPluginToChain(int chainIndex, const juce::PluginDescription& desc,
                           int insertIndex = -1);

@@ -1656,6 +1656,17 @@ void DeviceSlotComponent::createCustomUI() {
             }
         };
 
+        // Pad swap via drag-and-drop
+        drumGridUI_->onPadsSwapped = [this, getDrumGrid, updatePadFromChain](int srcPad,
+                                                                             int dstPad) {
+            if (auto* dg = getDrumGrid()) {
+                dg->swapPadChains(srcPad, dstPad);
+                updatePadFromChain(dg, srcPad);
+                updatePadFromChain(dg, dstPad);
+                drumGridUI_->rebuildChainRows();
+            }
+        };
+
         // Set plugin pointer for trigger polling
         drumGridUI_->setDrumGridPlugin(getDrumGrid());
 

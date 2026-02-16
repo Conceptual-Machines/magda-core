@@ -108,6 +108,9 @@ class DrumGridUI : public juce::Component,
     /** Called when delete is clicked on a chain row. (padIndex) */
     std::function<void(int)> onPadDeleteRequested;
 
+    /** Called when a pad is dragged and dropped onto another pad. (sourcePad, targetPad) */
+    std::function<void(int, int)> onPadsSwapped;
+
     /** Called when pad note range changes. (padIndex, lowNote, highNote, rootNote) */
     std::function<void(int, int, int, int)> onPadRangeChanged;
 
@@ -145,6 +148,7 @@ class DrumGridUI : public juce::Component,
     //==============================================================================
     // Component overrides
     void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
     void timerCallback() override;
 
@@ -181,6 +185,7 @@ class DrumGridUI : public juce::Component,
         void paint(juce::Graphics& g) override;
         void resized() override;
         void mouseDown(const juce::MouseEvent& e) override;
+        void mouseDrag(const juce::MouseEvent& e) override;
         void mouseUp(const juce::MouseEvent& e) override;
 
       private:

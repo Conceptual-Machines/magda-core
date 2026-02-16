@@ -169,6 +169,21 @@ void DrumGridUI::PadButton::mouseDown(const juce::MouseEvent& e) {
         onClicked(padIndex_);
 }
 
+void DrumGridUI::PadButton::mouseDrag(const juce::MouseEvent& e) {
+    if (playPressed_ || !hasSample_)
+        return;
+
+    if (e.getDistanceFromDragStart() < 4)
+        return;
+
+    if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor(this)) {
+        auto* dragInfo = new juce::DynamicObject();
+        dragInfo->setProperty("type", "pad");
+        dragInfo->setProperty("padIndex", padIndex_);
+        container->startDragging(juce::var(dragInfo), this);
+    }
+}
+
 void DrumGridUI::PadButton::mouseUp(const juce::MouseEvent& /*e*/) {
     if (playPressed_) {
         playPressed_ = false;
@@ -573,15 +588,19 @@ void DrumGridUI::paint(juce::Graphics& g) {
         int chainsLeft = chainsViewport_.getX() - kGap / 2;
         g.drawVerticalLine(chainsLeft, top, bottom);
     }
+}
 
-    // Plugin drop highlight on pad
+void DrumGridUI::paintOverChildren(juce::Graphics& g) {
+    // Drop highlight on pad (painted over children so it's visible on top of PadButton)
     if (dropHighlightPad_ >= 0) {
         int pageStart = currentPage_ * kPadsPerPage;
         int btnIdx = dropHighlightPad_ - pageStart;
         if (btnIdx >= 0 && btnIdx < kPadsPerPage) {
             auto padBounds = padButtons_[static_cast<size_t>(btnIdx)].getBounds();
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+            g.setColour(juce::Colours::yellow.withAlpha(0.4f));
             g.fillRoundedRectangle(padBounds.toFloat(), 3.0f);
+            g.setColour(juce::Colours::yellow.withAlpha(0.8f));
+            g.drawRoundedRectangle(padBounds.toFloat().reduced(1.0f), 3.0f, 1.5f);
         }
     }
 }
@@ -733,7 +752,8 @@ void DrumGridUI::resized() {
 
 bool DrumGridUI::isInterestedInDragSource(const SourceDetails& details) {
     if (auto* obj = details.description.getDynamicObject()) {
-        bool interested = obj->getProperty("type").toString() == "plugin";
+        auto type = obj->getProperty("type").toString();
+        bool interested = type == "plugin" || type == "pad";
         DBG("DrumGridUI::isInterestedInDragSource: " << (interested ? "YES" : "NO"));
         return interested;
     }
@@ -774,11 +794,19 @@ void DrumGridUI::itemDropped(const SourceDetails& details) {
     }
 
     int padIndex = currentPage_ * kPadsPerPage + btnIdx;
-    setSelectedPad(padIndex);
 
     if (auto* obj = details.description.getDynamicObject()) {
-        if (onPluginDropped)
-            onPluginDropped(padIndex, *obj);
+        auto type = obj->getProperty("type").toString();
+
+        if (type == "pad") {
+            int sourcePad = static_cast<int>(obj->getProperty("padIndex"));
+            if (sourcePad != padIndex && onPadsSwapped)
+                onPadsSwapped(sourcePad, padIndex);
+        } else {
+            setSelectedPad(padIndex);
+            if (onPluginDropped)
+                onPluginDropped(padIndex, *obj);
+        }
     }
 
     repaint();

@@ -437,6 +437,65 @@ void DrumGridPlugin::loadPluginToPad(int padIndex, const juce::PluginDescription
     notifyGraphRebuildNeeded();
 }
 
+void DrumGridPlugin::swapPadChains(int padIndexA, int padIndexB) {
+    if (padIndexA < 0 || padIndexA >= maxPads || padIndexB < 0 || padIndexB >= maxPads)
+        return;
+    if (padIndexA == padIndexB)
+        return;
+
+    int noteA = baseNote + padIndexA;
+    int noteB = baseNote + padIndexB;
+
+    auto* chainA = findChainForNote(noteA);
+    auto* chainB = findChainForNote(noteB);
+
+    if (!chainA && !chainB)
+        return;  // Both empty — nothing to do
+
+    if (chainA && chainB) {
+        // Both pads have chains — swap their note assignments and names
+        auto treeA = findChainTree(chainA->index);
+        auto treeB = findChainTree(chainB->index);
+
+        // Swap note ranges
+        std::swap(chainA->lowNote, chainB->lowNote);
+        std::swap(chainA->highNote, chainB->highNote);
+        std::swap(chainA->rootNote, chainB->rootNote);
+        std::swap(chainA->name, chainB->name);
+
+        // Sync to ValueTree
+        if (treeA.isValid()) {
+            treeA.setProperty(lowNoteId, chainA->lowNote, nullptr);
+            treeA.setProperty(highNoteId, chainA->highNote, nullptr);
+            treeA.setProperty(rootNoteId, chainA->rootNote, nullptr);
+            treeA.setProperty(chainNameId, chainA->name, nullptr);
+        }
+        if (treeB.isValid()) {
+            treeB.setProperty(lowNoteId, chainB->lowNote, nullptr);
+            treeB.setProperty(highNoteId, chainB->highNote, nullptr);
+            treeB.setProperty(rootNoteId, chainB->rootNote, nullptr);
+            treeB.setProperty(chainNameId, chainB->name, nullptr);
+        }
+    } else {
+        // Only one pad has a chain — move it to the other pad's note
+        auto* src = chainA ? chainA : chainB;
+        int dstNote = chainA ? noteB : noteA;
+
+        src->lowNote = dstNote;
+        src->highNote = dstNote;
+        src->rootNote = dstNote;
+
+        auto tree = findChainTree(src->index);
+        if (tree.isValid()) {
+            tree.setProperty(lowNoteId, src->lowNote, nullptr);
+            tree.setProperty(highNoteId, src->highNote, nullptr);
+            tree.setProperty(rootNoteId, src->rootNote, nullptr);
+        }
+    }
+
+    notifyGraphRebuildNeeded();
+}
+
 void DrumGridPlugin::clearPad(int padIndex) {
     if (padIndex < 0 || padIndex >= maxPads)
         return;
