@@ -34,6 +34,7 @@ set(TEST_SOURCES
     test_velocity_lane_utils.cpp
     test_grid_constants.cpp
     test_multi_out_tracks.cpp
+    test_freeze_track.cpp
 )
 
 # Create test executable
