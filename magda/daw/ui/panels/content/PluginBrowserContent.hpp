@@ -33,7 +33,8 @@ struct PluginBrowserInfo {
 
     // Create internal plugin entry
     static PluginBrowserInfo createInternal(const juce::String& name, const juce::String& pluginId,
-                                            bool isInstrument);
+                                            bool isInstrument,
+                                            const juce::String& subcategory = "");
 };
 
 /**

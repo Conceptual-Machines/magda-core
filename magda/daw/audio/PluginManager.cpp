@@ -385,6 +385,18 @@ te::Plugin::Ptr PluginManager::loadBuiltInPlugin(TrackId trackId, const juce::St
         plugin = edit_.getPluginCache().createNewPlugin(te::PhaserPlugin::xmlTypeName, {});
         if (plugin)
             track->pluginList.insertPlugin(plugin, -1, nullptr);
+    } else if (type.equalsIgnoreCase("lowpass")) {
+        plugin = edit_.getPluginCache().createNewPlugin(te::LowPassPlugin::xmlTypeName, {});
+        if (plugin)
+            track->pluginList.insertPlugin(plugin, -1, nullptr);
+    } else if (type.equalsIgnoreCase("pitchshift")) {
+        plugin = edit_.getPluginCache().createNewPlugin(te::PitchShiftPlugin::xmlTypeName, {});
+        if (plugin)
+            track->pluginList.insertPlugin(plugin, -1, nullptr);
+    } else if (type.equalsIgnoreCase("impulseresponse")) {
+        plugin = edit_.getPluginCache().createNewPlugin(te::ImpulseResponsePlugin::xmlTypeName, {});
+        if (plugin)
+            track->pluginList.insertPlugin(plugin, -1, nullptr);
     }
 
     if (!plugin) {
@@ -1422,6 +1434,13 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
             plugin = edit_.getPluginCache().createNewPlugin(te::ChorusPlugin::xmlTypeName, {});
         } else if (device.pluginId.containsIgnoreCase("phaser")) {
             plugin = edit_.getPluginCache().createNewPlugin(te::PhaserPlugin::xmlTypeName, {});
+        } else if (device.pluginId.containsIgnoreCase("lowpass")) {
+            plugin = edit_.getPluginCache().createNewPlugin(te::LowPassPlugin::xmlTypeName, {});
+        } else if (device.pluginId.containsIgnoreCase("pitchshift")) {
+            plugin = edit_.getPluginCache().createNewPlugin(te::PitchShiftPlugin::xmlTypeName, {});
+        } else if (device.pluginId.containsIgnoreCase("impulseresponse")) {
+            plugin =
+                edit_.getPluginCache().createNewPlugin(te::ImpulseResponsePlugin::xmlTypeName, {});
         } else if (device.pluginId.containsIgnoreCase("tone")) {
             plugin =
                 edit_.getPluginCache().createNewPlugin(te::ToneGeneratorPlugin::xmlTypeName, {});
@@ -1597,6 +1616,27 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
         } else if (device.pluginId.containsIgnoreCase("compressor")) {
             plugin = edit_.getPluginCache().createNewPlugin(te::CompressorPlugin::xmlTypeName, {});
+            if (plugin)
+                track->pluginList.insertPlugin(plugin, -1, nullptr);
+        } else if (device.pluginId.containsIgnoreCase("chorus")) {
+            plugin = edit_.getPluginCache().createNewPlugin(te::ChorusPlugin::xmlTypeName, {});
+            if (plugin)
+                track->pluginList.insertPlugin(plugin, -1, nullptr);
+        } else if (device.pluginId.containsIgnoreCase("phaser")) {
+            plugin = edit_.getPluginCache().createNewPlugin(te::PhaserPlugin::xmlTypeName, {});
+            if (plugin)
+                track->pluginList.insertPlugin(plugin, -1, nullptr);
+        } else if (device.pluginId.containsIgnoreCase("lowpass")) {
+            plugin = edit_.getPluginCache().createNewPlugin(te::LowPassPlugin::xmlTypeName, {});
+            if (plugin)
+                track->pluginList.insertPlugin(plugin, -1, nullptr);
+        } else if (device.pluginId.containsIgnoreCase("pitchshift")) {
+            plugin = edit_.getPluginCache().createNewPlugin(te::PitchShiftPlugin::xmlTypeName, {});
+            if (plugin)
+                track->pluginList.insertPlugin(plugin, -1, nullptr);
+        } else if (device.pluginId.containsIgnoreCase("impulseresponse")) {
+            plugin =
+                edit_.getPluginCache().createNewPlugin(te::ImpulseResponsePlugin::xmlTypeName, {});
             if (plugin)
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
         }

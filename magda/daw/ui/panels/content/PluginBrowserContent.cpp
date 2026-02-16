@@ -30,14 +30,17 @@ PluginBrowserInfo PluginBrowserInfo::fromPluginDescription(const juce::PluginDes
 }
 
 PluginBrowserInfo PluginBrowserInfo::createInternal(const juce::String& name,
-                                                    const juce::String& pluginId,
-                                                    bool isInstrument) {
+                                                    const juce::String& pluginId, bool isInstrument,
+                                                    const juce::String& subcategory) {
     PluginBrowserInfo info;
     info.name = name;
     info.manufacturer = "MAGDA";
     info.category = isInstrument ? "Instrument" : "Effect";
     info.format = "Internal";
-    info.subcategory = isInstrument ? "Synth" : "Utility";
+    if (subcategory.isNotEmpty())
+        info.subcategory = subcategory;
+    else
+        info.subcategory = isInstrument ? "Synth" : "Utility";
     info.isExternal = false;
     info.uniqueId = pluginId;
     info.fileOrIdentifier = pluginId;
@@ -295,6 +298,21 @@ void PluginBrowserContent::buildInternalPluginList() {
         audio::MagdaSamplerPlugin::getPluginName(), audio::MagdaSamplerPlugin::xmlTypeName, true));
     plugins_.push_back(PluginBrowserInfo::createInternal(audio::DrumGridPlugin::getPluginName(),
                                                          audio::DrumGridPlugin::xmlTypeName, true));
+
+    // Built-in FX (TE plugins)
+    plugins_.push_back(PluginBrowserInfo::createInternal("Equaliser", "eq", false, "EQ"));
+    plugins_.push_back(
+        PluginBrowserInfo::createInternal("Compressor", "compressor", false, "Dynamics"));
+    plugins_.push_back(PluginBrowserInfo::createInternal("Reverb", "reverb", false, "Reverb"));
+    plugins_.push_back(PluginBrowserInfo::createInternal("Delay", "delay", false, "Delay"));
+    plugins_.push_back(PluginBrowserInfo::createInternal("Chorus", "chorus", false, "Modulation"));
+    plugins_.push_back(PluginBrowserInfo::createInternal("Phaser", "phaser", false, "Modulation"));
+    plugins_.push_back(
+        PluginBrowserInfo::createInternal("Low Pass Filter", "lowpass", false, "Filter"));
+    plugins_.push_back(
+        PluginBrowserInfo::createInternal("Pitch Shift", "pitchshift", false, "Pitch"));
+    plugins_.push_back(
+        PluginBrowserInfo::createInternal("IR Reverb", "impulseresponse", false, "Reverb"));
 }
 
 void PluginBrowserContent::loadExternalPlugins() {
