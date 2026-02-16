@@ -240,6 +240,13 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     te::AudioTrack* getAudioTrack(TrackId trackId) const;
 
     /**
+     * @brief Get the PluginManager (for InstrumentRackManager access)
+     */
+    PluginManager& getPluginManager() {
+        return pluginManager_;
+    }
+
+    /**
      * @brief Get the Tracktion Plugin for a MAGDA device
      * @param deviceId MAGDA device ID
      * @return The Plugin, or nullptr if not found

@@ -80,7 +80,10 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     std::function<void(ClipId, double)> onClipSplit;       // clipId, splitTime (Alt+click)
     std::function<void(ClipId)> onClipRenderRequested;     // clipId (render clip to new file)
     std::function<void()> onRenderTimeSelectionRequested;  // render time selection
-    std::function<double(double)> snapTimeToGrid;          // Optional grid snapping
+    std::function<void(ClipId)> onBounceInPlaceRequested;  // bounce MIDI clip in place (synth only)
+    std::function<void(ClipId)>
+        onBounceToNewTrackRequested;               // bounce clip to new track (full chain)
+    std::function<double(double)> snapTimeToGrid;  // Optional grid snapping
 
     // Real-time preview callbacks (called during drag, not just on mouseUp)
     std::function<void(ClipId, double, double)>

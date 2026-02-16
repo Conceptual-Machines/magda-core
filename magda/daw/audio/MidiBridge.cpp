@@ -26,12 +26,21 @@ MidiBridge::~MidiBridge() {
         monitoredTracks_.clear();
     }
 
-    // Destroy MIDI inputs outside of lock
+    // Stop all MIDI inputs outside of lock — this unregisters CoreMIDI callbacks
     for (auto& [deviceId, midiInput] : inputsToDestroy) {
         if (midiInput) {
             midiInput->stop();
         }
     }
+
+    // Brief pause to allow any in-flight CoreMIDI callback invocations to complete.
+    // CoreMIDI dispatches callbacks on its own threads; after stop() returns, a callback
+    // that was already dispatched may still be executing. 10ms is sufficient for any
+    // in-progress callback to finish.
+    if (!inputsToDestroy.empty()) {
+        juce::Thread::sleep(10);
+    }
+
     inputsToDestroy.clear();
 }
 

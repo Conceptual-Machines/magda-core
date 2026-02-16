@@ -490,4 +490,74 @@ class DeleteTimeSelectionCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+/**
+ * @brief Command for bouncing a MIDI clip in place (synth only, no FX)
+ *
+ * Renders the clip through just the instrument plugin (bypassing all FX),
+ * replaces the MIDI clip with the resulting audio clip on the same track,
+ * and changes the track type from Instrument to Audio.
+ */
+class BounceInPlaceCommand : public UndoableCommand {
+  public:
+    BounceInPlaceCommand(ClipId clipId, TracktionEngineWrapper* engine);
+
+    juce::String getDescription() const override {
+        return "Bounce In Place";
+    }
+
+    void execute() override;
+    void undo() override;
+
+    bool wasSuccessful() const {
+        return success_;
+    }
+
+    ClipId getNewClipId() const {
+        return newClipId_;
+    }
+
+  private:
+    ClipId clipId_;
+    TracktionEngineWrapper* engine_;
+    ClipInfo originalClipSnapshot_;
+    ClipId newClipId_ = INVALID_CLIP_ID;
+    juce::File renderedFile_;
+    bool success_ = false;
+};
+
+/**
+ * @brief Command for bouncing a clip to a new audio track (full signal chain)
+ *
+ * Renders the clip through all plugins (synth + FX) and places the resulting
+ * audio clip on a new Audio track inserted after the source track.
+ * The original clip remains untouched.
+ */
+class BounceToNewTrackCommand : public UndoableCommand {
+  public:
+    BounceToNewTrackCommand(ClipId clipId, TracktionEngineWrapper* engine);
+
+    juce::String getDescription() const override {
+        return "Bounce To New Track";
+    }
+
+    void execute() override;
+    void undo() override;
+
+    bool wasSuccessful() const {
+        return success_;
+    }
+
+    ClipId getNewClipId() const {
+        return newClipId_;
+    }
+
+  private:
+    ClipId clipId_;
+    TracktionEngineWrapper* engine_;
+    ClipId newClipId_ = INVALID_CLIP_ID;
+    TrackId newTrackId_ = INVALID_TRACK_ID;
+    juce::File renderedFile_;
+    bool success_ = false;
+};
+
 }  // namespace magda

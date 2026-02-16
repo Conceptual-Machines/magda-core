@@ -5,8 +5,10 @@
 #include <iostream>
 
 #include "../audio/AudioBridge.hpp"
+#include "../audio/InstrumentRackManager.hpp"
 #include "../engine/TracktionEngineWrapper.hpp"
 #include "Config.hpp"
+#include "TrackCommands.hpp"
 #include "TrackManager.hpp"
 
 namespace magda {
@@ -1239,6 +1241,384 @@ void DeleteTimeSelectionCommand::undo() {
 
     clipManager.forceNotifyClipsChanged();
     executed_ = false;
+}
+
+// ============================================================================
+// BounceInPlaceCommand
+// ============================================================================
+
+BounceInPlaceCommand::BounceInPlaceCommand(ClipId clipId, TracktionEngineWrapper* engine)
+    : clipId_(clipId), engine_(engine) {}
+
+void BounceInPlaceCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI || !engine_) {
+        std::cerr << "BounceInPlaceCommand: invalid clip (must be MIDI) or engine" << std::endl;
+        return;
+    }
+
+    // Must be on an instrument track
+    auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
+    if (!trackInfo || trackInfo->type != TrackType::Instrument) {
+        std::cerr << "BounceInPlaceCommand: clip must be on an Instrument track" << std::endl;
+        return;
+    }
+
+    // Snapshot original clip for undo
+    originalClipSnapshot_ = *clip;
+
+    auto* edit = engine_->getEdit();
+    auto* bridge = engine_->getAudioBridge();
+    if (!edit || !bridge) {
+        std::cerr << "BounceInPlaceCommand: no edit or bridge" << std::endl;
+        return;
+    }
+
+    // Find the TE clip
+    auto* teClip = bridge->getArrangementTeClip(clipId_);
+    if (!teClip) {
+        std::cerr << "BounceInPlaceCommand: TE clip not found" << std::endl;
+        return;
+    }
+
+    // Determine output file path
+    auto configFolder = Config::getInstance().getRenderFolder();
+    juce::File rendersDir;
+    if (!configFolder.empty()) {
+        rendersDir = juce::File(configFolder);
+    } else {
+        // Use project directory renders subfolder
+        rendersDir = edit->editFileRetriever().getParentDirectory().getChildFile("renders");
+    }
+    rendersDir.createDirectory();
+
+    juce::String timestamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S");
+    juce::String safeName = clip->name.isNotEmpty() ? clip->name : "clip";
+    safeName = safeName.replaceCharacters(" /\\:", "____");
+    renderedFile_ = rendersDir.getChildFile(safeName + "_bounced_" + timestamp + ".wav");
+
+    // Stop transport and free playback context
+    auto& transport = edit->getTransport();
+    bool wasPlaying = transport.isPlaying();
+    if (wasPlaying) {
+        transport.stop(false, false);
+    }
+    te::freePlaybackContextIfNotRecording(transport);
+
+    auto restoreTransport = [wasPlaying, &transport]() {
+        if (wasPlaying)
+            transport.play(false);
+    };
+
+    // Find TE track
+    auto* teTrack = teClip->getTrack();
+    if (!teTrack) {
+        std::cerr << "BounceInPlaceCommand: clip has no track" << std::endl;
+        restoreTransport();
+        return;
+    }
+
+    // Bypass FX plugins (everything that isn't the instrument wrapper rack)
+    auto& rackManager = bridge->getPluginManager().getInstrumentRackManager();
+    struct PluginState {
+        te::Plugin* plugin;
+        bool wasEnabled;
+    };
+    std::vector<PluginState> savedStates;
+
+    for (auto plugin : teTrack->pluginList) {
+        if (!rackManager.isWrapperRack(plugin)) {
+            savedStates.push_back({plugin, plugin->isEnabled()});
+            plugin->setEnabled(false);
+        }
+    }
+
+    // Find track index for tracksToDo bitset
+    auto allTracks = te::getAllTracks(*edit);
+    int trackIndex = -1;
+    for (int i = 0; i < allTracks.size(); ++i) {
+        if (allTracks[i] == teTrack) {
+            trackIndex = i;
+            break;
+        }
+    }
+
+    if (trackIndex < 0) {
+        std::cerr << "BounceInPlaceCommand: track not found in edit" << std::endl;
+        // Restore bypassed plugins
+        for (auto& state : savedStates) {
+            state.plugin->setEnabled(state.wasEnabled);
+        }
+        restoreTransport();
+        return;
+    }
+
+    // Build Renderer::Parameters
+    te::Renderer::Parameters params(*edit);
+    params.destFile = renderedFile_;
+    auto& formatManager = engine_->getEngine()->getAudioFileFormatManager();
+    params.audioFormat = formatManager.getWavFormat();
+    params.bitDepth = 24;
+    params.sampleRateForAudio = edit->engine.getDeviceManager().getSampleRate();
+    params.blockSizeForAudio = 512;
+    params.usePlugins = true;  // Synth is active, FX are bypassed
+    params.useMasterPlugins = false;
+    params.checkNodesForAudio = false;  // MIDI→synth generates audio
+
+    // Time range = clip timeline range + tail allowance
+    double endAllowance = 2.0;
+    params.time =
+        te::TimeRange(te::TimePosition::fromSeconds(clip->startTime),
+                      te::TimePosition::fromSeconds(clip->startTime + clip->length + endAllowance));
+
+    juce::BigInteger trackBits;
+    trackBits.setBit(trackIndex);
+    params.tracksToDo = trackBits;
+    params.allowedClips.add(teClip);
+
+    // Render
+    RenderProgressWindow progressWindow("Bouncing In Place...", params);
+    bool userCancelled = !progressWindow.runThread();
+
+    // Restore FX plugins regardless of render outcome
+    for (auto& state : savedStates) {
+        state.plugin->setEnabled(state.wasEnabled);
+    }
+
+    if (userCancelled || !progressWindow.wasSuccessful()) {
+        if (!userCancelled)
+            std::cerr << "BounceInPlaceCommand: render failed" << std::endl;
+        if (renderedFile_.existsAsFile())
+            renderedFile_.deleteFile();
+        restoreTransport();
+        return;
+    }
+
+    // Replace MIDI clip with audio clip
+    double startTime = clip->startTime;
+    double length = clip->length;
+    TrackId trackId = clip->trackId;
+    juce::Colour colour = clip->colour;
+    juce::String name = clip->name;
+
+    clipManager.deleteClip(clipId_);
+
+    newClipId_ =
+        clipManager.createAudioClip(trackId, startTime, length, renderedFile_.getFullPathName());
+
+    if (auto* newClip = clipManager.getClip(newClipId_)) {
+        newClip->colour = colour;
+        newClip->name = name.isNotEmpty() ? name : safeName;
+        clipManager.forceNotifyClipsChanged();
+    }
+
+    // Change track type from Instrument to Audio
+    TrackManager::getInstance().setTrackType(trackId, TrackType::Audio);
+
+    restoreTransport();
+    success_ = true;
+}
+
+void BounceInPlaceCommand::undo() {
+    if (!success_)
+        return;
+
+    auto& clipManager = ClipManager::getInstance();
+
+    // Delete the replacement audio clip
+    if (newClipId_ != INVALID_CLIP_ID) {
+        clipManager.deleteClip(newClipId_);
+        newClipId_ = INVALID_CLIP_ID;
+    }
+
+    // Restore original MIDI clip
+    clipManager.restoreClip(originalClipSnapshot_);
+
+    // Restore track type back to Instrument
+    TrackManager::getInstance().setTrackType(originalClipSnapshot_.trackId, TrackType::Instrument);
+
+    // Delete the rendered file
+    if (renderedFile_.existsAsFile()) {
+        renderedFile_.deleteFile();
+    }
+
+    success_ = false;
+}
+
+// ============================================================================
+// BounceToNewTrackCommand
+// ============================================================================
+
+BounceToNewTrackCommand::BounceToNewTrackCommand(ClipId clipId, TracktionEngineWrapper* engine)
+    : clipId_(clipId), engine_(engine) {}
+
+void BounceToNewTrackCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || !engine_) {
+        std::cerr << "BounceToNewTrackCommand: invalid clip or engine" << std::endl;
+        return;
+    }
+
+    auto* edit = engine_->getEdit();
+    auto* bridge = engine_->getAudioBridge();
+    if (!edit || !bridge) {
+        std::cerr << "BounceToNewTrackCommand: no edit or bridge" << std::endl;
+        return;
+    }
+
+    // Find the TE clip
+    auto* teClip = bridge->getArrangementTeClip(clipId_);
+    if (!teClip) {
+        std::cerr << "BounceToNewTrackCommand: TE clip not found" << std::endl;
+        return;
+    }
+
+    // Determine output file path
+    auto configFolder = Config::getInstance().getRenderFolder();
+    juce::File rendersDir;
+    if (!configFolder.empty()) {
+        rendersDir = juce::File(configFolder);
+    } else {
+        rendersDir = edit->editFileRetriever().getParentDirectory().getChildFile("renders");
+    }
+    rendersDir.createDirectory();
+
+    juce::String timestamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S");
+    juce::String safeName = clip->name.isNotEmpty() ? clip->name : "clip";
+    safeName = safeName.replaceCharacters(" /\\:", "____");
+    renderedFile_ = rendersDir.getChildFile(safeName + "_bounce_" + timestamp + ".wav");
+
+    // Stop transport and free playback context
+    auto& transport = edit->getTransport();
+    bool wasPlaying = transport.isPlaying();
+    if (wasPlaying) {
+        transport.stop(false, false);
+    }
+    te::freePlaybackContextIfNotRecording(transport);
+
+    auto restoreTransport = [wasPlaying, &transport]() {
+        if (wasPlaying)
+            transport.play(false);
+    };
+
+    // Find TE track
+    auto* teTrack = teClip->getTrack();
+    if (!teTrack) {
+        std::cerr << "BounceToNewTrackCommand: clip has no track" << std::endl;
+        restoreTransport();
+        return;
+    }
+
+    // Find track index
+    auto allTracks = te::getAllTracks(*edit);
+    int trackIndex = -1;
+    for (int i = 0; i < allTracks.size(); ++i) {
+        if (allTracks[i] == teTrack) {
+            trackIndex = i;
+            break;
+        }
+    }
+
+    if (trackIndex < 0) {
+        std::cerr << "BounceToNewTrackCommand: track not found in edit" << std::endl;
+        restoreTransport();
+        return;
+    }
+
+    // Build Renderer::Parameters (full chain)
+    te::Renderer::Parameters params(*edit);
+    params.destFile = renderedFile_;
+    auto& formatManager = engine_->getEngine()->getAudioFileFormatManager();
+    params.audioFormat = formatManager.getWavFormat();
+    params.bitDepth = 24;
+    params.sampleRateForAudio = edit->engine.getDeviceManager().getSampleRate();
+    params.blockSizeForAudio = 512;
+    params.usePlugins = true;  // Full signal chain
+    params.useMasterPlugins = false;
+    params.checkNodesForAudio = false;
+
+    double endAllowance = 2.0;
+    params.time =
+        te::TimeRange(te::TimePosition::fromSeconds(clip->startTime),
+                      te::TimePosition::fromSeconds(clip->startTime + clip->length + endAllowance));
+
+    juce::BigInteger trackBits;
+    trackBits.setBit(trackIndex);
+    params.tracksToDo = trackBits;
+    params.allowedClips.add(teClip);
+
+    // Render
+    RenderProgressWindow progressWindow("Bouncing To New Track...", params);
+    bool userCancelled = !progressWindow.runThread();
+
+    if (userCancelled || !progressWindow.wasSuccessful()) {
+        if (!userCancelled)
+            std::cerr << "BounceToNewTrackCommand: render failed" << std::endl;
+        if (renderedFile_.existsAsFile())
+            renderedFile_.deleteFile();
+        restoreTransport();
+        return;
+    }
+
+    // Save clip properties before createTrack/createAudioClip, which trigger
+    // listener callbacks that may invalidate the clip pointer
+    const auto clipName = clip->name;
+    const auto clipColour = clip->colour;
+    const auto clipStartTime = clip->startTime;
+    const auto clipLength = clip->length;
+    const auto clipTrackId = clip->trackId;
+
+    // Create new audio track after the source track
+    auto& trackManager = TrackManager::getInstance();
+    juce::String trackName = clipName.isNotEmpty() ? clipName + " (bounced)" : "Bounced";
+    newTrackId_ = trackManager.createTrack(trackName, TrackType::Audio);
+
+    // Move new track to position after source track
+    int sourceIndex = trackManager.getTrackIndex(clipTrackId);
+    if (sourceIndex >= 0) {
+        trackManager.moveTrack(newTrackId_, sourceIndex + 1);
+    }
+
+    // Create audio clip on new track
+    newClipId_ = clipManager.createAudioClip(newTrackId_, clipStartTime, clipLength,
+                                             renderedFile_.getFullPathName());
+
+    if (auto* newClip = clipManager.getClip(newClipId_)) {
+        newClip->colour = clipColour;
+        newClip->name = clipName.isNotEmpty() ? clipName : safeName;
+        clipManager.forceNotifyClipsChanged();
+    }
+
+    restoreTransport();
+    success_ = true;
+}
+
+void BounceToNewTrackCommand::undo() {
+    if (!success_)
+        return;
+
+    auto& clipManager = ClipManager::getInstance();
+
+    // Delete the new audio clip
+    if (newClipId_ != INVALID_CLIP_ID) {
+        clipManager.deleteClip(newClipId_);
+        newClipId_ = INVALID_CLIP_ID;
+    }
+
+    // Delete the new track
+    if (newTrackId_ != INVALID_TRACK_ID) {
+        TrackManager::getInstance().deleteTrack(newTrackId_);
+        newTrackId_ = INVALID_TRACK_ID;
+    }
+
+    // Delete the rendered file
+    if (renderedFile_.existsAsFile()) {
+        renderedFile_.deleteFile();
+    }
+
+    success_ = false;
 }
 
 }  // namespace magda

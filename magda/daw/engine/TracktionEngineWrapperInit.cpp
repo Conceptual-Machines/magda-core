@@ -1,5 +1,3 @@
-#include "TracktionEngineWrapper.hpp"
-
 #include <iostream>
 
 #include "../audio/AudioBridge.hpp"
@@ -10,6 +8,7 @@
 #include "MagdaUIBehaviour.hpp"
 #include "PluginScanCoordinator.hpp"
 #include "PluginWindowManager.hpp"
+#include "TracktionEngineWrapper.hpp"
 
 namespace magda {
 
@@ -323,12 +322,9 @@ void TracktionEngineWrapper::shutdown() {
         sessionScheduler_.reset();
     }
 
-    // Destroy bridges (they reference Edit and/or Engine)
+    // Destroy AudioBridge first (it references Edit and Engine)
     if (audioBridge_) {
         audioBridge_.reset();
-    }
-    if (midiBridge_) {
-        midiBridge_.reset();
     }
 
     // CRITICAL: Stop transport and release playback context BEFORE destroying Edit
@@ -347,6 +343,15 @@ void TracktionEngineWrapper::shutdown() {
 
         std::cout << "Destroying Edit..." << std::endl;
         currentEdit_.reset();
+    }
+
+    // CRITICAL: Destroy MidiBridge AFTER freeing playback context but BEFORE
+    // closing devices. MidiBridge::~MidiBridge() stops all MIDI inputs first,
+    // which unregisters CoreMIDI callbacks. This must happen while the MIDI
+    // devices still exist, but after playback is stopped.
+    if (midiBridge_) {
+        std::cout << "Destroying MidiBridge..." << std::endl;
+        midiBridge_.reset();
     }
 
     // Close audio/MIDI devices before destroying engine

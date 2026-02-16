@@ -409,6 +409,27 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         getCommandManager().invokeDirectly(CommandIDs::renderTimeSelection, false);
     };
 
+    // Wire bounce callbacks
+    mainView->onBounceInPlaceRequested = [this](ClipId clipId) {
+        auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
+        if (!engine) {
+            DBG("BounceInPlace: no TracktionEngineWrapper available");
+            return;
+        }
+        auto cmd = std::make_unique<BounceInPlaceCommand>(clipId, engine);
+        UndoManager::getInstance().executeCommand(std::move(cmd));
+    };
+
+    mainView->onBounceToNewTrackRequested = [this](ClipId clipId) {
+        auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
+        if (!engine) {
+            DBG("BounceToNewTrack: no TracktionEngineWrapper available");
+            return;
+        }
+        auto cmd = std::make_unique<BounceToNewTrackCommand>(clipId, engine);
+        UndoManager::getInstance().executeCommand(std::move(cmd));
+    };
+
     setupResizeHandles();
     setupViewModeListener();
     setupAudioEngineCallbacks(externalEngine);

@@ -1407,6 +1407,14 @@ void TrackContentPanel::rebuildClipComponents() {
             if (onRenderTimeSelectionRequested)
                 onRenderTimeSelectionRequested();
         };
+        clipComp->onBounceInPlaceRequested = [this](ClipId id) {
+            if (onBounceInPlaceRequested)
+                onBounceInPlaceRequested(id);
+        };
+        clipComp->onBounceToNewTrackRequested = [this](ClipId id) {
+            if (onBounceToNewTrackRequested)
+                onBounceToNewTrackRequested(id);
+        };
 
         // Wire up grid snapping
         clipComp->snapTimeToGrid = snapTimeToGrid;

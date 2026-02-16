@@ -1816,6 +1816,25 @@ void ClipComponent::showContextMenu() {
         menu.addItem(10, "Render Time Selection", hasTimeSelection);
     }
 
+    // Bounce operations
+    {
+        menu.addSeparator();
+
+        // Bounce In Place: only for MIDI clips on instrument tracks
+        bool canBounceInPlace = false;
+        if (!isMultiSelection) {
+            const auto* clipInfo = getClipInfo();
+            if (clipInfo && clipInfo->type == ClipType::MIDI) {
+                auto* trackInfo = TrackManager::getInstance().getTrack(clipInfo->trackId);
+                canBounceInPlace = trackInfo && trackInfo->type == TrackType::Instrument;
+            }
+        }
+        menu.addItem(11, "Bounce In Place", canBounceInPlace);
+
+        // Bounce To New Track: available for any clip
+        menu.addItem(12, "Bounce To New Track", hasSelection);
+    }
+
     // Show menu
     menu.showMenuAsync(juce::PopupMenu::Options(), [this, &clipManager,
                                                     &selectionManager](int result) {
@@ -1983,6 +2002,20 @@ void ClipComponent::showContextMenu() {
             case 10: {  // Render Time Selection
                 if (onRenderTimeSelectionRequested) {
                     onRenderTimeSelectionRequested();
+                }
+                break;
+            }
+
+            case 11: {  // Bounce In Place
+                if (onBounceInPlaceRequested) {
+                    onBounceInPlaceRequested(clipId_);
+                }
+                break;
+            }
+
+            case 12: {  // Bounce To New Track
+                if (onBounceToNewTrackRequested) {
+                    onBounceToNewTrackRequested(clipId_);
                 }
                 break;
             }

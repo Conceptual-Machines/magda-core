@@ -1423,6 +1423,14 @@ void MainView::setupSelectionCallbacks() {
         if (onRenderTimeSelectionRequested)
             onRenderTimeSelectionRequested();
     };
+    trackContentPanel->onBounceInPlaceRequested = [this](ClipId id) {
+        if (onBounceInPlaceRequested)
+            onBounceInPlaceRequested(id);
+    };
+    trackContentPanel->onBounceToNewTrackRequested = [this](ClipId id) {
+        if (onBounceToNewTrackRequested)
+            onBounceToNewTrackRequested(id);
+    };
 
     // Set up time selection callback from track content panel
     trackContentPanel->onTimeSelectionChanged = [this](double start, double end,
