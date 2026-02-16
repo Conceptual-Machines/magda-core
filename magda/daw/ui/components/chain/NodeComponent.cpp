@@ -478,11 +478,9 @@ void NodeComponent::setFrozen(bool frozen) {
     if (frozen_ == frozen)
         return;
     frozen_ = frozen;
-    // Block mouse interaction on all children so params can't be edited,
-    // without changing their enabled state (preserves hover/tooltips and
-    // avoids losing the state of already-disabled children on unfreeze)
+    // Disable all child components so params can't be edited
     for (auto* child : getChildren()) {
-        child->setInterceptsMouseClicks(!frozen, !frozen);
+        child->setEnabled(!frozen);
     }
     repaint();
 }
