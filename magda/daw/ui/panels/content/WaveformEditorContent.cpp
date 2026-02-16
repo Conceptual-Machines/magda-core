@@ -194,6 +194,31 @@ WaveformEditorContent::WaveformEditorContent() {
     timeRuler_->setDisplayMode(magda::TimeRuler::DisplayMode::BarsBeats);
     timeRuler_->setRelativeMode(relativeTimeMode_);
     timeRuler_->setLeftPadding(GRID_LEFT_PADDING);
+
+    // Wire up ruler zoom callback — ruler works in ppb, we work in pps
+    timeRuler_->onZoomChanged = [this](double newRulerZoom, double /*anchorTime*/,
+                                       int anchorScreenX) {
+        double bpm = 120.0;
+        auto* controller = magda::TimelineController::getCurrent();
+        if (controller)
+            bpm = controller->getState().tempo.bpm;
+
+        double newZoom = newRulerZoom * bpm / 60.0;
+        newZoom = juce::jlimit(MIN_ZOOM, MAX_ZOOM, newZoom);
+        if (newZoom != horizontalZoom_) {
+            int anchorX = anchorScreenX - viewport_->getX();
+            performAnchorPointZoom(newZoom / horizontalZoom_, anchorX);
+        }
+    };
+
+    // Wire up ruler scroll callback
+    timeRuler_->onScrollRequested = [this](int deltaX) {
+        if (viewport_) {
+            viewport_->setViewPosition(viewport_->getViewPositionX() + deltaX,
+                                       viewport_->getViewPositionY());
+        }
+    };
+
     addAndMakeVisible(timeRuler_.get());
 
     // Create look and feel for buttons

@@ -135,7 +135,7 @@ class ClipOperations {
      * @param fileDuration Total file duration for constraint checking (0 = no file constraint)
      */
     static inline void trimAudioFromLeft(ClipInfo& clip, double trimAmount,
-                                         double fileDuration = 0.0) {
+                                         double fileDuration = 0.0, double bpm = 0.0) {
         double sourceDelta = trimAmount * clip.speedRatio;
         double newOffset = clip.offset + sourceDelta;
 
@@ -151,6 +151,11 @@ class ClipOperations {
         clip.loopStart = clip.offset;
         clip.startTime = juce::jmax(0.0, clip.startTime + timelineDelta);
         clip.length = juce::jmax(MIN_CLIP_LENGTH, clip.length - timelineDelta);
+
+        if ((clip.autoTempo || clip.warpEnabled) && bpm > 0.0) {
+            clip.startBeats = clip.startTime * bpm / 60.0;
+            clip.lengthBeats = clip.length * bpm / 60.0;
+        }
     }
 
     /**
@@ -161,7 +166,7 @@ class ClipOperations {
      * @param fileDuration Total file duration for constraint checking (0 = no file constraint)
      */
     static inline void trimAudioFromRight(ClipInfo& clip, double trimAmount,
-                                          double fileDuration = 0.0) {
+                                          double fileDuration = 0.0, double bpm = 0.0) {
         double newLength = clip.length - trimAmount;
 
         if (fileDuration > 0.0) {
@@ -171,6 +176,10 @@ class ClipOperations {
 
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
         clip.length = newLength;
+
+        if ((clip.autoTempo || clip.warpEnabled) && bpm > 0.0) {
+            clip.lengthBeats = newLength * bpm / 60.0;
+        }
     }
 
     /**

@@ -206,7 +206,7 @@ struct DuplicateClipState {
 class DuplicateClipCommand : public SnapshotCommand<DuplicateClipState> {
   public:
     DuplicateClipCommand(ClipId sourceClipId, double startTime = -1.0,
-                         TrackId targetTrackId = INVALID_TRACK_ID);
+                         TrackId targetTrackId = INVALID_TRACK_ID, double tempo = 0.0);
 
     juce::String getDescription() const override {
         return "Duplicate Clip";
@@ -228,6 +228,7 @@ class DuplicateClipCommand : public SnapshotCommand<DuplicateClipState> {
     ClipId sourceClipId_;
     double startTime_;       // -1 = use default (after source)
     TrackId targetTrackId_;  // INVALID = same track
+    double tempo_;           // BPM for beat field sync (0 = skip)
     ClipId duplicatedClipId_ = INVALID_CLIP_ID;
 };
 

@@ -177,6 +177,12 @@ void BarsBeatsTicksLabel::paint(juce::Graphics& g) {
     }
 }
 
+bool BarsBeatsTicksLabel::isDragging() const {
+    return (barsSegment_ && barsSegment_->isDragging()) ||
+           (beatsSegment_ && beatsSegment_->isDragging()) ||
+           (ticksSegment_ && ticksSegment_->isDragging());
+}
+
 void BarsBeatsTicksLabel::resized() {
     auto bounds = getLocalBounds().reduced(2, 0);
     int totalWidth = bounds.getWidth();

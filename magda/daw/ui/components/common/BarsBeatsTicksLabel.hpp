@@ -47,6 +47,9 @@ class BarsBeatsTicksLabel : public juce::Component {
     // Whether to draw background fill + border (default: true)
     void setDrawBackground(bool draw);
 
+    // Whether any segment is currently being dragged
+    bool isDragging() const;
+
     // Callback when value changes
     std::function<void()> onValueChange;
 
@@ -111,6 +114,10 @@ class BarsBeatsTicksLabel : public juce::Component {
         void mouseDoubleClick(const juce::MouseEvent& e) override;
         void mouseWheelMove(const juce::MouseEvent& e,
                             const juce::MouseWheelDetails& wheel) override;
+
+        bool isDragging() const {
+            return isDragging_;
+        }
 
       private:
         BarsBeatsTicksLabel& owner_;

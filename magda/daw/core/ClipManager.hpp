@@ -118,7 +118,8 @@ class ClipManager {
      * @param trackId Track for the duplicate (INVALID_TRACK_ID = same track)
      * @return The ID of the new clip
      */
-    ClipId duplicateClipAt(ClipId clipId, double startTime, TrackId trackId = INVALID_TRACK_ID);
+    ClipId duplicateClipAt(ClipId clipId, double startTime, TrackId trackId = INVALID_TRACK_ID,
+                           double tempo = 0.0);
 
     // ========================================================================
     // Clip Manipulation
@@ -151,7 +152,7 @@ class ClipManager {
     /**
      * @brief Trim clip to a range (used for time selection based creation)
      */
-    void trimClip(ClipId clipId, double newStartTime, double newLength);
+    void trimClip(ClipId clipId, double newStartTime, double newLength, double tempo = 0.0);
 
     // ========================================================================
     // Clip Properties
@@ -260,7 +261,7 @@ class ClipManager {
      * @param originalSpeedRatio Original speed ratio at drag start
      */
     void stretchAudioLeft(ClipId clipId, double newLength, double oldLength,
-                          double originalSpeedRatio);
+                          double originalSpeedRatio, double bpm = 0.0);
 
     /**
      * @brief Stretch audio from right edge (editor operation)
@@ -269,7 +270,7 @@ class ClipManager {
      * @param originalSpeedRatio Original speed ratio at drag start
      */
     void stretchAudioRight(ClipId clipId, double newLength, double oldLength,
-                           double originalSpeedRatio);
+                           double originalSpeedRatio, double bpm = 0.0);
 
     // MIDI-specific
     void addMidiNote(ClipId clipId, const MidiNote& note);

@@ -359,8 +359,11 @@ bool CreateClipCommand::validateState() const {
 // ============================================================================
 
 DuplicateClipCommand::DuplicateClipCommand(ClipId sourceClipId, double startTime,
-                                           TrackId targetTrackId)
-    : sourceClipId_(sourceClipId), startTime_(startTime), targetTrackId_(targetTrackId) {}
+                                           TrackId targetTrackId, double tempo)
+    : sourceClipId_(sourceClipId),
+      startTime_(startTime),
+      targetTrackId_(targetTrackId),
+      tempo_(tempo) {}
 
 bool DuplicateClipCommand::canExecute() const {
     return ClipManager::getInstance().getClip(sourceClipId_) != nullptr;
@@ -394,7 +397,8 @@ void DuplicateClipCommand::performAction() {
     if (startTime_ < 0) {
         duplicatedClipId_ = clipManager.duplicateClip(sourceClipId_);
     } else {
-        duplicatedClipId_ = clipManager.duplicateClipAt(sourceClipId_, startTime_, targetTrackId_);
+        duplicatedClipId_ =
+            clipManager.duplicateClipAt(sourceClipId_, startTime_, targetTrackId_, tempo_);
     }
 }
 

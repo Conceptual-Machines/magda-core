@@ -244,8 +244,8 @@ void TrackContentPanel::finishMultiClipDrag() {
             std::vector<std::unique_ptr<DuplicateClipCommand>> commands;
             for (const auto& dragInfo : multiClipDragInfos_) {
                 double newStartTime = juce::jmax(0.0, dragInfo.originalStartTime + actualDeltaTime);
-                auto cmd = std::make_unique<DuplicateClipCommand>(dragInfo.clipId, newStartTime,
-                                                                  dragInfo.originalTrackId);
+                auto cmd = std::make_unique<DuplicateClipCommand>(
+                    dragInfo.clipId, newStartTime, dragInfo.originalTrackId, getTempo());
                 commands.push_back(std::move(cmd));
             }
 

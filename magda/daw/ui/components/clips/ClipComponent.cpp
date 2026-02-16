@@ -1309,8 +1309,9 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                     }
 
                     // Shift+drag duplicate: create duplicate at final position via undo command
+                    double dupTempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
                     auto cmd = std::make_unique<DuplicateClipCommand>(clipId_, finalStartTime,
-                                                                      targetTrackId);
+                                                                      targetTrackId, dupTempo);
                     auto* cmdPtr = cmd.get();
                     UndoManager::getInstance().executeCommand(std::move(cmd));
                     ClipId newClipId = cmdPtr->getDuplicatedClipId();
