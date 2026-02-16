@@ -871,7 +871,19 @@ void WaveformEditorContent::updateGridSize() {
             } else {
                 totalTime = clip->startTime + clip->length;
             }
-            timeRuler_->setTimelineLength(totalTime + 10.0);  // Add padding
+            // Ensure the ruler extends at least to the right edge of the viewport.
+            // Padding is in whole bars so the ruler ends on a musically sensible boundary.
+            double bpmForPad = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
+            double barSeconds = 4.0 * 60.0 / bpmForPad;  // one 4/4 bar in seconds
+            double viewportEndTime = 0.0;
+            if (viewport_ && gridComponent_ && horizontalZoom_ > 0.0) {
+                int scrollX = viewport_->getViewPositionX();
+                int viewW = viewport_->getWidth();
+                viewportEndTime = static_cast<double>(scrollX + viewW) / horizontalZoom_;
+            }
+            double rulerLength =
+                juce::jmax(totalTime + barSeconds * 4.0, viewportEndTime + barSeconds);
+            timeRuler_->setTimelineLength(rulerLength);
         }
     }
 }
