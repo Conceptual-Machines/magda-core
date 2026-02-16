@@ -320,6 +320,23 @@ juce::ValueTree DrumGridPlugin::findChainTree(int chainIndex) const {
     return {};
 }
 
+void DrumGridPlugin::setChainNoteRange(int chainIndex, int lowNote, int highNote, int rootNote) {
+    auto* chain = getChainByIndexMutable(chainIndex);
+    if (!chain)
+        return;
+
+    chain->lowNote = juce::jlimit(0, 127, lowNote);
+    chain->highNote = juce::jlimit(0, 127, highNote);
+    chain->rootNote = juce::jlimit(0, 127, rootNote);
+
+    auto chainTree = findChainTree(chainIndex);
+    if (chainTree.isValid()) {
+        chainTree.setProperty(lowNoteId, chain->lowNote, nullptr);
+        chainTree.setProperty(highNoteId, chain->highNote, nullptr);
+        chainTree.setProperty(rootNoteId, chain->rootNote, nullptr);
+    }
+}
+
 //==============================================================================
 // Convenience pad-level API
 //==============================================================================

@@ -303,6 +303,7 @@ set(DAW_UI_SOURCES
     ui/components/chain/DrumGridUI.cpp
     ui/components/chain/PadChainPanel.cpp
     ui/components/chain/PadDeviceSlot.cpp
+    ui/components/chain/PadChainRangeRowComponent.cpp
     ui/components/chain/PadChainRowComponent.cpp
     ui/components/chain/ParamSlotComponent.cpp
     ui/components/chain/ParamLinkResolver.cpp

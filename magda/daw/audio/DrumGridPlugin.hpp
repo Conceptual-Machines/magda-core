@@ -93,6 +93,9 @@ class DrumGridPlugin : public te::Plugin {
     const Chain* getChainByIndex(int chainIndex) const;
     Chain* getChainByIndexMutable(int chainIndex);
 
+    // Update note range for an existing chain
+    void setChainNoteRange(int chainIndex, int lowNote, int highNote, int rootNote);
+
     // Convenience pad-level API (finds/creates single-note chain for padIndex)
     void loadSampleToPad(int padIndex, const juce::File& file);
     void loadPluginToPad(int padIndex, const juce::PluginDescription& desc);

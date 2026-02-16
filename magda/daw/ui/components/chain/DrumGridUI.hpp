@@ -6,8 +6,10 @@
 #include <array>
 #include <functional>
 #include <memory>
+#include <tuple>
 
 #include "PadChainPanel.hpp"
+#include "PadChainRangeRowComponent.hpp"
 #include "PadChainRowComponent.hpp"
 #include "ParamSlotComponent.hpp"
 #include "SamplerUI.hpp"
@@ -106,8 +108,14 @@ class DrumGridUI : public juce::Component,
     /** Called when delete is clicked on a chain row. (padIndex) */
     std::function<void(int)> onPadDeleteRequested;
 
-    /** Called when play button is clicked on a pad. (padIndex) */
-    std::function<void(int)> onPlayClicked;
+    /** Called when pad note range changes. (padIndex, lowNote, highNote, rootNote) */
+    std::function<void(int, int, int, int)> onPadRangeChanged;
+
+    /** Query note range for a pad. Returns {lowNote, highNote, rootNote}. */
+    std::function<std::tuple<int, int, int>(int padIndex)> getNoteRange;
+
+    /** Called when play button is pressed/released on a pad. (padIndex, isNoteOn) */
+    std::function<void(int, bool)> onNotePreview;
 
     /** Set the DrumGridPlugin pointer for trigger polling. Starts timer. */
     void setDrumGridPlugin(daw::audio::DrumGridPlugin* plugin);
@@ -168,11 +176,12 @@ class DrumGridUI : public juce::Component,
         void setTriggered(bool triggered);
 
         std::function<void(int)> onClicked;
-        std::function<void(int)> onPlayClicked;
+        std::function<void(int, bool)> onNotePreview;  // (padIndex, isNoteOn)
 
         void paint(juce::Graphics& g) override;
         void resized() override;
         void mouseDown(const juce::MouseEvent& e) override;
+        void mouseUp(const juce::MouseEvent& e) override;
 
       private:
         int padIndex_ = 0;
@@ -183,6 +192,7 @@ class DrumGridUI : public juce::Component,
         bool muted_ = false;
         bool soloed_ = false;
         bool triggered_ = false;
+        bool playPressed_ = false;
         std::unique_ptr<magda::SvgButton> playButton_;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PadButton)
@@ -233,6 +243,13 @@ class DrumGridUI : public juce::Component,
     juce::Component chainsContainer_;
     std::vector<std::unique_ptr<PadChainRowComponent>> chainRows_;
     std::unique_ptr<magda::SvgButton> chainsToggleButton_;
+
+    // Chains tab system (Mix / Range)
+    enum class ChainsTab { Mix, Range };
+    ChainsTab currentChainsTab_ = ChainsTab::Mix;
+    juce::TextButton mixTabButton_{"Mix"};
+    juce::TextButton rangeTabButton_{"Range"};
+    std::vector<std::unique_ptr<PadChainRangeRowComponent>> rangeRows_;
 
     // Plugin drop highlight
     int dropHighlightPad_ = -1;
