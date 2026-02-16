@@ -57,10 +57,7 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     juce::String getNodeName() const;
     void setBypassed(bool bypassed);
     bool isBypassed() const;
-    void setFrozen(bool frozen) {
-        frozen_ = frozen;
-        repaint();
-    }
+    void setFrozen(bool frozen);
     bool isFrozen() const {
         return frozen_;
     }

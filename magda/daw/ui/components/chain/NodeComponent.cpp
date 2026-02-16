@@ -474,6 +474,17 @@ bool NodeComponent::isBypassed() const {
     return !bypassButton_->getToggleState();  // Toggle OFF = bypassed
 }
 
+void NodeComponent::setFrozen(bool frozen) {
+    if (frozen_ == frozen)
+        return;
+    frozen_ = frozen;
+    // Disable all child components so params can't be edited
+    for (auto* child : getChildren()) {
+        child->setEnabled(!frozen);
+    }
+    repaint();
+}
+
 void NodeComponent::setModPanelVisible(bool visible) {
     if (modPanelVisible_ != visible) {
         modPanelVisible_ = visible;
