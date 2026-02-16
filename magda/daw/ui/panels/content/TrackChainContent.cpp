@@ -1173,6 +1173,13 @@ void TrackChainContent::rebuildNodeComponents() {
         }
     }
 
+    // Set frozen state on all nodes
+    auto* trackInfo = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+    bool trackFrozen = trackInfo && trackInfo->frozen;
+    for (auto& node : nodeComponents_) {
+        node->setFrozen(trackFrozen);
+    }
+
     // Restore node states (collapsed, expanded chains) for ALL nodes
     restoreNodeStates();
 

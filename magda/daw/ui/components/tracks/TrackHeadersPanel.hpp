@@ -111,6 +111,7 @@ class TrackHeadersPanel : public juce::Component,
         bool selected = false;
         bool muted = false;
         bool solo = false;
+        bool frozen = false;
         float volume = 0.8f;
         float pan = 0.0f;
         int height = DEFAULT_TRACK_HEIGHT;

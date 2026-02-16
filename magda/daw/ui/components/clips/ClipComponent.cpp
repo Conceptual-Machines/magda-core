@@ -136,6 +136,13 @@ void ClipComponent::paint(juce::Graphics& g) {
         g.setColour(juce::Colours::white);
         g.drawRect(bounds, 2);
     }
+
+    // Frozen overlay — dim clip on frozen tracks
+    auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
+    if (trackInfo && trackInfo->frozen) {
+        g.setColour(juce::Colours::black.withAlpha(0.35f));
+        g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
+    }
 }
 
 void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
@@ -722,6 +729,10 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
+    // Check if track is frozen
+    auto* trackInfoForFreeze = TrackManager::getInstance().getTrack(clip->trackId);
+    bool isFrozen = trackInfoForFreeze && trackInfoForFreeze->frozen;
+
     // Ensure parent panel has keyboard focus so shortcuts work
     if (parentPanel_) {
         parentPanel_->grabKeyboardFocus();
@@ -744,6 +755,21 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
                                   daw::ui::PanelContentType::WaveformEditor);
         }
     };
+
+    // Frozen tracks: allow selection (so piano roll shows content) but block editing
+    if (isFrozen && !e.mods.isPopupMenu()) {
+        // Still allow click-to-select and Cmd+click toggle
+        if (e.mods.isCommandDown()) {
+            selectionManager.toggleClipSelection(clipId_);
+        } else {
+            selectionManager.selectClip(clipId_);
+        }
+        isSelected_ = selectionManager.isClipSelected(clipId_);
+        ensureEditorOpen(clipId_);
+        dragMode_ = DragMode::None;
+        repaint();
+        return;
+    }
 
     // Handle Cmd/Ctrl+click for toggle selection
     if (e.mods.isCommandDown()) {
@@ -917,6 +943,12 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 
     const auto* clip = getClipInfo();
     if (!clip) {
+        return;
+    }
+
+    // Block editing on frozen tracks
+    auto* trackInfoDrag = TrackManager::getInstance().getTrack(clip->trackId);
+    if (trackInfoDrag && trackInfoDrag->frozen) {
         return;
     }
 
@@ -1739,20 +1771,29 @@ void ClipComponent::showContextMenu() {
         isMultiSelection = false;
     }
 
+    // Check if track is frozen — disable destructive editing if so
+    const auto* clipForMenu = getClipInfo();
+    bool isFrozen = false;
+    if (clipForMenu) {
+        auto* ti = TrackManager::getInstance().getTrack(clipForMenu->trackId);
+        isFrozen = ti && ti->frozen;
+    }
+    bool canEdit = hasSelection && !isFrozen;
+
     juce::PopupMenu menu;
 
     // Copy/Cut/Paste
-    menu.addItem(1, "Copy", hasSelection);
-    menu.addItem(2, "Cut", hasSelection);
-    menu.addItem(3, "Paste");  // Always available (will check clipboard when clicked)
+    menu.addItem(1, "Copy", hasSelection);  // Copy is always allowed
+    menu.addItem(2, "Cut", canEdit);
+    menu.addItem(3, "Paste", !isFrozen);
     menu.addSeparator();
 
     // Duplicate
-    menu.addItem(4, "Duplicate", hasSelection);
+    menu.addItem(4, "Duplicate", canEdit);
     menu.addSeparator();
 
     // Split / Trim
-    menu.addItem(5, "Split / Trim", hasSelection);
+    menu.addItem(5, "Split / Trim", canEdit);
     menu.addSeparator();
 
     // Join Clips (need 2+ adjacent clips on same track)
@@ -1773,16 +1814,16 @@ void ClipComponent::showContextMenu() {
             canJoin = testCmd.canExecute();
         }
     }
-    menu.addItem(8, "Join Clips", canJoin);
+    menu.addItem(8, "Join Clips", canJoin && !isFrozen);
     menu.addSeparator();
 
     // Delete
-    menu.addItem(6, "Delete", hasSelection);
+    menu.addItem(6, "Delete", canEdit);
     menu.addSeparator();
 
     // Loop Settings (only for single clip)
     if (!isMultiSelection) {
-        menu.addItem(7, "Loop Settings...");
+        menu.addItem(7, "Loop Settings...", !isFrozen);
     }
 
     // Render Clip(s) - available for audio clips (single or multi-selection)

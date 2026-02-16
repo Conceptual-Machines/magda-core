@@ -6,6 +6,7 @@
 #include "core/ClipManager.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 
 namespace magda {
@@ -509,6 +510,16 @@ void PianoRollGridComponent::mouseExit(const juce::MouseEvent& /*e*/) {
 }
 
 void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
+    // Block note creation on frozen tracks
+    if (clipId_ != INVALID_CLIP_ID) {
+        auto* clip = ClipManager::getInstance().getClip(clipId_);
+        if (clip) {
+            auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
+            if (trackInfo && trackInfo->frozen)
+                return;
+        }
+    }
+
     // Double-click to add a new note
     if (selectedClipIds_.empty()) {
         return;

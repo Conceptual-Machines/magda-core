@@ -1,6 +1,8 @@
 #include "NoteComponent.hpp"
 
 #include "NoteGridHost.hpp"
+#include "core/ClipManager.hpp"
+#include "core/TrackManager.hpp"
 
 namespace magda {
 
@@ -52,6 +54,16 @@ void NoteComponent::resized() {
 }
 
 void NoteComponent::mouseDown(const juce::MouseEvent& e) {
+    // Block all interaction on frozen tracks
+    if (sourceClipId_ != INVALID_CLIP_ID) {
+        auto* clip = ClipManager::getInstance().getClip(sourceClipId_);
+        if (clip) {
+            auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
+            if (trackInfo && trackInfo->frozen)
+                return;
+        }
+    }
+
     // Right-click: forward to parent for context menu
     if (e.mods.isPopupMenu()) {
         if (onRightClick) {

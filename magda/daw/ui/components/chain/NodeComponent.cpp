@@ -185,8 +185,8 @@ void NodeComponent::paint(juce::Graphics& g) {
         g.drawText(getNodeName(), textBounds, juce::Justification::centred);
         g.restoreState();
 
-        // Dim if bypassed
-        if (!bypassButton_->getToggleState()) {
+        // Dim if bypassed or frozen
+        if (!bypassButton_->getToggleState() || frozen_) {
             g.setColour(juce::Colours::black.withAlpha(0.3f));
             g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
         }
@@ -273,8 +273,8 @@ void NodeComponent::paint(juce::Graphics& g) {
     // Let subclass paint main content
     paintContent(g, contentArea);
 
-    // Dim if bypassed (draw over everything)
-    if (!bypassButton_->getToggleState()) {  // Toggle OFF = bypassed
+    // Dim if bypassed or frozen (draw over everything)
+    if (!bypassButton_->getToggleState() || frozen_) {  // Toggle OFF = bypassed
         g.setColour(juce::Colours::black.withAlpha(0.3f));
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 4.0f);
     }
