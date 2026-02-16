@@ -323,7 +323,20 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     mainView->onTimeSelectionChanged = [this](double start, double end, bool hasTimeSelection) {
         transportPanel->setTimeSelection(start, end, hasTimeSelection);
         // Refresh menu enabled state so Copy/Duplicate/Delete reflect time selection
-        selectionTypeChanged(SelectionManager::getInstance().getSelectionType());
+        if (hasTimeSelection) {
+            // Force menu refresh with hasSelection=true
+            bool isPlaying = false, isRecording = false, isLooping = false, hasEditCursor = false;
+            if (mainView) {
+                const auto& ts = mainView->getTimelineController().getState();
+                isPlaying = ts.playhead.isPlaying;
+                isRecording = ts.playhead.isRecording;
+                isLooping = ts.loop.enabled;
+                hasEditCursor = ts.editCursorPosition >= 0;
+            }
+            MenuManager::getInstance().updateMenuStates(
+                false, false, true, hasEditCursor, leftPanelVisible, rightPanelVisible,
+                bottomPanelVisible, isPlaying, isRecording, isLooping);
+        }
     };
     mainView->onEditCursorChanged = [this](double position) {
         transportPanel->setEditCursorPosition(position);

@@ -313,92 +313,19 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onCopy = [this]() {
-        auto& clipManager = ClipManager::getInstance();
-        auto& selectionManager = SelectionManager::getInstance();
-        auto selectedClips = selectionManager.getSelectedClips();
-        if (!selectedClips.empty()) {
-            clipManager.copyToClipboard(selectedClips);
-        }
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::copy, false);
     };
 
     callbacks.onPaste = [this]() {
-        auto& clipManager = ClipManager::getInstance();
-        auto& selectionManager = SelectionManager::getInstance();
-        if (clipManager.hasClipsInClipboard()) {
-            // Paste at edit cursor position from MainView
-            double pasteTime =
-                mainComponent->mainView
-                    ? mainComponent->mainView->getTimelineController().getState().editCursorPosition
-                    : 0.0;
-            // If edit cursor not set, use playback position
-            if (pasteTime < 0 && mainComponent->mainView) {
-                pasteTime = mainComponent->mainView->getTimelineController()
-                                .getState()
-                                .playhead.editPosition;
-            }
-            auto newClips = clipManager.pasteFromClipboard(pasteTime);
-            if (!newClips.empty()) {
-                // Select the pasted clips
-                std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
-                selectionManager.selectClips(newSelection);
-            }
-        }
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::paste, false);
     };
 
     callbacks.onDuplicate = [this]() {
-        auto& selectionManager = SelectionManager::getInstance();
-        auto selectedClips = selectionManager.getSelectedClips();
-        if (!selectedClips.empty()) {
-            std::vector<ClipId> newClips;
-
-            // Use compound operation for multiple duplicates
-            if (selectedClips.size() > 1) {
-                UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
-            }
-
-            for (auto clipId : selectedClips) {
-                auto cmd = std::make_unique<DuplicateClipCommand>(clipId);
-                auto* cmdPtr = cmd.get();
-                UndoManager::getInstance().executeCommand(std::move(cmd));
-
-                ClipId newClipId = cmdPtr->getDuplicatedClipId();
-                if (newClipId != INVALID_CLIP_ID) {
-                    newClips.push_back(newClipId);
-                }
-            }
-
-            if (selectedClips.size() > 1) {
-                UndoManager::getInstance().endCompoundOperation();
-            }
-
-            // Select the new duplicates
-            if (!newClips.empty()) {
-                std::unordered_set<ClipId> newSelection(newClips.begin(), newClips.end());
-                selectionManager.selectClips(newSelection);
-            }
-        }
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::duplicate, false);
     };
 
     callbacks.onDelete = [this]() {
-        auto& selectionManager = SelectionManager::getInstance();
-        auto selectedClips = selectionManager.getSelectedClips();
-        if (!selectedClips.empty()) {
-            // Use compound operation for multiple deletes
-            if (selectedClips.size() > 1) {
-                UndoManager::getInstance().beginCompoundOperation("Delete Clips");
-            }
-
-            for (auto clipId : selectedClips) {
-                auto cmd = std::make_unique<DeleteClipCommand>(clipId);
-                UndoManager::getInstance().executeCommand(std::move(cmd));
-            }
-
-            if (selectedClips.size() > 1) {
-                UndoManager::getInstance().endCompoundOperation();
-            }
-
-            selectionManager.clearSelection();
-        }
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::deleteCmd, false);
     };
 
     callbacks.onSplitOrTrim = [this]() {

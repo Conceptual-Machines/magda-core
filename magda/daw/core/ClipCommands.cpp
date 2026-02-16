@@ -1153,4 +1153,115 @@ void RippleDeleteTimeSelectionCommand::undo() {
     executed_ = false;
 }
 
+// ============================================================================
+// DeleteTimeSelectionCommand (no ripple)
+// ============================================================================
+
+DeleteTimeSelectionCommand::DeleteTimeSelectionCommand(double startTime, double endTime,
+                                                       const std::vector<TrackId>& trackIds)
+    : startTime_(startTime), endTime_(endTime), trackIds_(trackIds) {}
+
+void DeleteTimeSelectionCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+
+    // Snapshot all arrangement clips for reliable undo
+    snapshot_ = clipManager.getArrangementClips();
+
+    double duration = endTime_ - startTime_;
+    if (duration <= 0.0)
+        return;
+
+    auto isAffectedTrack = [this](TrackId trackId) {
+        if (trackIds_.empty())
+            return true;
+        return std::find(trackIds_.begin(), trackIds_.end(), trackId) != trackIds_.end();
+    };
+
+    std::vector<ClipId> clipsToDelete;
+
+    auto allClips = clipManager.getArrangementClips();
+    for (const auto& clip : allClips) {
+        if (!isAffectedTrack(clip.trackId))
+            continue;
+
+        double clipEnd = clip.startTime + clip.length;
+
+        // No overlap
+        if (clip.startTime >= endTime_ || clipEnd <= startTime_)
+            continue;
+
+        bool startsBeforeSel = clip.startTime < startTime_;
+        bool endsAfterSel = clipEnd > endTime_;
+
+        if (startsBeforeSel && endsAfterSel) {
+            // Clip spans both boundaries: trim to end at startTime_
+            auto* liveClip = clipManager.getClip(clip.id);
+            if (liveClip)
+                liveClip->length = startTime_ - clip.startTime;
+        } else if (startsBeforeSel) {
+            // Clip spans left boundary: trim right edge to startTime_
+            auto* liveClip = clipManager.getClip(clip.id);
+            if (liveClip)
+                liveClip->length = startTime_ - clip.startTime;
+        } else if (endsAfterSel) {
+            // Clip spans right boundary: trim left edge to endTime_
+            auto* liveClip = clipManager.getClip(clip.id);
+            if (liveClip) {
+                double trimAmount = endTime_ - clip.startTime;
+                if (liveClip->type == ClipType::Audio) {
+                    liveClip->offset += trimAmount * liveClip->speedRatio;
+                    if (!liveClip->loopEnabled) {
+                        liveClip->loopStart = liveClip->offset;
+                    }
+                } else if (liveClip->type == ClipType::MIDI && !liveClip->midiNotes.empty()) {
+                    double bps = 120.0 / 60.0;
+                    double trimBeats = trimAmount * bps;
+                    std::vector<MidiNote> remaining;
+                    for (auto& note : liveClip->midiNotes) {
+                        if (note.startBeat >= trimBeats) {
+                            MidiNote n = note;
+                            n.startBeat -= trimBeats;
+                            remaining.push_back(n);
+                        }
+                    }
+                    liveClip->midiNotes = remaining;
+                }
+                liveClip->length -= trimAmount;
+                liveClip->startTime = endTime_;  // Keep in place (no shift)
+            }
+        } else {
+            // Fully inside selection: delete
+            clipsToDelete.push_back(clip.id);
+        }
+    }
+
+    for (auto clipId : clipsToDelete) {
+        clipManager.deleteClip(clipId);
+    }
+
+    // No ripple shift — clips after selection stay where they are
+
+    clipManager.forceNotifyClipsChanged();
+    executed_ = true;
+}
+
+void DeleteTimeSelectionCommand::undo() {
+    if (!executed_)
+        return;
+
+    auto& clipManager = ClipManager::getInstance();
+
+    auto currentClips = clipManager.getArrangementClips();
+    for (const auto& clip : currentClips) {
+        clipManager.deleteClip(clip.id);
+    }
+
+    for (const auto& clip : snapshot_) {
+        clipManager.restoreClip(clip);
+    }
+
+    clipManager.forceNotifyClipsChanged();
+    executed_ = false;
+}
+
 }  // namespace magda
