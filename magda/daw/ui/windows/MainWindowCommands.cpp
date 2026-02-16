@@ -1,5 +1,6 @@
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
+#include "../../core/Config.hpp"
 #include "../../core/MidiNoteCommands.hpp"
 #include "../../core/SelectionManager.hpp"
 #include "../../core/TrackCommands.hpp"
@@ -405,8 +406,24 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             // No notes or clips selected — delete selected track
             TrackId selectedTrack = selectionManager.getSelectedTrack();
             if (selectedTrack != INVALID_TRACK_ID) {
-                auto cmd = std::make_unique<DeleteTrackCommand>(selectedTrack);
-                UndoManager::getInstance().executeCommand(std::move(cmd));
+                if (Config::getInstance().getConfirmTrackDelete()) {
+                    auto trackId = selectedTrack;
+                    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+                    juce::String trackName = trackInfo ? trackInfo->name : "this track";
+                    juce::AlertWindow::showOkCancelBox(
+                        juce::AlertWindow::WarningIcon, "Delete Track",
+                        "Are you sure you want to delete \"" + trackName + "\"?", "Delete",
+                        "Cancel", nullptr,
+                        juce::ModalCallbackFunction::create([trackId](int result) {
+                            if (result == 1) {
+                                auto cmd = std::make_unique<DeleteTrackCommand>(trackId);
+                                UndoManager::getInstance().executeCommand(std::move(cmd));
+                            }
+                        }));
+                } else {
+                    auto cmd = std::make_unique<DeleteTrackCommand>(selectedTrack);
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+                }
                 return true;
             }
             return true;

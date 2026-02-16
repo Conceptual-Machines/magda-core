@@ -41,6 +41,9 @@ class PreferencesDialog : public juce::Component {
     juce::ToggleButton showRightPanelToggle;
     juce::ToggleButton showBottomPanelToggle;
 
+    // Behavior section
+    juce::ToggleButton confirmTrackDeleteToggle;
+
     // Layout section
     juce::ToggleButton leftHandedLayoutToggle;
 
@@ -79,6 +82,7 @@ class PreferencesDialog : public juce::Component {
     juce::Label timelineHeader;
     juce::Label transportHeader;
     juce::Label panelsHeader;
+    juce::Label behaviorHeader;
     juce::Label layoutHeader;
 
     // Buttons

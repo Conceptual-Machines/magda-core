@@ -45,6 +45,7 @@ void Config::saveToFile(const std::string& filename) {
     file << "preferredOutputChannels=" << preferredOutputChannels << std::endl;
     file << "openaiApiKey=" << openaiApiKey << std::endl;
     file << "openaiModel=" << openaiModel << std::endl;
+    file << "confirmTrackDelete=" << (confirmTrackDelete ? 1 : 0) << std::endl;
 
     file.close();
     std::cout << "Config saved to: " << filename << std::endl;
@@ -149,6 +150,8 @@ void Config::parseConfigLine(const std::string& key, const std::string& value) {
             preferredInputChannels = static_cast<int>(numValue);
         } else if (key == "preferredOutputChannels") {
             preferredOutputChannels = static_cast<int>(numValue);
+        } else if (key == "confirmTrackDelete") {
+            confirmTrackDelete = (numValue != 0);
         }
         // Skip unknown keys silently
     } catch (const std::exception& e) {

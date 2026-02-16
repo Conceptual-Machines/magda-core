@@ -276,6 +276,7 @@ TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(au
     std::cout << "TrackHeadersPanel created with audioEngine=" << (audioEngine ? "valid" : "NULL")
               << std::endl;
     setSize(TRACK_HEADER_WIDTH, 400);
+    setWantsKeyboardFocus(true);
 
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
@@ -807,6 +808,7 @@ void TrackHeadersPanel::selectTrack(int index) {
             onTrackSelected(index);
         }
 
+        grabKeyboardFocus();
         repaint();
     }
 }
@@ -2126,6 +2128,22 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
 
         y += laneHeight;
     }
+}
+
+// =============================================================================
+// Keyboard Handling
+// =============================================================================
+
+bool TrackHeadersPanel::keyPressed(const juce::KeyPress& key) {
+    // Forward all keys up the parent chain so shortcuts (delete, Cmd+D, etc.)
+    // reach MainComponent's command handler.
+    auto* parent = getParentComponent();
+    while (parent != nullptr) {
+        if (parent->keyPressed(key))
+            return true;
+        parent = parent->getParentComponent();
+    }
+    return false;
 }
 
 // =============================================================================

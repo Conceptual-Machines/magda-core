@@ -33,6 +33,10 @@ PreferencesDialog::PreferencesDialog() {
     setupToggle(showRightPanelToggle, "Show Right Panel (Inspector)");
     setupToggle(showBottomPanelToggle, "Show Bottom Panel (Mixer)");
 
+    // Setup behavior section
+    setupSectionHeader(behaviorHeader, "Behavior");
+    setupToggle(confirmTrackDeleteToggle, "Confirm before deleting tracks");
+
     // Setup layout section
     setupSectionHeader(layoutHeader, "Layout");
     setupToggle(leftHandedLayoutToggle, "Headers on Right");
@@ -200,7 +204,7 @@ PreferencesDialog::PreferencesDialog() {
     loadCurrentSettings();
 
     // Set preferred size (increased height for panels, layout, rendering and shortcuts sections)
-    setSize(450, 1150);
+    setSize(450, 1220);
 }
 
 PreferencesDialog::~PreferencesDialog() = default;
@@ -297,6 +301,17 @@ void PreferencesDialog::resized() {
     // Show bottom panel toggle
     row = bounds.removeFromTop(toggleHeight + 8);
     showBottomPanelToggle.setBounds(row.reduced(0, 4));
+
+    bounds.removeFromTop(sectionSpacing);
+
+    // Behavior section
+    auto behaviorHeaderBounds = bounds.removeFromTop(headerHeight);
+    behaviorHeader.setBounds(behaviorHeaderBounds);
+    bounds.removeFromTop(4);
+
+    // Confirm track delete toggle
+    row = bounds.removeFromTop(toggleHeight + 8);
+    confirmTrackDeleteToggle.setBounds(row.reduced(0, 4));
 
     bounds.removeFromTop(sectionSpacing);
 
@@ -419,6 +434,10 @@ void PreferencesDialog::loadCurrentSettings() {
     showRightPanelToggle.setToggleState(config.getShowRightPanel(), juce::dontSendNotification);
     showBottomPanelToggle.setToggleState(config.getShowBottomPanel(), juce::dontSendNotification);
 
+    // Load behavior settings
+    confirmTrackDeleteToggle.setToggleState(config.getConfirmTrackDelete(),
+                                            juce::dontSendNotification);
+
     // Load layout settings
     leftHandedLayoutToggle.setToggleState(config.getScrollbarOnLeft(), juce::dontSendNotification);
 
@@ -458,6 +477,9 @@ void PreferencesDialog::applySettings() {
     config.setShowLeftPanel(showLeftPanelToggle.getToggleState());
     config.setShowRightPanel(showRightPanelToggle.getToggleState());
     config.setShowBottomPanel(showBottomPanelToggle.getToggleState());
+
+    // Apply behavior settings
+    config.setConfirmTrackDelete(confirmTrackDeleteToggle.getToggleState());
 
     // Apply layout settings
     config.setScrollbarOnLeft(leftHandedLayoutToggle.getToggleState());
