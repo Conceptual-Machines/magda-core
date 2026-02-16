@@ -1167,9 +1167,9 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
     if (header.frozen) {
         g.setColour(juce::Colours::black.withAlpha(0.3f));
         g.fillRect(bgArea);
-        // Cyan strip on the left to indicate frozen state
+        // Cyan strip along the top to indicate frozen state (avoids overlapping group indicator)
         g.setColour(juce::Colour(0xFF66CCDD).withAlpha(0.8f));
-        g.fillRect(bgArea.getX(), bgArea.getY(), 3, bgArea.getHeight());
+        g.fillRect(bgArea.getX(), bgArea.getY(), bgArea.getWidth(), 3);
     }
 }
 

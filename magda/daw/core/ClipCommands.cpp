@@ -1395,12 +1395,13 @@ void BounceInPlaceCommand::execute() {
         return;
     }
 
-    // Replace MIDI clip with audio clip
-    double startTime = clip->startTime;
-    double length = clip->length;
-    TrackId trackId = clip->trackId;
-    juce::Colour colour = clip->colour;
-    juce::String name = clip->name;
+    // Replace MIDI clip with audio clip using the original snapshot
+    // (clip pointer may be invalidated by render/transport operations)
+    double startTime = originalClipSnapshot_.startTime;
+    double length = originalClipSnapshot_.length;
+    TrackId trackId = originalClipSnapshot_.trackId;
+    juce::Colour colour = originalClipSnapshot_.colour;
+    juce::String name = originalClipSnapshot_.name;
 
     clipManager.deleteClip(clipId_);
 

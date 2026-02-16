@@ -493,9 +493,8 @@ class DeleteTimeSelectionCommand : public UndoableCommand {
 /**
  * @brief Command for bouncing a MIDI clip in place (synth only, no FX)
  *
- * Renders the clip through just the instrument plugin (bypassing all FX),
- * replaces the MIDI clip with the resulting audio clip on the same track,
- * and changes the track type from Instrument to Audio.
+ * Renders the clip through just the instrument plugin (bypassing all FX)
+ * and replaces the MIDI clip with the resulting audio clip on the same track.
  */
 class BounceInPlaceCommand : public UndoableCommand {
   public:
