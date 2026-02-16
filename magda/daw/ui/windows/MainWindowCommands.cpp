@@ -400,6 +400,14 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     UndoManager::getInstance().endCompoundOperation();
                 }
                 selectionManager.clearSelection();
+                return true;
+            }
+            // No notes or clips selected — delete selected track
+            TrackId selectedTrack = selectionManager.getSelectedTrack();
+            if (selectedTrack != INVALID_TRACK_ID) {
+                auto cmd = std::make_unique<DeleteTrackCommand>(selectedTrack);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+                return true;
             }
             return true;
         }
