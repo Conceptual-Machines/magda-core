@@ -222,16 +222,27 @@ void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
     }
 
     // Draw drop indicator for file drag-and-drop
-    if (showDropIndicator_ && dropTargetTrackIndex_ >= 0 &&
-        dropTargetTrackIndex_ < static_cast<int>(trackLanes.size())) {
+    if (showDropIndicator_) {
         int dropX = timeToPixel(dropInsertTime_);
-        int trackY = getTrackYPosition(dropTargetTrackIndex_);
-        int trackHeight = getTrackHeight(dropTargetTrackIndex_);
 
-        // Draw yellow vertical line to indicate drop position
-        g.setColour(juce::Colours::yellow.withAlpha(0.8f));
-        g.drawLine(static_cast<float>(dropX), static_cast<float>(trackY), static_cast<float>(dropX),
-                   static_cast<float>(trackY + trackHeight), 2.0f);
+        if (dropTargetTrackIndex_ >= 0 &&
+            dropTargetTrackIndex_ < static_cast<int>(trackLanes.size())) {
+            // Dropping on an existing track — line spans that track
+            int trackY = getTrackYPosition(dropTargetTrackIndex_);
+            int trackHeight = getTrackHeight(dropTargetTrackIndex_);
+
+            g.setColour(juce::Colours::yellow.withAlpha(0.8f));
+            g.drawLine(static_cast<float>(dropX), static_cast<float>(trackY),
+                       static_cast<float>(dropX), static_cast<float>(trackY + trackHeight), 2.0f);
+        } else {
+            // Dropping on empty area — show drop line spanning a phantom track region
+            int topY = getTotalTracksHeight();
+            int bottomY = topY + DEFAULT_TRACK_HEIGHT;
+
+            g.setColour(juce::Colours::yellow.withAlpha(0.8f));
+            g.drawLine(static_cast<float>(dropX), static_cast<float>(topY),
+                       static_cast<float>(dropX), static_cast<float>(bottomY), 2.0f);
+        }
     }
 }
 
