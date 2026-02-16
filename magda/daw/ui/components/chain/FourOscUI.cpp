@@ -286,11 +286,13 @@ void FourOscUI::OscTab::setupLabel(juce::Label& label, const juce::String& text)
 FourOscUI::FilterTab::FilterTab(FourOscUI& owner) : owner_(owner) {
     // Type combo
     setupLabel(typeLabel_, "TYPE");
-    typeCombo_.addItem("Low Pass", 1);
-    typeCombo_.addItem("Band Pass", 2);
+    // Filter type values in FourOscPlugin: 0=Off, 1=LowPass, 2=HighPass, 3=BandPass, 4=Notch
+    typeCombo_.addItem("Off", 1);
+    typeCombo_.addItem("Low Pass", 2);
     typeCombo_.addItem("High Pass", 3);
-    typeCombo_.addItem("Notch", 4);
-    typeCombo_.setSelectedId(1, juce::dontSendNotification);
+    typeCombo_.addItem("Band Pass", 4);
+    typeCombo_.addItem("Notch", 5);
+    typeCombo_.setSelectedId(2, juce::dontSendNotification);  // Default to Low Pass
     typeCombo_.onChange = [this]() {
         if (owner_.onPluginStateChanged)
             owner_.onPluginStateChanged("filterType", juce::var(typeCombo_.getSelectedId() - 1));
