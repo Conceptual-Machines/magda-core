@@ -8,7 +8,6 @@
 #include "../audio/InstrumentRackManager.hpp"
 #include "../engine/TracktionEngineWrapper.hpp"
 #include "Config.hpp"
-#include "TrackCommands.hpp"
 #include "TrackManager.hpp"
 
 namespace magda {
@@ -1413,9 +1412,6 @@ void BounceInPlaceCommand::execute() {
         clipManager.forceNotifyClipsChanged();
     }
 
-    // Change track type from Instrument to Audio
-    TrackManager::getInstance().setTrackType(trackId, TrackType::Audio);
-
     restoreTransport();
     success_ = true;
 }
@@ -1434,9 +1430,6 @@ void BounceInPlaceCommand::undo() {
 
     // Restore original MIDI clip
     clipManager.restoreClip(originalClipSnapshot_);
-
-    // Restore track type back to Instrument
-    TrackManager::getInstance().setTrackType(originalClipSnapshot_.trackId, TrackType::Instrument);
 
     // Delete the rendered file
     if (renderedFile_.existsAsFile()) {
