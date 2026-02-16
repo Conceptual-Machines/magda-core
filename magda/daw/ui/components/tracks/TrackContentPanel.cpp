@@ -2067,31 +2067,30 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
     }
     int trackIndex = getTrackIndexAtY(y);
 
-    if (trackIndex < 0 || trackIndex >= static_cast<int>(visibleTrackIds_.size())) {
-        return;
+    TrackId targetTrackId = INVALID_TRACK_ID;
+
+    if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
+        // Dropped on an existing track
+        targetTrackId = visibleTrackIds_[trackIndex];
+        auto* track = TrackManager::getInstance().getTrack(targetTrackId);
+        if (!track)
+            return;
+
+        // Only allow drops on audio tracks
+        if (track->type != TrackType::Audio) {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon, "Drop Failed",
+                "Audio files can only be dropped on audio tracks.");
+            return;
+        }
     }
-
-    TrackId targetTrackId = visibleTrackIds_[trackIndex];
-    auto* track = TrackManager::getInstance().getTrack(targetTrackId);
-
-    if (!track) {
-        return;
-    }
-
-    // Only allow drops on audio tracks
-    if (track->type != TrackType::Audio) {
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Drop Failed",
-                                               "Audio files can only be dropped on audio tracks.");
-        return;
-    }
-
-    // Import audio files at drop position
-    auto& clipManager = ClipManager::getInstance();
-    double currentTime = dropTime;
-    int importedCount = 0;
+    // If targetTrackId is still INVALID, we'll create a new track below
 
     juce::AudioFormatManager formatManager;
     formatManager.registerBasicFormats();
+
+    double currentTime = dropTime;
+    int importedCount = 0;
 
     for (const auto& filePath : files) {
         // Filter audio files only
@@ -2104,6 +2103,15 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
         juce::File audioFile(filePath);
         if (!audioFile.existsAsFile())
             continue;
+
+        // Create a new audio track if dropped on empty area
+        if (targetTrackId == INVALID_TRACK_ID) {
+            juce::String trackName = audioFile.getFileNameWithoutExtension();
+            targetTrackId = TrackManager::getInstance().createTrack(trackName, TrackType::Audio);
+            if (targetTrackId == INVALID_TRACK_ID)
+                return;
+            TrackManager::getInstance().setSelectedTrack(targetTrackId);
+        }
 
         // Read actual file duration
         double fileDuration = 4.0;  // fallback if reader fails
