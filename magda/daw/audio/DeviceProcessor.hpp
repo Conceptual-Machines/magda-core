@@ -238,6 +238,9 @@ class FourOscProcessor : public DeviceProcessor {
     int getParameterCount() const override;
     ParameterInfo getParameterInfo(int index) const override;
     void populateParameters(DeviceInfo& info) const override;
+
+    void setParameterByIndex(int paramIndex, float value);
+    float getParameterByIndex(int paramIndex) const;
 };
 
 /**

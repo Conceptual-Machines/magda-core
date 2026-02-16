@@ -452,6 +452,26 @@ void FourOscProcessor::populateParameters(DeviceInfo& info) const {
     }
 }
 
+void FourOscProcessor::setParameterByIndex(int paramIndex, float value) {
+    if (!plugin_)
+        return;
+
+    auto params = plugin_->getAutomatableParameters();
+    if (paramIndex >= 0 && paramIndex < params.size()) {
+        params[paramIndex]->setParameter(value, juce::sendNotificationSync);
+    }
+}
+
+float FourOscProcessor::getParameterByIndex(int paramIndex) const {
+    if (!plugin_)
+        return 0.0f;
+
+    auto params = plugin_->getAutomatableParameters();
+    if (paramIndex >= 0 && paramIndex < params.size())
+        return params[paramIndex]->getCurrentValue();
+    return 0.0f;
+}
+
 // =============================================================================
 // DrumGridProcessor
 // =============================================================================
