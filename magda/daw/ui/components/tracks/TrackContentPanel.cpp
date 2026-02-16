@@ -2087,12 +2087,22 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
         if (!track)
             return;
 
-        // Only allow drops on audio tracks
-        if (track->type != TrackType::Audio) {
+        // Block drops on group/aux tracks (no clip timeline)
+        if (track->type == TrackType::Group || track->type == TrackType::Aux) {
             juce::AlertWindow::showMessageBoxAsync(
                 juce::AlertWindow::WarningIcon, "Drop Failed",
-                "Audio files can only be dropped on audio tracks.");
+                "Audio files cannot be dropped on group or aux tracks.");
             return;
+        }
+
+        // Block drops on tracks with a DrumGrid plugin
+        for (const auto& element : track->chainElements) {
+            if (isDevice(element) && getDevice(element).pluginId.containsIgnoreCase("drumgrid")) {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::WarningIcon, "Drop Failed",
+                    "Audio files cannot be dropped on Drum Grid tracks.");
+                return;
+            }
         }
     }
     // If targetTrackId is still INVALID, we'll create a new track below
