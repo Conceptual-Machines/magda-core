@@ -1257,10 +1257,11 @@ void BounceInPlaceCommand::execute() {
         return;
     }
 
-    // Must be on an instrument track
+    // Must be on a track with an instrument
     auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
-    if (!trackInfo || trackInfo->type != TrackType::Instrument) {
-        std::cerr << "BounceInPlaceCommand: clip must be on an Instrument track" << std::endl;
+    if (!trackInfo || !trackInfo->hasInstrument()) {
+        std::cerr << "BounceInPlaceCommand: clip must be on a track with an instrument"
+                  << std::endl;
         return;
     }
 

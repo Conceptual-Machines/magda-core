@@ -1,6 +1,7 @@
 #include "MagdaUIBehaviour.hpp"
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <tracktion_engine/tracktion_engine.h>
 
 namespace magda {
 
@@ -37,8 +38,24 @@ class TaskProgressWindow : public juce::ThreadWithProgressWindow {
 }  // namespace
 
 void MagdaUIBehaviour::runTaskWithProgressBar(tracktion::ThreadPoolJobWithProgress& task) {
+    DBG("MagdaUIBehaviour::runTaskWithProgressBar - starting task: " << task.getJobName());
     TaskProgressWindow window(task);
     window.runThread();
+    auto progress = task.getCurrentTaskProgress();
+    DBG("MagdaUIBehaviour::runTaskWithProgressBar - task finished, progress=" << progress);
+
+    // Check for error message on RenderTask
+    if (auto* renderTask = dynamic_cast<tracktion::Renderer::RenderTask*>(&task)) {
+        if (renderTask->errorMessage.isNotEmpty()) {
+            DBG("  -> Render error: " << renderTask->errorMessage);
+        }
+        DBG("  -> Dest file: " << renderTask->params.destFile.getFullPathName());
+        DBG("  -> Dest file exists: " << (renderTask->params.destFile.existsAsFile() ? "yes"
+                                                                                     : "no"));
+        DBG("  -> Time range: " << renderTask->params.time.getStart().inSeconds() << " - "
+                                << renderTask->params.time.getEnd().inSeconds());
+        DBG("  -> Tracks to do bits: " << renderTask->params.tracksToDo.countNumberOfSetBits());
+    }
 }
 
 std::unique_ptr<juce::Component> MagdaUIBehaviour::createPluginWindow(

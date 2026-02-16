@@ -131,6 +131,10 @@ void AudioBridge::trackPropertyChanged(int trackId) {
 
             // Sync freeze state
             if (trackInfo->frozen != track->isFrozen(te::AudioTrack::individualFreeze)) {
+                DBG("AudioBridge::trackPropertyChanged - freeze sync: trackId="
+                    << trackId << " frozen=" << (trackInfo->frozen ? 1 : 0) << " teTrackName="
+                    << track->getName() << " numClips=" << track->getClips().size()
+                    << " trackLength=" << track->getLength().inSeconds());
                 track->setFrozen(trackInfo->frozen, te::AudioTrack::individualFreeze);
             }
 

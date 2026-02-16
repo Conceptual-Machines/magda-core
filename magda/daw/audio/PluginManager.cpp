@@ -510,7 +510,7 @@ void PluginManager::ensureVolumePluginPosition(te::AudioTrack* track) const {
 
     auto& plugins = track->pluginList;
 
-    // Find any VolumeAndPanPlugin in the chain
+    // Find VolumeAndPanPlugin
     te::Plugin::Ptr volPanPlugin;
     int volPanIndex = -1;
     for (int i = 0; i < plugins.size(); ++i) {
@@ -521,44 +521,31 @@ void PluginManager::ensureVolumePluginPosition(te::AudioTrack* track) const {
         }
     }
 
-    if (!volPanPlugin) {
-        // No VolumeAndPanPlugin exists - this is expected for tracks without the volume plugin
-        // (Tracktion Engine creates it automatically when needed)
+    if (!volPanPlugin)
         return;
-    }
 
-    // Find LevelMeterPlugin position (if it exists)
-    int meterIndex = -1;
-    for (int i = 0; i < plugins.size(); ++i) {
-        if (dynamic_cast<te::LevelMeterPlugin*>(plugins[i])) {
-            meterIndex = i;
+    // Check if there are any non-utility plugins after VolumeAndPan.
+    // VolumeAndPan is the track fader — it must come AFTER all audio-producing
+    // plugins (instruments, racks, FX, sends) and only before LevelMeter.
+    bool needsMove = false;
+    for (int i = volPanIndex + 1; i < plugins.size(); ++i) {
+        if (!dynamic_cast<te::LevelMeterPlugin*>(plugins[i])) {
+            needsMove = true;
             break;
         }
     }
 
-    // Determine target position: before LevelMeter, or at end if no meter
-    int targetIndex = meterIndex >= 0 ? meterIndex : plugins.size();
+    if (!needsMove)
+        return;
 
-    // Move VolumeAndPanPlugin to target position if needed
-    if (volPanIndex != targetIndex && volPanIndex >= 0) {
-        // Tracktion Engine PluginList doesn't have removeObjectWithoutDeleting
-        // Instead, we can just reorder by removing and re-adding
-        // First remove the plugin (this doesn't delete it, just removes from list)
-        volPanPlugin->removeFromParent();
+    // Move VolumeAndPan to the end of the list.
+    // addLevelMeterToTrack() runs right after this and ensures LevelMeter
+    // is always the very last plugin, so the final order will be:
+    // [instruments, FX, sends, ..., VolumeAndPan, LevelMeter]
+    volPanPlugin->removeFromParent();
+    plugins.insertPlugin(volPanPlugin, -1, nullptr);
 
-        // After removal, if volume was before meter, meter index shifts down by 1
-        int insertIndex = -1;  // Default: append to end
-        if (meterIndex >= 0) {
-            // If volume was before meter, meter shifted down
-            insertIndex = (volPanIndex < meterIndex) ? (meterIndex - 1) : meterIndex;
-        }
-
-        // Reinsert at corrected position
-        plugins.insertPlugin(volPanPlugin, insertIndex, nullptr);
-
-        DBG("Moved VolumeAndPanPlugin from position "
-            << volPanIndex << " to " << (insertIndex >= 0 ? insertIndex : plugins.size() - 1));
-    }
+    DBG("Moved VolumeAndPanPlugin from position " << volPanIndex << " to end");
 }
 
 // =============================================================================

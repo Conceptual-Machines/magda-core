@@ -155,6 +155,24 @@ struct TrackInfo {
         return juce::Colour(defaultColors[index % defaultColors.size()]);
     }
 
+    // Check if this track has an instrument device in its chain
+    bool hasInstrument() const {
+        for (const auto& element : chainElements) {
+            if (isDevice(element) && getDevice(element).isInstrument)
+                return true;
+            if (isRack(element)) {
+                const auto& rack = getRack(element);
+                for (const auto& chain : rack.chains) {
+                    for (const auto& e : chain.elements) {
+                        if (isDevice(e) && getDevice(e).isInstrument)
+                            return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     // Hierarchy helpers
     bool hasParent() const {
         return parentId != INVALID_TRACK_ID;

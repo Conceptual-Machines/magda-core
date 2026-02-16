@@ -1820,13 +1820,13 @@ void ClipComponent::showContextMenu() {
     {
         menu.addSeparator();
 
-        // Bounce In Place: only for MIDI clips on instrument tracks
+        // Bounce In Place: only for MIDI clips on tracks with an instrument
         bool canBounceInPlace = false;
         if (!isMultiSelection) {
             const auto* clipInfo = getClipInfo();
             if (clipInfo && clipInfo->type == ClipType::MIDI) {
                 auto* trackInfo = TrackManager::getInstance().getTrack(clipInfo->trackId);
-                canBounceInPlace = trackInfo && trackInfo->type == TrackType::Instrument;
+                canBounceInPlace = trackInfo && trackInfo->hasInstrument();
             }
         }
         menu.addItem(11, "Bounce In Place", canBounceInPlace);
