@@ -320,8 +320,10 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     mainView->onPlayheadPositionChanged = [this](double position) {
         transportPanel->setPlayheadPosition(position);
     };
-    mainView->onTimeSelectionChanged = [this](double start, double end, bool hasSelection) {
-        transportPanel->setTimeSelection(start, end, hasSelection);
+    mainView->onTimeSelectionChanged = [this](double start, double end, bool hasTimeSelection) {
+        transportPanel->setTimeSelection(start, end, hasTimeSelection);
+        // Refresh menu enabled state so Copy/Duplicate/Delete reflect time selection
+        selectionTypeChanged(SelectionManager::getInstance().getSelectionType());
     };
     mainView->onEditCursorChanged = [this](double position) {
         transportPanel->setEditCursorPosition(position);
@@ -818,6 +820,13 @@ void MainWindow::MainComponent::selectionTypeChanged(SelectionType newType) {
     bool hasSelection = ((newType == SelectionType::Clip || newType == SelectionType::MultiClip) &&
                          selectionManager.getSelectedClipCount() > 0) ||
                         (newType == SelectionType::Note && selectionManager.hasNoteSelection());
+
+    // Time selection also counts as "has selection" for copy/duplicate/delete
+    if (!hasSelection && mainView) {
+        const auto& sel = mainView->getTimelineController().getState().selection;
+        if (sel.isActive() && !sel.visuallyHidden)
+            hasSelection = true;
+    }
 
     // Get transport and edit cursor state (if available)
     bool isPlaying = false;

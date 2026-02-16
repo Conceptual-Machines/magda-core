@@ -1257,6 +1257,78 @@ void ClipManager::copyToClipboard(const std::unordered_set<ClipId>& clipIds) {
     std::cout << "CLIPBOARD: Copied " << clipboard_.size() << " clip(s)" << std::endl;
 }
 
+void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
+                                           const std::vector<TrackId>& trackIds) {
+    clipboard_.clear();
+    clipboardReferenceTime_ = startTime;
+
+    if (startTime >= endTime)
+        return;
+
+    for (const auto& clip : arrangementClips_) {
+        // Filter by track if trackIds is non-empty
+        if (!trackIds.empty()) {
+            if (std::find(trackIds.begin(), trackIds.end(), clip.trackId) == trackIds.end())
+                continue;
+        }
+
+        // Check overlap
+        double clipEnd = clip.startTime + clip.length;
+        if (clip.startTime >= endTime || clipEnd <= startTime)
+            continue;
+
+        double overlapStart = std::max(clip.startTime, startTime);
+        double overlapEnd = std::min(clipEnd, endTime);
+
+        ClipInfo trimmed = clip;
+        trimmed.length = overlapEnd - overlapStart;
+        trimmed.startTime = overlapStart;
+
+        if (clip.type == ClipType::Audio) {
+            // Adjust offset for the trimmed start position
+            double trimFromLeft = overlapStart - clip.startTime;
+            if ((clip.autoTempo || clip.warpEnabled) && clip.sourceBPM > 0.0) {
+                // In autoTempo mode, use sourceBPM ratio
+                trimmed.offset =
+                    clip.offset + trimFromLeft * clip.sourceBPM / 60.0 * 60.0 / clip.sourceBPM;
+                // Simplifies to: offset + trimFromLeft (timeline seconds map 1:1 when using
+                // beat-stretch)
+                trimmed.offset = clip.offset + trimFromLeft;
+            } else {
+                trimmed.offset = clip.offset + trimFromLeft * clip.speedRatio;
+            }
+            // Sync loop fields for non-looped clips
+            if (!trimmed.loopEnabled) {
+                trimmed.loopStart = trimmed.offset;
+                trimmed.loopLength = trimmed.timelineToSource(trimmed.length);
+            }
+        } else if (clip.type == ClipType::MIDI && !clip.midiNotes.empty()) {
+            // Filter MIDI notes to those within the overlap range
+            double bps = 120.0 / 60.0;  // default; we don't have tempo here, use beats relative
+            // Notes are in beats relative to clip start. Convert overlap bounds to beats.
+            double clipStartBeat = 0.0;
+            double overlapStartBeat = (overlapStart - clip.startTime) * bps;
+            double overlapEndBeat = (overlapEnd - clip.startTime) * bps;
+            juce::ignoreUnused(clipStartBeat);
+
+            std::vector<MidiNote> filteredNotes;
+            for (const auto& note : clip.midiNotes) {
+                if (note.startBeat >= overlapStartBeat && note.startBeat < overlapEndBeat) {
+                    MidiNote adjusted = note;
+                    adjusted.startBeat -= overlapStartBeat;
+                    filteredNotes.push_back(adjusted);
+                }
+            }
+            trimmed.midiNotes = filteredNotes;
+        }
+
+        clipboard_.push_back(trimmed);
+    }
+
+    std::cout << "CLIPBOARD: Copied time range [" << startTime << " - " << endTime << "] -> "
+              << clipboard_.size() << " clip(s)" << std::endl;
+}
+
 std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId targetTrackId) {
     std::vector<ClipId> newClips;
 

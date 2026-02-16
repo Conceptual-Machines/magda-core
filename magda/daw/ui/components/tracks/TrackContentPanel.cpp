@@ -766,13 +766,8 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
             moveSelectionOriginalEnd = selection.endTime;
             moveSelectionOriginalTracks = selection.trackIndices;
 
-            // Shift+grab: split clips at selection boundaries before moving
-            if (event.mods.isShiftDown()) {
-                splitClipsAtSelectionBoundaries();
-            }
-
-            // Capture all clips within the time selection (after splits)
-            captureClipsInTimeSelection();
+            // Defer split to first drag motion (so click-without-drag doesn't split)
+            needsSplitOnFirstDrag_ = true;
             return;
         } else {
             // Clicked outside time selection in lower zone - clear it and start new one
@@ -826,6 +821,13 @@ void TrackContentPanel::mouseDrag(const juce::MouseEvent& event) {
             onTimeSelectionChanged(newStart, newEnd, moveSelectionOriginalTracks);
         }
     } else if (isMovingSelection) {
+        // Split clips at selection boundaries on first drag motion
+        if (needsSplitOnFirstDrag_) {
+            needsSplitOnFirstDrag_ = false;
+            splitClipsAtSelectionBoundaries();
+            captureClipsInTimeSelection();
+        }
+
         // Calculate time delta from drag start
         double currentTime = pixelToTime(event.x);
         double deltaTime = currentTime - moveDragStartTime;
@@ -1040,6 +1042,7 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
 
         // Finalize move - the selection has already been updated via mouseDrag
         isMovingSelection = false;
+        needsSplitOnFirstDrag_ = false;
         moveDragStartTime = -1.0;
         moveSelectionOriginalStart = -1.0;
         moveSelectionOriginalEnd = -1.0;

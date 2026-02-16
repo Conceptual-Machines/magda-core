@@ -1019,4 +1019,138 @@ void RenderTimeSelectionCommand::undo() {
     success_ = false;
 }
 
+// ============================================================================
+// RippleDeleteTimeSelectionCommand
+// ============================================================================
+
+RippleDeleteTimeSelectionCommand::RippleDeleteTimeSelectionCommand(
+    double startTime, double endTime, const std::vector<TrackId>& trackIds)
+    : startTime_(startTime), endTime_(endTime), trackIds_(trackIds) {}
+
+void RippleDeleteTimeSelectionCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+
+    // Snapshot all arrangement clips for reliable undo
+    snapshot_ = clipManager.getArrangementClips();
+
+    double duration = endTime_ - startTime_;
+    if (duration <= 0.0)
+        return;
+
+    // Helper: check if a clip's track is affected
+    auto isAffectedTrack = [this](TrackId trackId) {
+        if (trackIds_.empty())
+            return true;
+        return std::find(trackIds_.begin(), trackIds_.end(), trackId) != trackIds_.end();
+    };
+
+    // Collect clips to delete (fully inside selection)
+    std::vector<ClipId> clipsToDelete;
+
+    // Process overlapping clips on affected tracks
+    // We need to work on a copy of clip IDs since we'll be modifying clips
+    auto allClips = clipManager.getArrangementClips();
+    for (const auto& clip : allClips) {
+        if (!isAffectedTrack(clip.trackId))
+            continue;
+
+        double clipEnd = clip.startTime + clip.length;
+
+        // No overlap
+        if (clip.startTime >= endTime_ || clipEnd <= startTime_)
+            continue;
+
+        bool startsBeforeSel = clip.startTime < startTime_;
+        bool endsAfterSel = clipEnd > endTime_;
+
+        if (startsBeforeSel && endsAfterSel) {
+            // Clip spans both boundaries: trim to remove middle, shift right portion
+            // Resize to end at startTime_
+            double newLength = startTime_ - clip.startTime;
+            auto* liveClip = clipManager.getClip(clip.id);
+            if (liveClip)
+                liveClip->length = newLength;
+            // Note: content after endTime_ that was part of this clip is lost
+            // (this is standard ripple delete behavior for spanning clips)
+        } else if (startsBeforeSel) {
+            // Clip spans left boundary only: trim right edge to startTime_
+            double newLength = startTime_ - clip.startTime;
+            auto* liveClip = clipManager.getClip(clip.id);
+            if (liveClip)
+                liveClip->length = newLength;
+        } else if (endsAfterSel) {
+            // Clip spans right boundary only: trim left edge to endTime_, then shift left
+            auto* liveClip = clipManager.getClip(clip.id);
+            if (liveClip) {
+                double trimAmount = endTime_ - clip.startTime;
+                if (liveClip->type == ClipType::Audio) {
+                    liveClip->offset += trimAmount * liveClip->speedRatio;
+                    if (!liveClip->loopEnabled) {
+                        liveClip->loopStart = liveClip->offset;
+                    }
+                } else if (liveClip->type == ClipType::MIDI && !liveClip->midiNotes.empty()) {
+                    // Shift MIDI notes left by the trimmed amount in beats
+                    double bps = 120.0 / 60.0;  // Default BPS
+                    double trimBeats = trimAmount * bps;
+                    std::vector<MidiNote> remaining;
+                    for (auto& note : liveClip->midiNotes) {
+                        if (note.startBeat >= trimBeats) {
+                            MidiNote n = note;
+                            n.startBeat -= trimBeats;
+                            remaining.push_back(n);
+                        }
+                    }
+                    liveClip->midiNotes = remaining;
+                }
+                liveClip->length -= trimAmount;
+                liveClip->startTime = startTime_;  // Shift left to fill gap
+            }
+        } else {
+            // Fully inside selection: delete
+            clipsToDelete.push_back(clip.id);
+        }
+    }
+
+    // Delete fully-inside clips
+    for (auto clipId : clipsToDelete) {
+        clipManager.deleteClip(clipId);
+    }
+
+    // Shift all clips on affected tracks that start at or after endTime_ left by duration
+    for (auto& clip : clipManager.getArrangementClips()) {
+        if (!isAffectedTrack(clip.trackId))
+            continue;
+
+        // Use non-const access
+        auto* liveClip = clipManager.getClip(clip.id);
+        if (liveClip && liveClip->startTime >= endTime_) {
+            liveClip->startTime -= duration;
+        }
+    }
+
+    clipManager.forceNotifyClipsChanged();
+    executed_ = true;
+}
+
+void RippleDeleteTimeSelectionCommand::undo() {
+    if (!executed_)
+        return;
+
+    auto& clipManager = ClipManager::getInstance();
+
+    // Delete all current arrangement clips
+    auto currentClips = clipManager.getArrangementClips();
+    for (const auto& clip : currentClips) {
+        clipManager.deleteClip(clip.id);
+    }
+
+    // Restore from snapshot
+    for (const auto& clip : snapshot_) {
+        clipManager.restoreClip(clip);
+    }
+
+    clipManager.forceNotifyClipsChanged();
+    executed_ = false;
+}
+
 }  // namespace magda

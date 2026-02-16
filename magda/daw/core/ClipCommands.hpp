@@ -438,4 +438,30 @@ class RenderTimeSelectionCommand : public UndoableCommand {
     bool success_ = false;
 };
 
+/**
+ * @brief Command for ripple-deleting a time selection
+ *
+ * Removes content within the time range and shifts subsequent clips left.
+ * Uses full arrangement snapshot for reliable undo.
+ */
+class RippleDeleteTimeSelectionCommand : public UndoableCommand {
+  public:
+    RippleDeleteTimeSelectionCommand(double startTime, double endTime,
+                                     const std::vector<TrackId>& trackIds);
+
+    juce::String getDescription() const override {
+        return "Ripple Delete Time Selection";
+    }
+
+    void execute() override;
+    void undo() override;
+
+  private:
+    double startTime_;
+    double endTime_;
+    std::vector<TrackId> trackIds_;
+    std::vector<ClipInfo> snapshot_;  // Full arrangement clips snapshot for undo
+    bool executed_ = false;
+};
+
 }  // namespace magda

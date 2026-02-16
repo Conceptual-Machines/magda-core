@@ -341,6 +341,15 @@ class ClipManager {
     void copyToClipboard(const std::unordered_set<ClipId>& clipIds);
 
     /**
+     * @brief Copy the overlapping portions of clips within a time range to clipboard
+     * @param startTime Start of time range
+     * @param endTime End of time range
+     * @param trackIds Tracks to copy from (empty = all arrangement tracks)
+     */
+    void copyTimeRangeToClipboard(double startTime, double endTime,
+                                  const std::vector<TrackId>& trackIds);
+
+    /**
      * @brief Paste clips from clipboard
      * @param pasteTime Timeline position to paste at
      * @param targetTrackId Track to paste on (INVALID_TRACK_ID = use original tracks)

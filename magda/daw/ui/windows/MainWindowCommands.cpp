@@ -191,6 +191,33 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
     auto& selectionManager = SelectionManager::getInstance();
     auto selectedClips = selectionManager.getSelectedClips();
 
+    // Helper: resolve time selection track indices to TrackIds
+    auto resolveTimeSelectionTrackIds = [this]() -> std::vector<TrackId> {
+        std::vector<TrackId> trackIds;
+        if (!mainView)
+            return trackIds;
+        const auto& sel = mainView->getTimelineController().getState().selection;
+        auto visibleTracks = TrackManager::getInstance().getVisibleTracks(
+            ViewModeController::getInstance().getViewMode());
+        if (sel.isAllTracks()) {
+            trackIds = visibleTracks;
+        } else {
+            for (int idx : sel.trackIndices) {
+                if (idx >= 0 && idx < static_cast<int>(visibleTracks.size()))
+                    trackIds.push_back(visibleTracks[idx]);
+            }
+        }
+        return trackIds;
+    };
+
+    // Helper: check if time selection is active and visible
+    auto hasActiveTimeSelection = [this]() -> bool {
+        if (!mainView)
+            return false;
+        const auto& sel = mainView->getTimelineController().getState().selection;
+        return sel.isActive() && !sel.visuallyHidden;
+    };
+
     switch (info.commandID) {
         case undo:
             UndoManager::getInstance().undo();
@@ -227,6 +254,13 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         }
 
         case copy: {
+            // Time selection copy takes priority
+            if (hasActiveTimeSelection()) {
+                const auto& sel = mainView->getTimelineController().getState().selection;
+                auto trackIds = resolveTimeSelectionTrackIds();
+                clipManager.copyTimeRangeToClipboard(sel.startTime, sel.endTime, trackIds);
+                return true;
+            }
             const auto& noteSel = selectionManager.getNoteSelection();
             if (noteSel.isValid()) {
                 clipManager.copyNotesToClipboard(noteSel.clipId, noteSel.noteIndices);
@@ -318,6 +352,27 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         }
 
         case duplicate: {
+            // Time selection duplicate: copy time range, paste at endTime
+            if (hasActiveTimeSelection()) {
+                const auto& sel = mainView->getTimelineController().getState().selection;
+                auto trackIds = resolveTimeSelectionTrackIds();
+                clipManager.copyTimeRangeToClipboard(sel.startTime, sel.endTime, trackIds);
+                if (clipManager.hasClipsInClipboard()) {
+                    auto cmd = std::make_unique<PasteClipCommand>(sel.endTime);
+                    auto* cmdPtr = cmd.get();
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                    // Clear clip selection so the time selection stays as active context
+                    selectionManager.clearSelection();
+
+                    // Move time selection to the duplicated region
+                    double duration = sel.endTime - sel.startTime;
+                    auto& timelineController = mainView->getTimelineController();
+                    timelineController.dispatch(SetTimeSelectionEvent{
+                        sel.endTime, sel.endTime + duration, sel.trackIndices});
+                }
+                return true;
+            }
             const auto& noteSel = selectionManager.getNoteSelection();
             if (noteSel.isValid()) {
                 const auto* clip = clipManager.getClip(noteSel.clipId);
@@ -381,6 +436,20 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         }
 
         case deleteCmd: {
+            // Time selection ripple delete
+            if (hasActiveTimeSelection()) {
+                const auto& sel = mainView->getTimelineController().getState().selection;
+                auto trackIds = resolveTimeSelectionTrackIds();
+                auto cmd = std::make_unique<RippleDeleteTimeSelectionCommand>(
+                    sel.startTime, sel.endTime, trackIds);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                // Move edit cursor to deletion point and clear selection
+                auto& timelineController = mainView->getTimelineController();
+                timelineController.dispatch(SetEditCursorEvent{sel.startTime});
+                timelineController.dispatch(ClearTimeSelectionEvent{});
+                return true;
+            }
             const auto& noteSel = selectionManager.getNoteSelection();
             if (noteSel.isValid()) {
                 auto cmd = std::make_unique<DeleteMultipleMidiNotesCommand>(noteSel.clipId,

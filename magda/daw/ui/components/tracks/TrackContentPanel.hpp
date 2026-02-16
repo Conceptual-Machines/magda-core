@@ -241,6 +241,7 @@ class TrackContentPanel : public juce::Component,
         double originalStartTime = 0.0;
     };
     std::vector<TimeSelectionClipInfo> clipsInTimeSelection_;
+    bool needsSplitOnFirstDrag_ = false;
     void splitClipsAtSelectionBoundaries();
     void captureClipsInTimeSelection();
     void moveClipsWithTimeSelection(double deltaTime);
