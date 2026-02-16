@@ -1064,14 +1064,21 @@ void RippleDeleteTimeSelectionCommand::execute() {
         bool endsAfterSel = clipEnd > endTime_;
 
         if (startsBeforeSel && endsAfterSel) {
-            // Clip spans both boundaries: trim to remove middle, shift right portion
-            // Resize to end at startTime_
-            double newLength = startTime_ - clip.startTime;
-            auto* liveClip = clipManager.getClip(clip.id);
-            if (liveClip)
-                liveClip->length = newLength;
-            // Note: content after endTime_ that was part of this clip is lost
-            // (this is standard ripple delete behavior for spanning clips)
+            // Clip spans both boundaries: split at startTime_, split again at endTime_,
+            // delete the middle piece. This preserves both the left and right portions.
+            ClipId rightId = clipManager.splitClip(clip.id, startTime_);
+            if (rightId != INVALID_CLIP_ID) {
+                // Split the right portion at endTime_ to isolate the middle
+                ClipId tailId = clipManager.splitClip(rightId, endTime_);
+                // Delete the middle piece (between startTime_ and endTime_)
+                clipsToDelete.push_back(rightId);
+                // The tail (after endTime_) needs to be shifted left by duration
+                if (tailId != INVALID_CLIP_ID) {
+                    auto* tailClip = clipManager.getClip(tailId);
+                    if (tailClip)
+                        tailClip->startTime = startTime_;  // Shift left to fill gap
+                }
+            }
         } else if (startsBeforeSel) {
             // Clip spans left boundary only: trim right edge to startTime_
             double newLength = startTime_ - clip.startTime;
@@ -1079,31 +1086,15 @@ void RippleDeleteTimeSelectionCommand::execute() {
             if (liveClip)
                 liveClip->length = newLength;
         } else if (endsAfterSel) {
-            // Clip spans right boundary only: trim left edge to endTime_, then shift left
-            auto* liveClip = clipManager.getClip(clip.id);
-            if (liveClip) {
-                double trimAmount = endTime_ - clip.startTime;
-                if (liveClip->type == ClipType::Audio) {
-                    liveClip->offset += trimAmount * liveClip->speedRatio;
-                    if (!liveClip->loopEnabled) {
-                        liveClip->loopStart = liveClip->offset;
-                    }
-                } else if (liveClip->type == ClipType::MIDI && !liveClip->midiNotes.empty()) {
-                    // Shift MIDI notes left by the trimmed amount in beats
-                    double bps = 120.0 / 60.0;  // Default BPS
-                    double trimBeats = trimAmount * bps;
-                    std::vector<MidiNote> remaining;
-                    for (auto& note : liveClip->midiNotes) {
-                        if (note.startBeat >= trimBeats) {
-                            MidiNote n = note;
-                            n.startBeat -= trimBeats;
-                            remaining.push_back(n);
-                        }
-                    }
-                    liveClip->midiNotes = remaining;
-                }
-                liveClip->length -= trimAmount;
-                liveClip->startTime = startTime_;  // Shift left to fill gap
+            // Clip spans right boundary only: split at endTime_, shift right portion left
+            ClipId tailId = clipManager.splitClip(clip.id, endTime_);
+            // Delete the left portion (starts inside selection)
+            clipsToDelete.push_back(clip.id);
+            // Shift the tail left to fill the gap
+            if (tailId != INVALID_CLIP_ID) {
+                auto* tailClip = clipManager.getClip(tailId);
+                if (tailClip)
+                    tailClip->startTime = startTime_;
             }
         } else {
             // Fully inside selection: delete
@@ -1194,41 +1185,27 @@ void DeleteTimeSelectionCommand::execute() {
         bool endsAfterSel = clipEnd > endTime_;
 
         if (startsBeforeSel && endsAfterSel) {
-            // Clip spans both boundaries: trim to end at startTime_
-            auto* liveClip = clipManager.getClip(clip.id);
-            if (liveClip)
-                liveClip->length = startTime_ - clip.startTime;
+            // Clip spans both boundaries: split at startTime_, split again at endTime_,
+            // delete the middle piece. Preserves both left and right portions.
+            ClipId rightId = clipManager.splitClip(clip.id, startTime_);
+            if (rightId != INVALID_CLIP_ID) {
+                ClipId tailId = clipManager.splitClip(rightId, endTime_);
+                clipsToDelete.push_back(rightId);
+                // tailId stays at endTime_ (no shift — non-ripple)
+                juce::ignoreUnused(tailId);
+            }
         } else if (startsBeforeSel) {
             // Clip spans left boundary: trim right edge to startTime_
+            double newLength = startTime_ - clip.startTime;
             auto* liveClip = clipManager.getClip(clip.id);
             if (liveClip)
-                liveClip->length = startTime_ - clip.startTime;
+                liveClip->length = newLength;
         } else if (endsAfterSel) {
-            // Clip spans right boundary: trim left edge to endTime_
-            auto* liveClip = clipManager.getClip(clip.id);
-            if (liveClip) {
-                double trimAmount = endTime_ - clip.startTime;
-                if (liveClip->type == ClipType::Audio) {
-                    liveClip->offset += trimAmount * liveClip->speedRatio;
-                    if (!liveClip->loopEnabled) {
-                        liveClip->loopStart = liveClip->offset;
-                    }
-                } else if (liveClip->type == ClipType::MIDI && !liveClip->midiNotes.empty()) {
-                    double bps = 120.0 / 60.0;
-                    double trimBeats = trimAmount * bps;
-                    std::vector<MidiNote> remaining;
-                    for (auto& note : liveClip->midiNotes) {
-                        if (note.startBeat >= trimBeats) {
-                            MidiNote n = note;
-                            n.startBeat -= trimBeats;
-                            remaining.push_back(n);
-                        }
-                    }
-                    liveClip->midiNotes = remaining;
-                }
-                liveClip->length -= trimAmount;
-                liveClip->startTime = endTime_;  // Keep in place (no shift)
-            }
+            // Clip spans right boundary: split at endTime_, delete left portion
+            ClipId tailId = clipManager.splitClip(clip.id, endTime_);
+            clipsToDelete.push_back(clip.id);
+            // tailId stays at endTime_ (no shift — non-ripple)
+            juce::ignoreUnused(tailId);
         } else {
             // Fully inside selection: delete
             clipsToDelete.push_back(clip.id);

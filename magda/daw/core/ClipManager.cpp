@@ -1258,7 +1258,7 @@ void ClipManager::copyToClipboard(const std::unordered_set<ClipId>& clipIds) {
 }
 
 void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
-                                           const std::vector<TrackId>& trackIds) {
+                                           const std::vector<TrackId>& trackIds, double tempoBPM) {
     clipboard_.clear();
     clipboardReferenceTime_ = startTime;
 
@@ -1287,13 +1287,9 @@ void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
         if (clip.type == ClipType::Audio) {
             // Adjust offset for the trimmed start position
             double trimFromLeft = overlapStart - clip.startTime;
-            if ((clip.autoTempo || clip.warpEnabled) && clip.sourceBPM > 0.0) {
-                // In autoTempo mode, use sourceBPM ratio
-                trimmed.offset =
-                    clip.offset + trimFromLeft * clip.sourceBPM / 60.0 * 60.0 / clip.sourceBPM;
-                // Simplifies to: offset + trimFromLeft (timeline seconds map 1:1 when using
-                // beat-stretch)
-                trimmed.offset = clip.offset + trimFromLeft;
+            if ((clip.autoTempo || clip.warpEnabled) && clip.sourceBPM > 0.0 && tempoBPM > 0.0) {
+                // autoTempo: timeline seconds → source seconds via tempo ratio
+                trimmed.offset = clip.offset + trimFromLeft * tempoBPM / clip.sourceBPM;
             } else {
                 trimmed.offset = clip.offset + trimFromLeft * clip.speedRatio;
             }
@@ -1304,12 +1300,10 @@ void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
             }
         } else if (clip.type == ClipType::MIDI && !clip.midiNotes.empty()) {
             // Filter MIDI notes to those within the overlap range
-            double bps = 120.0 / 60.0;  // default; we don't have tempo here, use beats relative
+            double bps = tempoBPM / 60.0;
             // Notes are in beats relative to clip start. Convert overlap bounds to beats.
-            double clipStartBeat = 0.0;
             double overlapStartBeat = (overlapStart - clip.startTime) * bps;
             double overlapEndBeat = (overlapEnd - clip.startTime) * bps;
-            juce::ignoreUnused(clipStartBeat);
 
             std::vector<MidiNote> filteredNotes;
             for (const auto& note : clip.midiNotes) {

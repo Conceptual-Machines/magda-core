@@ -119,7 +119,7 @@ class ClipManager {
      * @return The ID of the new clip
      */
     ClipId duplicateClipAt(ClipId clipId, double startTime, TrackId trackId = INVALID_TRACK_ID,
-                           double tempo = 0.0);
+                           double tempo = 120.0);
 
     // ========================================================================
     // Clip Manipulation
@@ -347,7 +347,7 @@ class ClipManager {
      * @param trackIds Tracks to copy from (empty = all arrangement tracks)
      */
     void copyTimeRangeToClipboard(double startTime, double endTime,
-                                  const std::vector<TrackId>& trackIds);
+                                  const std::vector<TrackId>& trackIds, double tempoBPM = 120.0);
 
     /**
      * @brief Paste clips from clipboard

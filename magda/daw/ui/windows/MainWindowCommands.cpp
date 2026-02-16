@@ -256,9 +256,10 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         case copy: {
             // Time selection copy takes priority
             if (hasActiveTimeSelection()) {
-                const auto& sel = mainView->getTimelineController().getState().selection;
+                const auto& state = mainView->getTimelineController().getState();
                 auto trackIds = resolveTimeSelectionTrackIds();
-                clipManager.copyTimeRangeToClipboard(sel.startTime, sel.endTime, trackIds);
+                clipManager.copyTimeRangeToClipboard(
+                    state.selection.startTime, state.selection.endTime, trackIds, state.tempo.bpm);
                 return true;
             }
             const auto& noteSel = selectionManager.getNoteSelection();
@@ -354,12 +355,13 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         case duplicate: {
             // Time selection duplicate: copy time range, paste at endTime
             if (hasActiveTimeSelection()) {
-                const auto& sel = mainView->getTimelineController().getState().selection;
+                const auto& state = mainView->getTimelineController().getState();
+                const auto& sel = state.selection;
                 auto trackIds = resolveTimeSelectionTrackIds();
-                clipManager.copyTimeRangeToClipboard(sel.startTime, sel.endTime, trackIds);
+                clipManager.copyTimeRangeToClipboard(sel.startTime, sel.endTime, trackIds,
+                                                     state.tempo.bpm);
                 if (clipManager.hasClipsInClipboard()) {
                     auto cmd = std::make_unique<PasteClipCommand>(sel.endTime);
-                    auto* cmdPtr = cmd.get();
                     UndoManager::getInstance().executeCommand(std::move(cmd));
 
                     // Clear clip selection so the time selection stays as active context
