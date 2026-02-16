@@ -25,6 +25,7 @@ class SvgButton;
  * - Tab bar with "Piano Roll" | "Drum Grid" for any MIDI clip
  */
 class BottomPanel : public daw::ui::TabbedPanel,
+                    public juce::DragAndDropTarget,
                     public ClipManagerListener,
                     public TrackManagerListener,
                     public TimelineStateListener {
@@ -49,6 +50,12 @@ class BottomPanel : public daw::ui::TabbedPanel,
 
     // TimelineStateListener
     void timelineStateChanged(const TimelineState& state, ChangeFlags changes) override;
+
+    // DragAndDropTarget implementation (plugin drops)
+    bool isInterestedInDragSource(const SourceDetails& details) override;
+    void itemDragEnter(const SourceDetails& details) override;
+    void itemDragExit(const SourceDetails& details) override;
+    void itemDropped(const SourceDetails& details) override;
 
   protected:
     juce::Rectangle<int> getCollapseButtonBounds() override;
@@ -90,6 +97,8 @@ class BottomPanel : public daw::ui::TabbedPanel,
 
     // RAII listener registration — handles late TimelineController availability
     ScopedListener<TimelineController, TimelineStateListener> timelineListenerGuard_{this};
+
+    bool showPluginDropOverlay_ = false;
 
     void setupHeaderControls();
     void applyTimeModeToContent();

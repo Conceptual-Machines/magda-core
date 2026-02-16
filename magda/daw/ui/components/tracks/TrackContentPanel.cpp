@@ -215,6 +215,12 @@ void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
     // Draw marquee selection rectangle on top of everything
     paintMarqueeRect(g);
 
+    // Draw tint overlay for plugin drag-and-drop
+    if (showPluginDropOverlay_) {
+        g.setColour(juce::Colours::white.withAlpha(0.08f));
+        g.fillRect(getLocalBounds());
+    }
+
     // Draw drop indicator for file drag-and-drop
     if (showDropIndicator_ && dropTargetTrackIndex_ >= 0 &&
         dropTargetTrackIndex_ < static_cast<int>(trackLanes.size())) {
@@ -2118,6 +2124,40 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
 
     if (importedCount > 0) {
         DBG("TrackContentPanel: Imported " << importedCount << " audio files");
+    }
+}
+
+// =============================================================================
+// Plugin Drag-and-Drop Implementation (DragAndDropTarget)
+// =============================================================================
+
+bool TrackContentPanel::isInterestedInDragSource(const SourceDetails& details) {
+    if (auto* obj = details.description.getDynamicObject()) {
+        return obj->getProperty("type").toString() == "plugin";
+    }
+    return false;
+}
+
+void TrackContentPanel::itemDragEnter(const SourceDetails& /*details*/) {
+    showPluginDropOverlay_ = true;
+    repaint();
+}
+
+void TrackContentPanel::itemDragMove(const SourceDetails& /*details*/) {
+    // Overlay already shown
+}
+
+void TrackContentPanel::itemDragExit(const SourceDetails& /*details*/) {
+    showPluginDropOverlay_ = false;
+    repaint();
+}
+
+void TrackContentPanel::itemDropped(const SourceDetails& details) {
+    showPluginDropOverlay_ = false;
+    repaint();
+
+    if (auto* obj = details.description.getDynamicObject()) {
+        TrackManager::createTrackWithPlugin(*obj);
     }
 }
 

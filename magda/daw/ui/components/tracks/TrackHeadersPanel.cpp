@@ -6,6 +6,7 @@
 
 #include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/MidiBridge.hpp"
+#include "../../../core/DeviceInfo.hpp"
 #include "../../../core/SelectionManager.hpp"
 #include "../../../core/TrackCommands.hpp"
 #include "../../../core/UndoManager.hpp"
@@ -780,6 +781,14 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
 
     // Draw drag-and-drop feedback on top
     paintDragFeedback(g);
+
+    // Draw plugin drop highlight
+    if (pluginDropTrackIndex_ >= 0 &&
+        pluginDropTrackIndex_ < static_cast<int>(trackHeaders.size())) {
+        auto area = getTrackHeaderArea(pluginDropTrackIndex_);
+        g.setColour(juce::Colours::white.withAlpha(0.12f));
+        g.fillRect(area);
+    }
 }
 
 void TrackHeadersPanel::resized() {
@@ -2117,6 +2126,101 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
 
         y += laneHeight;
     }
+}
+
+// =============================================================================
+// Plugin Drag-and-Drop Implementation (DragAndDropTarget)
+// =============================================================================
+
+bool TrackHeadersPanel::isInterestedInDragSource(const SourceDetails& details) {
+    if (auto* obj = details.description.getDynamicObject()) {
+        return obj->getProperty("type").toString() == "plugin";
+    }
+    return false;
+}
+
+void TrackHeadersPanel::itemDragEnter(const SourceDetails& details) {
+    pluginDropTrackIndex_ = -1;
+    for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
+        if (getTrackHeaderArea(i).contains(details.localPosition)) {
+            pluginDropTrackIndex_ = i;
+            break;
+        }
+    }
+    repaint();
+}
+
+void TrackHeadersPanel::itemDragMove(const SourceDetails& details) {
+    int prev = pluginDropTrackIndex_;
+    pluginDropTrackIndex_ = -1;
+    for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
+        if (getTrackHeaderArea(i).contains(details.localPosition)) {
+            pluginDropTrackIndex_ = i;
+            break;
+        }
+    }
+    if (pluginDropTrackIndex_ != prev)
+        repaint();
+}
+
+void TrackHeadersPanel::itemDragExit(const SourceDetails& /*details*/) {
+    pluginDropTrackIndex_ = -1;
+    repaint();
+}
+
+void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
+    auto* obj = details.description.getDynamicObject();
+    if (!obj) {
+        pluginDropTrackIndex_ = -1;
+        repaint();
+        return;
+    }
+
+    // Determine which track header was dropped on
+    int targetIndex = -1;
+    for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
+        if (getTrackHeaderArea(i).contains(details.localPosition)) {
+            targetIndex = i;
+            break;
+        }
+    }
+
+    if (targetIndex >= 0 && targetIndex < static_cast<int>(visibleTrackIds_.size())) {
+        // Dropped on existing track header → add plugin to that track
+        DeviceInfo device;
+        device.name = obj->getProperty("name").toString().toStdString();
+        device.manufacturer = obj->getProperty("manufacturer").toString().toStdString();
+        auto uniqueId = obj->getProperty("uniqueId").toString();
+        device.pluginId = uniqueId.isNotEmpty() ? uniqueId
+                                                : obj->getProperty("name").toString() + "_" +
+                                                      obj->getProperty("format").toString();
+        device.isInstrument = static_cast<bool>(obj->getProperty("isInstrument"));
+        device.uniqueId = obj->getProperty("uniqueId").toString();
+        device.fileOrIdentifier = obj->getProperty("fileOrIdentifier").toString();
+
+        juce::String format = obj->getProperty("format").toString();
+        if (format == "VST3")
+            device.format = PluginFormat::VST3;
+        else if (format == "AU")
+            device.format = PluginFormat::AU;
+        else if (format == "VST")
+            device.format = PluginFormat::VST;
+        else if (format == "Internal")
+            device.format = PluginFormat::Internal;
+
+        TrackId trackId = visibleTrackIds_[targetIndex];
+        TrackManager::getInstance().addDeviceToTrack(trackId, device);
+        TrackManager::getInstance().setSelectedTrack(trackId);
+
+        DBG("Dropped plugin on track header: " << juce::String(device.name) << " → track "
+                                               << trackId);
+    } else {
+        // Dropped on empty area → create new track with plugin
+        TrackManager::createTrackWithPlugin(*obj);
+    }
+
+    pluginDropTrackIndex_ = -1;
+    repaint();
 }
 
 }  // namespace magda

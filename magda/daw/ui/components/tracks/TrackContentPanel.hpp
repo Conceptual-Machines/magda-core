@@ -26,6 +26,7 @@ class AutomationLaneComponent;
 
 class TrackContentPanel : public juce::Component,
                           public juce::FileDragAndDropTarget,
+                          public juce::DragAndDropTarget,
                           public TimelineStateListener,
                           public TrackManagerListener,
                           public ClipManagerListener,
@@ -71,6 +72,13 @@ class TrackContentPanel : public juce::Component,
     void fileDragMove(const juce::StringArray& files, int x, int y) override;
     void fileDragExit(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
+
+    // DragAndDropTarget implementation (plugin drops)
+    bool isInterestedInDragSource(const SourceDetails& details) override;
+    void itemDragEnter(const SourceDetails& details) override;
+    void itemDragMove(const SourceDetails& details) override;
+    void itemDragExit(const SourceDetails& details) override;
+    void itemDropped(const SourceDetails& details) override;
 
     // Set the audio engine reference (called by MainView after construction)
     void setAudioEngine(AudioEngine* engine) {
@@ -341,6 +349,11 @@ class TrackContentPanel : public juce::Component,
 
     // Multi-clip drag methods (private helper)
     void cancelMultiClipDrag();
+
+    // ========================================================================
+    // Plugin Drag-and-Drop State
+    // ========================================================================
+    bool showPluginDropOverlay_ = false;
 
     // ========================================================================
     // File Drag-and-Drop State

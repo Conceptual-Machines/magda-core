@@ -288,6 +288,12 @@ void BottomPanel::setCollapsed(bool collapsed) {
 void BottomPanel::paint(juce::Graphics& g) {
     TabbedPanel::paint(g);
 
+    // Draw tint overlay for plugin drag-and-drop
+    if (showPluginDropOverlay_) {
+        g.setColour(juce::Colours::white.withAlpha(0.08f));
+        g.fillRect(getLocalBounds());
+    }
+
     // Draw bottom border below the editor tab header and column dividers for tab icons
     if (showEditorTabs_) {
         g.setColour(DarkTheme::getBorderColour());
@@ -619,6 +625,38 @@ void BottomPanel::syncGridStateFromTimeline() {
         gridNumerator_ = gq.numerator;
         gridDenominator_ = gq.denominator;
         isSnapEnabled_ = state.display.snapEnabled;
+    }
+}
+
+// =============================================================================
+// Plugin Drag-and-Drop Implementation (DragAndDropTarget)
+// =============================================================================
+
+bool BottomPanel::isInterestedInDragSource(const SourceDetails& details) {
+    if (auto* obj = details.description.getDynamicObject()) {
+        return obj->getProperty("type").toString() == "plugin";
+    }
+    return false;
+}
+
+void BottomPanel::itemDragEnter(const SourceDetails& /*details*/) {
+    showPluginDropOverlay_ = true;
+    repaint();
+}
+
+void BottomPanel::itemDragExit(const SourceDetails& /*details*/) {
+    showPluginDropOverlay_ = false;
+    repaint();
+}
+
+void BottomPanel::itemDropped(const SourceDetails& details) {
+    showPluginDropOverlay_ = false;
+    repaint();
+
+    if (auto* obj = details.description.getDynamicObject()) {
+        TrackManager::createTrackWithPlugin(*obj);
+        // trackSelectionChanged listener will trigger updateContentBasedOnSelection()
+        // which shows TrackChainContent with the new plugin
     }
 }
 

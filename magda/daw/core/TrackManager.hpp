@@ -122,6 +122,16 @@ class TrackManager {
         return audioEngine_;
     }
 
+    /**
+     * @brief Create a new track from a dropped plugin DynamicObject.
+     *
+     * Extracts DeviceInfo, creates an Instrument or Audio track named after the
+     * plugin, adds the device, and selects the new track.
+     *
+     * @return The new track ID, or INVALID_TRACK_ID on failure.
+     */
+    static TrackId createTrackWithPlugin(const juce::DynamicObject& pluginObj);
+
     // Track operations
     TrackId createTrack(const juce::String& name = "", TrackType type = TrackType::Audio);
     TrackId createGroupTrack(const juce::String& name = "");

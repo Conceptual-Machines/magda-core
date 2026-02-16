@@ -21,6 +21,53 @@ TrackManager::TrackManager() {
 }
 
 // ============================================================================
+// Plugin Drop → New Track Helper
+// ============================================================================
+
+TrackId TrackManager::createTrackWithPlugin(const juce::DynamicObject& pluginObj) {
+    // Extract DeviceInfo from the DynamicObject (same pattern as TrackChainContent)
+    DeviceInfo device;
+    device.name = pluginObj.getProperty("name").toString().toStdString();
+    device.manufacturer = pluginObj.getProperty("manufacturer").toString().toStdString();
+    auto uniqueId = pluginObj.getProperty("uniqueId").toString();
+    device.pluginId = uniqueId.isNotEmpty() ? uniqueId
+                                            : pluginObj.getProperty("name").toString() + "_" +
+                                                  pluginObj.getProperty("format").toString();
+    device.isInstrument = static_cast<bool>(pluginObj.getProperty("isInstrument"));
+    device.uniqueId = pluginObj.getProperty("uniqueId").toString();
+    device.fileOrIdentifier = pluginObj.getProperty("fileOrIdentifier").toString();
+
+    juce::String format = pluginObj.getProperty("format").toString();
+    if (format == "VST3")
+        device.format = PluginFormat::VST3;
+    else if (format == "AU")
+        device.format = PluginFormat::AU;
+    else if (format == "VST")
+        device.format = PluginFormat::VST;
+    else if (format == "Internal")
+        device.format = PluginFormat::Internal;
+
+    // Determine track type
+    TrackType trackType = device.isInstrument ? TrackType::Instrument : TrackType::Audio;
+
+    // Create the track named after the plugin
+    juce::String pluginName = pluginObj.getProperty("name").toString();
+    auto& tm = getInstance();
+    TrackId newTrackId = tm.createTrack(pluginName, trackType);
+    if (newTrackId == INVALID_TRACK_ID)
+        return INVALID_TRACK_ID;
+
+    // Add the device to the new track
+    tm.addDeviceToTrack(newTrackId, device);
+
+    // Select the new track
+    tm.setSelectedTrack(newTrackId);
+
+    DBG("Created track with plugin: " << pluginName << " (trackId=" << newTrackId << ")");
+    return newTrackId;
+}
+
+// ============================================================================
 // Track Operations
 // ============================================================================
 

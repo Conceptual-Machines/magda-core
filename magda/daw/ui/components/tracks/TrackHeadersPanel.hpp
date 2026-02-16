@@ -22,6 +22,7 @@ namespace magda {
 class AudioEngine;
 
 class TrackHeadersPanel : public juce::Component,
+                          public juce::DragAndDropTarget,
                           public juce::Timer,
                           public TrackManagerListener,
                           public ViewModeListener,
@@ -49,6 +50,13 @@ class TrackHeadersPanel : public juce::Component,
     // AutomationManagerListener
     void automationLanesChanged() override;
     void automationLanePropertyChanged(AutomationLaneId laneId) override;
+
+    // DragAndDropTarget implementation (plugin drops)
+    bool isInterestedInDragSource(const SourceDetails& details) override;
+    void itemDragEnter(const SourceDetails& details) override;
+    void itemDragMove(const SourceDetails& details) override;
+    void itemDragExit(const SourceDetails& details) override;
+    void itemDropped(const SourceDetails& details) override;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -165,10 +173,13 @@ class TrackHeadersPanel : public juce::Component,
     int dragStartY_ = 0;
     int currentDragY_ = 0;
 
-    // Drop target state
+    // Drop target state (track reorder)
     enum class DropTargetType { None, BetweenTracks, OntoGroup };
     DropTargetType dropTargetType_ = DropTargetType::None;
     int dropTargetIndex_ = -1;
+
+    // Plugin drop state
+    int pluginDropTrackIndex_ = -1;  // -1 = empty area (new track), >= 0 = existing track
 
     // Routing device management
     void populateAudioInputOptions(RoutingSelector* selector);
