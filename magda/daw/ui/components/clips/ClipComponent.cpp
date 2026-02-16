@@ -1870,10 +1870,10 @@ void ClipComponent::showContextMenu() {
                 canBounceInPlace = trackInfo && trackInfo->hasInstrument();
             }
         }
-        menu.addItem(11, "Bounce In Place", canBounceInPlace);
+        menu.addItem(11, "Bounce In Place", canBounceInPlace && !isFrozen);
 
         // Bounce To New Track: available for any clip
-        menu.addItem(12, "Bounce To New Track", hasSelection);
+        menu.addItem(12, "Bounce To New Track", hasSelection && !isFrozen);
     }
 
     // Show menu
