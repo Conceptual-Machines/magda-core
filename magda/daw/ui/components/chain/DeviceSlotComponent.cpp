@@ -518,6 +518,9 @@ int DeviceSlotComponent::getPreferredWidth() const {
     if (eqUI_) {
         return getTotalWidth(400);
     }
+    if (compressorUI_) {
+        return getTotalWidth(350);
+    }
     if (samplerUI_) {
         return getTotalWidth(BASE_SLOT_WIDTH * 2);
     }
@@ -585,13 +588,13 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
 
     // Create custom UI if this is an internal device and we don't have one yet
     if (isInternalDevice() && !toneGeneratorUI_ && !samplerUI_ && !drumGridUI_ && !fourOscUI_ &&
-        !eqUI_) {
+        !eqUI_ && !compressorUI_) {
         createCustomUI();
         setupCustomUILinking();
     }
 
     // Update custom UI if available
-    if (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_) {
+    if (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_) {
         updateCustomUI();
     }
 
@@ -756,6 +759,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             fourOscUI_->setVisible(false);
         if (eqUI_)
             eqUI_->setVisible(false);
+        if (compressorUI_)
+            compressorUI_->setVisible(false);
         return;
     }
 
@@ -773,7 +778,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
 
     // Check if this is an internal device with custom UI
     if (isInternalDevice() &&
-        (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_)) {
+        (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_)) {
         // Show custom minimal UI
         if (toneGeneratorUI_) {
             toneGeneratorUI_->setBounds(contentArea.reduced(4));
@@ -801,6 +806,10 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             eqUI_->setBounds(contentArea.reduced(4));
             eqUI_->setVisible(true);
         }
+        if (compressorUI_) {
+            compressorUI_->setBounds(contentArea.reduced(4));
+            compressorUI_->setVisible(true);
+        }
 
         // Hide parameter grid and pagination
         for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
@@ -821,6 +830,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             fourOscUI_->setVisible(false);
         if (eqUI_)
             eqUI_->setVisible(false);
+        if (compressorUI_)
+            compressorUI_->setVisible(false);
 
         // Pagination area
         auto paginationArea = contentArea.removeFromTop(PAGINATION_HEIGHT);
@@ -1934,6 +1945,16 @@ void DeviceSlotComponent::createCustomUI() {
         };
         addAndMakeVisible(*eqUI_);
         updateCustomUI();
+    } else if (device_.pluginId.containsIgnoreCase("compressor")) {
+        compressorUI_ = std::make_unique<CompressorUI>();
+        compressorUI_->onParameterChanged = [this](int paramIndex, float value) {
+            if (!nodePath_.isValid())
+                return;
+            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
+                                                                       value);
+        };
+        addAndMakeVisible(*compressorUI_);
+        updateCustomUI();
     }
 }
 
@@ -2094,6 +2115,10 @@ void DeviceSlotComponent::updateCustomUI() {
     if (eqUI_ && device_.pluginId.equalsIgnoreCase("eq")) {
         eqUI_->updateFromParameters(device_.parameters);
     }
+
+    if (compressorUI_ && device_.pluginId.containsIgnoreCase("compressor")) {
+        compressorUI_->updateFromParameters(device_.parameters);
+    }
 }
 
 // =============================================================================
@@ -2109,6 +2134,8 @@ void DeviceSlotComponent::setupCustomUILinking() {
         sliders = fourOscUI_->getLinkableSliders();
     else if (toneGeneratorUI_)
         sliders = toneGeneratorUI_->getLinkableSliders();
+    else if (compressorUI_)
+        sliders = compressorUI_->getLinkableSliders();
     else if (samplerUI_)
         sliders = samplerUI_->getLinkableSliders();
 
