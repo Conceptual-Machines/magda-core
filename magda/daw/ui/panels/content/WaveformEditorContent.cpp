@@ -1096,7 +1096,7 @@ void WaveformEditorContent::sliceAtWarpMarkers() {
     if (editingClipId_ == magda::INVALID_CLIP_ID)
         return;
 
-    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
     if (!clip)
         return;
 
@@ -1108,15 +1108,34 @@ void WaveformEditorContent::sliceAtWarpMarkers() {
     if (markers.size() <= 2)
         return;  // Only boundary markers, nothing to slice at
 
+    // Disable warp BEFORE splitting.  splitClip uses a linear formula
+    // (tempo/sourceBPM or speedRatio) to compute source offsets, but warp
+    // markers define a non-linear mapping.  With warp off the linear formula
+    // is correct, so we convert marker sourceTime values to the linear
+    // timeline domain first.
+    clip->warpEnabled = false;
+    bridge->disableWarp(editingClipId_);
+
+    double tempo = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
+    double clipStart = clip->startTime;
+    double clipEnd = clip->startTime + clip->length;
+    double clipOffset = clip->offset;
+
     std::vector<double> splitTimes;
     splitTimes.reserve(markers.size());
 
-    double clipStart = clip->startTime;
-    double clipEnd = clip->startTime + clip->length;
-
-    // Skip first and last markers (boundary markers at 0 and file end)
+    // Skip first and last markers (boundary markers at 0 and file end).
+    // Convert each marker's sourceTime to a linear timeline position that
+    // is the inverse of splitClip's offset formula, so that splitClip
+    // computes the correct source offset for each piece.
     for (size_t i = 1; i + 1 < markers.size(); ++i) {
-        double splitTime = clipStart + cachedDisplayInfo_.sourceToTimeline(markers[i].warpTime);
+        double sourceDelta = markers[i].sourceTime - clipOffset;
+        double splitTime;
+        if (clip->autoTempo && clip->sourceBPM > 0.0 && tempo > 0.0) {
+            splitTime = clipStart + sourceDelta * clip->sourceBPM / tempo;
+        } else {
+            splitTime = clipStart + sourceDelta / clip->speedRatio;
+        }
         if (splitTime > clipStart && splitTime < clipEnd) {
             splitTimes.push_back(splitTime);
         }
@@ -1133,7 +1152,7 @@ void WaveformEditorContent::sliceAtGrid() {
     if (editingClipId_ == magda::INVALID_CLIP_ID)
         return;
 
-    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
     if (!clip)
         return;
 
@@ -1144,6 +1163,15 @@ void WaveformEditorContent::sliceAtGrid() {
     double bpm = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
     if (bpm <= 0.0)
         return;
+
+    // Disable warp before splitting so splitClip's linear offset formula
+    // produces correct results (see sliceAtWarpMarkers comment).
+    if (clip->warpEnabled) {
+        clip->warpEnabled = false;
+        auto* bridge = getBridge();
+        if (bridge)
+            bridge->disableWarp(editingClipId_);
+    }
 
     double secondsPerBeat = 60.0 / bpm;
     double secondsPerGrid = gridBeats * secondsPerBeat;
@@ -1176,13 +1204,8 @@ void WaveformEditorContent::sliceClipAtTimes(const std::vector<double>& splitTim
     auto& undoManager = magda::UndoManager::getInstance();
     undoManager.beginCompoundOperation("Slice Clip");
 
-    magda::ClipId originalClipId = editingClipId_;
     magda::ClipId currentClipId = editingClipId_;
     double tempo = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
-
-    // Collect all resulting clip IDs (left pieces + final right piece)
-    std::vector<magda::ClipId> resultClipIds;
-    resultClipIds.push_back(originalClipId);
 
     for (double splitTime : splitTimes) {
         auto cmd = std::make_unique<magda::SplitClipCommand>(currentClipId, splitTime, tempo);
@@ -1191,20 +1214,6 @@ void WaveformEditorContent::sliceClipAtTimes(const std::vector<double>& splitTim
         currentClipId = cmdPtr->getRightClipId();
         if (currentClipId == magda::INVALID_CLIP_ID)
             break;
-        resultClipIds.push_back(currentClipId);
-    }
-
-    // Disable warp on all resulting clips — the warp markers referenced the
-    // original unsplit clip and are invalid for the individual pieces.  The
-    // split offset calculations already accounted for warp mode.
-    auto* bridge = getBridge();
-    for (magda::ClipId id : resultClipIds) {
-        auto* clip = magda::ClipManager::getInstance().getClip(id);
-        if (clip && clip->warpEnabled) {
-            clip->warpEnabled = false;
-            if (bridge)
-                bridge->disableWarp(id);
-        }
     }
 
     undoManager.endCompoundOperation();
