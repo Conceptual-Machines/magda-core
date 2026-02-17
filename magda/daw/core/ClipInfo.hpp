@@ -140,8 +140,9 @@ struct ClipInfo {
     bool isReversed = false;
 
     // Per-Clip Mix
-    float gainDB = 0.0f;
-    float pan = 0.0f;  // -1.0 to 1.0
+    float volumeDB = 0.0f;  // Volume: -inf to 0 dB (clip handle)
+    float gainDB = 0.0f;    // Gain: 0 to +24 dB (inspector only)
+    float pan = 0.0f;       // -1.0 to 1.0
 
     // Fades
     double fadeIn = 0.0;

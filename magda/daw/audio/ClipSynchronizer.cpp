@@ -184,8 +184,11 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                             if (clip->isReversed != audioClip->getIsReversed())
                                 audioClip->setIsReversed(clip->isReversed);
                             // Per-Clip Mix
-                            if (std::abs(audioClip->getGainDB() - clip->gainDB) > 0.001f)
-                                audioClip->setGainDB(clip->gainDB);
+                            {
+                                float combinedGain = clip->volumeDB + clip->gainDB;
+                                if (std::abs(audioClip->getGainDB() - combinedGain) > 0.001f)
+                                    audioClip->setGainDB(combinedGain);
+                            }
                             if (std::abs(audioClip->getPan() - clip->pan) > 0.001f)
                                 audioClip->setPan(clip->pan);
                         }
@@ -433,8 +436,11 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
             audioClipPtr->setTranspose(clip->transpose);
         if (clip->isReversed)
             audioClipPtr->setIsReversed(true);
-        if (std::abs(clip->gainDB) > 0.001f)
-            audioClipPtr->setGainDB(clip->gainDB);
+        {
+            float combinedGain = clip->volumeDB + clip->gainDB;
+            if (std::abs(combinedGain) > 0.001f)
+                audioClipPtr->setGainDB(combinedGain);
+        }
         if (std::abs(clip->pan) > 0.001f)
             audioClipPtr->setPan(clip->pan);
 
@@ -1226,8 +1232,11 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
     // 10. PLAYBACK (isReversed handled at top of function)
 
     // 11. PER-CLIP MIX
-    if (std::abs(audioClipPtr->getGainDB() - clip->gainDB) > 0.001f)
-        audioClipPtr->setGainDB(clip->gainDB);
+    {
+        float combinedGain = clip->volumeDB + clip->gainDB;
+        if (std::abs(audioClipPtr->getGainDB() - combinedGain) > 0.001f)
+            audioClipPtr->setGainDB(combinedGain);
+    }
     if (std::abs(audioClipPtr->getPan() - clip->pan) > 0.001f)
         audioClipPtr->setPan(clip->pan);
 

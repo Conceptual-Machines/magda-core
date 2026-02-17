@@ -638,14 +638,14 @@ void ClipInspector::initMixSection() {
     clipMixSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(clipMixSectionLabel_);
 
-    clipGainValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
-    clipGainValue_->setRange(-60.0, 24.0, 0.0);
-    clipGainValue_->onValueChange = [this]() {
+    clipVolumeValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
+    clipVolumeValue_->setRange(-60.0, 0.0, 0.0);
+    clipVolumeValue_->onValueChange = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID)
-            magda::ClipManager::getInstance().setClipGainDB(
-                selectedClipId_, static_cast<float>(clipGainValue_->getValue()));
+            magda::ClipManager::getInstance().setClipVolumeDB(
+                selectedClipId_, static_cast<float>(clipVolumeValue_->getValue()));
     };
-    clipPropsContainer_.addChildComponent(*clipGainValue_);
+    clipPropsContainer_.addChildComponent(*clipVolumeValue_);
 
     clipPanValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Pan);
     clipPanValue_->setRange(-1.0, 1.0, 0.0);
@@ -655,6 +655,16 @@ void ClipInspector::initMixSection() {
                 selectedClipId_, static_cast<float>(clipPanValue_->getValue()));
     };
     clipPropsContainer_.addChildComponent(*clipPanValue_);
+
+    clipGainValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
+    clipGainValue_->setRange(0.0, 24.0, 0.0);
+    clipGainValue_->setSuffix(" dB");
+    clipGainValue_->onValueChange = [this]() {
+        if (selectedClipId_ != magda::INVALID_CLIP_ID)
+            magda::ClipManager::getInstance().setClipGainDB(
+                selectedClipId_, static_cast<float>(clipGainValue_->getValue()));
+    };
+    clipPropsContainer_.addChildComponent(*clipGainValue_);
 }
 
 // ========================================================================

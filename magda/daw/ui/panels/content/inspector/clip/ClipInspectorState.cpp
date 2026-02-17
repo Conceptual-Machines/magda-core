@@ -308,16 +308,18 @@ void ClipInspector::updateFromSelectedClip() {
             transposeValue_->setAlpha(clip->autoPitch ? 0.4f : 1.0f);
         }
 
-        // Mix section (audio clips only) — includes Gain/Pan + Reverse/L/R
+        // Mix section (audio clips only) — includes Volume/Pan/Gain + Reverse/L/R
         clipMixSectionLabel_.setVisible(isAudioClip);
-        clipGainValue_->setVisible(isAudioClip);
+        clipVolumeValue_->setVisible(isAudioClip);
         clipPanValue_->setVisible(isAudioClip);
+        clipGainValue_->setVisible(isAudioClip);
         reverseToggle_.setVisible(isAudioClip);
         leftChannelToggle_.setVisible(false);
         rightChannelToggle_.setVisible(false);
         if (isAudioClip) {
-            clipGainValue_->setValue(clip->gainDB, juce::dontSendNotification);
+            clipVolumeValue_->setValue(clip->volumeDB, juce::dontSendNotification);
             clipPanValue_->setValue(clip->pan, juce::dontSendNotification);
+            clipGainValue_->setValue(clip->gainDB, juce::dontSendNotification);
             reverseToggle_.setToggleState(clip->isReversed, juce::dontSendNotification);
         }
 
@@ -414,8 +416,9 @@ void ClipInspector::showClipControls(bool show) {
         pitchChangeValue_->setVisible(false);
         transposeValue_->setVisible(false);
         clipMixSectionLabel_.setVisible(false);
-        clipGainValue_->setVisible(false);
+        clipVolumeValue_->setVisible(false);
         clipPanValue_->setVisible(false);
+        clipGainValue_->setVisible(false);
         beatDetectionSectionLabel_.setVisible(false);
         reverseToggle_.setVisible(false);
         autoDetectBeatsToggle_.setVisible(false);

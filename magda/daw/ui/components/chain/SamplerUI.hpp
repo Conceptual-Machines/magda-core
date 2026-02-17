@@ -150,6 +150,9 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     juce::Label attackLabel_, decayLabel_, sustainLabel_, releaseLabel_;
     juce::Label pitchLabel_, fineLabel_, levelLabel_, velAmountLabel_;
 
+    // Waveform gain (driven by level parameter)
+    float waveformGain_ = 1.0f;
+
     // Dragging state
     enum class DragTarget { None, SampleStart, SampleEnd, LoopStart, LoopEnd, LoopRegion, Scroll };
     DragTarget currentDrag_ = DragTarget::None;

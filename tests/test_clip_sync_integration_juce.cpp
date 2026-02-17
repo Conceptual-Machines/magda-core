@@ -588,7 +588,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         f.clipSync->syncClipToEngine(clipId);
 
         // Set gain and pan
-        ClipManager::getInstance().setClipGainDB(clipId, -6.0f);
+        ClipManager::getInstance().setClipVolumeDB(clipId, -6.0f);
         ClipManager::getInstance().setClipPan(clipId, 0.5f);
         f.clipSync->syncClipToEngine(clipId);
 

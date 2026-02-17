@@ -681,10 +681,19 @@ void ClipManager::setIsReversed(ClipId clipId, bool reversed) {
 // Per-Clip Mix
 // ============================================================================
 
+void ClipManager::setClipVolumeDB(ClipId clipId, float dB) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->volumeDB = juce::jlimit(-100.0f, 0.0f, dB);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
 void ClipManager::setClipGainDB(ClipId clipId, float dB) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
-            clip->gainDB = juce::jlimit(-60.0f, 24.0f, dB);
+            clip->gainDB = juce::jlimit(0.0f, 24.0f, dB);
             notifyClipPropertyChanged(clipId);
         }
     }

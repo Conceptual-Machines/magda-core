@@ -139,6 +139,13 @@ SamplerUI::SamplerUI() {
     levelSlider_.onValueChanged = [this](double value) {
         if (onParameterChanged)
             onParameterChanged(6, static_cast<float>(value));
+        // Update waveform scaling to reflect level
+        waveformGain_ = juce::Decibels::decibelsToGain(static_cast<float>(value));
+        if (waveformBuffer_ != nullptr) {
+            auto waveArea = getWaveformBounds();
+            buildWaveformPath(waveformBuffer_, waveArea.getWidth(), waveArea.getHeight() - 4);
+            repaint();
+        }
     };
     addAndMakeVisible(levelSlider_);
 
@@ -199,6 +206,7 @@ void SamplerUI::updateParameters(float attack, float decay, float sustain, float
     pitchSlider_.setValue(pitch, juce::dontSendNotification);
     fineSlider_.setValue(fine, juce::dontSendNotification);
     levelSlider_.setValue(level, juce::dontSendNotification);
+    waveformGain_ = juce::Decibels::decibelsToGain(level);
     velAmountSlider_.setValue(velAmount, juce::dontSendNotification);
 
     startSlider_.setValue(sampleStart, juce::dontSendNotification);
@@ -289,6 +297,7 @@ void SamplerUI::buildWaveformPath(const juce::AudioBuffer<float>* buffer, int wi
             if (absVal > maxVal)
                 maxVal = absVal;
         }
+        maxVal *= waveformGain_;
 
         float y = halfHeight - maxVal * halfHeight;
         waveformPath_.lineTo(static_cast<float>(x), y);
@@ -308,6 +317,7 @@ void SamplerUI::buildWaveformPath(const juce::AudioBuffer<float>* buffer, int wi
             if (absVal > maxVal)
                 maxVal = absVal;
         }
+        maxVal *= waveformGain_;
 
         float y = halfHeight + maxVal * halfHeight;
         waveformPath_.lineTo(static_cast<float>(x), y);

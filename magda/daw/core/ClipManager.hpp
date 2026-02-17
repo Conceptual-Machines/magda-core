@@ -204,6 +204,7 @@ class ClipManager {
     void setIsReversed(ClipId clipId, bool reversed);
 
     // Per-Clip Mix
+    void setClipVolumeDB(ClipId clipId, float dB);
     void setClipGainDB(ClipId clipId, float dB);
     void setClipPan(ClipId clipId, float pan);
 
