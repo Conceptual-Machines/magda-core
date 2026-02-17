@@ -1389,6 +1389,14 @@ void WaveformGridComponent::showContextMenu(const juce::MouseEvent& event) {
         }
     }
 
+    // Slice operations
+    menu.addSeparator();
+    bool canSliceAtMarkers = warpMode_ && warpMarkers_.size() > 2;
+    menu.addItem(6, "Slice at Warp Markers", canSliceAtMarkers);
+    bool canSliceAtGrid =
+        (gridResolution_ != GridResolution::Off || customGridBeats_ > 0.0) && timeRuler_ != nullptr;
+    menu.addItem(7, "Slice at Grid", canSliceAtGrid);
+
     menu.showMenuAsync(juce::PopupMenu::Options(), [this, markerIndex, clipOffset](int result) {
         if (result == 1) {
             if (timeRuler_)
@@ -1406,6 +1414,10 @@ void WaveformGridComponent::showContextMenu(const juce::MouseEvent& event) {
             repaint();
         } else if (result == 5 && markerIndex >= 0 && onWarpMarkerRemove) {
             onWarpMarkerRemove(markerIndex);
+        } else if (result == 6 && onSliceAtWarpMarkers) {
+            onSliceAtWarpMarkers();
+        } else if (result == 7 && onSliceAtGrid) {
+            onSliceAtGrid();
         }
     });
 }

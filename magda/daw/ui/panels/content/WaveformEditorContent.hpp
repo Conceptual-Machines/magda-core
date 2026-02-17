@@ -138,6 +138,11 @@ class WaveformEditorContent : public PanelContent,
     void refreshWarpMarkers();
     magda::AudioBridge* getBridge();
 
+    // Slice helpers
+    void sliceAtWarpMarkers();
+    void sliceAtGrid();
+    void sliceClipAtTimes(const std::vector<double>& splitTimes);
+
     // Warp state tracking
     bool wasWarpEnabled_ = false;
 

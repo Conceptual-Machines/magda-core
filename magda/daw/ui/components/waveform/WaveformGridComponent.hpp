@@ -174,6 +174,10 @@ class WaveformGridComponent : public juce::Component {
     // Warp marker reposition callback (Alt+drag: remove + add at new position)
     std::function<void(int index, double newSourceTime, double newWarpTime)> onWarpMarkerReposition;
 
+    // Slice callbacks
+    std::function<void()> onSliceAtWarpMarkers;
+    std::function<void()> onSliceAtGrid;
+
     // Zoom drag callback (deltaY from start, anchorX in viewport coords)
     std::function<void(int deltaY, int anchorX)> onZoomDrag;
 

@@ -8,8 +8,10 @@
 #include "../../themes/FontManager.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
+#include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/TrackManager.hpp"
+#include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
 
 namespace magda::daw::ui {
@@ -400,6 +402,10 @@ WaveformEditorContent::WaveformEditorContent() {
             refreshWarpMarkers();
         }
     };
+
+    // Slice callbacks
+    gridComponent_->onSliceAtWarpMarkers = [this]() { sliceAtWarpMarkers(); };
+    gridComponent_->onSliceAtGrid = [this]() { sliceAtGrid(); };
 
     // Zoom drag on waveform — same log-curve sensitivity as header drag
     gridComponent_->onZoomDrag = [this](int deltaY, int anchorX) {
@@ -1080,6 +1086,113 @@ void WaveformEditorContent::timerCallback() {
         transientsCached_ = true;
         stopTimer();
     }
+}
+
+// ============================================================================
+// Slice Helpers
+// ============================================================================
+
+void WaveformEditorContent::sliceAtWarpMarkers() {
+    if (editingClipId_ == magda::INVALID_CLIP_ID)
+        return;
+
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    if (!clip)
+        return;
+
+    auto* bridge = getBridge();
+    if (!bridge)
+        return;
+
+    auto markers = bridge->getWarpMarkers(editingClipId_);
+    if (markers.size() <= 2)
+        return;  // Only boundary markers, nothing to slice at
+
+    std::vector<double> splitTimes;
+    splitTimes.reserve(markers.size());
+
+    double clipStart = clip->startTime;
+    double clipEnd = clip->startTime + clip->length;
+
+    // Skip first and last markers (boundary markers at 0 and file end)
+    for (size_t i = 1; i + 1 < markers.size(); ++i) {
+        double splitTime = clipStart + cachedDisplayInfo_.sourceToTimeline(markers[i].warpTime);
+        if (splitTime > clipStart && splitTime < clipEnd) {
+            splitTimes.push_back(splitTime);
+        }
+    }
+
+    std::sort(splitTimes.begin(), splitTimes.end());
+    // Deduplicate
+    splitTimes.erase(std::unique(splitTimes.begin(), splitTimes.end()), splitTimes.end());
+
+    sliceClipAtTimes(splitTimes);
+}
+
+void WaveformEditorContent::sliceAtGrid() {
+    if (editingClipId_ == magda::INVALID_CLIP_ID)
+        return;
+
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    if (!clip)
+        return;
+
+    double gridBeats = gridComponent_->getGridResolutionBeats();
+    if (gridBeats <= 0.0)
+        return;
+
+    double bpm = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
+    if (bpm <= 0.0)
+        return;
+
+    double secondsPerBeat = 60.0 / bpm;
+    double secondsPerGrid = gridBeats * secondsPerBeat;
+
+    // Grid origin in timeline seconds (same math as paintBeatGrid)
+    double originTimeline =
+        timeRuler_ ? cachedDisplayInfo_.sourceToTimeline(timeRuler_->getBarOrigin()) : 0.0;
+
+    double clipStart = clip->startTime;
+    double clipEnd = clip->startTime + clip->length;
+
+    // Find the first grid line at or before clip start
+    double startK = std::ceil((clipStart - originTimeline) / secondsPerGrid);
+    double iterStart = originTimeline + startK * secondsPerGrid;
+
+    std::vector<double> splitTimes;
+    for (double t = iterStart; t < clipEnd; t += secondsPerGrid) {
+        if (t > clipStart && t < clipEnd) {
+            splitTimes.push_back(t);
+        }
+    }
+
+    sliceClipAtTimes(splitTimes);
+}
+
+void WaveformEditorContent::sliceClipAtTimes(const std::vector<double>& splitTimes) {
+    if (splitTimes.empty())
+        return;
+
+    auto& undoManager = magda::UndoManager::getInstance();
+    undoManager.beginCompoundOperation("Slice Clip");
+
+    magda::ClipId currentClipId = editingClipId_;
+    double tempo = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
+
+    for (double splitTime : splitTimes) {
+        auto cmd = std::make_unique<magda::SplitClipCommand>(currentClipId, splitTime, tempo);
+        auto* cmdPtr = cmd.get();
+        undoManager.executeCommand(std::move(cmd));
+        currentClipId = cmdPtr->getRightClipId();
+        if (currentClipId == magda::INVALID_CLIP_ID)
+            break;
+    }
+
+    undoManager.endCompoundOperation();
+
+    // Clear editing clip — original is now sliced into pieces
+    editingClipId_ = magda::INVALID_CLIP_ID;
+    gridComponent_->setClip(magda::INVALID_CLIP_ID);
 }
 
 }  // namespace magda::daw::ui
