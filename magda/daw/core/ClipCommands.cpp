@@ -1616,4 +1616,108 @@ void BounceToNewTrackCommand::undo() {
     success_ = false;
 }
 
+// ============================================================================
+// Slice Utilities
+// ============================================================================
+
+void sliceClipAtTimes(ClipId clipId, const std::vector<double>& splitTimes, double tempo) {
+    if (splitTimes.empty())
+        return;
+
+    auto& undoManager = UndoManager::getInstance();
+    undoManager.beginCompoundOperation("Slice Clip");
+
+    ClipId currentClipId = clipId;
+
+    for (double splitTime : splitTimes) {
+        auto cmd = std::make_unique<SplitClipCommand>(currentClipId, splitTime, tempo);
+        auto* cmdPtr = cmd.get();
+        undoManager.executeCommand(std::move(cmd));
+        currentClipId = cmdPtr->getRightClipId();
+        if (currentClipId == INVALID_CLIP_ID)
+            break;
+    }
+
+    undoManager.endCompoundOperation();
+}
+
+void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
+    if (!bridge)
+        return;
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (!clip || clip->type != ClipType::Audio)
+        return;
+
+    auto markers = bridge->getWarpMarkers(clipId);
+    if (markers.size() <= 2)
+        return;  // Only boundary markers
+
+    // Disable warp before splitting — splitClip uses a linear formula
+    // (tempo/sourceBPM or speedRatio) to compute source offsets, but warp
+    // markers define a non-linear mapping.  With warp off the linear formula
+    // is correct, so we convert marker sourceTime values to the linear
+    // timeline domain.
+    clip->warpEnabled = false;
+    bridge->disableWarp(clipId);
+
+    double clipStart = clip->startTime;
+    double clipEnd = clip->startTime + clip->length;
+    double clipOffset = clip->offset;
+
+    std::vector<double> splitTimes;
+    splitTimes.reserve(markers.size());
+
+    // Skip first and last markers (boundary markers at 0 and file end).
+    // Convert each marker's sourceTime to a linear timeline position using
+    // the inverse of splitClip's offset formula.
+    for (size_t i = 1; i + 1 < markers.size(); ++i) {
+        double sourceDelta = markers[i].sourceTime - clipOffset;
+        double splitTime;
+        if (clip->autoTempo && clip->sourceBPM > 0.0 && tempo > 0.0) {
+            splitTime = clipStart + sourceDelta * clip->sourceBPM / tempo;
+        } else {
+            splitTime = clipStart + sourceDelta / clip->speedRatio;
+        }
+        if (splitTime > clipStart && splitTime < clipEnd) {
+            splitTimes.push_back(splitTime);
+        }
+    }
+
+    std::sort(splitTimes.begin(), splitTimes.end());
+    splitTimes.erase(std::unique(splitTimes.begin(), splitTimes.end()), splitTimes.end());
+
+    sliceClipAtTimes(clipId, splitTimes, tempo);
+}
+
+void sliceClipAtGrid(ClipId clipId, double gridInterval, double tempo, AudioBridge* bridge) {
+    if (gridInterval <= 0.0)
+        return;
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (!clip)
+        return;
+
+    // Disable warp before splitting if enabled
+    if (clip->warpEnabled) {
+        clip->warpEnabled = false;
+        if (bridge)
+            bridge->disableWarp(clipId);
+    }
+
+    double clipStart = clip->startTime;
+    double clipEnd = clip->startTime + clip->length;
+
+    double startK = std::ceil(clipStart / gridInterval);
+    double iterStart = startK * gridInterval;
+
+    std::vector<double> splitTimes;
+    for (double t = iterStart; t < clipEnd; t += gridInterval) {
+        if (t > clipStart && t < clipEnd)
+            splitTimes.push_back(t);
+    }
+
+    sliceClipAtTimes(clipId, splitTimes, tempo);
+}
+
 }  // namespace magda

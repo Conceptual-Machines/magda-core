@@ -559,4 +559,36 @@ class BounceToNewTrackCommand : public UndoableCommand {
     bool success_ = false;
 };
 
+// ============================================================================
+// Slice Utilities
+// ============================================================================
+
+class AudioBridge;
+
+/**
+ * @brief Split a clip at multiple sorted ascending times as one undo step.
+ *
+ * Wraps the splits in a compound operation so a single undo restores
+ * the original clip.  Caller must disable warp before calling if the
+ * clip has warp enabled (splitClip's linear offset formula requires it).
+ */
+void sliceClipAtTimes(ClipId clipId, const std::vector<double>& splitTimes, double tempo);
+
+/**
+ * @brief Slice an audio clip at its warp marker positions.
+ *
+ * Disables warp, converts each marker's sourceTime to a linear timeline
+ * position, and calls sliceClipAtTimes.
+ */
+void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge);
+
+/**
+ * @brief Slice a clip at regular grid intervals.
+ *
+ * @param gridInterval  Grid spacing in timeline seconds.
+ *
+ * Disables warp if enabled, then splits at each grid line inside the clip.
+ */
+void sliceClipAtGrid(ClipId clipId, double gridInterval, double tempo, AudioBridge* bridge);
+
 }  // namespace magda

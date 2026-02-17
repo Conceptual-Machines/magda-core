@@ -141,7 +141,6 @@ class WaveformEditorContent : public PanelContent,
     // Slice helpers
     void sliceAtWarpMarkers();
     void sliceAtGrid();
-    void sliceClipAtTimes(const std::vector<double>& splitTimes);
 
     // Warp state tracking
     bool wasWarpEnabled_ = false;

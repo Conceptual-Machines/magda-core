@@ -1794,6 +1794,29 @@ void ClipComponent::showContextMenu() {
 
     // Split / Trim
     menu.addItem(5, "Split / Trim", canEdit);
+
+    // Slice operations (single audio clip only)
+    bool canSliceAtMarkers = false;
+    bool canSliceAtGrid = false;
+    if (!isMultiSelection && canEdit) {
+        const auto* singleClip = getClipInfo();
+        if (singleClip && singleClip->type == ClipType::Audio) {
+            // Check for warp markers
+            if (singleClip->warpEnabled) {
+                auto* audioEngine = TrackManager::getInstance().getAudioEngine();
+                if (audioEngine) {
+                    auto* bridge = audioEngine->getAudioBridge();
+                    if (bridge) {
+                        auto markers = bridge->getWarpMarkers(clipId_);
+                        canSliceAtMarkers = markers.size() > 2;
+                    }
+                }
+            }
+            canSliceAtGrid = true;
+        }
+    }
+    menu.addItem(13, "Slice at Warp Markers", canSliceAtMarkers);
+    menu.addItem(14, "Slice at Grid", canSliceAtGrid);
     menu.addSeparator();
 
     // Join Clips (need 2+ adjacent clips on same track)
@@ -2058,6 +2081,27 @@ void ClipComponent::showContextMenu() {
                 if (onBounceToNewTrackRequested) {
                     onBounceToNewTrackRequested(clipId_);
                 }
+                break;
+            }
+
+            case 13: {  // Slice at Warp Markers
+                double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+                auto* audioEngine = TrackManager::getInstance().getAudioEngine();
+                auto* bridge = audioEngine ? audioEngine->getAudioBridge() : nullptr;
+                sliceClipAtWarpMarkers(clipId_, tempo, bridge);
+                break;
+            }
+
+            case 14: {  // Slice at Grid
+                double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+                double gridInterval = 0.0;
+                if (parentPanel_ && parentPanel_->getTimelineController()) {
+                    gridInterval =
+                        parentPanel_->getTimelineController()->getState().getSnapInterval();
+                }
+                auto* audioEngine = TrackManager::getInstance().getAudioEngine();
+                auto* bridge = audioEngine ? audioEngine->getAudioBridge() : nullptr;
+                sliceClipAtGrid(clipId_, gridInterval, tempo, bridge);
                 break;
             }
 
