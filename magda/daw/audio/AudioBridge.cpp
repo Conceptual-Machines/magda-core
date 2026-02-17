@@ -317,6 +317,8 @@ void AudioBridge::deviceParameterChanged(DeviceId deviceId, int paramIndex, floa
         samplerProc->setParameterByIndex(paramIndex, newValue);
     } else if (auto* fourOscProc = dynamic_cast<FourOscProcessor*>(processor)) {
         fourOscProc->setParameterByIndex(paramIndex, newValue);
+    } else if (auto* eqProc = dynamic_cast<EqualiserProcessor*>(processor)) {
+        eqProc->setParameterByIndex(paramIndex, newValue);
     }
 }
 

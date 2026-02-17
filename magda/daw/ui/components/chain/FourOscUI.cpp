@@ -1,5 +1,6 @@
 #include "FourOscUI.hpp"
 
+#include "BinaryData.h"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -60,6 +61,82 @@ void FourOscUI::resized() {
     tabs_->setBounds(getLocalBounds());
 }
 
+std::vector<LinkableTextSlider*> FourOscUI::getLinkableSliders() {
+    std::vector<LinkableTextSlider*> sliders;
+
+    // OSC tab: 4 oscillators x 7 params each (indices 0-27)
+    for (int i = 0; i < 4; ++i) {
+        auto& row = oscTab_->rows_[i];
+        sliders.push_back(&row.tuneSlider);        // oscBase + i*7 + 0
+        sliders.push_back(&row.fineSlider);        // oscBase + i*7 + 1
+        sliders.push_back(&row.levelSlider);       // oscBase + i*7 + 2
+        sliders.push_back(&row.pulseWidthSlider);  // oscBase + i*7 + 3
+        sliders.push_back(&row.detuneSlider);      // oscBase + i*7 + 4
+        sliders.push_back(&row.spreadSlider);      // oscBase + i*7 + 5
+        sliders.push_back(&row.panSlider);         // oscBase + i*7 + 6
+    }
+
+    // LFO tab: 2 LFOs x 2 params each (indices 28-31)
+    for (int i = 0; i < 2; ++i) {
+        auto& row = lfoTab_->rows_[i];
+        sliders.push_back(&row.rateSlider);   // lfoBase + i*2 + 0
+        sliders.push_back(&row.depthSlider);  // lfoBase + i*2 + 1
+    }
+
+    // Mod Env tab: 2 envelopes x 4 params each (indices 32-39)
+    for (int i = 0; i < 2; ++i) {
+        auto& row = modEnvTab_->rows_[i];
+        sliders.push_back(&row.attackSlider);   // modEnvBase + i*4 + 0
+        sliders.push_back(&row.decaySlider);    // modEnvBase + i*4 + 1
+        sliders.push_back(&row.sustainSlider);  // modEnvBase + i*4 + 2
+        sliders.push_back(&row.releaseSlider);  // modEnvBase + i*4 + 3
+    }
+
+    // Amp tab: 5 params (indices 40-44)
+    sliders.push_back(&ampTab_->attackSlider_);    // ampBase + 0
+    sliders.push_back(&ampTab_->decaySlider_);     // ampBase + 1
+    sliders.push_back(&ampTab_->sustainSlider_);   // ampBase + 2
+    sliders.push_back(&ampTab_->releaseSlider_);   // ampBase + 3
+    sliders.push_back(&ampTab_->velocitySlider_);  // ampBase + 4
+
+    // Filter tab: 9 params (indices 45-53)
+    sliders.push_back(&filterTab_->attackSlider_);     // filterBase + 0
+    sliders.push_back(&filterTab_->decaySlider_);      // filterBase + 1
+    sliders.push_back(&filterTab_->sustainSlider_);    // filterBase + 2
+    sliders.push_back(&filterTab_->releaseSlider_);    // filterBase + 3
+    sliders.push_back(&filterTab_->freqSlider_);       // filterBase + 4
+    sliders.push_back(&filterTab_->resonanceSlider_);  // filterBase + 5
+    sliders.push_back(&filterTab_->amountSlider_);     // filterBase + 6
+    sliders.push_back(&filterTab_->keySlider_);        // filterBase + 7
+    sliders.push_back(&filterTab_->velocitySlider_);   // filterBase + 8
+
+    // Distortion: 1 param (index 54)
+    sliders.push_back(&fxTab_->distAmountSlider_);  // distBase + 0
+
+    // Reverb: 4 params (indices 55-58)
+    sliders.push_back(&fxTab_->reverbSizeSlider_);   // reverbBase + 0
+    sliders.push_back(&fxTab_->reverbDampSlider_);   // reverbBase + 1
+    sliders.push_back(&fxTab_->reverbWidthSlider_);  // reverbBase + 2
+    sliders.push_back(&fxTab_->reverbMixSlider_);    // reverbBase + 3
+
+    // Delay: 3 params (indices 59-61)
+    sliders.push_back(&fxTab_->delayFeedbackSlider_);   // delayBase + 0
+    sliders.push_back(&fxTab_->delayCrossfeedSlider_);  // delayBase + 1
+    sliders.push_back(&fxTab_->delayMixSlider_);        // delayBase + 2
+
+    // Chorus: 4 params (indices 62-65)
+    sliders.push_back(&fxTab_->chorusSpeedSlider_);  // chorusBase + 0
+    sliders.push_back(&fxTab_->chorusDepthSlider_);  // chorusBase + 1
+    sliders.push_back(&fxTab_->chorusWidthSlider_);  // chorusBase + 2
+    sliders.push_back(&fxTab_->chorusMixSlider_);    // chorusBase + 3
+
+    // Global: 2 params (indices 66-67)
+    sliders.push_back(&oscTab_->legatoSlider_);       // globalBase + 0
+    sliders.push_back(&oscTab_->masterLevelSlider_);  // globalBase + 1
+
+    return sliders;
+}
+
 // =============================================================================
 // Helper: setup a small label
 // =============================================================================
@@ -71,6 +148,24 @@ static void setupLabelStatic(juce::Label& label, const juce::String& text,
     label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     label.setJustificationType(juce::Justification::centred);
     parent->addAndMakeVisible(label);
+}
+
+// =============================================================================
+// Helper: load ADSR icon
+// =============================================================================
+
+// =============================================================================
+// Helper: populate waveform icon selector (shared by OscTab + LFOTab)
+// =============================================================================
+
+static void populateWaveSelector(IconSelector& selector) {
+    // Matches Oscillator::Waves enum: none=0, sine=1, square=2, saw=3, triangle=4, noise=5
+    selector.addTextOption("Off", "Off");
+    selector.addOption(BinaryData::fadmodsine_svg, BinaryData::fadmodsine_svgSize, "Sine");
+    selector.addOption(BinaryData::fadmodsquare_svg, BinaryData::fadmodsquare_svgSize, "Square");
+    selector.addOption(BinaryData::fadmodsawup_svg, BinaryData::fadmodsawup_svgSize, "Saw");
+    selector.addOption(BinaryData::fadmodtri_svg, BinaryData::fadmodtri_svgSize, "Triangle");
+    selector.addOption(BinaryData::fadmodrandom_svg, BinaryData::fadmodrandom_svgSize, "Noise");
 }
 
 // =============================================================================
@@ -91,23 +186,17 @@ FourOscUI::OscTab::OscTab(FourOscUI& owner) : owner_(owner) {
     for (int i = 0; i < 4; ++i) {
         auto& row = rows_[i];
 
-        // Row label
-        setupLabel(row.label, "OSC " + juce::String(i + 1));
+        setupLabel(row.label, juce::String(i + 1));
 
-        // Waveform combo
-        row.waveformCombo.addItem("Sine", 1);
-        row.waveformCombo.addItem("Triangle", 2);
-        row.waveformCombo.addItem("Saw Up", 3);
-        row.waveformCombo.addItem("Saw Down", 4);
-        row.waveformCombo.addItem("Square", 5);
-        row.waveformCombo.addItem("Noise", 6);
-        row.waveformCombo.setSelectedId(1, juce::dontSendNotification);
-        row.waveformCombo.onChange = [this, i]() {
-            int shape = rows_[i].waveformCombo.getSelectedId() - 1;
+        // Waveform icon selector
+        setupWaveSelector(row.waveSelector);
+        row.waveSelector.onChange = [this, i](int shape) {
+            DBG("OscTab wave selector changed: osc=" + juce::String(i + 1) +
+                " shape=" + juce::String(shape));
             if (owner_.onPluginStateChanged)
                 owner_.onPluginStateChanged("waveShape" + juce::String(i + 1), juce::var(shape));
         };
-        addAndMakeVisible(row.waveformCombo);
+        addAndMakeVisible(row.waveSelector);
 
         // Tune (-36 to 36 semitones)
         int oscBase = kOscBase + i * kOscParamsPerOsc;
@@ -173,31 +262,78 @@ FourOscUI::OscTab::OscTab(FourOscUI& owner) : owner_(owner) {
         };
         addAndMakeVisible(row.panSlider);
 
-        // Voices combo
-        for (int v = 1; v <= 8; ++v)
-            row.voicesCombo.addItem(juce::String(v), v);
-        row.voicesCombo.setSelectedId(1, juce::dontSendNotification);
-        row.voicesCombo.onChange = [this, i]() {
-            int voices = rows_[i].voicesCombo.getSelectedId();
+        // Voices slider (1-8 integer)
+        row.voicesSlider.setRange(1.0, 8.0, 1.0);
+        row.voicesSlider.setValue(1.0, juce::dontSendNotification);
+        row.voicesSlider.setValueFormatter(
+            [](double v) { return juce::String(static_cast<int>(v)); });
+        row.voicesSlider.onValueChanged = [this, i](double v) {
             if (owner_.onPluginStateChanged)
-                owner_.onPluginStateChanged("voices" + juce::String(i + 1), juce::var(voices));
+                owner_.onPluginStateChanged("voices" + juce::String(i + 1),
+                                            juce::var(static_cast<int>(v)));
         };
-        addAndMakeVisible(row.voicesCombo);
+        addAndMakeVisible(row.voicesSlider);
     }
+
+    // Global controls row
+    setupLabel(modeLabel_, "MODE");
+    voiceModeSelector_.addTextOption("Mono", "Mono");
+    voiceModeSelector_.addTextOption("Leg", "Legato");
+    voiceModeSelector_.addTextOption("Poly", "Poly");
+    voiceModeSelector_.setSelectedIndex(2, juce::dontSendNotification);  // Default Poly
+    voiceModeSelector_.onChange = [this](int idx) {
+        if (owner_.onPluginStateChanged)
+            owner_.onPluginStateChanged("voiceMode", juce::var(idx));
+    };
+    addAndMakeVisible(voiceModeSelector_);
+
+    setupLabel(gVoicesLabel_, "VOICES");
+    globalVoicesSlider_.setRange(1.0, 64.0, 1.0);
+    globalVoicesSlider_.setValue(32.0, juce::dontSendNotification);
+    globalVoicesSlider_.setValueFormatter(
+        [](double v) { return juce::String(static_cast<int>(v)); });
+    globalVoicesSlider_.onValueChanged = [this](double v) {
+        if (owner_.onPluginStateChanged)
+            owner_.onPluginStateChanged("voices", juce::var(static_cast<int>(v)));
+    };
+    addAndMakeVisible(globalVoicesSlider_);
+
+    setupLabel(legatoLabel_, "GLIDE");
+    legatoSlider_.setRange(0.0, 500.0, 0.1);
+    legatoSlider_.setValue(0.0, juce::dontSendNotification);
+    legatoSlider_.onValueChanged = [this](double v) {
+        if (owner_.onParameterChanged)
+            owner_.onParameterChanged(kGlobalBase, static_cast<float>(v));
+    };
+    addAndMakeVisible(legatoSlider_);
+
+    setupLabel(masterLabel_, "LEVEL");
+    masterLevelSlider_.setRange(-100.0, 0.0, 0.1);
+    masterLevelSlider_.setValue(0.0, juce::dontSendNotification);
+    masterLevelSlider_.onValueChanged = [this](double v) {
+        if (owner_.onParameterChanged)
+            owner_.onParameterChanged(kGlobalBase + 1, static_cast<float>(v));
+    };
+    addAndMakeVisible(masterLevelSlider_);
+}
+
+void FourOscUI::OscTab::setupWaveSelector(IconSelector& selector) {
+    populateWaveSelector(selector);
 }
 
 void FourOscUI::OscTab::resized() {
     auto area = getLocalBounds().reduced(4);
     constexpr int rowH = 22;
-    constexpr int labelW = 36;
-    constexpr int comboW = 54;
-    constexpr int sliderW = 44;
+    constexpr int labelW = 16;
+    constexpr int waveSelectorW = 96;  // 6 items (Off + 5 waveforms) at 16px each
+    constexpr int sliderW = 42;
+    constexpr int comboW = 46;
     constexpr int gap = 2;
 
     // Header row
     auto headerRow = area.removeFromTop(14);
-    headerRow.removeFromLeft(labelW + gap);  // skip row label column
-    hdrWave_.setBounds(headerRow.removeFromLeft(comboW));
+    headerRow.removeFromLeft(labelW + gap);
+    hdrWave_.setBounds(headerRow.removeFromLeft(waveSelectorW));
     headerRow.removeFromLeft(gap);
     hdrTune_.setBounds(headerRow.removeFromLeft(sliderW));
     headerRow.removeFromLeft(gap);
@@ -224,7 +360,7 @@ void FourOscUI::OscTab::resized() {
         auto& row = rows_[i];
         row.label.setBounds(rowArea.removeFromLeft(labelW));
         rowArea.removeFromLeft(gap);
-        row.waveformCombo.setBounds(rowArea.removeFromLeft(comboW));
+        row.waveSelector.setBounds(rowArea.removeFromLeft(waveSelectorW));
         rowArea.removeFromLeft(gap);
         row.tuneSlider.setBounds(rowArea.removeFromLeft(sliderW));
         rowArea.removeFromLeft(gap);
@@ -240,8 +376,32 @@ void FourOscUI::OscTab::resized() {
         rowArea.removeFromLeft(gap);
         row.panSlider.setBounds(rowArea.removeFromLeft(sliderW));
         rowArea.removeFromLeft(gap);
-        row.voicesCombo.setBounds(rowArea.removeFromLeft(comboW));
+        row.voicesSlider.setBounds(rowArea.removeFromLeft(comboW));
     }
+
+    // Global controls row at the bottom
+    area.removeFromTop(4);
+    constexpr int globalRowH = 22;
+    constexpr int modeSelectorW = 72;  // 3 text options
+    constexpr int globalSliderW = 50;
+    constexpr int globalLabelW = 36;
+
+    auto globalRow = area.removeFromTop(globalRowH);
+    modeLabel_.setBounds(globalRow.removeFromLeft(globalLabelW));
+    globalRow.removeFromLeft(gap);
+    voiceModeSelector_.setBounds(globalRow.removeFromLeft(modeSelectorW));
+    globalRow.removeFromLeft(gap * 3);
+    gVoicesLabel_.setBounds(globalRow.removeFromLeft(globalLabelW));
+    globalRow.removeFromLeft(gap);
+    globalVoicesSlider_.setBounds(globalRow.removeFromLeft(globalSliderW));
+    globalRow.removeFromLeft(gap * 3);
+    legatoLabel_.setBounds(globalRow.removeFromLeft(globalLabelW));
+    globalRow.removeFromLeft(gap);
+    legatoSlider_.setBounds(globalRow.removeFromLeft(globalSliderW));
+    globalRow.removeFromLeft(gap * 3);
+    masterLabel_.setBounds(globalRow.removeFromLeft(globalLabelW));
+    globalRow.removeFromLeft(gap);
+    masterLevelSlider_.setBounds(globalRow.removeFromLeft(globalSliderW));
 }
 
 void FourOscUI::OscTab::updateFromParameters(const std::vector<magda::ParameterInfo>& params) {
@@ -265,14 +425,24 @@ void FourOscUI::OscTab::updateFromParameters(const std::vector<magda::ParameterI
         row.panSlider.setValue(params[static_cast<size_t>(base + 6)].currentValue,
                                juce::dontSendNotification);
     }
+    // Global automatable params
+    if (kGlobalBase + 1 < static_cast<int>(params.size())) {
+        legatoSlider_.setValue(params[kGlobalBase].currentValue, juce::dontSendNotification);
+        masterLevelSlider_.setValue(params[kGlobalBase + 1].currentValue,
+                                    juce::dontSendNotification);
+    }
 }
 
 void FourOscUI::OscTab::updatePluginState(const FourOscPluginState& state) {
     for (int i = 0; i < 4; ++i) {
-        rows_[i].waveformCombo.setSelectedId(state.oscWaveShape[i] + 1, juce::dontSendNotification);
-        rows_[i].voicesCombo.setSelectedId(juce::jlimit(1, 8, state.oscVoices[i]),
-                                           juce::dontSendNotification);
+        rows_[i].waveSelector.setSelectedIndex(state.oscWaveShape[i], juce::dontSendNotification);
+        rows_[i].voicesSlider.setValue(static_cast<double>(juce::jlimit(1, 8, state.oscVoices[i])),
+                                       juce::dontSendNotification);
     }
+    voiceModeSelector_.setSelectedIndex(juce::jlimit(0, 2, state.voiceMode),
+                                        juce::dontSendNotification);
+    globalVoicesSlider_.setValue(static_cast<double>(juce::jlimit(1, 64, state.globalVoices)),
+                                 juce::dontSendNotification);
 }
 
 void FourOscUI::OscTab::setupLabel(juce::Label& label, const juce::String& text) {
@@ -284,34 +454,38 @@ void FourOscUI::OscTab::setupLabel(juce::Label& label, const juce::String& text)
 // =============================================================================
 
 FourOscUI::FilterTab::FilterTab(FourOscUI& owner) : owner_(owner) {
-    // Type combo
+    // Filter type icon selector: Off, LP, HP, BP, Notch
     setupLabel(typeLabel_, "TYPE");
-    // Filter type values in FourOscPlugin: 0=Off, 1=LowPass, 2=HighPass, 3=BandPass, 4=Notch
-    typeCombo_.addItem("Off", 1);
-    typeCombo_.addItem("Low Pass", 2);
-    typeCombo_.addItem("High Pass", 3);
-    typeCombo_.addItem("Band Pass", 4);
-    typeCombo_.addItem("Notch", 5);
-    typeCombo_.setSelectedId(2, juce::dontSendNotification);  // Default to Low Pass
-    typeCombo_.onChange = [this]() {
+    typeSelector_.addOption(BinaryData::fadfilterbypass_svg, BinaryData::fadfilterbypass_svgSize,
+                            "Off");
+    typeSelector_.addOption(BinaryData::fadfilterlowpass_svg, BinaryData::fadfilterlowpass_svgSize,
+                            "Low Pass");
+    typeSelector_.addOption(BinaryData::fadfilterhighpass_svg,
+                            BinaryData::fadfilterhighpass_svgSize, "High Pass");
+    typeSelector_.addOption(BinaryData::fadfilterbandpass_svg,
+                            BinaryData::fadfilterbandpass_svgSize, "Band Pass");
+    typeSelector_.addOption(BinaryData::fadfilternotch_svg, BinaryData::fadfilternotch_svgSize,
+                            "Notch");
+    typeSelector_.setSelectedIndex(1, juce::dontSendNotification);  // Default LP
+    typeSelector_.onChange = [this](int idx) {
         if (owner_.onPluginStateChanged)
-            owner_.onPluginStateChanged("filterType", juce::var(typeCombo_.getSelectedId() - 1));
+            owner_.onPluginStateChanged("filterType", juce::var(idx));
     };
-    addAndMakeVisible(typeCombo_);
+    addAndMakeVisible(typeSelector_);
 
-    // Slope combo
+    // Slope selector (text buttons)
     setupLabel(slopeLabel_, "SLOPE");
-    slopeCombo_.addItem("12 dB", 1);
-    slopeCombo_.addItem("24 dB", 2);
-    slopeCombo_.setSelectedId(1, juce::dontSendNotification);
-    slopeCombo_.onChange = [this]() {
-        int slope = slopeCombo_.getSelectedId() == 1 ? 12 : 24;
+    slopeSelector_.addTextOption("12dB");
+    slopeSelector_.addTextOption("24dB");
+    slopeSelector_.setSelectedIndex(0, juce::dontSendNotification);
+    slopeSelector_.onChange = [this](int idx) {
+        int slope = (idx == 0) ? 12 : 24;
         if (owner_.onPluginStateChanged)
             owner_.onPluginStateChanged("filterSlope", juce::var(slope));
     };
-    addAndMakeVisible(slopeCombo_);
+    addAndMakeVisible(slopeSelector_);
 
-    // Freq (0 to 135.076232 — MIDI note mapping)
+    // Freq
     setupLabel(freqLabel_, "FREQ");
     freqSlider_.setRange(0.0, 135.076232, 0.01);
     freqSlider_.setValue(69.0, juce::dontSendNotification);
@@ -321,7 +495,7 @@ FourOscUI::FilterTab::FilterTab(FourOscUI& owner) : owner_(owner) {
     };
     addAndMakeVisible(freqSlider_);
 
-    // Resonance (0-100 %)
+    // Resonance
     setupLabel(resLabel_, "RES");
     resonanceSlider_.setRange(0.0, 100.0, 0.1);
     resonanceSlider_.onValueChanged = [this](double v) {
@@ -330,7 +504,7 @@ FourOscUI::FilterTab::FilterTab(FourOscUI& owner) : owner_(owner) {
     };
     addAndMakeVisible(resonanceSlider_);
 
-    // Key tracking (0-100 %)
+    // Key tracking
     setupLabel(keyLabel_, "KEY");
     keySlider_.setRange(0.0, 100.0, 0.1);
     keySlider_.onValueChanged = [this](double v) {
@@ -339,7 +513,7 @@ FourOscUI::FilterTab::FilterTab(FourOscUI& owner) : owner_(owner) {
     };
     addAndMakeVisible(keySlider_);
 
-    // Velocity (0-100 %)
+    // Velocity
     setupLabel(velLabel_, "VEL");
     velocitySlider_.setRange(0.0, 100.0, 0.1);
     velocitySlider_.onValueChanged = [this](double v) {
@@ -348,7 +522,7 @@ FourOscUI::FilterTab::FilterTab(FourOscUI& owner) : owner_(owner) {
     };
     addAndMakeVisible(velocitySlider_);
 
-    // Env amount (-1 to 1)
+    // Env amount
     setupLabel(amountLabel_, "AMT");
     amountSlider_.setRange(-1.0, 1.0, 0.01);
     amountSlider_.onValueChanged = [this](double v) {
@@ -395,22 +569,23 @@ void FourOscUI::FilterTab::resized() {
     auto area = getLocalBounds().reduced(4);
     constexpr int rowH = 22;
     constexpr int labelW = 36;
-    constexpr int comboW = 80;
+    constexpr int selectorW = 100;      // 5 filter type icons
+    constexpr int slopeSelectorW = 60;  // 2 text options
     constexpr int sliderW = 50;
     constexpr int gap = 4;
 
-    // Row 1: Type, Slope combos
+    // Row 1: Type selector, Slope combo
     auto row1 = area.removeFromTop(rowH);
     typeLabel_.setBounds(row1.removeFromLeft(labelW));
     row1.removeFromLeft(gap);
-    typeCombo_.setBounds(row1.removeFromLeft(comboW));
+    typeSelector_.setBounds(row1.removeFromLeft(selectorW));
     row1.removeFromLeft(gap + 8);
     slopeLabel_.setBounds(row1.removeFromLeft(labelW));
     row1.removeFromLeft(gap);
-    slopeCombo_.setBounds(row1.removeFromLeft(comboW));
+    slopeSelector_.setBounds(row1.removeFromLeft(slopeSelectorW));
     area.removeFromTop(gap);
 
-    // Row 2: Freq, Resonance, Key, Velocity, Amount
+    // Row 2: Freq, Resonance, Key
     auto row2 = area.removeFromTop(rowH);
     freqLabel_.setBounds(row2.removeFromLeft(labelW));
     row2.removeFromLeft(gap);
@@ -436,7 +611,7 @@ void FourOscUI::FilterTab::resized() {
     amountSlider_.setBounds(row3.removeFromLeft(sliderW));
     area.removeFromTop(gap);
 
-    // Row 4: Filter ADSR
+    // Row 4: Filter ADSR with icon
     auto row4 = area.removeFromTop(rowH);
     atkLabel_.setBounds(row4.removeFromLeft(labelW));
     row4.removeFromLeft(gap);
@@ -455,6 +630,8 @@ void FourOscUI::FilterTab::resized() {
     releaseSlider_.setBounds(row4.removeFromLeft(sliderW));
 }
 
+void FourOscUI::FilterTab::paint(juce::Graphics&) {}
+
 void FourOscUI::FilterTab::updateFromParameters(const std::vector<magda::ParameterInfo>& params) {
     if (kFilterBase + 8 >= static_cast<int>(params.size()))
         return;
@@ -470,8 +647,8 @@ void FourOscUI::FilterTab::updateFromParameters(const std::vector<magda::Paramet
 }
 
 void FourOscUI::FilterTab::updatePluginState(const FourOscPluginState& state) {
-    typeCombo_.setSelectedId(state.filterType + 1, juce::dontSendNotification);
-    slopeCombo_.setSelectedId(state.filterSlope == 24 ? 2 : 1, juce::dontSendNotification);
+    typeSelector_.setSelectedIndex(state.filterType, juce::dontSendNotification);
+    slopeSelector_.setSelectedIndex(state.filterSlope == 24 ? 1 : 0, juce::dontSendNotification);
 }
 
 void FourOscUI::FilterTab::setupLabel(juce::Label& label, const juce::String& text) {
@@ -564,6 +741,8 @@ void FourOscUI::AmpTab::resized() {
     row2.removeFromLeft(gap + 8);
     analogButton_.setBounds(row2.removeFromLeft(80));
 }
+
+void FourOscUI::AmpTab::paint(juce::Graphics&) {}
 
 void FourOscUI::AmpTab::updateFromParameters(const std::vector<magda::ParameterInfo>& params) {
     if (kAmpBase + 4 >= static_cast<int>(params.size()))
@@ -664,6 +843,8 @@ void FourOscUI::ModEnvTab::resized() {
     }
 }
 
+void FourOscUI::ModEnvTab::paint(juce::Graphics&) {}
+
 void FourOscUI::ModEnvTab::updateFromParameters(const std::vector<magda::ParameterInfo>& params) {
     for (int i = 0; i < 2; ++i) {
         int base = kModEnvBase + i * kModEnvParamsPerEnv;
@@ -700,20 +881,13 @@ FourOscUI::LFOTab::LFOTab(FourOscUI& owner) : owner_(owner) {
 
         setupLabel(row.label, "LFO " + juce::String(i + 1));
 
-        // Wave combo
-        row.waveCombo.addItem("Sine", 1);
-        row.waveCombo.addItem("Triangle", 2);
-        row.waveCombo.addItem("Saw Up", 3);
-        row.waveCombo.addItem("Saw Down", 4);
-        row.waveCombo.addItem("Square", 5);
-        row.waveCombo.addItem("Random", 6);
-        row.waveCombo.setSelectedId(1, juce::dontSendNotification);
-        row.waveCombo.onChange = [this, i]() {
-            int shape = rows_[i].waveCombo.getSelectedId() - 1;
+        // Wave icon selector
+        setupWaveSelector(row.waveSelector);
+        row.waveSelector.onChange = [this, i](int shape) {
             if (owner_.onPluginStateChanged)
                 owner_.onPluginStateChanged("lfoShape" + juce::String(i + 1), juce::var(shape));
         };
-        addAndMakeVisible(row.waveCombo);
+        addAndMakeVisible(row.waveSelector);
 
         // Rate (0-500 Hz)
         row.rateSlider.setRange(0.0, 500.0, 0.01);
@@ -741,11 +915,15 @@ FourOscUI::LFOTab::LFOTab(FourOscUI& owner) : owner_(owner) {
     }
 }
 
+void FourOscUI::LFOTab::setupWaveSelector(IconSelector& selector) {
+    populateWaveSelector(selector);
+}
+
 void FourOscUI::LFOTab::resized() {
     auto area = getLocalBounds().reduced(4);
     constexpr int rowH = 22;
     constexpr int labelW = 36;
-    constexpr int comboW = 70;
+    constexpr int waveSelectorW = 112;  // 7 items (Off + 6 waveforms)
     constexpr int sliderW = 50;
     constexpr int toggleW = 50;
     constexpr int gap = 4;
@@ -753,7 +931,7 @@ void FourOscUI::LFOTab::resized() {
     // Header
     auto headerRow = area.removeFromTop(14);
     headerRow.removeFromLeft(labelW + gap);
-    hdrWave_.setBounds(headerRow.removeFromLeft(comboW));
+    hdrWave_.setBounds(headerRow.removeFromLeft(waveSelectorW));
     headerRow.removeFromLeft(gap);
     hdrRate_.setBounds(headerRow.removeFromLeft(sliderW));
     headerRow.removeFromLeft(gap);
@@ -768,7 +946,7 @@ void FourOscUI::LFOTab::resized() {
         auto& row = rows_[i];
         row.label.setBounds(rowArea.removeFromLeft(labelW));
         rowArea.removeFromLeft(gap);
-        row.waveCombo.setBounds(rowArea.removeFromLeft(comboW));
+        row.waveSelector.setBounds(rowArea.removeFromLeft(waveSelectorW));
         rowArea.removeFromLeft(gap);
         row.rateSlider.setBounds(rowArea.removeFromLeft(sliderW));
         rowArea.removeFromLeft(gap);
@@ -792,7 +970,7 @@ void FourOscUI::LFOTab::updateFromParameters(const std::vector<magda::ParameterI
 
 void FourOscUI::LFOTab::updatePluginState(const FourOscPluginState& state) {
     for (int i = 0; i < 2; ++i) {
-        rows_[i].waveCombo.setSelectedId(state.lfoWaveShape[i] + 1, juce::dontSendNotification);
+        rows_[i].waveSelector.setSelectedIndex(state.lfoWaveShape[i], juce::dontSendNotification);
         rows_[i].syncButton.setToggleState(state.lfoSync[i], juce::dontSendNotification);
     }
 }

@@ -116,6 +116,22 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/punchinout/punchin_on.svg
     ../../assets/icons/punchinout/punchout.svg
     ../../assets/icons/punchinout/punchout_on.svg
+    # Fontaudio waveform icons
+    ../../assets/icons/fontaudio/fad-modsine.svg
+    ../../assets/icons/fontaudio/fad-modtri.svg
+    ../../assets/icons/fontaudio/fad-modsawup.svg
+    ../../assets/icons/fontaudio/fad-modsquare.svg
+    ../../assets/icons/fontaudio/fad-modrandom.svg
+    # Fontaudio filter icons
+    ../../assets/icons/fontaudio/fad-filter-bypass.svg
+    ../../assets/icons/fontaudio/fad-filter-lowpass.svg
+    ../../assets/icons/fontaudio/fad-filter-highpass.svg
+    ../../assets/icons/fontaudio/fad-filter-bandpass.svg
+    ../../assets/icons/fontaudio/fad-filter-notch.svg
+    # Fontaudio utility icons
+    ../../assets/icons/fontaudio/fad-powerswitch.svg
+    # Fontaudio logo icons
+    ../../assets/icons/fontaudio/fad-logo-tracktion.svg
 )
 
 # DAW Core sources
@@ -255,10 +271,12 @@ set(DAW_UI_SOURCES
     ui/views/MixerView.cpp
     # Components - Common
     ui/components/common/SvgButton.cpp
+    ui/components/common/IconSelector.cpp
     ui/components/common/ZoomControls.cpp
     ui/components/common/LayoutDebugPanel.cpp
     ui/components/common/MixerDebugPanel.cpp
     ui/components/common/GridOverlayComponent.cpp
+    ui/components/common/LinkableTextSlider.cpp
     ui/components/common/DraggableValueLabel.cpp
     ui/components/common/BarsBeatsTicksLabel.cpp
     # Components - Timeline
@@ -301,6 +319,7 @@ set(DAW_UI_SOURCES
     ui/components/chain/ToneGeneratorUI.cpp
     ui/components/chain/SamplerUI.cpp
     ui/components/chain/DrumGridUI.cpp
+    ui/components/chain/EqualiserUI.cpp
     ui/components/chain/FourOscUI.cpp
     ui/components/chain/PadChainPanel.cpp
     ui/components/chain/PadDeviceSlot.cpp
@@ -445,11 +464,13 @@ set(DAW_HEADERS
     ui/state/TimelineController.hpp
     # Components - Common
     ui/components/common/SvgButton.hpp
+    ui/components/common/IconSelector.hpp
     ui/components/common/ZoomControls.hpp
     ui/components/common/ModeSwitcher.hpp
     ui/components/common/LayoutDebugPanel.hpp
     ui/components/common/MixerDebugPanel.hpp
     ui/components/common/GridOverlayComponent.hpp
+    ui/components/common/LinkableTextSlider.hpp
     ui/components/common/DraggableValueLabel.hpp
     ui/components/common/BarsBeatsTicksLabel.hpp
     # Components - Timeline
@@ -481,6 +502,7 @@ set(DAW_HEADERS
     ui/components/chain/PadChainPanel.hpp
     ui/components/chain/PadDeviceSlot.hpp
     ui/components/chain/ToneGeneratorUI.hpp
+    ui/components/chain/EqualiserUI.hpp
     ui/components/chain/FourOscUI.hpp
     ui/components/chain/PagedControlPanel.hpp
     ui/components/chain/MacroKnobComponent.hpp

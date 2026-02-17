@@ -2,7 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "ui/components/common/TextSlider.hpp"
+#include "ui/components/common/LinkableTextSlider.hpp"
 
 namespace magda::daw::ui {
 
@@ -36,6 +36,9 @@ class ToneGeneratorUI : public juce::Component {
      */
     std::function<void(int paramIndex, float actualValue)> onParameterChanged;
 
+    // Get all linkable sliders for mod/macro wiring (in parameter-index order)
+    std::vector<LinkableTextSlider*> getLinkableSliders();
+
     void paint(juce::Graphics& g) override;
     void resized() override;
 
@@ -44,10 +47,10 @@ class ToneGeneratorUI : public juce::Component {
     juce::ComboBox waveformSelector_;
 
     // Frequency slider (20 Hz - 20 kHz, logarithmic)
-    TextSlider frequencySlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider frequencySlider_{TextSlider::Format::Decimal};
 
     // Level slider (-60 to 0 dB)
-    TextSlider levelSlider_{TextSlider::Format::Decibels};
+    LinkableTextSlider levelSlider_{TextSlider::Format::Decibels};
 
     // Convert frequency to display string (for formatter)
     juce::String formatFrequency(float hz) const;

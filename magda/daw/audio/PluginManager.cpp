@@ -1611,8 +1611,10 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
         } else if (device.pluginId.containsIgnoreCase("eq")) {
             plugin = edit_.getPluginCache().createNewPlugin(te::EqualiserPlugin::xmlTypeName, {});
-            if (plugin)
+            if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
+                processor = std::make_unique<EqualiserProcessor>(device.id, plugin);
+            }
         } else if (device.pluginId.containsIgnoreCase("compressor")) {
             plugin = edit_.getPluginCache().createNewPlugin(te::CompressorPlugin::xmlTypeName, {});
             if (plugin)

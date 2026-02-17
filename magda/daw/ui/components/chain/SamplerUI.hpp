@@ -6,8 +6,8 @@
 #include <functional>
 #include <memory>
 
+#include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/SvgButton.hpp"
-#include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::audio {
 class MagdaSamplerPlugin;
@@ -50,6 +50,9 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
      * @brief Callback when a parameter changes (paramIndex, actualValue)
      */
     std::function<void(int paramIndex, float actualValue)> onParameterChanged;
+
+    // Get all linkable sliders for mod/macro wiring (in parameter-index order)
+    std::vector<LinkableTextSlider*> getLinkableSliders();
 
     /**
      * @brief Callback when user requests to load a sample file
@@ -120,28 +123,28 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     static constexpr double kMaxPixelsPerSecond = 5000.0;
 
     // Sample start/end / Loop controls
-    TextSlider startSlider_{TextSlider::Format::Decimal};
-    TextSlider endSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider startSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider endSlider_{TextSlider::Format::Decimal};
     std::unique_ptr<magda::SvgButton> loopButton_;
-    TextSlider loopStartSlider_{TextSlider::Format::Decimal};
-    TextSlider loopEndSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider loopStartSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider loopEndSlider_{TextSlider::Format::Decimal};
     juce::Label startLabel_, endLabel_, loopStartLabel_, loopEndLabel_;
 
     // ADSR
-    TextSlider attackSlider_{TextSlider::Format::Decimal};
-    TextSlider decaySlider_{TextSlider::Format::Decimal};
-    TextSlider sustainSlider_{TextSlider::Format::Decimal};
-    TextSlider releaseSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider attackSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider decaySlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider sustainSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider releaseSlider_{TextSlider::Format::Decimal};
 
     // Pitch
-    TextSlider pitchSlider_{TextSlider::Format::Decimal};
-    TextSlider fineSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider pitchSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider fineSlider_{TextSlider::Format::Decimal};
 
     // Level
-    TextSlider levelSlider_{TextSlider::Format::Decibels};
+    LinkableTextSlider levelSlider_{TextSlider::Format::Decibels};
 
     // Velocity amount
-    TextSlider velAmountSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider velAmountSlider_{TextSlider::Format::Decimal};
 
     // Labels
     juce::Label attackLabel_, decayLabel_, sustainLabel_, releaseLabel_;

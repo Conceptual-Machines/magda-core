@@ -3,7 +3,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "core/DeviceInfo.hpp"
-#include "ui/components/common/TextSlider.hpp"
+#include "ui/components/common/IconSelector.hpp"
+#include "ui/components/common/LinkableTextSlider.hpp"
 
 namespace magda::daw::ui {
 
@@ -25,6 +26,8 @@ struct FourOscPluginState {
     bool reverbOn = false;
     bool delayOn = false;
     bool chorusOn = false;
+    int voiceMode = 2;      // 0=Mono, 1=Legato, 2=Poly
+    int globalVoices = 32;  // Max polyphony
 };
 
 /**
@@ -41,25 +44,14 @@ class FourOscUI : public juce::Component {
     FourOscUI();
     ~FourOscUI() override = default;
 
-    /**
-     * @brief Update all automatable parameter controls from device parameters
-     */
     void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
-
-    /**
-     * @brief Update non-automatable plugin state (waveform combos, toggles, etc.)
-     */
     void updatePluginState(const FourOscPluginState& state);
 
-    /**
-     * @brief Callback for automatable parameter changes (paramIndex, value)
-     */
     std::function<void(int paramIndex, float value)> onParameterChanged;
-
-    /**
-     * @brief Callback for non-automatable plugin state changes
-     */
     std::function<void(const juce::String& propertyId, juce::var value)> onPluginStateChanged;
+
+    // Get all linkable sliders for mod/macro wiring (in parameter-index order)
+    std::vector<LinkableTextSlider*> getLinkableSliders();
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -70,6 +62,8 @@ class FourOscUI : public juce::Component {
     // =========================================================================
 
     class OscTab : public juce::Component {
+        friend class FourOscUI;
+
       public:
         OscTab(FourOscUI& owner);
         void resized() override;
@@ -78,46 +72,55 @@ class FourOscUI : public juce::Component {
 
       private:
         FourOscUI& owner_;
-        // Per-oscillator controls (4 oscillators)
         struct OscRow {
             juce::Label label;
-            juce::ComboBox waveformCombo;
-            TextSlider tuneSlider{TextSlider::Format::Decimal};
-            TextSlider fineSlider{TextSlider::Format::Decimal};
-            TextSlider levelSlider{TextSlider::Format::Decibels};
-            TextSlider pulseWidthSlider{TextSlider::Format::Decimal};
-            TextSlider detuneSlider{TextSlider::Format::Decimal};
-            TextSlider spreadSlider{TextSlider::Format::Decimal};
-            TextSlider panSlider{TextSlider::Format::Decimal};
-            juce::ComboBox voicesCombo;
+            IconSelector waveSelector;
+            LinkableTextSlider tuneSlider{TextSlider::Format::Decimal};
+            LinkableTextSlider fineSlider{TextSlider::Format::Decimal};
+            LinkableTextSlider levelSlider{TextSlider::Format::Decibels};
+            LinkableTextSlider pulseWidthSlider{TextSlider::Format::Decimal};
+            LinkableTextSlider detuneSlider{TextSlider::Format::Decimal};
+            LinkableTextSlider spreadSlider{TextSlider::Format::Decimal};
+            LinkableTextSlider panSlider{TextSlider::Format::Decimal};
+            LinkableTextSlider voicesSlider{TextSlider::Format::Decimal};
         };
         OscRow rows_[4];
+        // Global controls
+        IconSelector voiceModeSelector_;
+        LinkableTextSlider globalVoicesSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider legatoSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider masterLevelSlider_{TextSlider::Format::Decibels};
+        juce::Label modeLabel_, gVoicesLabel_, legatoLabel_, masterLabel_;
         void setupLabel(juce::Label& label, const juce::String& text);
-        // Column header labels
+        static void setupWaveSelector(IconSelector& selector);
         juce::Label hdrWave_, hdrTune_, hdrFine_, hdrLevel_, hdrPW_, hdrDetune_, hdrSpread_,
             hdrPan_, hdrVoices_;
     };
 
     class FilterTab : public juce::Component {
+        friend class FourOscUI;
+
       public:
         FilterTab(FourOscUI& owner);
         void resized() override;
+        void paint(juce::Graphics& g) override;
         void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
         void updatePluginState(const FourOscPluginState& state);
 
       private:
         FourOscUI& owner_;
-        juce::ComboBox typeCombo_, slopeCombo_;
-        TextSlider freqSlider_{TextSlider::Format::Decimal};
-        TextSlider resonanceSlider_{TextSlider::Format::Decimal};
-        TextSlider keySlider_{TextSlider::Format::Decimal};
-        TextSlider velocitySlider_{TextSlider::Format::Decimal};
-        TextSlider amountSlider_{TextSlider::Format::Decimal};
+        IconSelector typeSelector_;
+        IconSelector slopeSelector_;
+        LinkableTextSlider freqSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider resonanceSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider keySlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider velocitySlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider amountSlider_{TextSlider::Format::Decimal};
         // Filter envelope
-        TextSlider attackSlider_{TextSlider::Format::Decimal};
-        TextSlider decaySlider_{TextSlider::Format::Decimal};
-        TextSlider sustainSlider_{TextSlider::Format::Decimal};
-        TextSlider releaseSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider attackSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider decaySlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider sustainSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider releaseSlider_{TextSlider::Format::Decimal};
         // Labels
         juce::Label typeLabel_, slopeLabel_, freqLabel_, resLabel_, keyLabel_, velLabel_,
             amountLabel_;
@@ -126,38 +129,44 @@ class FourOscUI : public juce::Component {
     };
 
     class AmpTab : public juce::Component {
+        friend class FourOscUI;
+
       public:
         AmpTab(FourOscUI& owner);
         void resized() override;
+        void paint(juce::Graphics& g) override;
         void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
         void updatePluginState(const FourOscPluginState& state);
 
       private:
         FourOscUI& owner_;
-        TextSlider attackSlider_{TextSlider::Format::Decimal};
-        TextSlider decaySlider_{TextSlider::Format::Decimal};
-        TextSlider sustainSlider_{TextSlider::Format::Decimal};
-        TextSlider releaseSlider_{TextSlider::Format::Decimal};
-        TextSlider velocitySlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider attackSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider decaySlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider sustainSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider releaseSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider velocitySlider_{TextSlider::Format::Decimal};
         juce::ToggleButton analogButton_{"Analog"};
         juce::Label atkLabel_, decLabel_, susLabel_, relLabel_, velLabel_;
         void setupLabel(juce::Label& label, const juce::String& text);
     };
 
     class ModEnvTab : public juce::Component {
+        friend class FourOscUI;
+
       public:
         ModEnvTab(FourOscUI& owner);
         void resized() override;
+        void paint(juce::Graphics& g) override;
         void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
 
       private:
         FourOscUI& owner_;
         struct EnvRow {
             juce::Label label;
-            TextSlider attackSlider{TextSlider::Format::Decimal};
-            TextSlider decaySlider{TextSlider::Format::Decimal};
-            TextSlider sustainSlider{TextSlider::Format::Decimal};
-            TextSlider releaseSlider{TextSlider::Format::Decimal};
+            LinkableTextSlider attackSlider{TextSlider::Format::Decimal};
+            LinkableTextSlider decaySlider{TextSlider::Format::Decimal};
+            LinkableTextSlider sustainSlider{TextSlider::Format::Decimal};
+            LinkableTextSlider releaseSlider{TextSlider::Format::Decimal};
         };
         EnvRow rows_[2];
         juce::Label hdrAtk_, hdrDec_, hdrSus_, hdrRel_;
@@ -165,6 +174,8 @@ class FourOscUI : public juce::Component {
     };
 
     class LFOTab : public juce::Component {
+        friend class FourOscUI;
+
       public:
         LFOTab(FourOscUI& owner);
         void resized() override;
@@ -175,17 +186,20 @@ class FourOscUI : public juce::Component {
         FourOscUI& owner_;
         struct LFORow {
             juce::Label label;
-            juce::ComboBox waveCombo;
-            TextSlider rateSlider{TextSlider::Format::Decimal};
-            TextSlider depthSlider{TextSlider::Format::Decimal};
+            IconSelector waveSelector;
+            LinkableTextSlider rateSlider{TextSlider::Format::Decimal};
+            LinkableTextSlider depthSlider{TextSlider::Format::Decimal};
             juce::ToggleButton syncButton{"Sync"};
         };
         LFORow rows_[2];
+        static void setupWaveSelector(IconSelector& selector);
         juce::Label hdrWave_, hdrRate_, hdrDepth_, hdrSync_;
         void setupLabel(juce::Label& label, const juce::String& text);
     };
 
     class FXTab : public juce::Component {
+        friend class FourOscUI;
+
       public:
         FXTab(FourOscUI& owner);
         void resized() override;
@@ -196,24 +210,24 @@ class FourOscUI : public juce::Component {
         FourOscUI& owner_;
         // Distortion
         juce::ToggleButton distOnButton_{"Dist"};
-        TextSlider distAmountSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider distAmountSlider_{TextSlider::Format::Decimal};
         // Reverb
         juce::ToggleButton reverbOnButton_{"Reverb"};
-        TextSlider reverbSizeSlider_{TextSlider::Format::Decimal};
-        TextSlider reverbDampSlider_{TextSlider::Format::Decimal};
-        TextSlider reverbWidthSlider_{TextSlider::Format::Decimal};
-        TextSlider reverbMixSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider reverbSizeSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider reverbDampSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider reverbWidthSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider reverbMixSlider_{TextSlider::Format::Decimal};
         // Delay
         juce::ToggleButton delayOnButton_{"Delay"};
-        TextSlider delayFeedbackSlider_{TextSlider::Format::Decibels};
-        TextSlider delayCrossfeedSlider_{TextSlider::Format::Decibels};
-        TextSlider delayMixSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider delayFeedbackSlider_{TextSlider::Format::Decibels};
+        LinkableTextSlider delayCrossfeedSlider_{TextSlider::Format::Decibels};
+        LinkableTextSlider delayMixSlider_{TextSlider::Format::Decimal};
         // Chorus
         juce::ToggleButton chorusOnButton_{"Chorus"};
-        TextSlider chorusSpeedSlider_{TextSlider::Format::Decimal};
-        TextSlider chorusDepthSlider_{TextSlider::Format::Decimal};
-        TextSlider chorusWidthSlider_{TextSlider::Format::Decimal};
-        TextSlider chorusMixSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider chorusSpeedSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider chorusDepthSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider chorusWidthSlider_{TextSlider::Format::Decimal};
+        LinkableTextSlider chorusMixSlider_{TextSlider::Format::Decimal};
         // Labels
         juce::Label distLabel_, revSizeLabel_, revDampLabel_, revWidthLabel_, revMixLabel_;
         juce::Label delFbLabel_, delXfLabel_, delMixLabel_;
@@ -234,25 +248,19 @@ class FourOscUI : public juce::Component {
     std::unique_ptr<FXTab> fxTab_;
 
     // Parameter index constants (based on FourOscPlugin::addParam order)
-    // Osc 1-4: 7 params each (tune, fineTune, level, pulseWidth, detune, spread, pan)
     static constexpr int kOscParamsPerOsc = 7;
-    static constexpr int kOscBase = 0;  // indices 0-27
-    // LFO 1-2: 2 params each (rate, depth)
+    static constexpr int kOscBase = 0;
     static constexpr int kLfoParamsPerLfo = 2;
-    static constexpr int kLfoBase = 28;  // indices 28-31
-    // Mod Env 1-2: 4 params each (attack, decay, sustain, release)
+    static constexpr int kLfoBase = 28;
     static constexpr int kModEnvParamsPerEnv = 4;
-    static constexpr int kModEnvBase = 32;  // indices 32-39
-    // Amp: 5 params (attack, decay, sustain, release, velocity)
-    static constexpr int kAmpBase = 40;  // indices 40-44
-    // Filter: 9 params (attack, decay, sustain, release, freq, resonance, amount, key, velocity)
-    static constexpr int kFilterBase = 45;  // indices 45-53
-    // Effects (added after modMatrix build)
-    static constexpr int kDistBase = 54;    // index 54
-    static constexpr int kReverbBase = 55;  // indices 55-58
-    static constexpr int kDelayBase = 59;   // indices 59-61
-    static constexpr int kChorusBase = 62;  // indices 62-65
-    static constexpr int kGlobalBase = 66;  // indices 66-67
+    static constexpr int kModEnvBase = 32;
+    static constexpr int kAmpBase = 40;
+    static constexpr int kFilterBase = 45;
+    static constexpr int kDistBase = 54;
+    static constexpr int kReverbBase = 55;
+    static constexpr int kDelayBase = 59;
+    static constexpr int kChorusBase = 62;
+    static constexpr int kGlobalBase = 66;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FourOscUI)
 };

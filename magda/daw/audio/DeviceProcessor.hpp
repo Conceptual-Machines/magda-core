@@ -244,6 +244,25 @@ class FourOscProcessor : public DeviceProcessor {
 };
 
 /**
+ * @brief Processor for the built-in 4-Band Equaliser
+ *
+ * Enumerates parameters generically from plugin->getAutomatableParameters().
+ * Parameter order: loFreq, loGain, loQ, midFreq1, midGain1, midQ1,
+ *                  midFreq2, midGain2, midQ2, hiFreq, hiGain, hiQ
+ */
+class EqualiserProcessor : public DeviceProcessor {
+  public:
+    EqualiserProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    int getParameterCount() const override;
+    ParameterInfo getParameterInfo(int index) const override;
+    void populateParameters(DeviceInfo& info) const override;
+
+    void setParameterByIndex(int paramIndex, float value);
+    float getParameterByIndex(int paramIndex) const;
+};
+
+/**
  * @brief Processor for the built-in Drum Grid device
  *
  * Minimal processor — the drum grid has no top-level automatable params initially.

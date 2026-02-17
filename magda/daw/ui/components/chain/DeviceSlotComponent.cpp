@@ -28,6 +28,14 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
 
     // Custom name and font for drum grid (MPC-style with Microgramma)
     isDrumGrid_ = device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
+    isTracktionDevice_ = isInternalDevice() && !isDrumGrid_;
+    if (isTracktionDevice_) {
+        tracktionLogo_ = juce::Drawable::createFromImageData(BinaryData::fadlogotracktion_svg,
+                                                             BinaryData::fadlogotracktion_svgSize);
+        if (tracktionLogo_)
+            tracktionLogo_->replaceColour(juce::Colours::black,
+                                          DarkTheme::getSecondaryTextColour());
+    }
     if (isDrumGrid_) {
         // Set empty name - we'll draw custom two-color text in paint()
         setNodeName("");
@@ -425,6 +433,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Create custom UI for internal devices
     if (isInternalDevice()) {
         createCustomUI();
+        setupCustomUILinking();
     }
 
     // Start timer to sync UI button state with actual window state (10 FPS)
@@ -506,6 +515,9 @@ int DeviceSlotComponent::getPreferredWidth() const {
     if (fourOscUI_) {
         return getTotalWidth(500);
     }
+    if (eqUI_) {
+        return getTotalWidth(400);
+    }
     if (samplerUI_) {
         return getTotalWidth(BASE_SLOT_WIDTH * 2);
     }
@@ -572,12 +584,14 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     updatePageControls();
 
     // Create custom UI if this is an internal device and we don't have one yet
-    if (isInternalDevice() && !toneGeneratorUI_ && !samplerUI_ && !drumGridUI_ && !fourOscUI_) {
+    if (isInternalDevice() && !toneGeneratorUI_ && !samplerUI_ && !drumGridUI_ && !fourOscUI_ &&
+        !eqUI_) {
         createCustomUI();
+        setupCustomUILinking();
     }
 
     // Update custom UI if available
-    if (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_) {
+    if (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_) {
         updateCustomUI();
     }
 
@@ -650,6 +664,9 @@ void DeviceSlotComponent::updateParamModulation() {
         paramSlots_[i]->setSelectedMacroIndex(selectedMacroIndex);
         paramSlots_[i]->repaint();
     }
+
+    // Also update custom UI linkable sliders
+    setupCustomUILinking();
 }
 
 void DeviceSlotComponent::paint(juce::Graphics& g) {
@@ -701,8 +718,19 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
         g.drawText("MAGDA Drum Grid", textArea, juce::Justification::centredLeft);
     } else {
         g.setFont(FontManager::getInstance().getUIFont(9.0f));
+        auto textArea = headerArea.reduced(2, 0);
+
+        // Draw Tracktion logo for TE built-in plugins
+        if (isTracktionDevice_ && tracktionLogo_) {
+            constexpr int logoSize = 14;
+            auto logoBounds = textArea.removeFromLeft(logoSize + 4);
+            logoBounds = logoBounds.withSizeKeepingCentre(logoSize, logoSize);
+            tracktionLogo_->drawWithin(g, logoBounds.toFloat(), juce::RectanglePlacement::centred,
+                                       isBypassed() ? 0.3f : 0.6f);
+        }
+
         juce::String headerText = device_.manufacturer + " / " + device_.name;
-        g.drawText(headerText, headerArea.reduced(2, 0), juce::Justification::centredLeft);
+        g.drawText(headerText, textArea, juce::Justification::centredLeft);
     }
 }
 
@@ -726,6 +754,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             drumGridUI_->setVisible(false);
         if (fourOscUI_)
             fourOscUI_->setVisible(false);
+        if (eqUI_)
+            eqUI_->setVisible(false);
         return;
     }
 
@@ -734,7 +764,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     bool isDrumGrid = drumGridUI_ != nullptr;
     modButton_->setVisible(!isDrumGrid);
     macroButton_->setVisible(!isDrumGrid);
-    uiButton_->setVisible(true);
+    uiButton_->setVisible(!isInternalDevice());
     onButton_->setVisible(true);
     gainSlider_.setVisible(true);
 
@@ -742,7 +772,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
 
     // Check if this is an internal device with custom UI
-    if (isInternalDevice() && (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_)) {
+    if (isInternalDevice() &&
+        (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_)) {
         // Show custom minimal UI
         if (toneGeneratorUI_) {
             toneGeneratorUI_->setBounds(contentArea.reduced(4));
@@ -766,6 +797,10 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             fourOscUI_->setBounds(contentArea.reduced(4));
             fourOscUI_->setVisible(true);
         }
+        if (eqUI_) {
+            eqUI_->setBounds(contentArea.reduced(4));
+            eqUI_->setVisible(true);
+        }
 
         // Hide parameter grid and pagination
         for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
@@ -784,6 +819,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             drumGridUI_->setVisible(false);
         if (fourOscUI_)
             fourOscUI_->setVisible(false);
+        if (eqUI_)
+            eqUI_->setVisible(false);
 
         // Pagination area
         auto paginationArea = contentArea.removeFromTop(PAGINATION_HEIGHT);
@@ -879,10 +916,10 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
     onButton_->setVisible(true);
     area.removeFromTop(4);
 
-    // UI button
+    // UI button (only for external plugins)
     uiButton_->setBounds(
         area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-    uiButton_->setVisible(true);
+    uiButton_->setVisible(!isInternalDevice());
     area.removeFromTop(4);
 
     // Macro button
@@ -1846,19 +1883,56 @@ void DeviceSlotComponent::createCustomUI() {
                                                                        value);
         };
         fourOscUI_->onPluginStateChanged = [this](const juce::String& propertyId, juce::var value) {
+            DBG("FourOsc onPluginStateChanged: propertyId=" + propertyId +
+                " value=" + value.toString());
             auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine)
+            if (!audioEngine) {
+                DBG("FourOsc onPluginStateChanged: no audioEngine");
                 return;
+            }
             auto* bridge = audioEngine->getAudioBridge();
-            if (!bridge)
+            if (!bridge) {
+                DBG("FourOsc onPluginStateChanged: no bridge");
                 return;
+            }
             auto plugin = bridge->getPlugin(device_.id);
             if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get())) {
                 auto& state = fourOsc->state;
+                DBG("FourOsc setting state property: " + propertyId + " = " + value.toString());
                 state.setProperty(juce::Identifier(propertyId), value, nullptr);
+                // Read back to verify
+                auto readBack = state.getProperty(juce::Identifier(propertyId));
+                DBG("FourOsc readback: " + propertyId + " = " + readBack.toString());
+            } else {
+                DBG("FourOsc onPluginStateChanged: plugin cast failed");
             }
         };
         addAndMakeVisible(*fourOscUI_);
+        updateCustomUI();
+    } else if (device_.pluginId.equalsIgnoreCase("eq")) {
+        eqUI_ = std::make_unique<EqualiserUI>();
+
+        // Route through TrackManager so modulation/macros can target EQ parameters
+        eqUI_->onParameterChanged = [this](int paramIndex, float value) {
+            if (!nodePath_.isValid())
+                return;
+            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
+                                                                       value);
+        };
+
+        eqUI_->getDBGainAtFrequency = [this](float freq) -> float {
+            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+            if (!audioEngine)
+                return 0.0f;
+            auto* bridge = audioEngine->getAudioBridge();
+            if (!bridge)
+                return 0.0f;
+            auto plugin = bridge->getPlugin(device_.id);
+            if (auto* eq = dynamic_cast<te::EqualiserPlugin*>(plugin.get()))
+                return eq->getDBGainAtFrequency(freq);
+            return 0.0f;
+        };
+        addAndMakeVisible(*eqUI_);
         updateCustomUI();
     }
 }
@@ -2009,10 +2083,211 @@ void DeviceSlotComponent::updateCustomUI() {
                     state.reverbOn = fourOsc->reverbOnValue.get();
                     state.delayOn = fourOsc->delayOnValue.get();
                     state.chorusOn = fourOsc->chorusOnValue.get();
+                    state.voiceMode = fourOsc->voiceModeValue.get();
+                    state.globalVoices = fourOsc->voicesValue.get();
                     fourOscUI_->updatePluginState(state);
                 }
             }
         }
+    }
+
+    if (eqUI_ && device_.pluginId.equalsIgnoreCase("eq")) {
+        eqUI_->updateFromParameters(device_.parameters);
+    }
+}
+
+// =============================================================================
+// Custom UI Linking
+// =============================================================================
+
+void DeviceSlotComponent::setupCustomUILinking() {
+    // Collect linkable sliders from whichever custom UI is active
+    std::vector<LinkableTextSlider*> sliders;
+    if (eqUI_)
+        sliders = eqUI_->getLinkableSliders();
+    else if (fourOscUI_)
+        sliders = fourOscUI_->getLinkableSliders();
+    else if (toneGeneratorUI_)
+        sliders = toneGeneratorUI_->getLinkableSliders();
+    else if (samplerUI_)
+        sliders = samplerUI_->getLinkableSliders();
+
+    if (sliders.empty())
+        return;
+
+    // Get mods and macros data
+    const auto* mods = getModsData();
+    const auto* macros = getMacrosData();
+
+    // Get rack-level mods and macros
+    const magda::ModArray* rackMods = nullptr;
+    const magda::MacroArray* rackMacros = nullptr;
+    if (!nodePath_.steps.empty() && nodePath_.steps[0].type == magda::ChainStepType::Rack) {
+        magda::ChainNodePath rackPath;
+        rackPath.trackId = nodePath_.trackId;
+        rackPath.steps.push_back(nodePath_.steps[0]);
+        if (auto* rack = magda::TrackManager::getInstance().getRackByPath(rackPath)) {
+            rackMods = &rack->mods;
+            rackMacros = &rack->macros;
+        }
+    }
+
+    // Check selection state
+    auto& selMgr = magda::SelectionManager::getInstance();
+    int selectedModIndex = -1;
+    int selectedMacroIndex = -1;
+    if (selMgr.hasModSelection()) {
+        const auto& modSel = selMgr.getModSelection();
+        if (modSel.parentPath == nodePath_)
+            selectedModIndex = modSel.modIndex;
+    }
+    if (selMgr.hasMacroSelection()) {
+        const auto& macroSel = selMgr.getMacroSelection();
+        if (macroSel.parentPath == nodePath_)
+            selectedMacroIndex = macroSel.macroIndex;
+    }
+
+    for (int i = 0; i < static_cast<int>(sliders.size()); ++i) {
+        auto* slider = sliders[static_cast<size_t>(i)];
+
+        // Set link context
+        slider->setLinkContext(device_.id, i, nodePath_);
+        slider->setAvailableMods(mods);
+        slider->setAvailableRackMods(rackMods);
+        slider->setAvailableMacros(macros);
+        slider->setAvailableRackMacros(rackMacros);
+        slider->setSelectedModIndex(selectedModIndex);
+        slider->setSelectedMacroIndex(selectedMacroIndex);
+
+        // Wire mod/macro callbacks — same lambdas as paramSlots_
+        slider->onModLinkedWithAmount = [safeThis = juce::Component::SafePointer(this)](
+                                            int modIndex, magda::ModTarget target, float amount) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            auto nodePath = self->nodePath_;
+            auto activeModSelection = magda::LinkModeManager::getInstance().getModInLinkMode();
+            if (activeModSelection.isValid() && activeModSelection.parentPath == nodePath) {
+                magda::TrackManager::getInstance().setDeviceModTarget(nodePath, modIndex, target);
+                magda::TrackManager::getInstance().setDeviceModLinkAmount(nodePath, modIndex,
+                                                                          target, amount);
+                if (!self)
+                    return;
+                self->updateModsPanel();
+                if (!self->modPanelVisible_) {
+                    self->modButton_->setToggleState(true, juce::dontSendNotification);
+                    self->modButton_->setActive(true);
+                    self->setModPanelVisible(true);
+                }
+                magda::SelectionManager::getInstance().selectMod(nodePath, modIndex);
+            } else if (activeModSelection.isValid()) {
+                magda::TrackManager::getInstance().setRackModTarget(activeModSelection.parentPath,
+                                                                    modIndex, target);
+                magda::TrackManager::getInstance().setRackModLinkAmount(
+                    activeModSelection.parentPath, modIndex, target, amount);
+            }
+            if (self)
+                self->updateParamModulation();
+        };
+
+        slider->onModUnlinked =
+            [safeThis = juce::Component::SafePointer(this)](int modIndex, magda::ModTarget target) {
+                auto self = safeThis;
+                if (!self)
+                    return;
+                auto nodePath = self->nodePath_;
+                magda::TrackManager::getInstance().removeDeviceModLink(nodePath, modIndex, target);
+                if (!self)
+                    return;
+                self->updateParamModulation();
+                self->updateModsPanel();
+            };
+
+        slider->onModAmountChanged = [safeThis = juce::Component::SafePointer(this)](
+                                         int modIndex, magda::ModTarget target, float amount) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            auto nodePath = self->nodePath_;
+            auto activeModSelection = magda::LinkModeManager::getInstance().getModInLinkMode();
+            if (activeModSelection.isValid() && activeModSelection.parentPath == nodePath) {
+                magda::TrackManager::getInstance().setDeviceModLinkAmount(nodePath, modIndex,
+                                                                          target, amount);
+                if (self)
+                    self->updateModsPanel();
+            } else if (activeModSelection.isValid()) {
+                magda::TrackManager::getInstance().setRackModLinkAmount(
+                    activeModSelection.parentPath, modIndex, target, amount);
+            }
+            if (self)
+                self->updateParamModulation();
+        };
+
+        slider->onMacroLinkedWithAmount = [safeThis = juce::Component::SafePointer(this)](
+                                              int macroIndex, magda::MacroTarget target,
+                                              float amount) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            auto nodePath = self->nodePath_;
+            auto activeMacroSelection = magda::LinkModeManager::getInstance().getMacroInLinkMode();
+            if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == nodePath) {
+                magda::TrackManager::getInstance().setDeviceMacroTarget(nodePath, macroIndex,
+                                                                        target);
+                magda::TrackManager::getInstance().setDeviceMacroLinkAmount(nodePath, macroIndex,
+                                                                            target, amount);
+                if (!self)
+                    return;
+                self->updateMacroPanel();
+                if (!self->paramPanelVisible_) {
+                    self->macroButton_->setToggleState(true, juce::dontSendNotification);
+                    self->macroButton_->setActive(true);
+                    self->setParamPanelVisible(true);
+                }
+                magda::SelectionManager::getInstance().selectMacro(nodePath, macroIndex);
+            } else if (activeMacroSelection.isValid()) {
+                magda::TrackManager::getInstance().setRackMacroTarget(
+                    activeMacroSelection.parentPath, macroIndex, target);
+                magda::TrackManager::getInstance().setRackMacroLinkAmount(
+                    activeMacroSelection.parentPath, macroIndex, target, amount);
+            }
+            if (self)
+                self->updateParamModulation();
+        };
+
+        slider->onMacroUnlinked = [safeThis = juce::Component::SafePointer(this)](
+                                      int macroIndex, magda::MacroTarget target) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            auto nodePath = self->nodePath_;
+            magda::TrackManager::getInstance().removeDeviceMacroLink(nodePath, macroIndex, target);
+            if (!self)
+                return;
+            self->updateParamModulation();
+            self->updateMacroPanel();
+        };
+
+        slider->onMacroAmountChanged = [safeThis = juce::Component::SafePointer(this)](
+                                           int macroIndex, magda::MacroTarget target,
+                                           float amount) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            auto nodePath = self->nodePath_;
+            auto activeMacroSelection = magda::LinkModeManager::getInstance().getMacroInLinkMode();
+            if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == nodePath) {
+                magda::TrackManager::getInstance().setDeviceMacroLinkAmount(nodePath, macroIndex,
+                                                                            target, amount);
+                if (self)
+                    self->updateMacroPanel();
+            } else if (activeMacroSelection.isValid()) {
+                magda::TrackManager::getInstance().setRackMacroLinkAmount(
+                    activeMacroSelection.parentPath, macroIndex, target, amount);
+            }
+            if (self)
+                self->updateParamModulation();
+        };
     }
 }
 

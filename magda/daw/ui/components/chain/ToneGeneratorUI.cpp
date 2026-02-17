@@ -96,6 +96,11 @@ void ToneGeneratorUI::resized() {
     levelSlider_.setBounds(levelArea);
 }
 
+std::vector<LinkableTextSlider*> ToneGeneratorUI::getLinkableSliders() {
+    // ParamIndex: 0=frequency, 1=level (waveform is a combo, not a slider)
+    return {&frequencySlider_, &levelSlider_};
+}
+
 juce::String ToneGeneratorUI::formatFrequency(float hz) const {
     if (hz >= 1000.0f) {
         float kHz = hz / 1000.0f;

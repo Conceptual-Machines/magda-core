@@ -26,8 +26,8 @@ SamplerUI::SamplerUI() {
     addAndMakeVisible(loadButton_);
 
     // --- Time slider setup helper ---
-    auto setupTimeSlider = [this](TextSlider& slider, int paramIndex, double min, double max,
-                                  double defaultVal) {
+    auto setupTimeSlider = [this](LinkableTextSlider& slider, int paramIndex, double min,
+                                  double max, double defaultVal) {
         slider.setRange(min, max, 0.001);
         slider.setValue(defaultVal, juce::dontSendNotification);
         slider.setValueFormatter([](double v) {
@@ -586,6 +586,14 @@ void SamplerUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheel
 // =============================================================================
 // Timer (Playhead Animation)
 // =============================================================================
+
+std::vector<LinkableTextSlider*> SamplerUI::getLinkableSliders() {
+    // Parameter indices: 0=attack, 1=decay, 2=sustain, 3=release, 4=pitch, 5=fine, 6=level,
+    //                    7=sampleStart, 8=sampleEnd, 9=loopStart, 10=loopEnd, 11=velAmount
+    return {&attackSlider_, &decaySlider_,     &sustainSlider_, &releaseSlider_,
+            &pitchSlider_,  &fineSlider_,      &levelSlider_,   &startSlider_,
+            &endSlider_,    &loopStartSlider_, &loopEndSlider_, &velAmountSlider_};
+}
 
 void SamplerUI::timerCallback() {
     if (getPlaybackPosition) {
