@@ -138,10 +138,6 @@ class WaveformEditorContent : public PanelContent,
     void refreshWarpMarkers();
     magda::AudioBridge* getBridge();
 
-    // Transient editing helpers
-    void updateCachedTransient(magda::ClipId clipId, int index, double newTime);
-    void removeCachedTransient(magda::ClipId clipId, int index);
-
     // Warp state tracking
     bool wasWarpEnabled_ = false;
 

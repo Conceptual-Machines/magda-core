@@ -390,17 +390,15 @@ WaveformEditorContent::WaveformEditorContent() {
         }
     };
 
-    // Transient editing callbacks
-    gridComponent_->onTransientAdd = [this](double sourceTime) {
-        updateCachedTransient(editingClipId_, -1, sourceTime);
-    };
-
-    gridComponent_->onTransientMove = [this](int index, double newTime) {
-        updateCachedTransient(editingClipId_, index, newTime);
-    };
-
-    gridComponent_->onTransientRemove = [this](int index) {
-        removeCachedTransient(editingClipId_, index);
+    // Warp marker reposition callback (Alt+drag: remove + add at new position)
+    gridComponent_->onWarpMarkerReposition = [this](int index, double newSourceTime,
+                                                    double newWarpTime) {
+        auto* bridge = getBridge();
+        if (bridge) {
+            bridge->removeWarpMarker(editingClipId_, index);
+            bridge->addWarpMarker(editingClipId_, newSourceTime, newWarpTime);
+            refreshWarpMarkers();
+        }
     };
 
     // Zoom drag on waveform — same log-curve sensitivity as header drag
@@ -1043,49 +1041,6 @@ magda::AudioBridge* WaveformEditorContent::getBridge() {
     if (!audioEngine)
         return nullptr;
     return audioEngine->getAudioBridge();
-}
-
-// ============================================================================
-// Transient Editing Helpers
-// ============================================================================
-
-void WaveformEditorContent::updateCachedTransient(magda::ClipId clipId, int index, double newTime) {
-    const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
-    if (!clip || clip->audioFilePath.isEmpty())
-        return;
-
-    auto* transients =
-        magda::AudioThumbnailManager::getInstance().getMutableCachedTransients(clip->audioFilePath);
-    if (!transients)
-        return;
-
-    if (index < 0) {
-        // Add: insert in sorted position
-        int insertPos = 0;
-        while (insertPos < transients->size() && (*transients)[insertPos] < newTime)
-            ++insertPos;
-        transients->insert(insertPos, newTime);
-    } else if (index < transients->size()) {
-        // Move: update and re-sort
-        transients->set(index, newTime);
-        transients->sort();
-    }
-
-    gridComponent_->setTransientTimes(*transients);
-}
-
-void WaveformEditorContent::removeCachedTransient(magda::ClipId clipId, int index) {
-    const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
-    if (!clip || clip->audioFilePath.isEmpty())
-        return;
-
-    auto* transients =
-        magda::AudioThumbnailManager::getInstance().getMutableCachedTransients(clip->audioFilePath);
-    if (!transients || index < 0 || index >= transients->size())
-        return;
-
-    transients->remove(index);
-    gridComponent_->setTransientTimes(*transients);
 }
 
 // ============================================================================

@@ -144,15 +144,6 @@ const juce::Array<double>* AudioThumbnailManager::getCachedTransients(
     return nullptr;
 }
 
-juce::Array<double>* AudioThumbnailManager::getMutableCachedTransients(
-    const juce::String& filePath) {
-    auto it = transientCache_.find(filePath);
-    if (it != transientCache_.end()) {
-        return &it->second;
-    }
-    return nullptr;
-}
-
 void AudioThumbnailManager::cacheTransients(const juce::String& filePath,
                                             const juce::Array<double>& times) {
     transientCache_[filePath] = times;
