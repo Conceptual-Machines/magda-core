@@ -593,6 +593,91 @@ float CompressorProcessor::getParameterByIndex(int paramIndex) const {
 }
 
 // =============================================================================
+// DelayProcessor
+// =============================================================================
+
+DelayProcessor::DelayProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
+    : DeviceProcessor(deviceId, std::move(plugin)) {}
+
+int DelayProcessor::getParameterCount() const {
+    // 2 automatable params (feedback, mix) + 1 virtual param (lengthMs)
+    if (plugin_)
+        return static_cast<int>(plugin_->getAutomatableParameters().size()) + 1;
+    return 0;
+}
+
+ParameterInfo DelayProcessor::getParameterInfo(int index) const {
+    ParameterInfo info;
+    if (!plugin_)
+        return info;
+
+    auto params = plugin_->getAutomatableParameters();
+    int autoCount = static_cast<int>(params.size());
+
+    if (index >= 0 && index < autoCount) {
+        auto* param = params[index];
+        info.name = param->getParameterName();
+        info.currentValue = param->getCurrentValue();
+        auto range = param->getValueRange();
+        info.minValue = range.getStart();
+        info.maxValue = range.getEnd();
+        info.defaultValue = param->getDefaultValue().value_or(range.getStart());
+    } else if (index == autoCount) {
+        // Virtual parameter: delay length in ms
+        info.name = "Length";
+        info.unit = "ms";
+        info.minValue = 1.0f;
+        info.maxValue = 2000.0f;
+        info.defaultValue = 150.0f;
+        if (auto* delay = dynamic_cast<te::DelayPlugin*>(plugin_.get()))
+            info.currentValue = static_cast<float>(delay->lengthMs.get());
+        else
+            info.currentValue = 150.0f;
+    }
+    return info;
+}
+
+void DelayProcessor::populateParameters(DeviceInfo& info) const {
+    info.parameters.clear();
+    int count = getParameterCount();
+    for (int i = 0; i < count; ++i) {
+        info.parameters.push_back(getParameterInfo(i));
+    }
+}
+
+void DelayProcessor::setParameterByIndex(int paramIndex, float value) {
+    if (!plugin_)
+        return;
+
+    auto params = plugin_->getAutomatableParameters();
+    int autoCount = static_cast<int>(params.size());
+
+    if (paramIndex >= 0 && paramIndex < autoCount) {
+        params[paramIndex]->setParameter(value, juce::sendNotificationSync);
+    } else if (paramIndex == autoCount) {
+        // Virtual parameter: delay length in ms
+        if (auto* delay = dynamic_cast<te::DelayPlugin*>(plugin_.get()))
+            delay->lengthMs = static_cast<int>(value);
+    }
+}
+
+float DelayProcessor::getParameterByIndex(int paramIndex) const {
+    if (!plugin_)
+        return 0.0f;
+
+    auto params = plugin_->getAutomatableParameters();
+    int autoCount = static_cast<int>(params.size());
+
+    if (paramIndex >= 0 && paramIndex < autoCount)
+        return params[paramIndex]->getCurrentValue();
+    if (paramIndex == autoCount) {
+        if (auto* delay = dynamic_cast<te::DelayPlugin*>(plugin_.get()))
+            return static_cast<float>(delay->lengthMs.get());
+    }
+    return 0.0f;
+}
+
+// =============================================================================
 // ReverbProcessor
 // =============================================================================
 

@@ -322,6 +322,7 @@ set(DAW_UI_SOURCES
     ui/components/chain/EqualiserUI.cpp
     ui/components/chain/CompressorUI.cpp
     ui/components/chain/ReverbUI.cpp
+    ui/components/chain/DelayUI.cpp
     ui/components/chain/FourOscUI.cpp
     ui/components/chain/PadChainPanel.cpp
     ui/components/chain/PadDeviceSlot.cpp
@@ -507,6 +508,7 @@ set(DAW_HEADERS
     ui/components/chain/EqualiserUI.hpp
     ui/components/chain/CompressorUI.hpp
     ui/components/chain/ReverbUI.hpp
+    ui/components/chain/DelayUI.hpp
     ui/components/chain/FourOscUI.hpp
     ui/components/chain/PagedControlPanel.hpp
     ui/components/chain/MacroKnobComponent.hpp

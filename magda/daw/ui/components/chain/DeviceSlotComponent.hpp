@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "CompressorUI.hpp"
+#include "DelayUI.hpp"
 #include "DrumGridUI.hpp"
 #include "EqualiserUI.hpp"
 #include "FourOscUI.hpp"
@@ -175,6 +176,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<EqualiserUI> eqUI_;
     std::unique_ptr<CompressorUI> compressorUI_;
     std::unique_ptr<ReverbUI> reverbUI_;
+    std::unique_ptr<DelayUI> delayUI_;
 
     void updatePageControls();
     void updateParamModulation();  // Update mod/macro pointers for params

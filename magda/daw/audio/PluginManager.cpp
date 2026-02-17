@@ -1603,8 +1603,10 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             // No processor for meter - it's just for measurement
         } else if (device.pluginId.containsIgnoreCase("delay")) {
             plugin = edit_.getPluginCache().createNewPlugin(te::DelayPlugin::xmlTypeName, {});
-            if (plugin)
+            if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
+                processor = std::make_unique<DelayProcessor>(device.id, plugin);
+            }
         } else if (device.pluginId.containsIgnoreCase("reverb")) {
             plugin = edit_.getPluginCache().createNewPlugin(te::ReverbPlugin::xmlTypeName, {});
             if (plugin) {

@@ -524,6 +524,9 @@ int DeviceSlotComponent::getPreferredWidth() const {
     if (reverbUI_) {
         return getTotalWidth(350);
     }
+    if (delayUI_) {
+        return getTotalWidth(300);
+    }
     if (samplerUI_) {
         return getTotalWidth(BASE_SLOT_WIDTH * 2);
     }
@@ -591,14 +594,14 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
 
     // Create custom UI if this is an internal device and we don't have one yet
     if (isInternalDevice() && !toneGeneratorUI_ && !samplerUI_ && !drumGridUI_ && !fourOscUI_ &&
-        !eqUI_ && !compressorUI_ && !reverbUI_) {
+        !eqUI_ && !compressorUI_ && !reverbUI_ && !delayUI_) {
         createCustomUI();
         setupCustomUILinking();
     }
 
     // Update custom UI if available
     if (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
-        reverbUI_) {
+        reverbUI_ || delayUI_) {
         updateCustomUI();
     }
 
@@ -767,6 +770,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             compressorUI_->setVisible(false);
         if (reverbUI_)
             reverbUI_->setVisible(false);
+        if (delayUI_)
+            delayUI_->setVisible(false);
         return;
     }
 
@@ -784,7 +789,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
 
     // Check if this is an internal device with custom UI
     if (isInternalDevice() && (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ ||
-                               eqUI_ || compressorUI_ || reverbUI_)) {
+                               eqUI_ || compressorUI_ || reverbUI_ || delayUI_)) {
         // Show custom minimal UI
         if (toneGeneratorUI_) {
             toneGeneratorUI_->setBounds(contentArea.reduced(4));
@@ -820,6 +825,10 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             reverbUI_->setBounds(contentArea.reduced(4));
             reverbUI_->setVisible(true);
         }
+        if (delayUI_) {
+            delayUI_->setBounds(contentArea.reduced(4));
+            delayUI_->setVisible(true);
+        }
 
         // Hide parameter grid and pagination
         for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
@@ -844,6 +853,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             compressorUI_->setVisible(false);
         if (reverbUI_)
             reverbUI_->setVisible(false);
+        if (delayUI_)
+            delayUI_->setVisible(false);
 
         // Pagination area
         auto paginationArea = contentArea.removeFromTop(PAGINATION_HEIGHT);
@@ -1977,6 +1988,16 @@ void DeviceSlotComponent::createCustomUI() {
         };
         addAndMakeVisible(*reverbUI_);
         updateCustomUI();
+    } else if (device_.pluginId.containsIgnoreCase("delay")) {
+        delayUI_ = std::make_unique<DelayUI>();
+        delayUI_->onParameterChanged = [this](int paramIndex, float value) {
+            if (!nodePath_.isValid())
+                return;
+            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
+                                                                       value);
+        };
+        addAndMakeVisible(*delayUI_);
+        updateCustomUI();
     }
 }
 
@@ -2145,6 +2166,10 @@ void DeviceSlotComponent::updateCustomUI() {
     if (reverbUI_ && device_.pluginId.containsIgnoreCase("reverb")) {
         reverbUI_->updateFromParameters(device_.parameters);
     }
+
+    if (delayUI_ && device_.pluginId.containsIgnoreCase("delay")) {
+        delayUI_->updateFromParameters(device_.parameters);
+    }
 }
 
 // =============================================================================
@@ -2164,6 +2189,8 @@ void DeviceSlotComponent::setupCustomUILinking() {
         sliders = compressorUI_->getLinkableSliders();
     else if (reverbUI_)
         sliders = reverbUI_->getLinkableSliders();
+    else if (delayUI_)
+        sliders = delayUI_->getLinkableSliders();
     else if (samplerUI_)
         sliders = samplerUI_->getLinkableSliders();
 

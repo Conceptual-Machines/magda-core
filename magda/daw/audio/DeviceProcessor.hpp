@@ -274,6 +274,18 @@ class CompressorProcessor : public DeviceProcessor {
     float getParameterByIndex(int paramIndex) const;
 };
 
+class DelayProcessor : public DeviceProcessor {
+  public:
+    DelayProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    int getParameterCount() const override;
+    ParameterInfo getParameterInfo(int index) const override;
+    void populateParameters(DeviceInfo& info) const override;
+
+    void setParameterByIndex(int paramIndex, float value);
+    float getParameterByIndex(int paramIndex) const;
+};
+
 class ReverbProcessor : public DeviceProcessor {
   public:
     ReverbProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
