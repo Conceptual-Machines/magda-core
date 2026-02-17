@@ -938,6 +938,20 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
     // Non-warp mode: standard trim/stretch interaction
     bool altHeld = event.mods.isAltDown();
 
+    // Option+click near transient takes priority over edge grabs,
+    // so transients at the very start/end of the sample can be moved.
+    if (altHeld) {
+        int transientIndex = findTransientAtPixel(x);
+        if (transientIndex >= 0) {
+            dragMode_ = DragMode::MoveTransient;
+            draggingTransientIndex_ = transientIndex;
+            dragStartTransientTime_ = transientTimes_[transientIndex];
+            dragStartX_ = x;
+            return;
+        }
+        // Alt held but not near a transient — fall through to normal behavior
+    }
+
     if (isNearLeftEdge(x, *clip)) {
         dragMode_ = shiftHeld ? DragMode::StretchLeft : DragMode::ResizeLeft;
     } else if (isNearRightEdge(x, *clip)) {
@@ -950,21 +964,6 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
             zoomDragAnchorX_ = x - scrollOffsetX_;
             if (onZoomDrag)
                 onZoomDrag(0, zoomDragAnchorX_);
-            return;
-        }
-
-        // Option+click near transient = start moving it
-        if (altHeld) {
-            int transientIndex = findTransientAtPixel(x);
-            if (transientIndex >= 0) {
-                dragMode_ = DragMode::MoveTransient;
-                draggingTransientIndex_ = transientIndex;
-                dragStartTransientTime_ = transientTimes_[transientIndex];
-                dragStartX_ = x;
-                return;
-            }
-            // Alt held but not near a transient — fall through to do nothing
-            dragMode_ = DragMode::None;
             return;
         }
 
@@ -1232,7 +1231,10 @@ void WaveformGridComponent::mouseMove(const juce::MouseEvent& event) {
         return;
     }
 
-    if (isNearLeftEdge(x, *clip) || isNearRightEdge(x, *clip)) {
+    // Alt+hover near transient takes priority (even near edges)
+    if (event.mods.isAltDown() && findTransientAtPixel(x) >= 0) {
+        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+    } else if (isNearLeftEdge(x, *clip) || isNearRightEdge(x, *clip)) {
         if (event.mods.isShiftDown()) {
             setMouseCursor(juce::MouseCursor::UpDownLeftRightResizeCursor);
         } else {
@@ -1241,8 +1243,6 @@ void WaveformGridComponent::mouseMove(const juce::MouseEvent& event) {
     } else if (isInsideWaveform(x, *clip)) {
         if (event.mods.isShiftDown()) {
             setMouseCursor(magda::CursorManager::getInstance().getZoomCursor());
-        } else if (event.mods.isAltDown() && findTransientAtPixel(x) >= 0) {
-            setMouseCursor(juce::MouseCursor::DraggingHandCursor);
         } else {
             setMouseCursor(juce::MouseCursor::CrosshairCursor);
         }
