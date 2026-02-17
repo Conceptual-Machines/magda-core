@@ -451,6 +451,15 @@ class ClipManager {
      */
     void createTestClips();
 
+    /**
+     * @brief Resolve overlaps after placing/moving a dominant clip
+     *
+     * Trims or deletes any arrangement clips on the same track that overlap
+     * with the dominant clip. "Last write wins" semantics.
+     * Called internally by clip creation/move methods.
+     */
+    void resolveOverlaps(ClipId dominantClipId);
+
   private:
     ClipManager() = default;
     ~ClipManager() = default;

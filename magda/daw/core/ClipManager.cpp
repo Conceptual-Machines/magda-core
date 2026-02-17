@@ -47,6 +47,7 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     // Add to appropriate array based on view
     if (view == ClipView::Arrangement) {
         arrangementClips_.push_back(clip);
+        resolveOverlaps(clip.id);
     } else {
         // Session clips loop by default
         clip.loopEnabled = true;
@@ -75,6 +76,7 @@ ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double len
     // Add to appropriate array based on view
     if (view == ClipView::Arrangement) {
         arrangementClips_.push_back(clip);
+        resolveOverlaps(clip.id);
     } else {
         // Session clips loop by default
         clip.loopEnabled = true;
@@ -202,6 +204,7 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
             newClip.startBeats = startTime * tempo / 60.0;
         }
         arrangementClips_.push_back(newClip);
+        resolveOverlaps(newClip.id);
     } else {
         // Session clips don't use timeline positioning
         newClip.startTime = 0.0;
@@ -225,6 +228,7 @@ void ClipManager::moveClip(ClipId clipId, double newStartTime, double tempo) {
         }
         // Notes maintain their relative position within the clip (startBeat unchanged)
         // so they move with the clip on the timeline
+        resolveOverlaps(clipId);
         notifyClipPropertyChanged(clipId);
     }
 }
@@ -233,6 +237,7 @@ void ClipManager::moveClipToTrack(ClipId clipId, TrackId newTrackId) {
     if (auto* clip = getClip(clipId)) {
         if (clip->trackId != newTrackId) {
             clip->trackId = newTrackId;
+            resolveOverlaps(clipId);
             notifyClipsChanged();  // Track assignment change affects layout
         }
     }
@@ -1119,6 +1124,76 @@ void ClipManager::createTestClips() {
 }
 
 // ============================================================================
+// Overlap Resolution
+// ============================================================================
+
+void ClipManager::resolveOverlaps(ClipId dominantClipId) {
+    const auto* dominant = getClip(dominantClipId);
+    if (!dominant || dominant->view != ClipView::Arrangement) {
+        return;
+    }
+
+    double dStart = dominant->startTime;
+    double dEnd = dominant->getEndTime();
+    TrackId trackId = dominant->trackId;
+
+    // Collect IDs to delete and clips to resize (avoid iterator invalidation)
+    std::vector<ClipId> toDelete;
+
+    struct ResizeOp {
+        ClipId id;
+        double newLength;
+        bool fromLeft;  // true = trim left edge (move start forward)
+    };
+    std::vector<ResizeOp> toResize;
+
+    for (const auto& clip : arrangementClips_) {
+        if (clip.id == dominantClipId || clip.trackId != trackId) {
+            continue;
+        }
+
+        double cStart = clip.startTime;
+        double cEnd = clip.getEndTime();
+
+        // Check for overlap
+        if (cStart >= dEnd || cEnd <= dStart) {
+            continue;  // No overlap
+        }
+
+        if (cStart >= dStart && cEnd <= dEnd) {
+            // Case 1: C fully covered by D → delete
+            toDelete.push_back(clip.id);
+        } else if (cStart < dStart && cEnd > dStart && cEnd <= dEnd) {
+            // Case 2: C overlaps from left → trim right edge to dStart
+            toResize.push_back({clip.id, dStart - cStart, false});
+        } else if (cStart >= dStart && cStart < dEnd && cEnd > dEnd) {
+            // Case 3: C overlaps from right → trim left edge to dEnd
+            toResize.push_back({clip.id, cEnd - dEnd, true});
+        } else if (cStart < dStart && cEnd > dEnd) {
+            // Case 4: C fully contains D → trim right edge to dStart (keep left portion)
+            toResize.push_back({clip.id, dStart - cStart, false});
+        }
+    }
+
+    // Apply deletions
+    for (auto id : toDelete) {
+        deleteClip(id);
+    }
+
+    // Apply resizes
+    for (const auto& op : toResize) {
+        if (auto* clip = getClip(op.id)) {
+            if (op.fromLeft) {
+                ClipOperations::resizeContainerFromLeft(*clip, op.newLength);
+            } else {
+                ClipOperations::resizeContainerFromRight(*clip, op.newLength);
+            }
+            notifyClipPropertyChanged(op.id);
+        }
+    }
+}
+
+// ============================================================================
 // Private Helpers
 // ============================================================================
 
@@ -1377,6 +1452,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                 forceNotifyClipPropertyChanged(newClipId);
             }
 
+            // resolveOverlaps already called by createAudioClip/createMidiClip
             newClips.push_back(newClipId);
         }
     }

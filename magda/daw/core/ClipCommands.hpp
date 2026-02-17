@@ -50,7 +50,7 @@ class SplitClipCommand : public SnapshotCommand<ClipInfo> {
  *
  * Supports merging consecutive small moves into a single undo step.
  */
-class MoveClipCommand : public SnapshotCommand<ClipInfo> {
+class MoveClipCommand : public ValidatedCommand {
   public:
     MoveClipCommand(ClipId clipId, double newStartTime);
 
@@ -58,23 +58,22 @@ class MoveClipCommand : public SnapshotCommand<ClipInfo> {
         return "Move Clip";
     }
 
+    void execute() override;
+    void undo() override;
+
     bool canMergeWith(const UndoableCommand* other) const override;
     void mergeWith(const UndoableCommand* other) override;
-
-  protected:
-    ClipInfo captureState() override;
-    void restoreState(const ClipInfo& state) override;
-    void performAction() override;
 
   private:
     ClipId clipId_;
     double newStartTime_;
+    std::vector<ClipInfo> arrangementSnapshot_;
 };
 
 /**
  * @brief Command for moving a clip to a different track
  */
-class MoveClipToTrackCommand : public SnapshotCommand<ClipInfo> {
+class MoveClipToTrackCommand : public ValidatedCommand {
   public:
     MoveClipToTrackCommand(ClipId clipId, TrackId newTrackId);
 
@@ -83,16 +82,13 @@ class MoveClipToTrackCommand : public SnapshotCommand<ClipInfo> {
     }
 
     bool canExecute() const override;
-
-  protected:
-    ClipInfo captureState() override;
-    void restoreState(const ClipInfo& state) override;
-    void performAction() override;
-    bool validateState() const override;
+    void execute() override;
+    void undo() override;
 
   private:
     ClipId clipId_;
     TrackId newTrackId_;
+    std::vector<ClipInfo> arrangementSnapshot_;
 };
 
 /**
@@ -148,19 +144,11 @@ class DeleteClipCommand : public SnapshotCommand<ClipInfo> {
 };
 
 /**
- * @brief State for CreateClipCommand - stores creation parameters
- */
-struct CreateClipState {
-    ClipId createdClipId = INVALID_CLIP_ID;
-    bool wasCreated = false;
-};
-
-/**
  * @brief Command for creating a new clip
  *
  * For undo, deletes the created clip.
  */
-class CreateClipCommand : public SnapshotCommand<CreateClipState> {
+class CreateClipCommand : public ValidatedCommand {
   public:
     CreateClipCommand(ClipType type, TrackId trackId, double startTime, double length,
                       const juce::String& audioFilePath = {},
@@ -171,16 +159,12 @@ class CreateClipCommand : public SnapshotCommand<CreateClipState> {
     }
 
     bool canExecute() const override;
+    void execute() override;
+    void undo() override;
 
     ClipId getCreatedClipId() const {
         return createdClipId_;
     }
-
-  protected:
-    CreateClipState captureState() override;
-    void restoreState(const CreateClipState& state) override;
-    void performAction() override;
-    bool validateState() const override;
 
   private:
     ClipType type_;
@@ -190,20 +174,13 @@ class CreateClipCommand : public SnapshotCommand<CreateClipState> {
     juce::String audioFilePath_;
     ClipView view_;
     ClipId createdClipId_ = INVALID_CLIP_ID;
-};
-
-/**
- * @brief State for DuplicateClipCommand
- */
-struct DuplicateClipState {
-    ClipId duplicatedClipId = INVALID_CLIP_ID;
-    bool wasDuplicated = false;
+    std::vector<ClipInfo> arrangementSnapshot_;
 };
 
 /**
  * @brief Command for duplicating a clip
  */
-class DuplicateClipCommand : public SnapshotCommand<DuplicateClipState> {
+class DuplicateClipCommand : public ValidatedCommand {
   public:
     DuplicateClipCommand(ClipId sourceClipId, double startTime = -1.0,
                          TrackId targetTrackId = INVALID_TRACK_ID, double tempo = 0.0);
@@ -213,16 +190,12 @@ class DuplicateClipCommand : public SnapshotCommand<DuplicateClipState> {
     }
 
     bool canExecute() const override;
+    void execute() override;
+    void undo() override;
 
     ClipId getDuplicatedClipId() const {
         return duplicatedClipId_;
     }
-
-  protected:
-    DuplicateClipState captureState() override;
-    void restoreState(const DuplicateClipState& state) override;
-    void performAction() override;
-    bool validateState() const override;
 
   private:
     ClipId sourceClipId_;
@@ -230,20 +203,13 @@ class DuplicateClipCommand : public SnapshotCommand<DuplicateClipState> {
     TrackId targetTrackId_;  // INVALID = same track
     double tempo_;           // BPM for beat field sync (0 = skip)
     ClipId duplicatedClipId_ = INVALID_CLIP_ID;
-};
-
-/**
- * @brief State for PasteClipCommand
- */
-struct PasteClipState {
-    std::vector<ClipId> pastedClipIds;
-    bool wasPasted = false;
+    std::vector<ClipInfo> arrangementSnapshot_;
 };
 
 /**
  * @brief Command for pasting clips from clipboard
  */
-class PasteClipCommand : public SnapshotCommand<PasteClipState> {
+class PasteClipCommand : public ValidatedCommand {
   public:
     PasteClipCommand(double pasteTime, TrackId targetTrackId = INVALID_TRACK_ID);
 
@@ -252,21 +218,18 @@ class PasteClipCommand : public SnapshotCommand<PasteClipState> {
     }
 
     bool canExecute() const override;
+    void execute() override;
+    void undo() override;
 
     const std::vector<ClipId>& getPastedClipIds() const {
         return pastedClipIds_;
     }
 
-  protected:
-    PasteClipState captureState() override;
-    void restoreState(const PasteClipState& state) override;
-    void performAction() override;
-    bool validateState() const override;
-
   private:
     double pasteTime_;
     TrackId targetTrackId_;
     std::vector<ClipId> pastedClipIds_;
+    std::vector<ClipInfo> arrangementSnapshot_;
 };
 
 /**
