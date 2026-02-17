@@ -155,6 +155,13 @@ class ClipSynchronizer : public ClipManagerListener {
     // =========================================================================
 
     /**
+     * @brief Set transient detection sensitivity and re-run detection
+     * @param clipId The MAGDA clip ID
+     * @param sensitivity Sensitivity value (0.0 to 1.0)
+     */
+    void setTransientSensitivity(ClipId clipId, float sensitivity);
+
+    /**
      * @brief Get transient detection times for a clip
      * @param clipId The MAGDA clip ID
      * @return true if transients were found

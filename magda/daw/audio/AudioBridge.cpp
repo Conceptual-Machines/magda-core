@@ -1112,6 +1112,10 @@ bool AudioBridge::loadSamplerSample(DeviceId deviceId, const juce::File& file) {
 // Warp Markers (delegated to ClipSynchronizer)
 // =============================================================================
 
+void AudioBridge::setTransientSensitivity(ClipId clipId, float sensitivity) {
+    clipSynchronizer_.setTransientSensitivity(clipId, sensitivity);
+}
+
 bool AudioBridge::getTransientTimes(ClipId clipId) {
     return clipSynchronizer_.getTransientTimes(clipId);
 }

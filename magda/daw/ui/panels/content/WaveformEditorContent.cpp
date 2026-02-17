@@ -683,6 +683,19 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
             wasWarpEnabled_ = warpEnabled;
         }
 
+        // Check if cached transients were invalidated (e.g. sensitivity changed)
+        if (transientsCached_ && clip->type == magda::ClipType::Audio &&
+            !clip->audioFilePath.isEmpty()) {
+            auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
+                clip->audioFilePath);
+            if (!cached) {
+                // Cache was cleared — restart polling for new transients
+                transientsCached_ = false;
+                transientPollCount_ = 0;
+                startTimer(250);
+            }
+        }
+
         updateGridSize();
         repaint();
     }
@@ -1021,9 +1034,6 @@ magda::AudioBridge* WaveformEditorContent::getBridge() {
 
 // ============================================================================
 // Timer (Transient Detection Polling)
-// TODO: Expose transient detection sensitivity control. TE's TransientDetectionJob
-//       accepts a Config { float sensitivity } but WarpTimeManager hardcodes 0.5f.
-//       Would need to modify WarpTimeManager or re-run the job with a custom config.
 // ============================================================================
 
 void WaveformEditorContent::timerCallback() {

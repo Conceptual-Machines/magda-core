@@ -8,7 +8,10 @@
 #include "../../../../utils/TimelineUtils.hpp"
 #include "../ClipInspector.hpp"
 #include "BinaryData.h"
+#include "audio/AudioBridge.hpp"
 #include "core/ClipOperations.hpp"
+#include "core/TrackManager.hpp"
+#include "engine/AudioEngine.hpp"
 
 namespace magda::daw::ui {
 
@@ -711,6 +714,34 @@ void ClipInspector::initPlaybackSection() {
                 selectedClipId_, static_cast<float>(beatSensitivityValue_->getValue()));
     };
     clipPropsContainer_.addChildComponent(*beatSensitivityValue_);
+
+    // Transient sensitivity
+    transientSectionLabel_.setText("Transients", juce::dontSendNotification);
+    transientSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    transientSectionLabel_.setColour(juce::Label::textColourId,
+                                     DarkTheme::getSecondaryTextColour());
+    clipPropsContainer_.addChildComponent(transientSectionLabel_);
+
+    transientSensitivityValue_ =
+        std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Percentage);
+    transientSensitivityValue_->setRange(0.0, 1.0, 0.01);
+    transientSensitivityValue_->setValue(0.5, juce::dontSendNotification);
+    transientSensitivityValue_->setDoubleClickResetsValue(true);
+    transientSensitivityValue_->onValueChange = [this]() {
+        if (selectedClipId_ == magda::INVALID_CLIP_ID)
+            return;
+        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+        if (!audioEngine)
+            return;
+        auto* bridge = audioEngine->getAudioBridge();
+        if (bridge) {
+            bridge->setTransientSensitivity(
+                selectedClipId_, static_cast<float>(transientSensitivityValue_->getValue()));
+            // Notify listeners so WaveformEditorContent restarts transient polling
+            magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(selectedClipId_);
+        }
+    };
+    clipPropsContainer_.addChildComponent(*transientSensitivityValue_);
 }
 
 // ========================================================================

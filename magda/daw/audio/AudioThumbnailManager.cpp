@@ -149,6 +149,10 @@ void AudioThumbnailManager::cacheTransients(const juce::String& filePath,
     transientCache_[filePath] = times;
 }
 
+void AudioThumbnailManager::clearCachedTransients(const juce::String& filePath) {
+    transientCache_.erase(filePath);
+}
+
 void AudioThumbnailManager::clearCache() {
     thumbnails_.clear();
     thumbnailCache_->clear();

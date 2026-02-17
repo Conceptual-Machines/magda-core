@@ -26,6 +26,29 @@ te::WaveAudioClip* findWaveAudioClip(te::Edit& edit,
 }
 }  // namespace
 
+void WarpMarkerManager::setTransientSensitivity(
+    te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId, ClipId clipId,
+    float sensitivity) {
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (!clip || clip->type != ClipType::Audio || clip->audioFilePath.isEmpty())
+        return;
+
+    te::WaveAudioClip* audioClipPtr = findWaveAudioClip(edit, clipIdToEngineId, clipId);
+    if (!audioClipPtr)
+        return;
+
+    auto& warpManager = audioClipPtr->getWarpTimeManager();
+    warpManager.setTransientSensitivity(sensitivity);
+    warpManager.detectTransients();
+
+    // Clear cache so the next poll picks up fresh results.
+    // Keep clipId in detectionStarted_ since detectTransients() already started the job.
+    AudioThumbnailManager::getInstance().clearCachedTransients(clip->audioFilePath);
+    detectionStarted_.insert(clipId);
+
+    DBG("WarpMarkerManager: set sensitivity=" << sensitivity << " for " << clip->audioFilePath);
+}
+
 bool WarpMarkerManager::getTransientTimes(te::Edit& edit,
                                           const std::map<ClipId, std::string>& clipIdToEngineId,
                                           ClipId clipId) {
@@ -50,8 +73,14 @@ bool WarpMarkerManager::getTransientTimes(te::Edit& edit,
     // Get WarpTimeManager from the clip
     auto& warpManager = audioClipPtr->getWarpTimeManager();
 
-    // Trigger detection if not started
-    warpManager.editFinishedLoading();
+    // Kick off detection if not already running. detectTransients() uses
+    // getOrCreateDetectionJob which returns the existing job if one is
+    // already in flight for this file+config, so calling it once is safe.
+    // We must NOT call it on every poll because it resets transientTimes.
+    if (!detectionStarted_.count(clipId)) {
+        warpManager.detectTransients();
+        detectionStarted_.insert(clipId);
+    }
 
     // Poll for completion
     auto [complete, transientPositions] = warpManager.getTransientTimes();

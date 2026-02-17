@@ -156,6 +156,13 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // =========================================================================
 
     /**
+     * @brief Set transient detection sensitivity and re-run detection
+     * @param clipId The MAGDA clip ID
+     * @param sensitivity Sensitivity value (0.0 to 1.0)
+     */
+    void setTransientSensitivity(ClipId clipId, float sensitivity);
+
+    /**
      * @brief Detect transient times for an audio clip's source file
      *
      * On first call, kicks off async transient detection via TE's WarpTimeManager.

@@ -62,6 +62,12 @@ class AudioThumbnailManager {
     void cacheTransients(const juce::String& filePath, const juce::Array<double>& times);
 
     /**
+     * @brief Clear cached transients for a single audio file
+     * @param filePath Absolute path to the audio file
+     */
+    void clearCachedTransients(const juce::String& filePath);
+
+    /**
      * @brief Clear the thumbnail cache (useful for freeing memory)
      */
     void clearCache();

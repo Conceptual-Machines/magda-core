@@ -620,6 +620,11 @@ te::Clip* ClipSynchronizer::getSessionTeClip(ClipId clipId) {
 // Warp Marker Operations (Delegated to WarpMarkerManager)
 // =============================================================================
 
+void ClipSynchronizer::setTransientSensitivity(ClipId clipId, float sensitivity) {
+    juce::ScopedLock lock(clipLock_);
+    warpMarkerManager_.setTransientSensitivity(edit_, clipIdToEngineId_, clipId, sensitivity);
+}
+
 bool ClipSynchronizer::getTransientTimes(ClipId clipId) {
     juce::ScopedLock lock(clipLock_);
     return warpMarkerManager_.getTransientTimes(edit_, clipIdToEngineId_, clipId);

@@ -4,6 +4,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -54,6 +55,17 @@ class WarpMarkerManager {
      */
     bool getTransientTimes(te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId,
                            ClipId clipId);
+
+    /**
+     * @brief Set transient detection sensitivity and re-run detection
+     * @param edit Tracktion Engine edit
+     * @param clipIdToEngineId Mapping from MAGDA clip ID to TE clip ID
+     * @param clipId The MAGDA clip ID
+     * @param sensitivity Sensitivity value (0.0 to 1.0)
+     */
+    void setTransientSensitivity(te::Edit& edit,
+                                 const std::map<ClipId, std::string>& clipIdToEngineId,
+                                 ClipId clipId, float sensitivity);
 
     /**
      * @brief Enable warping: populate WarpTimeManager with markers at detected transients
@@ -116,6 +128,10 @@ class WarpMarkerManager {
      */
     void removeWarpMarker(te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId,
                           ClipId clipId, int index);
+
+  private:
+    // Tracks which clips have had detection kicked off (to avoid restarting on every poll)
+    std::set<ClipId> detectionStarted_;
 };
 
 }  // namespace magda
