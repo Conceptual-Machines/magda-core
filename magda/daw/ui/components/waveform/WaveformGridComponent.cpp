@@ -888,6 +888,7 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
                 dragMode_ = DragMode::RepositionWarpMarker;
                 draggingMarkerIndex_ = markerIndex;
                 dragStartWarpTime_ = warpMarkers_[static_cast<size_t>(markerIndex)].warpTime;
+                dragStartSourceTime_ = warpMarkers_[static_cast<size_t>(markerIndex)].sourceTime;
                 dragStartX_ = x;
             } else {
                 // Normal drag = stretch (change warp time only)
@@ -1044,12 +1045,15 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
 
         double timelineDelta = (event.x - dragStartX_) / horizontalZoom_;
         double sourceDelta = displayInfo_.timelineToSource(timelineDelta);
+
+        // Move both sourceTime and warpTime by the same source-domain delta
+        // This preserves the stretch relationship at this marker
+        double newSourceTime = dragStartSourceTime_ + sourceDelta;
         double newWarpTime = dragStartWarpTime_ + sourceDelta;
+        if (newSourceTime < 0.0)
+            newSourceTime = 0.0;
         if (newWarpTime < 0.0)
             newWarpTime = 0.0;
-
-        // Move both sourceTime and warpTime by the same delta — no stretch change
-        double newSourceTime = newWarpTime;
 
         if (draggingMarkerIndex_ >= 0 && onWarpMarkerReposition) {
             onWarpMarkerReposition(draggingMarkerIndex_, newSourceTime, newWarpTime);

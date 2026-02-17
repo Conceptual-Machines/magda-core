@@ -1812,7 +1812,12 @@ void ClipComponent::showContextMenu() {
                     }
                 }
             }
-            canSliceAtGrid = true;
+            // Only enable grid slicing when snap interval is positive
+            if (parentPanel_ && parentPanel_->getTimelineController()) {
+                double gridInterval =
+                    parentPanel_->getTimelineController()->getState().getSnapInterval();
+                canSliceAtGrid = gridInterval > 0.0;
+            }
         }
     }
     menu.addItem(13, "Slice at Warp Markers In Place", canSliceAtMarkers);

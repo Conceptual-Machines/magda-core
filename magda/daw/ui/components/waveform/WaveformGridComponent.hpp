@@ -241,6 +241,7 @@ class WaveformGridComponent : public juce::Component {
     int hoveredMarkerIndex_ = -1;
     int draggingMarkerIndex_ = -1;
     double dragStartWarpTime_ = 0.0;
+    double dragStartSourceTime_ = 0.0;
 
     // Pre/post loop visibility
     bool showPreLoop_ = true;
