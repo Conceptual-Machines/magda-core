@@ -321,6 +321,8 @@ void AudioBridge::deviceParameterChanged(DeviceId deviceId, int paramIndex, floa
         eqProc->setParameterByIndex(paramIndex, newValue);
     } else if (auto* compProc = dynamic_cast<CompressorProcessor*>(processor)) {
         compProc->setParameterByIndex(paramIndex, newValue);
+    } else if (auto* reverbProc = dynamic_cast<ReverbProcessor*>(processor)) {
+        reverbProc->setParameterByIndex(paramIndex, newValue);
     }
 }
 

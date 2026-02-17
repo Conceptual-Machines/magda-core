@@ -1607,8 +1607,10 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
         } else if (device.pluginId.containsIgnoreCase("reverb")) {
             plugin = edit_.getPluginCache().createNewPlugin(te::ReverbPlugin::xmlTypeName, {});
-            if (plugin)
+            if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
+                processor = std::make_unique<ReverbProcessor>(device.id, plugin);
+            }
         } else if (device.pluginId.containsIgnoreCase("eq")) {
             plugin = edit_.getPluginCache().createNewPlugin(te::EqualiserPlugin::xmlTypeName, {});
             if (plugin) {

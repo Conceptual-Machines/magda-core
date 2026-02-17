@@ -593,6 +593,66 @@ float CompressorProcessor::getParameterByIndex(int paramIndex) const {
 }
 
 // =============================================================================
+// ReverbProcessor
+// =============================================================================
+
+ReverbProcessor::ReverbProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
+    : DeviceProcessor(deviceId, std::move(plugin)) {}
+
+int ReverbProcessor::getParameterCount() const {
+    if (plugin_)
+        return plugin_->getAutomatableParameters().size();
+    return 0;
+}
+
+ParameterInfo ReverbProcessor::getParameterInfo(int index) const {
+    ParameterInfo info;
+    if (!plugin_)
+        return info;
+
+    auto params = plugin_->getAutomatableParameters();
+    if (index < 0 || index >= params.size())
+        return info;
+
+    auto* param = params[index];
+    info.name = param->getParameterName();
+    info.currentValue = param->getCurrentValue();
+    auto range = param->getValueRange();
+    info.minValue = range.getStart();
+    info.maxValue = range.getEnd();
+    info.defaultValue = param->getDefaultValue().value_or(range.getStart());
+    return info;
+}
+
+void ReverbProcessor::populateParameters(DeviceInfo& info) const {
+    info.parameters.clear();
+    int count = getParameterCount();
+    for (int i = 0; i < count; ++i) {
+        info.parameters.push_back(getParameterInfo(i));
+    }
+}
+
+void ReverbProcessor::setParameterByIndex(int paramIndex, float value) {
+    if (!plugin_)
+        return;
+
+    auto params = plugin_->getAutomatableParameters();
+    if (paramIndex >= 0 && paramIndex < params.size()) {
+        params[paramIndex]->setParameter(value, juce::sendNotificationSync);
+    }
+}
+
+float ReverbProcessor::getParameterByIndex(int paramIndex) const {
+    if (!plugin_)
+        return 0.0f;
+
+    auto params = plugin_->getAutomatableParameters();
+    if (paramIndex >= 0 && paramIndex < params.size())
+        return params[paramIndex]->getCurrentValue();
+    return 0.0f;
+}
+
+// =============================================================================
 // DrumGridProcessor
 // =============================================================================
 

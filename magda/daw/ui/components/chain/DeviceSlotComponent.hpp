@@ -8,6 +8,7 @@
 #include "FourOscUI.hpp"
 #include "NodeComponent.hpp"
 #include "ParamSlotComponent.hpp"
+#include "ReverbUI.hpp"
 #include "SamplerUI.hpp"
 #include "ToneGeneratorUI.hpp"
 #include "core/DeviceInfo.hpp"
@@ -173,6 +174,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<FourOscUI> fourOscUI_;
     std::unique_ptr<EqualiserUI> eqUI_;
     std::unique_ptr<CompressorUI> compressorUI_;
+    std::unique_ptr<ReverbUI> reverbUI_;
 
     void updatePageControls();
     void updateParamModulation();  // Update mod/macro pointers for params

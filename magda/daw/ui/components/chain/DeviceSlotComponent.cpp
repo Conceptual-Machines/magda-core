@@ -521,6 +521,9 @@ int DeviceSlotComponent::getPreferredWidth() const {
     if (compressorUI_) {
         return getTotalWidth(350);
     }
+    if (reverbUI_) {
+        return getTotalWidth(350);
+    }
     if (samplerUI_) {
         return getTotalWidth(BASE_SLOT_WIDTH * 2);
     }
@@ -588,13 +591,14 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
 
     // Create custom UI if this is an internal device and we don't have one yet
     if (isInternalDevice() && !toneGeneratorUI_ && !samplerUI_ && !drumGridUI_ && !fourOscUI_ &&
-        !eqUI_ && !compressorUI_) {
+        !eqUI_ && !compressorUI_ && !reverbUI_) {
         createCustomUI();
         setupCustomUILinking();
     }
 
     // Update custom UI if available
-    if (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_) {
+    if (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
+        reverbUI_) {
         updateCustomUI();
     }
 
@@ -761,6 +765,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             eqUI_->setVisible(false);
         if (compressorUI_)
             compressorUI_->setVisible(false);
+        if (reverbUI_)
+            reverbUI_->setVisible(false);
         return;
     }
 
@@ -777,8 +783,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
 
     // Check if this is an internal device with custom UI
-    if (isInternalDevice() &&
-        (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_)) {
+    if (isInternalDevice() && (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ ||
+                               eqUI_ || compressorUI_ || reverbUI_)) {
         // Show custom minimal UI
         if (toneGeneratorUI_) {
             toneGeneratorUI_->setBounds(contentArea.reduced(4));
@@ -810,6 +816,10 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             compressorUI_->setBounds(contentArea.reduced(4));
             compressorUI_->setVisible(true);
         }
+        if (reverbUI_) {
+            reverbUI_->setBounds(contentArea.reduced(4));
+            reverbUI_->setVisible(true);
+        }
 
         // Hide parameter grid and pagination
         for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
@@ -832,6 +842,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             eqUI_->setVisible(false);
         if (compressorUI_)
             compressorUI_->setVisible(false);
+        if (reverbUI_)
+            reverbUI_->setVisible(false);
 
         // Pagination area
         auto paginationArea = contentArea.removeFromTop(PAGINATION_HEIGHT);
@@ -1955,6 +1967,16 @@ void DeviceSlotComponent::createCustomUI() {
         };
         addAndMakeVisible(*compressorUI_);
         updateCustomUI();
+    } else if (device_.pluginId.containsIgnoreCase("reverb")) {
+        reverbUI_ = std::make_unique<ReverbUI>();
+        reverbUI_->onParameterChanged = [this](int paramIndex, float value) {
+            if (!nodePath_.isValid())
+                return;
+            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
+                                                                       value);
+        };
+        addAndMakeVisible(*reverbUI_);
+        updateCustomUI();
     }
 }
 
@@ -2119,6 +2141,10 @@ void DeviceSlotComponent::updateCustomUI() {
     if (compressorUI_ && device_.pluginId.containsIgnoreCase("compressor")) {
         compressorUI_->updateFromParameters(device_.parameters);
     }
+
+    if (reverbUI_ && device_.pluginId.containsIgnoreCase("reverb")) {
+        reverbUI_->updateFromParameters(device_.parameters);
+    }
 }
 
 // =============================================================================
@@ -2136,6 +2162,8 @@ void DeviceSlotComponent::setupCustomUILinking() {
         sliders = toneGeneratorUI_->getLinkableSliders();
     else if (compressorUI_)
         sliders = compressorUI_->getLinkableSliders();
+    else if (reverbUI_)
+        sliders = reverbUI_->getLinkableSliders();
     else if (samplerUI_)
         sliders = samplerUI_->getLinkableSliders();
 
