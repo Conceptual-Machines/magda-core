@@ -171,6 +171,11 @@ class WaveformGridComponent : public juce::Component {
     std::function<void(int index, double newWarpTime)> onWarpMarkerMove;
     std::function<void(int index)> onWarpMarkerRemove;
 
+    // Transient editing callbacks
+    std::function<void(double sourceTime)> onTransientAdd;
+    std::function<void(int index, double newTime)> onTransientMove;
+    std::function<void(int index)> onTransientRemove;
+
     // Zoom drag callback (deltaY from start, anchorX in viewport coords)
     std::function<void(int deltaY, int anchorX)> onZoomDrag;
 
@@ -205,6 +210,7 @@ class WaveformGridComponent : public juce::Component {
         StretchLeft,
         StretchRight,
         MoveWarpMarker,
+        MoveTransient,
         Zoom
     };
     DragMode dragMode_ = DragMode::None;
@@ -224,6 +230,8 @@ class WaveformGridComponent : public juce::Component {
 
     // Transient markers (source file seconds)
     juce::Array<double> transientTimes_;
+    int draggingTransientIndex_ = -1;
+    double dragStartTransientTime_ = 0.0;
 
     // Warp mode state
     bool warpMode_ = false;
@@ -276,6 +284,9 @@ class WaveformGridComponent : public juce::Component {
     int findMarkerAtPixel(int x) const;
     double snapToNearestTransient(double time) const;
     static constexpr int WARP_MARKER_HIT_DISTANCE = 5;
+
+    // Transient marker helpers
+    int findTransientAtPixel(int x) const;
 
     // Display start time (0.0 in relative mode, clipStartTime_ in absolute)
     double getDisplayStartTime() const {

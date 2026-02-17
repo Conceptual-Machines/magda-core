@@ -936,17 +936,48 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
     }
 
     // Non-warp mode: standard trim/stretch interaction
+    bool altHeld = event.mods.isAltDown();
+
     if (isNearLeftEdge(x, *clip)) {
         dragMode_ = shiftHeld ? DragMode::StretchLeft : DragMode::ResizeLeft;
     } else if (isNearRightEdge(x, *clip)) {
         dragMode_ = shiftHeld ? DragMode::StretchRight : DragMode::ResizeRight;
     } else if (isInsideWaveform(x, *clip)) {
-        // Inside waveform but not near edges — zoom drag
-        dragMode_ = DragMode::Zoom;
-        zoomDragStartY_ = event.y;
-        zoomDragAnchorX_ = x - scrollOffsetX_;  // viewport-relative
-        if (onZoomDrag)
-            onZoomDrag(0, zoomDragAnchorX_);  // Signal drag start
+        // Shift+click = zoom drag (preserves existing behavior)
+        if (shiftHeld) {
+            dragMode_ = DragMode::Zoom;
+            zoomDragStartY_ = event.y;
+            zoomDragAnchorX_ = x - scrollOffsetX_;
+            if (onZoomDrag)
+                onZoomDrag(0, zoomDragAnchorX_);
+            return;
+        }
+
+        // Option+click near transient = start moving it
+        if (altHeld) {
+            int transientIndex = findTransientAtPixel(x);
+            if (transientIndex >= 0) {
+                dragMode_ = DragMode::MoveTransient;
+                draggingTransientIndex_ = transientIndex;
+                dragStartTransientTime_ = transientTimes_[transientIndex];
+                dragStartX_ = x;
+                return;
+            }
+            // Alt held but not near a transient — fall through to do nothing
+            dragMode_ = DragMode::None;
+            return;
+        }
+
+        // Plain click = add transient at click position
+        {
+            double clickTime = pixelToTime(x);
+            double fileRelativeTime = clickTime - getDisplayStartTime();
+            double sourceTime = displayInfo_.timelineToSource(fileRelativeTime);
+            if (sourceTime < 0.0)
+                sourceTime = 0.0;
+            if (onTransientAdd)
+                onTransientAdd(sourceTime);
+        }
         return;
     } else {
         dragMode_ = DragMode::None;
@@ -1021,6 +1052,20 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
 
         if (draggingMarkerIndex_ >= 0 && onWarpMarkerMove) {
             onWarpMarkerMove(draggingMarkerIndex_, newWarpTime);
+        }
+        return;
+    }
+
+    // Transient marker drag
+    if (dragMode_ == DragMode::MoveTransient) {
+        double timeDelta = (event.x - dragStartX_) / horizontalZoom_;
+        // Convert timeline delta to source delta
+        double sourceDelta = displayInfo_.timelineToSource(timeDelta);
+        double newTime = dragStartTransientTime_ + sourceDelta;
+        if (newTime < 0.0)
+            newTime = 0.0;
+        if (draggingTransientIndex_ >= 0 && onTransientMove) {
+            onTransientMove(draggingTransientIndex_, newTime);
         }
         return;
     }
@@ -1134,6 +1179,12 @@ void WaveformGridComponent::mouseUp(const juce::MouseEvent& /*event*/) {
         return;
     }
 
+    if (dragMode_ == DragMode::MoveTransient) {
+        draggingTransientIndex_ = -1;
+        dragMode_ = DragMode::None;
+        return;
+    }
+
     if (dragMode_ != DragMode::None && editingClipId_ != magda::INVALID_CLIP_ID) {
         // Clear drag mode BEFORE notifying so that updateClipPosition() can
         // update the cached values with the final clip state.
@@ -1185,7 +1236,13 @@ void WaveformGridComponent::mouseMove(const juce::MouseEvent& event) {
             setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
         }
     } else if (isInsideWaveform(x, *clip)) {
-        setMouseCursor(magda::CursorManager::getInstance().getZoomCursor());
+        if (event.mods.isShiftDown()) {
+            setMouseCursor(magda::CursorManager::getInstance().getZoomCursor());
+        } else if (event.mods.isAltDown() && findTransientAtPixel(x) >= 0) {
+            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+        } else {
+            setMouseCursor(juce::MouseCursor::CrosshairCursor);
+        }
     } else {
         setMouseCursor(juce::MouseCursor::NormalCursor);
     }
@@ -1326,6 +1383,22 @@ double WaveformGridComponent::snapToNearestTransient(double time) const {
     return closest;
 }
 
+int WaveformGridComponent::findTransientAtPixel(int x) const {
+    if (transientTimes_.isEmpty())
+        return -1;
+
+    double displayStartTime = getDisplayStartTime();
+
+    for (int i = 0; i < transientTimes_.size(); ++i) {
+        double sourceTime = transientTimes_[i];
+        double displayTime = displayInfo_.sourceToTimeline(sourceTime) + displayStartTime;
+        int px = timeToPixel(displayTime);
+        if (std::abs(x - px) <= WARP_MARKER_HIT_DISTANCE)
+            return i;
+    }
+    return -1;
+}
+
 void WaveformGridComponent::showContextMenu(const juce::MouseEvent& event) {
     juce::PopupMenu menu;
 
@@ -1371,12 +1444,20 @@ void WaveformGridComponent::showContextMenu(const juce::MouseEvent& event) {
 }
 
 void WaveformGridComponent::mouseDoubleClick(const juce::MouseEvent& event) {
-    if (!warpMode_ || editingClipId_ == magda::INVALID_CLIP_ID)
+    if (editingClipId_ == magda::INVALID_CLIP_ID)
         return;
 
-    int markerIndex = findMarkerAtPixel(event.x);
-    if (markerIndex >= 0 && onWarpMarkerRemove) {
-        onWarpMarkerRemove(markerIndex);
+    if (warpMode_) {
+        int markerIndex = findMarkerAtPixel(event.x);
+        if (markerIndex >= 0 && onWarpMarkerRemove) {
+            onWarpMarkerRemove(markerIndex);
+        }
+    } else {
+        // Non-warp mode: double-click on transient to remove it
+        int transientIndex = findTransientAtPixel(event.x);
+        if (transientIndex >= 0 && onTransientRemove) {
+            onTransientRemove(transientIndex);
+        }
     }
 }
 

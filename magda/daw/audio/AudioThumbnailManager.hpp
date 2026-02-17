@@ -55,6 +55,13 @@ class AudioThumbnailManager {
     const juce::Array<double>* getCachedTransients(const juce::String& filePath) const;
 
     /**
+     * @brief Get mutable access to cached transient times for editing
+     * @param filePath Absolute path to the audio file
+     * @return Mutable pointer to cached transient array, or nullptr if not cached
+     */
+    juce::Array<double>* getMutableCachedTransients(const juce::String& filePath);
+
+    /**
      * @brief Cache detected transient times for an audio file
      * @param filePath Absolute path to the audio file
      * @param times Array of transient times in source-file seconds
