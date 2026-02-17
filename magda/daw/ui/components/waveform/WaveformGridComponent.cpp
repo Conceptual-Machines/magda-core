@@ -120,7 +120,7 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
     auto* thumbnail = thumbnailManager.getThumbnail(clip.audioFilePath);
     double fileDuration = thumbnail ? thumbnail->getTotalLength() : 0.0;
     auto waveColour = clip.colour.brighter(0.2f);
-    float gainLinear = juce::Decibels::decibelsToGain(clip.volumeDB);
+    float gainLinear = juce::Decibels::decibelsToGain(clip.volumeDB + clip.gainDB);
     auto vertZoom = static_cast<float>(verticalZoom_) * gainLinear;
 
     g.saveState();

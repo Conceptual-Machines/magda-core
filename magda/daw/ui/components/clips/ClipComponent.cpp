@@ -204,7 +204,7 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
             }
 
             auto waveColour = clip.colour.brighter(0.2f);
-            float gainLinear = juce::Decibels::decibelsToGain(clip.volumeDB);
+            float gainLinear = juce::Decibels::decibelsToGain(clip.volumeDB + clip.gainDB);
 
             // Get actual file duration
             double fileDuration = 0.0;
