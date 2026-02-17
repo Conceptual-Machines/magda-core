@@ -639,7 +639,7 @@ void ClipInspector::initMixSection() {
     clipPropsContainer_.addChildComponent(clipMixSectionLabel_);
 
     clipVolumeValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
-    clipVolumeValue_->setRange(-60.0, 0.0, 0.0);
+    clipVolumeValue_->setRange(-100.0, 0.0, 0.0);
     clipVolumeValue_->onValueChange = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID)
             magda::ClipManager::getInstance().setClipVolumeDB(

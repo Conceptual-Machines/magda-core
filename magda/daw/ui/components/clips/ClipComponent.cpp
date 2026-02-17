@@ -126,7 +126,7 @@ void ClipComponent::paint(juce::Graphics& g) {
         paintFadeHandles(g, *clip, getLocalBounds());
     }
 
-    // Draw gain line (audio clips with non-zero gain, or when hovering/dragging)
+    // Draw volume line (audio clips with non-zero volume, or when hovering/dragging)
     if (clip->type == ClipType::Audio && (std::abs(clip->volumeDB) > 0.01f || hoverVolumeHandle_ ||
                                           dragMode_ == DragMode::VolumeDrag)) {
         auto wfArea = bounds.reduced(2, HEADER_HEIGHT + 2);
@@ -951,7 +951,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Gain handle (top edge of waveform area, audio clips only)
+    // Volume handle (top edge of waveform area, audio clips only)
     if (isSelected_ && isOnVolumeHandle(e.x, e.y)) {
         dragMode_ = DragMode::VolumeDrag;
         dragStartVolumeDB_ = clip->volumeDB;
@@ -1635,7 +1635,7 @@ void ClipComponent::mouseMove(const juce::MouseEvent& e) {
     bool wasHoverRight = hoverRightEdge_;
     bool wasHoverFadeIn = hoverFadeIn_;
     bool wasHoverFadeOut = hoverFadeOut_;
-    bool wasHoverGain = hoverVolumeHandle_;
+    bool wasHoverVolume = hoverVolumeHandle_;
 
     hoverLeftEdge_ = isOnLeftEdge(e.x);
     hoverRightEdge_ = isOnRightEdge(e.x);
@@ -1644,7 +1644,7 @@ void ClipComponent::mouseMove(const juce::MouseEvent& e) {
     if (isSelected_) {
         hoverFadeIn_ = isOnFadeInHandle(e.x, e.y);
         hoverFadeOut_ = isOnFadeOutHandle(e.x, e.y);
-        // Gain handle: only when not on fade handles or edges
+        // Volume handle: only when not on fade handles or edges
         hoverVolumeHandle_ = !hoverFadeIn_ && !hoverFadeOut_ && !hoverLeftEdge_ &&
                              !hoverRightEdge_ && isOnVolumeHandle(e.x, e.y);
     } else {
@@ -1658,7 +1658,7 @@ void ClipComponent::mouseMove(const juce::MouseEvent& e) {
 
     if (hoverLeftEdge_ != wasHoverLeft || hoverRightEdge_ != wasHoverRight ||
         hoverFadeIn_ != wasHoverFadeIn || hoverFadeOut_ != wasHoverFadeOut ||
-        hoverVolumeHandle_ != wasHoverGain) {
+        hoverVolumeHandle_ != wasHoverVolume) {
         repaint();
     }
 }
@@ -1814,8 +1814,12 @@ bool ClipComponent::isOnVolumeHandle(int x, int y) const {
     if (waveformArea.getWidth() <= 0 || waveformArea.getHeight() <= 0)
         return false;
 
-    // Top 6px of waveform area, full clip width
-    return y >= waveformArea.getY() && y <= waveformArea.getY() + 6;
+    // Hit test near the actual volume line position (±6px tolerance)
+    float volumeLinear = juce::Decibels::decibelsToGain(clip->volumeDB);
+    volumeLinear = juce::jlimit(0.0f, 1.0f, volumeLinear);
+    float lineY = static_cast<float>(waveformArea.getY()) +
+                  ((1.0f - volumeLinear) * static_cast<float>(waveformArea.getHeight()));
+    return std::abs(static_cast<float>(y) - lineY) <= 6.0f;
 }
 
 void ClipComponent::updateCursor(bool isAltDown, bool isShiftDown) {
