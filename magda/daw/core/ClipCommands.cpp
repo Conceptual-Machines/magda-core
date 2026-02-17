@@ -175,6 +175,7 @@ void MoveClipCommand::undo() {
     }
 
     clipManager.forceNotifyClipsChanged();
+    executed_ = false;
 }
 
 bool MoveClipCommand::canMergeWith(const UndoableCommand* other) const {
@@ -232,6 +233,7 @@ void MoveClipToTrackCommand::undo() {
     }
 
     clipManager.forceNotifyClipsChanged();
+    executed_ = false;
 }
 
 // ============================================================================
@@ -352,6 +354,7 @@ void CreateClipCommand::undo() {
 
     createdClipId_ = INVALID_CLIP_ID;
     clipManager.forceNotifyClipsChanged();
+    executed_ = false;
 }
 
 // ============================================================================
@@ -406,6 +409,7 @@ void DuplicateClipCommand::undo() {
 
     duplicatedClipId_ = INVALID_CLIP_ID;
     clipManager.forceNotifyClipsChanged();
+    executed_ = false;
 }
 
 // ============================================================================
@@ -450,6 +454,7 @@ void PasteClipCommand::undo() {
 
     pastedClipIds_.clear();
     clipManager.forceNotifyClipsChanged();
+    executed_ = false;
 }
 
 // ============================================================================
