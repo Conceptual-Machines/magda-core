@@ -69,6 +69,10 @@ class EqualiserUI : public juce::Component, public juce::Timer {
     BandControls bands_[4];
     CurveDisplay curveDisplay_;
 
+    // Phase invert toggle (virtual param index 12)
+    juce::Label phaseInvertLabel_;
+    LinkableTextSlider phaseInvertSlider_;
+
     // Band colours for dots on curve
     static constexpr int kNumBands = 4;
     static constexpr int kBandParamCount = 3;  // freq, gain, Q per band

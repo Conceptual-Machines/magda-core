@@ -35,6 +35,20 @@ EqualiserUI::EqualiserUI() : curveDisplay_(*this) {
     for (int i = 0; i < kNumBands; ++i)
         setupBandControls(i, bandNames[i]);
 
+    // Phase invert toggle (virtual param index 12, after 4 bands x 3 params)
+    setupLabelStatic(phaseInvertLabel_, "PHASE", this);
+    addAndMakeVisible(phaseInvertSlider_);
+    phaseInvertSlider_.setRange(0.0, 1.0, 1.0);
+    phaseInvertSlider_.setValueFormatter(
+        [](double value) -> juce::String { return value >= 0.5 ? "INV" : "NRM"; });
+    phaseInvertSlider_.setValueParser([](const juce::String& text) -> double {
+        return text.trim().toLowerCase() == "inv" ? 1.0 : 0.0;
+    });
+    phaseInvertSlider_.onValueChanged = [this](double value) {
+        if (onParameterChanged)
+            onParameterChanged(12, static_cast<float>(value));
+    };
+
     // Repaint curve at ~15 Hz
     startTimerHz(15);
 }
@@ -115,6 +129,9 @@ void EqualiserUI::updateFromParameters(const std::vector<magda::ParameterInfo>& 
             bandGains_[i] = gain;
         }
     }
+    // Phase invert is at index 12 (after 4 bands x 3 params)
+    if (params.size() > 12)
+        phaseInvertSlider_.setValue(params[12].currentValue, juce::dontSendNotification);
 }
 
 void EqualiserUI::paint(juce::Graphics& g) {
@@ -133,8 +150,8 @@ void EqualiserUI::resized() {
 
     area.removeFromTop(4);  // spacing
 
-    // Bottom: 4 columns of band controls
-    int colWidth = area.getWidth() / kNumBands;
+    // Bottom: 4 band columns + phase invert column
+    int colWidth = area.getWidth() / (kNumBands + 1);
     int rowHeight = 16;
 
     for (int i = 0; i < kNumBands; ++i) {
@@ -148,6 +165,12 @@ void EqualiserUI::resized() {
         bands_[i].qLabel.setBounds(col.removeFromTop(rowHeight - 4));
         bands_[i].qSlider.setBounds(col.removeFromTop(rowHeight));
     }
+
+    // Phase invert column
+    auto phaseCol = area.removeFromLeft(colWidth).reduced(2, 0);
+    phaseCol.removeFromTop(rowHeight);  // Skip name row to align with controls
+    phaseInvertLabel_.setBounds(phaseCol.removeFromTop(rowHeight - 4));
+    phaseInvertSlider_.setBounds(phaseCol.removeFromTop(rowHeight));
 }
 
 void EqualiserUI::timerCallback() {
@@ -162,6 +185,8 @@ std::vector<LinkableTextSlider*> EqualiserUI::getLinkableSliders() {
         sliders.push_back(&bands_[i].gainSlider);
         sliders.push_back(&bands_[i].qSlider);
     }
+    // Phase invert at index 12
+    sliders.push_back(&phaseInvertSlider_);
     return sliders;
 }
 

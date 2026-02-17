@@ -105,6 +105,19 @@ CompressorUI::CompressorUI() {
         if (onParameterChanged)
             onParameterChanged(5, static_cast<float>(value));
     };
+
+    // Sidechain Trigger: ON/OFF toggle (virtual param index 6)
+    setupSlider(scTrigger_, "SC TRIG");
+    scTrigger_.slider.setRange(0.0, 1.0, 1.0);
+    scTrigger_.slider.setValueFormatter(
+        [](double value) -> juce::String { return value >= 0.5 ? "ON" : "OFF"; });
+    scTrigger_.slider.setValueParser([](const juce::String& text) -> double {
+        return text.trim().toLowerCase() == "on" ? 1.0 : 0.0;
+    });
+    scTrigger_.slider.onValueChanged = [this](double value) {
+        if (onParameterChanged)
+            onParameterChanged(6, static_cast<float>(value));
+    };
 }
 
 void CompressorUI::setupSlider(SliderWithLabel& s, const juce::String& labelText) {
@@ -125,6 +138,8 @@ void CompressorUI::updateFromParameters(const std::vector<magda::ParameterInfo>&
         output_.slider.setValue(params[4].currentValue, juce::dontSendNotification);
     if (params.size() > 5)
         sidechain_.slider.setValue(params[5].currentValue, juce::dontSendNotification);
+    if (params.size() > 6)
+        scTrigger_.slider.setValue(params[6].currentValue, juce::dontSendNotification);
 }
 
 void CompressorUI::paint(juce::Graphics& g) {
@@ -137,7 +152,7 @@ void CompressorUI::paint(juce::Graphics& g) {
 void CompressorUI::resized() {
     auto area = getLocalBounds().reduced(6);
     int colWidth = area.getWidth() / 3;
-    int rowHeight = (area.getHeight() - 4) / 2;  // 4px gap between rows
+    int rowHeight = (area.getHeight() - 8) / 3;  // 4px gap between rows
     int labelHeight = 14;
     int sliderHeight = 18;
 
@@ -153,17 +168,24 @@ void CompressorUI::resized() {
 
     area.removeFromTop(4);
 
-    auto bottomRow = area.removeFromTop(rowHeight);
+    auto midRow = area.removeFromTop(rowHeight);
     for (auto* s : row2) {
-        auto col = bottomRow.removeFromLeft(colWidth).reduced(2, 0);
+        auto col = midRow.removeFromLeft(colWidth).reduced(2, 0);
         s->label.setBounds(col.removeFromTop(labelHeight));
         s->slider.setBounds(col.removeFromTop(sliderHeight));
     }
+
+    area.removeFromTop(4);
+
+    auto bottomRow = area.removeFromTop(rowHeight);
+    auto col = bottomRow.removeFromLeft(colWidth).reduced(2, 0);
+    scTrigger_.label.setBounds(col.removeFromTop(labelHeight));
+    scTrigger_.slider.setBounds(col.removeFromTop(sliderHeight));
 }
 
 std::vector<LinkableTextSlider*> CompressorUI::getLinkableSliders() {
-    return {&threshold_.slider, &ratio_.slider,  &attack_.slider,
-            &release_.slider,   &output_.slider, &sidechain_.slider};
+    return {&threshold_.slider, &ratio_.slider,     &attack_.slider,   &release_.slider,
+            &output_.slider,    &sidechain_.slider, &scTrigger_.slider};
 }
 
 }  // namespace magda::daw::ui

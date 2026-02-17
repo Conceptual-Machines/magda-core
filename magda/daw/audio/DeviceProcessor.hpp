@@ -298,6 +298,30 @@ class ReverbProcessor : public DeviceProcessor {
     float getParameterByIndex(int paramIndex) const;
 };
 
+class ChorusProcessor : public DeviceProcessor {
+  public:
+    ChorusProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    int getParameterCount() const override;
+    ParameterInfo getParameterInfo(int index) const override;
+    void populateParameters(DeviceInfo& info) const override;
+
+    void setParameterByIndex(int paramIndex, float value);
+    float getParameterByIndex(int paramIndex) const;
+};
+
+class PhaserProcessor : public DeviceProcessor {
+  public:
+    PhaserProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    int getParameterCount() const override;
+    ParameterInfo getParameterInfo(int index) const override;
+    void populateParameters(DeviceInfo& info) const override;
+
+    void setParameterByIndex(int paramIndex, float value);
+    float getParameterByIndex(int paramIndex) const;
+};
+
 /**
  * @brief Processor for the built-in Drum Grid device
  *

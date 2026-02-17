@@ -8,16 +8,17 @@
 namespace magda::daw::ui {
 
 /**
- * @brief Custom UI for the Tracktion Engine Compressor
+ * @brief Custom UI for the Tracktion Engine Phaser
  *
- * 2 rows x 3 columns layout:
- *   Row 1: Threshold, Ratio, Attack
- *   Row 2: Release, Output, Sidechain
+ * 1 row x 3 columns layout:
+ *   Depth, Rate, Feedback
+ *
+ * All parameters are non-automatable CachedValues exposed as virtual params.
  */
-class CompressorUI : public juce::Component {
+class PhaserUI : public juce::Component {
   public:
-    CompressorUI();
-    ~CompressorUI() override = default;
+    PhaserUI();
+    ~PhaserUI() override = default;
 
     void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
 
@@ -37,17 +38,13 @@ class CompressorUI : public juce::Component {
             : slider(fmt) {}
     };
 
-    SliderWithLabel threshold_;
-    SliderWithLabel ratio_;
-    SliderWithLabel attack_;
-    SliderWithLabel release_;
-    SliderWithLabel output_{TextSlider::Format::Decibels};
-    SliderWithLabel sidechain_{TextSlider::Format::Decibels};
-    SliderWithLabel scTrigger_;
+    SliderWithLabel depth_;
+    SliderWithLabel rate_;
+    SliderWithLabel feedback_;
 
     void setupSlider(SliderWithLabel& s, const juce::String& labelText);
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CompressorUI)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PhaserUI)
 };
 
 }  // namespace magda::daw::ui

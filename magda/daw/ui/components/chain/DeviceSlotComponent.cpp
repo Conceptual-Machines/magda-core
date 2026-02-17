@@ -527,6 +527,12 @@ int DeviceSlotComponent::getPreferredWidth() const {
     if (delayUI_) {
         return getTotalWidth(300);
     }
+    if (chorusUI_) {
+        return getTotalWidth(350);
+    }
+    if (phaserUI_) {
+        return getTotalWidth(300);
+    }
     if (samplerUI_) {
         return getTotalWidth(BASE_SLOT_WIDTH * 2);
     }
@@ -594,14 +600,14 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
 
     // Create custom UI if this is an internal device and we don't have one yet
     if (isInternalDevice() && !toneGeneratorUI_ && !samplerUI_ && !drumGridUI_ && !fourOscUI_ &&
-        !eqUI_ && !compressorUI_ && !reverbUI_ && !delayUI_) {
+        !eqUI_ && !compressorUI_ && !reverbUI_ && !delayUI_ && !chorusUI_ && !phaserUI_) {
         createCustomUI();
         setupCustomUILinking();
     }
 
     // Update custom UI if available
     if (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
-        reverbUI_ || delayUI_) {
+        reverbUI_ || delayUI_ || chorusUI_ || phaserUI_) {
         updateCustomUI();
     }
 
@@ -772,6 +778,10 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             reverbUI_->setVisible(false);
         if (delayUI_)
             delayUI_->setVisible(false);
+        if (chorusUI_)
+            chorusUI_->setVisible(false);
+        if (phaserUI_)
+            phaserUI_->setVisible(false);
         return;
     }
 
@@ -788,8 +798,9 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
 
     // Check if this is an internal device with custom UI
-    if (isInternalDevice() && (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ ||
-                               eqUI_ || compressorUI_ || reverbUI_ || delayUI_)) {
+    if (isInternalDevice() &&
+        (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
+         reverbUI_ || delayUI_ || chorusUI_ || phaserUI_)) {
         // Show custom minimal UI
         if (toneGeneratorUI_) {
             toneGeneratorUI_->setBounds(contentArea.reduced(4));
@@ -829,6 +840,14 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             delayUI_->setBounds(contentArea.reduced(4));
             delayUI_->setVisible(true);
         }
+        if (chorusUI_) {
+            chorusUI_->setBounds(contentArea.reduced(4));
+            chorusUI_->setVisible(true);
+        }
+        if (phaserUI_) {
+            phaserUI_->setBounds(contentArea.reduced(4));
+            phaserUI_->setVisible(true);
+        }
 
         // Hide parameter grid and pagination
         for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
@@ -855,6 +874,10 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             reverbUI_->setVisible(false);
         if (delayUI_)
             delayUI_->setVisible(false);
+        if (chorusUI_)
+            chorusUI_->setVisible(false);
+        if (phaserUI_)
+            phaserUI_->setVisible(false);
 
         // Pagination area
         auto paginationArea = contentArea.removeFromTop(PAGINATION_HEIGHT);
@@ -1998,6 +2021,26 @@ void DeviceSlotComponent::createCustomUI() {
         };
         addAndMakeVisible(*delayUI_);
         updateCustomUI();
+    } else if (device_.pluginId.containsIgnoreCase("chorus")) {
+        chorusUI_ = std::make_unique<ChorusUI>();
+        chorusUI_->onParameterChanged = [this](int paramIndex, float value) {
+            if (!nodePath_.isValid())
+                return;
+            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
+                                                                       value);
+        };
+        addAndMakeVisible(*chorusUI_);
+        updateCustomUI();
+    } else if (device_.pluginId.containsIgnoreCase("phaser")) {
+        phaserUI_ = std::make_unique<PhaserUI>();
+        phaserUI_->onParameterChanged = [this](int paramIndex, float value) {
+            if (!nodePath_.isValid())
+                return;
+            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
+                                                                       value);
+        };
+        addAndMakeVisible(*phaserUI_);
+        updateCustomUI();
     }
 }
 
@@ -2170,6 +2213,14 @@ void DeviceSlotComponent::updateCustomUI() {
     if (delayUI_ && device_.pluginId.containsIgnoreCase("delay")) {
         delayUI_->updateFromParameters(device_.parameters);
     }
+
+    if (chorusUI_ && device_.pluginId.containsIgnoreCase("chorus")) {
+        chorusUI_->updateFromParameters(device_.parameters);
+    }
+
+    if (phaserUI_ && device_.pluginId.containsIgnoreCase("phaser")) {
+        phaserUI_->updateFromParameters(device_.parameters);
+    }
 }
 
 // =============================================================================
@@ -2191,6 +2242,10 @@ void DeviceSlotComponent::setupCustomUILinking() {
         sliders = reverbUI_->getLinkableSliders();
     else if (delayUI_)
         sliders = delayUI_->getLinkableSliders();
+    else if (chorusUI_)
+        sliders = chorusUI_->getLinkableSliders();
+    else if (phaserUI_)
+        sliders = phaserUI_->getLinkableSliders();
     else if (samplerUI_)
         sliders = samplerUI_->getLinkableSliders();
 

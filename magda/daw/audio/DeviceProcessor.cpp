@@ -481,7 +481,7 @@ EqualiserProcessor::EqualiserProcessor(DeviceId deviceId, te::Plugin::Ptr plugin
 
 int EqualiserProcessor::getParameterCount() const {
     if (plugin_)
-        return plugin_->getAutomatableParameters().size();
+        return static_cast<int>(plugin_->getAutomatableParameters().size()) + 1;
     return 0;
 }
 
@@ -491,16 +491,26 @@ ParameterInfo EqualiserProcessor::getParameterInfo(int index) const {
         return info;
 
     auto params = plugin_->getAutomatableParameters();
-    if (index < 0 || index >= params.size())
-        return info;
+    int autoCount = static_cast<int>(params.size());
 
-    auto* param = params[index];
-    info.name = param->getParameterName();
-    info.currentValue = param->getCurrentValue();
-    auto range = param->getValueRange();
-    info.minValue = range.getStart();
-    info.maxValue = range.getEnd();
-    info.defaultValue = param->getDefaultValue().value_or(range.getStart());
+    if (index >= 0 && index < autoCount) {
+        auto* param = params[index];
+        info.name = param->getParameterName();
+        info.currentValue = param->getCurrentValue();
+        auto range = param->getValueRange();
+        info.minValue = range.getStart();
+        info.maxValue = range.getEnd();
+        info.defaultValue = param->getDefaultValue().value_or(range.getStart());
+    } else if (index == autoCount) {
+        info.name = "Phase Invert";
+        info.minValue = 0.0f;
+        info.maxValue = 1.0f;
+        info.defaultValue = 0.0f;
+        if (auto* eq = dynamic_cast<te::EqualiserPlugin*>(plugin_.get()))
+            info.currentValue = eq->phaseInvert.get() ? 1.0f : 0.0f;
+        else
+            info.currentValue = 0.0f;
+    }
     return info;
 }
 
@@ -517,8 +527,13 @@ void EqualiserProcessor::setParameterByIndex(int paramIndex, float value) {
         return;
 
     auto params = plugin_->getAutomatableParameters();
-    if (paramIndex >= 0 && paramIndex < params.size()) {
+    int autoCount = static_cast<int>(params.size());
+
+    if (paramIndex >= 0 && paramIndex < autoCount) {
         params[paramIndex]->setParameter(value, juce::sendNotificationSync);
+    } else if (paramIndex == autoCount) {
+        if (auto* eq = dynamic_cast<te::EqualiserPlugin*>(plugin_.get()))
+            eq->phaseInvert = value >= 0.5f;
     }
 }
 
@@ -527,8 +542,14 @@ float EqualiserProcessor::getParameterByIndex(int paramIndex) const {
         return 0.0f;
 
     auto params = plugin_->getAutomatableParameters();
-    if (paramIndex >= 0 && paramIndex < params.size())
+    int autoCount = static_cast<int>(params.size());
+
+    if (paramIndex >= 0 && paramIndex < autoCount)
         return params[paramIndex]->getCurrentValue();
+    if (paramIndex == autoCount) {
+        if (auto* eq = dynamic_cast<te::EqualiserPlugin*>(plugin_.get()))
+            return eq->phaseInvert.get() ? 1.0f : 0.0f;
+    }
     return 0.0f;
 }
 
@@ -541,7 +562,7 @@ CompressorProcessor::CompressorProcessor(DeviceId deviceId, te::Plugin::Ptr plug
 
 int CompressorProcessor::getParameterCount() const {
     if (plugin_)
-        return plugin_->getAutomatableParameters().size();
+        return static_cast<int>(plugin_->getAutomatableParameters().size()) + 1;
     return 0;
 }
 
@@ -551,16 +572,26 @@ ParameterInfo CompressorProcessor::getParameterInfo(int index) const {
         return info;
 
     auto params = plugin_->getAutomatableParameters();
-    if (index < 0 || index >= params.size())
-        return info;
+    int autoCount = static_cast<int>(params.size());
 
-    auto* param = params[index];
-    info.name = param->getParameterName();
-    info.currentValue = param->getCurrentValue();
-    auto range = param->getValueRange();
-    info.minValue = range.getStart();
-    info.maxValue = range.getEnd();
-    info.defaultValue = param->getDefaultValue().value_or(range.getStart());
+    if (index >= 0 && index < autoCount) {
+        auto* param = params[index];
+        info.name = param->getParameterName();
+        info.currentValue = param->getCurrentValue();
+        auto range = param->getValueRange();
+        info.minValue = range.getStart();
+        info.maxValue = range.getEnd();
+        info.defaultValue = param->getDefaultValue().value_or(range.getStart());
+    } else if (index == autoCount) {
+        info.name = "Sidechain Trigger";
+        info.minValue = 0.0f;
+        info.maxValue = 1.0f;
+        info.defaultValue = 0.0f;
+        if (auto* comp = dynamic_cast<te::CompressorPlugin*>(plugin_.get()))
+            info.currentValue = comp->useSidechainTrigger.get() ? 1.0f : 0.0f;
+        else
+            info.currentValue = 0.0f;
+    }
     return info;
 }
 
@@ -577,8 +608,13 @@ void CompressorProcessor::setParameterByIndex(int paramIndex, float value) {
         return;
 
     auto params = plugin_->getAutomatableParameters();
-    if (paramIndex >= 0 && paramIndex < params.size()) {
+    int autoCount = static_cast<int>(params.size());
+
+    if (paramIndex >= 0 && paramIndex < autoCount) {
         params[paramIndex]->setParameter(value, juce::sendNotificationSync);
+    } else if (paramIndex == autoCount) {
+        if (auto* comp = dynamic_cast<te::CompressorPlugin*>(plugin_.get()))
+            comp->useSidechainTrigger = value >= 0.5f;
     }
 }
 
@@ -587,8 +623,14 @@ float CompressorProcessor::getParameterByIndex(int paramIndex) const {
         return 0.0f;
 
     auto params = plugin_->getAutomatableParameters();
-    if (paramIndex >= 0 && paramIndex < params.size())
+    int autoCount = static_cast<int>(params.size());
+
+    if (paramIndex >= 0 && paramIndex < autoCount)
         return params[paramIndex]->getCurrentValue();
+    if (paramIndex == autoCount) {
+        if (auto* comp = dynamic_cast<te::CompressorPlugin*>(plugin_.get()))
+            return comp->useSidechainTrigger.get() ? 1.0f : 0.0f;
+    }
     return 0.0f;
 }
 
@@ -735,6 +777,192 @@ float ReverbProcessor::getParameterByIndex(int paramIndex) const {
     if (paramIndex >= 0 && paramIndex < params.size())
         return params[paramIndex]->getCurrentValue();
     return 0.0f;
+}
+
+// =============================================================================
+// ChorusProcessor
+// =============================================================================
+
+ChorusProcessor::ChorusProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
+    : DeviceProcessor(deviceId, std::move(plugin)) {}
+
+int ChorusProcessor::getParameterCount() const {
+    return 4;  // All virtual: depthMs, speedHz, width, mixProportion
+}
+
+ParameterInfo ChorusProcessor::getParameterInfo(int index) const {
+    ParameterInfo info;
+    auto* chorus = plugin_ ? dynamic_cast<te::ChorusPlugin*>(plugin_.get()) : nullptr;
+
+    switch (index) {
+        case 0:
+            info.name = "Depth";
+            info.unit = "ms";
+            info.minValue = 0.1f;
+            info.maxValue = 20.0f;
+            info.defaultValue = 3.0f;
+            info.currentValue = chorus ? chorus->depthMs.get() : 3.0f;
+            break;
+        case 1:
+            info.name = "Speed";
+            info.unit = "Hz";
+            info.minValue = 0.1f;
+            info.maxValue = 10.0f;
+            info.defaultValue = 1.0f;
+            info.currentValue = chorus ? chorus->speedHz.get() : 1.0f;
+            break;
+        case 2:
+            info.name = "Width";
+            info.minValue = 0.0f;
+            info.maxValue = 1.0f;
+            info.defaultValue = 0.5f;
+            info.currentValue = chorus ? chorus->width.get() : 0.5f;
+            break;
+        case 3:
+            info.name = "Mix";
+            info.minValue = 0.0f;
+            info.maxValue = 1.0f;
+            info.defaultValue = 0.5f;
+            info.currentValue = chorus ? chorus->mixProportion.get() : 0.5f;
+            break;
+        default:
+            break;
+    }
+    return info;
+}
+
+void ChorusProcessor::populateParameters(DeviceInfo& info) const {
+    info.parameters.clear();
+    for (int i = 0; i < getParameterCount(); ++i)
+        info.parameters.push_back(getParameterInfo(i));
+}
+
+void ChorusProcessor::setParameterByIndex(int paramIndex, float value) {
+    auto* chorus = plugin_ ? dynamic_cast<te::ChorusPlugin*>(plugin_.get()) : nullptr;
+    if (!chorus)
+        return;
+
+    switch (paramIndex) {
+        case 0:
+            chorus->depthMs = value;
+            break;
+        case 1:
+            chorus->speedHz = value;
+            break;
+        case 2:
+            chorus->width = value;
+            break;
+        case 3:
+            chorus->mixProportion = value;
+            break;
+        default:
+            break;
+    }
+}
+
+float ChorusProcessor::getParameterByIndex(int paramIndex) const {
+    auto* chorus = plugin_ ? dynamic_cast<te::ChorusPlugin*>(plugin_.get()) : nullptr;
+    if (!chorus)
+        return 0.0f;
+
+    switch (paramIndex) {
+        case 0:
+            return chorus->depthMs.get();
+        case 1:
+            return chorus->speedHz.get();
+        case 2:
+            return chorus->width.get();
+        case 3:
+            return chorus->mixProportion.get();
+        default:
+            return 0.0f;
+    }
+}
+
+// =============================================================================
+// PhaserProcessor
+// =============================================================================
+
+PhaserProcessor::PhaserProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
+    : DeviceProcessor(deviceId, std::move(plugin)) {}
+
+int PhaserProcessor::getParameterCount() const {
+    return 3;  // All virtual: depth, rate, feedbackGain
+}
+
+ParameterInfo PhaserProcessor::getParameterInfo(int index) const {
+    ParameterInfo info;
+    auto* phaser = plugin_ ? dynamic_cast<te::PhaserPlugin*>(plugin_.get()) : nullptr;
+
+    switch (index) {
+        case 0:
+            info.name = "Depth";
+            info.minValue = 0.0f;
+            info.maxValue = 12.0f;
+            info.defaultValue = 5.0f;
+            info.currentValue = phaser ? phaser->depth.get() : 5.0f;
+            break;
+        case 1:
+            info.name = "Rate";
+            info.minValue = 0.0f;
+            info.maxValue = 2.0f;
+            info.defaultValue = 0.4f;
+            info.currentValue = phaser ? phaser->rate.get() : 0.4f;
+            break;
+        case 2:
+            info.name = "Feedback";
+            info.minValue = 0.0f;
+            info.maxValue = 0.99f;
+            info.defaultValue = 0.7f;
+            info.currentValue = phaser ? phaser->feedbackGain.get() : 0.7f;
+            break;
+        default:
+            break;
+    }
+    return info;
+}
+
+void PhaserProcessor::populateParameters(DeviceInfo& info) const {
+    info.parameters.clear();
+    for (int i = 0; i < getParameterCount(); ++i)
+        info.parameters.push_back(getParameterInfo(i));
+}
+
+void PhaserProcessor::setParameterByIndex(int paramIndex, float value) {
+    auto* phaser = plugin_ ? dynamic_cast<te::PhaserPlugin*>(plugin_.get()) : nullptr;
+    if (!phaser)
+        return;
+
+    switch (paramIndex) {
+        case 0:
+            phaser->depth = value;
+            break;
+        case 1:
+            phaser->rate = value;
+            break;
+        case 2:
+            phaser->feedbackGain = value;
+            break;
+        default:
+            break;
+    }
+}
+
+float PhaserProcessor::getParameterByIndex(int paramIndex) const {
+    auto* phaser = plugin_ ? dynamic_cast<te::PhaserPlugin*>(plugin_.get()) : nullptr;
+    if (!phaser)
+        return 0.0f;
+
+    switch (paramIndex) {
+        case 0:
+            return phaser->depth.get();
+        case 1:
+            return phaser->rate.get();
+        case 2:
+            return phaser->feedbackGain.get();
+        default:
+            return 0.0f;
+    }
 }
 
 // =============================================================================

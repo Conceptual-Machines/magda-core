@@ -325,6 +325,10 @@ void AudioBridge::deviceParameterChanged(DeviceId deviceId, int paramIndex, floa
         reverbProc->setParameterByIndex(paramIndex, newValue);
     } else if (auto* delayProc = dynamic_cast<DelayProcessor*>(processor)) {
         delayProc->setParameterByIndex(paramIndex, newValue);
+    } else if (auto* chorusProc = dynamic_cast<ChorusProcessor*>(processor)) {
+        chorusProc->setParameterByIndex(paramIndex, newValue);
+    } else if (auto* phaserProc = dynamic_cast<PhaserProcessor*>(processor)) {
+        phaserProc->setParameterByIndex(paramIndex, newValue);
     }
 }
 

@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "ChorusUI.hpp"
 #include "CompressorUI.hpp"
 #include "DelayUI.hpp"
 #include "DrumGridUI.hpp"
@@ -9,6 +10,7 @@
 #include "FourOscUI.hpp"
 #include "NodeComponent.hpp"
 #include "ParamSlotComponent.hpp"
+#include "PhaserUI.hpp"
 #include "ReverbUI.hpp"
 #include "SamplerUI.hpp"
 #include "ToneGeneratorUI.hpp"
@@ -177,6 +179,8 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<CompressorUI> compressorUI_;
     std::unique_ptr<ReverbUI> reverbUI_;
     std::unique_ptr<DelayUI> delayUI_;
+    std::unique_ptr<ChorusUI> chorusUI_;
+    std::unique_ptr<PhaserUI> phaserUI_;
 
     void updatePageControls();
     void updateParamModulation();  // Update mod/macro pointers for params
