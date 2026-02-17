@@ -328,6 +328,7 @@ void ClipInspector::updateFromSelectedClip() {
 
         // Transient sensitivity (audio clips only)
         transientSectionLabel_.setVisible(isAudioClip);
+        transientSensitivityLabel_.setVisible(isAudioClip);
         transientSensitivityValue_->setVisible(isAudioClip);
 
         // Fades section (arrangement audio clips only, hidden for session, collapsible)
@@ -420,6 +421,7 @@ void ClipInspector::showClipControls(bool show) {
         autoDetectBeatsToggle_.setVisible(false);
         beatSensitivityValue_->setVisible(false);
         transientSectionLabel_.setVisible(false);
+        transientSensitivityLabel_.setVisible(false);
         transientSensitivityValue_->setVisible(false);
         fadesSectionLabel_.setVisible(false);
         fadeInValue_->setVisible(false);

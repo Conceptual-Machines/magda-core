@@ -716,11 +716,17 @@ void ClipInspector::initPlaybackSection() {
     clipPropsContainer_.addChildComponent(*beatSensitivityValue_);
 
     // Transient sensitivity
-    transientSectionLabel_.setText("Transients", juce::dontSendNotification);
+    transientSectionLabel_.setText("Transient Detection", juce::dontSendNotification);
     transientSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     transientSectionLabel_.setColour(juce::Label::textColourId,
                                      DarkTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(transientSectionLabel_);
+
+    transientSensitivityLabel_.setText("Sensitivity", juce::dontSendNotification);
+    transientSensitivityLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
+    transientSensitivityLabel_.setColour(juce::Label::textColourId,
+                                         DarkTheme::getSecondaryTextColour());
+    clipPropsContainer_.addChildComponent(transientSensitivityLabel_);
 
     transientSensitivityValue_ =
         std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Percentage);

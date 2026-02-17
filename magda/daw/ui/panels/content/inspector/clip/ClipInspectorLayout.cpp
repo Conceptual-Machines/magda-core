@@ -165,9 +165,12 @@ void ClipInspector::resized() {
     if (transientSectionLabel_.isVisible()) {
         addSeparator();
         transientSectionLabel_.setBounds(addRow(16));
-        addSpace(4);
         {
-            auto row = addRow(22);
+            auto labelRow = addRow(labelHeight);
+            transientSensitivityLabel_.setBounds(labelRow);
+        }
+        {
+            auto row = addRow(valueHeight);
             transientSensitivityValue_->setBounds(row);
         }
     }
