@@ -990,6 +990,9 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
         if (clip.warpEnabled) {
             obj->setProperty("warpEnabled", clip.warpEnabled);
         }
+        if (clip.analogPitch) {
+            obj->setProperty("analogPitch", clip.analogPitch);
+        }
         if (clip.timeStretchMode != 0) {
             obj->setProperty("timeStretchMode", clip.timeStretchMode);
         }
@@ -1130,6 +1133,10 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
         auto warpEnabledVar = obj->getProperty("warpEnabled");
         if (!warpEnabledVar.isVoid()) {
             outClip.warpEnabled = static_cast<bool>(warpEnabledVar);
+        }
+        auto analogPitchVar = obj->getProperty("analogPitch");
+        if (!analogPitchVar.isVoid()) {
+            outClip.analogPitch = static_cast<bool>(analogPitchVar);
         }
         auto timeStretchModeVar = obj->getProperty("timeStretchMode");
         if (!timeStretchModeVar.isVoid()) {

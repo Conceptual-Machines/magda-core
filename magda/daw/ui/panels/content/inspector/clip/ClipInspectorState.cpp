@@ -293,6 +293,14 @@ void ClipInspector::updateFromSelectedClip() {
         autoPitchModeCombo_.setVisible(false);  // hidden for now
         pitchChangeValue_->setVisible(isAudioClip);
         transposeValue_->setVisible(isAudioClip);
+
+        // Analog pitch toggle: visible for audio clips when not in autoTempo/warp mode
+        bool canAnalog = isAudioClip && !clip->autoTempo && !clip->warpEnabled;
+        analogPitchToggle_.setVisible(canAnalog);
+        if (canAnalog) {
+            analogPitchToggle_.setToggleState(clip->analogPitch, juce::dontSendNotification);
+        }
+
         if (isAudioClip) {
             autoPitchToggle_.setToggleState(clip->autoPitch, juce::dontSendNotification);
             autoPitchModeCombo_.setSelectedId(clip->autoPitchMode + 1, juce::dontSendNotification);
@@ -303,9 +311,18 @@ void ClipInspector::updateFromSelectedClip() {
             autoPitchModeCombo_.setEnabled(clip->autoPitch);
             autoPitchModeCombo_.setAlpha(clip->autoPitch ? 1.0f : 0.4f);
 
-            // transpose disabled when autoPitch is on
-            transposeValue_->setEnabled(!clip->autoPitch);
-            transposeValue_->setAlpha(clip->autoPitch ? 0.4f : 1.0f);
+            // When analogPitch is active: disable/dim transpose and speedRatio controls
+            bool analogActive = clip->analogPitch && !clip->autoTempo && !clip->warpEnabled;
+
+            // transpose disabled when autoPitch or analogPitch is on
+            transposeValue_->setEnabled(!clip->autoPitch && !analogActive);
+            transposeValue_->setAlpha((clip->autoPitch || analogActive) ? 0.4f : 1.0f);
+
+            // When analog pitch is active, dim the speed ratio control
+            if (analogActive && clipStretchValue_) {
+                clipStretchValue_->setEnabled(false);
+                clipStretchValue_->setAlpha(0.4f);
+            }
         }
 
         // Mix section (audio clips only) — includes Volume/Pan/Gain + Reverse/L/R
@@ -412,6 +429,7 @@ void ClipInspector::showClipControls(bool show) {
         // New sections
         pitchSectionLabel_.setVisible(false);
         autoPitchToggle_.setVisible(false);
+        analogPitchToggle_.setVisible(false);
         autoPitchModeCombo_.setVisible(false);
         pitchChangeValue_->setVisible(false);
         transposeValue_->setVisible(false);

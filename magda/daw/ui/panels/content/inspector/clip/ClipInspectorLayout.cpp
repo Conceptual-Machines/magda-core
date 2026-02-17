@@ -182,6 +182,11 @@ void ClipInspector::resized() {
     // Pitch section (audio clips only)
     if (pitchSectionLabel_.isVisible()) {
         pitchSectionLabel_.setBounds(addRow(16));
+        if (analogPitchToggle_.isVisible()) {
+            addSpace(4);
+            auto row = addRow(22);
+            analogPitchToggle_.setBounds(row.removeFromLeft(60).reduced(0, 1));
+        }
         if (autoPitchToggle_.isVisible()) {
             addSpace(4);
             auto row = addRow(22);

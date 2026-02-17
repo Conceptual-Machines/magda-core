@@ -174,10 +174,18 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                         auto* audioClip = dynamic_cast<te::WaveAudioClip*>(teClip);
                         if (audioClip) {
                             // Pitch
+                            bool isAnalog =
+                                clip->analogPitch && !clip->autoTempo && !clip->warpEnabled;
                             if (clip->autoPitch != audioClip->getAutoPitch())
-                                audioClip->setAutoPitch(clip->autoPitch);
-                            if (std::abs(audioClip->getPitchChange() - clip->pitchChange) > 0.001f)
-                                audioClip->setPitchChange(clip->pitchChange);
+                                audioClip->setAutoPitch(isAnalog ? false : clip->autoPitch);
+                            if (isAnalog) {
+                                if (std::abs(audioClip->getPitchChange()) > 0.001f)
+                                    audioClip->setPitchChange(0.0f);
+                            } else {
+                                if (std::abs(audioClip->getPitchChange() - clip->pitchChange) >
+                                    0.001f)
+                                    audioClip->setPitchChange(clip->pitchChange);
+                            }
                             if (audioClip->getTransposeSemiTones(false) != clip->transpose)
                                 audioClip->setTranspose(clip->transpose);
                             // Playback
@@ -395,11 +403,16 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
 
         // Set timestretcher mode — keep disabled when mode is 0 and speedRatio is 1.0
         // Warp also requires a valid stretcher
-        auto stretchMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
-        if (stretchMode == te::TimeStretcher::disabled &&
-            (std::abs(clip->speedRatio - 1.0) > 0.001 || clip->warpEnabled))
-            stretchMode = te::TimeStretcher::defaultMode;
-        audioClipPtr->setTimeStretchMode(stretchMode);
+        {
+            bool isAnalog = clip->analogPitch && !clip->autoTempo && !clip->warpEnabled;
+            auto stretchMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+            if (!isAnalog && stretchMode == te::TimeStretcher::disabled &&
+                (std::abs(clip->speedRatio - 1.0) > 0.001 || clip->warpEnabled))
+                stretchMode = te::TimeStretcher::defaultMode;
+            if (isAnalog)
+                stretchMode = te::TimeStretcher::disabled;
+            audioClipPtr->setTimeStretchMode(stretchMode);
+        }
 
         // Set speed ratio (BEFORE offset, since TE offset
         // is in stretched time and must be set after speed ratio)
@@ -428,10 +441,16 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         }
 
         // Sync session-applicable audio properties at creation
-        if (clip->autoPitch)
-            audioClipPtr->setAutoPitch(true);
-        if (std::abs(clip->pitchChange) > 0.001f)
-            audioClipPtr->setPitchChange(clip->pitchChange);
+        {
+            bool isAnalog = clip->analogPitch && !clip->autoTempo && !clip->warpEnabled;
+            if (!isAnalog && clip->autoPitch)
+                audioClipPtr->setAutoPitch(true);
+            if (isAnalog) {
+                // Analog pitch: don't send pitchChange to TE (resampling handles it)
+            } else if (std::abs(clip->pitchChange) > 0.001f) {
+                audioClipPtr->setPitchChange(clip->pitchChange);
+            }
+        }
         if (clip->transpose != 0)
             audioClipPtr->setTranspose(clip->transpose);
         if (clip->isReversed)
@@ -891,11 +910,17 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         // getActualTimeStretchMode() will auto-upgrade to defaultMode when
         // autoPitch/autoTempo/pitchChange require it.
         // Force defaultMode when speedRatio != 1.0 or warp is enabled.
-        auto stretchMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
-        if (stretchMode == te::TimeStretcher::disabled &&
-            (std::abs(clip->speedRatio - 1.0) > 0.001 || clip->warpEnabled))
-            stretchMode = te::TimeStretcher::defaultMode;
-        audioClipPtr->setTimeStretchMode(stretchMode);
+        // Analog pitch: force disabled mode (pure resampling via speedRatio).
+        {
+            bool isAnalog = clip->analogPitch && !clip->autoTempo && !clip->warpEnabled;
+            auto stretchMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+            if (!isAnalog && stretchMode == te::TimeStretcher::disabled &&
+                (std::abs(clip->speedRatio - 1.0) > 0.001 || clip->warpEnabled))
+                stretchMode = te::TimeStretcher::defaultMode;
+            if (isAnalog)
+                stretchMode = te::TimeStretcher::disabled;
+            audioClipPtr->setTimeStretchMode(stretchMode);
+        }
         audioClipPtr->setUsesProxy(false);
 
         // Populate source file metadata from TE's loopInfo
@@ -1097,9 +1122,13 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
 
         // Sync time stretch mode — warp also requires a valid stretcher
         auto desiredMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
-        if (desiredMode == te::TimeStretcher::disabled &&
+        bool isAnalog = clip->analogPitch && !clip->autoTempo && !clip->warpEnabled;
+        if (!isAnalog && desiredMode == te::TimeStretcher::disabled &&
             (std::abs(teSpeedRatio - 1.0) > 0.001 || clip->warpEnabled))
             desiredMode = te::TimeStretcher::defaultMode;
+        // When analog: force disabled mode (pure resampling)
+        if (isAnalog)
+            desiredMode = te::TimeStretcher::disabled;
         if (audioClipPtr->getTimeStretchMode() != desiredMode) {
             audioClipPtr->setTimeStretchMode(desiredMode);
         }
@@ -1213,15 +1242,23 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
     }
 
     // 8. PITCH
-    if (clip->autoPitch != audioClipPtr->getAutoPitch())
-        audioClipPtr->setAutoPitch(clip->autoPitch);
-    if (static_cast<int>(audioClipPtr->getAutoPitchMode()) != clip->autoPitchMode)
-        audioClipPtr->setAutoPitchMode(
-            static_cast<te::AudioClipBase::AutoPitchMode>(clip->autoPitchMode));
-    if (std::abs(audioClipPtr->getPitchChange() - clip->pitchChange) > 0.001f)
-        audioClipPtr->setPitchChange(clip->pitchChange);
-    if (audioClipPtr->getTransposeSemiTones(false) != clip->transpose)
-        audioClipPtr->setTranspose(clip->transpose);
+    {
+        bool isAnalog = clip->analogPitch && !clip->autoTempo && !clip->warpEnabled;
+        if (clip->autoPitch != audioClipPtr->getAutoPitch())
+            audioClipPtr->setAutoPitch(isAnalog ? false : clip->autoPitch);
+        if (static_cast<int>(audioClipPtr->getAutoPitchMode()) != clip->autoPitchMode)
+            audioClipPtr->setAutoPitchMode(
+                static_cast<te::AudioClipBase::AutoPitchMode>(clip->autoPitchMode));
+        if (isAnalog) {
+            if (std::abs(audioClipPtr->getPitchChange()) > 0.001f)
+                audioClipPtr->setPitchChange(0.0f);
+        } else {
+            if (std::abs(audioClipPtr->getPitchChange() - clip->pitchChange) > 0.001f)
+                audioClipPtr->setPitchChange(clip->pitchChange);
+        }
+        if (audioClipPtr->getTransposeSemiTones(false) != clip->transpose)
+            audioClipPtr->setTranspose(clip->transpose);
+    }
 
     // 9. BEAT DETECTION
     if (clip->autoDetectBeats != audioClipPtr->getAutoDetectBeats())

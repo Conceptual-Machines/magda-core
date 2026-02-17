@@ -615,6 +615,22 @@ void ClipManager::setAutoPitch(ClipId clipId, bool enabled) {
     }
 }
 
+void ClipManager::setAnalogPitch(ClipId clipId, bool enabled) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->analogPitch = enabled;
+            if (enabled && !clip->autoTempo && !clip->warpEnabled) {
+                // Recompute speedRatio from current pitchChange
+                double pitchFactor = std::pow(2.0, clip->pitchChange / 12.0);
+                double sourceContent = clip->length * clip->speedRatio;
+                clip->speedRatio = pitchFactor;
+                clip->length = juce::jmax(ClipInfo::MIN_CLIP_LENGTH, sourceContent / pitchFactor);
+            }
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
 void ClipManager::setAutoPitchMode(ClipId clipId, int mode) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
@@ -627,7 +643,17 @@ void ClipManager::setAutoPitchMode(ClipId clipId, int mode) {
 void ClipManager::setPitchChange(ClipId clipId, float semitones) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
+            float old = clip->pitchChange;
             clip->pitchChange = juce::jlimit(-48.0f, 48.0f, semitones);
+
+            if (clip->analogPitch && !clip->autoTempo && !clip->warpEnabled) {
+                double oldFactor = std::pow(2.0, old / 12.0);
+                double newFactor = std::pow(2.0, clip->pitchChange / 12.0);
+                clip->length =
+                    juce::jmax(ClipInfo::MIN_CLIP_LENGTH, clip->length * (oldFactor / newFactor));
+                clip->speedRatio = newFactor;
+            }
+
             notifyClipPropertyChanged(clipId);
         }
     }

@@ -589,6 +589,29 @@ void ClipInspector::initPitchSection() {
     };
     clipPropsContainer_.addChildComponent(autoPitchToggle_);
 
+    analogPitchToggle_.setButtonText("ANALOG");
+    analogPitchToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    analogPitchToggle_.setColour(juce::TextButton::buttonColourId,
+                                 DarkTheme::getColour(DarkTheme::SURFACE));
+    analogPitchToggle_.setColour(juce::TextButton::buttonOnColourId,
+                                 DarkTheme::getAccentColour().withAlpha(0.3f));
+    analogPitchToggle_.setColour(juce::TextButton::textColourOffId,
+                                 DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    analogPitchToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+    analogPitchToggle_.setTooltip(
+        "Analog pitch shift: resample instead of time-stretch.\n"
+        "Changes playback speed to change pitch (tape/vinyl/sampler behavior).");
+    analogPitchToggle_.onClick = [this]() {
+        if (selectedClipId_ != magda::INVALID_CLIP_ID) {
+            auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
+            if (clip) {
+                magda::ClipManager::getInstance().setAnalogPitch(selectedClipId_,
+                                                                 !clip->analogPitch);
+            }
+        }
+    };
+    clipPropsContainer_.addChildComponent(analogPitchToggle_);
+
     autoPitchModeCombo_.setColour(juce::ComboBox::backgroundColourId,
                                   DarkTheme::getColour(DarkTheme::SURFACE));
     autoPitchModeCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());

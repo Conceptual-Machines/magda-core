@@ -192,6 +192,7 @@ class ClipManager {
 
     // Pitch
     void setAutoPitch(ClipId clipId, bool enabled);
+    void setAnalogPitch(ClipId clipId, bool enabled);
     void setAutoPitchMode(ClipId clipId, int mode);
     void setPitchChange(ClipId clipId, float semitones);
     void setTranspose(ClipId clipId, int semitones);

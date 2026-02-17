@@ -94,6 +94,7 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     // Pitch section
     juce::Label pitchSectionLabel_;
     juce::TextButton autoPitchToggle_;
+    juce::TextButton analogPitchToggle_;
     juce::ComboBox autoPitchModeCombo_;
     std::unique_ptr<magda::DraggableValueLabel> pitchChangeValue_;
     std::unique_ptr<magda::DraggableValueLabel> transposeValue_;
