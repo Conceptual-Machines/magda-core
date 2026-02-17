@@ -1639,17 +1639,23 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             }
         } else if (device.pluginId.containsIgnoreCase("lowpass")) {
             plugin = edit_.getPluginCache().createNewPlugin(te::LowPassPlugin::xmlTypeName, {});
-            if (plugin)
+            if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
+                processor = std::make_unique<FilterProcessor>(device.id, plugin);
+            }
         } else if (device.pluginId.containsIgnoreCase("pitchshift")) {
             plugin = edit_.getPluginCache().createNewPlugin(te::PitchShiftPlugin::xmlTypeName, {});
-            if (plugin)
+            if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
+                processor = std::make_unique<PitchShiftProcessor>(device.id, plugin);
+            }
         } else if (device.pluginId.containsIgnoreCase("impulseresponse")) {
             plugin =
                 edit_.getPluginCache().createNewPlugin(te::ImpulseResponsePlugin::xmlTypeName, {});
-            if (plugin)
+            if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
+                processor = std::make_unique<ImpulseResponseProcessor>(device.id, plugin);
+            }
         }
     } else {
         // External plugin - find matching description from KnownPluginList

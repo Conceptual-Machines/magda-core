@@ -7,10 +7,13 @@
 #include "DelayUI.hpp"
 #include "DrumGridUI.hpp"
 #include "EqualiserUI.hpp"
+#include "FilterUI.hpp"
 #include "FourOscUI.hpp"
+#include "ImpulseResponseUI.hpp"
 #include "NodeComponent.hpp"
 #include "ParamSlotComponent.hpp"
 #include "PhaserUI.hpp"
+#include "PitchShiftUI.hpp"
 #include "ReverbUI.hpp"
 #include "SamplerUI.hpp"
 #include "ToneGeneratorUI.hpp"
@@ -181,6 +184,9 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<DelayUI> delayUI_;
     std::unique_ptr<ChorusUI> chorusUI_;
     std::unique_ptr<PhaserUI> phaserUI_;
+    std::unique_ptr<FilterUI> filterUI_;
+    std::unique_ptr<PitchShiftUI> pitchShiftUI_;
+    std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
 
     void updatePageControls();
     void updateParamModulation();  // Update mod/macro pointers for params

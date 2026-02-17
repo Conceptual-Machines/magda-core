@@ -322,6 +322,42 @@ class PhaserProcessor : public DeviceProcessor {
     float getParameterByIndex(int paramIndex) const;
 };
 
+class FilterProcessor : public DeviceProcessor {
+  public:
+    FilterProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    int getParameterCount() const override;
+    ParameterInfo getParameterInfo(int index) const override;
+    void populateParameters(DeviceInfo& info) const override;
+
+    void setParameterByIndex(int paramIndex, float value);
+    float getParameterByIndex(int paramIndex) const;
+};
+
+class PitchShiftProcessor : public DeviceProcessor {
+  public:
+    PitchShiftProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    int getParameterCount() const override;
+    ParameterInfo getParameterInfo(int index) const override;
+    void populateParameters(DeviceInfo& info) const override;
+
+    void setParameterByIndex(int paramIndex, float value);
+    float getParameterByIndex(int paramIndex) const;
+};
+
+class ImpulseResponseProcessor : public DeviceProcessor {
+  public:
+    ImpulseResponseProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    int getParameterCount() const override;
+    ParameterInfo getParameterInfo(int index) const override;
+    void populateParameters(DeviceInfo& info) const override;
+
+    void setParameterByIndex(int paramIndex, float value);
+    float getParameterByIndex(int paramIndex) const;
+};
+
 /**
  * @brief Processor for the built-in Drum Grid device
  *

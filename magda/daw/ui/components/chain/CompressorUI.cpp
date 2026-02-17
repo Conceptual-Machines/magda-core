@@ -106,18 +106,23 @@ CompressorUI::CompressorUI() {
             onParameterChanged(5, static_cast<float>(value));
     };
 
-    // Sidechain Trigger: ON/OFF toggle (virtual param index 6)
-    setupSlider(scTrigger_, "SC TRIG");
-    scTrigger_.slider.setRange(0.0, 1.0, 1.0);
-    scTrigger_.slider.setValueFormatter(
-        [](double value) -> juce::String { return value >= 0.5 ? "ON" : "OFF"; });
-    scTrigger_.slider.setValueParser([](const juce::String& text) -> double {
-        return text.trim().toLowerCase() == "on" ? 1.0 : 0.0;
-    });
-    scTrigger_.slider.onValueChanged = [this](double value) {
+    // Sidechain Trigger: ON/OFF toggle button (virtual param index 6)
+    setupLabelStatic(scTriggerLabel_, "SC TRIG", this);
+    scTriggerButton_.setButtonText("OFF");
+    scTriggerButton_.setClickingTogglesState(true);
+    scTriggerButton_.setColour(juce::TextButton::buttonColourId,
+                               DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+    scTriggerButton_.setColour(juce::TextButton::buttonOnColourId,
+                               DarkTheme::getAccentColour().withAlpha(0.6f));
+    scTriggerButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    scTriggerButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    scTriggerButton_.onClick = [this]() {
+        bool on = scTriggerButton_.getToggleState();
+        scTriggerButton_.setButtonText(on ? "ON" : "OFF");
         if (onParameterChanged)
-            onParameterChanged(6, static_cast<float>(value));
+            onParameterChanged(6, on ? 1.0f : 0.0f);
     };
+    addAndMakeVisible(scTriggerButton_);
 }
 
 void CompressorUI::setupSlider(SliderWithLabel& s, const juce::String& labelText) {
@@ -138,8 +143,11 @@ void CompressorUI::updateFromParameters(const std::vector<magda::ParameterInfo>&
         output_.slider.setValue(params[4].currentValue, juce::dontSendNotification);
     if (params.size() > 5)
         sidechain_.slider.setValue(params[5].currentValue, juce::dontSendNotification);
-    if (params.size() > 6)
-        scTrigger_.slider.setValue(params[6].currentValue, juce::dontSendNotification);
+    if (params.size() > 6) {
+        bool on = params[6].currentValue >= 0.5f;
+        scTriggerButton_.setToggleState(on, juce::dontSendNotification);
+        scTriggerButton_.setButtonText(on ? "ON" : "OFF");
+    }
 }
 
 void CompressorUI::paint(juce::Graphics& g) {
@@ -179,13 +187,13 @@ void CompressorUI::resized() {
 
     auto bottomRow = area.removeFromTop(rowHeight);
     auto col = bottomRow.removeFromLeft(colWidth).reduced(2, 0);
-    scTrigger_.label.setBounds(col.removeFromTop(labelHeight));
-    scTrigger_.slider.setBounds(col.removeFromTop(sliderHeight));
+    scTriggerLabel_.setBounds(col.removeFromTop(labelHeight));
+    scTriggerButton_.setBounds(col.removeFromTop(sliderHeight));
 }
 
 std::vector<LinkableTextSlider*> CompressorUI::getLinkableSliders() {
-    return {&threshold_.slider, &ratio_.slider,     &attack_.slider,   &release_.slider,
-            &output_.slider,    &sidechain_.slider, &scTrigger_.slider};
+    return {&threshold_.slider, &ratio_.slider,  &attack_.slider,
+            &release_.slider,   &output_.slider, &sidechain_.slider};
 }
 
 }  // namespace magda::daw::ui

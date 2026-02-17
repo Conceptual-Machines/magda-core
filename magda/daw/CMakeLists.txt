@@ -325,6 +325,9 @@ set(DAW_UI_SOURCES
     ui/components/chain/DelayUI.cpp
     ui/components/chain/ChorusUI.cpp
     ui/components/chain/PhaserUI.cpp
+    ui/components/chain/FilterUI.cpp
+    ui/components/chain/PitchShiftUI.cpp
+    ui/components/chain/ImpulseResponseUI.cpp
     ui/components/chain/FourOscUI.cpp
     ui/components/chain/PadChainPanel.cpp
     ui/components/chain/PadDeviceSlot.cpp
@@ -513,6 +516,9 @@ set(DAW_HEADERS
     ui/components/chain/DelayUI.hpp
     ui/components/chain/ChorusUI.hpp
     ui/components/chain/PhaserUI.hpp
+    ui/components/chain/FilterUI.hpp
+    ui/components/chain/PitchShiftUI.hpp
+    ui/components/chain/ImpulseResponseUI.hpp
     ui/components/chain/FourOscUI.hpp
     ui/components/chain/PagedControlPanel.hpp
     ui/components/chain/MacroKnobComponent.hpp

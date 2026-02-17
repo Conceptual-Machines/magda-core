@@ -966,6 +966,203 @@ float PhaserProcessor::getParameterByIndex(int paramIndex) const {
 }
 
 // =============================================================================
+// FilterProcessor
+// =============================================================================
+
+FilterProcessor::FilterProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
+    : DeviceProcessor(deviceId, std::move(plugin)) {}
+
+int FilterProcessor::getParameterCount() const {
+    // 1 automatable (frequency) + 1 virtual (mode)
+    int autoCount = 0;
+    if (plugin_) {
+        autoCount = static_cast<int>(plugin_->getAutomatableParameters().size());
+    }
+    return autoCount + 1;
+}
+
+ParameterInfo FilterProcessor::getParameterInfo(int index) const {
+    ParameterInfo info;
+    if (!plugin_)
+        return info;
+
+    auto params = plugin_->getAutomatableParameters();
+    int autoCount = static_cast<int>(params.size());
+
+    if (index >= 0 && index < autoCount) {
+        auto* param = params[index];
+        info.name = param->getParameterName();
+        info.currentValue = param->getCurrentValue();
+        auto range = param->getValueRange();
+        info.minValue = range.getStart();
+        info.maxValue = range.getEnd();
+        info.defaultValue = param->getDefaultValue().value_or(range.getStart());
+    } else if (index == autoCount) {
+        // Virtual param: mode (0 = lowpass, 1 = highpass)
+        info.name = "Mode";
+        info.minValue = 0.0f;
+        info.maxValue = 1.0f;
+        info.defaultValue = 0.0f;
+        if (auto* lp = dynamic_cast<te::LowPassPlugin*>(plugin_.get()))
+            info.currentValue = lp->isLowPass() ? 0.0f : 1.0f;
+        else
+            info.currentValue = 0.0f;
+    }
+    return info;
+}
+
+void FilterProcessor::populateParameters(DeviceInfo& info) const {
+    info.parameters.clear();
+    for (int i = 0; i < getParameterCount(); ++i)
+        info.parameters.push_back(getParameterInfo(i));
+}
+
+void FilterProcessor::setParameterByIndex(int paramIndex, float value) {
+    if (!plugin_)
+        return;
+
+    auto params = plugin_->getAutomatableParameters();
+    int autoCount = static_cast<int>(params.size());
+
+    if (paramIndex < autoCount && params[paramIndex]) {
+        params[paramIndex]->setParameter(value, juce::sendNotificationSync);
+        return;
+    }
+
+    // Virtual param: mode
+    if (paramIndex == autoCount) {
+        if (auto* lp = dynamic_cast<te::LowPassPlugin*>(plugin_.get()))
+            lp->mode = value >= 0.5f ? "highpass" : "lowpass";
+    }
+}
+
+float FilterProcessor::getParameterByIndex(int paramIndex) const {
+    if (!plugin_)
+        return 0.0f;
+
+    auto params = plugin_->getAutomatableParameters();
+    int autoCount = static_cast<int>(params.size());
+
+    if (paramIndex < autoCount && params[paramIndex])
+        return params[paramIndex]->getCurrentValue();
+
+    // Virtual param: mode
+    if (paramIndex == autoCount) {
+        if (auto* lp = dynamic_cast<te::LowPassPlugin*>(plugin_.get()))
+            return lp->isLowPass() ? 0.0f : 1.0f;
+    }
+    return 0.0f;
+}
+
+// =============================================================================
+// PitchShiftProcessor
+// =============================================================================
+
+PitchShiftProcessor::PitchShiftProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
+    : DeviceProcessor(deviceId, std::move(plugin)) {}
+
+int PitchShiftProcessor::getParameterCount() const {
+    if (!plugin_)
+        return 0;
+    return static_cast<int>(plugin_->getAutomatableParameters().size());
+}
+
+ParameterInfo PitchShiftProcessor::getParameterInfo(int index) const {
+    ParameterInfo info;
+    if (!plugin_)
+        return info;
+
+    auto params = plugin_->getAutomatableParameters();
+    if (index >= 0 && index < static_cast<int>(params.size())) {
+        auto* param = params[index];
+        info.name = param->getParameterName();
+        info.currentValue = param->getCurrentValue();
+        auto range = param->getValueRange();
+        info.minValue = range.getStart();
+        info.maxValue = range.getEnd();
+        info.defaultValue = param->getDefaultValue().value_or(range.getStart());
+    }
+    return info;
+}
+
+void PitchShiftProcessor::populateParameters(DeviceInfo& info) const {
+    info.parameters.clear();
+    for (int i = 0; i < getParameterCount(); ++i)
+        info.parameters.push_back(getParameterInfo(i));
+}
+
+void PitchShiftProcessor::setParameterByIndex(int paramIndex, float value) {
+    if (!plugin_)
+        return;
+    auto params = plugin_->getAutomatableParameters();
+    if (paramIndex < static_cast<int>(params.size()) && params[paramIndex])
+        params[paramIndex]->setParameter(value, juce::sendNotificationSync);
+}
+
+float PitchShiftProcessor::getParameterByIndex(int paramIndex) const {
+    if (!plugin_)
+        return 0.0f;
+    auto params = plugin_->getAutomatableParameters();
+    if (paramIndex < static_cast<int>(params.size()) && params[paramIndex])
+        return params[paramIndex]->getCurrentValue();
+    return 0.0f;
+}
+
+// =============================================================================
+// ImpulseResponseProcessor
+// =============================================================================
+
+ImpulseResponseProcessor::ImpulseResponseProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
+    : DeviceProcessor(deviceId, std::move(plugin)) {}
+
+int ImpulseResponseProcessor::getParameterCount() const {
+    if (!plugin_)
+        return 0;
+    return static_cast<int>(plugin_->getAutomatableParameters().size());
+}
+
+ParameterInfo ImpulseResponseProcessor::getParameterInfo(int index) const {
+    ParameterInfo info;
+    if (!plugin_)
+        return info;
+
+    auto params = plugin_->getAutomatableParameters();
+    if (index >= 0 && index < static_cast<int>(params.size())) {
+        auto* param = params[index];
+        info.name = param->getParameterName();
+        info.currentValue = param->getCurrentValue();
+        auto range = param->getValueRange();
+        info.minValue = range.getStart();
+        info.maxValue = range.getEnd();
+        info.defaultValue = param->getDefaultValue().value_or(range.getStart());
+    }
+    return info;
+}
+
+void ImpulseResponseProcessor::populateParameters(DeviceInfo& info) const {
+    info.parameters.clear();
+    for (int i = 0; i < getParameterCount(); ++i)
+        info.parameters.push_back(getParameterInfo(i));
+}
+
+void ImpulseResponseProcessor::setParameterByIndex(int paramIndex, float value) {
+    if (!plugin_)
+        return;
+    auto params = plugin_->getAutomatableParameters();
+    if (paramIndex < static_cast<int>(params.size()) && params[paramIndex])
+        params[paramIndex]->setParameter(value, juce::sendNotificationSync);
+}
+
+float ImpulseResponseProcessor::getParameterByIndex(int paramIndex) const {
+    if (!plugin_)
+        return 0.0f;
+    auto params = plugin_->getAutomatableParameters();
+    if (paramIndex < static_cast<int>(params.size()) && params[paramIndex])
+        return params[paramIndex]->getCurrentValue();
+    return 0.0f;
+}
+
+// =============================================================================
 // DrumGridProcessor
 // =============================================================================
 

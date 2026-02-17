@@ -329,6 +329,12 @@ void AudioBridge::deviceParameterChanged(DeviceId deviceId, int paramIndex, floa
         chorusProc->setParameterByIndex(paramIndex, newValue);
     } else if (auto* phaserProc = dynamic_cast<PhaserProcessor*>(processor)) {
         phaserProc->setParameterByIndex(paramIndex, newValue);
+    } else if (auto* lpProc = dynamic_cast<FilterProcessor*>(processor)) {
+        lpProc->setParameterByIndex(paramIndex, newValue);
+    } else if (auto* pitchProc = dynamic_cast<PitchShiftProcessor*>(processor)) {
+        pitchProc->setParameterByIndex(paramIndex, newValue);
+    } else if (auto* irProc = dynamic_cast<ImpulseResponseProcessor*>(processor)) {
+        irProc->setParameterByIndex(paramIndex, newValue);
     }
 }
 

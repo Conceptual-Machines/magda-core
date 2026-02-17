@@ -8,16 +8,14 @@
 namespace magda::daw::ui {
 
 /**
- * @brief Custom UI for the Tracktion Engine Compressor
+ * @brief Custom UI for the Tracktion Engine Low/High-Pass Filter
  *
- * 2 rows x 3 columns layout:
- *   Row 1: Threshold, Ratio, Attack
- *   Row 2: Release, Output, Sidechain
+ * 1 row layout: Frequency slider + LP/HP mode toggle
  */
-class CompressorUI : public juce::Component {
+class FilterUI : public juce::Component {
   public:
-    CompressorUI();
-    ~CompressorUI() override = default;
+    FilterUI();
+    ~FilterUI() override = default;
 
     void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
 
@@ -37,19 +35,14 @@ class CompressorUI : public juce::Component {
             : slider(fmt) {}
     };
 
-    SliderWithLabel threshold_;
-    SliderWithLabel ratio_;
-    SliderWithLabel attack_;
-    SliderWithLabel release_;
-    SliderWithLabel output_{TextSlider::Format::Decibels};
-    SliderWithLabel sidechain_{TextSlider::Format::Decibels};
-    // SC Trigger toggle button (virtual param index 6)
-    juce::Label scTriggerLabel_;
-    juce::TextButton scTriggerButton_;
+    SliderWithLabel frequency_;
+    // Mode toggle: 0 = lowpass, 1 = highpass (virtual param index 1)
+    juce::Label modeLabel_;
+    juce::TextButton modeButton_;
 
     void setupSlider(SliderWithLabel& s, const juce::String& labelText);
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CompressorUI)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FilterUI)
 };
 
 }  // namespace magda::daw::ui

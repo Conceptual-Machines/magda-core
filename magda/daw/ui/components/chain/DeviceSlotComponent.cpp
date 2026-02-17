@@ -533,6 +533,15 @@ int DeviceSlotComponent::getPreferredWidth() const {
     if (phaserUI_) {
         return getTotalWidth(300);
     }
+    if (filterUI_) {
+        return getTotalWidth(250);
+    }
+    if (pitchShiftUI_) {
+        return getTotalWidth(200);
+    }
+    if (impulseResponseUI_) {
+        return getTotalWidth(350);
+    }
     if (samplerUI_) {
         return getTotalWidth(BASE_SLOT_WIDTH * 2);
     }
@@ -600,14 +609,16 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
 
     // Create custom UI if this is an internal device and we don't have one yet
     if (isInternalDevice() && !toneGeneratorUI_ && !samplerUI_ && !drumGridUI_ && !fourOscUI_ &&
-        !eqUI_ && !compressorUI_ && !reverbUI_ && !delayUI_ && !chorusUI_ && !phaserUI_) {
+        !eqUI_ && !compressorUI_ && !reverbUI_ && !delayUI_ && !chorusUI_ && !phaserUI_ &&
+        !filterUI_ && !pitchShiftUI_ && !impulseResponseUI_) {
         createCustomUI();
         setupCustomUILinking();
     }
 
     // Update custom UI if available
     if (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
-        reverbUI_ || delayUI_ || chorusUI_ || phaserUI_) {
+        reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
+        impulseResponseUI_) {
         updateCustomUI();
     }
 
@@ -782,6 +793,12 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             chorusUI_->setVisible(false);
         if (phaserUI_)
             phaserUI_->setVisible(false);
+        if (filterUI_)
+            filterUI_->setVisible(false);
+        if (pitchShiftUI_)
+            pitchShiftUI_->setVisible(false);
+        if (impulseResponseUI_)
+            impulseResponseUI_->setVisible(false);
         return;
     }
 
@@ -798,9 +815,9 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
 
     // Check if this is an internal device with custom UI
-    if (isInternalDevice() &&
-        (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
-         reverbUI_ || delayUI_ || chorusUI_ || phaserUI_)) {
+    if (isInternalDevice() && (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ ||
+                               eqUI_ || compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ ||
+                               phaserUI_ || filterUI_ || pitchShiftUI_ || impulseResponseUI_)) {
         // Show custom minimal UI
         if (toneGeneratorUI_) {
             toneGeneratorUI_->setBounds(contentArea.reduced(4));
@@ -848,6 +865,18 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             phaserUI_->setBounds(contentArea.reduced(4));
             phaserUI_->setVisible(true);
         }
+        if (filterUI_) {
+            filterUI_->setBounds(contentArea.reduced(4));
+            filterUI_->setVisible(true);
+        }
+        if (pitchShiftUI_) {
+            pitchShiftUI_->setBounds(contentArea.reduced(4));
+            pitchShiftUI_->setVisible(true);
+        }
+        if (impulseResponseUI_) {
+            impulseResponseUI_->setBounds(contentArea.reduced(4));
+            impulseResponseUI_->setVisible(true);
+        }
 
         // Hide parameter grid and pagination
         for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
@@ -878,6 +907,12 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             chorusUI_->setVisible(false);
         if (phaserUI_)
             phaserUI_->setVisible(false);
+        if (filterUI_)
+            filterUI_->setVisible(false);
+        if (pitchShiftUI_)
+            pitchShiftUI_->setVisible(false);
+        if (impulseResponseUI_)
+            impulseResponseUI_->setVisible(false);
 
         // Pagination area
         auto paginationArea = contentArea.removeFromTop(PAGINATION_HEIGHT);
@@ -2041,6 +2076,69 @@ void DeviceSlotComponent::createCustomUI() {
         };
         addAndMakeVisible(*phaserUI_);
         updateCustomUI();
+    } else if (device_.pluginId.containsIgnoreCase("lowpass")) {
+        filterUI_ = std::make_unique<FilterUI>();
+        filterUI_->onParameterChanged = [this](int paramIndex, float value) {
+            if (!nodePath_.isValid())
+                return;
+            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
+                                                                       value);
+        };
+        addAndMakeVisible(*filterUI_);
+        updateCustomUI();
+    } else if (device_.pluginId.containsIgnoreCase("pitchshift")) {
+        pitchShiftUI_ = std::make_unique<PitchShiftUI>();
+        pitchShiftUI_->onParameterChanged = [this](int paramIndex, float value) {
+            if (!nodePath_.isValid())
+                return;
+            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
+                                                                       value);
+        };
+        addAndMakeVisible(*pitchShiftUI_);
+        updateCustomUI();
+    } else if (device_.pluginId.containsIgnoreCase("impulseresponse")) {
+        impulseResponseUI_ = std::make_unique<ImpulseResponseUI>();
+        impulseResponseUI_->onParameterChanged = [this](int paramIndex, float value) {
+            if (!nodePath_.isValid())
+                return;
+            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
+                                                                       value);
+        };
+
+        // Helper to load an IR file into the plugin
+        auto loadIR = [this](const juce::File& file) {
+            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+            if (!audioEngine)
+                return;
+            auto* bridge = audioEngine->getAudioBridge();
+            if (!bridge)
+                return;
+            auto plugin = bridge->getPlugin(device_.id);
+            if (auto* ir = dynamic_cast<te::ImpulseResponsePlugin*>(plugin.get())) {
+                if (ir->loadImpulseResponse(file)) {
+                    ir->name = file.getFileNameWithoutExtension();
+                    impulseResponseUI_->setIRName(file.getFileNameWithoutExtension());
+                    repaint();
+                }
+            }
+        };
+
+        impulseResponseUI_->onLoadIRRequested = [loadIR]() {
+            auto chooser = std::make_shared<juce::FileChooser>(
+                "Load Impulse Response", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg");
+            chooser->launchAsync(juce::FileBrowserComponent::openMode |
+                                     juce::FileBrowserComponent::canSelectFiles,
+                                 [loadIR, chooser](const juce::FileChooser&) {
+                                     auto result = chooser->getResult();
+                                     if (result.existsAsFile())
+                                         loadIR(result);
+                                 });
+        };
+
+        impulseResponseUI_->onFileDropped = loadIR;
+
+        addAndMakeVisible(*impulseResponseUI_);
+        updateCustomUI();
     }
 }
 
@@ -2221,6 +2319,29 @@ void DeviceSlotComponent::updateCustomUI() {
     if (phaserUI_ && device_.pluginId.containsIgnoreCase("phaser")) {
         phaserUI_->updateFromParameters(device_.parameters);
     }
+
+    if (filterUI_ && device_.pluginId.containsIgnoreCase("lowpass")) {
+        filterUI_->updateFromParameters(device_.parameters);
+    }
+
+    if (pitchShiftUI_ && device_.pluginId.containsIgnoreCase("pitchshift")) {
+        pitchShiftUI_->updateFromParameters(device_.parameters);
+    }
+
+    if (impulseResponseUI_ && device_.pluginId.containsIgnoreCase("impulseresponse")) {
+        impulseResponseUI_->updateFromParameters(device_.parameters);
+
+        // Update IR name from plugin state
+        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+        if (audioEngine) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(device_.id);
+                if (auto* ir = dynamic_cast<te::ImpulseResponsePlugin*>(plugin.get())) {
+                    impulseResponseUI_->setIRName(ir->name.get());
+                }
+            }
+        }
+    }
 }
 
 // =============================================================================
@@ -2246,6 +2367,12 @@ void DeviceSlotComponent::setupCustomUILinking() {
         sliders = chorusUI_->getLinkableSliders();
     else if (phaserUI_)
         sliders = phaserUI_->getLinkableSliders();
+    else if (filterUI_)
+        sliders = filterUI_->getLinkableSliders();
+    else if (pitchShiftUI_)
+        sliders = pitchShiftUI_->getLinkableSliders();
+    else if (impulseResponseUI_)
+        sliders = impulseResponseUI_->getLinkableSliders();
     else if (samplerUI_)
         sliders = samplerUI_->getLinkableSliders();
 

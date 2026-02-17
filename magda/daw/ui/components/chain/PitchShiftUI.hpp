@@ -8,16 +8,14 @@
 namespace magda::daw::ui {
 
 /**
- * @brief Custom UI for the Tracktion Engine Compressor
+ * @brief Custom UI for the Tracktion Engine Pitch Shifter
  *
- * 2 rows x 3 columns layout:
- *   Row 1: Threshold, Ratio, Attack
- *   Row 2: Release, Output, Sidechain
+ * Single slider layout: Semitones (-24 to +24)
  */
-class CompressorUI : public juce::Component {
+class PitchShiftUI : public juce::Component {
   public:
-    CompressorUI();
-    ~CompressorUI() override = default;
+    PitchShiftUI();
+    ~PitchShiftUI() override = default;
 
     void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
 
@@ -37,19 +35,11 @@ class CompressorUI : public juce::Component {
             : slider(fmt) {}
     };
 
-    SliderWithLabel threshold_;
-    SliderWithLabel ratio_;
-    SliderWithLabel attack_;
-    SliderWithLabel release_;
-    SliderWithLabel output_{TextSlider::Format::Decibels};
-    SliderWithLabel sidechain_{TextSlider::Format::Decibels};
-    // SC Trigger toggle button (virtual param index 6)
-    juce::Label scTriggerLabel_;
-    juce::TextButton scTriggerButton_;
+    SliderWithLabel semitones_;
 
     void setupSlider(SliderWithLabel& s, const juce::String& labelText);
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CompressorUI)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PitchShiftUI)
 };
 
 }  // namespace magda::daw::ui
