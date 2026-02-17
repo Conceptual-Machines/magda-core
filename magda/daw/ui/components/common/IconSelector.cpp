@@ -18,6 +18,8 @@ void IconSelector::addTextOption(const juce::String& text, const juce::String& t
 }
 
 void IconSelector::setSelectedIndex(int index, juce::NotificationType notification) {
+    if (options_.empty())
+        return;
     index = juce::jlimit(0, static_cast<int>(options_.size()) - 1, index);
     if (index == selectedIndex_)
         return;

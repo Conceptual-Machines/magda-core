@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <memory>
 #include <vector>
 
 namespace magda::daw::ui {
