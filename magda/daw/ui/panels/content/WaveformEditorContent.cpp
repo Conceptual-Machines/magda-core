@@ -1176,8 +1176,13 @@ void WaveformEditorContent::sliceClipAtTimes(const std::vector<double>& splitTim
     auto& undoManager = magda::UndoManager::getInstance();
     undoManager.beginCompoundOperation("Slice Clip");
 
+    magda::ClipId originalClipId = editingClipId_;
     magda::ClipId currentClipId = editingClipId_;
     double tempo = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
+
+    // Collect all resulting clip IDs (left pieces + final right piece)
+    std::vector<magda::ClipId> resultClipIds;
+    resultClipIds.push_back(originalClipId);
 
     for (double splitTime : splitTimes) {
         auto cmd = std::make_unique<magda::SplitClipCommand>(currentClipId, splitTime, tempo);
@@ -1186,6 +1191,20 @@ void WaveformEditorContent::sliceClipAtTimes(const std::vector<double>& splitTim
         currentClipId = cmdPtr->getRightClipId();
         if (currentClipId == magda::INVALID_CLIP_ID)
             break;
+        resultClipIds.push_back(currentClipId);
+    }
+
+    // Disable warp on all resulting clips — the warp markers referenced the
+    // original unsplit clip and are invalid for the individual pieces.  The
+    // split offset calculations already accounted for warp mode.
+    auto* bridge = getBridge();
+    for (magda::ClipId id : resultClipIds) {
+        auto* clip = magda::ClipManager::getInstance().getClip(id);
+        if (clip && clip->warpEnabled) {
+            clip->warpEnabled = false;
+            if (bridge)
+                bridge->disableWarp(id);
+        }
     }
 
     undoManager.endCompoundOperation();
