@@ -405,6 +405,8 @@ WaveformEditorContent::WaveformEditorContent() {
     // Slice callbacks
     gridComponent_->onSliceAtWarpMarkers = [this]() { sliceAtWarpMarkers(); };
     gridComponent_->onSliceAtGrid = [this]() { sliceAtGrid(); };
+    gridComponent_->onSliceWarpMarkersToDrumGrid = [this]() { sliceWarpMarkersToDrumGrid(); };
+    gridComponent_->onSliceAtGridToDrumGrid = [this]() { sliceAtGridToDrumGrid(); };
 
     // Zoom drag on waveform — same log-curve sensitivity as header drag
     gridComponent_->onZoomDrag = [this](int deltaY, int anchorX) {
@@ -1116,6 +1118,27 @@ void WaveformEditorContent::sliceAtGrid() {
 
     editingClipId_ = magda::INVALID_CLIP_ID;
     gridComponent_->setClip(magda::INVALID_CLIP_ID);
+}
+
+void WaveformEditorContent::sliceWarpMarkersToDrumGrid() {
+    if (editingClipId_ == magda::INVALID_CLIP_ID)
+        return;
+
+    double tempo = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
+    magda::sliceWarpMarkersToDrumGrid(editingClipId_, tempo, getBridge());
+}
+
+void WaveformEditorContent::sliceAtGridToDrumGrid() {
+    if (editingClipId_ == magda::INVALID_CLIP_ID)
+        return;
+
+    double bpm = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
+    double gridBeats = gridComponent_->getGridResolutionBeats();
+    if (gridBeats <= 0.0)
+        return;
+
+    double gridInterval = gridBeats * 60.0 / bpm;
+    magda::sliceAtGridToDrumGrid(editingClipId_, gridInterval, bpm, getBridge());
 }
 
 }  // namespace magda::daw::ui

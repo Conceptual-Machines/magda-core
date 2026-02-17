@@ -591,4 +591,22 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge);
  */
 void sliceClipAtGrid(ClipId clipId, double gridInterval, double tempo, AudioBridge* bridge);
 
+/**
+ * @brief Create a DrumGrid track from an audio clip's warp markers.
+ *
+ * Each warp marker boundary becomes a pad in a new DrumGridPlugin.
+ * A MIDI clip is created with notes that trigger each pad in sequence
+ * to reproduce the original pattern.
+ */
+void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo, AudioBridge* bridge);
+
+/**
+ * @brief Create a DrumGrid track from an audio clip sliced at grid intervals.
+ *
+ * Each grid-aligned region becomes a pad in a new DrumGridPlugin.
+ * A MIDI clip is created with notes that trigger each pad in sequence
+ * to reproduce the original pattern.
+ */
+void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo, AudioBridge* bridge);
+
 }  // namespace magda

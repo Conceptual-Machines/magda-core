@@ -5,7 +5,9 @@
 #include <iostream>
 
 #include "../audio/AudioBridge.hpp"
+#include "../audio/DrumGridPlugin.hpp"
 #include "../audio/InstrumentRackManager.hpp"
+#include "../audio/MagdaSamplerPlugin.hpp"
 #include "../engine/TracktionEngineWrapper.hpp"
 #include "Config.hpp"
 #include "TrackManager.hpp"
@@ -1718,6 +1720,240 @@ void sliceClipAtGrid(ClipId clipId, double gridInterval, double tempo, AudioBrid
     }
 
     sliceClipAtTimes(clipId, splitTimes, tempo);
+}
+
+namespace {
+
+struct SliceRegion {
+    double sourceStart;
+    double sourceEnd;
+    double timelinePos;
+};
+
+/**
+ * Core helper: given pre-computed slice regions, create a DrumGrid
+ * track, load each region to a pad, and write a MIDI clip.
+ */
+void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipInfo& clip,
+                             const juce::File& audioFile, double tempo, AudioBridge* bridge) {
+    if (slices.empty())
+        return;
+
+    int numSlices = static_cast<int>(slices.size());
+    if (numSlices > daw::audio::DrumGridPlugin::maxPads)
+        numSlices = daw::audio::DrumGridPlugin::maxPads;
+
+    // Create Instrument track with DrumGridPlugin
+    auto& trackManager = TrackManager::getInstance();
+    juce::String clipName =
+        clip.name.isNotEmpty() ? clip.name : audioFile.getFileNameWithoutExtension();
+    TrackId newTrackId = trackManager.createTrack("Drum Grid - " + clipName, TrackType::Instrument);
+    if (newTrackId == INVALID_TRACK_ID)
+        return;
+
+    DeviceInfo dgDevice;
+    dgDevice.name = "Drum Grid";
+    dgDevice.pluginId = "drumgrid";
+    dgDevice.format = PluginFormat::Internal;
+    dgDevice.isInstrument = true;
+    trackManager.addDeviceToTrack(newTrackId, dgDevice);
+
+    // Find the DrumGridPlugin that was just created
+    auto* audioEngine = trackManager.getAudioEngine();
+    if (!audioEngine)
+        return;
+    auto* teTrack = bridge->getAudioTrack(newTrackId);
+    if (!teTrack)
+        return;
+
+    daw::audio::DrumGridPlugin* drumGrid = nullptr;
+    for (auto* plugin : teTrack->pluginList) {
+        drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin);
+        if (drumGrid)
+            break;
+        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
+            if (rackInstance->type != nullptr) {
+                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
+                    drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(innerPlugin);
+                    if (drumGrid)
+                        break;
+                }
+            }
+        }
+        if (drumGrid)
+            break;
+    }
+
+    if (!drumGrid) {
+        std::cerr << "buildDrumGridFromSlices: DrumGridPlugin not found on new track" << std::endl;
+        return;
+    }
+
+    // Load samples to pads and set region boundaries
+    for (int i = 0; i < numSlices; ++i) {
+        const auto& slice = slices[static_cast<size_t>(i)];
+        drumGrid->loadSampleToPad(i, audioFile);
+
+        auto* chain = drumGrid->getChainByIndexMutable(i);
+        if (chain && !chain->plugins.empty()) {
+            auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(chain->plugins[0].get());
+            if (sampler) {
+                auto startSec = static_cast<float>(slice.sourceStart);
+                auto endSec = static_cast<float>(slice.sourceEnd);
+                sampler->sampleStartParam->setParameter(startSec, juce::dontSendNotification);
+                sampler->sampleStartValue = startSec;
+                sampler->sampleEndParam->setParameter(endSec, juce::dontSendNotification);
+                sampler->sampleEndValue = endSec;
+            }
+        }
+    }
+
+    // Create MIDI clip with notes triggering each pad
+    auto& clipManager = ClipManager::getInstance();
+    double clipStart = clip.startTime;
+    double clipEnd = clip.startTime + clip.length;
+    ClipId midiClipId = clipManager.createMidiClip(newTrackId, clipStart, clip.length);
+    if (midiClipId == INVALID_CLIP_ID)
+        return;
+
+    double beatsPerSecond = tempo / 60.0;
+
+    for (int i = 0; i < numSlices; ++i) {
+        const auto& slice = slices[static_cast<size_t>(i)];
+        double noteStartTime = slice.timelinePos - clipStart;
+        double noteStartBeat = noteStartTime * beatsPerSecond;
+
+        double nextTimeline =
+            (i + 1 < numSlices) ? slices[static_cast<size_t>(i + 1)].timelinePos : clipEnd;
+        double noteDuration = nextTimeline - slice.timelinePos;
+        double noteLengthBeats = noteDuration * beatsPerSecond;
+
+        if (noteStartBeat < 0.0)
+            noteStartBeat = 0.0;
+        if (noteLengthBeats <= 0.0)
+            noteLengthBeats = 0.01;
+
+        MidiNote note;
+        note.noteNumber = daw::audio::DrumGridPlugin::baseNote + i;
+        note.velocity = 100;
+        note.startBeat = noteStartBeat;
+        note.lengthBeats = noteLengthBeats;
+        clipManager.addMidiNote(midiClipId, note);
+    }
+
+    clipManager.forceNotifyClipsChanged();
+}
+
+}  // namespace
+
+void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo, AudioBridge* bridge) {
+    if (!bridge)
+        return;
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (!clip || clip->type != ClipType::Audio || clip->audioFilePath.isEmpty())
+        return;
+
+    auto markers = bridge->getWarpMarkers(clipId);
+    if (markers.size() <= 2)
+        return;
+
+    juce::File audioFile(clip->audioFilePath);
+    if (!audioFile.existsAsFile())
+        return;
+
+    double clipStart = clip->startTime;
+    double clipEnd = clip->startTime + clip->length;
+    double clipOffset = clip->offset;
+
+    // Build sorted interior marker source times
+    std::vector<double> interiorSourceTimes;
+    interiorSourceTimes.reserve(markers.size());
+    for (size_t i = 1; i + 1 < markers.size(); ++i) {
+        interiorSourceTimes.push_back(markers[i].sourceTime);
+    }
+    std::sort(interiorSourceTimes.begin(), interiorSourceTimes.end());
+
+    // Build region boundaries: [first boundary, interior..., last boundary]
+    double regionStart = markers.front().sourceTime;
+    double regionEnd = markers.back().sourceTime;
+
+    std::vector<double> boundaries;
+    boundaries.push_back(regionStart);
+    for (double t : interiorSourceTimes) {
+        if (t > regionStart && t < regionEnd)
+            boundaries.push_back(t);
+    }
+    boundaries.push_back(regionEnd);
+
+    auto sourceToTimeline = [&](double sourceTime) -> double {
+        double sourceDelta = sourceTime - clipOffset;
+        if (clip->autoTempo && clip->sourceBPM > 0.0 && tempo > 0.0)
+            return clipStart + sourceDelta * clip->sourceBPM / tempo;
+        else
+            return clipStart + sourceDelta / clip->speedRatio;
+    };
+
+    std::vector<SliceRegion> slices;
+    for (size_t i = 0; i + 1 < boundaries.size(); ++i) {
+        double tlPos = sourceToTimeline(boundaries[i]);
+        if (tlPos >= clipEnd)
+            break;
+        double tlEnd = sourceToTimeline(boundaries[i + 1]);
+        if (tlEnd <= clipStart)
+            continue;
+        slices.push_back({boundaries[i], boundaries[i + 1], tlPos});
+    }
+
+    buildDrumGridFromSlices(slices, *clip, audioFile, tempo, bridge);
+}
+
+void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo, AudioBridge* bridge) {
+    if (!bridge || gridInterval <= 0.0)
+        return;
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (!clip || clip->type != ClipType::Audio || clip->audioFilePath.isEmpty())
+        return;
+
+    juce::File audioFile(clip->audioFilePath);
+    if (!audioFile.existsAsFile())
+        return;
+
+    double clipStart = clip->startTime;
+    double clipEnd = clip->startTime + clip->length;
+    double clipOffset = clip->offset;
+
+    // Convert timeline grid lines to source-file boundaries
+    auto timelineToSource = [&](double timelinePos) -> double {
+        double delta = timelinePos - clipStart;
+        if (clip->autoTempo && clip->sourceBPM > 0.0 && tempo > 0.0)
+            return clipOffset + delta * tempo / clip->sourceBPM;
+        else
+            return clipOffset + delta * clip->speedRatio;
+    };
+
+    // Build timeline grid positions within the clip
+    double startK = std::ceil(clipStart / gridInterval);
+    double iterStart = startK * gridInterval;
+
+    std::vector<double> gridTimes;
+    gridTimes.push_back(clipStart);  // Always start at clip start
+    for (double t = iterStart; t < clipEnd; t += gridInterval) {
+        if (t > clipStart && t < clipEnd)
+            gridTimes.push_back(t);
+    }
+    gridTimes.push_back(clipEnd);  // Always end at clip end
+
+    // Convert to slice regions
+    std::vector<SliceRegion> slices;
+    for (size_t i = 0; i + 1 < gridTimes.size(); ++i) {
+        double srcStart = timelineToSource(gridTimes[i]);
+        double srcEnd = timelineToSource(gridTimes[i + 1]);
+        slices.push_back({srcStart, srcEnd, gridTimes[i]});
+    }
+
+    buildDrumGridFromSlices(slices, *clip, audioFile, tempo, bridge);
 }
 
 }  // namespace magda

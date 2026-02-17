@@ -177,6 +177,8 @@ class WaveformGridComponent : public juce::Component {
     // Slice callbacks
     std::function<void()> onSliceAtWarpMarkers;
     std::function<void()> onSliceAtGrid;
+    std::function<void()> onSliceWarpMarkersToDrumGrid;
+    std::function<void()> onSliceAtGridToDrumGrid;
 
     // Zoom drag callback (deltaY from start, anchorX in viewport coords)
     std::function<void(int deltaY, int anchorX)> onZoomDrag;

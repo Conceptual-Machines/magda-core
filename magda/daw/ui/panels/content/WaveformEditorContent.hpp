@@ -141,6 +141,8 @@ class WaveformEditorContent : public PanelContent,
     // Slice helpers
     void sliceAtWarpMarkers();
     void sliceAtGrid();
+    void sliceWarpMarkersToDrumGrid();
+    void sliceAtGridToDrumGrid();
 
     // Warp state tracking
     bool wasWarpEnabled_ = false;

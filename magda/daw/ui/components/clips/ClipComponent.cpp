@@ -1815,8 +1815,10 @@ void ClipComponent::showContextMenu() {
             canSliceAtGrid = true;
         }
     }
-    menu.addItem(13, "Slice at Warp Markers", canSliceAtMarkers);
-    menu.addItem(14, "Slice at Grid", canSliceAtGrid);
+    menu.addItem(13, "Slice at Warp Markers In Place", canSliceAtMarkers);
+    menu.addItem(15, "Slice at Warp Markers to Drum Grid", canSliceAtMarkers);
+    menu.addItem(14, "Slice at Grid In Place", canSliceAtGrid);
+    menu.addItem(16, "Slice at Grid to Drum Grid", canSliceAtGrid);
     menu.addSeparator();
 
     // Join Clips (need 2+ adjacent clips on same track)
@@ -2102,6 +2104,27 @@ void ClipComponent::showContextMenu() {
                 auto* audioEngine = TrackManager::getInstance().getAudioEngine();
                 auto* bridge = audioEngine ? audioEngine->getAudioBridge() : nullptr;
                 sliceClipAtGrid(clipId_, gridInterval, tempo, bridge);
+                break;
+            }
+
+            case 15: {  // Slice at Warp Markers to Drum Grid
+                double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+                auto* audioEngine = TrackManager::getInstance().getAudioEngine();
+                auto* bridge = audioEngine ? audioEngine->getAudioBridge() : nullptr;
+                sliceWarpMarkersToDrumGrid(clipId_, tempo, bridge);
+                break;
+            }
+
+            case 16: {  // Slice at Grid to Drum Grid
+                double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+                double gridInterval = 0.0;
+                if (parentPanel_ && parentPanel_->getTimelineController()) {
+                    gridInterval =
+                        parentPanel_->getTimelineController()->getState().getSnapInterval();
+                }
+                auto* audioEngine = TrackManager::getInstance().getAudioEngine();
+                auto* bridge = audioEngine ? audioEngine->getAudioBridge() : nullptr;
+                sliceAtGridToDrumGrid(clipId_, gridInterval, tempo, bridge);
                 break;
             }
 
