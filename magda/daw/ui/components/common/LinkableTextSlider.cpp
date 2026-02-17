@@ -2,6 +2,7 @@
 
 #include "ParamLinkResolver.hpp"
 #include "core/LinkModeManager.hpp"
+#include "ui/components/chain/ParamModulationPainter.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -280,6 +281,22 @@ void LinkableTextSlider::paintOverChildren(juce::Graphics& g) {
         g.setColour(color);
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
     }
+
+    // Modulation indicator bars
+    ModulationPaintContext paintCtx;
+    paintCtx.sliderBounds = slider_.getBounds();
+    paintCtx.cellBounds = getLocalBounds();
+    paintCtx.currentParamValue = static_cast<float>(slider_.getNormalizedValue());
+    paintCtx.isInLinkMode = isInLinkMode_;
+    paintCtx.isLinkModeDrag = isLinkModeDrag_;
+    paintCtx.linkModeDragCurrentAmount = linkModeDragCurrentAmount_;
+    paintCtx.activeMod = activeMod_;
+    paintCtx.activeMacro = activeMacro_;
+    paintCtx.linkCtx = buildLinkContext();
+
+    paintModulationIndicators(g, paintCtx);
+
+    updateModTimerState();
 }
 
 // ============================================================================
@@ -452,6 +469,30 @@ void LinkableTextSlider::mouseUp(const juce::MouseEvent& /*e*/) {
         }
 
         repaint();
+    }
+}
+
+// ============================================================================
+// Modulation display
+// ============================================================================
+
+ParamLinkContext LinkableTextSlider::buildLinkContext() const {
+    return {deviceId_,          paramIndex_,      devicePath_,          availableMods_,
+            availableRackMods_, availableMacros_, availableRackMacros_, selectedModIndex_,
+            selectedMacroIndex_};
+}
+
+void LinkableTextSlider::timerCallback() {
+    repaint();
+}
+
+void LinkableTextSlider::updateModTimerState() {
+    if (hasActiveLinks(buildLinkContext())) {
+        if (!isTimerRunning()) {
+            startTimer(33);  // ~30 FPS
+        }
+    } else {
+        stopTimer();
     }
 }
 

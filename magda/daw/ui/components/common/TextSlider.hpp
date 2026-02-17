@@ -115,6 +115,12 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
         return isLeftButtonDrag_;
     }
 
+    double getNormalizedValue() const {
+        if (maxValue_ <= minValue_)
+            return 0.0;
+        return (value_ - minValue_) / (maxValue_ - minValue_);
+    }
+
     std::function<void(double)> onValueChanged;
     std::function<void()> onClicked;       // Called on single left-click (no drag)
     std::function<void()> onShiftClicked;  // Called on Shift+click (no drag)

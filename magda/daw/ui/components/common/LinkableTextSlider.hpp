@@ -6,6 +6,7 @@
 #include "core/LinkModeManager.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
+#include "ui/components/chain/ParamModulationPainter.hpp"
 
 namespace magda::daw::ui {
 
@@ -15,7 +16,9 @@ namespace magda::daw::ui {
  * Drop-in replacement for TextSlider in custom UIs.
  * Handles shift-drag, global link mode, and visual feedback.
  */
-class LinkableTextSlider : public juce::Component, public magda::LinkModeManagerListener {
+class LinkableTextSlider : public juce::Component,
+                           public magda::LinkModeManagerListener,
+                           public juce::Timer {
   public:
     LinkableTextSlider(TextSlider::Format format = TextSlider::Format::Decimal);
     ~LinkableTextSlider() override;
@@ -73,6 +76,9 @@ class LinkableTextSlider : public juce::Component, public magda::LinkModeManager
     void modLinkModeChanged(bool active, const magda::ModSelection& selection) override;
     void macroLinkModeChanged(bool active, const magda::MacroSelection& selection) override;
 
+    // === Timer ===
+    void timerCallback() override;
+
   private:
     TextSlider slider_;
 
@@ -104,6 +110,10 @@ class LinkableTextSlider : public juce::Component, public magda::LinkModeManager
 
     // Amount tooltip label
     juce::Label amountLabel_;
+
+    // Modulation display helpers
+    ParamLinkContext buildLinkContext() const;
+    void updateModTimerState();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LinkableTextSlider)
 };
