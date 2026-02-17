@@ -972,7 +972,10 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
         {
             double clickTime = pixelToTime(x);
             double fileRelativeTime = clickTime - getDisplayStartTime();
-            double sourceTime = displayInfo_.timelineToSource(fileRelativeTime);
+            // Convert timeline delta to source delta, then add draw start
+            // to get absolute source file time (matching transientTimes_ values)
+            double sourceTime =
+                displayInfo_.timelineToSource(fileRelativeTime) + displayInfo_.fullDrawStartSeconds;
             if (sourceTime < 0.0)
                 sourceTime = 0.0;
             if (onTransientAdd)
@@ -1239,7 +1242,7 @@ void WaveformGridComponent::mouseMove(const juce::MouseEvent& event) {
         if (event.mods.isShiftDown()) {
             setMouseCursor(magda::CursorManager::getInstance().getZoomCursor());
         } else if (event.mods.isAltDown() && findTransientAtPixel(x) >= 0) {
-            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+            setMouseCursor(juce::MouseCursor::DraggingHandCursor);
         } else {
             setMouseCursor(juce::MouseCursor::CrosshairCursor);
         }
@@ -1388,11 +1391,18 @@ int WaveformGridComponent::findTransientAtPixel(int x) const {
         return -1;
 
     double displayStartTime = getDisplayStartTime();
+    double sourceStart = displayInfo_.fullDrawStartSeconds;
+    double sourceEnd = displayInfo_.fullDrawEndSeconds;
 
     for (int i = 0; i < transientTimes_.size(); ++i) {
-        double sourceTime = transientTimes_[i];
-        double displayTime = displayInfo_.sourceToTimeline(sourceTime) + displayStartTime;
-        int px = timeToPixel(displayTime);
+        double t = transientTimes_[i];
+        if (t < sourceStart || t >= sourceEnd)
+            continue;
+
+        // Must match paintTransientMarkers coordinate conversion
+        double displayTime = displayInfo_.sourceToTimeline(t - sourceStart);
+        double absDisplayTime = displayTime + displayStartTime;
+        int px = timeToPixel(absDisplayTime);
         if (std::abs(x - px) <= WARP_MARKER_HIT_DISTANCE)
             return i;
     }
