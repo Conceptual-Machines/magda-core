@@ -1310,6 +1310,10 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
         // Now apply snapping and commit to ClipManager
         switch (savedDragMode) {
             case DragMode::Move: {
+                // SafePointer guard: overlap resolution during move/duplicate can
+                // trigger rebuildClipComponents() which destroys this component.
+                juce::Component::SafePointer<ClipComponent> safeThis(this);
+
                 double finalStartTime = previewStartTime_;
                 if (snapTimeToGrid) {
                     finalStartTime = snapTimeToGrid(finalStartTime);
@@ -1346,6 +1350,8 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                                                                       targetTrackId, dupTempo);
                     auto* cmdPtr = cmd.get();
                     UndoManager::getInstance().executeCommand(std::move(cmd));
+                    if (safeThis == nullptr)
+                        return;
                     ClipId newClipId = cmdPtr->getDuplicatedClipId();
                     if (newClipId != INVALID_CLIP_ID) {
                         SelectionManager::getInstance().selectClip(newClipId);
@@ -1357,6 +1363,8 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                     // Normal move: update original clip position
                     if (onClipMoved) {
                         onClipMoved(clipId_, finalStartTime);
+                        if (safeThis == nullptr)
+                            return;
                     }
                     if (targetTrackId != dragStartTrackId_ && onClipMovedToTrack) {
                         onClipMovedToTrack(clipId_, targetTrackId);
