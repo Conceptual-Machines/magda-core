@@ -1617,8 +1617,10 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             }
         } else if (device.pluginId.containsIgnoreCase("compressor")) {
             plugin = edit_.getPluginCache().createNewPlugin(te::CompressorPlugin::xmlTypeName, {});
-            if (plugin)
+            if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
+                processor = std::make_unique<CompressorProcessor>(device.id, plugin);
+            }
         } else if (device.pluginId.containsIgnoreCase("chorus")) {
             plugin = edit_.getPluginCache().createNewPlugin(te::ChorusPlugin::xmlTypeName, {});
             if (plugin)
