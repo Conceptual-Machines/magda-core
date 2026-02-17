@@ -413,7 +413,7 @@ DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devicePath
 void TrackManager::setDeviceInChainBypassedByPath(const ChainNodePath& devicePath, bool bypassed) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
         device->bypassed = bypassed;
-        notifyTrackDevicesChanged(devicePath.trackId);
+        notifyDevicePropertyChanged(device->id);
     }
 }
 

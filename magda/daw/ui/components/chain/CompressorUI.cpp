@@ -20,8 +20,8 @@ CompressorUI::CompressorUI() {
     setupSlider(threshold_, "THRESH");
     setupSlider(ratio_, "RATIO");
     setupSlider(attack_, "ATTACK");
-    setupSlider(release_, "RELEASE");
-    setupSlider(output_, "OUTPUT");
+    setupSlider(release_, "REL");
+    setupSlider(output_, "GAIN");
     setupSlider(sidechain_, "SC GAIN");
 
     // Threshold: linear gain 0.01–1.0, displayed as dB
@@ -141,8 +141,8 @@ void CompressorUI::resized() {
     int labelHeight = 14;
     int sliderHeight = 18;
 
-    SliderWithLabel* row1[] = {&threshold_, &ratio_, &attack_};
-    SliderWithLabel* row2[] = {&release_, &output_, &sidechain_};
+    SliderWithLabel* row1[] = {&threshold_, &ratio_, &output_};
+    SliderWithLabel* row2[] = {&attack_, &release_, &sidechain_};
 
     auto topRow = area.removeFromTop(rowHeight);
     for (auto* s : row1) {
