@@ -965,10 +965,10 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
 }
 
 void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
-    // Header layout: [Macro] [M] [Name...] [gain slider] [UI] [on]
+    // Header layout: [Macro] [M] [Name] [UI] [...] [gain slider] [SC] [MO] [on] [X]
     // Note: delete (X) is handled by NodeComponent on the right
 
-    // Macro button on the left (before name) - matches panel order
+    // Macro button on the left
     macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
     headerArea.removeFromLeft(4);
 
@@ -978,10 +978,6 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
 
     // Power button on the right (before delete which is handled by parent)
     onButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
-    headerArea.removeFromRight(4);
-
-    // UI button
-    uiButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
     headerArea.removeFromRight(4);
 
     // Sidechain button (only if plugin supports it)
@@ -1002,6 +998,13 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     // Gain slider takes some space on the right
     gainSlider_.setBounds(headerArea.removeFromRight(70));
     headerArea.removeFromRight(4);
+
+    // Name label gets the remaining left portion (handled by NodeComponent)
+    // UI button sits just to the right of the name
+    if (uiButton_->isVisible()) {
+        uiButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+        headerArea.removeFromRight(4);
+    }
 
     // Remaining space is for the name label (handled by NodeComponent)
 }
