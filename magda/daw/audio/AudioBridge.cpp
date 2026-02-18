@@ -379,13 +379,17 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
                 }
             }
 
-            // Re-check MIDI sidechain monitor on both source and current track
-            if (device->sidechain.type == SidechainConfig::Type::MIDI &&
-                device->sidechain.sourceTrackId != INVALID_TRACK_ID) {
-                DBG("AudioBridge::devicePropertyChanged - MIDI sidechain set, checking monitor on "
-                    "source track "
+            // MIDI sidechain: ensure MidiReceivePlugin + SidechainMonitorPlugin
+            if (device->sidechain.isActive() &&
+                device->sidechain.type == SidechainConfig::Type::MIDI) {
+                DBG("AudioBridge::devicePropertyChanged - MIDI sidechain set, "
+                    "ensuring MidiReceive + monitor for source track "
                     << device->sidechain.sourceTrackId);
+                pluginManager_.ensureMidiReceive(track.id, device->id,
+                                                 device->sidechain.sourceTrackId);
                 pluginManager_.checkSidechainMonitor(device->sidechain.sourceTrackId);
+            } else {
+                pluginManager_.removeMidiReceive(track.id, device->id);
             }
             // Also re-check the track this device is on (may no longer need monitor)
             pluginManager_.checkSidechainMonitor(track.id);
