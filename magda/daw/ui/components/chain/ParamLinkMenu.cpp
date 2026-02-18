@@ -29,7 +29,7 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
             menu.addItem(1, "Unlink from " + modName);
         } else {
             menu.addSectionHeader(modName);
-            menu.addItem(2, "Link to " + modName + " (50%)");
+            menu.addItem(2, "Link to " + modName);
         }
 
         // Show contextual menu
@@ -53,7 +53,7 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
                                    }
                                } else if (result == 2) {
                                    if (cbs.onModLinkedWithAmount) {
-                                       cbs.onModLinkedWithAmount(modIndex, target, 0.5f);
+                                       cbs.onModLinkedWithAmount(modIndex, target, 0.0f);
                                    }
                                }
 
@@ -154,7 +154,7 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
                            } else if (result >= 3000 && result < 4000) {
                                int modIndex = result - 3000;
                                if (cbs.onModLinkedWithAmount) {
-                                   cbs.onModLinkedWithAmount(modIndex, target, 0.5f);
+                                   cbs.onModLinkedWithAmount(modIndex, target, 0.0f);
                                }
                            } else if (result >= 4000 && result < 5000) {
                                int macroIndex = result - 4000;

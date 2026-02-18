@@ -8,6 +8,93 @@
 
 namespace magda::daw::ui {
 
+// ============================================================================
+// ModMatrixContent
+// ============================================================================
+
+void ModMatrixContent::setLinks(const std::vector<LinkRow>& links) {
+    links_ = links;
+    setSize(getWidth(), juce::jmax(1, static_cast<int>(links_.size())) * ROW_HEIGHT);
+    repaint();
+}
+
+void ModMatrixContent::paint(juce::Graphics& g) {
+    auto font = FontManager::getInstance().getUIFont(8.0f);
+    g.setFont(font);
+
+    for (int i = 0; i < static_cast<int>(links_.size()); ++i) {
+        const auto& link = links_[static_cast<size_t>(i)];
+        int y = i * ROW_HEIGHT;
+        auto rowBounds = juce::Rectangle<int>(0, y, getWidth(), ROW_HEIGHT);
+
+        // Alternating row background
+        if (i % 2 == 0) {
+            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.3f));
+            g.fillRect(rowBounds);
+        }
+
+        auto remaining = rowBounds.reduced(2, 0);
+
+        // Delete button (X) on right - 14px
+        auto deleteBounds = remaining.removeFromRight(14);
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.drawText("x", deleteBounds, juce::Justification::centred);
+        remaining.removeFromRight(2);
+
+        // Bipolar toggle - 16px
+        auto bipolarBounds = remaining.removeFromRight(16);
+        g.setColour(link.bipolar ? DarkTheme::getColour(DarkTheme::ACCENT_ORANGE)
+                                 : DarkTheme::getSecondaryTextColour());
+        g.drawText(link.bipolar ? "Bi" : "Un", bipolarBounds, juce::Justification::centred);
+        remaining.removeFromRight(2);
+
+        // Amount - 28px
+        auto amountBounds = remaining.removeFromRight(28);
+        int percent = static_cast<int>(link.amount * 100);
+        g.setColour(DarkTheme::getTextColour());
+        g.drawText(juce::String(percent) + "%", amountBounds, juce::Justification::centredRight);
+        remaining.removeFromRight(2);
+
+        // Param name takes remaining space
+        g.setColour(DarkTheme::getTextColour());
+        g.drawText(link.paramName, remaining, juce::Justification::centredLeft, true);
+    }
+
+    if (links_.empty()) {
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.drawText("No links", getLocalBounds(), juce::Justification::centred);
+    }
+}
+
+void ModMatrixContent::mouseDown(const juce::MouseEvent& e) {
+    int rowIndex = e.getPosition().y / ROW_HEIGHT;
+    if (rowIndex < 0 || rowIndex >= static_cast<int>(links_.size()))
+        return;
+
+    int x = e.getPosition().x;
+    int width = getWidth();
+
+    // Delete button zone: rightmost 14px + 2px padding
+    if (x >= width - 16) {
+        if (onDeleteLink)
+            onDeleteLink(links_[static_cast<size_t>(rowIndex)].target);
+        return;
+    }
+
+    // Bipolar toggle zone: next 16px + 2px padding
+    if (x >= width - 36 && x < width - 18) {
+        if (onToggleBipolar) {
+            auto& link = links_[static_cast<size_t>(rowIndex)];
+            onToggleBipolar(link.target, !link.bipolar);
+        }
+        return;
+    }
+}
+
+// ============================================================================
+// ModulatorEditorPanel
+// ============================================================================
+
 ModulatorEditorPanel::ModulatorEditorPanel() {
     // Intercept mouse clicks to prevent propagation to parent
     setInterceptsMouseClicks(true, true);
@@ -343,6 +430,22 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
             onAdvancedClicked();
     };
     addAndMakeVisible(advancedButton_.get());
+
+    // Mod matrix viewport
+    modMatrixViewport_.setViewedComponent(&modMatrixContent_, false);
+    modMatrixViewport_.setScrollBarsShown(true, false);
+    addAndMakeVisible(modMatrixViewport_);
+
+    modMatrixContent_.onDeleteLink = [this](magda::ModTarget target) {
+        if (selectedModIndex_ >= 0 && onModLinkDeleted) {
+            onModLinkDeleted(selectedModIndex_, target);
+        }
+    };
+    modMatrixContent_.onToggleBipolar = [this](magda::ModTarget target, bool bipolar) {
+        if (selectedModIndex_ >= 0 && onModLinkBipolarChanged) {
+            onModLinkBipolarChanged(selectedModIndex_, target, bipolar);
+        }
+    };
 }
 
 ModulatorEditorPanel::~ModulatorEditorPanel() {
@@ -436,6 +539,9 @@ void ModulatorEditorPanel::updateFromMod() {
         audioReleaseSlider_.setValue(currentMod_.audioReleaseMs, juce::dontSendNotification);
     }
 
+    // Update mod matrix
+    updateModMatrix();
+
     // Update layout since curve/LFO mode affects component positions
     resized();
 }
@@ -472,6 +578,31 @@ void ModulatorEditorPanel::paint(juce::Graphics& g) {
 
     // Skip trigger row (no dot painted here — waveform display handles the indicator)
     bounds.removeFromTop(18);
+
+    // "Links" label for mod matrix
+    {
+        auto linkLabelBounds = getLocalBounds().reduced(6);
+        // Skip to same position as resized calculates
+        linkLabelBounds.removeFromTop(18 + 6);  // name + gap
+        if (isCurveMode_) {
+            linkLabelBounds.removeFromTop(18 + 4);  // preset combo + gap
+        } else {
+            linkLabelBounds.removeFromTop(10 + 18 + 4);  // label + waveform + gap
+        }
+        int dh = isCurveMode_ ? 70 : 46;
+        linkLabelBounds.removeFromTop(dh + 6);   // display + gap
+        linkLabelBounds.removeFromTop(18 + 8);   // rate row + gap
+        linkLabelBounds.removeFromTop(12 + 18);  // trigger label + trigger row
+
+        if (audioAttackSlider_.isVisible()) {
+            linkLabelBounds.removeFromTop(6 + 10 + 18 + 4 + 10 + 18);  // audio sliders
+        }
+
+        linkLabelBounds.removeFromTop(8);  // gap before Links label
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setFont(FontManager::getInstance().getUIFont(8.0f));
+        g.drawText("Links", linkLabelBounds.removeFromTop(12), juce::Justification::centredLeft);
+    }
 
     // Audio envelope labels (when trigger mode = Audio)
     if (audioAttackSlider_.isVisible()) {
@@ -573,6 +704,17 @@ void ModulatorEditorPanel::resized() {
         bounds.removeFromTop(10);  // Label space
         audioReleaseSlider_.setBounds(bounds.removeFromTop(18));
     }
+
+    // Mod matrix section: takes all remaining space
+    bounds.removeFromTop(8);
+    bounds.removeFromTop(12);  // "Links" label
+    if (bounds.getHeight() > 0) {
+        modMatrixViewport_.setBounds(bounds);
+        modMatrixContent_.setSize(
+            bounds.getWidth() - (modMatrixViewport_.isVerticalScrollBarShown() ? 8 : 0),
+            juce::jmax(bounds.getHeight(),
+                       static_cast<int>(currentMod_.links.size()) * ModMatrixContent::ROW_HEIGHT));
+    }
 }
 
 void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& /*e*/) {
@@ -581,6 +723,30 @@ void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& /*e*/) {
 
 void ModulatorEditorPanel::mouseUp(const juce::MouseEvent& /*e*/) {
     // Consume mouse events to prevent propagation to parent
+}
+
+void ModulatorEditorPanel::updateModMatrix() {
+    std::vector<ModMatrixContent::LinkRow> rows;
+
+    for (const auto& link : currentMod_.links) {
+        if (!link.isValid())
+            continue;
+
+        ModMatrixContent::LinkRow row;
+        row.target = link.target;
+        row.amount = link.amount;
+        row.bipolar = link.bipolar;
+
+        if (paramNameResolver_) {
+            row.paramName = paramNameResolver_(link.target.deviceId, link.target.paramIndex);
+        } else {
+            row.paramName = "P" + juce::String(link.target.paramIndex);
+        }
+
+        rows.push_back(row);
+    }
+
+    modMatrixContent_.setLinks(rows);
 }
 
 void ModulatorEditorPanel::timerCallback() {

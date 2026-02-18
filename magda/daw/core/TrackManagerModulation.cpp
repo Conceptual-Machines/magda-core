@@ -72,6 +72,19 @@ void TrackManager::setRackMacroLinkAmount(const ChainNodePath& rackPath, int mac
     }
 }
 
+void TrackManager::setRackMacroLinkBipolar(const ChainNodePath& rackPath, int macroIndex,
+                                           MacroTarget target, bool bipolar) {
+    if (auto* rack = getRackByPath(rackPath)) {
+        if (macroIndex < 0 || macroIndex >= static_cast<int>(rack->macros.size())) {
+            return;
+        }
+        if (auto* link = rack->macros[macroIndex].getLink(target)) {
+            link->bipolar = bipolar;
+            notifyDeviceModifiersChanged(rackPath.trackId);
+        }
+    }
+}
+
 void TrackManager::addRackMacroPage(const ChainNodePath& rackPath) {
     if (auto* rack = getRackByPath(rackPath)) {
         addMacroPage(rack->macros);
@@ -132,6 +145,19 @@ void TrackManager::setRackModLinkAmount(const ChainNodePath& rackPath, int modIn
             rack->mods[modIndex].amount = amount;
         }
         notifyDeviceModifiersChanged(rackPath.trackId);
+    }
+}
+
+void TrackManager::setRackModLinkBipolar(const ChainNodePath& rackPath, int modIndex,
+                                         ModTarget target, bool bipolar) {
+    if (auto* rack = getRackByPath(rackPath)) {
+        if (modIndex < 0 || modIndex >= static_cast<int>(rack->mods.size())) {
+            return;
+        }
+        if (auto* link = rack->mods[modIndex].getLink(target)) {
+            link->bipolar = bipolar;
+            notifyDeviceModifiersChanged(rackPath.trackId);
+        }
     }
 }
 
@@ -305,6 +331,20 @@ void TrackManager::removeRackMod(const ChainNodePath& rackPath, int modIndex) {
     }
 }
 
+void TrackManager::removeRackModLink(const ChainNodePath& rackPath, int modIndex,
+                                     ModTarget target) {
+    if (auto* rack = getRackByPath(rackPath)) {
+        if (modIndex >= 0 && modIndex < static_cast<int>(rack->mods.size())) {
+            auto& mod = rack->mods[modIndex];
+            mod.removeLink(target);
+            if (mod.target == target) {
+                mod.target = ModTarget{};
+            }
+            notifyTrackDevicesChanged(rackPath.trackId);
+        }
+    }
+}
+
 void TrackManager::setRackModEnabled(const ChainNodePath& rackPath, int modIndex, bool enabled) {
     if (auto* rack = getRackByPath(rackPath)) {
         if (modIndex >= 0 && modIndex < static_cast<int>(rack->mods.size())) {
@@ -353,7 +393,7 @@ void TrackManager::setDeviceModTarget(const ChainNodePath& devicePath, int modIn
                                       ModTarget target) {
     if (auto* mod = getDeviceMod(devicePath, modIndex)) {
         if (target.isValid()) {
-            mod->addLink(target, 0.5f);
+            mod->addLink(target, 0.0f);
         }
         mod->target = target;
         // Use modifier-only notify to avoid full UI rebuild (panel stays open)
@@ -384,6 +424,16 @@ void TrackManager::setDeviceModLinkAmount(const ChainNodePath& devicePath, int m
             mod->amount = amount;
         }
         notifyDeviceModifiersChanged(devicePath.trackId);
+    }
+}
+
+void TrackManager::setDeviceModLinkBipolar(const ChainNodePath& devicePath, int modIndex,
+                                           ModTarget target, bool bipolar) {
+    if (auto* mod = getDeviceMod(devicePath, modIndex)) {
+        if (auto* link = mod->getLink(target)) {
+            link->bipolar = bipolar;
+            notifyDeviceModifiersChanged(devicePath.trackId);
+        }
     }
 }
 
@@ -932,6 +982,19 @@ void TrackManager::setDeviceMacroLinkAmount(const ChainNodePath& devicePath, int
             notifyTrackDevicesChanged(devicePath.trackId);
         } else {
             // Existing link amount changed — resync TE assignments
+            notifyDeviceModifiersChanged(devicePath.trackId);
+        }
+    }
+}
+
+void TrackManager::setDeviceMacroLinkBipolar(const ChainNodePath& devicePath, int macroIndex,
+                                             MacroTarget target, bool bipolar) {
+    if (auto* device = getDeviceInChainByPath(devicePath)) {
+        if (macroIndex < 0 || macroIndex >= static_cast<int>(device->macros.size())) {
+            return;
+        }
+        if (auto* link = device->macros[macroIndex].getLink(target)) {
+            link->bipolar = bipolar;
             notifyDeviceModifiersChanged(devicePath.trackId);
         }
     }

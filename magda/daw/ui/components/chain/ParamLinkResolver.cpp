@@ -131,7 +131,8 @@ float computeTotalModModulation(const ParamLinkContext& ctx) {
     if (ctx.deviceMods) {
         for (const auto& mod : *ctx.deviceMods) {
             if (const auto* link = mod.getLink(modTarget)) {
-                total += mod.value * link->amount;
+                float modOffset = link->bipolar ? (mod.value * 2.0f - 1.0f) : mod.value;
+                total += modOffset * link->amount;
             }
         }
     }
@@ -140,7 +141,8 @@ float computeTotalModModulation(const ParamLinkContext& ctx) {
     if (ctx.rackMods) {
         for (const auto& mod : *ctx.rackMods) {
             if (const auto* link = mod.getLink(modTarget)) {
-                total += mod.value * link->amount;
+                float modOffset = link->bipolar ? (mod.value * 2.0f - 1.0f) : mod.value;
+                total += modOffset * link->amount;
             }
         }
     }
@@ -160,7 +162,8 @@ float computeTotalMacroModulation(const ParamLinkContext& ctx) {
     if (ctx.deviceMacros) {
         for (const auto& macro : *ctx.deviceMacros) {
             if (const auto* link = macro.getLink(macroTarget)) {
-                total += macro.value * link->amount;
+                float macroOffset = link->bipolar ? (macro.value * 2.0f - 1.0f) : macro.value;
+                total += macroOffset * link->amount;
             }
         }
     }
@@ -169,7 +172,8 @@ float computeTotalMacroModulation(const ParamLinkContext& ctx) {
     if (ctx.rackMacros) {
         for (const auto& macro : *ctx.rackMacros) {
             if (const auto* link = macro.getLink(macroTarget)) {
-                total += macro.value * link->amount;
+                float macroOffset = link->bipolar ? (macro.value * 2.0f - 1.0f) : macro.value;
+                total += macroOffset * link->amount;
             }
         }
     }

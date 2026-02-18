@@ -1550,6 +1550,7 @@ juce::var ProjectSerializer::serializeMacroInfo(const MacroInfo& macro) {
         linkTargetObj->setProperty("paramIndex", link.target.paramIndex);
         linkObj->setProperty("target", juce::var(linkTargetObj));
         linkObj->setProperty("amount", link.amount);
+        linkObj->setProperty("bipolar", link.bipolar);
         linksArray.add(juce::var(linkObj));
     }
     obj->setProperty("links", juce::var(linksArray));
@@ -1593,6 +1594,8 @@ bool ProjectSerializer::deserializeMacroInfo(const juce::var& json, MacroInfo& o
                 link.target.paramIndex = targetObj->getProperty("paramIndex");
             }
             link.amount = linkObj->getProperty("amount");
+            if (linkObj->hasProperty("bipolar"))
+                link.bipolar = static_cast<bool>(linkObj->getProperty("bipolar"));
             outMacro.links.push_back(link);
         }
     }
@@ -1645,6 +1648,7 @@ juce::var ProjectSerializer::serializeModInfo(const ModInfo& mod) {
         linkTargetObj->setProperty("paramIndex", link.target.paramIndex);
         linkObj->setProperty("target", juce::var(linkTargetObj));
         linkObj->setProperty("amount", link.amount);
+        linkObj->setProperty("bipolar", link.bipolar);
         linksArray.add(juce::var(linkObj));
     }
     obj->setProperty("links", juce::var(linksArray));
@@ -1726,6 +1730,8 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
                 link.target.paramIndex = targetObj->getProperty("paramIndex");
             }
             link.amount = linkObj->getProperty("amount");
+            if (linkObj->hasProperty("bipolar"))
+                link.bipolar = static_cast<bool>(linkObj->getProperty("bipolar"));
             outMod.links.push_back(link);
         }
     }

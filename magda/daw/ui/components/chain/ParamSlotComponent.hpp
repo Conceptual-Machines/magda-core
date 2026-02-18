@@ -177,8 +177,8 @@ class ParamSlotComponent : public juce::Component,
 
     // Link mode drag state (for setting modulation amount via drag)
     bool isLinkModeDrag_ = false;
-    float linkModeDragStartAmount_ = 0.5f;
-    float linkModeDragCurrentAmount_ = 0.5f;
+    float linkModeDragStartAmount_ = 0.0f;
+    float linkModeDragCurrentAmount_ = 0.0f;
     int linkModeDragStartY_ = 0;
 
     // Overlay slider for link mode

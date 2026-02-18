@@ -100,8 +100,8 @@ class LinkableTextSlider : public juce::Component,
 
     // Link mode drag state
     bool isLinkModeDrag_ = false;
-    float linkModeDragStartAmount_ = 0.5f;
-    float linkModeDragCurrentAmount_ = 0.5f;
+    float linkModeDragStartAmount_ = 0.0f;
+    float linkModeDragCurrentAmount_ = 0.0f;
     int linkModeDragStartY_ = 0;
 
     // Shift-drag state (editing amount on selected mod)
