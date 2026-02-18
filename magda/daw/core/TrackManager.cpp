@@ -662,9 +662,7 @@ void TrackManager::setTrackMidiOutput(TrackId trackId, const juce::String& devic
     // Update track state
     track->midiOutputDevice = deviceId;
 
-    // TODO: Forward to MidiBridge when MIDI output routing is implemented
-
-    // Notify listeners
+    // Notify listeners (AudioBridge forwards to TrackController for TE routing)
     notifyTrackPropertyChanged(trackId);
 }
 

@@ -410,10 +410,11 @@ void TrackHeadersPanel::populateMidiInputOptions(RoutingSelector* selector) {
     RoutingSyncHelper::populateMidiInputOptions(selector, audioEngine_->getMidiBridge());
 }
 
-void TrackHeadersPanel::populateMidiOutputOptions(RoutingSelector* selector) {
+void TrackHeadersPanel::populateMidiOutputOptions(RoutingSelector* selector, TrackId trackId) {
     if (!selector || !audioEngine_)
         return;
-    RoutingSyncHelper::populateMidiOutputOptions(selector, audioEngine_->getMidiBridge());
+    RoutingSyncHelper::populateMidiOutputOptions(selector, audioEngine_->getMidiBridge(), trackId,
+                                                 midiOutputTrackMapping_);
 }
 
 void TrackHeadersPanel::refreshInputSelectors() {
@@ -549,6 +550,13 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
         if (selectedId == 1) {
             // None
             TrackManager::getInstance().setTrackMidiOutput(trackId, "");
+        } else if (selectedId >= 200) {
+            // Track destination
+            auto it = midiOutputTrackMapping_.find(selectedId);
+            if (it != midiOutputTrackMapping_.end()) {
+                TrackManager::getInstance().setTrackMidiOutput(trackId,
+                                                               "track:" + juce::String(it->second));
+            }
         } else if (selectedId >= 10 && midiBridge) {
             auto midiOutputs = midiBridge->getAvailableMidiOutputs();
             int deviceIndex = selectedId - 10;
@@ -756,7 +764,7 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
     RoutingSyncHelper::syncSelectorsFromTrack(
         *track, header.audioInputSelector.get(), header.inputSelector.get(),
         header.outputSelector.get(), header.midiOutputSelector.get(), audioEngine_->getMidiBridge(),
-        device, header.trackId, outputTrackMapping_);
+        device, header.trackId, outputTrackMapping_, midiOutputTrackMapping_);
 }
 
 void TrackHeadersPanel::paint(juce::Graphics& g) {
@@ -1074,7 +1082,7 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
     populateAudioInputOptions(header.audioInputSelector.get());
     populateMidiInputOptions(header.inputSelector.get());
     populateAudioOutputOptions(header.outputSelector.get(), trackId);
-    populateMidiOutputOptions(header.midiOutputSelector.get());
+    populateMidiOutputOptions(header.midiOutputSelector.get(), trackId);
 
     // Set up routing callbacks (audio/MIDI input with mutual exclusion, outputs)
     setupRoutingCallbacks(header, trackId);

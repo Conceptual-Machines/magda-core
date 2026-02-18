@@ -132,6 +132,13 @@ class TrackController {
     juce::String getTrackAudioOutput(TrackId trackId) const;
 
     /**
+     * @brief Set MIDI output destination for a track
+     * @param trackId The MAGDA track ID
+     * @param deviceId MIDI output device ID, "track:NNN" for track destination, empty to disable
+     */
+    void setTrackMidiOutput(TrackId trackId, const juce::String& deviceId);
+
+    /**
      * @brief Set audio input source for a track
      * @param trackId The MAGDA track ID
      * @param deviceId Input device ID, "default" for default input, empty to disable

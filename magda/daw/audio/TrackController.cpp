@@ -204,6 +204,13 @@ juce::String TrackController::getTrackAudioOutput(TrackId trackId) const {
     return output.getOutputName();
 }
 
+void TrackController::setTrackMidiOutput(TrackId trackId, const juce::String& deviceId) {
+    // NOTE: TE has a single TrackOutput per track (shared audio+MIDI).
+    // We cannot use TrackOutput for independent MIDI routing — it would
+    // replace the audio output. MIDI routing will be handled via aux sends.
+    juce::ignoreUnused(trackId, deviceId);
+}
+
 void TrackController::setTrackAudioInput(TrackId trackId, const juce::String& deviceId) {
     auto* track = getAudioTrack(trackId);
     if (!track) {

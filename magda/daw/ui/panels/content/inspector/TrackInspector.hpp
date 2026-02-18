@@ -94,6 +94,7 @@ class TrackInspector : public BaseInspector, public magda::TrackManagerListener 
 
     // Output routing: option ID → TrackId mapping for group/aux destinations
     std::map<int, magda::TrackId> outputTrackMapping_;
+    std::map<int, magda::TrackId> midiOutputTrackMapping_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TrackInspector)
 };

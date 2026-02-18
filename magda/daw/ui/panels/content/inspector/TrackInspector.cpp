@@ -759,6 +759,13 @@ void TrackInspector::populateRoutingSelectors() {
 
         if (selectedId == 1) {
             magda::TrackManager::getInstance().setTrackMidiOutput(selectedTrackId_, "");
+        } else if (selectedId >= 200) {
+            // Track destination
+            auto it = midiOutputTrackMapping_.find(selectedId);
+            if (it != midiOutputTrackMapping_.end()) {
+                magda::TrackManager::getInstance().setTrackMidiOutput(
+                    selectedTrackId_, "track:" + juce::String(it->second));
+            }
         } else if (selectedId >= 10 && midiBridge) {
             auto midiOutputs = midiBridge->getAvailableMidiOutputs();
             int deviceIndex = selectedId - 10;
@@ -802,7 +809,8 @@ void TrackInspector::populateMidiOutputOptions() {
     if (!midiOutputSelector_ || !audioEngine_)
         return;
     magda::RoutingSyncHelper::populateMidiOutputOptions(midiOutputSelector_.get(),
-                                                        audioEngine_->getMidiBridge());
+                                                        audioEngine_->getMidiBridge(),
+                                                        selectedTrackId_, midiOutputTrackMapping_);
 }
 
 void TrackInspector::updateRoutingSelectorsFromTrack() {
@@ -818,7 +826,7 @@ void TrackInspector::updateRoutingSelectorsFromTrack() {
     magda::RoutingSyncHelper::syncSelectorsFromTrack(
         *track, audioInputSelector_.get(), inputSelector_.get(), outputSelector_.get(),
         midiOutputSelector_.get(), audioEngine_->getMidiBridge(), device, selectedTrackId_,
-        outputTrackMapping_);
+        outputTrackMapping_, midiOutputTrackMapping_);
 }
 
 }  // namespace magda::daw::ui

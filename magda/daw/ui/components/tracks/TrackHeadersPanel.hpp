@@ -188,12 +188,13 @@ class TrackHeadersPanel : public juce::Component,
     void populateAudioOutputOptions(RoutingSelector* selector,
                                     TrackId currentTrackId = INVALID_TRACK_ID);
     void populateMidiInputOptions(RoutingSelector* selector);
-    void populateMidiOutputOptions(RoutingSelector* selector);
+    void populateMidiOutputOptions(RoutingSelector* selector, TrackId trackId);
     void setupRoutingCallbacks(TrackHeader& header, TrackId trackId);
     void updateRoutingSelectorFromTrack(TrackHeader& header, const TrackInfo* track);
 
     // Output routing: option ID → TrackId mapping for group/aux destinations
     std::map<int, TrackId> outputTrackMapping_;
+    std::map<int, TrackId> midiOutputTrackMapping_;
 
     // Refresh all input selectors (call after MIDI device scan completes)
     void refreshInputSelectors();
