@@ -106,7 +106,7 @@ struct ModTarget {
  */
 struct ModLink {
     ModTarget target;
-    float amount = 0.5f;  // 0.0 to 1.0, modulation depth for this link
+    float amount = 0.5f;  // -1.0 to 1.0, modulation depth for this link
 
     bool isValid() const {
         return target.isValid();

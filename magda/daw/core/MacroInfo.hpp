@@ -37,7 +37,7 @@ struct MacroTarget {
  */
 struct MacroLink {
     MacroTarget target;
-    float amount = 0.5f;  // Per-link amount (0.0 to 1.0)
+    float amount = 0.5f;  // Per-link amount (-1.0 to 1.0)
 };
 
 /**

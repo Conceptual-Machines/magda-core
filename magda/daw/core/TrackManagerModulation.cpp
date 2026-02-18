@@ -96,7 +96,7 @@ void TrackManager::setRackModAmount(const ChainNodePath& rackPath, int modIndex,
         if (modIndex < 0 || modIndex >= static_cast<int>(rack->mods.size())) {
             return;
         }
-        rack->mods[modIndex].amount = juce::jlimit(0.0f, 1.0f, amount);
+        rack->mods[modIndex].amount = juce::jlimit(-1.0f, 1.0f, amount);
         // Don't notify - simple value change doesn't need UI rebuild
     }
 }
@@ -345,7 +345,7 @@ ModInfo* TrackManager::getDeviceMod(const ChainNodePath& devicePath, int modInde
 
 void TrackManager::setDeviceModAmount(const ChainNodePath& devicePath, int modIndex, float amount) {
     if (auto* mod = getDeviceMod(devicePath, modIndex)) {
-        mod->amount = juce::jlimit(0.0f, 1.0f, amount);
+        mod->amount = juce::jlimit(-1.0f, 1.0f, amount);
     }
 }
 
@@ -694,6 +694,17 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                 }
             }
 
+            // Process trigger first, then stop conditions override
+            // (stop events always get the final say to prevent race conditions)
+            if (shouldTrigger) {
+                mod.phase = 0.0f;
+                mod.triggered = true;
+                mod.triggerCount++;
+                mod.running = true;
+            } else {
+                mod.triggered = false;
+            }
+
             // Handle note-off: stop MIDI-triggered LFOs
             if (mod.triggerMode == LFOTriggerMode::MIDI && midiNoteOff && mod.running)
                 mod.running = false;
@@ -707,15 +718,6 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                 mod.running) {
                 mod.running = false;
                 mod.phase = 0.0f;
-            }
-
-            if (shouldTrigger) {
-                mod.phase = 0.0f;
-                mod.triggered = true;
-                mod.triggerCount++;
-                mod.running = true;
-            } else {
-                mod.triggered = false;
             }
 
             // Gate: only advance phase for Free mode, or when running for triggered modes

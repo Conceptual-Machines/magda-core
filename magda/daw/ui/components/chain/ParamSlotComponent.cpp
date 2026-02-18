@@ -586,7 +586,7 @@ void ParamSlotComponent::mouseDrag(const juce::MouseEvent& e) {
         int deltaY = linkModeDragStartY_ - e.getPosition().y;
         float sensitivity = 0.005f;
         float newAmount =
-            juce::jlimit(0.0f, 1.0f, linkModeDragStartAmount_ + (deltaY * sensitivity));
+            juce::jlimit(-1.0f, 1.0f, linkModeDragStartAmount_ + (deltaY * sensitivity));
 
         linkModeDragCurrentAmount_ = newAmount;
 
