@@ -139,7 +139,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     scButton_->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     scButton_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     scButton_->onClick = [this]() { showSidechainMenu(); };
-    scButton_->setVisible(device_.canSidechain);
+    scButton_->setVisible(device_.canSidechain || device_.canReceiveMidi);
     addAndMakeVisible(*scButton_);
     updateScButtonState();
 
@@ -578,7 +578,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
 
     // Update sidechain button visibility and state
     if (scButton_) {
-        scButton_->setVisible(device_.canSidechain);
+        scButton_->setVisible(device_.canSidechain || device_.canReceiveMidi);
         updateScButtonState();
     }
 
@@ -981,7 +981,7 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     headerArea.removeFromRight(4);
 
     // Sidechain button (only if plugin supports it)
-    if (device_.canSidechain && scButton_) {
+    if ((device_.canSidechain || device_.canReceiveMidi) && scButton_) {
         scButton_->setBounds(headerArea.removeFromRight(20));
         scButton_->setVisible(true);
         headerArea.removeFromRight(2);
@@ -2602,9 +2602,13 @@ void DeviceSlotComponent::showSidechainMenu() {
 
     // Read live sidechain state from TrackManager (device_ may be stale)
     magda::SidechainConfig currentSidechain;
+    bool canAudio = device_.canSidechain;
+    bool canMidi = device_.canReceiveMidi;
     if (auto* currentDevice =
             magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
         currentSidechain = currentDevice->sidechain;
+        canAudio = currentDevice->canSidechain;
+        canMidi = currentDevice->canReceiveMidi;
     }
 
     // "None" option to clear sidechain
@@ -2613,7 +2617,6 @@ void DeviceSlotComponent::showSidechainMenu() {
     menu.addSeparator();
 
     // Build list of candidate tracks (excluding this device's own track)
-    // Store id→name pairs for the async callback
     struct TrackEntry {
         magda::TrackId id;
         juce::String name;
@@ -2622,16 +2625,37 @@ void DeviceSlotComponent::showSidechainMenu() {
 
     auto& tm = magda::TrackManager::getInstance();
     const auto& tracks = tm.getTracks();
-    int itemId = 100;
 
     for (const auto& track : tracks) {
         if (track.id == nodePath_.trackId)
             continue;
-
-        bool isSelected = currentSidechain.isActive() && currentSidechain.sourceTrackId == track.id;
-        menu.addItem(itemId, track.name, true, isSelected);
         trackEntries->push_back({track.id, track.name});
-        ++itemId;
+    }
+
+    // Audio sidechain section (only if plugin supports audio sidechain)
+    if (canAudio) {
+        menu.addSectionHeader("Audio Sidechain");
+        int itemId = 100;
+        for (const auto& entry : *trackEntries) {
+            bool isSelected = currentSidechain.isActive() &&
+                              currentSidechain.type == magda::SidechainConfig::Type::Audio &&
+                              currentSidechain.sourceTrackId == entry.id;
+            menu.addItem(itemId, entry.name, true, isSelected);
+            ++itemId;
+        }
+    }
+
+    // MIDI sidechain section (only if plugin accepts MIDI input)
+    if (canMidi) {
+        menu.addSectionHeader("MIDI Source");
+        int itemId = 200;
+        for (const auto& entry : *trackEntries) {
+            bool isSelected = currentSidechain.isActive() &&
+                              currentSidechain.type == magda::SidechainConfig::Type::MIDI &&
+                              currentSidechain.sourceTrackId == entry.id;
+            menu.addItem(itemId, entry.name, true, isSelected);
+            ++itemId;
+        }
     }
 
     auto deviceId = device_.id;
@@ -2643,12 +2667,21 @@ void DeviceSlotComponent::showSidechainMenu() {
 
                            if (result == 1) {
                                magda::TrackManager::getInstance().clearSidechain(deviceId);
-                           } else {
+                           } else if (result >= 100 && result < 200) {
+                               // Audio sidechain
                                int index = result - 100;
                                if (index >= 0 && index < static_cast<int>(trackEntries->size())) {
                                    magda::TrackManager::getInstance().setSidechainSource(
                                        deviceId, (*trackEntries)[static_cast<size_t>(index)].id,
                                        magda::SidechainConfig::Type::Audio);
+                               }
+                           } else if (result >= 200) {
+                               // MIDI sidechain
+                               int index = result - 200;
+                               if (index >= 0 && index < static_cast<int>(trackEntries->size())) {
+                                   magda::TrackManager::getInstance().setSidechainSource(
+                                       deviceId, (*trackEntries)[static_cast<size_t>(index)].id,
+                                       magda::SidechainConfig::Type::MIDI);
                                }
                            }
 
@@ -2669,10 +2702,8 @@ void DeviceSlotComponent::updateScButtonState() {
         return;
 
     if (device_.sidechain.isActive()) {
-        // Show source track name and highlight
-        auto* sourceTrack =
-            magda::TrackManager::getInstance().getTrack(device_.sidechain.sourceTrackId);
-        juce::String label = sourceTrack ? "SC" : "SC";
+        juce::String label =
+            device_.sidechain.type == magda::SidechainConfig::Type::MIDI ? "MI" : "SC";
         scButton_->setButtonText(label);
         scButton_->setColour(juce::TextButton::buttonColourId,
                              DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).darker(0.3f));

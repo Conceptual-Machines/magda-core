@@ -1870,11 +1870,12 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
     }
 
     if (plugin) {
-        // Update canSidechain flag on the DeviceInfo in TrackManager
-        if (plugin->canSidechain()) {
-            if (auto* devInfo = TrackManager::getInstance().getDevice(trackId, device.id)) {
+        // Update capability flags on the DeviceInfo in TrackManager
+        if (auto* devInfo = TrackManager::getInstance().getDevice(trackId, device.id)) {
+            if (plugin->canSidechain())
                 devInfo->canSidechain = true;
-            }
+            if (plugin->takesMidiInput() && !device.isInstrument)
+                devInfo->canReceiveMidi = true;
         }
 
         // Store the processor if we created one

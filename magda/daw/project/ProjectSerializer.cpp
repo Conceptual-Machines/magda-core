@@ -650,9 +650,12 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
         obj->setProperty("multiOut", juce::var(multiOutObj));
     }
 
-    // Sidechain capability
+    // Sidechain / MIDI receive capabilities
     if (device.canSidechain) {
         obj->setProperty("canSidechain", true);
+    }
+    if (device.canReceiveMidi) {
+        obj->setProperty("canReceiveMidi", true);
     }
 
     // Sidechain
@@ -775,10 +778,14 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
         }
     }
 
-    // Sidechain capability
+    // Sidechain / MIDI receive capabilities
     auto canSidechainVar = obj->getProperty("canSidechain");
     if (!canSidechainVar.isVoid()) {
         outDevice.canSidechain = static_cast<bool>(canSidechainVar);
+    }
+    auto canReceiveMidiVar = obj->getProperty("canReceiveMidi");
+    if (!canReceiveMidiVar.isVoid()) {
+        outDevice.canReceiveMidi = static_cast<bool>(canReceiveMidiVar);
     }
 
     // Sidechain
