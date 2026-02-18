@@ -360,6 +360,9 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
         if (device) {
             processor->syncFromDeviceInfo(*device);
 
+            // Push gain to the audio-graph atomic so DeviceGainNode picks it up
+            deviceMetering_.setGain(deviceId, device->gainValue);
+
             // Sync sidechain routing if changed
             auto* tePlugin = pluginManager_.getPlugin(deviceId).get();
             if (tePlugin && tePlugin->canSidechain()) {

@@ -82,6 +82,20 @@ class DeviceMeteringManager {
     bool getLatestLevels(DeviceId deviceId, DeviceMeterData& out) const;
 
     /**
+     * @brief Set per-device gain (linear) for use in the audio graph
+     * @param deviceId The MAGDA device ID
+     * @param gainLinear Gain value in linear scale (1.0 = unity)
+     */
+    void setGain(DeviceId deviceId, float gainLinear);
+
+    /**
+     * @brief Get pointer to gain atomic for a device (for DeviceGainNode in the graph)
+     * @param deviceId The MAGDA device ID
+     * @return Pointer to the atomic, or nullptr if device not found
+     */
+    std::atomic<float>* getGainAtomic(DeviceId deviceId);
+
+    /**
      * @brief Clear all measurers (called during shutdown)
      */
     void clear();
@@ -97,6 +111,7 @@ class DeviceMeteringManager {
         te::LevelMeasurer::Client client;
         std::atomic<float> peakL{0.f};
         std::atomic<float> peakR{0.f};
+        std::atomic<float> gainLinear{1.0f};
         bool clientRegistered = false;
     };
 

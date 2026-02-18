@@ -67,6 +67,21 @@ bool DeviceMeteringManager::getLatestLevels(DeviceId deviceId, DeviceMeterData& 
     return true;
 }
 
+void DeviceMeteringManager::setGain(DeviceId deviceId, float gain) {
+    juce::ScopedLock sl(lock_);
+    auto it = entries_.find(deviceId);
+    if (it != entries_.end())
+        it->second->gainLinear.store(gain, std::memory_order_relaxed);
+}
+
+std::atomic<float>* DeviceMeteringManager::getGainAtomic(DeviceId deviceId) {
+    juce::ScopedLock sl(lock_);
+    auto it = entries_.find(deviceId);
+    if (it != entries_.end())
+        return &it->second->gainLinear;
+    return nullptr;
+}
+
 void DeviceMeteringManager::clear() {
     juce::ScopedLock sl(lock_);
     for (auto& [deviceId, entry] : entries_) {
