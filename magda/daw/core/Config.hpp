@@ -209,6 +209,14 @@ class Config {
         confirmTrackDelete = confirm;
     }
 
+    // Tooltip Configuration
+    bool getShowTooltips() const {
+        return showTooltips;
+    }
+    void setShowTooltips(bool show) {
+        showTooltips = show;
+    }
+
     // Save/Load Configuration (for future use)
     void saveToFile(const std::string& filename);
     void loadFromFile(const std::string& filename);
@@ -244,6 +252,9 @@ class Config {
 
     // Track deletion settings
     bool confirmTrackDelete = true;  // Show confirmation dialog before deleting a track
+
+    // Tooltip settings
+    bool showTooltips = false;  // Disabled by default — enable via config
 
     // Layout settings
     bool scrollbarOnLeft = false;  // Scrollbar on right by default

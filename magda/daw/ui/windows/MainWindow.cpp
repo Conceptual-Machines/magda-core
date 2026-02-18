@@ -221,6 +221,11 @@ void MainWindow::closeButtonPressed() {
 MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     setWantsKeyboardFocus(true);
 
+    // Enable tooltips if configured
+    if (Config::getInstance().getShowTooltips()) {
+        tooltipWindow_ = std::make_unique<juce::TooltipWindow>(this);
+    }
+
     // Register this component as a command target for keyboard shortcuts
     commandManager.registerAllCommandsForTarget(this);
 

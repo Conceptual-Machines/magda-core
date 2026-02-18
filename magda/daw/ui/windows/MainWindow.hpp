@@ -143,8 +143,8 @@ class MainWindow::MainComponent : public juce::Component,
     class LoadingOverlay;
     std::unique_ptr<LoadingOverlay> loadingOverlay_;
 
-    // Tooltip support (must exist for setTooltip() to work on any component)
-    juce::TooltipWindow tooltipWindow_{this};
+    // Tooltip support — enabled via Config::getShowTooltips()
+    std::unique_ptr<juce::TooltipWindow> tooltipWindow_;
 
     // Setup helpers
     void setupResizeHandles();

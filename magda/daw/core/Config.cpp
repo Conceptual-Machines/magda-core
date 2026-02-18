@@ -46,6 +46,7 @@ void Config::saveToFile(const std::string& filename) {
     file << "openaiApiKey=" << openaiApiKey << std::endl;
     file << "openaiModel=" << openaiModel << std::endl;
     file << "confirmTrackDelete=" << (confirmTrackDelete ? 1 : 0) << std::endl;
+    file << "showTooltips=" << (showTooltips ? 1 : 0) << std::endl;
     // Save browser favorites as tab-delimited string
     {
         std::string joined;
@@ -188,6 +189,8 @@ void Config::parseConfigLine(const std::string& key, const std::string& value) {
             preferredOutputChannels = static_cast<int>(numValue);
         } else if (key == "confirmTrackDelete") {
             confirmTrackDelete = (numValue != 0);
+        } else if (key == "showTooltips") {
+            showTooltips = (numValue != 0);
         }
         // Skip unknown keys silently
     } catch (const std::exception& e) {
