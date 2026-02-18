@@ -151,7 +151,6 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
 
         if (meterPeakL_ > 0.001f || meterPeakR_ > 0.001f) {
             float w = static_cast<float>(bounds.getWidth());
-            int halfW = bounds.getWidth() / 2;
 
             // Range: -60dB to +6dB (66dB total). 0dB = 60/66 of width.
             auto gainToWidth = [w](float gain) -> float {
@@ -184,8 +183,7 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
             };
 
             // L bar (top half), R bar (bottom half)
-            drawHorizontalBar(bounds.getY(),
-                              halfW > 0 ? bounds.getHeight() / 2 : bounds.getHeight(), meterPeakL_);
+            drawHorizontalBar(bounds.getY(), bounds.getHeight() / 2, meterPeakL_);
             drawHorizontalBar(bounds.getY() + bounds.getHeight() / 2, bounds.getHeight() / 2,
                               meterPeakR_);
         }
