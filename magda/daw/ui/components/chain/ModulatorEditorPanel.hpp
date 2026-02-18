@@ -137,20 +137,30 @@ class ModMatrixContent : public juce::Component {
         magda::ModTarget target;
         juce::String paramName;
         float amount = 0.0f;
-        bool bipolar = true;
+        bool bipolar = false;
     };
 
     void setLinks(const std::vector<LinkRow>& links);
+    bool isDragging() const {
+        return draggingRow_ >= 0;
+    }
+    bool updateLinkAmount(magda::ModTarget target, float amount, bool bipolar);
 
     // Callbacks
     std::function<void(magda::ModTarget target)> onDeleteLink;
     std::function<void(magda::ModTarget target, bool bipolar)> onToggleBipolar;
+    std::function<void(magda::ModTarget target, float amount)> onAmountChanged;
 
     void paint(juce::Graphics& g) override;
     void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent& e) override;
 
   private:
     std::vector<LinkRow> links_;
+    int draggingRow_ = -1;
+    float dragStartAmount_ = 0.0f;
+    int dragStartX_ = 0;
 };
 
 /**
@@ -203,6 +213,7 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
     std::function<void(int modIndex, magda::ModTarget target)> onModLinkDeleted;
     std::function<void(int modIndex, magda::ModTarget target, bool bipolar)>
         onModLinkBipolarChanged;
+    std::function<void(int modIndex, magda::ModTarget target, float amount)> onModLinkAmountChanged;
 
     void paint(juce::Graphics& g) override;
     void resized() override;

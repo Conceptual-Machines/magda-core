@@ -106,8 +106,8 @@ struct ModTarget {
  */
 struct ModLink {
     ModTarget target;
-    float amount = 0.0f;  // -1.0 to 1.0, modulation depth for this link
-    bool bipolar = true;  // true: LFO 0-1 maps to -1..+1; false: stays 0..+1
+    float amount = 0.0f;   // -1.0 to 1.0, modulation depth for this link
+    bool bipolar = false;  // true: LFO 0-1 maps to -1..+1; false: stays 0..+1
 
     bool isValid() const {
         return target.isValid();

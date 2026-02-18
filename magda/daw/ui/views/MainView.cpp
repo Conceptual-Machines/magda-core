@@ -13,6 +13,7 @@
 #include "audio/AudioBridge.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipManager.hpp"
+#include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
@@ -799,8 +800,12 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
-    // Check for Escape to clear time selection and clip selection
+    // Check for Escape — exit link mode first, then clear selection
     if (key == juce::KeyPress::escapeKey) {
+        if (LinkModeManager::getInstance().isInLinkMode()) {
+            LinkModeManager::getInstance().exitAllLinkModes();
+            return true;
+        }
         timelineController->dispatch(ClearTimeSelectionEvent{});
         SelectionManager::getInstance().clearSelection();
         return true;

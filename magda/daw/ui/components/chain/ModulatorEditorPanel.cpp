@@ -18,6 +18,18 @@ void ModMatrixContent::setLinks(const std::vector<LinkRow>& links) {
     repaint();
 }
 
+bool ModMatrixContent::updateLinkAmount(magda::ModTarget target, float amount, bool bipolar) {
+    for (auto& link : links_) {
+        if (link.target == target) {
+            bool changed = (link.amount != amount || link.bipolar != bipolar);
+            link.amount = amount;
+            link.bipolar = bipolar;
+            return changed;
+        }
+    }
+    return false;
+}
+
 void ModMatrixContent::paint(juce::Graphics& g) {
     auto font = FontManager::getInstance().getUIFont(8.0f);
     g.setFont(font);
@@ -89,6 +101,28 @@ void ModMatrixContent::mouseDown(const juce::MouseEvent& e) {
         }
         return;
     }
+
+    // Amount drag — anywhere else in the row
+    draggingRow_ = rowIndex;
+    dragStartAmount_ = links_[static_cast<size_t>(rowIndex)].amount;
+    dragStartX_ = e.getPosition().x;
+}
+
+void ModMatrixContent::mouseDrag(const juce::MouseEvent& e) {
+    if (draggingRow_ < 0 || draggingRow_ >= static_cast<int>(links_.size()))
+        return;
+
+    float delta = static_cast<float>(e.getPosition().x - dragStartX_) / 100.0f;
+    float newAmount = juce::jlimit(-1.0f, 1.0f, dragStartAmount_ + delta);
+    links_[static_cast<size_t>(draggingRow_)].amount = newAmount;
+    repaint();
+
+    if (onAmountChanged)
+        onAmountChanged(links_[static_cast<size_t>(draggingRow_)].target, newAmount);
+}
+
+void ModMatrixContent::mouseUp(const juce::MouseEvent&) {
+    draggingRow_ = -1;
 }
 
 // ============================================================================
@@ -446,6 +480,11 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
             onModLinkBipolarChanged(selectedModIndex_, target, bipolar);
         }
     };
+    modMatrixContent_.onAmountChanged = [this](magda::ModTarget target, float amount) {
+        if (selectedModIndex_ >= 0 && onModLinkAmountChanged) {
+            onModLinkAmountChanged(selectedModIndex_, target, amount);
+        }
+    };
 }
 
 ModulatorEditorPanel::~ModulatorEditorPanel() {
@@ -750,6 +789,19 @@ void ModulatorEditorPanel::updateModMatrix() {
 }
 
 void ModulatorEditorPanel::timerCallback() {
+    // Sync mod matrix amounts from live data (handles slider→matrix updates)
+    if (liveModPtr_ && !modMatrixContent_.isDragging()) {
+        bool changed = false;
+        for (const auto& liveLink : liveModPtr_->links) {
+            if (!liveLink.isValid())
+                continue;
+            if (modMatrixContent_.updateLinkAmount(liveLink.target, liveLink.amount,
+                                                   liveLink.bipolar))
+                changed = true;
+        }
+        if (changed)
+            modMatrixContent_.repaint();
+    }
     repaint();
 }
 

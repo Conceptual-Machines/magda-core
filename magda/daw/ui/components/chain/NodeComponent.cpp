@@ -1135,6 +1135,19 @@ void NodeComponent::initializeModsMacrosPanels() {
         updateModulatorEditor();
     };
 
+    // Mod matrix: change link amount
+    modulatorEditorPanel_->onModLinkAmountChanged = [this](int modIndex, magda::ModTarget target,
+                                                           float amount) {
+        auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
+        if (device) {
+            magda::TrackManager::getInstance().setDeviceModLinkAmount(nodePath_, modIndex, target,
+                                                                      amount);
+        } else {
+            magda::TrackManager::getInstance().setRackModLinkAmount(nodePath_, modIndex, target,
+                                                                    amount);
+        }
+    };
+
     addChildComponent(*modulatorEditorPanel_);
 
     // Create macro editor panel

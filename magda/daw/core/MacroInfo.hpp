@@ -37,8 +37,8 @@ struct MacroTarget {
  */
 struct MacroLink {
     MacroTarget target;
-    float amount = 0.0f;  // Per-link amount (-1.0 to 1.0)
-    bool bipolar = true;  // true: macro 0-1 maps to -1..+1; false: stays 0..+1
+    float amount = 0.0f;   // Per-link amount (-1.0 to 1.0)
+    bool bipolar = false;  // true: macro 0-1 maps to -1..+1; false: stays 0..+1
 };
 
 /**
