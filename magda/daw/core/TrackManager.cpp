@@ -752,6 +752,7 @@ void TrackManager::addSend(TrackId sourceTrackId, TrackId destTrackId) {
     source->sends.push_back(send);
 
     notifyTrackDevicesChanged(sourceTrackId);
+    notifyTrackDevicesChanged(destTrackId);
     DBG("Added send from track " << sourceTrackId << " to track " << destTrackId << " (bus "
                                  << dest->auxBusIndex << ")");
 }
