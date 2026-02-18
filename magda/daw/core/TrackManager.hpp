@@ -6,7 +6,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <set>
 #include <vector>
 
 #include "SelectionManager.hpp"
@@ -532,9 +531,12 @@ class TrackManager {
 
     // MIDI state for modulator triggers, protected by midiTriggerMutex_
     // Written from MIDI thread, read from timer thread
-    std::set<TrackId> pendingMidiTriggers_;  // note-on events (consumed each tick)
-    std::set<TrackId> pendingMidiNoteOffs_;  // note-off events (consumed each tick)
+    std::map<TrackId, int> pendingMidiNoteOns_;   // per-track note-on count (consumed each tick)
+    std::map<TrackId, int> pendingMidiNoteOffs_;  // per-track note-off count (consumed each tick)
     std::mutex midiTriggerMutex_;
+
+    // Per-track held note count (persists across ticks, updated in updateAllMods)
+    std::map<TrackId, int> midiHeldNotes_;
 
     // Transport state for LFO trigger sync (written from engine timer, read by mod timer)
     std::atomic<bool> transportPlaying_{false};
