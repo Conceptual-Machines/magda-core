@@ -254,7 +254,7 @@ class Config {
     bool confirmTrackDelete = true;  // Show confirmation dialog before deleting a track
 
     // Tooltip settings
-    bool showTooltips = false;  // Disabled by default — enable via config
+    bool showTooltips = true;  // Enabled by default — disable via config
 
     // Layout settings
     bool scrollbarOnLeft = false;  // Scrollbar on right by default
