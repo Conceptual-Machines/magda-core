@@ -385,33 +385,22 @@ void TrackHeadersPanel::viewModeChanged(ViewMode mode, const AudioEngineProfile&
 }
 
 void TrackHeadersPanel::populateAudioInputOptions(RoutingSelector* selector, TrackId trackId) {
-    DBG("TrackHeadersPanel::populateAudioInputOptions - trackId=" << trackId);
-    if (!selector || !audioEngine_) {
-        DBG("  -> early return: no selector or audioEngine");
+    if (!selector || !audioEngine_)
         return;
-    }
     auto* deviceManager = audioEngine_->getDeviceManager();
-    if (!deviceManager) {
-        DBG("  -> early return: no deviceManager");
+    if (!deviceManager)
         return;
-    }
     // If no trackId provided, find it from the existing trackHeaders
     if (trackId == INVALID_TRACK_ID) {
-        DBG("  -> trackId is INVALID, searching trackHeaders (size=" << (int)trackHeaders.size()
-                                                                     << ")");
         for (const auto& h : trackHeaders) {
             if (h->audioInputSelector.get() == selector) {
                 trackId = h->trackId;
-                DBG("  -> found trackId=" << trackId);
                 break;
             }
         }
     }
-    auto* device = deviceManager->getCurrentAudioDevice();
-    DBG("  -> calling RoutingSyncHelper with trackId=" << trackId << " hasDevice="
-                                                       << (int)(device != nullptr));
-    RoutingSyncHelper::populateAudioInputOptions(selector, device, trackId, &inputTrackMapping_);
-    DBG("  -> inputTrackMapping_ size=" << (int)inputTrackMapping_.size());
+    RoutingSyncHelper::populateAudioInputOptions(selector, deviceManager->getCurrentAudioDevice(),
+                                                 trackId, &inputTrackMapping_);
 }
 
 void TrackHeadersPanel::populateAudioOutputOptions(RoutingSelector* selector,

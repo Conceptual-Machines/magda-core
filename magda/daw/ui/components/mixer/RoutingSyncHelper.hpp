@@ -74,12 +74,9 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
     }
 
     // Add tracks as audio input sources (resampling) — ID 200+
-    DBG("RoutingSyncHelper::populateAudioInputOptions - currentTrackId="
-        << currentTrackId << " hasMapping=" << (int)(outInputTrackMapping != nullptr));
     if (currentTrackId != INVALID_TRACK_ID) {
         auto& trackManager = TrackManager::getInstance();
         const auto& allTracks = trackManager.getTracks();
-        DBG("  -> allTracks.size()=" << (int)allTracks.size());
 
         // Collect descendants to prevent routing cycles
         std::vector<TrackId> descendants = trackManager.getAllDescendants(currentTrackId);
@@ -90,38 +87,25 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
         std::vector<RoutingSelector::RoutingOption> trackOptions;
         int id = 200;
         for (const auto& t : allTracks) {
-            DBG("  -> checking track id=" << t.id << " name='" << t.name
-                                          << "' type=" << static_cast<int>(t.type));
-            if (t.id == currentTrackId) {
-                DBG("     skipped (self)");
+            if (t.id == currentTrackId)
                 continue;
-            }
-            if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end()) {
-                DBG("     skipped (descendant)");
+            if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
                 continue;
-            }
             if (t.type == TrackType::Audio || t.type == TrackType::Instrument ||
                 t.type == TrackType::Group || t.type == TrackType::Aux) {
-                DBG("     ADDED as option id=" << id);
                 trackOptions.push_back({id, t.name});
                 if (outInputTrackMapping)
                     (*outInputTrackMapping)[id] = t.id;
                 ++id;
-            } else {
-                DBG("     skipped (type=" << static_cast<int>(t.type) << ")");
             }
         }
-        DBG("  -> trackOptions.size()=" << (int)trackOptions.size());
         if (!trackOptions.empty()) {
             options.push_back({0, "", true});  // separator
             for (auto& opt : trackOptions)
                 options.push_back(std::move(opt));
         }
-    } else {
-        DBG("  -> skipped track section (INVALID_TRACK_ID)");
     }
 
-    DBG("  -> total options=" << (int)options.size());
     selector->setOptions(options);
 }
 
