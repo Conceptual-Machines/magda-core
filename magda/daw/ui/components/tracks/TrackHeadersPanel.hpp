@@ -184,7 +184,7 @@ class TrackHeadersPanel : public juce::Component,
     int pluginDropTrackIndex_ = -1;  // -1 = empty area (new track), >= 0 = existing track
 
     // Routing device management
-    void populateAudioInputOptions(RoutingSelector* selector);
+    void populateAudioInputOptions(RoutingSelector* selector, TrackId trackId = INVALID_TRACK_ID);
     void populateAudioOutputOptions(RoutingSelector* selector,
                                     TrackId currentTrackId = INVALID_TRACK_ID);
     void populateMidiInputOptions(RoutingSelector* selector);

@@ -384,22 +384,23 @@ void TrackHeadersPanel::viewModeChanged(ViewMode mode, const AudioEngineProfile&
     tracksChanged();  // Rebuild with new visibility settings
 }
 
-void TrackHeadersPanel::populateAudioInputOptions(RoutingSelector* selector) {
+void TrackHeadersPanel::populateAudioInputOptions(RoutingSelector* selector, TrackId trackId) {
     if (!selector || !audioEngine_)
         return;
     auto* deviceManager = audioEngine_->getDeviceManager();
     if (!deviceManager)
         return;
-    // Find the trackId for this selector so we can populate track-as-input options
-    TrackId selectorTrackId = INVALID_TRACK_ID;
-    for (const auto& h : trackHeaders) {
-        if (h->audioInputSelector.get() == selector) {
-            selectorTrackId = h->trackId;
-            break;
+    // If no trackId provided, find it from the existing trackHeaders
+    if (trackId == INVALID_TRACK_ID) {
+        for (const auto& h : trackHeaders) {
+            if (h->audioInputSelector.get() == selector) {
+                trackId = h->trackId;
+                break;
+            }
         }
     }
     RoutingSyncHelper::populateAudioInputOptions(selector, deviceManager->getCurrentAudioDevice(),
-                                                 selectorTrackId, &inputTrackMapping_);
+                                                 trackId, &inputTrackMapping_);
 }
 
 void TrackHeadersPanel::populateAudioOutputOptions(RoutingSelector* selector,
@@ -1101,7 +1102,7 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
 
     // Populate all routing selectors
 
-    populateAudioInputOptions(header.audioInputSelector.get());
+    populateAudioInputOptions(header.audioInputSelector.get(), trackId);
     populateMidiInputOptions(header.inputSelector.get());
     populateAudioOutputOptions(header.outputSelector.get(), trackId);
     populateMidiOutputOptions(header.midiOutputSelector.get(), trackId);
