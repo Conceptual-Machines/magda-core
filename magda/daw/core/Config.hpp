@@ -162,6 +162,22 @@ class Config {
         customPluginPaths = paths;
     }
 
+    // Browser Favorites
+    std::vector<std::string> getBrowserFavorites() const {
+        return browserFavorites;
+    }
+    void setBrowserFavorites(const std::vector<std::string>& paths) {
+        browserFavorites = paths;
+    }
+
+    // Browser Default Directory
+    std::string getBrowserDefaultDirectory() const {
+        return browserDefaultDirectory;
+    }
+    void setBrowserDefaultDirectory(const std::string& dir) {
+        browserDefaultDirectory = dir;
+    }
+
     // Render Configuration
     std::string getRenderFolder() const {
         return renderFolder;
@@ -234,6 +250,10 @@ class Config {
 
     // Custom plugin paths
     std::vector<std::string> customPluginPaths;
+
+    // Browser favorites and default directory
+    std::vector<std::string> browserFavorites;
+    std::string browserDefaultDirectory = "";  // empty = user home
 
     // Render settings
     std::string renderFolder = "";  // Custom render output folder (empty = renders/ beside source)

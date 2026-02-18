@@ -1,5 +1,6 @@
 #include "MediaExplorerContent.hpp"
 
+#include "../../../core/Config.hpp"
 #include "../../components/common/SvgButton.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -97,6 +98,20 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
 //==============================================================================
 // SidebarComponent - Places and folder tree navigation
 //==============================================================================
+// A TextButton that forwards right-clicks to a callback
+class FavoriteButton : public juce::TextButton {
+  public:
+    std::function<void()> onRightClick;
+
+    void mouseDown(const juce::MouseEvent& e) override {
+        if (e.mods.isPopupMenu() && onRightClick) {
+            onRightClick();
+            return;
+        }
+        juce::TextButton::mouseDown(e);
+    }
+};
+
 class MediaExplorerContent::SidebarComponent : public juce::Component {
   public:
     SidebarComponent() {
@@ -104,74 +119,103 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         projectButton_ = std::make_unique<magda::SvgButton>("Project", BinaryData::project_home_svg,
                                                             BinaryData::project_home_svgSize);
         projectButton_->setToggleable(true);
-        projectButton_->setClickingTogglesState(true);               // Enable click-to-toggle
-        projectButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG's gray fill
+        projectButton_->setClickingTogglesState(true);
+        projectButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
         projectButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         projectButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         projectButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         projectButton_->onClick = [this]() {
             selectButton(projectButton_.get());
-            // Placeholder: Hide file browser, show empty state
             if (onLocationSelected)
-                onLocationSelected(juce::File());  // Empty file = hide browser
+                onLocationSelected(juce::File());
         };
         addAndMakeVisible(*projectButton_);
 
         diskButton_ = std::make_unique<magda::SvgButton>("Disk", BinaryData::harddrive_svg,
                                                          BinaryData::harddrive_svgSize);
         diskButton_->setToggleable(true);
-        diskButton_->setClickingTogglesState(true);               // Enable click-to-toggle
-        diskButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG's gray fill
+        diskButton_->setClickingTogglesState(true);
+        diskButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
         diskButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         diskButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         diskButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         diskButton_->onClick = [this]() {
             selectButton(diskButton_.get());
-            // Navigate to user home directory
-            if (onLocationSelected)
+            if (onLocationSelected) {
+                auto defaultDir = magda::Config::getInstance().getBrowserDefaultDirectory();
+                if (!defaultDir.empty()) {
+                    juce::File dir(defaultDir);
+                    if (dir.isDirectory()) {
+                        onLocationSelected(dir);
+                        return;
+                    }
+                }
                 onLocationSelected(juce::File::getSpecialLocation(juce::File::userHomeDirectory));
+            }
         };
         addAndMakeVisible(*diskButton_);
 
         libraryButton_ = std::make_unique<magda::SvgButton>("Library", BinaryData::library_svg,
                                                             BinaryData::library_svgSize);
         libraryButton_->setToggleable(true);
-        libraryButton_->setClickingTogglesState(true);               // Enable click-to-toggle
-        libraryButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG's gray fill
+        libraryButton_->setClickingTogglesState(true);
+        libraryButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
         libraryButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         libraryButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         libraryButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         libraryButton_->onClick = [this]() {
             selectButton(libraryButton_.get());
-            // Placeholder: Hide file browser, show empty state
             if (onLocationSelected)
-                onLocationSelected(juce::File());  // Empty file = hide browser
+                onLocationSelected(juce::File());
         };
         addAndMakeVisible(*libraryButton_);
+
+        // "+" button to add current directory as favorite
+        addFavButton_.setButtonText("+");
+        addFavButton_.setColour(juce::TextButton::buttonColourId,
+                                DarkTheme::getColour(DarkTheme::SURFACE));
+        addFavButton_.setColour(juce::TextButton::textColourOffId,
+                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        addFavButton_.onClick = [this]() {
+            if (onAddFavorite)
+                onAddFavorite();
+        };
+        addAndMakeVisible(addFavButton_);
+
+        // Favorites viewport for scrolling
+        favoritesContent_ = std::make_unique<juce::Component>();
+        favoritesViewport_.setViewedComponent(favoritesContent_.get(), false);
+        favoritesViewport_.setScrollBarsShown(true, false);
+        favoritesViewport_.setScrollBarThickness(4);
+        addAndMakeVisible(favoritesViewport_);
+
+        // Load favorites from config
+        rebuildFavoriteButtons();
 
         // Set Disk as initially selected
         selectButton(diskButton_.get());
     }
 
     void paint(juce::Graphics& g) override {
-        // Background
         g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE));
 
         // Right border
         g.setColour(DarkTheme::getBorderColour());
         g.fillRect(getWidth() - 1, 0, 1, getHeight());
+
+        // Separator line between nav buttons and favorites
+        g.setColour(DarkTheme::getBorderColour());
+        g.fillRect(4, separatorY_, getWidth() - 9, 1);
     }
 
     void resized() override {
         auto bounds = getLocalBounds();
 
-        // Smaller icon buttons stacked vertically with padding
         const int iconSize = 24;
         const int padding = 6;
 
         bounds.removeFromTop(padding);
 
-        // Center icons horizontally
         auto centerX = (getWidth() - iconSize) / 2;
 
         projectButton_->setBounds(centerX, bounds.getY(), iconSize, iconSize);
@@ -181,13 +225,94 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         bounds.removeFromTop(iconSize + padding);
 
         libraryButton_->setBounds(centerX, bounds.getY(), iconSize, iconSize);
+        bounds.removeFromTop(iconSize + padding);
+
+        // Separator
+        separatorY_ = bounds.getY();
+        bounds.removeFromTop(padding);
+
+        // "+" button at bottom
+        auto addBtnArea = bounds.removeFromBottom(22);
+        addFavButton_.setBounds(addBtnArea.reduced(4, 0));
+
+        // Favorites viewport fills remaining space
+        favoritesViewport_.setBounds(bounds);
+        layoutFavoriteButtons();
+    }
+
+    void rebuildFavoriteButtons() {
+        favoriteButtons_.clear();
+        auto favorites = magda::Config::getInstance().getBrowserFavorites();
+
+        for (const auto& path : favorites) {
+            juce::File dir(path);
+            auto btn = std::make_unique<FavoriteButton>();
+            btn->setButtonText(dir.getFileName());
+            btn->setColour(juce::TextButton::buttonColourId,
+                           DarkTheme::getColour(DarkTheme::SURFACE));
+            btn->setColour(juce::TextButton::textColourOffId,
+                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            btn->setTooltip(path);
+
+            auto pathCopy = path;
+            btn->onClick = [this, pathCopy]() {
+                if (onLocationSelected)
+                    onLocationSelected(juce::File(pathCopy));
+            };
+
+            btn->onRightClick = [this, pathCopy]() { showFavoriteContextMenu(pathCopy); };
+
+            favoritesContent_->addAndMakeVisible(*btn);
+            favoriteButtons_.push_back(std::move(btn));
+        }
+
+        layoutFavoriteButtons();
+        repaint();
     }
 
     std::function<void(const juce::File&)> onLocationSelected;
+    std::function<void()> onAddFavorite;
 
   private:
+    void layoutFavoriteButtons() {
+        const int btnHeight = 20;
+        const int btnPadding = 2;
+        const int sideMargin = 2;
+        int totalHeight = 0;
+
+        for (size_t i = 0; i < favoriteButtons_.size(); ++i) {
+            int y = static_cast<int>(i) * (btnHeight + btnPadding);
+            favoriteButtons_[i]->setBounds(
+                sideMargin, y, favoritesViewport_.getWidth() - sideMargin * 2 - 4, btnHeight);
+            totalHeight = y + btnHeight;
+        }
+
+        favoritesContent_->setSize(favoritesViewport_.getWidth(), totalHeight);
+    }
+
+    void showFavoriteContextMenu(const std::string& path) {
+        juce::PopupMenu menu;
+        menu.addItem(1, "Remove from favorites");
+        menu.addItem(2, "Set as default directory");
+
+        menu.showMenuAsync(juce::PopupMenu::Options(), [this, path](int result) {
+            if (result == 1) {
+                // Remove
+                auto favorites = magda::Config::getInstance().getBrowserFavorites();
+                favorites.erase(std::remove(favorites.begin(), favorites.end(), path),
+                                favorites.end());
+                magda::Config::getInstance().setBrowserFavorites(favorites);
+                magda::Config::getInstance().saveToFile("magda_config.txt");
+                rebuildFavoriteButtons();
+            } else if (result == 2) {
+                // Set as default
+                magda::Config::getInstance().setBrowserDefaultDirectory(path);
+                magda::Config::getInstance().saveToFile("magda_config.txt");
+            }
+        });
+    }
+
     void selectButton(magda::SvgButton* selected) {
-        // Radio button behavior - only one selected at a time
         if (projectButton_.get() != selected) {
             projectButton_->setToggleState(false, juce::dontSendNotification);
             projectButton_->setActive(false);
@@ -208,6 +333,13 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
     std::unique_ptr<magda::SvgButton> projectButton_;
     std::unique_ptr<magda::SvgButton> diskButton_;
     std::unique_ptr<magda::SvgButton> libraryButton_;
+
+    // Favorites
+    juce::TextButton addFavButton_;
+    juce::Viewport favoritesViewport_;
+    std::unique_ptr<juce::Component> favoritesContent_;
+    std::vector<std::unique_ptr<FavoriteButton>> favoriteButtons_;
+    int separatorY_ = 0;
 };
 
 //==============================================================================
@@ -455,7 +587,29 @@ MediaExplorerContent::MediaExplorerContent() {
     sidebarComponent_->onLocationSelected = [this](const juce::File& location) {
         navigateToDirectory(location);
     };
+    sidebarComponent_->onAddFavorite = [this]() {
+        if (fileBrowser_ && fileBrowser_->getRoot().isDirectory()) {
+            auto currentDir = fileBrowser_->getRoot().getFullPathName().toStdString();
+            auto favorites = magda::Config::getInstance().getBrowserFavorites();
+            // Don't add duplicates
+            if (std::find(favorites.begin(), favorites.end(), currentDir) == favorites.end()) {
+                favorites.push_back(currentDir);
+                magda::Config::getInstance().setBrowserFavorites(favorites);
+                magda::Config::getInstance().saveToFile("magda_config.txt");
+                sidebarComponent_->rebuildFavoriteButtons();
+            }
+        }
+    };
     addAndMakeVisible(*sidebarComponent_);
+
+    // Navigate to default directory if configured, otherwise fall back to userMusicDirectory
+    auto defaultDir = magda::Config::getInstance().getBrowserDefaultDirectory();
+    if (!defaultDir.empty()) {
+        juce::File dir(defaultDir);
+        if (dir.isDirectory()) {
+            navigateToDirectory(dir);
+        }
+    }
 
     // Setup audio preview
     setupAudioPreview();
@@ -736,7 +890,7 @@ void MediaExplorerContent::paint(juce::Graphics& g) {
 }
 
 void MediaExplorerContent::resized() {
-    auto bounds = getLocalBounds().reduced(8);
+    auto bounds = getLocalBounds().reduced(4);
 
     // Top bar with all controls
     auto topBar = bounds.removeFromTop(32);
@@ -773,7 +927,7 @@ void MediaExplorerContent::resized() {
     browseButton_.setVisible(false);
 
     // Reserve space for preview/inspector area at bottom (compact size)
-    const int previewAreaHeight = 120;  // Reduced from 160px for more browser space
+    const int previewAreaHeight = 80;  // Compact preview for more browser space
     auto previewArea = bounds.removeFromBottom(previewAreaHeight);
 
     // Main content area: sidebar + file browser
@@ -786,29 +940,27 @@ void MediaExplorerContent::resized() {
     fileBrowser_->setBounds(bounds);
 
     // Now layout compact preview/inspector area
-    previewArea.removeFromTop(4);
+    previewArea.removeFromTop(2);
 
-    // Metadata section (smaller)
-    fileInfoLabel_.setBounds(previewArea.removeFromTop(14));
-    previewArea.removeFromTop(1);
-    formatLabel_.setBounds(previewArea.removeFromTop(12));
-    previewArea.removeFromTop(1);
-    propertiesLabel_.setBounds(previewArea.removeFromTop(12));
-    previewArea.removeFromTop(4);
+    // Metadata: file name + format on one line, properties on next
+    fileInfoLabel_.setBounds(previewArea.removeFromTop(13));
+    formatLabel_.setBounds(previewArea.removeFromTop(11));
+    propertiesLabel_.setBounds(previewArea.removeFromTop(11));
+    previewArea.removeFromTop(2);
 
-    // Waveform thumbnail (smaller)
-    thumbnailComponent_->setBounds(previewArea.removeFromTop(40));
-    previewArea.removeFromTop(4);
+    // Waveform thumbnail
+    thumbnailComponent_->setBounds(previewArea.removeFromTop(16));
+    previewArea.removeFromTop(2);
 
     // Preview controls row
-    auto previewRow = previewArea.removeFromTop(28);
-    playButton_->setBounds(previewRow.removeFromLeft(28));
+    auto previewRow = previewArea.removeFromTop(22);
+    playButton_->setBounds(previewRow.removeFromLeft(22));
+    previewRow.removeFromLeft(2);
+    stopButton_->setBounds(previewRow.removeFromLeft(22));
     previewRow.removeFromLeft(4);
-    stopButton_->setBounds(previewRow.removeFromLeft(28));
-    previewRow.removeFromLeft(8);
-    syncToTempoButton_.setBounds(previewRow.removeFromLeft(60));
-    previewRow.removeFromLeft(12);
-    volumeSlider_.setBounds(previewRow.removeFromLeft(120));
+    syncToTempoButton_.setBounds(previewRow.removeFromLeft(50));
+    previewRow.removeFromLeft(4);
+    volumeSlider_.setBounds(previewRow.removeFromLeft(100));
 }
 
 void MediaExplorerContent::onActivated() {
