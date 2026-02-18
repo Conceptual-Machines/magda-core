@@ -516,11 +516,14 @@ TEST_CASE("Device mod property changes fire deviceModifiersChanged", "[mod][noti
         REQUIRE(dev->mods[0].amount == Catch::Approx(0.85f));
     }
 
-    SECTION("setDeviceModAmount clamps to 0-1") {
+    SECTION("setDeviceModAmount clamps to -1 to 1") {
         fixture.tm().setDeviceModAmount(devicePath, 0, -0.5f);
-
         auto* dev = fixture.tm().getDeviceInChainByPath(devicePath);
-        REQUIRE(dev->mods[0].amount == Catch::Approx(0.0f));
+        REQUIRE(dev->mods[0].amount == Catch::Approx(-0.5f));
+
+        fixture.tm().setDeviceModAmount(devicePath, 0, -1.5f);
+        dev = fixture.tm().getDeviceInChainByPath(devicePath);
+        REQUIRE(dev->mods[0].amount == Catch::Approx(-1.0f));
     }
 
     SECTION("setDeviceModName does NOT fire notification") {
@@ -620,7 +623,7 @@ TEST_CASE("Device mod target fires deviceModifiersChanged", "[mod][notification]
 
         auto* dev = fixture.tm().getDeviceInChainByPath(devicePath);
         REQUIRE(dev->mods[0].getLink(target) != nullptr);
-        REQUIRE(dev->mods[0].getLink(target)->amount == Catch::Approx(0.5f));
+        REQUIRE(dev->mods[0].getLink(target)->amount == Catch::Approx(0.0f));
     }
 
     SECTION("removeDeviceModLink fires deviceModifiersChanged") {
