@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 
+#include "core/DeviceInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/ModulatorEngine.hpp"
 #include "ui/components/chain/LFOCurveEditor.hpp"
@@ -123,6 +124,46 @@ class WaveformDisplay : public juce::Component, private juce::Timer {
 };
 
 /**
+ * @brief Scrollable content component for the mod matrix
+ *
+ * Displays all parameter links for the selected mod.
+ * Each row: param_name | bipolar toggle | amount | delete button
+ */
+class ModMatrixContent : public juce::Component {
+  public:
+    static constexpr int ROW_HEIGHT = 18;
+
+    struct LinkRow {
+        magda::ModTarget target;
+        juce::String paramName;
+        float amount = 0.0f;
+        bool bipolar = false;
+    };
+
+    void setLinks(const std::vector<LinkRow>& links);
+    bool isDragging() const {
+        return draggingRow_ >= 0;
+    }
+    bool updateLinkAmount(magda::ModTarget target, float amount, bool bipolar);
+
+    // Callbacks
+    std::function<void(magda::ModTarget target)> onDeleteLink;
+    std::function<void(magda::ModTarget target, bool bipolar)> onToggleBipolar;
+    std::function<void(magda::ModTarget target, float amount)> onAmountChanged;
+
+    void paint(juce::Graphics& g) override;
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent& e) override;
+
+  private:
+    std::vector<LinkRow> links_;
+    int draggingRow_ = -1;
+    float dragStartAmount_ = 0.0f;
+    int dragStartX_ = 0;
+};
+
+/**
  * @brief Panel for editing modulator settings
  *
  * Shows when a mod is selected from the mods panel.
@@ -148,6 +189,11 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
     // Set the mod to edit
     void setModInfo(const magda::ModInfo& mod, const magda::ModInfo* liveMod = nullptr);
 
+    // Set a resolver for getting parameter names from device/param IDs
+    void setParamNameResolver(std::function<juce::String(magda::DeviceId, int)> resolver) {
+        paramNameResolver_ = std::move(resolver);
+    }
+
     // Set the selected mod index (-1 for none)
     void setSelectedModIndex(int index);
     int getSelectedModIndex() const {
@@ -164,6 +210,10 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
     std::function<void()> onAdvancedClicked;
     std::function<void(float ms)> onAudioAttackChanged;
     std::function<void(float ms)> onAudioReleaseChanged;
+    std::function<void(int modIndex, magda::ModTarget target)> onModLinkDeleted;
+    std::function<void(int modIndex, magda::ModTarget target, bool bipolar)>
+        onModLinkBipolarChanged;
+    std::function<void(int modIndex, magda::ModTarget target, float amount)> onModLinkAmountChanged;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -197,7 +247,13 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
     TextSlider audioReleaseSlider_{TextSlider::Format::Decimal};
 
     void updateFromMod();
+    void updateModMatrix();
     void timerCallback() override;
+
+    // Mod matrix
+    juce::Viewport modMatrixViewport_;
+    ModMatrixContent modMatrixContent_;
+    std::function<juce::String(magda::DeviceId, int)> paramNameResolver_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ModulatorEditorPanel)
 };

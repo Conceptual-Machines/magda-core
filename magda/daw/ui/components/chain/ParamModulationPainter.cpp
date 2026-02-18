@@ -31,15 +31,19 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
         if (ctx.isLinkModeDrag && ctx.activeMod.isValid()) {
             int y = sliderBounds.getBottom() - 6;
 
-            // Bar starts from current param value and extends by drag amount (unipolar mode)
+            // Bar starts from current param value and extends by drag amount (bipolar mode)
             int startX = leftX + static_cast<int>(maxWidth * ctx.currentParamValue);
-            int barWidth =
-                juce::jmax(1, static_cast<int>(maxWidth * ctx.linkModeDragCurrentAmount));
+            int barWidth = static_cast<int>(maxWidth * ctx.linkModeDragCurrentAmount);
 
             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-            g.fillRoundedRectangle(static_cast<float>(startX), static_cast<float>(y),
-                                   static_cast<float>(barWidth),
-                                   static_cast<float>(amountBarHeight), 1.0f);
+            if (barWidth > 0)
+                g.fillRoundedRectangle(static_cast<float>(startX), static_cast<float>(y),
+                                       static_cast<float>(juce::jmax(1, barWidth)),
+                                       static_cast<float>(amountBarHeight), 1.0f);
+            else if (barWidth < 0)
+                g.fillRoundedRectangle(static_cast<float>(startX + barWidth), static_cast<float>(y),
+                                       static_cast<float>(juce::jmax(1, -barWidth)),
+                                       static_cast<float>(amountBarHeight), 1.0f);
         }
 
         // Draw MACRO amount line at TOP - only for the ACTIVE macro in link mode
@@ -55,12 +59,18 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
                     float linkAmount = link->amount;
 
                     int startX = leftX + static_cast<int>(maxWidth * ctx.currentParamValue);
-                    int barWidth = juce::jmax(1, static_cast<int>(maxWidth * linkAmount));
+                    int barWidth = static_cast<int>(maxWidth * linkAmount);
 
                     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.9f));
-                    g.fillRoundedRectangle(static_cast<float>(startX), static_cast<float>(y),
-                                           static_cast<float>(barWidth),
-                                           static_cast<float>(amountBarHeight), 1.0f);
+                    if (barWidth > 0)
+                        g.fillRoundedRectangle(static_cast<float>(startX), static_cast<float>(y),
+                                               static_cast<float>(juce::jmax(1, barWidth)),
+                                               static_cast<float>(amountBarHeight), 1.0f);
+                    else if (barWidth < 0)
+                        g.fillRoundedRectangle(static_cast<float>(startX + barWidth),
+                                               static_cast<float>(y),
+                                               static_cast<float>(juce::jmax(1, -barWidth)),
+                                               static_cast<float>(amountBarHeight), 1.0f);
                 }
             }
         }
@@ -78,12 +88,18 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
                     float linkAmount = link->amount;
 
                     int startX = leftX + static_cast<int>(maxWidth * ctx.currentParamValue);
-                    int barWidth = juce::jmax(1, static_cast<int>(maxWidth * linkAmount));
+                    int barWidth = static_cast<int>(maxWidth * linkAmount);
 
                     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-                    g.fillRoundedRectangle(static_cast<float>(startX), static_cast<float>(y),
-                                           static_cast<float>(barWidth),
-                                           static_cast<float>(amountBarHeight), 1.0f);
+                    if (barWidth > 0)
+                        g.fillRoundedRectangle(static_cast<float>(startX), static_cast<float>(y),
+                                               static_cast<float>(juce::jmax(1, barWidth)),
+                                               static_cast<float>(amountBarHeight), 1.0f);
+                    else if (barWidth < 0)
+                        g.fillRoundedRectangle(static_cast<float>(startX + barWidth),
+                                               static_cast<float>(y),
+                                               static_cast<float>(juce::jmax(1, -barWidth)),
+                                               static_cast<float>(amountBarHeight), 1.0f);
                 }
             }
         }
@@ -93,32 +109,42 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
     if (!ctx.activeMacro.isValid()) {
         float totalMacroModulation = computeTotalMacroModulation(ctx.linkCtx);
 
-        if (totalMacroModulation > 0.0f) {
+        if (totalMacroModulation != 0.0f) {
             int y = sliderBounds.getY() + 2;
 
             int startX = leftX + static_cast<int>(maxWidth * ctx.currentParamValue);
-            int barWidth = juce::jmax(1, static_cast<int>(maxWidth * totalMacroModulation));
+            int barWidth = static_cast<int>(maxWidth * totalMacroModulation);
 
             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.6f));
-            g.fillRoundedRectangle(static_cast<float>(startX), static_cast<float>(y),
-                                   static_cast<float>(barWidth),
-                                   static_cast<float>(movementBarHeight), 1.0f);
+            if (barWidth > 0)
+                g.fillRoundedRectangle(static_cast<float>(startX), static_cast<float>(y),
+                                       static_cast<float>(juce::jmax(1, barWidth)),
+                                       static_cast<float>(movementBarHeight), 1.0f);
+            else if (barWidth < 0)
+                g.fillRoundedRectangle(static_cast<float>(startX + barWidth), static_cast<float>(y),
+                                       static_cast<float>(juce::jmax(1, -barWidth)),
+                                       static_cast<float>(movementBarHeight), 1.0f);
         }
     }
 
     // MOD MOVEMENT LINE: Shows current LFO output (animated)
     float totalModModulation = computeTotalModModulation(ctx.linkCtx);
 
-    if (totalModModulation > 0.0f) {
+    if (totalModModulation != 0.0f) {
         int y = sliderBounds.getBottom() - 6;
 
         int startX = leftX + static_cast<int>(maxWidth * ctx.currentParamValue);
-        int barWidth = juce::jmax(1, static_cast<int>(maxWidth * totalModModulation));
+        int barWidth = static_cast<int>(maxWidth * totalModModulation);
 
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.6f));
-        g.fillRoundedRectangle(static_cast<float>(startX), static_cast<float>(y),
-                               static_cast<float>(barWidth), static_cast<float>(movementBarHeight),
-                               1.0f);
+        if (barWidth > 0)
+            g.fillRoundedRectangle(static_cast<float>(startX), static_cast<float>(y),
+                                   static_cast<float>(juce::jmax(1, barWidth)),
+                                   static_cast<float>(movementBarHeight), 1.0f);
+        else if (barWidth < 0)
+            g.fillRoundedRectangle(static_cast<float>(startX + barWidth), static_cast<float>(y),
+                                   static_cast<float>(juce::jmax(1, -barWidth)),
+                                   static_cast<float>(movementBarHeight), 1.0f);
     }
 }
 

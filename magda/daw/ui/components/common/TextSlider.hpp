@@ -241,7 +241,7 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
                 // Used for macro/modulation linking
                 float dragSensitivity = 1.0f / 100.0f;  // 100 pixels for full range
                 float delta = static_cast<float>(dragStartY_ - e.y) * dragSensitivity;
-                float newValue = juce::jlimit(0.0f, 1.0f, shiftDragStartValue_ + delta);
+                float newValue = juce::jlimit(-1.0f, 1.0f, shiftDragStartValue_ + delta);
                 onShiftDrag(newValue);
             } else {
                 // Normal drag: change the slider value with modifier-based sensitivity

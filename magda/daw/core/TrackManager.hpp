@@ -6,7 +6,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <set>
 #include <vector>
 
 #include "SelectionManager.hpp"
@@ -300,6 +299,8 @@ class TrackManager {
     void setRackMacroTarget(const ChainNodePath& rackPath, int macroIndex, MacroTarget target);
     void setRackMacroLinkAmount(const ChainNodePath& rackPath, int macroIndex, MacroTarget target,
                                 float amount);
+    void setRackMacroLinkBipolar(const ChainNodePath& rackPath, int macroIndex, MacroTarget target,
+                                 bool bipolar);
     void setRackMacroName(const ChainNodePath& rackPath, int macroIndex, const juce::String& name);
     void addRackMacroPage(const ChainNodePath& rackPath);
     void removeRackMacroPage(const ChainNodePath& rackPath);
@@ -309,6 +310,8 @@ class TrackManager {
     void setRackModTarget(const ChainNodePath& rackPath, int modIndex, ModTarget target);
     void setRackModLinkAmount(const ChainNodePath& rackPath, int modIndex, ModTarget target,
                               float amount);
+    void setRackModLinkBipolar(const ChainNodePath& rackPath, int modIndex, ModTarget target,
+                               bool bipolar);
     void setRackModName(const ChainNodePath& rackPath, int modIndex, const juce::String& name);
     void setRackModType(const ChainNodePath& rackPath, int modIndex, ModType type);
     void setRackModWaveform(const ChainNodePath& rackPath, int modIndex, LFOWaveform waveform);
@@ -324,6 +327,7 @@ class TrackManager {
     void addRackMod(const ChainNodePath& rackPath, int slotIndex, ModType type,
                     LFOWaveform waveform = LFOWaveform::Sine);
     void removeRackMod(const ChainNodePath& rackPath, int modIndex);
+    void removeRackModLink(const ChainNodePath& rackPath, int modIndex, ModTarget target);
     void setRackModEnabled(const ChainNodePath& rackPath, int modIndex, bool enabled);
     void addRackModPage(const ChainNodePath& rackPath);
     void removeRackModPage(const ChainNodePath& rackPath);
@@ -334,6 +338,8 @@ class TrackManager {
     void removeDeviceModLink(const ChainNodePath& devicePath, int modIndex, ModTarget target);
     void setDeviceModLinkAmount(const ChainNodePath& devicePath, int modIndex, ModTarget target,
                                 float amount);
+    void setDeviceModLinkBipolar(const ChainNodePath& devicePath, int modIndex, ModTarget target,
+                                 bool bipolar);
     void setDeviceModName(const ChainNodePath& devicePath, int modIndex, const juce::String& name);
     void setDeviceModType(const ChainNodePath& devicePath, int modIndex, ModType type);
     void setDeviceModWaveform(const ChainNodePath& devicePath, int modIndex, LFOWaveform waveform);
@@ -395,6 +401,8 @@ class TrackManager {
     void removeDeviceMacroLink(const ChainNodePath& devicePath, int macroIndex, MacroTarget target);
     void setDeviceMacroLinkAmount(const ChainNodePath& devicePath, int macroIndex,
                                   MacroTarget target, float amount);
+    void setDeviceMacroLinkBipolar(const ChainNodePath& devicePath, int macroIndex,
+                                   MacroTarget target, bool bipolar);
     void setDeviceMacroName(const ChainNodePath& devicePath, int macroIndex,
                             const juce::String& name);
     void addDeviceMacroPage(const ChainNodePath& devicePath);
@@ -523,9 +531,12 @@ class TrackManager {
 
     // MIDI state for modulator triggers, protected by midiTriggerMutex_
     // Written from MIDI thread, read from timer thread
-    std::set<TrackId> pendingMidiTriggers_;  // note-on events (consumed each tick)
-    std::set<TrackId> pendingMidiNoteOffs_;  // note-off events (consumed each tick)
+    std::map<TrackId, int> pendingMidiNoteOns_;   // per-track note-on count (consumed each tick)
+    std::map<TrackId, int> pendingMidiNoteOffs_;  // per-track note-off count (consumed each tick)
     std::mutex midiTriggerMutex_;
+
+    // Per-track held note count (persists across ticks, updated in updateAllMods)
+    std::map<TrackId, int> midiHeldNotes_;
 
     // Transport state for LFO trigger sync (written from engine timer, read by mod timer)
     std::atomic<bool> transportPlaying_{false};

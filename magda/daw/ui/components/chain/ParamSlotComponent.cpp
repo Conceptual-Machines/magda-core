@@ -493,7 +493,7 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
             const auto* modPtr =
                 resolveModPtr(activeMod_, devicePath_, availableMods_, availableRackMods_);
 
-            float initialAmount = 0.5f;
+            float initialAmount = 0.0f;
             bool isLinked = false;
 
             if (modPtr) {
@@ -535,7 +535,7 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
             const auto* macroPtr =
                 resolveMacroPtr(activeMacro_, devicePath_, availableMacros_, availableRackMacros_);
 
-            float initialAmount = 0.5f;
+            float initialAmount = 0.0f;
             bool isLinked = false;
 
             if (macroPtr) {
@@ -586,7 +586,7 @@ void ParamSlotComponent::mouseDrag(const juce::MouseEvent& e) {
         int deltaY = linkModeDragStartY_ - e.getPosition().y;
         float sensitivity = 0.005f;
         float newAmount =
-            juce::jlimit(0.0f, 1.0f, linkModeDragStartAmount_ + (deltaY * sensitivity));
+            juce::jlimit(-1.0f, 1.0f, linkModeDragStartAmount_ + (deltaY * sensitivity));
 
         linkModeDragCurrentAmount_ = newAmount;
 

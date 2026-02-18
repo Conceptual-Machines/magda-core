@@ -1082,6 +1082,72 @@ void NodeComponent::initializeModsMacrosPanels() {
             }
         });
     };
+    // Mod matrix: param name resolver
+    modulatorEditorPanel_->setParamNameResolver([this](magda::DeviceId deviceId,
+                                                       int paramIndex) -> juce::String {
+        auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
+        if (!device) {
+            // Try rack: look up device by ID across all chains
+            auto* rack = magda::TrackManager::getInstance().getRackByPath(nodePath_);
+            if (rack) {
+                for (auto& chain : rack->chains) {
+                    for (auto& element : chain.elements) {
+                        if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
+                            device = &magda::getDevice(element);
+                            break;
+                        }
+                    }
+                    if (device)
+                        break;
+                }
+            }
+        }
+        if (device && device->id == deviceId && paramIndex >= 0 &&
+            paramIndex < static_cast<int>(device->parameters.size())) {
+            return device->parameters[static_cast<size_t>(paramIndex)].name;
+        }
+        return "P" + juce::String(paramIndex);
+    });
+
+    // Mod matrix: delete link
+    modulatorEditorPanel_->onModLinkDeleted = [this](int modIndex, magda::ModTarget target) {
+        auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
+        if (device) {
+            magda::TrackManager::getInstance().removeDeviceModLink(nodePath_, modIndex, target);
+        } else {
+            // Rack mod
+            magda::TrackManager::getInstance().removeRackModLink(nodePath_, modIndex, target);
+        }
+        updateModulatorEditor();
+    };
+
+    // Mod matrix: toggle bipolar
+    modulatorEditorPanel_->onModLinkBipolarChanged = [this](int modIndex, magda::ModTarget target,
+                                                            bool bipolar) {
+        auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
+        if (device) {
+            magda::TrackManager::getInstance().setDeviceModLinkBipolar(nodePath_, modIndex, target,
+                                                                       bipolar);
+        } else {
+            magda::TrackManager::getInstance().setRackModLinkBipolar(nodePath_, modIndex, target,
+                                                                     bipolar);
+        }
+        updateModulatorEditor();
+    };
+
+    // Mod matrix: change link amount
+    modulatorEditorPanel_->onModLinkAmountChanged = [this](int modIndex, magda::ModTarget target,
+                                                           float amount) {
+        auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
+        if (device) {
+            magda::TrackManager::getInstance().setDeviceModLinkAmount(nodePath_, modIndex, target,
+                                                                      amount);
+        } else {
+            magda::TrackManager::getInstance().setRackModLinkAmount(nodePath_, modIndex, target,
+                                                                    amount);
+        }
+    };
+
     addChildComponent(*modulatorEditorPanel_);
 
     // Create macro editor panel

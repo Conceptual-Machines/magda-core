@@ -2,6 +2,7 @@
 
 #include "ParamLinkResolver.hpp"
 #include "core/LinkModeManager.hpp"
+#include "ui/components/chain/ParamLinkMenu.hpp"
 #include "ui/components/chain/ParamModulationPainter.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -314,6 +315,14 @@ void LinkableTextSlider::mouseExit(const juce::MouseEvent& /*e*/) {
 }
 
 void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
+    // Right-click: show link/unlink context menu
+    if (e.mods.isPopupMenu() && deviceId_ != magda::INVALID_DEVICE_ID) {
+        showParamLinkMenu(this, buildLinkContext(),
+                          {onModUnlinked, onModLinkedWithAmount, nullptr, onMacroLinkedWithAmount,
+                           onMacroUnlinked});
+        return;
+    }
+
     if (!isInLinkMode_ || !e.mods.isLeftButtonDown()) {
         return;
     }
@@ -323,7 +332,7 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
         const auto* modPtr =
             resolveModPtr(activeMod_, devicePath_, availableMods_, availableRackMods_);
 
-        float initialAmount = 0.5f;
+        float initialAmount = 0.0f;
         bool isLinked = false;
 
         if (modPtr) {
@@ -365,7 +374,7 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
         const auto* macroPtr =
             resolveMacroPtr(activeMacro_, devicePath_, availableMacros_, availableRackMacros_);
 
-        float initialAmount = 0.5f;
+        float initialAmount = 0.0f;
         bool isLinked = false;
 
         if (macroPtr) {
@@ -409,7 +418,7 @@ void LinkableTextSlider::mouseDrag(const juce::MouseEvent& e) {
 
     int deltaY = linkModeDragStartY_ - e.getPosition().y;
     float sensitivity = 0.005f;
-    float newAmount = juce::jlimit(0.0f, 1.0f, linkModeDragStartAmount_ + (deltaY * sensitivity));
+    float newAmount = juce::jlimit(-1.0f, 1.0f, linkModeDragStartAmount_ + (deltaY * sensitivity));
 
     linkModeDragCurrentAmount_ = newAmount;
 
