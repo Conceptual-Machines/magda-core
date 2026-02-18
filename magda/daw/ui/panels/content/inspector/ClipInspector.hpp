@@ -16,7 +16,7 @@ namespace magda::daw::ui {
  * - Loop controls (toggle, start, length, phase)
  * - Warp/auto-tempo/stretch settings
  * - Pitch (auto-pitch, transpose)
- * - Per-clip mix (gain, pan)
+ * - Per-clip mix (volume, pan, gain)
  * - Fades (in/out with type/behavior controls)
  * - Playback (reverse, channels)
  * - Session launch settings (mode, quantize)
@@ -94,6 +94,7 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     // Pitch section
     juce::Label pitchSectionLabel_;
     juce::TextButton autoPitchToggle_;
+    juce::TextButton analogPitchToggle_;
     juce::ComboBox autoPitchModeCombo_;
     std::unique_ptr<magda::DraggableValueLabel> pitchChangeValue_;
     std::unique_ptr<magda::DraggableValueLabel> transposeValue_;
@@ -113,8 +114,9 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
 
     // Per-clip mix section
     juce::Label clipMixSectionLabel_;
-    std::unique_ptr<magda::DraggableValueLabel> clipGainValue_;
+    std::unique_ptr<magda::DraggableValueLabel> clipVolumeValue_;
     std::unique_ptr<magda::DraggableValueLabel> clipPanValue_;
+    std::unique_ptr<magda::DraggableValueLabel> clipGainValue_;
 
     // Fades section (collapsible)
     bool fadesCollapsed_ = false;

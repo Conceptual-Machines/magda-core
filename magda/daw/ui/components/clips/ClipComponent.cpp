@@ -1,6 +1,7 @@
 #include "ClipComponent.hpp"
 
 #include <BinaryData.h>
+#include <juce_audio_basics/juce_audio_basics.h>
 
 #include <cmath>
 
@@ -125,6 +126,13 @@ void ClipComponent::paint(juce::Graphics& g) {
         paintFadeHandles(g, *clip, getLocalBounds());
     }
 
+    // Draw volume line (audio clips with non-zero volume, or when hovering/dragging)
+    if (clip->type == ClipType::Audio && (std::abs(clip->volumeDB) > 0.01f || hoverVolumeHandle_ ||
+                                          dragMode_ == DragMode::VolumeDrag)) {
+        auto wfArea = bounds.reduced(2, HEADER_HEIGHT + 2);
+        paintVolumeLine(g, *clip, wfArea);
+    }
+
     // Marquee highlight overlay (during marquee drag)
     if (isMarqueeHighlighted_) {
         g.setColour(juce::Colours::white.withAlpha(0.2f));
@@ -196,6 +204,7 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
             }
 
             auto waveColour = clip.colour.brighter(0.2f);
+            float gainLinear = juce::Decibels::decibelsToGain(clip.volumeDB + clip.gainDB);
 
             // Get actual file duration
             double fileDuration = 0.0;
@@ -268,7 +277,8 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                         fileDuration > 0.0 ? juce::jmin(srcEnd, fileDuration) : srcEnd;
                     if (finalSrcEnd > finalSrcStart) {
                         thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath,
-                                                      finalSrcStart, finalSrcEnd, waveColour);
+                                                      finalSrcStart, finalSrcEnd, waveColour,
+                                                      gainLinear);
                     }
                 }
             } else if (di.isLooped()) {
@@ -331,7 +341,7 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                     }
 
                     thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, tileFileStart,
-                                                  tileFileEnd, waveColour);
+                                                  tileFileEnd, waveColour, gainLinear);
                     timePos += tileFullDuration;
                 }
             } else {
@@ -350,7 +360,7 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                                                      drawWidth, waveformArea.getHeight());
 
                 thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, fileStart, fileEnd,
-                                              waveColour);
+                                              waveColour, gainLinear);
             }
             // Restore from reverse flip
             if (clip.isReversed)
@@ -679,6 +689,39 @@ void ClipComponent::paintFadeHandles(juce::Graphics& g, const ClipInfo& clip,
     }
 }
 
+void ClipComponent::paintVolumeLine(juce::Graphics& g, const ClipInfo& clip,
+                                    juce::Rectangle<int> waveformArea) {
+    if (waveformArea.getWidth() <= 0 || waveformArea.getHeight() <= 0)
+        return;
+
+    float gainLinear = juce::Decibels::decibelsToGain(clip.volumeDB);
+    gainLinear = juce::jlimit(0.0f, 1.0f, gainLinear);
+
+    // Y position: top = 0 dB (unity/full), bottom = -inf (silence)
+    float lineY = static_cast<float>(waveformArea.getY()) +
+                  (1.0f - gainLinear) * static_cast<float>(waveformArea.getHeight());
+
+    // Draw the gain line
+    auto lineColour = juce::Colours::white.withAlpha(
+        hoverVolumeHandle_ || dragMode_ == DragMode::VolumeDrag ? 0.8f : 0.4f);
+    g.setColour(lineColour);
+    g.drawHorizontalLine(static_cast<int>(lineY), static_cast<float>(waveformArea.getX()),
+                         static_cast<float>(waveformArea.getRight()));
+
+    // Show dB text during drag
+    if (dragMode_ == DragMode::VolumeDrag) {
+        juce::String dbText;
+        if (clip.volumeDB <= -100.0f)
+            dbText = "-inf dB";
+        else
+            dbText = juce::String(clip.volumeDB, 1) + " dB";
+        g.setColour(juce::Colours::white);
+        g.setFont(10.0f);
+        g.drawText(dbText, waveformArea.getX() + 4, static_cast<int>(lineY) - 14, 60, 14,
+                   juce::Justification::centredLeft);
+    }
+}
+
 void ClipComponent::resized() {
     // Nothing to do - clip bounds are set by parent
 }
@@ -903,6 +946,15 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         }
         dragMode_ = DragMode::FadeOut;
         dragStartFadeOut_ = clip->fadeOut;
+        dragStartClipSnapshot_ = *clip;
+        repaint();
+        return;
+    }
+
+    // Volume handle (top edge of waveform area, audio clips only)
+    if (isSelected_ && isOnVolumeHandle(e.x, e.y)) {
+        dragMode_ = DragMode::VolumeDrag;
+        dragStartVolumeDB_ = clip->volumeDB;
         dragStartClipSnapshot_ = *clip;
         repaint();
         return;
@@ -1220,6 +1272,17 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             break;
         }
 
+        case DragMode::VolumeDrag: {
+            // Convert vertical delta to dB (~1 dB per 2px, up = louder)
+            auto parentPos = e.getEventRelativeTo(parentPanel_).getPosition();
+            int deltaY = parentPos.y - dragStartPos_.y;
+            float dbDelta = static_cast<float>(-deltaY) * 0.5f;  // Up = louder
+            float newGainDB = juce::jlimit(-100.0f, 0.0f, dragStartVolumeDB_ + dbDelta);
+            ClipManager::getInstance().setClipVolumeDB(clipId_, newGainDB);
+            repaint();
+            break;
+        }
+
         case DragMode::StretchLeft: {
             // Shift+left edge: stretch from left, right edge stays fixed
             double endTime = dragStartTime_ + dragStartLength_;
@@ -1475,6 +1538,12 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 break;
             }
 
+            case DragMode::VolumeDrag: {
+                auto cmd = std::make_unique<SetVolumeCommand>(clipId_, dragStartClipSnapshot_);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+                break;
+            }
+
             case DragMode::StretchRight: {
                 stretchThrottle_.reset();
 
@@ -1566,6 +1635,7 @@ void ClipComponent::mouseMove(const juce::MouseEvent& e) {
     bool wasHoverRight = hoverRightEdge_;
     bool wasHoverFadeIn = hoverFadeIn_;
     bool wasHoverFadeOut = hoverFadeOut_;
+    bool wasHoverVolume = hoverVolumeHandle_;
 
     hoverLeftEdge_ = isOnLeftEdge(e.x);
     hoverRightEdge_ = isOnRightEdge(e.x);
@@ -1574,16 +1644,21 @@ void ClipComponent::mouseMove(const juce::MouseEvent& e) {
     if (isSelected_) {
         hoverFadeIn_ = isOnFadeInHandle(e.x, e.y);
         hoverFadeOut_ = isOnFadeOutHandle(e.x, e.y);
+        // Volume handle: only when not on fade handles or edges
+        hoverVolumeHandle_ = !hoverFadeIn_ && !hoverFadeOut_ && !hoverLeftEdge_ &&
+                             !hoverRightEdge_ && isOnVolumeHandle(e.x, e.y);
     } else {
         hoverFadeIn_ = false;
         hoverFadeOut_ = false;
+        hoverVolumeHandle_ = false;
     }
 
     // Always update cursor to check for Alt key (blade mode) and Shift key (stretch mode)
     updateCursor(e.mods.isAltDown(), e.mods.isShiftDown());
 
     if (hoverLeftEdge_ != wasHoverLeft || hoverRightEdge_ != wasHoverRight ||
-        hoverFadeIn_ != wasHoverFadeIn || hoverFadeOut_ != wasHoverFadeOut) {
+        hoverFadeIn_ != wasHoverFadeIn || hoverFadeOut_ != wasHoverFadeOut ||
+        hoverVolumeHandle_ != wasHoverVolume) {
         repaint();
     }
 }
@@ -1593,6 +1668,7 @@ void ClipComponent::mouseExit(const juce::MouseEvent& /*e*/) {
     hoverRightEdge_ = false;
     hoverFadeIn_ = false;
     hoverFadeOut_ = false;
+    hoverVolumeHandle_ = false;
     updateCursor(false, false);
     repaint();
 }
@@ -1728,6 +1804,24 @@ bool ClipComponent::isOnFadeOutHandle(int x, int y) const {
     return std::abs(static_cast<float>(x) - handleX) <= FADE_HANDLE_HIT_WIDTH * 0.5f;
 }
 
+bool ClipComponent::isOnVolumeHandle(int x, int y) const {
+    juce::ignoreUnused(x);
+    const auto* clip = getClipInfo();
+    if (!clip || clip->type != ClipType::Audio)
+        return false;
+
+    auto waveformArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+    if (waveformArea.getWidth() <= 0 || waveformArea.getHeight() <= 0)
+        return false;
+
+    // Hit test near the actual volume line position (±6px tolerance)
+    float volumeLinear = juce::Decibels::decibelsToGain(clip->volumeDB);
+    volumeLinear = juce::jlimit(0.0f, 1.0f, volumeLinear);
+    float lineY = static_cast<float>(waveformArea.getY()) +
+                  ((1.0f - volumeLinear) * static_cast<float>(waveformArea.getHeight()));
+    return std::abs(static_cast<float>(y) - lineY) <= 6.0f;
+}
+
 void ClipComponent::updateCursor(bool isAltDown, bool isShiftDown) {
     // Alt key = blade/scissors mode
     if (isAltDown) {
@@ -1739,6 +1833,11 @@ void ClipComponent::updateCursor(bool isAltDown, bool isShiftDown) {
 
     if (isClipSelected && (hoverFadeIn_ || hoverFadeOut_)) {
         setMouseCursor(juce::MouseCursor::PointingHandCursor);
+        return;
+    }
+
+    if (isClipSelected && hoverVolumeHandle_) {
+        setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
         return;
     }
 

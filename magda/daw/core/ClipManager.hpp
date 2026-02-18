@@ -192,6 +192,7 @@ class ClipManager {
 
     // Pitch
     void setAutoPitch(ClipId clipId, bool enabled);
+    void setAnalogPitch(ClipId clipId, bool enabled);
     void setAutoPitchMode(ClipId clipId, int mode);
     void setPitchChange(ClipId clipId, float semitones);
     void setTranspose(ClipId clipId, int semitones);
@@ -204,6 +205,7 @@ class ClipManager {
     void setIsReversed(ClipId clipId, bool reversed);
 
     // Per-Clip Mix
+    void setClipVolumeDB(ClipId clipId, float dB);
     void setClipGainDB(ClipId clipId, float dB);
     void setClipPan(ClipId clipId, float pan);
 

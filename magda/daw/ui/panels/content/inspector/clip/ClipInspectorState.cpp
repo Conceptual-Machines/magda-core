@@ -255,10 +255,13 @@ void ClipInspector::updateFromSelectedClip() {
         stretchModeCombo_.setVisible(isAudioClip);
         if (isAudioClip) {
             clipStretchValue_->setValue(clip->speedRatio, juce::dontSendNotification);
-            // Show effective stretch mode (auto-upgraded when autoTempo/warp is active)
+            // Show effective stretch mode (auto-upgraded when autoTempo/warp is active,
+            // or when pitchChange != 0 without analog pitch — TE uses SoundTouch)
             int effectiveMode = clip->timeStretchMode;
-            if (effectiveMode == 0 && (clip->autoTempo || clip->warpEnabled ||
-                                       std::abs(clip->speedRatio - 1.0) > 0.001)) {
+            bool isAnalog = clip->isAnalogPitchActive();
+            if (!isAnalog && effectiveMode == 0 &&
+                (clip->autoTempo || clip->warpEnabled || std::abs(clip->speedRatio - 1.0) > 0.001 ||
+                 std::abs(clip->pitchChange) > 0.001f)) {
                 effectiveMode = 4;  // soundtouchBetter (defaultMode)
             }
             stretchModeCombo_.setSelectedId(effectiveMode + 1, juce::dontSendNotification);
@@ -293,6 +296,14 @@ void ClipInspector::updateFromSelectedClip() {
         autoPitchModeCombo_.setVisible(false);  // hidden for now
         pitchChangeValue_->setVisible(isAudioClip);
         transposeValue_->setVisible(isAudioClip);
+
+        // Analog pitch toggle: visible for audio clips when not in autoTempo/warp mode
+        bool canAnalog = isAudioClip && !clip->autoTempo && !clip->warpEnabled;
+        analogPitchToggle_.setVisible(canAnalog);
+        if (canAnalog) {
+            analogPitchToggle_.setToggleState(clip->analogPitch, juce::dontSendNotification);
+        }
+
         if (isAudioClip) {
             autoPitchToggle_.setToggleState(clip->autoPitch, juce::dontSendNotification);
             autoPitchModeCombo_.setSelectedId(clip->autoPitchMode + 1, juce::dontSendNotification);
@@ -303,21 +314,32 @@ void ClipInspector::updateFromSelectedClip() {
             autoPitchModeCombo_.setEnabled(clip->autoPitch);
             autoPitchModeCombo_.setAlpha(clip->autoPitch ? 1.0f : 0.4f);
 
-            // transpose disabled when autoPitch is on
-            transposeValue_->setEnabled(!clip->autoPitch);
-            transposeValue_->setAlpha(clip->autoPitch ? 0.4f : 1.0f);
+            // When analogPitch is active: disable/dim transpose and speedRatio controls
+            bool analogActive = clip->isAnalogPitchActive();
+
+            // transpose disabled when autoPitch or analogPitch is on
+            transposeValue_->setEnabled(!clip->autoPitch && !analogActive);
+            transposeValue_->setAlpha((clip->autoPitch || analogActive) ? 0.4f : 1.0f);
+
+            // When analog pitch is active, dim the speed ratio control
+            if (analogActive && clipStretchValue_) {
+                clipStretchValue_->setEnabled(false);
+                clipStretchValue_->setAlpha(0.4f);
+            }
         }
 
-        // Mix section (audio clips only) — includes Gain/Pan + Reverse/L/R
+        // Mix section (audio clips only) — includes Volume/Pan/Gain + Reverse/L/R
         clipMixSectionLabel_.setVisible(isAudioClip);
-        clipGainValue_->setVisible(isAudioClip);
+        clipVolumeValue_->setVisible(isAudioClip);
         clipPanValue_->setVisible(isAudioClip);
+        clipGainValue_->setVisible(isAudioClip);
         reverseToggle_.setVisible(isAudioClip);
         leftChannelToggle_.setVisible(false);
         rightChannelToggle_.setVisible(false);
         if (isAudioClip) {
-            clipGainValue_->setValue(clip->gainDB, juce::dontSendNotification);
+            clipVolumeValue_->setValue(clip->volumeDB, juce::dontSendNotification);
             clipPanValue_->setValue(clip->pan, juce::dontSendNotification);
+            clipGainValue_->setValue(clip->gainDB, juce::dontSendNotification);
             reverseToggle_.setToggleState(clip->isReversed, juce::dontSendNotification);
         }
 
@@ -410,12 +432,14 @@ void ClipInspector::showClipControls(bool show) {
         // New sections
         pitchSectionLabel_.setVisible(false);
         autoPitchToggle_.setVisible(false);
+        analogPitchToggle_.setVisible(false);
         autoPitchModeCombo_.setVisible(false);
         pitchChangeValue_->setVisible(false);
         transposeValue_->setVisible(false);
         clipMixSectionLabel_.setVisible(false);
-        clipGainValue_->setVisible(false);
+        clipVolumeValue_->setVisible(false);
         clipPanValue_->setVisible(false);
+        clipGainValue_->setVisible(false);
         beatDetectionSectionLabel_.setVisible(false);
         reverseToggle_.setVisible(false);
         autoDetectBeatsToggle_.setVisible(false);

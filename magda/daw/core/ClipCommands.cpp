@@ -175,6 +175,7 @@ void MoveClipCommand::undo() {
     }
 
     clipManager.forceNotifyClipsChanged();
+    executed_ = false;
 }
 
 bool MoveClipCommand::canMergeWith(const UndoableCommand* other) const {
@@ -232,6 +233,7 @@ void MoveClipToTrackCommand::undo() {
     }
 
     clipManager.forceNotifyClipsChanged();
+    executed_ = false;
 }
 
 // ============================================================================
@@ -352,6 +354,7 @@ void CreateClipCommand::undo() {
 
     createdClipId_ = INVALID_CLIP_ID;
     clipManager.forceNotifyClipsChanged();
+    executed_ = false;
 }
 
 // ============================================================================
@@ -406,6 +409,7 @@ void DuplicateClipCommand::undo() {
 
     duplicatedClipId_ = INVALID_CLIP_ID;
     clipManager.forceNotifyClipsChanged();
+    executed_ = false;
 }
 
 // ============================================================================
@@ -450,6 +454,7 @@ void PasteClipCommand::undo() {
 
     pastedClipIds_.clear();
     clipManager.forceNotifyClipsChanged();
+    executed_ = false;
 }
 
 // ============================================================================
@@ -611,6 +616,38 @@ void SetFadeCommand::execute() {
 }
 
 void SetFadeCommand::undo() {
+    auto& clipManager = ClipManager::getInstance();
+    if (auto* clip = clipManager.getClip(clipId_)) {
+        *clip = beforeState_;
+        clipManager.forceNotifyClipsChanged();
+    }
+}
+
+// ============================================================================
+// SetVolumeCommand
+// ============================================================================
+
+SetVolumeCommand::SetVolumeCommand(ClipId clipId, const ClipInfo& beforeState)
+    : clipId_(clipId), beforeState_(beforeState) {}
+
+void SetVolumeCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip)
+        return;
+
+    if (afterState_.id == INVALID_CLIP_ID) {
+        // First execution: clip is already in final state from drag updates.
+        // Just capture it for redo.
+        afterState_ = *clip;
+    } else {
+        // Redo: restore the after-state
+        *clip = afterState_;
+        clipManager.forceNotifyClipsChanged();
+    }
+}
+
+void SetVolumeCommand::undo() {
     auto& clipManager = ClipManager::getInstance();
     if (auto* clip = clipManager.getClip(clipId_)) {
         *clip = beforeState_;

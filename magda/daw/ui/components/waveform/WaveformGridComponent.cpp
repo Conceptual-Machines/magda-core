@@ -1,5 +1,7 @@
 #include "WaveformGridComponent.hpp"
 
+#include <juce_audio_basics/juce_audio_basics.h>
+
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -118,7 +120,8 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
     auto* thumbnail = thumbnailManager.getThumbnail(clip.audioFilePath);
     double fileDuration = thumbnail ? thumbnail->getTotalLength() : 0.0;
     auto waveColour = clip.colour.brighter(0.2f);
-    auto vertZoom = static_cast<float>(verticalZoom_);
+    float gainLinear = juce::Decibels::decibelsToGain(clip.volumeDB + clip.gainDB);
+    auto vertZoom = static_cast<float>(verticalZoom_) * gainLinear;
 
     g.saveState();
     if (g.reduceClipRegion(waveformRect)) {

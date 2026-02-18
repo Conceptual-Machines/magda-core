@@ -343,6 +343,7 @@ void ClipInspector::initClipPropertiesSection() {
 
     clipStretchValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
     clipStretchValue_->setRange(0.25, 4.0, 1.0);
+    clipStretchValue_->setDecimalPlaces(3);
     clipStretchValue_->setSuffix("x");
     clipStretchValue_->setDrawBackground(false);
     clipStretchValue_->setDrawBorder(true);
@@ -589,6 +590,29 @@ void ClipInspector::initPitchSection() {
     };
     clipPropsContainer_.addChildComponent(autoPitchToggle_);
 
+    analogPitchToggle_.setButtonText("ANALOG");
+    analogPitchToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    analogPitchToggle_.setColour(juce::TextButton::buttonColourId,
+                                 DarkTheme::getColour(DarkTheme::SURFACE));
+    analogPitchToggle_.setColour(juce::TextButton::buttonOnColourId,
+                                 DarkTheme::getAccentColour().withAlpha(0.3f));
+    analogPitchToggle_.setColour(juce::TextButton::textColourOffId,
+                                 DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    analogPitchToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+    analogPitchToggle_.setTooltip(
+        "Analog pitch shift: resample instead of time-stretch.\n"
+        "Changes playback speed to change pitch (tape/vinyl/sampler behavior).");
+    analogPitchToggle_.onClick = [this]() {
+        if (selectedClipId_ != magda::INVALID_CLIP_ID) {
+            auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
+            if (clip) {
+                magda::ClipManager::getInstance().setAnalogPitch(selectedClipId_,
+                                                                 !clip->analogPitch);
+            }
+        }
+    };
+    clipPropsContainer_.addChildComponent(analogPitchToggle_);
+
     autoPitchModeCombo_.setColour(juce::ComboBox::backgroundColourId,
                                   DarkTheme::getColour(DarkTheme::SURFACE));
     autoPitchModeCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
@@ -638,14 +662,14 @@ void ClipInspector::initMixSection() {
     clipMixSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(clipMixSectionLabel_);
 
-    clipGainValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
-    clipGainValue_->setRange(-60.0, 24.0, 0.0);
-    clipGainValue_->onValueChange = [this]() {
+    clipVolumeValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
+    clipVolumeValue_->setRange(-100.0, 0.0, 0.0);
+    clipVolumeValue_->onValueChange = [this]() {
         if (selectedClipId_ != magda::INVALID_CLIP_ID)
-            magda::ClipManager::getInstance().setClipGainDB(
-                selectedClipId_, static_cast<float>(clipGainValue_->getValue()));
+            magda::ClipManager::getInstance().setClipVolumeDB(
+                selectedClipId_, static_cast<float>(clipVolumeValue_->getValue()));
     };
-    clipPropsContainer_.addChildComponent(*clipGainValue_);
+    clipPropsContainer_.addChildComponent(*clipVolumeValue_);
 
     clipPanValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Pan);
     clipPanValue_->setRange(-1.0, 1.0, 0.0);
@@ -655,6 +679,16 @@ void ClipInspector::initMixSection() {
                 selectedClipId_, static_cast<float>(clipPanValue_->getValue()));
     };
     clipPropsContainer_.addChildComponent(*clipPanValue_);
+
+    clipGainValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
+    clipGainValue_->setRange(0.0, 24.0, 0.0);
+    clipGainValue_->setSuffix(" dB");
+    clipGainValue_->onValueChange = [this]() {
+        if (selectedClipId_ != magda::INVALID_CLIP_ID)
+            magda::ClipManager::getInstance().setClipGainDB(
+                selectedClipId_, static_cast<float>(clipGainValue_->getValue()));
+    };
+    clipPropsContainer_.addChildComponent(*clipGainValue_);
 }
 
 // ========================================================================

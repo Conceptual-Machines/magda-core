@@ -27,14 +27,29 @@ void ClipInspector::clipPropertyChanged(magda::ClipId clipId) {
                            (clipBeatsLengthValue_ && clipBeatsLengthValue_->isDragging()) ||
                            (pitchChangeValue_ && pitchChangeValue_->isDragging()) ||
                            (transposeValue_ && transposeValue_->isDragging()) ||
-                           (clipGainValue_ && clipGainValue_->isDragging()) ||
+                           (clipVolumeValue_ && clipVolumeValue_->isDragging()) ||
                            (clipPanValue_ && clipPanValue_->isDragging()) ||
+                           (clipGainValue_ && clipGainValue_->isDragging()) ||
                            (fadeInValue_ && fadeInValue_->isDragging()) ||
                            (fadeOutValue_ && fadeOutValue_->isDragging()) ||
                            (beatSensitivityValue_ && beatSensitivityValue_->isDragging()) ||
                            (transientSensitivityValue_ && transientSensitivityValue_->isDragging());
-        if (anyDragging)
+        if (anyDragging) {
+            // Still update stretch mode combo during drag — pitchChange affects effective mode
+            const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
+            if (clip && clip->type == magda::ClipType::Audio) {
+                int effectiveMode = clip->timeStretchMode;
+                bool isAnalog = clip->isAnalogPitchActive();
+                if (!isAnalog && effectiveMode == 0 &&
+                    (clip->autoTempo || clip->warpEnabled ||
+                     std::abs(clip->speedRatio - 1.0) > 0.001 ||
+                     std::abs(clip->pitchChange) > 0.001f)) {
+                    effectiveMode = 4;
+                }
+                stretchModeCombo_.setSelectedId(effectiveMode + 1, juce::dontSendNotification);
+            }
             return;
+        }
 
         updateFromSelectedClip();
     }

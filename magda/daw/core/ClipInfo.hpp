@@ -128,6 +128,10 @@ struct ClipInfo {
 
     // Pitch
     bool autoPitch = false;
+    bool analogPitch = false;  // Analog pitch: resample instead of time-stretch
+    bool isAnalogPitchActive() const {
+        return analogPitch && !autoTempo && !warpEnabled;
+    }
     int autoPitchMode = 0;     // 0=pitchTrack, 1=chordTrackMono, 2=chordTrackPoly
     float pitchChange = 0.0f;  // -48 to +48 semitones
     int transpose = 0;         // -24 to +24 semitones (only when !autoPitch)
@@ -140,8 +144,9 @@ struct ClipInfo {
     bool isReversed = false;
 
     // Per-Clip Mix
-    float gainDB = 0.0f;
-    float pan = 0.0f;  // -1.0 to 1.0
+    float volumeDB = 0.0f;  // Volume: -inf to 0 dB (clip handle)
+    float gainDB = 0.0f;    // Gain: 0 to +24 dB (inspector only)
+    float pan = 0.0f;       // -1.0 to 1.0
 
     // Fades
     double fadeIn = 0.0;

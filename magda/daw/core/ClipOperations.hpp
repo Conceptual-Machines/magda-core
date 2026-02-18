@@ -407,6 +407,7 @@ class ClipOperations {
         clip.autoTempo = enabled;
 
         if (enabled) {
+            clip.analogPitch = false;  // Analog pitch is incompatible with autoTempo
             DBG("[SET-AUTO-TEMPO] ENABLING clip " << clip.id << " bpm=" << bpm);
             DBG("[SET-AUTO-TEMPO]   BEFORE: startTime="
                 << clip.startTime << " length=" << clip.length << " loopLength=" << clip.loopLength

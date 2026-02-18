@@ -182,6 +182,11 @@ void ClipInspector::resized() {
     // Pitch section (audio clips only)
     if (pitchSectionLabel_.isVisible()) {
         pitchSectionLabel_.setBounds(addRow(16));
+        if (analogPitchToggle_.isVisible()) {
+            addSpace(4);
+            auto row = addRow(22);
+            analogPitchToggle_.setBounds(row.removeFromLeft(60).reduced(0, 1));
+        }
         if (autoPitchToggle_.isVisible()) {
             addSpace(4);
             auto row = addRow(22);
@@ -204,19 +209,21 @@ void ClipInspector::resized() {
     if (clipMixSectionLabel_.isVisible())
         addSeparator();
 
-    // Mix section (audio clips only) — 2-column: volume/pan, reverse/LR
+    // Mix section (audio clips only) — 3-column: volume/pan/gain, reverse
     if (clipMixSectionLabel_.isVisible()) {
         clipMixSectionLabel_.setBounds(addRow(16));
         addSpace(4);
-        const int colGap = 8;
-        int halfWidth = (containerWidth - colGap) / 2;
+        const int colGap = 4;
+        int thirdWidth = (containerWidth - colGap * 2) / 3;
 
-        // Row 1: [volume] | [pan]
+        // Row 1: [Volume] | [Pan] | [Gain]
         {
             auto row = addRow(22);
-            clipGainValue_->setBounds(row.removeFromLeft(halfWidth));
+            clipVolumeValue_->setBounds(row.removeFromLeft(thirdWidth));
             row.removeFromLeft(colGap);
-            clipPanValue_->setBounds(row.removeFromLeft(halfWidth));
+            clipPanValue_->setBounds(row.removeFromLeft(thirdWidth));
+            row.removeFromLeft(colGap);
+            clipGainValue_->setBounds(row);
         }
         addSpace(4);
         // Row 2: [REVERSE full width]

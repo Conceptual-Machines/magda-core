@@ -104,7 +104,8 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
         StretchLeft,
         StretchRight,
         FadeIn,
-        FadeOut
+        FadeOut,
+        VolumeDrag
     };
     DragMode dragMode_ = DragMode::None;
 
@@ -147,6 +148,10 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     double dragStartFadeIn_ = 0.0;
     double dragStartFadeOut_ = 0.0;
 
+    // Volume handle state
+    bool hoverVolumeHandle_ = false;
+    float dragStartVolumeDB_ = 0.0f;
+
     // Visual constants
     static constexpr int RESIZE_HANDLE_WIDTH = 6;
     static constexpr int CORNER_RADIUS = 4;
@@ -163,12 +168,15 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     void paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
                            juce::Rectangle<int> waveformArea, double pixelsPerSecond);
     void paintFadeHandles(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
+    void paintVolumeLine(juce::Graphics& g, const ClipInfo& clip,
+                         juce::Rectangle<int> waveformArea);
 
     // Interaction helpers
     bool isOnLeftEdge(int x) const;
     bool isOnRightEdge(int x) const;
     bool isOnFadeInHandle(int x, int y) const;
     bool isOnFadeOutHandle(int x, int y) const;
+    bool isOnVolumeHandle(int x, int y) const;
     void updateCursor(bool isAltDown = false, bool isShiftDown = false);
 
     // Helper to get current clip info
