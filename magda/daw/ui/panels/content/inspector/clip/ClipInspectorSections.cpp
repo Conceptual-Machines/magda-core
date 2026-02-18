@@ -343,6 +343,7 @@ void ClipInspector::initClipPropertiesSection() {
 
     clipStretchValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
     clipStretchValue_->setRange(0.25, 4.0, 1.0);
+    clipStretchValue_->setDecimalPlaces(3);
     clipStretchValue_->setSuffix("x");
     clipStretchValue_->setDrawBackground(false);
     clipStretchValue_->setDrawBorder(true);
