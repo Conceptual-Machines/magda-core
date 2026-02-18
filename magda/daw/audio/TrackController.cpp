@@ -204,6 +204,13 @@ juce::String TrackController::getTrackAudioOutput(TrackId trackId) const {
     return output.getOutputName();
 }
 
+void TrackController::setTrackMidiOutput(TrackId trackId, const juce::String& deviceId) {
+    // NOTE: TE has a single TrackOutput per track (shared audio+MIDI).
+    // We cannot use TrackOutput for independent MIDI routing — it would
+    // replace the audio output. MIDI routing will be handled via aux sends.
+    juce::ignoreUnused(trackId, deviceId);
+}
+
 void TrackController::setTrackAudioInput(TrackId trackId, const juce::String& deviceId) {
     auto* track = getAudioTrack(trackId);
     if (!track) {
@@ -227,6 +234,23 @@ void TrackController::setTrackAudioInput(TrackId trackId, const juce::String& de
             }
         }
         DBG("  -> Cleared audio input");
+    } else if (deviceId.startsWith("track:")) {
+        // Route another track's audio output as input (resampling)
+        TrackId sourceTrackId =
+            deviceId.fromFirstOccurrenceOf("track:", false, false).getIntValue();
+        auto* sourceTrack = getAudioTrack(sourceTrackId);
+        if (sourceTrack) {
+            auto* dest =
+                te::assignTrackAsInput(*track, *sourceTrack, te::InputDevice::trackWaveDevice);
+            if (dest) {
+                dest->recordEnabled = false;  // Arming happens separately
+                DBG("  -> Assigned track " << sourceTrackId << " as audio input");
+            } else {
+                DBG("  -> Warning: assignTrackAsInput returned null");
+            }
+        } else {
+            DBG("  -> Source track not found: " << sourceTrackId);
+        }
     } else {
         // Enable input - route default or specific device to this track
         auto* playbackContext = edit_.getCurrentPlaybackContext();
@@ -277,6 +301,18 @@ juce::String TrackController::getTrackAudioInput(TrackId trackId) const {
             auto targets = inputDeviceInstance->getTargets();
             for (auto targetID : targets) {
                 if (targetID == track->itemID) {
+                    // Check if this is a track-as-input (resampling) device
+                    if (inputDeviceInstance->owner.isTrackDevice() &&
+                        inputDeviceInstance->owner.getDeviceType() ==
+                            te::InputDevice::trackWaveDevice) {
+                        // Find the source MAGDA TrackId for this track input device
+                        juce::ScopedLock lock(trackLock_);
+                        for (const auto& [magdaId, teTrack] : trackMapping_) {
+                            if (&teTrack->getWaveInputDevice() == &inputDeviceInstance->owner) {
+                                return "track:" + juce::String(magdaId);
+                            }
+                        }
+                    }
                     // Return "default" if this is the first input (for round-trip consistency)
                     if (i == 0) {
                         return "default";

@@ -184,16 +184,18 @@ class TrackHeadersPanel : public juce::Component,
     int pluginDropTrackIndex_ = -1;  // -1 = empty area (new track), >= 0 = existing track
 
     // Routing device management
-    void populateAudioInputOptions(RoutingSelector* selector);
+    void populateAudioInputOptions(RoutingSelector* selector, TrackId trackId = INVALID_TRACK_ID);
     void populateAudioOutputOptions(RoutingSelector* selector,
                                     TrackId currentTrackId = INVALID_TRACK_ID);
     void populateMidiInputOptions(RoutingSelector* selector);
-    void populateMidiOutputOptions(RoutingSelector* selector);
+    void populateMidiOutputOptions(RoutingSelector* selector, TrackId trackId);
     void setupRoutingCallbacks(TrackHeader& header, TrackId trackId);
     void updateRoutingSelectorFromTrack(TrackHeader& header, const TrackInfo* track);
 
-    // Output routing: option ID → TrackId mapping for group/aux destinations
+    // Routing: option ID → TrackId mapping for destinations/sources
     std::map<int, TrackId> outputTrackMapping_;
+    std::map<int, TrackId> midiOutputTrackMapping_;
+    std::map<int, TrackId> inputTrackMapping_;
 
     // Refresh all input selectors (call after MIDI device scan completes)
     void refreshInputSelectors();

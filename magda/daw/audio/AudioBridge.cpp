@@ -51,6 +51,10 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
 
+    // Set up per-device metering manager
+    deviceMetering_.setPluginManager(&pluginManager_);
+    DeviceMeteringManager::registerForEdit(edit_, &deviceMetering_);
+
     // Master metering will be registered when playback context is available
     // (done in timerCallback when context exists)
 
@@ -82,6 +86,10 @@ AudioBridge::~AudioBridge() {
 
         // NOTE: Plugin windows are now closed by PluginWindowManager BEFORE AudioBridge
         // is destroyed (in TracktionEngineWrapper::shutdown()). No window cleanup needed here.
+
+        // Unregister per-device metering from Edit
+        DeviceMeteringManager::unregisterForEdit(edit_);
+        deviceMetering_.clear();
 
         // Unregister master meter client from playback context
         if (masterMeterRegistered_) {
@@ -352,6 +360,9 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
         if (device) {
             processor->syncFromDeviceInfo(*device);
 
+            // Push gain to the audio-graph atomic so DeviceGainNode picks it up
+            deviceMetering_.setGain(deviceId, device->gainValue);
+
             // Sync sidechain routing if changed
             auto* tePlugin = pluginManager_.getPlugin(deviceId).get();
             if (tePlugin && tePlugin->canSidechain()) {
@@ -368,13 +379,17 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
                 }
             }
 
-            // Re-check MIDI sidechain monitor on both source and current track
-            if (device->sidechain.type == SidechainConfig::Type::MIDI &&
-                device->sidechain.sourceTrackId != INVALID_TRACK_ID) {
-                DBG("AudioBridge::devicePropertyChanged - MIDI sidechain set, checking monitor on "
-                    "source track "
+            // MIDI sidechain: ensure MidiReceivePlugin + SidechainMonitorPlugin
+            if (device->sidechain.isActive() &&
+                device->sidechain.type == SidechainConfig::Type::MIDI) {
+                DBG("AudioBridge::devicePropertyChanged - MIDI sidechain set, "
+                    "ensuring MidiReceive + monitor for source track "
                     << device->sidechain.sourceTrackId);
+                pluginManager_.ensureMidiReceive(track.id, device->id,
+                                                 device->sidechain.sourceTrackId);
                 pluginManager_.checkSidechainMonitor(device->sidechain.sourceTrackId);
+            } else {
+                pluginManager_.removeMidiReceive(track.id, device->id);
             }
             // Also re-check the track this device is on (may no longer need monitor)
             pluginManager_.checkSidechainMonitor(track.id);
@@ -746,6 +761,9 @@ void AudioBridge::timerCallback() {
             }
         });
     });
+
+    // Update per-device metering
+    deviceMetering_.updateAllClients();
 
     // Register master meter client with playback context if not done yet
     if (!masterMeterRegistered_) {

@@ -1,6 +1,8 @@
 #include "TrackInspector.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <vector>
 
 #include "../../../audio/MidiBridge.hpp"
 #include "../../../engine/AudioEngine.hpp"
@@ -549,50 +551,73 @@ void TrackInspector::showAddSendMenu() {
     if (!currentTrack)
         return;
 
-    // Aux tracks can't have sends
-    if (currentTrack->type == magda::TrackType::Aux)
-        return;
-
     juce::PopupMenu menu;
-    const auto& allTracks = magda::TrackManager::getInstance().getTracks();
+    auto& trackManager = magda::TrackManager::getInstance();
+    const auto& allTracks = trackManager.getTracks();
 
-    int itemId = 1;
-    std::vector<magda::TrackId> auxTrackIds;
-
-    for (const auto& track : allTracks) {
-        if (track.type != magda::TrackType::Aux)
-            continue;
-        if (track.id == selectedTrackId_)
-            continue;
-
-        // Filter out aux tracks that already have a send from this track
-        bool alreadyHasSend = false;
-        for (const auto& send : currentTrack->sends) {
-            if (send.destTrackId == track.id) {
-                alreadyHasSend = true;
-                break;
-            }
-        }
-        if (alreadyHasSend)
-            continue;
-
-        menu.addItem(itemId, track.name);
-        auxTrackIds.push_back(track.id);
-        ++itemId;
+    // Collect descendants to prevent routing cycles
+    std::vector<magda::TrackId> descendants;
+    if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+        descendants = trackManager.getAllDescendants(selectedTrackId_);
     }
 
+    int itemId = 1;
+    std::vector<magda::TrackId> destTrackIds;
+
+    auto addTracksOfType = [&](magda::TrackType type) {
+        bool addedSeparator = false;
+        for (const auto& track : allTracks) {
+            if (track.type != type)
+                continue;
+            if (track.id == selectedTrackId_)
+                continue;
+            if (track.type == magda::TrackType::Master)
+                continue;
+            if (std::find(descendants.begin(), descendants.end(), track.id) != descendants.end())
+                continue;
+
+            // Filter out tracks that already have a send from this track
+            bool alreadyHasSend = false;
+            for (const auto& send : currentTrack->sends) {
+                if (send.destTrackId == track.id) {
+                    alreadyHasSend = true;
+                    break;
+                }
+            }
+            if (alreadyHasSend)
+                continue;
+
+            if (!addedSeparator && itemId > 1) {
+                menu.addSeparator();
+                addedSeparator = true;
+            }
+            if (!addedSeparator) {
+                addedSeparator = true;
+            }
+
+            menu.addItem(itemId, track.name);
+            destTrackIds.push_back(track.id);
+            ++itemId;
+        }
+    };
+
+    addTracksOfType(magda::TrackType::Aux);
+    addTracksOfType(magda::TrackType::Group);
+    addTracksOfType(magda::TrackType::Audio);
+    addTracksOfType(magda::TrackType::Instrument);
+
     if (menu.getNumItems() == 0) {
-        menu.addItem(-1, "(No available aux tracks)", false);
+        menu.addItem(-1, "(No available tracks)", false);
     }
 
     // Capture selectedTrackId_ by value to avoid stale reference if selection
     // changes while the async menu is open
     TrackId sourceTrackId = selectedTrackId_;
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&addSendButton_),
-                       [sourceTrackId, auxTrackIds](int result) {
-                           if (result > 0 && result <= static_cast<int>(auxTrackIds.size())) {
+                       [sourceTrackId, destTrackIds](int result) {
+                           if (result > 0 && result <= static_cast<int>(destTrackIds.size())) {
                                magda::TrackManager::getInstance().addSend(sourceTrackId,
-                                                                          auxTrackIds[result - 1]);
+                                                                          destTrackIds[result - 1]);
                            }
                        });
 }
@@ -618,7 +643,13 @@ void TrackInspector::populateRoutingSelectors() {
             // Disable MIDI input (mutually exclusive)
             inputSelector_->setEnabled(false);
             magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "");
-            magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "default");
+            // Preserve existing track input if already set, otherwise default
+            auto* trackInfo = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+            if (trackInfo && trackInfo->audioInputDevice.startsWith("track:"))
+                magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_,
+                                                                      trackInfo->audioInputDevice);
+            else
+                magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "default");
         } else {
             magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "");
         }
@@ -630,6 +661,13 @@ void TrackInspector::populateRoutingSelectors() {
 
         if (selectedId == 1) {
             magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "");
+        } else if (selectedId >= 200) {
+            // Track-as-input (resampling)
+            auto it = inputTrackMapping_.find(selectedId);
+            if (it != inputTrackMapping_.end()) {
+                magda::TrackManager::getInstance().setTrackAudioInput(
+                    selectedTrackId_, "track:" + juce::String(it->second));
+            }
         } else if (selectedId >= 10) {
             magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "default");
         }
@@ -704,8 +742,8 @@ void TrackInspector::populateRoutingSelectors() {
         } else if (selectedId == 2) {
             // None
             magda::TrackManager::getInstance().setTrackAudioOutput(selectedTrackId_, "");
-        } else if (selectedId >= 200 && selectedId < 400) {
-            // Group or Aux track destination
+        } else if (selectedId >= 200) {
+            // Track destination (Group, Aux, Audio, Instrument)
             auto it = outputTrackMapping_.find(selectedId);
             if (it != outputTrackMapping_.end()) {
                 magda::TrackManager::getInstance().setTrackAudioOutput(
@@ -734,6 +772,13 @@ void TrackInspector::populateRoutingSelectors() {
 
         if (selectedId == 1) {
             magda::TrackManager::getInstance().setTrackMidiOutput(selectedTrackId_, "");
+        } else if (selectedId >= 200) {
+            // Track destination
+            auto it = midiOutputTrackMapping_.find(selectedId);
+            if (it != midiOutputTrackMapping_.end()) {
+                magda::TrackManager::getInstance().setTrackMidiOutput(
+                    selectedTrackId_, "track:" + juce::String(it->second));
+            }
         } else if (selectedId >= 10 && midiBridge) {
             auto midiOutputs = midiBridge->getAvailableMidiOutputs();
             int deviceIndex = selectedId - 10;
@@ -752,7 +797,8 @@ void TrackInspector::populateAudioInputOptions() {
     if (!deviceManager)
         return;
     magda::RoutingSyncHelper::populateAudioInputOptions(audioInputSelector_.get(),
-                                                        deviceManager->getCurrentAudioDevice());
+                                                        deviceManager->getCurrentAudioDevice(),
+                                                        selectedTrackId_, &inputTrackMapping_);
 }
 
 void TrackInspector::populateAudioOutputOptions() {
@@ -776,8 +822,8 @@ void TrackInspector::populateMidiInputOptions() {
 void TrackInspector::populateMidiOutputOptions() {
     if (!midiOutputSelector_ || !audioEngine_)
         return;
-    magda::RoutingSyncHelper::populateMidiOutputOptions(midiOutputSelector_.get(),
-                                                        audioEngine_->getMidiBridge());
+    magda::RoutingSyncHelper::populateMidiOutputOptions(
+        midiOutputSelector_.get(), audioEngine_->getMidiBridge(), midiOutputTrackMapping_);
 }
 
 void TrackInspector::updateRoutingSelectorsFromTrack() {
@@ -788,12 +834,15 @@ void TrackInspector::updateRoutingSelectorsFromTrack() {
     if (!track)
         return;
 
+    // Always re-populate audio input options so track-as-input entries are current
+    populateAudioInputOptions();
+
     auto* deviceManager = audioEngine_->getDeviceManager();
     auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;
     magda::RoutingSyncHelper::syncSelectorsFromTrack(
         *track, audioInputSelector_.get(), inputSelector_.get(), outputSelector_.get(),
         midiOutputSelector_.get(), audioEngine_->getMidiBridge(), device, selectedTrackId_,
-        outputTrackMapping_);
+        outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_);
 }
 
 }  // namespace magda::daw::ui

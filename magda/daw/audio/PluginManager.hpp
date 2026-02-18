@@ -93,6 +93,13 @@ class PluginManager {
      */
     DeviceProcessor* getDeviceProcessor(DeviceId deviceId) const;
 
+    /**
+     * @brief Reverse lookup: get DeviceId for a TE Plugin pointer
+     * @param plugin The TE plugin pointer
+     * @return The DeviceId, or INVALID_DEVICE_ID if not found
+     */
+    DeviceId getDeviceIdForPlugin(te::Plugin* plugin) const;
+
     // =========================================================================
     // Plugin Synchronization
     // =========================================================================
@@ -301,6 +308,21 @@ class PluginManager {
     void removeSidechainMonitor(TrackId sourceTrackId);
 
     /**
+     * @brief Ensure a MidiReceivePlugin exists before a target device for MIDI sidechain.
+     * @param trackId The destination track
+     * @param deviceId The device that needs MIDI injection
+     * @param sourceTrackId The source track providing MIDI
+     */
+    void ensureMidiReceive(TrackId trackId, DeviceId deviceId, TrackId sourceTrackId);
+
+    /**
+     * @brief Remove a MidiReceivePlugin for a device when its MIDI sidechain is cleared.
+     * @param trackId The destination track
+     * @param deviceId The device that no longer needs MIDI injection
+     */
+    void removeMidiReceive(TrackId trackId, DeviceId deviceId);
+
+    /**
      * @brief Set a device macro parameter value on the TE MacroParameter
      */
     void setDeviceMacroValue(DeviceId deviceId, int macroIndex, float value);
@@ -354,6 +376,9 @@ class PluginManager {
 
     // Sidechain monitor plugins (sourceTrackId → SidechainMonitorPlugin)
     std::map<TrackId, te::Plugin::Ptr> sidechainMonitors_;
+
+    // MIDI receive plugins (deviceId → MidiReceivePlugin inserted before the device)
+    std::map<DeviceId, te::Plugin::Ptr> midiReceiveMapping_;
 
     // Pre-computed sidechain LFO cache: indexed by source TrackId.
     // Audio/MIDI threads read under cacheLock_; message thread writes during rebuild.

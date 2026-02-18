@@ -95,7 +95,8 @@ struct DeviceInfo {
 
     // Sidechain configuration (e.g., compressor key input)
     SidechainConfig sidechain;
-    bool canSidechain = false;  // true if TE plugin supports sidechain input
+    bool canSidechain = false;    // true if TE plugin supports audio sidechain input
+    bool canReceiveMidi = false;  // true if TE plugin accepts MIDI input (for cross-track MIDI)
 
     // Multi-output configuration (for instruments with >2 output channels)
     MultiOutConfig multiOut;

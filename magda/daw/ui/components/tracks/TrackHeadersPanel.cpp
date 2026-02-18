@@ -384,13 +384,23 @@ void TrackHeadersPanel::viewModeChanged(ViewMode mode, const AudioEngineProfile&
     tracksChanged();  // Rebuild with new visibility settings
 }
 
-void TrackHeadersPanel::populateAudioInputOptions(RoutingSelector* selector) {
+void TrackHeadersPanel::populateAudioInputOptions(RoutingSelector* selector, TrackId trackId) {
     if (!selector || !audioEngine_)
         return;
     auto* deviceManager = audioEngine_->getDeviceManager();
     if (!deviceManager)
         return;
-    RoutingSyncHelper::populateAudioInputOptions(selector, deviceManager->getCurrentAudioDevice());
+    // If no trackId provided, find it from the existing trackHeaders
+    if (trackId == INVALID_TRACK_ID) {
+        for (const auto& h : trackHeaders) {
+            if (h->audioInputSelector.get() == selector) {
+                trackId = h->trackId;
+                break;
+            }
+        }
+    }
+    RoutingSyncHelper::populateAudioInputOptions(selector, deviceManager->getCurrentAudioDevice(),
+                                                 trackId, &inputTrackMapping_);
 }
 
 void TrackHeadersPanel::populateAudioOutputOptions(RoutingSelector* selector,
@@ -410,10 +420,12 @@ void TrackHeadersPanel::populateMidiInputOptions(RoutingSelector* selector) {
     RoutingSyncHelper::populateMidiInputOptions(selector, audioEngine_->getMidiBridge());
 }
 
-void TrackHeadersPanel::populateMidiOutputOptions(RoutingSelector* selector) {
+void TrackHeadersPanel::populateMidiOutputOptions(RoutingSelector* selector, TrackId trackId) {
     if (!selector || !audioEngine_)
         return;
-    RoutingSyncHelper::populateMidiOutputOptions(selector, audioEngine_->getMidiBridge());
+    juce::ignoreUnused(trackId);
+    RoutingSyncHelper::populateMidiOutputOptions(selector, audioEngine_->getMidiBridge(),
+                                                 midiOutputTrackMapping_);
 }
 
 void TrackHeadersPanel::refreshInputSelectors() {
@@ -444,7 +456,13 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
                 }
             }
             TrackManager::getInstance().setTrackMidiInput(trackId, "");
-            TrackManager::getInstance().setTrackAudioInput(trackId, "default");
+            // Preserve existing track input if already set, otherwise default
+            auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+            if (trackInfo && trackInfo->audioInputDevice.startsWith("track:"))
+                TrackManager::getInstance().setTrackAudioInput(trackId,
+                                                               trackInfo->audioInputDevice);
+            else
+                TrackManager::getInstance().setTrackAudioInput(trackId, "default");
         } else {
             TrackManager::getInstance().setTrackAudioInput(trackId, "");
         }
@@ -453,6 +471,13 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
     header.audioInputSelector->onSelectionChanged = [this, trackId](int selectedId) {
         if (selectedId == 1) {
             TrackManager::getInstance().setTrackAudioInput(trackId, "");
+        } else if (selectedId >= 200) {
+            // Track-as-input (resampling)
+            auto it = inputTrackMapping_.find(selectedId);
+            if (it != inputTrackMapping_.end()) {
+                TrackManager::getInstance().setTrackAudioInput(trackId,
+                                                               "track:" + juce::String(it->second));
+            }
         } else if (selectedId >= 10) {
             TrackManager::getInstance().setTrackAudioInput(trackId, "default");
         }
@@ -523,8 +548,8 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
         } else if (selectedId == 2) {
             // None
             TrackManager::getInstance().setTrackAudioOutput(trackId, "");
-        } else if (selectedId >= 200 && selectedId < 400) {
-            // Group or Aux track destination
+        } else if (selectedId >= 200) {
+            // Track destination (Group, Aux, Audio, Instrument)
             auto it = mapping.find(selectedId);
             if (it != mapping.end()) {
                 TrackManager::getInstance().setTrackAudioOutput(
@@ -549,6 +574,13 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
         if (selectedId == 1) {
             // None
             TrackManager::getInstance().setTrackMidiOutput(trackId, "");
+        } else if (selectedId >= 200) {
+            // Track destination
+            auto it = midiOutputTrackMapping_.find(selectedId);
+            if (it != midiOutputTrackMapping_.end()) {
+                TrackManager::getInstance().setTrackMidiOutput(trackId,
+                                                               "track:" + juce::String(it->second));
+            }
         } else if (selectedId >= 10 && midiBridge) {
             auto midiOutputs = midiBridge->getAvailableMidiOutputs();
             int deviceIndex = selectedId - 10;
@@ -756,7 +788,7 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
     RoutingSyncHelper::syncSelectorsFromTrack(
         *track, header.audioInputSelector.get(), header.inputSelector.get(),
         header.outputSelector.get(), header.midiOutputSelector.get(), audioEngine_->getMidiBridge(),
-        device, header.trackId, outputTrackMapping_);
+        device, header.trackId, outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_);
 }
 
 void TrackHeadersPanel::paint(juce::Graphics& g) {
@@ -1071,10 +1103,10 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
 
     // Populate all routing selectors
 
-    populateAudioInputOptions(header.audioInputSelector.get());
+    populateAudioInputOptions(header.audioInputSelector.get(), trackId);
     populateMidiInputOptions(header.inputSelector.get());
     populateAudioOutputOptions(header.outputSelector.get(), trackId);
-    populateMidiOutputOptions(header.midiOutputSelector.get());
+    populateMidiOutputOptions(header.midiOutputSelector.get(), trackId);
 
     // Set up routing callbacks (audio/MIDI input with mutual exclusion, outputs)
     setupRoutingCallbacks(header, trackId);
@@ -1650,37 +1682,52 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
 
     menu.addSeparator();
 
-    // Add Send submenu (list available aux tracks) — not for aux tracks themselves
-    if (track->type != TrackType::Aux) {
+    // Add Send submenu (list all available tracks as send destinations)
+    {
         juce::PopupMenu sendMenu;
         const auto& allTracks = trackManager.getTracks();
         int sendItemId = 500;
-        bool hasAuxOptions = false;
+        bool hasOptions = false;
 
-        for (const auto& t : allTracks) {
-            if (t.type != TrackType::Aux)
-                continue;
-            // Skip aux tracks that already have a send from this track
-            bool alreadyConnected = false;
-            for (const auto& s : track->sends) {
-                if (s.destTrackId == t.id) {
-                    alreadyConnected = true;
-                    break;
-                }
-            }
-            if (!alreadyConnected) {
-                if (t.id >= 100) {
-                    juce::AlertWindow::showMessageBoxAsync(
-                        juce::MessageBoxIconType::WarningIcon, "Limit Reached",
-                        "Cannot create more than 100 aux tracks.");
-                    break;
-                }
-                sendMenu.addItem(sendItemId + t.id, t.name);
-                hasAuxOptions = true;
-            }
+        // Collect descendants to prevent routing cycles
+        std::vector<TrackId> descendants;
+        if (track->id != INVALID_TRACK_ID) {
+            descendants = trackManager.getAllDescendants(track->id);
         }
 
-        if (hasAuxOptions) {
+        auto addSendTargets = [&](TrackType type) {
+            bool addedSeparator = false;
+            for (const auto& t : allTracks) {
+                if (t.type != type || t.id == track->id || t.type == TrackType::Master)
+                    continue;
+                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+                    continue;
+
+                bool alreadyConnected = false;
+                for (const auto& s : track->sends) {
+                    if (s.destTrackId == t.id) {
+                        alreadyConnected = true;
+                        break;
+                    }
+                }
+                if (alreadyConnected)
+                    continue;
+
+                if (!addedSeparator && hasOptions) {
+                    sendMenu.addSeparator();
+                    addedSeparator = true;
+                }
+                sendMenu.addItem(sendItemId + t.id, t.name);
+                hasOptions = true;
+            }
+        };
+
+        addSendTargets(TrackType::Aux);
+        addSendTargets(TrackType::Group);
+        addSendTargets(TrackType::Audio);
+        addSendTargets(TrackType::Instrument);
+
+        if (hasOptions) {
             menu.addSubMenu("Add Send", sendMenu);
         }
 

@@ -139,7 +139,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     scButton_->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     scButton_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     scButton_->onClick = [this]() { showSidechainMenu(); };
-    scButton_->setVisible(device_.canSidechain);
+    scButton_->setVisible(device_.canSidechain || device_.canReceiveMidi);
     addAndMakeVisible(*scButton_);
     updateScButtonState();
 
@@ -436,8 +436,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         setupCustomUILinking();
     }
 
-    // Start timer to sync UI button state with actual window state (10 FPS)
-    startTimer(100);
+    // Start timer for UI button state sync and meter updates (~30 FPS)
+    startTimerHz(30);
 }
 
 DeviceSlotComponent::~DeviceSlotComponent() {
@@ -446,21 +446,30 @@ DeviceSlotComponent::~DeviceSlotComponent() {
 }
 
 void DeviceSlotComponent::timerCallback() {
+    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+    if (!audioEngine)
+        return;
+
+    auto* bridge = audioEngine->getAudioBridge();
+    if (!bridge)
+        return;
+
     // Update UI button state to match actual plugin window state
     if (uiButton_) {
-        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-        if (audioEngine) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                bool isOpen = bridge->isPluginWindowOpen(device_.id);
-                bool currentState = uiButton_->getToggleState();
+        bool isOpen = bridge->isPluginWindowOpen(device_.id);
+        bool currentState = uiButton_->getToggleState();
 
-                // Only update if state changed to avoid unnecessary repaints
-                if (isOpen != currentState) {
-                    uiButton_->setToggleState(isOpen, juce::dontSendNotification);
-                    uiButton_->setActive(isOpen);
-                }
-            }
+        // Only update if state changed to avoid unnecessary repaints
+        if (isOpen != currentState) {
+            uiButton_->setToggleState(isOpen, juce::dontSendNotification);
+            uiButton_->setActive(isOpen);
         }
+    }
+
+    // Poll device peak levels and feed to gain slider meter
+    magda::DeviceMeteringManager::DeviceMeterData data;
+    if (bridge->getDeviceMetering().getLatestLevels(device_.id, data)) {
+        gainSlider_.setMeterLevels(data.peakL, data.peakR);
     }
 }
 
@@ -569,7 +578,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
 
     // Update sidechain button visibility and state
     if (scButton_) {
-        scButton_->setVisible(device_.canSidechain);
+        scButton_->setVisible(device_.canSidechain || device_.canReceiveMidi);
         updateScButtonState();
     }
 
@@ -956,10 +965,10 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
 }
 
 void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
-    // Header layout: [Macro] [M] [Name...] [gain slider] [UI] [on]
+    // Header layout: [Macro] [M] [Name] [UI] [...] [gain slider] [SC] [MO] [on] [X]
     // Note: delete (X) is handled by NodeComponent on the right
 
-    // Macro button on the left (before name) - matches panel order
+    // Macro button on the left
     macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
     headerArea.removeFromLeft(4);
 
@@ -971,12 +980,8 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     onButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
     headerArea.removeFromRight(4);
 
-    // UI button
-    uiButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
-    headerArea.removeFromRight(4);
-
     // Sidechain button (only if plugin supports it)
-    if (device_.canSidechain && scButton_) {
+    if ((device_.canSidechain || device_.canReceiveMidi) && scButton_) {
         scButton_->setBounds(headerArea.removeFromRight(20));
         scButton_->setVisible(true);
         headerArea.removeFromRight(2);
@@ -991,8 +996,15 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     }
 
     // Gain slider takes some space on the right
-    gainSlider_.setBounds(headerArea.removeFromRight(50));
+    gainSlider_.setBounds(headerArea.removeFromRight(70));
     headerArea.removeFromRight(4);
+
+    // Name label gets the remaining left portion (handled by NodeComponent)
+    // UI button sits just to the right of the name
+    if (uiButton_->isVisible()) {
+        uiButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+        headerArea.removeFromRight(4);
+    }
 
     // Remaining space is for the name label (handled by NodeComponent)
 }
@@ -2568,13 +2580,7 @@ int DeviceSlotComponent::getVisibleParamCount() const {
 }
 
 int DeviceSlotComponent::getParamsPerRow() const {
-    int visibleCount = getVisibleParamCount();
-
-    // Determine columns based on visible parameter count
-    // Minimum 4 columns to keep header properly sized, always maintain 4 rows
-    if (visibleCount <= 16)
-        return 4;  // 4 columns × 4 rows (minimum width)
-    return 8;      // 8 columns × 4 rows (for 17-32 params)
+    return 8;  // Always 8 columns × 4 rows
 }
 
 int DeviceSlotComponent::getParamsPerPage() const {
@@ -2596,9 +2602,13 @@ void DeviceSlotComponent::showSidechainMenu() {
 
     // Read live sidechain state from TrackManager (device_ may be stale)
     magda::SidechainConfig currentSidechain;
+    bool canAudio = device_.canSidechain;
+    bool canMidi = device_.canReceiveMidi;
     if (auto* currentDevice =
             magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
         currentSidechain = currentDevice->sidechain;
+        canAudio = currentDevice->canSidechain;
+        canMidi = currentDevice->canReceiveMidi;
     }
 
     // "None" option to clear sidechain
@@ -2607,7 +2617,6 @@ void DeviceSlotComponent::showSidechainMenu() {
     menu.addSeparator();
 
     // Build list of candidate tracks (excluding this device's own track)
-    // Store id→name pairs for the async callback
     struct TrackEntry {
         magda::TrackId id;
         juce::String name;
@@ -2616,16 +2625,37 @@ void DeviceSlotComponent::showSidechainMenu() {
 
     auto& tm = magda::TrackManager::getInstance();
     const auto& tracks = tm.getTracks();
-    int itemId = 100;
 
     for (const auto& track : tracks) {
         if (track.id == nodePath_.trackId)
             continue;
-
-        bool isSelected = currentSidechain.isActive() && currentSidechain.sourceTrackId == track.id;
-        menu.addItem(itemId, track.name, true, isSelected);
         trackEntries->push_back({track.id, track.name});
-        ++itemId;
+    }
+
+    // Audio sidechain section (only if plugin supports audio sidechain)
+    if (canAudio) {
+        menu.addSectionHeader("Audio Sidechain");
+        int itemId = 100;
+        for (const auto& entry : *trackEntries) {
+            bool isSelected = currentSidechain.isActive() &&
+                              currentSidechain.type == magda::SidechainConfig::Type::Audio &&
+                              currentSidechain.sourceTrackId == entry.id;
+            menu.addItem(itemId, entry.name, true, isSelected);
+            ++itemId;
+        }
+    }
+
+    // MIDI sidechain section (only if plugin accepts MIDI input)
+    if (canMidi) {
+        menu.addSectionHeader("MIDI Source");
+        int itemId = 200;
+        for (const auto& entry : *trackEntries) {
+            bool isSelected = currentSidechain.isActive() &&
+                              currentSidechain.type == magda::SidechainConfig::Type::MIDI &&
+                              currentSidechain.sourceTrackId == entry.id;
+            menu.addItem(itemId, entry.name, true, isSelected);
+            ++itemId;
+        }
     }
 
     auto deviceId = device_.id;
@@ -2637,12 +2667,21 @@ void DeviceSlotComponent::showSidechainMenu() {
 
                            if (result == 1) {
                                magda::TrackManager::getInstance().clearSidechain(deviceId);
-                           } else {
+                           } else if (result >= 100 && result < 200) {
+                               // Audio sidechain
                                int index = result - 100;
                                if (index >= 0 && index < static_cast<int>(trackEntries->size())) {
                                    magda::TrackManager::getInstance().setSidechainSource(
                                        deviceId, (*trackEntries)[static_cast<size_t>(index)].id,
                                        magda::SidechainConfig::Type::Audio);
+                               }
+                           } else if (result >= 200) {
+                               // MIDI sidechain
+                               int index = result - 200;
+                               if (index >= 0 && index < static_cast<int>(trackEntries->size())) {
+                                   magda::TrackManager::getInstance().setSidechainSource(
+                                       deviceId, (*trackEntries)[static_cast<size_t>(index)].id,
+                                       magda::SidechainConfig::Type::MIDI);
                                }
                            }
 
@@ -2663,10 +2702,8 @@ void DeviceSlotComponent::updateScButtonState() {
         return;
 
     if (device_.sidechain.isActive()) {
-        // Show source track name and highlight
-        auto* sourceTrack =
-            magda::TrackManager::getInstance().getTrack(device_.sidechain.sourceTrackId);
-        juce::String label = sourceTrack ? "SC" : "SC";
+        juce::String label =
+            device_.sidechain.type == magda::SidechainConfig::Type::MIDI ? "MI" : "SC";
         scButton_->setButtonText(label);
         scButton_->setColour(juce::TextButton::buttonColourId,
                              DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).darker(0.3f));

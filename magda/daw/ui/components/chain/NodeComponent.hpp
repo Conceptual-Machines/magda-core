@@ -179,6 +179,11 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
         return HEADER_HEIGHT;
     }
 
+    // Override to reserve space for a meter strip on the right edge
+    virtual int getMeterWidth() const {
+        return 0;
+    }
+
     // Control header button visibility (for custom header layouts)
     void setBypassButtonVisible(bool visible);
     void setDeleteButtonVisible(bool visible);

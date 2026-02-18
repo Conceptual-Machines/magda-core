@@ -54,7 +54,6 @@ class DeviceSlotComponent : public NodeComponent,
     static constexpr int PARAM_CELL_HEIGHT = 28;
     static constexpr int PAGINATION_HEIGHT = 18;
     static constexpr int CONTENT_HEADER_HEIGHT = 18;
-
     DeviceSlotComponent(const magda::DeviceInfo& device);
     ~DeviceSlotComponent() override;
 
@@ -85,6 +84,10 @@ class DeviceSlotComponent : public NodeComponent,
     int getModPanelWidth() const override;
     int getParamPanelWidth() const override;
     int getGainPanelWidth() const override {
+        return 0;
+    }
+
+    int getMeterWidth() const override {
         return 0;
     }
 

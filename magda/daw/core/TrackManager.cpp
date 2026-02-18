@@ -662,9 +662,7 @@ void TrackManager::setTrackMidiOutput(TrackId trackId, const juce::String& devic
     // Update track state
     track->midiOutputDevice = deviceId;
 
-    // TODO: Forward to MidiBridge when MIDI output routing is implemented
-
-    // Notify listeners
+    // Notify listeners (AudioBridge forwards to TrackController for TE routing)
     notifyTrackPropertyChanged(trackId);
 }
 
@@ -724,12 +722,17 @@ void TrackManager::setTrackAudioOutput(TrackId trackId, const juce::String& rout
 // Send Management
 // ============================================================================
 
-void TrackManager::addSend(TrackId sourceTrackId, TrackId destAuxTrackId) {
+void TrackManager::addSend(TrackId sourceTrackId, TrackId destTrackId) {
     auto* source = getTrack(sourceTrackId);
-    auto* dest = getTrack(destAuxTrackId);
-    if (!source || !dest || dest->type != TrackType::Aux || dest->auxBusIndex < 0) {
+    auto* dest = getTrack(destTrackId);
+    if (!source || !dest || dest->type == TrackType::Master) {
         DBG("addSend failed: invalid source or destination");
         return;
+    }
+
+    // Auto-assign auxBusIndex for non-Aux tracks that don't have one yet
+    if (dest->auxBusIndex < 0) {
+        dest->auxBusIndex = nextAuxBusIndex_++;
     }
 
     // Check if send already exists
@@ -743,11 +746,12 @@ void TrackManager::addSend(TrackId sourceTrackId, TrackId destAuxTrackId) {
     send.busIndex = dest->auxBusIndex;
     send.level = 1.0f;
     send.preFader = false;
-    send.destTrackId = destAuxTrackId;
+    send.destTrackId = destTrackId;
     source->sends.push_back(send);
 
     notifyTrackDevicesChanged(sourceTrackId);
-    DBG("Added send from track " << sourceTrackId << " to aux track " << destAuxTrackId << " (bus "
+    notifyTrackDevicesChanged(destTrackId);
+    DBG("Added send from track " << sourceTrackId << " to track " << destTrackId << " (bus "
                                  << dest->auxBusIndex << ")");
 }
 
@@ -1477,74 +1481,74 @@ void TrackManager::refreshIdCountersFromTracks() {
 
 void TrackManager::notifyTracksChanged() {
     ScopedNotifyGuard guard(*this);
-    for (auto* listener : listeners_) {
-        if (listener)
-            listener->tracksChanged();
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->tracksChanged();
     }
 }
 
 void TrackManager::notifyTrackPropertyChanged(int trackId) {
     ScopedNotifyGuard guard(*this);
-    for (auto* listener : listeners_) {
-        if (listener)
-            listener->trackPropertyChanged(trackId);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->trackPropertyChanged(trackId);
     }
 }
 
 void TrackManager::notifyMasterChannelChanged() {
     ScopedNotifyGuard guard(*this);
-    for (auto* listener : listeners_) {
-        if (listener)
-            listener->masterChannelChanged();
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->masterChannelChanged();
     }
 }
 
 void TrackManager::notifyTrackSelectionChanged(TrackId trackId) {
     ScopedNotifyGuard guard(*this);
-    for (auto* listener : listeners_) {
-        if (listener)
-            listener->trackSelectionChanged(trackId);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->trackSelectionChanged(trackId);
     }
 }
 
 void TrackManager::notifyTrackDevicesChanged(TrackId trackId) {
     ScopedNotifyGuard guard(*this);
-    for (auto* listener : listeners_) {
-        if (listener)
-            listener->trackDevicesChanged(trackId);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->trackDevicesChanged(trackId);
     }
 }
 
 void TrackManager::notifyDeviceModifiersChanged(TrackId trackId) {
     ScopedNotifyGuard guard(*this);
-    for (auto* listener : listeners_) {
-        if (listener)
-            listener->deviceModifiersChanged(trackId);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->deviceModifiersChanged(trackId);
     }
 }
 
 void TrackManager::notifyDevicePropertyChanged(DeviceId deviceId) {
     ScopedNotifyGuard guard(*this);
-    for (auto* listener : listeners_) {
-        if (listener)
-            listener->devicePropertyChanged(deviceId);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->devicePropertyChanged(deviceId);
     }
 }
 
 void TrackManager::notifyDeviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue) {
     ScopedNotifyGuard guard(*this);
-    for (auto* listener : listeners_) {
-        if (listener)
-            listener->deviceParameterChanged(deviceId, paramIndex, newValue);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->deviceParameterChanged(deviceId, paramIndex, newValue);
     }
 }
 
 void TrackManager::notifyMacroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
                                            float value) {
     ScopedNotifyGuard guard(*this);
-    for (auto* listener : listeners_) {
-        if (listener)
-            listener->macroValueChanged(trackId, isRack, id, macroIndex, value);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->macroValueChanged(trackId, isRack, id, macroIndex, value);
     }
 }
 
@@ -1555,10 +1559,10 @@ void TrackManager::updateRackMods(const RackInfo& rack, double deltaTime) {
 }
 
 void TrackManager::notifyModulationChanged() {
-    // Notify all listeners that modulation values have changed
-    // This triggers parameter indicator repaints
-    for (auto* listener : listeners_) {
-        listener->tracksChanged();
+    ScopedNotifyGuard guard(*this);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->tracksChanged();
     }
 }
 

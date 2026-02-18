@@ -9,6 +9,7 @@
 #include "CurveSnapshot.hpp"
 #include "DrumGridPlugin.hpp"
 #include "MagdaSamplerPlugin.hpp"
+#include "MidiReceivePlugin.hpp"
 #include "ModifierHelpers.hpp"
 #include "PluginWindowBridge.hpp"
 #include "SidechainMonitorPlugin.hpp"
@@ -50,6 +51,19 @@ DeviceProcessor* PluginManager::getDeviceProcessor(DeviceId deviceId) const {
     juce::ScopedLock lock(pluginLock_);
     auto it = deviceProcessors_.find(deviceId);
     return it != deviceProcessors_.end() ? it->second.get() : nullptr;
+}
+
+DeviceId PluginManager::getDeviceIdForPlugin(te::Plugin* plugin) const {
+    if (!plugin)
+        return INVALID_DEVICE_ID;
+
+    juce::ScopedLock lock(pluginLock_);
+    auto it = pluginToDevice_.find(plugin);
+    if (it != pluginToDevice_.end())
+        return it->second;
+
+    // Check if this is an instrument wrapper rack
+    return instrumentRackManager_.getDeviceIdForRack(plugin);
 }
 
 // =============================================================================
@@ -221,8 +235,8 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
         }
     }
 
-    // Aux track: ensure AuxReturnPlugin exists with correct bus number
-    if (trackInfo->type == TrackType::Aux && trackInfo->auxBusIndex >= 0) {
+    // Any track with auxBusIndex: ensure AuxReturnPlugin exists with correct bus number
+    if (trackInfo->auxBusIndex >= 0) {
         bool hasReturn = false;
         for (int i = 0; i < teTrack->pluginList.size(); ++i) {
             if (dynamic_cast<te::AuxReturnPlugin*>(teTrack->pluginList[i])) {
@@ -640,7 +654,8 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
                         for (auto* assignment : param->getAssignments()) {
                             if (assignment->isForModifierSource(*modifier)) {
                                 float effectiveAmount = link.amount;
-                                if (modInfo.triggerMode != LFOTriggerMode::Free && !modInfo.running)
+                                if (modInfo.triggerMode != LFOTriggerMode::Free &&
+                                    !modInfo.running && !modInfo.oneShot)
                                     effectiveAmount = 0.0f;
                                 assignment->value = effectiveAmount;
                                 assignment->offset = 0.0f;
@@ -1160,18 +1175,26 @@ void PluginManager::syncSidechains(TrackId trackId, te::AudioTrack* teTrack) {
 
         const auto& device = getDevice(element);
         auto plugin = getPlugin(device.id);
-        if (!plugin || !plugin->canSidechain())
-            continue;
 
-        if (device.sidechain.isActive() && device.sidechain.type == SidechainConfig::Type::Audio) {
-            auto* sourceTrack = trackController_.getAudioTrack(device.sidechain.sourceTrackId);
-            if (sourceTrack) {
-                plugin->setSidechainSourceID(sourceTrack->itemID);
-                plugin->guessSidechainRouting();
+        // --- Audio sidechain (TE native) ---
+        if (plugin && plugin->canSidechain()) {
+            if (device.sidechain.isActive() &&
+                device.sidechain.type == SidechainConfig::Type::Audio) {
+                auto* sourceTrack = trackController_.getAudioTrack(device.sidechain.sourceTrackId);
+                if (sourceTrack) {
+                    plugin->setSidechainSourceID(sourceTrack->itemID);
+                    plugin->guessSidechainRouting();
+                }
+            } else {
+                plugin->setSidechainSourceID({});
             }
+        }
+
+        // --- MIDI sidechain (MidiReceivePlugin injection) ---
+        if (device.sidechain.isActive() && device.sidechain.type == SidechainConfig::Type::MIDI) {
+            ensureMidiReceive(trackId, device.id, device.sidechain.sourceTrackId);
         } else {
-            // Clear sidechain if not active
-            plugin->setSidechainSourceID({});
+            removeMidiReceive(trackId, device.id);
         }
     }
 }
@@ -1314,6 +1337,83 @@ void PluginManager::removeSidechainMonitor(TrackId sourceTrackId) {
 }
 
 // =============================================================================
+// MIDI Receive Plugin Lifecycle
+// =============================================================================
+
+void PluginManager::ensureMidiReceive(TrackId trackId, DeviceId deviceId, TrackId sourceTrackId) {
+    // Already have one for this device? Update its source track if needed.
+    auto it = midiReceiveMapping_.find(deviceId);
+    if (it != midiReceiveMapping_.end()) {
+        if (auto* rx = dynamic_cast<MidiReceivePlugin*>(it->second.get())) {
+            if (rx->getSourceTrackId() != sourceTrackId) {
+                rx->setSourceTrackId(sourceTrackId);
+                // Update sidechain graph dependency to new source track
+                auto* sourceTeTrack = trackController_.getAudioTrack(sourceTrackId);
+                if (sourceTeTrack) {
+                    it->second->setSidechainSourceID(sourceTeTrack->itemID);
+                    it->second->guessSidechainRouting();
+                }
+            }
+        }
+        return;
+    }
+
+    auto* teTrack = trackController_.getAudioTrack(trackId);
+    if (!teTrack)
+        return;
+
+    // Find the target device's TE plugin to insert before it
+    auto targetPlugin = getPlugin(deviceId);
+    int insertPos = -1;
+    if (targetPlugin) {
+        for (int i = 0; i < teTrack->pluginList.size(); ++i) {
+            if (teTrack->pluginList[i] == targetPlugin.get()) {
+                insertPos = i;
+                break;
+            }
+        }
+    }
+
+    // Create MidiReceivePlugin via TE plugin cache
+    juce::ValueTree pluginState(te::IDs::PLUGIN);
+    pluginState.setProperty(te::IDs::type, MidiReceivePlugin::xmlTypeName, nullptr);
+    pluginState.setProperty(juce::Identifier("sourceTrackId"), sourceTrackId, nullptr);
+
+    auto plugin = edit_.getPluginCache().createNewPlugin(pluginState);
+    if (plugin) {
+        if (auto* rx = dynamic_cast<MidiReceivePlugin*>(plugin.get()))
+            rx->setSourceTrackId(sourceTrackId);
+
+        // Set sidechain source to create a graph dependency on the source track.
+        // This ensures TE processes the source track (with SidechainMonitorPlugin)
+        // before this plugin, so MidiBroadcastBus contains current-block MIDI — zero latency.
+        auto* sourceTeTrack = trackController_.getAudioTrack(sourceTrackId);
+        if (sourceTeTrack) {
+            plugin->setSidechainSourceID(sourceTeTrack->itemID);
+            plugin->guessSidechainRouting();
+        }
+
+        teTrack->pluginList.insertPlugin(plugin, insertPos, nullptr);
+        midiReceiveMapping_[deviceId] = plugin;
+        DBG("PluginManager::ensureMidiReceive - inserted MidiReceivePlugin for device "
+            << deviceId << " source=" << sourceTrackId << " at pos=" << insertPos);
+    }
+}
+
+void PluginManager::removeMidiReceive(TrackId /*trackId*/, DeviceId deviceId) {
+    auto it = midiReceiveMapping_.find(deviceId);
+    if (it == midiReceiveMapping_.end())
+        return;
+
+    DBG("PluginManager::removeMidiReceive - removing for device " << deviceId);
+    auto plugin = it->second;
+    midiReceiveMapping_.erase(it);
+
+    if (plugin)
+        plugin->deleteFromParent();
+}
+
+// =============================================================================
 // Multi-Output Track Sync
 // =============================================================================
 
@@ -1398,6 +1498,7 @@ void PluginManager::clearAllMappings() {
     pluginToDevice_.clear();
     deviceProcessors_.clear();
     sidechainMonitors_.clear();
+    midiReceiveMapping_.clear();
 }
 
 void PluginManager::updateTransportSyncedProcessors(bool isPlaying) {
@@ -1770,11 +1871,12 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
     }
 
     if (plugin) {
-        // Update canSidechain flag on the DeviceInfo in TrackManager
-        if (plugin->canSidechain()) {
-            if (auto* devInfo = TrackManager::getInstance().getDevice(trackId, device.id)) {
+        // Update capability flags on the DeviceInfo in TrackManager
+        if (auto* devInfo = TrackManager::getInstance().getDevice(trackId, device.id)) {
+            if (plugin->canSidechain())
                 devInfo->canSidechain = true;
-            }
+            if (plugin->takesMidiInput() && !device.isInstrument)
+                devInfo->canReceiveMidi = true;
         }
 
         // Store the processor if we created one

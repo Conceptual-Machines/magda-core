@@ -1,5 +1,6 @@
 #pragma once
 
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
@@ -21,8 +22,8 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
     TextSlider(Format format = Format::Decimal) : format_(format) {
         label_.setFont(FontManager::getInstance().getUIFont(12.0f));
         label_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-        label_.setColour(juce::Label::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-        label_.setColour(juce::Label::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+        label_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+        label_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
         label_.setColour(juce::Label::outlineWhenEditingColourId,
                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         label_.setColour(juce::Label::backgroundWhenEditingColourId,
@@ -111,6 +112,15 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
         shiftDragStartValue_ = value;
     }
 
+    /** Set peak meter levels to display behind the text (0.0 = silence, 1.0 = 0dB) */
+    void setMeterLevels(float peakL, float peakR) {
+        if (std::abs(meterPeakL_ - peakL) > 0.001f || std::abs(meterPeakR_ - peakR) > 0.001f) {
+            meterPeakL_ = peakL;
+            meterPeakR_ = peakR;
+            repaint();
+        }
+    }
+
     bool isBeingDragged() const {
         return isLeftButtonDrag_;
     }
@@ -130,6 +140,65 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
     std::function<void()> onShiftDragEnd;    // Called when Shift+drag ends
     std::function<void()>
         onRightClicked;  // Called on right-click (when rightClickEditsText_ is false)
+
+    void paint(juce::Graphics& g) override {
+        // Draw background ourselves so the label can be transparent (meters show through)
+        auto bounds = getLocalBounds();
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.fillRect(bounds);
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawRect(bounds);
+
+        if (meterPeakL_ > 0.001f || meterPeakR_ > 0.001f) {
+            float w = static_cast<float>(bounds.getWidth());
+
+            // Range: -60dB to +6dB (66dB total). 0dB = 60/66 of width.
+            auto gainToWidth = [w](float gain) -> float {
+                float db = juce::Decibels::gainToDecibels(gain, -60.0f);
+                float norm = juce::jlimit(0.0f, 1.0f, (db + 60.0f) / 66.0f);
+                return w * norm;
+            };
+
+            constexpr float zeroDbNorm = 60.0f / 66.0f;
+
+            auto drawHorizontalBar = [&](int y, int barH, float gain) {
+                int barW = static_cast<int>(gainToWidth(gain));
+                if (barW < 1)
+                    return;
+
+                auto barArea = juce::Rectangle<int>(bounds.getX(), y, barW, barH);
+                float barNorm = static_cast<float>(barW) / w;
+
+                if (barNorm <= zeroDbNorm * 0.7f) {
+                    g.setColour(juce::Colour(0xff4CAF50).withAlpha(0.5f));
+                    g.fillRect(barArea);
+                } else {
+                    juce::ColourGradient gradient(juce::Colour(0xff4CAF50).withAlpha(0.5f), 0.0f,
+                                                  0.0f, juce::Colour(0xffF44336).withAlpha(0.5f), w,
+                                                  0.0f, false);
+                    gradient.addColour(zeroDbNorm, juce::Colour(0xffFFC107).withAlpha(0.5f));
+                    g.setGradientFill(gradient);
+                    g.fillRect(barArea);
+                }
+            };
+
+            // L bar (top half), R bar (bottom half)
+            drawHorizontalBar(bounds.getY(), bounds.getHeight() / 2, meterPeakL_);
+            drawHorizontalBar(bounds.getY() + bounds.getHeight() / 2, bounds.getHeight() / 2,
+                              meterPeakR_);
+        }
+
+        // 0dB tick mark (always visible when format is dB)
+        if (format_ == Format::Decibels) {
+            float w = static_cast<float>(bounds.getWidth());
+            float h = static_cast<float>(bounds.getHeight());
+            constexpr float zeroDbNorm = 60.0f / 66.0f;
+            int zeroDbX = bounds.getX() + static_cast<int>(w * zeroDbNorm);
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.drawVerticalLine(zeroDbX, static_cast<float>(bounds.getY()),
+                               static_cast<float>(bounds.getY()) + h);
+        }
+    }
 
     void resized() override {
         label_.setBounds(getLocalBounds());
@@ -321,6 +390,9 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
 
         label_.setText(text, juce::dontSendNotification);
     }
+
+    float meterPeakL_ = 0.f;
+    float meterPeakR_ = 0.f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TextSlider)
 };

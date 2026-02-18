@@ -191,8 +191,8 @@ class TrackManager {
     void setTrackAudioInput(TrackId trackId, const juce::String& deviceId);
     void setTrackAudioOutput(TrackId trackId, const juce::String& routing);
 
-    // Send management (track → aux track)
-    void addSend(TrackId sourceTrackId, TrackId destAuxTrackId);
+    // Send management (track → any track)
+    void addSend(TrackId sourceTrackId, TrackId destTrackId);
     void removeSend(TrackId sourceTrackId, int busIndex);
     void setSendLevel(TrackId sourceTrackId, int busIndex, float level);
 
