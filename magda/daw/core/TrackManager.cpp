@@ -724,12 +724,17 @@ void TrackManager::setTrackAudioOutput(TrackId trackId, const juce::String& rout
 // Send Management
 // ============================================================================
 
-void TrackManager::addSend(TrackId sourceTrackId, TrackId destAuxTrackId) {
+void TrackManager::addSend(TrackId sourceTrackId, TrackId destTrackId) {
     auto* source = getTrack(sourceTrackId);
-    auto* dest = getTrack(destAuxTrackId);
-    if (!source || !dest || dest->type != TrackType::Aux || dest->auxBusIndex < 0) {
+    auto* dest = getTrack(destTrackId);
+    if (!source || !dest || dest->type == TrackType::Master) {
         DBG("addSend failed: invalid source or destination");
         return;
+    }
+
+    // Auto-assign auxBusIndex for non-Aux tracks that don't have one yet
+    if (dest->auxBusIndex < 0) {
+        dest->auxBusIndex = nextAuxBusIndex_++;
     }
 
     // Check if send already exists
@@ -743,11 +748,11 @@ void TrackManager::addSend(TrackId sourceTrackId, TrackId destAuxTrackId) {
     send.busIndex = dest->auxBusIndex;
     send.level = 1.0f;
     send.preFader = false;
-    send.destTrackId = destAuxTrackId;
+    send.destTrackId = destTrackId;
     source->sends.push_back(send);
 
     notifyTrackDevicesChanged(sourceTrackId);
-    DBG("Added send from track " << sourceTrackId << " to aux track " << destAuxTrackId << " (bus "
+    DBG("Added send from track " << sourceTrackId << " to track " << destTrackId << " (bus "
                                  << dest->auxBusIndex << ")");
 }
 

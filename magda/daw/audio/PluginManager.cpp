@@ -234,8 +234,8 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
         }
     }
 
-    // Aux track: ensure AuxReturnPlugin exists with correct bus number
-    if (trackInfo->type == TrackType::Aux && trackInfo->auxBusIndex >= 0) {
+    // Any track with auxBusIndex: ensure AuxReturnPlugin exists with correct bus number
+    if (trackInfo->auxBusIndex >= 0) {
         bool hasReturn = false;
         for (int i = 0; i < teTrack->pluginList.size(); ++i) {
             if (dynamic_cast<te::AuxReturnPlugin*>(teTrack->pluginList[i])) {

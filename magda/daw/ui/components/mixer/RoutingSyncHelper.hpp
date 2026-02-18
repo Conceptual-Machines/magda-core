@@ -127,6 +127,25 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
         }
     }
 
+    // Audio/Instrument tracks (ID 400+)
+    {
+        std::vector<RoutingSelector::RoutingOption> trackOptions;
+        int id = 400;
+        for (const auto& t : allTracks) {
+            if ((t.type == TrackType::Audio || t.type == TrackType::Instrument) &&
+                t.id != currentTrackId) {
+                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+                    continue;
+                trackOptions.push_back({id++, t.name});
+            }
+        }
+        if (!trackOptions.empty()) {
+            options.push_back({0, "", true});
+            for (auto& opt : trackOptions)
+                options.push_back(std::move(opt));
+        }
+    }
+
     // Hardware output channels
     if (device) {
         auto activeOutputChannels = device->getActiveOutputChannels();
@@ -178,6 +197,15 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
         id = 300;
         for (const auto& t : allTracks) {
             if (t.type == TrackType::Aux && t.id != currentTrackId) {
+                outTrackMapping[id++] = t.id;
+            }
+        }
+        id = 400;
+        for (const auto& t : allTracks) {
+            if ((t.type == TrackType::Audio || t.type == TrackType::Instrument) &&
+                t.id != currentTrackId) {
+                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+                    continue;
                 outTrackMapping[id++] = t.id;
             }
         }

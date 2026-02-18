@@ -523,8 +523,8 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
         } else if (selectedId == 2) {
             // None
             TrackManager::getInstance().setTrackAudioOutput(trackId, "");
-        } else if (selectedId >= 200 && selectedId < 400) {
-            // Group or Aux track destination
+        } else if (selectedId >= 200) {
+            // Track destination (Group, Aux, Audio, Instrument)
             auto it = mapping.find(selectedId);
             if (it != mapping.end()) {
                 TrackManager::getInstance().setTrackAudioOutput(
@@ -1650,37 +1650,52 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
 
     menu.addSeparator();
 
-    // Add Send submenu (list available aux tracks) — not for aux tracks themselves
-    if (track->type != TrackType::Aux) {
+    // Add Send submenu (list all available tracks as send destinations)
+    {
         juce::PopupMenu sendMenu;
         const auto& allTracks = trackManager.getTracks();
         int sendItemId = 500;
-        bool hasAuxOptions = false;
+        bool hasOptions = false;
 
-        for (const auto& t : allTracks) {
-            if (t.type != TrackType::Aux)
-                continue;
-            // Skip aux tracks that already have a send from this track
-            bool alreadyConnected = false;
-            for (const auto& s : track->sends) {
-                if (s.destTrackId == t.id) {
-                    alreadyConnected = true;
-                    break;
-                }
-            }
-            if (!alreadyConnected) {
-                if (t.id >= 100) {
-                    juce::AlertWindow::showMessageBoxAsync(
-                        juce::MessageBoxIconType::WarningIcon, "Limit Reached",
-                        "Cannot create more than 100 aux tracks.");
-                    break;
-                }
-                sendMenu.addItem(sendItemId + t.id, t.name);
-                hasAuxOptions = true;
-            }
+        // Collect descendants to prevent routing cycles
+        std::vector<TrackId> descendants;
+        if (track->id != INVALID_TRACK_ID) {
+            descendants = trackManager.getAllDescendants(track->id);
         }
 
-        if (hasAuxOptions) {
+        auto addSendTargets = [&](TrackType type) {
+            bool addedSeparator = false;
+            for (const auto& t : allTracks) {
+                if (t.type != type || t.id == track->id || t.type == TrackType::Master)
+                    continue;
+                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+                    continue;
+
+                bool alreadyConnected = false;
+                for (const auto& s : track->sends) {
+                    if (s.destTrackId == t.id) {
+                        alreadyConnected = true;
+                        break;
+                    }
+                }
+                if (alreadyConnected)
+                    continue;
+
+                if (!addedSeparator && hasOptions) {
+                    sendMenu.addSeparator();
+                    addedSeparator = true;
+                }
+                sendMenu.addItem(sendItemId + t.id, t.name);
+                hasOptions = true;
+            }
+        };
+
+        addSendTargets(TrackType::Aux);
+        addSendTargets(TrackType::Group);
+        addSendTargets(TrackType::Audio);
+        addSendTargets(TrackType::Instrument);
+
+        if (hasOptions) {
             menu.addSubMenu("Add Send", sendMenu);
         }
 
