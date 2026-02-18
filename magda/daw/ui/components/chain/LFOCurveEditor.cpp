@@ -8,9 +8,9 @@ namespace magda {
 LFOCurveEditor::LFOCurveEditor() {
     setName("LFOCurveEditor");
 
-    // Padding allows edge dots to extend beyond content area without clipping
-    // Parent component should expand bounds by this amount
-    setPadding(4);
+    // Padding allows edge dots to extend beyond content area without clipping.
+    // Must be >= half of POINT_SIZE_SELECTED (8) so extreme points are fully grabbable.
+    setPadding(8);
 
     rebuildPointComponents();
     startTimer(33);  // 30 FPS animation for phase indicator
