@@ -192,9 +192,10 @@ class TrackHeadersPanel : public juce::Component,
     void setupRoutingCallbacks(TrackHeader& header, TrackId trackId);
     void updateRoutingSelectorFromTrack(TrackHeader& header, const TrackInfo* track);
 
-    // Output routing: option ID → TrackId mapping for group/aux destinations
+    // Routing: option ID → TrackId mapping for destinations/sources
     std::map<int, TrackId> outputTrackMapping_;
     std::map<int, TrackId> midiOutputTrackMapping_;
+    std::map<int, TrackId> inputTrackMapping_;
 
     // Refresh all input selectors (call after MIDI device scan completes)
     void refreshInputSelectors();

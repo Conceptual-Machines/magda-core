@@ -643,7 +643,13 @@ void TrackInspector::populateRoutingSelectors() {
             // Disable MIDI input (mutually exclusive)
             inputSelector_->setEnabled(false);
             magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "");
-            magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "default");
+            // Preserve existing track input if already set, otherwise default
+            auto* trackInfo = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+            if (trackInfo && trackInfo->audioInputDevice.startsWith("track:"))
+                magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_,
+                                                                      trackInfo->audioInputDevice);
+            else
+                magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "default");
         } else {
             magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "");
         }
@@ -655,6 +661,13 @@ void TrackInspector::populateRoutingSelectors() {
 
         if (selectedId == 1) {
             magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "");
+        } else if (selectedId >= 200) {
+            // Track-as-input (resampling)
+            auto it = inputTrackMapping_.find(selectedId);
+            if (it != inputTrackMapping_.end()) {
+                magda::TrackManager::getInstance().setTrackAudioInput(
+                    selectedTrackId_, "track:" + juce::String(it->second));
+            }
         } else if (selectedId >= 10) {
             magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "default");
         }
@@ -784,7 +797,8 @@ void TrackInspector::populateAudioInputOptions() {
     if (!deviceManager)
         return;
     magda::RoutingSyncHelper::populateAudioInputOptions(audioInputSelector_.get(),
-                                                        deviceManager->getCurrentAudioDevice());
+                                                        deviceManager->getCurrentAudioDevice(),
+                                                        selectedTrackId_, &inputTrackMapping_);
 }
 
 void TrackInspector::populateAudioOutputOptions() {
@@ -826,7 +840,7 @@ void TrackInspector::updateRoutingSelectorsFromTrack() {
     magda::RoutingSyncHelper::syncSelectorsFromTrack(
         *track, audioInputSelector_.get(), inputSelector_.get(), outputSelector_.get(),
         midiOutputSelector_.get(), audioEngine_->getMidiBridge(), device, selectedTrackId_,
-        outputTrackMapping_, midiOutputTrackMapping_);
+        outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_);
 }
 
 }  // namespace magda::daw::ui

@@ -22,7 +22,9 @@ namespace magda {
  */
 namespace RoutingSyncHelper {
 
-inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODevice* device) {
+inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODevice* device,
+                                      TrackId currentTrackId = INVALID_TRACK_ID,
+                                      std::map<int, TrackId>* outInputTrackMapping = nullptr) {
     if (!selector)
         return;
 
@@ -69,6 +71,39 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
     } else {
         options.push_back({1, "None"});
         options.push_back({2, "(No Device Active)"});
+    }
+
+    // Add tracks as audio input sources (resampling) — ID 200+
+    if (currentTrackId != INVALID_TRACK_ID) {
+        auto& trackManager = TrackManager::getInstance();
+        const auto& allTracks = trackManager.getTracks();
+
+        // Collect descendants to prevent routing cycles
+        std::vector<TrackId> descendants = trackManager.getAllDescendants(currentTrackId);
+
+        if (outInputTrackMapping)
+            outInputTrackMapping->clear();
+
+        std::vector<RoutingSelector::RoutingOption> trackOptions;
+        int id = 200;
+        for (const auto& t : allTracks) {
+            if (t.id == currentTrackId)
+                continue;
+            if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+                continue;
+            if (t.type == TrackType::Audio || t.type == TrackType::Instrument ||
+                t.type == TrackType::Group || t.type == TrackType::Aux) {
+                trackOptions.push_back({id, t.name});
+                if (outInputTrackMapping)
+                    (*outInputTrackMapping)[id] = t.id;
+                ++id;
+            }
+        }
+        if (!trackOptions.empty()) {
+            options.push_back({0, "", true});  // separator
+            for (auto& opt : trackOptions)
+                options.push_back(std::move(opt));
+        }
     }
 
     selector->setOptions(options);
@@ -355,7 +390,8 @@ inline void syncSelectorsFromTrack(const TrackInfo& track, RoutingSelector* audi
                                    RoutingSelector* midiOutSelector, MidiBridge* midiBridge,
                                    juce::AudioIODevice* device, TrackId currentTrackId,
                                    std::map<int, TrackId>& outputTrackMapping,
-                                   std::map<int, TrackId>& midiOutputTrackMapping) {
+                                   std::map<int, TrackId>& midiOutputTrackMapping,
+                                   std::map<int, TrackId>* inputTrackMapping = nullptr) {
     bool hasAudioInput = !track.audioInputDevice.isEmpty();
     bool hasMidiInput = !track.midiInputDevice.isEmpty();
 
@@ -363,8 +399,22 @@ inline void syncSelectorsFromTrack(const TrackInfo& track, RoutingSelector* audi
     if (audioInSelector) {
         if (hasAudioInput) {
             int currentId = audioInSelector->getSelectedId();
-            populateAudioInputOptions(audioInSelector, device);
-            if (currentId < 10) {
+            populateAudioInputOptions(audioInSelector, device, currentTrackId, inputTrackMapping);
+
+            if (track.audioInputDevice.startsWith("track:") && inputTrackMapping) {
+                // Track-as-input: find the matching option ID
+                TrackId sourceId =
+                    track.audioInputDevice.fromFirstOccurrenceOf("track:", false, false)
+                        .getIntValue();
+                int optionId = 1;
+                for (const auto& [oid, tid] : *inputTrackMapping) {
+                    if (tid == sourceId) {
+                        optionId = oid;
+                        break;
+                    }
+                }
+                audioInSelector->setSelectedId(optionId);
+            } else if (currentId < 10) {
                 int firstChannel = audioInSelector->getFirstChannelOptionId();
                 audioInSelector->setSelectedId(firstChannel > 0 ? firstChannel : 1);
             }

@@ -390,7 +390,16 @@ void TrackHeadersPanel::populateAudioInputOptions(RoutingSelector* selector) {
     auto* deviceManager = audioEngine_->getDeviceManager();
     if (!deviceManager)
         return;
-    RoutingSyncHelper::populateAudioInputOptions(selector, deviceManager->getCurrentAudioDevice());
+    // Find the trackId for this selector so we can populate track-as-input options
+    TrackId selectorTrackId = INVALID_TRACK_ID;
+    for (const auto& h : trackHeaders) {
+        if (h->audioInputSelector.get() == selector) {
+            selectorTrackId = h->trackId;
+            break;
+        }
+    }
+    RoutingSyncHelper::populateAudioInputOptions(selector, deviceManager->getCurrentAudioDevice(),
+                                                 selectorTrackId, &inputTrackMapping_);
 }
 
 void TrackHeadersPanel::populateAudioOutputOptions(RoutingSelector* selector,
@@ -445,7 +454,13 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
                 }
             }
             TrackManager::getInstance().setTrackMidiInput(trackId, "");
-            TrackManager::getInstance().setTrackAudioInput(trackId, "default");
+            // Preserve existing track input if already set, otherwise default
+            auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+            if (trackInfo && trackInfo->audioInputDevice.startsWith("track:"))
+                TrackManager::getInstance().setTrackAudioInput(trackId,
+                                                               trackInfo->audioInputDevice);
+            else
+                TrackManager::getInstance().setTrackAudioInput(trackId, "default");
         } else {
             TrackManager::getInstance().setTrackAudioInput(trackId, "");
         }
@@ -454,6 +469,13 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
     header.audioInputSelector->onSelectionChanged = [this, trackId](int selectedId) {
         if (selectedId == 1) {
             TrackManager::getInstance().setTrackAudioInput(trackId, "");
+        } else if (selectedId >= 200) {
+            // Track-as-input (resampling)
+            auto it = inputTrackMapping_.find(selectedId);
+            if (it != inputTrackMapping_.end()) {
+                TrackManager::getInstance().setTrackAudioInput(trackId,
+                                                               "track:" + juce::String(it->second));
+            }
         } else if (selectedId >= 10) {
             TrackManager::getInstance().setTrackAudioInput(trackId, "default");
         }
@@ -764,7 +786,7 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
     RoutingSyncHelper::syncSelectorsFromTrack(
         *track, header.audioInputSelector.get(), header.inputSelector.get(),
         header.outputSelector.get(), header.midiOutputSelector.get(), audioEngine_->getMidiBridge(),
-        device, header.trackId, outputTrackMapping_, midiOutputTrackMapping_);
+        device, header.trackId, outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_);
 }
 
 void TrackHeadersPanel::paint(juce::Graphics& g) {
