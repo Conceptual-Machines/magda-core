@@ -418,6 +418,11 @@ void NodeComponent::resized() {
 
     // === MAIN NODE AREA (remaining bounds) ===
 
+    // Reserve meter strip on the right edge (subclasses override getMeterWidth())
+    int meterWidth = getMeterWidth();
+    if (meterWidth > 0)
+        bounds.removeFromRight(meterWidth);
+
     // === HEADER: [B] Name ... [X] === (only if header visible)
     int headerHeight = getHeaderHeight();
     if (headerHeight > 0) {
@@ -582,7 +587,7 @@ int NodeComponent::getRightPanelsWidth() const {
 }
 
 int NodeComponent::getTotalWidth(int baseContentWidth) const {
-    return getLeftPanelsWidth() + baseContentWidth + getRightPanelsWidth();
+    return getLeftPanelsWidth() + baseContentWidth + getRightPanelsWidth() + getMeterWidth();
 }
 
 int NodeComponent::getExtraLeftPanelWidth() const {

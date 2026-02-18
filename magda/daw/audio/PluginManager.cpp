@@ -52,6 +52,19 @@ DeviceProcessor* PluginManager::getDeviceProcessor(DeviceId deviceId) const {
     return it != deviceProcessors_.end() ? it->second.get() : nullptr;
 }
 
+DeviceId PluginManager::getDeviceIdForPlugin(te::Plugin* plugin) const {
+    if (!plugin)
+        return INVALID_DEVICE_ID;
+
+    juce::ScopedLock lock(pluginLock_);
+    auto it = pluginToDevice_.find(plugin);
+    if (it != pluginToDevice_.end())
+        return it->second;
+
+    // Check if this is an instrument wrapper rack
+    return instrumentRackManager_.getDeviceIdForRack(plugin);
+}
+
 // =============================================================================
 // Plugin Synchronization
 // =============================================================================

@@ -170,6 +170,7 @@ set(DAW_CORE_SOURCES
     # Audio integration
     audio/AudioBridge.cpp
     audio/AudioThumbnailManager.cpp
+    audio/DeviceMeteringManager.cpp
     audio/DeviceProcessor.cpp
     audio/MidiBridge.cpp
     audio/SessionClipScheduler.cpp

@@ -93,6 +93,13 @@ class PluginManager {
      */
     DeviceProcessor* getDeviceProcessor(DeviceId deviceId) const;
 
+    /**
+     * @brief Reverse lookup: get DeviceId for a TE Plugin pointer
+     * @param plugin The TE plugin pointer
+     * @return The DeviceId, or INVALID_DEVICE_ID if not found
+     */
+    DeviceId getDeviceIdForPlugin(te::Plugin* plugin) const;
+
     // =========================================================================
     // Plugin Synchronization
     // =========================================================================

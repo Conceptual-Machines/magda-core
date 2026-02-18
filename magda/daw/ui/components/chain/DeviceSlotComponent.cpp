@@ -436,8 +436,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         setupCustomUILinking();
     }
 
-    // Start timer to sync UI button state with actual window state (10 FPS)
-    startTimer(100);
+    // Start timer for UI button state sync and meter updates (~30 FPS)
+    startTimerHz(30);
 }
 
 DeviceSlotComponent::~DeviceSlotComponent() {
@@ -446,21 +446,30 @@ DeviceSlotComponent::~DeviceSlotComponent() {
 }
 
 void DeviceSlotComponent::timerCallback() {
+    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+    if (!audioEngine)
+        return;
+
+    auto* bridge = audioEngine->getAudioBridge();
+    if (!bridge)
+        return;
+
     // Update UI button state to match actual plugin window state
     if (uiButton_) {
-        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-        if (audioEngine) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                bool isOpen = bridge->isPluginWindowOpen(device_.id);
-                bool currentState = uiButton_->getToggleState();
+        bool isOpen = bridge->isPluginWindowOpen(device_.id);
+        bool currentState = uiButton_->getToggleState();
 
-                // Only update if state changed to avoid unnecessary repaints
-                if (isOpen != currentState) {
-                    uiButton_->setToggleState(isOpen, juce::dontSendNotification);
-                    uiButton_->setActive(isOpen);
-                }
-            }
+        // Only update if state changed to avoid unnecessary repaints
+        if (isOpen != currentState) {
+            uiButton_->setToggleState(isOpen, juce::dontSendNotification);
+            uiButton_->setActive(isOpen);
         }
+    }
+
+    // Poll device peak levels and feed to gain slider meter
+    magda::DeviceMeteringManager::DeviceMeterData data;
+    if (bridge->getDeviceMetering().getLatestLevels(device_.id, data)) {
+        gainSlider_.setMeterLevels(data.peakL, data.peakR);
     }
 }
 
@@ -991,7 +1000,7 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     }
 
     // Gain slider takes some space on the right
-    gainSlider_.setBounds(headerArea.removeFromRight(50));
+    gainSlider_.setBounds(headerArea.removeFromRight(70));
     headerArea.removeFromRight(4);
 
     // Remaining space is for the name label (handled by NodeComponent)

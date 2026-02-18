@@ -51,6 +51,10 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
 
+    // Set up per-device metering manager
+    deviceMetering_.setPluginManager(&pluginManager_);
+    DeviceMeteringManager::registerForEdit(edit_, &deviceMetering_);
+
     // Master metering will be registered when playback context is available
     // (done in timerCallback when context exists)
 
@@ -82,6 +86,10 @@ AudioBridge::~AudioBridge() {
 
         // NOTE: Plugin windows are now closed by PluginWindowManager BEFORE AudioBridge
         // is destroyed (in TracktionEngineWrapper::shutdown()). No window cleanup needed here.
+
+        // Unregister per-device metering from Edit
+        DeviceMeteringManager::unregisterForEdit(edit_);
+        deviceMetering_.clear();
 
         // Unregister master meter client from playback context
         if (masterMeterRegistered_) {
@@ -746,6 +754,9 @@ void AudioBridge::timerCallback() {
             }
         });
     });
+
+    // Update per-device metering
+    deviceMetering_.updateAllClients();
 
     // Register master meter client with playback context if not done yet
     if (!masterMeterRegistered_) {

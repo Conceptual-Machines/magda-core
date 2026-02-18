@@ -11,6 +11,7 @@
 #include "../core/TrackManager.hpp"
 #include "../core/TypeIds.hpp"
 #include "ClipSynchronizer.hpp"
+#include "DeviceMeteringManager.hpp"
 #include "DeviceProcessor.hpp"
 #include "MeteringBuffer.hpp"
 #include "MidiActivityMonitor.hpp"
@@ -459,6 +460,16 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // =========================================================================
 
     /**
+     * @brief Get the per-device metering manager
+     */
+    DeviceMeteringManager& getDeviceMetering() {
+        return deviceMetering_;
+    }
+    const DeviceMeteringManager& getDeviceMetering() const {
+        return deviceMetering_;
+    }
+
+    /**
      * @brief Get master channel peak level (left)
      * @return Peak level as linear gain
      */
@@ -656,6 +667,9 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     TrackController trackController_;
     PluginManager pluginManager_;
     ClipSynchronizer clipSynchronizer_;
+
+    // Per-device metering (LevelMeasurer per device, polled on timer)
+    DeviceMeteringManager deviceMetering_;
 
     // Master channel metering (lock-free atomics for thread safety)
     std::atomic<float> masterPeakL_{0.0f};

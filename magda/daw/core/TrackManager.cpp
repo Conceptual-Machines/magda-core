@@ -1477,74 +1477,74 @@ void TrackManager::refreshIdCountersFromTracks() {
 
 void TrackManager::notifyTracksChanged() {
     ScopedNotifyGuard guard(*this);
-    for (auto* listener : listeners_) {
-        if (listener)
-            listener->tracksChanged();
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->tracksChanged();
     }
 }
 
 void TrackManager::notifyTrackPropertyChanged(int trackId) {
     ScopedNotifyGuard guard(*this);
-    for (auto* listener : listeners_) {
-        if (listener)
-            listener->trackPropertyChanged(trackId);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->trackPropertyChanged(trackId);
     }
 }
 
 void TrackManager::notifyMasterChannelChanged() {
     ScopedNotifyGuard guard(*this);
-    for (auto* listener : listeners_) {
-        if (listener)
-            listener->masterChannelChanged();
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->masterChannelChanged();
     }
 }
 
 void TrackManager::notifyTrackSelectionChanged(TrackId trackId) {
     ScopedNotifyGuard guard(*this);
-    for (auto* listener : listeners_) {
-        if (listener)
-            listener->trackSelectionChanged(trackId);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->trackSelectionChanged(trackId);
     }
 }
 
 void TrackManager::notifyTrackDevicesChanged(TrackId trackId) {
     ScopedNotifyGuard guard(*this);
-    for (auto* listener : listeners_) {
-        if (listener)
-            listener->trackDevicesChanged(trackId);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->trackDevicesChanged(trackId);
     }
 }
 
 void TrackManager::notifyDeviceModifiersChanged(TrackId trackId) {
     ScopedNotifyGuard guard(*this);
-    for (auto* listener : listeners_) {
-        if (listener)
-            listener->deviceModifiersChanged(trackId);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->deviceModifiersChanged(trackId);
     }
 }
 
 void TrackManager::notifyDevicePropertyChanged(DeviceId deviceId) {
     ScopedNotifyGuard guard(*this);
-    for (auto* listener : listeners_) {
-        if (listener)
-            listener->devicePropertyChanged(deviceId);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->devicePropertyChanged(deviceId);
     }
 }
 
 void TrackManager::notifyDeviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue) {
     ScopedNotifyGuard guard(*this);
-    for (auto* listener : listeners_) {
-        if (listener)
-            listener->deviceParameterChanged(deviceId, paramIndex, newValue);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->deviceParameterChanged(deviceId, paramIndex, newValue);
     }
 }
 
 void TrackManager::notifyMacroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
                                            float value) {
     ScopedNotifyGuard guard(*this);
-    for (auto* listener : listeners_) {
-        if (listener)
-            listener->macroValueChanged(trackId, isRack, id, macroIndex, value);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->macroValueChanged(trackId, isRack, id, macroIndex, value);
     }
 }
 
@@ -1555,10 +1555,10 @@ void TrackManager::updateRackMods(const RackInfo& rack, double deltaTime) {
 }
 
 void TrackManager::notifyModulationChanged() {
-    // Notify all listeners that modulation values have changed
-    // This triggers parameter indicator repaints
-    for (auto* listener : listeners_) {
-        listener->tracksChanged();
+    ScopedNotifyGuard guard(*this);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->tracksChanged();
     }
 }
 
