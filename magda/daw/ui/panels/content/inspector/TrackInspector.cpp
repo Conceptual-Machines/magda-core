@@ -822,9 +822,8 @@ void TrackInspector::populateMidiInputOptions() {
 void TrackInspector::populateMidiOutputOptions() {
     if (!midiOutputSelector_ || !audioEngine_)
         return;
-    magda::RoutingSyncHelper::populateMidiOutputOptions(midiOutputSelector_.get(),
-                                                        audioEngine_->getMidiBridge(),
-                                                        selectedTrackId_, midiOutputTrackMapping_);
+    magda::RoutingSyncHelper::populateMidiOutputOptions(
+        midiOutputSelector_.get(), audioEngine_->getMidiBridge(), midiOutputTrackMapping_);
 }
 
 void TrackInspector::updateRoutingSelectorsFromTrack() {
@@ -834,6 +833,9 @@ void TrackInspector::updateRoutingSelectorsFromTrack() {
     const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
     if (!track)
         return;
+
+    // Always re-populate audio input options so track-as-input entries are current
+    populateAudioInputOptions();
 
     auto* deviceManager = audioEngine_->getDeviceManager();
     auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;

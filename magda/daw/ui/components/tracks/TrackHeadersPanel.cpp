@@ -385,22 +385,33 @@ void TrackHeadersPanel::viewModeChanged(ViewMode mode, const AudioEngineProfile&
 }
 
 void TrackHeadersPanel::populateAudioInputOptions(RoutingSelector* selector, TrackId trackId) {
-    if (!selector || !audioEngine_)
+    DBG("TrackHeadersPanel::populateAudioInputOptions - trackId=" << trackId);
+    if (!selector || !audioEngine_) {
+        DBG("  -> early return: no selector or audioEngine");
         return;
+    }
     auto* deviceManager = audioEngine_->getDeviceManager();
-    if (!deviceManager)
+    if (!deviceManager) {
+        DBG("  -> early return: no deviceManager");
         return;
+    }
     // If no trackId provided, find it from the existing trackHeaders
     if (trackId == INVALID_TRACK_ID) {
+        DBG("  -> trackId is INVALID, searching trackHeaders (size=" << (int)trackHeaders.size()
+                                                                     << ")");
         for (const auto& h : trackHeaders) {
             if (h->audioInputSelector.get() == selector) {
                 trackId = h->trackId;
+                DBG("  -> found trackId=" << trackId);
                 break;
             }
         }
     }
-    RoutingSyncHelper::populateAudioInputOptions(selector, deviceManager->getCurrentAudioDevice(),
-                                                 trackId, &inputTrackMapping_);
+    auto* device = deviceManager->getCurrentAudioDevice();
+    DBG("  -> calling RoutingSyncHelper with trackId=" << trackId << " hasDevice="
+                                                       << (int)(device != nullptr));
+    RoutingSyncHelper::populateAudioInputOptions(selector, device, trackId, &inputTrackMapping_);
+    DBG("  -> inputTrackMapping_ size=" << (int)inputTrackMapping_.size());
 }
 
 void TrackHeadersPanel::populateAudioOutputOptions(RoutingSelector* selector,
@@ -423,7 +434,8 @@ void TrackHeadersPanel::populateMidiInputOptions(RoutingSelector* selector) {
 void TrackHeadersPanel::populateMidiOutputOptions(RoutingSelector* selector, TrackId trackId) {
     if (!selector || !audioEngine_)
         return;
-    RoutingSyncHelper::populateMidiOutputOptions(selector, audioEngine_->getMidiBridge(), trackId,
+    juce::ignoreUnused(trackId);
+    RoutingSyncHelper::populateMidiOutputOptions(selector, audioEngine_->getMidiBridge(),
                                                  midiOutputTrackMapping_);
 }
 

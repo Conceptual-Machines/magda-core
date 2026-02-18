@@ -74,9 +74,12 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
     }
 
     // Add tracks as audio input sources (resampling) — ID 200+
+    DBG("RoutingSyncHelper::populateAudioInputOptions - currentTrackId="
+        << currentTrackId << " hasMapping=" << (int)(outInputTrackMapping != nullptr));
     if (currentTrackId != INVALID_TRACK_ID) {
         auto& trackManager = TrackManager::getInstance();
         const auto& allTracks = trackManager.getTracks();
+        DBG("  -> allTracks.size()=" << (int)allTracks.size());
 
         // Collect descendants to prevent routing cycles
         std::vector<TrackId> descendants = trackManager.getAllDescendants(currentTrackId);
@@ -87,25 +90,38 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
         std::vector<RoutingSelector::RoutingOption> trackOptions;
         int id = 200;
         for (const auto& t : allTracks) {
-            if (t.id == currentTrackId)
+            DBG("  -> checking track id=" << t.id << " name='" << t.name
+                                          << "' type=" << static_cast<int>(t.type));
+            if (t.id == currentTrackId) {
+                DBG("     skipped (self)");
                 continue;
-            if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+            }
+            if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end()) {
+                DBG("     skipped (descendant)");
                 continue;
+            }
             if (t.type == TrackType::Audio || t.type == TrackType::Instrument ||
                 t.type == TrackType::Group || t.type == TrackType::Aux) {
+                DBG("     ADDED as option id=" << id);
                 trackOptions.push_back({id, t.name});
                 if (outInputTrackMapping)
                     (*outInputTrackMapping)[id] = t.id;
                 ++id;
+            } else {
+                DBG("     skipped (type=" << static_cast<int>(t.type) << ")");
             }
         }
+        DBG("  -> trackOptions.size()=" << (int)trackOptions.size());
         if (!trackOptions.empty()) {
             options.push_back({0, "", true});  // separator
             for (auto& opt : trackOptions)
                 options.push_back(std::move(opt));
         }
+    } else {
+        DBG("  -> skipped track section (INVALID_TRACK_ID)");
     }
 
+    DBG("  -> total options=" << (int)options.size());
     selector->setOptions(options);
 }
 
@@ -272,7 +288,6 @@ inline void populateMidiInputOptions(RoutingSelector* selector, MidiBridge* midi
 }
 
 inline void populateMidiOutputOptions(RoutingSelector* selector, MidiBridge* midiBridge,
-                                      TrackId currentTrackId,
                                       std::map<int, TrackId>& outTrackMapping) {
     if (!selector || !midiBridge)
         return;
@@ -291,96 +306,7 @@ inline void populateMidiOutputOptions(RoutingSelector* selector, MidiBridge* mid
         }
     }
 
-    // Add tracks as MIDI output destinations
-    auto& trackManager = TrackManager::getInstance();
-    const auto& allTracks = trackManager.getTracks();
-
-    // Collect descendants to prevent routing cycles
-    std::vector<TrackId> descendants;
-    if (currentTrackId != INVALID_TRACK_ID) {
-        descendants = trackManager.getAllDescendants(currentTrackId);
-    }
-
     outTrackMapping.clear();
-
-    // Instrument tracks (ID 200+)
-    {
-        std::vector<RoutingSelector::RoutingOption> trackOptions;
-        int id = 200;
-        for (const auto& t : allTracks) {
-            if (t.type == TrackType::Instrument && t.id != currentTrackId) {
-                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
-                    continue;
-                trackOptions.push_back({id, t.name});
-                outTrackMapping[id] = t.id;
-                ++id;
-            }
-        }
-        if (!trackOptions.empty()) {
-            options.push_back({0, "", true});
-            for (auto& opt : trackOptions)
-                options.push_back(std::move(opt));
-        }
-    }
-
-    // Audio tracks (ID 300+)
-    {
-        std::vector<RoutingSelector::RoutingOption> trackOptions;
-        int id = 300;
-        for (const auto& t : allTracks) {
-            if (t.type == TrackType::Audio && t.id != currentTrackId) {
-                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
-                    continue;
-                trackOptions.push_back({id, t.name});
-                outTrackMapping[id] = t.id;
-                ++id;
-            }
-        }
-        if (!trackOptions.empty()) {
-            options.push_back({0, "", true});
-            for (auto& opt : trackOptions)
-                options.push_back(std::move(opt));
-        }
-    }
-
-    // Group tracks (ID 400+)
-    {
-        std::vector<RoutingSelector::RoutingOption> trackOptions;
-        int id = 400;
-        for (const auto& t : allTracks) {
-            if (t.type == TrackType::Group && t.id != currentTrackId) {
-                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
-                    continue;
-                trackOptions.push_back({id, t.name});
-                outTrackMapping[id] = t.id;
-                ++id;
-            }
-        }
-        if (!trackOptions.empty()) {
-            options.push_back({0, "", true});
-            for (auto& opt : trackOptions)
-                options.push_back(std::move(opt));
-        }
-    }
-
-    // Aux tracks (ID 500+)
-    {
-        std::vector<RoutingSelector::RoutingOption> trackOptions;
-        int id = 500;
-        for (const auto& t : allTracks) {
-            if (t.type == TrackType::Aux && t.id != currentTrackId) {
-                trackOptions.push_back({id, t.name});
-                outTrackMapping[id] = t.id;
-                ++id;
-            }
-        }
-        if (!trackOptions.empty()) {
-            options.push_back({0, "", true});
-            for (auto& opt : trackOptions)
-                options.push_back(std::move(opt));
-        }
-    }
-
     selector->setOptions(options);
 }
 
@@ -478,23 +404,10 @@ inline void syncSelectorsFromTrack(const TrackInfo& track, RoutingSelector* audi
 
     // Update MIDI Output selector
     if (midiOutSelector) {
-        populateMidiOutputOptions(midiOutSelector, midiBridge, currentTrackId,
-                                  midiOutputTrackMapping);
+        populateMidiOutputOptions(midiOutSelector, midiBridge, midiOutputTrackMapping);
         juce::String currentMidiOutput = track.midiOutputDevice;
         if (currentMidiOutput.isEmpty()) {
             midiOutSelector->setSelectedId(1);  // "None"
-        } else if (currentMidiOutput.startsWith("track:")) {
-            TrackId destId =
-                currentMidiOutput.fromFirstOccurrenceOf("track:", false, false).getIntValue();
-            int optionId = 1;
-            for (const auto& [oid, tid] : midiOutputTrackMapping) {
-                if (tid == destId) {
-                    optionId = oid;
-                    break;
-                }
-            }
-            midiOutSelector->setSelectedId(optionId);
-            midiOutSelector->setEnabled(true);
         } else if (midiBridge) {
             auto midiOutputs = midiBridge->getAvailableMidiOutputs();
             int selectedId = 1;
