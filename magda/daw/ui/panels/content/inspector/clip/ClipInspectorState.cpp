@@ -258,7 +258,7 @@ void ClipInspector::updateFromSelectedClip() {
             // Show effective stretch mode (auto-upgraded when autoTempo/warp is active,
             // or when pitchChange != 0 without analog pitch — TE uses SoundTouch)
             int effectiveMode = clip->timeStretchMode;
-            bool isAnalog = clip->analogPitch && !clip->autoTempo && !clip->warpEnabled;
+            bool isAnalog = clip->isAnalogPitchActive();
             if (!isAnalog && effectiveMode == 0 &&
                 (clip->autoTempo || clip->warpEnabled || std::abs(clip->speedRatio - 1.0) > 0.001 ||
                  std::abs(clip->pitchChange) > 0.001f)) {
@@ -315,7 +315,7 @@ void ClipInspector::updateFromSelectedClip() {
             autoPitchModeCombo_.setAlpha(clip->autoPitch ? 1.0f : 0.4f);
 
             // When analogPitch is active: disable/dim transpose and speedRatio controls
-            bool analogActive = clip->analogPitch && !clip->autoTempo && !clip->warpEnabled;
+            bool analogActive = clip->isAnalogPitchActive();
 
             // transpose disabled when autoPitch or analogPitch is on
             transposeValue_->setEnabled(!clip->autoPitch && !analogActive);

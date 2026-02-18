@@ -483,6 +483,8 @@ void ClipManager::setClipWarpEnabled(ClipId clipId, bool enabled) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio && clip->warpEnabled != enabled) {
             clip->warpEnabled = enabled;
+            if (enabled)
+                clip->analogPitch = false;  // Analog pitch is incompatible with warp
             notifyClipPropertyChanged(clipId);
         }
     }
@@ -646,7 +648,7 @@ void ClipManager::setPitchChange(ClipId clipId, float semitones) {
             float old = clip->pitchChange;
             clip->pitchChange = juce::jlimit(-48.0f, 48.0f, semitones);
 
-            if (clip->analogPitch && !clip->autoTempo && !clip->warpEnabled) {
+            if (clip->isAnalogPitchActive()) {
                 double oldFactor = std::pow(2.0, old / 12.0);
                 double newFactor = std::pow(2.0, clip->pitchChange / 12.0);
                 clip->length =

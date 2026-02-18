@@ -39,7 +39,7 @@ void ClipInspector::clipPropertyChanged(magda::ClipId clipId) {
             const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
             if (clip && clip->type == magda::ClipType::Audio) {
                 int effectiveMode = clip->timeStretchMode;
-                bool isAnalog = clip->analogPitch && !clip->autoTempo && !clip->warpEnabled;
+                bool isAnalog = clip->isAnalogPitchActive();
                 if (!isAnalog && effectiveMode == 0 &&
                     (clip->autoTempo || clip->warpEnabled ||
                      std::abs(clip->speedRatio - 1.0) > 0.001 ||

@@ -129,6 +129,9 @@ struct ClipInfo {
     // Pitch
     bool autoPitch = false;
     bool analogPitch = false;  // Analog pitch: resample instead of time-stretch
+    bool isAnalogPitchActive() const {
+        return analogPitch && !autoTempo && !warpEnabled;
+    }
     int autoPitchMode = 0;     // 0=pitchTrack, 1=chordTrackMono, 2=chordTrackPoly
     float pitchChange = 0.0f;  // -48 to +48 semitones
     int transpose = 0;         // -24 to +24 semitones (only when !autoPitch)
