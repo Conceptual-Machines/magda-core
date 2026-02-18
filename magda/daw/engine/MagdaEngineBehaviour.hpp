@@ -3,6 +3,7 @@
 
 #include "../audio/DrumGridPlugin.hpp"
 #include "../audio/MagdaSamplerPlugin.hpp"
+#include "../audio/MidiReceivePlugin.hpp"
 #include "../audio/SidechainMonitorPlugin.hpp"
 
 namespace magda {
@@ -30,6 +31,10 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         if (type == SidechainMonitorPlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating SidechainMonitorPlugin");
             return new SidechainMonitorPlugin(info);
+        }
+        if (type == MidiReceivePlugin::xmlTypeName) {
+            DBG("MagdaEngineBehaviour::createCustomPlugin - creating MidiReceivePlugin");
+            return new MidiReceivePlugin(info);
         }
         DBG("MagdaEngineBehaviour::createCustomPlugin - unknown type: " << type);
         return {};

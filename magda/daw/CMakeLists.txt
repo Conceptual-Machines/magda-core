@@ -188,6 +188,7 @@ set(DAW_CORE_SOURCES
     audio/RackSyncManager.cpp
     audio/ClipSynchronizer.cpp
     audio/SidechainMonitorPlugin.cpp
+    audio/MidiReceivePlugin.cpp
     audio/MagdaSamplerPlugin.cpp
     audio/DrumGridPlugin.cpp
     # Project serialization
@@ -457,6 +458,8 @@ set(DAW_HEADERS
     audio/ClipSynchronizer.hpp
     audio/SidechainTriggerBus.hpp
     audio/SidechainMonitorPlugin.hpp
+    audio/MidiBroadcastBus.hpp
+    audio/MidiReceivePlugin.hpp
     audio/MagdaSamplerPlugin.hpp
     audio/DrumGridPlugin.hpp
     # Views

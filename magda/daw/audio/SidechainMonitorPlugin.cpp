@@ -1,5 +1,6 @@
 #include "SidechainMonitorPlugin.hpp"
 
+#include "MidiBroadcastBus.hpp"
 #include "PluginManager.hpp"
 #include "SidechainTriggerBus.hpp"
 
@@ -30,19 +31,23 @@ void SidechainMonitorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     // Periodic heartbeat counter (no logging — this runs on the audio thread)
     ++heartbeatCount_;
 
-    // --- MIDI detection ---
+    // --- MIDI detection + broadcast ---
     if (fc.bufferForMidiMessages) {
         bool hasNoteOn = false;
         bool hasNoteOff = false;
 
+        auto& bus = MidiBroadcastBus::getInstance();
+        bus.beginBlock(sourceTrackId_);
+
         for (auto& msg : *fc.bufferForMidiMessages) {
+            bus.addMessage(sourceTrackId_, msg);
             if (msg.isNoteOn())
                 hasNoteOn = true;
             if (msg.isNoteOff())
                 hasNoteOff = true;
-            if (hasNoteOn && hasNoteOff)
-                break;
         }
+
+        bus.endBlock(sourceTrackId_);
 
         if (hasNoteOn) {
             SidechainTriggerBus::getInstance().triggerNoteOn(sourceTrackId_);
