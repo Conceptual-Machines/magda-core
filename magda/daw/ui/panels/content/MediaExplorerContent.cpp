@@ -99,9 +99,12 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
 //==============================================================================
 // SidebarComponent - Places and folder tree navigation
 //==============================================================================
-// A TextButton that forwards right-clicks to a callback
-class FavoriteButton : public juce::TextButton {
+// An SvgButton that forwards right-clicks to a callback
+class FavoriteButton : public magda::SvgButton {
   public:
+    FavoriteButton(const juce::String& name)
+        : SvgButton(name, BinaryData::favorite_svg, BinaryData::favorite_svgSize) {}
+
     std::function<void()> onRightClick;
 
     void mouseDown(const juce::MouseEvent& e) override {
@@ -109,7 +112,7 @@ class FavoriteButton : public juce::TextButton {
             onRightClick();
             return;
         }
-        juce::TextButton::mouseDown(e);
+        SvgButton::mouseDown(e);
     }
 };
 
@@ -171,18 +174,6 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         };
         addAndMakeVisible(*libraryButton_);
 
-        // "+" button to add current directory as favorite
-        addFavButton_.setButtonText("+");
-        addFavButton_.setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
-        addFavButton_.setColour(juce::TextButton::textColourOffId,
-                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        addFavButton_.onClick = [this]() {
-            if (onAddFavorite)
-                onAddFavorite();
-        };
-        addAndMakeVisible(addFavButton_);
-
         // Favorites viewport for scrolling
         favoritesContent_ = std::make_unique<juce::Component>();
         favoritesViewport_.setViewedComponent(favoritesContent_.get(), false);
@@ -232,10 +223,6 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         separatorY_ = bounds.getY();
         bounds.removeFromTop(padding);
 
-        // "+" button at bottom
-        auto addBtnArea = bounds.removeFromBottom(22);
-        addFavButton_.setBounds(addBtnArea.reduced(4, 0));
-
         // Favorites viewport fills remaining space
         favoritesViewport_.setBounds(bounds);
         layoutFavoriteButtons();
@@ -247,13 +234,12 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
 
         for (const auto& path : favorites) {
             juce::File dir(path);
-            auto btn = std::make_unique<FavoriteButton>();
-            btn->setButtonText(dir.getFileName());
-            btn->setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-            btn->setColour(juce::TextButton::textColourOffId,
-                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-            btn->setTooltip(path);
+            auto btn = std::make_unique<FavoriteButton>(dir.getFileName());
+            btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
+            btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+            btn->setTooltip(dir.getFileName() + "\n" + path);
 
             auto pathCopy = path;
             btn->onClick = [this, pathCopy]() {
@@ -272,20 +258,22 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
     }
 
     std::function<void(const juce::File&)> onLocationSelected;
-    std::function<void()> onAddFavorite;
+
+    bool canAddFavorite() const {
+        return static_cast<int>(favoriteButtons_.size()) < kMaxFavorites;
+    }
 
   private:
     void layoutFavoriteButtons() {
-        const int btnHeight = 20;
-        const int btnPadding = 2;
-        const int sideMargin = 2;
+        const int iconSize = 24;
+        const int btnPadding = 4;
         int totalHeight = 0;
+        auto centerX = (favoritesViewport_.getWidth() - iconSize) / 2;
 
         for (size_t i = 0; i < favoriteButtons_.size(); ++i) {
-            int y = static_cast<int>(i) * (btnHeight + btnPadding);
-            favoriteButtons_[i]->setBounds(
-                sideMargin, y, favoritesViewport_.getWidth() - sideMargin * 2 - 4, btnHeight);
-            totalHeight = y + btnHeight;
+            int y = static_cast<int>(i) * (iconSize + btnPadding);
+            favoriteButtons_[i]->setBounds(centerX, y, iconSize, iconSize);
+            totalHeight = y + iconSize;
         }
 
         favoritesContent_->setSize(favoritesViewport_.getWidth(), totalHeight);
@@ -335,8 +323,9 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
     std::unique_ptr<magda::SvgButton> diskButton_;
     std::unique_ptr<magda::SvgButton> libraryButton_;
 
+    static constexpr int kMaxFavorites = 8;
+
     // Favorites
-    juce::TextButton addFavButton_;
     juce::Viewport favoritesViewport_;
     std::unique_ptr<juce::Component> favoritesContent_;
     std::vector<std::unique_ptr<FavoriteButton>> favoriteButtons_;
@@ -571,19 +560,6 @@ MediaExplorerContent::MediaExplorerContent() {
     sidebarComponent_ = std::make_unique<SidebarComponent>();
     sidebarComponent_->onLocationSelected = [this](const juce::File& location) {
         navigateToDirectory(location);
-    };
-    sidebarComponent_->onAddFavorite = [this]() {
-        if (fileBrowser_ && fileBrowser_->getRoot().isDirectory()) {
-            auto currentDir = fileBrowser_->getRoot().getFullPathName().toStdString();
-            auto favorites = magda::Config::getInstance().getBrowserFavorites();
-            // Don't add duplicates
-            if (std::find(favorites.begin(), favorites.end(), currentDir) == favorites.end()) {
-                favorites.push_back(currentDir);
-                magda::Config::getInstance().setBrowserFavorites(favorites);
-                magda::Config::getInstance().saveToFile("magda_config.txt");
-                sidebarComponent_->rebuildFavoriteButtons();
-            }
-        }
     };
     addAndMakeVisible(*sidebarComponent_);
 
@@ -1047,13 +1023,44 @@ void MediaExplorerContent::selectionChanged() {
 }
 
 void MediaExplorerContent::fileClicked(const juce::File& file, const juce::MouseEvent& e) {
+    // Right-click on a directory: offer to add as favorite
+    if (e.mods.isPopupMenu() && file.isDirectory()) {
+        juce::PopupMenu menu;
+        auto favorites = magda::Config::getInstance().getBrowserFavorites();
+        auto path = file.getFullPathName().toStdString();
+        bool alreadyFavorite =
+            std::find(favorites.begin(), favorites.end(), path) != favorites.end();
+
+        if (alreadyFavorite) {
+            menu.addItem(1, "Remove from favorites");
+        } else if (sidebarComponent_->canAddFavorite()) {
+            menu.addItem(2, "Add to favorites");
+        } else {
+            menu.addItem(0, "Favorites full (max 8)", false);
+        }
+
+        menu.showMenuAsync(juce::PopupMenu::Options(), [this, path](int result) {
+            if (result == 1) {
+                auto favs = magda::Config::getInstance().getBrowserFavorites();
+                favs.erase(std::remove(favs.begin(), favs.end(), path), favs.end());
+                magda::Config::getInstance().setBrowserFavorites(favs);
+                magda::Config::getInstance().saveToFile("magda_config.txt");
+                sidebarComponent_->rebuildFavoriteButtons();
+            } else if (result == 2) {
+                auto favs = magda::Config::getInstance().getBrowserFavorites();
+                favs.push_back(path);
+                magda::Config::getInstance().setBrowserFavorites(favs);
+                magda::Config::getInstance().saveToFile("magda_config.txt");
+                sidebarComponent_->rebuildFavoriteButtons();
+            }
+        });
+        return;
+    }
+
     // Store for potential drag (all media types are draggable)
     fileForDrag_ = file;
     mouseDownPosition_ = e.getScreenPosition();
     isDraggingFile_ = false;
-
-    // Note: Selection is handled by FileBrowserComponent automatically
-    // Preview loading happens in selectionChanged() callback
 }
 
 void MediaExplorerContent::fileDoubleClicked(const juce::File& file) {
