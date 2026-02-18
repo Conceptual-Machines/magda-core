@@ -2577,13 +2577,7 @@ int DeviceSlotComponent::getVisibleParamCount() const {
 }
 
 int DeviceSlotComponent::getParamsPerRow() const {
-    int visibleCount = getVisibleParamCount();
-
-    // Determine columns based on visible parameter count
-    // Minimum 4 columns to keep header properly sized, always maintain 4 rows
-    if (visibleCount <= 16)
-        return 4;  // 4 columns × 4 rows (minimum width)
-    return 8;      // 8 columns × 4 rows (for 17-32 params)
+    return 8;  // Always 8 columns × 4 rows
 }
 
 int DeviceSlotComponent::getParamsPerPage() const {
