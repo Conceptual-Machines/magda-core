@@ -62,6 +62,19 @@ struct CurveSnapshot {
     }
 
     /**
+     * @brief Return the value at the very end of the curve (for oneshot hold).
+     *
+     * Returns the last custom point's value, or the preset evaluated at phase 1.0.
+     * Avoids the wrap-around interpolation that evaluate(0.999) would do
+     * (which would interpolate from the last point back toward the first).
+     */
+    float endValue() const {
+        if (count > 0)
+            return points[static_cast<size_t>(count - 1)].value;
+        return evaluatePreset(preset, 1.0f);
+    }
+
+    /**
      * @brief Evaluate the curve at a given phase.
      *
      * If custom points exist, uses tension-based interpolation (same as
@@ -194,12 +207,8 @@ struct CurveSnapshotHolder {
         const CurveSnapshot* snap = holder->active.load(std::memory_order_acquire);
 
         if (snap->oneShot) {
-            // Use 0.999999f so curve evaluation stays in the last segment
-            // rather than wrapping to the first point.
-            constexpr float kEndPhase = 0.999999f;
-
             if (holder->oneShotCompleted_.load(std::memory_order_acquire))
-                return snap->evaluate(kEndPhase);
+                return snap->endValue();
 
             float prev = holder->previousPhase_.load(std::memory_order_relaxed);
             holder->previousPhase_.store(phase, std::memory_order_relaxed);
@@ -207,7 +216,7 @@ struct CurveSnapshotHolder {
             // Detect phase wrap-around: phase jumped back significantly
             if (prev >= 0.0f && phase < prev - 0.5f) {
                 holder->oneShotCompleted_.store(true, std::memory_order_release);
-                return snap->evaluate(kEndPhase);
+                return snap->endValue();
             }
         }
 
