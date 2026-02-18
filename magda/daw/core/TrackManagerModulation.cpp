@@ -742,14 +742,18 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                         mod.phase -= 1.0f;
                 }
                 // Apply phase offset when generating waveform
-                // Use 0.999999f for one-shot end so curve evaluation stays in the
-                // last segment rather than wrapping to the first point.
-                float effectivePhase = mod.oneShot && mod.phase >= 1.0f
-                                           ? 0.999999f
-                                           : std::fmod(mod.phase + mod.phaseOffset, 1.0f);
-                mod.value = ModulatorEngine::generateWaveformForMod(mod, effectivePhase);
+                if (mod.oneShot && mod.phase >= 1.0f) {
+                    // One-shot end: return last point value directly to avoid
+                    // wrap-around interpolation back toward the first point
+                    mod.value = ModulatorEngine::generateOneShotEndValue(mod);
+                } else {
+                    float effectivePhase = std::fmod(mod.phase + mod.phaseOffset, 1.0f);
+                    mod.value = ModulatorEngine::generateWaveformForMod(mod, effectivePhase);
+                }
             } else {
-                mod.value = 0.0f;  // No output when not running
+                // Not running: hold oneshot end value, otherwise no output
+                if (!mod.oneShot)
+                    mod.value = 0.0f;
             }
         }
         return mod.running != wasRunning;

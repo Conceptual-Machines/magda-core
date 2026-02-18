@@ -654,7 +654,8 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
                         for (auto* assignment : param->getAssignments()) {
                             if (assignment->isForModifierSource(*modifier)) {
                                 float effectiveAmount = link.amount;
-                                if (modInfo.triggerMode != LFOTriggerMode::Free && !modInfo.running)
+                                if (modInfo.triggerMode != LFOTriggerMode::Free &&
+                                    !modInfo.running && !modInfo.oneShot)
                                     effectiveAmount = 0.0f;
                                 assignment->value = effectiveAmount;
                                 assignment->offset = 0.0f;

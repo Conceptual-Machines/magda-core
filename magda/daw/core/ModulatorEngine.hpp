@@ -271,6 +271,21 @@ class ModulatorEngine {
      * @param phase Current phase (0.0 to 1.0)
      * @return Output value (0.0 to 1.0)
      */
+    /**
+     * @brief Return the end-of-cycle value for oneshot mode.
+     *
+     * Returns the last custom point's value directly (avoiding wrap-around
+     * interpolation), or the preset value at phase 1.0 for non-custom waveforms.
+     */
+    static float generateOneShotEndValue(const ModInfo& mod) {
+        if (mod.waveform == LFOWaveform::Custom) {
+            if (!mod.curvePoints.empty())
+                return mod.curvePoints.back().value;
+            return generateCurvePreset(mod.curvePreset, 1.0f);
+        }
+        return generateWaveform(mod.waveform, 1.0f);
+    }
+
     static float generateWaveformForMod(const ModInfo& mod, float phase) {
         if (mod.waveform == LFOWaveform::Custom) {
             if (!mod.curvePoints.empty()) {

@@ -298,7 +298,7 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
                                         if (assignment->isForModifierSource(*modifier)) {
                                             float effectiveAmount = link.amount;
                                             if (modInfo.triggerMode != LFOTriggerMode::Free &&
-                                                !modInfo.running)
+                                                !modInfo.running && !modInfo.oneShot)
                                                 effectiveAmount = 0.0f;
                                             assignment->value = effectiveAmount;
                                             assignment->offset = 0.0f;
