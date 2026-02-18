@@ -3,6 +3,7 @@
 #include "../../../core/Config.hpp"
 #include "../../components/common/SvgButton.hpp"
 #include "../../themes/DarkTheme.hpp"
+#include "../../themes/FileBrowserLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
 #include "AudioThumbnailManager.hpp"
 #include "BinaryData.h"
@@ -490,18 +491,16 @@ MediaExplorerContent::MediaExplorerContent() {
     };
     addAndMakeVisible(volumeSlider_);
 
-    // Sync to tempo button
-    syncToTempoButton_.setButtonText("Sync");
-    syncToTempoButton_.setToggleState(false, juce::dontSendNotification);
-    syncToTempoButton_.setColour(juce::ToggleButton::textColourId, DarkTheme::getTextColour());
-    syncToTempoButton_.setColour(juce::ToggleButton::tickColourId,
-                                 DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    syncToTempoButton_.setColour(juce::ToggleButton::tickDisabledColourId,
-                                 DarkTheme::getSecondaryTextColour());
-    syncToTempoButton_.onClick = [this]() {
-        // Backend: Implement tempo sync for audio playback
-    };
-    addAndMakeVisible(syncToTempoButton_);
+    // Auto-play toggle — automatically preview audio files on selection
+    autoPlayButton_.setButtonText("Auto");
+    autoPlayButton_.setToggleState(false, juce::dontSendNotification);
+    autoPlayButton_.setColour(juce::ToggleButton::textColourId, DarkTheme::getTextColour());
+    autoPlayButton_.setColour(juce::ToggleButton::tickColourId,
+                              DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    autoPlayButton_.setColour(juce::ToggleButton::tickDisabledColourId,
+                              DarkTheme::getSecondaryTextColour());
+    autoPlayButton_.setLookAndFeel(&FileBrowserLookAndFeel::getInstance());
+    addAndMakeVisible(autoPlayButton_);
 
     // Metadata labels (compact sizing)
     fileInfoLabel_.setText("No file selected", juce::dontSendNotification);
@@ -538,6 +537,7 @@ MediaExplorerContent::MediaExplorerContent() {
         nullptr);
 
     fileBrowser_->addListener(this);
+    // Set colours before LookAndFeel so lookAndFeelChanged() picks them up
     fileBrowser_->setColour(juce::FileBrowserComponent::currentPathBoxBackgroundColourId,
                             DarkTheme::getColour(DarkTheme::SURFACE));
     fileBrowser_->setColour(juce::FileBrowserComponent::currentPathBoxTextColourId,
@@ -550,37 +550,22 @@ MediaExplorerContent::MediaExplorerContent() {
                             DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
     fileBrowser_->setColour(juce::DirectoryContentsDisplayComponent::textColourId,
                             DarkTheme::getTextColour());
+    // Apply LookAndFeel — triggers lookAndFeelChanged() which recreates go-up button
+    fileBrowser_->setLookAndFeel(&FileBrowserLookAndFeel::getInstance());
     // Listen to mouse events on file browser (Component IS-A MouseListener)
     fileBrowser_->addMouseListener(this, true);
     addAndMakeVisible(*fileBrowser_);
 
-    // Fix the file browser component sizes
-    // After adding to parent, adjust child component heights
-    // Use SafePointer to prevent use-after-free if component is destroyed before callback runs
-    juce::Component::SafePointer<MediaExplorerContent> safeThis(this);
-    juce::MessageManager::callAsync([safeThis]() {
-        if (auto* self = safeThis.getComponent()) {
-            if (self->fileBrowser_ != nullptr) {
-                // Hide the filename text box - we already show selection info at the bottom
-                for (int i = 0; i < self->fileBrowser_->getNumChildComponents(); ++i) {
-                    auto* child = self->fileBrowser_->getChildComponent(i);
-
-                    // First child is the path ComboBox - keep it compact
-                    if (i == 0) {
-                        if (auto* pathBox = dynamic_cast<juce::ComboBox*>(child)) {
-                            pathBox->setBounds(pathBox->getBounds().withHeight(28));
-                        }
-                    }
-
-                    // Look for the filename editor at the bottom and hide it
-                    if (auto* editor = dynamic_cast<juce::TextEditor*>(child)) {
-                        editor->setVisible(false);
-                    }
-                }
-                self->resized();  // Trigger layout update
-            }
+    // Apply LookAndFeel to ComboBox child and hide the filename editor
+    for (int i = 0; i < fileBrowser_->getNumChildComponents(); ++i) {
+        auto* child = fileBrowser_->getChildComponent(i);
+        if (auto* comboBox = dynamic_cast<juce::ComboBox*>(child)) {
+            comboBox->setLookAndFeel(&FileBrowserLookAndFeel::getInstance());
         }
-    });
+        if (auto* editor = dynamic_cast<juce::TextEditor*>(child)) {
+            editor->setVisible(false);
+        }
+    }
 
     // Setup sidebar navigation
     sidebarComponent_ = std::make_unique<SidebarComponent>();
@@ -616,6 +601,14 @@ MediaExplorerContent::MediaExplorerContent() {
 }
 
 MediaExplorerContent::~MediaExplorerContent() {
+    for (int i = 0; i < fileBrowser_->getNumChildComponents(); ++i) {
+        if (auto* comboBox = dynamic_cast<juce::ComboBox*>(fileBrowser_->getChildComponent(i))) {
+            comboBox->setLookAndFeel(nullptr);
+        }
+    }
+    fileBrowser_->setLookAndFeel(nullptr);
+    autoPlayButton_.setLookAndFeel(nullptr);
+
     stopPreview();
 
     // CRITICAL: Remove audio callback before destroying player/transport
@@ -927,7 +920,7 @@ void MediaExplorerContent::resized() {
     browseButton_.setVisible(false);
 
     // Reserve space for preview/inspector area at bottom (compact size)
-    const int previewAreaHeight = 80;  // Compact preview for more browser space
+    const int previewAreaHeight = 120;
     auto previewArea = bounds.removeFromBottom(previewAreaHeight);
 
     // Main content area: sidebar + file browser
@@ -939,28 +932,30 @@ void MediaExplorerContent::resized() {
     // Right: File browser takes all remaining space
     fileBrowser_->setBounds(bounds);
 
-    // Now layout compact preview/inspector area
-    previewArea.removeFromTop(2);
+    // Now layout preview/inspector area
+    previewArea.removeFromTop(4);
 
-    // Metadata: file name + format on one line, properties on next
-    fileInfoLabel_.setBounds(previewArea.removeFromTop(13));
-    formatLabel_.setBounds(previewArea.removeFromTop(11));
-    propertiesLabel_.setBounds(previewArea.removeFromTop(11));
-    previewArea.removeFromTop(2);
+    // Metadata section
+    fileInfoLabel_.setBounds(previewArea.removeFromTop(14));
+    previewArea.removeFromTop(1);
+    formatLabel_.setBounds(previewArea.removeFromTop(12));
+    previewArea.removeFromTop(1);
+    propertiesLabel_.setBounds(previewArea.removeFromTop(12));
+    previewArea.removeFromTop(4);
 
     // Waveform thumbnail
-    thumbnailComponent_->setBounds(previewArea.removeFromTop(16));
-    previewArea.removeFromTop(2);
+    thumbnailComponent_->setBounds(previewArea.removeFromTop(40));
+    previewArea.removeFromTop(4);
 
     // Preview controls row
-    auto previewRow = previewArea.removeFromTop(22);
-    playButton_->setBounds(previewRow.removeFromLeft(22));
-    previewRow.removeFromLeft(2);
-    stopButton_->setBounds(previewRow.removeFromLeft(22));
+    auto previewRow = previewArea.removeFromTop(28);
+    playButton_->setBounds(previewRow.removeFromLeft(28));
     previewRow.removeFromLeft(4);
-    syncToTempoButton_.setBounds(previewRow.removeFromLeft(50));
-    previewRow.removeFromLeft(4);
-    volumeSlider_.setBounds(previewRow.removeFromLeft(100));
+    stopButton_->setBounds(previewRow.removeFromLeft(28));
+    previewRow.removeFromLeft(8);
+    autoPlayButton_.setBounds(previewRow.removeFromLeft(60));
+    previewRow.removeFromLeft(12);
+    volumeSlider_.setBounds(previewRow.removeFromLeft(120));
 }
 
 void MediaExplorerContent::onActivated() {
@@ -994,8 +989,10 @@ void MediaExplorerContent::selectionChanged() {
 
     // Handle different file types
     if (isAudioFile(selectedFile)) {
-        // Audio files: load audio preview (updateFileInfo called in loadFileForPreview)
         loadFileForPreview(selectedFile);
+        if (autoPlayButton_.getToggleState()) {
+            playPreview();
+        }
     } else if (isMidiFile(selectedFile)) {
         // MIDI files: show info, preview placeholder
         stopPreview();
