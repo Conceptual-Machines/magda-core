@@ -72,8 +72,8 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
         info.timeSignatureNumerator = 3;
         info.timeSignatureDenominator = 4;
         info.loopEnabled = true;
-        info.loopStart = 4.0;
-        info.loopEnd = 16.0;
+        info.loopStartBeats = 4.0;
+        info.loopEndBeats = 16.0;
 
         // Serialize to JSON
         auto json = ProjectSerializer::serializeProject(info);
@@ -90,8 +90,8 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
         REQUIRE(loaded.timeSignatureNumerator == info.timeSignatureNumerator);
         REQUIRE(loaded.timeSignatureDenominator == info.timeSignatureDenominator);
         REQUIRE(loaded.loopEnabled == info.loopEnabled);
-        REQUIRE(loaded.loopStart == info.loopStart);
-        REQUIRE(loaded.loopEnd == info.loopEnd);
+        REQUIRE(loaded.loopStartBeats == info.loopStartBeats);
+        REQUIRE(loaded.loopEndBeats == info.loopEndBeats);
     }
 }
 

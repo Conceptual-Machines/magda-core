@@ -538,7 +538,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopReg
         state.loop.enabled = true;
     }
 
-    ProjectManager::getInstance().setLoopSettings(state.loop.enabled, start, end);
+    ProjectManager::getInstance().setLoopSettings(state.loop.enabled, state.loop.startBeats,
+                                                  state.loop.endBeats);
 
     // Notify audio engine of loop region change
     for (auto* listener : audioEngineListeners) {
@@ -568,8 +569,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopEna
 
     state.loop.enabled = e.enabled;
 
-    ProjectManager::getInstance().setLoopSettings(e.enabled, state.loop.startTime,
-                                                  state.loop.endTime);
+    ProjectManager::getInstance().setLoopSettings(e.enabled, state.loop.startBeats,
+                                                  state.loop.endBeats);
 
     // Notify audio engine of loop enabled change
     for (auto* listener : audioEngineListeners) {
@@ -1058,22 +1059,22 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimelin
 // ===== Project Restore =====
 
 void TimelineController::restoreProjectState(double tempo, int timeSigNum, int timeSigDen,
-                                             bool loopEnabled, double loopStart, double loopEnd) {
+                                             bool loopEnabled, double loopStartBeats,
+                                             double loopEndBeats) {
     // Unconditionally set state — no early returns
     state.tempo.bpm = juce::jlimit(20.0, 999.0, tempo);
     state.tempo.timeSignatureNumerator = juce::jlimit(1, 16, timeSigNum);
     state.tempo.timeSignatureDenominator = juce::jlimit(1, 16, timeSigDen);
 
-    // Loop
-    state.loop.startTime = juce::jlimit(0.0, state.timelineLength, loopStart);
-    state.loop.endTime = juce::jlimit(0.0, state.timelineLength, loopEnd);
+    // Loop: beats are authoritative, derive seconds from BPM
+    state.loop.startBeats = loopStartBeats;
+    state.loop.endBeats = loopEndBeats;
     state.loop.enabled = loopEnabled;
 
-    if (state.loop.endTime - state.loop.startTime >= 0.01) {
-        state.loop.startBeats =
-            magda::TimelineUtils::secondsToBeats(state.loop.startTime, state.tempo.bpm);
-        state.loop.endBeats =
-            magda::TimelineUtils::secondsToBeats(state.loop.endTime, state.tempo.bpm);
+    if (loopEndBeats - loopStartBeats >= 0.01) {
+        state.loop.startTime =
+            magda::TimelineUtils::beatsToSeconds(loopStartBeats, state.tempo.bpm);
+        state.loop.endTime = magda::TimelineUtils::beatsToSeconds(loopEndBeats, state.tempo.bpm);
     } else {
         state.loop.clear();
     }

@@ -165,12 +165,12 @@ void ProjectManager::setTimeSignature(int numerator, int denominator) {
     }
 }
 
-void ProjectManager::setLoopSettings(bool enabled, double start, double end) {
-    if (currentProject_.loopEnabled != enabled || currentProject_.loopStart != start ||
-        currentProject_.loopEnd != end) {
+void ProjectManager::setLoopSettings(bool enabled, double startBeats, double endBeats) {
+    if (currentProject_.loopEnabled != enabled || currentProject_.loopStartBeats != startBeats ||
+        currentProject_.loopEndBeats != endBeats) {
         currentProject_.loopEnabled = enabled;
-        currentProject_.loopStart = start;
-        currentProject_.loopEnd = end;
+        currentProject_.loopStartBeats = startBeats;
+        currentProject_.loopEndBeats = endBeats;
         markDirty();
     }
 }

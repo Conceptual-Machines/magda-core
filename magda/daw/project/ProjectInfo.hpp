@@ -20,10 +20,10 @@ struct ProjectInfo {
     int timeSignatureDenominator = 4;
     double projectLength = 240.0;  // seconds
 
-    // Loop settings
+    // Loop settings (beats are authoritative, seconds derived from tempo)
     bool loopEnabled = false;
-    double loopStart = 0.0;
-    double loopEnd = 0.0;
+    double loopStartBeats = 0.0;
+    double loopEndBeats = 0.0;
 
     // Version tracking
     juce::String version = "1.0.0";  // Magda version

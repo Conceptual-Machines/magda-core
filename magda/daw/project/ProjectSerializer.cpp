@@ -121,8 +121,8 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     // Loop settings
     auto* loopObj = new juce::DynamicObject();
     loopObj->setProperty("enabled", info.loopEnabled);
-    loopObj->setProperty("start", info.loopStart);
-    loopObj->setProperty("end", info.loopEnd);
+    loopObj->setProperty("startBeats", info.loopStartBeats);
+    loopObj->setProperty("endBeats", info.loopEndBeats);
     projectObj->setProperty("loop", juce::var(loopObj));
 
     obj->setProperty("project", juce::var(projectObj));
@@ -188,8 +188,8 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
     if (loopVar.isObject()) {
         auto* loopObj = loopVar.getDynamicObject();
         outInfo.loopEnabled = loopObj->getProperty("enabled");
-        outInfo.loopStart = loopObj->getProperty("start");
-        outInfo.loopEnd = loopObj->getProperty("end");
+        outInfo.loopStartBeats = loopObj->getProperty("startBeats");
+        outInfo.loopEndBeats = loopObj->getProperty("endBeats");
     }
 
     // ATOMIC DESERIALIZATION: Validate and stage ALL components before modifying any state.

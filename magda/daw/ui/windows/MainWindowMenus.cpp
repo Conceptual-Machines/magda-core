@@ -37,6 +37,13 @@ void MainWindow::setupMenuCallbacks() {
 
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "New Project",
                                                    message);
+        } else {
+            // Reset timeline/transport to defaults
+            ProjectInfo defaults;
+            auto& tc = mainComponent->mainView->getTimelineController();
+            tc.restoreProjectState(defaults.tempo, defaults.timeSignatureNumerator,
+                                   defaults.timeSignatureDenominator, defaults.loopEnabled,
+                                   defaults.loopStartBeats, defaults.loopEndBeats);
         }
     };
 
@@ -70,17 +77,24 @@ void MainWindow::setupMenuCallbacks() {
                 auto& tc = mainComponent->mainView->getTimelineController();
                 tc.restoreProjectState(info.tempo, info.timeSignatureNumerator,
                                        info.timeSignatureDenominator, info.loopEnabled,
-                                       info.loopStart, info.loopEnd);
+                                       info.loopStartBeats, info.loopEndBeats);
             }
         });
     };
 
-    callbacks.onCloseProject = []() {
+    callbacks.onCloseProject = [this]() {
         auto& projectManager = ProjectManager::getInstance();
         if (!projectManager.closeProject()) {
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Close Project",
                                                    "Failed to close project: " +
                                                        projectManager.getLastError());
+        } else {
+            // Reset timeline/transport to defaults
+            ProjectInfo defaults;
+            auto& tc = mainComponent->mainView->getTimelineController();
+            tc.restoreProjectState(defaults.tempo, defaults.timeSignatureNumerator,
+                                   defaults.timeSignatureDenominator, defaults.loopEnabled,
+                                   defaults.loopStartBeats, defaults.loopEndBeats);
         }
     };
 

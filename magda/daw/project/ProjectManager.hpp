@@ -142,7 +142,7 @@ class ProjectManager {
     /**
      * @brief Set project loop settings
      */
-    void setLoopSettings(bool enabled, double start, double end);
+    void setLoopSettings(bool enabled, double startBeats, double endBeats);
 
     /**
      * @brief Mark project as dirty (unsaved changes)

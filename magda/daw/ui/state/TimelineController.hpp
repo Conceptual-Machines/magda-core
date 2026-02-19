@@ -177,7 +177,7 @@ class TimelineController {
      * and UI are always synced, even if values haven't changed in TC state.
      */
     void restoreProjectState(double tempo, int timeSigNum, int timeSigDen, bool loopEnabled,
-                             double loopStart, double loopEnd);
+                             double loopStartBeats, double loopEndBeats);
 
     // ===== Configuration =====
 
