@@ -1217,14 +1217,15 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 auto& cm = magda::ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
                     double lengthDelta = finalLength - dragStartLength_;
-                    ClipOperations::resizeContainerFromRight(*mutableClip, finalLength);
+                    ClipOperations::resizeContainerFromRight(*mutableClip, finalLength, tempoBPM);
                     cm.forceNotifyClipPropertyChanged(clipId_);
 
                     // Also update other selected clips with the same delta
                     for (auto& [cid, origLen] : dragStartSelectedLengths_) {
                         if (auto* otherClip = cm.getClip(cid)) {
                             double otherLen = juce::jmax(0.1, origLen + lengthDelta);
-                            ClipOperations::resizeContainerFromRight(*otherClip, otherLen);
+                            ClipOperations::resizeContainerFromRight(*otherClip, otherLen,
+                                                                     tempoBPM);
                             cm.forceNotifyClipPropertyChanged(cid);
                         }
                     }
