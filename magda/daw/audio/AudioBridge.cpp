@@ -546,9 +546,6 @@ void AudioBridge::syncAll() {
 
     // Sync master channel volume/pan to Tracktion Engine
     masterChannelChanged();
-
-    // Sync MIDI routing (e.g. after project load, MIDI-triggered mods need routing)
-    updateMidiRoutingForSelection();
 }
 
 void AudioBridge::syncTrackPlugins(TrackId trackId) {
