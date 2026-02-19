@@ -55,6 +55,7 @@ class InspectorContainer : public PanelContent, public magda::SelectionManagerLi
     void selectionTypeChanged(magda::SelectionType newType) override;
     void trackSelectionChanged(magda::TrackId trackId) override;
     void clipSelectionChanged(magda::ClipId clipId) override;
+    void multiClipSelectionChanged(const std::unordered_set<magda::ClipId>& clipIds) override;
     void noteSelectionChanged(const magda::NoteSelection& selection) override;
     void chainNodeSelectionChanged(const magda::ChainNodePath& path) override;
 

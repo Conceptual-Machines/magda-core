@@ -148,6 +148,57 @@ class SetMultipleNoteVelocitiesCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for moving multiple MIDI notes at once (single undo step)
+ */
+class MoveMultipleMidiNotesCommand : public UndoableCommand {
+  public:
+    struct NoteMove {
+        size_t noteIndex;
+        double newStartBeat;
+        int newNoteNumber;
+    };
+
+    MoveMultipleMidiNotesCommand(ClipId clipId, std::vector<NoteMove> moves);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Move MIDI Notes";
+    }
+
+  private:
+    ClipId clipId_;
+    std::vector<NoteMove> moves_;
+    struct OldValues {
+        double startBeat;
+        int noteNumber;
+    };
+    std::vector<OldValues> oldValues_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for resizing multiple MIDI notes at once (single undo step)
+ */
+class ResizeMultipleMidiNotesCommand : public UndoableCommand {
+  public:
+    ResizeMultipleMidiNotesCommand(ClipId clipId,
+                                   std::vector<std::pair<size_t, double>> noteLengths);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Resize MIDI Notes";
+    }
+
+  private:
+    ClipId clipId_;
+    std::vector<std::pair<size_t, double>> newLengths_;  // {index, newLength}
+    std::vector<std::pair<size_t, double>> oldLengths_;  // captured on first execute
+    bool executed_ = false;
+};
+
+/**
  * @brief Command for moving a MIDI note between clips
  * Removes note from source clip and adds it to destination clip
  */
@@ -244,6 +295,29 @@ class AddMultipleMidiNotesCommand : public UndoableCommand {
     std::vector<MidiNote> notes_;
     juce::String description_;
     std::vector<size_t> insertedIndices_;  // Indices of inserted notes after execute
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for transposing all notes in a MIDI clip by a given number of semitones
+ */
+class TransposeMidiClipCommand : public UndoableCommand {
+  public:
+    TransposeMidiClipCommand(ClipId clipId, int semitones);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Transpose MIDI Clip";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override;
+    void mergeWith(const UndoableCommand* other) override;
+
+  private:
+    ClipId clipId_;
+    int semitones_;
+    std::vector<int> oldNoteNumbers_;
     bool executed_ = false;
 };
 

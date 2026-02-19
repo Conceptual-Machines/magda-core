@@ -135,9 +135,9 @@ PianoRollContent::~PianoRollContent() {
 
 void PianoRollContent::setupGridCallbacks() {
     // Handle note addition
-    gridComponent_->onNoteAdded = [](magda::ClipId clipId, double beat, int noteNumber,
-                                     int velocity) {
-        double defaultLength = 1.0;
+    gridComponent_->onNoteAdded = [this](magda::ClipId clipId, double beat, int noteNumber,
+                                         int velocity) {
+        double defaultLength = gridComponent_->getGridResolutionBeats();
         auto cmd = std::make_unique<magda::AddMidiNoteCommand>(clipId, beat, noteNumber,
                                                                defaultLength, velocity);
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
@@ -258,6 +258,35 @@ void PianoRollContent::setupGridCallbacks() {
         // Note: UI refresh handled via ClipManagerListener::clipPropertyChanged()
     };
 
+    // Handle batch note movement (single undo step)
+    gridComponent_->onMultipleNotesMoved =
+        [](magda::ClipId clipId, std::vector<magda::MoveMultipleMidiNotesCommand::NoteMove> moves) {
+            auto cmd =
+                std::make_unique<magda::MoveMultipleMidiNotesCommand>(clipId, std::move(moves));
+            magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+        };
+
+    // Handle batch note resize (single undo step)
+    gridComponent_->onMultipleNotesResized =
+        [](magda::ClipId clipId, std::vector<std::pair<size_t, double>> noteLengths) {
+            auto cmd = std::make_unique<magda::ResizeMultipleMidiNotesCommand>(
+                clipId, std::move(noteLengths));
+            magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+        };
+
+    // Handle left-edge resize for multi-selection (compound move+resize as single undo step)
+    gridComponent_->onLeftResizeMultipleNotes =
+        [](magda::ClipId clipId, std::vector<magda::MoveMultipleMidiNotesCommand::NoteMove> moves,
+           std::vector<std::pair<size_t, double>> noteLengths) {
+            magda::CompoundOperationScope scope("Resize Notes From Left");
+            auto moveCmd =
+                std::make_unique<magda::MoveMultipleMidiNotesCommand>(clipId, std::move(moves));
+            magda::UndoManager::getInstance().executeCommand(std::move(moveCmd));
+            auto resizeCmd = std::make_unique<magda::ResizeMultipleMidiNotesCommand>(
+                clipId, std::move(noteLengths));
+            magda::UndoManager::getInstance().executeCommand(std::move(resizeCmd));
+        };
+
     // Handle note selection - update SelectionManager
     gridComponent_->onNoteSelected = [](magda::ClipId clipId, size_t noteIndex, bool isAdditive) {
         if (isAdditive) {
@@ -267,11 +296,12 @@ void PianoRollContent::setupGridCallbacks() {
         }
     };
 
-    // Handle batch note selection changes (lasso, deselect-all)
+    // Handle batch note selection changes (lasso, deselect-all, Cmd+click toggle)
     gridComponent_->onNoteSelectionChanged = [this](magda::ClipId clipId,
                                                     std::vector<size_t> noteIndices) {
         if (noteIndices.empty()) {
-            // Only clear note selection in the velocity lane — preserve clip selection
+            // Clear note selection — preserve clip selection
+            magda::SelectionManager::getInstance().clearNoteSelection();
             if (velocityLane_) {
                 velocityLane_->setSelectedNoteIndices({});
             }

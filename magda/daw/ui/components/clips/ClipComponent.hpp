@@ -2,6 +2,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <limits>
+
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
 #include "core/ClipTypes.hpp"
@@ -128,6 +130,10 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     double dragStartAudioOffset_ = 0.0;
     double dragStartFileDuration_ = 0.0;
     ClipInfo dragStartClipSnapshot_;  // Full clip state at drag start (for undo)
+    std::unordered_map<ClipId, double>
+        dragStartSelectedLengths_;  // Original lengths of other selected clips
+    double multiResizeMaxDelta_ =
+        std::numeric_limits<double>::max();  // Max length increase before collision
     DragThrottle stretchThrottle_{50};
     DragThrottle resizeThrottle_{50};
 
@@ -147,6 +153,8 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     bool hoverFadeOut_ = false;
     double dragStartFadeIn_ = 0.0;
     double dragStartFadeOut_ = 0.0;
+    std::unordered_map<ClipId, ClipInfo>
+        dragStartSelectedFadeSnapshots_;  // Original state of other selected clips for fade undo
 
     // Volume handle state
     bool hoverVolumeHandle_ = false;

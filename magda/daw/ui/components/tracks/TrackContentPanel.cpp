@@ -1293,20 +1293,15 @@ void TrackContentPanel::clipsChanged() {
 
 void TrackContentPanel::clipPropertyChanged(ClipId clipId) {
     // Find the clip component and update its position/size
-    // Skip if any clip is being dragged to prevent flicker
     for (auto& clipComp : clipComponents_) {
         if (clipComp->getClipId() == clipId) {
-            // Check if any clip is currently being dragged
-            bool anyDragging = false;
-            for (const auto& cc : clipComponents_) {
-                if (cc->isCurrentlyDragging()) {
-                    anyDragging = true;
-                    break;
-                }
+            // Skip if THIS clip is the one being dragged (it manages its own bounds)
+            if (clipComp->isCurrentlyDragging()) {
+                break;
             }
-            if (!anyDragging) {
-                updateClipComponentPositions();
-            }
+            // Update all clip positions (updateClipComponentPositions already
+            // skips dragging clips internally)
+            updateClipComponentPositions();
             break;
         }
     }
@@ -1353,8 +1348,30 @@ void TrackContentPanel::rebuildClipComponents() {
         };
 
         clipComp->onClipResized = [this](ClipId id, double newLength, bool fromStart) {
-            auto cmd = std::make_unique<ResizeClipCommand>(id, newLength, fromStart, getTempo());
-            UndoManager::getInstance().executeCommand(std::move(cmd));
+            const auto* draggedClip = ClipManager::getInstance().getClip(id);
+            if (!draggedClip)
+                return;
+            double lengthDelta = newLength - draggedClip->length;
+
+            const auto& selected = SelectionManager::getInstance().getSelectedClips();
+            auto clipsToResize = (selected.size() > 1 && selected.count(id))
+                                     ? selected
+                                     : std::unordered_set<ClipId>{id};
+
+            if (clipsToResize.size() > 1)
+                UndoManager::getInstance().beginCompoundOperation("Resize Clips");
+
+            for (auto cid : clipsToResize) {
+                const auto* c = ClipManager::getInstance().getClip(cid);
+                if (!c)
+                    continue;
+                double clipLen = juce::jmax(0.1, c->length + lengthDelta);
+                auto cmd = std::make_unique<ResizeClipCommand>(cid, clipLen, fromStart, getTempo());
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+            }
+
+            if (clipsToResize.size() > 1)
+                UndoManager::getInstance().endCompoundOperation();
         };
 
         clipComp->onClipSelected = [](ClipId id) {

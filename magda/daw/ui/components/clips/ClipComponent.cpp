@@ -929,6 +929,19 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         dragMode_ = DragMode::FadeIn;
         dragStartFadeIn_ = clip->fadeIn;
         dragStartClipSnapshot_ = *clip;
+        // Capture selected clips' state for multi-fade
+        dragStartSelectedFadeSnapshots_.clear();
+        const auto& selected = SelectionManager::getInstance().getSelectedClips();
+        if (selected.size() > 1 && selected.count(clipId_)) {
+            auto& cm = ClipManager::getInstance();
+            for (auto cid : selected) {
+                if (cid == clipId_)
+                    continue;
+                const auto* c = cm.getClip(cid);
+                if (c && c->type == ClipType::Audio)
+                    dragStartSelectedFadeSnapshots_[cid] = *c;
+            }
+        }
         repaint();
         return;
     }
@@ -947,6 +960,19 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         dragMode_ = DragMode::FadeOut;
         dragStartFadeOut_ = clip->fadeOut;
         dragStartClipSnapshot_ = *clip;
+        // Capture selected clips' state for multi-fade
+        dragStartSelectedFadeSnapshots_.clear();
+        const auto& selected = SelectionManager::getInstance().getSelectedClips();
+        if (selected.size() > 1 && selected.count(clipId_)) {
+            auto& cm = ClipManager::getInstance();
+            for (auto cid : selected) {
+                if (cid == clipId_)
+                    continue;
+                const auto* c = cm.getClip(cid);
+                if (c && c->type == ClipType::Audio)
+                    dragStartSelectedFadeSnapshots_[cid] = *c;
+            }
+        }
         repaint();
         return;
     }
@@ -956,6 +982,19 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         dragMode_ = DragMode::VolumeDrag;
         dragStartVolumeDB_ = clip->volumeDB;
         dragStartClipSnapshot_ = *clip;
+        // Capture selected clips' state for multi-volume
+        dragStartSelectedFadeSnapshots_.clear();
+        const auto& selected = SelectionManager::getInstance().getSelectedClips();
+        if (selected.size() > 1 && selected.count(clipId_)) {
+            auto& cm = ClipManager::getInstance();
+            for (auto cid : selected) {
+                if (cid == clipId_)
+                    continue;
+                const auto* c = cm.getClip(cid);
+                if (c && c->type == ClipType::Audio)
+                    dragStartSelectedFadeSnapshots_[cid] = *c;
+            }
+        }
         repaint();
         return;
     }
@@ -980,6 +1019,32 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         } else {
             dragMode_ = DragMode::ResizeRight;
             dragStartClipSnapshot_ = *clip;
+            // Capture original lengths of other selected clips for multi-resize
+            dragStartSelectedLengths_.clear();
+            multiResizeMaxDelta_ = std::numeric_limits<double>::max();
+            const auto& selected = SelectionManager::getInstance().getSelectedClips();
+            if (selected.size() > 1 && selected.count(clipId_)) {
+                auto& cm = ClipManager::getInstance();
+                for (auto cid : selected) {
+                    const auto* c = cm.getClip(cid);
+                    if (!c)
+                        continue;
+                    if (cid != clipId_)
+                        dragStartSelectedLengths_[cid] = c->length;
+
+                    // Find max resize before hitting next non-selected clip
+                    auto trackClips = cm.getClipsOnTrack(c->trackId);
+                    for (auto otherId : trackClips) {
+                        if (selected.count(otherId))
+                            continue;
+                        const auto* other = cm.getClip(otherId);
+                        if (other && other->startTime > c->startTime) {
+                            double gap = other->startTime - (c->startTime + c->length);
+                            multiResizeMaxDelta_ = juce::jmin(multiResizeMaxDelta_, gap);
+                        }
+                    }
+                }
+            }
         }
     } else {
         dragMode_ = DragMode::Move;
@@ -1178,14 +1243,31 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 finalLength = juce::jmin(finalLength, maxLength);
             }
 
+            // Clamp to avoid overlapping next non-selected clip
+            if (!dragStartSelectedLengths_.empty()) {
+                double maxLength = dragStartLength_ + multiResizeMaxDelta_;
+                finalLength = juce::jmin(finalLength, maxLength);
+            }
+
             previewLength_ = finalLength;
 
             // Throttled update so waveform editor stays in sync during drag
             if (resizeThrottle_.check()) {
                 auto& cm = magda::ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
-                    ClipOperations::resizeContainerFromRight(*mutableClip, finalLength);
+                    double lengthDelta = finalLength - dragStartLength_;
+                    ClipOperations::resizeContainerFromRight(*mutableClip, finalLength, tempoBPM);
                     cm.forceNotifyClipPropertyChanged(clipId_);
+
+                    // Also update other selected clips with the same delta
+                    for (auto& [cid, origLen] : dragStartSelectedLengths_) {
+                        if (auto* otherClip = cm.getClip(cid)) {
+                            double otherLen = juce::jmax(0.1, origLen + lengthDelta);
+                            ClipOperations::resizeContainerFromRight(*otherClip, otherLen,
+                                                                     tempoBPM);
+                            cm.forceNotifyClipPropertyChanged(cid);
+                        }
+                    }
                 }
             }
 
@@ -1249,7 +1331,17 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 const auto* ci = getClipInfo();
                 double maxFadeIn = ci ? ci->length - ci->fadeOut : dragStartLength_;
                 newFadeIn = juce::jmin(newFadeIn, juce::jmax(0.0, maxFadeIn));
-                ClipManager::getInstance().setFadeIn(clipId_, newFadeIn);
+                double fadeDelta = newFadeIn - dragStartFadeIn_;
+                auto& cm = ClipManager::getInstance();
+                cm.setFadeIn(clipId_, newFadeIn);
+                for (auto& [cid, snap] : dragStartSelectedFadeSnapshots_) {
+                    const auto* c = cm.getClip(cid);
+                    if (!c)
+                        continue;
+                    double otherFade = juce::jmax(0.0, snap.fadeIn + fadeDelta);
+                    otherFade = juce::jmin(otherFade, juce::jmax(0.0, c->length - c->fadeOut));
+                    cm.setFadeIn(cid, otherFade);
+                }
                 repaint();
             }
             break;
@@ -1266,7 +1358,17 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 const auto* ci = getClipInfo();
                 double maxFadeOut = ci ? ci->length - ci->fadeIn : dragStartLength_;
                 newFadeOut = juce::jmin(newFadeOut, juce::jmax(0.0, maxFadeOut));
-                ClipManager::getInstance().setFadeOut(clipId_, newFadeOut);
+                double fadeDelta = newFadeOut - dragStartFadeOut_;
+                auto& cm = ClipManager::getInstance();
+                cm.setFadeOut(clipId_, newFadeOut);
+                for (auto& [cid, snap] : dragStartSelectedFadeSnapshots_) {
+                    const auto* c = cm.getClip(cid);
+                    if (!c)
+                        continue;
+                    double otherFade = juce::jmax(0.0, snap.fadeOut + fadeDelta);
+                    otherFade = juce::jmin(otherFade, juce::jmax(0.0, c->length - c->fadeIn));
+                    cm.setFadeOut(cid, otherFade);
+                }
                 repaint();
             }
             break;
@@ -1278,7 +1380,12 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             int deltaY = parentPos.y - dragStartPos_.y;
             float dbDelta = static_cast<float>(-deltaY) * 0.5f;  // Up = louder
             float newGainDB = juce::jlimit(-100.0f, 0.0f, dragStartVolumeDB_ + dbDelta);
-            ClipManager::getInstance().setClipVolumeDB(clipId_, newGainDB);
+            auto& cm = ClipManager::getInstance();
+            cm.setClipVolumeDB(clipId_, newGainDB);
+            for (auto& [cid, snap] : dragStartSelectedFadeSnapshots_) {
+                float otherDB = juce::jlimit(-100.0f, 0.0f, snap.volumeDB + dbDelta);
+                cm.setClipVolumeDB(cid, otherDB);
+            }
             repaint();
             break;
         }
@@ -1478,23 +1585,31 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
 
                 finalLength = juce::jmax(0.1, finalLength);
 
-                // Restore clip length to pre-drag state before committing.
-                // Throttled drag updates modified length directly — the
-                // command needs the original state for correct undo capture.
+                // Restore all clips to pre-drag state before committing.
+                // Throttled drag updates modified lengths directly — the
+                // commands need original state for correct undo capture.
                 {
                     auto& cm = ClipManager::getInstance();
                     if (auto* c = cm.getClip(clipId_)) {
                         c->length = dragStartLength_;
+                    }
+                    for (auto& [cid, origLen] : dragStartSelectedLengths_) {
+                        if (auto* c = cm.getClip(cid)) {
+                            c->length = origLen;
+                        }
                     }
                 }
 
                 if (onClipResized) {
                     onClipResized(clipId_, finalLength, false);
                 }
+                dragStartSelectedLengths_.clear();
                 break;
             }
 
             case DragMode::FadeIn: {
+                // Capture final fade value before restoring
+                double finalFadeIn = 0.0;
                 {
                     auto wfArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
                     double pps = (dragStartLength_ > 0.0)
@@ -1502,21 +1617,52 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                                      : 0.0;
                     if (pps > 0.0) {
                         double fadeInPx = static_cast<double>(e.x - wfArea.getX());
-                        double newFadeIn = juce::jmax(0.0, fadeInPx / pps);
+                        finalFadeIn = juce::jmax(0.0, fadeInPx / pps);
                         const auto* ci = getClipInfo();
                         double maxFadeIn = ci ? ci->length - ci->fadeOut : dragStartLength_;
-                        newFadeIn = juce::jmin(newFadeIn, juce::jmax(0.0, maxFadeIn));
-                        ClipManager::getInstance().setFadeIn(clipId_, newFadeIn);
+                        finalFadeIn = juce::jmin(finalFadeIn, juce::jmax(0.0, maxFadeIn));
                     }
                 }
                 {
+                    // Restore all clips to pre-drag state for correct undo capture
+                    auto& cm = ClipManager::getInstance();
+                    if (auto* c = cm.getClip(clipId_))
+                        c->fadeIn = dragStartClipSnapshot_.fadeIn;
+                    for (auto& [cid, snap] : dragStartSelectedFadeSnapshots_) {
+                        if (auto* c = cm.getClip(cid))
+                            c->fadeIn = snap.fadeIn;
+                    }
+
+                    double fadeDelta = finalFadeIn - dragStartFadeIn_;
+                    bool isMulti = !dragStartSelectedFadeSnapshots_.empty();
+                    if (isMulti)
+                        UndoManager::getInstance().beginCompoundOperation("Adjust Fades");
+
                     auto cmd = std::make_unique<SetFadeCommand>(clipId_, dragStartClipSnapshot_);
+                    cm.setFadeIn(clipId_, finalFadeIn);
                     UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                    for (auto& [cid, snap] : dragStartSelectedFadeSnapshots_) {
+                        const auto* c = cm.getClip(cid);
+                        if (!c)
+                            continue;
+                        double otherFade = juce::jmax(0.0, snap.fadeIn + fadeDelta);
+                        otherFade = juce::jmin(otherFade, juce::jmax(0.0, c->length - c->fadeOut));
+                        cm.setFadeIn(cid, otherFade);
+                        auto otherCmd = std::make_unique<SetFadeCommand>(cid, snap);
+                        UndoManager::getInstance().executeCommand(std::move(otherCmd));
+                    }
+
+                    if (isMulti)
+                        UndoManager::getInstance().endCompoundOperation();
                 }
+                dragStartSelectedFadeSnapshots_.clear();
                 break;
             }
 
             case DragMode::FadeOut: {
+                // Capture final fade value before restoring
+                double finalFadeOut = 0.0;
                 {
                     auto wfArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
                     double pps = (dragStartLength_ > 0.0)
@@ -1524,23 +1670,81 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                                      : 0.0;
                     if (pps > 0.0) {
                         double fadeOutPx = static_cast<double>(wfArea.getRight() - e.x);
-                        double newFadeOut = juce::jmax(0.0, fadeOutPx / pps);
+                        finalFadeOut = juce::jmax(0.0, fadeOutPx / pps);
                         const auto* ci = getClipInfo();
                         double maxFadeOut = ci ? ci->length - ci->fadeIn : dragStartLength_;
-                        newFadeOut = juce::jmin(newFadeOut, juce::jmax(0.0, maxFadeOut));
-                        ClipManager::getInstance().setFadeOut(clipId_, newFadeOut);
+                        finalFadeOut = juce::jmin(finalFadeOut, juce::jmax(0.0, maxFadeOut));
                     }
                 }
                 {
+                    // Restore all clips to pre-drag state for correct undo capture
+                    auto& cm = ClipManager::getInstance();
+                    if (auto* c = cm.getClip(clipId_))
+                        c->fadeOut = dragStartClipSnapshot_.fadeOut;
+                    for (auto& [cid, snap] : dragStartSelectedFadeSnapshots_) {
+                        if (auto* c = cm.getClip(cid))
+                            c->fadeOut = snap.fadeOut;
+                    }
+
+                    double fadeDelta = finalFadeOut - dragStartFadeOut_;
+                    bool isMulti = !dragStartSelectedFadeSnapshots_.empty();
+                    if (isMulti)
+                        UndoManager::getInstance().beginCompoundOperation("Adjust Fades");
+
                     auto cmd = std::make_unique<SetFadeCommand>(clipId_, dragStartClipSnapshot_);
+                    cm.setFadeOut(clipId_, finalFadeOut);
                     UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                    for (auto& [cid, snap] : dragStartSelectedFadeSnapshots_) {
+                        const auto* c = cm.getClip(cid);
+                        if (!c)
+                            continue;
+                        double otherFade = juce::jmax(0.0, snap.fadeOut + fadeDelta);
+                        otherFade = juce::jmin(otherFade, juce::jmax(0.0, c->length - c->fadeIn));
+                        cm.setFadeOut(cid, otherFade);
+                        auto otherCmd = std::make_unique<SetFadeCommand>(cid, snap);
+                        UndoManager::getInstance().executeCommand(std::move(otherCmd));
+                    }
+
+                    if (isMulti)
+                        UndoManager::getInstance().endCompoundOperation();
                 }
+                dragStartSelectedFadeSnapshots_.clear();
                 break;
             }
 
             case DragMode::VolumeDrag: {
+                // Restore all clips to pre-drag state for correct undo capture
+                auto& cm = ClipManager::getInstance();
+                const auto* current = cm.getClip(clipId_);
+                float finalDB = current ? current->volumeDB : dragStartVolumeDB_;
+                float dbDelta = finalDB - dragStartVolumeDB_;
+
+                if (auto* c = cm.getClip(clipId_))
+                    c->volumeDB = dragStartClipSnapshot_.volumeDB;
+                for (auto& [cid, snap] : dragStartSelectedFadeSnapshots_) {
+                    if (auto* c = cm.getClip(cid))
+                        c->volumeDB = snap.volumeDB;
+                }
+
+                bool isMulti = !dragStartSelectedFadeSnapshots_.empty();
+                if (isMulti)
+                    UndoManager::getInstance().beginCompoundOperation("Adjust Volumes");
+
+                cm.setClipVolumeDB(clipId_, finalDB);
                 auto cmd = std::make_unique<SetVolumeCommand>(clipId_, dragStartClipSnapshot_);
                 UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                for (auto& [cid, snap] : dragStartSelectedFadeSnapshots_) {
+                    float otherDB = juce::jlimit(-100.0f, 0.0f, snap.volumeDB + dbDelta);
+                    cm.setClipVolumeDB(cid, otherDB);
+                    auto otherCmd = std::make_unique<SetVolumeCommand>(cid, snap);
+                    UndoManager::getInstance().executeCommand(std::move(otherCmd));
+                }
+
+                if (isMulti)
+                    UndoManager::getInstance().endCompoundOperation();
+                dragStartSelectedFadeSnapshots_.clear();
                 break;
             }
 

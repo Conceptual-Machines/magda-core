@@ -13,6 +13,11 @@
 namespace magda::daw::ui {
 
 ClipInspector::ClipInspector() {
+    // Multi-clip count label (shown when multiple clips selected)
+    clipCountLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+    clipCountLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    addChildComponent(clipCountLabel_);
+
     initClipPropertiesSection();
     initSessionLaunchSection();
     initPitchSection();

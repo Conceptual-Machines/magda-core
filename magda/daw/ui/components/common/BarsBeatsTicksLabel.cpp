@@ -147,25 +147,31 @@ void BarsBeatsTicksLabel::paint(juce::Graphics& g) {
         g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.0f);
     }
 
-    // Draw dot separators between segments
     g.setColour(getTextColour());
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
 
-    // Dot between bars and beats
-    auto dot1X = barsSegment_->getRight();
-    auto dot2X = beatsSegment_->getRight();
-    float dotY = bounds.getCentreY();
-    float dotRadius = 1.5f;
+    if (textOverride_.isNotEmpty()) {
+        // Draw override text centred in bounds
+        g.drawText(textOverride_, bounds.toNearestInt(), juce::Justification::centred, false);
+    } else {
+        // Draw dot separators between segments
+        auto dot1X = barsSegment_->getRight();
+        auto dot2X = beatsSegment_->getRight();
+        float dotY = bounds.getCentreY();
+        float dotRadius = 1.5f;
 
-    float dot1CenterX =
-        static_cast<float>(dot1X) +
-        (static_cast<float>(beatsSegment_->getX()) - static_cast<float>(dot1X)) * 0.5f;
-    g.fillEllipse(dot1CenterX - dotRadius, dotY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f);
+        float dot1CenterX =
+            static_cast<float>(dot1X) +
+            (static_cast<float>(beatsSegment_->getX()) - static_cast<float>(dot1X)) * 0.5f;
+        g.fillEllipse(dot1CenterX - dotRadius, dotY - dotRadius, dotRadius * 2.0f,
+                      dotRadius * 2.0f);
 
-    float dot2CenterX =
-        static_cast<float>(dot2X) +
-        (static_cast<float>(ticksSegment_->getX()) - static_cast<float>(dot2X)) * 0.5f;
-    g.fillEllipse(dot2CenterX - dotRadius, dotY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f);
+        float dot2CenterX =
+            static_cast<float>(dot2X) +
+            (static_cast<float>(ticksSegment_->getX()) - static_cast<float>(dot2X)) * 0.5f;
+        g.fillEllipse(dot2CenterX - dotRadius, dotY - dotRadius, dotRadius * 2.0f,
+                      dotRadius * 2.0f);
+    }
 
     // Draw overlay label at top-left corner
     if (overlayLabel_.isNotEmpty()) {
@@ -175,6 +181,16 @@ void BarsBeatsTicksLabel::paint(juce::Graphics& g) {
         g.drawText(overlayLabel_, 2, 1, static_cast<int>(bounds.getWidth()) - 4, 8,
                    juce::Justification::topLeft, false);
     }
+}
+
+void BarsBeatsTicksLabel::setTextOverride(const juce::String& text) {
+    textOverride_ = text;
+    repaint();
+}
+
+void BarsBeatsTicksLabel::clearTextOverride() {
+    textOverride_.clear();
+    repaint();
 }
 
 bool BarsBeatsTicksLabel::isDragging() const {
@@ -229,7 +245,7 @@ juce::String BarsBeatsTicksLabel::SegmentLabel::formatDisplay() const {
 }
 
 void BarsBeatsTicksLabel::SegmentLabel::paint(juce::Graphics& g) {
-    if (!isEditing_) {
+    if (!isEditing_ && owner_.textOverride_.isEmpty()) {
         g.setColour(owner_.getTextColour());
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.drawText(formatDisplay(), getLocalBounds(), juce::Justification::centred, false);

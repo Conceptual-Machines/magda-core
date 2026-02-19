@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unordered_set>
+
 #include "../../common/BarsBeatsTicksLabel.hpp"
 #include "../../common/DraggableValueLabel.hpp"
 #include "../../common/SvgButton.hpp"
@@ -33,7 +35,13 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     void resized() override;
 
     /**
-     * @brief Set the currently selected clip
+     * @brief Set the currently selected clips (batch)
+     * @param clipIds Set of clip IDs to inspect
+     */
+    void setSelectedClips(const std::unordered_set<magda::ClipId>& clipIds);
+
+    /**
+     * @brief Set the currently selected clip (convenience wrapper)
      * @param clipId The clip to inspect (INVALID_CLIP_ID for none)
      */
     void setSelectedClip(magda::ClipId clipId);
@@ -54,8 +62,16 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     void initChannelsSection();
     void initViewport();
 
-    // Current selection
-    magda::ClipId selectedClipId_ = magda::INVALID_CLIP_ID;
+    // Current selection (supports single and multi-clip)
+    std::unordered_set<magda::ClipId> selectedClipIds_;
+
+    /** @brief Returns the primary clip ID (first in set) or INVALID_CLIP_ID if empty */
+    magda::ClipId primaryClipId() const {
+        return selectedClipIds_.empty() ? magda::INVALID_CLIP_ID : *selectedClipIds_.begin();
+    }
+
+    // Multi-selection count label
+    juce::Label clipCountLabel_;
 
     // Clip name and file info
     juce::Label clipNameLabel_;
@@ -91,8 +107,11 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     juce::Label clipBpmValue_;
     std::unique_ptr<magda::DraggableValueLabel> clipBeatsLengthValue_;
 
-    // Pitch section
+    // Pitch section (audio + MIDI)
     juce::Label pitchSectionLabel_;
+    juce::TextButton midiTransposeUpBtn_;
+    juce::TextButton midiTransposeDownBtn_;
+    juce::Label midiTransposeLabel_;
     juce::TextButton autoPitchToggle_;
     juce::TextButton analogPitchToggle_;
     juce::ComboBox autoPitchModeCombo_;
@@ -150,9 +169,44 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     };
     ClipPropsContainer clipPropsContainer_;
 
+    // Multi-selection range cache
+    struct ClipRange {
+        bool valid = false;  // True if at least one clip was processed
+        float minPitchChange = 0.0f, maxPitchChange = 0.0f;
+        int minTranspose = 0, maxTranspose = 0;
+        float minVolumeDB = 0.0f, maxVolumeDB = 0.0f;
+        float minPan = 0.0f, maxPan = 0.0f;
+        float minGainDB = 0.0f, maxGainDB = 0.0f;
+        double minFadeIn = 0.0, maxFadeIn = 0.0;
+        double minFadeOut = 0.0, maxFadeOut = 0.0;
+        double minSpeedRatio = 1.0, maxSpeedRatio = 1.0;
+        double minStartSeconds = 0.0, maxStartSeconds = 0.0;
+        double minLengthSeconds = 0.0, maxLengthSeconds = 0.0;
+        double minOffsetSeconds = 0.0, maxOffsetSeconds = 0.0;
+        // Type flags
+        bool allAudio = true, allMidi = true;
+        bool allArrangement = true, allSession = true;
+    };
+    ClipRange clipRange_;
+
+    // Drag-start tracking for multi-selection delta edits
+    double multiPitchChangeDragStart_ = 0.0;
+    double multiTransposeDragStart_ = 0.0;
+    double multiVolumeDragStart_ = 0.0;
+    double multiPanDragStart_ = 0.0;
+    double multiGainDragStart_ = 0.0;
+    double multiFadeInDragStart_ = 0.0;
+    double multiFadeOutDragStart_ = 0.0;
+    double multiSpeedRatioDragStart_ = 0.0;
+    double multiStartDragStart_ = 0.0;
+    double multiEndDragStart_ = 0.0;
+    double multiOffsetDragStart_ = 0.0;
+
     // Update methods
     void updateFromSelectedClip();
     void showClipControls(bool show);
+    void computeClipRange();
+    void refreshClipRangeDisplay();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipInspector)
 };

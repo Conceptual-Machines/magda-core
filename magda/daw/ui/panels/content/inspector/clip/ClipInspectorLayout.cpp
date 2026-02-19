@@ -6,6 +6,12 @@ namespace magda::daw::ui {
 void ClipInspector::resized() {
     auto bounds = getLocalBounds().reduced(10);
 
+    // Multi-clip count label (above header when multiple clips selected)
+    if (clipCountLabel_.isVisible()) {
+        clipCountLabel_.setBounds(bounds.removeFromTop(20));
+        bounds.removeFromTop(4);
+    }
+
     // Clip name as header with type icon (outside viewport)
     {
         const int iconSize = 18;
@@ -75,7 +81,7 @@ void ClipInspector::resized() {
 
     // Loop row: loop toggle + lstart | lend | phase (only when loop is on)
     if (clipLoopToggle_->isVisible()) {
-        const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId_);
+        const auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
         bool loopOn = clip && (clip->loopEnabled || clip->view == magda::ClipView::Session);
 
         if (loopOn) {
@@ -173,6 +179,18 @@ void ClipInspector::resized() {
             auto row = addRow(valueHeight);
             transientSensitivityValue_->setBounds(row);
         }
+    }
+
+    // MIDI transpose row (label + up/down buttons)
+    if (midiTransposeLabel_.isVisible()) {
+        addSeparator();
+        auto row = addRow(22);
+        midiTransposeLabel_.setBounds(row.removeFromLeft(70));
+        const int btnW = 32;
+        const int btnGap = 4;
+        midiTransposeDownBtn_.setBounds(row.removeFromLeft(btnW).reduced(0, 1));
+        row.removeFromLeft(btnGap);
+        midiTransposeUpBtn_.setBounds(row.removeFromLeft(btnW).reduced(0, 1));
     }
 
     // Separator: after position/warp rows, before Pitch

@@ -74,9 +74,18 @@ void NoteComponent::mouseDown(const juce::MouseEvent& e) {
 
     // Handle Cmd+click for toggle selection (additive)
     if (e.mods.isCommandDown()) {
+        bool wasSelected = isSelected_;
         setSelected(!isSelected_);
-        if (onNoteSelected) {
-            onNoteSelected(noteIndex_, true);
+        if (wasSelected) {
+            // Toggling OFF — notify deselect
+            if (onNoteDeselected) {
+                onNoteDeselected(noteIndex_);
+            }
+        } else {
+            // Toggling ON — additive select
+            if (onNoteSelected) {
+                onNoteSelected(noteIndex_, true);
+            }
         }
         dragMode_ = DragMode::None;
         return;
@@ -167,6 +176,9 @@ void NoteComponent::mouseDrag(const juce::MouseEvent& e) {
             previewStartBeat_ = rawStartBeat;
             previewNoteNumber_ = rawNoteNumber;
 
+            double snappedBeatDelta = previewStartBeat_ - dragStartBeat_;
+            int snappedNoteDelta = previewNoteNumber_ - dragStartNoteNumber_;
+
             // For copy drag, keep original in place and show ghost at destination
             if (isCopyDrag_) {
                 parentGrid_->setCopyDragPreview(previewStartBeat_, previewNoteNumber_,
@@ -174,6 +186,8 @@ void NoteComponent::mouseDrag(const juce::MouseEvent& e) {
             } else {
                 parentGrid_->updateNotePosition(this, previewStartBeat_, previewNoteNumber_,
                                                 dragStartLength_);
+                // Update all other selected notes by the same delta
+                parentGrid_->updateSelectedNotePositions(this, snappedBeatDelta, snappedNoteDelta);
             }
 
             // Notify listeners of drag preview
@@ -203,6 +217,8 @@ void NoteComponent::mouseDrag(const juce::MouseEvent& e) {
             // Update visual position
             parentGrid_->updateNotePosition(this, previewStartBeat_, noteNumber_,
                                             previewLengthBeats_);
+            // Update all other selected notes: shift both start and length for left-resize
+            parentGrid_->updateSelectedNoteLeftResize(this, previewLengthBeats_ - dragStartLength_);
             break;
         }
 
@@ -221,6 +237,8 @@ void NoteComponent::mouseDrag(const juce::MouseEvent& e) {
 
             // Update visual position
             parentGrid_->updateNotePosition(this, dragStartBeat_, noteNumber_, previewLengthBeats_);
+            // Update all other selected notes by the same length delta
+            parentGrid_->updateSelectedNoteLengths(this, previewLengthBeats_ - dragStartLength_);
             break;
         }
 
@@ -247,10 +265,8 @@ void NoteComponent::mouseUp(const juce::MouseEvent& /*e*/) {
                 break;
 
             case DragMode::ResizeLeft:
-                // Resizing from left changes both start and length
-                if (onNoteMoved) {
-                    onNoteMoved(noteIndex_, previewStartBeat_, noteNumber_);
-                }
+                // Left-resize changes both start and length.
+                // Pass fromStart=true so the handler can batch both changes atomically.
                 if (onNoteResized) {
                     onNoteResized(noteIndex_, previewLengthBeats_, true);
                 }
