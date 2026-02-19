@@ -319,10 +319,17 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
                 continue;
             }
 
-            // Use drag velocity if this is the note being dragged (primary clip only)
+            // Use drag velocity if this note is being dragged (primary clip only)
             int velocity = note.velocity;
             if (isDragging_ && isPrimaryClip && i == draggingNoteIndex_) {
                 velocity = currentDragVelocity_;
+            } else if (isDragging_ && isPrimaryClip && !selectionDragStartVelocities_.empty()) {
+                // Multi-selection drag: preview delta on all selected notes
+                auto it = selectionDragStartVelocities_.find(i);
+                if (it != selectionDragStartVelocities_.end()) {
+                    int delta = currentDragVelocity_ - dragStartVelocity_;
+                    velocity = juce::jlimit(1, 127, it->second + delta);
+                }
             }
             // Use preview velocity during ramp/curve editing
             if (isPrimaryClip && !previewVelocities_.empty()) {
@@ -469,7 +476,7 @@ void VelocityLaneComponent::mouseDown(const juce::MouseEvent& e) {
     curveAmount_ = 0.0f;
     previewVelocities_.clear();
 
-    // Normal single-note drag
+    // Normal single-note drag (selection-aware)
     size_t noteIndex = findNoteAtX(e.x);
 
     if (noteIndex != SIZE_MAX) {
@@ -479,6 +486,20 @@ void VelocityLaneComponent::mouseDown(const juce::MouseEvent& e) {
             dragStartVelocity_ = clip->midiNotes[noteIndex].velocity;
             currentDragVelocity_ = yToVelocity(e.y);
             isDragging_ = true;
+
+            // B5: Store starting velocities of all selected notes
+            selectionDragStartVelocities_.clear();
+            bool noteIsSelected =
+                std::find(selectedNoteIndices_.begin(), selectedNoteIndices_.end(), noteIndex) !=
+                selectedNoteIndices_.end();
+            if (noteIsSelected && selectedNoteIndices_.size() > 1) {
+                for (size_t idx : selectedNoteIndices_) {
+                    if (idx < clip->midiNotes.size()) {
+                        selectionDragStartVelocities_[idx] = clip->midiNotes[idx].velocity;
+                    }
+                }
+            }
+
             repaint();
         }
     }
@@ -554,12 +575,23 @@ void VelocityLaneComponent::mouseUp(const juce::MouseEvent& e) {
 
     if (isDragging_ && draggingNoteIndex_ != SIZE_MAX) {
         int finalVelocity = yToVelocity(e.y);
+        int velocityDelta = finalVelocity - dragStartVelocity_;
 
-        // Only commit if velocity actually changed
-        if (finalVelocity != dragStartVelocity_ && onVelocityChanged) {
-            onVelocityChanged(clipId_, draggingNoteIndex_, finalVelocity);
+        if (velocityDelta != 0) {
+            // B5: If we're dragging with a multi-selection, apply delta to all selected notes
+            if (!selectionDragStartVelocities_.empty() && onMultiVelocityChanged) {
+                std::vector<std::pair<size_t, int>> velocities;
+                for (const auto& [idx, startVel] : selectionDragStartVelocities_) {
+                    int newVel = juce::jlimit(1, 127, startVel + velocityDelta);
+                    velocities.emplace_back(idx, newVel);
+                }
+                onMultiVelocityChanged(clipId_, velocities);
+            } else if (onVelocityChanged) {
+                onVelocityChanged(clipId_, draggingNoteIndex_, finalVelocity);
+            }
         }
 
+        selectionDragStartVelocities_.clear();
         draggingNoteIndex_ = SIZE_MAX;
         isDragging_ = false;
         repaint();

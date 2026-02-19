@@ -150,6 +150,10 @@ class PianoRollGridComponent : public juce::Component,
                             double length) override;
     void setCopyDragPreview(double beat, int noteNumber, double length, juce::Colour colour,
                             bool active, size_t sourceNoteIndex) override;
+    void updateSelectedNotePositions(NoteComponent* draggedNote, double beatDelta,
+                                     int noteDelta) override;
+    void updateSelectedNoteLengths(NoteComponent* draggedNote, double lengthDelta) override;
+    void updateSelectedNoteLeftResize(NoteComponent* draggedNote, double lengthDelta) override;
 
     // Refresh note components from clip data
     void refreshNotes();
@@ -180,6 +184,14 @@ class PianoRollGridComponent : public juce::Component,
     // Callback for drag preview (for syncing velocity lane position)
     std::function<void(ClipId, size_t, double, bool)>
         onNoteDragging;  // clipId, index, previewBeat, isDragging
+
+    // Callbacks for multi-note operations (single undo step)
+    std::function<void(ClipId, std::vector<MoveMultipleMidiNotesCommand::NoteMove>)>
+        onMultipleNotesMoved;
+    std::function<void(ClipId, std::vector<std::pair<size_t, double>>)> onMultipleNotesResized;
+    std::function<void(ClipId, std::vector<MoveMultipleMidiNotesCommand::NoteMove>,
+                       std::vector<std::pair<size_t, double>>)>
+        onLeftResizeMultipleNotes;  // compound move+resize for left-edge resize
 
     // Callbacks for edit operations from context menu
     std::function<void(ClipId, std::vector<size_t>, QuantizeMode)> onQuantizeNotes;

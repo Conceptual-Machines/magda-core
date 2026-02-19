@@ -104,7 +104,15 @@ void InspectorContainer::trackSelectionChanged(magda::TrackId trackId) {
 void InspectorContainer::clipSelectionChanged(magda::ClipId clipId) {
     auto* clipInspector = dynamic_cast<ClipInspector*>(currentInspector_.get());
     if (clipInspector) {
-        clipInspector->setSelectedClip(clipId);
+        clipInspector->setSelectedClips({clipId});
+    }
+}
+
+void InspectorContainer::multiClipSelectionChanged(
+    const std::unordered_set<magda::ClipId>& clipIds) {
+    auto* clipInspector = dynamic_cast<ClipInspector*>(currentInspector_.get());
+    if (clipInspector) {
+        clipInspector->setSelectedClips(clipIds);
     }
 }
 

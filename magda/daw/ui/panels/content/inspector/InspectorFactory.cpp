@@ -15,6 +15,9 @@ std::unique_ptr<BaseInspector> InspectorFactory::createInspector(magda::Selectio
         case magda::SelectionType::Clip:
             return std::make_unique<ClipInspector>();
 
+        case magda::SelectionType::MultiClip:
+            return std::make_unique<ClipInspector>();
+
         case magda::SelectionType::Note:
             return std::make_unique<NoteInspector>();
 

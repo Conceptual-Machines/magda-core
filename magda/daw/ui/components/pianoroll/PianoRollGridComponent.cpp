@@ -616,6 +616,45 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
 }
 
 bool PianoRollGridComponent::keyPressed(const juce::KeyPress& key) {
+    // M5: Cmd+A — Select all notes
+    if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'A') {
+        if (clipId_ == INVALID_CLIP_ID)
+            return false;
+
+        std::vector<size_t> allIndices;
+        for (auto& nc : noteComponents_) {
+            if (nc->getSourceClipId() == clipId_) {
+                nc->setSelected(true);
+                allIndices.push_back(nc->getNoteIndex());
+            }
+        }
+
+        if (onNoteSelectionChanged) {
+            onNoteSelectionChanged(clipId_, allIndices);
+        }
+        repaint();
+        return true;
+    }
+
+    // M2: Delete/Backspace — Delete all selected notes
+    if (key.getKeyCode() == juce::KeyPress::deleteKey ||
+        key.getKeyCode() == juce::KeyPress::backspaceKey) {
+        if (clipId_ == INVALID_CLIP_ID)
+            return false;
+
+        std::vector<size_t> selectedIndices;
+        for (const auto& nc : noteComponents_) {
+            if (nc->isSelected() && nc->getSourceClipId() == clipId_) {
+                selectedIndices.push_back(nc->getNoteIndex());
+            }
+        }
+
+        if (!selectedIndices.empty() && onDeleteNotes) {
+            onDeleteNotes(clipId_, selectedIndices);
+        }
+        return !selectedIndices.empty();
+    }
+
     // Arrow up/down: move selected notes by semitone (or octave with Shift)
     // Alt+arrows reserved for viewport scrolling
     if (!key.getModifiers().isAltDown() && (key.getKeyCode() == juce::KeyPress::upKey ||
@@ -641,12 +680,56 @@ bool PianoRollGridComponent::keyPressed(const juce::KeyPress& key) {
                 return true;  // Consume but don't move
         }
 
-        // Move each selected note
+        // B3 fix: batch all pitch moves into a single command
+        std::vector<MoveMultipleMidiNotesCommand::NoteMove> moves;
         for (size_t idx : noteSel.noteIndices) {
             const auto& note = clip->midiNotes[idx];
-            auto cmd = std::make_unique<MoveMidiNoteCommand>(noteSel.clipId, idx, note.startBeat,
-                                                             note.noteNumber + delta);
-            UndoManager::getInstance().executeCommand(std::move(cmd));
+            moves.push_back({idx, note.startBeat, note.noteNumber + delta});
+        }
+
+        if (moves.size() > 1 && onMultipleNotesMoved) {
+            onMultipleNotesMoved(noteSel.clipId, std::move(moves));
+        } else if (moves.size() == 1 && onNoteMoved) {
+            onNoteMoved(noteSel.clipId, moves[0].noteIndex, moves[0].newStartBeat,
+                        moves[0].newNoteNumber);
+        }
+        return true;
+    }
+
+    // M6: Left/Right arrow — nudge selected notes by one grid step
+    if (!key.getModifiers().isAltDown() && (key.getKeyCode() == juce::KeyPress::leftKey ||
+                                            key.getKeyCode() == juce::KeyPress::rightKey)) {
+        const auto& noteSel = SelectionManager::getInstance().getNoteSelection();
+        if (!noteSel.isValid())
+            return false;
+
+        const auto* clip = ClipManager::getInstance().getClip(noteSel.clipId);
+        if (!clip || clip->type != ClipType::MIDI)
+            return false;
+
+        double nudge = gridResolutionBeats_;
+        if (key.getKeyCode() == juce::KeyPress::leftKey)
+            nudge = -nudge;
+
+        // Check all notes stay at >= 0
+        for (size_t idx : noteSel.noteIndices) {
+            if (idx >= clip->midiNotes.size())
+                return false;
+            if (clip->midiNotes[idx].startBeat + nudge < 0.0)
+                return true;  // Consume but don't move
+        }
+
+        std::vector<MoveMultipleMidiNotesCommand::NoteMove> moves;
+        for (size_t idx : noteSel.noteIndices) {
+            const auto& note = clip->midiNotes[idx];
+            moves.push_back({idx, note.startBeat + nudge, note.noteNumber});
+        }
+
+        if (moves.size() > 1 && onMultipleNotesMoved) {
+            onMultipleNotesMoved(noteSel.clipId, std::move(moves));
+        } else if (moves.size() == 1 && onNoteMoved) {
+            onNoteMoved(noteSel.clipId, moves[0].noteIndex, moves[0].newStartBeat,
+                        moves[0].newNoteNumber);
         }
         return true;
     }
@@ -870,6 +953,97 @@ void PianoRollGridComponent::setCopyDragPreview(double beat, int noteNumber, dou
     repaint();
 }
 
+void PianoRollGridComponent::updateSelectedNotePositions(NoteComponent* draggedNote,
+                                                         double beatDelta, int noteDelta) {
+    if (!draggedNote)
+        return;
+
+    ClipId dragClipId = draggedNote->getSourceClipId();
+    const auto* clip = ClipManager::getInstance().getClip(dragClipId);
+    if (!clip)
+        return;
+
+    for (auto& nc : noteComponents_) {
+        if (nc.get() == draggedNote)
+            continue;
+        if (nc->getSourceClipId() != dragClipId)
+            continue;
+        if (!nc->isSelected())
+            continue;
+
+        size_t idx = nc->getNoteIndex();
+        if (idx >= clip->midiNotes.size())
+            continue;
+
+        const auto& note = clip->midiNotes[idx];
+        double newBeat = juce::jmax(0.0, note.startBeat + beatDelta);
+        int newNote = juce::jlimit(0, 127, note.noteNumber + noteDelta);
+        updateNotePosition(nc.get(), newBeat, newNote, note.lengthBeats);
+    }
+}
+
+void PianoRollGridComponent::updateSelectedNoteLengths(NoteComponent* draggedNote,
+                                                       double lengthDelta) {
+    if (!draggedNote)
+        return;
+
+    ClipId dragClipId = draggedNote->getSourceClipId();
+    const auto* clip = ClipManager::getInstance().getClip(dragClipId);
+    if (!clip)
+        return;
+
+    constexpr double MIN_LENGTH = 1.0 / 16.0;
+
+    for (auto& nc : noteComponents_) {
+        if (nc.get() == draggedNote)
+            continue;
+        if (nc->getSourceClipId() != dragClipId)
+            continue;
+        if (!nc->isSelected())
+            continue;
+
+        size_t idx = nc->getNoteIndex();
+        if (idx >= clip->midiNotes.size())
+            continue;
+
+        const auto& note = clip->midiNotes[idx];
+        double newLength = juce::jmax(MIN_LENGTH, note.lengthBeats + lengthDelta);
+        updateNotePosition(nc.get(), note.startBeat, note.noteNumber, newLength);
+    }
+}
+
+void PianoRollGridComponent::updateSelectedNoteLeftResize(NoteComponent* draggedNote,
+                                                          double lengthDelta) {
+    if (!draggedNote)
+        return;
+
+    ClipId dragClipId = draggedNote->getSourceClipId();
+    const auto* clip = ClipManager::getInstance().getClip(dragClipId);
+    if (!clip)
+        return;
+
+    constexpr double MIN_LENGTH = 1.0 / 16.0;
+    double beatDelta = -lengthDelta;  // Start shifts opposite to length change
+
+    for (auto& nc : noteComponents_) {
+        if (nc.get() == draggedNote)
+            continue;
+        if (nc->getSourceClipId() != dragClipId)
+            continue;
+        if (!nc->isSelected())
+            continue;
+
+        size_t idx = nc->getNoteIndex();
+        if (idx >= clip->midiNotes.size())
+            continue;
+
+        const auto& note = clip->midiNotes[idx];
+        double newLength = juce::jmax(MIN_LENGTH, note.lengthBeats + lengthDelta);
+        double newStart = juce::jmax(0.0, note.startBeat + beatDelta);
+        updateNotePosition(nc.get(), newStart, note.noteNumber, newLength);
+    }
+}
+
 void PianoRollGridComponent::selectNoteAfterRefresh(ClipId clipId, int noteIndex) {
     pendingSelectClipId_ = clipId;
     pendingSelectNoteIndex_ = noteIndex;
@@ -1040,14 +1214,25 @@ void PianoRollGridComponent::createNoteComponents() {
                 }
             };
 
+            noteComp->onNoteDeselected = [this, clipId](size_t index) {
+                // Cmd+click toggled this note OFF — remove from SelectionManager
+                if (onNoteSelectionChanged) {
+                    std::vector<size_t> selectedIndices;
+                    for (auto& nc : noteComponents_) {
+                        if (nc->isSelected()) {
+                            selectedIndices.push_back(nc->getNoteIndex());
+                        }
+                    }
+                    onNoteSelectionChanged(clipId, selectedIndices);
+                }
+            };
+
             noteComp->onNoteMoved = [this, clipId](size_t index, double newBeat,
                                                    int newNoteNumber) {
-                if (!onNoteMoved)
-                    return;
-
                 const auto* srcClip = ClipManager::getInstance().getClip(clipId);
                 if (!srcClip || index >= srcClip->midiNotes.size()) {
-                    onNoteMoved(clipId, index, newBeat, newNoteNumber);
+                    if (onNoteMoved)
+                        onNoteMoved(clipId, index, newBeat, newNoteNumber);
                     return;
                 }
 
@@ -1055,10 +1240,10 @@ void PianoRollGridComponent::createNoteComponents() {
                 double beatDelta = newBeat - sourceNote.startBeat;
                 int noteDelta = newNoteNumber - sourceNote.noteNumber;
 
-                // Move the dragged note
-                onNoteMoved(clipId, index, newBeat, newNoteNumber);
+                // Collect all selected notes into a single batch move
+                std::vector<MoveMultipleMidiNotesCommand::NoteMove> moves;
+                moves.push_back({index, newBeat, newNoteNumber});
 
-                // Move other selected notes with the same delta
                 for (auto& nc : noteComponents_) {
                     if (nc->getSourceClipId() != clipId)
                         continue;
@@ -1076,7 +1261,13 @@ void PianoRollGridComponent::createNoteComponents() {
                     int otherNewNote =
                         juce::jlimit(MIN_NOTE, MAX_NOTE, otherNote.noteNumber + noteDelta);
 
-                    onNoteMoved(clipId, otherIndex, otherNewBeat, otherNewNote);
+                    moves.push_back({otherIndex, otherNewBeat, otherNewNote});
+                }
+
+                if (moves.size() > 1 && onMultipleNotesMoved) {
+                    onMultipleNotesMoved(clipId, std::move(moves));
+                } else if (onNoteMoved) {
+                    onNoteMoved(clipId, index, newBeat, newNoteNumber);
                 }
             };
 
@@ -1126,17 +1317,94 @@ void PianoRollGridComponent::createNoteComponents() {
 
             noteComp->onNoteResized = [this, clipId](size_t index, double newLength,
                                                      bool fromStart) {
-                (void)fromStart;  // Length change is already computed
-                if (onNoteResized) {
+                const auto* srcClip = ClipManager::getInstance().getClip(clipId);
+                if (!srcClip || index >= srcClip->midiNotes.size()) {
+                    if (onNoteResized)
+                        onNoteResized(clipId, index, newLength);
+                    return;
+                }
+
+                // Compute length delta from the dragged note
+                double lengthDelta = newLength - srcClip->midiNotes[index].lengthBeats;
+                constexpr double MIN_LENGTH = 1.0 / 16.0;
+
+                // Collect all selected notes into a batch resize
+                std::vector<std::pair<size_t, double>> resizes;
+                resizes.emplace_back(index, newLength);
+
+                // For left-resize, also collect start position moves
+                // (start shifts by -lengthDelta to keep the right edge fixed)
+                std::vector<MoveMultipleMidiNotesCommand::NoteMove> moves;
+                if (fromStart) {
+                    double beatDelta = -lengthDelta;
+                    const auto& draggedNote = srcClip->midiNotes[index];
+                    moves.push_back({index, juce::jmax(0.0, draggedNote.startBeat + beatDelta),
+                                     draggedNote.noteNumber});
+                }
+
+                for (auto& nc : noteComponents_) {
+                    if (nc->getSourceClipId() != clipId)
+                        continue;
+                    if (nc->getNoteIndex() == index)
+                        continue;
+                    if (!nc->isSelected())
+                        continue;
+
+                    size_t otherIndex = nc->getNoteIndex();
+                    if (otherIndex >= srcClip->midiNotes.size())
+                        continue;
+
+                    double otherNewLength = juce::jmax(
+                        MIN_LENGTH, srcClip->midiNotes[otherIndex].lengthBeats + lengthDelta);
+                    resizes.emplace_back(otherIndex, otherNewLength);
+
+                    if (fromStart) {
+                        double beatDelta = -lengthDelta;
+                        const auto& otherNote = srcClip->midiNotes[otherIndex];
+                        moves.push_back({otherIndex,
+                                         juce::jmax(0.0, otherNote.startBeat + beatDelta),
+                                         otherNote.noteNumber});
+                    }
+                }
+
+                if (fromStart && !moves.empty() && resizes.size() > 1) {
+                    // Left-resize with multi-selection: compound move+resize as one undo step
+                    if (onLeftResizeMultipleNotes)
+                        onLeftResizeMultipleNotes(clipId, std::move(moves), std::move(resizes));
+                } else if (fromStart && resizes.size() == 1) {
+                    // Left-resize single note: compound move+resize
+                    if (!moves.empty() && onNoteMoved)
+                        onNoteMoved(clipId, moves[0].noteIndex, moves[0].newStartBeat,
+                                    moves[0].newNoteNumber);
+                    if (onNoteResized)
+                        onNoteResized(clipId, index, newLength);
+                } else if (resizes.size() > 1 && onMultipleNotesResized) {
+                    onMultipleNotesResized(clipId, std::move(resizes));
+                } else if (onNoteResized) {
                     onNoteResized(clipId, index, newLength);
                 }
             };
 
             noteComp->onNoteDeleted = [this, clipId](size_t index) {
-                if (onNoteDeleted) {
-                    onNoteDeleted(clipId, index);
-                    selectedNoteIndex_ = -1;
+                // If the double-clicked note is part of a multi-selection,
+                // delete all selected notes instead of just this one
+                std::vector<size_t> selectedIndices;
+                bool indexIsSelected = false;
+                for (const auto& nc : noteComponents_) {
+                    if (nc->isSelected()) {
+                        selectedIndices.push_back(nc->getNoteIndex());
+                        if (nc->getNoteIndex() == index) {
+                            indexIsSelected = true;
+                        }
+                    }
                 }
+
+                if (indexIsSelected && selectedIndices.size() > 1 && onDeleteNotes) {
+                    onDeleteNotes(clipId, selectedIndices);
+                } else if (onNoteDeleted) {
+                    onNoteDeleted(clipId, index);
+                }
+                selectedNoteIndex_ = -1;
             };
 
             noteComp->onNoteDragging = [this, clipId](size_t index, double previewBeat,

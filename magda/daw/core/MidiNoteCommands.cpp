@@ -321,6 +321,130 @@ void SetMultipleNoteVelocitiesCommand::undo() {
 }
 
 // ============================================================================
+// MoveMultipleMidiNotesCommand
+// ============================================================================
+
+MoveMultipleMidiNotesCommand::MoveMultipleMidiNotesCommand(ClipId clipId,
+                                                           std::vector<NoteMove> moves)
+    : clipId_(clipId), moves_(std::move(moves)) {}
+
+void MoveMultipleMidiNotesCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || clip->type != ClipType::MIDI) {
+        return;
+    }
+
+    // Capture old values on first execute
+    if (!executed_) {
+        oldValues_.clear();
+        oldValues_.reserve(moves_.size());
+        for (const auto& move : moves_) {
+            if (move.noteIndex < clip->midiNotes.size()) {
+                oldValues_.push_back({clip->midiNotes[move.noteIndex].startBeat,
+                                      clip->midiNotes[move.noteIndex].noteNumber});
+            }
+        }
+    }
+
+    // Apply moves
+    for (const auto& move : moves_) {
+        if (move.noteIndex < clip->midiNotes.size()) {
+            clip->midiNotes[move.noteIndex].startBeat = move.newStartBeat;
+            clip->midiNotes[move.noteIndex].noteNumber = move.newNoteNumber;
+        }
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void MoveMultipleMidiNotesCommand::undo() {
+    if (!executed_) {
+        return;
+    }
+
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || clip->type != ClipType::MIDI) {
+        return;
+    }
+
+    // Restore old values
+    for (size_t i = 0; i < moves_.size() && i < oldValues_.size(); ++i) {
+        size_t index = moves_[i].noteIndex;
+        if (index < clip->midiNotes.size()) {
+            clip->midiNotes[index].startBeat = oldValues_[i].startBeat;
+            clip->midiNotes[index].noteNumber = oldValues_[i].noteNumber;
+        }
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+// ============================================================================
+// ResizeMultipleMidiNotesCommand
+// ============================================================================
+
+ResizeMultipleMidiNotesCommand::ResizeMultipleMidiNotesCommand(
+    ClipId clipId, std::vector<std::pair<size_t, double>> noteLengths)
+    : clipId_(clipId), newLengths_(std::move(noteLengths)) {}
+
+void ResizeMultipleMidiNotesCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || clip->type != ClipType::MIDI) {
+        return;
+    }
+
+    // Capture old lengths on first execute
+    if (!executed_) {
+        oldLengths_.clear();
+        oldLengths_.reserve(newLengths_.size());
+        for (const auto& [index, newLen] : newLengths_) {
+            if (index < clip->midiNotes.size()) {
+                oldLengths_.emplace_back(index, clip->midiNotes[index].lengthBeats);
+            }
+        }
+    }
+
+    // Apply new lengths
+    for (const auto& [index, newLen] : newLengths_) {
+        if (index < clip->midiNotes.size()) {
+            clip->midiNotes[index].lengthBeats = newLen;
+        }
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void ResizeMultipleMidiNotesCommand::undo() {
+    if (!executed_) {
+        return;
+    }
+
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || clip->type != ClipType::MIDI) {
+        return;
+    }
+
+    // Restore old lengths
+    for (const auto& [index, oldLen] : oldLengths_) {
+        if (index < clip->midiNotes.size()) {
+            clip->midiNotes[index].lengthBeats = oldLen;
+        }
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+// ============================================================================
 // MoveMidiNoteBetweenClipsCommand
 // ============================================================================
 
@@ -593,6 +717,71 @@ void AddMultipleMidiNotesCommand::undo() {
     }
 
     clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+// ============================================================================
+// TransposeMidiClipCommand
+// ============================================================================
+
+TransposeMidiClipCommand::TransposeMidiClipCommand(ClipId clipId, int semitones)
+    : clipId_(clipId), semitones_(semitones) {}
+
+void TransposeMidiClipCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || clip->type != ClipType::MIDI || clip->midiNotes.empty()) {
+        return;
+    }
+
+    // Capture old note numbers on first execute
+    if (!executed_) {
+        oldNoteNumbers_.clear();
+        oldNoteNumbers_.reserve(clip->midiNotes.size());
+        for (const auto& note : clip->midiNotes) {
+            oldNoteNumbers_.push_back(note.noteNumber);
+        }
+    }
+
+    // Apply transpose, clamping to MIDI range
+    for (auto& note : clip->midiNotes) {
+        note.noteNumber = juce::jlimit(0, 127, note.noteNumber + semitones_);
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void TransposeMidiClipCommand::undo() {
+    if (!executed_) {
+        return;
+    }
+
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || clip->type != ClipType::MIDI) {
+        return;
+    }
+
+    // Restore old note numbers
+    for (size_t i = 0; i < oldNoteNumbers_.size() && i < clip->midiNotes.size(); ++i) {
+        clip->midiNotes[i].noteNumber = oldNoteNumbers_[i];
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+bool TransposeMidiClipCommand::canMergeWith(const UndoableCommand* other) const {
+    auto* otherTranspose = dynamic_cast<const TransposeMidiClipCommand*>(other);
+    return otherTranspose && otherTranspose->clipId_ == clipId_;
+}
+
+void TransposeMidiClipCommand::mergeWith(const UndoableCommand* other) {
+    auto* otherTranspose = dynamic_cast<const TransposeMidiClipCommand*>(other);
+    if (otherTranspose) {
+        semitones_ += otherTranspose->semitones_;
+    }
 }
 
 }  // namespace magda

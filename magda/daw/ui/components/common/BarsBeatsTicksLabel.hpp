@@ -47,6 +47,10 @@ class BarsBeatsTicksLabel : public juce::Component {
     // Whether to draw background fill + border (default: true)
     void setDrawBackground(bool draw);
 
+    // Text override: when set, displays this text instead of bars.beats.ticks segments
+    void setTextOverride(const juce::String& text);
+    void clearTextOverride();
+
     // Whether any segment is currently being dragged
     bool isDragging() const;
 
@@ -77,6 +81,7 @@ class BarsBeatsTicksLabel : public juce::Component {
     bool hasCustomTextColour_ = false;
     juce::String overlayLabel_;
     bool drawBackground_ = true;
+    juce::String textOverride_;
 
     std::unique_ptr<SegmentLabel> barsSegment_;
     std::unique_ptr<SegmentLabel> beatsSegment_;

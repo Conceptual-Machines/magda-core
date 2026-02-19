@@ -275,6 +275,13 @@ class DrumGridClipGrid : public juce::Component,
         repaint();
     }
 
+    void updateSelectedNotePositions(magda::NoteComponent* /*draggedNote*/, double /*beatDelta*/,
+                                     int /*noteDelta*/) override {}
+    void updateSelectedNoteLengths(magda::NoteComponent* /*draggedNote*/,
+                                   double /*lengthDelta*/) override {}
+    void updateSelectedNoteLeftResize(magda::NoteComponent* /*draggedNote*/,
+                                      double /*lengthDelta*/) override {}
+
     // -- ClipManagerListener --
 
     void clipsChanged() override {}

@@ -89,6 +89,9 @@ class VelocityLaneComponent : public juce::Component {
     // Selected note indices (synced from SelectionManager)
     std::vector<size_t> selectedNoteIndices_;
 
+    // Selection-aware drag: starting velocities of selected notes
+    std::unordered_map<size_t, int> selectionDragStartVelocities_;
+
     // Alt+drag ramp state
     bool isRampDragging_ = false;
     int rampStartVelocity_ = 0;
