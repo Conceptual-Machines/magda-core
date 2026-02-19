@@ -1293,20 +1293,15 @@ void TrackContentPanel::clipsChanged() {
 
 void TrackContentPanel::clipPropertyChanged(ClipId clipId) {
     // Find the clip component and update its position/size
-    // Skip if any clip is being dragged to prevent flicker
     for (auto& clipComp : clipComponents_) {
         if (clipComp->getClipId() == clipId) {
-            // Check if any clip is currently being dragged
-            bool anyDragging = false;
-            for (const auto& cc : clipComponents_) {
-                if (cc->isCurrentlyDragging()) {
-                    anyDragging = true;
-                    break;
-                }
+            // Skip if THIS clip is the one being dragged (it manages its own bounds)
+            if (clipComp->isCurrentlyDragging()) {
+                break;
             }
-            if (!anyDragging) {
-                updateClipComponentPositions();
-            }
+            // Update all clip positions (updateClipComponentPositions already
+            // skips dragging clips internally)
+            updateClipComponentPositions();
             break;
         }
     }
