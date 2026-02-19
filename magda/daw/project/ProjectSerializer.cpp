@@ -4,6 +4,7 @@
 
 #include "../core/AutomationManager.hpp"
 #include "../core/ClipManager.hpp"
+#include "../core/SelectionManager.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/ViewModeState.hpp"
 
@@ -232,6 +233,10 @@ void ProjectSerializer::commitStagedData(std::vector<TrackInfo>& stagedTracks,
     auto& clipManager = ClipManager::getInstance();
     auto& automationManager = AutomationManager::getInstance();
 
+    // Clear selection state before clearing managers to ensure all listeners
+    // are properly notified (prevents stale selection after project load)
+    SelectionManager::getInstance().clearSelection();
+
     // Clear all existing data from managers
     trackManager.clearAllTracks();
     clipManager.clearAllClips();
@@ -263,6 +268,11 @@ void ProjectSerializer::commitStagedData(std::vector<TrackInfo>& stagedTracks,
 
     // Update automation ID counters to avoid collisions
     automationManager.refreshIdCountersFromLanes();
+
+    // Select the first track so the UI has a valid selection after load
+    if (!stagedTracks.empty()) {
+        SelectionManager::getInstance().selectTrack(stagedTracks[0].id);
+    }
 }
 
 // ============================================================================
@@ -1078,6 +1088,8 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("length", clip.length);
     obj->setProperty("view", static_cast<int>(clip.view));
     obj->setProperty("loopEnabled", clip.loopEnabled);
+    obj->setProperty("loopStart", clip.loopStart);
+    obj->setProperty("loopLength", clip.loopLength);
     obj->setProperty("sceneIndex", clip.sceneIndex);
     obj->setProperty("launchMode", static_cast<int>(clip.launchMode));
     obj->setProperty("launchQuantize", static_cast<int>(clip.launchQuantize));
@@ -1088,12 +1100,58 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("gridDenominator", clip.gridDenominator);
     obj->setProperty("gridSnapEnabled", clip.gridSnapEnabled);
 
+    // Per-clip mix
+    obj->setProperty("volumeDB", clip.volumeDB);
+    obj->setProperty("gainDB", clip.gainDB);
+    obj->setProperty("pan", clip.pan);
+
+    // Fades
+    obj->setProperty("fadeIn", clip.fadeIn);
+    obj->setProperty("fadeOut", clip.fadeOut);
+    obj->setProperty("fadeInType", clip.fadeInType);
+    obj->setProperty("fadeOutType", clip.fadeOutType);
+    obj->setProperty("fadeInBehaviour", clip.fadeInBehaviour);
+    obj->setProperty("fadeOutBehaviour", clip.fadeOutBehaviour);
+    obj->setProperty("autoCrossfade", clip.autoCrossfade);
+
+    // Pitch
+    obj->setProperty("pitchChange", clip.pitchChange);
+    obj->setProperty("transpose", clip.transpose);
+    obj->setProperty("autoPitch", clip.autoPitch);
+    obj->setProperty("autoPitchMode", clip.autoPitchMode);
+
+    // Playback
+    obj->setProperty("isReversed", clip.isReversed);
+
+    // Beat detection
+    obj->setProperty("autoDetectBeats", clip.autoDetectBeats);
+    obj->setProperty("beatSensitivity", clip.beatSensitivity);
+
+    // Channels
+    obj->setProperty("leftChannelActive", clip.leftChannelActive);
+    obj->setProperty("rightChannelActive", clip.rightChannelActive);
+
+    // Auto-tempo / Musical mode & beat-based properties
+    obj->setProperty("autoTempo", clip.autoTempo);
+    obj->setProperty("startBeats", clip.startBeats);
+    obj->setProperty("lengthBeats", clip.lengthBeats);
+    obj->setProperty("loopStartBeats", clip.loopStartBeats);
+    obj->setProperty("loopLengthBeats", clip.loopLengthBeats);
+
+    // Source metadata
+    if (clip.sourceNumBeats > 0.0)
+        obj->setProperty("sourceNumBeats", clip.sourceNumBeats);
+    if (clip.sourceBPM > 0.0)
+        obj->setProperty("sourceBPM", clip.sourceBPM);
+
+    // MIDI offset
+    if (clip.midiOffset != 0.0)
+        obj->setProperty("midiOffset", clip.midiOffset);
+
     // Audio properties (TE-aligned model)
     if (clip.audioFilePath.isNotEmpty()) {
         obj->setProperty("audioFilePath", clip.audioFilePath);
         obj->setProperty("offset", clip.offset);
-        obj->setProperty("loopStart", clip.loopStart);
-        obj->setProperty("loopLength", clip.loopLength);
         obj->setProperty("speedRatio", clip.speedRatio);
         if (clip.warpEnabled) {
             obj->setProperty("warpEnabled", clip.warpEnabled);
@@ -1161,127 +1219,80 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     if (!viewVar.isVoid()) {
         outClip.view = static_cast<ClipView>(static_cast<int>(viewVar));
     }
-    // Loop settings (new model)
-    auto loopEnabledVar = obj->getProperty("loopEnabled");
-    if (!loopEnabledVar.isVoid()) {
-        outClip.loopEnabled = static_cast<bool>(loopEnabledVar);
-    } else {
-        // Backward compatibility: try old field name
-        outClip.loopEnabled = obj->getProperty("internalLoopEnabled");
-    }
+    // Loop settings
+    outClip.loopEnabled = static_cast<bool>(obj->getProperty("loopEnabled"));
+    outClip.loopStart = obj->getProperty("loopStart");
+    outClip.loopLength = obj->getProperty("loopLength");
     outClip.sceneIndex = obj->getProperty("sceneIndex");
 
-    // Launch properties (backward compatible - defaults apply if missing)
-    auto launchModeVar = obj->getProperty("launchMode");
-    if (!launchModeVar.isVoid()) {
-        outClip.launchMode = static_cast<LaunchMode>(static_cast<int>(launchModeVar));
-    }
-    auto launchQuantizeVar = obj->getProperty("launchQuantize");
-    if (!launchQuantizeVar.isVoid()) {
-        outClip.launchQuantize = static_cast<LaunchQuantize>(static_cast<int>(launchQuantizeVar));
-    }
+    // Launch properties
+    outClip.launchMode = static_cast<LaunchMode>(static_cast<int>(obj->getProperty("launchMode")));
+    outClip.launchQuantize =
+        static_cast<LaunchQuantize>(static_cast<int>(obj->getProperty("launchQuantize")));
 
-    // Per-clip grid settings (backward compatible - defaults apply if missing)
-    if (obj->hasProperty("gridAutoGrid")) {
-        outClip.gridAutoGrid = static_cast<bool>(obj->getProperty("gridAutoGrid"));
-    }
-    if (obj->hasProperty("gridNumerator")) {
-        outClip.gridNumerator = static_cast<int>(obj->getProperty("gridNumerator"));
-    }
-    if (obj->hasProperty("gridDenominator")) {
-        outClip.gridDenominator = static_cast<int>(obj->getProperty("gridDenominator"));
-    }
-    if (obj->hasProperty("gridSnapEnabled")) {
-        outClip.gridSnapEnabled = static_cast<bool>(obj->getProperty("gridSnapEnabled"));
-    }
+    // Per-clip grid settings
+    outClip.gridAutoGrid = static_cast<bool>(obj->getProperty("gridAutoGrid"));
+    outClip.gridNumerator = obj->getProperty("gridNumerator");
+    outClip.gridDenominator = obj->getProperty("gridDenominator");
+    outClip.gridSnapEnabled = static_cast<bool>(obj->getProperty("gridSnapEnabled"));
 
-    // Audio properties (TE-aligned model)
+    // Per-clip mix
+    outClip.volumeDB = static_cast<float>(static_cast<double>(obj->getProperty("volumeDB")));
+    outClip.gainDB = static_cast<float>(static_cast<double>(obj->getProperty("gainDB")));
+    outClip.pan = static_cast<float>(static_cast<double>(obj->getProperty("pan")));
+
+    // Fades
+    outClip.fadeIn = obj->getProperty("fadeIn");
+    outClip.fadeOut = obj->getProperty("fadeOut");
+    outClip.fadeInType = obj->getProperty("fadeInType");
+    outClip.fadeOutType = obj->getProperty("fadeOutType");
+    outClip.fadeInBehaviour = obj->getProperty("fadeInBehaviour");
+    outClip.fadeOutBehaviour = obj->getProperty("fadeOutBehaviour");
+    outClip.autoCrossfade = static_cast<bool>(obj->getProperty("autoCrossfade"));
+
+    // Pitch
+    outClip.pitchChange = static_cast<float>(static_cast<double>(obj->getProperty("pitchChange")));
+    outClip.transpose = obj->getProperty("transpose");
+    outClip.autoPitch = static_cast<bool>(obj->getProperty("autoPitch"));
+    outClip.autoPitchMode = obj->getProperty("autoPitchMode");
+
+    // Playback
+    outClip.isReversed = static_cast<bool>(obj->getProperty("isReversed"));
+
+    // Beat detection
+    outClip.autoDetectBeats = static_cast<bool>(obj->getProperty("autoDetectBeats"));
+    outClip.beatSensitivity =
+        static_cast<float>(static_cast<double>(obj->getProperty("beatSensitivity")));
+
+    // Channels
+    outClip.leftChannelActive = static_cast<bool>(obj->getProperty("leftChannelActive"));
+    outClip.rightChannelActive = static_cast<bool>(obj->getProperty("rightChannelActive"));
+
+    // Auto-tempo / Musical mode & beat-based properties
+    outClip.autoTempo = static_cast<bool>(obj->getProperty("autoTempo"));
+    outClip.startBeats = obj->getProperty("startBeats");
+    outClip.lengthBeats = obj->getProperty("lengthBeats");
+    outClip.loopStartBeats = obj->getProperty("loopStartBeats");
+    outClip.loopLengthBeats = obj->getProperty("loopLengthBeats");
+
+    // Source metadata
+    outClip.sourceNumBeats = obj->getProperty("sourceNumBeats");
+    outClip.sourceBPM = obj->getProperty("sourceBPM");
+
+    // MIDI offset
+    outClip.midiOffset = obj->getProperty("midiOffset");
+
+    // Audio properties
     auto audioFilePathVar = obj->getProperty("audioFilePath");
     if (!audioFilePathVar.isVoid()) {
         outClip.audioFilePath = audioFilePathVar.toString();
-
-        // Try new TE-aligned field names first, fall back to old names for backward compatibility
-        auto offsetVar = obj->getProperty("offset");
-        if (!offsetVar.isVoid()) {
-            outClip.offset = static_cast<double>(offsetVar);
-        } else {
-            // Backward compatibility: try sourceStart, then audioOffset
-            auto sourceStartVar = obj->getProperty("sourceStart");
-            if (!sourceStartVar.isVoid()) {
-                outClip.offset = static_cast<double>(sourceStartVar);
-            } else {
-                outClip.offset = obj->getProperty("audioOffset");
-            }
-        }
-
-        auto loopStartVar = obj->getProperty("loopStart");
-        if (!loopStartVar.isVoid()) {
-            outClip.loopStart = static_cast<double>(loopStartVar);
-        } else {
-            // Backward compatibility: loopStart defaults to offset
-            outClip.loopStart = outClip.offset;
-        }
-
-        auto loopLengthVar = obj->getProperty("loopLength");
-        if (!loopLengthVar.isVoid()) {
-            outClip.loopLength = static_cast<double>(loopLengthVar);
-        } else {
-            // Backward compatibility: try to derive from old sourceEnd
-            auto sourceEndVar = obj->getProperty("sourceEnd");
-            if (!sourceEndVar.isVoid()) {
-                double sourceEnd = static_cast<double>(sourceEndVar);
-                if (sourceEnd > outClip.offset) {
-                    outClip.loopLength = sourceEnd - outClip.offset;
-                }
-            }
-            // Note: loopLength=0 means "use clip length", which is fine for migration
-        }
-
-        auto speedRatioVar = obj->getProperty("speedRatio");
-        if (!speedRatioVar.isVoid()) {
-            outClip.speedRatio = static_cast<double>(speedRatioVar);
-        } else {
-            // Backward compatibility: try stretchFactor, then audioStretchFactor
-            auto stretchVar = obj->getProperty("stretchFactor");
-            if (!stretchVar.isVoid()) {
-                outClip.speedRatio = static_cast<double>(stretchVar);
-            } else {
-                outClip.speedRatio = obj->getProperty("audioStretchFactor");
-            }
-        }
+        outClip.offset = obj->getProperty("offset");
+        outClip.speedRatio = obj->getProperty("speedRatio");
         if (outClip.speedRatio <= 0.0)
             outClip.speedRatio = 1.0;
-
-        auto warpEnabledVar = obj->getProperty("warpEnabled");
-        if (!warpEnabledVar.isVoid()) {
-            outClip.warpEnabled = static_cast<bool>(warpEnabledVar);
-        }
-        auto analogPitchVar = obj->getProperty("analogPitch");
-        if (!analogPitchVar.isVoid()) {
-            outClip.analogPitch = static_cast<bool>(analogPitchVar);
-        }
-        auto timeStretchModeVar = obj->getProperty("timeStretchMode");
-        if (!timeStretchModeVar.isVoid()) {
-            outClip.timeStretchMode = static_cast<int>(timeStretchModeVar);
-        }
-    } else {
-        // Migration from old audioSources format
-        auto audioSourcesVar = obj->getProperty("audioSources");
-        if (audioSourcesVar.isArray()) {
-            auto* arr = audioSourcesVar.getArray();
-            if (arr && !arr->isEmpty()) {
-                auto firstSourceVar = (*arr)[0];
-                if (firstSourceVar.isObject()) {
-                    auto* srcObj = firstSourceVar.getDynamicObject();
-                    outClip.audioFilePath = srcObj->getProperty("filePath").toString();
-                    outClip.offset = srcObj->getProperty("offset");
-                    outClip.loopStart = outClip.offset;
-                    outClip.speedRatio = srcObj->getProperty("stretchFactor");
-                    if (outClip.speedRatio <= 0.0)
-                        outClip.speedRatio = 1.0;
-                }
-            }
-        }
+        outClip.warpEnabled = static_cast<bool>(obj->getProperty("warpEnabled"));
+        outClip.analogPitch = static_cast<bool>(obj->getProperty("analogPitch"));
+        outClip.timeStretchMode = obj->getProperty("timeStretchMode");
     }
 
     // MIDI notes
