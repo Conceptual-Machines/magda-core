@@ -398,7 +398,20 @@ class ClipOperations {
 
         // Use stored beat values when available (set by setAutoTempo / setClipBeats)
         if (clip.loopLengthBeats > 0.0) {
-            return {clip.loopStartBeats, clip.loopLengthBeats};
+            double start = clip.loopStartBeats;
+            double length = clip.loopLengthBeats;
+            // Clamp to sourceNumBeats (TE can't read beyond the file)
+            if (clip.sourceNumBeats > 0.0) {
+                if (length > clip.sourceNumBeats) {
+                    length = clip.sourceNumBeats;
+                    start = 0.0;
+                } else if (start + length > clip.sourceNumBeats) {
+                    start = clip.sourceNumBeats - length;
+                    if (start < 0.0)
+                        start = 0.0;
+                }
+            }
+            return {start, length};
         }
 
         // Derive from source-time seconds using sourceBPM
