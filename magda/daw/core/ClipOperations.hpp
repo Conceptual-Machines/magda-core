@@ -299,26 +299,31 @@ class ClipOperations {
      * Adjusts sourceBPM so TE stretches the same source audio to fill newBeats.
      * Mirrors ClipManager::setLengthBeats logic.
      */
-    static inline void stretchAutoTempoBeats(ClipInfo& clip, double newBeats, double /*bpm*/) {
+    static inline void stretchAutoTempoBeats(ClipInfo& clip, double newTotalBeats, double /*bpm*/) {
         double sourceSeconds = clip.loopLength > 0.0 ? clip.loopLength : clip.getSourceLength();
         if (sourceSeconds <= 0.0)
             return;
 
+        // Compute stretch ratio from total beats (handles multiple loop cycles)
+        double oldTotalBeats = clip.lengthBeats > 0.0 ? clip.lengthBeats : clip.loopLengthBeats;
+        if (oldTotalBeats <= 0.0)
+            return;
+
+        double stretchRatio = newTotalBeats / oldTotalBeats;
+
+        // Scale per-cycle beats proportionally
+        double newLoopBeats = clip.loopLengthBeats * stretchRatio;
+
+        // Update sourceBPM from new per-cycle beats
         double oldSourceBPM = clip.sourceBPM;
-        clip.sourceBPM = newBeats * 60.0 / sourceSeconds;
+        clip.sourceBPM = newLoopBeats * 60.0 / sourceSeconds;
 
         if (oldSourceBPM > 0.0 && clip.sourceNumBeats > 0.0) {
             clip.sourceNumBeats *= clip.sourceBPM / oldSourceBPM;
         }
 
-        double oldLoopLengthBeats = clip.loopLengthBeats;
-        clip.loopLengthBeats = newBeats;
-        if (oldLoopLengthBeats > 0.0) {
-            clip.lengthBeats = clip.lengthBeats * newBeats / oldLoopLengthBeats;
-        } else {
-            clip.lengthBeats = newBeats;
-        }
-
+        clip.loopLengthBeats = newLoopBeats;
+        clip.lengthBeats = newTotalBeats;
         clip.loopStartBeats = clip.loopStart * clip.sourceBPM / 60.0;
     }
 
