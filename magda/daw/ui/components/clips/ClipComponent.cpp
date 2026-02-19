@@ -982,6 +982,19 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         dragMode_ = DragMode::VolumeDrag;
         dragStartVolumeDB_ = clip->volumeDB;
         dragStartClipSnapshot_ = *clip;
+        // Capture selected clips' state for multi-volume
+        dragStartSelectedFadeSnapshots_.clear();
+        const auto& selected = SelectionManager::getInstance().getSelectedClips();
+        if (selected.size() > 1 && selected.count(clipId_)) {
+            auto& cm = ClipManager::getInstance();
+            for (auto cid : selected) {
+                if (cid == clipId_)
+                    continue;
+                const auto* c = cm.getClip(cid);
+                if (c && c->type == ClipType::Audio)
+                    dragStartSelectedFadeSnapshots_[cid] = *c;
+            }
+        }
         repaint();
         return;
     }
@@ -1367,7 +1380,12 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             int deltaY = parentPos.y - dragStartPos_.y;
             float dbDelta = static_cast<float>(-deltaY) * 0.5f;  // Up = louder
             float newGainDB = juce::jlimit(-100.0f, 0.0f, dragStartVolumeDB_ + dbDelta);
-            ClipManager::getInstance().setClipVolumeDB(clipId_, newGainDB);
+            auto& cm = ClipManager::getInstance();
+            cm.setClipVolumeDB(clipId_, newGainDB);
+            for (auto& [cid, snap] : dragStartSelectedFadeSnapshots_) {
+                float otherDB = juce::jlimit(-100.0f, 0.0f, snap.volumeDB + dbDelta);
+                cm.setClipVolumeDB(cid, otherDB);
+            }
             repaint();
             break;
         }
@@ -1696,8 +1714,37 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
             }
 
             case DragMode::VolumeDrag: {
+                // Restore all clips to pre-drag state for correct undo capture
+                auto& cm = ClipManager::getInstance();
+                const auto* current = cm.getClip(clipId_);
+                float finalDB = current ? current->volumeDB : dragStartVolumeDB_;
+                float dbDelta = finalDB - dragStartVolumeDB_;
+
+                if (auto* c = cm.getClip(clipId_))
+                    c->volumeDB = dragStartClipSnapshot_.volumeDB;
+                for (auto& [cid, snap] : dragStartSelectedFadeSnapshots_) {
+                    if (auto* c = cm.getClip(cid))
+                        c->volumeDB = snap.volumeDB;
+                }
+
+                bool isMulti = !dragStartSelectedFadeSnapshots_.empty();
+                if (isMulti)
+                    UndoManager::getInstance().beginCompoundOperation("Adjust Volumes");
+
+                cm.setClipVolumeDB(clipId_, finalDB);
                 auto cmd = std::make_unique<SetVolumeCommand>(clipId_, dragStartClipSnapshot_);
                 UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                for (auto& [cid, snap] : dragStartSelectedFadeSnapshots_) {
+                    float otherDB = juce::jlimit(-100.0f, 0.0f, snap.volumeDB + dbDelta);
+                    cm.setClipVolumeDB(cid, otherDB);
+                    auto otherCmd = std::make_unique<SetVolumeCommand>(cid, snap);
+                    UndoManager::getInstance().executeCommand(std::move(otherCmd));
+                }
+
+                if (isMulti)
+                    UndoManager::getInstance().endCompoundOperation();
+                dragStartSelectedFadeSnapshots_.clear();
                 break;
             }
 
