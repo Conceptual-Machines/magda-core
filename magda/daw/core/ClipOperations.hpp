@@ -306,7 +306,9 @@ class ClipOperations {
                                        double bpm = 120.0) {
         clip.length = newLength;
         if (clip.autoTempo && bpm > 0.0) {
-            clip.lengthBeats = newLength * bpm / 60.0;
+            double newBeats = newLength * bpm / 60.0;
+            clip.lengthBeats = newBeats;
+            clip.loopLengthBeats = newBeats;
         } else {
             clip.speedRatio = newSpeedRatio;
         }
@@ -327,7 +329,9 @@ class ClipOperations {
         clip.length = newLength;
         clip.startTime = rightEdge - newLength;
         if (clip.autoTempo && bpm > 0.0) {
-            clip.lengthBeats = newLength * bpm / 60.0;
+            double newBeats = newLength * bpm / 60.0;
+            clip.lengthBeats = newBeats;
+            clip.loopLengthBeats = newBeats;
         } else {
             clip.speedRatio = newSpeedRatio;
         }
