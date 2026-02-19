@@ -980,6 +980,32 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         } else {
             dragMode_ = DragMode::ResizeRight;
             dragStartClipSnapshot_ = *clip;
+            // Capture original lengths of other selected clips for multi-resize
+            dragStartSelectedLengths_.clear();
+            multiResizeMaxDelta_ = std::numeric_limits<double>::max();
+            const auto& selected = SelectionManager::getInstance().getSelectedClips();
+            if (selected.size() > 1 && selected.count(clipId_)) {
+                auto& cm = ClipManager::getInstance();
+                for (auto cid : selected) {
+                    const auto* c = cm.getClip(cid);
+                    if (!c)
+                        continue;
+                    if (cid != clipId_)
+                        dragStartSelectedLengths_[cid] = c->length;
+
+                    // Find max resize before hitting next non-selected clip
+                    auto trackClips = cm.getClipsOnTrack(c->trackId);
+                    for (auto otherId : trackClips) {
+                        if (selected.count(otherId))
+                            continue;
+                        const auto* other = cm.getClip(otherId);
+                        if (other && other->startTime > c->startTime) {
+                            double gap = other->startTime - (c->startTime + c->length);
+                            multiResizeMaxDelta_ = juce::jmin(multiResizeMaxDelta_, gap);
+                        }
+                    }
+                }
+            }
         }
     } else {
         dragMode_ = DragMode::Move;
@@ -1178,14 +1204,30 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 finalLength = juce::jmin(finalLength, maxLength);
             }
 
+            // Clamp to avoid overlapping next non-selected clip
+            if (!dragStartSelectedLengths_.empty()) {
+                double maxLength = dragStartLength_ + multiResizeMaxDelta_;
+                finalLength = juce::jmin(finalLength, maxLength);
+            }
+
             previewLength_ = finalLength;
 
             // Throttled update so waveform editor stays in sync during drag
             if (resizeThrottle_.check()) {
                 auto& cm = magda::ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
+                    double lengthDelta = finalLength - dragStartLength_;
                     ClipOperations::resizeContainerFromRight(*mutableClip, finalLength);
                     cm.forceNotifyClipPropertyChanged(clipId_);
+
+                    // Also update other selected clips with the same delta
+                    for (auto& [cid, origLen] : dragStartSelectedLengths_) {
+                        if (auto* otherClip = cm.getClip(cid)) {
+                            double otherLen = juce::jmax(0.1, origLen + lengthDelta);
+                            ClipOperations::resizeContainerFromRight(*otherClip, otherLen);
+                            cm.forceNotifyClipPropertyChanged(cid);
+                        }
+                    }
                 }
             }
 
@@ -1478,19 +1520,25 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
 
                 finalLength = juce::jmax(0.1, finalLength);
 
-                // Restore clip length to pre-drag state before committing.
-                // Throttled drag updates modified length directly — the
-                // command needs the original state for correct undo capture.
+                // Restore all clips to pre-drag state before committing.
+                // Throttled drag updates modified lengths directly — the
+                // commands need original state for correct undo capture.
                 {
                     auto& cm = ClipManager::getInstance();
                     if (auto* c = cm.getClip(clipId_)) {
                         c->length = dragStartLength_;
+                    }
+                    for (auto& [cid, origLen] : dragStartSelectedLengths_) {
+                        if (auto* c = cm.getClip(cid)) {
+                            c->length = origLen;
+                        }
                     }
                 }
 
                 if (onClipResized) {
                     onClipResized(clipId_, finalLength, false);
                 }
+                dragStartSelectedLengths_.clear();
                 break;
             }
 
