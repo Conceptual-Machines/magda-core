@@ -111,7 +111,8 @@ class ProjectSerializer {
      * @return true on success (all lanes valid), false on error (no state modified)
      */
     static bool deserializeAutomationToStaging(const juce::var& json,
-                                               std::vector<AutomationLaneInfo>& outLanes);
+                                               std::vector<AutomationLaneInfo>& outLanes,
+                                               std::vector<AutomationClipInfo>& outClips);
 
     /**
      * @brief Atomically commit staged deserialization data to singleton managers
@@ -126,7 +127,8 @@ class ProjectSerializer {
      */
     static void commitStagedData(std::vector<TrackInfo>& stagedTracks,
                                  std::vector<ClipInfo>& stagedClips,
-                                 std::vector<AutomationLaneInfo>& stagedAutomation);
+                                 std::vector<AutomationLaneInfo>& stagedAutomation,
+                                 std::vector<AutomationClipInfo>& stagedAutomationClips);
 
     // ========================================================================
     // Track serialization helpers

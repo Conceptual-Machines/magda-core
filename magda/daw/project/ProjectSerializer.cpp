@@ -5,6 +5,7 @@
 #include "../core/AutomationManager.hpp"
 #include "../core/ClipManager.hpp"
 #include "../core/TrackManager.hpp"
+#include "../core/ViewModeState.hpp"
 
 namespace magda {
 
@@ -198,6 +199,7 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
     std::vector<TrackInfo> stagedTracks;
     std::vector<ClipInfo> stagedClips;
     std::vector<AutomationLaneInfo> stagedAutomation;
+    std::vector<AutomationClipInfo> stagedAutomationClips;
 
     if (!deserializeTracksToStaging(obj->getProperty("tracks"), stagedTracks)) {
         return false;  // Failed - no state modified
@@ -207,12 +209,13 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
         return false;  // Failed - no state modified
     }
 
-    if (!deserializeAutomationToStaging(obj->getProperty("automation"), stagedAutomation)) {
+    if (!deserializeAutomationToStaging(obj->getProperty("automation"), stagedAutomation,
+                                        stagedAutomationClips)) {
         return false;  // Failed - no state modified
     }
 
     // Stage 2: All components validated successfully - now commit to managers atomically
-    commitStagedData(stagedTracks, stagedClips, stagedAutomation);
+    commitStagedData(stagedTracks, stagedClips, stagedAutomation, stagedAutomationClips);
 
     return true;
 }
@@ -223,7 +226,8 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
 
 void ProjectSerializer::commitStagedData(std::vector<TrackInfo>& stagedTracks,
                                          std::vector<ClipInfo>& stagedClips,
-                                         std::vector<AutomationLaneInfo>& stagedAutomation) {
+                                         std::vector<AutomationLaneInfo>& stagedAutomation,
+                                         std::vector<AutomationClipInfo>& stagedAutomationClips) {
     auto& trackManager = TrackManager::getInstance();
     auto& clipManager = ClipManager::getInstance();
     auto& automationManager = AutomationManager::getInstance();
@@ -234,9 +238,6 @@ void ProjectSerializer::commitStagedData(std::vector<TrackInfo>& stagedTracks,
     automationManager.clearAll();
 
     // Restore tracks
-    // TODO: Performance - restoreTrack() calls notifyTracksChanged() for each track,
-    // causing a notification storm for large projects. Consider adding batch restore
-    // API to TrackManager that suppresses notifications during load and emits once at end.
     for (auto& track : stagedTracks) {
         trackManager.restoreTrack(track);
     }
@@ -246,18 +247,22 @@ void ProjectSerializer::commitStagedData(std::vector<TrackInfo>& stagedTracks,
     trackManager.refreshIdCountersFromTracks();
 
     // Restore clips
-    // TODO: Performance - restoreClip() calls notifyClipsChanged() for each clip,
-    // causing a notification storm for large projects. Consider adding batch restore
-    // mode to ClipManager that suppresses notifications during load and emits once at end.
     for (auto& clip : stagedClips) {
         clipManager.restoreClip(clip);
     }
 
-    // Restore automation (currently always empty since deserialization is not implemented)
+    // Restore automation lanes
     for (auto& lane : stagedAutomation) {
-        // TODO: Implement automation restoration when automation deserialization is implemented
-        juce::ignoreUnused(lane);
+        automationManager.restoreLane(lane);
     }
+
+    // Restore automation clips
+    for (auto& clip : stagedAutomationClips) {
+        automationManager.restoreClip(clip);
+    }
+
+    // Update automation ID counters to avoid collisions
+    automationManager.refreshIdCountersFromLanes();
 }
 
 // ============================================================================
@@ -287,14 +292,23 @@ juce::var ProjectSerializer::serializeClips() {
 }
 
 juce::var ProjectSerializer::serializeAutomation() {
-    juce::Array<juce::var> lanesArray;
-
     auto& automationManager = AutomationManager::getInstance();
+
+    juce::Array<juce::var> lanesArray;
     for (const auto& lane : automationManager.getLanes()) {
         lanesArray.add(serializeAutomationLaneInfo(lane));
     }
 
-    return juce::var(lanesArray);
+    juce::Array<juce::var> clipsArray;
+    for (const auto& clip : automationManager.getClips()) {
+        clipsArray.add(serializeAutomationClipInfo(clip));
+    }
+
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty("lanes", juce::var(lanesArray));
+    obj->setProperty("clips", juce::var(clipsArray));
+
+    return juce::var(obj);
 }
 
 // ============================================================================
@@ -348,38 +362,82 @@ bool ProjectSerializer::deserializeClipsToStaging(const juce::var& json,
 }
 
 bool ProjectSerializer::deserializeAutomationToStaging(const juce::var& json,
-                                                       std::vector<AutomationLaneInfo>& outLanes) {
-    // Bug Fix: Handle missing automation key gracefully for backward compatibility.
+                                                       std::vector<AutomationLaneInfo>& outLanes,
+                                                       std::vector<AutomationClipInfo>& outClips) {
+    // Handle missing automation key gracefully for backward compatibility.
     // Older project files created before automation support won't have this key.
     if (json.isVoid()) {
-        // No automation data present - treat as empty (backward compatible)
         outLanes.clear();
+        outClips.clear();
         return true;
     }
 
-    if (!json.isArray()) {
-        lastError_ = "Automation data is not an array";
-        return false;
+    // New format: object with "lanes" and "clips" arrays
+    if (json.isObject()) {
+        auto* obj = json.getDynamicObject();
+        if (obj == nullptr) {
+            lastError_ = "Automation data object is invalid";
+            return false;
+        }
+
+        // Deserialize lanes
+        auto lanesVar = obj->getProperty("lanes");
+        if (lanesVar.isArray()) {
+            auto* lanesArr = lanesVar.getArray();
+            outLanes.clear();
+            outLanes.reserve(lanesArr->size());
+            for (const auto& laneVar : *lanesArr) {
+                AutomationLaneInfo lane;
+                if (!deserializeAutomationLaneInfo(laneVar, lane)) {
+                    return false;
+                }
+                outLanes.push_back(std::move(lane));
+            }
+        }
+
+        // Deserialize clips
+        auto clipsVar = obj->getProperty("clips");
+        if (clipsVar.isArray()) {
+            auto* clipsArr = clipsVar.getArray();
+            outClips.clear();
+            outClips.reserve(clipsArr->size());
+            for (const auto& clipVar : *clipsArr) {
+                AutomationClipInfo clip;
+                if (!deserializeAutomationClipInfo(clipVar, clip)) {
+                    return false;
+                }
+                outClips.push_back(std::move(clip));
+            }
+        }
+
+        return true;
     }
 
-    auto* arr = json.getArray();
-    if (arr == nullptr) {
-        lastError_ = "Automation data array is invalid";
-        return false;
+    // Legacy format: plain array of lanes (no clips)
+    if (json.isArray()) {
+        auto* arr = json.getArray();
+        if (arr == nullptr) {
+            lastError_ = "Automation data array is invalid";
+            return false;
+        }
+
+        outLanes.clear();
+        outLanes.reserve(arr->size());
+        outClips.clear();
+
+        for (const auto& laneVar : *arr) {
+            AutomationLaneInfo lane;
+            if (!deserializeAutomationLaneInfo(laneVar, lane)) {
+                return false;
+            }
+            outLanes.push_back(std::move(lane));
+        }
+
+        return true;
     }
 
-    // To avoid silently losing user automation data, we treat the presence of
-    // non-empty automation arrays as a hard load error until proper
-    // deserialization is implemented or a forward-compat mechanism is added.
-    if (!arr->isEmpty()) {
-        lastError_ = "Project contains automation lanes, but automation deserialization "
-                     "is not yet implemented. Cannot load project without losing automation data.";
-        return false;
-    }
-
-    // Empty automation array is fine - no data to lose
-    outLanes.clear();
-    return true;
+    lastError_ = "Automation data has unexpected format";
+    return false;
 }
 
 // ============================================================================
@@ -408,6 +466,20 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
     obj->setProperty("muted", track.muted);
     obj->setProperty("soloed", track.soloed);
     obj->setProperty("recordArmed", track.recordArmed);
+    obj->setProperty("frozen", track.frozen);
+
+    // View settings per view mode
+    auto* viewSettingsObj = new juce::DynamicObject();
+    for (auto mode : {ViewMode::Live, ViewMode::Arrange, ViewMode::Mix, ViewMode::Master}) {
+        const auto& vs = track.viewSettings.get(mode);
+        auto* modeObj = new juce::DynamicObject();
+        modeObj->setProperty("visible", vs.visible);
+        modeObj->setProperty("locked", vs.locked);
+        modeObj->setProperty("collapsed", vs.collapsed);
+        modeObj->setProperty("height", vs.height);
+        viewSettingsObj->setProperty(getViewModeName(mode), juce::var(modeObj));
+    }
+    obj->setProperty("viewSettings", juce::var(viewSettingsObj));
 
     // Routing
     obj->setProperty("midiInputDevice", track.midiInputDevice);
@@ -478,6 +550,29 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
     outTrack.muted = obj->getProperty("muted");
     outTrack.soloed = obj->getProperty("soloed");
     outTrack.recordArmed = obj->getProperty("recordArmed");
+
+    // Frozen state (backward compatible - defaults to false)
+    if (obj->hasProperty("frozen")) {
+        outTrack.frozen = static_cast<bool>(obj->getProperty("frozen"));
+    }
+
+    // View settings per view mode (backward compatible - defaults applied if missing)
+    auto viewSettingsVar = obj->getProperty("viewSettings");
+    if (viewSettingsVar.isObject()) {
+        auto* vsObj = viewSettingsVar.getDynamicObject();
+        for (auto mode : {ViewMode::Live, ViewMode::Arrange, ViewMode::Mix, ViewMode::Master}) {
+            auto modeVar = vsObj->getProperty(getViewModeName(mode));
+            if (modeVar.isObject()) {
+                auto* modeObj = modeVar.getDynamicObject();
+                TrackViewSettings vs;
+                vs.visible = modeObj->getProperty("visible");
+                vs.locked = modeObj->getProperty("locked");
+                vs.collapsed = modeObj->getProperty("collapsed");
+                vs.height = modeObj->getProperty("height");
+                outTrack.viewSettings.set(mode, vs);
+            }
+        }
+    }
 
     // Routing
     outTrack.midiInputDevice = obj->getProperty("midiInputDevice").toString();
@@ -987,6 +1082,12 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("launchMode", static_cast<int>(clip.launchMode));
     obj->setProperty("launchQuantize", static_cast<int>(clip.launchQuantize));
 
+    // Per-clip grid settings
+    obj->setProperty("gridAutoGrid", clip.gridAutoGrid);
+    obj->setProperty("gridNumerator", clip.gridNumerator);
+    obj->setProperty("gridDenominator", clip.gridDenominator);
+    obj->setProperty("gridSnapEnabled", clip.gridSnapEnabled);
+
     // Audio properties (TE-aligned model)
     if (clip.audioFilePath.isNotEmpty()) {
         obj->setProperty("audioFilePath", clip.audioFilePath);
@@ -1078,6 +1179,20 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     auto launchQuantizeVar = obj->getProperty("launchQuantize");
     if (!launchQuantizeVar.isVoid()) {
         outClip.launchQuantize = static_cast<LaunchQuantize>(static_cast<int>(launchQuantizeVar));
+    }
+
+    // Per-clip grid settings (backward compatible - defaults apply if missing)
+    if (obj->hasProperty("gridAutoGrid")) {
+        outClip.gridAutoGrid = static_cast<bool>(obj->getProperty("gridAutoGrid"));
+    }
+    if (obj->hasProperty("gridNumerator")) {
+        outClip.gridNumerator = static_cast<int>(obj->getProperty("gridNumerator"));
+    }
+    if (obj->hasProperty("gridDenominator")) {
+        outClip.gridDenominator = static_cast<int>(obj->getProperty("gridDenominator"));
+    }
+    if (obj->hasProperty("gridSnapEnabled")) {
+        outClip.gridSnapEnabled = static_cast<bool>(obj->getProperty("gridSnapEnabled"));
     }
 
     // Audio properties (TE-aligned model)

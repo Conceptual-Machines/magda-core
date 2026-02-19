@@ -99,6 +99,13 @@ class AutomationManager : public TrackManagerListener {
     }
 
     /**
+     * @brief Get all clips
+     */
+    const std::vector<AutomationClipInfo>& getClips() const {
+        return clips_;
+    }
+
+    /**
      * @brief Get lanes for a specific track
      */
     std::vector<AutomationLaneId> getLanesForTrack(TrackId trackId) const;
@@ -268,6 +275,21 @@ class AutomationManager : public TrackManagerListener {
     // ========================================================================
 
     void clearAll();
+
+    /**
+     * @brief Restore a lane from deserialized data (project load)
+     */
+    void restoreLane(AutomationLaneInfo& lane);
+
+    /**
+     * @brief Restore a clip from deserialized data (project load)
+     */
+    void restoreClip(AutomationClipInfo& clip);
+
+    /**
+     * @brief Update ID counters to avoid collisions after restoring lanes/clips
+     */
+    void refreshIdCountersFromLanes();
 
     // ========================================================================
     // TrackManagerListener - Updates automation when faders move
