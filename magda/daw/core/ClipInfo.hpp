@@ -66,8 +66,8 @@ struct ClipInfo {
     double startTime = 0.0;  // Position on timeline (seconds) - only for Arrangement view
     double length = 4.0;     // Duration (seconds)
 
-    // Beat-based position (only used when autoTempo = true in Arrangement view)
-    double startBeats = -1.0;  // Start position in beats (-1 = not set/use startTime)
+    // Beat-based position (authoritative for MIDI clips; used when autoTempo = true for Audio)
+    double startBeats = 0.0;  // Start position in beats
 
     // Audio-specific properties (flat model: one clip = one file reference)
     juce::String audioFilePath;   // Path to audio file
@@ -124,13 +124,21 @@ struct ClipInfo {
     // TE: AudioClipBase::loopStartBeats, loopLengthBeats
     double loopStartBeats = 0.0;   // Loop start in beats (relative to file start)
     double loopLengthBeats = 0.0;  // Loop length in beats (0 = derive from clip length)
-    double lengthBeats = 0.0;  // Clip timeline length in project beats (authoritative in autoTempo)
+    double lengthBeats =
+        4.0;  // Clip timeline length in project beats (authoritative for MIDI and autoTempo Audio)
 
     // Pitch
     bool autoPitch = false;
     bool analogPitch = false;  // Analog pitch: resample instead of time-stretch
     bool isAnalogPitchActive() const {
         return analogPitch && !autoTempo && !warpEnabled;
+    }
+
+    /// Whether this clip uses beat-based timing as authoritative.
+    /// True for MIDI clips (always beat-based), audio clips with autoTempo,
+    /// and audio clips with warp markers enabled.
+    bool isBeatsAuthoritative() const {
+        return type == ClipType::MIDI || autoTempo || warpEnabled;
     }
     int autoPitchMode = 0;     // 0=pitchTrack, 1=chordTrackMono, 2=chordTrackPoly
     float pitchChange = 0.0f;  // -48 to +48 semitones
@@ -188,6 +196,21 @@ struct ClipInfo {
     // Helpers
     double getEndTime() const {
         return startTime + length;
+    }
+
+    /// Derive startTime/length from beat values using the given BPM (for MIDI clips)
+    void deriveTimesFromBeats(double bpm) {
+        if (bpm > 0.0) {
+            if (lengthBeats > 0.0) {
+                startTime = (startBeats * 60.0) / bpm;
+                length = (lengthBeats * 60.0) / bpm;
+            }
+        }
+    }
+
+    /// Get end position in beats without BPM conversion (beats are always valid for MIDI)
+    double getEndBeatsRaw() const {
+        return startBeats + lengthBeats;
     }
 
     /// Convert source-time to timeline-time (speed-factor semantics: timeline = source /
@@ -296,9 +319,9 @@ struct ClipInfo {
     }
 
     /// Get clip start position in beats (single source of truth for display)
-    /// Returns stored beat value in autoTempo mode, calculates from time otherwise
+    /// Returns stored beat value for MIDI/autoTempo, calculates from time otherwise
     double getStartBeats(double bpm) const {
-        if (autoTempo) {
+        if (isBeatsAuthoritative()) {
             return startBeats;  // Authoritative beat value
         }
         // Calculate from time
@@ -308,7 +331,7 @@ struct ClipInfo {
     /// Get clip end position in beats (single source of truth for display)
     /// Returns start + length in beats, using authoritative values based on mode
     double getEndBeats(double bpm) const {
-        if (autoTempo && lengthBeats > 0.0) {
+        if (isBeatsAuthoritative() && lengthBeats > 0.0) {
             return startBeats + lengthBeats;
         }
         // Calculate from time

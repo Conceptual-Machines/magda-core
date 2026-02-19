@@ -999,10 +999,11 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Shift+edge = stretch mode (time-stretches audio source along with clip)
+    // Shift+edge = stretch mode (time-stretches audio source or scales MIDI notes)
     if (isOnLeftEdge(e.x)) {
-        if (e.mods.isShiftDown() && clip->type == ClipType::Audio &&
-            clip->audioFilePath.isNotEmpty()) {
+        if (e.mods.isShiftDown() &&
+            ((clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty()) ||
+             clip->type == ClipType::MIDI)) {
             dragMode_ = DragMode::StretchLeft;
             dragStartSpeedRatio_ = clip->speedRatio;
             dragStartClipSnapshot_ = *clip;
@@ -1011,8 +1012,9 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             dragStartClipSnapshot_ = *clip;
         }
     } else if (isOnRightEdge(e.x)) {
-        if (e.mods.isShiftDown() && clip->type == ClipType::Audio &&
-            clip->audioFilePath.isNotEmpty()) {
+        if (e.mods.isShiftDown() &&
+            ((clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty()) ||
+             clip->type == ClipType::MIDI)) {
             dragMode_ = DragMode::StretchRight;
             dragStartSpeedRatio_ = clip->speedRatio;
             dragStartClipSnapshot_ = *clip;
@@ -1280,7 +1282,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
         }
 
         case DragMode::StretchRight: {
-            // Shift+right edge: stretch clip and audio source proportionally
+            // Shift+right edge: stretch clip proportionally
             double rawEndTime = dragStartTime_ + dragStartLength_ + deltaTime;
             double finalEndTime = rawEndTime;
 
@@ -1295,12 +1297,13 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 
             double finalLength = juce::jmax(0.1, finalEndTime - dragStartTime_);
 
-            // Clamp by stretch factor limits [0.25, 4.0]
+            // Clamp stretch ratio
             double stretchRatio = finalLength / dragStartLength_;
-            double newSpeedRatio = dragStartSpeedRatio_ * stretchRatio;
-            newSpeedRatio = juce::jlimit(0.25, 4.0, newSpeedRatio);
-            // Back-compute the allowed length from the clamped stretch factor
-            finalLength = dragStartLength_ * (newSpeedRatio / dragStartSpeedRatio_);
+            stretchRatio = juce::jlimit(0.25, 4.0, stretchRatio);
+            finalLength = dragStartLength_ * stretchRatio;
+
+            // For audio: compute speed ratio (longer = slower)
+            double newSpeedRatio = dragStartSpeedRatio_ / stretchRatio;
 
             previewLength_ = finalLength;
 
@@ -1309,11 +1312,20 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             int newWidth = static_cast<int>(finalLengthBeats * pixelsPerBeat);
             setBounds(newX, getY(), juce::jmax(10, newWidth), getHeight());
 
-            // Throttled live update to audio engine
+            // Throttled live update
             if (stretchThrottle_.check()) {
                 auto& cm = ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
-                    ClipOperations::stretchAbsolute(*mutableClip, newSpeedRatio, finalLength);
+                    if (mutableClip->type == ClipType::MIDI) {
+                        // Scale MIDI notes from original snapshot
+                        mutableClip->midiNotes = dragStartClipSnapshot_.midiNotes;
+                        ClipOperations::stretchMidiNotes(*mutableClip, stretchRatio);
+                        ClipOperations::resizeContainerFromRight(*mutableClip, finalLength,
+                                                                 tempoBPM);
+                    } else {
+                        ClipOperations::stretchAbsolute(*mutableClip, newSpeedRatio, finalLength,
+                                                        tempoBPM);
+                    }
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
             }
@@ -1408,12 +1420,14 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             finalStartTime = juce::jmin(finalStartTime, endTime - 0.1);
             double finalLength = endTime - finalStartTime;
 
-            // Clamp by stretch factor limits
+            // Clamp stretch ratio
             double stretchRatio = finalLength / dragStartLength_;
-            double newSpeedRatio = dragStartSpeedRatio_ * stretchRatio;
-            newSpeedRatio = juce::jlimit(0.25, 4.0, newSpeedRatio);
-            finalLength = dragStartLength_ * (newSpeedRatio / dragStartSpeedRatio_);
+            stretchRatio = juce::jlimit(0.25, 4.0, stretchRatio);
+            finalLength = dragStartLength_ * stretchRatio;
             finalStartTime = endTime - finalLength;
+
+            // For audio: compute speed ratio (longer = slower)
+            double newSpeedRatio = dragStartSpeedRatio_ / stretchRatio;
 
             previewStartTime_ = finalStartTime;
             previewLength_ = finalLength;
@@ -1423,13 +1437,20 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             int newWidth = static_cast<int>(finalLengthBeats * pixelsPerBeat);
             setBounds(newX, getY(), juce::jmax(10, newWidth), getHeight());
 
-            // Throttled live update to audio engine
+            // Throttled live update
             if (stretchThrottle_.check()) {
                 auto& cm = ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
                     double rightEdge = dragStartTime_ + dragStartLength_;
-                    ClipOperations::stretchAbsoluteFromLeft(*mutableClip, newSpeedRatio,
-                                                            finalLength, rightEdge);
+                    if (mutableClip->type == ClipType::MIDI) {
+                        mutableClip->midiNotes = dragStartClipSnapshot_.midiNotes;
+                        ClipOperations::stretchMidiNotes(*mutableClip, stretchRatio);
+                        mutableClip->length = finalLength;
+                        mutableClip->startTime = finalStartTime;
+                    } else {
+                        ClipOperations::stretchAbsoluteFromLeft(*mutableClip, newSpeedRatio,
+                                                                finalLength, rightEdge, tempoBPM);
+                    }
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
             }
@@ -1758,16 +1779,23 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                     finalLength = endTime - dragStartTime_;
                 }
 
-                // Compute final stretch factor from drag-start values
+                // Clamp stretch ratio
                 double stretchRatio = finalLength / dragStartLength_;
-                double newSpeedRatio = dragStartSpeedRatio_ * stretchRatio;
-                newSpeedRatio = juce::jlimit(0.25, 4.0, newSpeedRatio);
-                finalLength = dragStartLength_ * (newSpeedRatio / dragStartSpeedRatio_);
+                stretchRatio = juce::jlimit(0.25, 4.0, stretchRatio);
+                finalLength = dragStartLength_ * stretchRatio;
+                double newSpeedRatio = dragStartSpeedRatio_ / stretchRatio;
 
-                // Apply final values
+                // Restore original state for undo capture, then apply final
+                double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
                 auto& cm = ClipManager::getInstance();
                 if (auto* clip = cm.getClip(clipId_)) {
-                    ClipOperations::stretchAbsolute(*clip, newSpeedRatio, finalLength);
+                    if (clip->type == ClipType::MIDI) {
+                        clip->midiNotes = dragStartClipSnapshot_.midiNotes;
+                        ClipOperations::stretchMidiNotes(*clip, stretchRatio);
+                        ClipOperations::resizeContainerFromRight(*clip, finalLength, tempo);
+                    } else {
+                        ClipOperations::stretchAbsolute(*clip, newSpeedRatio, finalLength, tempo);
+                    }
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
 
@@ -1789,18 +1817,26 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                     finalLength = endTime - finalStartTime;
                 }
 
-                // Compute final speed ratio from drag-start values
+                // Clamp stretch ratio
                 double stretchRatio = finalLength / dragStartLength_;
-                double newSpeedRatio = dragStartSpeedRatio_ * stretchRatio;
-                newSpeedRatio = juce::jlimit(0.25, 4.0, newSpeedRatio);
-                finalLength = dragStartLength_ * (newSpeedRatio / dragStartSpeedRatio_);
+                stretchRatio = juce::jlimit(0.25, 4.0, stretchRatio);
+                finalLength = dragStartLength_ * stretchRatio;
                 finalStartTime = endTime - finalLength;
+                double newSpeedRatio = dragStartSpeedRatio_ / stretchRatio;
 
                 // Apply final values
+                double tempoLeft = parentPanel_ ? parentPanel_->getTempo() : 120.0;
                 auto& cm = ClipManager::getInstance();
                 if (auto* clip = cm.getClip(clipId_)) {
-                    ClipOperations::stretchAbsoluteFromLeft(*clip, newSpeedRatio, finalLength,
-                                                            endTime);
+                    if (clip->type == ClipType::MIDI) {
+                        clip->midiNotes = dragStartClipSnapshot_.midiNotes;
+                        ClipOperations::stretchMidiNotes(*clip, stretchRatio);
+                        clip->length = finalLength;
+                        clip->startTime = finalStartTime;
+                    } else {
+                        ClipOperations::stretchAbsoluteFromLeft(*clip, newSpeedRatio, finalLength,
+                                                                endTime, tempoLeft);
+                    }
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
 

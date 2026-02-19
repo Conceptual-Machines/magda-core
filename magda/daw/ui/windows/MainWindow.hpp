@@ -109,6 +109,10 @@ class MainWindow::MainComponent : public juce::Component,
         return externalAudioEngine_ ? externalAudioEngine_ : audioEngine_.get();
     }
 
+    // Loading overlay control (for async project loading)
+    void showLoadingMessage(const juce::String& message);
+    void hideLoadingMessage();
+
   private:
     // Command manager for keyboard shortcuts and menu commands
     juce::ApplicationCommandManager commandManager;

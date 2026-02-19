@@ -169,6 +169,16 @@ class TimelineController {
      */
     void clearUndoHistory();
 
+    // ===== Project Restore =====
+
+    /**
+     * Unconditionally restore project state (tempo, time sig, loop) after project load.
+     * Unlike dispatch(), this bypasses early-return checks to ensure the engine
+     * and UI are always synced, even if values haven't changed in TC state.
+     */
+    void restoreProjectState(double tempo, int timeSigNum, int timeSigDen, bool loopEnabled,
+                             double loopStartBeats, double loopEndBeats);
+
     // ===== Configuration =====
 
     /**

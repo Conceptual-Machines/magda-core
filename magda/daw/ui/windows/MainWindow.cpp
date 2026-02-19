@@ -357,6 +357,10 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
                                              bool isBars) {
         transportPanel->setGridQuantize(autoGrid, numerator, denominator, isBars);
     };
+    mainView->onTempoChanged = [this](double bpm) { transportPanel->setTempo(bpm); };
+    mainView->onTimeSignatureChanged = [this](int numerator, int denominator) {
+        transportPanel->setTimeSignature(numerator, denominator);
+    };
 
     // Wire clip render callback (handles both single and multi-clip render)
     mainView->onClipRenderRequested = [this](ClipId clipId) {
@@ -910,6 +914,20 @@ void MainWindow::MainComponent::switchToView(ViewMode mode) {
     }
 
     DBG("Switched to view mode: " << getViewModeName(mode));
+}
+
+void MainWindow::MainComponent::showLoadingMessage(const juce::String& message) {
+    if (loadingOverlay_) {
+        loadingOverlay_->setMessage(message);
+        loadingOverlay_->showWithFade();
+        loadingOverlay_->toFront(false);
+    }
+}
+
+void MainWindow::MainComponent::hideLoadingMessage() {
+    if (loadingOverlay_) {
+        loadingOverlay_->hideWithFade();
+    }
 }
 
 void MainWindow::setupMenuBar() {

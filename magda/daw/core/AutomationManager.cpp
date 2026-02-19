@@ -706,6 +706,51 @@ void AutomationManager::clearAll() {
     notifyLanesChanged();
 }
 
+void AutomationManager::restoreLane(AutomationLaneInfo& lane) {
+    lanes_.push_back(std::move(lane));
+    notifyLanesChanged();
+}
+
+void AutomationManager::restoreClip(AutomationClipInfo& clip) {
+    clips_.push_back(std::move(clip));
+    notifyClipsChanged(clip.laneId);
+}
+
+void AutomationManager::refreshIdCountersFromLanes() {
+    int maxLaneId = 0;
+    int maxClipId = 0;
+    int maxPointId = 0;
+
+    for (const auto& lane : lanes_) {
+        if (lane.id > maxLaneId)
+            maxLaneId = lane.id;
+
+        for (const auto& point : lane.absolutePoints) {
+            if (point.id > maxPointId)
+                maxPointId = point.id;
+        }
+
+        for (auto clipId : lane.clipIds) {
+            if (clipId > maxClipId)
+                maxClipId = clipId;
+        }
+    }
+
+    for (const auto& clip : clips_) {
+        if (clip.id > maxClipId)
+            maxClipId = clip.id;
+
+        for (const auto& point : clip.points) {
+            if (point.id > maxPointId)
+                maxPointId = point.id;
+        }
+    }
+
+    nextLaneId_ = maxLaneId + 1;
+    nextClipId_ = maxClipId + 1;
+    nextPointId_ = maxPointId + 1;
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================

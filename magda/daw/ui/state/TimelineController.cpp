@@ -5,6 +5,7 @@
 
 #include "../../core/ClipManager.hpp"
 #include "../../core/TrackManager.hpp"
+#include "../../project/ProjectManager.hpp"
 #include "../utils/TimelineUtils.hpp"
 #include "Config.hpp"
 
@@ -502,6 +503,14 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
     state.loop.endTime = state.selection.endTime;
     state.loop.enabled = true;
 
+    // Compute beat positions
+    double bpm = state.tempo.bpm;
+    state.loop.startBeats = magda::TimelineUtils::secondsToBeats(state.loop.startTime, bpm);
+    state.loop.endBeats = magda::TimelineUtils::secondsToBeats(state.loop.endTime, bpm);
+
+    ProjectManager::getInstance().setLoopSettings(state.loop.enabled, state.loop.startBeats,
+                                                  state.loop.endBeats);
+
     // Hide selection visually but keep data for transport display
     state.selection.hideVisually();
 
@@ -518,9 +527,6 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopRegionEvent& e) {
     double start = juce::jlimit(0.0, state.timelineLength, e.startTime);
     double end = juce::jlimit(0.0, state.timelineLength, e.endTime);
-
-    std::cout << "[SetLoopRegion] Input: startTime=" << e.startTime << "s, endTime=" << e.endTime
-              << "s" << std::endl;
 
     // Ensure minimum duration
     if (end - start < 0.01) {
@@ -540,6 +546,9 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopReg
         state.loop.enabled = true;
     }
 
+    ProjectManager::getInstance().setLoopSettings(state.loop.enabled, state.loop.startBeats,
+                                                  state.loop.endBeats);
+
     // Notify audio engine of loop region change
     for (auto* listener : audioEngineListeners) {
         listener->onLoopRegionChanged(start, end, state.loop.enabled);
@@ -554,6 +563,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ClearLoopR
     }
 
     state.loop.clear();
+    ProjectManager::getInstance().setLoopSettings(false, 0.0, 0.0);
     return ChangeFlags::Loop;
 }
 
@@ -567,6 +577,9 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopEna
     }
 
     state.loop.enabled = e.enabled;
+
+    ProjectManager::getInstance().setLoopSettings(e.enabled, state.loop.startBeats,
+                                                  state.loop.endBeats);
 
     // Notify audio engine of loop enabled change
     for (auto* listener : audioEngineListeners) {
@@ -589,6 +602,14 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const MoveLoopRe
 
     state.loop.startTime = newStart;
     state.loop.endTime = newStart + duration;
+
+    // Update beat positions and sync to ProjectManager
+    double bpm = state.tempo.bpm;
+    state.loop.startBeats = magda::TimelineUtils::secondsToBeats(newStart, bpm);
+    state.loop.endBeats = magda::TimelineUtils::secondsToBeats(newStart + duration, bpm);
+
+    ProjectManager::getInstance().setLoopSettings(state.loop.enabled, state.loop.startBeats,
+                                                  state.loop.endBeats);
 
     return ChangeFlags::Loop;
 }
@@ -692,6 +713,9 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
     double oldBpm = state.tempo.bpm;
     state.tempo.bpm = newBpm;
 
+    // Keep ProjectManager in sync for serialization
+    ProjectManager::getInstance().setTempo(newBpm);
+
     // Update all beat-anchored positions to maintain bar/beat positions
     uint32_t extraFlags = 0;
 
@@ -754,6 +778,12 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
         state.loop.startTime = magda::TimelineUtils::beatsToSeconds(state.loop.startBeats, newBpm);
         state.loop.endTime = magda::TimelineUtils::beatsToSeconds(state.loop.endBeats, newBpm);
         extraFlags |= static_cast<uint32_t>(ChangeFlags::Loop);
+    }
+
+    // Sync updated loop to ProjectManager
+    if (state.loop.isValid()) {
+        ProjectManager::getInstance().setLoopSettings(state.loop.enabled, state.loop.startBeats,
+                                                      state.loop.endBeats);
     }
 
     // IMPORTANT: Notify audio engine FIRST so TE's tempo sequence is updated
@@ -839,6 +869,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimeSig
 
     state.tempo.timeSignatureNumerator = num;
     state.tempo.timeSignatureDenominator = den;
+
+    ProjectManager::getInstance().setTimeSignature(num, den);
 
     // Notify audio engine of time signature change
     for (auto* listener : audioEngineListeners) {
@@ -1045,6 +1077,44 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimelin
     clampScrollPosition();
 
     return ChangeFlags::Timeline | ChangeFlags::Zoom | ChangeFlags::Scroll;
+}
+
+// ===== Project Restore =====
+
+void TimelineController::restoreProjectState(double tempo, int timeSigNum, int timeSigDen,
+                                             bool loopEnabled, double loopStartBeats,
+                                             double loopEndBeats) {
+    // Unconditionally set state — no early returns
+    state.tempo.bpm = juce::jlimit(20.0, 999.0, tempo);
+    state.tempo.timeSignatureNumerator = juce::jlimit(1, 16, timeSigNum);
+    state.tempo.timeSignatureDenominator = juce::jlimit(1, 16, timeSigDen);
+
+    // Loop: beats are authoritative, derive seconds from BPM
+    state.loop.startBeats = loopStartBeats;
+    state.loop.endBeats = loopEndBeats;
+    state.loop.enabled = loopEnabled;
+
+    if (loopEndBeats - loopStartBeats >= 0.01) {
+        state.loop.startTime =
+            magda::TimelineUtils::beatsToSeconds(loopStartBeats, state.tempo.bpm);
+        state.loop.endTime = magda::TimelineUtils::beatsToSeconds(loopEndBeats, state.tempo.bpm);
+    } else {
+        state.loop.clear();
+    }
+
+    // Notify audio engine unconditionally
+    for (auto* listener : audioEngineListeners) {
+        listener->onTempoChanged(state.tempo.bpm);
+        listener->onTimeSignatureChanged(state.tempo.timeSignatureNumerator,
+                                         state.tempo.timeSignatureDenominator);
+        if (state.loop.isValid()) {
+            listener->onLoopRegionChanged(state.loop.startTime, state.loop.endTime,
+                                          state.loop.enabled);
+        }
+    }
+
+    // Notify UI listeners
+    notifyListeners(ChangeFlags::Tempo | ChangeFlags::Loop);
 }
 
 // ===== Notification Helpers =====

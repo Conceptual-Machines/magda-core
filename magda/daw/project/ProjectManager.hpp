@@ -2,6 +2,8 @@
 
 #include <juce_core/juce_core.h>
 
+#include <functional>
+#include <thread>
 #include <vector>
 
 #include "ProjectInfo.hpp"
@@ -80,11 +82,27 @@ class ProjectManager {
     bool saveProjectAs(const juce::File& file);
 
     /**
-     * @brief Load project from file
+     * @brief Load project from file (synchronous)
      * @param file Source file path
+     * @param onBeforeCommit Optional callback invoked after staging but before committing data.
+     *                       Use this to set tempo/time sig on the audio engine so that clip sync
+     *                       uses the correct BPM. Receives the loaded ProjectInfo.
      * @return true on success
      */
-    bool loadProject(const juce::File& file);
+    bool loadProject(const juce::File& file,
+                     std::function<void(const ProjectInfo&)> onBeforeCommit = nullptr);
+
+    /**
+     * @brief Load project asynchronously (heavy I/O on background thread, commit on message thread)
+     * @param file Source file path
+     * @param onBeforeCommit Callback invoked on message thread before committing staged data.
+     *                       Use this to set tempo/time sig on the audio engine so that clip sync
+     *                       uses the correct BPM. Receives the loaded ProjectInfo.
+     * @param onComplete Callback invoked on message thread after commit: (success, errorMessage)
+     */
+    void loadProjectAsync(const juce::File& file,
+                          std::function<void(const ProjectInfo&)> onBeforeCommit,
+                          std::function<void(bool, const juce::String&)> onComplete);
 
     /**
      * @brief Close current project
@@ -142,7 +160,7 @@ class ProjectManager {
     /**
      * @brief Set project loop settings
      */
-    void setLoopSettings(bool enabled, double start, double end);
+    void setLoopSettings(bool enabled, double startBeats, double endBeats);
 
     /**
      * @brief Mark project as dirty (unsaved changes)
@@ -166,7 +184,9 @@ class ProjectManager {
 
   private:
     ProjectManager();
-    ~ProjectManager() = default;
+    ~ProjectManager();
+
+    void joinBackgroundThread();
 
     ProjectInfo currentProject_;
     juce::File currentFile_;
@@ -175,6 +195,7 @@ class ProjectManager {
 
     std::vector<ProjectManagerListener*> listeners_;
     juce::String lastError_;
+    std::thread loadThread_;
 
     void clearDirty();
     void notifyProjectOpened();

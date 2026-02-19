@@ -1,5 +1,6 @@
 #include <cmath>
 
+#include "../../../../../audio/AudioThumbnailManager.hpp"
 #include "../../../../state/TimelineController.hpp"
 #include "../../../../themes/DarkTheme.hpp"
 #include "../../../../themes/FontManager.hpp"
@@ -52,11 +53,47 @@ void ClipInspector::initClipPropertiesSection() {
     clipTypeIcon_->setTooltip("Audio clip");
     addChildComponent(*clipTypeIcon_);
 
-    // Detected BPM (shown at bottom with WARP button)
+    // Source BPM (editable — shown at bottom with WARP/BEAT buttons)
     clipBpmValue_.setFont(FontManager::getInstance().getUIFont(11.0f));
     clipBpmValue_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     clipBpmValue_.setColour(juce::Label::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
     clipBpmValue_.setJustificationType(juce::Justification::centred);
+    clipBpmValue_.setEditable(true);
+    clipBpmValue_.onTextChange = [this]() {
+        auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
+        if (!clip || clip->type != magda::ClipType::Audio)
+            return;
+
+        // Parse BPM from text (strip " BPM" suffix if present)
+        juce::String text = clipBpmValue_.getText().trimCharactersAtEnd(" BPMbpm");
+        double newBPM = text.getDoubleValue();
+        if (newBPM < 20.0 || newBPM > 999.0)
+            return;
+
+        double bpm = timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
+
+        // Update source metadata using actual file duration (not timeline length)
+        double sourceDuration = clip->getSourceLength();
+        clip->sourceBPM = newBPM;
+        if (sourceDuration > 0.0) {
+            clip->sourceNumBeats = sourceDuration * newBPM / 60.0;
+        }
+
+        // If autoTempo is active, recalculate beat values and resize
+        if (clip->autoTempo) {
+            clip->lengthBeats = clip->sourceNumBeats;
+            clip->loopLengthBeats = clip->sourceNumBeats;
+            double newLength = clip->lengthBeats * 60.0 / bpm;
+            magda::ClipManager::getInstance().resizeClip(primaryClipId(), newLength, false, bpm);
+        } else {
+            // Trigger sync even without autoTempo (sourceBPM stored for later use)
+            magda::ClipManager::getInstance().resizeClip(primaryClipId(), clip->length, false, bpm);
+        }
+
+        // Re-display with suffix
+        clipBpmValue_.setText(juce::String(newBPM, 1) + " BPM", juce::dontSendNotification);
+        updateFromSelectedClip();
+    };
     clipPropsContainer_.addChildComponent(clipBpmValue_);
 
     // Length in beats (shown next to BPM when auto-tempo is enabled)
@@ -271,8 +308,28 @@ void ClipInspector::initClipPropertiesSection() {
             bpm = timelineController_->getState().tempo.bpm;
         }
 
+        // When enabling, update sourceBPM from detected BPM (AudioThumbnailManager)
+        // since the clip model may have stale metadata from TE's default loopInfo
+        if (enable && clip->type == magda::ClipType::Audio) {
+            double detectedBPM =
+                magda::AudioThumbnailManager::getInstance().detectBPM(clip->audioFilePath);
+            if (detectedBPM > 0.0) {
+                double sourceDuration = clip->getSourceLength();
+                clip->sourceBPM = detectedBPM;
+                // Recalculate source beat count from detected BPM and file duration
+                if (sourceDuration > 0.0) {
+                    clip->sourceNumBeats = sourceDuration * detectedBPM / 60.0;
+                }
+            }
+        }
+
         magda::ClipOperations::setAutoTempo(*clip, enable, bpm);
-        magda::ClipManager::getInstance().resizeClip(primaryClipId(), clip->length, false, bpm);
+
+        // In autoTempo mode, timeline length is derived from beat count
+        double newLength = (enable && clip->lengthBeats > 0.0 && bpm > 0.0)
+                               ? (clip->lengthBeats * 60.0 / bpm)
+                               : clip->length;
+        magda::ClipManager::getInstance().resizeClip(primaryClipId(), newLength, false, bpm);
         updateFromSelectedClip();
     };
 

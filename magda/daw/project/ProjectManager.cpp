@@ -1,5 +1,8 @@
 #include "ProjectManager.hpp"
 
+#include <juce_events/juce_events.h>
+#include <juce_gui_basics/juce_gui_basics.h>
+
 #include <algorithm>
 
 #include "../core/AutomationManager.hpp"
@@ -18,6 +21,15 @@ ProjectManager::ProjectManager() {
     // Initialize with default project info
     currentProject_.name = "Untitled";
     currentProject_.version = "1.0.0";
+}
+
+ProjectManager::~ProjectManager() {
+    joinBackgroundThread();
+}
+
+void ProjectManager::joinBackgroundThread() {
+    if (loadThread_.joinable())
+        loadThread_.join();
 }
 
 // ============================================================================
@@ -87,7 +99,8 @@ bool ProjectManager::saveProjectAs(const juce::File& file) {
     return true;
 }
 
-bool ProjectManager::loadProject(const juce::File& file) {
+bool ProjectManager::loadProject(const juce::File& file,
+                                 std::function<void(const ProjectInfo&)> onBeforeCommit) {
     // Check for unsaved changes in current project
     if (isDirty_ && !showUnsavedChangesDialog()) {
         return false;
@@ -99,15 +112,23 @@ bool ProjectManager::loadProject(const juce::File& file) {
         return false;
     }
 
-    // Load from file
-    ProjectInfo loadedInfo;
-    if (!ProjectSerializer::loadFromFile(file, loadedInfo)) {
+    // Stage first (file I/O + parse + validate)
+    StagedProjectData staged;
+    if (!ProjectSerializer::loadAndStage(file, staged)) {
         lastError_ = "Failed to load project: " + ProjectSerializer::getLastError();
         return false;
     }
 
+    // Set tempo/time sig/loop on the audio engine BEFORE committing tracks & clips,
+    // so that audio engine clip sync uses the correct BPM.
+    if (onBeforeCommit)
+        onBeforeCommit(staged.info);
+
+    // Commit staged data to singleton managers
+    ProjectSerializer::commitStaged(staged);
+
     // Update state
-    currentProject_ = loadedInfo;
+    currentProject_ = staged.info;
     currentProject_.filePath = file.getFullPathName();
     currentFile_ = file;
     isProjectOpen_ = true;
@@ -115,6 +136,59 @@ bool ProjectManager::loadProject(const juce::File& file) {
     notifyProjectOpened();
 
     return true;
+}
+
+void ProjectManager::loadProjectAsync(const juce::File& file,
+                                      std::function<void(const ProjectInfo&)> onBeforeCommit,
+                                      std::function<void(bool, const juce::String&)> onComplete) {
+    // Pre-flight checks on the message thread
+    if (isDirty_ && !showUnsavedChangesDialog()) {
+        if (onComplete)
+            onComplete(false, "Cancelled by user");
+        return;
+    }
+
+    if (!file.existsAsFile()) {
+        if (onComplete)
+            onComplete(false, "File does not exist: " + file.getFullPathName());
+        return;
+    }
+
+    // Capture file path for the background thread
+    auto fileCopy = file;
+
+    // Join any previous background load before starting a new one
+    joinBackgroundThread();
+
+    // Launch background thread for I/O + parse + staging
+    loadThread_ = std::thread([fileCopy, onBeforeCommit, onComplete, this]() {
+        auto staged = std::make_shared<StagedProjectData>();
+        bool ok = ProjectSerializer::loadAndStage(fileCopy, *staged);
+        juce::String error =
+            ok ? juce::String() : ("Failed to load project: " + ProjectSerializer::getLastError());
+
+        // Bounce back to the message thread for commit + notification
+        juce::MessageManager::callAsync(
+            [this, staged, ok, error, fileCopy, onBeforeCommit, onComplete]() {
+                if (ok) {
+                    // Set tempo/time sig/loop BEFORE committing tracks & clips,
+                    // so that audio engine clip sync uses the correct BPM.
+                    if (onBeforeCommit)
+                        onBeforeCommit(staged->info);
+
+                    ProjectSerializer::commitStaged(*staged);
+                    currentProject_ = staged->info;
+                    currentProject_.filePath = fileCopy.getFullPathName();
+                    currentFile_ = fileCopy;
+                    isProjectOpen_ = true;
+                    clearDirty();
+                    notifyProjectOpened();
+                }
+
+                if (onComplete)
+                    onComplete(ok, error);
+            });
+    });
 }
 
 bool ProjectManager::closeProject() {
@@ -165,12 +239,12 @@ void ProjectManager::setTimeSignature(int numerator, int denominator) {
     }
 }
 
-void ProjectManager::setLoopSettings(bool enabled, double start, double end) {
-    if (currentProject_.loopEnabled != enabled || currentProject_.loopStart != start ||
-        currentProject_.loopEnd != end) {
+void ProjectManager::setLoopSettings(bool enabled, double startBeats, double endBeats) {
+    if (currentProject_.loopEnabled != enabled || currentProject_.loopStartBeats != startBeats ||
+        currentProject_.loopEndBeats != endBeats) {
         currentProject_.loopEnabled = enabled;
-        currentProject_.loopStart = start;
-        currentProject_.loopEnd = end;
+        currentProject_.loopStartBeats = startBeats;
+        currentProject_.loopEndBeats = endBeats;
         markDirty();
     }
 }
@@ -232,18 +306,38 @@ void ProjectManager::notifyDirtyStateChanged() {
 }
 
 bool ProjectManager::showUnsavedChangesDialog() {
-    // TODO: Implement UI dialog to ask user if they want to save changes
-    // Until UI integration is complete, block operations that would discard
-    // unsaved changes to prevent silent data loss.
+    // Modal dialog: returns 1 for "Save", 2 for "Don't Save", 0 for "Cancel"
+    int result = juce::AlertWindow::showYesNoCancelBox(
+        juce::AlertWindow::QuestionIcon, "Unsaved Changes",
+        "You have unsaved changes. Do you want to save before continuing?", "Save", "Don't Save",
+        "Cancel");
 
-    // When implemented, this dialog should offer:
-    // - Save: Save changes and continue (return true)
-    // - Don't Save: Discard changes and continue (return true)
-    // - Cancel: Don't continue with the operation (return false)
+    if (result == 0) {
+        // Cancel — abort the operation
+        return false;
+    }
 
-    lastError_ = "Cannot proceed: project has unsaved changes. Please save or implement unsaved "
-                 "changes dialog.";
-    return false;  // Block operations until UI dialog is implemented
+    if (result == 1) {
+        // Save — attempt to save, abort if save fails
+        if (!currentFile_.getFullPathName().isEmpty()) {
+            if (!saveProject()) {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                       "Save Failed",
+                                                       "Could not save project: " + lastError_);
+                return false;
+            }
+        } else {
+            // No file path — can't save without a file chooser (synchronous context).
+            // Treat as cancel so the user can use Save As first.
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::InfoIcon, "Save Required",
+                "Please use File > Save As to save your project first.");
+            return false;
+        }
+    }
+
+    // result == 2: Don't Save — proceed without saving
+    return true;
 }
 
 }  // namespace magda

@@ -4,7 +4,9 @@
 
 #include "../core/AutomationManager.hpp"
 #include "../core/ClipManager.hpp"
+#include "../core/SelectionManager.hpp"
 #include "../core/TrackManager.hpp"
+#include "../core/ViewModeState.hpp"
 
 namespace magda {
 
@@ -57,6 +59,16 @@ bool ProjectSerializer::saveToFile(const juce::File& file, const ProjectInfo& in
 }
 
 bool ProjectSerializer::loadFromFile(const juce::File& file, ProjectInfo& outInfo) {
+    StagedProjectData staged;
+    if (!loadAndStage(file, staged))
+        return false;
+
+    outInfo = staged.info;
+    commitStaged(staged);
+    return true;
+}
+
+bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& outData) {
     try {
         // Check file exists
         if (!file.existsAsFile()) {
@@ -81,8 +93,79 @@ bool ProjectSerializer::loadFromFile(const juce::File& file, ProjectInfo& outInf
             return false;
         }
 
-        // Deserialize project
-        return deserializeProject(json, outInfo);
+        // Deserialize project metadata
+        if (!json.isObject()) {
+            lastError_ = "Invalid project JSON: not an object";
+            return false;
+        }
+
+        auto* obj = json.getDynamicObject();
+        if (obj == nullptr) {
+            lastError_ = "Invalid project JSON: null object";
+            return false;
+        }
+
+        // Version check
+        outData.info.version = obj->getProperty("magdaVersion").toString();
+        if (outData.info.version.isEmpty()) {
+            lastError_ = "Missing magdaVersion field";
+            return false;
+        }
+
+        // Parse timestamp
+        juce::String timeStr = obj->getProperty("lastModified").toString();
+        if (timeStr.isNotEmpty()) {
+            outData.info.lastModified = juce::Time::fromISO8601(timeStr);
+        }
+
+        // Parse project settings
+        auto projectVar = obj->getProperty("project");
+        if (!projectVar.isObject()) {
+            lastError_ = "Missing or invalid project settings";
+            return false;
+        }
+
+        auto* projectObj = projectVar.getDynamicObject();
+        outData.info.name = projectObj->getProperty("name").toString();
+        outData.info.tempo = projectObj->getProperty("tempo");
+
+        // Time signature
+        auto timeSigVar = projectObj->getProperty("timeSignature");
+        if (timeSigVar.isArray()) {
+            auto* arr = timeSigVar.getArray();
+            if (arr->size() >= 2) {
+                outData.info.timeSignatureNumerator = (*arr)[0];
+                outData.info.timeSignatureDenominator = (*arr)[1];
+            }
+        }
+
+        outData.info.projectLength = projectObj->getProperty("projectLength");
+
+        // Loop settings
+        auto loopVar = projectObj->getProperty("loop");
+        if (loopVar.isObject()) {
+            auto* loopObj = loopVar.getDynamicObject();
+            outData.info.loopEnabled = loopObj->getProperty("enabled");
+            outData.info.loopStartBeats = loopObj->getProperty("startBeats");
+            outData.info.loopEndBeats = loopObj->getProperty("endBeats");
+        }
+
+        // Stage tracks, clips, and automation
+        if (!deserializeTracksToStaging(obj->getProperty("tracks"), outData.tracks)) {
+            return false;
+        }
+
+        if (!deserializeClipsToStaging(obj->getProperty("clips"), outData.clips,
+                                       outData.info.tempo)) {
+            return false;
+        }
+
+        if (!deserializeAutomationToStaging(obj->getProperty("automation"), outData.automationLanes,
+                                            outData.automationClips)) {
+            return false;
+        }
+
+        return true;
 
     } catch (const std::exception& e) {
         lastError_ = "Exception while loading: " + juce::String(e.what());
@@ -91,6 +174,10 @@ bool ProjectSerializer::loadFromFile(const juce::File& file, ProjectInfo& outInf
         lastError_ = "Unknown exception while loading";
         return false;
     }
+}
+
+void ProjectSerializer::commitStaged(StagedProjectData& data) {
+    commitStagedData(data.tracks, data.clips, data.automationLanes, data.automationClips);
 }
 
 // ============================================================================
@@ -119,8 +206,8 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     // Loop settings
     auto* loopObj = new juce::DynamicObject();
     loopObj->setProperty("enabled", info.loopEnabled);
-    loopObj->setProperty("start", info.loopStart);
-    loopObj->setProperty("end", info.loopEnd);
+    loopObj->setProperty("startBeats", info.loopStartBeats);
+    loopObj->setProperty("endBeats", info.loopEndBeats);
     projectObj->setProperty("loop", juce::var(loopObj));
 
     obj->setProperty("project", juce::var(projectObj));
@@ -186,8 +273,8 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
     if (loopVar.isObject()) {
         auto* loopObj = loopVar.getDynamicObject();
         outInfo.loopEnabled = loopObj->getProperty("enabled");
-        outInfo.loopStart = loopObj->getProperty("start");
-        outInfo.loopEnd = loopObj->getProperty("end");
+        outInfo.loopStartBeats = loopObj->getProperty("startBeats");
+        outInfo.loopEndBeats = loopObj->getProperty("endBeats");
     }
 
     // ATOMIC DESERIALIZATION: Validate and stage ALL components before modifying any state.
@@ -198,21 +285,23 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
     std::vector<TrackInfo> stagedTracks;
     std::vector<ClipInfo> stagedClips;
     std::vector<AutomationLaneInfo> stagedAutomation;
+    std::vector<AutomationClipInfo> stagedAutomationClips;
 
     if (!deserializeTracksToStaging(obj->getProperty("tracks"), stagedTracks)) {
         return false;  // Failed - no state modified
     }
 
-    if (!deserializeClipsToStaging(obj->getProperty("clips"), stagedClips)) {
+    if (!deserializeClipsToStaging(obj->getProperty("clips"), stagedClips, outInfo.tempo)) {
         return false;  // Failed - no state modified
     }
 
-    if (!deserializeAutomationToStaging(obj->getProperty("automation"), stagedAutomation)) {
+    if (!deserializeAutomationToStaging(obj->getProperty("automation"), stagedAutomation,
+                                        stagedAutomationClips)) {
         return false;  // Failed - no state modified
     }
 
     // Stage 2: All components validated successfully - now commit to managers atomically
-    commitStagedData(stagedTracks, stagedClips, stagedAutomation);
+    commitStagedData(stagedTracks, stagedClips, stagedAutomation, stagedAutomationClips);
 
     return true;
 }
@@ -223,10 +312,15 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
 
 void ProjectSerializer::commitStagedData(std::vector<TrackInfo>& stagedTracks,
                                          std::vector<ClipInfo>& stagedClips,
-                                         std::vector<AutomationLaneInfo>& stagedAutomation) {
+                                         std::vector<AutomationLaneInfo>& stagedAutomation,
+                                         std::vector<AutomationClipInfo>& stagedAutomationClips) {
     auto& trackManager = TrackManager::getInstance();
     auto& clipManager = ClipManager::getInstance();
     auto& automationManager = AutomationManager::getInstance();
+
+    // Clear selection state before clearing managers to ensure all listeners
+    // are properly notified (prevents stale selection after project load)
+    SelectionManager::getInstance().clearSelection();
 
     // Clear all existing data from managers
     trackManager.clearAllTracks();
@@ -234,9 +328,6 @@ void ProjectSerializer::commitStagedData(std::vector<TrackInfo>& stagedTracks,
     automationManager.clearAll();
 
     // Restore tracks
-    // TODO: Performance - restoreTrack() calls notifyTracksChanged() for each track,
-    // causing a notification storm for large projects. Consider adding batch restore
-    // API to TrackManager that suppresses notifications during load and emits once at end.
     for (auto& track : stagedTracks) {
         trackManager.restoreTrack(track);
     }
@@ -246,17 +337,26 @@ void ProjectSerializer::commitStagedData(std::vector<TrackInfo>& stagedTracks,
     trackManager.refreshIdCountersFromTracks();
 
     // Restore clips
-    // TODO: Performance - restoreClip() calls notifyClipsChanged() for each clip,
-    // causing a notification storm for large projects. Consider adding batch restore
-    // mode to ClipManager that suppresses notifications during load and emits once at end.
     for (auto& clip : stagedClips) {
         clipManager.restoreClip(clip);
     }
 
-    // Restore automation (currently always empty since deserialization is not implemented)
+    // Restore automation lanes
     for (auto& lane : stagedAutomation) {
-        // TODO: Implement automation restoration when automation deserialization is implemented
-        juce::ignoreUnused(lane);
+        automationManager.restoreLane(lane);
+    }
+
+    // Restore automation clips
+    for (auto& clip : stagedAutomationClips) {
+        automationManager.restoreClip(clip);
+    }
+
+    // Update automation ID counters to avoid collisions
+    automationManager.refreshIdCountersFromLanes();
+
+    // Select the first track so the UI has a valid selection after load
+    if (!stagedTracks.empty()) {
+        SelectionManager::getInstance().selectTrack(stagedTracks[0].id);
     }
 }
 
@@ -287,14 +387,23 @@ juce::var ProjectSerializer::serializeClips() {
 }
 
 juce::var ProjectSerializer::serializeAutomation() {
-    juce::Array<juce::var> lanesArray;
-
     auto& automationManager = AutomationManager::getInstance();
+
+    juce::Array<juce::var> lanesArray;
     for (const auto& lane : automationManager.getLanes()) {
         lanesArray.add(serializeAutomationLaneInfo(lane));
     }
 
-    return juce::var(lanesArray);
+    juce::Array<juce::var> clipsArray;
+    for (const auto& clip : automationManager.getClips()) {
+        clipsArray.add(serializeAutomationClipInfo(clip));
+    }
+
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty("lanes", juce::var(lanesArray));
+    obj->setProperty("clips", juce::var(clipsArray));
+
+    return juce::var(obj);
 }
 
 // ============================================================================
@@ -325,7 +434,8 @@ bool ProjectSerializer::deserializeTracksToStaging(const juce::var& json,
 }
 
 bool ProjectSerializer::deserializeClipsToStaging(const juce::var& json,
-                                                  std::vector<ClipInfo>& outClips) {
+                                                  std::vector<ClipInfo>& outClips,
+                                                  double projectTempo) {
     if (!json.isArray()) {
         lastError_ = "Clips data is not an array";
         return false;
@@ -338,7 +448,7 @@ bool ProjectSerializer::deserializeClipsToStaging(const juce::var& json,
     // Deserialize all clips into staging vector (validation phase)
     for (const auto& clipVar : *arr) {
         ClipInfo clip;
-        if (!deserializeClipInfo(clipVar, clip)) {
+        if (!deserializeClipInfo(clipVar, clip, projectTempo)) {
             return false;  // Failed - staging vector discarded
         }
         outClips.push_back(std::move(clip));
@@ -348,38 +458,82 @@ bool ProjectSerializer::deserializeClipsToStaging(const juce::var& json,
 }
 
 bool ProjectSerializer::deserializeAutomationToStaging(const juce::var& json,
-                                                       std::vector<AutomationLaneInfo>& outLanes) {
-    // Bug Fix: Handle missing automation key gracefully for backward compatibility.
+                                                       std::vector<AutomationLaneInfo>& outLanes,
+                                                       std::vector<AutomationClipInfo>& outClips) {
+    // Handle missing automation key gracefully for backward compatibility.
     // Older project files created before automation support won't have this key.
     if (json.isVoid()) {
-        // No automation data present - treat as empty (backward compatible)
         outLanes.clear();
+        outClips.clear();
         return true;
     }
 
-    if (!json.isArray()) {
-        lastError_ = "Automation data is not an array";
-        return false;
+    // New format: object with "lanes" and "clips" arrays
+    if (json.isObject()) {
+        auto* obj = json.getDynamicObject();
+        if (obj == nullptr) {
+            lastError_ = "Automation data object is invalid";
+            return false;
+        }
+
+        // Deserialize lanes
+        auto lanesVar = obj->getProperty("lanes");
+        if (lanesVar.isArray()) {
+            auto* lanesArr = lanesVar.getArray();
+            outLanes.clear();
+            outLanes.reserve(lanesArr->size());
+            for (const auto& laneVar : *lanesArr) {
+                AutomationLaneInfo lane;
+                if (!deserializeAutomationLaneInfo(laneVar, lane)) {
+                    return false;
+                }
+                outLanes.push_back(std::move(lane));
+            }
+        }
+
+        // Deserialize clips
+        auto clipsVar = obj->getProperty("clips");
+        if (clipsVar.isArray()) {
+            auto* clipsArr = clipsVar.getArray();
+            outClips.clear();
+            outClips.reserve(clipsArr->size());
+            for (const auto& clipVar : *clipsArr) {
+                AutomationClipInfo clip;
+                if (!deserializeAutomationClipInfo(clipVar, clip)) {
+                    return false;
+                }
+                outClips.push_back(std::move(clip));
+            }
+        }
+
+        return true;
     }
 
-    auto* arr = json.getArray();
-    if (arr == nullptr) {
-        lastError_ = "Automation data array is invalid";
-        return false;
+    // Legacy format: plain array of lanes (no clips)
+    if (json.isArray()) {
+        auto* arr = json.getArray();
+        if (arr == nullptr) {
+            lastError_ = "Automation data array is invalid";
+            return false;
+        }
+
+        outLanes.clear();
+        outLanes.reserve(arr->size());
+        outClips.clear();
+
+        for (const auto& laneVar : *arr) {
+            AutomationLaneInfo lane;
+            if (!deserializeAutomationLaneInfo(laneVar, lane)) {
+                return false;
+            }
+            outLanes.push_back(std::move(lane));
+        }
+
+        return true;
     }
 
-    // To avoid silently losing user automation data, we treat the presence of
-    // non-empty automation arrays as a hard load error until proper
-    // deserialization is implemented or a forward-compat mechanism is added.
-    if (!arr->isEmpty()) {
-        lastError_ = "Project contains automation lanes, but automation deserialization "
-                     "is not yet implemented. Cannot load project without losing automation data.";
-        return false;
-    }
-
-    // Empty automation array is fine - no data to lose
-    outLanes.clear();
-    return true;
+    lastError_ = "Automation data has unexpected format";
+    return false;
 }
 
 // ============================================================================
@@ -408,6 +562,20 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
     obj->setProperty("muted", track.muted);
     obj->setProperty("soloed", track.soloed);
     obj->setProperty("recordArmed", track.recordArmed);
+    obj->setProperty("frozen", track.frozen);
+
+    // View settings per view mode
+    auto* viewSettingsObj = new juce::DynamicObject();
+    for (auto mode : {ViewMode::Live, ViewMode::Arrange, ViewMode::Mix, ViewMode::Master}) {
+        const auto& vs = track.viewSettings.get(mode);
+        auto* modeObj = new juce::DynamicObject();
+        modeObj->setProperty("visible", vs.visible);
+        modeObj->setProperty("locked", vs.locked);
+        modeObj->setProperty("collapsed", vs.collapsed);
+        modeObj->setProperty("height", vs.height);
+        viewSettingsObj->setProperty(getViewModeName(mode), juce::var(modeObj));
+    }
+    obj->setProperty("viewSettings", juce::var(viewSettingsObj));
 
     // Routing
     obj->setProperty("midiInputDevice", track.midiInputDevice);
@@ -478,6 +646,29 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
     outTrack.muted = obj->getProperty("muted");
     outTrack.soloed = obj->getProperty("soloed");
     outTrack.recordArmed = obj->getProperty("recordArmed");
+
+    // Frozen state (backward compatible - defaults to false)
+    if (obj->hasProperty("frozen")) {
+        outTrack.frozen = static_cast<bool>(obj->getProperty("frozen"));
+    }
+
+    // View settings per view mode (backward compatible - defaults applied if missing)
+    auto viewSettingsVar = obj->getProperty("viewSettings");
+    if (viewSettingsVar.isObject()) {
+        auto* vsObj = viewSettingsVar.getDynamicObject();
+        for (auto mode : {ViewMode::Live, ViewMode::Arrange, ViewMode::Mix, ViewMode::Master}) {
+            auto modeVar = vsObj->getProperty(getViewModeName(mode));
+            if (modeVar.isObject()) {
+                auto* modeObj = modeVar.getDynamicObject();
+                TrackViewSettings vs;
+                vs.visible = modeObj->getProperty("visible");
+                vs.locked = modeObj->getProperty("locked");
+                vs.collapsed = modeObj->getProperty("collapsed");
+                vs.height = modeObj->getProperty("height");
+                outTrack.viewSettings.set(mode, vs);
+            }
+        }
+    }
 
     // Routing
     outTrack.midiInputDevice = obj->getProperty("midiInputDevice").toString();
@@ -983,16 +1174,70 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("length", clip.length);
     obj->setProperty("view", static_cast<int>(clip.view));
     obj->setProperty("loopEnabled", clip.loopEnabled);
+    obj->setProperty("loopStart", clip.loopStart);
+    obj->setProperty("loopLength", clip.loopLength);
     obj->setProperty("sceneIndex", clip.sceneIndex);
     obj->setProperty("launchMode", static_cast<int>(clip.launchMode));
     obj->setProperty("launchQuantize", static_cast<int>(clip.launchQuantize));
+
+    // Per-clip grid settings
+    obj->setProperty("gridAutoGrid", clip.gridAutoGrid);
+    obj->setProperty("gridNumerator", clip.gridNumerator);
+    obj->setProperty("gridDenominator", clip.gridDenominator);
+    obj->setProperty("gridSnapEnabled", clip.gridSnapEnabled);
+
+    // Per-clip mix
+    obj->setProperty("volumeDB", clip.volumeDB);
+    obj->setProperty("gainDB", clip.gainDB);
+    obj->setProperty("pan", clip.pan);
+
+    // Fades
+    obj->setProperty("fadeIn", clip.fadeIn);
+    obj->setProperty("fadeOut", clip.fadeOut);
+    obj->setProperty("fadeInType", clip.fadeInType);
+    obj->setProperty("fadeOutType", clip.fadeOutType);
+    obj->setProperty("fadeInBehaviour", clip.fadeInBehaviour);
+    obj->setProperty("fadeOutBehaviour", clip.fadeOutBehaviour);
+    obj->setProperty("autoCrossfade", clip.autoCrossfade);
+
+    // Pitch
+    obj->setProperty("pitchChange", clip.pitchChange);
+    obj->setProperty("transpose", clip.transpose);
+    obj->setProperty("autoPitch", clip.autoPitch);
+    obj->setProperty("autoPitchMode", clip.autoPitchMode);
+
+    // Playback
+    obj->setProperty("isReversed", clip.isReversed);
+
+    // Beat detection
+    obj->setProperty("autoDetectBeats", clip.autoDetectBeats);
+    obj->setProperty("beatSensitivity", clip.beatSensitivity);
+
+    // Channels
+    obj->setProperty("leftChannelActive", clip.leftChannelActive);
+    obj->setProperty("rightChannelActive", clip.rightChannelActive);
+
+    // Auto-tempo / Musical mode & beat-based properties
+    obj->setProperty("autoTempo", clip.autoTempo);
+    obj->setProperty("startBeats", clip.startBeats);
+    obj->setProperty("lengthBeats", clip.lengthBeats);
+    obj->setProperty("loopStartBeats", clip.loopStartBeats);
+    obj->setProperty("loopLengthBeats", clip.loopLengthBeats);
+
+    // Source metadata
+    if (clip.sourceNumBeats > 0.0)
+        obj->setProperty("sourceNumBeats", clip.sourceNumBeats);
+    if (clip.sourceBPM > 0.0)
+        obj->setProperty("sourceBPM", clip.sourceBPM);
+
+    // MIDI offset
+    if (clip.midiOffset != 0.0)
+        obj->setProperty("midiOffset", clip.midiOffset);
 
     // Audio properties (TE-aligned model)
     if (clip.audioFilePath.isNotEmpty()) {
         obj->setProperty("audioFilePath", clip.audioFilePath);
         obj->setProperty("offset", clip.offset);
-        obj->setProperty("loopStart", clip.loopStart);
-        obj->setProperty("loopLength", clip.loopLength);
         obj->setProperty("speedRatio", clip.speedRatio);
         if (clip.warpEnabled) {
             obj->setProperty("warpEnabled", clip.warpEnabled);
@@ -1040,7 +1285,8 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     return juce::var(obj);
 }
 
-bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& outClip) {
+bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& outClip,
+                                            double projectTempo) {
     if (!json.isObject()) {
         lastError_ = "Clip data is not an object";
         return false;
@@ -1060,113 +1306,80 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     if (!viewVar.isVoid()) {
         outClip.view = static_cast<ClipView>(static_cast<int>(viewVar));
     }
-    // Loop settings (new model)
-    auto loopEnabledVar = obj->getProperty("loopEnabled");
-    if (!loopEnabledVar.isVoid()) {
-        outClip.loopEnabled = static_cast<bool>(loopEnabledVar);
-    } else {
-        // Backward compatibility: try old field name
-        outClip.loopEnabled = obj->getProperty("internalLoopEnabled");
-    }
+    // Loop settings
+    outClip.loopEnabled = static_cast<bool>(obj->getProperty("loopEnabled"));
+    outClip.loopStart = obj->getProperty("loopStart");
+    outClip.loopLength = obj->getProperty("loopLength");
     outClip.sceneIndex = obj->getProperty("sceneIndex");
 
-    // Launch properties (backward compatible - defaults apply if missing)
-    auto launchModeVar = obj->getProperty("launchMode");
-    if (!launchModeVar.isVoid()) {
-        outClip.launchMode = static_cast<LaunchMode>(static_cast<int>(launchModeVar));
-    }
-    auto launchQuantizeVar = obj->getProperty("launchQuantize");
-    if (!launchQuantizeVar.isVoid()) {
-        outClip.launchQuantize = static_cast<LaunchQuantize>(static_cast<int>(launchQuantizeVar));
-    }
+    // Launch properties
+    outClip.launchMode = static_cast<LaunchMode>(static_cast<int>(obj->getProperty("launchMode")));
+    outClip.launchQuantize =
+        static_cast<LaunchQuantize>(static_cast<int>(obj->getProperty("launchQuantize")));
 
-    // Audio properties (TE-aligned model)
+    // Per-clip grid settings
+    outClip.gridAutoGrid = static_cast<bool>(obj->getProperty("gridAutoGrid"));
+    outClip.gridNumerator = obj->getProperty("gridNumerator");
+    outClip.gridDenominator = obj->getProperty("gridDenominator");
+    outClip.gridSnapEnabled = static_cast<bool>(obj->getProperty("gridSnapEnabled"));
+
+    // Per-clip mix
+    outClip.volumeDB = static_cast<float>(static_cast<double>(obj->getProperty("volumeDB")));
+    outClip.gainDB = static_cast<float>(static_cast<double>(obj->getProperty("gainDB")));
+    outClip.pan = static_cast<float>(static_cast<double>(obj->getProperty("pan")));
+
+    // Fades
+    outClip.fadeIn = obj->getProperty("fadeIn");
+    outClip.fadeOut = obj->getProperty("fadeOut");
+    outClip.fadeInType = obj->getProperty("fadeInType");
+    outClip.fadeOutType = obj->getProperty("fadeOutType");
+    outClip.fadeInBehaviour = obj->getProperty("fadeInBehaviour");
+    outClip.fadeOutBehaviour = obj->getProperty("fadeOutBehaviour");
+    outClip.autoCrossfade = static_cast<bool>(obj->getProperty("autoCrossfade"));
+
+    // Pitch
+    outClip.pitchChange = static_cast<float>(static_cast<double>(obj->getProperty("pitchChange")));
+    outClip.transpose = obj->getProperty("transpose");
+    outClip.autoPitch = static_cast<bool>(obj->getProperty("autoPitch"));
+    outClip.autoPitchMode = obj->getProperty("autoPitchMode");
+
+    // Playback
+    outClip.isReversed = static_cast<bool>(obj->getProperty("isReversed"));
+
+    // Beat detection
+    outClip.autoDetectBeats = static_cast<bool>(obj->getProperty("autoDetectBeats"));
+    outClip.beatSensitivity =
+        static_cast<float>(static_cast<double>(obj->getProperty("beatSensitivity")));
+
+    // Channels
+    outClip.leftChannelActive = static_cast<bool>(obj->getProperty("leftChannelActive"));
+    outClip.rightChannelActive = static_cast<bool>(obj->getProperty("rightChannelActive"));
+
+    // Auto-tempo / Musical mode & beat-based properties
+    outClip.autoTempo = static_cast<bool>(obj->getProperty("autoTempo"));
+    outClip.startBeats = obj->getProperty("startBeats");
+    outClip.lengthBeats = obj->getProperty("lengthBeats");
+    outClip.loopStartBeats = obj->getProperty("loopStartBeats");
+    outClip.loopLengthBeats = obj->getProperty("loopLengthBeats");
+
+    // Source metadata
+    outClip.sourceNumBeats = obj->getProperty("sourceNumBeats");
+    outClip.sourceBPM = obj->getProperty("sourceBPM");
+
+    // MIDI offset
+    outClip.midiOffset = obj->getProperty("midiOffset");
+
+    // Audio properties
     auto audioFilePathVar = obj->getProperty("audioFilePath");
     if (!audioFilePathVar.isVoid()) {
         outClip.audioFilePath = audioFilePathVar.toString();
-
-        // Try new TE-aligned field names first, fall back to old names for backward compatibility
-        auto offsetVar = obj->getProperty("offset");
-        if (!offsetVar.isVoid()) {
-            outClip.offset = static_cast<double>(offsetVar);
-        } else {
-            // Backward compatibility: try sourceStart, then audioOffset
-            auto sourceStartVar = obj->getProperty("sourceStart");
-            if (!sourceStartVar.isVoid()) {
-                outClip.offset = static_cast<double>(sourceStartVar);
-            } else {
-                outClip.offset = obj->getProperty("audioOffset");
-            }
-        }
-
-        auto loopStartVar = obj->getProperty("loopStart");
-        if (!loopStartVar.isVoid()) {
-            outClip.loopStart = static_cast<double>(loopStartVar);
-        } else {
-            // Backward compatibility: loopStart defaults to offset
-            outClip.loopStart = outClip.offset;
-        }
-
-        auto loopLengthVar = obj->getProperty("loopLength");
-        if (!loopLengthVar.isVoid()) {
-            outClip.loopLength = static_cast<double>(loopLengthVar);
-        } else {
-            // Backward compatibility: try to derive from old sourceEnd
-            auto sourceEndVar = obj->getProperty("sourceEnd");
-            if (!sourceEndVar.isVoid()) {
-                double sourceEnd = static_cast<double>(sourceEndVar);
-                if (sourceEnd > outClip.offset) {
-                    outClip.loopLength = sourceEnd - outClip.offset;
-                }
-            }
-            // Note: loopLength=0 means "use clip length", which is fine for migration
-        }
-
-        auto speedRatioVar = obj->getProperty("speedRatio");
-        if (!speedRatioVar.isVoid()) {
-            outClip.speedRatio = static_cast<double>(speedRatioVar);
-        } else {
-            // Backward compatibility: try stretchFactor, then audioStretchFactor
-            auto stretchVar = obj->getProperty("stretchFactor");
-            if (!stretchVar.isVoid()) {
-                outClip.speedRatio = static_cast<double>(stretchVar);
-            } else {
-                outClip.speedRatio = obj->getProperty("audioStretchFactor");
-            }
-        }
+        outClip.offset = obj->getProperty("offset");
+        outClip.speedRatio = obj->getProperty("speedRatio");
         if (outClip.speedRatio <= 0.0)
             outClip.speedRatio = 1.0;
-
-        auto warpEnabledVar = obj->getProperty("warpEnabled");
-        if (!warpEnabledVar.isVoid()) {
-            outClip.warpEnabled = static_cast<bool>(warpEnabledVar);
-        }
-        auto analogPitchVar = obj->getProperty("analogPitch");
-        if (!analogPitchVar.isVoid()) {
-            outClip.analogPitch = static_cast<bool>(analogPitchVar);
-        }
-        auto timeStretchModeVar = obj->getProperty("timeStretchMode");
-        if (!timeStretchModeVar.isVoid()) {
-            outClip.timeStretchMode = static_cast<int>(timeStretchModeVar);
-        }
-    } else {
-        // Migration from old audioSources format
-        auto audioSourcesVar = obj->getProperty("audioSources");
-        if (audioSourcesVar.isArray()) {
-            auto* arr = audioSourcesVar.getArray();
-            if (arr && !arr->isEmpty()) {
-                auto firstSourceVar = (*arr)[0];
-                if (firstSourceVar.isObject()) {
-                    auto* srcObj = firstSourceVar.getDynamicObject();
-                    outClip.audioFilePath = srcObj->getProperty("filePath").toString();
-                    outClip.offset = srcObj->getProperty("offset");
-                    outClip.loopStart = outClip.offset;
-                    outClip.speedRatio = srcObj->getProperty("stretchFactor");
-                    if (outClip.speedRatio <= 0.0)
-                        outClip.speedRatio = 1.0;
-                }
-            }
-        }
+        outClip.warpEnabled = static_cast<bool>(obj->getProperty("warpEnabled"));
+        outClip.analogPitch = static_cast<bool>(obj->getProperty("analogPitch"));
+        outClip.timeStretchMode = obj->getProperty("timeStretchMode");
     }
 
     // MIDI notes
@@ -1211,6 +1424,16 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
                 outClip.midiPitchBendData.push_back(pb);
             }
         }
+    }
+
+    // MIDI clips: ensure beats are populated (backward compat with old project files)
+    if (outClip.type == ClipType::MIDI) {
+        if (outClip.lengthBeats <= 0.0 && projectTempo > 0.0) {
+            outClip.startBeats = (outClip.startTime * projectTempo) / 60.0;
+            outClip.lengthBeats = (outClip.length * projectTempo) / 60.0;
+        }
+        // Derive seconds cache from authoritative beats
+        outClip.deriveTimesFromBeats(projectTempo);
     }
 
     return true;

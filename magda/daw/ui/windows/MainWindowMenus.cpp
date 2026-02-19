@@ -37,6 +37,15 @@ void MainWindow::setupMenuCallbacks() {
 
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "New Project",
                                                    message);
+        } else {
+            // Reset timeline/transport to defaults
+            if (mainComponent && mainComponent->mainView) {
+                ProjectInfo defaults;
+                auto& tc = mainComponent->mainView->getTimelineController();
+                tc.restoreProjectState(defaults.tempo, defaults.timeSignatureNumerator,
+                                       defaults.timeSignatureDenominator, defaults.loopEnabled,
+                                       defaults.loopStartBeats, defaults.loopEndBeats);
+            }
         }
     };
 
@@ -59,21 +68,51 @@ void MainWindow::setupMenuCallbacks() {
             if (!file.existsAsFile())
                 return;  // User cancelled
 
+            // Show loading overlay
+            if (mainComponent)
+                mainComponent->showLoadingMessage("Loading project...");
+
             auto& projectManager = ProjectManager::getInstance();
-            if (!projectManager.loadProject(file)) {
-                juce::AlertWindow::showMessageBoxAsync(
-                    juce::AlertWindow::WarningIcon, "Open Project",
-                    "Failed to load project: " + projectManager.getLastError());
-            }
+            projectManager.loadProjectAsync(
+                file,
+                // onBeforeCommit: set tempo/time sig/loop on the audio engine BEFORE
+                // clips are committed, so clip sync uses the correct BPM.
+                [this](const ProjectInfo& info) {
+                    if (mainComponent && mainComponent->mainView) {
+                        auto& tc = mainComponent->mainView->getTimelineController();
+                        tc.restoreProjectState(info.tempo, info.timeSignatureNumerator,
+                                               info.timeSignatureDenominator, info.loopEnabled,
+                                               info.loopStartBeats, info.loopEndBeats);
+                    }
+                },
+                [this](bool success, const juce::String& error) {
+                    // Hide loading overlay
+                    if (mainComponent)
+                        mainComponent->hideLoadingMessage();
+
+                    if (!success) {
+                        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                               "Open Project", error);
+                    }
+                });
         });
     };
 
-    callbacks.onCloseProject = []() {
+    callbacks.onCloseProject = [this]() {
         auto& projectManager = ProjectManager::getInstance();
         if (!projectManager.closeProject()) {
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Close Project",
                                                    "Failed to close project: " +
                                                        projectManager.getLastError());
+        } else {
+            // Reset timeline/transport to defaults
+            if (mainComponent && mainComponent->mainView) {
+                ProjectInfo defaults;
+                auto& tc = mainComponent->mainView->getTimelineController();
+                tc.restoreProjectState(defaults.tempo, defaults.timeSignatureNumerator,
+                                       defaults.timeSignatureDenominator, defaults.loopEnabled,
+                                       defaults.loopStartBeats, defaults.loopEndBeats);
+            }
         }
     };
 

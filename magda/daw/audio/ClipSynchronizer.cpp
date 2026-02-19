@@ -114,7 +114,7 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
         << clip->length << " offset=" << clip->offset << " loopStart=" << clip->loopStart
         << " getTeOffset()=" << clip->getTeOffset(clip->loopEnabled));
 
-    if (clip->autoTempo || clip->warpEnabled) {
+    if (clip->isBeatsAuthoritative()) {
         DBG("[CLIP-SYNCHRONIZER] clipPropertyChanged clip "
             << clipId << " length=" << clip->length << " loopLength=" << clip->loopLength
             << " loopLengthBeats=" << clip->loopLengthBeats << " lengthBeats=" << clip->lengthBeats
@@ -725,9 +725,12 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
 
     // Create clip if it doesn't exist
     if (!midiClipPtr) {
-        auto timeRange =
-            te::TimeRange(te::TimePosition::fromSeconds(clip->startTime),
-                          te::TimePosition::fromSeconds(clip->startTime + clip->length));
+        // Use beats-based positioning via TE's tempo sequence (always correct regardless of tempo)
+        auto startPos =
+            edit_.tempoSequence.beatsToTime(te::BeatPosition::fromBeats(clip->startBeats));
+        auto endPos = edit_.tempoSequence.beatsToTime(
+            te::BeatPosition::fromBeats(clip->startBeats + clip->lengthBeats));
+        auto timeRange = te::TimeRange(startPos, endPos);
 
         auto clipRef = audioTrack->insertMIDIClip(timeRange, nullptr);
         if (!clipRef) {
@@ -746,11 +749,16 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
         }
     }
 
-    // Update clip position/length
-    // CRITICAL: Use preserveSync=true to maintain the content offset
-    // When false, Tracktion adjusts the content offset which breaks note playback
-    midiClipPtr->setStart(te::TimePosition::fromSeconds(clip->startTime), true, false);
-    midiClipPtr->setEnd(te::TimePosition::fromSeconds(clip->startTime + clip->length), false);
+    // Update clip position/length using beats-based positioning via TE's tempo sequence
+    // This ensures correct positioning regardless of when TE's tempo is updated
+    {
+        auto startPos =
+            edit_.tempoSequence.beatsToTime(te::BeatPosition::fromBeats(clip->startBeats));
+        auto endPos = edit_.tempoSequence.beatsToTime(
+            te::BeatPosition::fromBeats(clip->startBeats + clip->lengthBeats));
+        midiClipPtr->setStart(startPos, true, false);
+        midiClipPtr->setEnd(endPos, false);
+    }
 
     // Force offset to 0 — note shifting is handled manually below
     midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
@@ -775,8 +783,7 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     sequence.clear(nullptr);
 
     // Calculate the beat range visible in this clip based on midiOffset
-    const double beatsPerSecond = edit_.tempoSequence.getBpmAt(te::TimePosition()) / 60.0;
-    double clipLengthBeats = clip->length * beatsPerSecond;
+    double clipLengthBeats = clip->lengthBeats;
     // When looping, notes only span the loop region — TE handles repetition
     double contentLengthBeats = (clip->loopEnabled && clip->loopLengthBeats > 0.0)
                                     ? clip->loopLengthBeats
@@ -1058,7 +1065,7 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
     DBG("    offset: " << audioClipPtr->getPosition().getOffset().inSeconds());
     DBG("    speedRatio: " << audioClipPtr->getSpeedRatio());
 
-    if (clip->autoTempo || clip->warpEnabled) {
+    if (clip->isBeatsAuthoritative()) {
         // ========================================================================
         // AUTO-TEMPO MODE (Beat-based length, maintains musical time)
         // Warp also uses this path — TE only passes warpMap to WaveNodeRealTime
@@ -1160,7 +1167,7 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
 
     // 6. UPDATE loop properties (BEFORE offset — setLoopRangeBeats can reset offset)
     // Use beat-based loop range in auto-tempo/warp mode, time-based otherwise
-    if (clip->autoTempo || clip->warpEnabled) {
+    if (clip->isBeatsAuthoritative()) {
         // Auto-tempo mode: ALWAYS set beat-based loop range
         // The loop range defines the clip's musical extent (not just the loop region)
 

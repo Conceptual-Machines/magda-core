@@ -4,6 +4,7 @@
 
 #include "../audio/AudioBridge.hpp"
 #include "../audio/MidiBridge.hpp"
+#include "../audio/SidechainTriggerBus.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "ModulatorEngine.hpp"
 #include "RackInfo.hpp"
@@ -297,6 +298,14 @@ void TrackManager::restoreTrack(const TrackInfo& trackInfo) {
                 parent->childIds.end()) {
                 parent->childIds.push_back(trackInfo.id);
             }
+        }
+    }
+
+    // Set up MidiBridge monitoring for restored track (same as createTrack)
+    if (audioEngine_ && trackInfo.type != TrackType::Aux) {
+        if (auto* midiBridge = audioEngine_->getMidiBridge()) {
+            midiBridge->setTrackMidiInput(trackInfo.id, "all");
+            midiBridge->startMonitoring(trackInfo.id);
         }
     }
 
@@ -1417,8 +1426,24 @@ void TrackManager::clearAllTracks() {
     nextRackId_ = 1;
     nextChainId_ = 1;
     nextAuxBusIndex_ = 0;
-    lastBusNoteOn_.fill(0);
-    lastBusNoteOff_.fill(0);
+
+    // Reset MIDI trigger state so stale held-note counts don't block
+    // first-note-on detection after project close/reopen.
+    midiHeldNotes_.clear();
+    {
+        std::lock_guard<std::mutex> lock(midiTriggerMutex_);
+        pendingMidiNoteOns_.clear();
+        pendingMidiNoteOffs_.clear();
+    }
+
+    // Sync lastBus counters to current SidechainTriggerBus values so the
+    // first tick after reopen sees a delta of 0 (no phantom note burst).
+    auto& bus = SidechainTriggerBus::getInstance();
+    for (int i = 0; i < kMaxBusTracks; ++i) {
+        lastBusNoteOn_[i] = bus.getNoteOnCounter(i);
+        lastBusNoteOff_[i] = bus.getNoteOffCounter(i);
+    }
+
     notifyTracksChanged();
 }
 

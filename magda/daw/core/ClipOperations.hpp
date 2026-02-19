@@ -98,7 +98,7 @@ class ClipOperations {
 
         clip.startTime = newStartTime;
         clip.length = newLength;
-        if ((clip.autoTempo || clip.warpEnabled) && bpm > 0.0) {
+        if (clip.isBeatsAuthoritative() && bpm > 0.0) {
             clip.startBeats = newStartTime * bpm / 60.0;
             clip.lengthBeats = newLength * bpm / 60.0;
         }
@@ -118,7 +118,7 @@ class ClipOperations {
                                                 double bpm = 120.0) {
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
         clip.length = newLength;
-        if ((clip.autoTempo || clip.warpEnabled) && bpm > 0.0) {
+        if (clip.isBeatsAuthoritative() && bpm > 0.0) {
             clip.lengthBeats = newLength * bpm / 60.0;
         }
     }
@@ -152,7 +152,7 @@ class ClipOperations {
         clip.startTime = juce::jmax(0.0, clip.startTime + timelineDelta);
         clip.length = juce::jmax(MIN_CLIP_LENGTH, clip.length - timelineDelta);
 
-        if ((clip.autoTempo || clip.warpEnabled) && bpm > 0.0) {
+        if (clip.isBeatsAuthoritative() && bpm > 0.0) {
             clip.startBeats = clip.startTime * bpm / 60.0;
             clip.lengthBeats = clip.length * bpm / 60.0;
         }
@@ -177,7 +177,7 @@ class ClipOperations {
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
         clip.length = newLength;
 
-        if ((clip.autoTempo || clip.warpEnabled) && bpm > 0.0) {
+        if (clip.isBeatsAuthoritative() && bpm > 0.0) {
             clip.lengthBeats = newLength * bpm / 60.0;
         }
     }
@@ -295,30 +295,89 @@ class ClipOperations {
     }
 
     /**
-     * @brief Stretch to absolute target speed/length (for drag preview).
-     * Maintains loopLength when looped (keeps loop markers fixed on timeline).
-     * @param clip Clip to stretch
-     * @param newSpeedRatio New speed ratio
-     * @param newLength New clip length
+     * @brief Update autoTempo clip for a new total beat count (stretch).
+     * Adjusts sourceBPM so TE stretches the same source audio to fill newBeats.
+     * Mirrors ClipManager::setLengthBeats logic.
      */
-    static inline void stretchAbsolute(ClipInfo& clip, double newSpeedRatio, double newLength) {
-        clip.speedRatio = newSpeedRatio;
+    static inline void stretchAutoTempoBeats(ClipInfo& clip, double newTotalBeats, double /*bpm*/) {
+        double sourceSeconds = clip.loopLength > 0.0 ? clip.loopLength : clip.getSourceLength();
+        if (sourceSeconds <= 0.0)
+            return;
+
+        // Compute stretch ratio from total beats (handles multiple loop cycles)
+        double oldTotalBeats = clip.lengthBeats > 0.0 ? clip.lengthBeats : clip.loopLengthBeats;
+        if (oldTotalBeats <= 0.0)
+            return;
+
+        double stretchRatio = newTotalBeats / oldTotalBeats;
+
+        // Scale per-cycle beats proportionally
+        double newLoopBeats = clip.loopLengthBeats * stretchRatio;
+
+        // Update sourceBPM from new per-cycle beats
+        double oldSourceBPM = clip.sourceBPM;
+        clip.sourceBPM = newLoopBeats * 60.0 / sourceSeconds;
+
+        if (oldSourceBPM > 0.0 && clip.sourceNumBeats > 0.0) {
+            clip.sourceNumBeats *= clip.sourceBPM / oldSourceBPM;
+        }
+
+        clip.loopLengthBeats = newLoopBeats;
+        clip.lengthBeats = newTotalBeats;
+        clip.loopStartBeats = clip.loopStart * clip.sourceBPM / 60.0;
+    }
+
+    /**
+     * @brief Stretch to absolute target speed/length (for drag preview).
+     * For autoTempo clips, changes lengthBeats instead of speedRatio.
+     * @param clip Clip to stretch
+     * @param newSpeedRatio New speed ratio (ignored for autoTempo)
+     * @param newLength New clip length in seconds
+     * @param bpm Current project tempo
+     */
+    static inline void stretchAbsolute(ClipInfo& clip, double newSpeedRatio, double newLength,
+                                       double bpm = 120.0) {
         clip.length = newLength;
+        if (clip.autoTempo && bpm > 0.0) {
+            double newBeats = newLength * bpm / 60.0;
+            stretchAutoTempoBeats(clip, newBeats, bpm);
+        } else {
+            clip.speedRatio = newSpeedRatio;
+        }
     }
 
     /**
      * @brief Stretch from left edge to absolute target (for drag preview).
-     * Keeps right edge fixed.
+     * Keeps right edge fixed. For autoTempo clips, changes lengthBeats.
      * @param clip Clip to stretch
-     * @param newSpeedRatio New speed ratio
-     * @param newLength New clip length
+     * @param newSpeedRatio New speed ratio (ignored for autoTempo)
+     * @param newLength New clip length in seconds
      * @param rightEdge Fixed right edge position
+     * @param bpm Current project tempo
      */
     static inline void stretchAbsoluteFromLeft(ClipInfo& clip, double newSpeedRatio,
-                                               double newLength, double rightEdge) {
-        clip.speedRatio = newSpeedRatio;
+                                               double newLength, double rightEdge,
+                                               double bpm = 120.0) {
         clip.length = newLength;
         clip.startTime = rightEdge - newLength;
+        if (clip.autoTempo && bpm > 0.0) {
+            double newBeats = newLength * bpm / 60.0;
+            stretchAutoTempoBeats(clip, newBeats, bpm);
+        } else {
+            clip.speedRatio = newSpeedRatio;
+        }
+    }
+
+    /**
+     * @brief Scale MIDI notes proportionally when stretching a MIDI clip.
+     * @param clip Clip whose midiNotes to scale
+     * @param stretchRatio Ratio of newLength / oldLength (>1 = longer, <1 = shorter)
+     */
+    static inline void stretchMidiNotes(ClipInfo& clip, double stretchRatio) {
+        for (auto& note : clip.midiNotes) {
+            note.startBeat *= stretchRatio;
+            note.lengthBeats *= stretchRatio;
+        }
     }
 
     // ========================================================================
@@ -342,7 +401,25 @@ class ClipOperations {
             return {0.0, 0.0};
         }
 
-        // Convert from source-time seconds to source beats
+        // Use stored beat values when available (set by setAutoTempo / setClipBeats)
+        if (clip.loopLengthBeats > 0.0) {
+            double start = clip.loopStartBeats;
+            double length = clip.loopLengthBeats;
+            // Clamp to sourceNumBeats (TE can't read beyond the file)
+            if (clip.sourceNumBeats > 0.0) {
+                if (length > clip.sourceNumBeats) {
+                    length = clip.sourceNumBeats;
+                    start = 0.0;
+                } else if (start + length > clip.sourceNumBeats) {
+                    start = clip.sourceNumBeats - length;
+                    if (start < 0.0)
+                        start = 0.0;
+                }
+            }
+            return {start, length};
+        }
+
+        // Derive from source-time seconds using sourceBPM
         if (clip.sourceBPM > 0.0) {
             double srcBps = clip.sourceBPM / 60.0;
             double start = clip.loopStart * srcBps;
@@ -408,11 +485,6 @@ class ClipOperations {
 
         if (enabled) {
             clip.analogPitch = false;  // Analog pitch is incompatible with autoTempo
-            DBG("[SET-AUTO-TEMPO] ENABLING clip " << clip.id << " bpm=" << bpm);
-            DBG("[SET-AUTO-TEMPO]   BEFORE: startTime="
-                << clip.startTime << " length=" << clip.length << " loopLength=" << clip.loopLength
-                << " loopStart=" << clip.loopStart << " offset=" << clip.offset
-                << " speedRatio=" << clip.speedRatio << " sourceBPM=" << clip.sourceBPM);
 
             // Convert current timeline position to beats
             clip.startBeats = (clip.startTime * bpm) / 60.0;
@@ -424,39 +496,40 @@ class ClipOperations {
                 clip.setLoopLengthFromTimeline(clip.length);
             }
 
-            // Store beat values in PROJECT beats (used by display, getEndBeats, etc.)
-            // TE needs SOURCE beats — that conversion happens in getAutoTempoBeatRange()
-            clip.lengthBeats = clip.getLengthInBeats(bpm);
+            // Use source file's beat count when available, otherwise derive from
+            // sourceBPM and source duration, falling back to project BPM
+            double sourceBeats = clip.sourceNumBeats;
+            if (sourceBeats <= 0.0 && clip.sourceBPM > 0.0) {
+                double sourceDuration = clip.getSourceLength();
+                sourceBeats = sourceDuration * clip.sourceBPM / 60.0;
+            }
+            clip.lengthBeats = sourceBeats > 0.0 ? sourceBeats : clip.getLengthInBeats(bpm);
+
             if (clip.loopEnabled && clip.loopLength > 0.0) {
-                clip.loopLengthBeats = (clip.loopLength * bpm) / 60.0;
+                clip.loopLengthBeats =
+                    sourceBeats > 0.0 ? sourceBeats : (clip.loopLength * bpm) / 60.0;
                 clip.loopStartBeats = (clip.loopStart * bpm) / 60.0;
             } else {
                 clip.loopLengthBeats = clip.lengthBeats;
                 clip.loopStartBeats = 0.0;
             }
 
-            DBG("[SET-AUTO-TEMPO]   beat values: startBeats="
-                << clip.startBeats << " lengthBeats=" << clip.lengthBeats << " loopLengthBeats="
-                << clip.loopLengthBeats << " loopStartBeats=" << clip.loopStartBeats);
-
             // Calibrate sourceBPM to the current playback speed so that enabling
-            // autoTempo doesn't change the audible playback speed.
-            // effectiveBPM = projectBPM / speedRatio.  When speedRatio=1.0 this
-            // equals projectBPM, so TE applies stretch ratio 1.0 (no change).
-            // Future project BPM changes will stretch proportionally.
+            // autoTempo doesn't change the audible playback speed — but only when
+            // sourceBPM matches the project BPM (i.e., was defaulted, not detected).
+            // When sourceBPM is from real BPM detection, preserve it so TE applies
+            // the correct stretch ratio (projectBPM / sourceBPM).
             double effectiveBPM = bpm / clip.speedRatio;
-            if (clip.sourceBPM > 0.0 && clip.sourceNumBeats > 0.0) {
-                double fileDuration = clip.sourceNumBeats * 60.0 / clip.sourceBPM;
-                clip.sourceNumBeats = effectiveBPM * fileDuration / 60.0;
+            if (std::abs(clip.sourceBPM - effectiveBPM) < 0.1) {
+                if (clip.sourceBPM > 0.0 && clip.sourceNumBeats > 0.0) {
+                    double fileDuration = clip.sourceNumBeats * 60.0 / clip.sourceBPM;
+                    clip.sourceNumBeats = effectiveBPM * fileDuration / 60.0;
+                }
+                clip.sourceBPM = effectiveBPM;
             }
-            clip.sourceBPM = effectiveBPM;
 
             // Force speedRatio to 1.0 (TE requirement for autoTempo)
             clip.speedRatio = 1.0;
-
-            DBG("[SET-AUTO-TEMPO]   AFTER: sourceBPM=" << clip.sourceBPM
-                                                       << " speedRatio=" << clip.speedRatio
-                                                       << " loopLength=" << clip.loopLength);
         } else {
             // Switching to time-based mode: keep current derived time values
             // Clear beat values (no longer used)
@@ -518,7 +591,7 @@ class ClipOperations {
             double avail = fileDuration - clip.loopStart;
             if (clip.loopLength > avail) {
                 clip.loopLength = juce::jmax(0.0, avail);
-                if ((clip.autoTempo || clip.warpEnabled) && oldLoopLength > 0.0) {
+                if (clip.isBeatsAuthoritative() && oldLoopLength > 0.0) {
                     clip.loopLengthBeats *= clip.loopLength / oldLoopLength;
                 }
             }

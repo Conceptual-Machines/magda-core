@@ -10,6 +10,20 @@
 namespace magda {
 
 /**
+ * @brief Holds deserialized project data before committing to singleton managers.
+ *
+ * Populated on any thread by loadAndStage(), then committed on the message thread
+ * by commitStaged(). This separation allows background loading with a UI overlay.
+ */
+struct StagedProjectData {
+    ProjectInfo info;
+    std::vector<TrackInfo> tracks;
+    std::vector<ClipInfo> clips;
+    std::vector<AutomationLaneInfo> automationLanes;
+    std::vector<AutomationClipInfo> automationClips;
+};
+
+/**
  * @brief Main serialization class for Magda projects
  *
  * Handles serialization/deserialization of complete project state to/from JSON format.
@@ -36,6 +50,20 @@ class ProjectSerializer {
      * @return true on success, false on error
      */
     static bool loadFromFile(const juce::File& file, ProjectInfo& outInfo);
+
+    /**
+     * @brief Decompress, parse, and stage project data (thread-safe, no UI interaction)
+     * @param file Source .mgd file
+     * @param outData Output staged data ready for commitStaged()
+     * @return true on success, false on error (check getLastError())
+     */
+    static bool loadAndStage(const juce::File& file, StagedProjectData& outData);
+
+    /**
+     * @brief Commit previously staged data to singleton managers (message thread only)
+     * @param data Staged data from a successful loadAndStage() call
+     */
+    static void commitStaged(StagedProjectData& data);
 
     // ========================================================================
     // Project-level serialization
@@ -102,7 +130,8 @@ class ProjectSerializer {
      * @param outClips Output staging vector for validated clips
      * @return true on success (all clips valid), false on error (no state modified)
      */
-    static bool deserializeClipsToStaging(const juce::var& json, std::vector<ClipInfo>& outClips);
+    static bool deserializeClipsToStaging(const juce::var& json, std::vector<ClipInfo>& outClips,
+                                          double projectTempo = 120.0);
 
     /**
      * @brief Deserialize automation lanes from JSON array to staging vector (validation phase)
@@ -111,7 +140,8 @@ class ProjectSerializer {
      * @return true on success (all lanes valid), false on error (no state modified)
      */
     static bool deserializeAutomationToStaging(const juce::var& json,
-                                               std::vector<AutomationLaneInfo>& outLanes);
+                                               std::vector<AutomationLaneInfo>& outLanes,
+                                               std::vector<AutomationClipInfo>& outClips);
 
     /**
      * @brief Atomically commit staged deserialization data to singleton managers
@@ -126,7 +156,8 @@ class ProjectSerializer {
      */
     static void commitStagedData(std::vector<TrackInfo>& stagedTracks,
                                  std::vector<ClipInfo>& stagedClips,
-                                 std::vector<AutomationLaneInfo>& stagedAutomation);
+                                 std::vector<AutomationLaneInfo>& stagedAutomation,
+                                 std::vector<AutomationClipInfo>& stagedAutomationClips);
 
     // ========================================================================
     // Track serialization helpers
@@ -152,7 +183,8 @@ class ProjectSerializer {
     // ========================================================================
 
     static juce::var serializeClipInfo(const ClipInfo& clip);
-    static bool deserializeClipInfo(const juce::var& json, ClipInfo& outClip);
+    static bool deserializeClipInfo(const juce::var& json, ClipInfo& outClip,
+                                    double projectTempo = 120.0);
 
     static juce::var serializeMidiNote(const MidiNote& note);
     static bool deserializeMidiNote(const juce::var& json, MidiNote& outNote);
