@@ -5,6 +5,7 @@
 
 #include "../../core/ClipManager.hpp"
 #include "../../core/TrackManager.hpp"
+#include "../../project/ProjectManager.hpp"
 #include "../utils/TimelineUtils.hpp"
 #include "Config.hpp"
 
@@ -540,6 +541,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopReg
         state.loop.enabled = true;
     }
 
+    ProjectManager::getInstance().setLoopSettings(state.loop.enabled, start, end);
+
     // Notify audio engine of loop region change
     for (auto* listener : audioEngineListeners) {
         listener->onLoopRegionChanged(start, end, state.loop.enabled);
@@ -567,6 +570,9 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopEna
     }
 
     state.loop.enabled = e.enabled;
+
+    ProjectManager::getInstance().setLoopSettings(e.enabled, state.loop.startTime,
+                                                  state.loop.endTime);
 
     // Notify audio engine of loop enabled change
     for (auto* listener : audioEngineListeners) {
@@ -691,6 +697,9 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
 
     double oldBpm = state.tempo.bpm;
     state.tempo.bpm = newBpm;
+
+    // Keep ProjectManager in sync for serialization
+    ProjectManager::getInstance().setTempo(newBpm);
 
     // Update all beat-anchored positions to maintain bar/beat positions
     uint32_t extraFlags = 0;
@@ -839,6 +848,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimeSig
 
     state.tempo.timeSignatureNumerator = num;
     state.tempo.timeSignatureDenominator = den;
+
+    ProjectManager::getInstance().setTimeSignature(num, den);
 
     // Notify audio engine of time signature change
     for (auto* listener : audioEngineListeners) {
