@@ -296,29 +296,41 @@ class ClipOperations {
 
     /**
      * @brief Stretch to absolute target speed/length (for drag preview).
-     * Maintains loopLength when looped (keeps loop markers fixed on timeline).
+     * For autoTempo clips, changes lengthBeats instead of speedRatio.
      * @param clip Clip to stretch
-     * @param newSpeedRatio New speed ratio
-     * @param newLength New clip length
+     * @param newSpeedRatio New speed ratio (ignored for autoTempo)
+     * @param newLength New clip length in seconds
+     * @param bpm Current project tempo
      */
-    static inline void stretchAbsolute(ClipInfo& clip, double newSpeedRatio, double newLength) {
-        clip.speedRatio = newSpeedRatio;
+    static inline void stretchAbsolute(ClipInfo& clip, double newSpeedRatio, double newLength,
+                                       double bpm = 120.0) {
         clip.length = newLength;
+        if (clip.autoTempo && bpm > 0.0) {
+            clip.lengthBeats = newLength * bpm / 60.0;
+        } else {
+            clip.speedRatio = newSpeedRatio;
+        }
     }
 
     /**
      * @brief Stretch from left edge to absolute target (for drag preview).
-     * Keeps right edge fixed.
+     * Keeps right edge fixed. For autoTempo clips, changes lengthBeats.
      * @param clip Clip to stretch
-     * @param newSpeedRatio New speed ratio
-     * @param newLength New clip length
+     * @param newSpeedRatio New speed ratio (ignored for autoTempo)
+     * @param newLength New clip length in seconds
      * @param rightEdge Fixed right edge position
+     * @param bpm Current project tempo
      */
     static inline void stretchAbsoluteFromLeft(ClipInfo& clip, double newSpeedRatio,
-                                               double newLength, double rightEdge) {
-        clip.speedRatio = newSpeedRatio;
+                                               double newLength, double rightEdge,
+                                               double bpm = 120.0) {
         clip.length = newLength;
         clip.startTime = rightEdge - newLength;
+        if (clip.autoTempo && bpm > 0.0) {
+            clip.lengthBeats = newLength * bpm / 60.0;
+        } else {
+            clip.speedRatio = newSpeedRatio;
+        }
     }
 
     // ========================================================================

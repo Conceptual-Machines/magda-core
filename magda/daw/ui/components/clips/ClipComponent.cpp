@@ -1314,7 +1314,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             if (stretchThrottle_.check()) {
                 auto& cm = ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
-                    ClipOperations::stretchAbsolute(*mutableClip, newSpeedRatio, finalLength);
+                    ClipOperations::stretchAbsolute(*mutableClip, newSpeedRatio, finalLength,
+                                                    tempoBPM);
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
             }
@@ -1431,7 +1432,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 if (auto* mutableClip = cm.getClip(clipId_)) {
                     double rightEdge = dragStartTime_ + dragStartLength_;
                     ClipOperations::stretchAbsoluteFromLeft(*mutableClip, newSpeedRatio,
-                                                            finalLength, rightEdge);
+                                                            finalLength, rightEdge, tempoBPM);
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
             }
@@ -1767,9 +1768,10 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 finalLength = dragStartLength_ * (dragStartSpeedRatio_ / newSpeedRatio);
 
                 // Apply final values
+                double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
                 auto& cm = ClipManager::getInstance();
                 if (auto* clip = cm.getClip(clipId_)) {
-                    ClipOperations::stretchAbsolute(*clip, newSpeedRatio, finalLength);
+                    ClipOperations::stretchAbsolute(*clip, newSpeedRatio, finalLength, tempo);
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
 
@@ -1799,10 +1801,11 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 finalStartTime = endTime - finalLength;
 
                 // Apply final values
+                double tempoLeft = parentPanel_ ? parentPanel_->getTempo() : 120.0;
                 auto& cm = ClipManager::getInstance();
                 if (auto* clip = cm.getClip(clipId_)) {
                     ClipOperations::stretchAbsoluteFromLeft(*clip, newSpeedRatio, finalLength,
-                                                            endTime);
+                                                            endTime, tempoLeft);
                     cm.forceNotifyClipPropertyChanged(clipId_);
                 }
 
