@@ -71,7 +71,7 @@ struct LayoutConfig {
 
     int footerHeight = 40;
 
-    int defaultLeftPanelWidth = 250;
+    int defaultLeftPanelWidth = 300;
     int defaultRightPanelWidth = 300;
     int minPanelWidth = 200;
     int collapsedPanelWidth = 24;

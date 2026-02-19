@@ -162,6 +162,22 @@ class Config {
         customPluginPaths = paths;
     }
 
+    // Browser Favorites
+    std::vector<std::string> getBrowserFavorites() const {
+        return browserFavorites;
+    }
+    void setBrowserFavorites(const std::vector<std::string>& paths) {
+        browserFavorites = paths;
+    }
+
+    // Browser Default Directory
+    std::string getBrowserDefaultDirectory() const {
+        return browserDefaultDirectory;
+    }
+    void setBrowserDefaultDirectory(const std::string& dir) {
+        browserDefaultDirectory = dir;
+    }
+
     // Render Configuration
     std::string getRenderFolder() const {
         return renderFolder;
@@ -191,6 +207,14 @@ class Config {
     }
     void setConfirmTrackDelete(bool confirm) {
         confirmTrackDelete = confirm;
+    }
+
+    // Tooltip Configuration
+    bool getShowTooltips() const {
+        return showTooltips;
+    }
+    void setShowTooltips(bool show) {
+        showTooltips = show;
     }
 
     // Save/Load Configuration (for future use)
@@ -229,11 +253,18 @@ class Config {
     // Track deletion settings
     bool confirmTrackDelete = true;  // Show confirmation dialog before deleting a track
 
+    // Tooltip settings
+    bool showTooltips = true;  // Enabled by default — disable via config
+
     // Layout settings
     bool scrollbarOnLeft = false;  // Scrollbar on right by default
 
     // Custom plugin paths
     std::vector<std::string> customPluginPaths;
+
+    // Browser favorites and default directory
+    std::vector<std::string> browserFavorites;
+    std::string browserDefaultDirectory = "";  // empty = user home
 
     // Render settings
     std::string renderFolder = "";  // Custom render output folder (empty = renders/ beside source)

@@ -73,7 +73,7 @@ class MediaExplorerContent : public PanelContent,
     // Preview controls
     std::unique_ptr<magda::SvgButton> playButton_;
     std::unique_ptr<magda::SvgButton> stopButton_;
-    juce::ToggleButton syncToTempoButton_;
+    juce::ToggleButton autoPlayButton_;
     juce::Slider volumeSlider_;
 
     // Metadata display

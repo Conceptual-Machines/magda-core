@@ -84,6 +84,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/project_home.svg
     ../../assets/icons/harddrive.svg
     ../../assets/icons/library.svg
+    ../../assets/icons/favorite.svg
     # Media Explorer filter icons
     ../../assets/midi.svg
     # Mixer fader icons
