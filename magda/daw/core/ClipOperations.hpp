@@ -333,6 +333,18 @@ class ClipOperations {
         }
     }
 
+    /**
+     * @brief Scale MIDI notes proportionally when stretching a MIDI clip.
+     * @param clip Clip whose midiNotes to scale
+     * @param stretchRatio Ratio of newLength / oldLength (>1 = longer, <1 = shorter)
+     */
+    static inline void stretchMidiNotes(ClipInfo& clip, double stretchRatio) {
+        for (auto& note : clip.midiNotes) {
+            note.startBeat *= stretchRatio;
+            note.lengthBeats *= stretchRatio;
+        }
+    }
+
     // ========================================================================
     // Auto-Tempo Operations (Musical Mode)
     // ========================================================================
