@@ -520,9 +520,6 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopReg
     double start = juce::jlimit(0.0, state.timelineLength, e.startTime);
     double end = juce::jlimit(0.0, state.timelineLength, e.endTime);
 
-    std::cout << "[SetLoopRegion] Input: startTime=" << e.startTime << "s, endTime=" << e.endTime
-              << "s" << std::endl;
-
     // Ensure minimum duration
     if (end - start < 0.01) {
         end = start + 0.01;
@@ -1056,6 +1053,44 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimelin
     clampScrollPosition();
 
     return ChangeFlags::Timeline | ChangeFlags::Zoom | ChangeFlags::Scroll;
+}
+
+// ===== Project Restore =====
+
+void TimelineController::restoreProjectState(double tempo, int timeSigNum, int timeSigDen,
+                                             bool loopEnabled, double loopStart, double loopEnd) {
+    // Unconditionally set state — no early returns
+    state.tempo.bpm = juce::jlimit(20.0, 999.0, tempo);
+    state.tempo.timeSignatureNumerator = juce::jlimit(1, 16, timeSigNum);
+    state.tempo.timeSignatureDenominator = juce::jlimit(1, 16, timeSigDen);
+
+    // Loop
+    state.loop.startTime = juce::jlimit(0.0, state.timelineLength, loopStart);
+    state.loop.endTime = juce::jlimit(0.0, state.timelineLength, loopEnd);
+    state.loop.enabled = loopEnabled;
+
+    if (state.loop.endTime - state.loop.startTime >= 0.01) {
+        state.loop.startBeats =
+            magda::TimelineUtils::secondsToBeats(state.loop.startTime, state.tempo.bpm);
+        state.loop.endBeats =
+            magda::TimelineUtils::secondsToBeats(state.loop.endTime, state.tempo.bpm);
+    } else {
+        state.loop.clear();
+    }
+
+    // Notify audio engine unconditionally
+    for (auto* listener : audioEngineListeners) {
+        listener->onTempoChanged(state.tempo.bpm);
+        listener->onTimeSignatureChanged(state.tempo.timeSignatureNumerator,
+                                         state.tempo.timeSignatureDenominator);
+        if (state.loop.isValid()) {
+            listener->onLoopRegionChanged(state.loop.startTime, state.loop.endTime,
+                                          state.loop.enabled);
+        }
+    }
+
+    // Notify UI listeners
+    notifyListeners(ChangeFlags::Tempo | ChangeFlags::Loop);
 }
 
 // ===== Notification Helpers =====

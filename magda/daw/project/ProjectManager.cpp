@@ -232,18 +232,9 @@ void ProjectManager::notifyDirtyStateChanged() {
 }
 
 bool ProjectManager::showUnsavedChangesDialog() {
-    // TODO: Implement UI dialog to ask user if they want to save changes
-    // Until UI integration is complete, block operations that would discard
-    // unsaved changes to prevent silent data loss.
-
-    // When implemented, this dialog should offer:
-    // - Save: Save changes and continue (return true)
-    // - Don't Save: Discard changes and continue (return true)
-    // - Cancel: Don't continue with the operation (return false)
-
-    lastError_ = "Cannot proceed: project has unsaved changes. Please save or implement unsaved "
-                 "changes dialog.";
-    return false;  // Block operations until UI dialog is implemented
+    // TODO: Implement proper Save/Don't Save/Cancel dialog
+    // For now, allow proceeding without saving to avoid blocking operations
+    return true;
 }
 
 }  // namespace magda

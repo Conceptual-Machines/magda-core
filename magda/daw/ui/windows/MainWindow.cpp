@@ -357,6 +357,10 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
                                              bool isBars) {
         transportPanel->setGridQuantize(autoGrid, numerator, denominator, isBars);
     };
+    mainView->onTempoChanged = [this](double bpm) { transportPanel->setTempo(bpm); };
+    mainView->onTimeSignatureChanged = [this](int numerator, int denominator) {
+        transportPanel->setTimeSignature(numerator, denominator);
+    };
 
     // Wire clip render callback (handles both single and multi-clip render)
     mainView->onClipRenderRequested = [this](ClipId clipId) {

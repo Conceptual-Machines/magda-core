@@ -72,7 +72,9 @@ class MainView : public juce::Component,
         onPunchRegionChanged;  // (startTime, endTime, punchInEnabled, punchOutEnabled)
     std::function<void(double)> onEditCursorChanged;  // (positionInSeconds)
     std::function<void(bool, int, int, bool)>
-        onGridQuantizeChanged;  // (autoGrid, numerator, denominator, isBars)
+        onGridQuantizeChanged;                   // (autoGrid, numerator, denominator, isBars)
+    std::function<void(double)> onTempoChanged;  // (bpm)
+    std::function<void(int, int)> onTimeSignatureChanged;     // (numerator, denominator)
     std::function<void(ClipId)> onClipRenderRequested;        // Render clip to new file
     std::function<void()> onRenderTimeSelectionRequested;     // Render time selection
     std::function<void(ClipId)> onBounceInPlaceRequested;     // Bounce MIDI clip in place

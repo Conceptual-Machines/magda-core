@@ -462,6 +462,17 @@ void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags chan
         }
     }
 
+    // Tempo changes
+    if (hasFlag(changes, ChangeFlags::Tempo)) {
+        if (onTempoChanged) {
+            onTempoChanged(state.tempo.bpm);
+        }
+        if (onTimeSignatureChanged) {
+            onTimeSignatureChanged(state.tempo.timeSignatureNumerator,
+                                   state.tempo.timeSignatureDenominator);
+        }
+    }
+
     // Punch changes
     if (hasFlag(changes, ChangeFlags::Punch)) {
         if (onPunchRegionChanged) {
