@@ -54,10 +54,11 @@ class NoteInspector : public BaseInspector, private magda::ClipManagerListener {
 
     // Multi-selection range cache
     struct NoteRange {
-        int minPitch = 127, maxPitch = 0;
-        int minVelocity = 127, maxVelocity = 0;
-        double minLength = 1e9, maxLength = 0.0;
-        double minStart = 1e9, maxStart = 0.0;
+        bool valid = false;  // True if at least one note was processed
+        int minPitch = 0, maxPitch = 0;
+        int minVelocity = 0, maxVelocity = 0;
+        double minLength = 0.0, maxLength = 0.0;
+        double minStart = 0.0, maxStart = 0.0;
     };
     NoteRange multiRange_;
 

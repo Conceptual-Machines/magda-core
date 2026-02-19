@@ -171,6 +171,7 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
 
     // Multi-selection range cache
     struct ClipRange {
+        bool valid = false;  // True if at least one clip was processed
         float minPitchChange = 0.0f, maxPitchChange = 0.0f;
         int minTranspose = 0, maxTranspose = 0;
         float minVolumeDB = 0.0f, maxVolumeDB = 0.0f;

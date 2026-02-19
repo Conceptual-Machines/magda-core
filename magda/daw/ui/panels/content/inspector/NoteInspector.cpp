@@ -280,6 +280,8 @@ void NoteInspector::updateFromSelectedNotes() {
     }
 
     computeMultiRange();
+    if (!multiRange_.valid)
+        return;
 
     // Set virtual values centered at midpoints for drag starting point
     double midPitch = (multiRange_.minPitch + multiRange_.maxPitch) / 2.0;
@@ -320,23 +322,36 @@ void NoteInspector::computeMultiRange() {
     if (!clip)
         return;
 
+    bool first = true;
     for (size_t idx : noteSelection_.noteIndices) {
         if (idx >= clip->midiNotes.size())
             continue;
         const auto& note = clip->midiNotes[idx];
 
-        multiRange_.minPitch = juce::jmin(multiRange_.minPitch, note.noteNumber);
-        multiRange_.maxPitch = juce::jmax(multiRange_.maxPitch, note.noteNumber);
-        multiRange_.minVelocity = juce::jmin(multiRange_.minVelocity, note.velocity);
-        multiRange_.maxVelocity = juce::jmax(multiRange_.maxVelocity, note.velocity);
-        multiRange_.minLength = juce::jmin(multiRange_.minLength, note.lengthBeats);
-        multiRange_.maxLength = juce::jmax(multiRange_.maxLength, note.lengthBeats);
-        multiRange_.minStart = juce::jmin(multiRange_.minStart, note.startBeat);
-        multiRange_.maxStart = juce::jmax(multiRange_.maxStart, note.startBeat);
+        if (first) {
+            multiRange_.valid = true;
+            multiRange_.minPitch = multiRange_.maxPitch = note.noteNumber;
+            multiRange_.minVelocity = multiRange_.maxVelocity = note.velocity;
+            multiRange_.minLength = multiRange_.maxLength = note.lengthBeats;
+            multiRange_.minStart = multiRange_.maxStart = note.startBeat;
+            first = false;
+        } else {
+            multiRange_.minPitch = juce::jmin(multiRange_.minPitch, note.noteNumber);
+            multiRange_.maxPitch = juce::jmax(multiRange_.maxPitch, note.noteNumber);
+            multiRange_.minVelocity = juce::jmin(multiRange_.minVelocity, note.velocity);
+            multiRange_.maxVelocity = juce::jmax(multiRange_.maxVelocity, note.velocity);
+            multiRange_.minLength = juce::jmin(multiRange_.minLength, note.lengthBeats);
+            multiRange_.maxLength = juce::jmax(multiRange_.maxLength, note.lengthBeats);
+            multiRange_.minStart = juce::jmin(multiRange_.minStart, note.startBeat);
+            multiRange_.maxStart = juce::jmax(multiRange_.maxStart, note.startBeat);
+        }
     }
 }
 
 void NoteInspector::refreshMultiRangeDisplay() {
+    if (!multiRange_.valid)
+        return;
+
     // Pitch range
     if (multiRange_.minPitch == multiRange_.maxPitch) {
         notePitchValue_->setTextOverride(midiNoteToName(multiRange_.minPitch));

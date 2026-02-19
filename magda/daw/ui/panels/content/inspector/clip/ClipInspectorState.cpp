@@ -406,7 +406,7 @@ void ClipInspector::updateFromSelectedClip() {
 
         // Compute range for multi-clip, set midpoints for display
         computeClipRange();
-        if (isMulti && isAudioClip) {
+        if (isMulti && isAudioClip && clipRange_.valid) {
             pitchChangeValue_->setValue((clipRange_.minPitchChange + clipRange_.maxPitchChange) /
                                             2.0,
                                         juce::dontSendNotification);
@@ -568,6 +568,7 @@ void ClipInspector::computeClipRange() {
             clipRange_.allSession = false;
 
         if (first) {
+            clipRange_.valid = true;
             clipRange_.minPitchChange = clipRange_.maxPitchChange = c->pitchChange;
             clipRange_.minTranspose = clipRange_.maxTranspose = c->transpose;
             clipRange_.minVolumeDB = clipRange_.maxVolumeDB = c->volumeDB;
@@ -608,7 +609,7 @@ void ClipInspector::computeClipRange() {
 }
 
 void ClipInspector::refreshClipRangeDisplay() {
-    if (selectedClipIds_.size() <= 1) {
+    if (!clipRange_.valid || selectedClipIds_.size() <= 1) {
         // Single clip: clear any text overrides
         pitchChangeValue_->clearTextOverride();
         transposeValue_->clearTextOverride();
