@@ -1296,11 +1296,12 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             double finalLength = juce::jmax(0.1, finalEndTime - dragStartTime_);
 
             // Clamp by stretch factor limits [0.25, 4.0]
+            // Longer clip = slower playback, so speedRatio decreases
             double stretchRatio = finalLength / dragStartLength_;
-            double newSpeedRatio = dragStartSpeedRatio_ * stretchRatio;
+            double newSpeedRatio = dragStartSpeedRatio_ / stretchRatio;
             newSpeedRatio = juce::jlimit(0.25, 4.0, newSpeedRatio);
-            // Back-compute the allowed length from the clamped stretch factor
-            finalLength = dragStartLength_ * (newSpeedRatio / dragStartSpeedRatio_);
+            // Back-compute the allowed length from the clamped speed ratio
+            finalLength = dragStartLength_ * (dragStartSpeedRatio_ / newSpeedRatio);
 
             previewLength_ = finalLength;
 
@@ -1409,10 +1410,11 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             double finalLength = endTime - finalStartTime;
 
             // Clamp by stretch factor limits
+            // Longer clip = slower playback, so speedRatio decreases
             double stretchRatio = finalLength / dragStartLength_;
-            double newSpeedRatio = dragStartSpeedRatio_ * stretchRatio;
+            double newSpeedRatio = dragStartSpeedRatio_ / stretchRatio;
             newSpeedRatio = juce::jlimit(0.25, 4.0, newSpeedRatio);
-            finalLength = dragStartLength_ * (newSpeedRatio / dragStartSpeedRatio_);
+            finalLength = dragStartLength_ * (dragStartSpeedRatio_ / newSpeedRatio);
             finalStartTime = endTime - finalLength;
 
             previewStartTime_ = finalStartTime;
@@ -1760,9 +1762,9 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
 
                 // Compute final stretch factor from drag-start values
                 double stretchRatio = finalLength / dragStartLength_;
-                double newSpeedRatio = dragStartSpeedRatio_ * stretchRatio;
+                double newSpeedRatio = dragStartSpeedRatio_ / stretchRatio;
                 newSpeedRatio = juce::jlimit(0.25, 4.0, newSpeedRatio);
-                finalLength = dragStartLength_ * (newSpeedRatio / dragStartSpeedRatio_);
+                finalLength = dragStartLength_ * (dragStartSpeedRatio_ / newSpeedRatio);
 
                 // Apply final values
                 auto& cm = ClipManager::getInstance();
@@ -1791,9 +1793,9 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
 
                 // Compute final speed ratio from drag-start values
                 double stretchRatio = finalLength / dragStartLength_;
-                double newSpeedRatio = dragStartSpeedRatio_ * stretchRatio;
+                double newSpeedRatio = dragStartSpeedRatio_ / stretchRatio;
                 newSpeedRatio = juce::jlimit(0.25, 4.0, newSpeedRatio);
-                finalLength = dragStartLength_ * (newSpeedRatio / dragStartSpeedRatio_);
+                finalLength = dragStartLength_ * (dragStartSpeedRatio_ / newSpeedRatio);
                 finalStartTime = endTime - finalLength;
 
                 // Apply final values
