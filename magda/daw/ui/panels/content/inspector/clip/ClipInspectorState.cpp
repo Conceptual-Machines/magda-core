@@ -112,12 +112,20 @@ void ClipInspector::updateFromSelectedClip() {
         }
 
         // Show BPM for audio clips (at bottom with WARP)
+        // Prefer clip's sourceBPM (may be user-edited), fall back to detected BPM
         if (isAudioClip && !isMulti) {
-            double detectedBPM =
-                magda::AudioThumbnailManager::getInstance().detectBPM(clip->audioFilePath);
+            double displayBPM = clip->sourceBPM;
+            double projectBPM =
+                timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
+            if (displayBPM <= 0.0 ||
+                (!clip->autoTempo && std::abs(displayBPM - projectBPM) < 0.1)) {
+                // sourceBPM is unset or matches project BPM (defaulted) — use detected
+                displayBPM =
+                    magda::AudioThumbnailManager::getInstance().detectBPM(clip->audioFilePath);
+            }
             clipBpmValue_.setVisible(true);
-            if (detectedBPM > 0.0) {
-                clipBpmValue_.setText(juce::String(detectedBPM, 1) + " BPM",
+            if (displayBPM > 0.0) {
+                clipBpmValue_.setText(juce::String(displayBPM, 1) + " BPM",
                                       juce::dontSendNotification);
             } else {
                 clipBpmValue_.setText(juce::String::fromUTF8("\xe2\x80\x94"),  // em dash

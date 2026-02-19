@@ -366,7 +366,12 @@ class ClipOperations {
             return {0.0, 0.0};
         }
 
-        // Convert from source-time seconds to source beats
+        // Use stored beat values when available (set by setAutoTempo / setClipBeats)
+        if (clip.loopLengthBeats > 0.0) {
+            return {clip.loopStartBeats, clip.loopLengthBeats};
+        }
+
+        // Derive from source-time seconds using sourceBPM
         if (clip.sourceBPM > 0.0) {
             double srcBps = clip.sourceBPM / 60.0;
             double start = clip.loopStart * srcBps;
@@ -432,11 +437,6 @@ class ClipOperations {
 
         if (enabled) {
             clip.analogPitch = false;  // Analog pitch is incompatible with autoTempo
-            DBG("[SET-AUTO-TEMPO] ENABLING clip " << clip.id << " bpm=" << bpm);
-            DBG("[SET-AUTO-TEMPO]   BEFORE: startTime="
-                << clip.startTime << " length=" << clip.length << " loopLength=" << clip.loopLength
-                << " loopStart=" << clip.loopStart << " offset=" << clip.offset
-                << " speedRatio=" << clip.speedRatio << " sourceBPM=" << clip.sourceBPM);
 
             // Convert current timeline position to beats
             clip.startBeats = (clip.startTime * bpm) / 60.0;
@@ -448,44 +448,40 @@ class ClipOperations {
                 clip.setLoopLengthFromTimeline(clip.length);
             }
 
-            // Use source file's beat count when available (e.g. 86 BPM file = 8 beats),
-            // otherwise fall back to project-tempo-derived beats
-            if (clip.sourceNumBeats > 0.0) {
-                clip.lengthBeats = clip.sourceNumBeats;
-            } else {
-                clip.lengthBeats = clip.getLengthInBeats(bpm);
+            // Use source file's beat count when available, otherwise derive from
+            // sourceBPM and source duration, falling back to project BPM
+            double sourceBeats = clip.sourceNumBeats;
+            if (sourceBeats <= 0.0 && clip.sourceBPM > 0.0) {
+                double sourceDuration = clip.getSourceLength();
+                sourceBeats = sourceDuration * clip.sourceBPM / 60.0;
             }
+            clip.lengthBeats = sourceBeats > 0.0 ? sourceBeats : clip.getLengthInBeats(bpm);
+
             if (clip.loopEnabled && clip.loopLength > 0.0) {
-                clip.loopLengthBeats = clip.sourceNumBeats > 0.0 ? clip.sourceNumBeats
-                                                                 : (clip.loopLength * bpm) / 60.0;
+                clip.loopLengthBeats =
+                    sourceBeats > 0.0 ? sourceBeats : (clip.loopLength * bpm) / 60.0;
                 clip.loopStartBeats = (clip.loopStart * bpm) / 60.0;
             } else {
                 clip.loopLengthBeats = clip.lengthBeats;
                 clip.loopStartBeats = 0.0;
             }
 
-            DBG("[SET-AUTO-TEMPO]   beat values: startBeats="
-                << clip.startBeats << " lengthBeats=" << clip.lengthBeats << " loopLengthBeats="
-                << clip.loopLengthBeats << " loopStartBeats=" << clip.loopStartBeats);
-
             // Calibrate sourceBPM to the current playback speed so that enabling
-            // autoTempo doesn't change the audible playback speed.
-            // effectiveBPM = projectBPM / speedRatio.  When speedRatio=1.0 this
-            // equals projectBPM, so TE applies stretch ratio 1.0 (no change).
-            // Future project BPM changes will stretch proportionally.
+            // autoTempo doesn't change the audible playback speed — but only when
+            // sourceBPM matches the project BPM (i.e., was defaulted, not detected).
+            // When sourceBPM is from real BPM detection, preserve it so TE applies
+            // the correct stretch ratio (projectBPM / sourceBPM).
             double effectiveBPM = bpm / clip.speedRatio;
-            if (clip.sourceBPM > 0.0 && clip.sourceNumBeats > 0.0) {
-                double fileDuration = clip.sourceNumBeats * 60.0 / clip.sourceBPM;
-                clip.sourceNumBeats = effectiveBPM * fileDuration / 60.0;
+            if (std::abs(clip.sourceBPM - effectiveBPM) < 0.1) {
+                if (clip.sourceBPM > 0.0 && clip.sourceNumBeats > 0.0) {
+                    double fileDuration = clip.sourceNumBeats * 60.0 / clip.sourceBPM;
+                    clip.sourceNumBeats = effectiveBPM * fileDuration / 60.0;
+                }
+                clip.sourceBPM = effectiveBPM;
             }
-            clip.sourceBPM = effectiveBPM;
 
             // Force speedRatio to 1.0 (TE requirement for autoTempo)
             clip.speedRatio = 1.0;
-
-            DBG("[SET-AUTO-TEMPO]   AFTER: sourceBPM=" << clip.sourceBPM
-                                                       << " speedRatio=" << clip.speedRatio
-                                                       << " loopLength=" << clip.loopLength);
         } else {
             // Switching to time-based mode: keep current derived time values
             // Clear beat values (no longer used)
