@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 
 #include <functional>
+#include <thread>
 #include <vector>
 
 #include "ProjectInfo.hpp"
@@ -183,7 +184,9 @@ class ProjectManager {
 
   private:
     ProjectManager();
-    ~ProjectManager() = default;
+    ~ProjectManager();
+
+    void joinBackgroundThread();
 
     ProjectInfo currentProject_;
     juce::File currentFile_;
@@ -192,6 +195,7 @@ class ProjectManager {
 
     std::vector<ProjectManagerListener*> listeners_;
     juce::String lastError_;
+    std::thread loadThread_;
 
     void clearDirty();
     void notifyProjectOpened();

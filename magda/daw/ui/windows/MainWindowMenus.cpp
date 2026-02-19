@@ -39,11 +39,13 @@ void MainWindow::setupMenuCallbacks() {
                                                    message);
         } else {
             // Reset timeline/transport to defaults
-            ProjectInfo defaults;
-            auto& tc = mainComponent->mainView->getTimelineController();
-            tc.restoreProjectState(defaults.tempo, defaults.timeSignatureNumerator,
-                                   defaults.timeSignatureDenominator, defaults.loopEnabled,
-                                   defaults.loopStartBeats, defaults.loopEndBeats);
+            if (mainComponent && mainComponent->mainView) {
+                ProjectInfo defaults;
+                auto& tc = mainComponent->mainView->getTimelineController();
+                tc.restoreProjectState(defaults.tempo, defaults.timeSignatureNumerator,
+                                       defaults.timeSignatureDenominator, defaults.loopEnabled,
+                                       defaults.loopStartBeats, defaults.loopEndBeats);
+            }
         }
     };
 
@@ -104,11 +106,13 @@ void MainWindow::setupMenuCallbacks() {
                                                        projectManager.getLastError());
         } else {
             // Reset timeline/transport to defaults
-            ProjectInfo defaults;
-            auto& tc = mainComponent->mainView->getTimelineController();
-            tc.restoreProjectState(defaults.tempo, defaults.timeSignatureNumerator,
-                                   defaults.timeSignatureDenominator, defaults.loopEnabled,
-                                   defaults.loopStartBeats, defaults.loopEndBeats);
+            if (mainComponent && mainComponent->mainView) {
+                ProjectInfo defaults;
+                auto& tc = mainComponent->mainView->getTimelineController();
+                tc.restoreProjectState(defaults.tempo, defaults.timeSignatureNumerator,
+                                       defaults.timeSignatureDenominator, defaults.loopEnabled,
+                                       defaults.loopStartBeats, defaults.loopEndBeats);
+            }
         }
     };
 

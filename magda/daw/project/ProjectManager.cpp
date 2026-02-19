@@ -1,9 +1,9 @@
 #include "ProjectManager.hpp"
 
 #include <juce_events/juce_events.h>
+#include <juce_gui_basics/juce_gui_basics.h>
 
 #include <algorithm>
-#include <thread>
 
 #include "../core/AutomationManager.hpp"
 #include "../core/ClipManager.hpp"
@@ -21,6 +21,15 @@ ProjectManager::ProjectManager() {
     // Initialize with default project info
     currentProject_.name = "Untitled";
     currentProject_.version = "1.0.0";
+}
+
+ProjectManager::~ProjectManager() {
+    joinBackgroundThread();
+}
+
+void ProjectManager::joinBackgroundThread() {
+    if (loadThread_.joinable())
+        loadThread_.join();
 }
 
 // ============================================================================
@@ -148,8 +157,11 @@ void ProjectManager::loadProjectAsync(const juce::File& file,
     // Capture file path for the background thread
     auto fileCopy = file;
 
+    // Join any previous background load before starting a new one
+    joinBackgroundThread();
+
     // Launch background thread for I/O + parse + staging
-    std::thread([fileCopy, onBeforeCommit, onComplete, this]() {
+    loadThread_ = std::thread([fileCopy, onBeforeCommit, onComplete, this]() {
         auto staged = std::make_shared<StagedProjectData>();
         bool ok = ProjectSerializer::loadAndStage(fileCopy, *staged);
         juce::String error =
@@ -176,7 +188,7 @@ void ProjectManager::loadProjectAsync(const juce::File& file,
                 if (onComplete)
                     onComplete(ok, error);
             });
-    }).detach();
+    });
 }
 
 bool ProjectManager::closeProject() {
@@ -294,8 +306,37 @@ void ProjectManager::notifyDirtyStateChanged() {
 }
 
 bool ProjectManager::showUnsavedChangesDialog() {
-    // TODO: Implement proper Save/Don't Save/Cancel dialog
-    // For now, allow proceeding without saving to avoid blocking operations
+    // Modal dialog: returns 1 for "Save", 2 for "Don't Save", 0 for "Cancel"
+    int result = juce::AlertWindow::showYesNoCancelBox(
+        juce::AlertWindow::QuestionIcon, "Unsaved Changes",
+        "You have unsaved changes. Do you want to save before continuing?", "Save", "Don't Save",
+        "Cancel");
+
+    if (result == 0) {
+        // Cancel — abort the operation
+        return false;
+    }
+
+    if (result == 1) {
+        // Save — attempt to save, abort if save fails
+        if (!currentFile_.getFullPathName().isEmpty()) {
+            if (!saveProject()) {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                       "Save Failed",
+                                                       "Could not save project: " + lastError_);
+                return false;
+            }
+        } else {
+            // No file path — can't save without a file chooser (synchronous context).
+            // Treat as cancel so the user can use Save As first.
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::InfoIcon, "Save Required",
+                "Please use File > Save As to save your project first.");
+            return false;
+        }
+    }
+
+    // result == 2: Don't Save — proceed without saving
     return true;
 }
 
