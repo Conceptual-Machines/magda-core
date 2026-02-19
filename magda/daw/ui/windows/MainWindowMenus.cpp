@@ -64,6 +64,15 @@ void MainWindow::setupMenuCallbacks() {
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::AlertWindow::WarningIcon, "Open Project",
                     "Failed to load project: " + projectManager.getLastError());
+            } else {
+                // Apply loaded project settings to timeline/transport
+                const auto& info = projectManager.getCurrentProjectInfo();
+                auto& tc = mainComponent->mainView->getTimelineController();
+                tc.dispatch(SetTempoEvent{info.tempo});
+                tc.dispatch(SetTimeSignatureEvent{info.timeSignatureNumerator,
+                                                  info.timeSignatureDenominator});
+                tc.dispatch(SetLoopRegionEvent{info.loopStart, info.loopEnd});
+                tc.dispatch(SetLoopEnabledEvent{info.loopEnabled});
             }
         });
     };
