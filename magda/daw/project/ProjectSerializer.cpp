@@ -155,7 +155,8 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
             return false;
         }
 
-        if (!deserializeClipsToStaging(obj->getProperty("clips"), outData.clips)) {
+        if (!deserializeClipsToStaging(obj->getProperty("clips"), outData.clips,
+                                       outData.info.tempo)) {
             return false;
         }
 
@@ -290,7 +291,7 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
         return false;  // Failed - no state modified
     }
 
-    if (!deserializeClipsToStaging(obj->getProperty("clips"), stagedClips)) {
+    if (!deserializeClipsToStaging(obj->getProperty("clips"), stagedClips, outInfo.tempo)) {
         return false;  // Failed - no state modified
     }
 
@@ -433,7 +434,8 @@ bool ProjectSerializer::deserializeTracksToStaging(const juce::var& json,
 }
 
 bool ProjectSerializer::deserializeClipsToStaging(const juce::var& json,
-                                                  std::vector<ClipInfo>& outClips) {
+                                                  std::vector<ClipInfo>& outClips,
+                                                  double projectTempo) {
     if (!json.isArray()) {
         lastError_ = "Clips data is not an array";
         return false;
@@ -446,7 +448,7 @@ bool ProjectSerializer::deserializeClipsToStaging(const juce::var& json,
     // Deserialize all clips into staging vector (validation phase)
     for (const auto& clipVar : *arr) {
         ClipInfo clip;
-        if (!deserializeClipInfo(clipVar, clip)) {
+        if (!deserializeClipInfo(clipVar, clip, projectTempo)) {
             return false;  // Failed - staging vector discarded
         }
         outClips.push_back(std::move(clip));
@@ -1283,7 +1285,8 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     return juce::var(obj);
 }
 
-bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& outClip) {
+bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& outClip,
+                                            double projectTempo) {
     if (!json.isObject()) {
         lastError_ = "Clip data is not an object";
         return false;
@@ -1421,6 +1424,16 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
                 outClip.midiPitchBendData.push_back(pb);
             }
         }
+    }
+
+    // MIDI clips: ensure beats are populated (backward compat with old project files)
+    if (outClip.type == ClipType::MIDI) {
+        if (outClip.lengthBeats <= 0.0 && projectTempo > 0.0) {
+            outClip.startBeats = (outClip.startTime * projectTempo) / 60.0;
+            outClip.lengthBeats = (outClip.length * projectTempo) / 60.0;
+        }
+        // Derive seconds cache from authoritative beats
+        outClip.deriveTimesFromBeats(projectTempo);
     }
 
     return true;

@@ -503,6 +503,14 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
     state.loop.endTime = state.selection.endTime;
     state.loop.enabled = true;
 
+    // Compute beat positions
+    double bpm = state.tempo.bpm;
+    state.loop.startBeats = magda::TimelineUtils::secondsToBeats(state.loop.startTime, bpm);
+    state.loop.endBeats = magda::TimelineUtils::secondsToBeats(state.loop.endTime, bpm);
+
+    ProjectManager::getInstance().setLoopSettings(state.loop.enabled, state.loop.startBeats,
+                                                  state.loop.endBeats);
+
     // Hide selection visually but keep data for transport display
     state.selection.hideVisually();
 
@@ -555,6 +563,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ClearLoopR
     }
 
     state.loop.clear();
+    ProjectManager::getInstance().setLoopSettings(false, 0.0, 0.0);
     return ChangeFlags::Loop;
 }
 
@@ -593,6 +602,14 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const MoveLoopRe
 
     state.loop.startTime = newStart;
     state.loop.endTime = newStart + duration;
+
+    // Update beat positions and sync to ProjectManager
+    double bpm = state.tempo.bpm;
+    state.loop.startBeats = magda::TimelineUtils::secondsToBeats(newStart, bpm);
+    state.loop.endBeats = magda::TimelineUtils::secondsToBeats(newStart + duration, bpm);
+
+    ProjectManager::getInstance().setLoopSettings(state.loop.enabled, state.loop.startBeats,
+                                                  state.loop.endBeats);
 
     return ChangeFlags::Loop;
 }
@@ -761,6 +778,12 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
         state.loop.startTime = magda::TimelineUtils::beatsToSeconds(state.loop.startBeats, newBpm);
         state.loop.endTime = magda::TimelineUtils::beatsToSeconds(state.loop.endBeats, newBpm);
         extraFlags |= static_cast<uint32_t>(ChangeFlags::Loop);
+    }
+
+    // Sync updated loop to ProjectManager
+    if (state.loop.isValid()) {
+        ProjectManager::getInstance().setLoopSettings(state.loop.enabled, state.loop.startBeats,
+                                                      state.loop.endBeats);
     }
 
     // IMPORTANT: Notify audio engine FIRST so TE's tempo sequence is updated

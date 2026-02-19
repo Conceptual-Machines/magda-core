@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "../project/ProjectManager.hpp"
 #include "ClipOperations.hpp"
 #include "TrackManager.hpp"
 #include "audio/AudioThumbnailManager.hpp"
@@ -72,6 +73,13 @@ ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double len
         static_cast<int>(arrangementClips_.size() + sessionClips_.size()));
     clip.startTime = startTime;
     clip.length = length;
+
+    // MIDI clips: beats are authoritative, derive from seconds using project tempo
+    double tempo = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+    if (tempo > 0.0) {
+        clip.startBeats = (startTime * tempo) / 60.0;
+        clip.lengthBeats = (length * tempo) / 60.0;
+    }
 
     // Add to appropriate array based on view
     if (view == ClipView::Arrangement) {
@@ -169,6 +177,9 @@ ClipId ClipManager::duplicateClip(ClipId clipId) {
     if (newClip.view == ClipView::Arrangement) {
         // Offset the duplicate to the right on the timeline
         newClip.startTime = original->startTime + original->length;
+        if (newClip.type == ClipType::MIDI) {
+            newClip.startBeats = original->startBeats + original->lengthBeats;
+        }
         arrangementClips_.push_back(newClip);
     } else {
         // Session clips don't use timeline positioning
@@ -200,7 +211,8 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
     // Add to same array as original
     if (newClip.view == ClipView::Arrangement) {
         newClip.startTime = startTime;
-        if ((newClip.autoTempo || newClip.warpEnabled) && tempo > 0.0) {
+        if ((newClip.type == ClipType::MIDI || newClip.autoTempo || newClip.warpEnabled) &&
+            tempo > 0.0) {
             newClip.startBeats = startTime * tempo / 60.0;
         }
         arrangementClips_.push_back(newClip);
@@ -223,7 +235,7 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
 void ClipManager::moveClip(ClipId clipId, double newStartTime, double tempo) {
     if (auto* clip = getClip(clipId)) {
         ClipOperations::moveContainer(*clip, newStartTime);
-        if ((clip->autoTempo || clip->warpEnabled) && tempo > 0.0) {
+        if ((clip->type == ClipType::MIDI || clip->autoTempo || clip->warpEnabled) && tempo > 0.0) {
             clip->startBeats = clip->startTime * tempo / 60.0;
         }
         // Notes maintain their relative position within the clip (startBeat unchanged)
@@ -330,7 +342,7 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
     clip->name = clip->name + " L";
 
     // Update beat fields for both halves
-    if ((clip->autoTempo || clip->warpEnabled) && tempo > 0.0) {
+    if ((clip->type == ClipType::MIDI || clip->autoTempo || clip->warpEnabled) && tempo > 0.0) {
         // Left clip: lengthBeats changes, startBeats stays the same
         clip->lengthBeats = leftLength * tempo / 60.0;
 
@@ -386,7 +398,7 @@ void ClipManager::trimClip(ClipId clipId, double newStartTime, double newLength,
     if (auto* clip = getClip(clipId)) {
         clip->startTime = newStartTime;
         clip->length = newLength;
-        if ((clip->autoTempo || clip->warpEnabled) && tempo > 0.0) {
+        if ((clip->type == ClipType::MIDI || clip->autoTempo || clip->warpEnabled) && tempo > 0.0) {
             clip->startBeats = newStartTime * tempo / 60.0;
             clip->lengthBeats = newLength * tempo / 60.0;
         }

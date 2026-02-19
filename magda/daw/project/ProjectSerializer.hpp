@@ -130,7 +130,8 @@ class ProjectSerializer {
      * @param outClips Output staging vector for validated clips
      * @return true on success (all clips valid), false on error (no state modified)
      */
-    static bool deserializeClipsToStaging(const juce::var& json, std::vector<ClipInfo>& outClips);
+    static bool deserializeClipsToStaging(const juce::var& json, std::vector<ClipInfo>& outClips,
+                                          double projectTempo = 120.0);
 
     /**
      * @brief Deserialize automation lanes from JSON array to staging vector (validation phase)
@@ -182,7 +183,8 @@ class ProjectSerializer {
     // ========================================================================
 
     static juce::var serializeClipInfo(const ClipInfo& clip);
-    static bool deserializeClipInfo(const juce::var& json, ClipInfo& outClip);
+    static bool deserializeClipInfo(const juce::var& json, ClipInfo& outClip,
+                                    double projectTempo = 120.0);
 
     static juce::var serializeMidiNote(const MidiNote& note);
     static bool deserializeMidiNote(const juce::var& json, MidiNote& outNote);
