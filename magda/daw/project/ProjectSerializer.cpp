@@ -7,6 +7,7 @@
 #include "../core/SelectionManager.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/ViewModeState.hpp"
+#include "SerializationHelpers.hpp"
 
 namespace magda {
 
@@ -598,12 +599,7 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
     // Sends
     juce::Array<juce::var> sendsArray;
     for (const auto& send : track.sends) {
-        auto* sendObj = new juce::DynamicObject();
-        sendObj->setProperty("busIndex", send.busIndex);
-        sendObj->setProperty("level", send.level);
-        sendObj->setProperty("preFader", send.preFader);
-        sendObj->setProperty("destTrackId", send.destTrackId);
-        sendsArray.add(juce::var(sendObj));
+        sendsArray.add(serializeSendInfo(send));
     }
     obj->setProperty("sends", juce::var(sendsArray));
 
@@ -697,14 +693,10 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
     if (sendsVar.isArray()) {
         auto* arr = sendsVar.getArray();
         for (const auto& sendVar : *arr) {
-            if (auto* sendObj = sendVar.getDynamicObject()) {
-                SendInfo send;
-                send.busIndex = sendObj->getProperty("busIndex");
-                send.level = sendObj->getProperty("level");
-                send.preFader = sendObj->getProperty("preFader");
-                send.destTrackId = sendObj->getProperty("destTrackId");
-                outTrack.sends.push_back(send);
-            }
+            SendInfo send;
+            if (!deserializeSendInfo(sendVar, send))
+                return false;
+            outTrack.sends.push_back(send);
         }
     }
 
@@ -1261,11 +1253,7 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     if (!clip.midiCCData.empty()) {
         juce::Array<juce::var> ccArray;
         for (const auto& cc : clip.midiCCData) {
-            auto* ccObj = new juce::DynamicObject();
-            ccObj->setProperty("controller", cc.controller);
-            ccObj->setProperty("value", cc.value);
-            ccObj->setProperty("beatPosition", cc.beatPosition);
-            ccArray.add(juce::var(ccObj));
+            ccArray.add(serializeMidiCCData(cc));
         }
         obj->setProperty("midiCCData", juce::var(ccArray));
     }
@@ -1274,10 +1262,7 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     if (!clip.midiPitchBendData.empty()) {
         juce::Array<juce::var> pbArray;
         for (const auto& pb : clip.midiPitchBendData) {
-            auto* pbObj = new juce::DynamicObject();
-            pbObj->setProperty("value", pb.value);
-            pbObj->setProperty("beatPosition", pb.beatPosition);
-            pbArray.add(juce::var(pbObj));
+            pbArray.add(serializeMidiPitchBendData(pb));
         }
         obj->setProperty("midiPitchBendData", juce::var(pbArray));
     }
@@ -1400,14 +1385,10 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     if (midiCCVar.isArray()) {
         auto* arr = midiCCVar.getArray();
         for (const auto& ccVar : *arr) {
-            if (ccVar.isObject()) {
-                auto* ccObj = ccVar.getDynamicObject();
-                MidiCCData cc;
-                cc.controller = ccObj->getProperty("controller");
-                cc.value = ccObj->getProperty("value");
-                cc.beatPosition = ccObj->getProperty("beatPosition");
-                outClip.midiCCData.push_back(cc);
-            }
+            MidiCCData cc;
+            if (!deserializeMidiCCData(ccVar, cc))
+                return false;
+            outClip.midiCCData.push_back(cc);
         }
     }
 
@@ -1416,13 +1397,10 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     if (midiPBVar.isArray()) {
         auto* arr = midiPBVar.getArray();
         for (const auto& pbVar : *arr) {
-            if (pbVar.isObject()) {
-                auto* pbObj = pbVar.getDynamicObject();
-                MidiPitchBendData pb;
-                pb.value = pbObj->getProperty("value");
-                pb.beatPosition = pbObj->getProperty("beatPosition");
-                outClip.midiPitchBendData.push_back(pb);
-            }
+            MidiPitchBendData pb;
+            if (!deserializeMidiPitchBendData(pbVar, pb))
+                return false;
+            outClip.midiPitchBendData.push_back(pb);
         }
     }
 
@@ -1439,30 +1417,166 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     return true;
 }
 
-juce::var ProjectSerializer::serializeMidiNote(const MidiNote& note) {
+juce::var ProjectSerializer::serializeMidiNote(const MidiNote& data) {
     auto* obj = new juce::DynamicObject();
-
-    obj->setProperty("noteNumber", note.noteNumber);
-    obj->setProperty("velocity", note.velocity);
-    obj->setProperty("startBeat", note.startBeat);
-    obj->setProperty("lengthBeats", note.lengthBeats);
-
+    SER(noteNumber);
+    SER(velocity);
+    SER(startBeat);
+    SER(lengthBeats);
     return juce::var(obj);
 }
 
-bool ProjectSerializer::deserializeMidiNote(const juce::var& json, MidiNote& outNote) {
+bool ProjectSerializer::deserializeMidiNote(const juce::var& json, MidiNote& data) {
     if (!json.isObject()) {
         lastError_ = "MIDI note is not an object";
         return false;
     }
-
     auto* obj = json.getDynamicObject();
+    DESER(noteNumber);
+    DESER(velocity);
+    DESER(startBeat);
+    DESER(lengthBeats);
+    return true;
+}
 
-    outNote.noteNumber = obj->getProperty("noteNumber");
-    outNote.velocity = obj->getProperty("velocity");
-    outNote.startBeat = obj->getProperty("startBeat");
-    outNote.lengthBeats = obj->getProperty("lengthBeats");
+juce::var ProjectSerializer::serializeMidiCCData(const MidiCCData& data) {
+    auto* obj = new juce::DynamicObject();
+    SER(controller);
+    SER(value);
+    SER(beatPosition);
+    return juce::var(obj);
+}
 
+bool ProjectSerializer::deserializeMidiCCData(const juce::var& json, MidiCCData& data) {
+    if (!json.isObject()) {
+        lastError_ = "MIDI CC data is not an object";
+        return false;
+    }
+    auto* obj = json.getDynamicObject();
+    DESER(controller);
+    DESER(value);
+    DESER(beatPosition);
+    return true;
+}
+
+juce::var ProjectSerializer::serializeMidiPitchBendData(const MidiPitchBendData& data) {
+    auto* obj = new juce::DynamicObject();
+    SER(value);
+    SER(beatPosition);
+    return juce::var(obj);
+}
+
+bool ProjectSerializer::deserializeMidiPitchBendData(const juce::var& json,
+                                                     MidiPitchBendData& data) {
+    if (!json.isObject()) {
+        lastError_ = "MIDI pitch bend data is not an object";
+        return false;
+    }
+    auto* obj = json.getDynamicObject();
+    DESER(value);
+    DESER(beatPosition);
+    return true;
+}
+
+juce::var ProjectSerializer::serializeSendInfo(const SendInfo& data) {
+    auto* obj = new juce::DynamicObject();
+    SER(busIndex);
+    SER(level);
+    SER(preFader);
+    SER(destTrackId);
+    return juce::var(obj);
+}
+
+bool ProjectSerializer::deserializeSendInfo(const juce::var& json, SendInfo& data) {
+    if (!json.isObject()) {
+        lastError_ = "Send info is not an object";
+        return false;
+    }
+    auto* obj = json.getDynamicObject();
+    DESER(busIndex);
+    DESER(level);
+    DESER(preFader);
+    DESER(destTrackId);
+    return true;
+}
+
+juce::var ProjectSerializer::serializeCurvePointData(const CurvePointData& data) {
+    auto* obj = new juce::DynamicObject();
+    SER(phase);
+    SER(value);
+    SER(tension);
+    return juce::var(obj);
+}
+
+bool ProjectSerializer::deserializeCurvePointData(const juce::var& json, CurvePointData& data) {
+    if (!json.isObject()) {
+        lastError_ = "Curve point data is not an object";
+        return false;
+    }
+    auto* obj = json.getDynamicObject();
+    DESER(phase);
+    DESER(value);
+    DESER(tension);
+    return true;
+}
+
+juce::var ProjectSerializer::serializeMacroLink(const MacroLink& data) {
+    auto* obj = new juce::DynamicObject();
+    // Nested target stays manual
+    auto* targetObj = new juce::DynamicObject();
+    targetObj->setProperty("deviceId", data.target.deviceId);
+    targetObj->setProperty("paramIndex", data.target.paramIndex);
+    obj->setProperty("target", juce::var(targetObj));
+    SER(amount);
+    SER(bipolar);
+    return juce::var(obj);
+}
+
+bool ProjectSerializer::deserializeMacroLink(const juce::var& json, MacroLink& data) {
+    if (!json.isObject()) {
+        lastError_ = "Macro link is not an object";
+        return false;
+    }
+    auto* obj = json.getDynamicObject();
+    // Nested target stays manual
+    auto targetVar = obj->getProperty("target");
+    if (targetVar.isObject()) {
+        auto* targetObj = targetVar.getDynamicObject();
+        data.target.deviceId = targetObj->getProperty("deviceId");
+        data.target.paramIndex = targetObj->getProperty("paramIndex");
+    }
+    DESER(amount);
+    DESER(bipolar);
+    return true;
+}
+
+juce::var ProjectSerializer::serializeModLink(const ModLink& data) {
+    auto* obj = new juce::DynamicObject();
+    // Nested target stays manual
+    auto* targetObj = new juce::DynamicObject();
+    targetObj->setProperty("deviceId", data.target.deviceId);
+    targetObj->setProperty("paramIndex", data.target.paramIndex);
+    obj->setProperty("target", juce::var(targetObj));
+    SER(amount);
+    SER(bipolar);
+    return juce::var(obj);
+}
+
+bool ProjectSerializer::deserializeModLink(const juce::var& json, ModLink& data) {
+    if (!json.isObject()) {
+        lastError_ = "Mod link is not an object";
+        return false;
+    }
+    auto* obj = json.getDynamicObject();
+    // Nested target stays manual
+    auto targetVar = obj->getProperty("target");
+    if (targetVar.isObject()) {
+        auto* targetObj = targetVar.getDynamicObject();
+        data.target.deviceId = targetObj->getProperty("deviceId");
+        data.target.paramIndex = targetObj->getProperty("paramIndex");
+    }
+    DESER(amount);
+    DESER(bipolar);
     return true;
 }
 
@@ -1767,14 +1881,7 @@ juce::var ProjectSerializer::serializeMacroInfo(const MacroInfo& macro) {
     // Links
     juce::Array<juce::var> linksArray;
     for (const auto& link : macro.links) {
-        auto* linkObj = new juce::DynamicObject();
-        auto* linkTargetObj = new juce::DynamicObject();
-        linkTargetObj->setProperty("deviceId", link.target.deviceId);
-        linkTargetObj->setProperty("paramIndex", link.target.paramIndex);
-        linkObj->setProperty("target", juce::var(linkTargetObj));
-        linkObj->setProperty("amount", link.amount);
-        linkObj->setProperty("bipolar", link.bipolar);
-        linksArray.add(juce::var(linkObj));
+        linksArray.add(serializeMacroLink(link));
     }
     obj->setProperty("links", juce::var(linksArray));
 
@@ -1806,19 +1913,9 @@ bool ProjectSerializer::deserializeMacroInfo(const juce::var& json, MacroInfo& o
     if (linksVar.isArray()) {
         auto* arr = linksVar.getArray();
         for (const auto& linkVar : *arr) {
-            if (!linkVar.isObject())
-                continue;
-            auto* linkObj = linkVar.getDynamicObject();
             MacroLink link;
-            auto targetVar2 = linkObj->getProperty("target");
-            if (targetVar2.isObject()) {
-                auto* targetObj = targetVar2.getDynamicObject();
-                link.target.deviceId = targetObj->getProperty("deviceId");
-                link.target.paramIndex = targetObj->getProperty("paramIndex");
-            }
-            link.amount = linkObj->getProperty("amount");
-            if (linkObj->hasProperty("bipolar"))
-                link.bipolar = static_cast<bool>(linkObj->getProperty("bipolar"));
+            if (!deserializeMacroLink(linkVar, link))
+                return false;
             outMacro.links.push_back(link);
         }
     }
@@ -1827,52 +1924,43 @@ bool ProjectSerializer::deserializeMacroInfo(const juce::var& json, MacroInfo& o
 }
 
 juce::var ProjectSerializer::serializeModInfo(const ModInfo& mod) {
+    // Use `data` alias so SER() macro works alongside manual `mod.` references
+    const auto& data = mod;
     auto* obj = new juce::DynamicObject();
 
-    obj->setProperty("id", mod.id);
-    obj->setProperty("name", mod.name);
-    obj->setProperty("type", static_cast<int>(mod.type));
-    obj->setProperty("enabled", mod.enabled);
-    obj->setProperty("rate", mod.rate);
-    obj->setProperty("waveform", static_cast<int>(mod.waveform));
-    obj->setProperty("phase", mod.phase);
-    obj->setProperty("phaseOffset", mod.phaseOffset);
-    obj->setProperty("value", mod.value);
-    obj->setProperty("tempoSync", mod.tempoSync);
-    obj->setProperty("syncDivision", static_cast<int>(mod.syncDivision));
-    obj->setProperty("triggerMode", static_cast<int>(mod.triggerMode));
-    obj->setProperty("oneShot", mod.oneShot);
-    obj->setProperty("useLoopRegion", mod.useLoopRegion);
-    obj->setProperty("loopStart", mod.loopStart);
-    obj->setProperty("loopEnd", mod.loopEnd);
-    obj->setProperty("midiChannel", mod.midiChannel);
-    obj->setProperty("midiNote", mod.midiNote);
-    obj->setProperty("audioAttackMs", mod.audioAttackMs);
-    obj->setProperty("audioReleaseMs", mod.audioReleaseMs);
-    obj->setProperty("curvePreset", static_cast<int>(mod.curvePreset));
+    SER(id);
+    SER(name);
+    SER(type);
+    SER(enabled);
+    SER(rate);
+    SER(waveform);
+    SER(phase);
+    SER(phaseOffset);
+    SER(value);
+    SER(tempoSync);
+    SER(syncDivision);
+    SER(triggerMode);
+    SER(oneShot);
+    SER(useLoopRegion);
+    SER(loopStart);
+    SER(loopEnd);
+    SER(midiChannel);
+    SER(midiNote);
+    SER(audioAttackMs);
+    SER(audioReleaseMs);
+    SER(curvePreset);
 
     // Curve points
     juce::Array<juce::var> curvePointsArray;
     for (const auto& point : mod.curvePoints) {
-        auto* pointObj = new juce::DynamicObject();
-        pointObj->setProperty("phase", point.phase);
-        pointObj->setProperty("value", point.value);
-        pointObj->setProperty("tension", point.tension);
-        curvePointsArray.add(juce::var(pointObj));
+        curvePointsArray.add(serializeCurvePointData(point));
     }
     obj->setProperty("curvePoints", juce::var(curvePointsArray));
 
     // Links
     juce::Array<juce::var> linksArray;
     for (const auto& link : mod.links) {
-        auto* linkObj = new juce::DynamicObject();
-        auto* linkTargetObj = new juce::DynamicObject();
-        linkTargetObj->setProperty("deviceId", link.target.deviceId);
-        linkTargetObj->setProperty("paramIndex", link.target.paramIndex);
-        linkObj->setProperty("target", juce::var(linkTargetObj));
-        linkObj->setProperty("amount", link.amount);
-        linkObj->setProperty("bipolar", link.bipolar);
-        linksArray.add(juce::var(linkObj));
+        linksArray.add(serializeModLink(link));
     }
     obj->setProperty("links", juce::var(linksArray));
 
@@ -1893,46 +1981,39 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
     }
 
     auto* obj = json.getDynamicObject();
+    // Use `data` alias so DESER() macro works alongside manual `outMod.` references
+    auto& data = outMod;
 
-    outMod.id = obj->getProperty("id");
-    outMod.name = obj->getProperty("name").toString();
-    outMod.type = static_cast<ModType>(static_cast<int>(obj->getProperty("type")));
-    outMod.enabled = obj->getProperty("enabled");
-    outMod.rate = obj->getProperty("rate");
-    outMod.waveform = static_cast<LFOWaveform>(static_cast<int>(obj->getProperty("waveform")));
-    outMod.phase = obj->getProperty("phase");
-    outMod.phaseOffset = obj->getProperty("phaseOffset");
-    outMod.value = obj->getProperty("value");
-    outMod.tempoSync = obj->getProperty("tempoSync");
-    outMod.syncDivision =
-        static_cast<SyncDivision>(static_cast<int>(obj->getProperty("syncDivision")));
-    outMod.triggerMode =
-        static_cast<LFOTriggerMode>(static_cast<int>(obj->getProperty("triggerMode")));
-    outMod.oneShot = obj->getProperty("oneShot");
-    outMod.useLoopRegion = obj->getProperty("useLoopRegion");
-    outMod.loopStart = obj->getProperty("loopStart");
-    outMod.loopEnd = obj->getProperty("loopEnd");
-    outMod.midiChannel = obj->getProperty("midiChannel");
-    outMod.midiNote = obj->getProperty("midiNote");
-    if (obj->hasProperty("audioAttackMs"))
-        outMod.audioAttackMs = obj->getProperty("audioAttackMs");
-    if (obj->hasProperty("audioReleaseMs"))
-        outMod.audioReleaseMs = obj->getProperty("audioReleaseMs");
-    outMod.curvePreset =
-        static_cast<CurvePreset>(static_cast<int>(obj->getProperty("curvePreset")));
+    DESER(id);
+    DESER(name);
+    DESER(type);
+    DESER(enabled);
+    DESER(rate);
+    DESER(waveform);
+    DESER(phase);
+    DESER(phaseOffset);
+    DESER(value);
+    DESER(tempoSync);
+    DESER(syncDivision);
+    DESER(triggerMode);
+    DESER(oneShot);
+    DESER(useLoopRegion);
+    DESER(loopStart);
+    DESER(loopEnd);
+    DESER(midiChannel);
+    DESER(midiNote);
+    DESER(audioAttackMs);
+    DESER(audioReleaseMs);
+    DESER(curvePreset);
 
     // Curve points
     auto curvePointsVar = obj->getProperty("curvePoints");
     if (curvePointsVar.isArray()) {
         auto* arr = curvePointsVar.getArray();
         for (const auto& pointVar : *arr) {
-            if (!pointVar.isObject())
-                continue;
-            auto* pointObj = pointVar.getDynamicObject();
             CurvePointData point;
-            point.phase = pointObj->getProperty("phase");
-            point.value = pointObj->getProperty("value");
-            point.tension = pointObj->getProperty("tension");
+            if (!deserializeCurvePointData(pointVar, point))
+                return false;
             outMod.curvePoints.push_back(point);
         }
     }
@@ -1942,19 +2023,9 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
     if (linksVar.isArray()) {
         auto* arr = linksVar.getArray();
         for (const auto& linkVar : *arr) {
-            if (!linkVar.isObject())
-                continue;
-            auto* linkObj = linkVar.getDynamicObject();
             ModLink link;
-            auto targetVar = linkObj->getProperty("target");
-            if (targetVar.isObject()) {
-                auto* targetObj = targetVar.getDynamicObject();
-                link.target.deviceId = targetObj->getProperty("deviceId");
-                link.target.paramIndex = targetObj->getProperty("paramIndex");
-            }
-            link.amount = linkObj->getProperty("amount");
-            if (linkObj->hasProperty("bipolar"))
-                link.bipolar = static_cast<bool>(linkObj->getProperty("bipolar"));
+            if (!deserializeModLink(linkVar, link))
+                return false;
             outMod.links.push_back(link);
         }
     }
@@ -1971,24 +2042,23 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
     return true;
 }
 
-juce::var ProjectSerializer::serializeParameterInfo(const ParameterInfo& param) {
+juce::var ProjectSerializer::serializeParameterInfo(const ParameterInfo& data) {
     auto* obj = new juce::DynamicObject();
+    SER(paramIndex);
+    SER(name);
+    SER(unit);
+    SER(minValue);
+    SER(maxValue);
+    SER(defaultValue);
+    SER(currentValue);
+    SER(scale);
+    SER(skewFactor);
+    SER(modulatable);
+    SER(bipolarModulation);
 
-    obj->setProperty("paramIndex", param.paramIndex);
-    obj->setProperty("name", param.name);
-    obj->setProperty("unit", param.unit);
-    obj->setProperty("minValue", param.minValue);
-    obj->setProperty("maxValue", param.maxValue);
-    obj->setProperty("defaultValue", param.defaultValue);
-    obj->setProperty("currentValue", param.currentValue);
-    obj->setProperty("scale", static_cast<int>(param.scale));
-    obj->setProperty("skewFactor", param.skewFactor);
-    obj->setProperty("modulatable", param.modulatable);
-    obj->setProperty("bipolarModulation", param.bipolarModulation);
-
-    // Choices
+    // Choices (vector of strings — stays manual)
     juce::Array<juce::var> choicesArray;
-    for (const auto& choice : param.choices) {
+    for (const auto& choice : data.choices) {
         choicesArray.add(choice);
     }
     obj->setProperty("choices", juce::var(choicesArray));
@@ -1996,32 +2066,30 @@ juce::var ProjectSerializer::serializeParameterInfo(const ParameterInfo& param) 
     return juce::var(obj);
 }
 
-bool ProjectSerializer::deserializeParameterInfo(const juce::var& json, ParameterInfo& outParam) {
+bool ProjectSerializer::deserializeParameterInfo(const juce::var& json, ParameterInfo& data) {
     if (!json.isObject()) {
         lastError_ = "Parameter is not an object";
         return false;
     }
-
     auto* obj = json.getDynamicObject();
+    DESER(paramIndex);
+    DESER(name);
+    DESER(unit);
+    DESER(minValue);
+    DESER(maxValue);
+    DESER(defaultValue);
+    DESER(currentValue);
+    DESER(scale);
+    DESER(skewFactor);
+    DESER(modulatable);
+    DESER(bipolarModulation);
 
-    outParam.paramIndex = obj->getProperty("paramIndex");
-    outParam.name = obj->getProperty("name").toString();
-    outParam.unit = obj->getProperty("unit").toString();
-    outParam.minValue = obj->getProperty("minValue");
-    outParam.maxValue = obj->getProperty("maxValue");
-    outParam.defaultValue = obj->getProperty("defaultValue");
-    outParam.currentValue = obj->getProperty("currentValue");
-    outParam.scale = static_cast<ParameterScale>(static_cast<int>(obj->getProperty("scale")));
-    outParam.skewFactor = obj->getProperty("skewFactor");
-    outParam.modulatable = obj->getProperty("modulatable");
-    outParam.bipolarModulation = obj->getProperty("bipolarModulation");
-
-    // Choices
+    // Choices (vector of strings — stays manual)
     auto choicesVar = obj->getProperty("choices");
     if (choicesVar.isArray()) {
         auto* arr = choicesVar.getArray();
         for (const auto& choiceVar : *arr) {
-            outParam.choices.push_back(choiceVar.toString());
+            data.choices.push_back(choiceVar.toString());
         }
     }
 
