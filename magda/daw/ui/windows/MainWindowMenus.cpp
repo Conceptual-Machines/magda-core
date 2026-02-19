@@ -66,19 +66,33 @@ void MainWindow::setupMenuCallbacks() {
             if (!file.existsAsFile())
                 return;  // User cancelled
 
+            // Show loading overlay
+            if (mainComponent)
+                mainComponent->showLoadingMessage("Loading project...");
+
             auto& projectManager = ProjectManager::getInstance();
-            if (!projectManager.loadProject(file)) {
-                juce::AlertWindow::showMessageBoxAsync(
-                    juce::AlertWindow::WarningIcon, "Open Project",
-                    "Failed to load project: " + projectManager.getLastError());
-            } else {
-                // Restore loaded project settings to timeline/transport/engine
-                const auto& info = projectManager.getCurrentProjectInfo();
-                auto& tc = mainComponent->mainView->getTimelineController();
-                tc.restoreProjectState(info.tempo, info.timeSignatureNumerator,
-                                       info.timeSignatureDenominator, info.loopEnabled,
-                                       info.loopStartBeats, info.loopEndBeats);
-            }
+            projectManager.loadProjectAsync(
+                file,
+                // onBeforeCommit: set tempo/time sig/loop on the audio engine BEFORE
+                // clips are committed, so clip sync uses the correct BPM.
+                [this](const ProjectInfo& info) {
+                    if (mainComponent && mainComponent->mainView) {
+                        auto& tc = mainComponent->mainView->getTimelineController();
+                        tc.restoreProjectState(info.tempo, info.timeSignatureNumerator,
+                                               info.timeSignatureDenominator, info.loopEnabled,
+                                               info.loopStartBeats, info.loopEndBeats);
+                    }
+                },
+                [this](bool success, const juce::String& error) {
+                    // Hide loading overlay
+                    if (mainComponent)
+                        mainComponent->hideLoadingMessage();
+
+                    if (!success) {
+                        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                               "Open Project", error);
+                    }
+                });
         });
     };
 

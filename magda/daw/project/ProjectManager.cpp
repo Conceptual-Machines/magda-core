@@ -1,6 +1,9 @@
 #include "ProjectManager.hpp"
 
+#include <juce_events/juce_events.h>
+
 #include <algorithm>
+#include <thread>
 
 #include "../core/AutomationManager.hpp"
 #include "../core/ClipManager.hpp"
@@ -87,7 +90,8 @@ bool ProjectManager::saveProjectAs(const juce::File& file) {
     return true;
 }
 
-bool ProjectManager::loadProject(const juce::File& file) {
+bool ProjectManager::loadProject(const juce::File& file,
+                                 std::function<void(const ProjectInfo&)> onBeforeCommit) {
     // Check for unsaved changes in current project
     if (isDirty_ && !showUnsavedChangesDialog()) {
         return false;
@@ -99,15 +103,23 @@ bool ProjectManager::loadProject(const juce::File& file) {
         return false;
     }
 
-    // Load from file
-    ProjectInfo loadedInfo;
-    if (!ProjectSerializer::loadFromFile(file, loadedInfo)) {
+    // Stage first (file I/O + parse + validate)
+    StagedProjectData staged;
+    if (!ProjectSerializer::loadAndStage(file, staged)) {
         lastError_ = "Failed to load project: " + ProjectSerializer::getLastError();
         return false;
     }
 
+    // Set tempo/time sig/loop on the audio engine BEFORE committing tracks & clips,
+    // so that audio engine clip sync uses the correct BPM.
+    if (onBeforeCommit)
+        onBeforeCommit(staged.info);
+
+    // Commit staged data to singleton managers
+    ProjectSerializer::commitStaged(staged);
+
     // Update state
-    currentProject_ = loadedInfo;
+    currentProject_ = staged.info;
     currentProject_.filePath = file.getFullPathName();
     currentFile_ = file;
     isProjectOpen_ = true;
@@ -115,6 +127,56 @@ bool ProjectManager::loadProject(const juce::File& file) {
     notifyProjectOpened();
 
     return true;
+}
+
+void ProjectManager::loadProjectAsync(const juce::File& file,
+                                      std::function<void(const ProjectInfo&)> onBeforeCommit,
+                                      std::function<void(bool, const juce::String&)> onComplete) {
+    // Pre-flight checks on the message thread
+    if (isDirty_ && !showUnsavedChangesDialog()) {
+        if (onComplete)
+            onComplete(false, "Cancelled by user");
+        return;
+    }
+
+    if (!file.existsAsFile()) {
+        if (onComplete)
+            onComplete(false, "File does not exist: " + file.getFullPathName());
+        return;
+    }
+
+    // Capture file path for the background thread
+    auto fileCopy = file;
+
+    // Launch background thread for I/O + parse + staging
+    std::thread([fileCopy, onBeforeCommit, onComplete, this]() {
+        auto staged = std::make_shared<StagedProjectData>();
+        bool ok = ProjectSerializer::loadAndStage(fileCopy, *staged);
+        juce::String error =
+            ok ? juce::String() : ("Failed to load project: " + ProjectSerializer::getLastError());
+
+        // Bounce back to the message thread for commit + notification
+        juce::MessageManager::callAsync(
+            [this, staged, ok, error, fileCopy, onBeforeCommit, onComplete]() {
+                if (ok) {
+                    // Set tempo/time sig/loop BEFORE committing tracks & clips,
+                    // so that audio engine clip sync uses the correct BPM.
+                    if (onBeforeCommit)
+                        onBeforeCommit(staged->info);
+
+                    ProjectSerializer::commitStaged(*staged);
+                    currentProject_ = staged->info;
+                    currentProject_.filePath = fileCopy.getFullPathName();
+                    currentFile_ = fileCopy;
+                    isProjectOpen_ = true;
+                    clearDirty();
+                    notifyProjectOpened();
+                }
+
+                if (onComplete)
+                    onComplete(ok, error);
+            });
+    }).detach();
 }
 
 bool ProjectManager::closeProject() {

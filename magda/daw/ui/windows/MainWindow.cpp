@@ -916,6 +916,20 @@ void MainWindow::MainComponent::switchToView(ViewMode mode) {
     DBG("Switched to view mode: " << getViewModeName(mode));
 }
 
+void MainWindow::MainComponent::showLoadingMessage(const juce::String& message) {
+    if (loadingOverlay_) {
+        loadingOverlay_->setMessage(message);
+        loadingOverlay_->showWithFade();
+        loadingOverlay_->toFront(false);
+    }
+}
+
+void MainWindow::MainComponent::hideLoadingMessage() {
+    if (loadingOverlay_) {
+        loadingOverlay_->hideWithFade();
+    }
+}
+
 void MainWindow::setupMenuBar() {
     setupMenuCallbacks();
 

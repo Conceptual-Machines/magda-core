@@ -59,6 +59,16 @@ bool ProjectSerializer::saveToFile(const juce::File& file, const ProjectInfo& in
 }
 
 bool ProjectSerializer::loadFromFile(const juce::File& file, ProjectInfo& outInfo) {
+    StagedProjectData staged;
+    if (!loadAndStage(file, staged))
+        return false;
+
+    outInfo = staged.info;
+    commitStaged(staged);
+    return true;
+}
+
+bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& outData) {
     try {
         // Check file exists
         if (!file.existsAsFile()) {
@@ -83,8 +93,78 @@ bool ProjectSerializer::loadFromFile(const juce::File& file, ProjectInfo& outInf
             return false;
         }
 
-        // Deserialize project
-        return deserializeProject(json, outInfo);
+        // Deserialize project metadata
+        if (!json.isObject()) {
+            lastError_ = "Invalid project JSON: not an object";
+            return false;
+        }
+
+        auto* obj = json.getDynamicObject();
+        if (obj == nullptr) {
+            lastError_ = "Invalid project JSON: null object";
+            return false;
+        }
+
+        // Version check
+        outData.info.version = obj->getProperty("magdaVersion").toString();
+        if (outData.info.version.isEmpty()) {
+            lastError_ = "Missing magdaVersion field";
+            return false;
+        }
+
+        // Parse timestamp
+        juce::String timeStr = obj->getProperty("lastModified").toString();
+        if (timeStr.isNotEmpty()) {
+            outData.info.lastModified = juce::Time::fromISO8601(timeStr);
+        }
+
+        // Parse project settings
+        auto projectVar = obj->getProperty("project");
+        if (!projectVar.isObject()) {
+            lastError_ = "Missing or invalid project settings";
+            return false;
+        }
+
+        auto* projectObj = projectVar.getDynamicObject();
+        outData.info.name = projectObj->getProperty("name").toString();
+        outData.info.tempo = projectObj->getProperty("tempo");
+
+        // Time signature
+        auto timeSigVar = projectObj->getProperty("timeSignature");
+        if (timeSigVar.isArray()) {
+            auto* arr = timeSigVar.getArray();
+            if (arr->size() >= 2) {
+                outData.info.timeSignatureNumerator = (*arr)[0];
+                outData.info.timeSignatureDenominator = (*arr)[1];
+            }
+        }
+
+        outData.info.projectLength = projectObj->getProperty("projectLength");
+
+        // Loop settings
+        auto loopVar = projectObj->getProperty("loop");
+        if (loopVar.isObject()) {
+            auto* loopObj = loopVar.getDynamicObject();
+            outData.info.loopEnabled = loopObj->getProperty("enabled");
+            outData.info.loopStartBeats = loopObj->getProperty("startBeats");
+            outData.info.loopEndBeats = loopObj->getProperty("endBeats");
+        }
+
+        // Stage tracks, clips, and automation
+        if (!deserializeTracksToStaging(obj->getProperty("tracks"), outData.tracks)) {
+            return false;
+        }
+
+        if (!deserializeClipsToStaging(obj->getProperty("clips"), outData.clips)) {
+            return false;
+        }
+
+        if (!deserializeAutomationToStaging(obj->getProperty("automation"), outData.automationLanes,
+                                            outData.automationClips)) {
+            return false;
+        }
+
+        return true;
 
     } catch (const std::exception& e) {
         lastError_ = "Exception while loading: " + juce::String(e.what());
@@ -93,6 +173,10 @@ bool ProjectSerializer::loadFromFile(const juce::File& file, ProjectInfo& outInf
         lastError_ = "Unknown exception while loading";
         return false;
     }
+}
+
+void ProjectSerializer::commitStaged(StagedProjectData& data) {
+    commitStagedData(data.tracks, data.clips, data.automationLanes, data.automationClips);
 }
 
 // ============================================================================
