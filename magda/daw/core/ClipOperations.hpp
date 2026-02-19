@@ -448,11 +448,16 @@ class ClipOperations {
                 clip.setLoopLengthFromTimeline(clip.length);
             }
 
-            // Store beat values in PROJECT beats (used by display, getEndBeats, etc.)
-            // TE needs SOURCE beats — that conversion happens in getAutoTempoBeatRange()
-            clip.lengthBeats = clip.getLengthInBeats(bpm);
+            // Use source file's beat count when available (e.g. 86 BPM file = 8 beats),
+            // otherwise fall back to project-tempo-derived beats
+            if (clip.sourceNumBeats > 0.0) {
+                clip.lengthBeats = clip.sourceNumBeats;
+            } else {
+                clip.lengthBeats = clip.getLengthInBeats(bpm);
+            }
             if (clip.loopEnabled && clip.loopLength > 0.0) {
-                clip.loopLengthBeats = (clip.loopLength * bpm) / 60.0;
+                clip.loopLengthBeats = clip.sourceNumBeats > 0.0 ? clip.sourceNumBeats
+                                                                 : (clip.loopLength * bpm) / 60.0;
                 clip.loopStartBeats = (clip.loopStart * bpm) / 60.0;
             } else {
                 clip.loopLengthBeats = clip.lengthBeats;
