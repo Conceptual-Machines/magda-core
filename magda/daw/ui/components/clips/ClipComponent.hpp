@@ -153,6 +153,8 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     bool hoverFadeOut_ = false;
     double dragStartFadeIn_ = 0.0;
     double dragStartFadeOut_ = 0.0;
+    std::unordered_map<ClipId, ClipInfo>
+        dragStartSelectedFadeSnapshots_;  // Original state of other selected clips for fade undo
 
     // Volume handle state
     bool hoverVolumeHandle_ = false;
