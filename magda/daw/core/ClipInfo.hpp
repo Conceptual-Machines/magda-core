@@ -133,6 +133,13 @@ struct ClipInfo {
     bool isAnalogPitchActive() const {
         return analogPitch && !autoTempo && !warpEnabled;
     }
+
+    /// Whether this clip uses beat-based timing as authoritative.
+    /// True for MIDI clips (always beat-based), audio clips with autoTempo,
+    /// and audio clips with warp markers enabled.
+    bool isBeatsAuthoritative() const {
+        return type == ClipType::MIDI || autoTempo || warpEnabled;
+    }
     int autoPitchMode = 0;     // 0=pitchTrack, 1=chordTrackMono, 2=chordTrackPoly
     float pitchChange = 0.0f;  // -48 to +48 semitones
     int transpose = 0;         // -24 to +24 semitones (only when !autoPitch)
@@ -314,7 +321,7 @@ struct ClipInfo {
     /// Get clip start position in beats (single source of truth for display)
     /// Returns stored beat value for MIDI/autoTempo, calculates from time otherwise
     double getStartBeats(double bpm) const {
-        if (type == ClipType::MIDI || autoTempo) {
+        if (isBeatsAuthoritative()) {
             return startBeats;  // Authoritative beat value
         }
         // Calculate from time
@@ -324,7 +331,7 @@ struct ClipInfo {
     /// Get clip end position in beats (single source of truth for display)
     /// Returns start + length in beats, using authoritative values based on mode
     double getEndBeats(double bpm) const {
-        if (type == ClipType::MIDI || (autoTempo && lengthBeats > 0.0)) {
+        if (isBeatsAuthoritative() && lengthBeats > 0.0) {
             return startBeats + lengthBeats;
         }
         // Calculate from time

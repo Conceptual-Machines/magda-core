@@ -114,7 +114,7 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
         << clip->length << " offset=" << clip->offset << " loopStart=" << clip->loopStart
         << " getTeOffset()=" << clip->getTeOffset(clip->loopEnabled));
 
-    if (clip->autoTempo || clip->warpEnabled) {
+    if (clip->isBeatsAuthoritative()) {
         DBG("[CLIP-SYNCHRONIZER] clipPropertyChanged clip "
             << clipId << " length=" << clip->length << " loopLength=" << clip->loopLength
             << " loopLengthBeats=" << clip->loopLengthBeats << " lengthBeats=" << clip->lengthBeats
@@ -1065,7 +1065,7 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
     DBG("    offset: " << audioClipPtr->getPosition().getOffset().inSeconds());
     DBG("    speedRatio: " << audioClipPtr->getSpeedRatio());
 
-    if (clip->autoTempo || clip->warpEnabled) {
+    if (clip->isBeatsAuthoritative()) {
         // ========================================================================
         // AUTO-TEMPO MODE (Beat-based length, maintains musical time)
         // Warp also uses this path — TE only passes warpMap to WaveNodeRealTime
@@ -1167,7 +1167,7 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
 
     // 6. UPDATE loop properties (BEFORE offset — setLoopRangeBeats can reset offset)
     // Use beat-based loop range in auto-tempo/warp mode, time-based otherwise
-    if (clip->autoTempo || clip->warpEnabled) {
+    if (clip->isBeatsAuthoritative()) {
         // Auto-tempo mode: ALWAYS set beat-based loop range
         // The loop range defines the clip's musical extent (not just the loop region)
 

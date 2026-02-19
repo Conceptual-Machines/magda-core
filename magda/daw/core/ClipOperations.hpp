@@ -98,7 +98,7 @@ class ClipOperations {
 
         clip.startTime = newStartTime;
         clip.length = newLength;
-        if ((clip.type == ClipType::MIDI || clip.autoTempo || clip.warpEnabled) && bpm > 0.0) {
+        if (clip.isBeatsAuthoritative() && bpm > 0.0) {
             clip.startBeats = newStartTime * bpm / 60.0;
             clip.lengthBeats = newLength * bpm / 60.0;
         }
@@ -118,7 +118,7 @@ class ClipOperations {
                                                 double bpm = 120.0) {
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
         clip.length = newLength;
-        if ((clip.type == ClipType::MIDI || clip.autoTempo || clip.warpEnabled) && bpm > 0.0) {
+        if (clip.isBeatsAuthoritative() && bpm > 0.0) {
             clip.lengthBeats = newLength * bpm / 60.0;
         }
     }
@@ -152,7 +152,7 @@ class ClipOperations {
         clip.startTime = juce::jmax(0.0, clip.startTime + timelineDelta);
         clip.length = juce::jmax(MIN_CLIP_LENGTH, clip.length - timelineDelta);
 
-        if ((clip.type == ClipType::MIDI || clip.autoTempo || clip.warpEnabled) && bpm > 0.0) {
+        if (clip.isBeatsAuthoritative() && bpm > 0.0) {
             clip.startBeats = clip.startTime * bpm / 60.0;
             clip.lengthBeats = clip.length * bpm / 60.0;
         }
@@ -177,7 +177,7 @@ class ClipOperations {
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
         clip.length = newLength;
 
-        if ((clip.type == ClipType::MIDI || clip.autoTempo || clip.warpEnabled) && bpm > 0.0) {
+        if (clip.isBeatsAuthoritative() && bpm > 0.0) {
             clip.lengthBeats = newLength * bpm / 60.0;
         }
     }
@@ -591,7 +591,7 @@ class ClipOperations {
             double avail = fileDuration - clip.loopStart;
             if (clip.loopLength > avail) {
                 clip.loopLength = juce::jmax(0.0, avail);
-                if ((clip.autoTempo || clip.warpEnabled) && oldLoopLength > 0.0) {
+                if (clip.isBeatsAuthoritative() && oldLoopLength > 0.0) {
                     clip.loopLengthBeats *= clip.loopLength / oldLoopLength;
                 }
             }
