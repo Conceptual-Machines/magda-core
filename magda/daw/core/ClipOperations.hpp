@@ -295,6 +295,34 @@ class ClipOperations {
     }
 
     /**
+     * @brief Update autoTempo clip for a new total beat count (stretch).
+     * Adjusts sourceBPM so TE stretches the same source audio to fill newBeats.
+     * Mirrors ClipManager::setLengthBeats logic.
+     */
+    static inline void stretchAutoTempoBeats(ClipInfo& clip, double newBeats, double /*bpm*/) {
+        double sourceSeconds = clip.loopLength > 0.0 ? clip.loopLength : clip.getSourceLength();
+        if (sourceSeconds <= 0.0)
+            return;
+
+        double oldSourceBPM = clip.sourceBPM;
+        clip.sourceBPM = newBeats * 60.0 / sourceSeconds;
+
+        if (oldSourceBPM > 0.0 && clip.sourceNumBeats > 0.0) {
+            clip.sourceNumBeats *= clip.sourceBPM / oldSourceBPM;
+        }
+
+        double oldLoopLengthBeats = clip.loopLengthBeats;
+        clip.loopLengthBeats = newBeats;
+        if (oldLoopLengthBeats > 0.0) {
+            clip.lengthBeats = clip.lengthBeats * newBeats / oldLoopLengthBeats;
+        } else {
+            clip.lengthBeats = newBeats;
+        }
+
+        clip.loopStartBeats = clip.loopStart * clip.sourceBPM / 60.0;
+    }
+
+    /**
      * @brief Stretch to absolute target speed/length (for drag preview).
      * For autoTempo clips, changes lengthBeats instead of speedRatio.
      * @param clip Clip to stretch
@@ -307,8 +335,7 @@ class ClipOperations {
         clip.length = newLength;
         if (clip.autoTempo && bpm > 0.0) {
             double newBeats = newLength * bpm / 60.0;
-            clip.lengthBeats = newBeats;
-            clip.loopLengthBeats = newBeats;
+            stretchAutoTempoBeats(clip, newBeats, bpm);
         } else {
             clip.speedRatio = newSpeedRatio;
         }
@@ -330,8 +357,7 @@ class ClipOperations {
         clip.startTime = rightEdge - newLength;
         if (clip.autoTempo && bpm > 0.0) {
             double newBeats = newLength * bpm / 60.0;
-            clip.lengthBeats = newBeats;
-            clip.loopLengthBeats = newBeats;
+            stretchAutoTempoBeats(clip, newBeats, bpm);
         } else {
             clip.speedRatio = newSpeedRatio;
         }
