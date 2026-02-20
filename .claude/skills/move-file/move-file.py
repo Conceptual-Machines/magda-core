@@ -4,6 +4,7 @@ Move a C++ source file and update all #include references throughout the project
 
 Usage (run from project root):
     python3 .claude/skills/move-file/move-file.py <old-path> <new-path>
+    python3 .claude/skills/move-file/move-file.py --dry-run <old-path> <new-path>
 
 Both paths must be relative to the project root.
 """
@@ -16,16 +17,13 @@ from pathlib import Path
 
 
 def find_project_root() -> Path:
-    """Find project root by looking for the top-level CMakeLists.txt."""
-    cwd = Path.cwd()
-    if (cwd / "CMakeLists.txt").exists():
-        return cwd
-    path = Path(__file__).resolve().parent
+    """Find project root by locating the .git directory."""
+    path = Path.cwd()
     while path != path.parent:
-        if (path / "CMakeLists.txt").exists():
+        if (path / ".git").exists():
             return path
         path = path.parent
-    raise RuntimeError("Could not find project root (no CMakeLists.txt found)")
+    raise RuntimeError("Could not find project root (no .git directory found)")
 
 
 def git_mv(old_abs: Path, new_abs: Path) -> None:
@@ -74,6 +72,7 @@ def update_includes_in_file(
     old_abs: Path,
     new_abs: Path,
     project_root: Path,
+    dry_run: bool = False,
 ) -> bool:
     """
     Update all #include "..." lines in file_path that resolve to old_abs.
@@ -107,8 +106,12 @@ def update_includes_in_file(
                 continue
         new_lines.append(line)
 
-    if changed:
-        file_path.write_text("\n".join(new_lines), encoding="utf-8")
+    if changed and not dry_run:
+        try:
+            file_path.write_text("\n".join(new_lines), encoding="utf-8")
+        except OSError as e:
+            print(f"  ⚠ Could not write {file_path}: {e}", file=sys.stderr)
+            return False
     return changed
 
 
@@ -117,6 +120,7 @@ def update_own_includes(
     old_abs: Path,
     new_abs: Path,
     project_root: Path,
+    dry_run: bool = False,
 ) -> bool:
     """
     Update relative includes *within* the moved file itself.
@@ -153,15 +157,20 @@ def update_own_includes(
                 continue
         new_lines.append(line)
 
-    if changed:
-        moved_file.write_text("\n".join(new_lines), encoding="utf-8")
+    if changed and not dry_run:
+        try:
+            moved_file.write_text("\n".join(new_lines), encoding="utf-8")
+        except OSError as e:
+            print(f"  ⚠ Could not write {moved_file}: {e}", file=sys.stderr)
+            return False
     return changed
 
 
-def update_cmake(cmake_path: Path, old_rel: str, new_rel: str) -> bool:
+def update_cmake(cmake_path: Path, old_rel: str, new_rel: str, dry_run: bool = False) -> bool:
     """
     Update source entries in CMakeLists.txt.
     old_rel / new_rel are paths relative to the CMakeLists.txt directory.
+    Only replaces lines that are source file entries (whole-line match, not comments).
     Returns True if a replacement was made.
     """
     try:
@@ -169,22 +178,35 @@ def update_cmake(cmake_path: Path, old_rel: str, new_rel: str) -> bool:
     except OSError:
         return False
 
-    new_content = content.replace(old_rel, new_rel)
+    new_content = re.sub(
+        r"(?m)^(\s*)" + re.escape(old_rel) + r"(\s*)$",
+        lambda m: m.group(1) + new_rel + m.group(2),
+        content,
+    )
     if new_content != content:
-        cmake_path.write_text(new_content, encoding="utf-8")
+        if not dry_run:
+            try:
+                cmake_path.write_text(new_content, encoding="utf-8")
+            except OSError as e:
+                print(f"  ⚠ Could not write {cmake_path}: {e}", file=sys.stderr)
+                return False
         return True
     return False
 
 
 def main() -> None:
-    if len(sys.argv) != 3:
-        print("Usage: move-file.py <old-path> <new-path>", file=sys.stderr)
+    args = sys.argv[1:]
+    dry_run = "--dry-run" in args
+    args = [a for a in args if a != "--dry-run"]
+
+    if len(args) != 2:
+        print("Usage: move-file.py [--dry-run] <old-path> <new-path>", file=sys.stderr)
         print("  Paths are relative to the project root.", file=sys.stderr)
         sys.exit(1)
 
     project_root = find_project_root()
-    old_path = Path(sys.argv[1])
-    new_path = Path(sys.argv[2])
+    old_path = Path(args[0])
+    new_path = Path(args[1])
     old_abs = (project_root / old_path).resolve()
     new_abs = (project_root / new_path).resolve()
 
@@ -195,33 +217,43 @@ def main() -> None:
         print(f"Error: '{new_path}' already exists.", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Moving {old_path} → {new_path}")
+    if dry_run:
+        print(f"[dry-run] Would move {old_path} → {new_path}")
+    else:
+        print(f"Moving {old_path} → {new_path}")
 
-    # Step 1: git mv
-    git_mv(old_abs, new_abs)
-    print("  ✓ git mv completed")
+    # Step 1: git mv (skipped in dry-run)
+    if not dry_run:
+        git_mv(old_abs, new_abs)
+        print("  ✓ git mv completed")
 
-    # Collect all C++ files (new_abs is now the moved file)
+    # In dry-run mode, new_abs doesn't exist yet; use old_abs as a stand-in for
+    # scanning the moved file's own includes (path computation only needs the path).
+    own_includes_file = new_abs if not dry_run else old_abs
+
+    # Collect all C++ files
     cpp_files = find_cpp_files(project_root)
 
     # Step 2: Update includes in all other files that reference the old path
     updated_files = []
     for file_path in cpp_files:
-        if file_path.resolve() == new_abs.resolve():
+        if file_path.resolve() == own_includes_file.resolve():
             continue
-        if update_includes_in_file(file_path, old_abs, new_abs, project_root):
+        if update_includes_in_file(file_path, old_abs, new_abs, project_root, dry_run=dry_run):
             updated_files.append(str(file_path.relative_to(project_root)))
 
+    verb = "Would update" if dry_run else "Updated"
     if updated_files:
-        print(f"  ✓ Updated includes in {len(updated_files)} file(s):")
+        print(f"  ✓ {verb} includes in {len(updated_files)} file(s):")
         for f in sorted(updated_files):
             print(f"    - {f}")
     else:
         print("  ✓ No external files needed include updates")
 
     # Step 3: Update relative includes within the moved file itself
-    if update_own_includes(new_abs, old_abs, new_abs, project_root):
-        print(f"  ✓ Updated relative includes within {new_path}")
+    if update_own_includes(own_includes_file, old_abs, new_abs, project_root, dry_run=dry_run):
+        verb2 = "Would update" if dry_run else "Updated"
+        print(f"  ✓ {verb2} relative includes within {new_path}")
     else:
         print(f"  ✓ No internal includes needed updating in {new_path}")
 
@@ -233,8 +265,9 @@ def main() -> None:
             try:
                 old_cmake_rel = str(old_abs.relative_to(cmake_dir)).replace("\\", "/")
                 new_cmake_rel = str(new_abs.relative_to(cmake_dir)).replace("\\", "/")
-                if update_cmake(cmake_path, old_cmake_rel, new_cmake_rel):
-                    print(f"  ✓ Updated CMakeLists.txt: {old_cmake_rel} → {new_cmake_rel}")
+                if update_cmake(cmake_path, old_cmake_rel, new_cmake_rel, dry_run=dry_run):
+                    verb3 = "Would update" if dry_run else "Updated"
+                    print(f"  ✓ {verb3} CMakeLists.txt: {old_cmake_rel} → {new_cmake_rel}")
                 else:
                     print(
                         f"  ⚠ '{old_cmake_rel}' not found in CMakeLists.txt (may need manual update)"
@@ -242,7 +275,10 @@ def main() -> None:
             except ValueError:
                 print("  ⚠ File is outside magda/daw/; CMakeLists.txt not updated")
 
-    print("\nDone! Review changes with: git diff")
+    if dry_run:
+        print("\n[dry-run] No files were modified. Re-run without --dry-run to apply.")
+    else:
+        print("\nDone! Review changes with: git diff")
 
 
 if __name__ == "__main__":

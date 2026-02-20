@@ -12,14 +12,19 @@ Automates moving a C++ source file and updating all related references.
 Run from the project root:
 
 ```bash
-python3 .claude/skills/move-file/move-file.py <old-path> <new-path>
+python3 .claude/skills/move-file/move-file.py [--dry-run] <old-path> <new-path>
 ```
 
-Both paths are relative to the project root.
+Both paths are relative to the project root. Use `--dry-run` to preview what would change without modifying any files.
 
 ## Example
 
 ```bash
+# Preview changes first (no files modified)
+python3 .claude/skills/move-file/move-file.py --dry-run \
+    magda/daw/core/Config.hpp \
+    magda/daw/engine/Config.hpp
+
 # Move a header from core/ to engine/
 python3 .claude/skills/move-file/move-file.py \
     magda/daw/core/Config.hpp \
