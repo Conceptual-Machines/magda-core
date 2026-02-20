@@ -37,40 +37,31 @@ void writeField(juce::DynamicObject* o, const char* k, E v) {
 }
 
 // -- Read overloads -----------------------------------------------------------
-// All use hasProperty for backward compatibility (missing field = keep default)
 
 inline void readField(const juce::DynamicObject* o, const char* k, int& v) {
-    if (o->hasProperty(k))
-        v = o->getProperty(k);
+    v = o->getProperty(k);
 }
 inline void readField(const juce::DynamicObject* o, const char* k, double& v) {
-    if (o->hasProperty(k))
-        v = o->getProperty(k);
+    v = o->getProperty(k);
 }
 inline void readField(const juce::DynamicObject* o, const char* k, float& v) {
-    if (o->hasProperty(k))
-        v = static_cast<float>(static_cast<double>(o->getProperty(k)));
+    v = static_cast<float>(static_cast<double>(o->getProperty(k)));
 }
 inline void readField(const juce::DynamicObject* o, const char* k, bool& v) {
-    if (o->hasProperty(k))
-        v = static_cast<bool>(o->getProperty(k));
+    v = static_cast<bool>(o->getProperty(k));
 }
 inline void readField(const juce::DynamicObject* o, const char* k, juce::String& v) {
-    if (o->hasProperty(k))
-        v = o->getProperty(k).toString();
+    v = o->getProperty(k).toString();
 }
 
-// Colour -- matches existing ProjectSerializer::stringToColour behaviour.
 inline void readField(const juce::DynamicObject* o, const char* k, juce::Colour& v) {
-    if (o->hasProperty(k))
-        v = juce::Colour::fromString(o->getProperty(k).toString());
+    v = juce::Colour::fromString(o->getProperty(k).toString());
 }
 
 template <typename E>
     requires std::is_enum_v<E>
 void readField(const juce::DynamicObject* o, const char* k, E& v) {
-    if (o->hasProperty(k))
-        v = static_cast<E>(static_cast<int>(o->getProperty(k)));
+    v = static_cast<E>(static_cast<int>(o->getProperty(k)));
 }
 
 }  // namespace magda::ser

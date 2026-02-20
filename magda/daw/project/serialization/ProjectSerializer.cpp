@@ -512,10 +512,6 @@ bool ProjectSerializer::deserializeAutomationToStaging(const juce::var& json,
     // Legacy format: plain array of lanes (no clips)
     if (json.isArray()) {
         auto* arr = json.getArray();
-        if (arr == nullptr) {
-            lastError_ = "Automation data array is invalid";
-            return false;
-        }
 
         outLanes.clear();
         outLanes.reserve(arr->size());
