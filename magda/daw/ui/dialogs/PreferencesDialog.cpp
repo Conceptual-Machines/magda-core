@@ -606,6 +606,7 @@ void PreferencesDialog::applySettings() {
     renderingPage->applySettings(config);
     aiPage->applySettings(config);
     shortcutsPage->applySettings(config);
+    config.save();
 }
 
 void PreferencesDialog::showDialog(juce::Component* parent) {
