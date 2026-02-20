@@ -12,6 +12,7 @@
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "core/ClipManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
@@ -41,8 +42,7 @@ TrackInspector::TrackInspector() {
 
     // Mute button (TCP style)
     muteButton_.setButtonText("M");
-    muteButton_.setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-                                  juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    muteButton_.setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
     muteButton_.setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE));
     muteButton_.setColour(juce::TextButton::buttonOnColourId,
@@ -67,8 +67,7 @@ TrackInspector::TrackInspector() {
 
     // Solo button (TCP style)
     soloButton_.setButtonText("S");
-    soloButton_.setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-                                  juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    soloButton_.setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
     soloButton_.setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE));
     soloButton_.setColour(juce::TextButton::buttonOnColourId,
@@ -89,8 +88,7 @@ TrackInspector::TrackInspector() {
 
     // Record button (TCP style)
     recordButton_.setButtonText("R");
-    recordButton_.setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-                                    juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    recordButton_.setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
     recordButton_.setColour(juce::TextButton::buttonColourId,
                             DarkTheme::getColour(DarkTheme::SURFACE));
     recordButton_.setColour(juce::TextButton::buttonOnColourId,
@@ -104,9 +102,7 @@ TrackInspector::TrackInspector() {
 
     // Monitor button (3-state: Off → In → Auto → Off)
     monitorButton_.setButtonText("-");
-    monitorButton_.setConnectedEdges(juce::Button::ConnectedOnLeft |
-                                     juce::Button::ConnectedOnRight | juce::Button::ConnectedOnTop |
-                                     juce::Button::ConnectedOnBottom);
+    monitorButton_.setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
     monitorButton_.setColour(juce::TextButton::buttonColourId,
                              DarkTheme::getColour(DarkTheme::SURFACE));
     monitorButton_.setColour(juce::TextButton::buttonOnColourId,
@@ -316,67 +312,107 @@ void TrackInspector::resized() {
     sectionSeparatorYs_.push_back(bounds.getY());
     bounds.removeFromTop(separatorPadding);
 
-    // Shared width for routing rows (matches routing: 55 + 4 + 55 = 114)
-    const int selectorWidth = 55;
     const int selectorGap = 4;
 
-    // Volume Pan M S R Mon — single row, vol+pan 60%, buttons 40%
-    auto mixRow = bounds.removeFromTop(24);
-    const int totalRowWidth = mixRow.getWidth();
+    const int availableWidth = bounds.getWidth();
+    const int stackThreshold = 100;
     const int buttonGap = 2;
     const int numButtons = 4;
-    const int numGaps = 5;  // gaps between vol|pan|M|S|R|Mon
-    const int gapTotal = numGaps * buttonGap;
-    const int usable = totalRowWidth - gapTotal;
-    const int volWidth = usable * 30 / 100;
-    const int panWidth = usable * 30 / 100;
-    const int btnWidth = (usable - volWidth - panWidth) / numButtons;
-    gainLabel_->setBounds(mixRow.removeFromLeft(volWidth));
-    mixRow.removeFromLeft(buttonGap);
-    panLabel_->setBounds(mixRow.removeFromLeft(panWidth));
-    mixRow.removeFromLeft(buttonGap);
-    muteButton_.setBounds(mixRow.removeFromLeft(btnWidth));
-    mixRow.removeFromLeft(buttonGap);
-    soloButton_.setBounds(mixRow.removeFromLeft(btnWidth));
-    mixRow.removeFromLeft(buttonGap);
-    recordButton_.setBounds(mixRow.removeFromLeft(btnWidth));
-    mixRow.removeFromLeft(buttonGap);
-    monitorButton_.setBounds(mixRow);
+    const int controlRowHeight = 24;
+    const int wideThreshold = 160;
+
+    if (availableWidth >= wideThreshold) {
+        // Wide: Vol Pan M S R Mon — all on one row
+        auto row = bounds.removeFromTop(controlRowHeight);
+        const int gap = 2;
+        const int mixPortion = row.getWidth() * 60 / 100;
+        const int btnPortion = row.getWidth() - mixPortion - gap;
+        const int volWidth = (mixPortion - gap) * 80 / 100;
+        gainLabel_->setBounds(row.removeFromLeft(volWidth));
+        row.removeFromLeft(gap);
+        panLabel_->setBounds(row.removeFromLeft(mixPortion - volWidth - gap));
+        row.removeFromLeft(gap);
+        const int btnWidth = (btnPortion - (numButtons - 1) * gap) / numButtons;
+        muteButton_.setBounds(row.removeFromLeft(btnWidth));
+        row.removeFromLeft(gap);
+        soloButton_.setBounds(row.removeFromLeft(btnWidth));
+        row.removeFromLeft(gap);
+        recordButton_.setBounds(row.removeFromLeft(btnWidth));
+        row.removeFromLeft(gap);
+        monitorButton_.setBounds(row);
+    } else if (availableWidth >= stackThreshold) {
+        // Medium: Vol(80%) Pan(20%) on one row, buttons on second row
+        auto mixRow = bounds.removeFromTop(controlRowHeight);
+        const int mixGap = 4;
+        const int volWidth = (mixRow.getWidth() - mixGap) * 80 / 100;
+        gainLabel_->setBounds(mixRow.removeFromLeft(volWidth));
+        mixRow.removeFromLeft(mixGap);
+        panLabel_->setBounds(mixRow);
+        bounds.removeFromTop(4);
+
+        auto buttonRow = bounds.removeFromTop(controlRowHeight);
+        const int btnWidth = (buttonRow.getWidth() - (numButtons - 1) * buttonGap) / numButtons;
+        muteButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
+        buttonRow.removeFromLeft(buttonGap);
+        soloButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
+        buttonRow.removeFromLeft(buttonGap);
+        recordButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
+        buttonRow.removeFromLeft(buttonGap);
+        monitorButton_.setBounds(buttonRow);
+    } else {
+        // Narrow: Volume, Pan, and buttons all stacked
+        gainLabel_->setBounds(bounds.removeFromTop(controlRowHeight));
+        bounds.removeFromTop(2);
+        panLabel_->setBounds(bounds.removeFromTop(controlRowHeight));
+        bounds.removeFromTop(4);
+
+        auto buttonRow = bounds.removeFromTop(controlRowHeight);
+        const int btnWidth = (buttonRow.getWidth() - (numButtons - 1) * buttonGap) / numButtons;
+        muteButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
+        buttonRow.removeFromLeft(buttonGap);
+        soloButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
+        buttonRow.removeFromLeft(buttonGap);
+        recordButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
+        buttonRow.removeFromLeft(buttonGap);
+        monitorButton_.setBounds(buttonRow);
+    }
     bounds.removeFromTop(separatorPadding);
     sectionSeparatorYs_.push_back(bounds.getY());
     bounds.removeFromTop(separatorPadding);
 
-    // Routing section
+    // Routing section — dropdowns fill available width
     const int selectorHeight = 18;
     const int columnHeaderHeight = 14;
     const int iconSize = 16;
+    const int dropdownGap = selectorGap;
+    const int dropdownWidth = (bounds.getWidth() - dropdownGap - dropdownGap - iconSize) / 2;
 
     // Column headers: [Audio] [MIDI]
     if (audioInputSelector_->isVisible()) {
         auto headerRow = bounds.removeFromTop(columnHeaderHeight);
-        audioColumnLabel_.setBounds(headerRow.removeFromLeft(selectorWidth));
-        headerRow.removeFromLeft(selectorGap);
-        midiColumnLabel_.setBounds(headerRow.removeFromLeft(selectorWidth));
+        audioColumnLabel_.setBounds(headerRow.removeFromLeft(dropdownWidth));
+        headerRow.removeFromLeft(dropdownGap);
+        midiColumnLabel_.setBounds(headerRow.removeFromLeft(dropdownWidth));
         bounds.removeFromTop(2);
     }
 
     // Input row: [Audio In] [MIDI In] [inputIcon] — hidden for multi-out child tracks
     if (audioInputSelector_->isVisible()) {
         auto inputRow = bounds.removeFromTop(selectorHeight);
-        audioInputSelector_->setBounds(inputRow.removeFromLeft(selectorWidth));
-        inputRow.removeFromLeft(selectorGap);
-        inputSelector_->setBounds(inputRow.removeFromLeft(selectorWidth));
-        inputRow.removeFromLeft(selectorGap);
+        audioInputSelector_->setBounds(inputRow.removeFromLeft(dropdownWidth));
+        inputRow.removeFromLeft(dropdownGap);
+        inputSelector_->setBounds(inputRow.removeFromLeft(dropdownWidth));
+        inputRow.removeFromLeft(dropdownGap);
         inputIcon_->setBounds(inputRow.removeFromLeft(iconSize));
         bounds.removeFromTop(4);
     }
 
     // Output row: [Audio Out] [MIDI Out] [outputIcon]
     auto outputRow = bounds.removeFromTop(selectorHeight);
-    outputSelector_->setBounds(outputRow.removeFromLeft(selectorWidth));
-    outputRow.removeFromLeft(selectorGap);
-    midiOutputSelector_->setBounds(outputRow.removeFromLeft(selectorWidth));
-    outputRow.removeFromLeft(selectorGap);
+    outputSelector_->setBounds(outputRow.removeFromLeft(dropdownWidth));
+    outputRow.removeFromLeft(dropdownGap);
+    midiOutputSelector_->setBounds(outputRow.removeFromLeft(dropdownWidth));
+    outputRow.removeFromLeft(dropdownGap);
     outputIcon_->setBounds(outputRow.removeFromLeft(iconSize));
     bounds.removeFromTop(separatorPadding);
     sectionSeparatorYs_.push_back(bounds.getY());
