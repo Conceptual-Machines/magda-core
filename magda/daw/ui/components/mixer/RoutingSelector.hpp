@@ -74,10 +74,6 @@ class RoutingSelector : public juce::Component {
     juce::Rectangle<int> getDropdownArea() const;
 
     void showPopupMenu();
-    juce::Colour getEnabledColour() const;
-
-    // Icon drawable (loaded once in constructor)
-    std::unique_ptr<juce::Drawable> icon_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RoutingSelector)
 };

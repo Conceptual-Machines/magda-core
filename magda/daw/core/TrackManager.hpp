@@ -189,6 +189,7 @@ class TrackManager {
     void setTrackMuted(TrackId trackId, bool muted);
     void setTrackSoloed(TrackId trackId, bool soloed);
     void setTrackRecordArmed(TrackId trackId, bool armed);
+    void setTrackInputMonitor(TrackId trackId, InputMonitorMode mode);
     void setTrackFrozen(TrackId trackId, bool frozen);
     void setTrackType(TrackId trackId, TrackType type);
 

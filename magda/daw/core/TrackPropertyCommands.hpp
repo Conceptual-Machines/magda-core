@@ -130,6 +130,33 @@ class SetTrackSoloCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for setting track input monitor mode
+ */
+class SetTrackInputMonitorCommand : public UndoableCommand {
+  public:
+    SetTrackInputMonitorCommand(TrackId trackId, InputMonitorMode newMode)
+        : trackId_(trackId), newMode_(newMode) {
+        auto* track = TrackManager::getInstance().getTrack(trackId);
+        if (track)
+            oldMode_ = track->inputMonitor;
+    }
+
+    void execute() override {
+        TrackManager::getInstance().setTrackInputMonitor(trackId_, newMode_);
+    }
+    void undo() override {
+        TrackManager::getInstance().setTrackInputMonitor(trackId_, oldMode_);
+    }
+    juce::String getDescription() const override {
+        return "Set Track Input Monitor";
+    }
+
+  private:
+    TrackId trackId_;
+    InputMonitorMode oldMode_ = InputMonitorMode::Off, newMode_;
+};
+
+/**
  * @brief Command for setting track name
  */
 class SetTrackNameCommand : public UndoableCommand {

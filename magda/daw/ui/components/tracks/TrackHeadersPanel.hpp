@@ -30,7 +30,7 @@ class TrackHeadersPanel : public juce::Component,
   public:
     static constexpr int TRACK_HEADER_WIDTH = 200;
     static constexpr int DEFAULT_TRACK_HEIGHT = 80;
-    static constexpr int MIN_TRACK_HEIGHT = 40;
+    static constexpr int MIN_TRACK_HEIGHT = 47;
     static constexpr int MAX_TRACK_HEIGHT = 200;
 
     TrackHeadersPanel(AudioEngine* audioEngine = nullptr);
@@ -128,6 +128,7 @@ class TrackHeadersPanel : public juce::Component,
         std::unique_ptr<juce::TextButton> muteButton;
         std::unique_ptr<juce::TextButton> soloButton;
         std::unique_ptr<juce::TextButton> recordButton;        // Record arm button
+        std::unique_ptr<juce::TextButton> monitorButton;       // Input monitor button
         std::unique_ptr<DraggableValueLabel> volumeLabel;      // Volume as draggable dB label
         std::unique_ptr<DraggableValueLabel> panLabel;         // Pan as draggable L/C/R label
         std::unique_ptr<juce::TextButton> collapseButton;      // For groups
@@ -137,6 +138,10 @@ class TrackHeadersPanel : public juce::Component,
         std::unique_ptr<RoutingSelector> inputSelector;        // MIDI input
         std::unique_ptr<RoutingSelector> outputSelector;       // Audio output
         std::unique_ptr<RoutingSelector> midiOutputSelector;   // MIDI output
+        std::unique_ptr<juce::Label> audioColumnLabel;         // "Audio" column header
+        std::unique_ptr<juce::Label> midiColumnLabel;          // "MIDI" column header
+        std::unique_ptr<juce::Component> inputIcon;            // Non-interactive Input icon
+        std::unique_ptr<juce::Component> outputIcon;           // Non-interactive Output icon
         std::vector<std::unique_ptr<DraggableValueLabel>> sendLabels;  // Send level labels
         std::unique_ptr<juce::Component> meterComponent;               // Peak meter display
         std::unique_ptr<juce::Component> midiIndicator;                // MIDI activity indicator
@@ -160,6 +165,9 @@ class TrackHeadersPanel : public juce::Component,
     ViewMode currentViewMode_ = ViewMode::Arrange;
     MixerLookAndFeel sliderLookAndFeel_;  // Custom look and feel for sliders
     AudioEngine* audioEngine_ = nullptr;  // Reference to audio engine for metering
+
+    // I/O routing visibility
+    bool showIORouting_ = true;
 
     // Resize functionality
     bool isResizing = false;

@@ -264,13 +264,19 @@ void MainView::setupComponents() {
                       BinaryData::fit_width_svgSize);
     zoomSelButton->onClick = [this]() { zoomToSelection(); };
 
-    setupCornerButton(trackCompactButton, "TrackCompact", BinaryData::compact_svg,
-                      BinaryData::compact_svgSize);
-    trackCompactButton->onClick = [this]() { setAllTrackHeights(60); };
+    // S = density_small.svg (4 rows = compact), M = density_medium.svg (3 rows), L =
+    // density_large.svg (2 rows = spacious)
+    setupCornerButton(trackSmallButton, "TrackSmall", BinaryData::density_small_svg,
+                      BinaryData::density_small_svgSize);
+    trackSmallButton->onClick = [this]() { setAllTrackHeights(47); };
 
-    setupCornerButton(trackExpandButton, "TrackExpand", BinaryData::large_svg,
-                      BinaryData::large_svgSize);
-    trackExpandButton->onClick = [this]() { setAllTrackHeights(200); };
+    setupCornerButton(trackMediumButton, "TrackMedium", BinaryData::density_medium_svg,
+                      BinaryData::density_medium_svgSize);
+    trackMediumButton->onClick = [this]() { setAllTrackHeights(78); };
+
+    setupCornerButton(trackLargeButton, "TrackLarge", BinaryData::density_large_svg,
+                      BinaryData::density_large_svgSize);
+    trackLargeButton->onClick = [this]() { setAllTrackHeights(140); };
 
     // Set up scroll synchronization
     trackContentViewport->getHorizontalScrollBar().addListener(this);
@@ -599,7 +605,7 @@ void MainView::resized() {
     {
         int btnSize = 22;
         int gap = 2;
-        int gridW = btnSize * 2 + gap;
+        int gridW = btnSize * 3 + gap * 2;
         int gridH = btnSize * 2 + gap;
         // Left-aligned, vertically centred
         auto grid = juce::Rectangle<int>(cornerArea.getX() + 4, cornerArea.getCentreY() - gridH / 2,
@@ -613,9 +619,11 @@ void MainView::resized() {
         topRow.removeFromLeft(gap);
         zoomSelButton->setBounds(topRow.removeFromLeft(btnSize));
 
-        trackCompactButton->setBounds(botRow.removeFromLeft(btnSize));
+        trackSmallButton->setBounds(botRow.removeFromLeft(btnSize));
         botRow.removeFromLeft(gap);
-        trackExpandButton->setBounds(botRow.removeFromLeft(btnSize));
+        trackMediumButton->setBounds(botRow.removeFromLeft(btnSize));
+        botRow.removeFromLeft(gap);
+        trackLargeButton->setBounds(botRow.removeFromLeft(btnSize));
     }
 
     // Add padding space for the resize handle

@@ -1,8 +1,8 @@
-#include "TracktionEngineWrapper.hpp"
-
 #include <iostream>
 
 #include "../audio/AudioBridge.hpp"
+#include "../core/TrackManager.hpp"
+#include "TracktionEngineWrapper.hpp"
 
 namespace magda {
 
@@ -153,14 +153,28 @@ void TracktionEngineWrapper::previewNoteOnTrack(const std::string& track_id, int
 
     DBG("TracktionEngineWrapper: Track found, injecting MIDI");
 
-    // Ensure MIDI input device is in monitoring mode (always audible)
+    // Set MIDI input device monitor mode based on track's inputMonitor setting
     auto& midiInput = audioTrack->getMidiInputDevice();
+    auto desiredMode = tracktion::InputDevice::MonitorMode::on;  // default for backward compat
+    if (auto* trackInfo = TrackManager::getInstance().getTrack(magdaTrackId)) {
+        switch (trackInfo->inputMonitor) {
+            case InputMonitorMode::Off:
+                desiredMode = tracktion::InputDevice::MonitorMode::off;
+                break;
+            case InputMonitorMode::In:
+                desiredMode = tracktion::InputDevice::MonitorMode::on;
+                break;
+            case InputMonitorMode::Auto:
+                desiredMode = tracktion::InputDevice::MonitorMode::automatic;
+                break;
+        }
+    }
     auto currentMode = midiInput.getMonitorMode();
     DBG("TracktionEngineWrapper: Current monitor mode: " << (int)currentMode);
 
-    if (currentMode != tracktion::InputDevice::MonitorMode::on) {
-        DBG("TracktionEngineWrapper: Enabling monitor mode");
-        midiInput.setMonitorMode(tracktion::InputDevice::MonitorMode::on);
+    if (currentMode != desiredMode) {
+        DBG("TracktionEngineWrapper: Setting monitor mode to " << (int)desiredMode);
+        midiInput.setMonitorMode(desiredMode);
     }
 
     // Create MIDI message

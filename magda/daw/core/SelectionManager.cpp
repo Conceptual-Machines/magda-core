@@ -3,6 +3,8 @@
 #include <algorithm>
 
 #include "ClipManager.hpp"
+#include "Config.hpp"
+#include "TrackInfo.hpp"
 #include "TrackManager.hpp"
 
 namespace magda {
@@ -23,6 +25,7 @@ SelectionManager::SelectionManager() {
 void SelectionManager::selectTrack(TrackId trackId) {
     bool typeChanged = selectionType_ != SelectionType::Track;
     bool trackChanged = selectedTrackId_ != trackId;
+    auto oldTrackId = selectedTrackId_;
 
     // Clear other selection types
     selectedClipId_ = INVALID_CLIP_ID;
@@ -30,6 +33,16 @@ void SelectionManager::selectTrack(TrackId trackId) {
 
     selectionType_ = SelectionType::Track;
     selectedTrackId_ = trackId;
+
+    // Auto-monitor: turn off old track's monitor, turn on new track's monitor
+    if (trackChanged && Config::getInstance().getAutoMonitorSelectedTrack()) {
+        if (oldTrackId != INVALID_TRACK_ID) {
+            TrackManager::getInstance().setTrackInputMonitor(oldTrackId, InputMonitorMode::Off);
+        }
+        if (trackId != INVALID_TRACK_ID && trackId != MASTER_TRACK_ID) {
+            TrackManager::getInstance().setTrackInputMonitor(trackId, InputMonitorMode::Auto);
+        }
+    }
 
     // Sync with TrackManager
     TrackManager::getInstance().setSelectedTrack(trackId);

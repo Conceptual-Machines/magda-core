@@ -30,6 +30,8 @@ struct SendInfo {
     TrackId destTrackId = INVALID_TRACK_ID;  // Target aux track (for display)
 };
 
+enum class InputMonitorMode { Off, In, Auto };
+
 /**
  * @brief Track data structure containing all track properties
  */
@@ -49,6 +51,7 @@ struct TrackInfo {
     bool muted = false;
     bool soloed = false;
     bool recordArmed = false;
+    InputMonitorMode inputMonitor = InputMonitorMode::Off;
     bool frozen = false;  // Track is frozen (rendered to audio, plugins disabled)
 
     // Routing
@@ -92,6 +95,7 @@ struct TrackInfo {
           muted(other.muted),
           soloed(other.soloed),
           recordArmed(other.recordArmed),
+          inputMonitor(other.inputMonitor),
           frozen(other.frozen),
           midiInputDevice(other.midiInputDevice),
           midiOutputDevice(other.midiOutputDevice),
@@ -121,6 +125,7 @@ struct TrackInfo {
             muted = other.muted;
             soloed = other.soloed;
             recordArmed = other.recordArmed;
+            inputMonitor = other.inputMonitor;
             frozen = other.frozen;
             midiInputDevice = other.midiInputDevice;
             midiOutputDevice = other.midiOutputDevice;

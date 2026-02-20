@@ -19,8 +19,8 @@ class SmallButtonLookAndFeel : public juce::LookAndFeel_V4 {
                               bool shouldDrawButtonAsHighlighted,
                               bool shouldDrawButtonAsDown) override {
         auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
-        // Minimal corner radius (2% of smaller dimension)
-        float cornerRadius = juce::jmin(bounds.getWidth(), bounds.getHeight()) * 0.02f;
+        // Slightly rounded corners
+        float cornerRadius = 3.0f;
 
         auto baseColour = bgColour;
         if (shouldDrawButtonAsDown)

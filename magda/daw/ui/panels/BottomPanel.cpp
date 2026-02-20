@@ -307,6 +307,20 @@ void BottomPanel::paint(juce::Graphics& g) {
 }
 
 void BottomPanel::resized() {
+    // Hide all header controls when collapsed
+    if (isCollapsed()) {
+        pianoRollTab_->setVisible(false);
+        drumGridTab_->setVisible(false);
+        timeModeButton_->setVisible(false);
+        gridNumeratorLabel_->setVisible(false);
+        gridSlashLabel_->setVisible(false);
+        gridDenominatorLabel_->setVisible(false);
+        autoGridButton_->setVisible(false);
+        snapButton_->setVisible(false);
+        TabbedPanel::resized();
+        return;
+    }
+
     // Position editor tab icons and header controls at the top of the panel area
     if (showEditorTabs_) {
         auto headerBounds = getLocalBounds().removeFromTop(EDITOR_TAB_HEIGHT);

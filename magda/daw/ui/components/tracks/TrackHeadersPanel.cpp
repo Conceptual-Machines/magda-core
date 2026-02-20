@@ -14,6 +14,7 @@
 #include "../../../engine/TracktionEngineWrapper.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "../automation/AutomationLaneComponent.hpp"
 #include "../mixer/RoutingSyncHelper.hpp"
 #include "BinaryData.h"
@@ -175,8 +176,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     nameLabel->setFont(FontManager::getInstance().getUIFont(12.0f));
 
     muteButton = std::make_unique<juce::TextButton>("M");
-    muteButton->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-                                  juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    muteButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
     muteButton->setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE));
     muteButton->setColour(juce::TextButton::buttonOnColourId,
@@ -188,8 +188,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     muteButton->setClickingTogglesState(true);
 
     soloButton = std::make_unique<juce::TextButton>("S");
-    soloButton->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-                                  juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    soloButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
     soloButton->setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE));
     soloButton->setColour(juce::TextButton::buttonOnColourId,
@@ -201,8 +200,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     soloButton->setClickingTogglesState(true);
 
     recordButton = std::make_unique<juce::TextButton>("R");
-    recordButton->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-                                    juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    recordButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
     recordButton->setColour(juce::TextButton::buttonColourId,
                             DarkTheme::getColour(DarkTheme::SURFACE));
     recordButton->setColour(juce::TextButton::buttonOnColourId,
@@ -213,6 +211,19 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     recordButton->setClickingTogglesState(true);
 
+    // Monitor button (3-state: Off → In → Auto → Off)
+    monitorButton = std::make_unique<juce::TextButton>("-");
+    monitorButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
+    monitorButton->setColour(juce::TextButton::buttonColourId,
+                             DarkTheme::getColour(DarkTheme::SURFACE));
+    monitorButton->setColour(juce::TextButton::buttonOnColourId,
+                             DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+    monitorButton->setColour(juce::TextButton::textColourOffId,
+                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    monitorButton->setColour(juce::TextButton::textColourOnId,
+                             DarkTheme::getColour(DarkTheme::BACKGROUND));
+    monitorButton->setTooltip("Input monitoring (Off/In/Auto)");
+
     // Automation button (bezier curve icon)
     automationButton = std::make_unique<SvgButton>("Automation", BinaryData::bezier_svg,
                                                    BinaryData::bezier_svgSize);
@@ -221,6 +232,8 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
                                 DarkTheme::getColour(DarkTheme::SURFACE));
     automationButton->setColour(juce::TextButton::buttonOnColourId,
                                 DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    automationButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    automationButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
 
     // Volume label (shows dB, draggable)
     volumeLabel = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
@@ -271,6 +284,38 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // MIDI activity indicator
     midiIndicator = std::make_unique<MidiActivityIndicator>();
     midiIndicator->setAlwaysOnTop(true);  // Ensure always visible on top
+
+    // Column header labels for routing selectors
+    audioColumnLabel = std::make_unique<juce::Label>("audioCol", "Audio");
+    audioColumnLabel->setFont(FontManager::getInstance().getUIFont(8.0f));
+    audioColumnLabel->setColour(juce::Label::textColourId,
+                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    audioColumnLabel->setJustificationType(juce::Justification::centred);
+
+    midiColumnLabel = std::make_unique<juce::Label>("midiCol", "MIDI");
+    midiColumnLabel->setFont(FontManager::getInstance().getUIFont(8.0f));
+    midiColumnLabel->setColour(juce::Label::textColourId,
+                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    midiColumnLabel->setJustificationType(juce::Justification::centred);
+
+    // I/O routing icons (non-interactive visual indicators)
+    auto inputDrawable =
+        std::make_unique<juce::DrawableButton>("inputIcon", juce::DrawableButton::ImageFitted);
+    if (auto svg =
+            juce::Drawable::createFromImageData(BinaryData::Input_svg, BinaryData::Input_svgSize)) {
+        inputDrawable->setImages(svg.get());
+    }
+    inputDrawable->setInterceptsMouseClicks(false, false);
+    inputIcon = std::move(inputDrawable);
+
+    auto outputDrawable =
+        std::make_unique<juce::DrawableButton>("outputIcon", juce::DrawableButton::ImageFitted);
+    if (auto svg = juce::Drawable::createFromImageData(BinaryData::Output_svg,
+                                                       BinaryData::Output_svgSize)) {
+        outputDrawable->setImages(svg.get());
+    }
+    outputDrawable->setInterceptsMouseClicks(false, false);
+    outputIcon = std::move(outputDrawable);
 }
 
 TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
@@ -278,6 +323,7 @@ TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(au
               << std::endl;
     setSize(TRACK_HEADER_WIDTH, 400);
     setWantsKeyboardFocus(true);
+    addMouseListener(this, true);  // Receive child clicks for track selection
 
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
@@ -357,12 +403,30 @@ void TrackHeadersPanel::timerCallback() {
             }
         }
 
-        // Check for new MIDI note-on (counter comparison)
+        // Check for new MIDI note-on (counter comparison), gated by monitor mode
         auto counter = bridge->getMidiActivityCounter(header->trackId);
         if (counter != header->lastMidiCounter) {
             header->lastMidiCounter = counter;
-            header->midiActivity = 1.0f;
-            header->midiHoldFrames = 4;  // Hold bright for ~130ms at 30fps
+
+            // Only show activity when monitoring is active
+            bool showActivity = false;
+            if (auto* trackInfo = TrackManager::getInstance().getTrack(header->trackId)) {
+                switch (trackInfo->inputMonitor) {
+                    case InputMonitorMode::In:
+                        showActivity = true;
+                        break;
+                    case InputMonitorMode::Auto:
+                        showActivity = !bridge->isTransportPlaying();
+                        break;
+                    case InputMonitorMode::Off:
+                        showActivity = false;
+                        break;
+                }
+            }
+            if (showActivity) {
+                header->midiActivity = 1.0f;
+                header->midiHoldFrames = 4;  // Hold bright for ~130ms at 30fps
+            }
         }
 
         // Decay only after hold expires
@@ -649,6 +713,7 @@ void TrackHeadersPanel::tracksChanged() {
         addAndMakeVisible(*header->muteButton);
         addAndMakeVisible(*header->soloButton);
         addAndMakeVisible(*header->recordButton);
+        addAndMakeVisible(*header->monitorButton);
         addAndMakeVisible(*header->automationButton);
         addAndMakeVisible(*header->volumeLabel);
         addAndMakeVisible(*header->panLabel);
@@ -656,6 +721,10 @@ void TrackHeadersPanel::tracksChanged() {
         addAndMakeVisible(*header->inputSelector);
         addAndMakeVisible(*header->outputSelector);
         addAndMakeVisible(*header->midiOutputSelector);
+        addAndMakeVisible(*header->audioColumnLabel);
+        addAndMakeVisible(*header->midiColumnLabel);
+        addAndMakeVisible(*header->inputIcon);
+        addAndMakeVisible(*header->outputIcon);
         for (auto& sendLabel : header->sendLabels) {
             addChildComponent(*sendLabel);  // Hidden by default; shown when track has sends
         }
@@ -731,6 +800,23 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
         header.soloButton->setToggleState(track->soloed, juce::dontSendNotification);
         header.volumeLabel->setValue(gainToDb(track->volume), juce::dontSendNotification);
         header.panLabel->setValue(track->pan, juce::dontSendNotification);
+
+        // Update monitor button
+        if (header.monitorButton) {
+            switch (track->inputMonitor) {
+                case InputMonitorMode::Off:
+                    header.monitorButton->setButtonText("-");
+                    break;
+                case InputMonitorMode::In:
+                    header.monitorButton->setButtonText("I");
+                    break;
+                case InputMonitorMode::Auto:
+                    header.monitorButton->setButtonText("A");
+                    break;
+            }
+            header.monitorButton->setToggleState(track->inputMonitor != InputMonitorMode::Off,
+                                                 juce::dontSendNotification);
+        }
 
         // Update routing selectors to match track state
         updateRoutingSelectorFromTrack(header, track);
@@ -1110,6 +1196,27 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
         }
     };
 
+    // Monitor button callback - cycles Off → In → Auto → Off
+    header.monitorButton->onClick = [this, trackId]() {
+        auto* track = TrackManager::getInstance().getTrack(trackId);
+        if (!track)
+            return;
+        InputMonitorMode nextMode;
+        switch (track->inputMonitor) {
+            case InputMonitorMode::Off:
+                nextMode = InputMonitorMode::In;
+                break;
+            case InputMonitorMode::In:
+                nextMode = InputMonitorMode::Auto;
+                break;
+            case InputMonitorMode::Auto:
+                nextMode = InputMonitorMode::Off;
+                break;
+        }
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetTrackInputMonitorCommand>(trackId, nextMode));
+    };
+
     // Automation button callback - shows automation lane menu
     header.automationButton->onClick = [this, trackId, &header]() {
         showAutomationMenu(trackId, header.automationButton.get());
@@ -1311,7 +1418,6 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
             // Constants
             const int nameRowHeight = 18;
             const int rowHeight = 16;
-            const int smallButtonSize = 16;
             const int spacing = 2;
 
             // Top row: collapse button (if group) + name label
@@ -1334,30 +1440,112 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 header.inputSelector->setVisible(false);
                 header.outputSelector->setVisible(false);
                 header.midiOutputSelector->setVisible(false);
+                header.audioColumnLabel->setVisible(false);
+                header.midiColumnLabel->setVisible(false);
+                header.inputIcon->setVisible(false);
+                header.outputIcon->setVisible(false);
                 for (auto& sendLabel : header.sendLabels) {
                     sendLabel->setVisible(false);
                 }
             };
 
-            // Label widths for draggable values
-            const int volumeLabelWidth = 42;  // "-60.0" or "+6.0"
-            const int panLabelWidth = 28;     // "L100" or "R100" or "C"
-            const int sendLabelWidth = 28;    // "-inf" or "-12"
+            // Helper: lay out Vol/Pan + buttons
+            // Full width (>=128px): single row — Vol Pan | M S R Mon A
+            // Narrow (<128px): two rows — Vol Pan / M S R Mon A
+            auto layoutVolPanAndButtons = [&](juce::Rectangle<int>& area, int gapOverride = -1) {
+                const int gap = 2;
+                const int rh = rowHeight;
+                const int areaWidth = area.getWidth();
+                const int numBtns = header.isMultiOut ? 3 : 5;
+
+                if (areaWidth >= 260) {
+                    // Single row: Vol Pan | M S R Mon A
+                    auto row = area.removeFromTop(rh);
+                    const int rowWidth = areaWidth;
+                    const int mixW = rowWidth * 60 / 100;
+                    const int btnsW = rowWidth - mixW - gap;
+                    const int mixGap = 2;
+                    const int volW = (mixW - mixGap) * 80 / 100;
+                    header.volumeLabel->setBounds(row.removeFromLeft(volW));
+                    header.volumeLabel->setVisible(true);
+                    row.removeFromLeft(mixGap);
+                    header.panLabel->setBounds(row.removeFromLeft(mixW - volW - mixGap));
+                    header.panLabel->setVisible(true);
+                    row.removeFromLeft(gap);
+                    const int btnGapTotal = (numBtns - 1) * gap;
+                    const int btnW = (btnsW - btnGapTotal) / numBtns;
+                    header.muteButton->setBounds(row.removeFromLeft(btnW));
+                    row.removeFromLeft(gap);
+                    header.soloButton->setBounds(row.removeFromLeft(btnW));
+                    row.removeFromLeft(gap);
+                    if (!header.isMultiOut) {
+                        header.recordButton->setBounds(row.removeFromLeft(btnW));
+                        header.recordButton->setVisible(true);
+                        row.removeFromLeft(gap);
+                        header.monitorButton->setBounds(row.removeFromLeft(btnW));
+                        header.monitorButton->setVisible(true);
+                        row.removeFromLeft(gap);
+                    } else {
+                        header.recordButton->setVisible(false);
+                        header.monitorButton->setVisible(false);
+                    }
+                    header.automationButton->setBounds(
+                        row.removeFromLeft(btnsW - (numBtns - 1) * (btnW + gap)));
+                    header.automationButton->setVisible(true);
+                } else {
+                    // Two rows: Vol Pan, then M S R Mon A
+                    const int rowWidth = std::min(areaWidth, 120);
+                    const int rowPadding = gapOverride >= 0
+                                               ? gapOverride
+                                               : std::max(2, (area.getHeight() - 2 * rh) / 3);
+                    auto volPanRow = area.removeFromTop(rh);
+                    const int mixGap = 4;
+                    const int volW = (rowWidth - mixGap) * 80 / 100;
+                    header.volumeLabel->setBounds(volPanRow.removeFromLeft(volW));
+                    header.volumeLabel->setVisible(true);
+                    volPanRow.removeFromLeft(mixGap);
+                    header.panLabel->setBounds(volPanRow.removeFromLeft(rowWidth - volW - mixGap));
+                    header.panLabel->setVisible(true);
+                    area.removeFromTop(rowPadding);
+
+                    auto btnRow = area.removeFromTop(rh);
+                    const int btnW = (rowWidth - (numBtns - 1) * gap) / numBtns;
+                    header.muteButton->setBounds(btnRow.removeFromLeft(btnW));
+                    btnRow.removeFromLeft(gap);
+                    header.soloButton->setBounds(btnRow.removeFromLeft(btnW));
+                    btnRow.removeFromLeft(gap);
+                    if (!header.isMultiOut) {
+                        header.recordButton->setBounds(btnRow.removeFromLeft(btnW));
+                        header.recordButton->setVisible(true);
+                        btnRow.removeFromLeft(gap);
+                        header.monitorButton->setBounds(btnRow.removeFromLeft(btnW));
+                        header.monitorButton->setVisible(true);
+                        btnRow.removeFromLeft(gap);
+                    } else {
+                        header.recordButton->setVisible(false);
+                        header.monitorButton->setVisible(false);
+                    }
+                    header.automationButton->setBounds(
+                        btnRow.removeFromLeft(rowWidth - (numBtns - 1) * (btnW + gap) - gap));
+                    header.automationButton->setVisible(true);
+                }
+            };
 
             if (trackHeight >= 100) {
-                // LARGE LAYOUT - fixed 4-row grid, sends use remaining space
-                // Order: M S R A, Volume/Pan, Input routing, Output routing
-                // Sends appear between Vol/Pan and I/O if present
-                const int toggleWidth = 40;
-                const int dropdownWidth = 55;
+                // LARGE LAYOUT
+                // Row 1: Volume Pan
+                // Row 2: M S R Mon A
+                // Sends, Input routing, Output routing follow
                 const int buttonGap = 2;
-                const int contentRowHeight = rowHeight - 2;
+                const int contentRowHeight = 18;  // I/O dropdowns taller than vol/buttons
                 const bool hasSends = !header.sendLabels.empty();
 
-                // Always 4 base rows for stable spacing
-                constexpr int numRows = 4;
+                const int sendLabelWidth = 28;
+                const bool wideEnough = tcpArea.getWidth() >= 260;
+                const int ioRows = showIORouting_ ? 2 : 0;
+                // vol/pan/buttons: 1 row if wide, 2 if not; plus I/O rows
+                const int numRows = (wideEnough ? 1 : 2) + ioRows;
 
-                // Calculate even spacing between rows
                 int totalContentHeight = numRows * contentRowHeight;
                 if (hasSends)
                     totalContentHeight += contentRowHeight;
@@ -1366,35 +1554,10 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                                  ? std::max(2, availableSpace / (numRows - 1 + (hasSends ? 1 : 0)))
                                  : 2;
 
-                // M S R A buttons row
-                auto buttonsRow = tcpArea.removeFromTop(contentRowHeight);
-                header.muteButton->setBounds(buttonsRow.removeFromLeft(smallButtonSize));
-                buttonsRow.removeFromLeft(buttonGap);
-                header.soloButton->setBounds(buttonsRow.removeFromLeft(smallButtonSize));
-                buttonsRow.removeFromLeft(buttonGap);
-                if (!header.isMultiOut) {
-                    header.recordButton->setBounds(buttonsRow.removeFromLeft(smallButtonSize));
-                    header.recordButton->setVisible(true);
-                    buttonsRow.removeFromLeft(buttonGap);
-                } else {
-                    header.recordButton->setVisible(false);
-                }
-                header.automationButton->setBounds(buttonsRow.removeFromLeft(smallButtonSize));
-                header.automationButton->setVisible(true);
+                // Vol/Pan/Buttons — uses same width-based logic as helper
+                layoutVolPanAndButtons(tcpArea, rowGap);
 
-                tcpArea.removeFromTop(rowGap);
-
-                // Volume / Pan row
-                auto mixRow = tcpArea.removeFromTop(contentRowHeight);
-
-                header.volumeLabel->setBounds(mixRow.removeFromLeft(volumeLabelWidth));
-                header.volumeLabel->setVisible(true);
-                mixRow.removeFromLeft(spacing);
-
-                header.panLabel->setBounds(mixRow.removeFromLeft(panLabelWidth));
-                header.panLabel->setVisible(true);
-
-                // Sends row (only if track has sends — squeezed in without affecting base rows)
+                // Sends row (only if track has sends)
                 if (hasSends) {
                     tcpArea.removeFromTop(rowGap);
                     auto sendRow = tcpArea.removeFromTop(contentRowHeight);
@@ -1416,82 +1579,54 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 
                 tcpArea.removeFromTop(rowGap);
 
-                // Input row: [Audio In] [MIDI In] — hidden for multi-out child tracks
-                auto inputRow = tcpArea.removeFromTop(contentRowHeight);
-                if (!header.isMultiOut) {
-                    header.audioInputSelector->setBounds(inputRow.removeFromLeft(dropdownWidth));
-                    header.audioInputSelector->setVisible(true);
-                    inputRow.removeFromLeft(spacing);
-                    header.inputSelector->setBounds(inputRow.removeFromLeft(dropdownWidth));
-                    header.inputSelector->setVisible(true);
+                header.audioColumnLabel->setVisible(false);
+                header.midiColumnLabel->setVisible(false);
+
+                if (showIORouting_) {
+                    // Input row: [Audio In] [MIDI In] [inputIcon] — hidden for multi-out
+                    const int iconSize = 16;
+                    const int ddGap = spacing;
+                    const int ioWidth = std::min(tcpArea.getWidth(), 120);
+                    const int ddWidth = (ioWidth - ddGap - ddGap - iconSize) / 2;
+                    auto inputRow = tcpArea.removeFromTop(contentRowHeight);
+                    if (!header.isMultiOut) {
+                        header.audioInputSelector->setBounds(inputRow.removeFromLeft(ddWidth));
+                        header.audioInputSelector->setVisible(true);
+                        inputRow.removeFromLeft(ddGap);
+                        header.inputSelector->setBounds(inputRow.removeFromLeft(ddWidth));
+                        header.inputSelector->setVisible(true);
+                        inputRow.removeFromLeft(ddGap);
+                        header.inputIcon->setBounds(inputRow.removeFromLeft(iconSize));
+                        header.inputIcon->setVisible(true);
+                    } else {
+                        header.audioInputSelector->setVisible(false);
+                        header.inputSelector->setVisible(false);
+                        header.inputIcon->setVisible(false);
+                    }
+                    tcpArea.removeFromTop(rowGap);
+
+                    // Output row: [Audio Out] [MIDI Out] [outputIcon]
+                    auto outputRow = tcpArea.removeFromTop(contentRowHeight);
+                    header.outputSelector->setBounds(outputRow.removeFromLeft(ddWidth));
+                    header.outputSelector->setVisible(true);
+                    outputRow.removeFromLeft(ddGap);
+                    header.midiOutputSelector->setBounds(outputRow.removeFromLeft(ddWidth));
+                    header.midiOutputSelector->setVisible(true);
+                    outputRow.removeFromLeft(ddGap);
+                    header.outputIcon->setBounds(outputRow.removeFromLeft(iconSize));
+                    header.outputIcon->setVisible(true);
                 } else {
-                    header.audioInputSelector->setVisible(false);
-                    header.inputSelector->setVisible(false);
+                    hideAllRouting();
                 }
-                tcpArea.removeFromTop(rowGap);
 
-                // Output row: [Audio Out] [MIDI Out]
-                auto outputRow = tcpArea.removeFromTop(contentRowHeight);
-                header.outputSelector->setBounds(outputRow.removeFromLeft(dropdownWidth));
-                header.outputSelector->setVisible(true);
-                outputRow.removeFromLeft(spacing);
-                header.midiOutputSelector->setBounds(outputRow.removeFromLeft(dropdownWidth));
-                header.midiOutputSelector->setVisible(true);
-
-            } else if (trackHeight >= 55) {
-                // MEDIUM LAYOUT: Buttons + volume/pan only
-                // Row 1: M S R A [volume] [pan]
-                auto row1 = tcpArea.removeFromTop(rowHeight);
-                header.muteButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                row1.removeFromLeft(spacing);
-                header.soloButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                row1.removeFromLeft(spacing);
-                if (!header.isMultiOut) {
-                    header.recordButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                    header.recordButton->setVisible(true);
-                    row1.removeFromLeft(spacing);
-                } else {
-                    header.recordButton->setVisible(false);
-                }
-                header.automationButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                header.automationButton->setVisible(true);
-                row1.removeFromLeft(spacing + 2);
-
-                header.volumeLabel->setBounds(row1.removeFromLeft(volumeLabelWidth));
-                header.volumeLabel->setVisible(true);
-                row1.removeFromLeft(spacing);
-
-                header.panLabel->setBounds(row1.removeFromLeft(panLabelWidth));
-                header.panLabel->setVisible(true);
-
+            } else if (trackHeight >= 60) {
+                // MEDIUM LAYOUT: 2 rows — Vol/Pan then M S R Mon A
+                layoutVolPanAndButtons(tcpArea);
                 hideAllRouting();
 
             } else {
-                // SMALL LAYOUT: Buttons + volume/pan on same row
-                // Row 1: M S R A [volume] [pan]
-                auto row1 = tcpArea.removeFromTop(rowHeight);
-                header.muteButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                row1.removeFromLeft(spacing);
-                header.soloButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                row1.removeFromLeft(spacing);
-                if (!header.isMultiOut) {
-                    header.recordButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                    header.recordButton->setVisible(true);
-                    row1.removeFromLeft(spacing);
-                } else {
-                    header.recordButton->setVisible(false);
-                }
-                header.automationButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                header.automationButton->setVisible(true);
-                row1.removeFromLeft(spacing + 2);
-
-                header.volumeLabel->setBounds(row1.removeFromLeft(volumeLabelWidth));
-                header.volumeLabel->setVisible(true);
-                row1.removeFromLeft(spacing);
-
-                header.panLabel->setBounds(row1.removeFromLeft(panLabelWidth));
-                header.panLabel->setVisible(true);
-
+                // SMALL LAYOUT: 2 rows — Vol/Pan then M S R Mon A
+                layoutVolPanAndButtons(tcpArea);
                 hideAllRouting();
             }
         }
@@ -1499,29 +1634,33 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 }
 
 void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
+    // Convert to panel coordinates (handles clicks forwarded from children)
+    auto localEvent = event.getEventRelativeTo(this);
+    auto pos = localEvent.getPosition();
+
     // Handle vertical track height resizing and track selection
     int trackIndex;
-    if (isResizeHandleArea(event.getPosition(), trackIndex)) {
+    if (isResizeHandleArea(pos, trackIndex)) {
         // Start resizing
         isResizing = true;
         resizingTrackIndex = trackIndex;
-        resizeStartY = event.y;
+        resizeStartY = localEvent.y;
         resizeStartHeight = trackHeaders[trackIndex]->height;
         setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
     } else {
         // Find which track was clicked
         for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
-            if (getTrackHeaderArea(i).contains(event.getPosition())) {
+            if (getTrackHeaderArea(i).contains(pos)) {
                 selectTrack(i);
 
-                // Right-click shows context menu
-                if (event.mods.isPopupMenu()) {
-                    showContextMenu(i, event.getPosition());
-                } else {
+                // Right-click shows context menu (only for direct clicks, not child forwards)
+                if (event.mods.isPopupMenu() && event.originalComponent == this) {
+                    showContextMenu(i, pos);
+                } else if (event.originalComponent == this) {
                     // Record potential drag start
                     draggedTrackIndex_ = i;
-                    dragStartX_ = event.x;
-                    dragStartY_ = event.y;
+                    dragStartX_ = localEvent.x;
+                    dragStartY_ = localEvent.y;
                 }
                 break;
             }
@@ -1776,6 +1915,11 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     // Delete track
     menu.addItem(3, "Delete Track");
 
+    menu.addSeparator();
+
+    // Show/Hide I/O routing
+    menu.addItem(6, showIORouting_ ? "Hide I/O Routing" : "Show I/O Routing");
+
     // Show menu and handle result
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
                            localAreaToGlobal(juce::Rectangle<int>(position.x, position.y, 1, 1))),
@@ -1798,6 +1942,10 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                                // Duplicate track without content
                                auto cmd = std::make_unique<DuplicateTrackCommand>(trackId, false);
                                UndoManager::getInstance().executeCommand(std::move(cmd));
+                           } else if (result == 6) {
+                               // Toggle I/O routing visibility
+                               showIORouting_ = !showIORouting_;
+                               resized();
                            } else if (result == 7) {
                                // Toggle freeze
                                auto* t = TrackManager::getInstance().getTrack(trackId);
