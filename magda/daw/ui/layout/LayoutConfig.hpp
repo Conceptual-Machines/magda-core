@@ -67,18 +67,23 @@ struct LayoutConfig {
     // Main window panels
     int defaultTransportHeight = 48;
     int minTransportHeight = 40;
-    int maxTransportHeight = 120;
+    int maxTransportHeight = 55;
 
     int footerHeight = 40;
 
     int defaultLeftPanelWidth = 300;
     int defaultRightPanelWidth = 300;
     int minPanelWidth = 200;
-    int collapsedPanelWidth = 24;
+    int collapsedPanelSize = 24;
     int panelCollapseThreshold = 50;
 
     int defaultBottomPanelHeight = 200;
     int minBottomPanelHeight = 100;
+
+    // Max panel size constraints (fraction of window dimension)
+    float maxLeftPanelRatio = 0.4f;    // Max 40% of window width
+    float maxRightPanelRatio = 0.4f;   // Max 40% of window width
+    float maxBottomPanelRatio = 0.6f;  // Max 60% of window height
 
     int resizeHandleSize = 3;
 

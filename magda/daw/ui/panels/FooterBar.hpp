@@ -29,14 +29,22 @@ class FooterBar : public juce::Component, public ViewModeListener {
     // ViewModeListener interface
     void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
 
+    // Bottom panel collapse control
+    void setBottomPanelCollapsed(bool collapsed);
+    std::function<void()> onBottomPanelCollapseToggle;
+
   private:
     static constexpr int NUM_MODES = 4;
     static constexpr int BUTTON_SIZE = 28;
     static constexpr int BUTTON_SPACING = 16;
 
     std::array<magda::ManagedChild<SvgButton>, NUM_MODES> modeButtons;
+    std::unique_ptr<SvgButton> bottomCollapseButton_;
+    bool bottomCollapsed_ = false;
 
     void setupButtons();
+    void setupBottomCollapseButton();
+    void updateBottomCollapseIcon();
     void updateButtonStates();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FooterBar)

@@ -1,22 +1,27 @@
 #include "TabbedPanel.hpp"
 
+#include <BinaryData.h>
+
 #include "../themes/DarkTheme.hpp"
 #include "content/MediaExplorerContent.hpp"
 #include "content/inspector/InspectorContainer.hpp"
 
 namespace magda::daw::ui {
 
-TabbedPanel::TabbedPanel(PanelLocation location) : location_(location) {
+TabbedPanel::TabbedPanel(PanelLocation location) : location_(location), tabBar_(location) {
     setName("Tabbed Panel");
 
-    // Setup tab bar
+    // Setup tab bar with callbacks
     tabBar_.onTabClicked = [this](int index) {
         PanelController::getInstance().setActiveTab(location_, index);
     };
+    tabBar_.onCollapseClicked = [this]() {
+        PanelController::getInstance().toggleCollapsed(location_);
+    };
     addAndMakeVisible(tabBar_);
 
-    // Setup collapse button
-    setupCollapseButton();
+    // Setup expand button for collapsed thin-bar state (side panels only)
+    setupExpandButton();
 
     // Register as listener
     PanelController::getInstance().addListener(this);
@@ -37,19 +42,27 @@ TabbedPanel::~TabbedPanel() {
     contentCache_.clear();
 }
 
-void TabbedPanel::setupCollapseButton() {
-    // Use text button as collapse control
-    collapseFallbackButton_.setColour(juce::TextButton::buttonColourId,
-                                      DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    collapseFallbackButton_.setColour(juce::TextButton::buttonOnColourId,
-                                      DarkTheme::getColour(DarkTheme::BUTTON_HOVER));
-    collapseFallbackButton_.setColour(juce::TextButton::textColourOffId,
-                                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    collapseFallbackButton_.onClick = [this]() {
+void TabbedPanel::setupExpandButton() {
+    // Only side panels need an expand button for the collapsed thin-bar state.
+    // Bottom panel collapse is handled by FooterBar.
+    if (location_ == PanelLocation::Bottom)
+        return;
+
+    // Arrow points outward to indicate "expand"
+    // PanelLocation::Right = LeftPanel collapsed: arrow points right (expand rightward)
+    // PanelLocation::Left = RightPanel collapsed: arrow points left (expand leftward)
+    const char* svgData = (location_ == PanelLocation::Right) ? BinaryData::collapse_right_svg
+                                                              : BinaryData::collapse_left_svg;
+    size_t svgSize = (location_ == PanelLocation::Right) ? BinaryData::collapse_right_svgSize
+                                                         : BinaryData::collapse_left_svgSize;
+
+    expandButton_ = std::make_unique<magda::SvgButton>("Expand", svgData, svgSize);
+    expandButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
+    expandButton_->onClick = [this]() {
         PanelController::getInstance().toggleCollapsed(location_);
     };
-    collapseFallbackButton_.setButtonText(getCollapseButtonText());
-    addAndMakeVisible(collapseFallbackButton_);
+    expandButton_->setVisible(false);
+    addAndMakeVisible(*expandButton_);
 }
 
 void TabbedPanel::paint(juce::Graphics& g) {
@@ -81,24 +94,28 @@ void TabbedPanel::paintBorder(juce::Graphics& g) {
 }
 
 void TabbedPanel::resized() {
-    auto bounds = getLocalBounds();
-
     if (collapsed_) {
-        // In collapsed state, just show collapse button
-        auto btnBounds = getCollapseButtonBounds();
-        collapseFallbackButton_.setBounds(btnBounds);
-        tabBar_.setVisible(false);
-        if (activeContent_) {
-            activeContent_->setVisible(false);
+        // In collapsed state, show expand button at the footer position (side panels only)
+        if (expandButton_) {
+            constexpr int btnSize = 20;
+            int btnY =
+                getHeight() - PanelTabBar::BAR_HEIGHT + (PanelTabBar::BAR_HEIGHT - btnSize) / 2;
+            expandButton_->setBounds(2, btnY, btnSize, btnSize);
+            expandButton_->setVisible(true);
+            expandButton_->toFront(false);
         }
+        tabBar_.setVisible(false);
+        if (activeContent_)
+            activeContent_->setVisible(false);
     } else {
-        // Normal state: content + tab bar + collapse button
+        // Hide expand button in normal state
+        if (expandButton_)
+            expandButton_->setVisible(false);
+
+        // Normal state: tab bar (footer) + content
         auto tabBarBounds = getTabBarBounds();
         tabBar_.setBounds(tabBarBounds);
         tabBar_.setVisible(true);
-
-        auto btnBounds = getCollapseButtonBounds();
-        collapseFallbackButton_.setBounds(btnBounds);
 
         auto contentBounds = getContentBounds();
         if (activeContent_) {
@@ -116,11 +133,8 @@ juce::Rectangle<int> TabbedPanel::getContentBounds() {
     auto bounds = getLocalBounds();
     int tabBarHeight = PanelTabBar::BAR_HEIGHT;
 
-    // Content above tab bar, with margin for collapse button
-    auto content = bounds.withTrimmedBottom(tabBarHeight);
-    if (content.getHeight() < 0)
-        content.setHeight(0);
-    return content;
+    // Content above tab bar (footer)
+    return bounds.withTrimmedBottom(tabBarHeight);
 }
 
 juce::Rectangle<int> TabbedPanel::getTabBarBounds() {
@@ -128,35 +142,6 @@ juce::Rectangle<int> TabbedPanel::getTabBarBounds() {
     int tabBarHeight = PanelTabBar::BAR_HEIGHT;
 
     return bounds.removeFromBottom(tabBarHeight);
-}
-
-juce::Rectangle<int> TabbedPanel::getCollapseButtonBounds() {
-    if (collapsed_) {
-        // Centered in collapsed panel
-        switch (location_) {
-            case PanelLocation::Left:
-            case PanelLocation::Right:
-                return juce::Rectangle<int>(2, getHeight() / 2 - 10, 20, 20);
-            case PanelLocation::Bottom:
-                return juce::Rectangle<int>(getWidth() / 2 - 10, 2, 20, 20);
-        }
-    } else {
-        // Top-right corner
-        return juce::Rectangle<int>(getWidth() - 24, 4, 20, 20);
-    }
-    return {};
-}
-
-juce::String TabbedPanel::getCollapseButtonText() const {
-    switch (location_) {
-        case PanelLocation::Left:
-            return collapsed_ ? ">" : "<";
-        case PanelLocation::Right:
-            return collapsed_ ? "<" : ">";
-        case PanelLocation::Bottom:
-            return collapsed_ ? "^" : "v";
-    }
-    return "";
 }
 
 void TabbedPanel::panelStateChanged(PanelLocation location, const PanelState& /*state*/) {
@@ -175,7 +160,7 @@ void TabbedPanel::activeTabChanged(PanelLocation location, int /*tabIndex*/,
 void TabbedPanel::panelCollapsedChanged(PanelLocation location, bool collapsed) {
     if (location == location_) {
         collapsed_ = collapsed;
-        collapseFallbackButton_.setButtonText(getCollapseButtonText());
+        tabBar_.setCollapseState(collapsed);
 
         if (onCollapseChanged) {
             onCollapseChanged(collapsed);
@@ -196,7 +181,7 @@ void TabbedPanel::updateFromState() {
     // Update collapsed state
     if (collapsed_ != state.collapsed) {
         collapsed_ = state.collapsed;
-        collapseFallbackButton_.setButtonText(getCollapseButtonText());
+        tabBar_.setCollapseState(collapsed_);
 
         if (onCollapseChanged) {
             onCollapseChanged(collapsed_);

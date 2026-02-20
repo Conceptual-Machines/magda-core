@@ -27,10 +27,8 @@ SvgIconData getSvgForContentType(PanelContentType type) {
         case PanelContentType::ScriptingConsole:
             return {BinaryData::script_svg, BinaryData::script_svgSize};
         case PanelContentType::TrackChain:
-            // Use plug icon as placeholder for chain (could add dedicated icon later)
             return {BinaryData::plug_svg, BinaryData::plug_svgSize};
         case PanelContentType::PianoRoll:
-            // Use script icon as placeholder for piano roll (could add dedicated icon later)
             return {BinaryData::script_svg, BinaryData::script_svgSize};
         case PanelContentType::WaveformEditor:
             return {BinaryData::sinewave_svg, BinaryData::sinewave_svgSize};
@@ -43,8 +41,9 @@ SvgIconData getSvgForContentType(PanelContentType type) {
 }
 }  // namespace
 
-PanelTabBar::PanelTabBar() {
+PanelTabBar::PanelTabBar(PanelLocation location) : location_(location) {
     setName("Panel Tab Bar");
+    setupCollapseButton();
 }
 
 void PanelTabBar::paint(juce::Graphics& g) {
@@ -57,12 +56,32 @@ void PanelTabBar::paint(juce::Graphics& g) {
 }
 
 void PanelTabBar::resized() {
+    // Reserve space for collapse button at the appropriate edge
+    auto availableBounds = getLocalBounds();
+    constexpr int collapseMargin = COLLAPSE_BUTTON_SIZE + 8;
+
+    if (collapseButton_) {
+        int btnY = (getHeight() - COLLAPSE_BUTTON_SIZE) / 2;
+
+        if (location_ == PanelLocation::Left) {
+            // PanelLocation::Left is used by RightPanel: collapse button on the LEFT edge
+            collapseButton_->setBounds(4, btnY, COLLAPSE_BUTTON_SIZE, COLLAPSE_BUTTON_SIZE);
+            availableBounds.removeFromLeft(collapseMargin);
+        } else {
+            // PanelLocation::Right is used by LeftPanel: collapse button on the RIGHT edge
+            collapseButton_->setBounds(getWidth() - COLLAPSE_BUTTON_SIZE - 4, btnY,
+                                       COLLAPSE_BUTTON_SIZE, COLLAPSE_BUTTON_SIZE);
+            availableBounds.removeFromRight(collapseMargin);
+        }
+    }
+
+    // Center the tab buttons in the remaining space
     if (currentTabs_.empty())
         return;
 
     auto numTabs = juce::jmin(static_cast<int>(currentTabs_.size()), MAX_TABS);
     int totalWidth = numTabs * BUTTON_SIZE + (numTabs - 1) * BUTTON_SPACING;
-    int startX = (getWidth() - totalWidth) / 2;
+    int startX = availableBounds.getX() + (availableBounds.getWidth() - totalWidth) / 2;
     int buttonY = (getHeight() - BUTTON_SIZE) / 2;
 
     for (size_t i = 0; i < currentTabs_.size() && i < MAX_TABS; ++i) {
@@ -71,6 +90,55 @@ void PanelTabBar::resized() {
             tabButtons_[i]->setBounds(buttonX, buttonY, BUTTON_SIZE, BUTTON_SIZE);
         }
     }
+}
+
+void PanelTabBar::setupCollapseButton() {
+    // Bottom panel collapse is handled by FooterBar
+    if (location_ == PanelLocation::Bottom)
+        return;
+
+    // PanelLocation::Right = LeftPanel (arrow points left to collapse)
+    // PanelLocation::Left = RightPanel (arrow points right to collapse)
+    const char* svgData = (location_ == PanelLocation::Right) ? BinaryData::collapse_left_svg
+                                                              : BinaryData::collapse_right_svg;
+    size_t svgSize = (location_ == PanelLocation::Right) ? BinaryData::collapse_left_svgSize
+                                                         : BinaryData::collapse_right_svgSize;
+
+    collapseButton_ = std::make_unique<magda::SvgButton>("Collapse", svgData, svgSize);
+    collapseButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
+    collapseButton_->onClick = [this]() {
+        if (onCollapseClicked)
+            onCollapseClicked();
+    };
+    addAndMakeVisible(*collapseButton_);
+}
+
+void PanelTabBar::setCollapseState(bool collapsed) {
+    collapsed_ = collapsed;
+    updateCollapseIcon();
+}
+
+void PanelTabBar::updateCollapseIcon() {
+    if (!collapseButton_)
+        return;
+
+    const char* svgData = nullptr;
+    size_t svgSize = 0;
+
+    if (location_ == PanelLocation::Right) {
+        // PanelLocation::Right = LeftPanel. Expanded: arrow left. Collapsed: arrow right.
+        svgData = collapsed_ ? BinaryData::collapse_right_svg : BinaryData::collapse_left_svg;
+        svgSize =
+            collapsed_ ? BinaryData::collapse_right_svgSize : BinaryData::collapse_left_svgSize;
+    } else if (location_ == PanelLocation::Left) {
+        // PanelLocation::Left = RightPanel. Expanded: arrow right. Collapsed: arrow left.
+        svgData = collapsed_ ? BinaryData::collapse_left_svg : BinaryData::collapse_right_svg;
+        svgSize =
+            collapsed_ ? BinaryData::collapse_left_svgSize : BinaryData::collapse_right_svgSize;
+    }
+
+    if (svgData)
+        collapseButton_->updateSvgData(svgData, svgSize);
 }
 
 void PanelTabBar::setTabs(const std::vector<PanelContentType>& tabs) {

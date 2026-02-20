@@ -98,23 +98,14 @@ class TabbedPanel : public juce::Component, public PanelStateListener {
      */
     virtual juce::Rectangle<int> getTabBarBounds();
 
-    /**
-     * @brief Get the bounds for the collapse button
-     */
-    virtual juce::Rectangle<int> getCollapseButtonBounds();
-
-    /**
-     * @brief Get the collapse button text for current state
-     */
-    virtual juce::String getCollapseButtonText() const;
-
   private:
     PanelLocation location_;
     bool collapsed_ = false;
 
     PanelTabBar tabBar_;
-    std::unique_ptr<magda::SvgButton> collapseButton_;
-    juce::TextButton collapseFallbackButton_;  // Fallback if no SVG
+
+    // Expand button shown only when panel is collapsed (thin bar state)
+    std::unique_ptr<magda::SvgButton> expandButton_;
 
     // Cache of content instances (lazy creation)
     std::unordered_map<PanelContentType, std::unique_ptr<PanelContent>> contentCache_;
@@ -124,7 +115,7 @@ class TabbedPanel : public juce::Component, public PanelStateListener {
     magda::AudioEngine* audioEngine_ = nullptr;
     magda::TimelineController* timelineController_ = nullptr;
 
-    void setupCollapseButton();
+    void setupExpandButton();
     void updateFromState();
     void switchToContent(PanelContentType type);
     PanelContent* getOrCreateContent(PanelContentType type);

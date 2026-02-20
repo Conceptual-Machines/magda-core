@@ -25,8 +25,7 @@ TrackManager::TrackManager() {
 // Plugin Drop → New Track Helper
 // ============================================================================
 
-TrackId TrackManager::createTrackWithPlugin(const juce::DynamicObject& pluginObj) {
-    // Extract DeviceInfo from the DynamicObject (same pattern as TrackChainContent)
+DeviceInfo TrackManager::deviceInfoFromPluginObject(const juce::DynamicObject& pluginObj) {
     DeviceInfo device;
     device.name = pluginObj.getProperty("name").toString().toStdString();
     device.manufacturer = pluginObj.getProperty("manufacturer").toString().toStdString();
@@ -47,6 +46,12 @@ TrackId TrackManager::createTrackWithPlugin(const juce::DynamicObject& pluginObj
         device.format = PluginFormat::VST;
     else if (format == "Internal")
         device.format = PluginFormat::Internal;
+
+    return device;
+}
+
+TrackId TrackManager::createTrackWithPlugin(const juce::DynamicObject& pluginObj) {
+    DeviceInfo device = deviceInfoFromPluginObject(pluginObj);
 
     // Determine track type
     TrackType trackType = device.isInstrument ? TrackType::Instrument : TrackType::Audio;

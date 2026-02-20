@@ -8,15 +8,16 @@ namespace magda {
 // CreateTrackCommand
 // ============================================================================
 
-CreateTrackCommand::CreateTrackCommand(TrackType type) : type_(type) {}
+CreateTrackCommand::CreateTrackCommand(TrackType type, const juce::String& name)
+    : type_(type), name_(name) {}
 
 void CreateTrackCommand::execute() {
     auto& trackManager = TrackManager::getInstance();
 
     if (type_ == TrackType::Group) {
-        createdTrackId_ = trackManager.createGroupTrack();
+        createdTrackId_ = trackManager.createGroupTrack(name_);
     } else {
-        createdTrackId_ = trackManager.createTrack("", type_);
+        createdTrackId_ = trackManager.createTrack(name_, type_);
     }
 
     executed_ = true;
@@ -150,6 +151,73 @@ void DuplicateTrackCommand::undo() {
 
     TrackManager::getInstance().deleteTrack(duplicatedTrackId_);
     DBG("UNDO: Undid duplicate track " << duplicatedTrackId_);
+}
+
+// ============================================================================
+// AddDeviceToTrackCommand
+// ============================================================================
+
+AddDeviceToTrackCommand::AddDeviceToTrackCommand(TrackId trackId, const DeviceInfo& device)
+    : trackId_(trackId), device_(device) {}
+
+void AddDeviceToTrackCommand::execute() {
+    auto& trackManager = TrackManager::getInstance();
+    createdDeviceId_ = trackManager.addDeviceToTrack(trackId_, device_);
+    executed_ = (createdDeviceId_ != INVALID_DEVICE_ID);
+    DBG("UNDO: Added device to track " << trackId_ << " (deviceId=" << createdDeviceId_ << ")");
+}
+
+void AddDeviceToTrackCommand::undo() {
+    if (!executed_ || createdDeviceId_ == INVALID_DEVICE_ID) {
+        return;
+    }
+
+    TrackManager::getInstance().removeDeviceFromTrack(trackId_, createdDeviceId_);
+    DBG("UNDO: Removed device " << createdDeviceId_ << " from track " << trackId_);
+}
+
+// ============================================================================
+// CreateTrackWithDeviceCommand
+// ============================================================================
+
+CreateTrackWithDeviceCommand::CreateTrackWithDeviceCommand(const juce::String& trackName,
+                                                           TrackType type, const DeviceInfo& device)
+    : trackName_(trackName), type_(type), device_(device) {}
+
+void CreateTrackWithDeviceCommand::execute() {
+    auto& trackManager = TrackManager::getInstance();
+
+    createdTrackId_ = trackManager.createTrack(trackName_, type_);
+    if (createdTrackId_ == INVALID_TRACK_ID) {
+        return;
+    }
+
+    createdDeviceId_ = trackManager.addDeviceToTrack(createdTrackId_, device_);
+    trackManager.setSelectedTrack(createdTrackId_);
+
+    executed_ = true;
+    DBG("UNDO: Created track " << createdTrackId_ << " with device " << createdDeviceId_);
+}
+
+void CreateTrackWithDeviceCommand::undo() {
+    if (!executed_ || createdTrackId_ == INVALID_TRACK_ID) {
+        return;
+    }
+
+    // Remove the device first
+    if (createdDeviceId_ != INVALID_DEVICE_ID) {
+        TrackManager::getInstance().removeDeviceFromTrack(createdTrackId_, createdDeviceId_);
+    }
+
+    // Delete all clips on this track before deleting the track
+    auto& clipManager = ClipManager::getInstance();
+    auto clipIds = clipManager.getClipsOnTrack(createdTrackId_);
+    for (auto clipId : clipIds) {
+        clipManager.deleteClip(clipId);
+    }
+
+    TrackManager::getInstance().deleteTrack(createdTrackId_);
+    DBG("UNDO: Undid create track with device " << createdTrackId_);
 }
 
 }  // namespace magda

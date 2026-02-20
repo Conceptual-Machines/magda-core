@@ -117,6 +117,11 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/punchinout/punchin_on.svg
     ../../assets/icons/punchinout/punchout.svg
     ../../assets/icons/punchinout/punchout_on.svg
+    # Panel collapse/expand icons
+    ../../assets/icons/panel/collapse_left.svg
+    ../../assets/icons/panel/collapse_right.svg
+    ../../assets/icons/panel/collapse_up.svg
+    ../../assets/icons/panel/collapse_down.svg
     # Fontaudio waveform icons
     ../../assets/icons/fontaudio/fad-modsine.svg
     ../../assets/icons/fontaudio/fad-modtri.svg
@@ -151,7 +156,10 @@ set(DAW_CORE_SOURCES
     core/LinkModeManager.cpp
     core/UndoManager.cpp
     core/ClipCommands.cpp
+    core/ClipPropertyCommands.cpp
     core/TrackCommands.cpp
+    core/TrackPropertyCommands.cpp
+    core/AutomationCommands.cpp
     core/MidiNoteCommands.cpp
     core/ParameterUtils.cpp
     engine/TracktionEngineWrapper.cpp
@@ -380,7 +388,10 @@ set(DAW_HEADERS
     core/LinkModeManager.hpp
     core/UndoManager.hpp
     core/ClipCommands.hpp
+    core/ClipPropertyCommands.hpp
     core/TrackCommands.hpp
+    core/TrackPropertyCommands.hpp
+    core/AutomationCommands.hpp
     core/MidiNoteCommands.hpp
     engine/AudioEngine.hpp
     engine/TracktionEngineWrapper.hpp

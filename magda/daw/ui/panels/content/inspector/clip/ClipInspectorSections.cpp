@@ -11,8 +11,10 @@
 #include "BinaryData.h"
 #include "audio/AudioBridge.hpp"
 #include "core/ClipOperations.hpp"
+#include "core/ClipPropertyCommands.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/TrackManager.hpp"
+#include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
 
 namespace magda::daw::ui {
@@ -32,8 +34,9 @@ void ClipInspector::initClipPropertiesSection() {
     clipNameValue_.setEditable(true);
     clipNameValue_.onTextChange = [this]() {
         if (primaryClipId() != magda::INVALID_CLIP_ID) {
-            magda::ClipManager::getInstance().setClipName(primaryClipId(),
-                                                          clipNameValue_.getText());
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetClipNameCommand>(primaryClipId(),
+                                                            clipNameValue_.getText()));
         }
     };
     addChildComponent(clipNameValue_);
@@ -113,7 +116,9 @@ void ClipInspector::initClipPropertiesSection() {
                 double bpm =
                     timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
                 // Stretch: keep source audio constant, change how many beats it fills
-                magda::ClipManager::getInstance().setLengthBeats(primaryClipId(), newBeats, bpm);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipLengthBeatsCommand>(primaryClipId(), newBeats,
+                                                                       bpm));
             }
         }
     };
@@ -224,7 +229,8 @@ void ClipInspector::initClipPropertiesSection() {
             }
             double newOffsetBeats = clipContentOffsetValue_->getValue();
             double newOffsetSeconds = magda::TimelineUtils::beatsToSeconds(newOffsetBeats, bpm);
-            magda::ClipManager::getInstance().setOffset(primaryClipId(), newOffsetSeconds);
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetClipOffsetCommand>(primaryClipId(), newOffsetSeconds));
         }
     };
     clipPropsContainer_.addChildComponent(*clipContentOffsetValue_);
@@ -382,7 +388,8 @@ void ClipInspector::initClipPropertiesSection() {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->type == magda::ClipType::Audio) {
                 double newVal = juce::jlimit(0.25, 4.0, c->speedRatio + delta);
-                magda::ClipManager::getInstance().setSpeedRatio(cid, newVal);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipSpeedRatioCommand>(cid, newVal));
             }
         }
         multiSpeedRatioDragStart_ = currentValue;
@@ -407,7 +414,8 @@ void ClipInspector::initClipPropertiesSection() {
             return;
         int mode = stretchModeCombo_.getSelectedId() - 1;
         for (auto cid : selectedClipIds_) {
-            magda::ClipManager::getInstance().setTimeStretchMode(cid, mode);
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetClipStretchModeCommand>(cid, mode));
         }
     };
     clipPropsContainer_.addChildComponent(stretchModeCombo_);
@@ -445,7 +453,8 @@ void ClipInspector::initClipPropertiesSection() {
         newLoopStartSeconds = std::max(0.0, newLoopStartSeconds);
         double newOffset = newLoopStartSeconds + currentPhase;
         magda::ClipManager::getInstance().setLoopStart(primaryClipId(), newLoopStartSeconds, bpm);
-        magda::ClipManager::getInstance().setOffset(primaryClipId(), newOffset);
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetClipOffsetCommand>(primaryClipId(), newOffset));
     };
     clipPropsContainer_.addChildComponent(*clipLoopStartValue_);
 
@@ -530,7 +539,8 @@ void ClipInspector::initClipPropertiesSection() {
         double newPhaseSeconds = magda::TimelineUtils::beatsToSeconds(newPhaseBeats, bpm);
         newPhaseSeconds = std::max(0.0, newPhaseSeconds);
         double newOffset = clip->loopStart + newPhaseSeconds;
-        magda::ClipManager::getInstance().setOffset(primaryClipId(), newOffset);
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetClipOffsetCommand>(primaryClipId(), newOffset));
     };
     clipPropsContainer_.addChildComponent(*clipLoopPhaseValue_);
 }
@@ -740,7 +750,8 @@ void ClipInspector::initPitchSection() {
             if (c && c->type == magda::ClipType::Audio) {
                 float newVal =
                     juce::jlimit(-48.0f, 48.0f, c->pitchChange + static_cast<float>(delta));
-                magda::ClipManager::getInstance().setPitchChange(cid, newVal);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipPitchCommand>(cid, newVal));
             }
         }
         multiPitchChangeDragStart_ = currentValue;
@@ -794,7 +805,8 @@ void ClipInspector::initMixSection() {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->type == magda::ClipType::Audio) {
                 float newVal = juce::jlimit(-100.0f, 0.0f, c->volumeDB + static_cast<float>(delta));
-                magda::ClipManager::getInstance().setClipVolumeDB(cid, newVal);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipVolumeDBCommand>(cid, newVal));
             }
         }
         multiVolumeDragStart_ = currentValue;
@@ -814,7 +826,8 @@ void ClipInspector::initMixSection() {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->type == magda::ClipType::Audio) {
                 float newVal = juce::jlimit(-1.0f, 1.0f, c->pan + static_cast<float>(delta));
-                magda::ClipManager::getInstance().setClipPan(cid, newVal);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipPanCommand>(cid, newVal));
             }
         }
         multiPanDragStart_ = currentValue;
@@ -835,7 +848,8 @@ void ClipInspector::initMixSection() {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->type == magda::ClipType::Audio) {
                 float newVal = juce::jlimit(0.0f, 24.0f, c->gainDB + static_cast<float>(delta));
-                magda::ClipManager::getInstance().setClipGainDB(cid, newVal);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipGainDBCommand>(cid, newVal));
             }
         }
         multiGainDragStart_ = currentValue;
@@ -873,7 +887,8 @@ void ClipInspector::initPlaybackSection() {
             return;
         bool newState = !clip->isReversed;
         for (auto cid : selectedClipIds_) {
-            magda::ClipManager::getInstance().setIsReversed(cid, newState);
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetClipReversedCommand>(cid, newState));
         }
     };
     clipPropsContainer_.addChildComponent(reverseToggle_);
@@ -968,7 +983,8 @@ void ClipInspector::initFadesSection() {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->type == magda::ClipType::Audio) {
                 double newVal = juce::jmax(0.0, c->fadeIn + delta);
-                magda::ClipManager::getInstance().setFadeIn(cid, newVal);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipFadeInCommand>(cid, newVal));
             }
         }
         multiFadeInDragStart_ = currentValue;
@@ -990,7 +1006,8 @@ void ClipInspector::initFadesSection() {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->type == magda::ClipType::Audio) {
                 double newVal = juce::jmax(0.0, c->fadeOut + delta);
-                magda::ClipManager::getInstance().setFadeOut(cid, newVal);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipFadeOutCommand>(cid, newVal));
             }
         }
         multiFadeOutDragStart_ = currentValue;
@@ -1034,7 +1051,8 @@ void ClipInspector::initFadesSection() {
             if (selectedClipIds_.empty())
                 return;
             for (auto cid : selectedClipIds_) {
-                magda::ClipManager::getInstance().setFadeInType(cid, fadeType);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipFadeInTypeCommand>(cid, fadeType));
             }
             for (int j = 0; j < 4; ++j)
                 fadeInTypeButtons_[j]->setActive(j == i);
@@ -1045,7 +1063,8 @@ void ClipInspector::initFadesSection() {
             if (selectedClipIds_.empty())
                 return;
             for (auto cid : selectedClipIds_) {
-                magda::ClipManager::getInstance().setFadeOutType(cid, fadeType);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipFadeOutTypeCommand>(cid, fadeType));
             }
             for (int j = 0; j < 4; ++j)
                 fadeOutTypeButtons_[j]->setActive(j == i);
@@ -1083,7 +1102,8 @@ void ClipInspector::initFadesSection() {
             if (selectedClipIds_.empty())
                 return;
             for (auto cid : selectedClipIds_) {
-                magda::ClipManager::getInstance().setFadeInBehaviour(cid, i);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipFadeInBehaviourCommand>(cid, i));
             }
             for (int j = 0; j < 2; ++j)
                 fadeInBehaviourButtons_[j]->setActive(j == i);
@@ -1094,7 +1114,8 @@ void ClipInspector::initFadesSection() {
             if (selectedClipIds_.empty())
                 return;
             for (auto cid : selectedClipIds_) {
-                magda::ClipManager::getInstance().setFadeOutBehaviour(cid, i);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipFadeOutBehaviourCommand>(cid, i));
             }
             for (int j = 0; j < 2; ++j)
                 fadeOutBehaviourButtons_[j]->setActive(j == i);

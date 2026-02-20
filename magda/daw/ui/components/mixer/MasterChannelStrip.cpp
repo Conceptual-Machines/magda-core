@@ -6,6 +6,8 @@
 #include "../../themes/FontManager.hpp"
 #include "../../themes/MixerMetrics.hpp"
 #include "BinaryData.h"
+#include "core/TrackPropertyCommands.hpp"
+#include "core/UndoManager.hpp"
 
 namespace magda {
 
@@ -204,7 +206,7 @@ void MasterChannelStrip::setupControls() {
         float faderPos = static_cast<float>(volumeSlider->getValue());
         float db = meterPosToDb(faderPos);
         float gain = dbToGain(db);
-        TrackManager::getInstance().setMasterVolume(gain);
+        UndoManager::getInstance().executeCommand(std::make_unique<SetMasterVolumeCommand>(gain));
         // Update volume label
         if (volumeValueLabel) {
             juce::String dbText;
@@ -242,7 +244,8 @@ void MasterChannelStrip::setupControls() {
     speakerButton->setColour(juce::DrawableButton::backgroundOnColourId,
                              DarkTheme::getColour(DarkTheme::STATUS_ERROR).withAlpha(0.3f));
     speakerButton->onClick = [this]() {
-        TrackManager::getInstance().setMasterMuted(speakerButton->getToggleState());
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetMasterMuteCommand>(speakerButton->getToggleState()));
     };
     addAndMakeVisible(*speakerButton);
 }

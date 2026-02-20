@@ -122,6 +122,14 @@ class TrackManager {
     }
 
     /**
+     * @brief Extract DeviceInfo from a dropped plugin DynamicObject.
+     *
+     * Parses the standard plugin properties (name, manufacturer, uniqueId,
+     * format, isInstrument, fileOrIdentifier) into a DeviceInfo struct.
+     */
+    static DeviceInfo deviceInfoFromPluginObject(const juce::DynamicObject& pluginObj);
+
+    /**
      * @brief Create a new track from a dropped plugin DynamicObject.
      *
      * Extracts DeviceInfo, creates an Instrument or Audio track named after the

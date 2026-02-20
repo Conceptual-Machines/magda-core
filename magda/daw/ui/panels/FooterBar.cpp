@@ -8,6 +8,7 @@ namespace magda {
 
 FooterBar::FooterBar() {
     setupButtons();
+    setupBottomCollapseButton();
     ViewModeController::getInstance().addListener(this);
     updateButtonStates();
 }
@@ -28,7 +29,7 @@ void FooterBar::paint(juce::Graphics& g) {
 void FooterBar::resized() {
     auto bounds = getLocalBounds();
 
-    // Center the buttons horizontally
+    // Center the view mode buttons horizontally
     int totalButtonsWidth = NUM_MODES * BUTTON_SIZE + (NUM_MODES - 1) * BUTTON_SPACING;
     int startX = (bounds.getWidth() - totalButtonsWidth) / 2;
 
@@ -37,6 +38,14 @@ void FooterBar::resized() {
     for (int i = 0; i < NUM_MODES; ++i) {
         int buttonX = startX + i * (BUTTON_SIZE + BUTTON_SPACING);
         modeButtons[static_cast<size_t>(i)]->setBounds(buttonX, buttonY, BUTTON_SIZE, BUTTON_SIZE);
+    }
+
+    // Bottom panel collapse button on the right side
+    if (bottomCollapseButton_) {
+        constexpr int collapseSize = 20;
+        int cy = (bounds.getHeight() - collapseSize) / 2;
+        bottomCollapseButton_->setBounds(bounds.getWidth() - collapseSize - 8, cy, collapseSize,
+                                         collapseSize);
     }
 }
 
@@ -92,6 +101,35 @@ void FooterBar::updateButtonStates() {
     }
 
     repaint();
+}
+
+void FooterBar::setupBottomCollapseButton() {
+    bottomCollapseButton_ = std::make_unique<SvgButton>(
+        "BottomCollapse", BinaryData::collapse_down_svg, BinaryData::collapse_down_svgSize);
+    bottomCollapseButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
+    bottomCollapseButton_->onClick = [this]() {
+        if (onBottomPanelCollapseToggle)
+            onBottomPanelCollapseToggle();
+    };
+    addAndMakeVisible(*bottomCollapseButton_);
+}
+
+void FooterBar::setBottomPanelCollapsed(bool collapsed) {
+    bottomCollapsed_ = collapsed;
+    updateBottomCollapseIcon();
+}
+
+void FooterBar::updateBottomCollapseIcon() {
+    if (!bottomCollapseButton_)
+        return;
+
+    if (bottomCollapsed_) {
+        bottomCollapseButton_->updateSvgData(BinaryData::collapse_up_svg,
+                                             BinaryData::collapse_up_svgSize);
+    } else {
+        bottomCollapseButton_->updateSvgData(BinaryData::collapse_down_svg,
+                                             BinaryData::collapse_down_svgSize);
+    }
 }
 
 }  // namespace magda

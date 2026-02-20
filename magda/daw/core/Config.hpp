@@ -110,6 +110,50 @@ class Config {
         showBottomPanel = show;
     }
 
+    // Panel Collapse State
+    bool getLeftPanelCollapsed() const {
+        return leftPanelCollapsed;
+    }
+    void setLeftPanelCollapsed(bool collapsed) {
+        leftPanelCollapsed = collapsed;
+    }
+
+    bool getRightPanelCollapsed() const {
+        return rightPanelCollapsed;
+    }
+    void setRightPanelCollapsed(bool collapsed) {
+        rightPanelCollapsed = collapsed;
+    }
+
+    bool getBottomPanelCollapsed() const {
+        return bottomPanelCollapsed;
+    }
+    void setBottomPanelCollapsed(bool collapsed) {
+        bottomPanelCollapsed = collapsed;
+    }
+
+    // Panel Sizes (0 = use default)
+    int getLeftPanelWidth() const {
+        return leftPanelWidth;
+    }
+    void setLeftPanelWidth(int width) {
+        leftPanelWidth = width;
+    }
+
+    int getRightPanelWidth() const {
+        return rightPanelWidth;
+    }
+    void setRightPanelWidth(int width) {
+        rightPanelWidth = width;
+    }
+
+    int getBottomPanelHeight() const {
+        return bottomPanelHeight;
+    }
+    void setBottomPanelHeight(int height) {
+        bottomPanelHeight = height;
+    }
+
     // Layout Configuration
     bool getScrollbarOnLeft() const {
         return scrollbarOnLeft;
@@ -249,6 +293,16 @@ class Config {
     bool showLeftPanel = true;    // Show left panel by default
     bool showRightPanel = true;   // Show right panel by default
     bool showBottomPanel = true;  // Show bottom panel by default
+
+    // Panel collapse state (persisted across sessions)
+    bool leftPanelCollapsed = false;
+    bool rightPanelCollapsed = false;
+    bool bottomPanelCollapsed = false;
+
+    // Panel sizes (0 = use LayoutConfig default)
+    int leftPanelWidth = 0;
+    int rightPanelWidth = 0;
+    int bottomPanelHeight = 0;
 
     // Track deletion settings
     bool confirmTrackDelete = true;  // Show confirmation dialog before deleting a track

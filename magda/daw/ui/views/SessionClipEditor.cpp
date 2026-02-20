@@ -5,6 +5,8 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/ClipDisplayInfo.hpp"
+#include "core/ClipPropertyCommands.hpp"
+#include "core/UndoManager.hpp"
 
 namespace magda {
 
@@ -207,7 +209,8 @@ void SessionClipEditor::setupFooter() {
     offsetSlider_->setColour(juce::Slider::textBoxBackgroundColourId,
                              DarkTheme::getColour(DarkTheme::SURFACE));
     offsetSlider_->onValueChange = [this]() {
-        ClipManager::getInstance().setOffset(clipId_, offsetSlider_->getValue());
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetClipOffsetCommand>(clipId_, offsetSlider_->getValue()));
         waveformDisplay_->repaint();
     };
     addAndMakeVisible(*offsetSlider_);
