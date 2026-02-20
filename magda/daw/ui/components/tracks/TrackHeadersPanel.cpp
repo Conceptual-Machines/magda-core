@@ -299,6 +299,25 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     midiColumnLabel->setColour(juce::Label::textColourId,
                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     midiColumnLabel->setJustificationType(juce::Justification::centred);
+
+    // I/O routing icons (non-interactive visual indicators)
+    auto inputDrawable =
+        std::make_unique<juce::DrawableButton>("inputIcon", juce::DrawableButton::ImageFitted);
+    if (auto svg =
+            juce::Drawable::createFromImageData(BinaryData::Input_svg, BinaryData::Input_svgSize)) {
+        inputDrawable->setImages(svg.get());
+    }
+    inputDrawable->setInterceptsMouseClicks(false, false);
+    inputIcon = std::move(inputDrawable);
+
+    auto outputDrawable =
+        std::make_unique<juce::DrawableButton>("outputIcon", juce::DrawableButton::ImageFitted);
+    if (auto svg = juce::Drawable::createFromImageData(BinaryData::Output_svg,
+                                                       BinaryData::Output_svgSize)) {
+        outputDrawable->setImages(svg.get());
+    }
+    outputDrawable->setInterceptsMouseClicks(false, false);
+    outputIcon = std::move(outputDrawable);
 }
 
 TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
@@ -705,6 +724,8 @@ void TrackHeadersPanel::tracksChanged() {
         addAndMakeVisible(*header->midiOutputSelector);
         addAndMakeVisible(*header->audioColumnLabel);
         addAndMakeVisible(*header->midiColumnLabel);
+        addAndMakeVisible(*header->inputIcon);
+        addAndMakeVisible(*header->outputIcon);
         for (auto& sendLabel : header->sendLabels) {
             addChildComponent(*sendLabel);  // Hidden by default; shown when track has sends
         }
@@ -1423,6 +1444,8 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 header.midiOutputSelector->setVisible(false);
                 header.audioColumnLabel->setVisible(false);
                 header.midiColumnLabel->setVisible(false);
+                header.inputIcon->setVisible(false);
+                header.outputIcon->setVisible(false);
                 for (auto& sendLabel : header.sendLabels) {
                     sendLabel->setVisible(false);
                 }
@@ -1524,7 +1547,8 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                     header.midiColumnLabel->setVisible(false);
                 }
 
-                // Input row: [Audio In] [MIDI In] — hidden for multi-out child tracks
+                // Input row: [Audio In] [MIDI In] [inputIcon] — hidden for multi-out
+                const int iconSize = 16;
                 auto inputRow = tcpArea.removeFromTop(contentRowHeight);
                 if (!header.isMultiOut) {
                     header.audioInputSelector->setBounds(inputRow.removeFromLeft(dropdownWidth));
@@ -1532,19 +1556,26 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                     inputRow.removeFromLeft(spacing);
                     header.inputSelector->setBounds(inputRow.removeFromLeft(dropdownWidth));
                     header.inputSelector->setVisible(true);
+                    inputRow.removeFromLeft(spacing);
+                    header.inputIcon->setBounds(inputRow.removeFromLeft(iconSize));
+                    header.inputIcon->setVisible(true);
                 } else {
                     header.audioInputSelector->setVisible(false);
                     header.inputSelector->setVisible(false);
+                    header.inputIcon->setVisible(false);
                 }
                 tcpArea.removeFromTop(rowGap);
 
-                // Output row: [Audio Out] [MIDI Out]
+                // Output row: [Audio Out] [MIDI Out] [outputIcon]
                 auto outputRow = tcpArea.removeFromTop(contentRowHeight);
                 header.outputSelector->setBounds(outputRow.removeFromLeft(dropdownWidth));
                 header.outputSelector->setVisible(true);
                 outputRow.removeFromLeft(spacing);
                 header.midiOutputSelector->setBounds(outputRow.removeFromLeft(dropdownWidth));
                 header.midiOutputSelector->setVisible(true);
+                outputRow.removeFromLeft(spacing);
+                header.outputIcon->setBounds(outputRow.removeFromLeft(iconSize));
+                header.outputIcon->setVisible(true);
 
             } else if (trackHeight >= 55) {
                 // MEDIUM LAYOUT: Buttons + volume/pan only
