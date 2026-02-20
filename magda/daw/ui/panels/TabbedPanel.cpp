@@ -40,26 +40,21 @@ TabbedPanel::~TabbedPanel() {
 }
 
 void TabbedPanel::setupCollapseButton() {
-    // Determine initial icon based on location (collapse direction)
-    const char* svgData = BinaryData::collapse_left_svg;
-    size_t svgSize = BinaryData::collapse_left_svgSize;
+    // Bottom panel collapse is handled by FooterBar, not here
+    if (location_ == PanelLocation::Bottom)
+        return;
 
-    switch (location_) {
-        case PanelLocation::Left:
-            svgData = BinaryData::collapse_left_svg;
-            svgSize = BinaryData::collapse_left_svgSize;
-            break;
-        case PanelLocation::Right:
-            svgData = BinaryData::collapse_right_svg;
-            svgSize = BinaryData::collapse_right_svgSize;
-            break;
-        case PanelLocation::Bottom:
-            svgData = BinaryData::collapse_down_svg;
-            svgSize = BinaryData::collapse_down_svgSize;
-            break;
+    // Side panels: arrow points inward (right for left panel, left for right panel)
+    const char* svgData = BinaryData::collapse_right_svg;
+    size_t svgSize = BinaryData::collapse_right_svgSize;
+
+    if (location_ == PanelLocation::Right) {
+        svgData = BinaryData::collapse_left_svg;
+        svgSize = BinaryData::collapse_left_svgSize;
     }
 
     collapseButton_ = std::make_unique<magda::SvgButton>("Collapse", svgData, svgSize);
+    collapseButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
     collapseButton_->onClick = [this]() {
         PanelController::getInstance().toggleCollapsed(location_);
     };
@@ -75,20 +70,20 @@ void TabbedPanel::updateCollapseIcon() {
 
     switch (location_) {
         case PanelLocation::Left:
-            svgData = collapsed_ ? BinaryData::collapse_right_svg : BinaryData::collapse_left_svg;
-            svgSize =
-                collapsed_ ? BinaryData::collapse_right_svgSize : BinaryData::collapse_left_svgSize;
-            break;
-        case PanelLocation::Right:
+            // Expanded: arrow points right (inward). Collapsed: arrow points left (outward).
             svgData = collapsed_ ? BinaryData::collapse_left_svg : BinaryData::collapse_right_svg;
             svgSize =
                 collapsed_ ? BinaryData::collapse_left_svgSize : BinaryData::collapse_right_svgSize;
             break;
-        case PanelLocation::Bottom:
-            svgData = collapsed_ ? BinaryData::collapse_up_svg : BinaryData::collapse_down_svg;
+        case PanelLocation::Right:
+            // Expanded: arrow points left (inward). Collapsed: arrow points right (outward).
+            svgData = collapsed_ ? BinaryData::collapse_right_svg : BinaryData::collapse_left_svg;
             svgSize =
-                collapsed_ ? BinaryData::collapse_up_svgSize : BinaryData::collapse_down_svgSize;
+                collapsed_ ? BinaryData::collapse_right_svgSize : BinaryData::collapse_left_svgSize;
             break;
+        case PanelLocation::Bottom:
+            // Handled by FooterBar
+            return;
     }
 
     collapseButton_->updateSvgData(svgData, svgSize);
@@ -124,22 +119,18 @@ void TabbedPanel::paintBorder(juce::Graphics& g) {
 
 void TabbedPanel::resized() {
     if (collapsed_) {
-        // In collapsed state, just show collapse button centered
-        auto btnBounds = getCollapseButtonBounds();
-        if (collapseButton_)
-            collapseButton_->setBounds(btnBounds);
+        // In collapsed state, show collapse button centered (side panels only)
+        if (collapseButton_) {
+            collapseButton_->setBounds(getCollapseButtonBounds());
+            collapseButton_->toFront(false);
+        }
         tabBar_.setVisible(false);
         if (activeContent_)
             activeContent_->setVisible(false);
     } else {
-        // Normal state: tab bar (footer) + collapse button + content
-        auto tabBarBounds = getTabBarBounds();
-        tabBar_.setBounds(tabBarBounds);
+        // Normal state: tab bar (footer) + content
+        tabBar_.setBounds(getTabBarBounds());
         tabBar_.setVisible(true);
-
-        auto btnBounds = getCollapseButtonBounds();
-        if (collapseButton_)
-            collapseButton_->setBounds(btnBounds);
 
         auto contentBounds = getContentBounds();
         if (activeContent_) {
@@ -150,6 +141,12 @@ void TabbedPanel::resized() {
                 activeContent_->setVisible(false);
             }
         }
+
+        // Position collapse button in footer and bring to front (side panels only)
+        if (collapseButton_) {
+            collapseButton_->setBounds(getCollapseButtonBounds());
+            collapseButton_->toFront(false);
+        }
     }
 }
 
@@ -157,17 +154,7 @@ juce::Rectangle<int> TabbedPanel::getContentBounds() {
     auto bounds = getLocalBounds();
     int tabBarHeight = PanelTabBar::BAR_HEIGHT;
 
-    switch (location_) {
-        case PanelLocation::Left:
-        case PanelLocation::Right:
-            // Tab bar at bottom (footer)
-            return bounds.withTrimmedBottom(tabBarHeight);
-        case PanelLocation::Bottom:
-            // Tab bar at bottom, collapse button area at top (header)
-            bounds.removeFromTop(tabBarHeight);     // header with collapse button
-            bounds.removeFromBottom(tabBarHeight);  // tab bar footer
-            return bounds;
-    }
+    // Content above tab bar (footer)
     return bounds.withTrimmedBottom(tabBarHeight);
 }
 
@@ -182,32 +169,20 @@ juce::Rectangle<int> TabbedPanel::getCollapseButtonBounds() {
     constexpr int btnSize = 20;
 
     if (collapsed_) {
-        // Centered in the collapsed thin bar
-        switch (location_) {
-            case PanelLocation::Left:
-            case PanelLocation::Right:
-                return juce::Rectangle<int>(2, getHeight() / 2 - btnSize / 2, btnSize, btnSize);
-            case PanelLocation::Bottom:
-                return juce::Rectangle<int>(getWidth() / 2 - btnSize / 2, 2, btnSize, btnSize);
-        }
-    } else {
-        switch (location_) {
-            case PanelLocation::Left:
-            case PanelLocation::Right: {
-                // Footer area — right side of tab bar row
-                int tabBarHeight = PanelTabBar::BAR_HEIGHT;
-                int y = getHeight() - tabBarHeight + (tabBarHeight - btnSize) / 2;
-                return juce::Rectangle<int>(getWidth() - btnSize - 4, y, btnSize, btnSize);
-            }
-            case PanelLocation::Bottom: {
-                // Header area — right side
-                int tabBarHeight = PanelTabBar::BAR_HEIGHT;
-                int y = (tabBarHeight - btnSize) / 2;
-                return juce::Rectangle<int>(getWidth() - btnSize - 4, y, btnSize, btnSize);
-            }
-        }
+        // Centered in the collapsed thin bar (side panels only)
+        return juce::Rectangle<int>(2, getHeight() / 2 - btnSize / 2, btnSize, btnSize);
     }
-    return {};
+
+    // Footer area — position depends on panel side
+    int tabBarHeight = PanelTabBar::BAR_HEIGHT;
+    int y = getHeight() - tabBarHeight + (tabBarHeight - btnSize) / 2;
+
+    if (location_ == PanelLocation::Right) {
+        // Right panel: collapse button on the LEFT side of footer
+        return juce::Rectangle<int>(4, y, btnSize, btnSize);
+    }
+    // Left panel: collapse button on the RIGHT side of footer
+    return juce::Rectangle<int>(getWidth() - btnSize - 4, y, btnSize, btnSize);
 }
 
 void TabbedPanel::panelStateChanged(PanelLocation location, const PanelState& /*state*/) {

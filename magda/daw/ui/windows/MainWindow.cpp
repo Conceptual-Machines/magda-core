@@ -316,11 +316,19 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     bottomPanel->setAudioEngine(externalEngine);
     bottomPanel->onCollapseChanged = [this](bool collapsed) {
         bottomPanelCollapsed = collapsed;
+        if (footerBar)
+            footerBar->setBottomPanelCollapsed(collapsed);
         resized();
     };
     addAndMakeVisible(*bottomPanel);
 
     footerBar = std::make_unique<FooterBar>();
+    footerBar->onBottomPanelCollapseToggle = [this]() {
+        bottomPanelCollapsed = !bottomPanelCollapsed;
+        bottomPanel->setCollapsed(bottomPanelCollapsed);
+        footerBar->setBottomPanelCollapsed(bottomPanelCollapsed);
+        resized();
+    };
     addAndMakeVisible(*footerBar);
 
     // Create views (now audioEngine is valid - use externalEngine which points to either external
@@ -471,8 +479,10 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         daw::ui::PanelController::getInstance().setCollapsed(daw::ui::PanelLocation::Left, true);
     if (rightPanelCollapsed)
         daw::ui::PanelController::getInstance().setCollapsed(daw::ui::PanelLocation::Right, true);
-    if (bottomPanelCollapsed)
+    if (bottomPanelCollapsed) {
         daw::ui::PanelController::getInstance().setCollapsed(daw::ui::PanelLocation::Bottom, true);
+        footerBar->setBottomPanelCollapsed(true);
+    }
 
 // Enable profiling if environment variable is set
 #if JUCE_DEBUG
@@ -542,10 +552,14 @@ void MainWindow::MainComponent::setupResizeHandles() {
         if (newHeight < layout.panelCollapseThreshold) {
             bottomPanelCollapsed = true;
             bottomPanel->setCollapsed(true);
+            if (footerBar)
+                footerBar->setBottomPanelCollapsed(true);
         } else {
             if (bottomPanelCollapsed) {
                 bottomPanelCollapsed = false;
                 bottomPanel->setCollapsed(false);
+                if (footerBar)
+                    footerBar->setBottomPanelCollapsed(false);
             }
             int maxHeight = static_cast<int>(getHeight() * layout.maxBottomPanelRatio);
             bottomPanelHeight =
