@@ -333,6 +333,35 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
 };
 
 //==============================================================================
+// MediaFileFilter - Combines wildcard extension matching with filename search
+//==============================================================================
+class MediaFileFilter : public juce::FileFilter {
+  public:
+    MediaFileFilter(const juce::String& wildcardPattern, const juce::String& searchTerm)
+        : juce::FileFilter("Media files"),
+          wildcardFilter_(wildcardPattern, "*", "Media files"),
+          searchTerm_(searchTerm.toLowerCase()) {}
+
+    bool isFileSuitable(const juce::File& file) const override {
+        if (!wildcardFilter_.isFileSuitable(file))
+            return false;
+        if (searchTerm_.isEmpty())
+            return true;
+        return file.getFileName().toLowerCase().contains(searchTerm_);
+    }
+
+    bool isDirectorySuitable(const juce::File& dir) const override {
+        // Directories are always shown so the user can navigate into them
+        // to find matching files; only file entries are filtered by search term.
+        return wildcardFilter_.isDirectorySuitable(dir);
+    }
+
+  private:
+    juce::WildcardFileFilter wildcardFilter_;
+    juce::String searchTerm_;
+};
+
+//==============================================================================
 // MediaExplorerContent
 //==============================================================================
 
@@ -348,6 +377,11 @@ MediaExplorerContent::MediaExplorerContent() {
                          DarkTheme::getColour(DarkTheme::SURFACE));
     searchBox_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
     searchBox_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+    searchBox_.onTextChange = [this]() {
+        searchTerm_ = searchBox_.getText();
+        stopTimer();
+        startTimer(300);  // 300 ms debounce
+    };
     addAndMakeVisible(searchBox_);
 
     // Setup type filter buttons with icons
@@ -515,8 +549,7 @@ MediaExplorerContent::MediaExplorerContent() {
     addAndMakeVisible(*thumbnailComponent_);
 
     // Setup file browser with initial filter
-    mediaFileFilter_ =
-        std::make_unique<juce::WildcardFileFilter>(getMediaFilterPattern(), "*", "Media files");
+    mediaFileFilter_ = std::make_unique<MediaFileFilter>(getMediaFilterPattern(), juce::String());
 
     fileBrowser_ = std::make_unique<juce::FileBrowserComponent>(
         juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles |
@@ -780,9 +813,8 @@ juce::String MediaExplorerContent::formatDuration(double seconds) {
 }
 
 void MediaExplorerContent::updateMediaFilter() {
-    // Rebuild the file filter based on active types
-    mediaFileFilter_ =
-        std::make_unique<juce::WildcardFileFilter>(getMediaFilterPattern(), "*", "Media files");
+    // Rebuild the file filter based on active types and current search term
+    mediaFileFilter_ = std::make_unique<MediaFileFilter>(getMediaFilterPattern(), searchTerm_);
 
     // Update the file browser with the new filter
     if (fileBrowser_) {
@@ -1102,6 +1134,11 @@ void MediaExplorerContent::mouseUp(const juce::MouseEvent& /*e*/) {
     // Reset drag state
     isDraggingFile_ = false;
     fileForDrag_ = juce::File();
+}
+
+void MediaExplorerContent::timerCallback() {
+    stopTimer();
+    updateMediaFilter();
 }
 
 }  // namespace magda::daw::ui
