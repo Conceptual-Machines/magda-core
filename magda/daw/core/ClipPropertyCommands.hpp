@@ -406,4 +406,110 @@ class SetClipLengthBeatsCommand : public UndoableCommand {
     double bpm_;
 };
 
+/**
+ * @brief Command for setting clip fade-in type
+ */
+class SetClipFadeInTypeCommand : public UndoableCommand {
+  public:
+    SetClipFadeInTypeCommand(ClipId clipId, int newType) : clipId_(clipId), newType_(newType) {
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip)
+            oldType_ = clip->fadeInType;
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setFadeInType(clipId_, newType_);
+    }
+    void undo() override {
+        ClipManager::getInstance().setFadeInType(clipId_, oldType_);
+    }
+    juce::String getDescription() const override {
+        return "Set Clip Fade In Type";
+    }
+
+  private:
+    ClipId clipId_;
+    int oldType_ = 1, newType_;
+};
+
+/**
+ * @brief Command for setting clip fade-out type
+ */
+class SetClipFadeOutTypeCommand : public UndoableCommand {
+  public:
+    SetClipFadeOutTypeCommand(ClipId clipId, int newType) : clipId_(clipId), newType_(newType) {
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip)
+            oldType_ = clip->fadeOutType;
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setFadeOutType(clipId_, newType_);
+    }
+    void undo() override {
+        ClipManager::getInstance().setFadeOutType(clipId_, oldType_);
+    }
+    juce::String getDescription() const override {
+        return "Set Clip Fade Out Type";
+    }
+
+  private:
+    ClipId clipId_;
+    int oldType_ = 1, newType_;
+};
+
+/**
+ * @brief Command for setting clip fade-in behaviour
+ */
+class SetClipFadeInBehaviourCommand : public UndoableCommand {
+  public:
+    SetClipFadeInBehaviourCommand(ClipId clipId, int newBehaviour)
+        : clipId_(clipId), newBehaviour_(newBehaviour) {
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip)
+            oldBehaviour_ = clip->fadeInBehaviour;
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setFadeInBehaviour(clipId_, newBehaviour_);
+    }
+    void undo() override {
+        ClipManager::getInstance().setFadeInBehaviour(clipId_, oldBehaviour_);
+    }
+    juce::String getDescription() const override {
+        return "Set Clip Fade In Behaviour";
+    }
+
+  private:
+    ClipId clipId_;
+    int oldBehaviour_ = 0, newBehaviour_;
+};
+
+/**
+ * @brief Command for setting clip fade-out behaviour
+ */
+class SetClipFadeOutBehaviourCommand : public UndoableCommand {
+  public:
+    SetClipFadeOutBehaviourCommand(ClipId clipId, int newBehaviour)
+        : clipId_(clipId), newBehaviour_(newBehaviour) {
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip)
+            oldBehaviour_ = clip->fadeOutBehaviour;
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setFadeOutBehaviour(clipId_, newBehaviour_);
+    }
+    void undo() override {
+        ClipManager::getInstance().setFadeOutBehaviour(clipId_, oldBehaviour_);
+    }
+    juce::String getDescription() const override {
+        return "Set Clip Fade Out Behaviour";
+    }
+
+  private:
+    ClipId clipId_;
+    int oldBehaviour_ = 0, newBehaviour_;
+};
+
 }  // namespace magda

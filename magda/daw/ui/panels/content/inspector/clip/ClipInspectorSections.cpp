@@ -1051,7 +1051,8 @@ void ClipInspector::initFadesSection() {
             if (selectedClipIds_.empty())
                 return;
             for (auto cid : selectedClipIds_) {
-                magda::ClipManager::getInstance().setFadeInType(cid, fadeType);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipFadeInTypeCommand>(cid, fadeType));
             }
             for (int j = 0; j < 4; ++j)
                 fadeInTypeButtons_[j]->setActive(j == i);
@@ -1062,7 +1063,8 @@ void ClipInspector::initFadesSection() {
             if (selectedClipIds_.empty())
                 return;
             for (auto cid : selectedClipIds_) {
-                magda::ClipManager::getInstance().setFadeOutType(cid, fadeType);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipFadeOutTypeCommand>(cid, fadeType));
             }
             for (int j = 0; j < 4; ++j)
                 fadeOutTypeButtons_[j]->setActive(j == i);
@@ -1100,7 +1102,8 @@ void ClipInspector::initFadesSection() {
             if (selectedClipIds_.empty())
                 return;
             for (auto cid : selectedClipIds_) {
-                magda::ClipManager::getInstance().setFadeInBehaviour(cid, i);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipFadeInBehaviourCommand>(cid, i));
             }
             for (int j = 0; j < 2; ++j)
                 fadeInBehaviourButtons_[j]->setActive(j == i);
@@ -1111,7 +1114,8 @@ void ClipInspector::initFadesSection() {
             if (selectedClipIds_.empty())
                 return;
             for (auto cid : selectedClipIds_) {
-                magda::ClipManager::getInstance().setFadeOutBehaviour(cid, i);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipFadeOutBehaviourCommand>(cid, i));
             }
             for (int j = 0; j < 2; ++j)
                 fadeOutBehaviourButtons_[j]->setActive(j == i);

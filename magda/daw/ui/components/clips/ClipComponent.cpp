@@ -14,6 +14,7 @@
 #include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipOperations.hpp"
+#include "core/ClipPropertyCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
@@ -917,11 +918,9 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     if (isSelected_ && isOnFadeInHandle(e.x, e.y)) {
         if (e.mods.isShiftDown()) {
             // Shift+click: cycle fade-in type (1→2→3→4→1)
-            dragStartClipSnapshot_ = *clip;
             int newType = (clip->fadeInType % 4) + 1;
-            ClipManager::getInstance().setFadeInType(clipId_, newType);
-            auto cmd = std::make_unique<SetFadeCommand>(clipId_, dragStartClipSnapshot_);
-            UndoManager::getInstance().executeCommand(std::move(cmd));
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetClipFadeInTypeCommand>(clipId_, newType));
             dragMode_ = DragMode::None;
             repaint();
             return;
@@ -948,11 +947,9 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     if (isSelected_ && isOnFadeOutHandle(e.x, e.y)) {
         if (e.mods.isShiftDown()) {
             // Shift+click: cycle fade-out type (1→2→3→4→1)
-            dragStartClipSnapshot_ = *clip;
             int newType = (clip->fadeOutType % 4) + 1;
-            ClipManager::getInstance().setFadeOutType(clipId_, newType);
-            auto cmd = std::make_unique<SetFadeCommand>(clipId_, dragStartClipSnapshot_);
-            UndoManager::getInstance().executeCommand(std::move(cmd));
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetClipFadeOutTypeCommand>(clipId_, newType));
             dragMode_ = DragMode::None;
             repaint();
             return;
