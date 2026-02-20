@@ -281,5 +281,4 @@ class SetMasterMuteCommand : public UndoableCommand {
   private:
     bool oldMuted_ = false, newMuted_;
 };
-
 }  // namespace magda
