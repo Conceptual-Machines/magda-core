@@ -1,7 +1,18 @@
 #include "Config.hpp"
 
-#include <fstream>
-#include <iostream>
+#include <juce_core/juce_core.h>
+
+// ---------------------------------------------------------------------------
+// Path helper
+// ---------------------------------------------------------------------------
+
+namespace {
+juce::File getConfigFile() {
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+        .getChildFile("MAGDA")
+        .getChildFile("config.json");
+}
+}  // namespace
 
 namespace magda {
 
@@ -10,216 +21,193 @@ Config& Config::getInstance() {
     return instance;
 }
 
-void Config::saveToFile(const std::string& filename) {
-    std::ofstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Failed to open config file for writing: " << filename << std::endl;
+// ---------------------------------------------------------------------------
+// Save
+// ---------------------------------------------------------------------------
+
+void Config::save() {
+    auto root = juce::DynamicObject::Ptr(new juce::DynamicObject());
+
+    // Timeline
+    root->setProperty("defaultTimelineLength", defaultTimelineLength);
+    root->setProperty("defaultZoomViewDuration", defaultZoomViewDuration);
+
+    // Zoom limits
+    root->setProperty("minZoomLevel", minZoomLevel);
+    root->setProperty("maxZoomLevel", maxZoomLevel);
+
+    // Zoom sensitivity
+    root->setProperty("zoomInSensitivity", zoomInSensitivity);
+    root->setProperty("zoomOutSensitivity", zoomOutSensitivity);
+    root->setProperty("zoomInSensitivityShift", zoomInSensitivityShift);
+    root->setProperty("zoomOutSensitivityShift", zoomOutSensitivityShift);
+
+    // Transport
+    root->setProperty("transportShowBothFormats", transportShowBothFormats);
+    root->setProperty("transportDefaultBarsBeats", transportDefaultBarsBeats);
+
+    // Panel visibility
+    root->setProperty("showLeftPanel", showLeftPanel);
+    root->setProperty("showRightPanel", showRightPanel);
+    root->setProperty("showBottomPanel", showBottomPanel);
+
+    // Panel collapse state
+    root->setProperty("leftPanelCollapsed", leftPanelCollapsed);
+    root->setProperty("rightPanelCollapsed", rightPanelCollapsed);
+    root->setProperty("bottomPanelCollapsed", bottomPanelCollapsed);
+
+    // Panel sizes
+    root->setProperty("leftPanelWidth", leftPanelWidth);
+    root->setProperty("rightPanelWidth", rightPanelWidth);
+    root->setProperty("bottomPanelHeight", bottomPanelHeight);
+
+    // UI / behaviour
+    root->setProperty("scrollbarOnLeft", scrollbarOnLeft);
+    root->setProperty("confirmTrackDelete", confirmTrackDelete);
+    root->setProperty("showTooltips", showTooltips);
+    root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
+
+    // Render
+    root->setProperty("renderFolder", juce::String(renderFolder));
+
+    // Audio devices
+    root->setProperty("preferredAudioDevice", juce::String(preferredAudioDevice));
+    root->setProperty("preferredInputDevice", juce::String(preferredInputDevice));
+    root->setProperty("preferredOutputDevice", juce::String(preferredOutputDevice));
+    root->setProperty("preferredInputChannels", preferredInputChannels);
+    root->setProperty("preferredOutputChannels", preferredOutputChannels);
+
+    // AI
+    root->setProperty("openaiApiKey", juce::String(openaiApiKey));
+    root->setProperty("openaiModel", juce::String(openaiModel));
+
+    // Browser
+    root->setProperty("browserDefaultDirectory", juce::String(browserDefaultDirectory));
+
+    juce::Array<juce::var> favArray;
+    for (const auto& f : browserFavorites)
+        favArray.add(juce::String(f));
+    root->setProperty("browserFavorites", favArray);
+
+    // Custom plugin paths
+    juce::Array<juce::var> pluginPathArray;
+    for (const auto& p : customPluginPaths)
+        pluginPathArray.add(juce::String(p));
+    root->setProperty("customPluginPaths", pluginPathArray);
+
+    // Write to disk
+    auto configFile = getConfigFile();
+    configFile.getParentDirectory().createDirectory();
+
+    auto json = juce::JSON::toString(juce::var(root.get()));
+    if (!configFile.replaceWithText(json))
+        DBG("Config::save — failed to write " + configFile.getFullPathName());
+    else
+        DBG("Config::save — " + configFile.getFullPathName());
+}
+
+// ---------------------------------------------------------------------------
+// Load
+// ---------------------------------------------------------------------------
+
+void Config::load() {
+    auto configFile = getConfigFile();
+    if (!configFile.existsAsFile()) {
+        DBG("Config::load — file not found, using defaults: " + configFile.getFullPathName());
         return;
     }
 
-    // Simple key-value format for now (later could be JSON)
-    file << "defaultTimelineLength=" << defaultTimelineLength << std::endl;
-    file << "defaultZoomViewDuration=" << defaultZoomViewDuration << std::endl;
-    file << "minZoomLevel=" << minZoomLevel << std::endl;
-    file << "maxZoomLevel=" << maxZoomLevel << std::endl;
-    file << "zoomInSensitivity=" << zoomInSensitivity << std::endl;
-    file << "zoomOutSensitivity=" << zoomOutSensitivity << std::endl;
-    file << "zoomInSensitivityShift=" << zoomInSensitivityShift << std::endl;
-    file << "zoomOutSensitivityShift=" << zoomOutSensitivityShift << std::endl;
-    file << "scrollbarOnLeft=" << (scrollbarOnLeft ? 1 : 0) << std::endl;
-    // Save custom plugin paths as tab-delimited string (tab cannot appear in paths)
-    {
-        std::string joined;
-        for (size_t i = 0; i < customPluginPaths.size(); ++i) {
-            if (i > 0)
-                joined += "\t";
-            joined += customPluginPaths[i];
-        }
-        file << "customPluginPaths=" << joined << std::endl;
-    }
-    file << "renderFolder=" << renderFolder << std::endl;
-    file << "preferredAudioDevice=" << preferredAudioDevice << std::endl;
-    file << "preferredInputDevice=" << preferredInputDevice << std::endl;
-    file << "preferredOutputDevice=" << preferredOutputDevice << std::endl;
-    file << "preferredInputChannels=" << preferredInputChannels << std::endl;
-    file << "preferredOutputChannels=" << preferredOutputChannels << std::endl;
-    file << "openaiApiKey=" << openaiApiKey << std::endl;
-    file << "openaiModel=" << openaiModel << std::endl;
-    file << "confirmTrackDelete=" << (confirmTrackDelete ? 1 : 0) << std::endl;
-    file << "showTooltips=" << (showTooltips ? 1 : 0) << std::endl;
-    file << "autoMonitorSelectedTrack=" << (autoMonitorSelectedTrack ? 1 : 0) << std::endl;
-    // Save browser favorites as tab-delimited string
-    {
-        std::string joined;
-        for (size_t i = 0; i < browserFavorites.size(); ++i) {
-            if (i > 0)
-                joined += "\t";
-            joined += browserFavorites[i];
-        }
-        file << "browserFavorites=" << joined << std::endl;
-    }
-    file << "browserDefaultDirectory=" << browserDefaultDirectory << std::endl;
-
-    // Panel collapse state and sizes
-    file << "leftPanelCollapsed=" << (leftPanelCollapsed ? 1 : 0) << std::endl;
-    file << "rightPanelCollapsed=" << (rightPanelCollapsed ? 1 : 0) << std::endl;
-    file << "bottomPanelCollapsed=" << (bottomPanelCollapsed ? 1 : 0) << std::endl;
-    file << "leftPanelWidth=" << leftPanelWidth << std::endl;
-    file << "rightPanelWidth=" << rightPanelWidth << std::endl;
-    file << "bottomPanelHeight=" << bottomPanelHeight << std::endl;
-
-    file.close();
-    std::cout << "Config saved to: " << filename << std::endl;
-}
-
-void Config::loadFromFile(const std::string& filename) {
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        std::cout << "Config file not found, using defaults: " << filename << std::endl;
+    juce::var parsed;
+    auto result = juce::JSON::parse(configFile.loadFileAsString(), parsed);
+    if (result.failed()) {
+        DBG("Config::load — JSON parse error: " + result.getErrorMessage());
         return;
     }
 
-    std::string line;
-    while (std::getline(file, line)) {
-        size_t equalPos = line.find('=');
-        if (equalPos == std::string::npos)
-            continue;
-
-        std::string key = line.substr(0, equalPos);
-        std::string value = line.substr(equalPos + 1);
-
-        parseConfigLine(key, value);
+    auto* obj = parsed.getDynamicObject();
+    if (obj == nullptr) {
+        DBG("Config::load — unexpected JSON root type");
+        return;
     }
 
-    file.close();
-    std::cout << "Config loaded from: " << filename << std::endl;
-}
+    auto getDouble = [&](const char* key, double fallback) -> double {
+        if (!obj->hasProperty(key))
+            return fallback;
+        return static_cast<double>(obj->getProperty(key));
+    };
+    auto getBool = [&](const char* key, bool fallback) -> bool {
+        if (!obj->hasProperty(key))
+            return fallback;
+        return static_cast<bool>(obj->getProperty(key));
+    };
+    auto getInt = [&](const char* key, int fallback) -> int {
+        if (!obj->hasProperty(key))
+            return fallback;
+        return static_cast<int>(obj->getProperty(key));
+    };
+    auto getString = [&](const char* key, const std::string& fallback) -> std::string {
+        if (!obj->hasProperty(key))
+            return fallback;
+        return obj->getProperty(key).toString().toStdString();
+    };
+    auto getStringArray = [&](const char* key) -> std::vector<std::string> {
+        std::vector<std::string> out;
+        if (!obj->hasProperty(key))
+            return out;
+        const auto& v = obj->getProperty(key);
+        if (v.isArray()) {
+            for (const auto& item : *v.getArray())
+                out.push_back(item.toString().toStdString());
+        }
+        return out;
+    };
 
-void Config::parseConfigLine(const std::string& key, const std::string& value) {
-    try {
-        // Handle string values
-        if (key == "customPluginPaths") {
-            customPluginPaths.clear();
-            if (!value.empty()) {
-                // Support both tab-delimited (current) and semicolon-delimited (legacy)
-                char delimiter = (value.find('\t') != std::string::npos) ? '\t' : ';';
-                std::string remaining = value;
-                while (!remaining.empty()) {
-                    auto pos = remaining.find(delimiter);
-                    std::string path;
-                    if (pos == std::string::npos) {
-                        path = remaining;
-                        remaining.clear();
-                    } else {
-                        path = remaining.substr(0, pos);
-                        remaining = remaining.substr(pos + 1);
-                    }
-                    if (!path.empty())
-                        customPluginPaths.push_back(path);
-                }
-            }
-            return;
-        }
-        if (key == "browserFavorites") {
-            browserFavorites.clear();
-            if (!value.empty()) {
-                char delimiter = (value.find('\t') != std::string::npos) ? '\t' : ';';
-                std::string remaining = value;
-                while (!remaining.empty()) {
-                    auto pos = remaining.find(delimiter);
-                    std::string path;
-                    if (pos == std::string::npos) {
-                        path = remaining;
-                        remaining.clear();
-                    } else {
-                        path = remaining.substr(0, pos);
-                        remaining = remaining.substr(pos + 1);
-                    }
-                    if (!path.empty())
-                        browserFavorites.push_back(path);
-                }
-            }
-            return;
-        }
-        if (key == "browserDefaultDirectory") {
-            browserDefaultDirectory = value;
-            return;
-        }
-        if (key == "renderFolder") {
-            renderFolder = value;
-            return;
-        }
-        if (key == "preferredAudioDevice") {
-            preferredAudioDevice = value;
-            return;
-        }
-        if (key == "preferredInputDevice") {
-            preferredInputDevice = value;
-            return;
-        }
-        if (key == "preferredOutputDevice") {
-            preferredOutputDevice = value;
-            return;
-        }
-        if (key == "openaiApiKey") {
-            openaiApiKey = value;
-            return;
-        }
-        if (key == "openaiModel") {
-            openaiModel = value;
-            return;
-        }
+    defaultTimelineLength = getDouble("defaultTimelineLength", defaultTimelineLength);
+    defaultZoomViewDuration = getDouble("defaultZoomViewDuration", defaultZoomViewDuration);
+    minZoomLevel = getDouble("minZoomLevel", minZoomLevel);
+    maxZoomLevel = getDouble("maxZoomLevel", maxZoomLevel);
 
-        // Handle numeric values
-        double numValue = 0.0;
-        numValue = std::stod(value);
+    zoomInSensitivity = getDouble("zoomInSensitivity", zoomInSensitivity);
+    zoomOutSensitivity = getDouble("zoomOutSensitivity", zoomOutSensitivity);
+    zoomInSensitivityShift = getDouble("zoomInSensitivityShift", zoomInSensitivityShift);
+    zoomOutSensitivityShift = getDouble("zoomOutSensitivityShift", zoomOutSensitivityShift);
 
-        if (key == "defaultTimelineLength") {
-            defaultTimelineLength = numValue;
-        } else if (key == "defaultZoomViewDuration") {
-            defaultZoomViewDuration = numValue;
-        } else if (key == "minZoomLevel") {
-            minZoomLevel = numValue;
-        } else if (key == "maxZoomLevel") {
-            maxZoomLevel = numValue;
-        } else if (key == "zoomInSensitivity") {
-            zoomInSensitivity = numValue;
-        } else if (key == "zoomOutSensitivity") {
-            zoomOutSensitivity = numValue;
-        } else if (key == "zoomInSensitivityShift") {
-            zoomInSensitivityShift = numValue;
-        } else if (key == "zoomOutSensitivityShift") {
-            zoomOutSensitivityShift = numValue;
-        } else if (key == "scrollbarOnLeft") {
-            scrollbarOnLeft = (numValue != 0);
-        } else if (key == "preferredInputChannels") {
-            preferredInputChannels = static_cast<int>(numValue);
-        } else if (key == "preferredOutputChannels") {
-            preferredOutputChannels = static_cast<int>(numValue);
-        } else if (key == "confirmTrackDelete") {
-            confirmTrackDelete = (numValue != 0);
-        } else if (key == "showTooltips") {
-            showTooltips = (numValue != 0);
-        } else if (key == "autoMonitorSelectedTrack") {
-            autoMonitorSelectedTrack = (numValue != 0);
-        } else if (key == "leftPanelCollapsed") {
-            leftPanelCollapsed = (numValue != 0);
-        } else if (key == "rightPanelCollapsed") {
-            rightPanelCollapsed = (numValue != 0);
-        } else if (key == "bottomPanelCollapsed") {
-            bottomPanelCollapsed = (numValue != 0);
-        } else if (key == "leftPanelWidth") {
-            leftPanelWidth = static_cast<int>(numValue);
-        } else if (key == "rightPanelWidth") {
-            rightPanelWidth = static_cast<int>(numValue);
-        } else if (key == "bottomPanelHeight") {
-            bottomPanelHeight = static_cast<int>(numValue);
-        }
-        // Skip unknown keys silently
-    } catch (const std::exception& e) {
-        std::cerr << "Error parsing config value: " << key << "=" << value << " (" << e.what()
-                  << ")" << std::endl;
-    }
+    transportShowBothFormats = getBool("transportShowBothFormats", transportShowBothFormats);
+    transportDefaultBarsBeats = getBool("transportDefaultBarsBeats", transportDefaultBarsBeats);
+
+    showLeftPanel = getBool("showLeftPanel", showLeftPanel);
+    showRightPanel = getBool("showRightPanel", showRightPanel);
+    showBottomPanel = getBool("showBottomPanel", showBottomPanel);
+
+    leftPanelCollapsed = getBool("leftPanelCollapsed", leftPanelCollapsed);
+    rightPanelCollapsed = getBool("rightPanelCollapsed", rightPanelCollapsed);
+    bottomPanelCollapsed = getBool("bottomPanelCollapsed", bottomPanelCollapsed);
+
+    leftPanelWidth = getInt("leftPanelWidth", leftPanelWidth);
+    rightPanelWidth = getInt("rightPanelWidth", rightPanelWidth);
+    bottomPanelHeight = getInt("bottomPanelHeight", bottomPanelHeight);
+
+    scrollbarOnLeft = getBool("scrollbarOnLeft", scrollbarOnLeft);
+    confirmTrackDelete = getBool("confirmTrackDelete", confirmTrackDelete);
+    showTooltips = getBool("showTooltips", showTooltips);
+    autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
+
+    renderFolder = getString("renderFolder", renderFolder);
+
+    preferredAudioDevice = getString("preferredAudioDevice", preferredAudioDevice);
+    preferredInputDevice = getString("preferredInputDevice", preferredInputDevice);
+    preferredOutputDevice = getString("preferredOutputDevice", preferredOutputDevice);
+    preferredInputChannels = getInt("preferredInputChannels", preferredInputChannels);
+    preferredOutputChannels = getInt("preferredOutputChannels", preferredOutputChannels);
+
+    openaiApiKey = getString("openaiApiKey", openaiApiKey);
+    openaiModel = getString("openaiModel", openaiModel);
+
+    browserDefaultDirectory = getString("browserDefaultDirectory", browserDefaultDirectory);
+    browserFavorites = getStringArray("browserFavorites");
+    customPluginPaths = getStringArray("customPluginPaths");
+
+    DBG("Config::load — " + configFile.getFullPathName());
 }
 
 }  // namespace magda

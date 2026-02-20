@@ -291,12 +291,12 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
                 favorites.erase(std::remove(favorites.begin(), favorites.end(), path),
                                 favorites.end());
                 magda::Config::getInstance().setBrowserFavorites(favorites);
-                magda::Config::getInstance().saveToFile("magda_config.txt");
+                magda::Config::getInstance().save();
                 rebuildFavoriteButtons();
             } else if (result == 2) {
                 // Set as default
                 magda::Config::getInstance().setBrowserDefaultDirectory(path);
-                magda::Config::getInstance().saveToFile("magda_config.txt");
+                magda::Config::getInstance().save();
             }
         });
     }
@@ -1044,13 +1044,13 @@ void MediaExplorerContent::fileClicked(const juce::File& file, const juce::Mouse
                 auto favs = magda::Config::getInstance().getBrowserFavorites();
                 favs.erase(std::remove(favs.begin(), favs.end(), path), favs.end());
                 magda::Config::getInstance().setBrowserFavorites(favs);
-                magda::Config::getInstance().saveToFile("magda_config.txt");
+                magda::Config::getInstance().save();
                 sidebarComponent_->rebuildFavoriteButtons();
             } else if (result == 2) {
                 auto favs = magda::Config::getInstance().getBrowserFavorites();
                 favs.push_back(path);
                 magda::Config::getInstance().setBrowserFavorites(favs);
-                magda::Config::getInstance().saveToFile("magda_config.txt");
+                magda::Config::getInstance().save();
                 sidebarComponent_->rebuildFavoriteButtons();
             }
         });
