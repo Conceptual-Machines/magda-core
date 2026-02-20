@@ -847,6 +847,17 @@ void TrackHeadersPanel::selectTrack(int index) {
     }
 }
 
+void TrackHeadersPanel::trackSelectionChanged(TrackId trackId) {
+    selectedTrackIndex = -1;
+    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
+        if (visibleTrackIds_[i] == trackId) {
+            selectedTrackIndex = static_cast<int>(i);
+            break;
+        }
+    }
+    repaint();
+}
+
 int TrackHeadersPanel::getNumTracks() const {
     return static_cast<int>(trackHeaders.size());
 }
