@@ -316,10 +316,16 @@ void TrackInspector::resized() {
     sectionSeparatorYs_.push_back(bounds.getY());
     bounds.removeFromTop(separatorPadding);
 
-    // M S R Mon buttons row
+    // Shared width for all rows (matches routing: 55 + 4 + 55 = 114)
+    const int selectorWidth = 55;
+    const int selectorGap = 4;
+    const int totalRowWidth = selectorWidth * 2 + selectorGap;  // 114
+
+    // M S R Mon buttons row — evenly fill totalRowWidth
     auto buttonRow = bounds.removeFromTop(24);
-    const int buttonSize = 24;
+    const int numButtons = 4;
     const int buttonGap = 2;
+    const int buttonSize = (totalRowWidth - (numButtons - 1) * buttonGap) / numButtons;
     muteButton_.setBounds(buttonRow.removeFromLeft(buttonSize));
     buttonRow.removeFromLeft(buttonGap);
     soloButton_.setBounds(buttonRow.removeFromLeft(buttonSize));
@@ -329,22 +335,18 @@ void TrackInspector::resized() {
     monitorButton_.setBounds(buttonRow.removeFromLeft(buttonSize));
     bounds.removeFromTop(4);
 
-    // Gain and Pan on same row (TCP style draggable labels)
+    // Gain and Pan on same row — split totalRowWidth evenly
     auto mixRow = bounds.removeFromTop(20);
-    const int labelWidth = 50;
-    const int labelGap = 8;
+    const int labelWidth = (totalRowWidth - selectorGap) / 2;
     gainLabel_->setBounds(mixRow.removeFromLeft(labelWidth));
-    mixRow.removeFromLeft(labelGap);
+    mixRow.removeFromLeft(selectorGap);
     panLabel_->setBounds(mixRow.removeFromLeft(labelWidth));
     bounds.removeFromTop(separatorPadding);
     sectionSeparatorYs_.push_back(bounds.getY());
     bounds.removeFromTop(separatorPadding);
 
     // Routing section
-
-    const int selectorWidth = 55;
     const int selectorHeight = 18;
-    const int selectorGap = 4;
     const int columnHeaderHeight = 14;
     const int iconSize = 16;
 
