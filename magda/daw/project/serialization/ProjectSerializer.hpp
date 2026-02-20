@@ -2,9 +2,9 @@
 
 #include <juce_core/juce_core.h>
 
-#include "../core/AutomationInfo.hpp"
-#include "../core/ClipInfo.hpp"
-#include "../core/TrackInfo.hpp"
+#include "../../core/AutomationInfo.hpp"
+#include "../../core/ClipInfo.hpp"
+#include "../../core/TrackInfo.hpp"
 #include "ProjectInfo.hpp"
 
 namespace magda {
@@ -186,8 +186,26 @@ class ProjectSerializer {
     static bool deserializeClipInfo(const juce::var& json, ClipInfo& outClip,
                                     double projectTempo = 120.0);
 
-    static juce::var serializeMidiNote(const MidiNote& note);
-    static bool deserializeMidiNote(const juce::var& json, MidiNote& outNote);
+    static juce::var serializeMidiNote(const MidiNote& data);
+    static bool deserializeMidiNote(const juce::var& json, MidiNote& data);
+
+    static juce::var serializeMidiCCData(const MidiCCData& data);
+    static bool deserializeMidiCCData(const juce::var& json, MidiCCData& data);
+
+    static juce::var serializeMidiPitchBendData(const MidiPitchBendData& data);
+    static bool deserializeMidiPitchBendData(const juce::var& json, MidiPitchBendData& data);
+
+    static juce::var serializeSendInfo(const SendInfo& data);
+    static bool deserializeSendInfo(const juce::var& json, SendInfo& data);
+
+    static juce::var serializeCurvePointData(const CurvePointData& data);
+    static bool deserializeCurvePointData(const juce::var& json, CurvePointData& data);
+
+    static juce::var serializeMacroLink(const MacroLink& data);
+    static bool deserializeMacroLink(const juce::var& json, MacroLink& data);
+
+    static juce::var serializeModLink(const ModLink& data);
+    static bool deserializeModLink(const juce::var& json, ModLink& data);
 
     // ========================================================================
     // Automation serialization helpers
@@ -221,8 +239,8 @@ class ProjectSerializer {
     static juce::var serializeModInfo(const ModInfo& mod);
     static bool deserializeModInfo(const juce::var& json, ModInfo& outMod);
 
-    static juce::var serializeParameterInfo(const ParameterInfo& param);
-    static bool deserializeParameterInfo(const juce::var& json, ParameterInfo& outParam);
+    static juce::var serializeParameterInfo(const ParameterInfo& data);
+    static bool deserializeParameterInfo(const juce::var& json, ParameterInfo& data);
 
     // ========================================================================
     // Utility functions

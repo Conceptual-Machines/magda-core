@@ -193,7 +193,10 @@ set(DAW_CORE_SOURCES
     audio/MagdaSamplerPlugin.cpp
     audio/DrumGridPlugin.cpp
     # Project serialization
-    project/ProjectSerializer.cpp
+    project/serialization/ProjectSerializer.cpp
+    project/serialization/TrackSerializer.cpp
+    project/serialization/ClipSerializer.cpp
+    project/serialization/AutomationModSerializer.cpp
     project/ProjectManager.cpp
     # Preset management
     core/PresetManager.cpp
