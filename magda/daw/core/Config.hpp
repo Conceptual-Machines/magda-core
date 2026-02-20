@@ -261,6 +261,14 @@ class Config {
         showTooltips = show;
     }
 
+    // Auto-monitor selected track
+    bool getAutoMonitorSelectedTrack() const {
+        return autoMonitorSelectedTrack;
+    }
+    void setAutoMonitorSelectedTrack(bool enabled) {
+        autoMonitorSelectedTrack = enabled;
+    }
+
     // Save/Load Configuration (for future use)
     void saveToFile(const std::string& filename);
     void loadFromFile(const std::string& filename);
@@ -309,6 +317,9 @@ class Config {
 
     // Tooltip settings
     bool showTooltips = true;  // Enabled by default — disable via config
+
+    // Auto-monitor settings
+    bool autoMonitorSelectedTrack = false;  // Auto-enable input monitor on selected track
 
     // Layout settings
     bool scrollbarOnLeft = false;  // Scrollbar on right by default

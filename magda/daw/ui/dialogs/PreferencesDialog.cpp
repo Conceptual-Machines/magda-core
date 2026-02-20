@@ -36,6 +36,7 @@ PreferencesDialog::PreferencesDialog() {
     // Setup behavior section
     setupSectionHeader(behaviorHeader, "Behavior");
     setupToggle(confirmTrackDeleteToggle, "Confirm before deleting tracks");
+    setupToggle(autoMonitorToggle, "Auto-monitor selected track");
 
     // Setup layout section
     setupSectionHeader(layoutHeader, "Layout");
@@ -204,7 +205,7 @@ PreferencesDialog::PreferencesDialog() {
     loadCurrentSettings();
 
     // Set preferred size (increased height for panels, layout, rendering and shortcuts sections)
-    setSize(450, 1220);
+    setSize(450, 1256);
 }
 
 PreferencesDialog::~PreferencesDialog() = default;
@@ -312,6 +313,11 @@ void PreferencesDialog::resized() {
     // Confirm track delete toggle
     row = bounds.removeFromTop(toggleHeight + 8);
     confirmTrackDeleteToggle.setBounds(row.reduced(0, 4));
+    bounds.removeFromTop(4);
+
+    // Auto-monitor selected track toggle
+    row = bounds.removeFromTop(toggleHeight + 8);
+    autoMonitorToggle.setBounds(row.reduced(0, 4));
 
     bounds.removeFromTop(sectionSpacing);
 
@@ -437,6 +443,8 @@ void PreferencesDialog::loadCurrentSettings() {
     // Load behavior settings
     confirmTrackDeleteToggle.setToggleState(config.getConfirmTrackDelete(),
                                             juce::dontSendNotification);
+    autoMonitorToggle.setToggleState(config.getAutoMonitorSelectedTrack(),
+                                     juce::dontSendNotification);
 
     // Load layout settings
     leftHandedLayoutToggle.setToggleState(config.getScrollbarOnLeft(), juce::dontSendNotification);
@@ -480,6 +488,7 @@ void PreferencesDialog::applySettings() {
 
     // Apply behavior settings
     config.setConfirmTrackDelete(confirmTrackDeleteToggle.getToggleState());
+    config.setAutoMonitorSelectedTrack(autoMonitorToggle.getToggleState());
 
     // Apply layout settings
     config.setScrollbarOnLeft(leftHandedLayoutToggle.getToggleState());

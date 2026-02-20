@@ -43,6 +43,7 @@ class PreferencesDialog : public juce::Component {
 
     // Behavior section
     juce::ToggleButton confirmTrackDeleteToggle;
+    juce::ToggleButton autoMonitorToggle;
 
     // Layout section
     juce::ToggleButton leftHandedLayoutToggle;

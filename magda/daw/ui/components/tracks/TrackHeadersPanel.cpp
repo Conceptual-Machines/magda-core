@@ -1456,20 +1456,54 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
             const int panLabelWidth = 28;     // "L100" or "R100" or "C"
             const int sendLabelWidth = 28;    // "-inf" or "-12"
 
+            // Helper: lay out Vol Pan M S R Mon A on a single row
+            // Volume+Pan take 60%, buttons take remaining 40%
+            auto layoutMixButtonRow = [&](juce::Rectangle<int> row) {
+                const int gap = 2;
+                const int numBtns = header.isMultiOut ? 3 : 5;  // M S A or M S R Mon A
+                const int numGaps = 1 + numBtns;                // gaps between vol|pan|btn|btn|...
+                const int usable = row.getWidth() - numGaps * gap;
+                const int volW = usable * 30 / 100;
+                const int panW = usable * 30 / 100;
+                const int btnW = (usable - volW - panW) / numBtns;
+
+                header.volumeLabel->setBounds(row.removeFromLeft(volW));
+                header.volumeLabel->setVisible(true);
+                row.removeFromLeft(gap);
+                header.panLabel->setBounds(row.removeFromLeft(panW));
+                header.panLabel->setVisible(true);
+                row.removeFromLeft(gap);
+                header.muteButton->setBounds(row.removeFromLeft(btnW));
+                row.removeFromLeft(gap);
+                header.soloButton->setBounds(row.removeFromLeft(btnW));
+                row.removeFromLeft(gap);
+                if (!header.isMultiOut) {
+                    header.recordButton->setBounds(row.removeFromLeft(btnW));
+                    header.recordButton->setVisible(true);
+                    row.removeFromLeft(gap);
+                    header.monitorButton->setBounds(row.removeFromLeft(btnW));
+                    header.monitorButton->setVisible(true);
+                    row.removeFromLeft(gap);
+                } else {
+                    header.recordButton->setVisible(false);
+                    header.monitorButton->setVisible(false);
+                }
+                header.automationButton->setBounds(row);
+                header.automationButton->setVisible(true);
+            };
+
             if (trackHeight >= 100) {
-                // LARGE LAYOUT - fixed 4-row grid, sends use remaining space
-                // Order: M S R A, Volume/Pan, Input routing, Output routing
-                // Sends appear between Vol/Pan and I/O if present
-                const int toggleWidth = 40;
+                // LARGE LAYOUT
+                // Row 1: Volume Pan
+                // Row 2: M S R Mon A
+                // Sends, Input routing, Output routing follow
                 const int dropdownWidth = 55;
                 const int buttonGap = 2;
                 const int contentRowHeight = rowHeight - 2;
                 const bool hasSends = !header.sendLabels.empty();
 
-                // Always 4 base rows for stable spacing
                 constexpr int numRows = 4;
 
-                // Calculate even spacing between rows
                 int totalContentHeight = numRows * contentRowHeight;
                 if (hasSends)
                     totalContentHeight += contentRowHeight;
@@ -1477,6 +1511,16 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 int rowGap = numRows > 1
                                  ? std::max(2, availableSpace / (numRows - 1 + (hasSends ? 1 : 0)))
                                  : 2;
+
+                // Volume / Pan row
+                auto mixRow = tcpArea.removeFromTop(contentRowHeight);
+                header.volumeLabel->setBounds(mixRow.removeFromLeft(mixRow.getWidth() / 2 - 1));
+                header.volumeLabel->setVisible(true);
+                mixRow.removeFromLeft(spacing);
+                header.panLabel->setBounds(mixRow);
+                header.panLabel->setVisible(true);
+
+                tcpArea.removeFromTop(rowGap);
 
                 // M S R Mon A buttons row
                 auto buttonsRow = tcpArea.removeFromTop(contentRowHeight);
@@ -1498,19 +1542,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 header.automationButton->setBounds(buttonsRow.removeFromLeft(smallButtonSize));
                 header.automationButton->setVisible(true);
 
-                tcpArea.removeFromTop(rowGap);
-
-                // Volume / Pan row
-                auto mixRow = tcpArea.removeFromTop(contentRowHeight);
-
-                header.volumeLabel->setBounds(mixRow.removeFromLeft(volumeLabelWidth));
-                header.volumeLabel->setVisible(true);
-                mixRow.removeFromLeft(spacing);
-
-                header.panLabel->setBounds(mixRow.removeFromLeft(panLabelWidth));
-                header.panLabel->setVisible(true);
-
-                // Sends row (only if track has sends — squeezed in without affecting base rows)
+                // Sends row (only if track has sends)
                 if (hasSends) {
                     tcpArea.removeFromTop(rowGap);
                     auto sendRow = tcpArea.removeFromTop(contentRowHeight);
@@ -1566,67 +1598,15 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 header.outputIcon->setVisible(true);
 
             } else if (trackHeight >= 55) {
-                // MEDIUM LAYOUT: Buttons + volume/pan only
-                // Row 1: M S R Mon A [volume] [pan]
+                // MEDIUM LAYOUT: Vol Pan M S R Mon A on one row
                 auto row1 = tcpArea.removeFromTop(rowHeight);
-                header.muteButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                row1.removeFromLeft(spacing);
-                header.soloButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                row1.removeFromLeft(spacing);
-                if (!header.isMultiOut) {
-                    header.recordButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                    header.recordButton->setVisible(true);
-                    row1.removeFromLeft(spacing);
-                    header.monitorButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                    header.monitorButton->setVisible(true);
-                    row1.removeFromLeft(spacing);
-                } else {
-                    header.recordButton->setVisible(false);
-                    header.monitorButton->setVisible(false);
-                }
-                header.automationButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                header.automationButton->setVisible(true);
-                row1.removeFromLeft(spacing + 2);
-
-                header.volumeLabel->setBounds(row1.removeFromLeft(volumeLabelWidth));
-                header.volumeLabel->setVisible(true);
-                row1.removeFromLeft(spacing);
-
-                header.panLabel->setBounds(row1.removeFromLeft(panLabelWidth));
-                header.panLabel->setVisible(true);
-
+                layoutMixButtonRow(row1);
                 hideAllRouting();
 
             } else {
-                // SMALL LAYOUT: Buttons + volume/pan on same row
-                // Row 1: M S R Mon A [volume] [pan]
+                // SMALL LAYOUT: Vol Pan M S R Mon A on one row
                 auto row1 = tcpArea.removeFromTop(rowHeight);
-                header.muteButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                row1.removeFromLeft(spacing);
-                header.soloButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                row1.removeFromLeft(spacing);
-                if (!header.isMultiOut) {
-                    header.recordButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                    header.recordButton->setVisible(true);
-                    row1.removeFromLeft(spacing);
-                    header.monitorButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                    header.monitorButton->setVisible(true);
-                    row1.removeFromLeft(spacing);
-                } else {
-                    header.recordButton->setVisible(false);
-                    header.monitorButton->setVisible(false);
-                }
-                header.automationButton->setBounds(row1.removeFromLeft(smallButtonSize));
-                header.automationButton->setVisible(true);
-                row1.removeFromLeft(spacing + 2);
-
-                header.volumeLabel->setBounds(row1.removeFromLeft(volumeLabelWidth));
-                header.volumeLabel->setVisible(true);
-                row1.removeFromLeft(spacing);
-
-                header.panLabel->setBounds(row1.removeFromLeft(panLabelWidth));
-                header.panLabel->setVisible(true);
-
+                layoutMixButtonRow(row1);
                 hideAllRouting();
             }
         }
