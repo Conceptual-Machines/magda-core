@@ -13,6 +13,7 @@
 #include "core/Config.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
+#include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
@@ -580,7 +581,8 @@ void MainWindow::setupMenuCallbacks() {
                 const auto& tracks = TrackManager::getInstance().getTracks();
                 if (selectedIndex < static_cast<int>(tracks.size())) {
                     const auto& track = tracks[selectedIndex];
-                    TrackManager::getInstance().setTrackMuted(track.id, !track.muted);
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<SetTrackMuteCommand>(track.id, !track.muted));
                 }
             }
         }
@@ -594,7 +596,8 @@ void MainWindow::setupMenuCallbacks() {
                 const auto& tracks = TrackManager::getInstance().getTracks();
                 if (selectedIndex < static_cast<int>(tracks.size())) {
                     const auto& track = tracks[selectedIndex];
-                    TrackManager::getInstance().setTrackSoloed(track.id, !track.soloed);
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<SetTrackSoloCommand>(track.id, !track.soloed));
                 }
             }
         }

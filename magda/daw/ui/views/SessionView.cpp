@@ -9,7 +9,9 @@
 #include "../state/TimelineController.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "core/ClipCommands.hpp"
+#include "core/ClipPropertyCommands.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "core/ViewModeController.hpp"
 
@@ -783,7 +785,8 @@ void SessionView::rebuildTracks() {
             float faderPos = static_cast<float>(trackFaders[i]->getValue());
             float db = meterPosToDb(faderPos);
             float gain = dbToGain(db);
-            TrackManager::getInstance().setTrackVolume(trackId, gain);
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackVolumeCommand>(trackId, gain));
         };
 
         faderContainer->addAndMakeVisible(*fader);
@@ -1545,7 +1548,8 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
         ClipId newClipId = clipManager.createAudioClip(targetTrackId, 0.0, fileDuration, filePath,
                                                        ClipView::Session, bpm);
         if (newClipId != INVALID_CLIP_ID) {
-            clipManager.setClipName(newClipId, audioFile.getFileNameWithoutExtension());
+            UndoManager::getInstance().executeCommand(std::make_unique<SetClipNameCommand>(
+                newClipId, audioFile.getFileNameWithoutExtension()));
 
             // Session clips default to looping, with source end matching clip duration
             clipManager.setClipLoopEnabled(newClipId, true, bpm);

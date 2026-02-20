@@ -11,6 +11,8 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "core/ClipManager.hpp"
+#include "core/TrackPropertyCommands.hpp"
+#include "core/UndoManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -28,8 +30,9 @@ TrackInspector::TrackInspector() {
     trackNameValue_.setEditable(true);
     trackNameValue_.onTextChange = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            magda::TrackManager::getInstance().setTrackName(selectedTrackId_,
-                                                            trackNameValue_.getText());
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetTrackNameCommand>(selectedTrackId_,
+                                                             trackNameValue_.getText()));
         }
     };
     addAndMakeVisible(trackNameValue_);
@@ -52,8 +55,9 @@ TrackInspector::TrackInspector() {
             if (selectedTrackId_ == magda::MASTER_TRACK_ID)
                 magda::TrackManager::getInstance().setMasterMuted(muteButton_.getToggleState());
             else
-                magda::TrackManager::getInstance().setTrackMuted(selectedTrackId_,
-                                                                 muteButton_.getToggleState());
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetTrackMuteCommand>(selectedTrackId_,
+                                                                 muteButton_.getToggleState()));
         }
     };
     addAndMakeVisible(muteButton_);
@@ -73,8 +77,9 @@ TrackInspector::TrackInspector() {
     soloButton_.setClickingTogglesState(true);
     soloButton_.onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            magda::TrackManager::getInstance().setTrackSoloed(selectedTrackId_,
-                                                              soloButton_.getToggleState());
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetTrackSoloCommand>(selectedTrackId_,
+                                                             soloButton_.getToggleState()));
         }
     };
     addAndMakeVisible(soloButton_);
@@ -105,7 +110,8 @@ TrackInspector::TrackInspector() {
             if (selectedTrackId_ == magda::MASTER_TRACK_ID)
                 magda::TrackManager::getInstance().setMasterVolume(gain);
             else
-                magda::TrackManager::getInstance().setTrackVolume(selectedTrackId_, gain);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetTrackVolumeCommand>(selectedTrackId_, gain));
         }
     };
     addAndMakeVisible(*gainLabel_);
@@ -120,7 +126,8 @@ TrackInspector::TrackInspector() {
             if (selectedTrackId_ == magda::MASTER_TRACK_ID)
                 magda::TrackManager::getInstance().setMasterPan(pan);
             else
-                magda::TrackManager::getInstance().setTrackPan(selectedTrackId_, pan);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetTrackPanCommand>(selectedTrackId_, pan));
         }
     };
     addAndMakeVisible(*panLabel_);
@@ -521,7 +528,8 @@ void TrackInspector::rebuildSendsUI() {
         levelLabel->onValueChange = [srcId, busIndex, levelLabelPtr]() {
             double db = levelLabelPtr->getValue();
             float gain = (db <= -60.0) ? 0.0f : std::pow(10.0f, static_cast<float>(db) / 20.0f);
-            magda::TrackManager::getInstance().setSendLevel(srcId, busIndex, gain);
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetSendLevelCommand>(srcId, busIndex, gain));
         };
         addAndMakeVisible(*levelLabel);
         sendLevelLabels_.push_back(std::move(levelLabel));

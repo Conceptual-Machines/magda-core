@@ -12,6 +12,8 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackPropertyCommands.hpp"
+#include "core/UndoManager.hpp"
 #include "core/ViewModeController.hpp"
 
 namespace magda {
@@ -218,7 +220,8 @@ void MixerView::ChannelStrip::setupControls() {
                        DarkTheme::getColour(DarkTheme::SURFACE));
     panKnob->setColour(juce::Slider::thumbColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     panKnob->onValueChange = [this]() {
-        TrackManager::getInstance().setTrackPan(trackId_, static_cast<float>(panKnob->getValue()));
+        UndoManager::getInstance().executeCommand(std::make_unique<SetTrackPanCommand>(
+            trackId_, static_cast<float>(panKnob->getValue())));
         // Update pan label
         if (panValueLabel) {
             float pan = static_cast<float>(panKnob->getValue());
@@ -277,7 +280,8 @@ void MixerView::ChannelStrip::setupControls() {
         float faderPos = static_cast<float>(volumeFader->getValue());
         float db = meterPosToDb(faderPos);
         float gain = dbToGain(db);
-        TrackManager::getInstance().setTrackVolume(trackId_, gain);
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetTrackVolumeCommand>(trackId_, gain));
         // Update fader label
         if (faderValueLabel) {
             juce::String dbText;
@@ -318,7 +322,8 @@ void MixerView::ChannelStrip::setupControls() {
                           DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     muteButton->setClickingTogglesState(true);
     muteButton->onClick = [this]() {
-        TrackManager::getInstance().setTrackMuted(trackId_, muteButton->getToggleState());
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetTrackMuteCommand>(trackId_, muteButton->getToggleState()));
     };
     addAndMakeVisible(*muteButton);
 
@@ -336,7 +341,8 @@ void MixerView::ChannelStrip::setupControls() {
                           DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     soloButton->setClickingTogglesState(true);
     soloButton->onClick = [this]() {
-        TrackManager::getInstance().setTrackSoloed(trackId_, soloButton->getToggleState());
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetTrackSoloCommand>(trackId_, soloButton->getToggleState()));
     };
     addAndMakeVisible(*soloButton);
 

@@ -16,6 +16,7 @@
 #include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
+#include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 
@@ -2124,7 +2125,8 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
         row->volumeLabel->onValueChange = [tid, volLabelPtr]() {
             float newDb = static_cast<float>(volLabelPtr->getValue());
             float gain = dbToGain(newDb);
-            TrackManager::getInstance().setTrackVolume(tid, gain);
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackVolumeCommand>(tid, gain));
         };
         addAndMakeVisible(*row->volumeLabel);
 
@@ -2134,8 +2136,8 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
         row->panLabel->setValue(track.pan, juce::dontSendNotification);
         auto* panLabelPtr = row->panLabel.get();
         row->panLabel->onValueChange = [tid, panLabelPtr]() {
-            TrackManager::getInstance().setTrackPan(tid,
-                                                    static_cast<float>(panLabelPtr->getValue()));
+            UndoManager::getInstance().executeCommand(std::make_unique<SetTrackPanCommand>(
+                tid, static_cast<float>(panLabelPtr->getValue())));
         };
         addAndMakeVisible(*row->panLabel);
 
@@ -2156,7 +2158,8 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
         row->muteButton->setToggleState(track.muted, juce::dontSendNotification);
         auto* muteBtnPtr = row->muteButton.get();
         row->muteButton->onClick = [tid, muteBtnPtr]() {
-            TrackManager::getInstance().setTrackMuted(tid, muteBtnPtr->getToggleState());
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackMuteCommand>(tid, muteBtnPtr->getToggleState()));
         };
         addAndMakeVisible(*row->muteButton);
 
@@ -2177,7 +2180,8 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
         row->soloButton->setToggleState(track.soloed, juce::dontSendNotification);
         auto* soloBtnPtr = row->soloButton.get();
         row->soloButton->onClick = [tid, soloBtnPtr]() {
-            TrackManager::getInstance().setTrackSoloed(tid, soloBtnPtr->getToggleState());
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackSoloCommand>(tid, soloBtnPtr->getToggleState()));
         };
         addAndMakeVisible(*row->soloButton);
 
