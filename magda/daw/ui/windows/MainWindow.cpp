@@ -285,12 +285,13 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     bottomPanelCollapsed = config.getBottomPanelCollapsed();
 
     // Restore persisted panel sizes (0 = use defaults already set above)
+    // Clamp against layout constraints to handle stale config values
     if (config.getLeftPanelWidth() > 0)
-        leftPanelWidth = config.getLeftPanelWidth();
+        leftPanelWidth = juce::jmax(layout.panelCollapseThreshold, config.getLeftPanelWidth());
     if (config.getRightPanelWidth() > 0)
-        rightPanelWidth = config.getRightPanelWidth();
+        rightPanelWidth = juce::jmax(layout.panelCollapseThreshold, config.getRightPanelWidth());
     if (config.getBottomPanelHeight() > 0)
-        bottomPanelHeight = config.getBottomPanelHeight();
+        bottomPanelHeight = juce::jmax(layout.minBottomPanelHeight, config.getBottomPanelHeight());
 
     // Create panels
     transportPanel = std::make_unique<TransportPanel>();
@@ -475,10 +476,11 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     setupDeviceLoadingCallback();
 
     // Sync persisted collapse state to PanelController so TabbedPanel UI matches
+    // Note: LeftPanel uses PanelLocation::Right and RightPanel uses PanelLocation::Left
     if (leftPanelCollapsed)
-        daw::ui::PanelController::getInstance().setCollapsed(daw::ui::PanelLocation::Left, true);
-    if (rightPanelCollapsed)
         daw::ui::PanelController::getInstance().setCollapsed(daw::ui::PanelLocation::Right, true);
+    if (rightPanelCollapsed)
+        daw::ui::PanelController::getInstance().setCollapsed(daw::ui::PanelLocation::Left, true);
     if (bottomPanelCollapsed) {
         daw::ui::PanelController::getInstance().setCollapsed(daw::ui::PanelLocation::Bottom, true);
         footerBar->setBottomPanelCollapsed(true);
@@ -835,14 +837,18 @@ void MainWindow::MainComponent::resized() {
     auto& layout = LayoutConfig::getInstance();
 
     // Re-clamp panel sizes to current window dimensions
-    int maxLeftWidth = static_cast<int>(getWidth() * layout.maxLeftPanelRatio);
-    int maxRightWidth = static_cast<int>(getWidth() * layout.maxRightPanelRatio);
-    int maxBottomHeight = static_cast<int>(getHeight() * layout.maxBottomPanelRatio);
+    const int maxLeftWidth = static_cast<int>(getWidth() * layout.maxLeftPanelRatio);
+    const int maxRightWidth = static_cast<int>(getWidth() * layout.maxRightPanelRatio);
+    const int maxBottomHeight = static_cast<int>(getHeight() * layout.maxBottomPanelRatio);
 
-    leftPanelWidth = juce::jmin(leftPanelWidth, maxLeftWidth);
-    rightPanelWidth = juce::jmin(rightPanelWidth, maxRightWidth);
-    bottomPanelHeight =
-        juce::jmin(bottomPanelHeight, juce::jmax(layout.minBottomPanelHeight, maxBottomHeight));
+    // Enforce both minimum and maximum so non-collapsed panels stay within valid range
+    const int minLeftWidth = leftPanelCollapsed ? 0 : layout.panelCollapseThreshold;
+    const int minRightWidth = rightPanelCollapsed ? 0 : layout.panelCollapseThreshold;
+    const int minBottomHeight = bottomPanelCollapsed ? 0 : layout.minBottomPanelHeight;
+
+    leftPanelWidth = juce::jlimit(minLeftWidth, maxLeftWidth, leftPanelWidth);
+    rightPanelWidth = juce::jlimit(minRightWidth, maxRightWidth, rightPanelWidth);
+    bottomPanelHeight = juce::jlimit(minBottomHeight, maxBottomHeight, bottomPanelHeight);
 
     auto bounds = getLocalBounds();
 
@@ -877,7 +883,7 @@ void MainWindow::MainComponent::layoutBottomPanel(juce::Rectangle<int>& bounds) 
 
     if (bottomPanelVisible) {
         if (bottomPanelCollapsed) {
-            bottomPanel->setBounds(bounds.removeFromBottom(layout.collapsedPanelWidth));
+            bottomPanel->setBounds(bounds.removeFromBottom(layout.collapsedPanelSize));
             bottomPanel->setCollapsed(true);
             bottomPanel->setVisible(true);
             bottomResizer->setVisible(false);
@@ -899,7 +905,7 @@ void MainWindow::MainComponent::layoutSidePanels(juce::Rectangle<int>& bounds) {
 
     // Left panel
     if (leftPanelVisible) {
-        int effectiveWidth = leftPanelCollapsed ? layout.collapsedPanelWidth : leftPanelWidth;
+        int effectiveWidth = leftPanelCollapsed ? layout.collapsedPanelSize : leftPanelWidth;
         leftPanel->setBounds(bounds.removeFromLeft(effectiveWidth));
         leftPanel->setCollapsed(leftPanelCollapsed);
         leftPanel->setVisible(true);
@@ -917,7 +923,7 @@ void MainWindow::MainComponent::layoutSidePanels(juce::Rectangle<int>& bounds) {
 
     // Right panel
     if (rightPanelVisible) {
-        int effectiveWidth = rightPanelCollapsed ? layout.collapsedPanelWidth : rightPanelWidth;
+        int effectiveWidth = rightPanelCollapsed ? layout.collapsedPanelSize : rightPanelWidth;
         rightPanel->setBounds(bounds.removeFromRight(effectiveWidth));
         rightPanel->setCollapsed(rightPanelCollapsed);
         rightPanel->setVisible(true);

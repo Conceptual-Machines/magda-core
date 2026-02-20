@@ -116,7 +116,6 @@ class TabbedPanel : public juce::Component, public PanelStateListener {
     magda::TimelineController* timelineController_ = nullptr;
 
     void setupExpandButton();
-    void updateExpandIcon();
     void updateFromState();
     void switchToContent(PanelContentType type);
     PanelContent* getOrCreateContent(PanelContentType type);

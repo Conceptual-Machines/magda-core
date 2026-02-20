@@ -74,7 +74,7 @@ struct LayoutConfig {
     int defaultLeftPanelWidth = 300;
     int defaultRightPanelWidth = 300;
     int minPanelWidth = 200;
-    int collapsedPanelWidth = 24;
+    int collapsedPanelSize = 24;
     int panelCollapseThreshold = 50;
 
     int defaultBottomPanelHeight = 200;
