@@ -41,7 +41,7 @@ def git_mv(old_abs: Path, new_abs: Path) -> None:
         sys.exit(1)
 
 
-def find_cpp_files(root: Path) -> list:
+def find_cpp_files(root: Path) -> list[Path]:
     """Find all .cpp and .hpp files under the project root, excluding build dirs."""
     files = []
     for ext in ("*.cpp", "*.hpp"):
@@ -81,8 +81,8 @@ def update_includes_in_file(
     Returns True if any changes were made.
     """
     try:
-        content = file_path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
+        content = file_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
         return False
 
     old_resolved = old_abs.resolve()
@@ -127,8 +127,8 @@ def update_own_includes(
     Returns True if any changes were made.
     """
     try:
-        content = moved_file.read_text(encoding="utf-8", errors="replace")
-    except OSError:
+        content = moved_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
         return False
 
     lines = content.split("\n")
