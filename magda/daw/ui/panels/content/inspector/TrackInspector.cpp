@@ -53,7 +53,8 @@ TrackInspector::TrackInspector() {
     muteButton_.onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             if (selectedTrackId_ == magda::MASTER_TRACK_ID)
-                magda::TrackManager::getInstance().setMasterMuted(muteButton_.getToggleState());
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetMasterMuteCommand>(muteButton_.getToggleState()));
             else
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetTrackMuteCommand>(selectedTrackId_,
@@ -108,7 +109,8 @@ TrackInspector::TrackInspector() {
             double db = gainLabel_->getValue();
             float gain = (db <= -60.0f) ? 0.0f : std::pow(10.0f, static_cast<float>(db) / 20.0f);
             if (selectedTrackId_ == magda::MASTER_TRACK_ID)
-                magda::TrackManager::getInstance().setMasterVolume(gain);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetMasterVolumeCommand>(gain));
             else
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetTrackVolumeCommand>(selectedTrackId_, gain));
@@ -124,7 +126,8 @@ TrackInspector::TrackInspector() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             float pan = static_cast<float>(panLabel_->getValue());
             if (selectedTrackId_ == magda::MASTER_TRACK_ID)
-                magda::TrackManager::getInstance().setMasterPan(pan);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetMasterPanCommand>(pan));
             else
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetTrackPanCommand>(selectedTrackId_, pan));

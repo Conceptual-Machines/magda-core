@@ -199,4 +199,87 @@ class SetSendLevelCommand : public UndoableCommand {
     float oldLevel_ = 1.0f, newLevel_;
 };
 
+/**
+ * @brief Command for setting master volume (supports merging for slider drags)
+ */
+class SetMasterVolumeCommand : public UndoableCommand {
+  public:
+    explicit SetMasterVolumeCommand(float newVolume) : newVolume_(newVolume) {
+        oldVolume_ = TrackManager::getInstance().getMasterChannel().volume;
+    }
+
+    void execute() override {
+        TrackManager::getInstance().setMasterVolume(newVolume_);
+    }
+    void undo() override {
+        TrackManager::getInstance().setMasterVolume(oldVolume_);
+    }
+    juce::String getDescription() const override {
+        return "Set Master Volume";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        return dynamic_cast<const SetMasterVolumeCommand*>(other) != nullptr;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        newVolume_ = static_cast<const SetMasterVolumeCommand*>(other)->newVolume_;
+    }
+
+  private:
+    float oldVolume_ = 1.0f, newVolume_;
+};
+
+/**
+ * @brief Command for setting master pan (supports merging for slider drags)
+ */
+class SetMasterPanCommand : public UndoableCommand {
+  public:
+    explicit SetMasterPanCommand(float newPan) : newPan_(newPan) {
+        oldPan_ = TrackManager::getInstance().getMasterChannel().pan;
+    }
+
+    void execute() override {
+        TrackManager::getInstance().setMasterPan(newPan_);
+    }
+    void undo() override {
+        TrackManager::getInstance().setMasterPan(oldPan_);
+    }
+    juce::String getDescription() const override {
+        return "Set Master Pan";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        return dynamic_cast<const SetMasterPanCommand*>(other) != nullptr;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        newPan_ = static_cast<const SetMasterPanCommand*>(other)->newPan_;
+    }
+
+  private:
+    float oldPan_ = 0.0f, newPan_;
+};
+
+/**
+ * @brief Command for setting master mute state
+ */
+class SetMasterMuteCommand : public UndoableCommand {
+  public:
+    explicit SetMasterMuteCommand(bool newMuted) : newMuted_(newMuted) {
+        oldMuted_ = TrackManager::getInstance().getMasterChannel().muted;
+    }
+
+    void execute() override {
+        TrackManager::getInstance().setMasterMuted(newMuted_);
+    }
+    void undo() override {
+        TrackManager::getInstance().setMasterMuted(oldMuted_);
+    }
+    juce::String getDescription() const override {
+        return "Set Master Mute";
+    }
+
+  private:
+    bool oldMuted_ = false, newMuted_;
+};
+
 }  // namespace magda

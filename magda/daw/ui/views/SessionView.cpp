@@ -492,7 +492,7 @@ SessionView::SessionView() {
         float faderPos = static_cast<float>(masterFader_->getValue());
         float db = meterPosToDb(faderPos);
         float gain = dbToGain(db);
-        TrackManager::getInstance().setMasterVolume(gain);
+        UndoManager::getInstance().executeCommand(std::make_unique<SetMasterVolumeCommand>(gain));
     };
 
     addAndMakeVisible(*masterFader_);

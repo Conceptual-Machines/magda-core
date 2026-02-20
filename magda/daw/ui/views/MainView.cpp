@@ -1801,7 +1801,8 @@ void MainView::MasterHeaderPanel::setupControls() {
     speakerButton->setColour(juce::DrawableButton::backgroundOnColourId,
                              DarkTheme::getColour(DarkTheme::STATUS_ERROR).withAlpha(0.3f));
     speakerButton->onClick = [this]() {
-        TrackManager::getInstance().setMasterMuted(speakerButton->getToggleState());
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetMasterMuteCommand>(speakerButton->getToggleState()));
     };
     addAndMakeVisible(*speakerButton);
 
@@ -1813,7 +1814,7 @@ void MainView::MasterHeaderPanel::setupControls() {
         // Convert dB to linear gain
         float db = static_cast<float>(volumeLabel->getValue());
         float gain = dbToGain(db);
-        TrackManager::getInstance().setMasterVolume(gain);
+        UndoManager::getInstance().executeCommand(std::make_unique<SetMasterVolumeCommand>(gain));
     };
     addAndMakeVisible(*volumeLabel);
 
@@ -1822,7 +1823,8 @@ void MainView::MasterHeaderPanel::setupControls() {
     panLabel->setRange(-1.0, 1.0, 0.0);  // Full left to full right, default center
     panLabel->setDoubleClickResetsValue(true);
     panLabel->onValueChange = [this]() {
-        TrackManager::getInstance().setMasterPan(static_cast<float>(panLabel->getValue()));
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetMasterPanCommand>(static_cast<float>(panLabel->getValue())));
     };
     addAndMakeVisible(*panLabel);
 
