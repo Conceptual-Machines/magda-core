@@ -117,6 +117,11 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/punchinout/punchin_on.svg
     ../../assets/icons/punchinout/punchout.svg
     ../../assets/icons/punchinout/punchout_on.svg
+    # Panel collapse/expand icons
+    ../../assets/icons/panel/collapse_left.svg
+    ../../assets/icons/panel/collapse_right.svg
+    ../../assets/icons/panel/collapse_up.svg
+    ../../assets/icons/panel/collapse_down.svg
     # Fontaudio waveform icons
     ../../assets/icons/fontaudio/fad-modsine.svg
     ../../assets/icons/fontaudio/fad-modtri.svg

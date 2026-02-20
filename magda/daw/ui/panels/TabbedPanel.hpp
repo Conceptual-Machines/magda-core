@@ -103,18 +103,12 @@ class TabbedPanel : public juce::Component, public PanelStateListener {
      */
     virtual juce::Rectangle<int> getCollapseButtonBounds();
 
-    /**
-     * @brief Get the collapse button text for current state
-     */
-    virtual juce::String getCollapseButtonText() const;
-
   private:
     PanelLocation location_;
     bool collapsed_ = false;
 
     PanelTabBar tabBar_;
     std::unique_ptr<magda::SvgButton> collapseButton_;
-    juce::TextButton collapseFallbackButton_;  // Fallback if no SVG
 
     // Cache of content instances (lazy creation)
     std::unordered_map<PanelContentType, std::unique_ptr<PanelContent>> contentCache_;
@@ -125,6 +119,7 @@ class TabbedPanel : public juce::Component, public PanelStateListener {
     magda::TimelineController* timelineController_ = nullptr;
 
     void setupCollapseButton();
+    void updateCollapseIcon();
     void updateFromState();
     void switchToContent(PanelContentType type);
     PanelContent* getOrCreateContent(PanelContentType type);
