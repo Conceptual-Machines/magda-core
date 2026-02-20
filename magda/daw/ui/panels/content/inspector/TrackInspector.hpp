@@ -66,6 +66,8 @@ class TrackInspector : public BaseInspector, public magda::TrackManagerListener 
     std::unique_ptr<magda::RoutingSelector> inputSelector_;        // MIDI input
     std::unique_ptr<magda::RoutingSelector> outputSelector_;       // Audio output
     std::unique_ptr<magda::RoutingSelector> midiOutputSelector_;   // MIDI output
+    std::unique_ptr<juce::Component> inputIcon_;                   // Non-interactive I/O icon
+    std::unique_ptr<juce::Component> outputIcon_;                  // Non-interactive I/O icon
 
     // Send/Receive section
     juce::Label sendReceiveSectionLabel_;

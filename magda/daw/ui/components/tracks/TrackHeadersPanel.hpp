@@ -128,6 +128,7 @@ class TrackHeadersPanel : public juce::Component,
         std::unique_ptr<juce::TextButton> muteButton;
         std::unique_ptr<juce::TextButton> soloButton;
         std::unique_ptr<juce::TextButton> recordButton;        // Record arm button
+        std::unique_ptr<juce::TextButton> monitorButton;       // Input monitor button
         std::unique_ptr<DraggableValueLabel> volumeLabel;      // Volume as draggable dB label
         std::unique_ptr<DraggableValueLabel> panLabel;         // Pan as draggable L/C/R label
         std::unique_ptr<juce::TextButton> collapseButton;      // For groups
@@ -137,6 +138,8 @@ class TrackHeadersPanel : public juce::Component,
         std::unique_ptr<RoutingSelector> inputSelector;        // MIDI input
         std::unique_ptr<RoutingSelector> outputSelector;       // Audio output
         std::unique_ptr<RoutingSelector> midiOutputSelector;   // MIDI output
+        std::unique_ptr<juce::Component> inputIcon;            // Non-interactive I/O icon
+        std::unique_ptr<juce::Component> outputIcon;           // Non-interactive I/O icon
         std::vector<std::unique_ptr<DraggableValueLabel>> sendLabels;  // Send level labels
         std::unique_ptr<juce::Component> meterComponent;               // Peak meter display
         std::unique_ptr<juce::Component> midiIndicator;                // MIDI activity indicator

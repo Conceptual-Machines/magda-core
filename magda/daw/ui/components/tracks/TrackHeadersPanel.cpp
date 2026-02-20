@@ -213,6 +213,21 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     recordButton->setClickingTogglesState(true);
 
+    // Monitor button (3-state: Off → In → Auto → Off)
+    monitorButton = std::make_unique<juce::TextButton>("-");
+    monitorButton->setConnectedEdges(juce::Button::ConnectedOnLeft |
+                                     juce::Button::ConnectedOnRight | juce::Button::ConnectedOnTop |
+                                     juce::Button::ConnectedOnBottom);
+    monitorButton->setColour(juce::TextButton::buttonColourId,
+                             DarkTheme::getColour(DarkTheme::SURFACE));
+    monitorButton->setColour(juce::TextButton::buttonOnColourId,
+                             DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+    monitorButton->setColour(juce::TextButton::textColourOffId,
+                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    monitorButton->setColour(juce::TextButton::textColourOnId,
+                             DarkTheme::getColour(DarkTheme::BACKGROUND));
+    monitorButton->setTooltip("Input monitoring (Off/In/Auto)");
+
     // Automation button (bezier curve icon)
     automationButton = std::make_unique<SvgButton>("Automation", BinaryData::bezier_svg,
                                                    BinaryData::bezier_svgSize);
@@ -271,6 +286,25 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // MIDI activity indicator
     midiIndicator = std::make_unique<MidiActivityIndicator>();
     midiIndicator->setAlwaysOnTop(true);  // Ensure always visible on top
+
+    // I/O routing icons (non-interactive visual indicators)
+    auto inputDrawable =
+        std::make_unique<juce::DrawableButton>("inputIcon", juce::DrawableButton::ImageFitted);
+    if (auto svg =
+            juce::Drawable::createFromImageData(BinaryData::Input_svg, BinaryData::Input_svgSize)) {
+        inputDrawable->setImages(svg.get());
+    }
+    inputDrawable->setInterceptsMouseClicks(false, false);
+    inputIcon = std::move(inputDrawable);
+
+    auto outputDrawable =
+        std::make_unique<juce::DrawableButton>("outputIcon", juce::DrawableButton::ImageFitted);
+    if (auto svg = juce::Drawable::createFromImageData(BinaryData::Output_svg,
+                                                       BinaryData::Output_svgSize)) {
+        outputDrawable->setImages(svg.get());
+    }
+    outputDrawable->setInterceptsMouseClicks(false, false);
+    outputIcon = std::move(outputDrawable);
 }
 
 TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
@@ -357,12 +391,30 @@ void TrackHeadersPanel::timerCallback() {
             }
         }
 
-        // Check for new MIDI note-on (counter comparison)
+        // Check for new MIDI note-on (counter comparison), gated by monitor mode
         auto counter = bridge->getMidiActivityCounter(header->trackId);
         if (counter != header->lastMidiCounter) {
             header->lastMidiCounter = counter;
-            header->midiActivity = 1.0f;
-            header->midiHoldFrames = 4;  // Hold bright for ~130ms at 30fps
+
+            // Only show activity when monitoring is active
+            bool showActivity = false;
+            if (auto* trackInfo = TrackManager::getInstance().getTrack(header->trackId)) {
+                switch (trackInfo->inputMonitor) {
+                    case InputMonitorMode::In:
+                        showActivity = true;
+                        break;
+                    case InputMonitorMode::Auto:
+                        showActivity = !bridge->isTransportPlaying();
+                        break;
+                    case InputMonitorMode::Off:
+                        showActivity = false;
+                        break;
+                }
+            }
+            if (showActivity) {
+                header->midiActivity = 1.0f;
+                header->midiHoldFrames = 4;  // Hold bright for ~130ms at 30fps
+            }
         }
 
         // Decay only after hold expires
@@ -649,6 +701,7 @@ void TrackHeadersPanel::tracksChanged() {
         addAndMakeVisible(*header->muteButton);
         addAndMakeVisible(*header->soloButton);
         addAndMakeVisible(*header->recordButton);
+        addAndMakeVisible(*header->monitorButton);
         addAndMakeVisible(*header->automationButton);
         addAndMakeVisible(*header->volumeLabel);
         addAndMakeVisible(*header->panLabel);
@@ -656,6 +709,8 @@ void TrackHeadersPanel::tracksChanged() {
         addAndMakeVisible(*header->inputSelector);
         addAndMakeVisible(*header->outputSelector);
         addAndMakeVisible(*header->midiOutputSelector);
+        addAndMakeVisible(*header->inputIcon);
+        addAndMakeVisible(*header->outputIcon);
         for (auto& sendLabel : header->sendLabels) {
             addChildComponent(*sendLabel);  // Hidden by default; shown when track has sends
         }
@@ -731,6 +786,23 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
         header.soloButton->setToggleState(track->soloed, juce::dontSendNotification);
         header.volumeLabel->setValue(gainToDb(track->volume), juce::dontSendNotification);
         header.panLabel->setValue(track->pan, juce::dontSendNotification);
+
+        // Update monitor button
+        if (header.monitorButton) {
+            switch (track->inputMonitor) {
+                case InputMonitorMode::Off:
+                    header.monitorButton->setButtonText("-");
+                    break;
+                case InputMonitorMode::In:
+                    header.monitorButton->setButtonText("I");
+                    break;
+                case InputMonitorMode::Auto:
+                    header.monitorButton->setButtonText("A");
+                    break;
+            }
+            header.monitorButton->setToggleState(track->inputMonitor != InputMonitorMode::Off,
+                                                 juce::dontSendNotification);
+        }
 
         // Update routing selectors to match track state
         updateRoutingSelectorFromTrack(header, track);
@@ -1110,6 +1182,27 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
         }
     };
 
+    // Monitor button callback - cycles Off → In → Auto → Off
+    header.monitorButton->onClick = [this, trackId]() {
+        auto* track = TrackManager::getInstance().getTrack(trackId);
+        if (!track)
+            return;
+        InputMonitorMode nextMode;
+        switch (track->inputMonitor) {
+            case InputMonitorMode::Off:
+                nextMode = InputMonitorMode::In;
+                break;
+            case InputMonitorMode::In:
+                nextMode = InputMonitorMode::Auto;
+                break;
+            case InputMonitorMode::Auto:
+                nextMode = InputMonitorMode::Off;
+                break;
+        }
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetTrackInputMonitorCommand>(trackId, nextMode));
+    };
+
     // Automation button callback - shows automation lane menu
     header.automationButton->onClick = [this, trackId, &header]() {
         showAutomationMenu(trackId, header.automationButton.get());
@@ -1334,6 +1427,8 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 header.inputSelector->setVisible(false);
                 header.outputSelector->setVisible(false);
                 header.midiOutputSelector->setVisible(false);
+                header.inputIcon->setVisible(false);
+                header.outputIcon->setVisible(false);
                 for (auto& sendLabel : header.sendLabels) {
                     sendLabel->setVisible(false);
                 }
@@ -1366,7 +1461,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                                  ? std::max(2, availableSpace / (numRows - 1 + (hasSends ? 1 : 0)))
                                  : 2;
 
-                // M S R A buttons row
+                // M S R Mon A buttons row
                 auto buttonsRow = tcpArea.removeFromTop(contentRowHeight);
                 header.muteButton->setBounds(buttonsRow.removeFromLeft(smallButtonSize));
                 buttonsRow.removeFromLeft(buttonGap);
@@ -1376,8 +1471,12 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                     header.recordButton->setBounds(buttonsRow.removeFromLeft(smallButtonSize));
                     header.recordButton->setVisible(true);
                     buttonsRow.removeFromLeft(buttonGap);
+                    header.monitorButton->setBounds(buttonsRow.removeFromLeft(smallButtonSize));
+                    header.monitorButton->setVisible(true);
+                    buttonsRow.removeFromLeft(buttonGap);
                 } else {
                     header.recordButton->setVisible(false);
+                    header.monitorButton->setVisible(false);
                 }
                 header.automationButton->setBounds(buttonsRow.removeFromLeft(smallButtonSize));
                 header.automationButton->setVisible(true);
@@ -1416,7 +1515,8 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 
                 tcpArea.removeFromTop(rowGap);
 
-                // Input row: [Audio In] [MIDI In] — hidden for multi-out child tracks
+                // Input row: [Audio In] [MIDI In] [inputIcon] — hidden for multi-out child tracks
+                const int iconSize = 16;
                 auto inputRow = tcpArea.removeFromTop(contentRowHeight);
                 if (!header.isMultiOut) {
                     header.audioInputSelector->setBounds(inputRow.removeFromLeft(dropdownWidth));
@@ -1424,23 +1524,30 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                     inputRow.removeFromLeft(spacing);
                     header.inputSelector->setBounds(inputRow.removeFromLeft(dropdownWidth));
                     header.inputSelector->setVisible(true);
+                    inputRow.removeFromLeft(spacing);
+                    header.inputIcon->setBounds(inputRow.removeFromLeft(iconSize));
+                    header.inputIcon->setVisible(true);
                 } else {
                     header.audioInputSelector->setVisible(false);
                     header.inputSelector->setVisible(false);
+                    header.inputIcon->setVisible(false);
                 }
                 tcpArea.removeFromTop(rowGap);
 
-                // Output row: [Audio Out] [MIDI Out]
+                // Output row: [Audio Out] [MIDI Out] [outputIcon]
                 auto outputRow = tcpArea.removeFromTop(contentRowHeight);
                 header.outputSelector->setBounds(outputRow.removeFromLeft(dropdownWidth));
                 header.outputSelector->setVisible(true);
                 outputRow.removeFromLeft(spacing);
                 header.midiOutputSelector->setBounds(outputRow.removeFromLeft(dropdownWidth));
                 header.midiOutputSelector->setVisible(true);
+                outputRow.removeFromLeft(spacing);
+                header.outputIcon->setBounds(outputRow.removeFromLeft(iconSize));
+                header.outputIcon->setVisible(true);
 
             } else if (trackHeight >= 55) {
                 // MEDIUM LAYOUT: Buttons + volume/pan only
-                // Row 1: M S R A [volume] [pan]
+                // Row 1: M S R Mon A [volume] [pan]
                 auto row1 = tcpArea.removeFromTop(rowHeight);
                 header.muteButton->setBounds(row1.removeFromLeft(smallButtonSize));
                 row1.removeFromLeft(spacing);
@@ -1450,8 +1557,12 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                     header.recordButton->setBounds(row1.removeFromLeft(smallButtonSize));
                     header.recordButton->setVisible(true);
                     row1.removeFromLeft(spacing);
+                    header.monitorButton->setBounds(row1.removeFromLeft(smallButtonSize));
+                    header.monitorButton->setVisible(true);
+                    row1.removeFromLeft(spacing);
                 } else {
                     header.recordButton->setVisible(false);
+                    header.monitorButton->setVisible(false);
                 }
                 header.automationButton->setBounds(row1.removeFromLeft(smallButtonSize));
                 header.automationButton->setVisible(true);
@@ -1468,7 +1579,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 
             } else {
                 // SMALL LAYOUT: Buttons + volume/pan on same row
-                // Row 1: M S R A [volume] [pan]
+                // Row 1: M S R Mon A [volume] [pan]
                 auto row1 = tcpArea.removeFromTop(rowHeight);
                 header.muteButton->setBounds(row1.removeFromLeft(smallButtonSize));
                 row1.removeFromLeft(spacing);
@@ -1478,8 +1589,12 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                     header.recordButton->setBounds(row1.removeFromLeft(smallButtonSize));
                     header.recordButton->setVisible(true);
                     row1.removeFromLeft(spacing);
+                    header.monitorButton->setBounds(row1.removeFromLeft(smallButtonSize));
+                    header.monitorButton->setVisible(true);
+                    row1.removeFromLeft(spacing);
                 } else {
                     header.recordButton->setVisible(false);
+                    header.monitorButton->setVisible(false);
                 }
                 header.automationButton->setBounds(row1.removeFromLeft(smallButtonSize));
                 header.automationButton->setVisible(true);

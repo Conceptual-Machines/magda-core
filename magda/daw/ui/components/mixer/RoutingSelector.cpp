@@ -1,7 +1,5 @@
 #include "RoutingSelector.hpp"
 
-#include <BinaryData.h>
-
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 
@@ -9,16 +7,6 @@ namespace magda {
 
 RoutingSelector::RoutingSelector(Type type) : type_(type) {
     setRepaintsOnMouseActivity(true);
-
-    // Load I/O icon based on type (Input or Output)
-    bool isInput = (type_ == Type::AudioIn || type_ == Type::MidiIn);
-    if (isInput) {
-        icon_ =
-            juce::Drawable::createFromImageData(BinaryData::Input_svg, BinaryData::Input_svgSize);
-    } else {
-        icon_ =
-            juce::Drawable::createFromImageData(BinaryData::Output_svg, BinaryData::Output_svgSize);
-    }
 }
 
 void RoutingSelector::paint(juce::Graphics& g) {
@@ -26,18 +14,10 @@ void RoutingSelector::paint(juce::Graphics& g) {
     auto mainArea = getMainButtonArea().toFloat();
     auto dropdownArea = getDropdownArea().toFloat();
 
-    // Background color based on enabled state
-    juce::Colour bgColour;
-    if (enabled_) {
-        bgColour = getEnabledColour();
-        if (isHovering_) {
-            bgColour = bgColour.brighter(0.1f);
-        }
-    } else {
-        bgColour = DarkTheme::getColour(DarkTheme::BUTTON_NORMAL);
-        if (isHovering_) {
-            bgColour = bgColour.brighter(0.1f);
-        }
+    // Background: always use BUTTON_NORMAL, brighter on hover
+    auto bgColour = DarkTheme::getColour(DarkTheme::BUTTON_NORMAL);
+    if (isHovering_) {
+        bgColour = bgColour.brighter(0.1f);
     }
 
     // Draw main button area
@@ -53,15 +33,11 @@ void RoutingSelector::paint(juce::Graphics& g) {
     g.drawLine(dropdownArea.getX(), dropdownArea.getY() + 2, dropdownArea.getX(),
                dropdownArea.getBottom() - 2, 1.0f);
 
-    // Draw I/O icon
-    if (icon_) {
-        auto iconColour = enabled_ ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)
-                                   : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
-        auto iconCopy = icon_->createCopy();
-        iconCopy->replaceColour(juce::Colour(0xFFB3B3B3), iconColour);
-        auto iconBounds = mainArea.reduced(2.0f);
-        iconCopy->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
-    }
+    // Draw selected name as text in main area
+    auto textBounds = mainArea.reduced(2.0f, 1.0f);
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    g.setFont(FontManager::getInstance().getUIFont(9.0f));
+    g.drawText(getSelectedName(), textBounds, juce::Justification::centredLeft, true);
 
     // Draw dropdown arrow
     auto arrowBounds = dropdownArea.reduced(2.0f);
@@ -73,8 +49,7 @@ void RoutingSelector::paint(juce::Graphics& g) {
     arrow.addTriangle(arrowX - arrowSize, arrowY - arrowSize * 0.5f, arrowX + arrowSize,
                       arrowY - arrowSize * 0.5f, arrowX, arrowY + arrowSize * 0.5f);
 
-    g.setColour(enabled_ ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)
-                         : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     g.fillPath(arrow);
 
     // Draw border
@@ -87,19 +62,8 @@ void RoutingSelector::resized() {
 }
 
 void RoutingSelector::mouseDown(const juce::MouseEvent& e) {
-    if (e.mods.isRightButtonDown()) {
-        // Right-click always opens menu
-        showPopupMenu();
-    } else if (getDropdownArea().contains(e.getPosition())) {
-        // Click on dropdown arrow opens menu
-        showPopupMenu();
-    } else {
-        // Click on main area toggles enabled state
-        setEnabled(!enabled_);
-        if (onEnabledChanged) {
-            onEnabledChanged(enabled_);
-        }
-    }
+    juce::ignoreUnused(e);
+    showPopupMenu();
 }
 
 void RoutingSelector::mouseEnter(const juce::MouseEvent&) {
@@ -175,10 +139,6 @@ juce::Rectangle<int> RoutingSelector::getDropdownArea() const {
 void RoutingSelector::showPopupMenu() {
     juce::PopupMenu menu;
 
-    // Add enable/disable toggle at top
-    menu.addItem(1000, enabled_ ? "Disable" : "Enable", true, false);
-    menu.addSeparator();
-
     // Add routing options
     if (options_.empty()) {
         menu.addItem(-1, "(No options available)", false);
@@ -197,13 +157,7 @@ void RoutingSelector::showPopupMenu() {
                            if (result == 0) {
                                return;  // Dismissed
                            }
-                           if (result == 1000) {
-                               // Toggle enable
-                               setEnabled(!enabled_);
-                               if (onEnabledChanged) {
-                                   onEnabledChanged(enabled_);
-                               }
-                           } else if (result > 0) {
+                           if (result > 0) {
                                // Selection changed
                                setSelectedId(result);
                                if (onSelectionChanged) {
@@ -211,18 +165,6 @@ void RoutingSelector::showPopupMenu() {
                                }
                            }
                        });
-}
-
-juce::Colour RoutingSelector::getEnabledColour() const {
-    switch (type_) {
-        case Type::AudioIn:
-        case Type::AudioOut:
-            return juce::Colour(0xFF446644);  // Green tint for audio
-        case Type::MidiIn:
-        case Type::MidiOut:
-            return juce::Colour(0xFF446666);  // Cyan tint for MIDI
-    }
-    return DarkTheme::getColour(DarkTheme::BUTTON_NORMAL);
 }
 
 }  // namespace magda

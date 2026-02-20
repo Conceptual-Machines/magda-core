@@ -1,5 +1,7 @@
 #include "TrackInspector.hpp"
 
+#include <BinaryData.h>
+
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -167,6 +169,27 @@ TrackInspector::TrackInspector() {
     midiOutputSelector_->setEnabled(false);  // Disabled by default
     addAndMakeVisible(*midiOutputSelector_);
 
+    // I/O routing icons (non-interactive visual indicators)
+    auto inputDrawable =
+        std::make_unique<juce::DrawableButton>("inputIcon", juce::DrawableButton::ImageFitted);
+    if (auto svg =
+            juce::Drawable::createFromImageData(BinaryData::Input_svg, BinaryData::Input_svgSize)) {
+        inputDrawable->setImages(svg.get());
+    }
+    inputDrawable->setInterceptsMouseClicks(false, false);
+    inputIcon_ = std::move(inputDrawable);
+    addAndMakeVisible(*inputIcon_);
+
+    auto outputDrawable =
+        std::make_unique<juce::DrawableButton>("outputIcon", juce::DrawableButton::ImageFitted);
+    if (auto svg = juce::Drawable::createFromImageData(BinaryData::Output_svg,
+                                                       BinaryData::Output_svgSize)) {
+        outputDrawable->setImages(svg.get());
+    }
+    outputDrawable->setInterceptsMouseClicks(false, false);
+    outputIcon_ = std::move(outputDrawable);
+    addAndMakeVisible(*outputIcon_);
+
     // Send/Receive section
     sendReceiveSectionLabel_.setText("Sends / Receives", juce::dontSendNotification);
     sendReceiveSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
@@ -257,21 +280,26 @@ void TrackInspector::resized() {
     const int selectorWidth = 55;
     const int selectorHeight = 18;
     const int selectorGap = 4;
+    const int iconSize = 16;
 
-    // Input row: [Audio In] [MIDI In] — hidden for multi-out child tracks
+    // Input row: [Audio In] [MIDI In] [inputIcon] — hidden for multi-out child tracks
     if (audioInputSelector_->isVisible()) {
         auto inputRow = bounds.removeFromTop(selectorHeight);
         audioInputSelector_->setBounds(inputRow.removeFromLeft(selectorWidth));
         inputRow.removeFromLeft(selectorGap);
         inputSelector_->setBounds(inputRow.removeFromLeft(selectorWidth));
+        inputRow.removeFromLeft(selectorGap);
+        inputIcon_->setBounds(inputRow.removeFromLeft(iconSize));
         bounds.removeFromTop(4);
     }
 
-    // Output row: [Audio Out] [MIDI Out]
+    // Output row: [Audio Out] [MIDI Out] [outputIcon]
     auto outputRow = bounds.removeFromTop(selectorHeight);
     outputSelector_->setBounds(outputRow.removeFromLeft(selectorWidth));
     outputRow.removeFromLeft(selectorGap);
     midiOutputSelector_->setBounds(outputRow.removeFromLeft(selectorWidth));
+    outputRow.removeFromLeft(selectorGap);
+    outputIcon_->setBounds(outputRow.removeFromLeft(iconSize));
     bounds.removeFromTop(16);
 
     // Send/Receive section
@@ -464,8 +492,10 @@ void TrackInspector::showTrackControls(bool show) {
     routingSectionLabel_.setVisible(showRouting);
     audioInputSelector_->setVisible(showRouting && !isMultiOut);
     inputSelector_->setVisible(showRouting && !isMultiOut);
+    inputIcon_->setVisible(showRouting && !isMultiOut);
     outputSelector_->setVisible(showRouting);
     midiOutputSelector_->setVisible(showRouting);
+    outputIcon_->setVisible(showRouting);
 
     // Send/Receive section — hidden for master and aux tracks
     bool showSends = show && !isMaster && !isAux;
