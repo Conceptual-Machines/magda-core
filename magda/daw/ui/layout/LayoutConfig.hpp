@@ -67,7 +67,7 @@ struct LayoutConfig {
     // Main window panels
     int defaultTransportHeight = 48;
     int minTransportHeight = 40;
-    int maxTransportHeight = 120;
+    int maxTransportHeight = 55;
 
     int footerHeight = 40;
 
