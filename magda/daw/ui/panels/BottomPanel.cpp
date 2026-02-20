@@ -518,15 +518,6 @@ void BottomPanel::updateContentBasedOnSelection() {
     }
 }
 
-juce::Rectangle<int> BottomPanel::getCollapseButtonBounds() {
-    if (isCollapsed()) {
-        return juce::Rectangle<int>(getWidth() / 2 - 10, 2, 20, 20);
-    } else {
-        // Collapse button on the right side of the header
-        return juce::Rectangle<int>(getWidth() - 28, 4, 20, 20);
-    }
-}
-
 juce::Rectangle<int> BottomPanel::getTabBarBounds() {
     // No tab bar for bottom panel - content is auto-switched based on selection
     return juce::Rectangle<int>();

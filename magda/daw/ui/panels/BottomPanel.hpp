@@ -58,7 +58,6 @@ class BottomPanel : public daw::ui::TabbedPanel,
     void itemDropped(const SourceDetails& details) override;
 
   protected:
-    juce::Rectangle<int> getCollapseButtonBounds() override;
     juce::Rectangle<int> getTabBarBounds() override;
     juce::Rectangle<int> getContentBounds() override;
 

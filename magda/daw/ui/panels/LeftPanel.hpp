@@ -19,9 +19,6 @@ class LeftPanel : public daw::ui::TabbedPanel {
     // Legacy API for compatibility
     void setCollapsed(bool collapsed);
 
-  protected:
-    juce::Rectangle<int> getCollapseButtonBounds() override;
-
   private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LeftPanel)
 };

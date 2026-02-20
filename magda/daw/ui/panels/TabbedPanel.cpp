@@ -8,17 +8,20 @@
 
 namespace magda::daw::ui {
 
-TabbedPanel::TabbedPanel(PanelLocation location) : location_(location) {
+TabbedPanel::TabbedPanel(PanelLocation location) : location_(location), tabBar_(location) {
     setName("Tabbed Panel");
 
-    // Setup tab bar
+    // Setup tab bar with callbacks
     tabBar_.onTabClicked = [this](int index) {
         PanelController::getInstance().setActiveTab(location_, index);
     };
+    tabBar_.onCollapseClicked = [this]() {
+        PanelController::getInstance().toggleCollapsed(location_);
+    };
     addAndMakeVisible(tabBar_);
 
-    // Setup collapse button
-    setupCollapseButton();
+    // Setup expand button for collapsed thin-bar state (side panels only)
+    setupExpandButton();
 
     // Register as listener
     PanelController::getInstance().addListener(this);
@@ -39,54 +42,27 @@ TabbedPanel::~TabbedPanel() {
     contentCache_.clear();
 }
 
-void TabbedPanel::setupCollapseButton() {
-    // Bottom panel collapse is handled by FooterBar, not here
+void TabbedPanel::setupExpandButton() {
+    // Only side panels need an expand button for the collapsed thin-bar state.
+    // Bottom panel collapse is handled by FooterBar.
     if (location_ == PanelLocation::Bottom)
         return;
 
-    // Side panels: arrow points inward (right for left panel, left for right panel)
-    const char* svgData = BinaryData::collapse_right_svg;
-    size_t svgSize = BinaryData::collapse_right_svgSize;
+    // Arrow points outward (toward the direction the panel expands)
+    // Left panel collapsed: arrow points right (expand rightward)
+    // Right panel collapsed: arrow points left (expand leftward)
+    const char* svgData = (location_ == PanelLocation::Left) ? BinaryData::collapse_right_svg
+                                                             : BinaryData::collapse_left_svg;
+    size_t svgSize = (location_ == PanelLocation::Left) ? BinaryData::collapse_right_svgSize
+                                                        : BinaryData::collapse_left_svgSize;
 
-    if (location_ == PanelLocation::Right) {
-        svgData = BinaryData::collapse_left_svg;
-        svgSize = BinaryData::collapse_left_svgSize;
-    }
-
-    collapseButton_ = std::make_unique<magda::SvgButton>("Collapse", svgData, svgSize);
-    collapseButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
-    collapseButton_->onClick = [this]() {
+    expandButton_ = std::make_unique<magda::SvgButton>("Expand", svgData, svgSize);
+    expandButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
+    expandButton_->onClick = [this]() {
         PanelController::getInstance().toggleCollapsed(location_);
     };
-    addAndMakeVisible(*collapseButton_);
-}
-
-void TabbedPanel::updateCollapseIcon() {
-    if (!collapseButton_)
-        return;
-
-    const char* svgData = nullptr;
-    size_t svgSize = 0;
-
-    switch (location_) {
-        case PanelLocation::Left:
-            // Expanded: arrow points right (inward). Collapsed: arrow points left (outward).
-            svgData = collapsed_ ? BinaryData::collapse_left_svg : BinaryData::collapse_right_svg;
-            svgSize =
-                collapsed_ ? BinaryData::collapse_left_svgSize : BinaryData::collapse_right_svgSize;
-            break;
-        case PanelLocation::Right:
-            // Expanded: arrow points left (inward). Collapsed: arrow points right (outward).
-            svgData = collapsed_ ? BinaryData::collapse_right_svg : BinaryData::collapse_left_svg;
-            svgSize =
-                collapsed_ ? BinaryData::collapse_right_svgSize : BinaryData::collapse_left_svgSize;
-            break;
-        case PanelLocation::Bottom:
-            // Handled by FooterBar
-            return;
-    }
-
-    collapseButton_->updateSvgData(svgData, svgSize);
+    expandButton_->setVisible(false);
+    addAndMakeVisible(*expandButton_);
 }
 
 void TabbedPanel::paint(juce::Graphics& g) {
@@ -119,17 +95,26 @@ void TabbedPanel::paintBorder(juce::Graphics& g) {
 
 void TabbedPanel::resized() {
     if (collapsed_) {
-        // In collapsed state, show collapse button centered (side panels only)
-        if (collapseButton_) {
-            collapseButton_->setBounds(getCollapseButtonBounds());
-            collapseButton_->toFront(false);
+        // In collapsed state, show expand button at the footer position (side panels only)
+        if (expandButton_) {
+            constexpr int btnSize = 20;
+            int btnY =
+                getHeight() - PanelTabBar::BAR_HEIGHT + (PanelTabBar::BAR_HEIGHT - btnSize) / 2;
+            expandButton_->setBounds(2, btnY, btnSize, btnSize);
+            expandButton_->setVisible(true);
+            expandButton_->toFront(false);
         }
         tabBar_.setVisible(false);
         if (activeContent_)
             activeContent_->setVisible(false);
     } else {
+        // Hide expand button in normal state
+        if (expandButton_)
+            expandButton_->setVisible(false);
+
         // Normal state: tab bar (footer) + content
-        tabBar_.setBounds(getTabBarBounds());
+        auto tabBarBounds = getTabBarBounds();
+        tabBar_.setBounds(tabBarBounds);
         tabBar_.setVisible(true);
 
         auto contentBounds = getContentBounds();
@@ -140,12 +125,6 @@ void TabbedPanel::resized() {
             } else {
                 activeContent_->setVisible(false);
             }
-        }
-
-        // Position collapse button in footer and bring to front (side panels only)
-        if (collapseButton_) {
-            collapseButton_->setBounds(getCollapseButtonBounds());
-            collapseButton_->toFront(false);
         }
     }
 }
@@ -165,26 +144,6 @@ juce::Rectangle<int> TabbedPanel::getTabBarBounds() {
     return bounds.removeFromBottom(tabBarHeight);
 }
 
-juce::Rectangle<int> TabbedPanel::getCollapseButtonBounds() {
-    constexpr int btnSize = 20;
-
-    if (collapsed_) {
-        // Centered in the collapsed thin bar (side panels only)
-        return juce::Rectangle<int>(2, getHeight() / 2 - btnSize / 2, btnSize, btnSize);
-    }
-
-    // Footer area — position depends on panel side
-    int tabBarHeight = PanelTabBar::BAR_HEIGHT;
-    int y = getHeight() - tabBarHeight + (tabBarHeight - btnSize) / 2;
-
-    if (location_ == PanelLocation::Right) {
-        // Right panel: collapse button on the LEFT side of footer
-        return juce::Rectangle<int>(4, y, btnSize, btnSize);
-    }
-    // Left panel: collapse button on the RIGHT side of footer
-    return juce::Rectangle<int>(getWidth() - btnSize - 4, y, btnSize, btnSize);
-}
-
 void TabbedPanel::panelStateChanged(PanelLocation location, const PanelState& /*state*/) {
     if (location == location_) {
         updateFromState();
@@ -201,7 +160,7 @@ void TabbedPanel::activeTabChanged(PanelLocation location, int /*tabIndex*/,
 void TabbedPanel::panelCollapsedChanged(PanelLocation location, bool collapsed) {
     if (location == location_) {
         collapsed_ = collapsed;
-        updateCollapseIcon();
+        tabBar_.setCollapseState(collapsed);
 
         if (onCollapseChanged) {
             onCollapseChanged(collapsed);
@@ -222,7 +181,7 @@ void TabbedPanel::updateFromState() {
     // Update collapsed state
     if (collapsed_ != state.collapsed) {
         collapsed_ = state.collapsed;
-        updateCollapseIcon();
+        tabBar_.setCollapseState(collapsed_);
 
         if (onCollapseChanged) {
             onCollapseChanged(collapsed_);
