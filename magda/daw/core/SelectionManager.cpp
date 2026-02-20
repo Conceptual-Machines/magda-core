@@ -39,7 +39,7 @@ void SelectionManager::selectTrack(TrackId trackId) {
         if (oldTrackId != INVALID_TRACK_ID) {
             TrackManager::getInstance().setTrackInputMonitor(oldTrackId, InputMonitorMode::Off);
         }
-        if (trackId != INVALID_TRACK_ID) {
+        if (trackId != INVALID_TRACK_ID && trackId != MASTER_TRACK_ID) {
             TrackManager::getInstance().setTrackInputMonitor(trackId, InputMonitorMode::Auto);
         }
     }
