@@ -96,6 +96,7 @@ class MainWindow::MainComponent : public juce::Component,
     // Collapsed state (panel shows thin bar with expand button)
     bool leftPanelCollapsed = false;
     bool rightPanelCollapsed = false;
+    bool bottomPanelCollapsed = false;
 
     std::unique_ptr<TransportPanel> transportPanel;
     std::unique_ptr<MainView> mainView;

@@ -273,11 +273,24 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         resized();
     });
 
-    // Initialize panel visibility from Config
+    // Initialize panel visibility and collapse state from Config
     auto& config = Config::getInstance();
     leftPanelVisible = config.getShowLeftPanel();
     rightPanelVisible = config.getShowRightPanel();
     bottomPanelVisible = config.getShowBottomPanel();
+
+    // Restore persisted collapse state
+    leftPanelCollapsed = config.getLeftPanelCollapsed();
+    rightPanelCollapsed = config.getRightPanelCollapsed();
+    bottomPanelCollapsed = config.getBottomPanelCollapsed();
+
+    // Restore persisted panel sizes (0 = use defaults already set above)
+    if (config.getLeftPanelWidth() > 0)
+        leftPanelWidth = config.getLeftPanelWidth();
+    if (config.getRightPanelWidth() > 0)
+        rightPanelWidth = config.getRightPanelWidth();
+    if (config.getBottomPanelHeight() > 0)
+        bottomPanelHeight = config.getBottomPanelHeight();
 
     // Create panels
     transportPanel = std::make_unique<TransportPanel>();
@@ -301,6 +314,10 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
 
     bottomPanel = std::make_unique<BottomPanel>();
     bottomPanel->setAudioEngine(externalEngine);
+    bottomPanel->onCollapseChanged = [this](bool collapsed) {
+        bottomPanelCollapsed = collapsed;
+        resized();
+    };
     addAndMakeVisible(*bottomPanel);
 
     footerBar = std::make_unique<FooterBar>();
@@ -449,6 +466,14 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     setupAudioEngineCallbacks(externalEngine);
     setupDeviceLoadingCallback();
 
+    // Sync persisted collapse state to PanelController so TabbedPanel UI matches
+    if (leftPanelCollapsed)
+        daw::ui::PanelController::getInstance().setCollapsed(daw::ui::PanelLocation::Left, true);
+    if (rightPanelCollapsed)
+        daw::ui::PanelController::getInstance().setCollapsed(daw::ui::PanelLocation::Right, true);
+    if (bottomPanelCollapsed)
+        daw::ui::PanelController::getInstance().setCollapsed(daw::ui::PanelLocation::Bottom, true);
+
 // Enable profiling if environment variable is set
 #if JUCE_DEBUG
     if (auto* enableProfiling = std::getenv("MAGDA_ENABLE_PROFILING")) {
@@ -484,7 +509,8 @@ void MainWindow::MainComponent::setupResizeHandles() {
                 leftPanelCollapsed = false;
                 leftPanel->setCollapsed(false);
             }
-            leftPanelWidth = juce::jmax(layout.panelCollapseThreshold, newWidth);
+            int maxWidth = static_cast<int>(getWidth() * layout.maxLeftPanelRatio);
+            leftPanelWidth = juce::jlimit(layout.panelCollapseThreshold, maxWidth, newWidth);
         }
         resized();
     };
@@ -502,7 +528,8 @@ void MainWindow::MainComponent::setupResizeHandles() {
                 rightPanelCollapsed = false;
                 rightPanel->setCollapsed(false);
             }
-            rightPanelWidth = juce::jmax(layout.panelCollapseThreshold, newWidth);
+            int maxWidth = static_cast<int>(getWidth() * layout.maxRightPanelRatio);
+            rightPanelWidth = juce::jlimit(layout.panelCollapseThreshold, maxWidth, newWidth);
         }
         resized();
     };
@@ -511,11 +538,20 @@ void MainWindow::MainComponent::setupResizeHandles() {
     // Bottom panel resizer
     bottomResizer = std::make_unique<ResizeHandle>(ResizeHandle::Vertical);
     bottomResizer->onResize = [this, &layout](int delta) {
-        // Cap max height so at least 100px remains for the main content area
-        int maxHeight = getHeight() - 100;
-        bottomPanelHeight = juce::jlimit(layout.minBottomPanelHeight,
-                                         juce::jmax(layout.minBottomPanelHeight, maxHeight),
-                                         bottomPanelHeight - delta);
+        int newHeight = bottomPanelHeight - delta;
+        if (newHeight < layout.panelCollapseThreshold) {
+            bottomPanelCollapsed = true;
+            bottomPanel->setCollapsed(true);
+        } else {
+            if (bottomPanelCollapsed) {
+                bottomPanelCollapsed = false;
+                bottomPanel->setCollapsed(false);
+            }
+            int maxHeight = static_cast<int>(getHeight() * layout.maxBottomPanelRatio);
+            bottomPanelHeight =
+                juce::jlimit(layout.minBottomPanelHeight,
+                             juce::jmax(layout.minBottomPanelHeight, maxHeight), newHeight);
+        }
         resized();
     };
     addAndMakeVisible(*bottomResizer);
@@ -692,6 +728,15 @@ MainWindow::MainComponent::~MainComponent() {
     std::cout << "    [5d] MainComponent::~MainComponent start" << std::endl;
     std::cout.flush();
 
+    // Save panel collapse state and sizes to Config for persistence
+    auto& config = Config::getInstance();
+    config.setLeftPanelCollapsed(leftPanelCollapsed);
+    config.setRightPanelCollapsed(rightPanelCollapsed);
+    config.setBottomPanelCollapsed(bottomPanelCollapsed);
+    config.setLeftPanelWidth(leftPanelWidth);
+    config.setRightPanelWidth(rightPanelWidth);
+    config.setBottomPanelHeight(bottomPanelHeight);
+
     // Remove command manager key listener before destruction
     removeKeyListener(commandManager.getKeyMappings());
     commandManager.setFirstCommandTarget(nullptr);
@@ -773,6 +818,18 @@ void MainWindow::MainComponent::paint(juce::Graphics& g) {
 }
 
 void MainWindow::MainComponent::resized() {
+    auto& layout = LayoutConfig::getInstance();
+
+    // Re-clamp panel sizes to current window dimensions
+    int maxLeftWidth = static_cast<int>(getWidth() * layout.maxLeftPanelRatio);
+    int maxRightWidth = static_cast<int>(getWidth() * layout.maxRightPanelRatio);
+    int maxBottomHeight = static_cast<int>(getHeight() * layout.maxBottomPanelRatio);
+
+    leftPanelWidth = juce::jmin(leftPanelWidth, maxLeftWidth);
+    rightPanelWidth = juce::jmin(rightPanelWidth, maxRightWidth);
+    bottomPanelHeight =
+        juce::jmin(bottomPanelHeight, juce::jmax(layout.minBottomPanelHeight, maxBottomHeight));
+
     auto bounds = getLocalBounds();
 
     // Loading overlay covers entire component
@@ -805,10 +862,18 @@ void MainWindow::MainComponent::layoutBottomPanel(juce::Rectangle<int>& bounds) 
     auto& layout = LayoutConfig::getInstance();
 
     if (bottomPanelVisible) {
-        bottomPanel->setBounds(bounds.removeFromBottom(bottomPanelHeight));
-        bottomResizer->setBounds(bounds.removeFromBottom(layout.resizeHandleSize));
-        bottomPanel->setVisible(true);
-        bottomResizer->setVisible(true);
+        if (bottomPanelCollapsed) {
+            bottomPanel->setBounds(bounds.removeFromBottom(layout.collapsedPanelWidth));
+            bottomPanel->setCollapsed(true);
+            bottomPanel->setVisible(true);
+            bottomResizer->setVisible(false);
+        } else {
+            bottomPanel->setBounds(bounds.removeFromBottom(bottomPanelHeight));
+            bottomResizer->setBounds(bounds.removeFromBottom(layout.resizeHandleSize));
+            bottomPanel->setCollapsed(false);
+            bottomPanel->setVisible(true);
+            bottomResizer->setVisible(true);
+        }
     } else {
         bottomPanel->setVisible(false);
         bottomResizer->setVisible(false);

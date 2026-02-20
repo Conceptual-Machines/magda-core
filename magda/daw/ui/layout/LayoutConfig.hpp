@@ -80,6 +80,11 @@ struct LayoutConfig {
     int defaultBottomPanelHeight = 200;
     int minBottomPanelHeight = 100;
 
+    // Max panel size constraints (fraction of window dimension)
+    float maxLeftPanelRatio = 0.4f;    // Max 40% of window width
+    float maxRightPanelRatio = 0.4f;   // Max 40% of window width
+    float maxBottomPanelRatio = 0.6f;  // Max 60% of window height
+
     int resizeHandleSize = 3;
 
     // Toggle debug overlay (F11)

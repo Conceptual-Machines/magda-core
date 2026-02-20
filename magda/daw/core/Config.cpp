@@ -59,6 +59,14 @@ void Config::saveToFile(const std::string& filename) {
     }
     file << "browserDefaultDirectory=" << browserDefaultDirectory << std::endl;
 
+    // Panel collapse state and sizes
+    file << "leftPanelCollapsed=" << (leftPanelCollapsed ? 1 : 0) << std::endl;
+    file << "rightPanelCollapsed=" << (rightPanelCollapsed ? 1 : 0) << std::endl;
+    file << "bottomPanelCollapsed=" << (bottomPanelCollapsed ? 1 : 0) << std::endl;
+    file << "leftPanelWidth=" << leftPanelWidth << std::endl;
+    file << "rightPanelWidth=" << rightPanelWidth << std::endl;
+    file << "bottomPanelHeight=" << bottomPanelHeight << std::endl;
+
     file.close();
     std::cout << "Config saved to: " << filename << std::endl;
 }
@@ -191,6 +199,18 @@ void Config::parseConfigLine(const std::string& key, const std::string& value) {
             confirmTrackDelete = (numValue != 0);
         } else if (key == "showTooltips") {
             showTooltips = (numValue != 0);
+        } else if (key == "leftPanelCollapsed") {
+            leftPanelCollapsed = (numValue != 0);
+        } else if (key == "rightPanelCollapsed") {
+            rightPanelCollapsed = (numValue != 0);
+        } else if (key == "bottomPanelCollapsed") {
+            bottomPanelCollapsed = (numValue != 0);
+        } else if (key == "leftPanelWidth") {
+            leftPanelWidth = static_cast<int>(numValue);
+        } else if (key == "rightPanelWidth") {
+            rightPanelWidth = static_cast<int>(numValue);
+        } else if (key == "bottomPanelHeight") {
+            bottomPanelHeight = static_cast<int>(numValue);
         }
         // Skip unknown keys silently
     } catch (const std::exception& e) {
