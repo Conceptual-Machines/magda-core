@@ -269,15 +269,15 @@ class Config {
         autoMonitorSelectedTrack = enabled;
     }
 
-    // Save/Load Configuration (for future use)
-    void saveToFile(const std::string& filename);
-    void loadFromFile(const std::string& filename);
+    // Save/load to platform-appropriate location:
+    //   macOS  ~/Library/Application Support/MAGDA/config.json
+    //   Windows  %APPDATA%\MAGDA\config.json
+    //   Linux  ~/.config/MAGDA/config.json
+    void save();
+    void load();
 
   private:
     Config() = default;
-
-    // Helper to parse a single config line
-    void parseConfigLine(const std::string& key, const std::string& value);
 
     // Timeline settings
     double defaultTimelineLength = 300.0;   // 5 minutes in seconds

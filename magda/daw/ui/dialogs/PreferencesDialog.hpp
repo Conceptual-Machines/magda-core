@@ -4,9 +4,16 @@
 
 namespace magda {
 
+// Forward declarations for tab page components (defined in PreferencesDialog.cpp)
+class GeneralPage;
+class UIPage;
+class RenderingPage;
+class AIPage;
+class ShortcutsPage;
+
 /**
  * Preferences dialog for editing application configuration.
- * Displays organized sections for zoom, timeline, and transport settings.
+ * Organised into tabs: General, UI, Rendering, AI, Shortcuts.
  */
 class PreferencesDialog : public juce::Component {
   public:
@@ -23,84 +30,19 @@ class PreferencesDialog : public juce::Component {
     static void showDialog(juce::Component* parent);
 
   private:
-    // Zoom section
-    juce::Slider zoomInSensitivitySlider;
-    juce::Slider zoomOutSensitivitySlider;
-    juce::Slider zoomShiftSensitivitySlider;
+    juce::TabbedComponent tabbedComponent{juce::TabbedButtonBar::TabsAtTop};
 
-    // Timeline section
-    juce::Slider timelineLengthSlider;
-    juce::Slider viewDurationSlider;
+    std::unique_ptr<GeneralPage> generalPage;
+    std::unique_ptr<UIPage> uiPage;
+    std::unique_ptr<RenderingPage> renderingPage;
+    std::unique_ptr<AIPage> aiPage;
+    std::unique_ptr<ShortcutsPage> shortcutsPage;
 
-    // Transport section
-    juce::ToggleButton showBothFormatsToggle;
-    juce::ToggleButton defaultBarsBeatsToggle;
-
-    // Panel section
-    juce::ToggleButton showLeftPanelToggle;
-    juce::ToggleButton showRightPanelToggle;
-    juce::ToggleButton showBottomPanelToggle;
-
-    // Behavior section
-    juce::ToggleButton confirmTrackDeleteToggle;
-    juce::ToggleButton autoMonitorToggle;
-
-    // Layout section
-    juce::ToggleButton leftHandedLayoutToggle;
-
-    // Rendering section
-    juce::Label renderHeader;
-    juce::Label renderFolderLabel;
-    juce::Label renderFolderValue;
-    juce::TextButton renderFolderBrowseButton;
-    juce::TextButton renderFolderClearButton;
-    std::unique_ptr<juce::FileChooser> fileChooser_;
-
-    // AI section
-    juce::Label aiHeader;
-    juce::Label aiApiKeyLabel;
-    juce::TextEditor aiApiKeyEditor;
-    juce::TextButton aiValidateButton;
-    juce::Label aiStatusLabel;
-
-    // Keyboard shortcuts section (read-only display for now)
-    juce::Label shortcutsHeader;
-    juce::Label addTrackShortcut;
-    juce::Label deleteTrackShortcut;
-    juce::Label duplicateTrackShortcut;
-    juce::Label muteTrackShortcut;
-    juce::Label soloTrackShortcut;
-
-    // Labels for each control
-    juce::Label zoomInLabel;
-    juce::Label zoomOutLabel;
-    juce::Label zoomShiftLabel;
-    juce::Label timelineLengthLabel;
-    juce::Label viewDurationLabel;
-
-    // Section headers
-    juce::Label zoomHeader;
-    juce::Label timelineHeader;
-    juce::Label transportHeader;
-    juce::Label panelsHeader;
-    juce::Label behaviorHeader;
-    juce::Label layoutHeader;
-
-    // Buttons
     juce::TextButton okButton;
     juce::TextButton cancelButton;
     juce::TextButton applyButton;
 
-    // Parent window reference for closing
-    juce::DialogWindow* dialogWindow = nullptr;
-
     void loadCurrentSettings();
-    void setupSlider(juce::Slider& slider, juce::Label& label, const juce::String& labelText,
-                     double min, double max, double interval, const juce::String& suffix = "");
-    void setupToggle(juce::ToggleButton& toggle, const juce::String& text);
-    void setupSectionHeader(juce::Label& header, const juce::String& text);
-    void setupShortcutLabel(juce::Label& label, const juce::String& action,
-                            const juce::String& shortcut);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PreferencesDialog)
 };

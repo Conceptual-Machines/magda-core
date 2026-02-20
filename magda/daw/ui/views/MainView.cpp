@@ -64,7 +64,7 @@ MainView::MainView(AudioEngine* audioEngine)
       initialZoomSet(false) {
     // Load configuration
     auto& config = magda::Config::getInstance();
-    config.loadFromFile("magda_config.txt");  // Load from file if it exists
+    config.load();
     timelineLength = config.getDefaultTimelineLength();
 
     std::cout << "🎯 CONFIG: Timeline length=" << timelineLength << " seconds" << std::endl;
@@ -336,8 +336,7 @@ MainView::~MainView() {
 
     // Save configuration on shutdown
     auto& config = magda::Config::getInstance();
-    config.saveToFile("magda_config.txt");
-    std::cout << "🎯 CONFIG: Saved configuration on shutdown" << std::endl;
+    config.save();
 }
 
 // ===== Timer Implementation (for metering) =====
