@@ -1225,8 +1225,21 @@ DrumGridClipContent::DrumGridClipContent() {
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
     };
 
-    gridComponent_->onNoteSelectionChanged = [this](magda::ClipId /*clipId*/,
+    gridComponent_->onNoteSelected = [](magda::ClipId clipId, size_t noteIndex, bool isAdditive) {
+        if (isAdditive) {
+            magda::SelectionManager::getInstance().addNoteToSelection(clipId, noteIndex);
+        } else {
+            magda::SelectionManager::getInstance().selectNote(clipId, noteIndex);
+        }
+    };
+
+    gridComponent_->onNoteSelectionChanged = [this](magda::ClipId clipId,
                                                     std::vector<size_t> noteIndices) {
+        if (noteIndices.empty()) {
+            magda::SelectionManager::getInstance().clearNoteSelection();
+        } else {
+            magda::SelectionManager::getInstance().selectNotes(clipId, noteIndices);
+        }
         setVelocityLaneSelectedNotes(noteIndices);
     };
 

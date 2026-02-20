@@ -439,6 +439,15 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         }
 
         case deleteCmd: {
+            // Note selection takes priority — user is actively editing in the piano roll
+            const auto& noteSel = selectionManager.getNoteSelection();
+            if (noteSel.isValid()) {
+                auto cmd = std::make_unique<DeleteMultipleMidiNotesCommand>(noteSel.clipId,
+                                                                            noteSel.noteIndices);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+                selectionManager.clearNoteSelection();
+                return true;
+            }
             // Time selection delete (no ripple — clips after selection stay in place)
             if (hasActiveTimeSelection()) {
                 const auto& sel = mainView->getTimelineController().getState().selection;
@@ -451,14 +460,6 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 auto& timelineController = mainView->getTimelineController();
                 timelineController.dispatch(SetEditCursorEvent{sel.startTime});
                 timelineController.dispatch(ClearTimeSelectionEvent{});
-                return true;
-            }
-            const auto& noteSel = selectionManager.getNoteSelection();
-            if (noteSel.isValid()) {
-                auto cmd = std::make_unique<DeleteMultipleMidiNotesCommand>(noteSel.clipId,
-                                                                            noteSel.noteIndices);
-                UndoManager::getInstance().executeCommand(std::move(cmd));
-                selectionManager.clearNoteSelection();
                 return true;
             }
             if (!selectedClips.empty()) {
