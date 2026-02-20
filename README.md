@@ -84,12 +84,18 @@ For detailed information about branch protection and security architecture, see 
 ```
 magda/
 ├── daw/        # DAW application (C++/JUCE)
+│   ├── audio/      # Audio processing
 │   ├── core/       # Track, clip, selection management
 │   ├── engine/     # Tracktion Engine wrapper
+│   ├── interfaces/ # Abstract interfaces
+│   ├── profiling/  # Performance profiling
+│   ├── project/    # Project management and serialization
 │   ├── ui/         # User interface components
-│   └── interfaces/ # Abstract interfaces
-├── agents/     # Agent system (C++)
-└── tests/      # Test suite
+│   └── utils/      # Utility helpers
+└── agents/     # Agent system (C++)
+tests/          # Test suite
+scripts/        # Development and build scripts
+docs/           # Documentation
 ```
 
 ## Dependencies
