@@ -1465,12 +1465,13 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 const int buttonGap = 2;
                 const int contentRowHeight = rowHeight - 2;
                 const bool hasSends = !header.sendLabels.empty();
+                const int columnHeaderHeight = 10;
 
-                // Always 4 base rows for stable spacing
+                // Always 4 base rows + column header for stable spacing
                 constexpr int numRows = 4;
 
                 // Calculate even spacing between rows
-                int totalContentHeight = numRows * contentRowHeight;
+                int totalContentHeight = numRows * contentRowHeight + columnHeaderHeight + 1;
                 if (hasSends)
                     totalContentHeight += contentRowHeight;
                 int availableSpace = tcpArea.getHeight() - totalContentHeight;
@@ -1533,7 +1534,6 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 tcpArea.removeFromTop(rowGap);
 
                 // Column headers: [Audio] [MIDI] — hidden for multi-out child tracks
-                const int columnHeaderHeight = 10;
                 if (!header.isMultiOut) {
                     auto headerRow = tcpArea.removeFromTop(columnHeaderHeight);
                     header.audioColumnLabel->setBounds(headerRow.removeFromLeft(dropdownWidth));
