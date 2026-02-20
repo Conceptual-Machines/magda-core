@@ -1,7 +1,5 @@
 #include "TrackInspector.hpp"
 
-#include <BinaryData.h>
-
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -102,6 +100,44 @@ TrackInspector::TrackInspector() {
     recordButton_.setClickingTogglesState(true);
     addAndMakeVisible(recordButton_);
 
+    // Monitor button (3-state: Off → In → Auto → Off)
+    monitorButton_.setButtonText("-");
+    monitorButton_.setConnectedEdges(juce::Button::ConnectedOnLeft |
+                                     juce::Button::ConnectedOnRight | juce::Button::ConnectedOnTop |
+                                     juce::Button::ConnectedOnBottom);
+    monitorButton_.setColour(juce::TextButton::buttonColourId,
+                             DarkTheme::getColour(DarkTheme::SURFACE));
+    monitorButton_.setColour(juce::TextButton::buttonOnColourId,
+                             DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+    monitorButton_.setColour(juce::TextButton::textColourOffId,
+                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    monitorButton_.setColour(juce::TextButton::textColourOnId,
+                             DarkTheme::getColour(DarkTheme::BACKGROUND));
+    monitorButton_.setTooltip("Input monitoring (Off/In/Auto)");
+    monitorButton_.onClick = [this]() {
+        if (selectedTrackId_ == magda::INVALID_TRACK_ID ||
+            selectedTrackId_ == magda::MASTER_TRACK_ID)
+            return;
+        auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+        if (!track)
+            return;
+        magda::InputMonitorMode nextMode;
+        switch (track->inputMonitor) {
+            case magda::InputMonitorMode::Off:
+                nextMode = magda::InputMonitorMode::In;
+                break;
+            case magda::InputMonitorMode::In:
+                nextMode = magda::InputMonitorMode::Auto;
+                break;
+            case magda::InputMonitorMode::Auto:
+                nextMode = magda::InputMonitorMode::Off;
+                break;
+        }
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetTrackInputMonitorCommand>(selectedTrackId_, nextMode));
+    };
+    addAndMakeVisible(monitorButton_);
+
     // Gain label (TCP style - draggable dB display)
     gainLabel_ =
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Decibels);
@@ -169,26 +205,18 @@ TrackInspector::TrackInspector() {
     midiOutputSelector_->setEnabled(false);  // Disabled by default
     addAndMakeVisible(*midiOutputSelector_);
 
-    // I/O routing icons (non-interactive visual indicators)
-    auto inputDrawable =
-        std::make_unique<juce::DrawableButton>("inputIcon", juce::DrawableButton::ImageFitted);
-    if (auto svg =
-            juce::Drawable::createFromImageData(BinaryData::Input_svg, BinaryData::Input_svgSize)) {
-        inputDrawable->setImages(svg.get());
-    }
-    inputDrawable->setInterceptsMouseClicks(false, false);
-    inputIcon_ = std::move(inputDrawable);
-    addAndMakeVisible(*inputIcon_);
+    // Column header labels for routing selectors
+    audioColumnLabel_.setText("Audio", juce::dontSendNotification);
+    audioColumnLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    audioColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    audioColumnLabel_.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(audioColumnLabel_);
 
-    auto outputDrawable =
-        std::make_unique<juce::DrawableButton>("outputIcon", juce::DrawableButton::ImageFitted);
-    if (auto svg = juce::Drawable::createFromImageData(BinaryData::Output_svg,
-                                                       BinaryData::Output_svgSize)) {
-        outputDrawable->setImages(svg.get());
-    }
-    outputDrawable->setInterceptsMouseClicks(false, false);
-    outputIcon_ = std::move(outputDrawable);
-    addAndMakeVisible(*outputIcon_);
+    midiColumnLabel_.setText("MIDI", juce::dontSendNotification);
+    midiColumnLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    midiColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    midiColumnLabel_.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(midiColumnLabel_);
 
     // Send/Receive section
     sendReceiveSectionLabel_.setText("Sends / Receives", juce::dontSendNotification);
@@ -253,7 +281,7 @@ void TrackInspector::resized() {
     trackNameValue_.setBounds(bounds.removeFromTop(24));
     bounds.removeFromTop(12);
 
-    // M S R buttons row
+    // M S R Mon buttons row
     auto buttonRow = bounds.removeFromTop(24);
     const int buttonSize = 24;
     const int buttonGap = 2;
@@ -262,6 +290,8 @@ void TrackInspector::resized() {
     soloButton_.setBounds(buttonRow.removeFromLeft(buttonSize));
     buttonRow.removeFromLeft(buttonGap);
     recordButton_.setBounds(buttonRow.removeFromLeft(buttonSize));
+    buttonRow.removeFromLeft(buttonGap);
+    monitorButton_.setBounds(buttonRow.removeFromLeft(buttonSize));
     bounds.removeFromTop(12);
 
     // Gain and Pan on same row (TCP style draggable labels)
@@ -280,26 +310,31 @@ void TrackInspector::resized() {
     const int selectorWidth = 55;
     const int selectorHeight = 18;
     const int selectorGap = 4;
-    const int iconSize = 16;
+    const int columnHeaderHeight = 14;
 
-    // Input row: [Audio In] [MIDI In] [inputIcon] — hidden for multi-out child tracks
+    // Column headers: [Audio] [MIDI]
+    if (audioInputSelector_->isVisible()) {
+        auto headerRow = bounds.removeFromTop(columnHeaderHeight);
+        audioColumnLabel_.setBounds(headerRow.removeFromLeft(selectorWidth));
+        headerRow.removeFromLeft(selectorGap);
+        midiColumnLabel_.setBounds(headerRow.removeFromLeft(selectorWidth));
+        bounds.removeFromTop(2);
+    }
+
+    // Input row: [Audio In] [MIDI In] — hidden for multi-out child tracks
     if (audioInputSelector_->isVisible()) {
         auto inputRow = bounds.removeFromTop(selectorHeight);
         audioInputSelector_->setBounds(inputRow.removeFromLeft(selectorWidth));
         inputRow.removeFromLeft(selectorGap);
         inputSelector_->setBounds(inputRow.removeFromLeft(selectorWidth));
-        inputRow.removeFromLeft(selectorGap);
-        inputIcon_->setBounds(inputRow.removeFromLeft(iconSize));
         bounds.removeFromTop(4);
     }
 
-    // Output row: [Audio Out] [MIDI Out] [outputIcon]
+    // Output row: [Audio Out] [MIDI Out]
     auto outputRow = bounds.removeFromTop(selectorHeight);
     outputSelector_->setBounds(outputRow.removeFromLeft(selectorWidth));
     outputRow.removeFromLeft(selectorGap);
     midiOutputSelector_->setBounds(outputRow.removeFromLeft(selectorWidth));
-    outputRow.removeFromLeft(selectorGap);
-    outputIcon_->setBounds(outputRow.removeFromLeft(iconSize));
     bounds.removeFromTop(16);
 
     // Send/Receive section
@@ -414,6 +449,21 @@ void TrackInspector::updateFromSelectedTrack() {
         soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
         recordButton_.setToggleState(track->recordArmed, juce::dontSendNotification);
 
+        // Update monitor button
+        switch (track->inputMonitor) {
+            case magda::InputMonitorMode::Off:
+                monitorButton_.setButtonText("-");
+                break;
+            case magda::InputMonitorMode::In:
+                monitorButton_.setButtonText("I");
+                break;
+            case magda::InputMonitorMode::Auto:
+                monitorButton_.setButtonText("A");
+                break;
+        }
+        monitorButton_.setToggleState(track->inputMonitor != magda::InputMonitorMode::Off,
+                                      juce::dontSendNotification);
+
         // Convert linear gain to dB for display
         float gainDb = (track->volume <= 0.0f) ? -60.0f : 20.0f * std::log10(track->volume);
         gainLabel_->setValue(gainDb, juce::dontSendNotification);
@@ -484,6 +534,7 @@ void TrackInspector::showTrackControls(bool show) {
     muteButton_.setVisible(show);
     soloButton_.setVisible(show && !isMaster);
     recordButton_.setVisible(show && !isMaster && !isAux && !isMultiOut);
+    monitorButton_.setVisible(show && !isMaster && !isAux && !isMultiOut);
     gainLabel_->setVisible(show);
     panLabel_->setVisible(show);
 
@@ -492,10 +543,10 @@ void TrackInspector::showTrackControls(bool show) {
     routingSectionLabel_.setVisible(showRouting);
     audioInputSelector_->setVisible(showRouting && !isMultiOut);
     inputSelector_->setVisible(showRouting && !isMultiOut);
-    inputIcon_->setVisible(showRouting && !isMultiOut);
+    audioColumnLabel_.setVisible(showRouting && !isMultiOut);
+    midiColumnLabel_.setVisible(showRouting && !isMultiOut);
     outputSelector_->setVisible(showRouting);
     midiOutputSelector_->setVisible(showRouting);
-    outputIcon_->setVisible(showRouting);
 
     // Send/Receive section — hidden for master and aux tracks
     bool showSends = show && !isMaster && !isAux;

@@ -30,6 +30,7 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
     obj->setProperty("muted", track.muted);
     obj->setProperty("soloed", track.soloed);
     obj->setProperty("recordArmed", track.recordArmed);
+    obj->setProperty("inputMonitor", static_cast<int>(track.inputMonitor));
     obj->setProperty("frozen", track.frozen);
 
     // View settings per view mode
@@ -109,6 +110,12 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
     outTrack.muted = obj->getProperty("muted");
     outTrack.soloed = obj->getProperty("soloed");
     outTrack.recordArmed = obj->getProperty("recordArmed");
+
+    // Input monitor mode (backward compatible - defaults to Off)
+    if (obj->hasProperty("inputMonitor")) {
+        outTrack.inputMonitor =
+            static_cast<InputMonitorMode>(static_cast<int>(obj->getProperty("inputMonitor")));
+    }
 
     // Frozen state (backward compatible - defaults to false)
     if (obj->hasProperty("frozen")) {

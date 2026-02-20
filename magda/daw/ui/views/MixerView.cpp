@@ -195,6 +195,21 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track) {
     if (recordButton) {
         recordButton->setToggleState(track.recordArmed, juce::dontSendNotification);
     }
+    if (monitorButton) {
+        switch (track.inputMonitor) {
+            case InputMonitorMode::Off:
+                monitorButton->setButtonText("-");
+                break;
+            case InputMonitorMode::In:
+                monitorButton->setButtonText("I");
+                break;
+            case InputMonitorMode::Auto:
+                monitorButton->setButtonText("A");
+                break;
+        }
+        monitorButton->setToggleState(track.inputMonitor != InputMonitorMode::Off,
+                                      juce::dontSendNotification);
+    }
 
     repaint();
 }
@@ -367,6 +382,41 @@ void MixerView::ChannelStrip::setupControls() {
         };
         addAndMakeVisible(*recordButton);
 
+        // Monitor button (3-state: Off → In → Auto → Off)
+        monitorButton = std::make_unique<juce::TextButton>("-");
+        monitorButton->setConnectedEdges(
+            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+        monitorButton->setColour(juce::TextButton::buttonColourId,
+                                 DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        monitorButton->setColour(juce::TextButton::buttonOnColourId,
+                                 DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+        monitorButton->setColour(juce::TextButton::textColourOffId,
+                                 DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        monitorButton->setColour(juce::TextButton::textColourOnId,
+                                 DarkTheme::getColour(DarkTheme::BACKGROUND));
+        monitorButton->setTooltip("Input monitoring (Off/In/Auto)");
+        monitorButton->onClick = [this]() {
+            auto* track = TrackManager::getInstance().getTrack(trackId_);
+            if (!track)
+                return;
+            InputMonitorMode nextMode;
+            switch (track->inputMonitor) {
+                case InputMonitorMode::Off:
+                    nextMode = InputMonitorMode::In;
+                    break;
+                case InputMonitorMode::In:
+                    nextMode = InputMonitorMode::Auto;
+                    break;
+                case InputMonitorMode::Auto:
+                    nextMode = InputMonitorMode::Off;
+                    break;
+            }
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackInputMonitorCommand>(trackId_, nextMode));
+        };
+        addAndMakeVisible(*monitorButton);
+
         // Audio/MIDI routing selectors (toggle + dropdown, not on master)
         audioInSelector = std::make_unique<RoutingSelector>(RoutingSelector::Type::AudioIn);
         audioInSelector->setOptions({
@@ -532,9 +582,9 @@ void MixerView::ChannelStrip::resized() {
     panValueLabel->setBounds(panLabelArea);
     bounds.removeFromTop(metrics.controlSpacing);
 
-    // M/S/R buttons at bottom
+    // M/S/R/Mon buttons at bottom
     auto buttonArea = bounds.removeFromBottom(metrics.buttonSize);
-    int numButtons = isMaster_ ? 2 : 3;
+    int numButtons = isMaster_ ? 2 : 4;
     int buttonWidth = (buttonArea.getWidth() - (numButtons - 1) * 2) / numButtons;
 
     muteButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
@@ -543,6 +593,10 @@ void MixerView::ChannelStrip::resized() {
     if (recordButton) {
         buttonArea.removeFromLeft(2);
         recordButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
+    }
+    if (monitorButton) {
+        buttonArea.removeFromLeft(2);
+        monitorButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
     }
 
     // Routing selectors above M/S/R (2 rows: Audio In/Out, MIDI In/Out)

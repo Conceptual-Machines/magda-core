@@ -138,8 +138,8 @@ class TrackHeadersPanel : public juce::Component,
         std::unique_ptr<RoutingSelector> inputSelector;        // MIDI input
         std::unique_ptr<RoutingSelector> outputSelector;       // Audio output
         std::unique_ptr<RoutingSelector> midiOutputSelector;   // MIDI output
-        std::unique_ptr<juce::Component> inputIcon;            // Non-interactive I/O icon
-        std::unique_ptr<juce::Component> outputIcon;           // Non-interactive I/O icon
+        std::unique_ptr<juce::Label> audioColumnLabel;         // "Audio" column header
+        std::unique_ptr<juce::Label> midiColumnLabel;          // "MIDI" column header
         std::vector<std::unique_ptr<DraggableValueLabel>> sendLabels;  // Send level labels
         std::unique_ptr<juce::Component> meterComponent;               // Peak meter display
         std::unique_ptr<juce::Component> midiIndicator;                // MIDI activity indicator

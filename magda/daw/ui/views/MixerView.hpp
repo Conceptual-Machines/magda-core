@@ -128,6 +128,7 @@ class MixerView : public juce::Component,
         std::unique_ptr<juce::TextButton> muteButton;
         std::unique_ptr<juce::TextButton> soloButton;
         std::unique_ptr<juce::TextButton> recordButton;
+        std::unique_ptr<juce::TextButton> monitorButton;
 
         // Routing selectors (toggle + dropdown)
         std::unique_ptr<RoutingSelector> audioInSelector;

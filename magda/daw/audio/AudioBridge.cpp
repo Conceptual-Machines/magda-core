@@ -160,6 +160,34 @@ void AudioBridge::trackPropertyChanged(int trackId) {
                 }
             }
 
+            // Sync input monitor mode to TE InputDevice instances
+            {
+                auto* playbackContext = edit_.getCurrentPlaybackContext();
+                if (playbackContext) {
+                    auto teMode = te::InputDevice::MonitorMode::off;
+                    switch (trackInfo->inputMonitor) {
+                        case InputMonitorMode::Off:
+                            teMode = te::InputDevice::MonitorMode::off;
+                            break;
+                        case InputMonitorMode::In:
+                            teMode = te::InputDevice::MonitorMode::on;
+                            break;
+                        case InputMonitorMode::Auto:
+                            teMode = te::InputDevice::MonitorMode::automatic;
+                            break;
+                    }
+                    for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+                        auto targets = inputDeviceInstance->getTargets();
+                        for (auto targetID : targets) {
+                            if (targetID == track->itemID) {
+                                inputDeviceInstance->owner.setMonitorMode(teMode);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
             // Update MIDI routing when record arm changes
             // (armed tracks should receive MIDI even when not selected)
             updateMidiRoutingForSelection();
@@ -919,6 +947,22 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
         DBG("  -> Routing ALL MIDI inputs to track. Total inputs in context: "
             << playbackContext->getAllInputs().size());
 
+        // Determine TE monitor mode from track's inputMonitor setting
+        auto teMonitorMode = te::InputDevice::MonitorMode::on;  // default for backward compat
+        if (auto* trackInfo = TrackManager::getInstance().getTrack(trackId)) {
+            switch (trackInfo->inputMonitor) {
+                case InputMonitorMode::Off:
+                    teMonitorMode = te::InputDevice::MonitorMode::off;
+                    break;
+                case InputMonitorMode::In:
+                    teMonitorMode = te::InputDevice::MonitorMode::on;
+                    break;
+                case InputMonitorMode::Auto:
+                    teMonitorMode = te::InputDevice::MonitorMode::automatic;
+                    break;
+            }
+        }
+
         for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
             // Check if this is a MIDI input device
             if (auto* midiDevice =
@@ -928,8 +972,8 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
                     midiDevice->setEnabled(true);
                 }
 
-                // Set monitor mode to "on" so we hear MIDI without needing to arm for recording
-                midiDevice->setMonitorMode(te::InputDevice::MonitorMode::on);
+                // Set monitor mode based on track's inputMonitor setting
+                midiDevice->setMonitorMode(teMonitorMode);
 
                 // Set this track as target for live MIDI
                 auto result =
@@ -1011,8 +1055,22 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
                 midiDevice->setEnabled(true);
             }
 
-            // Set monitor mode to "on" so we hear MIDI without needing to arm for recording
-            midiDevice->setMonitorMode(te::InputDevice::MonitorMode::on);
+            // Set monitor mode based on track's inputMonitor setting
+            auto teMonitorModeSpecific = te::InputDevice::MonitorMode::on;  // default
+            if (auto* trackInfo2 = TrackManager::getInstance().getTrack(trackId)) {
+                switch (trackInfo2->inputMonitor) {
+                    case InputMonitorMode::Off:
+                        teMonitorModeSpecific = te::InputDevice::MonitorMode::off;
+                        break;
+                    case InputMonitorMode::In:
+                        teMonitorModeSpecific = te::InputDevice::MonitorMode::on;
+                        break;
+                    case InputMonitorMode::Auto:
+                        teMonitorModeSpecific = te::InputDevice::MonitorMode::automatic;
+                        break;
+                }
+            }
+            midiDevice->setMonitorMode(teMonitorModeSpecific);
 
             // Find the InputDeviceInstance for this MIDI device
             for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {

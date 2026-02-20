@@ -553,6 +553,13 @@ void TrackManager::setTrackRecordArmed(TrackId trackId, bool armed) {
     }
 }
 
+void TrackManager::setTrackInputMonitor(TrackId trackId, InputMonitorMode mode) {
+    if (auto* track = getTrack(trackId)) {
+        track->inputMonitor = mode;
+        notifyTrackPropertyChanged(trackId);
+    }
+}
+
 void TrackManager::setTrackFrozen(TrackId trackId, bool frozen) {
     if (auto* track = getTrack(trackId)) {
         track->frozen = frozen;

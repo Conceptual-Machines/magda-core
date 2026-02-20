@@ -56,6 +56,7 @@ class TrackInspector : public BaseInspector, public magda::TrackManagerListener 
     juce::TextButton muteButton_;
     juce::TextButton soloButton_;
     juce::TextButton recordButton_;
+    juce::TextButton monitorButton_;
     std::unique_ptr<magda::DraggableValueLabel> gainLabel_;
     std::unique_ptr<magda::DraggableValueLabel> panLabel_;
 
@@ -66,8 +67,8 @@ class TrackInspector : public BaseInspector, public magda::TrackManagerListener 
     std::unique_ptr<magda::RoutingSelector> inputSelector_;        // MIDI input
     std::unique_ptr<magda::RoutingSelector> outputSelector_;       // Audio output
     std::unique_ptr<magda::RoutingSelector> midiOutputSelector_;   // MIDI output
-    std::unique_ptr<juce::Component> inputIcon_;                   // Non-interactive I/O icon
-    std::unique_ptr<juce::Component> outputIcon_;                  // Non-interactive I/O icon
+    juce::Label audioColumnLabel_;                                 // "Audio" column header
+    juce::Label midiColumnLabel_;                                  // "MIDI" column header
 
     // Send/Receive section
     juce::Label sendReceiveSectionLabel_;
