@@ -194,6 +194,9 @@ set(DAW_CORE_SOURCES
     audio/DrumGridPlugin.cpp
     # Project serialization
     project/ProjectSerializer.cpp
+    project/TrackSerializer.cpp
+    project/ClipSerializer.cpp
+    project/AutomationModSerializer.cpp
     project/ProjectManager.cpp
     # Preset management
     core/PresetManager.cpp
