@@ -30,7 +30,7 @@ class TrackHeadersPanel : public juce::Component,
   public:
     static constexpr int TRACK_HEADER_WIDTH = 200;
     static constexpr int DEFAULT_TRACK_HEIGHT = 80;
-    static constexpr int MIN_TRACK_HEIGHT = 62;
+    static constexpr int MIN_TRACK_HEIGHT = 47;
     static constexpr int MAX_TRACK_HEIGHT = 200;
 
     TrackHeadersPanel(AudioEngine* audioEngine = nullptr);

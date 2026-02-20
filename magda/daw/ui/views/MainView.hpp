@@ -250,8 +250,9 @@ class MainView : public juce::Component,
     // Corner toolbar buttons (above track headers)
     std::unique_ptr<SvgButton> zoomFitButton;
     std::unique_ptr<SvgButton> zoomSelButton;
-    std::unique_ptr<SvgButton> trackCompactButton;
-    std::unique_ptr<SvgButton> trackExpandButton;
+    std::unique_ptr<SvgButton> trackSmallButton;
+    std::unique_ptr<SvgButton> trackMediumButton;
+    std::unique_ptr<SvgButton> trackLargeButton;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainView)
 };

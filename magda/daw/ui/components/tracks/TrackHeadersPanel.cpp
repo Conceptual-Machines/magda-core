@@ -1619,7 +1619,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                     hideAllRouting();
                 }
 
-            } else if (trackHeight >= 55) {
+            } else if (trackHeight >= 60) {
                 // MEDIUM LAYOUT: 2 rows — Vol/Pan then M S R Mon A
                 layoutVolPanAndButtons(tcpArea);
                 hideAllRouting();
