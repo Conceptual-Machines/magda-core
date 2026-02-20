@@ -166,6 +166,9 @@ class TrackHeadersPanel : public juce::Component,
     MixerLookAndFeel sliderLookAndFeel_;  // Custom look and feel for sliders
     AudioEngine* audioEngine_ = nullptr;  // Reference to audio engine for metering
 
+    // I/O routing visibility
+    bool showIORouting_ = true;
+
     // Resize functionality
     bool isResizing = false;
     int resizingTrackIndex = -1;

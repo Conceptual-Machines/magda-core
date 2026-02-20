@@ -1416,7 +1416,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 
             // Constants
             const int nameRowHeight = 18;
-            const int rowHeight = 22;
+            const int rowHeight = 20;
             const int spacing = 2;
 
             // Top row: collapse button (if group) + name label
@@ -1451,7 +1451,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
             // Helper: lay out Vol/Pan + buttons
             // Full width (>=128px): single row — Vol Pan | M S R Mon A
             // Narrow (<128px): two rows — Vol Pan / M S R Mon A
-            auto layoutVolPanAndButtons = [&](juce::Rectangle<int>& area) {
+            auto layoutVolPanAndButtons = [&](juce::Rectangle<int>& area, int gapOverride = -1) {
                 const int gap = 2;
                 const int rh = rowHeight;
                 const int rowWidth = area.getWidth();
@@ -1492,8 +1492,9 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                     header.automationButton->setVisible(true);
                 } else {
                     // Two rows: Vol Pan, then M S R Mon A
-                    // Gap between rows is relative to available height
-                    const int rowPadding = std::max(2, (area.getHeight() - 2 * rh) / 3);
+                    const int rowPadding = gapOverride >= 0
+                                               ? gapOverride
+                                               : std::max(2, (area.getHeight() - 2 * rh) / 3);
                     auto volPanRow = area.removeFromTop(rh);
                     const int mixGap = 4;
                     const int volW = (rowWidth - mixGap) * 80 / 100;
@@ -1538,8 +1539,9 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 
                 const int sendLabelWidth = 28;
                 const bool wideEnough = tcpArea.getWidth() >= 260;
-                // 3 rows if single combo row, 4 if vol/pan and buttons separate
-                const int numRows = wideEnough ? 3 : 4;
+                const int ioRows = showIORouting_ ? 2 : 0;
+                // vol/pan/buttons: 1 row if wide, 2 if not; plus I/O rows
+                const int numRows = (wideEnough ? 1 : 2) + ioRows;
 
                 int totalContentHeight = numRows * contentRowHeight;
                 if (hasSends)
@@ -1550,7 +1552,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                                  : 2;
 
                 // Vol/Pan/Buttons — uses same width-based logic as helper
-                layoutVolPanAndButtons(tcpArea);
+                layoutVolPanAndButtons(tcpArea, rowGap);
 
                 // Sends row (only if track has sends)
                 if (hasSends) {
@@ -1577,37 +1579,41 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 header.audioColumnLabel->setVisible(false);
                 header.midiColumnLabel->setVisible(false);
 
-                // Input row: [Audio In] [MIDI In] [inputIcon] — hidden for multi-out
-                const int iconSize = 16;
-                const int ddGap = spacing;
-                const int ddWidth = (tcpArea.getWidth() - ddGap - ddGap - iconSize) / 2;
-                auto inputRow = tcpArea.removeFromTop(contentRowHeight);
-                if (!header.isMultiOut) {
-                    header.audioInputSelector->setBounds(inputRow.removeFromLeft(ddWidth));
-                    header.audioInputSelector->setVisible(true);
-                    inputRow.removeFromLeft(ddGap);
-                    header.inputSelector->setBounds(inputRow.removeFromLeft(ddWidth));
-                    header.inputSelector->setVisible(true);
-                    inputRow.removeFromLeft(ddGap);
-                    header.inputIcon->setBounds(inputRow.removeFromLeft(iconSize));
-                    header.inputIcon->setVisible(true);
-                } else {
-                    header.audioInputSelector->setVisible(false);
-                    header.inputSelector->setVisible(false);
-                    header.inputIcon->setVisible(false);
-                }
-                tcpArea.removeFromTop(rowGap);
+                if (showIORouting_) {
+                    // Input row: [Audio In] [MIDI In] [inputIcon] — hidden for multi-out
+                    const int iconSize = 16;
+                    const int ddGap = spacing;
+                    const int ddWidth = (tcpArea.getWidth() - ddGap - ddGap - iconSize) / 2;
+                    auto inputRow = tcpArea.removeFromTop(contentRowHeight);
+                    if (!header.isMultiOut) {
+                        header.audioInputSelector->setBounds(inputRow.removeFromLeft(ddWidth));
+                        header.audioInputSelector->setVisible(true);
+                        inputRow.removeFromLeft(ddGap);
+                        header.inputSelector->setBounds(inputRow.removeFromLeft(ddWidth));
+                        header.inputSelector->setVisible(true);
+                        inputRow.removeFromLeft(ddGap);
+                        header.inputIcon->setBounds(inputRow.removeFromLeft(iconSize));
+                        header.inputIcon->setVisible(true);
+                    } else {
+                        header.audioInputSelector->setVisible(false);
+                        header.inputSelector->setVisible(false);
+                        header.inputIcon->setVisible(false);
+                    }
+                    tcpArea.removeFromTop(rowGap);
 
-                // Output row: [Audio Out] [MIDI Out] [outputIcon]
-                auto outputRow = tcpArea.removeFromTop(contentRowHeight);
-                header.outputSelector->setBounds(outputRow.removeFromLeft(ddWidth));
-                header.outputSelector->setVisible(true);
-                outputRow.removeFromLeft(ddGap);
-                header.midiOutputSelector->setBounds(outputRow.removeFromLeft(ddWidth));
-                header.midiOutputSelector->setVisible(true);
-                outputRow.removeFromLeft(ddGap);
-                header.outputIcon->setBounds(outputRow.removeFromLeft(iconSize));
-                header.outputIcon->setVisible(true);
+                    // Output row: [Audio Out] [MIDI Out] [outputIcon]
+                    auto outputRow = tcpArea.removeFromTop(contentRowHeight);
+                    header.outputSelector->setBounds(outputRow.removeFromLeft(ddWidth));
+                    header.outputSelector->setVisible(true);
+                    outputRow.removeFromLeft(ddGap);
+                    header.midiOutputSelector->setBounds(outputRow.removeFromLeft(ddWidth));
+                    header.midiOutputSelector->setVisible(true);
+                    outputRow.removeFromLeft(ddGap);
+                    header.outputIcon->setBounds(outputRow.removeFromLeft(iconSize));
+                    header.outputIcon->setVisible(true);
+                } else {
+                    hideAllRouting();
+                }
 
             } else if (trackHeight >= 55) {
                 // MEDIUM LAYOUT: 2 rows — Vol/Pan then M S R Mon A
@@ -1901,6 +1907,11 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     // Delete track
     menu.addItem(3, "Delete Track");
 
+    menu.addSeparator();
+
+    // Show/Hide I/O routing
+    menu.addItem(6, showIORouting_ ? "Hide I/O Routing" : "Show I/O Routing");
+
     // Show menu and handle result
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
                            localAreaToGlobal(juce::Rectangle<int>(position.x, position.y, 1, 1))),
@@ -1923,6 +1934,10 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                                // Duplicate track without content
                                auto cmd = std::make_unique<DuplicateTrackCommand>(trackId, false);
                                UndoManager::getInstance().executeCommand(std::move(cmd));
+                           } else if (result == 6) {
+                               // Toggle I/O routing visibility
+                               showIORouting_ = !showIORouting_;
+                               resized();
                            } else if (result == 7) {
                                // Toggle freeze
                                auto* t = TrackManager::getInstance().getTrack(trackId);
