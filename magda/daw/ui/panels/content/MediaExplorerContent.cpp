@@ -1104,7 +1104,14 @@ void MediaExplorerContent::fileDoubleClicked(const juce::File& file) {
 }
 
 void MediaExplorerContent::browserRootChanged(const juce::File& /*newRoot*/) {
-    // Could save last browsed location here
+    // Clear the search term when the user navigates to a new root directory so
+    // the filter doesn't silently hide files in the new location.
+    if (searchTerm_.isNotEmpty()) {
+        searchTerm_ = juce::String();
+        searchBox_.setText(juce::String(), juce::dontSendNotification);
+        stopTimer();
+        updateMediaFilter();
+    }
 }
 
 // ChangeListener implementation
