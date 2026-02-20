@@ -1418,7 +1418,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 
             // Constants
             const int nameRowHeight = 18;
-            const int rowHeight = 18;
+            const int rowHeight = 22;
             const int smallButtonSize = 16;
             const int spacing = 2;
 
