@@ -4,12 +4,12 @@
 
 namespace magda {
 
-LeftPanel::LeftPanel() : TabbedPanel(daw::ui::PanelLocation::Left) {
+LeftPanel::LeftPanel() : TabbedPanel(daw::ui::PanelLocation::Right) {
     setName("Left Panel");
 }
 
 void LeftPanel::setCollapsed(bool collapsed) {
-    daw::ui::PanelController::getInstance().setCollapsed(daw::ui::PanelLocation::Left, collapsed);
+    daw::ui::PanelController::getInstance().setCollapsed(daw::ui::PanelLocation::Right, collapsed);
 }
 
 }  // namespace magda

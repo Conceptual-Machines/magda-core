@@ -63,12 +63,12 @@ void PanelTabBar::resized() {
     if (collapseButton_) {
         int btnY = (getHeight() - COLLAPSE_BUTTON_SIZE) / 2;
 
-        if (location_ == PanelLocation::Right) {
-            // Right panel: collapse button on the LEFT edge
+        if (location_ == PanelLocation::Left) {
+            // PanelLocation::Left is used by RightPanel: collapse button on the LEFT edge
             collapseButton_->setBounds(4, btnY, COLLAPSE_BUTTON_SIZE, COLLAPSE_BUTTON_SIZE);
             availableBounds.removeFromLeft(collapseMargin);
         } else {
-            // Left panel (and bottom): collapse button on the RIGHT edge
+            // PanelLocation::Right is used by LeftPanel: collapse button on the RIGHT edge
             collapseButton_->setBounds(getWidth() - COLLAPSE_BUTTON_SIZE - 4, btnY,
                                        COLLAPSE_BUTTON_SIZE, COLLAPSE_BUTTON_SIZE);
             availableBounds.removeFromRight(collapseMargin);
@@ -97,12 +97,12 @@ void PanelTabBar::setupCollapseButton() {
     if (location_ == PanelLocation::Bottom)
         return;
 
-    // Side panels: arrow points toward the edge (collapse direction)
-    // Left panel: arrow points left. Right panel: arrow points right.
-    const char* svgData = (location_ == PanelLocation::Left) ? BinaryData::collapse_left_svg
-                                                             : BinaryData::collapse_right_svg;
-    size_t svgSize = (location_ == PanelLocation::Left) ? BinaryData::collapse_left_svgSize
-                                                        : BinaryData::collapse_right_svgSize;
+    // PanelLocation::Right = LeftPanel (arrow points left to collapse)
+    // PanelLocation::Left = RightPanel (arrow points right to collapse)
+    const char* svgData = (location_ == PanelLocation::Right) ? BinaryData::collapse_left_svg
+                                                              : BinaryData::collapse_right_svg;
+    size_t svgSize = (location_ == PanelLocation::Right) ? BinaryData::collapse_left_svgSize
+                                                         : BinaryData::collapse_right_svgSize;
 
     collapseButton_ = std::make_unique<magda::SvgButton>("Collapse", svgData, svgSize);
     collapseButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
@@ -125,13 +125,13 @@ void PanelTabBar::updateCollapseIcon() {
     const char* svgData = nullptr;
     size_t svgSize = 0;
 
-    if (location_ == PanelLocation::Left) {
-        // Expanded: arrow left (toward edge). Collapsed: arrow right (outward).
+    if (location_ == PanelLocation::Right) {
+        // PanelLocation::Right = LeftPanel. Expanded: arrow left. Collapsed: arrow right.
         svgData = collapsed_ ? BinaryData::collapse_right_svg : BinaryData::collapse_left_svg;
         svgSize =
             collapsed_ ? BinaryData::collapse_right_svgSize : BinaryData::collapse_left_svgSize;
-    } else if (location_ == PanelLocation::Right) {
-        // Expanded: arrow right (toward edge). Collapsed: arrow left (outward).
+    } else if (location_ == PanelLocation::Left) {
+        // PanelLocation::Left = RightPanel. Expanded: arrow right. Collapsed: arrow left.
         svgData = collapsed_ ? BinaryData::collapse_left_svg : BinaryData::collapse_right_svg;
         svgSize =
             collapsed_ ? BinaryData::collapse_left_svgSize : BinaryData::collapse_right_svgSize;
