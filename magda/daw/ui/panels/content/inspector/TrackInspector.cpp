@@ -294,15 +294,27 @@ void TrackInspector::onDeactivated() {
 
 void TrackInspector::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+
+    // Draw section separators
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    auto area = getLocalBounds().reduced(8);
+    for (int y : sectionSeparatorYs_) {
+        g.drawHorizontalLine(y, static_cast<float>(area.getX()),
+                             static_cast<float>(area.getRight()));
+    }
 }
 
 void TrackInspector::resized() {
     auto bounds = getLocalBounds().reduced(8);
+    sectionSeparatorYs_.clear();
+    const int separatorPadding = 6;
 
     // Track properties layout (TCP style)
     trackNameLabel_.setBounds(bounds.removeFromTop(16));
     trackNameValue_.setBounds(bounds.removeFromTop(24));
-    bounds.removeFromTop(12);
+    bounds.removeFromTop(separatorPadding);
+    sectionSeparatorYs_.push_back(bounds.getY());
+    bounds.removeFromTop(separatorPadding);
 
     // M S R Mon buttons row
     auto buttonRow = bounds.removeFromTop(24);
@@ -315,7 +327,7 @@ void TrackInspector::resized() {
     recordButton_.setBounds(buttonRow.removeFromLeft(buttonSize));
     buttonRow.removeFromLeft(buttonGap);
     monitorButton_.setBounds(buttonRow.removeFromLeft(buttonSize));
-    bounds.removeFromTop(12);
+    bounds.removeFromTop(4);
 
     // Gain and Pan on same row (TCP style draggable labels)
     auto mixRow = bounds.removeFromTop(20);
@@ -324,11 +336,11 @@ void TrackInspector::resized() {
     gainLabel_->setBounds(mixRow.removeFromLeft(labelWidth));
     mixRow.removeFromLeft(labelGap);
     panLabel_->setBounds(mixRow.removeFromLeft(labelWidth));
-    bounds.removeFromTop(16);
+    bounds.removeFromTop(separatorPadding);
+    sectionSeparatorYs_.push_back(bounds.getY());
+    bounds.removeFromTop(separatorPadding);
 
     // Routing section
-    routingSectionLabel_.setBounds(bounds.removeFromTop(16));
-    bounds.removeFromTop(4);
 
     const int selectorWidth = 55;
     const int selectorHeight = 18;
@@ -363,7 +375,9 @@ void TrackInspector::resized() {
     midiOutputSelector_->setBounds(outputRow.removeFromLeft(selectorWidth));
     outputRow.removeFromLeft(selectorGap);
     outputIcon_->setBounds(outputRow.removeFromLeft(iconSize));
-    bounds.removeFromTop(16);
+    bounds.removeFromTop(separatorPadding);
+    sectionSeparatorYs_.push_back(bounds.getY());
+    bounds.removeFromTop(separatorPadding);
 
     // Send/Receive section
     auto sendHeaderRow = bounds.removeFromTop(16);
@@ -388,7 +402,9 @@ void TrackInspector::resized() {
     }
 
     receivesLabel_.setBounds(bounds.removeFromTop(16));
-    bounds.removeFromTop(16);
+    bounds.removeFromTop(separatorPadding);
+    sectionSeparatorYs_.push_back(bounds.getY());
+    bounds.removeFromTop(separatorPadding);
 
     // Clips section
     clipsSectionLabel_.setBounds(bounds.removeFromTop(16));
@@ -568,7 +584,7 @@ void TrackInspector::showTrackControls(bool show) {
 
     // Routing section — hidden for master and aux; input selectors hidden for multi-out
     bool showRouting = show && !isMaster && !isAux;
-    routingSectionLabel_.setVisible(showRouting);
+    routingSectionLabel_.setVisible(false);
     audioInputSelector_->setVisible(showRouting && !isMultiOut);
     inputSelector_->setVisible(showRouting && !isMultiOut);
     audioColumnLabel_.setVisible(showRouting && !isMultiOut);

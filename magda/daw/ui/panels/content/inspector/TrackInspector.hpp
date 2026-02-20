@@ -85,6 +85,9 @@ class TrackInspector : public BaseInspector, public magda::TrackManagerListener 
     juce::Label clipsSectionLabel_;
     juce::Label clipCountLabel_;
 
+    // Section separator Y positions (computed in resized, drawn in paint)
+    std::vector<int> sectionSeparatorYs_;
+
     // Update methods
     void updateFromSelectedTrack();
     void showTrackControls(bool show);
