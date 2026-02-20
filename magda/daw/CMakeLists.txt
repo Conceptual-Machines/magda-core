@@ -151,7 +151,10 @@ set(DAW_CORE_SOURCES
     core/LinkModeManager.cpp
     core/UndoManager.cpp
     core/ClipCommands.cpp
+    core/ClipPropertyCommands.cpp
     core/TrackCommands.cpp
+    core/TrackPropertyCommands.cpp
+    core/AutomationCommands.cpp
     core/MidiNoteCommands.cpp
     core/ParameterUtils.cpp
     engine/TracktionEngineWrapper.cpp
@@ -380,7 +383,10 @@ set(DAW_HEADERS
     core/LinkModeManager.hpp
     core/UndoManager.hpp
     core/ClipCommands.hpp
+    core/ClipPropertyCommands.hpp
     core/TrackCommands.hpp
+    core/TrackPropertyCommands.hpp
+    core/AutomationCommands.hpp
     core/MidiNoteCommands.hpp
     engine/AudioEngine.hpp
     engine/TracktionEngineWrapper.hpp

@@ -5,6 +5,7 @@
 #include "../../core/SelectionManager.hpp"
 #include "../../core/TrackCommands.hpp"
 #include "../../core/TrackManager.hpp"
+#include "../../core/TrackPropertyCommands.hpp"
 #include "../../core/UndoManager.hpp"
 #include "../debug/DebugDialog.hpp"
 #include "../state/TimelineController.hpp"
@@ -438,6 +439,15 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         }
 
         case deleteCmd: {
+            // Note selection takes priority — user is actively editing in the piano roll
+            const auto& noteSel = selectionManager.getNoteSelection();
+            if (noteSel.isValid()) {
+                auto cmd = std::make_unique<DeleteMultipleMidiNotesCommand>(noteSel.clipId,
+                                                                            noteSel.noteIndices);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+                selectionManager.clearNoteSelection();
+                return true;
+            }
             // Time selection delete (no ripple — clips after selection stay in place)
             if (hasActiveTimeSelection()) {
                 const auto& sel = mainView->getTimelineController().getState().selection;
@@ -450,14 +460,6 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 auto& timelineController = mainView->getTimelineController();
                 timelineController.dispatch(SetEditCursorEvent{sel.startTime});
                 timelineController.dispatch(ClearTimeSelectionEvent{});
-                return true;
-            }
-            const auto& noteSel = selectionManager.getNoteSelection();
-            if (noteSel.isValid()) {
-                auto cmd = std::make_unique<DeleteMultipleMidiNotesCommand>(noteSel.clipId,
-                                                                            noteSel.noteIndices);
-                UndoManager::getInstance().executeCommand(std::move(cmd));
-                selectionManager.clearNoteSelection();
                 return true;
             }
             if (!selectedClips.empty()) {
@@ -815,7 +817,8 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
                     }
 
                     // Set track fader to -12dB
-                    tm.setTrackVolume(trackId, minus12dB);
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<SetTrackVolumeCommand>(trackId, minus12dB));
                     std::cout << "Track " << trackId << ": tone @ 0dB, fader @ -12dB" << std::endl;
                 }
 
@@ -867,7 +870,8 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
                 const auto& tracks = TrackManager::getInstance().getTracks();
                 if (selectedIndex < static_cast<int>(tracks.size())) {
                     const auto& track = tracks[selectedIndex];
-                    TrackManager::getInstance().setTrackMuted(track.id, !track.muted);
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<SetTrackMuteCommand>(track.id, !track.muted));
                 }
             }
         }
@@ -883,7 +887,8 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
                 const auto& tracks = TrackManager::getInstance().getTracks();
                 if (selectedIndex < static_cast<int>(tracks.size())) {
                     const auto& track = tracks[selectedIndex];
-                    TrackManager::getInstance().setTrackSoloed(track.id, !track.soloed);
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<SetTrackSoloCommand>(track.id, !track.soloed));
                 }
             }
         }

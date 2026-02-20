@@ -14,6 +14,8 @@
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackPropertyCommands.hpp"
+#include "core/UndoManager.hpp"
 #include "ui/components/chain/DeviceSlotComponent.hpp"
 #include "ui/components/chain/NodeComponent.hpp"
 #include "ui/components/chain/RackComponent.hpp"
@@ -592,8 +594,9 @@ TrackChainContent::TrackChainContent()
     muteButton_.setClickingTogglesState(true);
     muteButton_.onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            magda::TrackManager::getInstance().setTrackMuted(selectedTrackId_,
-                                                             muteButton_.getToggleState());
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetTrackMuteCommand>(selectedTrackId_,
+                                                             muteButton_.getToggleState()));
         }
     };
     muteButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
@@ -611,8 +614,9 @@ TrackChainContent::TrackChainContent()
     soloButton_.setClickingTogglesState(true);
     soloButton_.onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            magda::TrackManager::getInstance().setTrackSoloed(selectedTrackId_,
-                                                              soloButton_.getToggleState());
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetTrackSoloCommand>(selectedTrackId_,
+                                                             soloButton_.getToggleState()));
         }
     };
     soloButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
@@ -624,7 +628,8 @@ TrackChainContent::TrackChainContent()
     volumeSlider_.onValueChanged = [this](double db) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             float gain = dbToGain(static_cast<float>(db));
-            magda::TrackManager::getInstance().setTrackVolume(selectedTrackId_, gain);
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetTrackVolumeCommand>(selectedTrackId_, gain));
         }
     };
     addChildComponent(volumeSlider_);
@@ -634,8 +639,9 @@ TrackChainContent::TrackChainContent()
     panSlider_.setValue(0.0, juce::dontSendNotification);  // Center
     panSlider_.onValueChanged = [this](double pan) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            magda::TrackManager::getInstance().setTrackPan(selectedTrackId_,
-                                                           static_cast<float>(pan));
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetTrackPanCommand>(selectedTrackId_,
+                                                            static_cast<float>(pan)));
         }
     };
     addChildComponent(panSlider_);

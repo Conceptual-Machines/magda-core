@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cmath>
 
+#include "core/AutomationCommands.hpp"
+#include "core/UndoManager.hpp"
+
 namespace magda {
 
 AutomationCurveEditor::AutomationCurveEditor(AutomationLaneId laneId) : laneId_(laneId) {
@@ -180,33 +183,35 @@ void AutomationCurveEditor::updatePointsCache() const {
 }
 
 void AutomationCurveEditor::onPointAdded(double x, double y, CurveType curveType) {
-    auto& manager = AutomationManager::getInstance();
     AutomationCurveType autoCurveType = toAutomationCurveType(curveType);
 
     if (clipId_ != INVALID_AUTOMATION_CLIP_ID) {
-        manager.addPointToClip(clipId_, x - clipOffset_, y, autoCurveType);
+        UndoManager::getInstance().executeCommand(std::make_unique<AddAutomationPointCommand>(
+            laneId_, clipId_, x - clipOffset_, y, autoCurveType));
     } else {
-        manager.addPoint(laneId_, x, y, autoCurveType);
+        UndoManager::getInstance().executeCommand(std::make_unique<AddAutomationPointCommand>(
+            laneId_, INVALID_AUTOMATION_CLIP_ID, x, y, autoCurveType));
     }
 }
 
 void AutomationCurveEditor::onPointMoved(uint32_t pointId, double newX, double newY) {
-    auto& manager = AutomationManager::getInstance();
-
     if (clipId_ != INVALID_AUTOMATION_CLIP_ID) {
-        manager.movePointInClip(clipId_, pointId, newX - clipOffset_, newY);
+        UndoManager::getInstance().executeCommand(std::make_unique<MoveAutomationPointCommand>(
+            laneId_, clipId_, static_cast<AutomationPointId>(pointId), newX - clipOffset_, newY));
     } else {
-        manager.movePoint(laneId_, pointId, newX, newY);
+        UndoManager::getInstance().executeCommand(std::make_unique<MoveAutomationPointCommand>(
+            laneId_, INVALID_AUTOMATION_CLIP_ID, static_cast<AutomationPointId>(pointId), newX,
+            newY));
     }
 }
 
 void AutomationCurveEditor::onPointDeleted(uint32_t pointId) {
-    auto& manager = AutomationManager::getInstance();
-
     if (clipId_ != INVALID_AUTOMATION_CLIP_ID) {
-        manager.deletePointFromClip(clipId_, pointId);
+        UndoManager::getInstance().executeCommand(std::make_unique<DeleteAutomationPointCommand>(
+            laneId_, clipId_, static_cast<AutomationPointId>(pointId)));
     } else {
-        manager.deletePoint(laneId_, pointId);
+        UndoManager::getInstance().executeCommand(std::make_unique<DeleteAutomationPointCommand>(
+            laneId_, INVALID_AUTOMATION_CLIP_ID, static_cast<AutomationPointId>(pointId)));
     }
 }
 
@@ -215,19 +220,20 @@ void AutomationCurveEditor::onPointSelected(uint32_t pointId) {
 }
 
 void AutomationCurveEditor::onTensionChanged(uint32_t pointId, double tension) {
-    auto& manager = AutomationManager::getInstance();
-
     if (clipId_ != INVALID_AUTOMATION_CLIP_ID) {
-        manager.setPointTensionInClip(clipId_, pointId, tension);
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetAutomationPointTensionCommand>(
+                laneId_, clipId_, static_cast<AutomationPointId>(pointId), tension));
     } else {
-        manager.setPointTension(laneId_, pointId, tension);
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetAutomationPointTensionCommand>(
+                laneId_, INVALID_AUTOMATION_CLIP_ID, static_cast<AutomationPointId>(pointId),
+                tension));
     }
 }
 
 void AutomationCurveEditor::onHandlesChanged(uint32_t pointId, const CurveHandleData& inHandle,
                                              const CurveHandleData& outHandle) {
-    auto& manager = AutomationManager::getInstance();
-
     // Convert CurveHandleData to BezierHandle
     BezierHandle inH;
     inH.time = inHandle.x;
@@ -240,9 +246,14 @@ void AutomationCurveEditor::onHandlesChanged(uint32_t pointId, const CurveHandle
     outH.linked = outHandle.linked;
 
     if (clipId_ != INVALID_AUTOMATION_CLIP_ID) {
-        manager.setPointHandlesInClip(clipId_, pointId, inH, outH);
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetAutomationPointHandlesCommand>(
+                laneId_, clipId_, static_cast<AutomationPointId>(pointId), inH, outH));
     } else {
-        manager.setPointHandles(laneId_, pointId, inH, outH);
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetAutomationPointHandlesCommand>(
+                laneId_, INVALID_AUTOMATION_CLIP_ID, static_cast<AutomationPointId>(pointId), inH,
+                outH));
     }
 }
 
@@ -284,15 +295,18 @@ void AutomationCurveEditor::deleteSelectedPoints() {
     if (selection.laneId != laneId_)
         return;
 
-    auto& manager = AutomationManager::getInstance();
-
-    // Delete in reverse order to maintain indices
+    // Delete in reverse order to maintain indices, grouped as one undo step
+    CompoundOperationScope scope("Delete Automation Points");
     auto pointIds = selection.pointIds;
     for (auto it = pointIds.rbegin(); it != pointIds.rend(); ++it) {
         if (selection.clipId != INVALID_AUTOMATION_CLIP_ID) {
-            manager.deletePointFromClip(selection.clipId, *it);
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<DeleteAutomationPointCommand>(
+                    laneId_, selection.clipId, static_cast<AutomationPointId>(*it)));
         } else {
-            manager.deletePoint(laneId_, *it);
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<DeleteAutomationPointCommand>(
+                    laneId_, INVALID_AUTOMATION_CLIP_ID, static_cast<AutomationPointId>(*it)));
         }
     }
 

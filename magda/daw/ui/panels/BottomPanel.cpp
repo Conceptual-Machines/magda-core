@@ -14,6 +14,8 @@
 #include "content/DrumGridClipContent.hpp"
 #include "content/MidiEditorContent.hpp"
 #include "content/PianoRollContent.hpp"
+#include "core/TrackCommands.hpp"
+#include "core/UndoManager.hpp"
 #include "state/PanelController.hpp"
 
 namespace magda {
@@ -654,7 +656,11 @@ void BottomPanel::itemDropped(const SourceDetails& details) {
     repaint();
 
     if (auto* obj = details.description.getDynamicObject()) {
-        TrackManager::createTrackWithPlugin(*obj);
+        auto device = TrackManager::deviceInfoFromPluginObject(*obj);
+        TrackType trackType = device.isInstrument ? TrackType::Instrument : TrackType::Audio;
+        juce::String pluginName = obj->getProperty("name").toString();
+        auto cmd = std::make_unique<CreateTrackWithDeviceCommand>(pluginName, trackType, device);
+        UndoManager::getInstance().executeCommand(std::move(cmd));
         // trackSelectionChanged listener will trigger updateContentBasedOnSelection()
         // which shows TrackChainContent with the new plugin
     }

@@ -11,7 +11,8 @@ namespace magda {
  */
 class CreateTrackCommand : public UndoableCommand {
   public:
-    explicit CreateTrackCommand(TrackType type = TrackType::Audio);
+    explicit CreateTrackCommand(TrackType type = TrackType::Audio,
+                                const juce::String& name = juce::String());
 
     void execute() override;
     void undo() override;
@@ -23,6 +24,7 @@ class CreateTrackCommand : public UndoableCommand {
 
   private:
     TrackType type_;
+    juce::String name_;
     TrackId createdTrackId_ = INVALID_TRACK_ID;
     bool executed_ = false;
 };
@@ -68,6 +70,53 @@ class DuplicateTrackCommand : public UndoableCommand {
     TrackId sourceTrackId_;
     bool duplicateContent_;
     TrackId duplicatedTrackId_ = INVALID_TRACK_ID;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for adding a device to an existing track
+ */
+class AddDeviceToTrackCommand : public UndoableCommand {
+  public:
+    AddDeviceToTrackCommand(TrackId trackId, const DeviceInfo& device);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Add Device to Track";
+    }
+
+  private:
+    TrackId trackId_;
+    DeviceInfo device_;
+    DeviceId createdDeviceId_ = INVALID_DEVICE_ID;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for creating a new track with a device (single undo step)
+ */
+class CreateTrackWithDeviceCommand : public UndoableCommand {
+  public:
+    CreateTrackWithDeviceCommand(const juce::String& trackName, TrackType type,
+                                 const DeviceInfo& device);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Create Track with Plugin";
+    }
+
+    TrackId getCreatedTrackId() const {
+        return createdTrackId_;
+    }
+
+  private:
+    juce::String trackName_;
+    TrackType type_;
+    DeviceInfo device_;
+    TrackId createdTrackId_ = INVALID_TRACK_ID;
+    DeviceId createdDeviceId_ = INVALID_DEVICE_ID;
     bool executed_ = false;
 };
 

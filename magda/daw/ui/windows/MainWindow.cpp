@@ -229,9 +229,14 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     // Register this component as a command target for keyboard shortcuts
     commandManager.registerAllCommandsForTarget(this);
 
-    // Note: We don't use addKeyListener because it only works when this component has focus.
-    // Instead, we rely on keyPressed() override which manually checks the command manager
-    // and receives bubbled events from child components.
+    // Make this the first command target so shortcuts (Cmd+Z, etc.) work
+    // regardless of which child component has keyboard focus.
+    commandManager.setFirstCommandTarget(this);
+
+    // Register command manager key mappings on this component so that
+    // registered shortcuts (Cmd+Z, Cmd+Shift+Z, etc.) are handled
+    // globally when key events bubble up to this top-level component.
+    addKeyListener(commandManager.getKeyMappings());
 
     // Use external engine if provided, otherwise create our own
     if (externalEngine) {
@@ -686,6 +691,10 @@ void MainWindow::MainComponent::setupDeviceLoadingCallback() {
 MainWindow::MainComponent::~MainComponent() {
     std::cout << "    [5d] MainComponent::~MainComponent start" << std::endl;
     std::cout.flush();
+
+    // Remove command manager key listener before destruction
+    removeKeyListener(commandManager.getKeyMappings());
+    commandManager.setFirstCommandTarget(nullptr);
 
     // Stop position timer before destroying
     std::cout << "    [5e] Stopping position timer..." << std::endl;

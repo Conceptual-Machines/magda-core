@@ -39,35 +39,6 @@ TimelineController::~TimelineController() {
 }
 
 void TimelineController::dispatch(const TimelineEvent& event) {
-    // Determine if this event should create an undo point
-    // We push undo state for significant changes but not for continuous operations
-    bool shouldPushUndo = std::visit(
-        [](const auto& e) -> bool {
-            using T = std::decay_t<decltype(e)>;
-            // Events that create undo points (discrete, significant changes)
-            if constexpr (std::is_same_v<T, SetLoopRegionEvent> ||
-                          std::is_same_v<T, ClearLoopRegionEvent> ||
-                          std::is_same_v<T, CreateLoopFromSelectionEvent> ||
-                          std::is_same_v<T, SetPunchRegionEvent> ||
-                          std::is_same_v<T, ClearPunchRegionEvent> ||
-                          std::is_same_v<T, ZoomToFitEvent> || std::is_same_v<T, ResetZoomEvent> ||
-                          std::is_same_v<T, AddSectionEvent> ||
-                          std::is_same_v<T, RemoveSectionEvent> ||
-                          std::is_same_v<T, MoveSectionEvent> ||
-                          std::is_same_v<T, ResizeSectionEvent> ||
-                          std::is_same_v<T, SetTimelineLengthEvent>) {
-                return true;
-            }
-            // Events that don't create undo points (continuous or minor changes)
-            return false;
-        },
-        event);
-
-    // Push undo state if needed
-    if (shouldPushUndo) {
-        pushUndoState();
-    }
-
     // Process the event using std::visit
     ChangeFlags changes =
         std::visit([this](const auto& e) -> ChangeFlags { return this->handleEvent(e); }, event);
@@ -99,59 +70,6 @@ void TimelineController::removeAudioEngineListener(AudioEngineListener* listener
     audioEngineListeners.erase(
         std::remove(audioEngineListeners.begin(), audioEngineListeners.end(), listener),
         audioEngineListeners.end());
-}
-
-void TimelineController::pushUndoState() {
-    undoStack.push_back(state);
-
-    // Limit undo stack size
-    while (undoStack.size() > maxUndoStates) {
-        undoStack.pop_front();
-    }
-
-    // Clear redo stack when new action is taken
-    redoStack.clear();
-}
-
-bool TimelineController::undo() {
-    if (undoStack.empty()) {
-        return false;
-    }
-
-    // Push current state to redo stack
-    redoStack.push_back(state);
-
-    // Restore previous state
-    state = undoStack.back();
-    undoStack.pop_back();
-
-    // Notify all listeners
-    notifyListeners(ChangeFlags::All);
-
-    return true;
-}
-
-bool TimelineController::redo() {
-    if (redoStack.empty()) {
-        return false;
-    }
-
-    // Push current state to undo stack
-    undoStack.push_back(state);
-
-    // Restore next state
-    state = redoStack.back();
-    redoStack.pop_back();
-
-    // Notify all listeners
-    notifyListeners(ChangeFlags::All);
-
-    return true;
-}
-
-void TimelineController::clearUndoHistory() {
-    undoStack.clear();
-    redoStack.clear();
 }
 
 // ===== Zoom Event Handlers =====

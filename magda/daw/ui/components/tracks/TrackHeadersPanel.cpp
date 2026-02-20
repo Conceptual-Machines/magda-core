@@ -9,6 +9,7 @@
 #include "../../../core/DeviceInfo.hpp"
 #include "../../../core/SelectionManager.hpp"
 #include "../../../core/TrackCommands.hpp"
+#include "../../../core/TrackPropertyCommands.hpp"
 #include "../../../core/UndoManager.hpp"
 #include "../../../engine/TracktionEngineWrapper.hpp"
 #include "../../themes/DarkTheme.hpp"
@@ -1050,7 +1051,8 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
         if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
             auto& header = *trackHeaders[index];
             header.name = header.nameLabel->getText();
-            TrackManager::getInstance().setTrackName(trackId, header.name);
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackNameCommand>(trackId, header.name));
         }
     };
 
@@ -1060,7 +1062,8 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
         if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
             auto& header = *trackHeaders[index];
             header.muted = header.muteButton->getToggleState();
-            TrackManager::getInstance().setTrackMuted(trackId, header.muted);
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackMuteCommand>(trackId, header.muted));
         }
     };
 
@@ -1070,7 +1073,8 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
         if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
             auto& header = *trackHeaders[index];
             header.solo = header.soloButton->getToggleState();
-            TrackManager::getInstance().setTrackSoloed(trackId, header.solo);
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackSoloCommand>(trackId, header.solo));
         }
     };
 
@@ -1081,7 +1085,8 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
             auto& header = *trackHeaders[index];
             // Convert dB to linear gain
             header.volume = dbToGain(static_cast<float>(header.volumeLabel->getValue()));
-            TrackManager::getInstance().setTrackVolume(trackId, header.volume);
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackVolumeCommand>(trackId, header.volume));
         }
     };
 
@@ -1091,7 +1096,8 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
         if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
             auto& header = *trackHeaders[index];
             header.pan = static_cast<float>(header.panLabel->getValue());
-            TrackManager::getInstance().setTrackPan(trackId, header.pan);
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackPanCommand>(trackId, header.pan));
         }
     };
 
@@ -1149,7 +1155,8 @@ void TrackHeadersPanel::rebuildSendLabels(TrackHeader& header, TrackId trackId) 
             for (size_t i = 0; i < header.sendLabels.size() && i < track->sends.size(); ++i) {
                 if (track->sends[i].busIndex == busIndex) {
                     float newLevel = dbToGain(static_cast<float>(header.sendLabels[i]->getValue()));
-                    TrackManager::getInstance().setSendLevel(trackId, busIndex, newLevel);
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<SetSendLevelCommand>(trackId, busIndex, newLevel));
                     break;
                 }
             }
@@ -2284,38 +2291,23 @@ void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
         }
     }
 
+    auto device = TrackManager::deviceInfoFromPluginObject(*obj);
+
     if (targetIndex >= 0 && targetIndex < static_cast<int>(visibleTrackIds_.size())) {
         // Dropped on existing track header → add plugin to that track
-        DeviceInfo device;
-        device.name = obj->getProperty("name").toString().toStdString();
-        device.manufacturer = obj->getProperty("manufacturer").toString().toStdString();
-        auto uniqueId = obj->getProperty("uniqueId").toString();
-        device.pluginId = uniqueId.isNotEmpty() ? uniqueId
-                                                : obj->getProperty("name").toString() + "_" +
-                                                      obj->getProperty("format").toString();
-        device.isInstrument = static_cast<bool>(obj->getProperty("isInstrument"));
-        device.uniqueId = obj->getProperty("uniqueId").toString();
-        device.fileOrIdentifier = obj->getProperty("fileOrIdentifier").toString();
-
-        juce::String format = obj->getProperty("format").toString();
-        if (format == "VST3")
-            device.format = PluginFormat::VST3;
-        else if (format == "AU")
-            device.format = PluginFormat::AU;
-        else if (format == "VST")
-            device.format = PluginFormat::VST;
-        else if (format == "Internal")
-            device.format = PluginFormat::Internal;
-
         TrackId trackId = visibleTrackIds_[targetIndex];
-        TrackManager::getInstance().addDeviceToTrack(trackId, device);
+        auto cmd = std::make_unique<AddDeviceToTrackCommand>(trackId, device);
+        UndoManager::getInstance().executeCommand(std::move(cmd));
         TrackManager::getInstance().setSelectedTrack(trackId);
 
         DBG("Dropped plugin on track header: " << juce::String(device.name) << " → track "
                                                << trackId);
     } else {
         // Dropped on empty area → create new track with plugin
-        TrackManager::createTrackWithPlugin(*obj);
+        TrackType trackType = device.isInstrument ? TrackType::Instrument : TrackType::Audio;
+        juce::String pluginName = obj->getProperty("name").toString();
+        auto cmd = std::make_unique<CreateTrackWithDeviceCommand>(pluginName, trackType, device);
+        UndoManager::getInstance().executeCommand(std::move(cmd));
     }
 
     pluginDropTrackIndex_ = -1;
