@@ -43,6 +43,7 @@ class TrackHeadersPanel : public juce::Component,
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
     void trackDevicesChanged(magda::TrackId trackId) override;
+    void trackSelectionChanged(magda::TrackId trackId) override;
 
     // ViewModeListener
     void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
