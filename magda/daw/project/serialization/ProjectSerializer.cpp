@@ -2,11 +2,11 @@
 
 #include <juce_data_structures/juce_data_structures.h>
 
-#include "../core/AutomationManager.hpp"
-#include "../core/ClipManager.hpp"
-#include "../core/SelectionManager.hpp"
-#include "../core/TrackManager.hpp"
-#include "../core/ViewModeState.hpp"
+#include "../../core/AutomationManager.hpp"
+#include "../../core/ClipManager.hpp"
+#include "../../core/SelectionManager.hpp"
+#include "../../core/TrackManager.hpp"
+#include "../../core/ViewModeState.hpp"
 
 namespace magda {
 

@@ -2,9 +2,9 @@
 
 #include <juce_core/juce_core.h>
 
-#include "../core/AutomationInfo.hpp"
-#include "../core/ClipInfo.hpp"
-#include "../core/TrackInfo.hpp"
+#include "../../core/AutomationInfo.hpp"
+#include "../../core/ClipInfo.hpp"
+#include "../../core/TrackInfo.hpp"
 #include "ProjectInfo.hpp"
 
 namespace magda {

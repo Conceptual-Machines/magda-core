@@ -6,7 +6,7 @@
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/project/ProjectInfo.hpp"
-#include "magda/daw/project/ProjectSerializer.hpp"
+#include "magda/daw/project/serialization/ProjectSerializer.hpp"
 #include "magda/daw/ui/state/TimelineController.hpp"
 #include "magda/daw/ui/state/TimelineEvents.hpp"
 

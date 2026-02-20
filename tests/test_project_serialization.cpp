@@ -6,7 +6,7 @@
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
-#include "magda/daw/project/ProjectSerializer.hpp"
+#include "magda/daw/project/serialization/ProjectSerializer.hpp"
 
 using namespace magda;
 

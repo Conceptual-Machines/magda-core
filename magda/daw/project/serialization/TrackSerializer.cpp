@@ -1,4 +1,4 @@
-#include "../core/ViewModeState.hpp"
+#include "../../core/ViewModeState.hpp"
 #include "ProjectSerializer.hpp"
 #include "SerializationHelpers.hpp"
 

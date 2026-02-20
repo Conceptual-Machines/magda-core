@@ -8,7 +8,7 @@
 #include "../core/AutomationManager.hpp"
 #include "../core/ClipManager.hpp"
 #include "../core/TrackManager.hpp"
-#include "ProjectSerializer.hpp"
+#include "serialization/ProjectSerializer.hpp"
 
 namespace magda {
 
