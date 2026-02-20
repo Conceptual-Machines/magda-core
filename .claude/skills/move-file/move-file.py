@@ -73,20 +73,20 @@ def update_includes_in_file(
     new_abs: Path,
     project_root: Path,
     dry_run: bool = False,
-) -> bool:
+) -> list[tuple[str, str]]:
     """
     Update all #include "..." lines in file_path that resolve to old_abs.
     Rewrites them to point to new_abs, preserving the original include style.
-    Returns True if any changes were made.
+    Returns a list of (old_include, new_include) pairs for each changed line.
     """
     try:
         content = file_path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
-        return False
+        return []
 
     old_resolved = old_abs.resolve()
     lines = content.split("\n")
-    changed = False
+    changes: list[tuple[str, str]] = []
     new_lines = []
 
     for line in lines:
@@ -102,17 +102,17 @@ def update_includes_in_file(
                     # Preserve relative style
                     new_include = compute_relative_include(file_path, new_abs)
                 new_lines.append(f"{prefix}{new_include}{suffix}")
-                changed = True
+                changes.append((include_str, new_include))
                 continue
         new_lines.append(line)
 
-    if changed and not dry_run:
+    if changes and not dry_run:
         try:
             file_path.write_text("\n".join(new_lines), encoding="utf-8")
         except OSError as e:
             print(f"  ⚠ Could not write {file_path}: {e}", file=sys.stderr)
-            return False
-    return changed
+            return []
+    return changes
 
 
 def update_own_includes(
@@ -121,22 +121,22 @@ def update_own_includes(
     new_abs: Path,
     project_root: Path,
     dry_run: bool = False,
-) -> bool:
+) -> list[tuple[str, str]]:
     """
     Update relative includes *within* the moved file itself.
 
     When a file moves to a new directory, its relative includes to other files
     must be recomputed from the new location. Project-root-relative includes
     ("magda/daw/...") are unchanged since they don't depend on file location.
-    Returns True if any changes were made.
+    Returns a list of (old_include, new_include) pairs for each changed line.
     """
     try:
         content = moved_file.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
-        return False
+        return []
 
     lines = content.split("\n")
-    changed = False
+    changes: list[tuple[str, str]] = []
     new_lines = []
 
     for line in lines:
@@ -153,17 +153,17 @@ def update_own_includes(
             new_include = compute_relative_include(new_abs, old_included)
             if new_include != include_str:
                 new_lines.append(f"{prefix}{new_include}{suffix}")
-                changed = True
+                changes.append((include_str, new_include))
                 continue
         new_lines.append(line)
 
-    if changed and not dry_run:
+    if changes and not dry_run:
         try:
             moved_file.write_text("\n".join(new_lines), encoding="utf-8")
         except OSError as e:
             print(f"  ⚠ Could not write {moved_file}: {e}", file=sys.stderr)
-            return False
-    return changed
+            return []
+    return changes
 
 
 def update_cmake(cmake_path: Path, old_rel: str, new_rel: str, dry_run: bool = False) -> bool:
@@ -235,25 +235,33 @@ def main() -> None:
     cpp_files = find_cpp_files(project_root)
 
     # Step 2: Update includes in all other files that reference the old path
-    updated_files = []
+    updated_files: list[tuple[str, list[tuple[str, str]]]] = []
     for file_path in cpp_files:
         if file_path.resolve() == own_includes_file.resolve():
             continue
-        if update_includes_in_file(file_path, old_abs, new_abs, project_root, dry_run=dry_run):
-            updated_files.append(str(file_path.relative_to(project_root)))
+        changes = update_includes_in_file(file_path, old_abs, new_abs, project_root, dry_run=dry_run)
+        if changes:
+            updated_files.append((str(file_path.relative_to(project_root)), changes))
 
     verb = "Would update" if dry_run else "Updated"
     if updated_files:
         print(f"  ✓ {verb} includes in {len(updated_files)} file(s):")
-        for f in sorted(updated_files):
+        for f, changes in sorted(updated_files):
             print(f"    - {f}")
+            if dry_run:
+                for old_inc, new_inc in changes:
+                    print(f'        "{old_inc}" → "{new_inc}"')
     else:
         print("  ✓ No external files needed include updates")
 
     # Step 3: Update relative includes within the moved file itself
-    if update_own_includes(own_includes_file, old_abs, new_abs, project_root, dry_run=dry_run):
+    own_changes = update_own_includes(own_includes_file, old_abs, new_abs, project_root, dry_run=dry_run)
+    if own_changes:
         verb2 = "Would update" if dry_run else "Updated"
         print(f"  ✓ {verb2} relative includes within {new_path}")
+        if dry_run:
+            for old_inc, new_inc in own_changes:
+                print(f'        "{old_inc}" → "{new_inc}"')
     else:
         print(f"  ✓ No internal includes needed updating in {new_path}")
 
