@@ -848,14 +848,13 @@ void TrackHeadersPanel::selectTrack(int index) {
 }
 
 void TrackHeadersPanel::trackSelectionChanged(TrackId trackId) {
+    selectedTrackIndex = -1;
     for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
         if (visibleTrackIds_[i] == trackId) {
             selectedTrackIndex = static_cast<int>(i);
-            repaint();
-            return;
+            break;
         }
     }
-    selectedTrackIndex = -1;
     repaint();
 }
 
