@@ -87,6 +87,9 @@ Builds/
 # Claude Code local settings
 .claude/settings.local.json
 
+# CodeQL
+_codeql_detected_source_root
+
 # User-specific config files
 magda_config.txt
 
