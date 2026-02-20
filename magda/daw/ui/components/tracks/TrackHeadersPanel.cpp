@@ -323,6 +323,7 @@ TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(au
               << std::endl;
     setSize(TRACK_HEADER_WIDTH, 400);
     setWantsKeyboardFocus(true);
+    addMouseListener(this, true);  // Receive child clicks for track selection
 
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
@@ -1416,7 +1417,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 
             // Constants
             const int nameRowHeight = 18;
-            const int rowHeight = 20;
+            const int rowHeight = 16;
             const int spacing = 2;
 
             // Top row: collapse button (if group) + name label
@@ -1454,12 +1455,13 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
             auto layoutVolPanAndButtons = [&](juce::Rectangle<int>& area, int gapOverride = -1) {
                 const int gap = 2;
                 const int rh = rowHeight;
-                const int rowWidth = area.getWidth();
+                const int areaWidth = area.getWidth();
                 const int numBtns = header.isMultiOut ? 3 : 5;
 
-                if (rowWidth >= 260) {
+                if (areaWidth >= 260) {
                     // Single row: Vol Pan | M S R Mon A
                     auto row = area.removeFromTop(rh);
+                    const int rowWidth = areaWidth;
                     const int mixW = rowWidth * 60 / 100;
                     const int btnsW = rowWidth - mixW - gap;
                     const int mixGap = 2;
@@ -1492,6 +1494,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                     header.automationButton->setVisible(true);
                 } else {
                     // Two rows: Vol Pan, then M S R Mon A
+                    const int rowWidth = std::min(areaWidth, 120);
                     const int rowPadding = gapOverride >= 0
                                                ? gapOverride
                                                : std::max(2, (area.getHeight() - 2 * rh) / 3);
@@ -1534,7 +1537,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 // Row 2: M S R Mon A
                 // Sends, Input routing, Output routing follow
                 const int buttonGap = 2;
-                const int contentRowHeight = rowHeight;
+                const int contentRowHeight = 18;  // I/O dropdowns taller than vol/buttons
                 const bool hasSends = !header.sendLabels.empty();
 
                 const int sendLabelWidth = 28;
@@ -1583,7 +1586,8 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                     // Input row: [Audio In] [MIDI In] [inputIcon] — hidden for multi-out
                     const int iconSize = 16;
                     const int ddGap = spacing;
-                    const int ddWidth = (tcpArea.getWidth() - ddGap - ddGap - iconSize) / 2;
+                    const int ioWidth = std::min(tcpArea.getWidth(), 120);
+                    const int ddWidth = (ioWidth - ddGap - ddGap - iconSize) / 2;
                     auto inputRow = tcpArea.removeFromTop(contentRowHeight);
                     if (!header.isMultiOut) {
                         header.audioInputSelector->setBounds(inputRow.removeFromLeft(ddWidth));
@@ -1630,29 +1634,33 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 }
 
 void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
+    // Convert to panel coordinates (handles clicks forwarded from children)
+    auto localEvent = event.getEventRelativeTo(this);
+    auto pos = localEvent.getPosition();
+
     // Handle vertical track height resizing and track selection
     int trackIndex;
-    if (isResizeHandleArea(event.getPosition(), trackIndex)) {
+    if (isResizeHandleArea(pos, trackIndex)) {
         // Start resizing
         isResizing = true;
         resizingTrackIndex = trackIndex;
-        resizeStartY = event.y;
+        resizeStartY = localEvent.y;
         resizeStartHeight = trackHeaders[trackIndex]->height;
         setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
     } else {
         // Find which track was clicked
         for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
-            if (getTrackHeaderArea(i).contains(event.getPosition())) {
+            if (getTrackHeaderArea(i).contains(pos)) {
                 selectTrack(i);
 
-                // Right-click shows context menu
-                if (event.mods.isPopupMenu()) {
-                    showContextMenu(i, event.getPosition());
-                } else {
+                // Right-click shows context menu (only for direct clicks, not child forwards)
+                if (event.mods.isPopupMenu() && event.originalComponent == this) {
+                    showContextMenu(i, pos);
+                } else if (event.originalComponent == this) {
                     // Record potential drag start
                     draggedTrackIndex_ = i;
-                    dragStartX_ = event.x;
-                    dragStartY_ = event.y;
+                    dragStartX_ = localEvent.x;
+                    dragStartY_ = localEvent.y;
                 }
                 break;
             }
