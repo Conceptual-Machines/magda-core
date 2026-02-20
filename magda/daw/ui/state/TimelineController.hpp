@@ -2,7 +2,6 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include <deque>
 #include <memory>
 #include <vector>
 
@@ -66,7 +65,7 @@ class TimelineStateListener {
  * and provides:
  * - Event dispatching for state modifications
  * - Listener notification for state changes
- * - Undo/redo support
+ * - Delegates undo/redo to the central UndoManager
  *
  * Data flow:
  *   User Input -> Component -> dispatch(Event) -> TimelineController
@@ -130,45 +129,6 @@ class TimelineController {
      */
     void removeAudioEngineListener(AudioEngineListener* listener);
 
-    // ===== Undo/Redo =====
-
-    /**
-     * Push the current state onto the undo stack.
-     * Call this before making significant changes that should be undoable.
-     */
-    void pushUndoState();
-
-    /**
-     * Undo the last state change.
-     * @return true if undo was performed
-     */
-    bool undo();
-
-    /**
-     * Redo a previously undone state change.
-     * @return true if redo was performed
-     */
-    bool redo();
-
-    /**
-     * Check if undo is available.
-     */
-    bool canUndo() const {
-        return !undoStack.empty();
-    }
-
-    /**
-     * Check if redo is available.
-     */
-    bool canRedo() const {
-        return !redoStack.empty();
-    }
-
-    /**
-     * Clear the undo/redo history.
-     */
-    void clearUndoHistory();
-
     // ===== Project Restore =====
 
     /**
@@ -178,15 +138,6 @@ class TimelineController {
      */
     void restoreProjectState(double tempo, int timeSigNum, int timeSigDen, bool loopEnabled,
                              double loopStartBeats, double loopEndBeats);
-
-    // ===== Configuration =====
-
-    /**
-     * Set the maximum number of undo states to keep.
-     */
-    void setMaxUndoStates(size_t maxStates) {
-        maxUndoStates = maxStates;
-    }
 
     // Backward-compatible alias for ChangeFlags (now at namespace scope)
     using ChangeFlags = magda::ChangeFlags;
@@ -198,11 +149,6 @@ class TimelineController {
     // Listeners
     std::vector<TimelineStateListener*> listeners;
     std::vector<AudioEngineListener*> audioEngineListeners;
-
-    // Undo/redo stacks
-    std::deque<TimelineState> undoStack;
-    std::deque<TimelineState> redoStack;
-    size_t maxUndoStates = 50;
 
     // ===== Event Handlers =====
     // Each handler modifies state and returns flags indicating what changed

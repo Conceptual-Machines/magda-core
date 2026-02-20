@@ -793,23 +793,7 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
     // Note: 'S' key is now used for split in TrackContentPanel
     // Snap toggle is available via the toolbar button
 
-    // Check for Ctrl+Z / Cmd+Z for undo
-    if (key == juce::KeyPress('z', juce::ModifierKeys::commandModifier, 0)) {
-        if (timelineController->undo()) {
-            std::cout << "🎯 UNDO: State restored" << std::endl;
-        }
-        return true;
-    }
-
-    // Check for Ctrl+Shift+Z / Cmd+Shift+Z for redo
-    if (key ==
-        juce::KeyPress('z', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier,
-                       0)) {
-        if (timelineController->redo()) {
-            std::cout << "🎯 REDO: State restored" << std::endl;
-        }
-        return true;
-    }
+    // Undo/redo is handled by the central UndoManager via MainWindowCommands
 
     // Check for Escape — exit link mode first, then clear selection
     if (key == juce::KeyPress::escapeKey) {
