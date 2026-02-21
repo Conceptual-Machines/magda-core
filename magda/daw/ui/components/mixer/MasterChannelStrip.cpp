@@ -324,6 +324,22 @@ void MasterChannelStrip::setupControls() {
     };
     addAndMakeVisible(*resizeHandle_);
 
+    // Output routing selector (placeholder)
+    outputSelector_ = std::make_unique<RoutingSelector>(RoutingSelector::Type::AudioOut);
+    outputSelector_->setOptions({
+        {1, "Output 1+2"},
+    });
+    outputSelector_->setSelectedId(1);
+    addAndMakeVisible(*outputSelector_);
+
+    // Cue output selector (placeholder)
+    cueSelector_ = std::make_unique<RoutingSelector>(RoutingSelector::Type::AudioOut);
+    cueSelector_->setOptions({
+        {1, "None"},
+    });
+    cueSelector_->setSelectedId(1);
+    addAndMakeVisible(*cueSelector_);
+
     // Speaker on/off button (toggles master mute)
     auto speakerOnIcon = juce::Drawable::createFromImageData(BinaryData::volume_up_svg,
                                                              BinaryData::volume_up_svgSize);
@@ -388,6 +404,12 @@ void MasterChannelStrip::resized() {
         auto buttonArea = bounds.removeFromBottom(metrics.buttonSize);
         speakerButton->setBounds(buttonArea.withSizeKeepingCentre(24, metrics.buttonSize));
 
+        // Routing selectors above speaker button (Output, Cue)
+        bounds.removeFromBottom(2);
+        cueSelector_->setBounds(bounds.removeFromBottom(16));
+        bounds.removeFromBottom(2);
+        outputSelector_->setBounds(bounds.removeFromBottom(16));
+
         // Small gap before fader region
         bounds.removeFromTop(2);
 
@@ -449,6 +471,8 @@ void MasterChannelStrip::resized() {
         // Hide components not used in horizontal mode
         dbScale_->setBounds(juce::Rectangle<int>());
         resizeHandle_->setBounds(juce::Rectangle<int>());
+        outputSelector_->setBounds(juce::Rectangle<int>());
+        cueSelector_->setBounds(juce::Rectangle<int>());
 
         // Clear vertical layout regions
         faderRegion_ = juce::Rectangle<int>();
