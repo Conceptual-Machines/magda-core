@@ -118,6 +118,7 @@ class MixerView : public juce::Component,
 
       private:
         int trackId_;
+        TrackType trackType_;
         bool isMaster_;
         bool isChildTrack_ = false;
         bool selected = false;

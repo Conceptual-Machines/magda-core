@@ -265,6 +265,7 @@ class MixerView::ChannelStrip::DbScale : public juce::Component {
 // Channel strip implementation
 MixerView::ChannelStrip::ChannelStrip(const TrackInfo& track, bool isMaster)
     : trackId_(track.id),
+      trackType_(track.type),
       isMaster_(isMaster),
       isChildTrack_(track.hasParent()),
       trackColour_(track.colour),
@@ -731,31 +732,42 @@ void MixerView::ChannelStrip::resized() {
         }
     }
 
-    // M/S/R/Mon buttons at bottom
+    // M/S/R/Mon buttons at bottom — multi-out children only show M/S
+    bool isMultiOut = trackType_ == TrackType::MultiOut;
     auto buttonArea = bounds.removeFromBottom(metrics.buttonSize);
-    int numButtons = isMaster_ ? 2 : 4;
-    int buttonWidth = (buttonArea.getWidth() - (numButtons - 1) * 2) / numButtons;
 
-    muteButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
-    buttonArea.removeFromLeft(2);
-    if (!recordButton) {
-        // Master: only M/S, last button takes remaining width
+    if (isMultiOut || isMaster_ || !recordButton) {
+        // M/S only
+        int buttonWidth = (buttonArea.getWidth() - 2) / 2;
+        muteButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
+        buttonArea.removeFromLeft(2);
         soloButton->setBounds(buttonArea);
+        if (recordButton)
+            recordButton->setVisible(false);
+        if (monitorButton)
+            monitorButton->setVisible(false);
     } else {
+        int numButtons = monitorButton ? 4 : 3;
+        int buttonWidth = (buttonArea.getWidth() - (numButtons - 1) * 2) / numButtons;
+        muteButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
+        buttonArea.removeFromLeft(2);
         soloButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
         buttonArea.removeFromLeft(2);
+        recordButton->setVisible(true);
         if (!monitorButton) {
             recordButton->setBounds(buttonArea);
         } else {
+            monitorButton->setVisible(true);
             recordButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
             buttonArea.removeFromLeft(2);
-            monitorButton->setBounds(buttonArea);  // Last button takes remaining width
+            monitorButton->setBounds(buttonArea);
         }
     }
 
-    // Routing selectors above M/S/R (2 rows: Audio In/Out, MIDI In/Out)
+    // Routing selectors above M/S/R — hide for multi-out children
+    bool showRoutingForStrip = metrics.showRouting && trackType_ != TrackType::MultiOut;
     if (audioInSelector && audioOutSelector && midiInSelector && midiOutSelector) {
-        if (metrics.showRouting) {
+        if (showRoutingForStrip) {
             audioInSelector->setVisible(true);
             audioOutSelector->setVisible(true);
             midiInSelector->setVisible(true);
