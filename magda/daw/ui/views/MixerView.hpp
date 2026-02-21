@@ -157,7 +157,8 @@ class MixerView : public juce::Component,
             std::unique_ptr<juce::TextButton> removeButton;
         };
         std::vector<std::unique_ptr<SendSlot>> sendSlots_;
-        std::unique_ptr<juce::TextButton> addSendButton_;
+        std::unique_ptr<juce::Viewport> sendViewport_;
+        std::unique_ptr<juce::Component> sendContainer_;
 
         // DrumGrid expand toggle (only visible when track has DrumGridPlugin)
         std::unique_ptr<juce::TextButton> expandToggle_;
@@ -260,6 +261,8 @@ class MixerView : public juce::Component,
 
     void rebuildChannelStrips();
     void updateStripWidths();
+    bool isResizeDragging_ = false;
+    bool pendingResizeUpdate_ = false;
 
     // Selection state
     int selectedChannelIndex = 0;  // Track index, -1 for no selection

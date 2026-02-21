@@ -373,6 +373,14 @@ void MixerView::ChannelStrip::setupControls() {
         };
         addAndMakeVisible(*monitorButton);
 
+        // Send viewport (scrollable container for send slots)
+        sendContainer_ = std::make_unique<juce::Component>();
+        sendViewport_ = std::make_unique<juce::Viewport>();
+        sendViewport_->setViewedComponent(sendContainer_.get(), false);
+        sendViewport_->setScrollBarsShown(true, false);  // vertical only
+        sendViewport_->setScrollBarThickness(4);
+        addAndMakeVisible(*sendViewport_);
+
         // Audio/MIDI routing selectors (toggle + dropdown, not on master)
         audioInSelector = std::make_unique<RoutingSelector>(RoutingSelector::Type::AudioIn);
         audioInSelector->setOptions({
@@ -406,44 +414,16 @@ void MixerView::ChannelStrip::setupControls() {
         midiOutSelector->setSelectedId(1);
         addAndMakeVisible(*midiOutSelector);
     }
-
-    // Add send button (not on master)
-    if (!isMaster_) {
-        addSendButton_ = std::make_unique<juce::TextButton>("+");
-        addSendButton_->setConnectedEdges(
-            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-        addSendButton_->setColour(juce::TextButton::buttonColourId,
-                                  DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-        addSendButton_->setColour(juce::TextButton::textColourOffId,
-                                  DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        addSendButton_->onClick = [this]() {
-            juce::PopupMenu menu;
-            const auto& tracks = TrackManager::getInstance().getTracks();
-            for (const auto& t : tracks) {
-                if (t.id != trackId_ && t.type != TrackType::Master) {
-                    menu.addItem(t.id, t.name);
-                }
-            }
-            if (menu.getNumItems() == 0) {
-                menu.addItem(-1, "(No tracks available)", false);
-            }
-            menu.showMenuAsync(juce::PopupMenu::Options(), [this](int result) {
-                if (result > 0) {
-                    TrackManager::getInstance().addSend(trackId_, static_cast<TrackId>(result));
-                }
-            });
-        };
-        addAndMakeVisible(*addSendButton_);
-    }
 }
 
 void MixerView::ChannelStrip::rebuildSendSlots(const std::vector<SendInfo>& sends) {
-    // Remove old slots
+    // Remove old slots from send container
     for (auto& slot : sendSlots_) {
-        removeChildComponent(slot->nameLabel.get());
-        removeChildComponent(slot->levelSlider.get());
-        removeChildComponent(slot->removeButton.get());
+        if (sendContainer_) {
+            sendContainer_->removeChildComponent(slot->nameLabel.get());
+            sendContainer_->removeChildComponent(slot->levelSlider.get());
+            sendContainer_->removeChildComponent(slot->removeButton.get());
+        }
     }
     sendSlots_.clear();
 
@@ -463,7 +443,7 @@ void MixerView::ChannelStrip::rebuildSendSlots(const std::vector<SendInfo>& send
         slot->nameLabel->setColour(juce::Label::textColourId,
                                    DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         slot->nameLabel->setJustificationType(juce::Justification::centredLeft);
-        addAndMakeVisible(*slot->nameLabel);
+        sendContainer_->addAndMakeVisible(*slot->nameLabel);
 
         // Level slider (horizontal, 0-1)
         slot->levelSlider =
@@ -477,7 +457,7 @@ void MixerView::ChannelStrip::rebuildSendSlots(const std::vector<SendInfo>& send
             UndoManager::getInstance().executeCommand(
                 std::make_unique<SetSendLevelCommand>(trackId_, busIdx, static_cast<float>(val)));
         };
-        addAndMakeVisible(*slot->levelSlider);
+        sendContainer_->addAndMakeVisible(*slot->levelSlider);
 
         // Remove button
         slot->removeButton = std::make_unique<juce::TextButton>("x");
@@ -491,7 +471,7 @@ void MixerView::ChannelStrip::rebuildSendSlots(const std::vector<SendInfo>& send
         slot->removeButton->onClick = [this, busIdx]() {
             TrackManager::getInstance().removeSend(trackId_, busIdx);
         };
-        addAndMakeVisible(*slot->removeButton);
+        sendContainer_->addAndMakeVisible(*slot->removeButton);
 
         sendSlots_.push_back(std::move(slot));
     }
@@ -611,22 +591,33 @@ void MixerView::ChannelStrip::resized() {
     trackLabel->setBounds(bounds.removeFromTop(24));
     bounds.removeFromTop(metrics.controlSpacing);
 
-    // Sends area (dynamic height) — between track label and fader
-    if (!isMaster_) {
+    // Sends area (fixed-height scrollable viewport) — between track label and fader
+    if (!isMaster_ && sendViewport_) {
         const int sendSlotHeight = 18;
-        const int addButtonHeight = 16;
+        const int maxSendAreaHeight = 60;  // Fixed allocation for sends area
+
+        // Layout send slots inside the container
+        int containerWidth = bounds.getWidth();
+        int totalContentHeight = 0;
         for (auto& slot : sendSlots_) {
-            auto row = bounds.removeFromTop(sendSlotHeight);
-            // Left: name label (~40%), Right: level slider + remove button
+            auto row = juce::Rectangle<int>(0, totalContentHeight, containerWidth, sendSlotHeight);
             slot->nameLabel->setBounds(row.removeFromLeft(row.getWidth() * 40 / 100));
             auto removeArea = row.removeFromRight(16);
             slot->removeButton->setBounds(removeArea);
             slot->levelSlider->setBounds(row);
-            bounds.removeFromTop(1);  // 1px gap between slots
+            totalContentHeight += sendSlotHeight + 1;  // 1px gap
         }
-        if (addSendButton_) {
-            addSendButton_->setBounds(bounds.removeFromTop(addButtonHeight));
+
+        sendContainer_->setBounds(0, 0, containerWidth, totalContentHeight);
+
+        // Only show viewport if there are sends
+        if (!sendSlots_.empty()) {
+            int viewportHeight = juce::jmin(maxSendAreaHeight, totalContentHeight);
+            sendViewport_->setBounds(bounds.removeFromTop(viewportHeight));
+            sendViewport_->setVisible(true);
             bounds.removeFromTop(metrics.controlSpacing);
+        } else {
+            sendViewport_->setVisible(false);
         }
     }
 
@@ -769,8 +760,26 @@ void MixerView::ChannelStrip::setSelected(bool shouldBeSelected) {
     }
 }
 
-void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& /*event*/) {
-    if (onClicked) {
+void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
+    if (event.mods.isPopupMenu() && !isMaster_) {
+        juce::PopupMenu menu;
+        juce::PopupMenu sendSubMenu;
+        const auto& tracks = TrackManager::getInstance().getTracks();
+        for (const auto& t : tracks) {
+            if (t.id != trackId_ && t.type != TrackType::Master) {
+                sendSubMenu.addItem(t.id, t.name);
+            }
+        }
+        if (sendSubMenu.getNumItems() == 0) {
+            sendSubMenu.addItem(-1, "(No tracks available)", false);
+        }
+        menu.addSubMenu("Add Send", sendSubMenu);
+        menu.showMenuAsync(juce::PopupMenu::Options(), [this](int result) {
+            if (result > 0) {
+                TrackManager::getInstance().addSend(trackId_, static_cast<TrackId>(result));
+            }
+        });
+    } else if (onClicked) {
         onClicked(trackId_, isMaster_);
     }
 }
@@ -1134,9 +1143,24 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
         int newWidth =
             juce::jlimit(minChannelWidth_, maxChannelWidth_, metrics.channelWidth + deltaX);
         if (metrics.channelWidth != newWidth) {
+            isResizeDragging_ = true;
             metrics.channelWidth = newWidth;
-            updateStripWidths();
+            // Coalesce: just store the new width, apply on next vblank
+            if (!pendingResizeUpdate_) {
+                pendingResizeUpdate_ = true;
+                juce::MessageManager::callAsync([this]() {
+                    if (pendingResizeUpdate_) {
+                        pendingResizeUpdate_ = false;
+                        updateStripWidths();
+                    }
+                });
+            }
         }
+    };
+    channelResizeHandle_->onResizeEnd = [this]() {
+        isResizeDragging_ = false;
+        pendingResizeUpdate_ = false;
+        updateStripWidths();  // Ensure final width is applied
     };
     channelContainer->addAndMakeVisible(*channelResizeHandle_);
 
@@ -1466,7 +1490,7 @@ void MixerView::updateStripWidths() {
     const auto& metrics = MixerMetrics::getInstance();
     int containerHeight = channelContainer->getHeight();
 
-    // Resize channel container and reposition strips only
+    // Resize channel container and reposition strips
     int numOrdered = static_cast<int>(orderedStrips_.size());
     int containerWidth = numOrdered * metrics.channelWidth;
     channelContainer->setSize(containerWidth, containerHeight);
@@ -1496,6 +1520,10 @@ void MixerView::updateStripWidths() {
 }
 
 void MixerView::timerCallback() {
+    // Skip meter updates during resize drag to avoid repaints
+    if (isResizeDragging_)
+        return;
+
     // Read metering data from AudioBridge
     if (!audioEngine_)
         return;
