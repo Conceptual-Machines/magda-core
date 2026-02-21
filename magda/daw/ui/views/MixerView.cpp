@@ -421,12 +421,12 @@ void MixerView::ChannelStrip::setupControls() {
             juce::PopupMenu menu;
             const auto& tracks = TrackManager::getInstance().getTracks();
             for (const auto& t : tracks) {
-                if (t.id != trackId_ && t.type == TrackType::Aux) {
+                if (t.id != trackId_ && t.type != TrackType::Master) {
                     menu.addItem(t.id, t.name);
                 }
             }
             if (menu.getNumItems() == 0) {
-                menu.addItem(-1, "(No aux tracks available)", false);
+                menu.addItem(-1, "(No tracks available)", false);
             }
             menu.showMenuAsync(juce::PopupMenu::Options(), [this](int result) {
                 if (result > 0) {
@@ -1384,6 +1384,11 @@ void MixerView::trackPropertyChanged(int trackId) {
             return;
         }
     }
+}
+
+void MixerView::trackDevicesChanged(TrackId trackId) {
+    // Sends are notified via trackDevicesChanged — update the strip
+    trackPropertyChanged(trackId);
 }
 
 void MixerView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profile*/) {
