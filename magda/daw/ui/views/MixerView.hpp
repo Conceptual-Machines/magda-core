@@ -85,6 +85,7 @@ class MixerView : public juce::Component,
         ~ChannelStrip() override;
 
         void paint(juce::Graphics& g) override;
+        void paintOverChildren(juce::Graphics& g) override;
         void resized() override;
         void mouseDown(const juce::MouseEvent& event) override;
 
@@ -118,6 +119,7 @@ class MixerView : public juce::Component,
       private:
         int trackId_;
         bool isMaster_;
+        bool isChildTrack_ = false;
         bool selected = false;
         float meterLevel = 0.0f;
         juce::Colour trackColour_;

@@ -264,7 +264,11 @@ class MixerView::ChannelStrip::DbScale : public juce::Component {
 
 // Channel strip implementation
 MixerView::ChannelStrip::ChannelStrip(const TrackInfo& track, bool isMaster)
-    : trackId_(track.id), isMaster_(isMaster), trackColour_(track.colour), trackName_(track.name) {
+    : trackId_(track.id),
+      isMaster_(isMaster),
+      isChildTrack_(track.hasParent()),
+      trackColour_(track.colour),
+      trackName_(track.name) {
     setOpaque(true);
     setupControls();
     updateFromTrack(track);
@@ -273,8 +277,12 @@ MixerView::ChannelStrip::ChannelStrip(const TrackInfo& track, bool isMaster)
 MixerView::ChannelStrip::~ChannelStrip() = default;
 
 void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track) {
+    bool wasChild = isChildTrack_;
+    isChildTrack_ = track.hasParent();
     trackColour_ = track.colour;
     trackName_ = track.name;
+    if (isChildTrack_ != wasChild)
+        repaint();
 
     if (trackLabel) {
         trackLabel->setText(isMaster_ ? "Master" : track.name, juce::dontSendNotification);
@@ -623,7 +631,7 @@ void MixerView::ChannelStrip::rebuildSendSlots(const std::vector<SendInfo>& send
 void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
-    // Background - slightly brighter if selected
+    // Background
     if (selected) {
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
     } else {
@@ -662,6 +670,19 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     // dB ticks and labels are drawn by the DbScale component
 }
 
+void MixerView::ChannelStrip::paintOverChildren(juce::Graphics& g) {
+    if (!isChildTrack_)
+        return;
+
+    // Semi-transparent overlay to dim child tracks
+    g.setColour(juce::Colour(0x30000000));
+    g.fillRect(getLocalBounds());
+
+    // Left-edge bracket bar showing group membership
+    g.setColour(trackColour_.withAlpha(0.8f));
+    g.fillRect(0, 0, 3, getHeight());
+}
+
 void MixerView::ChannelStrip::resized() {
     const auto& metrics = MixerMetrics::getInstance();
     auto bounds = getLocalBounds().reduced(metrics.channelPadding);
@@ -669,14 +690,13 @@ void MixerView::ChannelStrip::resized() {
     // Color indicator space
     bounds.removeFromTop(6);
 
-    // Expand toggle at top (only for tracks with DrumGridPlugin)
+    // Track label (with expand toggle next to it if present)
+    auto titleRow = bounds.removeFromTop(24);
     if (expandToggle_) {
-        expandToggle_->setBounds(bounds.removeFromTop(18));
-        bounds.removeFromTop(2);
+        expandToggle_->setBounds(titleRow.removeFromLeft(20).withSizeKeepingCentre(18, 18));
+        titleRow.removeFromLeft(2);
     }
-
-    // Track label at top
-    trackLabel->setBounds(bounds.removeFromTop(24));
+    trackLabel->setBounds(titleRow);
     bounds.removeFromTop(metrics.controlSpacing);
 
     // Sends area (scrollable viewport) — between track label and fader
@@ -1332,6 +1352,14 @@ void MixerView::rebuildChannelStrips() {
         if (track.type == TrackType::Aux)
             continue;  // Aux strips handled separately
 
+        // Skip children of collapsed group tracks
+        if (track.hasParent()) {
+            if (auto* parent = TrackManager::getInstance().getTrack(track.parentId)) {
+                if (parent->isGroup() && parent->isCollapsedIn(currentViewMode_))
+                    continue;
+            }
+        }
+
         // Skip collapsed multi-out children
         if (track.type == TrackType::MultiOut && track.multiOutLink) {
             if (auto* parent =
@@ -1389,8 +1417,33 @@ void MixerView::rebuildChannelStrips() {
             strip->addAndMakeVisible(*strip->expandToggle_);
         }
 
+        // Add expand/collapse toggle for group tracks with children
+        if (!drumGrid && track.isGroup() && track.hasChildren()) {
+            bool isCollapsed = track.isCollapsedIn(currentViewMode_);
+            TrackId trackId = track.id;
+            strip->expandToggle_ = std::make_unique<juce::TextButton>(
+                isCollapsed ? juce::String::charToString(0x25B6)    // ▶
+                            : juce::String::charToString(0x25BC));  // ▼
+            strip->expandToggle_->setConnectedEdges(
+                juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+                juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+            strip->expandToggle_->setColour(juce::TextButton::buttonColourId,
+                                            DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+            strip->expandToggle_->setColour(juce::TextButton::textColourOffId,
+                                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            strip->expandToggle_->onClick = [this, trackId]() {
+                auto* t = TrackManager::getInstance().getTrack(trackId);
+                if (t) {
+                    bool collapsed = t->isCollapsedIn(currentViewMode_);
+                    t->viewSettings.setCollapsed(currentViewMode_, !collapsed);
+                }
+                rebuildChannelStrips();
+            };
+            strip->addAndMakeVisible(*strip->expandToggle_);
+        }
+
         // Check if this track has active multi-out children (and no DrumGrid toggle already)
-        if (!drumGrid) {
+        if (!drumGrid && !track.isGroup()) {
             bool hasActiveMultiOut = false;
             bool isCollapsed = false;
             TrackId trackId = track.id;
