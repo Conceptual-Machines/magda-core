@@ -54,6 +54,57 @@ float meterPosToDb(float pos) {
 }
 }  // namespace
 
+// Resize handle for the send area boundary (matches channel strip's SendResizeHandle)
+class MasterChannelStrip::ResizeHandle : public juce::Component {
+  public:
+    ResizeHandle() {
+        setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.setColour(isHovering_ ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+                                : DarkTheme::getColour(DarkTheme::SEPARATOR));
+        int y = getHeight() / 2;
+        g.fillRect(4, y, getWidth() - 8, 2);
+    }
+
+    void mouseEnter(const juce::MouseEvent& /*event*/) override {
+        isHovering_ = true;
+        repaint();
+    }
+
+    void mouseExit(const juce::MouseEvent& /*event*/) override {
+        isHovering_ = false;
+        repaint();
+    }
+
+    void mouseDown(const juce::MouseEvent& event) override {
+        isDragging_ = true;
+        dragStartY_ = event.getScreenY();
+    }
+
+    void mouseDrag(const juce::MouseEvent& event) override {
+        if (!isDragging_ || !onResize)
+            return;
+        int deltaY = event.getScreenY() - dragStartY_;
+        onResize(deltaY);
+        dragStartY_ = event.getScreenY();
+    }
+
+    void mouseUp(const juce::MouseEvent& /*event*/) override {
+        isDragging_ = false;
+        isHovering_ = false;
+        repaint();
+    }
+
+    std::function<void(int deltaY)> onResize;
+
+  private:
+    bool isHovering_ = false;
+    bool isDragging_ = false;
+    int dragStartY_ = 0;
+};
+
 // dB scale component — draws tick marks and dB labels, resizes with fader area
 class MasterChannelStrip::DbScale : public juce::Component {
   public:
@@ -258,6 +309,21 @@ void MasterChannelStrip::setupControls() {
     dbScale_ = std::make_unique<DbScale>();
     addAndMakeVisible(*dbScale_);
 
+    // Send area resize handle
+    resizeHandle_ = std::make_unique<ResizeHandle>();
+    resizeHandle_->onResize = [this](int deltaY) {
+        auto& metrics = MixerMetrics::getInstance();
+        int newHeight =
+            juce::jlimit(MixerMetrics::minSendAreaHeight, MixerMetrics::maxSendAreaHeight,
+                         metrics.sendAreaHeight + deltaY);
+        if (metrics.sendAreaHeight != newHeight) {
+            metrics.sendAreaHeight = newHeight;
+            if (onSendAreaResized)
+                onSendAreaResized();
+        }
+    };
+    addAndMakeVisible(*resizeHandle_);
+
     // Speaker on/off button (toggles master mute)
     auto speakerOnIcon = juce::Drawable::createFromImageData(BinaryData::volume_up_svg,
                                                              BinaryData::volume_up_svgSize);
@@ -296,23 +362,34 @@ void MasterChannelStrip::paint(juce::Graphics& g) {
 
 void MasterChannelStrip::resized() {
     const auto& metrics = MixerMetrics::getInstance();
-    auto bounds = getLocalBounds().reduced(4);
+    auto bounds = getLocalBounds().reduced(metrics.channelPadding);
 
     if (orientation_ == Orientation::Vertical) {
-        // Vertical layout (for MixerView and SessionView)
+        // Color indicator space (matches channel strip)
+        bounds.removeFromTop(6);
         titleLabel->setBounds(bounds.removeFromTop(24));
-        bounds.removeFromTop(4);
+        bounds.removeFromTop(metrics.controlSpacing);
 
-        // Mute button
-        auto muteArea = bounds.removeFromTop(28);
-        speakerButton->setBounds(muteArea.withSizeKeepingCentre(24, 24));
-        bounds.removeFromTop(4);
+        // Send area space — reserve same height as channel strips for alignment
+        const int sendAreaHeight = metrics.sendAreaHeight;
+        bounds.removeFromTop(2);  // Gap between header and sends/handle
+        bounds.removeFromTop(sendAreaHeight);
 
-        // Use percentage of remaining height for fader
-        int faderHeight = static_cast<int>(bounds.getHeight() * metrics.faderHeightRatio / 100.0f);
-        int extraSpace = bounds.getHeight() - faderHeight;
-        bounds.removeFromTop(extraSpace / 2);
-        bounds.setHeight(faderHeight);
+        // Resize handle overlapping the bottom of the send area space
+        if (resizeHandle_) {
+            int handleH = 8;
+            int handleOverlap = 6;
+            resizeHandle_->setBounds(bounds.getX(), bounds.getY() - handleH - handleOverlap,
+                                     bounds.getWidth(), handleH);
+            resizeHandle_->setAlwaysOnTop(true);
+        }
+
+        // Speaker button at bottom
+        auto buttonArea = bounds.removeFromBottom(metrics.buttonSize);
+        speakerButton->setBounds(buttonArea.withSizeKeepingCentre(24, metrics.buttonSize));
+
+        // Small gap before fader region
+        bounds.removeFromTop(2);
 
         // Calculate proportional widths like channel strips
         int availWidth = bounds.getWidth();
@@ -320,20 +397,9 @@ void MasterChannelStrip::resized() {
         int meterWidthVal = juce::jlimit(8, 24, availWidth * 16 / 100);
         int gap = metrics.tickToFaderGap;
         int meterGapVal = metrics.tickToMeterGap;
-        int tickToLabelGap = metrics.tickToLabelGap;
-        int tickWidth = static_cast<int>(std::ceil(metrics.tickWidth()));
-        int labelTextWidth = static_cast<int>(metrics.labelTextWidth);
-
-        // Layout: [fader] [gap] [dbScale] [meterGap] [peakMeter]
-        int totalLayoutWidth = faderWidth + gap + tickWidth + tickToLabelGap + labelTextWidth +
-                               tickToLabelGap + tickWidth + meterGapVal + meterWidthVal;
-
-        // Center the layout within bounds
-        int leftMargin = (bounds.getWidth() - totalLayoutWidth) / 2;
-        auto centeredBounds = bounds.withTrimmedLeft(leftMargin).withWidth(totalLayoutWidth);
 
         // Store the entire fader region for border drawing
-        faderRegion_ = centeredBounds;
+        faderRegion_ = bounds;
 
         // Position peak label above the fader region top border
         const int labelHeight = 12;
@@ -343,11 +409,10 @@ void MasterChannelStrip::resized() {
         peakValueLabel->setBounds(valueLabelArea);
 
         // Add vertical padding inside the border
-        const int borderPadding = 6;
-        centeredBounds.removeFromTop(borderPadding);
-        centeredBounds.removeFromBottom(borderPadding);
+        bounds.removeFromTop(6);
+        bounds.removeFromBottom(3);
 
-        auto layoutArea = centeredBounds;
+        auto layoutArea = bounds;
 
         // Fader on left
         faderArea_ = layoutArea.removeFromLeft(faderWidth);
@@ -381,8 +446,9 @@ void MasterChannelStrip::resized() {
         bounds.removeFromRight(4);
         volumeSlider->setBounds(bounds);
 
-        // Hide DbScale in horizontal mode
+        // Hide components not used in horizontal mode
         dbScale_->setBounds(juce::Rectangle<int>());
+        resizeHandle_->setBounds(juce::Rectangle<int>());
 
         // Clear vertical layout regions
         faderRegion_ = juce::Rectangle<int>();

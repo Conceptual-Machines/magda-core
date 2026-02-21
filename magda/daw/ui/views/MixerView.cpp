@@ -1219,6 +1219,7 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
 
     // Create master strip (uses shared MasterChannelStrip component)
     masterStrip = std::make_unique<MasterChannelStrip>(MasterChannelStrip::Orientation::Vertical);
+    masterStrip->onSendAreaResized = [this]() { relayoutAllStrips(); };
     addAndMakeVisible(*masterStrip);
 
     // Create channel resize handle (thin, overlaps right edge of last channel strip)
@@ -1628,6 +1629,10 @@ void MixerView::relayoutAllStrips() {
                 for (auto& strip : auxChannelStrips) {
                     strip->resized();
                     strip->repaint();
+                }
+                if (masterStrip) {
+                    masterStrip->resized();
+                    masterStrip->repaint();
                 }
             }
         });

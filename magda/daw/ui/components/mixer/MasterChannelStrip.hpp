@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
 #include <memory>
 
 #include "../common/TextSlider.hpp"
@@ -33,6 +34,9 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     // Set meter levels (for audio engine integration)
     void setPeakLevels(float leftPeak, float rightPeak);
 
+    // Called when the send area resize handle is dragged
+    std::function<void()> onSendAreaResized;
+
   private:
     Orientation orientation_;
 
@@ -50,6 +54,10 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     // dB scale component
     class DbScale;
     std::unique_ptr<DbScale> dbScale_;
+
+    // Send area resize handle
+    class ResizeHandle;
+    std::unique_ptr<ResizeHandle> resizeHandle_;
 
     // Layout regions for fader area
     juce::Rectangle<int> faderRegion_;
