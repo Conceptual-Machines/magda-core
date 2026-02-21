@@ -340,7 +340,7 @@ void MasterChannelStrip::setupControls() {
     cueVolumeSlider_ = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decibels);
     cueVolumeSlider_->setOrientation(daw::ui::TextSlider::Orientation::Horizontal);
     cueVolumeSlider_->setRange(0.0, 1.0, 0.001);
-    cueVolumeSlider_->setValue(dbToMeterPos(0.0f), juce::dontSendNotification);
+    cueVolumeSlider_->setValue(0.0, juce::dontSendNotification);  // -inf by default
     cueVolumeSlider_->setFont(FontManager::getInstance().getUIFont(9.0f));
 
     cueVolumeSlider_->setValueFormatter([](double pos) -> juce::String {
@@ -444,7 +444,7 @@ void MasterChannelStrip::resized() {
         // Calculate proportional widths like channel strips
         int availWidth = bounds.getWidth();
         int faderWidth = juce::jlimit(20, 60, availWidth * 40 / 100);
-        int meterWidthVal = juce::jlimit(8, 24, availWidth * 16 / 100);
+        int meterWidthVal = faderWidth;  // Same width as fader
         int gap = metrics.tickToFaderGap;
         int meterGapVal = metrics.tickToMeterGap;
 

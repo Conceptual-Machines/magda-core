@@ -778,7 +778,7 @@ void MixerView::ChannelStrip::resized() {
     // Fader and meter scale proportionally with channel width
     int availWidth = bounds.getWidth();
     int faderWidth = juce::jlimit(20, 60, availWidth * 40 / 100);
-    int meterWidthVal = juce::jlimit(8, 24, availWidth * 16 / 100);
+    int meterWidthVal = faderWidth;  // Same width as fader
     int gap = metrics.tickToFaderGap;
 
     // Store the entire fader region for border drawing
@@ -1159,7 +1159,7 @@ void MixerView::DrumSubChannelStrip::resized() {
 
     int availWidth = bounds.getWidth();
     int faderWidth = juce::jlimit(20, 60, availWidth * 40 / 100);
-    int meterWidthVal = juce::jlimit(8, 24, availWidth * 16 / 100);
+    int meterWidthVal = faderWidth;  // Same width as fader
 
     faderRegion_ = bounds;
 
