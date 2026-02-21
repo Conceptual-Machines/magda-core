@@ -477,17 +477,7 @@ void AudioSettingsDialog::onInputDeviceSelected() {
         return;
     }
 
-    // Flush pending async updates so wave device list rebuilds before audio callback fires (#719)
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
-
-    // Enable all channels on the new device — it may have a different channel count
-    if (auto* device = deviceManager_->getCurrentAudioDevice()) {
-        auto newSetup = deviceManager_->getAudioDeviceSetup();
-        newSetup.inputChannels.setRange(0, device->getInputChannelNames().size(), true);
-        newSetup.outputChannels.setRange(0, device->getOutputChannelNames().size(), true);
-        deviceManager_->setAudioDeviceSetup(newSetup, true);
-        juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
-    }
+    enableAllChannelsOnCurrentDevice();
 
     // Update channel selectors to reflect new device
     inputChannelSelector_->updateFromDevice();
@@ -520,17 +510,7 @@ void AudioSettingsDialog::onOutputDeviceSelected() {
         return;
     }
 
-    // Flush pending async updates so wave device list rebuilds before audio callback fires (#719)
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
-
-    // Enable all channels on the new device — it may have a different channel count
-    if (auto* device = deviceManager_->getCurrentAudioDevice()) {
-        auto newSetup = deviceManager_->getAudioDeviceSetup();
-        newSetup.inputChannels.setRange(0, device->getInputChannelNames().size(), true);
-        newSetup.outputChannels.setRange(0, device->getOutputChannelNames().size(), true);
-        deviceManager_->setAudioDeviceSetup(newSetup, true);
-        juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
-    }
+    enableAllChannelsOnCurrentDevice();
 
     // Update channel selectors to reflect new device
     outputChannelSelector_->updateFromDevice();
@@ -540,6 +520,20 @@ void AudioSettingsDialog::onOutputDeviceSelected() {
         juce::String labelText = "Input: " + setup.inputDeviceName;
         labelText += " | Output: " + setup.outputDeviceName;
         deviceNameLabel_.setText(labelText, juce::dontSendNotification);
+    }
+}
+
+void AudioSettingsDialog::enableAllChannelsOnCurrentDevice() {
+    // Flush pending async updates so wave device list rebuilds before audio callback fires (#719)
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
+
+    // Enable all channels on the current device — it may have a different channel count
+    if (auto* device = deviceManager_->getCurrentAudioDevice()) {
+        auto newSetup = deviceManager_->getAudioDeviceSetup();
+        newSetup.inputChannels.setRange(0, device->getInputChannelNames().size(), true);
+        newSetup.outputChannels.setRange(0, device->getOutputChannelNames().size(), true);
+        deviceManager_->setAudioDeviceSetup(newSetup, true);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
     }
 }
 

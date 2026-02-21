@@ -69,8 +69,9 @@ void TracktionEngineWrapper::initializeDeviceManager() {
     // Request all available channels — Tracktion creates WaveInputDevices
     // for all hardware channels and expects them all in the audio callback.
     // JUCE clamps to actual hardware count.
-    int inputChannels = 256;
-    int outputChannels = 256;
+    static constexpr int kMaxRequestedChannels = 256;
+    int inputChannels = kMaxRequestedChannels;
+    int outputChannels = kMaxRequestedChannels;
     dm.initialise(inputChannels, outputChannels);
     DBG("DeviceManager initialized with " << inputChannels << " input / " << outputChannels
                                           << " output channels");

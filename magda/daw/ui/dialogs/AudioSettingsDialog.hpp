@@ -62,6 +62,7 @@ class AudioSettingsDialog : public juce::Component {
     void populateDeviceLists();
     void onInputDeviceSelected();
     void onOutputDeviceSelected();
+    void enableAllChannelsOnCurrentDevice();
     void savePreferencesIfNeeded();
 
     std::unique_ptr<juce::AudioDeviceSelectorComponent> deviceSelector_;

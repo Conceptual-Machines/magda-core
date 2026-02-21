@@ -415,9 +415,13 @@ void MainWindow::setupMenuCallbacks() {
         DBG("deviceManager valid - showing dialog");
 
         // Pass TE DeviceManager so channel preferences operate at the TE level
-        auto* teEngine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
-        tracktion::DeviceManager* teDeviceManager =
-            teEngine ? &teEngine->getEngine()->getDeviceManager() : nullptr;
+        tracktion::DeviceManager* teDeviceManager = nullptr;
+        if (auto* teEngine =
+                dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine())) {
+            if (auto* tracktionEngine = teEngine->getEngine()) {
+                teDeviceManager = &tracktionEngine->getDeviceManager();
+            }
+        }
         AudioSettingsDialog::showDialog(this, deviceManager, teDeviceManager);
     };
 
