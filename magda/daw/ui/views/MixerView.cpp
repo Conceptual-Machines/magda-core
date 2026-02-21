@@ -779,7 +779,6 @@ void MixerView::ChannelStrip::resized() {
     int availWidth = bounds.getWidth();
     int faderWidth = juce::jlimit(20, 60, availWidth * 40 / 100);
     int meterWidthVal = juce::jlimit(8, 24, availWidth * 16 / 100);
-    int tickWidth = static_cast<int>(std::ceil(metrics.tickWidth()));
     int gap = metrics.tickToFaderGap;
 
     // Store the entire fader region for border drawing

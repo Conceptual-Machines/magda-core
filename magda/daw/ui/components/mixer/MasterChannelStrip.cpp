@@ -256,7 +256,7 @@ void MasterChannelStrip::setupControls() {
     // Title label
     titleLabel = std::make_unique<juce::Label>("Master", "Master");
     titleLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    titleLabel->setJustificationType(juce::Justification::centred);
+    titleLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(*titleLabel);
 
     // Peak meter
@@ -407,7 +407,13 @@ void MasterChannelStrip::resized() {
     if (orientation_ == Orientation::Vertical) {
         // Color indicator space (matches channel strip)
         bounds.removeFromTop(6);
-        titleLabel->setBounds(bounds.removeFromTop(24));
+
+        // Title row: [speaker icon] [Master label]
+        auto titleRow = bounds.removeFromTop(24);
+        speakerButton->setBounds(titleRow.removeFromLeft(20).withSizeKeepingCentre(18, 18));
+        titleRow.removeFromLeft(2);
+        titleLabel->setBounds(titleRow);
+
         bounds.removeFromTop(metrics.controlSpacing);
 
         // Send area space — reserve same height as channel strips for alignment
@@ -424,16 +430,13 @@ void MasterChannelStrip::resized() {
             resizeHandle_->setAlwaysOnTop(true);
         }
 
-        // Speaker button at bottom
-        auto buttonArea = bounds.removeFromBottom(metrics.buttonSize);
-        speakerButton->setBounds(buttonArea.withSizeKeepingCentre(24, metrics.buttonSize));
-
-        // Cue volume: [headphone icon] [slider]
+        // Cue volume at bottom: [headphone icon] [slider]
         bounds.removeFromBottom(2);
         auto cueRow = bounds.removeFromBottom(20);
         headphoneIcon_->setBounds(cueRow.removeFromLeft(18));
         cueRow.removeFromLeft(2);
         cueVolumeSlider_->setBounds(cueRow);
+        bounds.removeFromBottom(2);  // Gap between cue row and fader region
 
         // Small gap before fader region
         bounds.removeFromTop(2);
