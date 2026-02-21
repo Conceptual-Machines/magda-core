@@ -17,7 +17,8 @@ namespace magda::daw::ui {
  */
 class MediaExplorerContent : public PanelContent,
                              public juce::FileBrowserListener,
-                             public juce::ChangeListener {
+                             public juce::ChangeListener,
+                             public juce::Timer {
   public:
     MediaExplorerContent();
     ~MediaExplorerContent() override;
@@ -90,7 +91,7 @@ class MediaExplorerContent : public PanelContent,
     std::unique_ptr<SidebarComponent> sidebarComponent_;
 
     // File browser
-    std::unique_ptr<juce::WildcardFileFilter> mediaFileFilter_;
+    std::unique_ptr<juce::FileFilter> mediaFileFilter_;
     std::unique_ptr<juce::FileBrowserComponent> fileBrowser_;
     std::unique_ptr<juce::FileChooser> fileChooser_;  // Persisted for async callbacks
 
@@ -98,6 +99,7 @@ class MediaExplorerContent : public PanelContent,
     bool audioFilterActive_ = true;
     bool midiFilterActive_ = false;
     bool presetFilterActive_ = false;
+    juce::String searchTerm_;
 
     // Audio engine reference for shared device manager
     magda::AudioEngine* audioEngine_ = nullptr;
@@ -117,6 +119,7 @@ class MediaExplorerContent : public PanelContent,
     bool isDraggingFile_ = false;
 
     // Helper methods
+    void timerCallback() override;
     void setupAudioPreview();
     void loadFileForPreview(const juce::File& file);
     void playPreview();

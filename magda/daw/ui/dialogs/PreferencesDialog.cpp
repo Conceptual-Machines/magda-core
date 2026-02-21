@@ -1,199 +1,554 @@
 #include "PreferencesDialog.hpp"
 
 #include "../themes/DarkTheme.hpp"
+#include "../themes/FontManager.hpp"
 #include "core/Config.hpp"
 
+// ---------------------------------------------------------------------------
+// Setup helpers — internal linkage, shared by all page classes
+// ---------------------------------------------------------------------------
+namespace {
+
+void setupSlider(juce::Component& owner, juce::Slider& slider, juce::Label& label,
+                 const juce::String& labelText, double min, double max, double interval,
+                 const juce::String& suffix = "") {
+    label.setText(labelText, juce::dontSendNotification);
+    label.setColour(juce::Label::textColourId,
+                    magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
+    label.setJustificationType(juce::Justification::centredLeft);
+    owner.addAndMakeVisible(label);
+
+    slider.setRange(min, max, interval);
+    slider.setSliderStyle(juce::Slider::LinearHorizontal);
+    slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
+    slider.setTextValueSuffix(suffix);
+    slider.setColour(juce::Slider::backgroundColourId,
+                     magda::DarkTheme::getColour(magda::DarkTheme::SURFACE));
+    slider.setColour(juce::Slider::thumbColourId,
+                     magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_BLUE));
+    slider.setColour(juce::Slider::trackColourId,
+                     magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_BLUE).darker(0.3f));
+    slider.setColour(juce::Slider::textBoxTextColourId,
+                     magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
+    slider.setColour(juce::Slider::textBoxBackgroundColourId,
+                     magda::DarkTheme::getColour(magda::DarkTheme::SURFACE));
+    slider.setColour(juce::Slider::textBoxOutlineColourId,
+                     magda::DarkTheme::getColour(magda::DarkTheme::BORDER));
+    owner.addAndMakeVisible(slider);
+}
+
+void setupToggle(juce::Component& owner, juce::ToggleButton& toggle, const juce::String& text) {
+    toggle.setButtonText(text);
+    toggle.setColour(juce::ToggleButton::textColourId,
+                     magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
+    toggle.setColour(juce::ToggleButton::tickColourId,
+                     magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_BLUE));
+    toggle.setColour(juce::ToggleButton::tickDisabledColourId,
+                     magda::DarkTheme::getColour(magda::DarkTheme::TEXT_DIM));
+    owner.addAndMakeVisible(toggle);
+}
+
+void setupSectionHeader(juce::Component& owner, juce::Label& header, const juce::String& text) {
+    header.setText(text, juce::dontSendNotification);
+    header.setColour(juce::Label::textColourId,
+                     magda::DarkTheme::getColour(magda::DarkTheme::TEXT_SECONDARY));
+    header.setFont(magda::FontManager::getInstance().getUIFontBold(14.0f));
+    header.setJustificationType(juce::Justification::centredLeft);
+    owner.addAndMakeVisible(header);
+}
+
+void setupShortcutLabel(juce::Component& owner, juce::Label& label, const juce::String& action,
+                        const juce::String& shortcut) {
+    label.setText(action + ":  " + shortcut, juce::dontSendNotification);
+    label.setColour(juce::Label::textColourId,
+                    magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
+    label.setJustificationType(juce::Justification::centredLeft);
+    owner.addAndMakeVisible(label);
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// Tab page components
+// ---------------------------------------------------------------------------
 namespace magda {
 
-PreferencesDialog::PreferencesDialog() {
-    // Setup section headers
-    setupSectionHeader(zoomHeader, "Zoom");
-    setupSectionHeader(timelineHeader, "Timeline");
-    setupSectionHeader(transportHeader, "Transport Display");
+// ---- General tab: Zoom, Timeline, Transport Display -----------------------
 
-    // Setup zoom sliders
-    setupSlider(zoomInSensitivitySlider, zoomInLabel, "Zoom In Sensitivity", 5.0, 100.0, 1.0);
-    setupSlider(zoomOutSensitivitySlider, zoomOutLabel, "Zoom Out Sensitivity", 5.0, 100.0, 1.0);
-    setupSlider(zoomShiftSensitivitySlider, zoomShiftLabel, "Shift+Zoom Sensitivity", 1.0, 50.0,
-                0.5);
+class GeneralPage : public juce::Component {
+  public:
+    GeneralPage() {
+        setupSectionHeader(*this, zoomHeader, "Zoom");
+        setupSlider(*this, zoomInSensitivitySlider, zoomInLabel, "Zoom In Sensitivity", 5.0, 100.0,
+                    1.0);
+        setupSlider(*this, zoomOutSensitivitySlider, zoomOutLabel, "Zoom Out Sensitivity", 5.0,
+                    100.0, 1.0);
+        setupSlider(*this, zoomShiftSensitivitySlider, zoomShiftLabel, "Shift+Zoom Sensitivity",
+                    1.0, 50.0, 0.5);
 
-    // Setup timeline sliders
-    setupSlider(timelineLengthSlider, timelineLengthLabel, "Default Length (sec)", 60.0, 1800.0,
-                10.0, " sec");
-    setupSlider(viewDurationSlider, viewDurationLabel, "Default View Duration", 10.0, 300.0, 5.0,
-                " sec");
+        setupSectionHeader(*this, timelineHeader, "Timeline");
+        setupSlider(*this, timelineLengthSlider, timelineLengthLabel, "Default Length (sec)", 60.0,
+                    1800.0, 10.0, " sec");
+        setupSlider(*this, viewDurationSlider, viewDurationLabel, "Default View Duration", 10.0,
+                    300.0, 5.0, " sec");
 
-    // Setup transport toggles
-    setupToggle(showBothFormatsToggle, "Show both time formats");
-    setupToggle(defaultBarsBeatsToggle, "Default to Bars/Beats (vs Seconds)");
+        setupSectionHeader(*this, transportHeader, "Transport Display");
+        setupToggle(*this, showBothFormatsToggle, "Show both time formats");
+        setupToggle(*this, defaultBarsBeatsToggle, "Default to Bars/Beats (vs Seconds)");
+    }
 
-    // Setup panel section
-    setupSectionHeader(panelsHeader, "Panels (Default Visibility)");
-    setupToggle(showLeftPanelToggle, "Show Left Panel (Browser)");
-    setupToggle(showRightPanelToggle, "Show Right Panel (Inspector)");
-    setupToggle(showBottomPanelToggle, "Show Bottom Panel (Mixer)");
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(16);
+        const int rowH = 32;
+        const int labelW = 180;
+        const int sliderH = 24;
+        const int toggleH = 24;
+        const int headerH = 28;
+        const int secGap = 12;
 
-    // Setup behavior section
-    setupSectionHeader(behaviorHeader, "Behavior");
-    setupToggle(confirmTrackDeleteToggle, "Confirm before deleting tracks");
-    setupToggle(autoMonitorToggle, "Auto-monitor selected track");
+        // Zoom
+        zoomHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        layoutSliderRow(bounds, zoomInLabel, zoomInSensitivitySlider, rowH, labelW, sliderH);
+        bounds.removeFromTop(4);
+        layoutSliderRow(bounds, zoomOutLabel, zoomOutSensitivitySlider, rowH, labelW, sliderH);
+        bounds.removeFromTop(4);
+        layoutSliderRow(bounds, zoomShiftLabel, zoomShiftSensitivitySlider, rowH, labelW, sliderH);
+        bounds.removeFromTop(secGap);
 
-    // Setup layout section
-    setupSectionHeader(layoutHeader, "Layout");
-    setupToggle(leftHandedLayoutToggle, "Headers on Right");
+        // Timeline
+        timelineHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        layoutSliderRow(bounds, timelineLengthLabel, timelineLengthSlider, rowH, labelW, sliderH);
+        bounds.removeFromTop(4);
+        layoutSliderRow(bounds, viewDurationLabel, viewDurationSlider, rowH, labelW, sliderH);
+        bounds.removeFromTop(secGap);
 
-    // Setup rendering section
-    setupSectionHeader(renderHeader, "Rendering");
+        // Transport
+        transportHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        showBothFormatsToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
+        bounds.removeFromTop(4);
+        defaultBarsBeatsToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
+    }
 
-    renderFolderLabel.setText("Render Output Folder", juce::dontSendNotification);
-    renderFolderLabel.setColour(juce::Label::textColourId,
-                                DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    renderFolderLabel.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(renderFolderLabel);
+    void loadSettings(Config& config) {
+        zoomInSensitivitySlider.setValue(config.getZoomInSensitivity(), juce::dontSendNotification);
+        zoomOutSensitivitySlider.setValue(config.getZoomOutSensitivity(),
+                                          juce::dontSendNotification);
+        zoomShiftSensitivitySlider.setValue(config.getZoomInSensitivityShift(),
+                                            juce::dontSendNotification);
+        timelineLengthSlider.setValue(config.getDefaultTimelineLength(),
+                                      juce::dontSendNotification);
+        viewDurationSlider.setValue(config.getDefaultZoomViewDuration(),
+                                    juce::dontSendNotification);
+        showBothFormatsToggle.setToggleState(config.getTransportShowBothFormats(),
+                                             juce::dontSendNotification);
+        defaultBarsBeatsToggle.setToggleState(config.getTransportDefaultBarsBeats(),
+                                              juce::dontSendNotification);
+    }
 
-    renderFolderValue.setText("Default (beside source file)", juce::dontSendNotification);
-    renderFolderValue.setColour(juce::Label::textColourId,
-                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    renderFolderValue.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(renderFolderValue);
+    void applySettings(Config& config) {
+        config.setZoomInSensitivity(zoomInSensitivitySlider.getValue());
+        config.setZoomOutSensitivity(zoomOutSensitivitySlider.getValue());
+        config.setZoomInSensitivityShift(zoomShiftSensitivitySlider.getValue());
+        config.setZoomOutSensitivityShift(zoomShiftSensitivitySlider.getValue());
+        config.setDefaultTimelineLength(timelineLengthSlider.getValue());
+        config.setDefaultZoomViewDuration(viewDurationSlider.getValue());
+        config.setTransportShowBothFormats(showBothFormatsToggle.getToggleState());
+        config.setTransportDefaultBarsBeats(defaultBarsBeatsToggle.getToggleState());
+    }
 
-    renderFolderBrowseButton.setButtonText("Browse...");
-    renderFolderBrowseButton.onClick = [this]() {
-        fileChooser_ = std::make_unique<juce::FileChooser>("Select Render Output Folder");
-        fileChooser_->launchAsync(
-            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
-            [this](const juce::FileChooser& fc) {
-                auto result = fc.getResult();
-                if (result.exists()) {
-                    renderFolderValue.setText(result.getFullPathName(), juce::dontSendNotification);
-                    renderFolderValue.setTooltip(result.getFullPathName());
-                }
-            });
-    };
-    addAndMakeVisible(renderFolderBrowseButton);
+  private:
+    static void layoutSliderRow(juce::Rectangle<int>& bounds, juce::Label& label,
+                                juce::Slider& slider, int rowH, int labelW, int sliderH) {
+        auto row = bounds.removeFromTop(rowH);
+        label.setBounds(row.removeFromLeft(labelW));
+        slider.setBounds(row.reduced(0, (rowH - sliderH) / 2));
+    }
 
-    renderFolderClearButton.setButtonText("Clear");
-    renderFolderClearButton.onClick = [this]() {
+    juce::Label zoomHeader, timelineHeader, transportHeader;
+    juce::Slider zoomInSensitivitySlider, zoomOutSensitivitySlider, zoomShiftSensitivitySlider;
+    juce::Label zoomInLabel, zoomOutLabel, zoomShiftLabel;
+    juce::Slider timelineLengthSlider, viewDurationSlider;
+    juce::Label timelineLengthLabel, viewDurationLabel;
+    juce::ToggleButton showBothFormatsToggle, defaultBarsBeatsToggle;
+};
+
+// ---- UI tab: Panels, Behavior (incl. showTooltips), Layout ----------------
+
+class UIPage : public juce::Component {
+  public:
+    UIPage() {
+        setupSectionHeader(*this, panelsHeader, "Panels (Default Visibility)");
+        setupToggle(*this, showLeftPanelToggle, "Show Left Panel (Browser)");
+        setupToggle(*this, showRightPanelToggle, "Show Right Panel (Inspector)");
+        setupToggle(*this, showBottomPanelToggle, "Show Bottom Panel (Mixer)");
+
+        setupSectionHeader(*this, behaviorHeader, "Behavior");
+        setupToggle(*this, confirmTrackDeleteToggle, "Confirm before deleting tracks");
+        setupToggle(*this, autoMonitorToggle, "Auto-monitor selected track");
+        setupToggle(*this, showTooltipsToggle, "Show tooltips");
+
+        setupSectionHeader(*this, layoutHeader, "Layout");
+        setupToggle(*this, leftHandedLayoutToggle, "Headers on Right");
+    }
+
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(16);
+        const int toggleH = 24;
+        const int headerH = 28;
+        const int secGap = 12;
+
+        // Panels
+        panelsHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        showLeftPanelToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
+        bounds.removeFromTop(4);
+        showRightPanelToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
+        bounds.removeFromTop(4);
+        showBottomPanelToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
+        bounds.removeFromTop(secGap);
+
+        // Behavior
+        behaviorHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        confirmTrackDeleteToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
+        bounds.removeFromTop(4);
+        autoMonitorToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
+        bounds.removeFromTop(4);
+        showTooltipsToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
+        bounds.removeFromTop(secGap);
+
+        // Layout
+        layoutHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        leftHandedLayoutToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
+    }
+
+    void loadSettings(Config& config) {
+        showLeftPanelToggle.setToggleState(config.getShowLeftPanel(), juce::dontSendNotification);
+        showRightPanelToggle.setToggleState(config.getShowRightPanel(), juce::dontSendNotification);
+        showBottomPanelToggle.setToggleState(config.getShowBottomPanel(),
+                                             juce::dontSendNotification);
+        confirmTrackDeleteToggle.setToggleState(config.getConfirmTrackDelete(),
+                                                juce::dontSendNotification);
+        autoMonitorToggle.setToggleState(config.getAutoMonitorSelectedTrack(),
+                                         juce::dontSendNotification);
+        showTooltipsToggle.setToggleState(config.getShowTooltips(), juce::dontSendNotification);
+        leftHandedLayoutToggle.setToggleState(config.getScrollbarOnLeft(),
+                                              juce::dontSendNotification);
+    }
+
+    void applySettings(Config& config) {
+        config.setShowLeftPanel(showLeftPanelToggle.getToggleState());
+        config.setShowRightPanel(showRightPanelToggle.getToggleState());
+        config.setShowBottomPanel(showBottomPanelToggle.getToggleState());
+        config.setConfirmTrackDelete(confirmTrackDeleteToggle.getToggleState());
+        config.setAutoMonitorSelectedTrack(autoMonitorToggle.getToggleState());
+        config.setShowTooltips(showTooltipsToggle.getToggleState());
+        config.setScrollbarOnLeft(leftHandedLayoutToggle.getToggleState());
+    }
+
+  private:
+    juce::Label panelsHeader, behaviorHeader, layoutHeader;
+    juce::ToggleButton showLeftPanelToggle, showRightPanelToggle, showBottomPanelToggle;
+    juce::ToggleButton confirmTrackDeleteToggle, autoMonitorToggle, showTooltipsToggle;
+    juce::ToggleButton leftHandedLayoutToggle;
+};
+
+// ---- Rendering tab --------------------------------------------------------
+
+class RenderingPage : public juce::Component {
+  public:
+    RenderingPage() {
+        setupSectionHeader(*this, renderHeader, "Rendering");
+
+        renderFolderLabel.setText("Render Output Folder", juce::dontSendNotification);
+        renderFolderLabel.setColour(juce::Label::textColourId,
+                                    DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        renderFolderLabel.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(renderFolderLabel);
+
         renderFolderValue.setText("Default (beside source file)", juce::dontSendNotification);
-        renderFolderValue.setTooltip("");
-    };
-    addAndMakeVisible(renderFolderClearButton);
+        renderFolderValue.setColour(juce::Label::textColourId,
+                                    DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        renderFolderValue.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(renderFolderValue);
 
-    // Setup AI section
-    setupSectionHeader(aiHeader, "AI Assistant");
+        renderFolderBrowseButton.setButtonText("Browse...");
+        renderFolderBrowseButton.onClick = [this]() {
+            fileChooser_ = std::make_unique<juce::FileChooser>("Select Render Output Folder");
+            fileChooser_->launchAsync(juce::FileBrowserComponent::openMode |
+                                          juce::FileBrowserComponent::canSelectDirectories,
+                                      [this](const juce::FileChooser& fc) {
+                                          auto result = fc.getResult();
+                                          if (result.exists()) {
+                                              renderFolderValue.setText(result.getFullPathName(),
+                                                                        juce::dontSendNotification);
+                                              renderFolderValue.setTooltip(
+                                                  result.getFullPathName());
+                                          }
+                                      });
+        };
+        addAndMakeVisible(renderFolderBrowseButton);
 
-    aiApiKeyLabel.setText("OpenAI API Key", juce::dontSendNotification);
-    aiApiKeyLabel.setColour(juce::Label::textColourId,
-                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    aiApiKeyLabel.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(aiApiKeyLabel);
+        renderFolderClearButton.setButtonText("Clear");
+        renderFolderClearButton.onClick = [this]() {
+            renderFolderValue.setText("Default (beside source file)", juce::dontSendNotification);
+            renderFolderValue.setTooltip("");
+        };
+        addAndMakeVisible(renderFolderClearButton);
+    }
 
-    aiApiKeyEditor.setPasswordCharacter(juce::juce_wchar('*'));
-    aiApiKeyEditor.setTextToShowWhenEmpty("sk-...", DarkTheme::getColour(DarkTheme::TEXT_DIM));
-    aiApiKeyEditor.setColour(juce::TextEditor::backgroundColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
-    aiApiKeyEditor.setColour(juce::TextEditor::textColourId,
-                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    aiApiKeyEditor.setColour(juce::TextEditor::outlineColourId,
-                             DarkTheme::getColour(DarkTheme::BORDER));
-    addAndMakeVisible(aiApiKeyEditor);
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(16);
+        const int rowH = 32;
+        const int headerH = 28;
 
-    aiValidateButton.setButtonText("Validate");
-    aiValidateButton.onClick = [this]() {
-        auto key = aiApiKeyEditor.getText().trim();
-        if (key.isEmpty()) {
-            aiStatusLabel.setText("Enter an API key first", juce::dontSendNotification);
-            aiStatusLabel.setColour(juce::Label::textColourId, juce::Colours::orange);
-            return;
+        renderHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+
+        renderFolderLabel.setBounds(bounds.removeFromTop(rowH));
+        bounds.removeFromTop(4);
+
+        auto row = bounds.removeFromTop(rowH);
+        auto buttonsArea = row.removeFromRight(140);
+        renderFolderValue.setBounds(row);
+        renderFolderClearButton.setBounds(buttonsArea.removeFromRight(60).reduced(0, 2));
+        buttonsArea.removeFromRight(4);
+        renderFolderBrowseButton.setBounds(buttonsArea.reduced(0, 2));
+    }
+
+    void loadSettings(Config& config) {
+        auto folder = config.getRenderFolder();
+        if (folder.empty()) {
+            renderFolderValue.setText("Default (beside source file)", juce::dontSendNotification);
+            renderFolderValue.setTooltip("");
+        } else {
+            renderFolderValue.setText(juce::String(folder), juce::dontSendNotification);
+            renderFolderValue.setTooltip(juce::String(folder));
         }
+    }
 
-        aiValidateButton.setEnabled(false);
-        aiStatusLabel.setText("Validating...", juce::dontSendNotification);
-        aiStatusLabel.setColour(juce::Label::textColourId,
-                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    void applySettings(Config& config) {
+        config.setRenderFolder(renderFolderValue.getTooltip().toStdString());
+    }
 
-        auto safeThis = juce::Component::SafePointer<PreferencesDialog>(this);
-        auto apiKey = key;
+  private:
+    juce::Label renderHeader;
+    juce::Label renderFolderLabel;
+    juce::Label renderFolderValue;
+    juce::TextButton renderFolderBrowseButton;
+    juce::TextButton renderFolderClearButton;
+    std::unique_ptr<juce::FileChooser> fileChooser_;
+};
 
-        juce::Thread::launch([safeThis, apiKey]() {
-            // GET https://api.openai.com/v1/models with the key
-            juce::URL url("https://api.openai.com/v1/models");
-            juce::String headers = "Authorization: Bearer " + apiKey;
+// ---- AI tab ---------------------------------------------------------------
 
-            auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
-                               .withExtraHeaders(headers)
-                               .withConnectionTimeoutMs(10000);
+class AIPage : public juce::Component {
+  public:
+    AIPage() {
+        setupSectionHeader(*this, aiHeader, "AI Assistant");
 
-            auto stream = url.createInputStream(options);
+        aiApiKeyLabel.setText("OpenAI API Key", juce::dontSendNotification);
+        aiApiKeyLabel.setColour(juce::Label::textColourId,
+                                DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        aiApiKeyLabel.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(aiApiKeyLabel);
 
-            bool valid = false;
-            juce::String statusMsg;
+        aiApiKeyEditor.setPasswordCharacter(static_cast<juce::juce_wchar>('*'));
+        aiApiKeyEditor.setTextToShowWhenEmpty("sk-...", DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        aiApiKeyEditor.setColour(juce::TextEditor::backgroundColourId,
+                                 DarkTheme::getColour(DarkTheme::SURFACE));
+        aiApiKeyEditor.setColour(juce::TextEditor::textColourId,
+                                 DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        aiApiKeyEditor.setColour(juce::TextEditor::outlineColourId,
+                                 DarkTheme::getColour(DarkTheme::BORDER));
+        addAndMakeVisible(aiApiKeyEditor);
 
-            if (stream) {
-                auto* webStream = dynamic_cast<juce::WebInputStream*>(stream.get());
-                if (webStream) {
-                    int code = webStream->getStatusCode();
-                    if (code == 200) {
-                        valid = true;
-                        statusMsg = "Valid";
-                    } else if (code == 401) {
-                        statusMsg = "Invalid API key";
-                    } else {
-                        statusMsg = "HTTP " + juce::String(code);
-                    }
-                }
-            } else {
-                statusMsg = "Connection failed";
+        aiValidateButton.setButtonText("Validate");
+        aiValidateButton.onClick = [this]() {
+            auto key = aiApiKeyEditor.getText().trim();
+            if (key.isEmpty()) {
+                aiStatusLabel.setText("Enter an API key first", juce::dontSendNotification);
+                aiStatusLabel.setColour(juce::Label::textColourId, juce::Colours::orange);
+                return;
             }
 
-            juce::MessageManager::callAsync([safeThis, valid, statusMsg]() {
-                if (!safeThis)
-                    return;
-                safeThis->aiValidateButton.setEnabled(true);
-                safeThis->aiStatusLabel.setText(statusMsg, juce::dontSendNotification);
-                safeThis->aiStatusLabel.setColour(juce::Label::textColourId,
-                                                  valid ? juce::Colours::limegreen
-                                                        : juce::Colours::red);
+            aiValidateButton.setEnabled(false);
+            aiStatusLabel.setText("Validating...", juce::dontSendNotification);
+            aiStatusLabel.setColour(juce::Label::textColourId,
+                                    DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+
+            auto safeThis = juce::Component::SafePointer<AIPage>(this);
+
+            juce::Thread::launch([safeThis, key]() {
+                juce::URL url("https://api.openai.com/v1/models");
+                juce::String headers = "Authorization: Bearer " + key;
+
+                auto options =
+                    juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+                        .withExtraHeaders(headers)
+                        .withConnectionTimeoutMs(10000);
+
+                auto stream = url.createInputStream(options);
+
+                bool valid = false;
+                juce::String statusMsg;
+
+                if (stream) {
+                    auto* webStream = dynamic_cast<juce::WebInputStream*>(stream.get());
+                    if (webStream) {
+                        int code = webStream->getStatusCode();
+                        if (code == 200) {
+                            valid = true;
+                            statusMsg = "Valid";
+                        } else if (code == 401) {
+                            statusMsg = "Invalid API key";
+                        } else {
+                            statusMsg = "HTTP " + juce::String(code);
+                        }
+                    }
+                } else {
+                    statusMsg = "Connection failed";
+                }
+
+                juce::MessageManager::callAsync([safeThis, valid, statusMsg]() {
+                    if (!safeThis)
+                        return;
+                    safeThis->aiValidateButton.setEnabled(true);
+                    safeThis->aiStatusLabel.setText(statusMsg, juce::dontSendNotification);
+                    safeThis->aiStatusLabel.setColour(juce::Label::textColourId,
+                                                      valid ? juce::Colours::limegreen
+                                                            : juce::Colours::red);
+                });
             });
-        });
-    };
-    addAndMakeVisible(aiValidateButton);
+        };
+        addAndMakeVisible(aiValidateButton);
 
-    aiStatusLabel.setColour(juce::Label::textColourId,
-                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    aiStatusLabel.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(aiStatusLabel);
+        aiStatusLabel.setColour(juce::Label::textColourId,
+                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        aiStatusLabel.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(aiStatusLabel);
+    }
 
-    // Setup keyboard shortcuts section
-    setupSectionHeader(shortcutsHeader, "Keyboard Shortcuts");
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(16);
+        const int rowH = 32;
+        const int labelW = 180;
+        const int headerH = 28;
+
+        aiHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+
+        auto row = bounds.removeFromTop(rowH);
+        aiApiKeyLabel.setBounds(row.removeFromLeft(labelW));
+        aiApiKeyEditor.setBounds(row.reduced(0, 4));
+        bounds.removeFromTop(4);
+
+        row = bounds.removeFromTop(rowH);
+        aiValidateButton.setBounds(row.removeFromLeft(80).reduced(0, 4));
+        row.removeFromLeft(8);
+        aiStatusLabel.setBounds(row);
+    }
+
+    void loadSettings(Config& config) {
+        aiApiKeyEditor.setText(juce::String(config.getOpenAIApiKey()), juce::dontSendNotification);
+    }
+
+    void applySettings(Config& config) {
+        config.setOpenAIApiKey(aiApiKeyEditor.getText().toStdString());
+    }
+
+  private:
+    juce::Label aiHeader;
+    juce::Label aiApiKeyLabel;
+    juce::TextEditor aiApiKeyEditor;
+    juce::TextButton aiValidateButton;
+    juce::Label aiStatusLabel;
+};
+
+// ---- Shortcuts tab (read-only) --------------------------------------------
+
+class ShortcutsPage : public juce::Component {
+  public:
+    ShortcutsPage() {
+        setupSectionHeader(*this, shortcutsHeader, "Keyboard Shortcuts");
 #if JUCE_MAC
-    setupShortcutLabel(addTrackShortcut, "Add Track", juce::String::fromUTF8("\u2318T"));
-    setupShortcutLabel(deleteTrackShortcut, "Delete Track", juce::String::fromUTF8("\u232B"));
-    setupShortcutLabel(duplicateTrackShortcut, "Duplicate Track",
-                       juce::String::fromUTF8("\u2318D"));
+        setupShortcutLabel(*this, addTrackShortcut, "Add Track", juce::String::fromUTF8("\u2318T"));
+        setupShortcutLabel(*this, deleteTrackShortcut, "Delete Track",
+                           juce::String::fromUTF8("\u232B"));
+        setupShortcutLabel(*this, duplicateTrackShortcut, "Duplicate Track",
+                           juce::String::fromUTF8("\u2318D"));
 #else
-    setupShortcutLabel(addTrackShortcut, "Add Track", "Ctrl+T");
-    setupShortcutLabel(deleteTrackShortcut, "Delete Track", "Delete");
-    setupShortcutLabel(duplicateTrackShortcut, "Duplicate Track", "Ctrl+D");
+        setupShortcutLabel(*this, addTrackShortcut, "Add Track", "Ctrl+T");
+        setupShortcutLabel(*this, deleteTrackShortcut, "Delete Track", "Delete");
+        setupShortcutLabel(*this, duplicateTrackShortcut, "Duplicate Track", "Ctrl+D");
 #endif
-    setupShortcutLabel(muteTrackShortcut, "Mute Track", "M");
-    setupShortcutLabel(soloTrackShortcut, "Solo Track", "S");
+        setupShortcutLabel(*this, muteTrackShortcut, "Mute Track", "M");
+        setupShortcutLabel(*this, soloTrackShortcut, "Solo Track", "S");
+    }
 
-    // Setup buttons
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(16);
+        const int rowH = 32;
+        const int headerH = 28;
+
+        shortcutsHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+
+        addTrackShortcut.setBounds(bounds.removeFromTop(rowH));
+        bounds.removeFromTop(4);
+        deleteTrackShortcut.setBounds(bounds.removeFromTop(rowH));
+        bounds.removeFromTop(4);
+        duplicateTrackShortcut.setBounds(bounds.removeFromTop(rowH));
+        bounds.removeFromTop(4);
+        muteTrackShortcut.setBounds(bounds.removeFromTop(rowH));
+        bounds.removeFromTop(4);
+        soloTrackShortcut.setBounds(bounds.removeFromTop(rowH));
+    }
+
+    void loadSettings(Config& /*config*/) {}
+    void applySettings(Config& /*config*/) {}
+
+  private:
+    juce::Label shortcutsHeader;
+    juce::Label addTrackShortcut, deleteTrackShortcut, duplicateTrackShortcut;
+    juce::Label muteTrackShortcut, soloTrackShortcut;
+};
+
+// ---------------------------------------------------------------------------
+// PreferencesDialog
+// ---------------------------------------------------------------------------
+
+PreferencesDialog::PreferencesDialog() {
+    generalPage = std::make_unique<GeneralPage>();
+    uiPage = std::make_unique<UIPage>();
+    renderingPage = std::make_unique<RenderingPage>();
+    aiPage = std::make_unique<AIPage>();
+    shortcutsPage = std::make_unique<ShortcutsPage>();
+
+    auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    tabbedComponent.addTab("General", tabBg, generalPage.get(), false);
+    tabbedComponent.addTab("UI", tabBg, uiPage.get(), false);
+    tabbedComponent.addTab("Rendering", tabBg, renderingPage.get(), false);
+    tabbedComponent.addTab("AI", tabBg, aiPage.get(), false);
+    tabbedComponent.addTab("Shortcuts", tabBg, shortcutsPage.get(), false);
+    addAndMakeVisible(tabbedComponent);
+
     okButton.setButtonText("OK");
     okButton.onClick = [this]() {
         applySettings();
-        if (auto* dw = findParentComponentOfClass<juce::DialogWindow>()) {
+        if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
             dw->exitModalState(1);
-        }
     };
     addAndMakeVisible(okButton);
 
     cancelButton.setButtonText("Cancel");
     cancelButton.onClick = [this]() {
-        if (auto* dw = findParentComponentOfClass<juce::DialogWindow>()) {
+        if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
             dw->exitModalState(0);
-        }
     };
     addAndMakeVisible(cancelButton);
 
@@ -201,11 +556,8 @@ PreferencesDialog::PreferencesDialog() {
     applyButton.onClick = [this]() { applySettings(); };
     addAndMakeVisible(applyButton);
 
-    // Load current settings
     loadCurrentSettings();
-
-    // Set preferred size (increased height for panels, layout, rendering and shortcuts sections)
-    setSize(450, 1256);
+    setSize(500, 580);
 }
 
 PreferencesDialog::~PreferencesDialog() = default;
@@ -215,293 +567,50 @@ void PreferencesDialog::paint(juce::Graphics& g) {
 }
 
 void PreferencesDialog::resized() {
-    auto bounds = getLocalBounds().reduced(20);
-    const int rowHeight = 32;
-    const int labelWidth = 180;
-    const int sliderHeight = 24;
-    const int toggleHeight = 24;
-    const int headerHeight = 28;
-    const int sectionSpacing = 16;
-    const int buttonHeight = 28;
-    const int buttonWidth = 80;
+    const int buttonH = 28;
+    const int buttonW = 80;
     const int buttonSpacing = 10;
+    const int margin = 16;
 
-    // Zoom section
-    auto zoomHeaderBounds = bounds.removeFromTop(headerHeight);
-    zoomHeader.setBounds(zoomHeaderBounds);
-    bounds.removeFromTop(4);
+    auto bounds = getLocalBounds();
 
-    // Zoom In Sensitivity
-    auto row = bounds.removeFromTop(rowHeight);
-    zoomInLabel.setBounds(row.removeFromLeft(labelWidth));
-    zoomInSensitivitySlider.setBounds(row.reduced(0, (rowHeight - sliderHeight) / 2));
-    bounds.removeFromTop(4);
+    // Reserve bottom strip for the button row
+    auto bottomStrip = bounds.removeFromBottom(buttonH + (margin * 2));
+    tabbedComponent.setBounds(bounds);
 
-    // Zoom Out Sensitivity
-    row = bounds.removeFromTop(rowHeight);
-    zoomOutLabel.setBounds(row.removeFromLeft(labelWidth));
-    zoomOutSensitivitySlider.setBounds(row.reduced(0, (rowHeight - sliderHeight) / 2));
-    bounds.removeFromTop(4);
+    // Right-align buttons within the bottom strip
+    bottomStrip.reduce(margin, margin);
+    const int totalBtnW = (buttonW * 3) + (buttonSpacing * 2);
+    bottomStrip.removeFromLeft(bottomStrip.getWidth() - totalBtnW);
 
-    // Shift+Zoom Sensitivity
-    row = bounds.removeFromTop(rowHeight);
-    zoomShiftLabel.setBounds(row.removeFromLeft(labelWidth));
-    zoomShiftSensitivitySlider.setBounds(row.reduced(0, (rowHeight - sliderHeight) / 2));
-
-    bounds.removeFromTop(sectionSpacing);
-
-    // Timeline section
-    auto timelineHeaderBounds = bounds.removeFromTop(headerHeight);
-    timelineHeader.setBounds(timelineHeaderBounds);
-    bounds.removeFromTop(4);
-
-    // Default Length
-    row = bounds.removeFromTop(rowHeight);
-    timelineLengthLabel.setBounds(row.removeFromLeft(labelWidth));
-    timelineLengthSlider.setBounds(row.reduced(0, (rowHeight - sliderHeight) / 2));
-    bounds.removeFromTop(4);
-
-    // Default View Duration
-    row = bounds.removeFromTop(rowHeight);
-    viewDurationLabel.setBounds(row.removeFromLeft(labelWidth));
-    viewDurationSlider.setBounds(row.reduced(0, (rowHeight - sliderHeight) / 2));
-
-    bounds.removeFromTop(sectionSpacing);
-
-    // Transport section
-    auto transportHeaderBounds = bounds.removeFromTop(headerHeight);
-    transportHeader.setBounds(transportHeaderBounds);
-    bounds.removeFromTop(4);
-
-    // Show both formats toggle
-    row = bounds.removeFromTop(toggleHeight + 8);
-    showBothFormatsToggle.setBounds(row.reduced(0, 4));
-    bounds.removeFromTop(4);
-
-    // Default bars/beats toggle
-    row = bounds.removeFromTop(toggleHeight + 8);
-    defaultBarsBeatsToggle.setBounds(row.reduced(0, 4));
-
-    bounds.removeFromTop(sectionSpacing);
-
-    // Panels section
-    auto panelsHeaderBounds = bounds.removeFromTop(headerHeight);
-    panelsHeader.setBounds(panelsHeaderBounds);
-    bounds.removeFromTop(4);
-
-    // Show left panel toggle
-    row = bounds.removeFromTop(toggleHeight + 8);
-    showLeftPanelToggle.setBounds(row.reduced(0, 4));
-    bounds.removeFromTop(4);
-
-    // Show right panel toggle
-    row = bounds.removeFromTop(toggleHeight + 8);
-    showRightPanelToggle.setBounds(row.reduced(0, 4));
-    bounds.removeFromTop(4);
-
-    // Show bottom panel toggle
-    row = bounds.removeFromTop(toggleHeight + 8);
-    showBottomPanelToggle.setBounds(row.reduced(0, 4));
-
-    bounds.removeFromTop(sectionSpacing);
-
-    // Behavior section
-    auto behaviorHeaderBounds = bounds.removeFromTop(headerHeight);
-    behaviorHeader.setBounds(behaviorHeaderBounds);
-    bounds.removeFromTop(4);
-
-    // Confirm track delete toggle
-    row = bounds.removeFromTop(toggleHeight + 8);
-    confirmTrackDeleteToggle.setBounds(row.reduced(0, 4));
-    bounds.removeFromTop(4);
-
-    // Auto-monitor selected track toggle
-    row = bounds.removeFromTop(toggleHeight + 8);
-    autoMonitorToggle.setBounds(row.reduced(0, 4));
-
-    bounds.removeFromTop(sectionSpacing);
-
-    // Layout section
-    auto layoutHeaderBounds = bounds.removeFromTop(headerHeight);
-    layoutHeader.setBounds(layoutHeaderBounds);
-    bounds.removeFromTop(4);
-
-    // Left-handed layout toggle
-    row = bounds.removeFromTop(toggleHeight + 8);
-    leftHandedLayoutToggle.setBounds(row.reduced(0, 4));
-
-    bounds.removeFromTop(sectionSpacing);
-
-    // Rendering section
-    auto renderHeaderBounds = bounds.removeFromTop(headerHeight);
-    renderHeader.setBounds(renderHeaderBounds);
-    bounds.removeFromTop(4);
-
-    // Render folder label
-    row = bounds.removeFromTop(rowHeight);
-    renderFolderLabel.setBounds(row);
-    bounds.removeFromTop(4);
-
-    // Render folder value + buttons
-    row = bounds.removeFromTop(rowHeight);
-    {
-        auto buttonsArea = row.removeFromRight(140);
-        renderFolderValue.setBounds(row);
-        renderFolderClearButton.setBounds(buttonsArea.removeFromRight(60).reduced(0, 2));
-        buttonsArea.removeFromRight(4);
-        renderFolderBrowseButton.setBounds(buttonsArea.reduced(0, 2));
-    }
-
-    bounds.removeFromTop(sectionSpacing);
-
-    // AI section
-    auto aiHeaderBounds = bounds.removeFromTop(headerHeight);
-    aiHeader.setBounds(aiHeaderBounds);
-    bounds.removeFromTop(4);
-
-    // API Key label
-    row = bounds.removeFromTop(rowHeight);
-    aiApiKeyLabel.setBounds(row.removeFromLeft(labelWidth));
-    aiApiKeyEditor.setBounds(row.reduced(0, 4));
-    bounds.removeFromTop(4);
-
-    // Validate button + status
-    row = bounds.removeFromTop(rowHeight);
-    aiValidateButton.setBounds(row.removeFromLeft(80).reduced(0, 4));
-    row.removeFromLeft(8);
-    aiStatusLabel.setBounds(row);
-
-    bounds.removeFromTop(sectionSpacing);
-
-    // Keyboard Shortcuts section
-    auto shortcutsHeaderBounds = bounds.removeFromTop(headerHeight);
-    shortcutsHeader.setBounds(shortcutsHeaderBounds);
-    bounds.removeFromTop(4);
-
-    // Add Track shortcut
-    row = bounds.removeFromTop(rowHeight);
-    addTrackShortcut.setBounds(row);
-    bounds.removeFromTop(4);
-
-    // Delete Track shortcut
-    row = bounds.removeFromTop(rowHeight);
-    deleteTrackShortcut.setBounds(row);
-    bounds.removeFromTop(4);
-
-    // Duplicate Track shortcut
-    row = bounds.removeFromTop(rowHeight);
-    duplicateTrackShortcut.setBounds(row);
-    bounds.removeFromTop(4);
-
-    // Mute Track shortcut
-    row = bounds.removeFromTop(rowHeight);
-    muteTrackShortcut.setBounds(row);
-    bounds.removeFromTop(4);
-
-    // Solo Track shortcut
-    row = bounds.removeFromTop(rowHeight);
-    soloTrackShortcut.setBounds(row);
-
-    // Button row at bottom
-    auto buttonArea = getLocalBounds().reduced(20).removeFromBottom(buttonHeight);
-
-    // Right-align buttons
-    auto buttonsWidth = buttonWidth * 3 + buttonSpacing * 2;
-    buttonArea.removeFromLeft(buttonArea.getWidth() - buttonsWidth);
-
-    cancelButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
-    buttonArea.removeFromLeft(buttonSpacing);
-    applyButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
-    buttonArea.removeFromLeft(buttonSpacing);
-    okButton.setBounds(buttonArea.removeFromLeft(buttonWidth));
+    cancelButton.setBounds(bottomStrip.removeFromLeft(buttonW));
+    bottomStrip.removeFromLeft(buttonSpacing);
+    applyButton.setBounds(bottomStrip.removeFromLeft(buttonW));
+    bottomStrip.removeFromLeft(buttonSpacing);
+    okButton.setBounds(bottomStrip.removeFromLeft(buttonW));
 }
 
 void PreferencesDialog::loadCurrentSettings() {
     auto& config = Config::getInstance();
-
-    // Load zoom settings
-    zoomInSensitivitySlider.setValue(config.getZoomInSensitivity(), juce::dontSendNotification);
-    zoomOutSensitivitySlider.setValue(config.getZoomOutSensitivity(), juce::dontSendNotification);
-    zoomShiftSensitivitySlider.setValue(config.getZoomInSensitivityShift(),
-                                        juce::dontSendNotification);
-
-    // Load timeline settings
-    timelineLengthSlider.setValue(config.getDefaultTimelineLength(), juce::dontSendNotification);
-    viewDurationSlider.setValue(config.getDefaultZoomViewDuration(), juce::dontSendNotification);
-
-    // Load transport settings
-    showBothFormatsToggle.setToggleState(config.getTransportShowBothFormats(),
-                                         juce::dontSendNotification);
-    defaultBarsBeatsToggle.setToggleState(config.getTransportDefaultBarsBeats(),
-                                          juce::dontSendNotification);
-
-    // Load panel visibility settings
-    showLeftPanelToggle.setToggleState(config.getShowLeftPanel(), juce::dontSendNotification);
-    showRightPanelToggle.setToggleState(config.getShowRightPanel(), juce::dontSendNotification);
-    showBottomPanelToggle.setToggleState(config.getShowBottomPanel(), juce::dontSendNotification);
-
-    // Load behavior settings
-    confirmTrackDeleteToggle.setToggleState(config.getConfirmTrackDelete(),
-                                            juce::dontSendNotification);
-    autoMonitorToggle.setToggleState(config.getAutoMonitorSelectedTrack(),
-                                     juce::dontSendNotification);
-
-    // Load layout settings
-    leftHandedLayoutToggle.setToggleState(config.getScrollbarOnLeft(), juce::dontSendNotification);
-
-    // Load AI settings
-    aiApiKeyEditor.setText(juce::String(config.getOpenAIApiKey()), juce::dontSendNotification);
-
-    // Load render folder setting
-    auto folder = config.getRenderFolder();
-    if (folder.empty()) {
-        renderFolderValue.setText("Default (beside source file)", juce::dontSendNotification);
-        renderFolderValue.setTooltip("");
-    } else {
-        renderFolderValue.setText(juce::String(folder), juce::dontSendNotification);
-        renderFolderValue.setTooltip(juce::String(folder));
-    }
+    generalPage->loadSettings(config);
+    uiPage->loadSettings(config);
+    renderingPage->loadSettings(config);
+    aiPage->loadSettings(config);
+    shortcutsPage->loadSettings(config);
 }
 
 void PreferencesDialog::applySettings() {
     auto& config = Config::getInstance();
-
-    // Apply zoom settings
-    config.setZoomInSensitivity(zoomInSensitivitySlider.getValue());
-    config.setZoomOutSensitivity(zoomOutSensitivitySlider.getValue());
-    config.setZoomInSensitivityShift(zoomShiftSensitivitySlider.getValue());
-    config.setZoomOutSensitivityShift(
-        zoomShiftSensitivitySlider.getValue());  // Use same value for both shift sensitivities
-
-    // Apply timeline settings
-    config.setDefaultTimelineLength(timelineLengthSlider.getValue());
-    config.setDefaultZoomViewDuration(viewDurationSlider.getValue());
-
-    // Apply transport settings
-    config.setTransportShowBothFormats(showBothFormatsToggle.getToggleState());
-    config.setTransportDefaultBarsBeats(defaultBarsBeatsToggle.getToggleState());
-
-    // Apply panel visibility settings
-    config.setShowLeftPanel(showLeftPanelToggle.getToggleState());
-    config.setShowRightPanel(showRightPanelToggle.getToggleState());
-    config.setShowBottomPanel(showBottomPanelToggle.getToggleState());
-
-    // Apply behavior settings
-    config.setConfirmTrackDelete(confirmTrackDeleteToggle.getToggleState());
-    config.setAutoMonitorSelectedTrack(autoMonitorToggle.getToggleState());
-
-    // Apply layout settings
-    config.setScrollbarOnLeft(leftHandedLayoutToggle.getToggleState());
-
-    // Apply render folder setting (tooltip holds the real path; empty = default)
-    auto folderPath = renderFolderValue.getTooltip();
-    config.setRenderFolder(folderPath.toStdString());
-
-    // Apply AI settings
-    config.setOpenAIApiKey(aiApiKeyEditor.getText().toStdString());
+    generalPage->applySettings(config);
+    uiPage->applySettings(config);
+    renderingPage->applySettings(config);
+    aiPage->applySettings(config);
+    shortcutsPage->applySettings(config);
+    config.save();
 }
 
 void PreferencesDialog::showDialog(juce::Component* parent) {
+    (void)parent;
     auto* dialog = new PreferencesDialog();
 
     juce::DialogWindow::LaunchOptions options;
@@ -513,57 +622,6 @@ void PreferencesDialog::showDialog(juce::Component* parent) {
     options.resizable = false;
 
     options.launchAsync();
-}
-
-void PreferencesDialog::setupSlider(juce::Slider& slider, juce::Label& label,
-                                    const juce::String& labelText, double min, double max,
-                                    double interval, const juce::String& suffix) {
-    label.setText(labelText, juce::dontSendNotification);
-    label.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    label.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(label);
-
-    slider.setRange(min, max, interval);
-    slider.setSliderStyle(juce::Slider::LinearHorizontal);
-    slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 20);
-    slider.setTextValueSuffix(suffix);
-    slider.setColour(juce::Slider::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    slider.setColour(juce::Slider::thumbColourId, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    slider.setColour(juce::Slider::trackColourId,
-                     DarkTheme::getColour(DarkTheme::ACCENT_BLUE).darker(0.3f));
-    slider.setColour(juce::Slider::textBoxTextColourId,
-                     DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    slider.setColour(juce::Slider::textBoxBackgroundColourId,
-                     DarkTheme::getColour(DarkTheme::SURFACE));
-    slider.setColour(juce::Slider::textBoxOutlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
-    addAndMakeVisible(slider);
-}
-
-void PreferencesDialog::setupToggle(juce::ToggleButton& toggle, const juce::String& text) {
-    toggle.setButtonText(text);
-    toggle.setColour(juce::ToggleButton::textColourId,
-                     DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    toggle.setColour(juce::ToggleButton::tickColourId,
-                     DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    toggle.setColour(juce::ToggleButton::tickDisabledColourId,
-                     DarkTheme::getColour(DarkTheme::TEXT_DIM));
-    addAndMakeVisible(toggle);
-}
-
-void PreferencesDialog::setupSectionHeader(juce::Label& header, const juce::String& text) {
-    header.setText(text, juce::dontSendNotification);
-    header.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    header.setFont(juce::Font(14.0f, juce::Font::bold));
-    header.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(header);
-}
-
-void PreferencesDialog::setupShortcutLabel(juce::Label& label, const juce::String& action,
-                                           const juce::String& shortcut) {
-    label.setText(action + ":  " + shortcut, juce::dontSendNotification);
-    label.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    label.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(label);
 }
 
 }  // namespace magda
