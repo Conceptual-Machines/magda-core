@@ -195,6 +195,73 @@ class MixerView::ChannelStrip::SendResizeHandle : public juce::Component {
     int dragStartY_ = 0;
 };
 
+// dB scale component — draws tick marks and dB labels, resizes with fader area
+class MixerView::ChannelStrip::DbScale : public juce::Component {
+  public:
+    DbScale() {
+        setInterceptsMouseClicks(false, false);
+    }
+
+    void paint(juce::Graphics& g) override {
+        auto bounds = getLocalBounds();
+        if (bounds.isEmpty())
+            return;
+
+        const auto& metrics = MixerMetrics::getInstance();
+
+        const float dbValues[] = {6.0f,   3.0f,   0.0f,   -3.0f,  -6.0f,
+                                  -12.0f, -18.0f, -24.0f, -36.0f, -48.0f};
+
+        // The component has extra padding at top/bottom for label overflow.
+        // The fader-aligned area starts at paddingTop and has faderHeight.
+        float paddingTop = metrics.labelTextHeight / 2.0f + 1.0f;
+        float paddingBottom = metrics.labelTextHeight / 2.0f;
+        float top = paddingTop;
+        float height = static_cast<float>(bounds.getHeight()) - paddingTop - paddingBottom;
+        float totalWidth = static_cast<float>(bounds.getWidth());
+
+        float tickW = metrics.tickWidth();
+        float labelWidth = metrics.labelTextWidth;
+        float centre = totalWidth / 2.0f;
+
+        g.setFont(FontManager::getInstance().getUIFont(metrics.labelFontSize));
+
+        float minSpacing = metrics.labelTextHeight + 2.0f;
+        float lastDrawnY = -1000.0f;
+
+        for (float db : dbValues) {
+            float faderPos = dbToMeterPos(db);
+            float y = top + height * (1.0f - faderPos);
+
+            if (std::abs(y - lastDrawnY) < minSpacing)
+                continue;
+            lastDrawnY = y;
+
+            float tickHeight = metrics.tickHeight();
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.fillRect(0.0f, y - tickHeight / 2.0f, tickW - 1.0f, tickHeight);
+            g.fillRect(totalWidth - tickW + 1.0f, y - tickHeight / 2.0f, tickW - 1.0f, tickHeight);
+
+            juce::String labelText;
+            int dbInt = static_cast<int>(db);
+            if (db <= MIN_DB) {
+                labelText = juce::String::charToString(0x221E);
+            } else {
+                labelText = juce::String(std::abs(dbInt));
+            }
+
+            float textHeight = metrics.labelTextHeight;
+            float textX = centre - labelWidth / 2.0f;
+            float textY = y - textHeight / 2.0f;
+
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            g.drawText(labelText, static_cast<int>(textX), static_cast<int>(textY),
+                       static_cast<int>(labelWidth), static_cast<int>(textHeight),
+                       juce::Justification::centred, false);
+        }
+    }
+};
+
 // Channel strip implementation
 MixerView::ChannelStrip::ChannelStrip(const TrackInfo& track, bool isMaster)
     : trackId_(track.id), isMaster_(isMaster), trackColour_(track.colour), trackName_(track.name) {
@@ -294,6 +361,10 @@ void MixerView::ChannelStrip::setupControls() {
     // Level meter
     levelMeter = std::make_unique<LevelMeter>();
     addAndMakeVisible(*levelMeter);
+
+    // dB scale (ticks + labels between fader and meter)
+    dbScale_ = std::make_unique<DbScale>();
+    addAndMakeVisible(*dbScale_);
 
     // Peak label
     peakLabel = std::make_unique<juce::Label>();
@@ -589,60 +660,7 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
         g.fillRect(faderRegion_.getX(), faderRegion_.getBottom() - 1, faderRegion_.getWidth(), 1);
     }
 
-    // Draw dB ticks and labels
-    drawDbLabels(g);
-}
-
-void MixerView::ChannelStrip::drawDbLabels(juce::Graphics& g) {
-    if (labelArea_.isEmpty() || !volumeSlider)
-        return;
-
-    const auto& metrics = MixerMetrics::getInstance();
-
-    // dB values to display with ticks
-    const std::vector<float> dbValues = {6.0f,   3.0f,   0.0f,   -3.0f,  -6.0f,
-                                         -12.0f, -18.0f, -24.0f, -36.0f, -48.0f};
-
-    // Ticks aligned with the fader slider bounds (offset down 2px to match visual top)
-    float top = static_cast<float>(faderArea_.getY()) + 1.0f;
-    float height = static_cast<float>(faderArea_.getHeight()) - 1.0f;
-
-    g.setFont(FontManager::getInstance().getUIFont(metrics.labelFontSize));
-
-    for (float db : dbValues) {
-        // Use same power curve as fader and meter
-        float faderPos = dbToMeterPos(db);
-        float y = top + height * (1.0f - faderPos);
-
-        // Draw ticks
-        float tickHeight = metrics.tickHeight();
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-
-        float leftTickX = static_cast<float>(leftTickArea_.getRight()) - metrics.tickWidth();
-        g.fillRect(leftTickX + 1.0f, y - tickHeight / 2.0f, metrics.tickWidth() - 1.0f, tickHeight);
-
-        float rightTickX = static_cast<float>(rightTickArea_.getX());
-        g.fillRect(rightTickX, y - tickHeight / 2.0f, metrics.tickWidth() - 1.0f, tickHeight);
-
-        // Label text
-        juce::String labelText;
-        int dbInt = static_cast<int>(db);
-        if (db <= MIN_DB) {
-            labelText = juce::String::charToString(0x221E);
-        } else {
-            labelText = juce::String(std::abs(dbInt));
-        }
-
-        float textWidth = metrics.labelTextWidth;
-        float textHeight = metrics.labelTextHeight;
-        float textX = labelArea_.getCentreX() - textWidth / 2.0f;
-        float textY = y - textHeight / 2.0f;
-
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        g.drawText(labelText, static_cast<int>(textX), static_cast<int>(textY),
-                   static_cast<int>(textWidth), static_cast<int>(textHeight),
-                   juce::Justification::centred, false);
-    }
+    // dB ticks and labels are drawn by the DbScale component
 }
 
 void MixerView::ChannelStrip::resized() {
@@ -662,38 +680,33 @@ void MixerView::ChannelStrip::resized() {
     trackLabel->setBounds(bounds.removeFromTop(24));
     bounds.removeFromTop(metrics.controlSpacing);
 
-    // Sends area (resizable-height scrollable viewport) — between track label and fader
-    // All non-master strips reserve the same height to keep faders aligned
+    // Sends area (scrollable viewport) — between track label and fader
     if (!isMaster_ && sendViewport_) {
         const int sendSlotHeight = 18;
         const int sendAreaHeight = metrics.sendAreaHeight;
 
-        if (sendAreaHeight > 0) {
-            // Layout send slots inside the container
-            int containerWidth = bounds.getWidth();
-            int totalContentHeight = 0;
-            for (auto& slot : sendSlots_) {
-                auto row =
-                    juce::Rectangle<int>(0, totalContentHeight, containerWidth, sendSlotHeight);
-                slot->nameLabel->setBounds(row.removeFromLeft(row.getWidth() * 40 / 100));
-                auto removeArea = row.removeFromRight(16);
-                slot->removeButton->setBounds(removeArea);
-                slot->levelSlider->setBounds(row);
-                totalContentHeight += sendSlotHeight + 1;  // 1px gap
-            }
-
-            sendContainer_->setBounds(0, 0, containerWidth, totalContentHeight);
-            sendViewport_->setBounds(bounds.removeFromTop(sendAreaHeight));
-            sendViewport_->setVisible(true);
-        } else {
-            sendViewport_->setVisible(false);
+        // Layout send slots inside the container
+        int containerWidth = bounds.getWidth();
+        int totalContentHeight = 0;
+        for (auto& slot : sendSlots_) {
+            auto row = juce::Rectangle<int>(0, totalContentHeight, containerWidth, sendSlotHeight);
+            slot->nameLabel->setBounds(row.removeFromLeft(row.getWidth() * 40 / 100));
+            auto removeArea = row.removeFromRight(16);
+            slot->removeButton->setBounds(removeArea);
+            slot->levelSlider->setBounds(row);
+            totalContentHeight += sendSlotHeight + 1;  // 1px gap
         }
+
+        sendContainer_->setBounds(0, 0, containerWidth, totalContentHeight);
+        sendViewport_->setBounds(bounds.removeFromTop(sendAreaHeight));
+        sendViewport_->setVisible(sendAreaHeight > 0);
 
         // Resize handle below the sends viewport
         if (sendResizeHandle_) {
             sendResizeHandle_->setBounds(bounds.removeFromTop(4));
             sendResizeHandle_->setAlwaysOnTop(true);
         }
+        bounds.removeFromTop(metrics.controlSpacing);
     }
 
     // M/S/R/Mon buttons at bottom
@@ -744,11 +757,8 @@ void MixerView::ChannelStrip::resized() {
     panSlider->setBounds(bounds.removeFromBottom(20));
     bounds.removeFromBottom(2);
 
-    // Use percentage of remaining height for fader, push extra space to top only
-    int faderHeight = static_cast<int>(bounds.getHeight() * metrics.faderHeightRatio / 100.0f);
-    int extraSpace = bounds.getHeight() - faderHeight;
-    bounds.removeFromTop(extraSpace);
-    bounds.setHeight(faderHeight);
+    // Small gap before fader region
+    bounds.removeFromTop(2);
 
     // Layout: [fader] [gap] [leftTicks] [labels] [rightTicks] [gap] [meter]
     // Fader and meter scale proportionally with channel width
@@ -782,23 +792,14 @@ void MixerView::ChannelStrip::resized() {
     meterArea_ = layoutArea.removeFromRight(meterWidthVal);
     levelMeter->setBounds(meterArea_);
 
-    // Position tick areas with gap from fader/meter
-    int meterGap = metrics.tickToMeterGap;
-
-    // Left ticks: positioned after fader + gap
-    leftTickArea_ = juce::Rectangle<int>(faderArea_.getRight() + gap, layoutArea.getY(), tickWidth,
-                                         layoutArea.getHeight());
-
-    // Right ticks: positioned before meter - meterGap
-    rightTickArea_ = juce::Rectangle<int>(meterArea_.getX() - tickWidth - meterGap,
-                                          layoutArea.getY(), tickWidth, layoutArea.getHeight());
-
-    // Label area between ticks
-    int tickToLabelGap = metrics.tickToLabelGap;
-    int labelLeft = leftTickArea_.getRight() + tickToLabelGap;
-    int labelRight = rightTickArea_.getX() - tickToLabelGap;
-    labelArea_ = juce::Rectangle<int>(labelLeft, layoutArea.getY(), labelRight - labelLeft,
-                                      layoutArea.getHeight());
+    // dB scale component — extends above/below fader area for label overflow
+    if (dbScale_) {
+        int labelPad = static_cast<int>(metrics.labelTextHeight / 2.0f + 1.0f);
+        int scaleLeft = faderArea_.getRight() + gap;
+        int scaleRight = meterArea_.getX() - metrics.tickToMeterGap;
+        dbScale_->setBounds(scaleLeft, layoutArea.getY() - labelPad, scaleRight - scaleLeft,
+                            layoutArea.getHeight() + labelPad * 2);
+    }
 }
 
 void MixerView::ChannelStrip::setMeterLevel(float level) {
@@ -1610,11 +1611,15 @@ void MixerView::relayoutAllStrips() {
         juce::MessageManager::callAsync([this]() {
             if (pendingSendResizeUpdate_) {
                 pendingSendResizeUpdate_ = false;
-                // Trigger resized() on all channel strips (including aux)
-                for (auto& strip : channelStrips)
+                // Trigger relayout and repaint on all channel strips
+                for (auto& strip : channelStrips) {
                     strip->resized();
-                for (auto& strip : auxChannelStrips)
+                    strip->repaint();
+                }
+                for (auto& strip : auxChannelStrips) {
                     strip->resized();
+                    strip->repaint();
+                }
             }
         });
     }

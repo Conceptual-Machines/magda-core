@@ -144,13 +144,13 @@ class MixerView : public juce::Component,
         float peakValue_ = 0.0f;
 
         // Stored bounds for layout regions
-        // Layout: [fader] [leftTicks] [labels] [rightTicks] [meter]
         juce::Rectangle<int> faderRegion_;  // Entire fader area (for border)
         juce::Rectangle<int> faderArea_;
-        juce::Rectangle<int> leftTickArea_;
-        juce::Rectangle<int> labelArea_;
-        juce::Rectangle<int> rightTickArea_;
         juce::Rectangle<int> meterArea_;
+
+        // dB scale component (ticks + labels between fader and meter)
+        class DbScale;
+        std::unique_ptr<DbScale> dbScale_;
 
         // Send slots (dynamic: one per active send on this track)
         struct SendSlot {
@@ -176,7 +176,6 @@ class MixerView : public juce::Component,
 
         void setupControls();
         void rebuildSendSlots(const std::vector<SendInfo>& sends);
-        void drawDbLabels(juce::Graphics& g);
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChannelStrip)
     };
