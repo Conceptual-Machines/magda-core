@@ -1531,7 +1531,7 @@ void MixerView::resized() {
 
     // Master strip on the right (only if visible)
     if (masterStrip->isVisible()) {
-        masterStrip->setBounds(bounds.removeFromRight(metrics.masterWidth));
+        masterStrip->setBounds(bounds.removeFromRight(metrics.channelWidth));
     }
 
     // Aux channel strips between regular channels and master

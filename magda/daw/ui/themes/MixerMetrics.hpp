@@ -43,7 +43,7 @@ struct MixerMetrics {
 
     // === Channel strip dimensions ===
     int channelWidth = 100;
-    int masterWidth = 160;  // Wider to accommodate dual meters (peak + VU)
+    int masterWidth = 100;  // Same as channel strips (resized together)
     int channelPadding = 4;
 
     // === Fader dimensions ===
