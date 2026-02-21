@@ -63,6 +63,9 @@ struct MixerMetrics {
     static constexpr int minSendAreaHeight = 0;
     static constexpr int maxSendAreaHeight = 400;
 
+    // === Visibility ===
+    bool showRouting = true;  // Show/hide I/O routing selectors on channel strips
+
     // === Spacing ===
     int controlSpacing = 4;
     int tickToFaderGap = 0;

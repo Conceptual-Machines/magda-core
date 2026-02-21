@@ -735,23 +735,35 @@ void MixerView::ChannelStrip::resized() {
 
     // Routing selectors above M/S/R (2 rows: Audio In/Out, MIDI In/Out)
     if (audioInSelector && audioOutSelector && midiInSelector && midiOutSelector) {
-        bounds.removeFromBottom(2);  // Small gap
+        if (metrics.showRouting) {
+            audioInSelector->setVisible(true);
+            audioOutSelector->setVisible(true);
+            midiInSelector->setVisible(true);
+            midiOutSelector->setVisible(true);
 
-        // MIDI row (Mi/Mo)
-        auto midiRow = bounds.removeFromBottom(16);
-        int halfWidth = (midiRow.getWidth() - 2) / 2;
-        midiInSelector->setBounds(midiRow.removeFromLeft(halfWidth));
-        midiRow.removeFromLeft(2);
-        midiOutSelector->setBounds(midiRow);  // Take remaining width
+            bounds.removeFromBottom(2);  // Small gap
 
-        bounds.removeFromBottom(2);  // Small gap
+            // MIDI row (Mi/Mo)
+            auto midiRow = bounds.removeFromBottom(16);
+            int halfWidth = (midiRow.getWidth() - 2) / 2;
+            midiInSelector->setBounds(midiRow.removeFromLeft(halfWidth));
+            midiRow.removeFromLeft(2);
+            midiOutSelector->setBounds(midiRow);  // Take remaining width
 
-        // Audio row (Ai/Ao)
-        auto audioRow = bounds.removeFromBottom(16);
-        halfWidth = (audioRow.getWidth() - 2) / 2;
-        audioInSelector->setBounds(audioRow.removeFromLeft(halfWidth));
-        audioRow.removeFromLeft(2);
-        audioOutSelector->setBounds(audioRow);  // Take remaining width
+            bounds.removeFromBottom(2);  // Small gap
+
+            // Audio row (Ai/Ao)
+            auto audioRow = bounds.removeFromBottom(16);
+            halfWidth = (audioRow.getWidth() - 2) / 2;
+            audioInSelector->setBounds(audioRow.removeFromLeft(halfWidth));
+            audioRow.removeFromLeft(2);
+            audioOutSelector->setBounds(audioRow);  // Take remaining width
+        } else {
+            audioInSelector->setVisible(false);
+            audioOutSelector->setVisible(false);
+            midiInSelector->setVisible(false);
+            midiOutSelector->setVisible(false);
+        }
     }
 
     // Pan slider — now below fader region, above routing
@@ -839,28 +851,43 @@ void MixerView::ChannelStrip::setSelected(bool shouldBeSelected) {
 }
 
 void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
-    if (event.mods.isPopupMenu() && !isMaster_) {
+    if (event.mods.isPopupMenu()) {
         juce::PopupMenu menu;
-        juce::PopupMenu sendSubMenu;
-        const auto& tracks = TrackManager::getInstance().getTracks();
-        // Collect existing send destination IDs
-        std::set<TrackId> existingSendDests;
-        if (auto* thisTrack = TrackManager::getInstance().getTrack(trackId_)) {
-            for (const auto& send : thisTrack->sends)
-                existingSendDests.insert(send.destTrackId);
-        }
-        for (const auto& t : tracks) {
-            if (t.id != trackId_ && t.type != TrackType::Master &&
-                existingSendDests.find(t.id) == existingSendDests.end()) {
-                sendSubMenu.addItem(t.id, t.name);
+
+        // Add Send submenu (not for master)
+        if (!isMaster_) {
+            juce::PopupMenu sendSubMenu;
+            const auto& tracks = TrackManager::getInstance().getTracks();
+            std::set<TrackId> existingSendDests;
+            if (auto* thisTrack = TrackManager::getInstance().getTrack(trackId_)) {
+                for (const auto& send : thisTrack->sends)
+                    existingSendDests.insert(send.destTrackId);
             }
+            for (const auto& t : tracks) {
+                if (t.id != trackId_ && t.type != TrackType::Master &&
+                    existingSendDests.find(t.id) == existingSendDests.end()) {
+                    sendSubMenu.addItem(t.id, t.name);
+                }
+            }
+            if (sendSubMenu.getNumItems() == 0) {
+                sendSubMenu.addItem(-1, "(No tracks available)", false);
+            }
+            menu.addSubMenu("Add Send", sendSubMenu);
+            menu.addSeparator();
         }
-        if (sendSubMenu.getNumItems() == 0) {
-            sendSubMenu.addItem(-1, "(No tracks available)", false);
-        }
-        menu.addSubMenu("Add Send", sendSubMenu);
+
+        // Show/hide I/O routing toggle
+        auto& metrics = MixerMetrics::getInstance();
+        const int toggleRoutingId = -100;
+        menu.addItem(toggleRoutingId, "Show I/O Routing", true, metrics.showRouting);
+
         menu.showMenuAsync(juce::PopupMenu::Options(), [this](int result) {
-            if (result > 0) {
+            if (result == -100) {
+                auto& m = MixerMetrics::getInstance();
+                m.showRouting = !m.showRouting;
+                if (onSendAreaResized)
+                    onSendAreaResized();  // Triggers relayout of all strips
+            } else if (result > 0) {
                 TrackManager::getInstance().addSend(trackId_, static_cast<TrackId>(result));
             }
         });
