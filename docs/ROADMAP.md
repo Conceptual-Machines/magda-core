@@ -51,6 +51,7 @@ Pitchbend and MIDI CC editing are standard expectations for any DAW's piano roll
 | # | Title | Priority |
 |---|-------|----------|
 | 729 | Implement sends in mixer view | **P0** |
+| 765 | Mixer channel strip UI restyling: text sliders for fader and pan | **P1** |
 
 Sends are fundamental to mixing — reverb buses, parallel compression, and headphone mixes all depend on them.
 
@@ -87,11 +88,18 @@ Without CI and a signed build pipeline, there is no release.
 | 735 | Set up release CI: build, sign, and distribute | **P0** |
 | 736 | Create product website | **P1** |
 
+### UI & Visual Polish
+
+| # | Title | Priority |
+|---|-------|----------|
+| 766 | UI font audit and fine-tuning pass | **P1** |
+| — | Track headers top area: additional controls (TBD) | **P2** |
+
 ### Summary
 
 0.1.0 ships when a user can: install MAGDA from a signed build, create a new project, record audio and MIDI, edit clips and notes in the piano roll (including pitchbend and CC lanes), route sends for effects buses, load VST/AU plugins and built-in effects, mix with volume/pan/mute/solo, use basic AI commands via the existing agent system, save/load their project, and export a stereo audio file. Everything else is a bonus.
 
-**Issue count: 18** (includes 2 new issues to be created)
+**Issue count: 21** (includes 3 new issues to be created)
 
 ---
 
@@ -293,6 +301,7 @@ For quick filtering, every issue falls into one of these domains:
 | **Clip & Track Editing** | #15, #16, #662, #663, #756 |
 | **Arrangement** | arrangement sections |
 | **Mixer & Routing** | #729, #730 |
+| **UI & Visual Polish (0.1.0)** | #765, #766, track headers TBD |
 | **Plugin System** | #80, #596, #763, custom parameter definitions |
 | **Monitoring & Analysis** | #739, #761 |
 | **Modulation / Automation** | #590, #758, modulation-to-automation |
