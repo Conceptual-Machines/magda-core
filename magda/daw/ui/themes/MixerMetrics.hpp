@@ -13,7 +13,7 @@ struct MixerMetrics {
     float thumbHeight = 16.0f;
     float thumbWidthMultiplier = 2.0f;     // thumbWidth = thumbHeight * this (32px)
     float trackWidthMultiplier = 0.66f;    // trackWidth = thumbHeight * this (~11px)
-    float tickWidthMultiplier = 0.78f;     // tickWidth = thumbHeight * this (~12px)
+    float tickWidthMultiplier = 0.3f;      // tickWidth = thumbHeight * this (~5px)
     float trackPaddingMultiplier = 0.25f;  // trackPadding = thumbHeight * this (4px)
 
     // === Derived fader values ===

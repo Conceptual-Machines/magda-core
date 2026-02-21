@@ -87,11 +87,7 @@ class MixerView::ChannelStrip::LevelMeter : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        auto bounds = getLocalBounds().toFloat();
-        const auto& metrics = MixerMetrics::getInstance();
-
-        // Meter uses effective range (with thumbRadius padding) to match fader track and labels
-        auto effectiveBounds = bounds.reduced(0.0f, metrics.thumbRadius());
+        auto effectiveBounds = getLocalBounds().toFloat();
 
         // Split into L/R with 1px gap
         const float gap = 1.0f;
@@ -101,10 +97,7 @@ class MixerView::ChannelStrip::LevelMeter : public juce::Component {
         auto rightBounds =
             effectiveBounds.withWidth(barWidth).withX(effectiveBounds.getX() + barWidth + gap);
 
-        // Draw left channel
         drawMeterBar(g, leftBounds, leftLevel_);
-
-        // Draw right channel
         drawMeterBar(g, rightBounds, rightLevel_);
     }
 
@@ -113,17 +106,15 @@ class MixerView::ChannelStrip::LevelMeter : public juce::Component {
     float rightLevel_ = 0.0f;
 
     void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level) {
-        // Background
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
         g.fillRoundedRectangle(bounds, 1.0f);
 
-        // Meter fill (using consistent scaling across all views)
+        // Use power curve to match fader and tick positions
         float displayLevel = dbToMeterPos(gainToDb(level));
         float meterHeight = bounds.getHeight() * displayLevel;
         auto fillBounds = bounds;
         fillBounds = fillBounds.removeFromBottom(meterHeight);
 
-        // Smooth gradient from green to yellow to red based on dB
         g.setColour(getMeterColour(level));
         g.fillRoundedRectangle(fillBounds, 1.0f);
     }
@@ -149,26 +140,13 @@ class MixerView::ChannelStrip::LevelMeter : public juce::Component {
 };
 
 // Channel strip implementation
-MixerView::ChannelStrip::ChannelStrip(const TrackInfo& track, juce::LookAndFeel* faderLookAndFeel,
-                                      bool isMaster)
-    : trackId_(track.id),
-      isMaster_(isMaster),
-      trackColour_(track.colour),
-      trackName_(track.name),
-      faderLookAndFeel_(faderLookAndFeel) {
+MixerView::ChannelStrip::ChannelStrip(const TrackInfo& track, bool isMaster)
+    : trackId_(track.id), isMaster_(isMaster), trackColour_(track.colour), trackName_(track.name) {
     setupControls();
     updateFromTrack(track);
 }
 
-MixerView::ChannelStrip::~ChannelStrip() {
-    // Clear look and feel before destruction to avoid dangling pointer issues
-    if (volumeFader) {
-        volumeFader->setLookAndFeel(nullptr);
-    }
-    if (panKnob) {
-        panKnob->setLookAndFeel(nullptr);
-    }
-}
+MixerView::ChannelStrip::~ChannelStrip() = default;
 
 void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track) {
     trackColour_ = track.colour;
@@ -177,14 +155,13 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track) {
     if (trackLabel) {
         trackLabel->setText(isMaster_ ? "Master" : track.name, juce::dontSendNotification);
     }
-    if (volumeFader) {
-        // Convert linear gain to fader position (using consistent meter scaling)
+    if (volumeSlider && !volumeSlider->isBeingDragged()) {
         float db = gainToDb(track.volume);
         float faderPos = dbToMeterPos(db);
-        volumeFader->setValue(faderPos, juce::dontSendNotification);
+        volumeSlider->setValue(faderPos, juce::dontSendNotification);
     }
-    if (panKnob) {
-        panKnob->setValue(track.pan, juce::dontSendNotification);
+    if (panSlider && !panSlider->isBeingDragged()) {
+        panSlider->setValue(track.pan, juce::dontSendNotification);
     }
     if (muteButton) {
         muteButton->setToggleState(track.muted, juce::dontSendNotification);
@@ -211,6 +188,27 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track) {
                                       juce::dontSendNotification);
     }
 
+    // Sync send slots
+    if (!isMaster_) {
+        bool sendsCountChanged = sendSlots_.size() != track.sends.size();
+        if (sendsCountChanged) {
+            rebuildSendSlots(track.sends);
+        } else {
+            // Update existing slots in-place
+            for (size_t i = 0; i < sendSlots_.size(); ++i) {
+                auto& slot = sendSlots_[i];
+                const auto& send = track.sends[i];
+                if (slot->levelSlider && !slot->levelSlider->isBeingDragged())
+                    slot->levelSlider->setValue(send.level, juce::dontSendNotification);
+                // Update dest name
+                if (slot->nameLabel && send.destTrackId != INVALID_TRACK_ID) {
+                    if (auto* destTrack = TrackManager::getInstance().getTrack(send.destTrackId))
+                        slot->nameLabel->setText(destTrack->name, juce::dontSendNotification);
+                }
+            }
+        }
+    }
+
     repaint();
 }
 
@@ -224,47 +222,17 @@ void MixerView::ChannelStrip::setupControls() {
                           DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
     addAndMakeVisible(*trackLabel);
 
-    // Pan knob
-    panKnob = std::make_unique<juce::Slider>(juce::Slider::RotaryHorizontalVerticalDrag,
-                                             juce::Slider::NoTextBox);
-    panKnob->setRange(-1.0, 1.0, 0.01);
-    panKnob->setValue(0.0, juce::dontSendNotification);
-    panKnob->setColour(juce::Slider::rotarySliderFillColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    panKnob->setColour(juce::Slider::rotarySliderOutlineColourId,
-                       DarkTheme::getColour(DarkTheme::SURFACE));
-    panKnob->setColour(juce::Slider::thumbColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    panKnob->onValueChange = [this]() {
-        UndoManager::getInstance().executeCommand(std::make_unique<SetTrackPanCommand>(
-            trackId_, static_cast<float>(panKnob->getValue())));
-        // Update pan label
-        if (panValueLabel) {
-            float pan = static_cast<float>(panKnob->getValue());
-            juce::String panText;
-            if (std::abs(pan) < 0.01f) {
-                panText = "C";
-            } else if (pan < 0) {
-                panText = juce::String(static_cast<int>(std::abs(pan) * 100)) + "L";
-            } else {
-                panText = juce::String(static_cast<int>(pan * 100)) + "R";
-            }
-            panValueLabel->setText(panText, juce::dontSendNotification);
-        }
+    // Pan slider (horizontal TextSlider)
+    panSlider = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Pan);
+    panSlider->setOrientation(daw::ui::TextSlider::Orientation::Horizontal);
+    panSlider->setRange(-1.0, 1.0, 0.01);
+    panSlider->setValue(0.0, juce::dontSendNotification);
+    panSlider->setFont(FontManager::getInstance().getUIFont(10.0f));
+    panSlider->onValueChanged = [this](double val) {
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetTrackPanCommand>(trackId_, static_cast<float>(val)));
     };
-    // Apply custom look and feel for knob styling
-    if (faderLookAndFeel_) {
-        panKnob->setLookAndFeel(faderLookAndFeel_);
-    }
-    addAndMakeVisible(*panKnob);
-
-    // Pan value label
-    panValueLabel = std::make_unique<juce::Label>();
-    panValueLabel->setText("C", juce::dontSendNotification);
-    panValueLabel->setJustificationType(juce::Justification::centred);
-    panValueLabel->setColour(juce::Label::textColourId,
-                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    panValueLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
-    addAndMakeVisible(*panValueLabel);
+    addAndMakeVisible(*panSlider);
 
     // Level meter
     levelMeter = std::make_unique<LevelMeter>();
@@ -279,49 +247,36 @@ void MixerView::ChannelStrip::setupControls() {
     peakLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
     addAndMakeVisible(*peakLabel);
 
-    // Volume fader - using dB scale with unity at 0.75 position
-    volumeFader =
-        std::make_unique<juce::Slider>(juce::Slider::LinearVertical, juce::Slider::NoTextBox);
-    volumeFader->setRange(0.0, 1.0, 0.001);                   // Internal 0-1 range
-    volumeFader->setValue(0.75, juce::dontSendNotification);  // Unity gain (0 dB) at 75%
-    volumeFader->setSliderSnapsToMousePosition(false);        // Relative drag, not jump to click
-    volumeFader->setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    volumeFader->setColour(juce::Slider::backgroundColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-    volumeFader->setColour(juce::Slider::thumbColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    volumeFader->onValueChange = [this]() {
-        // Convert fader position to dB, then to linear gain for TrackManager
-        float faderPos = static_cast<float>(volumeFader->getValue());
-        float db = meterPosToDb(faderPos);
+    // Volume slider (vertical TextSlider, 0-1 range with power curve mapping)
+    volumeSlider = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decibels);
+    volumeSlider->setOrientation(daw::ui::TextSlider::Orientation::Vertical);
+    volumeSlider->setRange(0.0, 1.0, 0.001);
+    volumeSlider->setValue(dbToMeterPos(0.0f), juce::dontSendNotification);  // 0 dB
+    volumeSlider->setFont(FontManager::getInstance().getUIFont(9.0f));
+    // Display dB text via custom formatter
+    volumeSlider->setValueFormatter([](double pos) -> juce::String {
+        float db = meterPosToDb(static_cast<float>(pos));
+        if (db <= MIN_DB)
+            return "-inf";
+        return juce::String(db, 1);
+    });
+    // Parse typed dB input
+    volumeSlider->setValueParser([](const juce::String& text) -> double {
+        auto t = text.trim();
+        if (t.endsWithIgnoreCase("db"))
+            t = t.dropLastCharacters(2).trim();
+        if (t.equalsIgnoreCase("-inf") || t.equalsIgnoreCase("inf"))
+            return 0.0;
+        float db = t.getFloatValue();
+        return static_cast<double>(dbToMeterPos(db));
+    });
+    volumeSlider->onValueChanged = [this](double pos) {
+        float db = meterPosToDb(static_cast<float>(pos));
         float gain = dbToGain(db);
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetTrackVolumeCommand>(trackId_, gain));
-        // Update fader label
-        if (faderValueLabel) {
-            juce::String dbText;
-            if (db <= MIN_DB) {
-                dbText = "-inf";
-            } else {
-                dbText = juce::String(db, 1) + " dB";
-            }
-            faderValueLabel->setText(dbText, juce::dontSendNotification);
-        }
     };
-    // Apply custom look and feel for fader styling
-    if (faderLookAndFeel_) {
-        volumeFader->setLookAndFeel(faderLookAndFeel_);
-    }
-    addAndMakeVisible(*volumeFader);
-
-    // Fader value label
-    faderValueLabel = std::make_unique<juce::Label>();
-    faderValueLabel->setText("0.0 dB", juce::dontSendNotification);
-    faderValueLabel->setJustificationType(juce::Justification::centred);
-    faderValueLabel->setColour(juce::Label::textColourId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    faderValueLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
-    addAndMakeVisible(*faderValueLabel);
+    addAndMakeVisible(*volumeSlider);
 
     // Mute button (square corners, compact)
     muteButton = std::make_unique<juce::TextButton>("M");
@@ -450,6 +405,97 @@ void MixerView::ChannelStrip::setupControls() {
         midiOutSelector->setSelectedId(1);
         addAndMakeVisible(*midiOutSelector);
     }
+
+    // Add send button (not on master)
+    if (!isMaster_) {
+        addSendButton_ = std::make_unique<juce::TextButton>("+");
+        addSendButton_->setConnectedEdges(
+            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+        addSendButton_->setColour(juce::TextButton::buttonColourId,
+                                  DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        addSendButton_->setColour(juce::TextButton::textColourOffId,
+                                  DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        addSendButton_->onClick = [this]() {
+            juce::PopupMenu menu;
+            const auto& tracks = TrackManager::getInstance().getTracks();
+            for (const auto& t : tracks) {
+                if (t.id != trackId_ && t.type == TrackType::Aux) {
+                    menu.addItem(t.id, t.name);
+                }
+            }
+            if (menu.getNumItems() == 0) {
+                menu.addItem(-1, "(No aux tracks available)", false);
+            }
+            menu.showMenuAsync(juce::PopupMenu::Options(), [this](int result) {
+                if (result > 0) {
+                    TrackManager::getInstance().addSend(trackId_, static_cast<TrackId>(result));
+                }
+            });
+        };
+        addAndMakeVisible(*addSendButton_);
+    }
+}
+
+void MixerView::ChannelStrip::rebuildSendSlots(const std::vector<SendInfo>& sends) {
+    // Remove old slots
+    for (auto& slot : sendSlots_) {
+        removeChildComponent(slot->nameLabel.get());
+        removeChildComponent(slot->levelSlider.get());
+        removeChildComponent(slot->removeButton.get());
+    }
+    sendSlots_.clear();
+
+    for (const auto& send : sends) {
+        auto slot = std::make_unique<SendSlot>();
+        slot->busIndex = send.busIndex;
+
+        // Destination name label
+        slot->nameLabel = std::make_unique<juce::Label>();
+        juce::String destName = "Bus " + juce::String(send.busIndex);
+        if (send.destTrackId != INVALID_TRACK_ID) {
+            if (auto* destTrack = TrackManager::getInstance().getTrack(send.destTrackId))
+                destName = destTrack->name;
+        }
+        slot->nameLabel->setText(destName, juce::dontSendNotification);
+        slot->nameLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
+        slot->nameLabel->setColour(juce::Label::textColourId,
+                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        slot->nameLabel->setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(*slot->nameLabel);
+
+        // Level slider (horizontal, 0-1)
+        slot->levelSlider =
+            std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decimal);
+        slot->levelSlider->setOrientation(daw::ui::TextSlider::Orientation::Horizontal);
+        slot->levelSlider->setRange(0.0, 1.0, 0.01);
+        slot->levelSlider->setValue(send.level, juce::dontSendNotification);
+        slot->levelSlider->setFont(FontManager::getInstance().getUIFont(9.0f));
+        int busIdx = send.busIndex;
+        slot->levelSlider->onValueChanged = [this, busIdx](double val) {
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetSendLevelCommand>(trackId_, busIdx, static_cast<float>(val)));
+        };
+        addAndMakeVisible(*slot->levelSlider);
+
+        // Remove button
+        slot->removeButton = std::make_unique<juce::TextButton>("x");
+        slot->removeButton->setConnectedEdges(
+            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+        slot->removeButton->setColour(juce::TextButton::buttonColourId,
+                                      DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        slot->removeButton->setColour(juce::TextButton::textColourOffId,
+                                      DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        slot->removeButton->onClick = [this, busIdx]() {
+            TrackManager::getInstance().removeSend(trackId_, busIdx);
+        };
+        addAndMakeVisible(*slot->removeButton);
+
+        sendSlots_.push_back(std::move(slot));
+    }
+
+    resized();
 }
 
 void MixerView::ChannelStrip::paint(juce::Graphics& g) {
@@ -487,18 +533,16 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     // Draw fader region border (top and bottom lines)
     if (!faderRegion_.isEmpty()) {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        // Top border
         g.fillRect(faderRegion_.getX(), faderRegion_.getY(), faderRegion_.getWidth(), 1);
-        // Bottom border
         g.fillRect(faderRegion_.getX(), faderRegion_.getBottom() - 1, faderRegion_.getWidth(), 1);
     }
 
-    // Draw dB labels with ticks
+    // Draw dB ticks and labels
     drawDbLabels(g);
 }
 
 void MixerView::ChannelStrip::drawDbLabels(juce::Graphics& g) {
-    if (labelArea_.isEmpty() || !volumeFader)
+    if (labelArea_.isEmpty() || !volumeSlider)
         return;
 
     const auto& metrics = MixerMetrics::getInstance();
@@ -507,39 +551,32 @@ void MixerView::ChannelStrip::drawDbLabels(juce::Graphics& g) {
     const std::vector<float> dbValues = {6.0f,   3.0f,   0.0f,   -3.0f,  -6.0f, -12.0f,
                                          -18.0f, -24.0f, -36.0f, -48.0f, -60.0f};
 
-    // Labels mark where the thumb CENTER is at each dB value.
-    // JUCE reduces slider bounds by thumbRadius, so the thumb center range is:
-    // - Top: faderArea_.getY() + thumbRadius
-    // - Bottom: faderArea_.getBottom() - thumbRadius
-    float thumbRadius = metrics.thumbRadius();
-    float effectiveTop = faderArea_.getY() + thumbRadius;
-    float effectiveHeight = faderArea_.getHeight() - 2.0f * thumbRadius;
+    // TextSlider uses 0-1 range with power curve — ticks must match its full bounds
+    float top = static_cast<float>(faderArea_.getY());
+    float height = static_cast<float>(faderArea_.getHeight());
 
     g.setFont(FontManager::getInstance().getUIFont(metrics.labelFontSize));
 
     for (float db : dbValues) {
-        // Convert dB to Y position using consistent meter scaling
+        // Use same power curve as fader and meter
         float faderPos = dbToMeterPos(db);
-        float yNorm = 1.0f - faderPos;
-        float y = effectiveTop + yNorm * effectiveHeight;
+        float y = top + height * (1.0f - faderPos);
 
-        // Draw ticks in their designated areas
+        // Draw ticks
         float tickHeight = metrics.tickHeight();
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
 
-        // Left tick: draw within leftTickArea_, right-aligned
         float leftTickX = static_cast<float>(leftTickArea_.getRight()) - metrics.tickWidth();
-        g.fillRect(leftTickX, y - tickHeight / 2.0f, metrics.tickWidth(), tickHeight);
+        g.fillRect(leftTickX + 1.0f, y - tickHeight / 2.0f, metrics.tickWidth() - 1.0f, tickHeight);
 
-        // Right tick: draw within rightTickArea_, left-aligned
         float rightTickX = static_cast<float>(rightTickArea_.getX());
-        g.fillRect(rightTickX, y - tickHeight / 2.0f, metrics.tickWidth(), tickHeight);
+        g.fillRect(rightTickX, y - tickHeight / 2.0f, metrics.tickWidth() - 1.0f, tickHeight);
 
-        // Draw label text centered - no signs, infinity symbol at bottom
+        // Label text
         juce::String labelText;
         int dbInt = static_cast<int>(db);
         if (db <= MIN_DB) {
-            labelText = juce::String::charToString(0x221E);  // ∞ infinity symbol
+            labelText = juce::String::charToString(0x221E);
         } else {
             labelText = juce::String(std::abs(dbInt));
         }
@@ -573,14 +610,24 @@ void MixerView::ChannelStrip::resized() {
     trackLabel->setBounds(bounds.removeFromTop(24));
     bounds.removeFromTop(metrics.controlSpacing);
 
-    // Pan knob
-    auto panArea = bounds.removeFromTop(metrics.knobSize);
-    panKnob->setBounds(panArea.withSizeKeepingCentre(metrics.knobSize, metrics.knobSize));
-
-    // Pan value label below knob
-    auto panLabelArea = bounds.removeFromTop(14);
-    panValueLabel->setBounds(panLabelArea);
-    bounds.removeFromTop(metrics.controlSpacing);
+    // Sends area (dynamic height) — between track label and fader
+    if (!isMaster_) {
+        const int sendSlotHeight = 18;
+        const int addButtonHeight = 16;
+        for (auto& slot : sendSlots_) {
+            auto row = bounds.removeFromTop(sendSlotHeight);
+            // Left: name label (~40%), Right: level slider + remove button
+            slot->nameLabel->setBounds(row.removeFromLeft(row.getWidth() * 40 / 100));
+            auto removeArea = row.removeFromRight(16);
+            slot->removeButton->setBounds(removeArea);
+            slot->levelSlider->setBounds(row);
+            bounds.removeFromTop(1);  // 1px gap between slots
+        }
+        if (addSendButton_) {
+            addSendButton_->setBounds(bounds.removeFromTop(addButtonHeight));
+            bounds.removeFromTop(metrics.controlSpacing);
+        }
+    }
 
     // M/S/R/Mon buttons at bottom
     auto buttonArea = bounds.removeFromBottom(metrics.buttonSize);
@@ -620,6 +667,8 @@ void MixerView::ChannelStrip::resized() {
         audioOutSelector->setBounds(audioRow.removeFromLeft(halfWidth));
     }
 
+    // Pan slider — now below fader region, above routing
+    panSlider->setBounds(bounds.removeFromBottom(20));
     bounds.removeFromBottom(metrics.controlSpacing);
 
     // Use percentage of remaining height for fader
@@ -638,24 +687,22 @@ void MixerView::ChannelStrip::resized() {
     // Store the entire fader region for border drawing
     faderRegion_ = bounds;
 
-    // Position value labels right above the fader region top border
+    // Position peak label right above the fader region top border
     const int labelHeight = 12;
     auto valueLabelArea =
         juce::Rectangle<int>(faderRegion_.getX(), faderRegion_.getY() - labelHeight,
                              faderRegion_.getWidth(), labelHeight);
-    faderValueLabel->setBounds(valueLabelArea.removeFromLeft(valueLabelArea.getWidth() / 2));
     peakLabel->setBounds(valueLabelArea);
 
     // Add vertical padding inside the border
-    const int borderPadding = 6;
-    bounds.removeFromTop(borderPadding);
-    bounds.removeFromBottom(borderPadding);
+    bounds.removeFromTop(6);
+    bounds.removeFromBottom(3);
 
     auto layoutArea = bounds;
 
-    // Fader on left
+    // Volume TextSlider on left
     faderArea_ = layoutArea.removeFromLeft(faderWidth);
-    volumeFader->setBounds(faderArea_);
+    volumeSlider->setBounds(faderArea_);
 
     // Meter on right
     meterArea_ = layoutArea.removeFromRight(meterWidthVal);
@@ -734,9 +781,7 @@ class MixerView::DrumSubChannelStrip::LevelMeter : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        auto bounds = getLocalBounds().toFloat();
-        const auto& metrics = MixerMetrics::getInstance();
-        auto effectiveBounds = bounds.reduced(0.0f, metrics.thumbRadius());
+        auto effectiveBounds = getLocalBounds().toFloat();
         const float gap = 1.0f;
         float barWidth = (effectiveBounds.getWidth() - gap) / 2.0f;
         auto leftBounds = effectiveBounds.withWidth(barWidth);
@@ -782,23 +827,13 @@ class MixerView::DrumSubChannelStrip::LevelMeter : public juce::Component {
 //==============================================================================
 MixerView::DrumSubChannelStrip::DrumSubChannelStrip(daw::audio::DrumGridPlugin* dg, int chainIndex,
                                                     const juce::String& name,
-                                                    juce::Colour parentColour,
-                                                    juce::LookAndFeel* faderLookAndFeel)
-    : drumGrid_(dg),
-      chainIndex_(chainIndex),
-      parentColour_(parentColour),
-      chainName_(name),
-      faderLookAndFeel_(faderLookAndFeel) {
+                                                    juce::Colour parentColour)
+    : drumGrid_(dg), chainIndex_(chainIndex), parentColour_(parentColour), chainName_(name) {
     setupControls();
     updateFromChain();
 }
 
-MixerView::DrumSubChannelStrip::~DrumSubChannelStrip() {
-    if (volumeFader)
-        volumeFader->setLookAndFeel(nullptr);
-    if (panKnob)
-        panKnob->setLookAndFeel(nullptr);
-}
+MixerView::DrumSubChannelStrip::~DrumSubChannelStrip() = default;
 
 void MixerView::DrumSubChannelStrip::setupControls() {
     // Track label
@@ -811,43 +846,17 @@ void MixerView::DrumSubChannelStrip::setupControls() {
     trackLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
     addAndMakeVisible(*trackLabel);
 
-    // Pan knob
-    panKnob = std::make_unique<juce::Slider>(juce::Slider::RotaryHorizontalVerticalDrag,
-                                             juce::Slider::NoTextBox);
-    panKnob->setRange(-1.0, 1.0, 0.01);
-    panKnob->setValue(0.0, juce::dontSendNotification);
-    panKnob->setColour(juce::Slider::rotarySliderFillColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    panKnob->setColour(juce::Slider::rotarySliderOutlineColourId,
-                       DarkTheme::getColour(DarkTheme::SURFACE));
-    panKnob->setColour(juce::Slider::thumbColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    panKnob->onValueChange = [this]() {
+    // Pan slider (horizontal TextSlider)
+    panSlider = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Pan);
+    panSlider->setOrientation(daw::ui::TextSlider::Orientation::Horizontal);
+    panSlider->setRange(-1.0, 1.0, 0.01);
+    panSlider->setValue(0.0, juce::dontSendNotification);
+    panSlider->setFont(FontManager::getInstance().getUIFont(10.0f));
+    panSlider->onValueChanged = [this](double val) {
         if (auto* chain = drumGrid_->getChainByIndexMutable(chainIndex_))
-            chain->pan = static_cast<float>(panKnob->getValue());
-        if (panValueLabel) {
-            float pan = static_cast<float>(panKnob->getValue());
-            juce::String panText;
-            if (std::abs(pan) < 0.01f)
-                panText = "C";
-            else if (pan < 0)
-                panText = juce::String(static_cast<int>(std::abs(pan) * 100)) + "L";
-            else
-                panText = juce::String(static_cast<int>(pan * 100)) + "R";
-            panValueLabel->setText(panText, juce::dontSendNotification);
-        }
+            chain->pan = static_cast<float>(val);
     };
-    if (faderLookAndFeel_)
-        panKnob->setLookAndFeel(faderLookAndFeel_);
-    addAndMakeVisible(*panKnob);
-
-    // Pan value label
-    panValueLabel = std::make_unique<juce::Label>();
-    panValueLabel->setText("C", juce::dontSendNotification);
-    panValueLabel->setJustificationType(juce::Justification::centred);
-    panValueLabel->setColour(juce::Label::textColourId,
-                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    panValueLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
-    addAndMakeVisible(*panValueLabel);
+    addAndMakeVisible(*panSlider);
 
     // Level meter
     levelMeter = std::make_unique<LevelMeter>();
@@ -862,43 +871,33 @@ void MixerView::DrumSubChannelStrip::setupControls() {
     peakLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
     addAndMakeVisible(*peakLabel);
 
-    // Volume fader
-    volumeFader =
-        std::make_unique<juce::Slider>(juce::Slider::LinearVertical, juce::Slider::NoTextBox);
-    volumeFader->setRange(0.0, 1.0, 0.001);
-    volumeFader->setValue(0.75, juce::dontSendNotification);
-    volumeFader->setSliderSnapsToMousePosition(false);
-    volumeFader->setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    volumeFader->setColour(juce::Slider::backgroundColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-    volumeFader->setColour(juce::Slider::thumbColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    volumeFader->onValueChange = [this]() {
-        float faderPos = static_cast<float>(volumeFader->getValue());
-        float db = meterPosToDb(faderPos);
+    // Volume slider (vertical TextSlider, 0-1 range with power curve mapping)
+    volumeSlider = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decibels);
+    volumeSlider->setOrientation(daw::ui::TextSlider::Orientation::Vertical);
+    volumeSlider->setRange(0.0, 1.0, 0.001);
+    volumeSlider->setValue(dbToMeterPos(0.0f), juce::dontSendNotification);
+    volumeSlider->setFont(FontManager::getInstance().getUIFont(9.0f));
+    volumeSlider->setValueFormatter([](double pos) -> juce::String {
+        float db = meterPosToDb(static_cast<float>(pos));
+        if (db <= MIN_DB)
+            return "-inf";
+        return juce::String(db, 1);
+    });
+    volumeSlider->setValueParser([](const juce::String& text) -> double {
+        auto t = text.trim();
+        if (t.endsWithIgnoreCase("db"))
+            t = t.dropLastCharacters(2).trim();
+        if (t.equalsIgnoreCase("-inf") || t.equalsIgnoreCase("inf"))
+            return 0.0;
+        float db = t.getFloatValue();
+        return static_cast<double>(dbToMeterPos(db));
+    });
+    volumeSlider->onValueChanged = [this](double pos) {
+        float db = meterPosToDb(static_cast<float>(pos));
         if (auto* chain = drumGrid_->getChainByIndexMutable(chainIndex_))
             chain->level = db;
-        if (faderValueLabel) {
-            juce::String dbText;
-            if (db <= MIN_DB)
-                dbText = "-inf";
-            else
-                dbText = juce::String(db, 1) + " dB";
-            faderValueLabel->setText(dbText, juce::dontSendNotification);
-        }
     };
-    if (faderLookAndFeel_)
-        volumeFader->setLookAndFeel(faderLookAndFeel_);
-    addAndMakeVisible(*volumeFader);
-
-    // Fader value label
-    faderValueLabel = std::make_unique<juce::Label>();
-    faderValueLabel->setText("0.0 dB", juce::dontSendNotification);
-    faderValueLabel->setJustificationType(juce::Justification::centred);
-    faderValueLabel->setColour(juce::Label::textColourId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    faderValueLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
-    addAndMakeVisible(*faderValueLabel);
+    addAndMakeVisible(*volumeSlider);
 
     // Mute button
     muteButton = std::make_unique<juce::TextButton>("M");
@@ -945,13 +944,13 @@ void MixerView::DrumSubChannelStrip::updateFromChain() {
     if (trackLabel)
         trackLabel->setText(chain->name.isNotEmpty() ? chain->name : chainName_,
                             juce::dontSendNotification);
-    if (volumeFader && !volumeFader->isMouseButtonDown()) {
+    if (volumeSlider && !volumeSlider->isBeingDragged()) {
         float db = chain->level.get();
         float faderPos = dbToMeterPos(db);
-        volumeFader->setValue(faderPos, juce::dontSendNotification);
+        volumeSlider->setValue(faderPos, juce::dontSendNotification);
     }
-    if (panKnob && !panKnob->isMouseButtonDown())
-        panKnob->setValue(chain->pan.get(), juce::dontSendNotification);
+    if (panSlider && !panSlider->isBeingDragged())
+        panSlider->setValue(chain->pan.get(), juce::dontSendNotification);
     if (muteButton)
         muteButton->setToggleState(chain->mute.get(), juce::dontSendNotification);
     if (soloButton)
@@ -998,55 +997,6 @@ void MixerView::DrumSubChannelStrip::paint(juce::Graphics& g) {
         g.fillRect(faderRegion_.getX(), faderRegion_.getY(), faderRegion_.getWidth(), 1);
         g.fillRect(faderRegion_.getX(), faderRegion_.getBottom() - 1, faderRegion_.getWidth(), 1);
     }
-
-    drawDbLabels(g);
-}
-
-void MixerView::DrumSubChannelStrip::drawDbLabels(juce::Graphics& g) {
-    if (labelArea_.isEmpty() || !volumeFader)
-        return;
-
-    const auto& metrics = MixerMetrics::getInstance();
-    const std::vector<float> dbValues = {6.0f,   3.0f,   0.0f,   -3.0f,  -6.0f, -12.0f,
-                                         -18.0f, -24.0f, -36.0f, -48.0f, -60.0f};
-
-    float thumbRadius = metrics.thumbRadius();
-    float effectiveTop = faderArea_.getY() + thumbRadius;
-    float effectiveHeight = faderArea_.getHeight() - 2.0f * thumbRadius;
-
-    g.setFont(FontManager::getInstance().getUIFont(metrics.labelFontSize));
-
-    for (float db : dbValues) {
-        float faderPos = dbToMeterPos(db);
-        float yNorm = 1.0f - faderPos;
-        float y = effectiveTop + yNorm * effectiveHeight;
-
-        float tickHeight = metrics.tickHeight();
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-
-        float leftTickX = static_cast<float>(leftTickArea_.getRight()) - metrics.tickWidth();
-        g.fillRect(leftTickX, y - tickHeight / 2.0f, metrics.tickWidth(), tickHeight);
-
-        float rightTickX = static_cast<float>(rightTickArea_.getX());
-        g.fillRect(rightTickX, y - tickHeight / 2.0f, metrics.tickWidth(), tickHeight);
-
-        juce::String labelText;
-        int dbInt = static_cast<int>(db);
-        if (db <= MIN_DB)
-            labelText = juce::String::charToString(0x221E);
-        else
-            labelText = juce::String(std::abs(dbInt));
-
-        float textWidth = metrics.labelTextWidth;
-        float textHeight = metrics.labelTextHeight;
-        float textX = labelArea_.getCentreX() - textWidth / 2.0f;
-        float textY = y - textHeight / 2.0f;
-
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        g.drawText(labelText, static_cast<int>(textX), static_cast<int>(textY),
-                   static_cast<int>(textWidth), static_cast<int>(textHeight),
-                   juce::Justification::centred, false);
-    }
 }
 
 void MixerView::DrumSubChannelStrip::resized() {
@@ -1060,13 +1010,8 @@ void MixerView::DrumSubChannelStrip::resized() {
     trackLabel->setBounds(bounds.removeFromTop(24));
     bounds.removeFromTop(metrics.controlSpacing);
 
-    // Pan knob
-    auto panArea = bounds.removeFromTop(metrics.knobSize);
-    panKnob->setBounds(panArea.withSizeKeepingCentre(metrics.knobSize, metrics.knobSize));
-
-    // Pan value label
-    auto panLabelArea = bounds.removeFromTop(14);
-    panValueLabel->setBounds(panLabelArea);
+    // Pan slider (horizontal TextSlider)
+    panSlider->setBounds(bounds.removeFromTop(20));
     bounds.removeFromTop(metrics.controlSpacing);
 
     // M/S buttons at bottom (no record button for sub-channels)
@@ -1086,16 +1031,14 @@ void MixerView::DrumSubChannelStrip::resized() {
 
     int faderWidth = metrics.faderWidth;
     int meterWidthVal = metrics.meterWidth;
-    int tickWidth = static_cast<int>(std::ceil(metrics.tickWidth()));
-    int gap = metrics.tickToFaderGap;
 
     faderRegion_ = bounds;
 
+    // Peak label above fader region
     const int labelHeight = 12;
     auto valueLabelArea =
         juce::Rectangle<int>(faderRegion_.getX(), faderRegion_.getY() - labelHeight,
                              faderRegion_.getWidth(), labelHeight);
-    faderValueLabel->setBounds(valueLabelArea.removeFromLeft(valueLabelArea.getWidth() / 2));
     peakLabel->setBounds(valueLabelArea);
 
     const int borderPadding = 6;
@@ -1104,23 +1047,13 @@ void MixerView::DrumSubChannelStrip::resized() {
 
     auto layoutArea = bounds;
 
+    // Volume TextSlider on left
     faderArea_ = layoutArea.removeFromLeft(faderWidth);
-    volumeFader->setBounds(faderArea_);
+    volumeSlider->setBounds(faderArea_);
 
+    // Meter on right
     meterArea_ = layoutArea.removeFromRight(meterWidthVal);
     levelMeter->setBounds(meterArea_);
-
-    int meterGap = metrics.tickToMeterGap;
-    leftTickArea_ = juce::Rectangle<int>(faderArea_.getRight() + gap, layoutArea.getY(), tickWidth,
-                                         layoutArea.getHeight());
-    rightTickArea_ = juce::Rectangle<int>(meterArea_.getX() - tickWidth - meterGap,
-                                          layoutArea.getY(), tickWidth, layoutArea.getHeight());
-
-    int tickToLabelGap = metrics.tickToLabelGap;
-    int labelLeft = leftTickArea_.getRight() + tickToLabelGap;
-    int labelRight = rightTickArea_.getX() - tickToLabelGap;
-    labelArea_ = juce::Rectangle<int>(labelLeft, layoutArea.getY(), labelRight - labelLeft,
-                                      layoutArea.getHeight());
 }
 
 void MixerView::DrumSubChannelStrip::mouseDown(const juce::MouseEvent& /*event*/) {
@@ -1273,7 +1206,7 @@ void MixerView::rebuildChannelStrips() {
             }
         }
 
-        auto strip = std::make_unique<ChannelStrip>(track, &mixerLookAndFeel_, false);
+        auto strip = std::make_unique<ChannelStrip>(track, false);
         strip->onClicked = [this](int trackId, bool isMaster) {
             // Find the index of this track in the visible strips
             for (size_t i = 0; i < channelStrips.size(); ++i) {
@@ -1369,8 +1302,8 @@ void MixerView::rebuildChannelStrips() {
                                         ? chain->name
                                         : juce::String("Pad ") + juce::String(chain->index);
 
-                auto subStrip = std::make_unique<DrumSubChannelStrip>(
-                    drumGrid, chain->index, name, track.colour, &mixerLookAndFeel_);
+                auto subStrip = std::make_unique<DrumSubChannelStrip>(drumGrid, chain->index, name,
+                                                                      track.colour);
 
                 channelContainer->addAndMakeVisible(*subStrip);
                 orderedStrips_.push_back(subStrip.get());
@@ -1384,7 +1317,7 @@ void MixerView::rebuildChannelStrips() {
     for (const auto& track : tracks) {
         if (track.type != TrackType::Aux || !track.isVisibleIn(currentViewMode_))
             continue;
-        auto strip = std::make_unique<ChannelStrip>(track, &mixerLookAndFeel_, false);
+        auto strip = std::make_unique<ChannelStrip>(track, false);
         strip->onClicked = [this](int trackId, bool isMaster) {
             for (size_t i = 0; i < channelStrips.size(); ++i) {
                 if (channelStrips[i]->getTrackId() == trackId) {

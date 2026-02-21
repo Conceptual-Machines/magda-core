@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "../components/common/MixerDebugPanel.hpp"
+#include "../components/common/TextSlider.hpp"
 #include "../components/mixer/MasterChannelStrip.hpp"
 #include "../components/mixer/RoutingSelector.hpp"
 #include "../themes/MixerLookAndFeel.hpp"
@@ -79,8 +80,7 @@ class MixerView : public juce::Component,
     // Channel strip component
     class ChannelStrip : public juce::Component {
       public:
-        ChannelStrip(const TrackInfo& track, juce::LookAndFeel* faderLookAndFeel,
-                     bool isMaster = false);
+        ChannelStrip(const TrackInfo& track, bool isMaster = false);
         ~ChannelStrip() override;
 
         void paint(juce::Graphics& g) override;
@@ -118,13 +118,10 @@ class MixerView : public juce::Component,
         float meterLevel = 0.0f;
         juce::Colour trackColour_;
         juce::String trackName_;
-        juce::LookAndFeel* faderLookAndFeel_ = nullptr;
 
         std::unique_ptr<juce::Label> trackLabel;
-        std::unique_ptr<juce::Slider> panKnob;
-        std::unique_ptr<juce::Label> panValueLabel;
-        std::unique_ptr<juce::Slider> volumeFader;
-        std::unique_ptr<juce::Label> faderValueLabel;
+        std::unique_ptr<daw::ui::TextSlider> panSlider;
+        std::unique_ptr<daw::ui::TextSlider> volumeSlider;
         std::unique_ptr<juce::TextButton> muteButton;
         std::unique_ptr<juce::TextButton> soloButton;
         std::unique_ptr<juce::TextButton> recordButton;
@@ -151,6 +148,16 @@ class MixerView : public juce::Component,
         juce::Rectangle<int> rightTickArea_;
         juce::Rectangle<int> meterArea_;
 
+        // Send slots (dynamic: one per active send on this track)
+        struct SendSlot {
+            int busIndex;
+            std::unique_ptr<juce::Label> nameLabel;
+            std::unique_ptr<daw::ui::TextSlider> levelSlider;
+            std::unique_ptr<juce::TextButton> removeButton;
+        };
+        std::vector<std::unique_ptr<SendSlot>> sendSlots_;
+        std::unique_ptr<juce::TextButton> addSendButton_;
+
         // DrumGrid expand toggle (only visible when track has DrumGridPlugin)
         std::unique_ptr<juce::TextButton> expandToggle_;
         daw::audio::DrumGridPlugin* drumGrid_ = nullptr;
@@ -159,6 +166,7 @@ class MixerView : public juce::Component,
         friend class MixerView;
 
         void setupControls();
+        void rebuildSendSlots(const std::vector<SendInfo>& sends);
         void drawDbLabels(juce::Graphics& g);
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChannelStrip)
@@ -168,8 +176,7 @@ class MixerView : public juce::Component,
     class DrumSubChannelStrip : public juce::Component {
       public:
         DrumSubChannelStrip(daw::audio::DrumGridPlugin* dg, int chainIndex,
-                            const juce::String& name, juce::Colour parentColour,
-                            juce::LookAndFeel* faderLookAndFeel);
+                            const juce::String& name, juce::Colour parentColour);
         ~DrumSubChannelStrip() override;
 
         void paint(juce::Graphics& g) override;
@@ -193,13 +200,10 @@ class MixerView : public juce::Component,
         int chainIndex_;
         juce::Colour parentColour_;
         juce::String chainName_;
-        juce::LookAndFeel* faderLookAndFeel_ = nullptr;
 
         std::unique_ptr<juce::Label> trackLabel;
-        std::unique_ptr<juce::Slider> panKnob;
-        std::unique_ptr<juce::Label> panValueLabel;
-        std::unique_ptr<juce::Slider> volumeFader;
-        std::unique_ptr<juce::Label> faderValueLabel;
+        std::unique_ptr<daw::ui::TextSlider> panSlider;
+        std::unique_ptr<daw::ui::TextSlider> volumeSlider;
         std::unique_ptr<juce::TextButton> muteButton;
         std::unique_ptr<juce::TextButton> soloButton;
 
@@ -210,13 +214,9 @@ class MixerView : public juce::Component,
 
         juce::Rectangle<int> faderRegion_;
         juce::Rectangle<int> faderArea_;
-        juce::Rectangle<int> leftTickArea_;
-        juce::Rectangle<int> labelArea_;
-        juce::Rectangle<int> rightTickArea_;
         juce::Rectangle<int> meterArea_;
 
         void setupControls();
-        void drawDbLabels(juce::Graphics& g);
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumSubChannelStrip)
     };
