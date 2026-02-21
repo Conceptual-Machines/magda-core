@@ -324,21 +324,45 @@ void MasterChannelStrip::setupControls() {
     };
     addAndMakeVisible(*resizeHandle_);
 
-    // Output routing selector (placeholder)
-    outputSelector_ = std::make_unique<RoutingSelector>(RoutingSelector::Type::AudioOut);
-    outputSelector_->setOptions({
-        {1, "Output 1+2"},
-    });
-    outputSelector_->setSelectedId(1);
-    addAndMakeVisible(*outputSelector_);
+    // Headphone icon (non-interactive, just a label)
+    auto hpIcon = juce::Drawable::createFromImageData(BinaryData::headphones_svg,
+                                                      BinaryData::headphones_svgSize);
+    headphoneIcon_ =
+        std::make_unique<juce::DrawableButton>("Headphones", juce::DrawableButton::ImageFitted);
+    headphoneIcon_->setImages(hpIcon.get());
+    headphoneIcon_->setClickingTogglesState(false);
+    headphoneIcon_->setInterceptsMouseClicks(false, false);
+    headphoneIcon_->setColour(juce::DrawableButton::backgroundColourId,
+                              juce::Colours::transparentBlack);
+    addAndMakeVisible(*headphoneIcon_);
 
-    // Cue output selector (placeholder)
-    cueSelector_ = std::make_unique<RoutingSelector>(RoutingSelector::Type::AudioOut);
-    cueSelector_->setOptions({
-        {1, "None"},
+    // Cue volume slider (horizontal)
+    cueVolumeSlider_ = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decibels);
+    cueVolumeSlider_->setOrientation(daw::ui::TextSlider::Orientation::Horizontal);
+    cueVolumeSlider_->setRange(0.0, 1.0, 0.001);
+    cueVolumeSlider_->setValue(dbToMeterPos(0.0f), juce::dontSendNotification);
+    cueVolumeSlider_->setFont(FontManager::getInstance().getUIFont(9.0f));
+
+    cueVolumeSlider_->setValueFormatter([](double pos) -> juce::String {
+        float db = meterPosToDb(static_cast<float>(pos));
+        if (db <= MIN_DB)
+            return "-inf";
+        return juce::String(db, 1);
     });
-    cueSelector_->setSelectedId(1);
-    addAndMakeVisible(*cueSelector_);
+
+    cueVolumeSlider_->setValueParser([](const juce::String& text) -> double {
+        auto t = text.trim();
+        if (t.endsWithIgnoreCase("db"))
+            t = t.dropLastCharacters(2).trim();
+        if (t.equalsIgnoreCase("-inf") || t.equalsIgnoreCase("inf"))
+            return 0.0;
+        float db = t.getFloatValue();
+        return static_cast<double>(dbToMeterPos(db));
+    });
+
+    // TODO: Wire to cue bus volume when implemented
+    cueVolumeSlider_->onValueChanged = [](double /*pos*/) {};
+    addAndMakeVisible(*cueVolumeSlider_);
 
     // Speaker on/off button (toggles master mute)
     auto speakerOnIcon = juce::Drawable::createFromImageData(BinaryData::volume_up_svg,
@@ -404,11 +428,12 @@ void MasterChannelStrip::resized() {
         auto buttonArea = bounds.removeFromBottom(metrics.buttonSize);
         speakerButton->setBounds(buttonArea.withSizeKeepingCentre(24, metrics.buttonSize));
 
-        // Routing selectors above speaker button (Output, Cue)
+        // Cue volume: [headphone icon] [slider]
         bounds.removeFromBottom(2);
-        cueSelector_->setBounds(bounds.removeFromBottom(16));
-        bounds.removeFromBottom(2);
-        outputSelector_->setBounds(bounds.removeFromBottom(16));
+        auto cueRow = bounds.removeFromBottom(20);
+        headphoneIcon_->setBounds(cueRow.removeFromLeft(18));
+        cueRow.removeFromLeft(2);
+        cueVolumeSlider_->setBounds(cueRow);
 
         // Small gap before fader region
         bounds.removeFromTop(2);
@@ -471,8 +496,8 @@ void MasterChannelStrip::resized() {
         // Hide components not used in horizontal mode
         dbScale_->setBounds(juce::Rectangle<int>());
         resizeHandle_->setBounds(juce::Rectangle<int>());
-        outputSelector_->setBounds(juce::Rectangle<int>());
-        cueSelector_->setBounds(juce::Rectangle<int>());
+        headphoneIcon_->setBounds(juce::Rectangle<int>());
+        cueVolumeSlider_->setBounds(juce::Rectangle<int>());
 
         // Clear vertical layout regions
         faderRegion_ = juce::Rectangle<int>();

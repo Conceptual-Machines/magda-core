@@ -6,7 +6,6 @@
 #include <memory>
 
 #include "../common/TextSlider.hpp"
-#include "RoutingSelector.hpp"
 #include "core/TrackManager.hpp"
 
 namespace magda {
@@ -46,6 +45,10 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     std::unique_ptr<daw::ui::TextSlider> volumeSlider;
     std::unique_ptr<juce::DrawableButton> speakerButton;  // Speaker on/off toggle
 
+    // Cue/headphone output
+    std::unique_ptr<juce::DrawableButton> headphoneIcon_;
+    std::unique_ptr<daw::ui::TextSlider> cueVolumeSlider_;
+
     // Meter component
     class LevelMeter;
     std::unique_ptr<LevelMeter> peakMeter;
@@ -55,10 +58,6 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     // dB scale component
     class DbScale;
     std::unique_ptr<DbScale> dbScale_;
-
-    // Routing selectors (placeholders)
-    std::unique_ptr<RoutingSelector> outputSelector_;
-    std::unique_ptr<RoutingSelector> cueSelector_;
 
     // Send area resize handle
     class ResizeHandle;
