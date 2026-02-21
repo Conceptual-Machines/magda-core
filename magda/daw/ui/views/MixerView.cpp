@@ -1,6 +1,7 @@
 #include "MixerView.hpp"
 
 #include <cmath>
+#include <set>
 
 #include "../../audio/AudioBridge.hpp"
 #include "../../audio/DrumGridPlugin.hpp"
@@ -147,12 +148,11 @@ class MixerView::ChannelStrip::SendResizeHandle : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        auto bounds = getLocalBounds();
-        // Draw a subtle horizontal line as drag affordance
+        // Single subtle line, highlights on hover
         g.setColour(isHovering_ ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
-                                : DarkTheme::getColour(DarkTheme::BORDER));
-        int lineY = bounds.getCentreY();
-        g.fillRect(bounds.getX() + 4, lineY, bounds.getWidth() - 8, 1);
+                                : DarkTheme::getColour(DarkTheme::SEPARATOR));
+        int y = getHeight() / 2;
+        g.fillRect(4, y, getWidth() - 8, 2);
     }
 
     void mouseEnter(const juce::MouseEvent& /*event*/) override {
@@ -697,15 +697,18 @@ void MixerView::ChannelStrip::resized() {
         }
 
         sendContainer_->setBounds(0, 0, containerWidth, totalContentHeight);
+        bounds.removeFromTop(2);  // Gap between track header and sends/handle
         sendViewport_->setBounds(bounds.removeFromTop(sendAreaHeight));
         sendViewport_->setVisible(sendAreaHeight > 0);
 
-        // Resize handle below the sends viewport
+        // Resize handle overlapping the bottom of the sends viewport
         if (sendResizeHandle_) {
-            sendResizeHandle_->setBounds(bounds.removeFromTop(4));
+            int handleH = 8;
+            int handleOverlap = 6;
+            sendResizeHandle_->setBounds(bounds.getX(), bounds.getY() - handleH - handleOverlap,
+                                         bounds.getWidth(), handleH);
             sendResizeHandle_->setAlwaysOnTop(true);
         }
-        bounds.removeFromTop(metrics.controlSpacing);
     }
 
     // M/S/R/Mon buttons at bottom
@@ -840,8 +843,15 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
         juce::PopupMenu menu;
         juce::PopupMenu sendSubMenu;
         const auto& tracks = TrackManager::getInstance().getTracks();
+        // Collect existing send destination IDs
+        std::set<TrackId> existingSendDests;
+        if (auto* thisTrack = TrackManager::getInstance().getTrack(trackId_)) {
+            for (const auto& send : thisTrack->sends)
+                existingSendDests.insert(send.destTrackId);
+        }
         for (const auto& t : tracks) {
-            if (t.id != trackId_ && t.type != TrackType::Master) {
+            if (t.id != trackId_ && t.type != TrackType::Master &&
+                existingSendDests.find(t.id) == existingSendDests.end()) {
                 sendSubMenu.addItem(t.id, t.name);
             }
         }
