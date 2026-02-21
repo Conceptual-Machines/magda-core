@@ -142,6 +142,7 @@ class MixerView::ChannelStrip::LevelMeter : public juce::Component {
 // Channel strip implementation
 MixerView::ChannelStrip::ChannelStrip(const TrackInfo& track, bool isMaster)
     : trackId_(track.id), isMaster_(isMaster), trackColour_(track.colour), trackName_(track.name) {
+    setOpaque(true);
     setupControls();
     updateFromTrack(track);
 }
@@ -684,9 +685,10 @@ void MixerView::ChannelStrip::resized() {
     bounds.setHeight(faderHeight);
 
     // Layout: [fader] [gap] [leftTicks] [labels] [rightTicks] [gap] [meter]
-    // Calculate widths from metrics
-    int faderWidth = metrics.faderWidth;
-    int meterWidthVal = metrics.meterWidth;
+    // Fader and meter scale proportionally with channel width
+    int availWidth = bounds.getWidth();
+    int faderWidth = juce::jlimit(20, 60, availWidth * 40 / 100);
+    int meterWidthVal = juce::jlimit(8, 24, availWidth * 16 / 100);
     int tickWidth = static_cast<int>(std::ceil(metrics.tickWidth()));
     int gap = metrics.tickToFaderGap;
 
@@ -1035,8 +1037,9 @@ void MixerView::DrumSubChannelStrip::resized() {
     bounds.removeFromTop(extraSpace / 2);
     bounds.setHeight(faderHeight);
 
-    int faderWidth = metrics.faderWidth;
-    int meterWidthVal = metrics.meterWidth;
+    int availWidth = bounds.getWidth();
+    int faderWidth = juce::jlimit(20, 60, availWidth * 40 / 100);
+    int meterWidthVal = juce::jlimit(8, 24, availWidth * 16 / 100);
 
     faderRegion_ = bounds;
 
@@ -1108,6 +1111,7 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
 
     // Create channel container
     channelContainer = std::make_unique<juce::Component>();
+    channelContainer->setPaintingIsUnclipped(true);
 
     // Create viewport for scrollable channels
     channelViewport = std::make_unique<juce::Viewport>();
@@ -1131,7 +1135,7 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
             juce::jlimit(minChannelWidth_, maxChannelWidth_, metrics.channelWidth + deltaX);
         if (metrics.channelWidth != newWidth) {
             metrics.channelWidth = newWidth;
-            resized();
+            updateStripWidths();
         }
     };
     channelContainer->addAndMakeVisible(*channelResizeHandle_);
@@ -1453,6 +1457,39 @@ void MixerView::resized() {
     }
 }
 
+void MixerView::updateStripWidths() {
+    const auto& metrics = MixerMetrics::getInstance();
+    int containerHeight = channelContainer->getHeight();
+
+    // Resize channel container and reposition strips only
+    int numOrdered = static_cast<int>(orderedStrips_.size());
+    int containerWidth = numOrdered * metrics.channelWidth;
+    channelContainer->setSize(containerWidth, containerHeight);
+
+    for (int i = 0; i < numOrdered; ++i) {
+        orderedStrips_[static_cast<size_t>(i)]->setBounds(i * metrics.channelWidth, 0,
+                                                          metrics.channelWidth, containerHeight);
+    }
+
+    // Update resize handle position
+    if (numOrdered > 0 && channelResizeHandle_) {
+        const int handleWidth = 8;
+        int handleX = containerWidth - handleWidth / 2;
+        channelResizeHandle_->setBounds(handleX, 0, handleWidth, containerHeight);
+        channelResizeHandle_->toFront(false);
+    }
+
+    // Update aux strips
+    int numAux = static_cast<int>(auxChannelStrips.size());
+    int auxWidth = numAux * metrics.channelWidth;
+    if (auxWidth > 0) {
+        for (int i = 0; i < numAux; ++i) {
+            auxChannelStrips[i]->setBounds(i * metrics.channelWidth, 0, metrics.channelWidth,
+                                           auxContainer->getHeight());
+        }
+    }
+}
+
 void MixerView::timerCallback() {
     // Read metering data from AudioBridge
     if (!audioEngine_)
@@ -1550,23 +1587,19 @@ void MixerView::ChannelResizeHandle::mouseDown(const juce::MouseEvent& event) {
     isDragging_ = true;
     hasConfirmedHorizontalDrag_ = false;
     dragStartX_ = event.getScreenX();
-    repaint();
 }
 
 void MixerView::ChannelResizeHandle::mouseDrag(const juce::MouseEvent& event) {
     if (!isDragging_ || !onResize)
         return;
 
-    // Only start resizing if the drag is predominantly horizontal
     if (!hasConfirmedHorizontalDrag_) {
         int dx = std::abs(event.getDistanceFromDragStartX());
         int dy = std::abs(event.getDistanceFromDragStartY());
         if (dx < 4 && dy < 4)
-            return;  // Wait for enough movement
+            return;
         if (dy > dx) {
-            // Vertical drag — cancel resize
             isDragging_ = false;
-            repaint();
             return;
         }
         hasConfirmedHorizontalDrag_ = true;
@@ -1579,9 +1612,8 @@ void MixerView::ChannelResizeHandle::mouseDrag(const juce::MouseEvent& event) {
 
 void MixerView::ChannelResizeHandle::mouseUp(const juce::MouseEvent& /*event*/) {
     isDragging_ = false;
-    if (onResizeEnd) {
+    if (onResizeEnd)
         onResizeEnd();
-    }
     repaint();
 }
 

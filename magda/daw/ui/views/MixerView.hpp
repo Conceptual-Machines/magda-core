@@ -258,6 +258,7 @@ class MixerView : public juce::Component,
     std::unique_ptr<ChannelResizeHandle> channelResizeHandle_;
 
     void rebuildChannelStrips();
+    void updateStripWidths();
 
     // Selection state
     int selectedChannelIndex = 0;  // Track index, -1 for no selection
@@ -275,7 +276,7 @@ class MixerView : public juce::Component,
     // Channel resize state
     static constexpr int resizeZoneWidth_ = 6;
     static constexpr int minChannelWidth_ = 80;
-    static constexpr int maxChannelWidth_ = 200;
+    static constexpr int maxChannelWidth_ = 160;
     bool isResizingChannel_ = false;
     int resizeStartX_ = 0;
     int resizeStartWidth_ = 0;
