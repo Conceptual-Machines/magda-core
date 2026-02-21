@@ -1158,10 +1158,6 @@ void MixerView::DrumSubChannelStrip::resized() {
     trackLabel->setBounds(bounds.removeFromTop(24));
     bounds.removeFromTop(metrics.controlSpacing);
 
-    // Pan slider (horizontal TextSlider)
-    panSlider->setBounds(bounds.removeFromTop(20));
-    bounds.removeFromTop(metrics.controlSpacing);
-
     // M/S buttons at bottom (no record button for sub-channels)
     auto buttonArea = bounds.removeFromBottom(metrics.buttonSize);
     int buttonWidth = (buttonArea.getWidth() - 2) / 2;
@@ -1169,6 +1165,10 @@ void MixerView::DrumSubChannelStrip::resized() {
     buttonArea.removeFromLeft(2);
     soloButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
 
+    bounds.removeFromBottom(metrics.controlSpacing);
+
+    // Pan slider above buttons (horizontal TextSlider)
+    panSlider->setBounds(bounds.removeFromBottom(20));
     bounds.removeFromBottom(metrics.controlSpacing);
 
     // Fader region
