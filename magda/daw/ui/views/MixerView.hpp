@@ -112,6 +112,9 @@ class MixerView : public juce::Component,
         // Callback when channel is clicked
         std::function<void(int trackId, bool isMaster)> onClicked;
 
+        // Callback when send area is resized (triggers relayout of all strips)
+        std::function<void()> onSendAreaResized;
+
       private:
         int trackId_;
         bool isMaster_;
@@ -159,6 +162,10 @@ class MixerView : public juce::Component,
         std::vector<std::unique_ptr<SendSlot>> sendSlots_;
         std::unique_ptr<juce::Viewport> sendViewport_;
         std::unique_ptr<juce::Component> sendContainer_;
+
+        // Send area resize handle
+        class SendResizeHandle;
+        std::unique_ptr<SendResizeHandle> sendResizeHandle_;
 
         // DrumGrid expand toggle (only visible when track has DrumGridPlugin)
         std::unique_ptr<juce::TextButton> expandToggle_;
@@ -261,8 +268,10 @@ class MixerView : public juce::Component,
 
     void rebuildChannelStrips();
     void updateStripWidths();
+    void relayoutAllStrips();
     bool isResizeDragging_ = false;
     bool pendingResizeUpdate_ = false;
+    bool pendingSendResizeUpdate_ = false;
 
     // Selection state
     int selectedChannelIndex = 0;  // Track index, -1 for no selection

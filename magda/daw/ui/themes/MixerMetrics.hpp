@@ -58,6 +58,11 @@ struct MixerMetrics {
     int knobSize = 32;
     int headerHeight = 30;
 
+    // === Send area ===
+    int sendAreaHeight = 60;
+    static constexpr int minSendAreaHeight = 0;
+    static constexpr int maxSendAreaHeight = 120;
+
     // === Spacing ===
     int controlSpacing = 4;
     int tickToFaderGap = 0;
