@@ -252,6 +252,7 @@ class MixerView : public juce::Component,
       private:
         bool isHovering_ = false;
         bool isDragging_ = false;
+        bool hasConfirmedHorizontalDrag_ = false;
         int dragStartX_ = 0;
     };
     std::unique_ptr<ChannelResizeHandle> channelResizeHandle_;
