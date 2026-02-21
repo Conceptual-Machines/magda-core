@@ -548,8 +548,8 @@ void MixerView::ChannelStrip::drawDbLabels(juce::Graphics& g) {
     const auto& metrics = MixerMetrics::getInstance();
 
     // dB values to display with ticks
-    const std::vector<float> dbValues = {6.0f,   3.0f,   0.0f,   -3.0f,  -6.0f, -12.0f,
-                                         -18.0f, -24.0f, -36.0f, -48.0f, -60.0f};
+    const std::vector<float> dbValues = {6.0f,   3.0f,   0.0f,   -3.0f,  -6.0f,
+                                         -12.0f, -18.0f, -24.0f, -36.0f, -48.0f};
 
     // TextSlider uses 0-1 range with power curve — ticks must match its full bounds
     float top = static_cast<float>(faderArea_.getY());
@@ -668,13 +668,14 @@ void MixerView::ChannelStrip::resized() {
     }
 
     // Pan slider — now below fader region, above routing
+    bounds.removeFromBottom(2);
     panSlider->setBounds(bounds.removeFromBottom(20));
-    bounds.removeFromBottom(metrics.controlSpacing);
+    bounds.removeFromBottom(2);
 
-    // Use percentage of remaining height for fader
+    // Use percentage of remaining height for fader, push extra space to top only
     int faderHeight = static_cast<int>(bounds.getHeight() * metrics.faderHeightRatio / 100.0f);
     int extraSpace = bounds.getHeight() - faderHeight;
-    bounds.removeFromTop(extraSpace / 2);
+    bounds.removeFromTop(extraSpace);
     bounds.setHeight(faderHeight);
 
     // Layout: [fader] [gap] [leftTicks] [labels] [rightTicks] [gap] [meter]
