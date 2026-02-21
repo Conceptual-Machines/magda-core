@@ -175,6 +175,10 @@ class MixerView : public juce::Component,
         daw::audio::DrumGridPlugin* drumGrid_ = nullptr;
         std::function<void()> onExpandToggled;
 
+        // Group envelope: child strips nested inside this group strip
+        // Can be ChannelStrip (group/multi-out children) or DrumSubChannelStrip
+        std::vector<juce::Component*> groupChildren_;
+
         friend class MixerView;
 
         void setupControls();

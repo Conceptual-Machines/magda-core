@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <set>
+#include <unordered_map>
 
 #include "../../audio/AudioBridge.hpp"
 #include "../../audio/DrumGridPlugin.hpp"
@@ -630,7 +631,14 @@ void MixerView::ChannelStrip::rebuildSendSlots(const std::vector<SendInfo>& send
 }
 
 void MixerView::ChannelStrip::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds();
+    auto fullBounds = getLocalBounds();
+    bool hasGroupChildren = !groupChildren_.empty();
+    bool isNestedInGroup = dynamic_cast<ChannelStrip*>(getParentComponent()) != nullptr;
+
+    // The group's own controls column (leftmost channelWidth when group has children)
+    auto ownBounds = hasGroupChildren
+                         ? fullBounds.withWidth(MixerMetrics::getInstance().channelWidth)
+                         : fullBounds;
 
     // Background
     if (selected) {
@@ -638,27 +646,31 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     } else {
         g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
     }
-    g.fillRect(bounds);
+    g.fillRect(ownBounds);
 
-    // Selection border
+    // Selection border on own column
     if (selected) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        g.drawRect(bounds, 2);
+        g.drawRect(ownBounds, 2);
     }
 
-    // Border on right side (separator) - only if not selected
-    if (!selected) {
+    // Separator on right side of own column
+    if (!selected && !hasGroupChildren) {
         g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
-        g.fillRect(bounds.getRight() - 1, 0, 1, bounds.getHeight());
+        g.fillRect(ownBounds.getRight() - 1, 0, 1, ownBounds.getHeight());
     }
 
-    // Channel color indicator at top
-    if (!isMaster_) {
-        g.setColour(trackColour_);
-        g.fillRect(selected ? 2 : 0, selected ? 2 : 0, getWidth() - (selected ? 3 : 1), 4);
-    } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        g.fillRect(selected ? 2 : 0, selected ? 2 : 0, getWidth() - (selected ? 3 : 1), 4);
+    // Channel color indicator at top — skip for children nested in group (envelope provides this)
+    if (!isNestedInGroup) {
+        if (!isMaster_) {
+            g.setColour(trackColour_);
+            g.fillRect(selected ? 2 : 0, selected ? 2 : 0,
+                       ownBounds.getWidth() - (selected ? 3 : 1), 4);
+        } else {
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+            g.fillRect(selected ? 2 : 0, selected ? 2 : 0,
+                       ownBounds.getWidth() - (selected ? 3 : 1), 4);
+        }
     }
 
     // Draw fader region border (top and bottom lines)
@@ -669,13 +681,42 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     }
 
     // dB ticks and labels are drawn by the DbScale component
+
+    // Group envelope: header banner + border around the entire group area
+    if (hasGroupChildren) {
+        const int groupHeaderHeight = 4 + 4 + 24 + MixerMetrics::getInstance().controlSpacing;
+
+        // Fill the header banner area across full width
+        g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
+
+        // Colour bar across entire top
+        g.setColour(trackColour_);
+        g.fillRect(2, 2, fullBounds.getWidth() - 4, 4);
+
+        // Border around the entire group area
+        g.setColour(trackColour_.withAlpha(0.6f));
+        g.drawRect(fullBounds, 2);
+
+        // Horizontal separator below header
+        g.setColour(trackColour_.withAlpha(0.4f));
+        g.fillRect(0, groupHeaderHeight, fullBounds.getWidth(), 1);
+    }
 }
 
 void MixerView::ChannelStrip::paintOverChildren(juce::Graphics& g) {
+    // Skip overlay for child tracks nested inside a group envelope
+    // (the group border provides the visual containment cue)
     if (!isChildTrack_)
         return;
 
-    // Semi-transparent overlay to dim child tracks
+    // Check if this strip is a child component of a group strip
+    if (auto* parentStrip = dynamic_cast<ChannelStrip*>(getParentComponent())) {
+        if (!parentStrip->groupChildren_.empty())
+            return;  // Nested inside group — no overlay needed
+    }
+
+    // Semi-transparent overlay to dim child tracks (fallback for non-group children)
     g.setColour(juce::Colour(0x30000000));
     g.fillRect(getLocalBounds());
 
@@ -686,13 +727,41 @@ void MixerView::ChannelStrip::paintOverChildren(juce::Graphics& g) {
 
 void MixerView::ChannelStrip::resized() {
     const auto& metrics = MixerMetrics::getInstance();
-    auto bounds = getLocalBounds().reduced(metrics.channelPadding);
+    bool hasGroupChildren = !groupChildren_.empty();
+
+    // Group envelope header height: colour bar + padding + label + spacing
+    const int groupHeaderHeight = 4 + 4 + 24 + metrics.controlSpacing;
+
+    // If this is a group strip with children, lay out the shared header banner
+    // across the full width, then position children below it
+    if (hasGroupChildren) {
+        int channelWidth = metrics.channelWidth;
+        int childTop = groupHeaderHeight;
+        int childHeight = getHeight() - childTop;
+
+        for (size_t i = 0; i < groupChildren_.size(); ++i) {
+            groupChildren_[i]->setBounds(static_cast<int>(i + 1) * channelWidth, childTop,
+                                         channelWidth, childHeight);
+        }
+    }
+
+    // For a group with children: own controls in the leftmost column, below the shared header
+    // For everything else: full width, full height
+    int ownWidth = hasGroupChildren ? metrics.channelWidth : getWidth();
+    int ownTop = 0;
+    int ownHeight = getHeight();
+
+    auto bounds =
+        juce::Rectangle<int>(0, ownTop, ownWidth, ownHeight).reduced(metrics.channelPadding);
 
     // Color indicator space
     bounds.removeFromTop(6);
 
-    // Track label (with expand toggle next to it if present)
+    // Track label — spans full width for groups (banner), own column for non-groups
+    int labelWidth = hasGroupChildren ? getWidth() - metrics.channelPadding * 2 : bounds.getWidth();
     auto titleRow = bounds.removeFromTop(24);
+    if (hasGroupChildren)
+        titleRow.setWidth(labelWidth);
     if (expandToggle_) {
         expandToggle_->setBounds(titleRow.removeFromLeft(20).withSizeKeepingCentre(18, 18));
         titleRow.removeFromLeft(2);
@@ -1335,6 +1404,8 @@ MixerView::~MixerView() {
     // Explicitly clear all UI components before automatic member destruction
     // This ensures components release their LookAndFeel references before
     // mixerLookAndFeel_ is destroyed (member destruction happens in reverse order)
+    for (auto& strip : channelStrips)
+        strip->groupChildren_.clear();
     drumSubStrips_.clear();
     orderedStrips_.clear();
     channelStrips.clear();
@@ -1348,6 +1419,10 @@ MixerView::~MixerView() {
 }
 
 void MixerView::rebuildChannelStrips() {
+    // Clear group children references before destroying strips
+    for (auto& strip : channelStrips)
+        strip->groupChildren_.clear();
+
     // Clear existing strips
     drumSubStrips_.clear();
     orderedStrips_.clear();
@@ -1502,8 +1577,6 @@ void MixerView::rebuildChannelStrips() {
             }
         }
 
-        channelContainer->addAndMakeVisible(*strip);
-        orderedStrips_.push_back(strip.get());
         channelStrips.push_back(std::move(strip));
 
         // If DrumGrid is expanded, create sub-strips for non-empty chains
@@ -1519,11 +1592,81 @@ void MixerView::rebuildChannelStrips() {
                 auto subStrip = std::make_unique<DrumSubChannelStrip>(drumGrid, chain->index, name,
                                                                       track.colour);
 
-                channelContainer->addAndMakeVisible(*subStrip);
-                orderedStrips_.push_back(subStrip.get());
                 drumSubStrips_.push_back(std::move(subStrip));
             }
         }
+    }
+
+    // Second pass: build orderedStrips_ and wire up parent-child hierarchy.
+    // Children of groups, multi-out parents, and DrumGrid parents all get
+    // nested inside their parent strip's groupChildren_ for envelope rendering.
+    // Use addChildComponent (not addAndMakeVisible) to avoid intermediate layouts.
+
+    std::unordered_map<int, ChannelStrip*> stripByTrackId;
+    for (auto& strip : channelStrips)
+        stripByTrackId[strip->getTrackId()] = strip.get();
+
+    // Map drum sub-strips to their owning track
+    std::unordered_map<int, std::vector<size_t>> drumSubsByTrack;
+    for (size_t i = 0; i < drumSubStrips_.size(); ++i) {
+        for (auto& cs : channelStrips) {
+            if (cs->drumGrid_ == drumSubStrips_[i]->getDrumGrid()) {
+                drumSubsByTrack[cs->getTrackId()].push_back(i);
+                break;
+            }
+        }
+    }
+
+    for (auto& strip : channelStrips) {
+        int trackId = strip->getTrackId();
+        const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+        if (!trackInfo)
+            continue;
+
+        // --- Nest inside group parent ---
+        if (trackInfo->hasParent()) {
+            if (auto* parentTrack = TrackManager::getInstance().getTrack(trackInfo->parentId)) {
+                if (parentTrack->isGroup()) {
+                    auto it = stripByTrackId.find(trackInfo->parentId);
+                    if (it != stripByTrackId.end()) {
+                        it->second->addChildComponent(*strip);
+                        it->second->groupChildren_.push_back(strip.get());
+                        continue;
+                    }
+                }
+            }
+        }
+
+        // --- Nest multi-out children inside their source parent ---
+        if (trackInfo->type == TrackType::MultiOut && trackInfo->multiOutLink) {
+            auto it = stripByTrackId.find(trackInfo->multiOutLink->sourceTrackId);
+            if (it != stripByTrackId.end()) {
+                it->second->addChildComponent(*strip);
+                it->second->groupChildren_.push_back(strip.get());
+                continue;
+            }
+        }
+
+        // --- Top-level strip ---
+        channelContainer->addChildComponent(*strip);
+        orderedStrips_.push_back(strip.get());
+
+        // Nest drum sub-strips inside this strip's envelope
+        auto dsIt = drumSubsByTrack.find(trackId);
+        if (dsIt != drumSubsByTrack.end()) {
+            for (size_t idx : dsIt->second) {
+                strip->addChildComponent(*drumSubStrips_[idx]);
+                strip->groupChildren_.push_back(drumSubStrips_[idx].get());
+            }
+        }
+    }
+
+    // Now make everything visible
+    for (auto* strip : orderedStrips_)
+        strip->setVisible(true);
+    for (auto& strip : channelStrips) {
+        for (auto* child : strip->groupChildren_)
+            child->setVisible(true);
     }
 
     // Build aux channel strips separately
@@ -1652,20 +1795,35 @@ void MixerView::resized() {
             orderedStrips_.push_back(s.get());
     }
 
-    // Size the channel container
-    int numOrdered = static_cast<int>(orderedStrips_.size());
-    int containerWidth = numOrdered * metrics.channelWidth;
+    // Size the channel container — group strips may be wider than channelWidth
     int containerHeight = bounds.getHeight();
+    int containerWidth = 0;
+    for (auto* strip : orderedStrips_) {
+        int stripWidth = metrics.channelWidth;
+        if (auto* cs = dynamic_cast<ChannelStrip*>(strip)) {
+            if (!cs->groupChildren_.empty())
+                stripWidth =
+                    (1 + static_cast<int>(cs->groupChildren_.size())) * metrics.channelWidth;
+        }
+        containerWidth += stripWidth;
+    }
     channelContainer->setSize(containerWidth, containerHeight);
 
-    // Position all strips (channel + drum sub-channel) in flat order
-    for (int i = 0; i < numOrdered; ++i) {
-        orderedStrips_[static_cast<size_t>(i)]->setBounds(i * metrics.channelWidth, 0,
-                                                          metrics.channelWidth, containerHeight);
+    // Position all strips with cumulative x (group strips span multiple columns)
+    int xPos = 0;
+    for (auto* strip : orderedStrips_) {
+        int stripWidth = metrics.channelWidth;
+        if (auto* cs = dynamic_cast<ChannelStrip*>(strip)) {
+            if (!cs->groupChildren_.empty())
+                stripWidth =
+                    (1 + static_cast<int>(cs->groupChildren_.size())) * metrics.channelWidth;
+        }
+        strip->setBounds(xPos, 0, stripWidth, containerHeight);
+        xPos += stripWidth;
     }
 
     // Resize handle centered on right border of last channel strip
-    if (numOrdered > 0 && channelResizeHandle_) {
+    if (!orderedStrips_.empty() && channelResizeHandle_) {
         const int handleWidth = 8;
         int handleX = containerWidth - handleWidth / 2;
         channelResizeHandle_->setBounds(handleX, 0, handleWidth, containerHeight);
@@ -1677,18 +1835,34 @@ void MixerView::updateStripWidths() {
     const auto& metrics = MixerMetrics::getInstance();
     int containerHeight = channelContainer->getHeight();
 
-    // Resize channel container and reposition strips
-    int numOrdered = static_cast<int>(orderedStrips_.size());
-    int containerWidth = numOrdered * metrics.channelWidth;
+    // Compute total container width with variable-width group strips
+    int containerWidth = 0;
+    for (auto* strip : orderedStrips_) {
+        int stripWidth = metrics.channelWidth;
+        if (auto* cs = dynamic_cast<ChannelStrip*>(strip)) {
+            if (!cs->groupChildren_.empty())
+                stripWidth =
+                    (1 + static_cast<int>(cs->groupChildren_.size())) * metrics.channelWidth;
+        }
+        containerWidth += stripWidth;
+    }
     channelContainer->setSize(containerWidth, containerHeight);
 
-    for (int i = 0; i < numOrdered; ++i) {
-        orderedStrips_[static_cast<size_t>(i)]->setBounds(i * metrics.channelWidth, 0,
-                                                          metrics.channelWidth, containerHeight);
+    // Position strips with cumulative x
+    int xPos = 0;
+    for (auto* strip : orderedStrips_) {
+        int stripWidth = metrics.channelWidth;
+        if (auto* cs = dynamic_cast<ChannelStrip*>(strip)) {
+            if (!cs->groupChildren_.empty())
+                stripWidth =
+                    (1 + static_cast<int>(cs->groupChildren_.size())) * metrics.channelWidth;
+        }
+        strip->setBounds(xPos, 0, stripWidth, containerHeight);
+        xPos += stripWidth;
     }
 
     // Update resize handle position
-    if (numOrdered > 0 && channelResizeHandle_) {
+    if (!orderedStrips_.empty() && channelResizeHandle_) {
         const int handleWidth = 8;
         int handleX = containerWidth - handleWidth / 2;
         channelResizeHandle_->setBounds(handleX, 0, handleWidth, containerHeight);
