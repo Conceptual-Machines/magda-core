@@ -151,44 +151,13 @@ void TracktionEngineWrapper::previewNoteOnTrack(const std::string& track_id, int
         return;
     }
 
-    DBG("TracktionEngineWrapper: Track found, injecting MIDI");
-
-    // Set MIDI input device monitor mode based on track's inputMonitor setting
-    auto& midiInput = audioTrack->getMidiInputDevice();
-    auto desiredMode = tracktion::InputDevice::MonitorMode::on;  // default for backward compat
-    if (auto* trackInfo = TrackManager::getInstance().getTrack(magdaTrackId)) {
-        switch (trackInfo->inputMonitor) {
-            case InputMonitorMode::Off:
-                desiredMode = tracktion::InputDevice::MonitorMode::off;
-                break;
-            case InputMonitorMode::In:
-                desiredMode = tracktion::InputDevice::MonitorMode::on;
-                break;
-            case InputMonitorMode::Auto:
-                desiredMode = tracktion::InputDevice::MonitorMode::automatic;
-                break;
-        }
-    }
-    auto currentMode = midiInput.getMonitorMode();
-    DBG("TracktionEngineWrapper: Current monitor mode: " << (int)currentMode);
-
-    if (currentMode != desiredMode) {
-        DBG("TracktionEngineWrapper: Setting monitor mode to " << (int)desiredMode);
-        midiInput.setMonitorMode(desiredMode);
-    }
-
-    // Create MIDI message
+    // Inject MIDI directly into the track's plugin chain via LiveMidiInjectingNode,
+    // bypassing the MIDI input device and its monitor mode entirely (#762)
     juce::MidiMessage message =
         isNoteOn ? juce::MidiMessage::noteOn(1, noteNumber, (juce::uint8)velocity)
                  : juce::MidiMessage::noteOff(1, noteNumber, (juce::uint8)velocity);
 
-    DBG("TracktionEngineWrapper: MIDI message created - " << message.getDescription());
-
-    // Inject MIDI through DeviceManager (simulates physical MIDI keyboard input)
-    // This ensures the message goes through the normal MIDI routing graph
-    DBG("TracktionEngineWrapper: Injecting MIDI through DeviceManager");
-    engine_->getDeviceManager().injectMIDIMessageToDefaultDevice(message);
-    DBG("TracktionEngineWrapper: MIDI message injected successfully");
+    audioTrack->injectLiveMidiMessage(message, {});
 }
 
 void TracktionEngineWrapper::setTrackVolume(const std::string& track_id, double volume) {
