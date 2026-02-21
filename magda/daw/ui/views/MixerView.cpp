@@ -552,9 +552,9 @@ void MixerView::ChannelStrip::drawDbLabels(juce::Graphics& g) {
     const std::vector<float> dbValues = {6.0f,   3.0f,   0.0f,   -3.0f,  -6.0f,
                                          -12.0f, -18.0f, -24.0f, -36.0f, -48.0f};
 
-    // TextSlider uses 0-1 range with power curve — ticks must match its full bounds
-    float top = static_cast<float>(faderArea_.getY());
-    float height = static_cast<float>(faderArea_.getHeight());
+    // Ticks aligned with the fader slider bounds (offset down 2px to match visual top)
+    float top = static_cast<float>(faderArea_.getY()) + 1.0f;
+    float height = static_cast<float>(faderArea_.getHeight()) - 1.0f;
 
     g.setFont(FontManager::getInstance().getUIFont(metrics.labelFontSize));
 
