@@ -504,8 +504,7 @@ void MixerView::ChannelStrip::setupControls() {
         sendContainer_ = std::make_unique<juce::Component>();
         sendViewport_ = std::make_unique<juce::Viewport>();
         sendViewport_->setViewedComponent(sendContainer_.get(), false);
-        sendViewport_->setScrollBarsShown(true, false);  // vertical only
-        sendViewport_->setScrollBarThickness(4);
+        sendViewport_->setScrollBarsShown(false, false, true, false);  // hidden but scrollable
         addAndMakeVisible(*sendViewport_);
 
         // Send area resize handle (thin horizontal bar below sends viewport)

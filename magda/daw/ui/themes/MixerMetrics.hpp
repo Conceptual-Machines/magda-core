@@ -61,7 +61,7 @@ struct MixerMetrics {
     // === Send area ===
     int sendAreaHeight = 60;
     static constexpr int minSendAreaHeight = 0;
-    static constexpr int maxSendAreaHeight = 120;
+    static constexpr int maxSendAreaHeight = 400;
 
     // === Spacing ===
     int controlSpacing = 4;
