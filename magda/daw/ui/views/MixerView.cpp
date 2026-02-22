@@ -801,29 +801,21 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     }
     g.fillRect(ownBounds);
 
-    // Selection border on own column
-    if (selected) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        g.drawRect(ownBounds, 2);
-    }
-
     // Separator on right side of own column
-    if (!selected) {
-        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
-        g.fillRect(ownBounds.getRight() - 1, 0, 1, ownBounds.getHeight());
-    }
+    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    g.fillRect(ownBounds.getRight() - 1, 0, 1, ownBounds.getHeight());
 
     // Channel color indicator at top — skip for children nested in group (envelope provides this)
+    // When selected, use accent blue as top border instead of track colour
     if (!isNestedInGroup) {
-        if (!isMaster_) {
+        if (selected) {
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        } else if (!isMaster_) {
             g.setColour(trackColour_);
-            g.fillRect(selected ? 2 : 0, selected ? 2 : 0,
-                       ownBounds.getWidth() - (selected ? 3 : 1), 4);
         } else {
             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-            g.fillRect(selected ? 2 : 0, selected ? 2 : 0,
-                       ownBounds.getWidth() - (selected ? 3 : 1), 4);
         }
+        g.fillRect(0, 0, ownBounds.getWidth() - 1, 4);
     }
 
     // Draw fader region border (top and bottom lines)
@@ -1000,32 +992,41 @@ void MixerView::ChannelStrip::resized() {
         }
     }
 
-    // Routing selectors above M/S/R — hide for multi-out children
-    bool showRoutingForStrip = metrics.showRouting && trackType_ != TrackType::MultiOut;
+    // Routing selectors above M/S/R
+    // Multi-out children: show audio out only (no input, no MIDI)
     if (audioInSelector && audioOutSelector && midiInSelector && midiOutSelector) {
-        if (showRoutingForStrip) {
-            audioInSelector->setVisible(true);
+        if (metrics.showRouting) {
+            bool showInputs = !isMultiOut;
+            bool showMidi = !isMultiOut;
+
             audioOutSelector->setVisible(true);
-            midiInSelector->setVisible(true);
-            midiOutSelector->setVisible(true);
+            audioInSelector->setVisible(showInputs);
+            midiInSelector->setVisible(showMidi);
+            midiOutSelector->setVisible(showMidi);
 
             bounds.removeFromBottom(2);  // Small gap
 
-            // MIDI row (Mi/Mo)
-            auto midiRow = bounds.removeFromBottom(16);
-            int halfWidth = (midiRow.getWidth() - 2) / 2;
-            midiInSelector->setBounds(midiRow.removeFromLeft(halfWidth));
-            midiRow.removeFromLeft(2);
-            midiOutSelector->setBounds(midiRow);  // Take remaining width
+            if (showMidi) {
+                // MIDI row (Mi/Mo)
+                auto midiRow = bounds.removeFromBottom(16);
+                int halfWidth = (midiRow.getWidth() - 2) / 2;
+                midiInSelector->setBounds(midiRow.removeFromLeft(halfWidth));
+                midiRow.removeFromLeft(2);
+                midiOutSelector->setBounds(midiRow);
 
-            bounds.removeFromBottom(2);  // Small gap
+                bounds.removeFromBottom(2);  // Small gap
+            }
 
-            // Audio row (Ai/Ao)
+            // Audio row (Ai/Ao or just Ao for multi-out)
             auto audioRow = bounds.removeFromBottom(16);
-            halfWidth = (audioRow.getWidth() - 2) / 2;
-            audioInSelector->setBounds(audioRow.removeFromLeft(halfWidth));
-            audioRow.removeFromLeft(2);
-            audioOutSelector->setBounds(audioRow);  // Take remaining width
+            if (showInputs) {
+                int halfWidth = (audioRow.getWidth() - 2) / 2;
+                audioInSelector->setBounds(audioRow.removeFromLeft(halfWidth));
+                audioRow.removeFromLeft(2);
+                audioOutSelector->setBounds(audioRow);
+            } else {
+                audioOutSelector->setBounds(audioRow);
+            }
         } else {
             audioInSelector->setVisible(false);
             audioOutSelector->setVisible(false);

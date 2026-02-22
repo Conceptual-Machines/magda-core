@@ -1620,12 +1620,17 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                     tcpArea.removeFromTop(rowGap);
 
                     // Output row: [Audio Out] [MIDI Out] [outputIcon]
+                    // Multi-out children: hide MIDI out (no independent MIDI routing)
                     auto outputRow = tcpArea.removeFromTop(contentRowHeight);
                     header.outputSelector->setBounds(outputRow.removeFromLeft(ddWidth));
                     header.outputSelector->setVisible(true);
                     outputRow.removeFromLeft(ddGap);
-                    header.midiOutputSelector->setBounds(outputRow.removeFromLeft(ddWidth));
-                    header.midiOutputSelector->setVisible(true);
+                    if (!header.isMultiOut) {
+                        header.midiOutputSelector->setBounds(outputRow.removeFromLeft(ddWidth));
+                        header.midiOutputSelector->setVisible(true);
+                    } else {
+                        header.midiOutputSelector->setVisible(false);
+                    }
                     outputRow.removeFromLeft(ddGap);
                     header.outputIcon->setBounds(outputRow.removeFromLeft(iconSize));
                     header.outputIcon->setVisible(true);

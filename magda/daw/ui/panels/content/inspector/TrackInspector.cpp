@@ -656,7 +656,7 @@ void TrackInspector::showTrackControls(bool show) {
     midiColumnLabel_.setVisible(showRouting && !isMultiOut);
     inputIcon_->setVisible(showRouting && !isMultiOut);
     outputSelector_->setVisible(showRouting);
-    midiOutputSelector_->setVisible(showRouting);
+    midiOutputSelector_->setVisible(showRouting && !isMultiOut);
     outputIcon_->setVisible(showRouting);
 
     // Send/Receive section — hidden for master and aux tracks
