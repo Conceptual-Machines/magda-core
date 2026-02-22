@@ -2503,11 +2503,11 @@ void SessionView::timerCallback() {
 
     auto& meteringBuffer = bridge->getMeteringBuffer();
 
-    // Update track strip meters
+    // Update track strip meters (peek, don't consume — MixerView also reads these)
     for (auto& strip : trackMiniStrips_) {
         int trackId = strip->getTrackId();
         MeterData data;
-        if (meteringBuffer.popLevels(trackId, data)) {
+        if (meteringBuffer.peekLatest(trackId, data)) {
             strip->setMeterLevels(data.peakL, data.peakR);
         }
     }
