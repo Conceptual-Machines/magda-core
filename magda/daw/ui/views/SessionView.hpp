@@ -120,8 +120,8 @@ class SessionView : public juce::Component,
     // Scene launch buttons
     std::vector<std::unique_ptr<juce::TextButton>> sceneButtons;
 
-    // Master label (top-right corner) and stop all button
-    std::unique_ptr<juce::Label> masterLabel_;
+    // Master header (top-right corner) and stop all button
+    std::unique_ptr<juce::TextButton> masterLabel_;
     std::unique_ptr<juce::TextButton> stopAllButton;
 
     // Custom grid content component that draws track separators

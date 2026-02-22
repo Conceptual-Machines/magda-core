@@ -1347,12 +1347,13 @@ SessionView::SessionView() {
     setupSceneButtons();
 
     // Master label (top-right corner, above scene buttons)
-    masterLabel_ = std::make_unique<juce::Label>();
-    masterLabel_->setText("Master", juce::dontSendNotification);
-    masterLabel_->setFont(FontManager::getInstance().getUIFontBold(10.0f));
-    masterLabel_->setColour(juce::Label::textColourId,
+    masterLabel_ = std::make_unique<juce::TextButton>("Master");
+    masterLabel_->setColour(juce::TextButton::buttonColourId,
+                            DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    masterLabel_->setColour(juce::TextButton::textColourOffId,
                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    masterLabel_->setJustificationType(juce::Justification::centred);
+    masterLabel_->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
+    masterLabel_->setInterceptsMouseClicks(false, false);
     addAndMakeVisible(*masterLabel_);
 
     // Create master strip in the fader row (scene column area)
