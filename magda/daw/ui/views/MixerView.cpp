@@ -1375,10 +1375,13 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
             // Coalesce: just store the new width, apply on next vblank
             if (!pendingResizeUpdate_) {
                 pendingResizeUpdate_ = true;
-                juce::MessageManager::callAsync([this]() {
-                    if (pendingResizeUpdate_) {
-                        pendingResizeUpdate_ = false;
-                        updateStripWidths();
+                juce::Component::SafePointer<MixerView> safeThis(this);
+                juce::MessageManager::callAsync([safeThis]() {
+                    if (auto* self = safeThis.getComponent()) {
+                        if (self->pendingResizeUpdate_) {
+                            self->pendingResizeUpdate_ = false;
+                            self->updateStripWidths();
+                        }
                     }
                 });
             }
@@ -1901,21 +1904,23 @@ void MixerView::updateStripWidths() {
 void MixerView::relayoutAllStrips() {
     if (!pendingSendResizeUpdate_) {
         pendingSendResizeUpdate_ = true;
-        juce::MessageManager::callAsync([this]() {
-            if (pendingSendResizeUpdate_) {
-                pendingSendResizeUpdate_ = false;
-                // Trigger relayout and repaint on all channel strips
-                for (auto& strip : channelStrips) {
-                    strip->resized();
-                    strip->repaint();
-                }
-                for (auto& strip : auxChannelStrips) {
-                    strip->resized();
-                    strip->repaint();
-                }
-                if (masterStrip) {
-                    masterStrip->resized();
-                    masterStrip->repaint();
+        juce::Component::SafePointer<MixerView> safeThis(this);
+        juce::MessageManager::callAsync([safeThis]() {
+            if (auto* self = safeThis.getComponent()) {
+                if (self->pendingSendResizeUpdate_) {
+                    self->pendingSendResizeUpdate_ = false;
+                    for (auto& strip : self->channelStrips) {
+                        strip->resized();
+                        strip->repaint();
+                    }
+                    for (auto& strip : self->auxChannelStrips) {
+                        strip->resized();
+                        strip->repaint();
+                    }
+                    if (self->masterStrip) {
+                        self->masterStrip->resized();
+                        self->masterStrip->repaint();
+                    }
                 }
             }
         });
