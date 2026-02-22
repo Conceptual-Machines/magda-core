@@ -1,6 +1,8 @@
 #include "MixerView.hpp"
 
 #include <cmath>
+#include <set>
+#include <unordered_map>
 
 #include "../../audio/AudioBridge.hpp"
 #include "../../audio/DrumGridPlugin.hpp"
@@ -87,11 +89,7 @@ class MixerView::ChannelStrip::LevelMeter : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        auto bounds = getLocalBounds().toFloat();
-        const auto& metrics = MixerMetrics::getInstance();
-
-        // Meter uses effective range (with thumbRadius padding) to match fader track and labels
-        auto effectiveBounds = bounds.reduced(0.0f, metrics.thumbRadius());
+        auto effectiveBounds = getLocalBounds().toFloat();
 
         // Split into L/R with 1px gap
         const float gap = 1.0f;
@@ -101,10 +99,7 @@ class MixerView::ChannelStrip::LevelMeter : public juce::Component {
         auto rightBounds =
             effectiveBounds.withWidth(barWidth).withX(effectiveBounds.getX() + barWidth + gap);
 
-        // Draw left channel
         drawMeterBar(g, leftBounds, leftLevel_);
-
-        // Draw right channel
         drawMeterBar(g, rightBounds, rightLevel_);
     }
 
@@ -113,17 +108,15 @@ class MixerView::ChannelStrip::LevelMeter : public juce::Component {
     float rightLevel_ = 0.0f;
 
     void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level) {
-        // Background
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
         g.fillRoundedRectangle(bounds, 1.0f);
 
-        // Meter fill (using consistent scaling across all views)
+        // Use power curve to match fader and tick positions
         float displayLevel = dbToMeterPos(gainToDb(level));
         float meterHeight = bounds.getHeight() * displayLevel;
         auto fillBounds = bounds;
         fillBounds = fillBounds.removeFromBottom(meterHeight);
 
-        // Smooth gradient from green to yellow to red based on dB
         g.setColour(getMeterColour(level));
         g.fillRoundedRectangle(fillBounds, 1.0f);
     }
@@ -148,43 +141,161 @@ class MixerView::ChannelStrip::LevelMeter : public juce::Component {
     }
 };
 
+// Send area resize handle (horizontal, between sends viewport and fader)
+class MixerView::ChannelStrip::SendResizeHandle : public juce::Component {
+  public:
+    SendResizeHandle() {
+        setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+    }
+
+    void paint(juce::Graphics& g) override {
+        // Single subtle line, highlights on hover
+        g.setColour(isHovering_ ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+                                : DarkTheme::getColour(DarkTheme::SEPARATOR));
+        int y = getHeight() / 2;
+        g.fillRect(4, y, getWidth() - 8, 2);
+    }
+
+    void mouseEnter(const juce::MouseEvent& /*event*/) override {
+        isHovering_ = true;
+        repaint();
+    }
+
+    void mouseExit(const juce::MouseEvent& /*event*/) override {
+        isHovering_ = false;
+        repaint();
+    }
+
+    void mouseDown(const juce::MouseEvent& event) override {
+        isDragging_ = true;
+        dragStartY_ = event.getScreenY();
+    }
+
+    void mouseDrag(const juce::MouseEvent& event) override {
+        if (!isDragging_ || !onResize)
+            return;
+        int deltaY = event.getScreenY() - dragStartY_;
+        onResize(deltaY);
+        dragStartY_ = event.getScreenY();
+    }
+
+    void mouseUp(const juce::MouseEvent& /*event*/) override {
+        isDragging_ = false;
+        isHovering_ = false;
+        if (onResizeEnd)
+            onResizeEnd();
+        repaint();
+    }
+
+    std::function<void(int deltaY)> onResize;
+    std::function<void()> onResizeEnd;
+
+  private:
+    bool isHovering_ = false;
+    bool isDragging_ = false;
+    int dragStartY_ = 0;
+};
+
+// dB scale component — draws tick marks and dB labels, resizes with fader area
+class MixerView::ChannelStrip::DbScale : public juce::Component {
+  public:
+    DbScale() {
+        setInterceptsMouseClicks(false, false);
+    }
+
+    void paint(juce::Graphics& g) override {
+        auto bounds = getLocalBounds();
+        if (bounds.isEmpty())
+            return;
+
+        const auto& metrics = MixerMetrics::getInstance();
+
+        const float dbValues[] = {6.0f,   3.0f,   0.0f,   -3.0f,  -6.0f,
+                                  -12.0f, -18.0f, -24.0f, -36.0f, -48.0f};
+
+        // The component has extra padding at top/bottom for label overflow.
+        // The fader-aligned area starts at paddingTop and has faderHeight.
+        float paddingTop = metrics.labelTextHeight / 2.0f + 1.0f;
+        float paddingBottom = metrics.labelTextHeight / 2.0f;
+        float top = paddingTop;
+        float height = static_cast<float>(bounds.getHeight()) - paddingTop - paddingBottom;
+        float totalWidth = static_cast<float>(bounds.getWidth());
+
+        float tickW = metrics.tickWidth();
+        float labelWidth = metrics.labelTextWidth;
+        float centre = totalWidth / 2.0f;
+
+        g.setFont(FontManager::getInstance().getUIFont(metrics.labelFontSize));
+
+        float minSpacing = metrics.labelTextHeight + 2.0f;
+        float lastDrawnY = -1000.0f;
+
+        for (float db : dbValues) {
+            float faderPos = dbToMeterPos(db);
+            float y = top + height * (1.0f - faderPos);
+
+            if (std::abs(y - lastDrawnY) < minSpacing)
+                continue;
+            lastDrawnY = y;
+
+            float tickHeight = metrics.tickHeight();
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.fillRect(0.0f, y - tickHeight / 2.0f, tickW - 1.0f, tickHeight);
+            g.fillRect(totalWidth - tickW + 1.0f, y - tickHeight / 2.0f, tickW - 1.0f, tickHeight);
+
+            juce::String labelText;
+            int dbInt = static_cast<int>(db);
+            if (db <= MIN_DB) {
+                labelText = juce::String::charToString(0x221E);
+            } else {
+                labelText = juce::String(std::abs(dbInt));
+            }
+
+            float textHeight = metrics.labelTextHeight;
+            float textX = centre - labelWidth / 2.0f;
+            float textY = y - textHeight / 2.0f;
+
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            g.drawText(labelText, static_cast<int>(textX), static_cast<int>(textY),
+                       static_cast<int>(labelWidth), static_cast<int>(textHeight),
+                       juce::Justification::centred, false);
+        }
+    }
+};
+
 // Channel strip implementation
-MixerView::ChannelStrip::ChannelStrip(const TrackInfo& track, juce::LookAndFeel* faderLookAndFeel,
-                                      bool isMaster)
+MixerView::ChannelStrip::ChannelStrip(const TrackInfo& track, bool isMaster)
     : trackId_(track.id),
+      trackType_(track.type),
       isMaster_(isMaster),
+      isChildTrack_(track.hasParent()),
       trackColour_(track.colour),
-      trackName_(track.name),
-      faderLookAndFeel_(faderLookAndFeel) {
+      trackName_(track.name) {
+    setOpaque(true);
     setupControls();
     updateFromTrack(track);
 }
 
-MixerView::ChannelStrip::~ChannelStrip() {
-    // Clear look and feel before destruction to avoid dangling pointer issues
-    if (volumeFader) {
-        volumeFader->setLookAndFeel(nullptr);
-    }
-    if (panKnob) {
-        panKnob->setLookAndFeel(nullptr);
-    }
-}
+MixerView::ChannelStrip::~ChannelStrip() = default;
 
 void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track) {
+    bool wasChild = isChildTrack_;
+    isChildTrack_ = track.hasParent();
     trackColour_ = track.colour;
     trackName_ = track.name;
+    if (isChildTrack_ != wasChild)
+        repaint();
 
     if (trackLabel) {
         trackLabel->setText(isMaster_ ? "Master" : track.name, juce::dontSendNotification);
     }
-    if (volumeFader) {
-        // Convert linear gain to fader position (using consistent meter scaling)
+    if (volumeSlider && !volumeSlider->isBeingDragged()) {
         float db = gainToDb(track.volume);
         float faderPos = dbToMeterPos(db);
-        volumeFader->setValue(faderPos, juce::dontSendNotification);
+        volumeSlider->setValue(faderPos, juce::dontSendNotification);
     }
-    if (panKnob) {
-        panKnob->setValue(track.pan, juce::dontSendNotification);
+    if (panSlider && !panSlider->isBeingDragged()) {
+        panSlider->setValue(track.pan, juce::dontSendNotification);
     }
     if (muteButton) {
         muteButton->setToggleState(track.muted, juce::dontSendNotification);
@@ -211,6 +322,27 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track) {
                                       juce::dontSendNotification);
     }
 
+    // Sync send slots
+    if (!isMaster_) {
+        bool sendsCountChanged = sendSlots_.size() != track.sends.size();
+        if (sendsCountChanged) {
+            rebuildSendSlots(track.sends);
+        } else {
+            // Update existing slots in-place
+            for (size_t i = 0; i < sendSlots_.size(); ++i) {
+                auto& slot = sendSlots_[i];
+                const auto& send = track.sends[i];
+                if (slot->levelSlider && !slot->levelSlider->isBeingDragged())
+                    slot->levelSlider->setValue(send.level, juce::dontSendNotification);
+                // Update dest name
+                if (slot->nameLabel && send.destTrackId != INVALID_TRACK_ID) {
+                    if (auto* destTrack = TrackManager::getInstance().getTrack(send.destTrackId))
+                        slot->nameLabel->setText(destTrack->name, juce::dontSendNotification);
+                }
+            }
+        }
+    }
+
     repaint();
 }
 
@@ -224,51 +356,25 @@ void MixerView::ChannelStrip::setupControls() {
                           DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
     addAndMakeVisible(*trackLabel);
 
-    // Pan knob
-    panKnob = std::make_unique<juce::Slider>(juce::Slider::RotaryHorizontalVerticalDrag,
-                                             juce::Slider::NoTextBox);
-    panKnob->setRange(-1.0, 1.0, 0.01);
-    panKnob->setValue(0.0, juce::dontSendNotification);
-    panKnob->setColour(juce::Slider::rotarySliderFillColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    panKnob->setColour(juce::Slider::rotarySliderOutlineColourId,
-                       DarkTheme::getColour(DarkTheme::SURFACE));
-    panKnob->setColour(juce::Slider::thumbColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    panKnob->onValueChange = [this]() {
-        UndoManager::getInstance().executeCommand(std::make_unique<SetTrackPanCommand>(
-            trackId_, static_cast<float>(panKnob->getValue())));
-        // Update pan label
-        if (panValueLabel) {
-            float pan = static_cast<float>(panKnob->getValue());
-            juce::String panText;
-            if (std::abs(pan) < 0.01f) {
-                panText = "C";
-            } else if (pan < 0) {
-                panText = juce::String(static_cast<int>(std::abs(pan) * 100)) + "L";
-            } else {
-                panText = juce::String(static_cast<int>(pan * 100)) + "R";
-            }
-            panValueLabel->setText(panText, juce::dontSendNotification);
-        }
+    // Pan slider (horizontal TextSlider)
+    panSlider = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Pan);
+    panSlider->setOrientation(daw::ui::TextSlider::Orientation::Horizontal);
+    panSlider->setRange(-1.0, 1.0, 0.01);
+    panSlider->setValue(0.0, juce::dontSendNotification);
+    panSlider->setFont(FontManager::getInstance().getUIFont(10.0f));
+    panSlider->onValueChanged = [this](double val) {
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetTrackPanCommand>(trackId_, static_cast<float>(val)));
     };
-    // Apply custom look and feel for knob styling
-    if (faderLookAndFeel_) {
-        panKnob->setLookAndFeel(faderLookAndFeel_);
-    }
-    addAndMakeVisible(*panKnob);
-
-    // Pan value label
-    panValueLabel = std::make_unique<juce::Label>();
-    panValueLabel->setText("C", juce::dontSendNotification);
-    panValueLabel->setJustificationType(juce::Justification::centred);
-    panValueLabel->setColour(juce::Label::textColourId,
-                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    panValueLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
-    addAndMakeVisible(*panValueLabel);
+    addAndMakeVisible(*panSlider);
 
     // Level meter
     levelMeter = std::make_unique<LevelMeter>();
     addAndMakeVisible(*levelMeter);
+
+    // dB scale (ticks + labels between fader and meter)
+    dbScale_ = std::make_unique<DbScale>();
+    addAndMakeVisible(*dbScale_);
 
     // Peak label
     peakLabel = std::make_unique<juce::Label>();
@@ -279,49 +385,36 @@ void MixerView::ChannelStrip::setupControls() {
     peakLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
     addAndMakeVisible(*peakLabel);
 
-    // Volume fader - using dB scale with unity at 0.75 position
-    volumeFader =
-        std::make_unique<juce::Slider>(juce::Slider::LinearVertical, juce::Slider::NoTextBox);
-    volumeFader->setRange(0.0, 1.0, 0.001);                   // Internal 0-1 range
-    volumeFader->setValue(0.75, juce::dontSendNotification);  // Unity gain (0 dB) at 75%
-    volumeFader->setSliderSnapsToMousePosition(false);        // Relative drag, not jump to click
-    volumeFader->setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    volumeFader->setColour(juce::Slider::backgroundColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-    volumeFader->setColour(juce::Slider::thumbColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    volumeFader->onValueChange = [this]() {
-        // Convert fader position to dB, then to linear gain for TrackManager
-        float faderPos = static_cast<float>(volumeFader->getValue());
-        float db = meterPosToDb(faderPos);
+    // Volume slider (vertical TextSlider, 0-1 range with power curve mapping)
+    volumeSlider = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decibels);
+    volumeSlider->setOrientation(daw::ui::TextSlider::Orientation::Vertical);
+    volumeSlider->setRange(0.0, 1.0, 0.001);
+    volumeSlider->setValue(dbToMeterPos(0.0f), juce::dontSendNotification);  // 0 dB
+    volumeSlider->setFont(FontManager::getInstance().getUIFont(9.0f));
+    // Display dB text via custom formatter
+    volumeSlider->setValueFormatter([](double pos) -> juce::String {
+        float db = meterPosToDb(static_cast<float>(pos));
+        if (db <= MIN_DB)
+            return "-inf";
+        return juce::String(db, 1);
+    });
+    // Parse typed dB input
+    volumeSlider->setValueParser([](const juce::String& text) -> double {
+        auto t = text.trim();
+        if (t.endsWithIgnoreCase("db"))
+            t = t.dropLastCharacters(2).trim();
+        if (t.equalsIgnoreCase("-inf") || t.equalsIgnoreCase("inf"))
+            return 0.0;
+        float db = t.getFloatValue();
+        return static_cast<double>(dbToMeterPos(db));
+    });
+    volumeSlider->onValueChanged = [this](double pos) {
+        float db = meterPosToDb(static_cast<float>(pos));
         float gain = dbToGain(db);
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetTrackVolumeCommand>(trackId_, gain));
-        // Update fader label
-        if (faderValueLabel) {
-            juce::String dbText;
-            if (db <= MIN_DB) {
-                dbText = "-inf";
-            } else {
-                dbText = juce::String(db, 1) + " dB";
-            }
-            faderValueLabel->setText(dbText, juce::dontSendNotification);
-        }
     };
-    // Apply custom look and feel for fader styling
-    if (faderLookAndFeel_) {
-        volumeFader->setLookAndFeel(faderLookAndFeel_);
-    }
-    addAndMakeVisible(*volumeFader);
-
-    // Fader value label
-    faderValueLabel = std::make_unique<juce::Label>();
-    faderValueLabel->setText("0.0 dB", juce::dontSendNotification);
-    faderValueLabel->setJustificationType(juce::Justification::centred);
-    faderValueLabel->setColour(juce::Label::textColourId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    faderValueLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
-    addAndMakeVisible(*faderValueLabel);
+    addAndMakeVisible(*volumeSlider);
 
     // Mute button (square corners, compact)
     muteButton = std::make_unique<juce::TextButton>("M");
@@ -417,6 +510,28 @@ void MixerView::ChannelStrip::setupControls() {
         };
         addAndMakeVisible(*monitorButton);
 
+        // Send viewport (scrollable container for send slots)
+        sendContainer_ = std::make_unique<juce::Component>();
+        sendViewport_ = std::make_unique<juce::Viewport>();
+        sendViewport_->setViewedComponent(sendContainer_.get(), false);
+        sendViewport_->setScrollBarsShown(false, false, true, false);  // hidden but scrollable
+        addAndMakeVisible(*sendViewport_);
+
+        // Send area resize handle (thin horizontal bar below sends viewport)
+        sendResizeHandle_ = std::make_unique<SendResizeHandle>();
+        sendResizeHandle_->onResize = [this](int deltaY) {
+            auto& metrics = MixerMetrics::getInstance();
+            int newHeight =
+                juce::jlimit(MixerMetrics::minSendAreaHeight, MixerMetrics::maxSendAreaHeight,
+                             metrics.sendAreaHeight + deltaY);
+            if (metrics.sendAreaHeight != newHeight) {
+                metrics.sendAreaHeight = newHeight;
+                if (onSendAreaResized)
+                    onSendAreaResized();
+            }
+        };
+        addAndMakeVisible(*sendResizeHandle_);
+
         // Audio/MIDI routing selectors (toggle + dropdown, not on master)
         audioInSelector = std::make_unique<RoutingSelector>(RoutingSelector::Type::AudioIn);
         audioInSelector->setOptions({
@@ -452,232 +567,367 @@ void MixerView::ChannelStrip::setupControls() {
     }
 }
 
-void MixerView::ChannelStrip::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds();
+void MixerView::ChannelStrip::rebuildSendSlots(const std::vector<SendInfo>& sends) {
+    // Remove old slots from send container
+    for (auto& slot : sendSlots_) {
+        if (sendContainer_) {
+            sendContainer_->removeChildComponent(slot->nameLabel.get());
+            sendContainer_->removeChildComponent(slot->levelSlider.get());
+            sendContainer_->removeChildComponent(slot->removeButton.get());
+        }
+    }
+    sendSlots_.clear();
 
-    // Background - slightly brighter if selected
+    for (const auto& send : sends) {
+        auto slot = std::make_unique<SendSlot>();
+        slot->busIndex = send.busIndex;
+
+        // Destination name label
+        slot->nameLabel = std::make_unique<juce::Label>();
+        juce::String destName = "Bus " + juce::String(send.busIndex);
+        if (send.destTrackId != INVALID_TRACK_ID) {
+            if (auto* destTrack = TrackManager::getInstance().getTrack(send.destTrackId))
+                destName = destTrack->name;
+        }
+        slot->nameLabel->setText(destName, juce::dontSendNotification);
+        slot->nameLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
+        slot->nameLabel->setColour(juce::Label::textColourId,
+                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        slot->nameLabel->setJustificationType(juce::Justification::centredLeft);
+        sendContainer_->addAndMakeVisible(*slot->nameLabel);
+
+        // Level slider (horizontal, 0-1)
+        slot->levelSlider =
+            std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decimal);
+        slot->levelSlider->setOrientation(daw::ui::TextSlider::Orientation::Horizontal);
+        slot->levelSlider->setRange(0.0, 1.0, 0.01);
+        slot->levelSlider->setValue(send.level, juce::dontSendNotification);
+        slot->levelSlider->setFont(FontManager::getInstance().getUIFont(9.0f));
+        int busIdx = send.busIndex;
+        slot->levelSlider->onValueChanged = [this, busIdx](double val) {
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetSendLevelCommand>(trackId_, busIdx, static_cast<float>(val)));
+        };
+        sendContainer_->addAndMakeVisible(*slot->levelSlider);
+
+        // Remove button
+        slot->removeButton = std::make_unique<juce::TextButton>("x");
+        slot->removeButton->setConnectedEdges(
+            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+        slot->removeButton->setColour(juce::TextButton::buttonColourId,
+                                      DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        slot->removeButton->setColour(juce::TextButton::textColourOffId,
+                                      DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        slot->removeButton->onClick = [this, busIdx]() {
+            TrackManager::getInstance().removeSend(trackId_, busIdx);
+        };
+        sendContainer_->addAndMakeVisible(*slot->removeButton);
+
+        sendSlots_.push_back(std::move(slot));
+    }
+
+    resized();
+}
+
+void MixerView::ChannelStrip::paint(juce::Graphics& g) {
+    auto fullBounds = getLocalBounds();
+    bool hasGroupChildren = !groupChildren_.empty();
+    bool isNestedInGroup = dynamic_cast<ChannelStrip*>(getParentComponent()) != nullptr;
+
+    // The group's own controls column (leftmost channelWidth when group has children)
+    auto ownBounds = hasGroupChildren
+                         ? fullBounds.withWidth(MixerMetrics::getInstance().channelWidth)
+                         : fullBounds;
+
+    // Background
     if (selected) {
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
     } else {
         g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
     }
-    g.fillRect(bounds);
+    g.fillRect(ownBounds);
 
-    // Selection border
+    // Selection border on own column
     if (selected) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        g.drawRect(bounds, 2);
+        g.drawRect(ownBounds, 2);
     }
 
-    // Border on right side (separator) - only if not selected
+    // Separator on right side of own column
     if (!selected) {
         g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
-        g.fillRect(bounds.getRight() - 1, 0, 1, bounds.getHeight());
+        g.fillRect(ownBounds.getRight() - 1, 0, 1, ownBounds.getHeight());
     }
 
-    // Channel color indicator at top
-    if (!isMaster_) {
-        g.setColour(trackColour_);
-        g.fillRect(selected ? 2 : 0, selected ? 2 : 0, getWidth() - (selected ? 3 : 1), 4);
-    } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        g.fillRect(selected ? 2 : 0, selected ? 2 : 0, getWidth() - (selected ? 3 : 1), 4);
+    // Channel color indicator at top — skip for children nested in group (envelope provides this)
+    if (!isNestedInGroup) {
+        if (!isMaster_) {
+            g.setColour(trackColour_);
+            g.fillRect(selected ? 2 : 0, selected ? 2 : 0,
+                       ownBounds.getWidth() - (selected ? 3 : 1), 4);
+        } else {
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+            g.fillRect(selected ? 2 : 0, selected ? 2 : 0,
+                       ownBounds.getWidth() - (selected ? 3 : 1), 4);
+        }
     }
 
     // Draw fader region border (top and bottom lines)
     if (!faderRegion_.isEmpty()) {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        // Top border
         g.fillRect(faderRegion_.getX(), faderRegion_.getY(), faderRegion_.getWidth(), 1);
-        // Bottom border
         g.fillRect(faderRegion_.getX(), faderRegion_.getBottom() - 1, faderRegion_.getWidth(), 1);
     }
 
-    // Draw dB labels with ticks
-    drawDbLabels(g);
+    // dB ticks and labels are drawn by the DbScale component
+
+    // Group envelope: header banner + border around the entire group area
+    if (hasGroupChildren) {
+        const int groupHeaderHeight = 4 + 4 + 24 + MixerMetrics::getInstance().controlSpacing;
+
+        // Fill the header banner area across full width
+        g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
+
+        // Colour bar across entire top
+        g.setColour(trackColour_);
+        g.fillRect(2, 2, fullBounds.getWidth() - 4, 4);
+
+        // Horizontal separator below header (drawn in paint, before children)
+        g.setColour(trackColour_.withAlpha(0.4f));
+        g.fillRect(0, groupHeaderHeight, fullBounds.getWidth(), 1);
+    }
 }
 
-void MixerView::ChannelStrip::drawDbLabels(juce::Graphics& g) {
-    if (labelArea_.isEmpty() || !volumeFader)
+void MixerView::ChannelStrip::paintOverChildren(juce::Graphics& g) {
+    // Group envelope border — drawn over children so it's not obscured
+    if (!groupChildren_.empty()) {
+        auto fullBounds = getLocalBounds();
+        g.setColour(trackColour_.withAlpha(0.6f));
+        g.drawRect(fullBounds, 2);
+    }
+
+    // Skip overlay for child tracks nested inside a group envelope
+    if (!isChildTrack_)
         return;
 
-    const auto& metrics = MixerMetrics::getInstance();
-
-    // dB values to display with ticks
-    const std::vector<float> dbValues = {6.0f,   3.0f,   0.0f,   -3.0f,  -6.0f, -12.0f,
-                                         -18.0f, -24.0f, -36.0f, -48.0f, -60.0f};
-
-    // Labels mark where the thumb CENTER is at each dB value.
-    // JUCE reduces slider bounds by thumbRadius, so the thumb center range is:
-    // - Top: faderArea_.getY() + thumbRadius
-    // - Bottom: faderArea_.getBottom() - thumbRadius
-    float thumbRadius = metrics.thumbRadius();
-    float effectiveTop = faderArea_.getY() + thumbRadius;
-    float effectiveHeight = faderArea_.getHeight() - 2.0f * thumbRadius;
-
-    g.setFont(FontManager::getInstance().getUIFont(metrics.labelFontSize));
-
-    for (float db : dbValues) {
-        // Convert dB to Y position using consistent meter scaling
-        float faderPos = dbToMeterPos(db);
-        float yNorm = 1.0f - faderPos;
-        float y = effectiveTop + yNorm * effectiveHeight;
-
-        // Draw ticks in their designated areas
-        float tickHeight = metrics.tickHeight();
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-
-        // Left tick: draw within leftTickArea_, right-aligned
-        float leftTickX = static_cast<float>(leftTickArea_.getRight()) - metrics.tickWidth();
-        g.fillRect(leftTickX, y - tickHeight / 2.0f, metrics.tickWidth(), tickHeight);
-
-        // Right tick: draw within rightTickArea_, left-aligned
-        float rightTickX = static_cast<float>(rightTickArea_.getX());
-        g.fillRect(rightTickX, y - tickHeight / 2.0f, metrics.tickWidth(), tickHeight);
-
-        // Draw label text centered - no signs, infinity symbol at bottom
-        juce::String labelText;
-        int dbInt = static_cast<int>(db);
-        if (db <= MIN_DB) {
-            labelText = juce::String::charToString(0x221E);  // ∞ infinity symbol
-        } else {
-            labelText = juce::String(std::abs(dbInt));
-        }
-
-        float textWidth = metrics.labelTextWidth;
-        float textHeight = metrics.labelTextHeight;
-        float textX = labelArea_.getCentreX() - textWidth / 2.0f;
-        float textY = y - textHeight / 2.0f;
-
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        g.drawText(labelText, static_cast<int>(textX), static_cast<int>(textY),
-                   static_cast<int>(textWidth), static_cast<int>(textHeight),
-                   juce::Justification::centred, false);
+    // Check if this strip is a child component of a group strip
+    if (auto* parentStrip = dynamic_cast<ChannelStrip*>(getParentComponent())) {
+        if (!parentStrip->groupChildren_.empty())
+            return;  // Nested inside group — no overlay needed
     }
+
+    // Semi-transparent overlay to dim child tracks (fallback for non-group children)
+    g.setColour(juce::Colour(0x30000000));
+    g.fillRect(getLocalBounds());
+
+    // Left-edge bracket bar showing group membership
+    g.setColour(trackColour_.withAlpha(0.8f));
+    g.fillRect(0, 0, 3, getHeight());
 }
 
 void MixerView::ChannelStrip::resized() {
     const auto& metrics = MixerMetrics::getInstance();
-    auto bounds = getLocalBounds().reduced(metrics.channelPadding);
+    bool hasGroupChildren = !groupChildren_.empty();
 
-    // Color indicator space
-    bounds.removeFromTop(6);
+    // Group envelope header height: colour bar + padding + label + spacing
+    const int groupHeaderHeight = 4 + 4 + 24 + metrics.controlSpacing;
 
-    // Expand toggle at top (only for tracks with DrumGridPlugin)
-    if (expandToggle_) {
-        expandToggle_->setBounds(bounds.removeFromTop(18));
-        bounds.removeFromTop(2);
+    // If this is a group strip with children, lay out the shared header banner
+    // across the full width, then position children below it
+    if (hasGroupChildren) {
+        int channelWidth = metrics.channelWidth;
+        int childTop = groupHeaderHeight;
+        int childHeight = getHeight() - childTop;
+
+        const int borderWidth = 2;
+        for (size_t i = 0; i < groupChildren_.size(); ++i) {
+            bool isLast = (i == groupChildren_.size() - 1);
+            int w = isLast ? channelWidth - borderWidth : channelWidth;
+            groupChildren_[i]->setBounds(static_cast<int>(i + 1) * channelWidth, childTop, w,
+                                         childHeight);
+        }
     }
 
-    // Track label at top
-    trackLabel->setBounds(bounds.removeFromTop(24));
+    // For a group with children: own controls in the leftmost column, below the shared header
+    // For everything else: full width, full height
+    int ownWidth = hasGroupChildren ? metrics.channelWidth : getWidth();
+    int ownTop = hasGroupChildren ? groupHeaderHeight : 0;
+    int ownHeight = getHeight() - ownTop;
+
+    auto bounds =
+        juce::Rectangle<int>(0, ownTop, ownWidth, ownHeight).reduced(metrics.channelPadding);
+
+    if (hasGroupChildren) {
+        // Group: label is part of the shared header banner (already positioned above)
+        // Position label in the header area spanning full width
+        auto headerBounds = juce::Rectangle<int>(0, 0, getWidth(), groupHeaderHeight)
+                                .reduced(metrics.channelPadding);
+        headerBounds.removeFromTop(6);  // colour bar space
+        auto titleRow = headerBounds.removeFromTop(24);
+        if (expandToggle_) {
+            expandToggle_->setBounds(titleRow.removeFromLeft(20).withSizeKeepingCentre(18, 18));
+            titleRow.removeFromLeft(2);
+        }
+        trackLabel->setBounds(titleRow);
+    } else {
+        // Non-group: colour bar space + label at top of own bounds
+        bounds.removeFromTop(6);
+        auto titleRow = bounds.removeFromTop(24);
+        if (expandToggle_) {
+            expandToggle_->setBounds(titleRow.removeFromLeft(20).withSizeKeepingCentre(18, 18));
+            titleRow.removeFromLeft(2);
+        }
+        trackLabel->setBounds(titleRow);
+    }
     bounds.removeFromTop(metrics.controlSpacing);
 
-    // Pan knob
-    auto panArea = bounds.removeFromTop(metrics.knobSize);
-    panKnob->setBounds(panArea.withSizeKeepingCentre(metrics.knobSize, metrics.knobSize));
+    // Sends area (scrollable viewport) — between track label and fader
+    if (!isMaster_ && sendViewport_) {
+        const int sendSlotHeight = 18;
+        const int sendAreaHeight = metrics.sendAreaHeight;
 
-    // Pan value label below knob
-    auto panLabelArea = bounds.removeFromTop(14);
-    panValueLabel->setBounds(panLabelArea);
-    bounds.removeFromTop(metrics.controlSpacing);
+        // Layout send slots inside the container
+        int containerWidth = bounds.getWidth();
+        int totalContentHeight = 0;
+        for (auto& slot : sendSlots_) {
+            auto row = juce::Rectangle<int>(0, totalContentHeight, containerWidth, sendSlotHeight);
+            slot->nameLabel->setBounds(row.removeFromLeft(row.getWidth() * 40 / 100));
+            auto removeArea = row.removeFromRight(16);
+            slot->removeButton->setBounds(removeArea);
+            slot->levelSlider->setBounds(row);
+            totalContentHeight += sendSlotHeight + 1;  // 1px gap
+        }
 
-    // M/S/R/Mon buttons at bottom
+        sendContainer_->setBounds(0, 0, containerWidth, totalContentHeight);
+        bounds.removeFromTop(2);  // Gap between track header and sends/handle
+        sendViewport_->setBounds(bounds.removeFromTop(sendAreaHeight));
+        sendViewport_->setVisible(sendAreaHeight > 0);
+
+        // Resize handle overlapping the bottom of the sends viewport
+        if (sendResizeHandle_) {
+            int handleH = 8;
+            int handleOverlap = 6;
+            sendResizeHandle_->setBounds(bounds.getX(), bounds.getY() - handleH - handleOverlap,
+                                         bounds.getWidth(), handleH);
+            sendResizeHandle_->setAlwaysOnTop(true);
+        }
+    }
+
+    // M/S/R/Mon buttons at bottom — multi-out children only show M/S
+    bool isMultiOut = trackType_ == TrackType::MultiOut;
     auto buttonArea = bounds.removeFromBottom(metrics.buttonSize);
-    int numButtons = isMaster_ ? 2 : 4;
-    int buttonWidth = (buttonArea.getWidth() - (numButtons - 1) * 2) / numButtons;
 
-    muteButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
-    buttonArea.removeFromLeft(2);
-    soloButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
-    if (recordButton) {
+    if (isMultiOut || isMaster_ || !recordButton) {
+        // M/S only
+        int buttonWidth = (buttonArea.getWidth() - 2) / 2;
+        muteButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
         buttonArea.removeFromLeft(2);
-        recordButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
-    }
-    if (monitorButton) {
+        soloButton->setBounds(buttonArea);
+        if (recordButton)
+            recordButton->setVisible(false);
+        if (monitorButton)
+            monitorButton->setVisible(false);
+    } else {
+        int numButtons = monitorButton ? 4 : 3;
+        int buttonWidth = (buttonArea.getWidth() - (numButtons - 1) * 2) / numButtons;
+        muteButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
         buttonArea.removeFromLeft(2);
-        monitorButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
+        soloButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
+        buttonArea.removeFromLeft(2);
+        recordButton->setVisible(true);
+        if (!monitorButton) {
+            recordButton->setBounds(buttonArea);
+        } else {
+            monitorButton->setVisible(true);
+            recordButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
+            buttonArea.removeFromLeft(2);
+            monitorButton->setBounds(buttonArea);
+        }
     }
 
-    // Routing selectors above M/S/R (2 rows: Audio In/Out, MIDI In/Out)
+    // Routing selectors above M/S/R — hide for multi-out children
+    bool showRoutingForStrip = metrics.showRouting && trackType_ != TrackType::MultiOut;
     if (audioInSelector && audioOutSelector && midiInSelector && midiOutSelector) {
-        bounds.removeFromBottom(2);  // Small gap
+        if (showRoutingForStrip) {
+            audioInSelector->setVisible(true);
+            audioOutSelector->setVisible(true);
+            midiInSelector->setVisible(true);
+            midiOutSelector->setVisible(true);
 
-        // MIDI row (Mi/Mo)
-        auto midiRow = bounds.removeFromBottom(16);
-        int halfWidth = (midiRow.getWidth() - 2) / 2;
-        midiInSelector->setBounds(midiRow.removeFromLeft(halfWidth));
-        midiRow.removeFromLeft(2);
-        midiOutSelector->setBounds(midiRow.removeFromLeft(halfWidth));
+            bounds.removeFromBottom(2);  // Small gap
 
-        bounds.removeFromBottom(2);  // Small gap
+            // MIDI row (Mi/Mo)
+            auto midiRow = bounds.removeFromBottom(16);
+            int halfWidth = (midiRow.getWidth() - 2) / 2;
+            midiInSelector->setBounds(midiRow.removeFromLeft(halfWidth));
+            midiRow.removeFromLeft(2);
+            midiOutSelector->setBounds(midiRow);  // Take remaining width
 
-        // Audio row (Ai/Ao)
-        auto audioRow = bounds.removeFromBottom(16);
-        halfWidth = (audioRow.getWidth() - 2) / 2;
-        audioInSelector->setBounds(audioRow.removeFromLeft(halfWidth));
-        audioRow.removeFromLeft(2);
-        audioOutSelector->setBounds(audioRow.removeFromLeft(halfWidth));
+            bounds.removeFromBottom(2);  // Small gap
+
+            // Audio row (Ai/Ao)
+            auto audioRow = bounds.removeFromBottom(16);
+            halfWidth = (audioRow.getWidth() - 2) / 2;
+            audioInSelector->setBounds(audioRow.removeFromLeft(halfWidth));
+            audioRow.removeFromLeft(2);
+            audioOutSelector->setBounds(audioRow);  // Take remaining width
+        } else {
+            audioInSelector->setVisible(false);
+            audioOutSelector->setVisible(false);
+            midiInSelector->setVisible(false);
+            midiOutSelector->setVisible(false);
+        }
     }
 
-    bounds.removeFromBottom(metrics.controlSpacing);
+    // Pan slider — now below fader region, above routing
+    bounds.removeFromBottom(2);
+    panSlider->setBounds(bounds.removeFromBottom(20));
+    bounds.removeFromBottom(2);
 
-    // Use percentage of remaining height for fader
-    int faderHeight = static_cast<int>(bounds.getHeight() * metrics.faderHeightRatio / 100.0f);
-    int extraSpace = bounds.getHeight() - faderHeight;
-    bounds.removeFromTop(extraSpace / 2);
-    bounds.setHeight(faderHeight);
+    // Small gap before fader region
+    bounds.removeFromTop(2);
 
     // Layout: [fader] [gap] [leftTicks] [labels] [rightTicks] [gap] [meter]
-    // Calculate widths from metrics
-    int faderWidth = metrics.faderWidth;
-    int meterWidthVal = metrics.meterWidth;
-    int tickWidth = static_cast<int>(std::ceil(metrics.tickWidth()));
+    // Fader and meter scale proportionally with channel width
+    int availWidth = bounds.getWidth();
+    int faderWidth = juce::jlimit(20, 60, availWidth * 40 / 100);
+    int meterWidthVal = faderWidth;  // Same width as fader
     int gap = metrics.tickToFaderGap;
 
     // Store the entire fader region for border drawing
     faderRegion_ = bounds;
 
-    // Position value labels right above the fader region top border
+    // Position peak label right above the fader region top border
     const int labelHeight = 12;
     auto valueLabelArea =
         juce::Rectangle<int>(faderRegion_.getX(), faderRegion_.getY() - labelHeight,
                              faderRegion_.getWidth(), labelHeight);
-    faderValueLabel->setBounds(valueLabelArea.removeFromLeft(valueLabelArea.getWidth() / 2));
     peakLabel->setBounds(valueLabelArea);
 
     // Add vertical padding inside the border
-    const int borderPadding = 6;
-    bounds.removeFromTop(borderPadding);
-    bounds.removeFromBottom(borderPadding);
+    bounds.removeFromTop(6);
+    bounds.removeFromBottom(3);
 
     auto layoutArea = bounds;
 
-    // Fader on left
+    // Volume TextSlider on left
     faderArea_ = layoutArea.removeFromLeft(faderWidth);
-    volumeFader->setBounds(faderArea_);
+    volumeSlider->setBounds(faderArea_);
 
     // Meter on right
     meterArea_ = layoutArea.removeFromRight(meterWidthVal);
     levelMeter->setBounds(meterArea_);
 
-    // Position tick areas with gap from fader/meter
-    int meterGap = metrics.tickToMeterGap;
-
-    // Left ticks: positioned after fader + gap
-    leftTickArea_ = juce::Rectangle<int>(faderArea_.getRight() + gap, layoutArea.getY(), tickWidth,
-                                         layoutArea.getHeight());
-
-    // Right ticks: positioned before meter - meterGap
-    rightTickArea_ = juce::Rectangle<int>(meterArea_.getX() - tickWidth - meterGap,
-                                          layoutArea.getY(), tickWidth, layoutArea.getHeight());
-
-    // Label area between ticks
-    int tickToLabelGap = metrics.tickToLabelGap;
-    int labelLeft = leftTickArea_.getRight() + tickToLabelGap;
-    int labelRight = rightTickArea_.getX() - tickToLabelGap;
-    labelArea_ = juce::Rectangle<int>(labelLeft, layoutArea.getY(), labelRight - labelLeft,
-                                      layoutArea.getHeight());
+    // dB scale component — extends above/below fader area for label overflow
+    if (dbScale_) {
+        int labelPad = static_cast<int>(metrics.labelTextHeight / 2.0f + 1.0f);
+        int scaleLeft = faderArea_.getRight() + gap;
+        int scaleRight = meterArea_.getX() - metrics.tickToMeterGap;
+        dbScale_->setBounds(scaleLeft, layoutArea.getY() - labelPad, scaleRight - scaleLeft,
+                            layoutArea.getHeight() + labelPad * 2);
+    }
 }
 
 void MixerView::ChannelStrip::setMeterLevel(float level) {
@@ -714,8 +964,48 @@ void MixerView::ChannelStrip::setSelected(bool shouldBeSelected) {
     }
 }
 
-void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& /*event*/) {
-    if (onClicked) {
+void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
+    if (event.mods.isPopupMenu()) {
+        juce::PopupMenu menu;
+
+        // Add Send submenu (not for master)
+        if (!isMaster_) {
+            juce::PopupMenu sendSubMenu;
+            const auto& tracks = TrackManager::getInstance().getTracks();
+            std::set<TrackId> existingSendDests;
+            if (auto* thisTrack = TrackManager::getInstance().getTrack(trackId_)) {
+                for (const auto& send : thisTrack->sends)
+                    existingSendDests.insert(send.destTrackId);
+            }
+            for (const auto& t : tracks) {
+                if (t.id != trackId_ && t.type != TrackType::Master &&
+                    existingSendDests.find(t.id) == existingSendDests.end()) {
+                    sendSubMenu.addItem(t.id, t.name);
+                }
+            }
+            if (sendSubMenu.getNumItems() == 0) {
+                sendSubMenu.addItem(-1, "(No tracks available)", false);
+            }
+            menu.addSubMenu("Add Send", sendSubMenu);
+            menu.addSeparator();
+        }
+
+        // Show/hide I/O routing toggle
+        auto& metrics = MixerMetrics::getInstance();
+        const int toggleRoutingId = -100;
+        menu.addItem(toggleRoutingId, "Show I/O Routing", true, metrics.showRouting);
+
+        menu.showMenuAsync(juce::PopupMenu::Options(), [this](int result) {
+            if (result == -100) {
+                auto& m = MixerMetrics::getInstance();
+                m.showRouting = !m.showRouting;
+                if (onSendAreaResized)
+                    onSendAreaResized();  // Triggers relayout of all strips
+            } else if (result > 0) {
+                TrackManager::getInstance().addSend(trackId_, static_cast<TrackId>(result));
+            }
+        });
+    } else if (onClicked) {
         onClicked(trackId_, isMaster_);
     }
 }
@@ -734,9 +1024,7 @@ class MixerView::DrumSubChannelStrip::LevelMeter : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        auto bounds = getLocalBounds().toFloat();
-        const auto& metrics = MixerMetrics::getInstance();
-        auto effectiveBounds = bounds.reduced(0.0f, metrics.thumbRadius());
+        auto effectiveBounds = getLocalBounds().toFloat();
         const float gap = 1.0f;
         float barWidth = (effectiveBounds.getWidth() - gap) / 2.0f;
         auto leftBounds = effectiveBounds.withWidth(barWidth);
@@ -782,23 +1070,13 @@ class MixerView::DrumSubChannelStrip::LevelMeter : public juce::Component {
 //==============================================================================
 MixerView::DrumSubChannelStrip::DrumSubChannelStrip(daw::audio::DrumGridPlugin* dg, int chainIndex,
                                                     const juce::String& name,
-                                                    juce::Colour parentColour,
-                                                    juce::LookAndFeel* faderLookAndFeel)
-    : drumGrid_(dg),
-      chainIndex_(chainIndex),
-      parentColour_(parentColour),
-      chainName_(name),
-      faderLookAndFeel_(faderLookAndFeel) {
+                                                    juce::Colour parentColour)
+    : drumGrid_(dg), chainIndex_(chainIndex), parentColour_(parentColour), chainName_(name) {
     setupControls();
     updateFromChain();
 }
 
-MixerView::DrumSubChannelStrip::~DrumSubChannelStrip() {
-    if (volumeFader)
-        volumeFader->setLookAndFeel(nullptr);
-    if (panKnob)
-        panKnob->setLookAndFeel(nullptr);
-}
+MixerView::DrumSubChannelStrip::~DrumSubChannelStrip() = default;
 
 void MixerView::DrumSubChannelStrip::setupControls() {
     // Track label
@@ -811,43 +1089,17 @@ void MixerView::DrumSubChannelStrip::setupControls() {
     trackLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
     addAndMakeVisible(*trackLabel);
 
-    // Pan knob
-    panKnob = std::make_unique<juce::Slider>(juce::Slider::RotaryHorizontalVerticalDrag,
-                                             juce::Slider::NoTextBox);
-    panKnob->setRange(-1.0, 1.0, 0.01);
-    panKnob->setValue(0.0, juce::dontSendNotification);
-    panKnob->setColour(juce::Slider::rotarySliderFillColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    panKnob->setColour(juce::Slider::rotarySliderOutlineColourId,
-                       DarkTheme::getColour(DarkTheme::SURFACE));
-    panKnob->setColour(juce::Slider::thumbColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    panKnob->onValueChange = [this]() {
+    // Pan slider (horizontal TextSlider)
+    panSlider = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Pan);
+    panSlider->setOrientation(daw::ui::TextSlider::Orientation::Horizontal);
+    panSlider->setRange(-1.0, 1.0, 0.01);
+    panSlider->setValue(0.0, juce::dontSendNotification);
+    panSlider->setFont(FontManager::getInstance().getUIFont(10.0f));
+    panSlider->onValueChanged = [this](double val) {
         if (auto* chain = drumGrid_->getChainByIndexMutable(chainIndex_))
-            chain->pan = static_cast<float>(panKnob->getValue());
-        if (panValueLabel) {
-            float pan = static_cast<float>(panKnob->getValue());
-            juce::String panText;
-            if (std::abs(pan) < 0.01f)
-                panText = "C";
-            else if (pan < 0)
-                panText = juce::String(static_cast<int>(std::abs(pan) * 100)) + "L";
-            else
-                panText = juce::String(static_cast<int>(pan * 100)) + "R";
-            panValueLabel->setText(panText, juce::dontSendNotification);
-        }
+            chain->pan = static_cast<float>(val);
     };
-    if (faderLookAndFeel_)
-        panKnob->setLookAndFeel(faderLookAndFeel_);
-    addAndMakeVisible(*panKnob);
-
-    // Pan value label
-    panValueLabel = std::make_unique<juce::Label>();
-    panValueLabel->setText("C", juce::dontSendNotification);
-    panValueLabel->setJustificationType(juce::Justification::centred);
-    panValueLabel->setColour(juce::Label::textColourId,
-                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    panValueLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
-    addAndMakeVisible(*panValueLabel);
+    addAndMakeVisible(*panSlider);
 
     // Level meter
     levelMeter = std::make_unique<LevelMeter>();
@@ -862,43 +1114,33 @@ void MixerView::DrumSubChannelStrip::setupControls() {
     peakLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
     addAndMakeVisible(*peakLabel);
 
-    // Volume fader
-    volumeFader =
-        std::make_unique<juce::Slider>(juce::Slider::LinearVertical, juce::Slider::NoTextBox);
-    volumeFader->setRange(0.0, 1.0, 0.001);
-    volumeFader->setValue(0.75, juce::dontSendNotification);
-    volumeFader->setSliderSnapsToMousePosition(false);
-    volumeFader->setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    volumeFader->setColour(juce::Slider::backgroundColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-    volumeFader->setColour(juce::Slider::thumbColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    volumeFader->onValueChange = [this]() {
-        float faderPos = static_cast<float>(volumeFader->getValue());
-        float db = meterPosToDb(faderPos);
+    // Volume slider (vertical TextSlider, 0-1 range with power curve mapping)
+    volumeSlider = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decibels);
+    volumeSlider->setOrientation(daw::ui::TextSlider::Orientation::Vertical);
+    volumeSlider->setRange(0.0, 1.0, 0.001);
+    volumeSlider->setValue(dbToMeterPos(0.0f), juce::dontSendNotification);
+    volumeSlider->setFont(FontManager::getInstance().getUIFont(9.0f));
+    volumeSlider->setValueFormatter([](double pos) -> juce::String {
+        float db = meterPosToDb(static_cast<float>(pos));
+        if (db <= MIN_DB)
+            return "-inf";
+        return juce::String(db, 1);
+    });
+    volumeSlider->setValueParser([](const juce::String& text) -> double {
+        auto t = text.trim();
+        if (t.endsWithIgnoreCase("db"))
+            t = t.dropLastCharacters(2).trim();
+        if (t.equalsIgnoreCase("-inf") || t.equalsIgnoreCase("inf"))
+            return 0.0;
+        float db = t.getFloatValue();
+        return static_cast<double>(dbToMeterPos(db));
+    });
+    volumeSlider->onValueChanged = [this](double pos) {
+        float db = meterPosToDb(static_cast<float>(pos));
         if (auto* chain = drumGrid_->getChainByIndexMutable(chainIndex_))
             chain->level = db;
-        if (faderValueLabel) {
-            juce::String dbText;
-            if (db <= MIN_DB)
-                dbText = "-inf";
-            else
-                dbText = juce::String(db, 1) + " dB";
-            faderValueLabel->setText(dbText, juce::dontSendNotification);
-        }
     };
-    if (faderLookAndFeel_)
-        volumeFader->setLookAndFeel(faderLookAndFeel_);
-    addAndMakeVisible(*volumeFader);
-
-    // Fader value label
-    faderValueLabel = std::make_unique<juce::Label>();
-    faderValueLabel->setText("0.0 dB", juce::dontSendNotification);
-    faderValueLabel->setJustificationType(juce::Justification::centred);
-    faderValueLabel->setColour(juce::Label::textColourId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    faderValueLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
-    addAndMakeVisible(*faderValueLabel);
+    addAndMakeVisible(*volumeSlider);
 
     // Mute button
     muteButton = std::make_unique<juce::TextButton>("M");
@@ -945,13 +1187,13 @@ void MixerView::DrumSubChannelStrip::updateFromChain() {
     if (trackLabel)
         trackLabel->setText(chain->name.isNotEmpty() ? chain->name : chainName_,
                             juce::dontSendNotification);
-    if (volumeFader && !volumeFader->isMouseButtonDown()) {
+    if (volumeSlider && !volumeSlider->isBeingDragged()) {
         float db = chain->level.get();
         float faderPos = dbToMeterPos(db);
-        volumeFader->setValue(faderPos, juce::dontSendNotification);
+        volumeSlider->setValue(faderPos, juce::dontSendNotification);
     }
-    if (panKnob && !panKnob->isMouseButtonDown())
-        panKnob->setValue(chain->pan.get(), juce::dontSendNotification);
+    if (panSlider && !panSlider->isBeingDragged())
+        panSlider->setValue(chain->pan.get(), juce::dontSendNotification);
     if (muteButton)
         muteButton->setToggleState(chain->mute.get(), juce::dontSendNotification);
     if (soloButton)
@@ -998,55 +1240,6 @@ void MixerView::DrumSubChannelStrip::paint(juce::Graphics& g) {
         g.fillRect(faderRegion_.getX(), faderRegion_.getY(), faderRegion_.getWidth(), 1);
         g.fillRect(faderRegion_.getX(), faderRegion_.getBottom() - 1, faderRegion_.getWidth(), 1);
     }
-
-    drawDbLabels(g);
-}
-
-void MixerView::DrumSubChannelStrip::drawDbLabels(juce::Graphics& g) {
-    if (labelArea_.isEmpty() || !volumeFader)
-        return;
-
-    const auto& metrics = MixerMetrics::getInstance();
-    const std::vector<float> dbValues = {6.0f,   3.0f,   0.0f,   -3.0f,  -6.0f, -12.0f,
-                                         -18.0f, -24.0f, -36.0f, -48.0f, -60.0f};
-
-    float thumbRadius = metrics.thumbRadius();
-    float effectiveTop = faderArea_.getY() + thumbRadius;
-    float effectiveHeight = faderArea_.getHeight() - 2.0f * thumbRadius;
-
-    g.setFont(FontManager::getInstance().getUIFont(metrics.labelFontSize));
-
-    for (float db : dbValues) {
-        float faderPos = dbToMeterPos(db);
-        float yNorm = 1.0f - faderPos;
-        float y = effectiveTop + yNorm * effectiveHeight;
-
-        float tickHeight = metrics.tickHeight();
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-
-        float leftTickX = static_cast<float>(leftTickArea_.getRight()) - metrics.tickWidth();
-        g.fillRect(leftTickX, y - tickHeight / 2.0f, metrics.tickWidth(), tickHeight);
-
-        float rightTickX = static_cast<float>(rightTickArea_.getX());
-        g.fillRect(rightTickX, y - tickHeight / 2.0f, metrics.tickWidth(), tickHeight);
-
-        juce::String labelText;
-        int dbInt = static_cast<int>(db);
-        if (db <= MIN_DB)
-            labelText = juce::String::charToString(0x221E);
-        else
-            labelText = juce::String(std::abs(dbInt));
-
-        float textWidth = metrics.labelTextWidth;
-        float textHeight = metrics.labelTextHeight;
-        float textX = labelArea_.getCentreX() - textWidth / 2.0f;
-        float textY = y - textHeight / 2.0f;
-
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        g.drawText(labelText, static_cast<int>(textX), static_cast<int>(textY),
-                   static_cast<int>(textWidth), static_cast<int>(textHeight),
-                   juce::Justification::centred, false);
-    }
 }
 
 void MixerView::DrumSubChannelStrip::resized() {
@@ -1060,15 +1253,6 @@ void MixerView::DrumSubChannelStrip::resized() {
     trackLabel->setBounds(bounds.removeFromTop(24));
     bounds.removeFromTop(metrics.controlSpacing);
 
-    // Pan knob
-    auto panArea = bounds.removeFromTop(metrics.knobSize);
-    panKnob->setBounds(panArea.withSizeKeepingCentre(metrics.knobSize, metrics.knobSize));
-
-    // Pan value label
-    auto panLabelArea = bounds.removeFromTop(14);
-    panValueLabel->setBounds(panLabelArea);
-    bounds.removeFromTop(metrics.controlSpacing);
-
     // M/S buttons at bottom (no record button for sub-channels)
     auto buttonArea = bounds.removeFromBottom(metrics.buttonSize);
     int buttonWidth = (buttonArea.getWidth() - 2) / 2;
@@ -1078,24 +1262,27 @@ void MixerView::DrumSubChannelStrip::resized() {
 
     bounds.removeFromBottom(metrics.controlSpacing);
 
+    // Pan slider above buttons (horizontal TextSlider)
+    panSlider->setBounds(bounds.removeFromBottom(20));
+    bounds.removeFromBottom(metrics.controlSpacing);
+
     // Fader region
     int faderHeight = static_cast<int>(bounds.getHeight() * metrics.faderHeightRatio / 100.0f);
     int extraSpace = bounds.getHeight() - faderHeight;
     bounds.removeFromTop(extraSpace / 2);
     bounds.setHeight(faderHeight);
 
-    int faderWidth = metrics.faderWidth;
-    int meterWidthVal = metrics.meterWidth;
-    int tickWidth = static_cast<int>(std::ceil(metrics.tickWidth()));
-    int gap = metrics.tickToFaderGap;
+    int availWidth = bounds.getWidth();
+    int faderWidth = juce::jlimit(20, 60, availWidth * 40 / 100);
+    int meterWidthVal = faderWidth;  // Same width as fader
 
     faderRegion_ = bounds;
 
+    // Peak label above fader region
     const int labelHeight = 12;
     auto valueLabelArea =
         juce::Rectangle<int>(faderRegion_.getX(), faderRegion_.getY() - labelHeight,
                              faderRegion_.getWidth(), labelHeight);
-    faderValueLabel->setBounds(valueLabelArea.removeFromLeft(valueLabelArea.getWidth() / 2));
     peakLabel->setBounds(valueLabelArea);
 
     const int borderPadding = 6;
@@ -1104,23 +1291,13 @@ void MixerView::DrumSubChannelStrip::resized() {
 
     auto layoutArea = bounds;
 
+    // Volume TextSlider on left
     faderArea_ = layoutArea.removeFromLeft(faderWidth);
-    volumeFader->setBounds(faderArea_);
+    volumeSlider->setBounds(faderArea_);
 
+    // Meter on right
     meterArea_ = layoutArea.removeFromRight(meterWidthVal);
     levelMeter->setBounds(meterArea_);
-
-    int meterGap = metrics.tickToMeterGap;
-    leftTickArea_ = juce::Rectangle<int>(faderArea_.getRight() + gap, layoutArea.getY(), tickWidth,
-                                         layoutArea.getHeight());
-    rightTickArea_ = juce::Rectangle<int>(meterArea_.getX() - tickWidth - meterGap,
-                                          layoutArea.getY(), tickWidth, layoutArea.getHeight());
-
-    int tickToLabelGap = metrics.tickToLabelGap;
-    int labelLeft = leftTickArea_.getRight() + tickToLabelGap;
-    int labelRight = rightTickArea_.getX() - tickToLabelGap;
-    labelArea_ = juce::Rectangle<int>(labelLeft, layoutArea.getY(), labelRight - labelLeft,
-                                      layoutArea.getHeight());
 }
 
 void MixerView::DrumSubChannelStrip::mouseDown(const juce::MouseEvent& /*event*/) {
@@ -1169,6 +1346,7 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
 
     // Create channel container
     channelContainer = std::make_unique<juce::Component>();
+    channelContainer->setPaintingIsUnclipped(true);
 
     // Create viewport for scrollable channels
     channelViewport = std::make_unique<juce::Viewport>();
@@ -1182,20 +1360,39 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
 
     // Create master strip (uses shared MasterChannelStrip component)
     masterStrip = std::make_unique<MasterChannelStrip>(MasterChannelStrip::Orientation::Vertical);
+    masterStrip->onSendAreaResized = [this]() { relayoutAllStrips(); };
     addAndMakeVisible(*masterStrip);
 
-    // Create channel resize handle
+    // Create channel resize handle (thin, overlaps right edge of last channel strip)
     channelResizeHandle_ = std::make_unique<ChannelResizeHandle>();
     channelResizeHandle_->onResize = [this](int deltaX) {
         auto& metrics = MixerMetrics::getInstance();
         int newWidth =
             juce::jlimit(minChannelWidth_, maxChannelWidth_, metrics.channelWidth + deltaX);
         if (metrics.channelWidth != newWidth) {
+            isResizeDragging_ = true;
             metrics.channelWidth = newWidth;
-            resized();
+            // Coalesce: just store the new width, apply on next vblank
+            if (!pendingResizeUpdate_) {
+                pendingResizeUpdate_ = true;
+                juce::Component::SafePointer<MixerView> safeThis(this);
+                juce::MessageManager::callAsync([safeThis]() {
+                    if (auto* self = safeThis.getComponent()) {
+                        if (self->pendingResizeUpdate_) {
+                            self->pendingResizeUpdate_ = false;
+                            self->updateStripWidths();
+                        }
+                    }
+                });
+            }
         }
     };
-    addAndMakeVisible(*channelResizeHandle_);
+    channelResizeHandle_->onResizeEnd = [this]() {
+        isResizeDragging_ = false;
+        pendingResizeUpdate_ = false;
+        updateStripWidths();  // Ensure final width is applied
+    };
+    channelContainer->addAndMakeVisible(*channelResizeHandle_);
 
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
@@ -1224,6 +1421,8 @@ MixerView::~MixerView() {
     // Explicitly clear all UI components before automatic member destruction
     // This ensures components release their LookAndFeel references before
     // mixerLookAndFeel_ is destroyed (member destruction happens in reverse order)
+    for (auto& strip : channelStrips)
+        strip->groupChildren_.clear();
     drumSubStrips_.clear();
     orderedStrips_.clear();
     channelStrips.clear();
@@ -1237,6 +1436,10 @@ MixerView::~MixerView() {
 }
 
 void MixerView::rebuildChannelStrips() {
+    // Clear group children references before destroying strips
+    for (auto& strip : channelStrips)
+        strip->groupChildren_.clear();
+
     // Clear existing strips
     drumSubStrips_.clear();
     orderedStrips_.clear();
@@ -1252,6 +1455,14 @@ void MixerView::rebuildChannelStrips() {
 
         if (track.type == TrackType::Aux)
             continue;  // Aux strips handled separately
+
+        // Skip children of collapsed group tracks
+        if (track.hasParent()) {
+            if (auto* parent = TrackManager::getInstance().getTrack(track.parentId)) {
+                if (parent->isGroup() && parent->isCollapsedIn(currentViewMode_))
+                    continue;
+            }
+        }
 
         // Skip collapsed multi-out children
         if (track.type == TrackType::MultiOut && track.multiOutLink) {
@@ -1273,7 +1484,7 @@ void MixerView::rebuildChannelStrips() {
             }
         }
 
-        auto strip = std::make_unique<ChannelStrip>(track, &mixerLookAndFeel_, false);
+        auto strip = std::make_unique<ChannelStrip>(track, false);
         strip->onClicked = [this](int trackId, bool isMaster) {
             // Find the index of this track in the visible strips
             for (size_t i = 0; i < channelStrips.size(); ++i) {
@@ -1283,6 +1494,9 @@ void MixerView::rebuildChannelStrips() {
                 }
             }
         };
+
+        // Wire up send area resize callback (coalesced relayout of all strips)
+        strip->onSendAreaResized = [this]() { relayoutAllStrips(); };
 
         // Check if this track has a DrumGridPlugin
         auto* drumGrid = findDrumGridForTrack(track, audioEngine_);
@@ -1307,8 +1521,33 @@ void MixerView::rebuildChannelStrips() {
             strip->addAndMakeVisible(*strip->expandToggle_);
         }
 
+        // Add expand/collapse toggle for group tracks with children
+        if (!drumGrid && track.isGroup() && track.hasChildren()) {
+            bool isCollapsed = track.isCollapsedIn(currentViewMode_);
+            TrackId trackId = track.id;
+            strip->expandToggle_ = std::make_unique<juce::TextButton>(
+                isCollapsed ? juce::String::charToString(0x25B6)    // ▶
+                            : juce::String::charToString(0x25BC));  // ▼
+            strip->expandToggle_->setConnectedEdges(
+                juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+                juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+            strip->expandToggle_->setColour(juce::TextButton::buttonColourId,
+                                            DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+            strip->expandToggle_->setColour(juce::TextButton::textColourOffId,
+                                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            strip->expandToggle_->onClick = [this, trackId]() {
+                auto* t = TrackManager::getInstance().getTrack(trackId);
+                if (t) {
+                    bool collapsed = t->isCollapsedIn(currentViewMode_);
+                    t->viewSettings.setCollapsed(currentViewMode_, !collapsed);
+                }
+                rebuildChannelStrips();
+            };
+            strip->addAndMakeVisible(*strip->expandToggle_);
+        }
+
         // Check if this track has active multi-out children (and no DrumGrid toggle already)
-        if (!drumGrid) {
+        if (!drumGrid && !track.isGroup()) {
             bool hasActiveMultiOut = false;
             bool isCollapsed = false;
             TrackId trackId = track.id;
@@ -1355,8 +1594,6 @@ void MixerView::rebuildChannelStrips() {
             }
         }
 
-        channelContainer->addAndMakeVisible(*strip);
-        orderedStrips_.push_back(strip.get());
         channelStrips.push_back(std::move(strip));
 
         // If DrumGrid is expanded, create sub-strips for non-empty chains
@@ -1369,14 +1606,88 @@ void MixerView::rebuildChannelStrips() {
                                         ? chain->name
                                         : juce::String("Pad ") + juce::String(chain->index);
 
-                auto subStrip = std::make_unique<DrumSubChannelStrip>(
-                    drumGrid, chain->index, name, track.colour, &mixerLookAndFeel_);
+                auto subStrip = std::make_unique<DrumSubChannelStrip>(drumGrid, chain->index, name,
+                                                                      track.colour);
 
-                channelContainer->addAndMakeVisible(*subStrip);
-                orderedStrips_.push_back(subStrip.get());
                 drumSubStrips_.push_back(std::move(subStrip));
             }
         }
+    }
+
+    // Second pass: build orderedStrips_ and wire up parent-child hierarchy.
+    // Children of groups, multi-out parents, and DrumGrid parents all get
+    // nested inside their parent strip's groupChildren_ for envelope rendering.
+    // Use addChildComponent (not addAndMakeVisible) to avoid intermediate layouts.
+
+    std::unordered_map<int, ChannelStrip*> stripByTrackId;
+    for (auto& strip : channelStrips)
+        stripByTrackId[strip->getTrackId()] = strip.get();
+
+    // Map drum sub-strips to their owning track
+    std::unordered_map<int, std::vector<size_t>> drumSubsByTrack;
+    for (size_t i = 0; i < drumSubStrips_.size(); ++i) {
+        for (auto& cs : channelStrips) {
+            if (cs->drumGrid_ == drumSubStrips_[i]->getDrumGrid()) {
+                drumSubsByTrack[cs->getTrackId()].push_back(i);
+                break;
+            }
+        }
+    }
+
+    for (auto& strip : channelStrips) {
+        int trackId = strip->getTrackId();
+        const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+        if (!trackInfo)
+            continue;
+
+        // --- Nest inside group parent ---
+        if (trackInfo->hasParent()) {
+            if (auto* parentTrack = TrackManager::getInstance().getTrack(trackInfo->parentId)) {
+                if (parentTrack->isGroup()) {
+                    auto it = stripByTrackId.find(trackInfo->parentId);
+                    if (it != stripByTrackId.end()) {
+                        it->second->addChildComponent(*strip);
+                        it->second->groupChildren_.push_back(strip.get());
+                        continue;
+                    }
+                }
+            }
+        }
+
+        // --- Nest multi-out children inside their source parent ---
+        if (trackInfo->type == TrackType::MultiOut && trackInfo->multiOutLink) {
+            auto it = stripByTrackId.find(trackInfo->multiOutLink->sourceTrackId);
+            if (it != stripByTrackId.end()) {
+                it->second->addChildComponent(*strip);
+                it->second->groupChildren_.push_back(strip.get());
+                continue;
+            }
+        }
+
+        // --- Top-level strip ---
+        channelContainer->addChildComponent(*strip);
+        orderedStrips_.push_back(strip.get());
+
+        // Nest drum sub-strips inside this strip's envelope
+        auto dsIt = drumSubsByTrack.find(trackId);
+        if (dsIt != drumSubsByTrack.end()) {
+            for (size_t idx : dsIt->second) {
+                strip->addChildComponent(*drumSubStrips_[idx]);
+                strip->groupChildren_.push_back(drumSubStrips_[idx].get());
+            }
+        }
+    }
+
+    // Now make everything visible.
+    // Group parent strips must not be opaque — they need to paint the envelope
+    // border around/behind their children.
+    for (auto* strip : orderedStrips_)
+        strip->setVisible(true);
+    for (auto& strip : channelStrips) {
+        if (!strip->groupChildren_.empty())
+            strip->setOpaque(false);
+        for (auto* child : strip->groupChildren_)
+            child->setVisible(true);
     }
 
     // Build aux channel strips separately
@@ -1384,7 +1695,7 @@ void MixerView::rebuildChannelStrips() {
     for (const auto& track : tracks) {
         if (track.type != TrackType::Aux || !track.isVisibleIn(currentViewMode_))
             continue;
-        auto strip = std::make_unique<ChannelStrip>(track, &mixerLookAndFeel_, false);
+        auto strip = std::make_unique<ChannelStrip>(track, false);
         strip->onClicked = [this](int trackId, bool isMaster) {
             for (size_t i = 0; i < channelStrips.size(); ++i) {
                 if (channelStrips[i]->getTrackId() == trackId) {
@@ -1443,6 +1754,11 @@ void MixerView::trackPropertyChanged(int trackId) {
     }
 }
 
+void MixerView::trackDevicesChanged(TrackId trackId) {
+    // Sends are notified via trackDevicesChanged — update the strip
+    trackPropertyChanged(trackId);
+}
+
 void MixerView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profile*/) {
     currentViewMode_ = mode;
     rebuildChannelStrips();
@@ -1459,6 +1775,10 @@ void MixerView::masterChannelChanged() {
 void MixerView::paint(juce::Graphics& g) {
     MAGDA_MONITOR_SCOPE("UIFrame");
     g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+
+    // Left border (visible when side panel is collapsed)
+    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    g.fillRect(0, 0, 1, getHeight());
 }
 
 void MixerView::resized() {
@@ -1467,11 +1787,7 @@ void MixerView::resized() {
 
     // Master strip on the right (only if visible)
     if (masterStrip->isVisible()) {
-        masterStrip->setBounds(bounds.removeFromRight(metrics.masterWidth));
-
-        // Resize handle between channels and master
-        const int handleWidth = 8;
-        channelResizeHandle_->setBounds(bounds.removeFromRight(handleWidth));
+        masterStrip->setBounds(bounds.removeFromRight(metrics.channelWidth));
     }
 
     // Aux channel strips between regular channels and master
@@ -1488,6 +1804,9 @@ void MixerView::resized() {
         auxContainer->setBounds(0, 0, 0, 0);
     }
 
+    // 1px left border padding (visible when side panel is collapsed)
+    bounds.removeFromLeft(1);
+
     // Channel viewport takes remaining space
     channelViewport->setBounds(bounds);
 
@@ -1497,20 +1816,122 @@ void MixerView::resized() {
             orderedStrips_.push_back(s.get());
     }
 
-    // Size the channel container using flat ordered strips list
-    int numOrdered = static_cast<int>(orderedStrips_.size());
-    int containerWidth = numOrdered * metrics.channelWidth;
+    // Size the channel container — group strips may be wider than channelWidth
     int containerHeight = bounds.getHeight();
+    int containerWidth = 0;
+    for (auto* strip : orderedStrips_) {
+        int stripWidth = metrics.channelWidth;
+        if (auto* cs = dynamic_cast<ChannelStrip*>(strip)) {
+            if (!cs->groupChildren_.empty())
+                stripWidth =
+                    (1 + static_cast<int>(cs->groupChildren_.size())) * metrics.channelWidth;
+        }
+        containerWidth += stripWidth;
+    }
     channelContainer->setSize(containerWidth, containerHeight);
 
-    // Position all strips (channel + drum sub-channel) in flat order
-    for (int i = 0; i < numOrdered; ++i) {
-        orderedStrips_[static_cast<size_t>(i)]->setBounds(i * metrics.channelWidth, 0,
-                                                          metrics.channelWidth, containerHeight);
+    // Position all strips with cumulative x (group strips span multiple columns)
+    int xPos = 0;
+    for (auto* strip : orderedStrips_) {
+        int stripWidth = metrics.channelWidth;
+        if (auto* cs = dynamic_cast<ChannelStrip*>(strip)) {
+            if (!cs->groupChildren_.empty())
+                stripWidth =
+                    (1 + static_cast<int>(cs->groupChildren_.size())) * metrics.channelWidth;
+        }
+        strip->setBounds(xPos, 0, stripWidth, containerHeight);
+        xPos += stripWidth;
+    }
+
+    // Resize handle centered on right border of last channel strip
+    if (!orderedStrips_.empty() && channelResizeHandle_) {
+        const int handleWidth = 8;
+        int handleX = containerWidth - handleWidth / 2;
+        channelResizeHandle_->setBounds(handleX, 0, handleWidth, containerHeight);
+        channelResizeHandle_->toFront(false);
+    }
+}
+
+void MixerView::updateStripWidths() {
+    const auto& metrics = MixerMetrics::getInstance();
+    int containerHeight = channelContainer->getHeight();
+
+    // Compute total container width with variable-width group strips
+    int containerWidth = 0;
+    for (auto* strip : orderedStrips_) {
+        int stripWidth = metrics.channelWidth;
+        if (auto* cs = dynamic_cast<ChannelStrip*>(strip)) {
+            if (!cs->groupChildren_.empty())
+                stripWidth =
+                    (1 + static_cast<int>(cs->groupChildren_.size())) * metrics.channelWidth;
+        }
+        containerWidth += stripWidth;
+    }
+    channelContainer->setSize(containerWidth, containerHeight);
+
+    // Position strips with cumulative x
+    int xPos = 0;
+    for (auto* strip : orderedStrips_) {
+        int stripWidth = metrics.channelWidth;
+        if (auto* cs = dynamic_cast<ChannelStrip*>(strip)) {
+            if (!cs->groupChildren_.empty())
+                stripWidth =
+                    (1 + static_cast<int>(cs->groupChildren_.size())) * metrics.channelWidth;
+        }
+        strip->setBounds(xPos, 0, stripWidth, containerHeight);
+        xPos += stripWidth;
+    }
+
+    // Update resize handle position
+    if (!orderedStrips_.empty() && channelResizeHandle_) {
+        const int handleWidth = 8;
+        int handleX = containerWidth - handleWidth / 2;
+        channelResizeHandle_->setBounds(handleX, 0, handleWidth, containerHeight);
+        channelResizeHandle_->toFront(false);
+    }
+
+    // Update aux strips
+    int numAux = static_cast<int>(auxChannelStrips.size());
+    int auxWidth = numAux * metrics.channelWidth;
+    if (auxWidth > 0) {
+        for (int i = 0; i < numAux; ++i) {
+            auxChannelStrips[i]->setBounds(i * metrics.channelWidth, 0, metrics.channelWidth,
+                                           auxContainer->getHeight());
+        }
+    }
+}
+
+void MixerView::relayoutAllStrips() {
+    if (!pendingSendResizeUpdate_) {
+        pendingSendResizeUpdate_ = true;
+        juce::Component::SafePointer<MixerView> safeThis(this);
+        juce::MessageManager::callAsync([safeThis]() {
+            if (auto* self = safeThis.getComponent()) {
+                if (self->pendingSendResizeUpdate_) {
+                    self->pendingSendResizeUpdate_ = false;
+                    for (auto& strip : self->channelStrips) {
+                        strip->resized();
+                        strip->repaint();
+                    }
+                    for (auto& strip : self->auxChannelStrips) {
+                        strip->resized();
+                        strip->repaint();
+                    }
+                    if (self->masterStrip) {
+                        self->masterStrip->resized();
+                        self->masterStrip->repaint();
+                    }
+                }
+            }
+        });
     }
 }
 
 void MixerView::timerCallback() {
+    // Skip meter updates during resize drag to avoid repaints
+    if (isResizeDragging_)
+        return;
+
     // Read metering data from AudioBridge
     if (!audioEngine_)
         return;
@@ -1585,46 +2006,55 @@ void MixerView::mouseUp(const juce::MouseEvent& /*event*/) {
 }
 
 // ChannelResizeHandle implementation
-MixerView::ChannelResizeHandle::ChannelResizeHandle() {
-    setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-}
+MixerView::ChannelResizeHandle::ChannelResizeHandle() = default;
 
-void MixerView::ChannelResizeHandle::paint(juce::Graphics& g) {
-    // Draw a subtle line, more visible when hovering
-    float alpha = (isHovering_ || isDragging_) ? 0.8f : 0.3f;
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(alpha));
-    g.fillRect(getWidth() / 2 - 1, 0, 2, getHeight());
+void MixerView::ChannelResizeHandle::paint(juce::Graphics& /*g*/) {
+    // Invisible — cursor change on hover is the only affordance
 }
 
 void MixerView::ChannelResizeHandle::mouseEnter(const juce::MouseEvent& /*event*/) {
     isHovering_ = true;
+    setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
     repaint();
 }
 
 void MixerView::ChannelResizeHandle::mouseExit(const juce::MouseEvent& /*event*/) {
     isHovering_ = false;
+    setMouseCursor(juce::MouseCursor::NormalCursor);
     repaint();
 }
 
 void MixerView::ChannelResizeHandle::mouseDown(const juce::MouseEvent& event) {
     isDragging_ = true;
+    hasConfirmedHorizontalDrag_ = false;
     dragStartX_ = event.getScreenX();
-    repaint();
 }
 
 void MixerView::ChannelResizeHandle::mouseDrag(const juce::MouseEvent& event) {
-    if (isDragging_ && onResize) {
-        int deltaX = event.getScreenX() - dragStartX_;
-        onResize(deltaX);
-        dragStartX_ = event.getScreenX();  // Incremental updates
+    if (!isDragging_ || !onResize)
+        return;
+
+    if (!hasConfirmedHorizontalDrag_) {
+        int dx = std::abs(event.getDistanceFromDragStartX());
+        int dy = std::abs(event.getDistanceFromDragStartY());
+        if (dx < 4 && dy < 4)
+            return;
+        if (dy > dx) {
+            isDragging_ = false;
+            return;
+        }
+        hasConfirmedHorizontalDrag_ = true;
     }
+
+    int deltaX = event.getScreenX() - dragStartX_;
+    onResize(deltaX);
+    dragStartX_ = event.getScreenX();
 }
 
 void MixerView::ChannelResizeHandle::mouseUp(const juce::MouseEvent& /*event*/) {
     isDragging_ = false;
-    if (onResizeEnd) {
+    if (onResizeEnd)
         onResizeEnd();
-    }
     repaint();
 }
 

@@ -66,14 +66,12 @@ void TracktionEngineWrapper::initializeDeviceManager() {
         }
     }
 
-    // Get user preferences
-    auto& config = magda::Config::getInstance();
-    int preferredInputs = config.getPreferredInputChannels();
-    int preferredOutputs = config.getPreferredOutputChannels();
-
-    // Initialize DeviceManager with preferred channel counts
-    int inputChannels = (preferredInputs > 0) ? preferredInputs : 1;
-    int outputChannels = (preferredOutputs > 0) ? preferredOutputs : 2;
+    // Request all available channels — Tracktion creates WaveInputDevices
+    // for all hardware channels and expects them all in the audio callback.
+    // JUCE clamps to actual hardware count.
+    static constexpr int kMaxRequestedChannels = 256;
+    int inputChannels = kMaxRequestedChannels;
+    int outputChannels = kMaxRequestedChannels;
     dm.initialise(inputChannels, outputChannels);
     DBG("DeviceManager initialized with " << inputChannels << " input / " << outputChannels
                                           << " output channels");
@@ -120,29 +118,53 @@ void TracktionEngineWrapper::configureAudioDevices() {
         DBG("Found preferred output device: " << preferredOutputDevice);
     }
 
-    // Enable channels based on preference
-    if (preferredInputs > 0) {
+    // Enable ALL hardware channels — Tracktion expects every hardware channel
+    // in the audio callback. Channel selection is handled at the TE level.
+    if (auto* device = juceDeviceManager.getCurrentAudioDevice()) {
         setup.inputChannels.clear();
-        for (int i = 0; i < preferredInputs; ++i) {
-            setup.inputChannels.setBit(i, true);
-        }
-    }
-
-    if (preferredOutputs > 0) {
+        setup.inputChannels.setRange(0, device->getInputChannelNames().size(), true);
         setup.outputChannels.clear();
-        for (int i = 0; i < preferredOutputs; ++i) {
-            setup.outputChannels.setBit(i, true);
-        }
+        setup.outputChannels.setRange(0, device->getOutputChannelNames().size(), true);
     }
 
     // Apply the device setup
     auto result = juceDeviceManager.setAudioDeviceSetup(setup, true);
+    // Flush pending async updates so wave device list rebuilds before audio callback fires (#719)
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
     if (result.isEmpty()) {
         DBG("Successfully selected preferred devices - Input: "
             << setup.inputDeviceName << " (" << preferredInputs
             << " ch), Output: " << setup.outputDeviceName << " (" << preferredOutputs << " ch)");
     } else {
         DBG("Failed to select preferred devices: " << result);
+    }
+
+    // Apply saved channel preferences at the TE wave device level
+    if (preferredInputs > 0) {
+        for (auto* dev : dm.getWaveInputDevices()) {
+            bool shouldEnable = false;
+            for (const auto& ch : dev->getChannels()) {
+                if (ch.indexInDevice < preferredInputs) {
+                    shouldEnable = true;
+                    break;
+                }
+            }
+            dev->setEnabled(shouldEnable);
+        }
+        DBG("Applied preferred input channel count: " << preferredInputs);
+    }
+    if (preferredOutputs > 0) {
+        for (auto* dev : dm.getWaveOutputDevices()) {
+            bool shouldEnable = false;
+            for (const auto& ch : dev->getChannels()) {
+                if (ch.indexInDevice < preferredOutputs) {
+                    shouldEnable = true;
+                    break;
+                }
+            }
+            dev->setEnabled(shouldEnable);
+        }
+        DBG("Applied preferred output channel count: " << preferredOutputs);
     }
 
     // Log currently selected device

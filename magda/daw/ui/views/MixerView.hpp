@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "../components/common/MixerDebugPanel.hpp"
+#include "../components/common/TextSlider.hpp"
 #include "../components/mixer/MasterChannelStrip.hpp"
 #include "../components/mixer/RoutingSelector.hpp"
 #include "../themes/MixerLookAndFeel.hpp"
@@ -57,6 +58,7 @@ class MixerView : public juce::Component,
     // TrackManagerListener
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
+    void trackDevicesChanged(TrackId trackId) override;
     void masterChannelChanged() override;
     void trackSelectionChanged(TrackId trackId) override;
 
@@ -79,11 +81,11 @@ class MixerView : public juce::Component,
     // Channel strip component
     class ChannelStrip : public juce::Component {
       public:
-        ChannelStrip(const TrackInfo& track, juce::LookAndFeel* faderLookAndFeel,
-                     bool isMaster = false);
+        ChannelStrip(const TrackInfo& track, bool isMaster = false);
         ~ChannelStrip() override;
 
         void paint(juce::Graphics& g) override;
+        void paintOverChildren(juce::Graphics& g) override;
         void resized() override;
         void mouseDown(const juce::MouseEvent& event) override;
 
@@ -111,20 +113,22 @@ class MixerView : public juce::Component,
         // Callback when channel is clicked
         std::function<void(int trackId, bool isMaster)> onClicked;
 
+        // Callback when send area is resized (triggers relayout of all strips)
+        std::function<void()> onSendAreaResized;
+
       private:
         int trackId_;
+        TrackType trackType_;
         bool isMaster_;
+        bool isChildTrack_ = false;
         bool selected = false;
         float meterLevel = 0.0f;
         juce::Colour trackColour_;
         juce::String trackName_;
-        juce::LookAndFeel* faderLookAndFeel_ = nullptr;
 
         std::unique_ptr<juce::Label> trackLabel;
-        std::unique_ptr<juce::Slider> panKnob;
-        std::unique_ptr<juce::Label> panValueLabel;
-        std::unique_ptr<juce::Slider> volumeFader;
-        std::unique_ptr<juce::Label> faderValueLabel;
+        std::unique_ptr<daw::ui::TextSlider> panSlider;
+        std::unique_ptr<daw::ui::TextSlider> volumeSlider;
         std::unique_ptr<juce::TextButton> muteButton;
         std::unique_ptr<juce::TextButton> soloButton;
         std::unique_ptr<juce::TextButton> recordButton;
@@ -143,23 +147,42 @@ class MixerView : public juce::Component,
         float peakValue_ = 0.0f;
 
         // Stored bounds for layout regions
-        // Layout: [fader] [leftTicks] [labels] [rightTicks] [meter]
         juce::Rectangle<int> faderRegion_;  // Entire fader area (for border)
         juce::Rectangle<int> faderArea_;
-        juce::Rectangle<int> leftTickArea_;
-        juce::Rectangle<int> labelArea_;
-        juce::Rectangle<int> rightTickArea_;
         juce::Rectangle<int> meterArea_;
+
+        // dB scale component (ticks + labels between fader and meter)
+        class DbScale;
+        std::unique_ptr<DbScale> dbScale_;
+
+        // Send slots (dynamic: one per active send on this track)
+        struct SendSlot {
+            int busIndex;
+            std::unique_ptr<juce::Label> nameLabel;
+            std::unique_ptr<daw::ui::TextSlider> levelSlider;
+            std::unique_ptr<juce::TextButton> removeButton;
+        };
+        std::vector<std::unique_ptr<SendSlot>> sendSlots_;
+        std::unique_ptr<juce::Viewport> sendViewport_;
+        std::unique_ptr<juce::Component> sendContainer_;
+
+        // Send area resize handle
+        class SendResizeHandle;
+        std::unique_ptr<SendResizeHandle> sendResizeHandle_;
 
         // DrumGrid expand toggle (only visible when track has DrumGridPlugin)
         std::unique_ptr<juce::TextButton> expandToggle_;
         daw::audio::DrumGridPlugin* drumGrid_ = nullptr;
         std::function<void()> onExpandToggled;
 
+        // Group envelope: child strips nested inside this group strip
+        // Can be ChannelStrip (group/multi-out children) or DrumSubChannelStrip
+        std::vector<juce::Component*> groupChildren_;
+
         friend class MixerView;
 
         void setupControls();
-        void drawDbLabels(juce::Graphics& g);
+        void rebuildSendSlots(const std::vector<SendInfo>& sends);
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChannelStrip)
     };
@@ -168,8 +191,7 @@ class MixerView : public juce::Component,
     class DrumSubChannelStrip : public juce::Component {
       public:
         DrumSubChannelStrip(daw::audio::DrumGridPlugin* dg, int chainIndex,
-                            const juce::String& name, juce::Colour parentColour,
-                            juce::LookAndFeel* faderLookAndFeel);
+                            const juce::String& name, juce::Colour parentColour);
         ~DrumSubChannelStrip() override;
 
         void paint(juce::Graphics& g) override;
@@ -193,13 +215,10 @@ class MixerView : public juce::Component,
         int chainIndex_;
         juce::Colour parentColour_;
         juce::String chainName_;
-        juce::LookAndFeel* faderLookAndFeel_ = nullptr;
 
         std::unique_ptr<juce::Label> trackLabel;
-        std::unique_ptr<juce::Slider> panKnob;
-        std::unique_ptr<juce::Label> panValueLabel;
-        std::unique_ptr<juce::Slider> volumeFader;
-        std::unique_ptr<juce::Label> faderValueLabel;
+        std::unique_ptr<daw::ui::TextSlider> panSlider;
+        std::unique_ptr<daw::ui::TextSlider> volumeSlider;
         std::unique_ptr<juce::TextButton> muteButton;
         std::unique_ptr<juce::TextButton> soloButton;
 
@@ -210,13 +229,9 @@ class MixerView : public juce::Component,
 
         juce::Rectangle<int> faderRegion_;
         juce::Rectangle<int> faderArea_;
-        juce::Rectangle<int> leftTickArea_;
-        juce::Rectangle<int> labelArea_;
-        juce::Rectangle<int> rightTickArea_;
         juce::Rectangle<int> meterArea_;
 
         void setupControls();
-        void drawDbLabels(juce::Graphics& g);
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumSubChannelStrip)
     };
@@ -252,11 +267,17 @@ class MixerView : public juce::Component,
       private:
         bool isHovering_ = false;
         bool isDragging_ = false;
+        bool hasConfirmedHorizontalDrag_ = false;
         int dragStartX_ = 0;
     };
     std::unique_ptr<ChannelResizeHandle> channelResizeHandle_;
 
     void rebuildChannelStrips();
+    void updateStripWidths();
+    void relayoutAllStrips();
+    bool isResizeDragging_ = false;
+    bool pendingResizeUpdate_ = false;
+    bool pendingSendResizeUpdate_ = false;
 
     // Selection state
     int selectedChannelIndex = 0;  // Track index, -1 for no selection
@@ -274,7 +295,7 @@ class MixerView : public juce::Component,
     // Channel resize state
     static constexpr int resizeZoneWidth_ = 6;
     static constexpr int minChannelWidth_ = 80;
-    static constexpr int maxChannelWidth_ = 200;
+    static constexpr int maxChannelWidth_ = 160;
     bool isResizingChannel_ = false;
     int resizeStartX_ = 0;
     int resizeStartWidth_ = 0;

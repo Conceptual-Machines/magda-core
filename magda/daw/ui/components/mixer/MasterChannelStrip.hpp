@@ -2,9 +2,10 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
 #include <memory>
 
-#include "../../themes/MixerLookAndFeel.hpp"
+#include "../common/TextSlider.hpp"
 #include "core/TrackManager.hpp"
 
 namespace magda {
@@ -32,45 +33,43 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
 
     // Set meter levels (for audio engine integration)
     void setPeakLevels(float leftPeak, float rightPeak);
-    void setVuLevels(float leftVu, float rightVu);
 
-    // Show/hide VU meter (peak meter is always visible)
-    void setShowVuMeter(bool show);
+    // Called when the send area resize handle is dragged
+    std::function<void()> onSendAreaResized;
 
   private:
     Orientation orientation_;
 
     // UI Components
     std::unique_ptr<juce::Label> titleLabel;
-    std::unique_ptr<juce::Slider> volumeSlider;
-    std::unique_ptr<juce::Label> volumeValueLabel;
+    std::unique_ptr<daw::ui::TextSlider> volumeSlider;
     std::unique_ptr<juce::DrawableButton> speakerButton;  // Speaker on/off toggle
 
-    // Meter components - dual meters for peak and VU
+    // Cue/headphone output
+    std::unique_ptr<juce::DrawableButton> headphoneIcon_;
+    std::unique_ptr<daw::ui::TextSlider> cueVolumeSlider_;
+
+    // Meter component
     class LevelMeter;
     std::unique_ptr<LevelMeter> peakMeter;
-    std::unique_ptr<LevelMeter> vuMeter;
     std::unique_ptr<juce::Label> peakValueLabel;
-    std::unique_ptr<juce::Label> vuValueLabel;
     float peakValue_ = 0.0f;
-    float vuPeakValue_ = 0.0f;
-    bool showVuMeter_ = true;
 
-    // Custom look and feel for faders
-    MixerLookAndFeel mixerLookAndFeel_;
+    // dB scale component
+    class DbScale;
+    std::unique_ptr<DbScale> dbScale_;
+
+    // Send area resize handle
+    class ResizeHandle;
+    std::unique_ptr<ResizeHandle> resizeHandle_;
 
     // Layout regions for fader area
     juce::Rectangle<int> faderRegion_;
     juce::Rectangle<int> faderArea_;
-    juce::Rectangle<int> leftTickArea_;
-    juce::Rectangle<int> labelArea_;
-    juce::Rectangle<int> rightTickArea_;
     juce::Rectangle<int> peakMeterArea_;
-    juce::Rectangle<int> vuMeterArea_;
 
     void setupControls();
     void updateFromMasterState();
-    void drawDbLabels(juce::Graphics& g);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MasterChannelStrip)
 };

@@ -13,7 +13,7 @@ struct MixerMetrics {
     float thumbHeight = 16.0f;
     float thumbWidthMultiplier = 2.0f;     // thumbWidth = thumbHeight * this (32px)
     float trackWidthMultiplier = 0.66f;    // trackWidth = thumbHeight * this (~11px)
-    float tickWidthMultiplier = 0.78f;     // tickWidth = thumbHeight * this (~12px)
+    float tickWidthMultiplier = 0.3f;      // tickWidth = thumbHeight * this (~5px)
     float trackPaddingMultiplier = 0.25f;  // trackPadding = thumbHeight * this (4px)
 
     // === Derived fader values ===
@@ -43,7 +43,7 @@ struct MixerMetrics {
 
     // === Channel strip dimensions ===
     int channelWidth = 100;
-    int masterWidth = 160;  // Wider to accommodate dual meters (peak + VU)
+    int masterWidth = 100;  // Same as channel strips (resized together)
     int channelPadding = 4;
 
     // === Fader dimensions ===
@@ -57,6 +57,14 @@ struct MixerMetrics {
     int buttonSize = 18;  // Compact M/S/R buttons
     int knobSize = 32;
     int headerHeight = 30;
+
+    // === Send area ===
+    int sendAreaHeight = 60;
+    static constexpr int minSendAreaHeight = 0;
+    static constexpr int maxSendAreaHeight = 400;
+
+    // === Visibility ===
+    bool showRouting = true;  // Show/hide I/O routing selectors on channel strips
 
     // === Spacing ===
     int controlSpacing = 4;

@@ -32,7 +32,6 @@ float dbToGain(float db) {
 constexpr float METER_CURVE_EXPONENT = 2.0f;
 
 // Convert dB to normalized meter position (0-1) with power curve
-// Used consistently for meters, labels, and faders across the app
 float dbToMeterPos(float db) {
     if (db <= MIN_DB)
         return 0.0f;
@@ -55,16 +54,130 @@ float meterPosToDb(float pos) {
 }
 }  // namespace
 
+// Resize handle for the send area boundary (matches channel strip's SendResizeHandle)
+class MasterChannelStrip::ResizeHandle : public juce::Component {
+  public:
+    ResizeHandle() {
+        setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.setColour(isHovering_ ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+                                : DarkTheme::getColour(DarkTheme::SEPARATOR));
+        int y = getHeight() / 2;
+        g.fillRect(4, y, getWidth() - 8, 2);
+    }
+
+    void mouseEnter(const juce::MouseEvent& /*event*/) override {
+        isHovering_ = true;
+        repaint();
+    }
+
+    void mouseExit(const juce::MouseEvent& /*event*/) override {
+        isHovering_ = false;
+        repaint();
+    }
+
+    void mouseDown(const juce::MouseEvent& event) override {
+        isDragging_ = true;
+        dragStartY_ = event.getScreenY();
+    }
+
+    void mouseDrag(const juce::MouseEvent& event) override {
+        if (!isDragging_ || !onResize)
+            return;
+        int deltaY = event.getScreenY() - dragStartY_;
+        onResize(deltaY);
+        dragStartY_ = event.getScreenY();
+    }
+
+    void mouseUp(const juce::MouseEvent& /*event*/) override {
+        isDragging_ = false;
+        isHovering_ = false;
+        repaint();
+    }
+
+    std::function<void(int deltaY)> onResize;
+
+  private:
+    bool isHovering_ = false;
+    bool isDragging_ = false;
+    int dragStartY_ = 0;
+};
+
+// dB scale component — draws tick marks and dB labels, resizes with fader area
+class MasterChannelStrip::DbScale : public juce::Component {
+  public:
+    DbScale() {
+        setInterceptsMouseClicks(false, false);
+    }
+
+    void paint(juce::Graphics& g) override {
+        auto bounds = getLocalBounds();
+        if (bounds.isEmpty())
+            return;
+
+        const auto& metrics = MixerMetrics::getInstance();
+
+        const float dbValues[] = {6.0f,   3.0f,   0.0f,   -3.0f,  -6.0f,
+                                  -12.0f, -18.0f, -24.0f, -36.0f, -48.0f};
+
+        float paddingTop = metrics.labelTextHeight / 2.0f + 1.0f;
+        float paddingBottom = metrics.labelTextHeight / 2.0f;
+        float top = paddingTop;
+        float height = static_cast<float>(bounds.getHeight()) - paddingTop - paddingBottom;
+        float totalWidth = static_cast<float>(bounds.getWidth());
+
+        float tickW = metrics.tickWidth();
+        float labelWidth = metrics.labelTextWidth;
+        float centre = totalWidth / 2.0f;
+
+        g.setFont(FontManager::getInstance().getUIFont(metrics.labelFontSize));
+
+        float minSpacing = metrics.labelTextHeight + 2.0f;
+        float lastDrawnY = -1000.0f;
+
+        for (float db : dbValues) {
+            float faderPos = dbToMeterPos(db);
+            float y = top + height * (1.0f - faderPos);
+
+            if (std::abs(y - lastDrawnY) < minSpacing)
+                continue;
+            lastDrawnY = y;
+
+            float tickHeight = metrics.tickHeight();
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.fillRect(0.0f, y - tickHeight / 2.0f, tickW - 1.0f, tickHeight);
+            g.fillRect(totalWidth - tickW + 1.0f, y - tickHeight / 2.0f, tickW - 1.0f, tickHeight);
+
+            juce::String labelText;
+            int dbInt = static_cast<int>(db);
+            if (db <= MIN_DB) {
+                labelText = juce::String::charToString(0x221E);
+            } else {
+                labelText = juce::String(std::abs(dbInt));
+            }
+
+            float textHeight = metrics.labelTextHeight;
+            float textX = centre - labelWidth / 2.0f;
+            float textY = y - textHeight / 2.0f;
+
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            g.drawText(labelText, static_cast<int>(textX), static_cast<int>(textY),
+                       static_cast<int>(labelWidth), static_cast<int>(textHeight),
+                       juce::Justification::centred, false);
+        }
+    }
+};
+
 // Stereo level meter component (L/R bars)
 class MasterChannelStrip::LevelMeter : public juce::Component {
   public:
     void setLevel(float newLevel) {
-        // Set both channels to the same level (for mono compatibility)
         setLevels(newLevel, newLevel);
     }
 
     void setLevels(float left, float right) {
-        // Allow up to 2.0 gain (+6 dB)
         leftLevel_ = juce::jlimit(0.0f, 2.0f, left);
         rightLevel_ = juce::jlimit(0.0f, 2.0f, right);
         repaint();
@@ -76,23 +189,14 @@ class MasterChannelStrip::LevelMeter : public juce::Component {
 
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds().toFloat();
-        const auto& metrics = MixerMetrics::getInstance();
 
-        // Meter uses effective range (with thumbRadius padding) to match fader track and labels
-        auto effectiveBounds = bounds.reduced(0.0f, metrics.thumbRadius());
-
-        // Split into L/R with 1px gap
         const float gap = 1.0f;
-        float barWidth = (effectiveBounds.getWidth() - gap) / 2.0f;
+        float barWidth = (bounds.getWidth() - gap) / 2.0f;
 
-        auto leftBounds = effectiveBounds.withWidth(barWidth);
-        auto rightBounds =
-            effectiveBounds.withWidth(barWidth).withX(effectiveBounds.getX() + barWidth + gap);
+        auto leftBounds = bounds.withWidth(barWidth);
+        auto rightBounds = bounds.withWidth(barWidth).withX(bounds.getX() + barWidth + gap);
 
-        // Draw left channel
         drawMeterBar(g, leftBounds, leftLevel_);
-
-        // Draw right channel
         drawMeterBar(g, rightBounds, rightLevel_);
     }
 
@@ -101,18 +205,15 @@ class MasterChannelStrip::LevelMeter : public juce::Component {
     float rightLevel_ = 0.0f;
 
     void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level) {
-        // Background
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
         g.fillRoundedRectangle(bounds, 1.0f);
 
-        // Meter fill (using fader scaling to match dB labels)
         float db = gainToDb(level);
         float displayLevel = dbToMeterPos(db);
         float meterHeight = bounds.getHeight() * displayLevel;
         auto fillBounds = bounds;
         fillBounds = fillBounds.removeFromBottom(meterHeight);
 
-        // Smooth gradient from green to yellow to red based on dB
         g.setColour(getMeterColour(level));
         g.fillRoundedRectangle(fillBounds, 1.0f);
     }
@@ -149,26 +250,18 @@ MasterChannelStrip::MasterChannelStrip(Orientation orientation) : orientation_(o
 
 MasterChannelStrip::~MasterChannelStrip() {
     TrackManager::getInstance().removeListener(this);
-    // Clear look and feel before destruction
-    if (volumeSlider) {
-        volumeSlider->setLookAndFeel(nullptr);
-    }
 }
 
 void MasterChannelStrip::setupControls() {
     // Title label
     titleLabel = std::make_unique<juce::Label>("Master", "Master");
     titleLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    titleLabel->setJustificationType(juce::Justification::centred);
+    titleLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(*titleLabel);
 
     // Peak meter
     peakMeter = std::make_unique<LevelMeter>();
     addAndMakeVisible(*peakMeter);
-
-    // VU meter
-    vuMeter = std::make_unique<LevelMeter>();
-    addAndMakeVisible(*vuMeter);
 
     // Peak value label
     peakValueLabel = std::make_unique<juce::Label>();
@@ -179,55 +272,97 @@ void MasterChannelStrip::setupControls() {
     peakValueLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
     addAndMakeVisible(*peakValueLabel);
 
-    // VU value label
-    vuValueLabel = std::make_unique<juce::Label>();
-    vuValueLabel->setText("-inf", juce::dontSendNotification);
-    vuValueLabel->setJustificationType(juce::Justification::centred);
-    vuValueLabel->setColour(juce::Label::textColourId,
-                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    vuValueLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
-    addAndMakeVisible(*vuValueLabel);
-
-    // Volume slider - using dB scale with unity at 0.75 position
-    volumeSlider = std::make_unique<juce::Slider>(orientation_ == Orientation::Vertical
-                                                      ? juce::Slider::LinearVertical
-                                                      : juce::Slider::LinearHorizontal,
-                                                  juce::Slider::NoTextBox);
+    // Volume slider - TextSlider with vertical orientation and dB display
+    volumeSlider = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decibels);
+    volumeSlider->setOrientation(daw::ui::TextSlider::Orientation::Vertical);
     volumeSlider->setRange(0.0, 1.0, 0.001);
-    volumeSlider->setValue(0.75);  // Unity gain (0 dB)
-    volumeSlider->setSliderSnapsToMousePosition(false);
-    volumeSlider->setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    volumeSlider->setColour(juce::Slider::backgroundColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
-    volumeSlider->setColour(juce::Slider::thumbColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    volumeSlider->setLookAndFeel(&mixerLookAndFeel_);
-    volumeSlider->onValueChange = [this]() {
-        float faderPos = static_cast<float>(volumeSlider->getValue());
-        float db = meterPosToDb(faderPos);
+    volumeSlider->setValue(dbToMeterPos(0.0f), juce::dontSendNotification);
+    volumeSlider->setFont(FontManager::getInstance().getUIFont(9.0f));
+
+    // Custom formatter: normalized position (0-1) -> dB string
+    volumeSlider->setValueFormatter([](double pos) -> juce::String {
+        float db = meterPosToDb(static_cast<float>(pos));
+        if (db <= MIN_DB)
+            return "-inf";
+        return juce::String(db, 1);
+    });
+
+    // Custom parser: user input text -> normalized position (0-1)
+    volumeSlider->setValueParser([](const juce::String& text) -> double {
+        auto t = text.trim();
+        if (t.endsWithIgnoreCase("db"))
+            t = t.dropLastCharacters(2).trim();
+        if (t.equalsIgnoreCase("-inf") || t.equalsIgnoreCase("inf"))
+            return 0.0;
+        float db = t.getFloatValue();
+        return static_cast<double>(dbToMeterPos(db));
+    });
+
+    volumeSlider->onValueChanged = [this](double pos) {
+        float db = meterPosToDb(static_cast<float>(pos));
         float gain = dbToGain(db);
         UndoManager::getInstance().executeCommand(std::make_unique<SetMasterVolumeCommand>(gain));
-        // Update volume label
-        if (volumeValueLabel) {
-            juce::String dbText;
-            if (db <= MIN_DB) {
-                dbText = "-inf";
-            } else {
-                dbText = juce::String(db, 1) + " dB";
-            }
-            volumeValueLabel->setText(dbText, juce::dontSendNotification);
-        }
     };
     addAndMakeVisible(*volumeSlider);
 
-    // Volume value label
-    volumeValueLabel = std::make_unique<juce::Label>();
-    volumeValueLabel->setText("0.0 dB", juce::dontSendNotification);
-    volumeValueLabel->setJustificationType(juce::Justification::centred);
-    volumeValueLabel->setColour(juce::Label::textColourId,
-                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    volumeValueLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
-    addAndMakeVisible(*volumeValueLabel);
+    // DbScale component
+    dbScale_ = std::make_unique<DbScale>();
+    addAndMakeVisible(*dbScale_);
+
+    // Send area resize handle
+    resizeHandle_ = std::make_unique<ResizeHandle>();
+    resizeHandle_->onResize = [this](int deltaY) {
+        auto& metrics = MixerMetrics::getInstance();
+        int newHeight =
+            juce::jlimit(MixerMetrics::minSendAreaHeight, MixerMetrics::maxSendAreaHeight,
+                         metrics.sendAreaHeight + deltaY);
+        if (metrics.sendAreaHeight != newHeight) {
+            metrics.sendAreaHeight = newHeight;
+            if (onSendAreaResized)
+                onSendAreaResized();
+        }
+    };
+    addAndMakeVisible(*resizeHandle_);
+
+    // Headphone icon (non-interactive, just a label)
+    auto hpIcon = juce::Drawable::createFromImageData(BinaryData::headphones_svg,
+                                                      BinaryData::headphones_svgSize);
+    headphoneIcon_ =
+        std::make_unique<juce::DrawableButton>("Headphones", juce::DrawableButton::ImageFitted);
+    headphoneIcon_->setImages(hpIcon.get());
+    headphoneIcon_->setClickingTogglesState(false);
+    headphoneIcon_->setInterceptsMouseClicks(false, false);
+    headphoneIcon_->setColour(juce::DrawableButton::backgroundColourId,
+                              juce::Colours::transparentBlack);
+    addAndMakeVisible(*headphoneIcon_);
+
+    // Cue volume slider (horizontal)
+    cueVolumeSlider_ = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decibels);
+    cueVolumeSlider_->setOrientation(daw::ui::TextSlider::Orientation::Horizontal);
+    cueVolumeSlider_->setRange(0.0, 1.0, 0.001);
+    cueVolumeSlider_->setValue(0.0, juce::dontSendNotification);  // -inf by default
+    cueVolumeSlider_->setFont(FontManager::getInstance().getUIFont(9.0f));
+
+    cueVolumeSlider_->setValueFormatter([](double pos) -> juce::String {
+        float db = meterPosToDb(static_cast<float>(pos));
+        if (db <= MIN_DB)
+            return "-inf";
+        return juce::String(db, 1);
+    });
+
+    cueVolumeSlider_->setValueParser([](const juce::String& text) -> double {
+        auto t = text.trim();
+        if (t.endsWithIgnoreCase("db"))
+            t = t.dropLastCharacters(2).trim();
+        if (t.equalsIgnoreCase("-inf") || t.equalsIgnoreCase("inf"))
+            return 0.0;
+        float db = t.getFloatValue();
+        return static_cast<double>(dbToMeterPos(db));
+    });
+
+    // TODO: Wire to cue bus volume when implemented
+    cueVolumeSlider_->onValueChanged = [](double /*pos*/) {};
+    addAndMakeVisible(*cueVolumeSlider_);
 
     // Speaker on/off button (toggles master mute)
     auto speakerOnIcon = juce::Drawable::createFromImageData(BinaryData::volume_up_svg,
@@ -260,119 +395,89 @@ void MasterChannelStrip::paint(juce::Graphics& g) {
     // Draw fader region border (top and bottom lines)
     if (!faderRegion_.isEmpty()) {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        // Top border
         g.fillRect(faderRegion_.getX(), faderRegion_.getY(), faderRegion_.getWidth(), 1);
-        // Bottom border
         g.fillRect(faderRegion_.getX(), faderRegion_.getBottom() - 1, faderRegion_.getWidth(), 1);
     }
-
-    // Draw dB labels with ticks
-    drawDbLabels(g);
 }
 
 void MasterChannelStrip::resized() {
     const auto& metrics = MixerMetrics::getInstance();
-    auto bounds = getLocalBounds().reduced(4);
+    auto bounds = getLocalBounds().reduced(metrics.channelPadding);
 
     if (orientation_ == Orientation::Vertical) {
-        // Vertical layout (for MixerView and SessionView)
-        titleLabel->setBounds(bounds.removeFromTop(24));
-        bounds.removeFromTop(4);
+        // Color indicator space (matches channel strip)
+        bounds.removeFromTop(6);
 
-        // Mute button
-        auto muteArea = bounds.removeFromTop(28);
-        speakerButton->setBounds(muteArea.withSizeKeepingCentre(24, 24));
-        bounds.removeFromTop(4);
+        // Title row: [speaker icon] [Master label]
+        auto titleRow = bounds.removeFromTop(24);
+        speakerButton->setBounds(titleRow.removeFromLeft(20).withSizeKeepingCentre(18, 18));
+        titleRow.removeFromLeft(2);
+        titleLabel->setBounds(titleRow);
 
-        // Use percentage of remaining height for fader
-        int faderHeight = static_cast<int>(bounds.getHeight() * metrics.faderHeightRatio / 100.0f);
-        int extraSpace = bounds.getHeight() - faderHeight;
-        bounds.removeFromTop(extraSpace / 2);
-        bounds.setHeight(faderHeight);
+        bounds.removeFromTop(metrics.controlSpacing);
 
-        // Layout: [fader] [gap] [leftTicks] [labels] [rightTicks] [gap] [peakMeter] [gap] [vuMeter]
-        // Use same widths as channel strip for consistency
-        int faderWidth = metrics.faderWidth;
-        int meterWidthVal = metrics.meterWidth;
-        int tickWidth = static_cast<int>(std::ceil(metrics.tickWidth()));
-        int gap = metrics.tickToFaderGap;
-        int meterGapVal = metrics.tickToMeterGap;
-        int tickToLabelGap = metrics.tickToLabelGap;
-        int labelTextWidth = static_cast<int>(metrics.labelTextWidth);
-        int meterGapBetween = 2;  // Gap between peak and VU meters
+        // Send area space — reserve same height as channel strips for alignment
+        const int sendAreaHeight = metrics.sendAreaHeight;
+        bounds.removeFromTop(2);  // Gap between header and sends/handle
+        bounds.removeFromTop(sendAreaHeight);
 
-        // Calculate total width needed for the fader layout
-        int totalLayoutWidth = faderWidth + gap + tickWidth + tickToLabelGap + labelTextWidth +
-                               tickToLabelGap + tickWidth + meterGapVal + meterWidthVal;
-        if (showVuMeter_) {
-            totalLayoutWidth += meterGapBetween + meterWidthVal;  // Add VU meter width
+        // Resize handle overlapping the bottom of the send area space
+        if (resizeHandle_) {
+            int handleH = 8;
+            int handleOverlap = 6;
+            resizeHandle_->setBounds(bounds.getX(), bounds.getY() - handleH - handleOverlap,
+                                     bounds.getWidth(), handleH);
+            resizeHandle_->setAlwaysOnTop(true);
         }
 
-        // Center the layout within bounds
-        int leftMargin = (bounds.getWidth() - totalLayoutWidth) / 2;
-        auto centeredBounds = bounds.withTrimmedLeft(leftMargin).withWidth(totalLayoutWidth);
+        // Cue volume at bottom: [headphone icon] [slider]
+        bounds.removeFromBottom(2);
+        auto cueRow = bounds.removeFromBottom(20);
+        headphoneIcon_->setBounds(cueRow.removeFromLeft(18));
+        cueRow.removeFromLeft(2);
+        cueVolumeSlider_->setBounds(cueRow);
+        bounds.removeFromBottom(2);  // Gap between cue row and fader region
 
-        // Store the entire fader region for border drawing (use centered bounds)
-        faderRegion_ = centeredBounds;
+        // Small gap before fader region
+        bounds.removeFromTop(2);
 
-        // Position value labels right above the fader region top border
+        // Calculate proportional widths like channel strips
+        int availWidth = bounds.getWidth();
+        int faderWidth = juce::jlimit(20, 60, availWidth * 40 / 100);
+        int meterWidthVal = faderWidth;  // Same width as fader
+        int gap = metrics.tickToFaderGap;
+        int meterGapVal = metrics.tickToMeterGap;
+
+        // Store the entire fader region for border drawing
+        faderRegion_ = bounds;
+
+        // Position peak label above the fader region top border
         const int labelHeight = 12;
         auto valueLabelArea =
             juce::Rectangle<int>(faderRegion_.getX(), faderRegion_.getY() - labelHeight,
                                  faderRegion_.getWidth(), labelHeight);
-        if (showVuMeter_) {
-            // Split label area: volume on left, peak in middle, VU on right
-            int labelThird = valueLabelArea.getWidth() / 3;
-            volumeValueLabel->setBounds(valueLabelArea.removeFromLeft(labelThird));
-            peakValueLabel->setBounds(valueLabelArea.removeFromLeft(labelThird));
-            vuValueLabel->setBounds(valueLabelArea);
-        } else {
-            // Split label area: volume on left, peak on right
-            int labelHalf = valueLabelArea.getWidth() / 2;
-            volumeValueLabel->setBounds(valueLabelArea.removeFromLeft(labelHalf));
-            peakValueLabel->setBounds(valueLabelArea);
-            vuValueLabel->setBounds(juce::Rectangle<int>());  // Hidden
-        }
+        peakValueLabel->setBounds(valueLabelArea);
 
         // Add vertical padding inside the border
-        const int borderPadding = 6;
-        centeredBounds.removeFromTop(borderPadding);
-        centeredBounds.removeFromBottom(borderPadding);
+        bounds.removeFromTop(6);
+        bounds.removeFromBottom(3);
 
-        auto layoutArea = centeredBounds;
+        auto layoutArea = bounds;
 
         // Fader on left
         faderArea_ = layoutArea.removeFromLeft(faderWidth);
         volumeSlider->setBounds(faderArea_);
 
-        if (showVuMeter_) {
-            // VU meter on far right
-            vuMeterArea_ = layoutArea.removeFromRight(meterWidthVal);
-            vuMeter->setBounds(vuMeterArea_);
-
-            // Gap between meters
-            layoutArea.removeFromRight(meterGapBetween);
-        } else {
-            vuMeterArea_ = juce::Rectangle<int>();
-            vuMeter->setBounds(juce::Rectangle<int>());
-        }
-
-        // Peak meter (always visible)
+        // Peak meter on right
         peakMeterArea_ = layoutArea.removeFromRight(meterWidthVal);
         peakMeter->setBounds(peakMeterArea_);
 
-        // Position tick areas with gap from fader/meter
-        leftTickArea_ = juce::Rectangle<int>(faderArea_.getRight() + gap, layoutArea.getY(),
-                                             tickWidth, layoutArea.getHeight());
-
-        rightTickArea_ = juce::Rectangle<int>(peakMeterArea_.getX() - tickWidth - meterGapVal,
-                                              layoutArea.getY(), tickWidth, layoutArea.getHeight());
-
-        // Label area between ticks
-        int labelLeft = leftTickArea_.getRight() + tickToLabelGap;
-        int labelRight = rightTickArea_.getX() - tickToLabelGap;
-        labelArea_ = juce::Rectangle<int>(labelLeft, layoutArea.getY(), labelRight - labelLeft,
-                                          layoutArea.getHeight());
+        // DbScale component — extends above/below for label overflow
+        int labelPad = static_cast<int>(metrics.labelTextHeight / 2.0f + 1.0f);
+        int scaleLeft = faderArea_.getRight() + gap;
+        int scaleRight = peakMeterArea_.getX() - meterGapVal;
+        dbScale_->setBounds(scaleLeft, layoutArea.getY() - labelPad, scaleRight - scaleLeft,
+                            layoutArea.getHeight() + labelPad * 2);
     } else {
         // Horizontal layout (for Arrange view - at bottom of track content)
         titleLabel->setBounds(bounds.removeFromLeft(60));
@@ -384,25 +489,23 @@ void MasterChannelStrip::resized() {
 
         // Value label above meter
         auto labelArea = bounds.removeFromTop(12);
-        volumeValueLabel->setBounds(labelArea.removeFromRight(40));
-        peakValueLabel->setBounds(juce::Rectangle<int>());  // Hidden in horizontal
-        vuValueLabel->setBounds(juce::Rectangle<int>());    // Hidden in horizontal
+        peakValueLabel->setBounds(labelArea.removeFromRight(40));
 
-        // Two meters side by side on right
-        vuMeter->setBounds(bounds.removeFromRight(6));
-        bounds.removeFromRight(1);
+        // Single meter on right
         peakMeter->setBounds(bounds.removeFromRight(6));
         bounds.removeFromRight(4);
         volumeSlider->setBounds(bounds);
 
+        // Hide components not used in horizontal mode
+        dbScale_->setBounds(juce::Rectangle<int>());
+        resizeHandle_->setBounds(juce::Rectangle<int>());
+        headphoneIcon_->setBounds(juce::Rectangle<int>());
+        cueVolumeSlider_->setBounds(juce::Rectangle<int>());
+
         // Clear vertical layout regions
         faderRegion_ = juce::Rectangle<int>();
         faderArea_ = juce::Rectangle<int>();
-        leftTickArea_ = juce::Rectangle<int>();
-        labelArea_ = juce::Rectangle<int>();
-        rightTickArea_ = juce::Rectangle<int>();
         peakMeterArea_ = juce::Rectangle<int>();
-        vuMeterArea_ = juce::Rectangle<int>();
     }
 }
 
@@ -417,17 +520,6 @@ void MasterChannelStrip::updateFromMasterState() {
     float db = gainToDb(master.volume);
     float faderPos = dbToMeterPos(db);
     volumeSlider->setValue(faderPos, juce::dontSendNotification);
-
-    // Update volume label
-    if (volumeValueLabel) {
-        juce::String dbText;
-        if (db <= MIN_DB) {
-            dbText = "-inf";
-        } else {
-            dbText = juce::String(db, 1) + " dB";
-        }
-        volumeValueLabel->setText(dbText, juce::dontSendNotification);
-    }
 
     // Update mute button
     if (speakerButton) {
@@ -454,101 +546,6 @@ void MasterChannelStrip::setPeakLevels(float leftPeak, float rightPeak) {
             }
             peakValueLabel->setText(peakText, juce::dontSendNotification);
         }
-    }
-}
-
-void MasterChannelStrip::setVuLevels(float leftVu, float rightVu) {
-    if (vuMeter) {
-        vuMeter->setLevels(leftVu, rightVu);
-    }
-
-    // Update VU value display (show max of both channels)
-    float maxVu = std::max(leftVu, rightVu);
-    if (maxVu > vuPeakValue_) {
-        vuPeakValue_ = maxVu;
-        if (vuValueLabel) {
-            float db = gainToDb(vuPeakValue_);
-            juce::String vuText;
-            if (db <= MIN_DB) {
-                vuText = "-inf";
-            } else {
-                vuText = juce::String(db, 1);
-            }
-            vuValueLabel->setText(vuText, juce::dontSendNotification);
-        }
-    }
-}
-
-void MasterChannelStrip::setShowVuMeter(bool show) {
-    if (showVuMeter_ != show) {
-        showVuMeter_ = show;
-        if (vuMeter) {
-            vuMeter->setVisible(show);
-        }
-        if (vuValueLabel) {
-            vuValueLabel->setVisible(show);
-        }
-        resized();
-    }
-}
-
-void MasterChannelStrip::drawDbLabels(juce::Graphics& g) {
-    if (labelArea_.isEmpty() || !volumeSlider)
-        return;
-
-    const auto& metrics = MixerMetrics::getInstance();
-
-    // dB values to display with ticks
-    const std::vector<float> dbValues = {6.0f,   3.0f,   0.0f,   -3.0f,  -6.0f, -12.0f,
-                                         -18.0f, -24.0f, -36.0f, -48.0f, -60.0f};
-
-    // Labels mark where the thumb CENTER is at each dB value.
-    // JUCE reduces slider bounds by thumbRadius, so the thumb center range is:
-    // - Top: faderArea_.getY() + thumbRadius
-    // - Bottom: faderArea_.getBottom() - thumbRadius
-    float thumbRadius = metrics.thumbRadius();
-    float effectiveTop = faderArea_.getY() + thumbRadius;
-    float effectiveHeight = faderArea_.getHeight() - 2.0f * thumbRadius;
-
-    g.setFont(FontManager::getInstance().getUIFont(metrics.labelFontSize));
-
-    for (float db : dbValues) {
-        // Convert dB to Y position - MUST match JUCE's formula exactly:
-        // sliderPos = sliderRegionStart + (1 - valueProportional) * sliderRegionSize
-        float faderPos = dbToMeterPos(db);
-        float yNorm = 1.0f - faderPos;
-        float y = effectiveTop + yNorm * effectiveHeight;
-
-        // Draw ticks in their designated areas
-        float tickHeight = metrics.tickHeight();
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-
-        // Left tick: draw within leftTickArea_, right-aligned
-        float leftTickX = static_cast<float>(leftTickArea_.getRight()) - metrics.tickWidth();
-        g.fillRect(leftTickX, y - tickHeight / 2.0f, metrics.tickWidth(), tickHeight);
-
-        // Right tick: draw within rightTickArea_, left-aligned
-        float rightTickX = static_cast<float>(rightTickArea_.getX());
-        g.fillRect(rightTickX, y - tickHeight / 2.0f, metrics.tickWidth(), tickHeight);
-
-        // Draw label text centered - no signs, infinity symbol at bottom
-        juce::String labelText;
-        int dbInt = static_cast<int>(db);
-        if (db <= MIN_DB) {
-            labelText = juce::String::charToString(0x221E);  // ∞ infinity symbol
-        } else {
-            labelText = juce::String(std::abs(dbInt));
-        }
-
-        float textWidth = metrics.labelTextWidth;
-        float textHeight = metrics.labelTextHeight;
-        float textX = labelArea_.getCentreX() - textWidth / 2.0f;
-        float textY = y - textHeight / 2.0f;
-
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        g.drawText(labelText, static_cast<int>(textX), static_cast<int>(textY),
-                   static_cast<int>(textWidth), static_cast<int>(textHeight),
-                   juce::Justification::centred, false);
     }
 }
 

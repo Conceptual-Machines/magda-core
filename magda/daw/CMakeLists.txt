@@ -33,6 +33,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/volume_up.svg
     ../../assets/icons/volume_down.svg
     ../../assets/icons/volume_off.svg
+    ../../assets/icons/headphones.svg
     ../../assets/icons/metronome.svg
     # UI icons
     ../../assets/icons/lock.svg

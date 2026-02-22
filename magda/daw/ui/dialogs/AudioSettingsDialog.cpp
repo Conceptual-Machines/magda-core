@@ -9,8 +9,9 @@ namespace magda {
 // CustomChannelSelector Implementation
 // ============================================================================
 
-CustomChannelSelector::CustomChannelSelector(juce::AudioDeviceManager* deviceManager, bool isInput)
-    : deviceManager_(deviceManager), isInput_(isInput) {
+CustomChannelSelector::CustomChannelSelector(juce::AudioDeviceManager* deviceManager, bool isInput,
+                                             tracktion::DeviceManager* teDeviceManager)
+    : deviceManager_(deviceManager), teDeviceManager_(teDeviceManager), isInput_(isInput) {
     titleLabel_.setText(isInput ? "Audio Inputs:" : "Audio Outputs:", juce::dontSendNotification);
     titleLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
     addAndMakeVisible(titleLabel_);
@@ -33,10 +34,29 @@ void CustomChannelSelector::updateFromDevice() {
     DBG("CustomChannelSelector::updateFromDevice - Device: " + device->getName() +
         " (isInput=" + juce::String(isInput_ ? "true" : "false") + ")");
 
-    // Get channel names and active channels from current setup
-    auto setup = deviceManager_->getAudioDeviceSetup();
+    // Get channel names from hardware device
     auto channelNames = isInput_ ? device->getInputChannelNames() : device->getOutputChannelNames();
-    auto activeChannels = isInput_ ? setup.inputChannels : setup.outputChannels;
+
+    // Build active channels from TE device enabled state (JUCE bits are always all-on)
+    juce::BigInteger activeChannels;
+    if (teDeviceManager_) {
+        auto setEnabledBits = [&activeChannels](auto devices) {
+            for (auto* dev : devices) {
+                if (dev->isEnabled()) {
+                    for (const auto& ch : dev->getChannels())
+                        activeChannels.setBit(ch.indexInDevice, true);
+                }
+            }
+        };
+        if (isInput_)
+            setEnabledBits(teDeviceManager_->getWaveInputDevices());
+        else
+            setEnabledBits(teDeviceManager_->getWaveOutputDevices());
+    } else {
+        // Fallback: read from JUCE setup
+        auto setup = deviceManager_->getAudioDeviceSetup();
+        activeChannels = isInput_ ? setup.inputChannels : setup.outputChannels;
+    }
 
     DBG("  Channel count: " + juce::String(channelNames.size()));
     DBG("  Active channels: " + activeChannels.toString(2));
@@ -201,15 +221,42 @@ void CustomChannelSelector::applyToDevice() {
         }
     }
 
-    // Apply to device manager
+    // Always enable all hardware channels at JUCE level — Tracktion expects this.
+    // Channel selection is handled at the TE WaveInputDevice enable/disable level.
     auto setup = deviceManager_->getAudioDeviceSetup();
     if (isInput_) {
-        setup.inputChannels = activeChannels;
+        setup.inputChannels.clear();
+        setup.inputChannels.setRange(0, device->getInputChannelNames().size(), true);
     } else {
-        setup.outputChannels = activeChannels;
+        setup.outputChannels.clear();
+        setup.outputChannels.setRange(0, device->getOutputChannelNames().size(), true);
     }
 
     deviceManager_->setAudioDeviceSetup(setup, true);
+
+    // Flush pending async updates so wave device list rebuilds before audio callback fires (#719)
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
+
+    // Sync TE wave devices based on toggle state
+    if (teDeviceManager_) {
+        auto syncDevices = [&activeChannels](auto devices) {
+            for (auto* dev : devices) {
+                bool shouldEnable = false;
+                for (const auto& ch : dev->getChannels()) {
+                    if (activeChannels[ch.indexInDevice]) {
+                        shouldEnable = true;
+                        break;
+                    }
+                }
+                if (dev->isEnabled() != shouldEnable)
+                    dev->setEnabled(shouldEnable);
+            }
+        };
+        if (isInput_)
+            syncDevices(teDeviceManager_->getWaveInputDevices());
+        else
+            syncDevices(teDeviceManager_->getWaveOutputDevices());
+    }
 }
 
 void CustomChannelSelector::paint(juce::Graphics& g) {
@@ -235,8 +282,9 @@ void CustomChannelSelector::resized() {
 // AudioSettingsDialog Implementation
 // ============================================================================
 
-AudioSettingsDialog::AudioSettingsDialog(juce::AudioDeviceManager* deviceManager)
-    : deviceManager_(deviceManager) {
+AudioSettingsDialog::AudioSettingsDialog(juce::AudioDeviceManager* deviceManager,
+                                         tracktion::DeviceManager* teDeviceManager)
+    : deviceManager_(deviceManager), teDeviceManager_(teDeviceManager) {
     // Input device selection dropdown
     inputDeviceLabel_.setText("Input Device:", juce::dontSendNotification);
     inputDeviceLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
@@ -282,10 +330,12 @@ AudioSettingsDialog::AudioSettingsDialog(juce::AudioDeviceManager* deviceManager
     addAndMakeVisible(*deviceSelector_);
 
     // Create custom channel selectors for inputs and outputs
-    inputChannelSelector_ = std::make_unique<CustomChannelSelector>(deviceManager, true);
+    inputChannelSelector_ =
+        std::make_unique<CustomChannelSelector>(deviceManager, true, teDeviceManager);
     addAndMakeVisible(*inputChannelSelector_);
 
-    outputChannelSelector_ = std::make_unique<CustomChannelSelector>(deviceManager, false);
+    outputChannelSelector_ =
+        std::make_unique<CustomChannelSelector>(deviceManager, false, teDeviceManager);
     addAndMakeVisible(*outputChannelSelector_);
 
     // Setup device name label
@@ -427,6 +477,8 @@ void AudioSettingsDialog::onInputDeviceSelected() {
         return;
     }
 
+    enableAllChannelsOnCurrentDevice();
+
     // Update channel selectors to reflect new device
     inputChannelSelector_->updateFromDevice();
 
@@ -458,6 +510,8 @@ void AudioSettingsDialog::onOutputDeviceSelected() {
         return;
     }
 
+    enableAllChannelsOnCurrentDevice();
+
     // Update channel selectors to reflect new device
     outputChannelSelector_->updateFromDevice();
 
@@ -469,25 +523,51 @@ void AudioSettingsDialog::onOutputDeviceSelected() {
     }
 }
 
+void AudioSettingsDialog::enableAllChannelsOnCurrentDevice() {
+    // Flush pending async updates so wave device list rebuilds before audio callback fires (#719)
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
+
+    // Enable all channels on the current device — it may have a different channel count
+    if (auto* device = deviceManager_->getCurrentAudioDevice()) {
+        auto newSetup = deviceManager_->getAudioDeviceSetup();
+        newSetup.inputChannels.setRange(0, device->getInputChannelNames().size(), true);
+        newSetup.outputChannels.setRange(0, device->getOutputChannelNames().size(), true);
+        deviceManager_->setAudioDeviceSetup(newSetup, true);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
+    }
+}
+
 void AudioSettingsDialog::savePreferencesIfNeeded() {
     if (!setAsPreferredCheckbox_.getToggleState())
         return;
 
     auto setup = deviceManager_->getAudioDeviceSetup();
 
-    // Count enabled input channels
+    // Count enabled channels from TE devices (JUCE bits are always all-on)
     int inputChannelCount = 0;
-    for (int i = 0; i < setup.inputChannels.getHighestBit() + 1; ++i) {
-        if (setup.inputChannels[i]) {
-            inputChannelCount = i + 1;
-        }
-    }
-
-    // Count enabled output channels
     int outputChannelCount = 0;
-    for (int i = 0; i < setup.outputChannels.getHighestBit() + 1; ++i) {
-        if (setup.outputChannels[i]) {
-            outputChannelCount = i + 1;
+    if (teDeviceManager_) {
+        for (auto* dev : teDeviceManager_->getWaveInputDevices()) {
+            if (dev->isEnabled()) {
+                for (const auto& ch : dev->getChannels())
+                    inputChannelCount = std::max(inputChannelCount, ch.indexInDevice + 1);
+            }
+        }
+        for (auto* dev : teDeviceManager_->getWaveOutputDevices()) {
+            if (dev->isEnabled()) {
+                for (const auto& ch : dev->getChannels())
+                    outputChannelCount = std::max(outputChannelCount, ch.indexInDevice + 1);
+            }
+        }
+    } else {
+        // Fallback: count from JUCE setup
+        for (int i = 0; i < setup.inputChannels.getHighestBit() + 1; ++i) {
+            if (setup.inputChannels[i])
+                inputChannelCount = i + 1;
+        }
+        for (int i = 0; i < setup.outputChannels.getHighestBit() + 1; ++i) {
+            if (setup.outputChannels[i])
+                outputChannelCount = i + 1;
         }
     }
 
@@ -504,7 +584,8 @@ void AudioSettingsDialog::savePreferencesIfNeeded() {
 }
 
 void AudioSettingsDialog::showDialog(juce::Component* parent,
-                                     juce::AudioDeviceManager* deviceManager) {
+                                     juce::AudioDeviceManager* deviceManager,
+                                     tracktion::DeviceManager* teDeviceManager) {
     if (deviceManager == nullptr) {
         juce::AlertWindow::showMessageBoxAsync(
             juce::AlertWindow::WarningIcon, "Audio Settings",
@@ -512,7 +593,7 @@ void AudioSettingsDialog::showDialog(juce::Component* parent,
         return;
     }
 
-    auto* dialog = new AudioSettingsDialog(deviceManager);
+    auto* dialog = new AudioSettingsDialog(deviceManager, teDeviceManager);
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = "Audio/MIDI Settings";

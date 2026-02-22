@@ -2,6 +2,7 @@
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <tracktion_engine/tracktion_engine.h>
 
 namespace magda {
 
@@ -11,7 +12,8 @@ namespace magda {
  */
 class CustomChannelSelector : public juce::Component {
   public:
-    CustomChannelSelector(juce::AudioDeviceManager* deviceManager, bool isInput);
+    CustomChannelSelector(juce::AudioDeviceManager* deviceManager, bool isInput,
+                          tracktion::DeviceManager* teDeviceManager = nullptr);
     ~CustomChannelSelector() override;
 
     void resized() override;
@@ -24,6 +26,7 @@ class CustomChannelSelector : public juce::Component {
     void refreshChannelStates();
 
     juce::AudioDeviceManager* deviceManager_;
+    tracktion::DeviceManager* teDeviceManager_;
     bool isInput_;
 
     struct ChannelToggle {
@@ -44,19 +47,22 @@ class CustomChannelSelector : public juce::Component {
  */
 class AudioSettingsDialog : public juce::Component {
   public:
-    explicit AudioSettingsDialog(juce::AudioDeviceManager* deviceManager);
+    explicit AudioSettingsDialog(juce::AudioDeviceManager* deviceManager,
+                                 tracktion::DeviceManager* teDeviceManager = nullptr);
     ~AudioSettingsDialog() override;
 
     void resized() override;
     void paint(juce::Graphics& g) override;
 
     // Static method to show as modal dialog
-    static void showDialog(juce::Component* parent, juce::AudioDeviceManager* deviceManager);
+    static void showDialog(juce::Component* parent, juce::AudioDeviceManager* deviceManager,
+                           tracktion::DeviceManager* teDeviceManager = nullptr);
 
   private:
     void populateDeviceLists();
     void onInputDeviceSelected();
     void onOutputDeviceSelected();
+    void enableAllChannelsOnCurrentDevice();
     void savePreferencesIfNeeded();
 
     std::unique_ptr<juce::AudioDeviceSelectorComponent> deviceSelector_;
@@ -72,6 +78,7 @@ class AudioSettingsDialog : public juce::Component {
     juce::TextButton closeButton_;
     juce::Label deviceNameLabel_;
     juce::AudioDeviceManager* deviceManager_;
+    tracktion::DeviceManager* teDeviceManager_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioSettingsDialog)
 };

@@ -18,6 +18,7 @@ namespace magda::daw::ui {
 class TextSlider : public juce::Component, public juce::Label::Listener {
   public:
     enum class Format { Decimal, Decibels, Pan };
+    enum class Orientation { Horizontal, Vertical };
 
     TextSlider(Format format = Format::Decimal) : format_(format) {
         label_.setFont(FontManager::getInstance().getUIFont(12.0f));
@@ -108,6 +109,14 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
         valueParser_ = std::move(parser);
     }
 
+    void setOrientation(Orientation o) {
+        orientation_ = o;
+    }
+
+    Orientation getOrientation() const {
+        return orientation_;
+    }
+
     void setShiftDragStartValue(float value) {
         shiftDragStartValue_ = value;
     }
@@ -142,61 +151,87 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
         onRightClicked;  // Called on right-click (when rightClickEditsText_ is false)
 
     void paint(juce::Graphics& g) override {
-        // Draw background ourselves so the label can be transparent (meters show through)
         auto bounds = getLocalBounds();
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-        g.fillRect(bounds);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.drawRect(bounds);
 
-        if (meterPeakL_ > 0.001f || meterPeakR_ > 0.001f) {
-            float w = static_cast<float>(bounds.getWidth());
-
-            // Range: -60dB to +6dB (66dB total). 0dB = 60/66 of width.
-            auto gainToWidth = [w](float gain) -> float {
-                float db = juce::Decibels::gainToDecibels(gain, -60.0f);
-                float norm = juce::jlimit(0.0f, 1.0f, (db + 60.0f) / 66.0f);
-                return w * norm;
-            };
-
-            constexpr float zeroDbNorm = 60.0f / 66.0f;
-
-            auto drawHorizontalBar = [&](int y, int barH, float gain) {
-                int barW = static_cast<int>(gainToWidth(gain));
-                if (barW < 1)
-                    return;
-
-                auto barArea = juce::Rectangle<int>(bounds.getX(), y, barW, barH);
-                float barNorm = static_cast<float>(barW) / w;
-
-                if (barNorm <= zeroDbNorm * 0.7f) {
-                    g.setColour(juce::Colour(0xff4CAF50).withAlpha(0.5f));
-                    g.fillRect(barArea);
-                } else {
-                    juce::ColourGradient gradient(juce::Colour(0xff4CAF50).withAlpha(0.5f), 0.0f,
-                                                  0.0f, juce::Colour(0xffF44336).withAlpha(0.5f), w,
-                                                  0.0f, false);
-                    gradient.addColour(zeroDbNorm, juce::Colour(0xffFFC107).withAlpha(0.5f));
-                    g.setGradientFill(gradient);
-                    g.fillRect(barArea);
-                }
-            };
-
-            // L bar (top half), R bar (bottom half)
-            drawHorizontalBar(bounds.getY(), bounds.getHeight() / 2, meterPeakL_);
-            drawHorizontalBar(bounds.getY() + bounds.getHeight() / 2, bounds.getHeight() / 2,
-                              meterPeakR_);
-        }
-
-        // 0dB tick mark (always visible when format is dB)
-        if (format_ == Format::Decibels) {
-            float w = static_cast<float>(bounds.getWidth());
-            float h = static_cast<float>(bounds.getHeight());
-            constexpr float zeroDbNorm = 60.0f / 66.0f;
-            int zeroDbX = bounds.getX() + static_cast<int>(w * zeroDbNorm);
+        if (orientation_ == Orientation::Vertical) {
+            // Vertical fader mode: fill from bottom to current position + handle
+            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+            g.fillRect(bounds);
             g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-            g.drawVerticalLine(zeroDbX, static_cast<float>(bounds.getY()),
-                               static_cast<float>(bounds.getY()) + h);
+            g.drawRect(bounds);
+
+            // Fill from bottom up to current value position
+            float norm = static_cast<float>(getNormalizedValue());
+            int fillHeight = static_cast<int>(bounds.getHeight() * norm);
+            auto fillRect = bounds.withTop(bounds.getBottom() - fillHeight);
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+            g.fillRect(fillRect);
+
+            // Draw handle at current position
+            int handleY = bounds.getBottom() - fillHeight;
+            const int handleH = 6;
+            auto handleRect = juce::Rectangle<int>(bounds.getX() + 1, handleY - handleH / 2,
+                                                   bounds.getWidth() - 2, handleH);
+            g.setColour(juce::Colour(0xFF888888));
+            g.fillRect(handleRect);
+            // Center line on handle
+            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+            g.drawHorizontalLine(handleY, static_cast<float>(handleRect.getX() + 2),
+                                 static_cast<float>(handleRect.getRight() - 2));
+        } else {
+            // Horizontal mode (original behavior)
+            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+            g.fillRect(bounds);
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.drawRect(bounds);
+
+            if (meterPeakL_ > 0.001f || meterPeakR_ > 0.001f) {
+                float w = static_cast<float>(bounds.getWidth());
+
+                auto gainToWidth = [w](float gain) -> float {
+                    float db = juce::Decibels::gainToDecibels(gain, -60.0f);
+                    float norm = juce::jlimit(0.0f, 1.0f, (db + 60.0f) / 66.0f);
+                    return w * norm;
+                };
+
+                constexpr float zeroDbNorm = 60.0f / 66.0f;
+
+                auto drawHorizontalBar = [&](int y, int barH, float gain) {
+                    int barW = static_cast<int>(gainToWidth(gain));
+                    if (barW < 1)
+                        return;
+
+                    auto barArea = juce::Rectangle<int>(bounds.getX(), y, barW, barH);
+                    float barNorm = static_cast<float>(barW) / w;
+
+                    if (barNorm <= zeroDbNorm * 0.7f) {
+                        g.setColour(juce::Colour(0xff4CAF50).withAlpha(0.5f));
+                        g.fillRect(barArea);
+                    } else {
+                        juce::ColourGradient gradient(
+                            juce::Colour(0xff4CAF50).withAlpha(0.5f), 0.0f, 0.0f,
+                            juce::Colour(0xffF44336).withAlpha(0.5f), w, 0.0f, false);
+                        gradient.addColour(zeroDbNorm, juce::Colour(0xffFFC107).withAlpha(0.5f));
+                        g.setGradientFill(gradient);
+                        g.fillRect(barArea);
+                    }
+                };
+
+                drawHorizontalBar(bounds.getY(), bounds.getHeight() / 2, meterPeakL_);
+                drawHorizontalBar(bounds.getY() + bounds.getHeight() / 2, bounds.getHeight() / 2,
+                                  meterPeakR_);
+            }
+
+            // 0dB tick mark (always visible when format is dB)
+            if (format_ == Format::Decibels) {
+                float w = static_cast<float>(bounds.getWidth());
+                float h = static_cast<float>(bounds.getHeight());
+                constexpr float zeroDbNorm = 60.0f / 66.0f;
+                int zeroDbX = bounds.getX() + static_cast<int>(w * zeroDbNorm);
+                g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+                g.drawVerticalLine(zeroDbX, static_cast<float>(bounds.getY()),
+                                   static_cast<float>(bounds.getY()) + h);
+            }
         }
     }
 
@@ -257,7 +292,12 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
                     sensitivity = baseSensitivity / 100.0;  // Very fine control
                 }
 
-                double delta = (dragStartY_ - e.y) * sensitivity;
+                double delta;
+                if (orientation_ == Orientation::Horizontal) {
+                    delta = (e.x - dragStartX_) * sensitivity;
+                } else {
+                    delta = (dragStartY_ - e.y) * sensitivity;
+                }
                 setValue(dragStartValue_ + delta);
             }
         }
@@ -340,6 +380,7 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
     bool isLeftButtonDrag_ = false;
     bool isShiftDrag_ = false;
     float shiftDragStartValue_ = 0.5f;
+    Orientation orientation_ = Orientation::Horizontal;
     bool rightClickEditsText_ = true;
     juce::String emptyText_ = "-";
     bool showEmptyText_ = false;
