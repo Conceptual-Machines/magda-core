@@ -18,6 +18,7 @@
 #include "../state/TimelineController.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
+#include "../themes/SmallButtonLookAndFeel.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/SelectionManager.hpp"
@@ -1516,6 +1517,7 @@ void SessionView::rebuildTracks() {
         header->setButtonText(headerText);
         header->setColour(juce::TextButton::textColourOffId,
                           DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        header->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
 
         // Click handler - select track and toggle collapse for groups
         TrackId trackId = track->id;
@@ -1877,7 +1879,7 @@ void SessionView::setupSceneButtons() {
 
     for (int i = 0; i < numScenes_; ++i) {
         auto btn = std::make_unique<juce::TextButton>();
-        btn->setButtonText(">");
+        btn->setButtonText(juce::String(juce::CharPointer_UTF8("\xe2\x96\xb6")));  // ▶
         btn->setColour(juce::TextButton::buttonColourId,
                        DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
         btn->setColour(juce::TextButton::textColourOffId,
@@ -1905,7 +1907,7 @@ void SessionView::addScene() {
     // Add a new scene button
     int sceneIndex = numScenes_ - 1;
     auto btn = std::make_unique<juce::TextButton>();
-    btn->setButtonText(">");
+    btn->setButtonText(juce::String(juce::CharPointer_UTF8("\xe2\x96\xb6")));  // ▶
     btn->setColour(juce::TextButton::buttonColourId,
                    DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
     btn->setColour(juce::TextButton::textColourOffId,
