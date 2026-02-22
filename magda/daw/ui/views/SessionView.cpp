@@ -1616,6 +1616,7 @@ void SessionView::rebuildTracks() {
                            DarkTheme::getColour(DarkTheme::SURFACE));
         stopBtn->setColour(juce::TextButton::textColourOffId,
                            DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+        stopBtn->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
 
         TrackId trackId = visibleTrackIds_[i];
         stopBtn->onClick = [this, trackId]() {
@@ -1884,6 +1885,7 @@ void SessionView::setupSceneButtons() {
                        DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
         btn->setColour(juce::TextButton::textColourOffId,
                        DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        btn->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
         btn->onClick = [this, i]() { onSceneLaunched(i); };
         sceneContainer->addAndMakeVisible(*btn);
         sceneButtons.push_back(std::move(btn));
@@ -1896,6 +1898,7 @@ void SessionView::setupSceneButtons() {
                              DarkTheme::getColour(DarkTheme::STATUS_ERROR));
     stopAllButton->setColour(juce::TextButton::textColourOffId,
                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    stopAllButton->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
     stopAllButton->onClick = [this]() { onStopAllClicked(); };
     addAndMakeVisible(*stopAllButton);
 }
@@ -1912,6 +1915,7 @@ void SessionView::addScene() {
                    DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
     btn->setColour(juce::TextButton::textColourOffId,
                    DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    btn->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
     btn->onClick = [this, sceneIndex]() { onSceneLaunched(sceneIndex); };
     sceneContainer->addAndMakeVisible(*btn);
     sceneButtons.push_back(std::move(btn));
