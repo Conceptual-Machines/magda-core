@@ -1083,7 +1083,13 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
         // Show/hide I/O routing toggle
         auto& metrics = MixerMetrics::getInstance();
         const int toggleRoutingId = -100;
+        const int deleteTrackId = -101;
         menu.addItem(toggleRoutingId, "Show I/O Routing", true, metrics.showRouting);
+
+        if (!isMaster_) {
+            menu.addSeparator();
+            menu.addItem(deleteTrackId, "Delete Track");
+        }
 
         menu.showMenuAsync(juce::PopupMenu::Options(), [this](int result) {
             if (result == -100) {
@@ -1091,6 +1097,9 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
                 m.showRouting = !m.showRouting;
                 if (onSendAreaResized)
                     onSendAreaResized();  // Triggers relayout of all strips
+            } else if (result == -101) {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<DeleteTrackCommand>(trackId_));
             } else if (result > 0) {
                 TrackManager::getInstance().addSend(trackId_, static_cast<TrackId>(result));
             }
