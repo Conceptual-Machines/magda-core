@@ -1868,6 +1868,25 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
             g.drawLine(centre.getX(), centre.getY() - 8, centre.getX(), centre.getY() + 8, 2.0f);
         }
     }
+
+    // File drag "new track" overlay (when dragging audio files past last track)
+    if (dragHoverTrackIndex_ == -1 && dragHoverSceneIndex_ >= 0) {
+        auto vpBounds = gridViewport->getBounds();
+        int lastTrackEnd = getTotalTracksWidth() - trackHeaderScrollOffset;
+        int indicatorW = DEFAULT_CLIP_SLOT_WIDTH;
+        auto indicatorBounds =
+            juce::Rectangle<int>(lastTrackEnd, 0, indicatorW, vpBounds.getBottom());
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.12f));
+        g.fillRect(indicatorBounds);
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.35f));
+        g.drawRect(indicatorBounds, 2);
+
+        // Draw "+" icon
+        auto centre = indicatorBounds.getCentre().toFloat();
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
+        g.drawLine(centre.getX() - 8, centre.getY(), centre.getX() + 8, centre.getY(), 2.0f);
+        g.drawLine(centre.getX(), centre.getY() - 8, centre.getX(), centre.getY() + 8, 2.0f);
+    }
 }
 
 void SessionView::resized() {
@@ -2628,8 +2647,8 @@ bool SessionView::isInterestedInFileDrag(const juce::StringArray& files) {
 void SessionView::fileDragEnter(const juce::StringArray& files, int x, int y) {
     updateDragHighlight(x, y);
 
-    // Show ghost preview if hovering over valid slot
-    if (dragHoverTrackIndex_ >= 0 && dragHoverSceneIndex_ >= 0) {
+    // Show ghost preview if hovering over valid slot or new-track area
+    if (dragHoverSceneIndex_ >= 0) {
         updateDragGhost(files, dragHoverTrackIndex_, dragHoverSceneIndex_);
     }
 }
@@ -2642,7 +2661,7 @@ void SessionView::fileDragMove(const juce::StringArray& files, int x, int y) {
 
     // Update ghost if slot changed
     if (dragHoverTrackIndex_ != oldTrackIndex || dragHoverSceneIndex_ != oldSceneIndex) {
-        if (dragHoverTrackIndex_ >= 0 && dragHoverSceneIndex_ >= 0) {
+        if (dragHoverSceneIndex_ >= 0) {
             updateDragGhost(files, dragHoverTrackIndex_, dragHoverSceneIndex_);
         } else {
             clearDragGhost();
@@ -2767,17 +2786,20 @@ void SessionView::updateDragHighlight(int x, int y) {
     int trackIndex = getTrackIndexAtX(gridLocalPoint.getX());
     int sceneIndex = gridLocalPoint.getY() / sceneRowHeight;
 
-    // Validate indices
-    if (trackIndex < 0 || trackIndex >= static_cast<int>(visibleTrackIds_.size())) {
-        trackIndex = -1;
-    }
+    // Validate scene index
     if (sceneIndex < 0 || sceneIndex >= numScenes_) {
         sceneIndex = -1;
     }
 
+    // trackIndex == -1 is valid: means "past last track" (create new track zone)
+    // Only clamp to -1 if truly out of bounds on the left
+    if (trackIndex >= static_cast<int>(visibleTrackIds_.size())) {
+        trackIndex = -1;
+    }
+
     // Update highlight if slot changed
     if (trackIndex != dragHoverTrackIndex_ || sceneIndex != dragHoverSceneIndex_) {
-        // Clear old highlight
+        // Clear old highlight on previous slot
         if (dragHoverTrackIndex_ >= 0 && dragHoverSceneIndex_ >= 0) {
             updateClipSlotAppearance(dragHoverTrackIndex_, dragHoverSceneIndex_);
         }
@@ -2796,19 +2818,26 @@ void SessionView::updateDragHighlight(int x, int y) {
                                 DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.5f));
             }
         }
+
+        // Repaint to update the "new track" overlay when hovering past last track
+        if (dragHoverTrackIndex_ == -1)
+            repaint();
     }
 }
 
 void SessionView::clearDragHighlight() {
+    bool needsRepaint = (dragHoverTrackIndex_ == -1 && dragHoverSceneIndex_ >= 0);
     if (dragHoverTrackIndex_ >= 0 && dragHoverSceneIndex_ >= 0) {
         updateClipSlotAppearance(dragHoverTrackIndex_, dragHoverSceneIndex_);
-        dragHoverTrackIndex_ = -1;
-        dragHoverSceneIndex_ = -1;
     }
+    dragHoverTrackIndex_ = -1;
+    dragHoverSceneIndex_ = -1;
+    if (needsRepaint)
+        repaint();
 }
 
 void SessionView::updateDragGhost(const juce::StringArray& files, int trackIndex, int sceneIndex) {
-    if (files.isEmpty() || trackIndex < 0 || sceneIndex < 0) {
+    if (files.isEmpty() || sceneIndex < 0) {
         clearDragGhost();
         return;
     }
@@ -2845,11 +2874,18 @@ void SessionView::updateDragGhost(const juce::StringArray& files, int trackIndex
     // Position ghost at the target slot (in grid coordinates)
     int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
 
-    int ghostX = getTrackX(trackIndex);
-    int ghostY = sceneIndex * sceneRowHeight;
-    int ghostW = (trackIndex < static_cast<int>(trackColumnWidths_.size()))
+    int ghostX, ghostW;
+    if (trackIndex >= 0) {
+        ghostX = getTrackX(trackIndex);
+        ghostW = (trackIndex < static_cast<int>(trackColumnWidths_.size()))
                      ? trackColumnWidths_[trackIndex]
                      : DEFAULT_CLIP_SLOT_WIDTH;
+    } else {
+        // Past last track — position ghost in "new track" column
+        ghostX = getTotalTracksWidth();
+        ghostW = DEFAULT_CLIP_SLOT_WIDTH;
+    }
+    int ghostY = sceneIndex * sceneRowHeight;
 
     // Update ghost label
     dragGhostLabel_->setText(filename, juce::dontSendNotification);
