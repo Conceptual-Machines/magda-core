@@ -1028,37 +1028,102 @@ class SessionView::MiniChannelStrip : public juce::Component {
         levelMeter_ = std::make_unique<LevelMeter>();
         addAndMakeVisible(*levelMeter_);
 
-        // Mute button
+        // Mute button (square corners, toggle)
         muteButton_ = std::make_unique<juce::TextButton>("M");
+        muteButton_->setConnectedEdges(
+            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
         muteButton_->setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
+                               DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        muteButton_->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFFAA8855));
         muteButton_->setColour(juce::TextButton::textColourOffId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        muteButton_->setColour(juce::TextButton::textColourOnId,
+                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        muteButton_->setClickingTogglesState(true);
+        muteButton_->setToggleState(track.muted, juce::dontSendNotification);
         muteButton_->onClick = [this]() {
-            const auto* t = TrackManager::getInstance().getTrack(trackId_);
-            if (t) {
-                UndoManager::getInstance().executeCommand(
-                    std::make_unique<SetTrackMuteCommand>(trackId_, !t->muted));
-            }
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackMuteCommand>(trackId_, muteButton_->getToggleState()));
         };
         addAndMakeVisible(*muteButton_);
-        updateMuteVisual(track.muted);
 
-        // Solo button
+        // Solo button (square corners, toggle)
         soloButton_ = std::make_unique<juce::TextButton>("S");
+        soloButton_->setConnectedEdges(
+            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
         soloButton_->setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
+                               DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        soloButton_->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFFAAAA55));
         soloButton_->setColour(juce::TextButton::textColourOffId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        soloButton_->setColour(juce::TextButton::textColourOnId,
+                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        soloButton_->setClickingTogglesState(true);
+        soloButton_->setToggleState(track.soloed, juce::dontSendNotification);
         soloButton_->onClick = [this]() {
-            const auto* t = TrackManager::getInstance().getTrack(trackId_);
-            if (t) {
-                UndoManager::getInstance().executeCommand(
-                    std::make_unique<SetTrackSoloCommand>(trackId_, !t->soloed));
-            }
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackSoloCommand>(trackId_, soloButton_->getToggleState()));
         };
         addAndMakeVisible(*soloButton_);
-        updateSoloVisual(track.soloed);
+
+        // Record arm button (square corners, toggle)
+        recordButton_ = std::make_unique<juce::TextButton>("R");
+        recordButton_->setConnectedEdges(
+            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+        recordButton_->setColour(juce::TextButton::buttonColourId,
+                                 DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        recordButton_->setColour(juce::TextButton::buttonOnColourId,
+                                 DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+        recordButton_->setColour(juce::TextButton::textColourOffId,
+                                 DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        recordButton_->setColour(juce::TextButton::textColourOnId,
+                                 DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        recordButton_->setClickingTogglesState(true);
+        recordButton_->setToggleState(track.recordArmed, juce::dontSendNotification);
+        recordButton_->onClick = [this]() {
+            TrackManager::getInstance().setTrackRecordArmed(trackId_,
+                                                            recordButton_->getToggleState());
+        };
+        addAndMakeVisible(*recordButton_);
+
+        // Monitor button (3-state: Off → In → Auto → Off)
+        monitorButton_ = std::make_unique<juce::TextButton>("-");
+        monitorButton_->setConnectedEdges(
+            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+        monitorButton_->setColour(juce::TextButton::buttonColourId,
+                                  DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        monitorButton_->setColour(juce::TextButton::buttonOnColourId,
+                                  DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+        monitorButton_->setColour(juce::TextButton::textColourOffId,
+                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        monitorButton_->setColour(juce::TextButton::textColourOnId,
+                                  DarkTheme::getColour(DarkTheme::BACKGROUND));
+        monitorButton_->setTooltip("Input monitoring (Off/In/Auto)");
+        monitorButton_->onClick = [this]() {
+            auto* t = TrackManager::getInstance().getTrack(trackId_);
+            if (!t)
+                return;
+            InputMonitorMode nextMode;
+            switch (t->inputMonitor) {
+                case InputMonitorMode::Off:
+                    nextMode = InputMonitorMode::In;
+                    break;
+                case InputMonitorMode::In:
+                    nextMode = InputMonitorMode::Auto;
+                    break;
+                case InputMonitorMode::Auto:
+                    nextMode = InputMonitorMode::Off;
+                    break;
+            }
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackInputMonitorCommand>(trackId_, nextMode));
+        };
+        addAndMakeVisible(*monitorButton_);
+        updateMonitorVisual(track.inputMonitor);
 
         // Listen for mouse events on all children so we can intercept right-clicks
         volumeSlider_->addMouseListener(this, false);
@@ -1066,6 +1131,8 @@ class SessionView::MiniChannelStrip : public juce::Component {
         levelMeter_->addMouseListener(this, false);
         muteButton_->addMouseListener(this, false);
         soloButton_->addMouseListener(this, false);
+        recordButton_->addMouseListener(this, false);
+        monitorButton_->addMouseListener(this, false);
     }
 
     void mouseDown(const juce::MouseEvent& e) override {
@@ -1087,11 +1154,16 @@ class SessionView::MiniChannelStrip : public juce::Component {
         auto bounds = getLocalBounds();
         bounds.removeFromTop(3);  // colour bar
 
-        // M/S buttons at bottom (18px row)
-        auto buttonRow = bounds.removeFromBottom(18);
-        int halfW = buttonRow.getWidth() / 2;
-        muteButton_->setBounds(buttonRow.removeFromLeft(halfW));
-        soloButton_->setBounds(buttonRow);
+        // Button rows at bottom: R/Mon (18px) then M/S (18px)
+        auto msRow = bounds.removeFromBottom(18);
+        int halfW = msRow.getWidth() / 2;
+        muteButton_->setBounds(msRow.removeFromLeft(halfW));
+        soloButton_->setBounds(msRow);
+
+        auto rmRow = bounds.removeFromBottom(18);
+        halfW = rmRow.getWidth() / 2;
+        recordButton_->setBounds(rmRow.removeFromLeft(halfW));
+        monitorButton_->setBounds(rmRow);
 
         // Layout: fader | dbScale | meter
         int meterW = juce::jmax(8, bounds.getWidth() * 30 / 100);
@@ -1118,8 +1190,10 @@ class SessionView::MiniChannelStrip : public juce::Component {
     void updateFromTrack(const TrackInfo& track) {
         float db = gainToDb(track.volume);
         volumeSlider_->setValue(db, juce::dontSendNotification);
-        updateMuteVisual(track.muted);
-        updateSoloVisual(track.soloed);
+        muteButton_->setToggleState(track.muted, juce::dontSendNotification);
+        soloButton_->setToggleState(track.soloed, juce::dontSendNotification);
+        recordButton_->setToggleState(track.recordArmed, juce::dontSendNotification);
+        updateMonitorVisual(track.inputMonitor);
         trackColour_ = track.colour;
         repaint();
     }
@@ -1136,33 +1210,22 @@ class SessionView::MiniChannelStrip : public juce::Component {
     std::unique_ptr<LevelMeter> levelMeter_;
     std::unique_ptr<juce::TextButton> muteButton_;
     std::unique_ptr<juce::TextButton> soloButton_;
+    std::unique_ptr<juce::TextButton> recordButton_;
+    std::unique_ptr<juce::TextButton> monitorButton_;
 
-    void updateMuteVisual(bool muted) {
-        if (muted) {
-            muteButton_->setColour(juce::TextButton::buttonColourId,
-                                   DarkTheme::getColour(DarkTheme::STATUS_ERROR));
-            muteButton_->setColour(juce::TextButton::textColourOffId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        } else {
-            muteButton_->setColour(juce::TextButton::buttonColourId,
-                                   DarkTheme::getColour(DarkTheme::SURFACE));
-            muteButton_->setColour(juce::TextButton::textColourOffId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    void updateMonitorVisual(InputMonitorMode mode) {
+        switch (mode) {
+            case InputMonitorMode::Off:
+                monitorButton_->setButtonText("-");
+                break;
+            case InputMonitorMode::In:
+                monitorButton_->setButtonText("I");
+                break;
+            case InputMonitorMode::Auto:
+                monitorButton_->setButtonText("A");
+                break;
         }
-    }
-
-    void updateSoloVisual(bool soloed) {
-        if (soloed) {
-            soloButton_->setColour(juce::TextButton::buttonColourId,
-                                   DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-            soloButton_->setColour(juce::TextButton::textColourOffId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        } else {
-            soloButton_->setColour(juce::TextButton::buttonColourId,
-                                   DarkTheme::getColour(DarkTheme::SURFACE));
-            soloButton_->setColour(juce::TextButton::textColourOffId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        }
+        monitorButton_->setToggleState(mode != InputMonitorMode::Off, juce::dontSendNotification);
     }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MiniChannelStrip)
@@ -1823,7 +1886,7 @@ void SessionView::resized() {
     for (int i = 0; i < numTracks; ++i) {
         int x = getTrackX(i) - trackHeaderScrollOffset;
         int w = trackColumnWidths_[i];
-        trackHeaders[i]->setBounds(x, 0, w, TRACK_HEADER_HEIGHT);
+        trackHeaders[i]->setBounds(x + 2, 2, w - 4, TRACK_HEADER_HEIGHT - 4);
 
         // Position resize handle at right edge of header
         if (i < static_cast<int>(trackResizeHandles_.size())) {
@@ -1872,7 +1935,7 @@ void SessionView::scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStar
         for (int i = 0; i < numTracks; ++i) {
             int x = getTrackX(i) - trackHeaderScrollOffset;
             int w = trackColumnWidths_[i];
-            trackHeaders[i]->setBounds(x, 0, w, TRACK_HEADER_HEIGHT);
+            trackHeaders[i]->setBounds(x + 2, 2, w - 4, TRACK_HEADER_HEIGHT - 4);
             if (i < static_cast<int>(trackResizeHandles_.size())) {
                 trackResizeHandles_[i]->setBounds(x + w - 2, 0, 4, TRACK_HEADER_HEIGHT);
             }
