@@ -6,6 +6,7 @@
 #include <cmath>
 #include <vector>
 
+#include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/MidiBridge.hpp"
 #include "../../../engine/AudioEngine.hpp"
 #include "../../components/mixer/RoutingSyncHelper.hpp"
@@ -275,16 +276,41 @@ TrackInspector::TrackInspector() {
 }
 
 TrackInspector::~TrackInspector() {
+    stopTimer();
     magda::TrackManager::getInstance().removeListener(this);
+}
+
+void TrackInspector::timerCallback() {
+    if (!audioEngine_)
+        return;
+
+    auto* midiBridge = audioEngine_->getMidiBridge();
+    if (!midiBridge)
+        return;
+
+    size_t inputCount = midiBridge->getAvailableMidiInputs().size();
+    size_t outputCount = midiBridge->getAvailableMidiOutputs().size();
+
+    if (inputCount != lastMidiInputCount_ || outputCount != lastMidiOutputCount_) {
+        lastMidiInputCount_ = inputCount;
+        lastMidiOutputCount_ = outputCount;
+        populateMidiInputOptions();
+        populateMidiOutputOptions();
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            updateRoutingSelectorsFromTrack();
+    }
 }
 
 void TrackInspector::onActivated() {
     magda::TrackManager::getInstance().addListener(this);
     populateRoutingSelectors();
     updateFromSelectedTrack();
+    // Poll for MIDI device changes every 2 seconds (matching TrackHeadersPanel)
+    startTimerHz(1);
 }
 
 void TrackInspector::onDeactivated() {
+    stopTimer();
     magda::TrackManager::getInstance().removeListener(this);
 }
 
@@ -973,9 +999,12 @@ void TrackInspector::populateAudioInputOptions() {
     auto* deviceManager = audioEngine_->getDeviceManager();
     if (!deviceManager)
         return;
-    magda::RoutingSyncHelper::populateAudioInputOptions(audioInputSelector_.get(),
-                                                        deviceManager->getCurrentAudioDevice(),
-                                                        selectedTrackId_, &inputTrackMapping_);
+    juce::BigInteger enabledInputChannels;
+    if (auto* bridge = audioEngine_->getAudioBridge())
+        enabledInputChannels = bridge->getEnabledInputChannels();
+    magda::RoutingSyncHelper::populateAudioInputOptions(
+        audioInputSelector_.get(), deviceManager->getCurrentAudioDevice(), selectedTrackId_,
+        &inputTrackMapping_, enabledInputChannels);
 }
 
 void TrackInspector::populateAudioOutputOptions() {
@@ -984,9 +1013,12 @@ void TrackInspector::populateAudioOutputOptions() {
     auto* deviceManager = audioEngine_->getDeviceManager();
     if (!deviceManager)
         return;
-    magda::RoutingSyncHelper::populateAudioOutputOptions(outputSelector_.get(), selectedTrackId_,
-                                                         deviceManager->getCurrentAudioDevice(),
-                                                         outputTrackMapping_);
+    juce::BigInteger enabledOutputChannels;
+    if (auto* bridge = audioEngine_->getAudioBridge())
+        enabledOutputChannels = bridge->getEnabledOutputChannels();
+    magda::RoutingSyncHelper::populateAudioOutputOptions(
+        outputSelector_.get(), selectedTrackId_, deviceManager->getCurrentAudioDevice(),
+        outputTrackMapping_, enabledOutputChannels);
 }
 
 void TrackInspector::populateMidiInputOptions() {
@@ -1016,10 +1048,15 @@ void TrackInspector::updateRoutingSelectorsFromTrack() {
 
     auto* deviceManager = audioEngine_->getDeviceManager();
     auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;
+    juce::BigInteger enabledIn, enabledOut;
+    if (auto* bridge = audioEngine_->getAudioBridge()) {
+        enabledIn = bridge->getEnabledInputChannels();
+        enabledOut = bridge->getEnabledOutputChannels();
+    }
     magda::RoutingSyncHelper::syncSelectorsFromTrack(
         *track, audioInputSelector_.get(), inputSelector_.get(), outputSelector_.get(),
         midiOutputSelector_.get(), audioEngine_->getMidiBridge(), device, selectedTrackId_,
-        outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_);
+        outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_, enabledIn, enabledOut);
 }
 
 }  // namespace magda::daw::ui

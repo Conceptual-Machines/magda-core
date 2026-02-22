@@ -7,10 +7,12 @@
 #include "../../audio/AudioBridge.hpp"
 #include "../../audio/DrumGridPlugin.hpp"
 #include "../../audio/MeteringBuffer.hpp"
+#include "../../audio/MidiBridge.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "../../engine/TracktionEngineWrapper.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
+#include "../components/mixer/RoutingSyncHelper.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/SelectionManager.hpp"
@@ -264,13 +266,15 @@ class MixerView::ChannelStrip::DbScale : public juce::Component {
 };
 
 // Channel strip implementation
-MixerView::ChannelStrip::ChannelStrip(const TrackInfo& track, bool isMaster)
+MixerView::ChannelStrip::ChannelStrip(const TrackInfo& track, AudioEngine* audioEngine,
+                                      bool isMaster)
     : trackId_(track.id),
       trackType_(track.type),
       isMaster_(isMaster),
       isChildTrack_(track.hasParent()),
       trackColour_(track.colour),
-      trackName_(track.name) {
+      trackName_(track.name),
+      audioEngine_(audioEngine) {
     setOpaque(true);
     setupControls();
     updateFromTrack(track);
@@ -341,6 +345,23 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track) {
                 }
             }
         }
+
+        // Sync routing selectors from current track state
+        if (audioEngine_ && audioInSelector && audioOutSelector && midiInSelector &&
+            midiOutSelector) {
+            auto* deviceManager = audioEngine_->getDeviceManager();
+            auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;
+            auto* midiBridge = audioEngine_->getMidiBridge();
+            juce::BigInteger enabledIn, enabledOut;
+            if (auto* bridge = audioEngine_->getAudioBridge()) {
+                enabledIn = bridge->getEnabledInputChannels();
+                enabledOut = bridge->getEnabledOutputChannels();
+            }
+            RoutingSyncHelper::syncSelectorsFromTrack(
+                track, audioInSelector.get(), midiInSelector.get(), audioOutSelector.get(),
+                midiOutSelector.get(), midiBridge, device, trackId_, outputTrackMapping_,
+                midiOutputTrackMapping_, &inputTrackMapping_, enabledIn, enabledOut);
+        }
     }
 
     repaint();
@@ -354,6 +375,7 @@ void MixerView::ChannelStrip::setupControls() {
     trackLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     trackLabel->setColour(juce::Label::backgroundColourId,
                           DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    trackLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
     addAndMakeVisible(*trackLabel);
 
     // Pan slider (horizontal TextSlider)
@@ -534,37 +556,168 @@ void MixerView::ChannelStrip::setupControls() {
 
         // Audio/MIDI routing selectors (toggle + dropdown, not on master)
         audioInSelector = std::make_unique<RoutingSelector>(RoutingSelector::Type::AudioIn);
-        audioInSelector->setOptions({
-            {1, "Input 1"},
-            {2, "Input 2"},
-            {3, "Input 1+2 (Stereo)"},
-            {0, "", true},  // Separator
-            {10, "External Sidechain"},
-        });
-        audioInSelector->setSelectedId(1);
         addAndMakeVisible(*audioInSelector);
 
         audioOutSelector = std::make_unique<RoutingSelector>(RoutingSelector::Type::AudioOut);
-        audioOutSelector->setOptions({
-            {1, "Master"},
-            {2, "Bus 1"},
-            {3, "Bus 2"},
-            {0, "", true},  // Separator
-            {10, "Hardware Out"},
-        });
-        audioOutSelector->setSelectedId(1);
         addAndMakeVisible(*audioOutSelector);
 
         midiInSelector = std::make_unique<RoutingSelector>(RoutingSelector::Type::MidiIn);
-        // Options should be populated from MidiBridge
-        midiInSelector->setSelectedId(1);
         addAndMakeVisible(*midiInSelector);
 
         midiOutSelector = std::make_unique<RoutingSelector>(RoutingSelector::Type::MidiOut);
-        // Options should be populated from MidiBridge
-        midiOutSelector->setSelectedId(1);
         addAndMakeVisible(*midiOutSelector);
+
+        // Populate routing options from real data and wire callbacks
+        if (audioEngine_) {
+            auto* deviceManager = audioEngine_->getDeviceManager();
+            auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;
+            auto* midiBridge = audioEngine_->getMidiBridge();
+
+            juce::BigInteger enabledInputChannels, enabledOutputChannels;
+            if (auto* bridge = audioEngine_->getAudioBridge()) {
+                enabledInputChannels = bridge->getEnabledInputChannels();
+                enabledOutputChannels = bridge->getEnabledOutputChannels();
+            }
+
+            RoutingSyncHelper::populateAudioInputOptions(audioInSelector.get(), device, trackId_,
+                                                         &inputTrackMapping_, enabledInputChannels);
+            RoutingSyncHelper::populateAudioOutputOptions(audioOutSelector.get(), trackId_, device,
+                                                          outputTrackMapping_,
+                                                          enabledOutputChannels);
+            RoutingSyncHelper::populateMidiInputOptions(midiInSelector.get(), midiBridge);
+            RoutingSyncHelper::populateMidiOutputOptions(midiOutSelector.get(), midiBridge,
+                                                         midiOutputTrackMapping_);
+        }
+
+        setupRoutingCallbacks();
     }
+}
+
+void MixerView::ChannelStrip::setupRoutingCallbacks() {
+    if (!audioInSelector || !audioOutSelector || !midiInSelector || !midiOutSelector)
+        return;
+
+    auto* midiBridge = audioEngine_ ? audioEngine_->getMidiBridge() : nullptr;
+
+    // Audio input selector callbacks (mutually exclusive with MIDI input)
+    audioInSelector->onEnabledChanged = [this](bool enabled) {
+        if (enabled) {
+            midiInSelector->setEnabled(false);
+            TrackManager::getInstance().setTrackMidiInput(trackId_, "");
+            auto* trackInfo = TrackManager::getInstance().getTrack(trackId_);
+            if (trackInfo && trackInfo->audioInputDevice.startsWith("track:"))
+                TrackManager::getInstance().setTrackAudioInput(trackId_,
+                                                               trackInfo->audioInputDevice);
+            else
+                TrackManager::getInstance().setTrackAudioInput(trackId_, "default");
+        } else {
+            TrackManager::getInstance().setTrackAudioInput(trackId_, "");
+        }
+    };
+
+    audioInSelector->onSelectionChanged = [this](int selectedId) {
+        if (selectedId == 1) {
+            TrackManager::getInstance().setTrackAudioInput(trackId_, "");
+        } else if (selectedId >= 200) {
+            auto it = inputTrackMapping_.find(selectedId);
+            if (it != inputTrackMapping_.end()) {
+                TrackManager::getInstance().setTrackAudioInput(trackId_,
+                                                               "track:" + juce::String(it->second));
+            }
+        } else if (selectedId >= 10) {
+            TrackManager::getInstance().setTrackAudioInput(trackId_, "default");
+        }
+    };
+
+    // MIDI input selector callbacks (mutually exclusive with audio input)
+    midiInSelector->onEnabledChanged = [this, midiBridge](bool enabled) {
+        if (enabled) {
+            audioInSelector->setEnabled(false);
+            TrackManager::getInstance().setTrackAudioInput(trackId_, "");
+            int selectedId = midiInSelector->getSelectedId();
+            if (selectedId == 1) {
+                TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
+            } else if (selectedId >= 10 && midiBridge) {
+                auto midiInputs = midiBridge->getAvailableMidiInputs();
+                int deviceIndex = selectedId - 10;
+                if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
+                    TrackManager::getInstance().setTrackMidiInput(trackId_,
+                                                                  midiInputs[deviceIndex].id);
+                } else {
+                    TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
+                }
+            } else {
+                TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
+            }
+        } else {
+            TrackManager::getInstance().setTrackMidiInput(trackId_, "");
+        }
+    };
+
+    midiInSelector->onSelectionChanged = [this, midiBridge](int selectedId) {
+        if (selectedId == 2) {
+            TrackManager::getInstance().setTrackMidiInput(trackId_, "");
+        } else if (selectedId == 1) {
+            TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
+        } else if (selectedId >= 10 && midiBridge) {
+            auto midiInputs = midiBridge->getAvailableMidiInputs();
+            int deviceIndex = selectedId - 10;
+            if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
+                TrackManager::getInstance().setTrackMidiInput(trackId_, midiInputs[deviceIndex].id);
+            }
+        }
+    };
+
+    // Output selector callbacks
+    audioOutSelector->onEnabledChanged = [this](bool enabled) {
+        if (enabled) {
+            TrackManager::getInstance().setTrackAudioOutput(trackId_, "master");
+        } else {
+            TrackManager::getInstance().setTrackAudioOutput(trackId_, "");
+        }
+    };
+
+    audioOutSelector->onSelectionChanged = [this, mapping = outputTrackMapping_](int selectedId) {
+        if (selectedId == 1) {
+            TrackManager::getInstance().setTrackAudioOutput(trackId_, "master");
+        } else if (selectedId == 2) {
+            TrackManager::getInstance().setTrackAudioOutput(trackId_, "");
+        } else if (selectedId >= 200) {
+            auto it = mapping.find(selectedId);
+            if (it != mapping.end()) {
+                TrackManager::getInstance().setTrackAudioOutput(
+                    trackId_, "track:" + juce::String(it->second));
+            }
+        } else if (selectedId >= 10) {
+            TrackManager::getInstance().setTrackAudioOutput(trackId_, "master");
+        }
+    };
+
+    // MIDI output selector callbacks
+    midiOutSelector->onEnabledChanged = [this](bool enabled) {
+        if (!enabled) {
+            TrackManager::getInstance().setTrackMidiOutput(trackId_, "");
+        }
+    };
+
+    midiOutSelector->onSelectionChanged = [this, midiBridge](int selectedId) {
+        if (selectedId == 1) {
+            TrackManager::getInstance().setTrackMidiOutput(trackId_, "");
+        } else if (selectedId >= 200) {
+            auto it = midiOutputTrackMapping_.find(selectedId);
+            if (it != midiOutputTrackMapping_.end()) {
+                TrackManager::getInstance().setTrackMidiOutput(trackId_,
+                                                               "track:" + juce::String(it->second));
+            }
+        } else if (selectedId >= 10 && midiBridge) {
+            auto midiOutputs = midiBridge->getAvailableMidiOutputs();
+            int deviceIndex = selectedId - 10;
+            if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiOutputs.size())) {
+                TrackManager::getInstance().setTrackMidiOutput(trackId_,
+                                                               midiOutputs[deviceIndex].id);
+            }
+        }
+    };
 }
 
 void MixerView::ChannelStrip::rebuildSendSlots(const std::vector<SendInfo>& sends) {
@@ -1484,7 +1637,7 @@ void MixerView::rebuildChannelStrips() {
             }
         }
 
-        auto strip = std::make_unique<ChannelStrip>(track, false);
+        auto strip = std::make_unique<ChannelStrip>(track, audioEngine_, false);
         strip->onClicked = [this](int trackId, bool isMaster) {
             // Find the index of this track in the visible strips
             for (size_t i = 0; i < channelStrips.size(); ++i) {
@@ -1695,7 +1848,7 @@ void MixerView::rebuildChannelStrips() {
     for (const auto& track : tracks) {
         if (track.type != TrackType::Aux || !track.isVisibleIn(currentViewMode_))
             continue;
-        auto strip = std::make_unique<ChannelStrip>(track, false);
+        auto strip = std::make_unique<ChannelStrip>(track, audioEngine_, false);
         strip->onClicked = [this](int trackId, bool isMaster) {
             for (size_t i = 0; i < channelStrips.size(); ++i) {
                 if (channelStrips[i]->getTrackId() == trackId) {

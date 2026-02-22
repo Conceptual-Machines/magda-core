@@ -21,7 +21,9 @@ namespace magda::daw::ui {
  * - Sends/Receives
  * - Clip count
  */
-class TrackInspector : public BaseInspector, public magda::TrackManagerListener {
+class TrackInspector : public BaseInspector,
+                       public magda::TrackManagerListener,
+                       public juce::Timer {
   public:
     TrackInspector();
     ~TrackInspector() override;
@@ -45,6 +47,9 @@ class TrackInspector : public BaseInspector, public magda::TrackManagerListener 
     void trackSelectionChanged(magda::TrackId trackId) override;
     void masterChannelChanged() override;
     void deviceParameterChanged(magda::DeviceId deviceId, int paramIndex, float newValue) override;
+
+    // Timer for polling MIDI device changes
+    void timerCallback() override;
 
   private:
     // Current selection
@@ -104,6 +109,10 @@ class TrackInspector : public BaseInspector, public magda::TrackManagerListener 
     std::map<int, magda::TrackId> outputTrackMapping_;
     std::map<int, magda::TrackId> midiOutputTrackMapping_;
     std::map<int, magda::TrackId> inputTrackMapping_;
+
+    // MIDI device change detection
+    size_t lastMidiInputCount_ = 0;
+    size_t lastMidiOutputCount_ = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TrackInspector)
 };

@@ -490,6 +490,23 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // =========================================================================
 
     /**
+     * @brief Get a bitmask of user-enabled input channels from TE WaveInputDevices
+     *
+     * JUCE device->getActiveInputChannels() always returns all channels (because
+     * TracktionEngineWrapper enables all at JUCE level). User preferences are applied
+     * at the TE WaveInputDevice level. This method reads those TE-level enabled states.
+     *
+     * @return BigInteger with bits set for each enabled input channel
+     */
+    juce::BigInteger getEnabledInputChannels() const;
+
+    /**
+     * @brief Get a bitmask of user-enabled output channels from TE WaveOutputDevices
+     * @return BigInteger with bits set for each enabled output channel
+     */
+    juce::BigInteger getEnabledOutputChannels() const;
+
+    /**
      * @brief Set audio output destination for a track
      * @param trackId The MAGDA track ID
      * @param destination Output destination: "master" for default, deviceID for specific output,

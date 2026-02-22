@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -81,7 +82,7 @@ class MixerView : public juce::Component,
     // Channel strip component
     class ChannelStrip : public juce::Component {
       public:
-        ChannelStrip(const TrackInfo& track, bool isMaster = false);
+        ChannelStrip(const TrackInfo& track, AudioEngine* audioEngine, bool isMaster = false);
         ~ChannelStrip() override;
 
         void paint(juce::Graphics& g) override;
@@ -181,7 +182,16 @@ class MixerView : public juce::Component,
 
         friend class MixerView;
 
+        // Audio engine for routing (not owned)
+        AudioEngine* audioEngine_ = nullptr;
+
+        // Routing option-to-track mappings (rebuilt when options are populated)
+        std::map<int, TrackId> outputTrackMapping_;
+        std::map<int, TrackId> midiOutputTrackMapping_;
+        std::map<int, TrackId> inputTrackMapping_;
+
         void setupControls();
+        void setupRoutingCallbacks();
         void rebuildSendSlots(const std::vector<SendInfo>& sends);
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChannelStrip)
