@@ -1367,9 +1367,9 @@ void MainView::mouseExit([[maybe_unused]] const juce::MouseEvent& event) {
 // Resize handle helper methods
 juce::Rectangle<int> MainView::getResizeHandleArea() const {
     // Position the resize handle in the padding space between headers and content
+    // Starts from top of component (covering corner toolbar area) for seamless border
     auto& layout = LayoutConfig::getInstance();
-    return juce::Rectangle<int>(trackHeaderWidth, getTimelineHeight(), layout.componentSpacing,
-                                getHeight() - getTimelineHeight());
+    return juce::Rectangle<int>(trackHeaderWidth, 0, layout.componentSpacing, getHeight());
 }
 
 void MainView::paintResizeHandle(juce::Graphics& g) {
