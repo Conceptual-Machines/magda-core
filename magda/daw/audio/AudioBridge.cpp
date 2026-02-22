@@ -48,6 +48,11 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
       trackController_(engine, edit),
       pluginManager_(engine, edit, trackController_, pluginWindowBridge_, transportState_),
       clipSynchronizer_(edit, trackController_, warpMarkerManager_) {
+    // Wire up async plugin load completion callback to notify UI
+    pluginManager_.onAsyncPluginLoaded = [](TrackId trackId) {
+        TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
+    };
+
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
 

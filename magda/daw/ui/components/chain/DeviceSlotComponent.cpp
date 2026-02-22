@@ -740,6 +740,22 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
 }
 
 void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) {
+    // Loading state overlay: show "Loading..." and skip normal content
+    if (device_.loadState == magda::DeviceLoadState::Loading) {
+        g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.6f));
+        g.setFont(FontManager::getInstance().getUIFont(11.0f));
+        g.drawText("Loading...", contentArea, juce::Justification::centred);
+        return;
+    }
+
+    // Failed state overlay
+    if (device_.loadState == magda::DeviceLoadState::Failed) {
+        g.setColour(juce::Colours::red.withAlpha(0.7f));
+        g.setFont(FontManager::getInstance().getUIFont(11.0f));
+        g.drawText("Failed to load", contentArea, juce::Justification::centred);
+        return;
+    }
+
     // Content header: manufacturer / device name
     auto headerArea = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
     auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
@@ -773,8 +789,8 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
 void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     DBG("DeviceSlotComponent::resizedContent - width=" + juce::String(getWidth()) +
         " contentArea.width=" + juce::String(contentArea.getWidth()));
-    // When collapsed, hide all content controls
-    if (collapsed_) {
+    // When collapsed or still loading, hide all content controls
+    if (collapsed_ || device_.loadState != magda::DeviceLoadState::Loaded) {
         for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
             paramSlots_[i]->setVisible(false);
         }

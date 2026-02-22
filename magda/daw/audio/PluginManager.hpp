@@ -7,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <set>
 #include <unordered_map>
 
 #include "../core/DeviceInfo.hpp"
@@ -153,6 +154,13 @@ class PluginManager {
      * Parameters: deviceId, error message
      */
     std::function<void(DeviceId, const juce::String&)> onPluginLoadFailed;
+
+    /**
+     * @brief Callback invoked when an async plugin load completes (success or failure)
+     * Used to trigger UI refresh after deferred external plugin loading.
+     * Parameters: trackId
+     */
+    std::function<void(TrackId)> onAsyncPluginLoaded;
 
     // =========================================================================
     // Rack Plugin Creation
@@ -331,6 +339,9 @@ class PluginManager {
     // Internal device → plugin conversion (used by syncTrackPlugins)
     te::Plugin::Ptr loadDeviceAsPlugin(TrackId trackId, const DeviceInfo& device);
 
+    // Poll for async plugin load completion (TE's background thread instantiation)
+    void pollAsyncPluginLoad(TrackId trackId, DeviceId deviceId, te::Plugin::Ptr plugin);
+
     // Plugin creation helpers
     te::Plugin::Ptr createToneGenerator(te::AudioTrack* track);
     te::Plugin::Ptr createLevelMeter(te::AudioTrack* track);
@@ -391,10 +402,14 @@ class PluginManager {
     std::array<PerTrackEntry, kMaxCacheTracks> sidechainLFOCache_{};
     juce::SpinLock cacheLock_;
 
+    // In-flight async plugin loads (prevents duplicate loads on re-entrant syncTrackPlugins)
+    std::set<DeviceId> pendingLoads_;
+
     // Thread safety
     mutable juce::CriticalSection pluginLock_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginManager)
+    JUCE_DECLARE_WEAK_REFERENCEABLE(PluginManager)
 };
 
 }  // namespace magda
