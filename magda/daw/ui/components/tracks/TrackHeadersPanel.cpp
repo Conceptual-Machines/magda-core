@@ -710,6 +710,9 @@ void TrackHeadersPanel::tracksChanged() {
         header->volume = track->volume;
         header->pan = track->pan;
 
+        // Inherit global I/O routing visibility
+        header->showIORouting = showIORouting_;
+
         // Use height from view settings
         header->height = track->viewSettings.getHeight(currentViewMode_);
 
@@ -1556,7 +1559,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 
                 const int sendLabelWidth = 28;
                 const bool wideEnough = tcpArea.getWidth() >= 260;
-                const int ioRows = showIORouting_ ? 2 : 0;
+                const int ioRows = header.showIORouting ? 2 : 0;
                 // vol/pan/buttons: 1 row if wide, 2 if not; plus I/O rows
                 const int numRows = (wideEnough ? 1 : 2) + ioRows;
 
@@ -1564,9 +1567,8 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 if (hasSends)
                     totalContentHeight += contentRowHeight;
                 int availableSpace = tcpArea.getHeight() - totalContentHeight;
-                int rowGap = numRows > 1
-                                 ? std::max(2, availableSpace / (numRows - 1 + (hasSends ? 1 : 0)))
-                                 : 2;
+                int divider = numRows - 1 + (hasSends ? 1 : 0);
+                int rowGap = divider > 0 ? std::clamp(availableSpace / divider, 2, 8) : 2;
 
                 // Vol/Pan/Buttons — uses same width-based logic as helper
                 layoutVolPanAndButtons(tcpArea, rowGap);
@@ -1596,7 +1598,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 header.audioColumnLabel->setVisible(false);
                 header.midiColumnLabel->setVisible(false);
 
-                if (showIORouting_) {
+                if (header.showIORouting) {
                     // Input row: [Audio In] [MIDI In] [inputIcon] — hidden for multi-out
                     const int iconSize = 16;
                     const int ddGap = spacing;
@@ -1937,7 +1939,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     menu.addSeparator();
 
     // Show/Hide I/O routing
-    menu.addItem(6, showIORouting_ ? "Hide I/O Routing" : "Show I/O Routing");
+    menu.addItem(6, header.showIORouting ? "Hide I/O Routing" : "Show I/O Routing");
 
     // Show menu and handle result
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
@@ -1962,9 +1964,13 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                                auto cmd = std::make_unique<DuplicateTrackCommand>(trackId, false);
                                UndoManager::getInstance().executeCommand(std::move(cmd));
                            } else if (result == 6) {
-                               // Toggle I/O routing visibility
-                               showIORouting_ = !showIORouting_;
-                               resized();
+                               // Toggle I/O routing visibility (per-track)
+                               if (trackIndex >= 0 &&
+                                   trackIndex < static_cast<int>(trackHeaders.size())) {
+                                   trackHeaders[trackIndex]->showIORouting =
+                                       !trackHeaders[trackIndex]->showIORouting;
+                                   resized();
+                               }
                            } else if (result == 7) {
                                // Toggle freeze
                                auto* t = TrackManager::getInstance().getTrack(trackId);
@@ -2479,6 +2485,32 @@ void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
 
     pluginDropTrackIndex_ = -1;
     repaint();
+}
+
+bool TrackHeadersPanel::isIORoutingVisible() const {
+    if (trackHeaders.empty())
+        return showIORouting_;
+    for (auto& h : trackHeaders) {
+        if (h->showIORouting)
+            return true;
+    }
+    return false;
+}
+
+void TrackHeadersPanel::toggleIORouting() {
+    // If any track has I/O visible, hide all; otherwise show all
+    bool anyVisible = false;
+    for (auto& h : trackHeaders) {
+        if (h->showIORouting) {
+            anyVisible = true;
+            break;
+        }
+    }
+    for (auto& h : trackHeaders) {
+        h->showIORouting = !anyVisible;
+    }
+    showIORouting_ = !anyVisible;
+    resized();
 }
 
 }  // namespace magda

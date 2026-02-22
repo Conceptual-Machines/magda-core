@@ -6,7 +6,6 @@
 #include <memory>
 #include <vector>
 
-#include "../themes/MixerLookAndFeel.hpp"
 #include "core/ClipManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
@@ -14,6 +13,7 @@
 namespace magda {
 
 class TimelineController;
+class AudioEngine;
 
 /**
  * @brief Session view - Ableton-style clip launcher grid
@@ -23,10 +23,12 @@ class TimelineController;
  * - Track headers at the top
  * - Scene launch buttons on the right
  * - Real-time clip status indicators
+ * - Mini mixer strip per track (fader, meter, M/S buttons)
  */
 class SessionView : public juce::Component,
                     private juce::ScrollBar::Listener,
                     public juce::FileDragAndDropTarget,
+                    public juce::Timer,
                     public TrackManagerListener,
                     public ClipManagerListener,
                     public ViewModeListener {
@@ -38,9 +40,13 @@ class SessionView : public juce::Component,
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
 
+    // Timer callback for meter updates
+    void timerCallback() override;
+
     // TrackManagerListener
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
+    void trackDevicesChanged(TrackId trackId) override;
     void masterChannelChanged() override;
     void trackSelectionChanged(TrackId trackId) override;
 
@@ -69,6 +75,9 @@ class SessionView : public juce::Component,
         timelineController_ = controller;
     }
 
+    /** Set the audio engine for metering. */
+    void setAudioEngine(AudioEngine* engine);
+
   private:
     // ScrollBar::Listener
     void scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStart) override;
@@ -88,7 +97,7 @@ class SessionView : public juce::Component,
     static constexpr int CLIP_SLOT_MARGIN = 2;
     static constexpr int TRACK_SEPARATOR_WIDTH = 3;
     static constexpr int MIN_FADER_ROW_HEIGHT = 60;
-    static constexpr int MAX_FADER_ROW_HEIGHT = 300;
+    static constexpr int MAX_FADER_ROW_HEIGHT = 200;
     int faderRowHeight_ = 100;
     int dragStartFaderHeight_ = 100;
     int dragStartTrackWidth_ = 80;
@@ -111,9 +120,8 @@ class SessionView : public juce::Component,
     // Scene launch buttons
     std::vector<std::unique_ptr<juce::TextButton>> sceneButtons;
 
-    // Add/remove scene buttons and stop all button
-    std::unique_ptr<juce::TextButton> addSceneButton;
-    std::unique_ptr<juce::TextButton> removeSceneButton;
+    // Master header (top-right corner) and stop all button
+    std::unique_ptr<juce::TextButton> masterLabel_;
     std::unique_ptr<juce::TextButton> stopAllButton;
 
     // Custom grid content component that draws track separators
@@ -141,14 +149,38 @@ class SessionView : public juce::Component,
     // Per-track column resize handles (positioned at right edge of each header)
     std::vector<std::unique_ptr<ResizeHandle>> trackResizeHandles_;
 
-    // Fader row at bottom of each track column
+    // I/O routing row (between stop buttons and fader row, toggleable)
+    class MiniIOStrip;
+    class IOContainer;
+    std::unique_ptr<IOContainer> ioContainer_;
+    std::vector<std::unique_ptr<MiniIOStrip>> trackIOStrips_;
+    bool ioRowVisible_ = false;
+    static constexpr int IO_ROW_HEIGHT = 32;
+
+    // Send section (between stop buttons and IO row, toggleable)
+    class MiniSendStrip;
+    class SendSectionContainer;
+    std::unique_ptr<SendSectionContainer> sendSectionContainer_;
+    std::unique_ptr<ResizeHandle> sendResizeHandle_;
+    std::vector<std::unique_ptr<juce::Viewport>> trackSendViewports_;
+    std::vector<std::unique_ptr<MiniSendStrip>> trackSendStrips_;
+    bool sendRowVisible_ = false;
+    static constexpr int MIN_SEND_SECTION_HEIGHT = 20;
+    static constexpr int MAX_SEND_SECTION_HEIGHT = 200;
+    int sendSectionHeight_ = 54;
+    int dragStartSendHeight_ = 54;
+
+    void showMixerContextMenu();
+
+    // Fader row at bottom of each track column - MiniChannelStrip per track
     class FaderContainer;
     std::unique_ptr<FaderContainer> faderContainer;
-    std::vector<std::unique_ptr<juce::Slider>> trackFaders;
-    MixerLookAndFeel faderLookAndFeel_;
+    class MiniChannelStrip;
+    std::vector<std::unique_ptr<MiniChannelStrip>> trackMiniStrips_;
 
-    // Master fader (in scene column area of fader row)
-    std::unique_ptr<juce::Slider> masterFader_;
+    // Master strip (in scene column area of fader row)
+    class MiniMasterStrip;
+    std::unique_ptr<MiniMasterStrip> masterStrip_;
 
     void rebuildTracks();
     void setupSceneButtons();
@@ -190,6 +222,9 @@ class SessionView : public juce::Component,
 
     // Timeline controller for tempo access (not owned)
     TimelineController* timelineController_ = nullptr;
+
+    // Audio engine for metering (not owned)
+    AudioEngine* audioEngine_ = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SessionView)
 };

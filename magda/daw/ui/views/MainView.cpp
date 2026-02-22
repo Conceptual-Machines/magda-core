@@ -15,6 +15,7 @@
 #include "core/ClipManager.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
@@ -259,24 +260,79 @@ void MainView::setupComponents() {
     setupCornerButton(zoomFitButton, "ZoomFit", BinaryData::zoom_out_map_svg,
                       BinaryData::zoom_out_map_svgSize);
     zoomFitButton->onClick = [this]() { resetZoomToFitTimeline(); };
+    zoomFitButton->setTooltip("Zoom to fit timeline");
 
     setupCornerButton(zoomSelButton, "ZoomSel", BinaryData::fit_width_svg,
                       BinaryData::fit_width_svgSize);
     zoomSelButton->onClick = [this]() { zoomToSelection(); };
+    zoomSelButton->setTooltip("Zoom to selection");
+
+    setupCornerButton(zoomLoopButton, "ZoomLoop", BinaryData::fit_loop_svg,
+                      BinaryData::fit_loop_svgSize);
+    zoomLoopButton->onClick = [this]() {
+        const auto& loop = timelineController->getState().loop;
+        if (loop.isValid()) {
+            timelineController->dispatch(ZoomToFitEvent{loop.startTime, loop.endTime, 0.05});
+        }
+    };
+    zoomLoopButton->setTooltip("Zoom to loop region");
+
+    setupCornerButton(addTrackButton, "AddTrack", BinaryData::add_svg, BinaryData::add_svgSize);
+    addTrackButton->onClick = [this]() {
+        auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Audio);
+        UndoManager::getInstance().executeCommand(std::move(cmd));
+    };
+    addTrackButton->setTooltip("Add track");
 
     // S = density_small.svg (4 rows = compact), M = density_medium.svg (3 rows), L =
     // density_large.svg (2 rows = spacious)
     setupCornerButton(trackSmallButton, "TrackSmall", BinaryData::density_small_svg,
                       BinaryData::density_small_svgSize);
     trackSmallButton->onClick = [this]() { setAllTrackHeights(47); };
+    trackSmallButton->setTooltip("Compact track height");
 
     setupCornerButton(trackMediumButton, "TrackMedium", BinaryData::density_medium_svg,
                       BinaryData::density_medium_svgSize);
     trackMediumButton->onClick = [this]() { setAllTrackHeights(78); };
+    trackMediumButton->setTooltip("Medium track height");
 
     setupCornerButton(trackLargeButton, "TrackLarge", BinaryData::density_large_svg,
                       BinaryData::density_large_svgSize);
     trackLargeButton->onClick = [this]() { setAllTrackHeights(140); };
+    trackLargeButton->setTooltip("Large track height");
+
+    setupCornerButton(ioToggleButton, "IOToggle", BinaryData::io_routing_svg,
+                      BinaryData::io_routing_svgSize);
+    ioToggleButton->onClick = [this]() {
+        trackHeadersPanel->toggleIORouting();
+        // Update button appearance to reflect state
+        if (trackHeadersPanel->isIORoutingVisible()) {
+            ioToggleButton->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        } else {
+            ioToggleButton->setNormalColor(
+                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.3f));
+        }
+        updateContentSizes();
+    };
+    ioToggleButton->setTooltip("Toggle I/O routing");
+    if (!trackHeadersPanel->isIORoutingVisible()) {
+        ioToggleButton->setNormalColor(
+            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.3f));
+    }
+
+    // Axis label icons (non-interactive)
+    setupCornerButton(hAxisIcon, "HAxis", BinaryData::horizontal_svg,
+                      BinaryData::horizontal_svgSize);
+    hAxisIcon->setInterceptsMouseClicks(false, false);
+    hAxisIcon->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
+    hAxisIcon->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
+    hAxisIcon->setBorderThickness(0.0f);
+
+    setupCornerButton(vAxisIcon, "VAxis", BinaryData::vertical_svg, BinaryData::vertical_svgSize);
+    vAxisIcon->setInterceptsMouseClicks(false, false);
+    vAxisIcon->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
+    vAxisIcon->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
+    vAxisIcon->setBorderThickness(0.0f);
 
     // Set up scroll synchronization
     trackContentViewport->getHorizontalScrollBar().addListener(this);
@@ -537,6 +593,12 @@ void MainView::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getBorderColour());
     g.fillRect(0, 0, getWidth(), 1);
 
+    // Draw corner toolbar separator line between zoom and density rows
+    if (!cornerSeparatorLine.isEmpty()) {
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.fillRect(cornerSeparatorLine);
+    }
+
     // Draw resize handles
     paintResizeHandle(g);
     paintMasterResizeHandle(g);
@@ -599,30 +661,45 @@ void MainView::resized() {
     // Timeline viewport at the top - offset by track header width
     auto timelineArea = bounds.removeFromTop(getTimelineHeight());
 
-    // Corner toolbar area above track headers — 2x2 icon grid (left-aligned, half-size)
+    // Corner toolbar area above track headers — buttons left, axis labels right
     auto cornerArea = headerColumn.removeFrom(timelineArea, trackHeaderWidth);
     {
         int btnSize = 22;
         int gap = 2;
-        int gridW = btnSize * 3 + gap * 2;
-        int gridH = btnSize * 2 + gap;
-        // Left-aligned, vertically centred
-        auto grid = juce::Rectangle<int>(cornerArea.getX() + 4, cornerArea.getCentreY() - gridH / 2,
-                                         gridW, gridH);
+        int sepGap = 4;  // extra gap between rows for separator
+        int margin = 4;
+        int gridH = btnSize * 2 + sepGap;
+        auto grid =
+            cornerArea.withTrimmedLeft(margin).withTrimmedRight(margin).withSizeKeepingCentre(
+                cornerArea.getWidth() - margin * 2, gridH);
 
         auto topRow = grid.removeFromTop(btnSize);
-        grid.removeFromTop(gap);
+        grid.removeFromTop(sepGap);
         auto botRow = grid.removeFromTop(btnSize);
 
+        // Store separator line position (drawn in paint())
+        cornerSeparatorLine = juce::Rectangle<int>(topRow.getX(), topRow.getBottom() + sepGap / 2,
+                                                   topRow.getWidth(), 1);
+
+        // Top row: action buttons left, axis label right
         zoomFitButton->setBounds(topRow.removeFromLeft(btnSize));
         topRow.removeFromLeft(gap);
         zoomSelButton->setBounds(topRow.removeFromLeft(btnSize));
+        topRow.removeFromLeft(gap);
+        zoomLoopButton->setBounds(topRow.removeFromLeft(btnSize));
+        topRow.removeFromLeft(gap);
+        addTrackButton->setBounds(topRow.removeFromLeft(btnSize));
+        hAxisIcon->setBounds(topRow.removeFromRight(btnSize));
 
+        // Bottom row: action buttons left, axis label right
         trackSmallButton->setBounds(botRow.removeFromLeft(btnSize));
         botRow.removeFromLeft(gap);
         trackMediumButton->setBounds(botRow.removeFromLeft(btnSize));
         botRow.removeFromLeft(gap);
         trackLargeButton->setBounds(botRow.removeFromLeft(btnSize));
+        botRow.removeFromLeft(gap);
+        ioToggleButton->setBounds(botRow.removeFromLeft(btnSize));
+        vAxisIcon->setBounds(botRow.removeFromRight(btnSize));
     }
 
     // Add padding space for the resize handle
@@ -669,7 +746,7 @@ void MainView::resized() {
 
         // Set initial zoom to show configurable duration on first resize
         if (!initialZoomSet) {
-            int availableWidth = viewportWidth - 18;  // Account for LEFT_PADDING
+            int availableWidth = viewportWidth - LayoutConfig::TIMELINE_LEFT_PADDING;
 
             if (availableWidth > 0) {
                 auto& config = magda::Config::getInstance();
@@ -1294,9 +1371,9 @@ void MainView::mouseExit([[maybe_unused]] const juce::MouseEvent& event) {
 // Resize handle helper methods
 juce::Rectangle<int> MainView::getResizeHandleArea() const {
     // Position the resize handle in the padding space between headers and content
+    // Starts from top of component (covering corner toolbar area) for seamless border
     auto& layout = LayoutConfig::getInstance();
-    return juce::Rectangle<int>(trackHeaderWidth, getTimelineHeight(), layout.componentSpacing,
-                                getHeight() - getTimelineHeight());
+    return juce::Rectangle<int>(trackHeaderWidth, 0, layout.componentSpacing, getHeight());
 }
 
 void MainView::paintResizeHandle(juce::Graphics& g) {

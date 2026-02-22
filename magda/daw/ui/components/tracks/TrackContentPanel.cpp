@@ -589,7 +589,8 @@ bool TrackContentPanel::isInSelectableArea(int x, int y) const {
 double TrackContentPanel::pixelToTime(int pixel) const {
     // currentZoom is ppb, convert through beats
     if (currentZoom > 0 && tempoBPM > 0) {
-        double beats = static_cast<double>(pixel - LEFT_PADDING) / currentZoom;
+        double beats =
+            static_cast<double>(pixel - LayoutConfig::TIMELINE_LEFT_PADDING) / currentZoom;
         return beats * 60.0 / tempoBPM;
     }
     return 0.0;
@@ -598,7 +599,7 @@ double TrackContentPanel::pixelToTime(int pixel) const {
 int TrackContentPanel::timeToPixel(double time) const {
     // currentZoom is ppb, convert through beats
     double beats = time * tempoBPM / 60.0;
-    return static_cast<int>(beats * currentZoom) + LEFT_PADDING;
+    return static_cast<int>(beats * currentZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
 }
 
 int TrackContentPanel::getTrackIndexAtY(int y) const {
@@ -1488,7 +1489,8 @@ void TrackContentPanel::updateClipComponentPositions() {
 
         // Calculate clip bounds (currentZoom is ppb)
         int clipX = (clip->autoTempo && clip->startBeats >= 0.0)
-                        ? static_cast<int>(clip->startBeats * currentZoom) + LEFT_PADDING
+                        ? static_cast<int>(clip->startBeats * currentZoom) +
+                              LayoutConfig::TIMELINE_LEFT_PADDING
                         : timeToPixel(clip->startTime);
         double clipBeats = (clip->autoTempo && clip->lengthBeats > 0.0)
                                ? clip->lengthBeats

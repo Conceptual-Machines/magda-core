@@ -253,6 +253,14 @@ class MainView : public juce::Component,
     std::unique_ptr<SvgButton> trackSmallButton;
     std::unique_ptr<SvgButton> trackMediumButton;
     std::unique_ptr<SvgButton> trackLargeButton;
+    std::unique_ptr<SvgButton> zoomLoopButton;
+    std::unique_ptr<SvgButton> addTrackButton;
+    std::unique_ptr<SvgButton> ioToggleButton;
+    std::unique_ptr<SvgButton> hAxisIcon;
+    std::unique_ptr<SvgButton> vAxisIcon;
+
+    // Separator line position between corner toolbar rows (set during resized())
+    juce::Rectangle<int> cornerSeparatorLine;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainView)
 };

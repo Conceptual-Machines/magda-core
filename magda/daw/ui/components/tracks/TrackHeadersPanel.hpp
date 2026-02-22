@@ -88,6 +88,10 @@ class TrackHeadersPanel : public juce::Component,
         return verticalZoom;
     }
 
+    // I/O routing visibility
+    void toggleIORouting();
+    bool isIORoutingVisible() const;
+
     // Callbacks
     std::function<void(int, int)> onTrackHeightChanged;
     std::function<void(int)> onTrackSelected;
@@ -116,6 +120,7 @@ class TrackHeadersPanel : public juce::Component,
         float volume = 0.8f;
         float pan = 0.0f;
         int height = DEFAULT_TRACK_HEIGHT;
+        bool showIORouting = true;  // Per-track I/O routing visibility
 
         // Routing enables (for right-click menu)
         bool audioInEnabled = true;

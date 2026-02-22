@@ -4,6 +4,8 @@
 
 #include <functional>
 
+#include "../../layout/LayoutConfig.hpp"
+
 namespace magda {
 
 /**
@@ -154,7 +156,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     bool loopPhaseVisible = false;
 
     // Layout
-    int leftPadding = 18;  // Configurable padding (default 18 for main timeline)
+    int leftPadding = LayoutConfig::TIMELINE_LEFT_PADDING;
     juce::Viewport* linkedViewport = nullptr;  // For real-time scroll sync
     static constexpr int TICK_HEIGHT_MAJOR = 12;
     static constexpr int TICK_HEIGHT_MINOR = 6;

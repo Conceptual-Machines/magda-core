@@ -18,6 +18,12 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         return false;
     }
 
+    // Process muted tracks so LevelMeterPlugin still receives audio and meters
+    // stay active. Track output is still silenced by TrackMutingNode.
+    bool shouldProcessMutedTracks() override {
+        return true;
+    }
+
     tracktion::Plugin::Ptr createCustomPlugin(tracktion::PluginCreationInfo info) override {
         auto type = info.state[tracktion::IDs::type].toString();
         if (type == daw::audio::MagdaSamplerPlugin::xmlTypeName) {
