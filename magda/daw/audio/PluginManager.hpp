@@ -339,6 +339,9 @@ class PluginManager {
     // Internal device → plugin conversion (used by syncTrackPlugins)
     te::Plugin::Ptr loadDeviceAsPlugin(TrackId trackId, const DeviceInfo& device);
 
+    // Poll for async plugin load completion (TE's background thread instantiation)
+    void pollAsyncPluginLoad(TrackId trackId, DeviceId deviceId, te::Plugin::Ptr plugin);
+
     // Plugin creation helpers
     te::Plugin::Ptr createToneGenerator(te::AudioTrack* track);
     te::Plugin::Ptr createLevelMeter(te::AudioTrack* track);

@@ -193,50 +193,29 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
             juce::ScopedLock lock(pluginLock_);
             if (deviceToPlugin_.find(device.id) == deviceToPlugin_.end() &&
                 pendingLoads_.find(device.id) == pendingLoads_.end()) {
-                if (device.format != PluginFormat::Internal) {
-                    // External plugin: defer loading so the UI can rebuild first
-                    pendingLoads_.insert(device.id);
+                // Load the device as a plugin. For external plugins, TE now uses
+                // async instantiation so createNewPlugin returns immediately while
+                // the heavy VST/AU load happens on a background thread.
+                auto plugin = loadDeviceAsPlugin(trackId, device);
+                if (plugin) {
+                    deviceToPlugin_[device.id] = plugin;
+                    pluginToDevice_[plugin.get()] = device.id;
 
-                    // Mark device as loading in TrackManager so UI shows indicator
-                    if (auto* devInfo = TrackManager::getInstance().getDevice(trackId, device.id)) {
-                        devInfo->loadState = DeviceLoadState::Loading;
-                    }
+                    // Check if plugin is still loading asynchronously (external plugins)
+                    if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+                        if (extPlugin->isInitialisingAsync()) {
+                            pendingLoads_.insert(device.id);
 
-                    // Capture what we need for the async callback
-                    auto deviceId = device.id;
-                    auto deviceCopy = device;
-
-                    juce::MessageManager::callAsync([this, trackId, deviceId, deviceCopy]() {
-                        // Load the plugin (still on message thread, just deferred)
-                        auto plugin = loadDeviceAsPlugin(trackId, deviceCopy);
-                        {
-                            juce::ScopedLock lock2(pluginLock_);
-                            pendingLoads_.erase(deviceId);
-
-                            if (plugin) {
-                                deviceToPlugin_[deviceId] = plugin;
-                                pluginToDevice_[plugin.get()] = deviceId;
+                            if (auto* devInfo =
+                                    TrackManager::getInstance().getDevice(trackId, device.id)) {
+                                devInfo->loadState = DeviceLoadState::Loading;
                             }
-                        }
 
-                        // Update load state on the DeviceInfo
-                        if (auto* devInfo =
-                                TrackManager::getInstance().getDevice(trackId, deviceId)) {
-                            devInfo->loadState =
-                                plugin ? DeviceLoadState::Loaded : DeviceLoadState::Failed;
+                            // Poll for completion — TE's async callback runs on message
+                            // thread, so a short timer will catch it promptly
+                            auto deviceId = device.id;
+                            pollAsyncPluginLoad(trackId, deviceId, plugin);
                         }
-
-                        // Notify so AudioBridge re-syncs (modifiers, macros, sidechains)
-                        // and UI rebuilds with Loaded state
-                        if (onAsyncPluginLoaded)
-                            onAsyncPluginLoaded(trackId);
-                    });
-                } else {
-                    // Built-in plugin: load synchronously (fast)
-                    auto plugin = loadDeviceAsPlugin(trackId, device);
-                    if (plugin) {
-                        deviceToPlugin_[device.id] = plugin;
-                        pluginToDevice_[plugin.get()] = device.id;
                     }
                 }
             }
@@ -513,7 +492,8 @@ PluginLoadResult PluginManager::loadExternalPlugin(TrackId trackId,
                               << " (identifier=" << extPlugin->getIdentifierString() << ")");
 
                 // Check if the plugin file exists and is loadable
-                if (!extPlugin->isEnabled()) {
+                // (skip this check if the plugin is still loading asynchronously)
+                if (!extPlugin->isEnabled() && !extPlugin->isInitialisingAsync()) {
                     juce::String error = "Plugin failed to initialize: " + description.name;
                     if (description.fileOrIdentifier.isNotEmpty()) {
                         error += " (" + description.fileOrIdentifier + ")";
@@ -570,6 +550,93 @@ te::Plugin::Ptr PluginManager::addLevelMeterToTrack(TrackId trackId) {
     }
 
     return plugin;
+}
+
+void PluginManager::pollAsyncPluginLoad(TrackId trackId, DeviceId deviceId,
+                                        te::Plugin::Ptr plugin) {
+    auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get());
+    if (!extPlugin)
+        return;
+
+    // Use a timer to poll until TE's async instantiation completes.
+    // The timer runs on the message thread, same as TE's completion callback.
+    juce::Timer::callAfterDelay(100, [this, trackId, deviceId, plugin]() {
+        auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get());
+        if (!ext)
+            return;
+
+        if (ext->isInitialisingAsync()) {
+            // Still loading — poll again
+            pollAsyncPluginLoad(trackId, deviceId, plugin);
+            return;
+        }
+
+        // Loading complete — update state
+        {
+            juce::ScopedLock lock(pluginLock_);
+            pendingLoads_.erase(deviceId);
+        }
+
+        bool loaded = ext->getLoadError().isEmpty();
+        if (auto* devInfo = TrackManager::getInstance().getDevice(trackId, deviceId)) {
+            devInfo->loadState = loaded ? DeviceLoadState::Loaded : DeviceLoadState::Failed;
+        }
+
+        if (loaded) {
+            // Apply bypass state
+            plugin->setEnabled(true);
+            if (auto* devInfo = TrackManager::getInstance().getDevice(trackId, deviceId)) {
+                plugin->setEnabled(!devInfo->bypassed);
+            }
+
+            // Create processor now that the plugin instance is ready
+            auto extProcessor = std::make_unique<ExternalPluginProcessor>(deviceId, plugin);
+            extProcessor->startParameterListening();
+
+            // Populate parameters on the DeviceInfo
+            if (auto* devInfo = TrackManager::getInstance().getDevice(trackId, deviceId)) {
+                extProcessor->populateParameters(*devInfo);
+
+                // Update capability flags
+                if (plugin->canSidechain())
+                    devInfo->canSidechain = true;
+                if (plugin->takesMidiInput() && !devInfo->isInstrument)
+                    devInfo->canReceiveMidi = true;
+            }
+
+            {
+                juce::ScopedLock lock(pluginLock_);
+                deviceProcessors_[deviceId] = std::move(extProcessor);
+            }
+
+            // Wrap instruments in a RackType (for audio passthrough + multi-out)
+            if (auto* devInfo = TrackManager::getInstance().getDevice(trackId, deviceId)) {
+                if (devInfo->isInstrument) {
+                    int numOutputChannels = ext->getNumOutputs();
+
+                    te::Plugin::Ptr rackPlugin;
+                    if (numOutputChannels > 2) {
+                        rackPlugin = instrumentRackManager_.wrapMultiOutInstrument(
+                            plugin, numOutputChannels);
+                    } else {
+                        rackPlugin = instrumentRackManager_.wrapInstrument(plugin);
+                    }
+
+                    if (rackPlugin) {
+                        auto* rackInstance = dynamic_cast<te::RackInstance*>(rackPlugin.get());
+                        te::RackType::Ptr rackType = rackInstance ? rackInstance->type : nullptr;
+                        instrumentRackManager_.recordWrapping(deviceId, rackType, plugin,
+                                                              rackPlugin, numOutputChannels > 2,
+                                                              numOutputChannels);
+                    }
+                }
+            }
+        }
+
+        // Notify so AudioBridge re-syncs infrastructure and UI rebuilds
+        if (onAsyncPluginLoaded)
+            onAsyncPluginLoaded(trackId);
+    });
 }
 
 void PluginManager::ensureVolumePluginPosition(te::AudioTrack* track) const {
@@ -1893,6 +1960,16 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             auto result = loadExternalPlugin(trackId, desc);
             if (result.success && result.plugin) {
                 plugin = result.plugin;
+
+                // If the plugin is loading asynchronously (TE background thread),
+                // skip processor creation — it will be done in pollAsyncPluginLoad
+                // when the VST instance is ready.
+                if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+                    if (ext->isInitialisingAsync()) {
+                        return plugin;  // Return bare wrapper; async poll handles the rest
+                    }
+                }
+
                 auto extProcessor = std::make_unique<ExternalPluginProcessor>(device.id, plugin);
                 // Start listening for parameter changes from the plugin's native UI
                 extProcessor->startParameterListening();
