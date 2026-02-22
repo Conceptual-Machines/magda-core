@@ -1243,6 +1243,17 @@ SessionView::SessionView() {
     sendSectionContainer_->onContextMenu = [this]() { showMixerContextMenu(); };
     addChildComponent(*sendSectionContainer_);
 
+    // Create send resize handle (top edge of send section)
+    sendResizeHandle_ = std::make_unique<ResizeHandle>(ResizeHandle::Vertical);
+    sendResizeHandle_->onResizeStart = [this]() { dragStartSendHeight_ = sendSectionHeight_; };
+    sendResizeHandle_->onResize = [this](int delta) {
+        sendSectionHeight_ = juce::jlimit(MIN_SEND_SECTION_HEIGHT, MAX_SEND_SECTION_HEIGHT,
+                                          dragStartSendHeight_ - delta);
+        resized();
+    };
+    sendResizeHandle_->onContextMenu = [this]() { showMixerContextMenu(); };
+    addChildComponent(*sendResizeHandle_);
+
     // Create fader container at the bottom
     faderContainer = std::make_unique<FaderContainer>();
     addAndMakeVisible(*faderContainer);
@@ -1689,7 +1700,10 @@ void SessionView::resized() {
 
     // Send section (conditional, between stop buttons and IO row)
     if (sendRowVisible_) {
-        auto sendRow = bounds.removeFromBottom(SEND_SECTION_HEIGHT);
+        auto sendRow = bounds.removeFromBottom(sendSectionHeight_);
+        auto sendHandleRow = bounds.removeFromBottom(4);
+        sendResizeHandle_->setBounds(sendHandleRow);
+        sendResizeHandle_->setVisible(true);
         sendSectionContainer_->setBounds(sendRow);
         sendSectionContainer_->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
                                               trackHeaderScrollOffset);
@@ -1698,13 +1712,14 @@ void SessionView::resized() {
         for (int i = 0; i < numTracks && i < static_cast<int>(trackSendViewports_.size()); ++i) {
             int x = getTrackX(i) - trackHeaderScrollOffset;
             int w = trackColumnWidths_[i];
-            trackSendViewports_[i]->setBounds(x + 1, 1, w - 2, SEND_SECTION_HEIGHT - 2);
+            trackSendViewports_[i]->setBounds(x + 1, 1, w - 2, sendSectionHeight_ - 2);
             if (i < static_cast<int>(trackSendStrips_.size())) {
                 trackSendStrips_[i]->setSize(w - 2, trackSendStrips_[i]->getHeight());
             }
         }
     } else {
         sendSectionContainer_->setVisible(false);
+        sendResizeHandle_->setVisible(false);
     }
 
     // Stop button row (full width: per-track stops + Stop All in scene column)
@@ -1829,7 +1844,7 @@ void SessionView::scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStar
                  ++i) {
                 int x = getTrackX(i) - trackHeaderScrollOffset;
                 int w = trackColumnWidths_[i];
-                trackSendViewports_[i]->setBounds(x + 1, 1, w - 2, SEND_SECTION_HEIGHT - 2);
+                trackSendViewports_[i]->setBounds(x + 1, 1, w - 2, sendSectionHeight_ - 2);
                 if (i < static_cast<int>(trackSendStrips_.size())) {
                     trackSendStrips_[i]->setSize(w - 2, trackSendStrips_[i]->getHeight());
                 }

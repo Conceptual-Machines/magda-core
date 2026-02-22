@@ -161,10 +161,14 @@ class SessionView : public juce::Component,
     class MiniSendStrip;
     class SendSectionContainer;
     std::unique_ptr<SendSectionContainer> sendSectionContainer_;
+    std::unique_ptr<ResizeHandle> sendResizeHandle_;
     std::vector<std::unique_ptr<juce::Viewport>> trackSendViewports_;
     std::vector<std::unique_ptr<MiniSendStrip>> trackSendStrips_;
     bool sendRowVisible_ = false;
-    static constexpr int SEND_SECTION_HEIGHT = 54;
+    static constexpr int MIN_SEND_SECTION_HEIGHT = 20;
+    static constexpr int MAX_SEND_SECTION_HEIGHT = 200;
+    int sendSectionHeight_ = 54;
+    int dragStartSendHeight_ = 54;
 
     void showMixerContextMenu();
 
