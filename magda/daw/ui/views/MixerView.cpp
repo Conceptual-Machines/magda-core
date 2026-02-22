@@ -655,7 +655,7 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     }
 
     // Separator on right side of own column
-    if (!selected && !hasGroupChildren) {
+    if (!selected) {
         g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
         g.fillRect(ownBounds.getRight() - 1, 0, 1, ownBounds.getHeight());
     }
@@ -694,19 +694,21 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
         g.setColour(trackColour_);
         g.fillRect(2, 2, fullBounds.getWidth() - 4, 4);
 
-        // Border around the entire group area
-        g.setColour(trackColour_.withAlpha(0.6f));
-        g.drawRect(fullBounds, 2);
-
-        // Horizontal separator below header
+        // Horizontal separator below header (drawn in paint, before children)
         g.setColour(trackColour_.withAlpha(0.4f));
         g.fillRect(0, groupHeaderHeight, fullBounds.getWidth(), 1);
     }
 }
 
 void MixerView::ChannelStrip::paintOverChildren(juce::Graphics& g) {
+    // Group envelope border — drawn over children so it's not obscured
+    if (!groupChildren_.empty()) {
+        auto fullBounds = getLocalBounds();
+        g.setColour(trackColour_.withAlpha(0.6f));
+        g.drawRect(fullBounds, 2);
+    }
+
     // Skip overlay for child tracks nested inside a group envelope
-    // (the group border provides the visual containment cue)
     if (!isChildTrack_)
         return;
 
@@ -748,25 +750,34 @@ void MixerView::ChannelStrip::resized() {
     // For a group with children: own controls in the leftmost column, below the shared header
     // For everything else: full width, full height
     int ownWidth = hasGroupChildren ? metrics.channelWidth : getWidth();
-    int ownTop = 0;
-    int ownHeight = getHeight();
+    int ownTop = hasGroupChildren ? groupHeaderHeight : 0;
+    int ownHeight = getHeight() - ownTop;
 
     auto bounds =
         juce::Rectangle<int>(0, ownTop, ownWidth, ownHeight).reduced(metrics.channelPadding);
 
-    // Color indicator space
-    bounds.removeFromTop(6);
-
-    // Track label — spans full width for groups (banner), own column for non-groups
-    int labelWidth = hasGroupChildren ? getWidth() - metrics.channelPadding * 2 : bounds.getWidth();
-    auto titleRow = bounds.removeFromTop(24);
-    if (hasGroupChildren)
-        titleRow.setWidth(labelWidth);
-    if (expandToggle_) {
-        expandToggle_->setBounds(titleRow.removeFromLeft(20).withSizeKeepingCentre(18, 18));
-        titleRow.removeFromLeft(2);
+    if (hasGroupChildren) {
+        // Group: label is part of the shared header banner (already positioned above)
+        // Position label in the header area spanning full width
+        auto headerBounds = juce::Rectangle<int>(0, 0, getWidth(), groupHeaderHeight)
+                                .reduced(metrics.channelPadding);
+        headerBounds.removeFromTop(6);  // colour bar space
+        auto titleRow = headerBounds.removeFromTop(24);
+        if (expandToggle_) {
+            expandToggle_->setBounds(titleRow.removeFromLeft(20).withSizeKeepingCentre(18, 18));
+            titleRow.removeFromLeft(2);
+        }
+        trackLabel->setBounds(titleRow);
+    } else {
+        // Non-group: colour bar space + label at top of own bounds
+        bounds.removeFromTop(6);
+        auto titleRow = bounds.removeFromTop(24);
+        if (expandToggle_) {
+            expandToggle_->setBounds(titleRow.removeFromLeft(20).withSizeKeepingCentre(18, 18));
+            titleRow.removeFromLeft(2);
+        }
+        trackLabel->setBounds(titleRow);
     }
-    trackLabel->setBounds(titleRow);
     bounds.removeFromTop(metrics.controlSpacing);
 
     // Sends area (scrollable viewport) — between track label and fader
@@ -1661,10 +1672,14 @@ void MixerView::rebuildChannelStrips() {
         }
     }
 
-    // Now make everything visible
+    // Now make everything visible.
+    // Group parent strips must not be opaque — they need to paint the envelope
+    // border around/behind their children.
     for (auto* strip : orderedStrips_)
         strip->setVisible(true);
     for (auto& strip : channelStrips) {
+        if (!strip->groupChildren_.empty())
+            strip->setOpaque(false);
         for (auto* child : strip->groupChildren_)
             child->setVisible(true);
     }
