@@ -504,6 +504,14 @@ class TrackManager {
      */
     void refreshIdCountersFromTracks();
 
+    /**
+     * @brief Notify all listeners that devices on a track changed
+     *
+     * Public so external systems (e.g. async plugin loading) can trigger
+     * a UI refresh after deferred operations complete.
+     */
+    void notifyTrackDevicesChanged(TrackId trackId);
+
   private:
     TrackManager();
     ~TrackManager() = default;
@@ -564,7 +572,6 @@ class TrackManager {
     void notifyTrackPropertyChanged(int trackId);
     void notifyMasterChannelChanged();
     void notifyTrackSelectionChanged(TrackId trackId);
-    void notifyTrackDevicesChanged(TrackId trackId);
     void notifyDeviceModifiersChanged(TrackId trackId);
     void notifyDevicePropertyChanged(DeviceId deviceId);
     void notifyDeviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue);

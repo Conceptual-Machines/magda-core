@@ -7,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <set>
 #include <unordered_map>
 
 #include "../core/DeviceInfo.hpp"
@@ -153,6 +154,13 @@ class PluginManager {
      * Parameters: deviceId, error message
      */
     std::function<void(DeviceId, const juce::String&)> onPluginLoadFailed;
+
+    /**
+     * @brief Callback invoked when an async plugin load completes (success or failure)
+     * Used to trigger UI refresh after deferred external plugin loading.
+     * Parameters: trackId
+     */
+    std::function<void(TrackId)> onAsyncPluginLoaded;
 
     // =========================================================================
     // Rack Plugin Creation
@@ -390,6 +398,9 @@ class PluginManager {
     static constexpr int kMaxCacheTracks = 512;
     std::array<PerTrackEntry, kMaxCacheTracks> sidechainLFOCache_{};
     juce::SpinLock cacheLock_;
+
+    // In-flight async plugin loads (prevents duplicate loads on re-entrant syncTrackPlugins)
+    std::set<DeviceId> pendingLoads_;
 
     // Thread safety
     mutable juce::CriticalSection pluginLock_;

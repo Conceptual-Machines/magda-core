@@ -53,6 +53,11 @@ struct SidechainConfig {
 };
 
 /**
+ * @brief Loading state for a device's underlying plugin
+ */
+enum class DeviceLoadState { Loaded, Loading, Failed };
+
+/**
  * @brief Device/plugin information stored on a track
  */
 struct DeviceInfo {
@@ -100,6 +105,9 @@ struct DeviceInfo {
 
     // Multi-output configuration (for instruments with >2 output channels)
     MultiOutConfig multiOut;
+
+    // Plugin loading state (Loading while async load is in-flight)
+    DeviceLoadState loadState = DeviceLoadState::Loaded;
 
     // UI state
     int currentParameterPage = 0;  // Current parameter page (for multi-page param display)

@@ -149,6 +149,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                 deviceToPlugin_.erase(it);
             }
             deviceProcessors_.erase(deviceId);
+            pendingLoads_.erase(deviceId);
         }
     }
 
@@ -190,12 +191,53 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
             const auto& device = getDevice(element);
 
             juce::ScopedLock lock(pluginLock_);
-            if (deviceToPlugin_.find(device.id) == deviceToPlugin_.end()) {
-                // Load this device as a plugin
-                auto plugin = loadDeviceAsPlugin(trackId, device);
-                if (plugin) {
-                    deviceToPlugin_[device.id] = plugin;
-                    pluginToDevice_[plugin.get()] = device.id;
+            if (deviceToPlugin_.find(device.id) == deviceToPlugin_.end() &&
+                pendingLoads_.find(device.id) == pendingLoads_.end()) {
+                if (device.format != PluginFormat::Internal) {
+                    // External plugin: defer loading so the UI can rebuild first
+                    pendingLoads_.insert(device.id);
+
+                    // Mark device as loading in TrackManager so UI shows indicator
+                    if (auto* devInfo = TrackManager::getInstance().getDevice(trackId, device.id)) {
+                        devInfo->loadState = DeviceLoadState::Loading;
+                    }
+
+                    // Capture what we need for the async callback
+                    auto deviceId = device.id;
+                    auto deviceCopy = device;
+
+                    juce::MessageManager::callAsync([this, trackId, deviceId, deviceCopy]() {
+                        // Load the plugin (still on message thread, just deferred)
+                        auto plugin = loadDeviceAsPlugin(trackId, deviceCopy);
+                        {
+                            juce::ScopedLock lock2(pluginLock_);
+                            pendingLoads_.erase(deviceId);
+
+                            if (plugin) {
+                                deviceToPlugin_[deviceId] = plugin;
+                                pluginToDevice_[plugin.get()] = deviceId;
+                            }
+                        }
+
+                        // Update load state on the DeviceInfo
+                        if (auto* devInfo =
+                                TrackManager::getInstance().getDevice(trackId, deviceId)) {
+                            devInfo->loadState =
+                                plugin ? DeviceLoadState::Loaded : DeviceLoadState::Failed;
+                        }
+
+                        // Notify so AudioBridge re-syncs (modifiers, macros, sidechains)
+                        // and UI rebuilds with Loaded state
+                        if (onAsyncPluginLoaded)
+                            onAsyncPluginLoaded(trackId);
+                    });
+                } else {
+                    // Built-in plugin: load synchronously (fast)
+                    auto plugin = loadDeviceAsPlugin(trackId, device);
+                    if (plugin) {
+                        deviceToPlugin_[device.id] = plugin;
+                        pluginToDevice_[plugin.get()] = device.id;
+                    }
                 }
             }
         } else if (isRack(element)) {
