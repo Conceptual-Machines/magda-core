@@ -710,6 +710,9 @@ void TrackHeadersPanel::tracksChanged() {
         header->volume = track->volume;
         header->pan = track->pan;
 
+        // Inherit global I/O routing visibility
+        header->showIORouting = showIORouting_;
+
         // Use height from view settings
         header->height = track->viewSettings.getHeight(currentViewMode_);
 
@@ -1564,9 +1567,8 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 if (hasSends)
                     totalContentHeight += contentRowHeight;
                 int availableSpace = tcpArea.getHeight() - totalContentHeight;
-                int rowGap = numRows > 1
-                                 ? std::max(2, availableSpace / (numRows - 1 + (hasSends ? 1 : 0)))
-                                 : 2;
+                int divider = numRows - 1 + (hasSends ? 1 : 0);
+                int rowGap = divider > 0 ? std::clamp(availableSpace / divider, 2, 8) : 2;
 
                 // Vol/Pan/Buttons — uses same width-based logic as helper
                 layoutVolPanAndButtons(tcpArea, rowGap);
@@ -2486,6 +2488,8 @@ void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
 }
 
 bool TrackHeadersPanel::isIORoutingVisible() const {
+    if (trackHeaders.empty())
+        return showIORouting_;
     for (auto& h : trackHeaders) {
         if (h->showIORouting)
             return true;
