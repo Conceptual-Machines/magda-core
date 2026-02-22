@@ -315,6 +315,10 @@ void MainView::setupComponents() {
         updateContentSizes();
     };
     ioToggleButton->setTooltip("Toggle I/O routing");
+    if (!trackHeadersPanel->isIORoutingVisible()) {
+        ioToggleButton->setNormalColor(
+            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.3f));
+    }
 
     // Axis label icons (non-interactive)
     setupCornerButton(hAxisIcon, "HAxis", BinaryData::horizontal_svg,
