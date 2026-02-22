@@ -260,10 +260,12 @@ void MainView::setupComponents() {
     setupCornerButton(zoomFitButton, "ZoomFit", BinaryData::zoom_out_map_svg,
                       BinaryData::zoom_out_map_svgSize);
     zoomFitButton->onClick = [this]() { resetZoomToFitTimeline(); };
+    zoomFitButton->setTooltip("Zoom to fit timeline");
 
     setupCornerButton(zoomSelButton, "ZoomSel", BinaryData::fit_width_svg,
                       BinaryData::fit_width_svgSize);
     zoomSelButton->onClick = [this]() { zoomToSelection(); };
+    zoomSelButton->setTooltip("Zoom to selection");
 
     setupCornerButton(zoomLoopButton, "ZoomLoop", BinaryData::fit_loop_svg,
                       BinaryData::fit_loop_svgSize);
@@ -273,26 +275,31 @@ void MainView::setupComponents() {
             timelineController->dispatch(ZoomToFitEvent{loop.startTime, loop.endTime, 0.05});
         }
     };
+    zoomLoopButton->setTooltip("Zoom to loop region");
 
     setupCornerButton(addTrackButton, "AddTrack", BinaryData::add_svg, BinaryData::add_svgSize);
     addTrackButton->onClick = [this]() {
         auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Audio);
         UndoManager::getInstance().executeCommand(std::move(cmd));
     };
+    addTrackButton->setTooltip("Add track");
 
     // S = density_small.svg (4 rows = compact), M = density_medium.svg (3 rows), L =
     // density_large.svg (2 rows = spacious)
     setupCornerButton(trackSmallButton, "TrackSmall", BinaryData::density_small_svg,
                       BinaryData::density_small_svgSize);
     trackSmallButton->onClick = [this]() { setAllTrackHeights(47); };
+    trackSmallButton->setTooltip("Compact track height");
 
     setupCornerButton(trackMediumButton, "TrackMedium", BinaryData::density_medium_svg,
                       BinaryData::density_medium_svgSize);
     trackMediumButton->onClick = [this]() { setAllTrackHeights(78); };
+    trackMediumButton->setTooltip("Medium track height");
 
     setupCornerButton(trackLargeButton, "TrackLarge", BinaryData::density_large_svg,
                       BinaryData::density_large_svgSize);
     trackLargeButton->onClick = [this]() { setAllTrackHeights(140); };
+    trackLargeButton->setTooltip("Large track height");
 
     setupCornerButton(ioToggleButton, "IOToggle", BinaryData::io_routing_svg,
                       BinaryData::io_routing_svgSize);
@@ -307,6 +314,7 @@ void MainView::setupComponents() {
         }
         updateContentSizes();
     };
+    ioToggleButton->setTooltip("Toggle I/O routing");
 
     // Axis label icons (non-interactive)
     setupCornerButton(hAxisIcon, "HAxis", BinaryData::horizontal_svg,
@@ -734,7 +742,7 @@ void MainView::resized() {
 
         // Set initial zoom to show configurable duration on first resize
         if (!initialZoomSet) {
-            int availableWidth = viewportWidth - 18;  // Account for LEFT_PADDING
+            int availableWidth = viewportWidth - LayoutConfig::TIMELINE_LEFT_PADDING;
 
             if (availableWidth > 0) {
                 auto& config = magda::Config::getInstance();

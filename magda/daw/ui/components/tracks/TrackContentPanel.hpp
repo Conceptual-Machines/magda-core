@@ -177,8 +177,7 @@ class TrackContentPanel : public juce::Component,
     // Audio engine reference for recording previews (not owned)
     AudioEngine* audioEngine_ = nullptr;
 
-    // Layout constants - use shared constant from LayoutConfig
-    static constexpr int LEFT_PADDING = LayoutConfig::TIMELINE_LEFT_PADDING;
+    // Layout: use LayoutConfig::TIMELINE_LEFT_PADDING directly
 
     struct TrackLane {
         bool selected = false;

@@ -133,8 +133,7 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     // RAII listener guard — destroyed before cached state below
     ScopedListener<TimelineController, TimelineStateListener> timelineListener_{this};
 
-    // Layout constants - use shared constant from LayoutConfig
-    static constexpr int LEFT_PADDING = LayoutConfig::TIMELINE_LEFT_PADDING;
+    // Layout: use LayoutConfig::TIMELINE_LEFT_PADDING directly
 
     // Local state (cached from controller for quick access during rendering)
     // These are updated via TimelineStateListener callbacks

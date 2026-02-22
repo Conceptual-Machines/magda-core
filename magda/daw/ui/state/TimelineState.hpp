@@ -364,8 +364,7 @@ struct TimelineState {
     std::vector<ArrangementSection> sections;
     int selectedSectionIndex = -1;
 
-    // Layout constant (shared across components)
-    static constexpr int LEFT_PADDING = LayoutConfig::TIMELINE_LEFT_PADDING;
+    // Layout constant — use LayoutConfig::TIMELINE_LEFT_PADDING directly
 
     // ===== Beat/time conversion helpers =====
 
@@ -388,7 +387,8 @@ struct TimelineState {
      */
     double pixelToTime(int pixel) const {
         if (zoom.horizontalZoom > 0) {
-            double beats = (pixel + zoom.scrollX - LEFT_PADDING) / zoom.horizontalZoom;
+            double beats =
+                (pixel + zoom.scrollX - LayoutConfig::TIMELINE_LEFT_PADDING) / zoom.horizontalZoom;
             return beatsToSeconds(beats);
         }
         return 0.0;
@@ -399,7 +399,7 @@ struct TimelineState {
      */
     double pixelToTimeLocal(int pixel) const {
         if (zoom.horizontalZoom > 0) {
-            double beats = (pixel - LEFT_PADDING) / zoom.horizontalZoom;
+            double beats = (pixel - LayoutConfig::TIMELINE_LEFT_PADDING) / zoom.horizontalZoom;
             return beatsToSeconds(beats);
         }
         return 0.0;
@@ -410,7 +410,8 @@ struct TimelineState {
      */
     int timeToPixel(double time) const {
         double beats = secondsToBeats(time);
-        return static_cast<int>(beats * zoom.horizontalZoom) + LEFT_PADDING - zoom.scrollX;
+        return static_cast<int>(beats * zoom.horizontalZoom) + LayoutConfig::TIMELINE_LEFT_PADDING -
+               zoom.scrollX;
     }
 
     /**
@@ -418,7 +419,7 @@ struct TimelineState {
      */
     int timeToPixelLocal(double time) const {
         double beats = secondsToBeats(time);
-        return static_cast<int>(beats * zoom.horizontalZoom) + LEFT_PADDING;
+        return static_cast<int>(beats * zoom.horizontalZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
     }
 
     /**

@@ -775,7 +775,7 @@ void TimelineComponent::clearSections() {
 
 double TimelineComponent::pixelToTime(int pixel) const {
     if (zoom > 0 && tempoBPM > 0) {
-        double beats = (pixel - LEFT_PADDING) / zoom;
+        double beats = (pixel - LayoutConfig::TIMELINE_LEFT_PADDING) / zoom;
         return beats * 60.0 / tempoBPM;
     }
     return 0.0;
@@ -834,7 +834,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
 
         // Draw ticks and labels
         for (double time = 0.0; time <= timelineLength; time += markerInterval) {
-            int x = timeToPixel(time) + LEFT_PADDING;
+            int x = timeToPixel(time) + LayoutConfig::TIMELINE_LEFT_PADDING;
             if (x >= 0 && x < getWidth()) {
                 bool isMajor = false;
                 if (markerInterval >= 1.0) {
@@ -935,7 +935,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
 
         // Pass 1: Draw grid ticks
         for (double time = 0.0; time <= timelineLength; time += markerIntervalSeconds) {
-            int x = timeToPixel(time) + LEFT_PADDING;
+            int x = timeToPixel(time) + LayoutConfig::TIMELINE_LEFT_PADDING;
             if (x < 0 || x >= getWidth())
                 continue;
 
@@ -1012,7 +1012,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
         if (!gridAligned) {
             for (double beat = 0.0; beat <= timelineLength / secondsPerBeat; beat += 1.0) {
                 double time = beat * secondsPerBeat;
-                int x = timeToPixel(time) + LEFT_PADDING;
+                int x = timeToPixel(time) + LayoutConfig::TIMELINE_LEFT_PADDING;
                 if (x < 0 || x >= getWidth())
                     continue;
 
@@ -1056,7 +1056,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
 }
 
 void TimelineComponent::drawPlayhead(juce::Graphics& g) {
-    int playheadX = timeToPixel(playheadPosition) + LEFT_PADDING;
+    int playheadX = timeToPixel(playheadPosition) + LayoutConfig::TIMELINE_LEFT_PADDING;
     if (playheadX >= 0 && playheadX < getWidth()) {
         // Draw shadow for better visibility
         g.setColour(juce::Colours::black.withAlpha(0.6f));
@@ -1075,8 +1075,8 @@ void TimelineComponent::drawArrangementSections(juce::Graphics& g) {
 
 void TimelineComponent::drawSection(juce::Graphics& g, const ArrangementSection& section,
                                     bool isSelected) const {
-    int startX = timeToPixel(section.startTime) + LEFT_PADDING;
-    int endX = timeToPixel(section.endTime) + LEFT_PADDING;
+    int startX = timeToPixel(section.startTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int endX = timeToPixel(section.endTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
     int width = endX - startX;
 
     if (width <= 0 || startX >= getWidth() || endX <= 0) {
@@ -1156,8 +1156,8 @@ bool TimelineComponent::isOnSectionEdge(int x, int sectionIndex, bool& isStartEd
     }
 
     const auto& section = *sections[sectionIndex];
-    int startX = timeToPixel(section.startTime) + LEFT_PADDING;
-    int endX = timeToPixel(section.endTime) + LEFT_PADDING;
+    int startX = timeToPixel(section.startTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int endX = timeToPixel(section.endTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
 
     const int edgeThreshold = 5;  // 5 pixels from edge
 
@@ -1219,8 +1219,8 @@ void TimelineComponent::drawLoopMarkers(juce::Graphics& g) {
     int rulerTop = layout.chordRowHeight + layout.arrangementBarHeight;
     int totalHeight = getHeight();
 
-    int startX = timeToPixel(loopStartTime) + LEFT_PADDING;
-    int endX = timeToPixel(loopEndTime) + LEFT_PADDING;
+    int startX = timeToPixel(loopStartTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int endX = timeToPixel(loopEndTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
 
     // Skip if completely out of view
     if (endX < 0 || startX > getWidth()) {
@@ -1258,8 +1258,8 @@ void TimelineComponent::drawLoopMarkerFlags(juce::Graphics& g) {
     int lineY = chordHeight + arrangementHeight;  // Connecting line aligns with ruler top border
     int flagTop = chordHeight + arrangementHeight + 2;  // Triangles just below the line
 
-    int startX = timeToPixel(loopStartTime) + LEFT_PADDING;
-    int endX = timeToPixel(loopEndTime) + LEFT_PADDING;
+    int startX = timeToPixel(loopStartTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int endX = timeToPixel(loopEndTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
 
     // Skip if completely out of view
     if (endX < 0 || startX > getWidth()) {
@@ -1307,8 +1307,8 @@ bool TimelineComponent::isOnLoopMarker(int x, int y, bool& isStartMarker) const 
     // Loop markers are visible in both arrangement bar and ruler area
     // No Y restriction - allow detection anywhere vertically
 
-    int startX = timeToPixel(loopStartTime) + LEFT_PADDING;
-    int endX = timeToPixel(loopEndTime) + LEFT_PADDING;
+    int startX = timeToPixel(loopStartTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int endX = timeToPixel(loopEndTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
 
     const int markerThreshold = 8;  // Pixels from marker to trigger drag
 
@@ -1340,8 +1340,8 @@ bool TimelineComponent::isOnLoopTopBorder(int x, int y) const {
     }
 
     // Check X is between the loop markers
-    int startX = timeToPixel(loopStartTime) + LEFT_PADDING;
-    int endX = timeToPixel(loopEndTime) + LEFT_PADDING;
+    int startX = timeToPixel(loopStartTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int endX = timeToPixel(loopEndTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
     const int horizontalMargin = 10;  // Don't trigger too close to the edges (those are resize)
 
     return x > (startX + horizontalMargin) && x < (endX - horizontalMargin);
@@ -1417,8 +1417,8 @@ void TimelineComponent::drawTimeSelection(juce::Graphics& g) {
         return;
     }
 
-    int startX = timeToPixel(timeSelectionStart) + LEFT_PADDING;
-    int endX = timeToPixel(timeSelectionEnd) + LEFT_PADDING;
+    int startX = timeToPixel(timeSelectionStart) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int endX = timeToPixel(timeSelectionEnd) + LayoutConfig::TIMELINE_LEFT_PADDING;
 
     // Skip if out of view
     if (endX < 0 || startX > getWidth()) {

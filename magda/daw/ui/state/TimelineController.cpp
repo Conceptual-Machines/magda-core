@@ -93,7 +93,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetZoomCen
     // Convert time to beats since zoom is ppb
     int viewportCenter = state.zoom.viewportWidth / 2;
     double centerBeats = state.secondsToBeats(e.centerTime);
-    int timeContentX = static_cast<int>(centerBeats * newZoom) + TimelineState::LEFT_PADDING;
+    int timeContentX =
+        static_cast<int>(centerBeats * newZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
     int newScrollX = timeContentX - viewportCenter;
 
     state.zoom.horizontalZoom = newZoom;
@@ -109,7 +110,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetZoomAnc
     // Calculate scroll position to keep anchorTime at anchorScreenX
     // Convert time to beats since zoom is ppb
     double anchorBeats = state.secondsToBeats(e.anchorTime);
-    int anchorPixelPos = static_cast<int>(anchorBeats * newZoom) + TimelineState::LEFT_PADDING;
+    int anchorPixelPos =
+        static_cast<int>(anchorBeats * newZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
     int newScrollX = anchorPixelPos - e.anchorScreenX;
 
     state.zoom.horizontalZoom = newZoom;
@@ -148,7 +150,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ResetZoomE
     }
 
     // Convert timeline length to beats since zoom is ppb
-    int availableWidth = state.zoom.viewportWidth - TimelineState::LEFT_PADDING;
+    int availableWidth = state.zoom.viewportWidth - LayoutConfig::TIMELINE_LEFT_PADDING;
     double beats = state.secondsToBeats(state.timelineLength);
     double fitZoom = (beats > 0) ? static_cast<double>(availableWidth) / beats : 1.0;
 
@@ -192,7 +194,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ScrollByDe
 TimelineController::ChangeFlags TimelineController::handleEvent(const ScrollToTimeEvent& e) {
     // Convert time to beats since zoom is ppb
     double beats = state.secondsToBeats(e.time);
-    int targetX = static_cast<int>(beats * state.zoom.horizontalZoom) + TimelineState::LEFT_PADDING;
+    int targetX =
+        static_cast<int>(beats * state.zoom.horizontalZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
 
     if (e.center) {
         targetX -= state.zoom.viewportWidth / 2;
