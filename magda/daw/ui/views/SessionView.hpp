@@ -28,6 +28,7 @@ class AudioEngine;
 class SessionView : public juce::Component,
                     private juce::ScrollBar::Listener,
                     public juce::FileDragAndDropTarget,
+                    public juce::DragAndDropTarget,
                     public juce::Timer,
                     public TrackManagerListener,
                     public ClipManagerListener,
@@ -65,6 +66,13 @@ class SessionView : public juce::Component,
     void fileDragMove(const juce::StringArray& files, int x, int y) override;
     void fileDragExit(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
+
+    // DragAndDropTarget (internal JUCE drags: plugins from browser, clip slot drags)
+    bool isInterestedInDragSource(const SourceDetails& details) override;
+    void itemDragEnter(const SourceDetails& details) override;
+    void itemDragMove(const SourceDetails& details) override;
+    void itemDragExit(const SourceDetails& details) override;
+    void itemDropped(const SourceDetails& details) override;
 
     /** Set the session clip playhead position (looped, in seconds).
         -1.0 means no session clips are playing. */
@@ -207,9 +215,13 @@ class SessionView : public juce::Component,
     void updateClipSlotAppearance(int trackIndex, int sceneIndex);
     void updateAllClipSlots();
 
-    // Drag & drop state
+    // Drag & drop state (file drops)
     int dragHoverTrackIndex_ = -1;
     int dragHoverSceneIndex_ = -1;
+
+    // Plugin drag-and-drop state (internal JUCE drags)
+    int pluginDropTrackIndex_ = -1;
+    bool showPluginDropOverlay_ = false;
     std::unique_ptr<juce::Label> dragGhostLabel_;
     void updateDragHighlight(int x, int y);
     void clearDragHighlight();

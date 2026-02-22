@@ -22,6 +22,7 @@
 #include "core/ClipCommands.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackCommands.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "core/ViewModeController.hpp"
@@ -83,6 +84,35 @@ class ClipSlotButton : public juce::TextButton {
     bool isMidiClip = false;
     double clipLength = 0.0;           // Clip duration in seconds (for progress bar)
     double sessionPlayheadPos = -1.0;  // Looped playhead position in seconds
+
+    // Clip slot identity (for drag-and-drop)
+    ClipId clipId = INVALID_CLIP_ID;
+    TrackId trackId = INVALID_TRACK_ID;
+    int sceneIndex = -1;
+
+    void mouseDrag(const juce::MouseEvent& event) override {
+        if (!hasClip || clipId == INVALID_CLIP_ID)
+            return;
+
+        if (event.getDistanceFromDragStart() < 5)
+            return;
+
+        auto* dragContainer = juce::DragAndDropContainer::findParentDragContainerFor(this);
+        if (!dragContainer)
+            return;
+
+        // Build drag description
+        auto* desc = new juce::DynamicObject();
+        desc->setProperty("type", "sessionClip");
+        desc->setProperty("clipId", static_cast<int>(clipId));
+        desc->setProperty("trackId", static_cast<int>(trackId));
+        desc->setProperty("sceneIndex", sceneIndex);
+
+        // Create a snapshot image of this slot as drag ghost
+        auto snapshot = createComponentSnapshot(getLocalBounds(), true, 1.0f);
+
+        dragContainer->startDragging(juce::var(desc), this, juce::ScaledImage(snapshot), true);
+    }
 
     void mouseDown(const juce::MouseEvent& event) override {
         if (event.mods.isPopupMenu()) {
@@ -1790,6 +1820,41 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
     // Horizontal separator on top of stop button row (full width)
     auto stopContainerBounds = stopButtonContainer->getBounds();
     g.fillRect(0, stopContainerBounds.getY(), getWidth(), 1);
+
+    // Plugin drag overlay
+    if (showPluginDropOverlay_) {
+        if (pluginDropTrackIndex_ >= 0 &&
+            pluginDropTrackIndex_ < static_cast<int>(visibleTrackIds_.size())) {
+            // Highlight the specific track column
+            int trackX = getTrackX(pluginDropTrackIndex_) - trackHeaderScrollOffset;
+            int trackW = (pluginDropTrackIndex_ < static_cast<int>(trackColumnWidths_.size()))
+                             ? trackColumnWidths_[pluginDropTrackIndex_]
+                             : DEFAULT_CLIP_SLOT_WIDTH;
+            auto vpBounds = gridViewport->getBounds();
+            auto colBounds = juce::Rectangle<int>(trackX, 0, trackW, vpBounds.getBottom());
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+            g.fillRect(colBounds);
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.5f));
+            g.drawRect(colBounds, 2);
+        } else {
+            // Past last track — show "new track" indicator
+            auto vpBounds = gridViewport->getBounds();
+            int lastTrackEnd = getTotalTracksWidth() - trackHeaderScrollOffset;
+            int indicatorW = DEFAULT_CLIP_SLOT_WIDTH;
+            auto indicatorBounds =
+                juce::Rectangle<int>(lastTrackEnd, 0, indicatorW, vpBounds.getBottom());
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.12f));
+            g.fillRect(indicatorBounds);
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.35f));
+            g.drawRect(indicatorBounds, 2);
+
+            // Draw "+" icon
+            auto centre = indicatorBounds.getCentre().toFloat();
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
+            g.drawLine(centre.getX() - 8, centre.getY(), centre.getX() + 8, centre.getY(), 2.0f);
+            g.drawLine(centre.getX(), centre.getY() - 8, centre.getX(), centre.getY() + 8, 2.0f);
+        }
+    }
 }
 
 void SessionView::resized() {
@@ -2402,11 +2467,16 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
     ClipId clipId = ClipManager::getInstance().getClipInSlot(trackId, sceneIndex);
     ClipId selectedClipId = ClipManager::getInstance().getSelectedClip();
 
+    // Always set slot identity for drag-and-drop
+    slot->trackId = trackId;
+    slot->sceneIndex = sceneIndex;
+
     if (clipId != INVALID_CLIP_ID) {
         const auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip) {
             // Update slot state for custom painting
             slot->hasClip = true;
+            slot->clipId = clipId;
             slot->clipIsPlaying = clip->isPlaying;
             slot->isSelected = (clipId == selectedClipId);
             slot->isMidiClip = (clip->type == ClipType::MIDI);
@@ -2435,6 +2505,7 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
     } else {
         // Empty slot
         slot->hasClip = false;
+        slot->clipId = INVALID_CLIP_ID;
         slot->clipIsPlaying = false;
         slot->isSelected = false;
         slot->isMidiClip = false;
@@ -2765,6 +2836,146 @@ bool SessionView::isAudioFile(const juce::String& filename) const {
         }
     }
     return false;
+}
+
+// ============================================================================
+// DragAndDropTarget implementation (internal JUCE drags: plugins, clip slots)
+// ============================================================================
+
+bool SessionView::isInterestedInDragSource(const SourceDetails& details) {
+    if (auto* obj = details.description.getDynamicObject()) {
+        auto type = obj->getProperty("type").toString();
+        return type == "plugin" || type == "sessionClip";
+    }
+    return false;
+}
+
+void SessionView::itemDragEnter(const SourceDetails& details) {
+    auto* obj = details.description.getDynamicObject();
+    if (!obj)
+        return;
+
+    auto type = obj->getProperty("type").toString();
+    if (type == "plugin") {
+        showPluginDropOverlay_ = true;
+        // Determine which track column is being hovered
+        auto gridLocalPoint = gridViewport->getLocalPoint(this, details.localPosition);
+        int hitX = gridLocalPoint.getX() + gridViewport->getViewPositionX();
+        pluginDropTrackIndex_ = getTrackIndexAtX(hitX);
+        repaint();
+    } else if (type == "sessionClip") {
+        // Highlight target slot
+        updateDragHighlight(details.localPosition.getX(), details.localPosition.getY());
+    }
+}
+
+void SessionView::itemDragMove(const SourceDetails& details) {
+    auto* obj = details.description.getDynamicObject();
+    if (!obj)
+        return;
+
+    auto type = obj->getProperty("type").toString();
+    if (type == "plugin") {
+        auto gridLocalPoint = gridViewport->getLocalPoint(this, details.localPosition);
+        int hitX = gridLocalPoint.getX() + gridViewport->getViewPositionX();
+        int oldIndex = pluginDropTrackIndex_;
+        pluginDropTrackIndex_ = getTrackIndexAtX(hitX);
+        if (pluginDropTrackIndex_ != oldIndex)
+            repaint();
+    } else if (type == "sessionClip") {
+        updateDragHighlight(details.localPosition.getX(), details.localPosition.getY());
+    }
+}
+
+void SessionView::itemDragExit(const SourceDetails& /*details*/) {
+    showPluginDropOverlay_ = false;
+    pluginDropTrackIndex_ = -1;
+    clearDragHighlight();
+    repaint();
+}
+
+void SessionView::itemDropped(const SourceDetails& details) {
+    showPluginDropOverlay_ = false;
+    pluginDropTrackIndex_ = -1;
+    clearDragHighlight();
+    repaint();
+
+    auto* obj = details.description.getDynamicObject();
+    if (!obj)
+        return;
+
+    auto type = obj->getProperty("type").toString();
+
+    if (type == "plugin") {
+        auto device = TrackManager::deviceInfoFromPluginObject(*obj);
+
+        // Determine target track from drop position
+        auto gridLocalPoint = gridViewport->getLocalPoint(this, details.localPosition);
+        int hitX = gridLocalPoint.getX() + gridViewport->getViewPositionX();
+        int trackIndex = getTrackIndexAtX(hitX);
+
+        if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
+            // Drop on existing track — add plugin to chain
+            TrackId trackId = visibleTrackIds_[trackIndex];
+            TrackManager::getInstance().addDeviceToTrack(trackId, device);
+        } else {
+            // Drop past last track — create new track with plugin
+            TrackType trackType = device.isInstrument ? TrackType::Instrument : TrackType::Audio;
+            juce::String pluginName = obj->getProperty("name").toString();
+            auto cmd =
+                std::make_unique<CreateTrackWithDeviceCommand>(pluginName, trackType, device);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+        }
+    } else if (type == "sessionClip") {
+        // Clip slot drag — handle in Phase 3
+        ClipId clipId = static_cast<ClipId>(static_cast<int>(obj->getProperty("clipId")));
+        TrackId sourceTrackId = static_cast<TrackId>(static_cast<int>(obj->getProperty("trackId")));
+        int sourceSceneIndex = static_cast<int>(obj->getProperty("sceneIndex"));
+
+        // Calculate target from drop coordinates
+        auto gridLocalPoint = gridViewport->getLocalPoint(this, details.localPosition);
+        gridLocalPoint +=
+            juce::Point<int>(gridViewport->getViewPositionX(), gridViewport->getViewPositionY());
+
+        int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
+        int targetTrackIndex = getTrackIndexAtX(gridLocalPoint.getX());
+        int targetSceneIndex = gridLocalPoint.getY() / sceneRowHeight;
+
+        // Validate
+        if (targetTrackIndex < 0 || targetTrackIndex >= static_cast<int>(visibleTrackIds_.size()))
+            return;
+        if (targetSceneIndex < 0 || targetSceneIndex >= numScenes_)
+            return;
+
+        TrackId targetTrackId = visibleTrackIds_[targetTrackIndex];
+
+        // Skip if dropping on same slot
+        if (targetTrackId == sourceTrackId && targetSceneIndex == sourceSceneIndex)
+            return;
+
+        // Check if target slot is occupied
+        auto& clipManager = ClipManager::getInstance();
+        if (clipManager.getClipInSlot(targetTrackId, targetSceneIndex) != INVALID_CLIP_ID)
+            return;  // Target occupied, reject
+
+        bool isAltHeld = juce::ModifierKeys::getCurrentModifiers().isAltDown();
+        if (isAltHeld) {
+            // Alt+drag = duplicate clip to target slot
+            auto cmd = std::make_unique<DuplicateClipCommand>(clipId);
+            auto* cmdPtr = cmd.get();
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            ClipId newClipId = cmdPtr->getDuplicatedClipId();
+            if (newClipId != INVALID_CLIP_ID) {
+                clipManager.moveClipToTrack(newClipId, targetTrackId);
+                clipManager.setClipSceneIndex(newClipId, targetSceneIndex);
+            }
+        } else {
+            // Regular drag = move clip to target slot
+            auto cmd =
+                std::make_unique<MoveSessionClipCommand>(clipId, targetTrackId, targetSceneIndex);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+        }
+    }
 }
 
 }  // namespace magda

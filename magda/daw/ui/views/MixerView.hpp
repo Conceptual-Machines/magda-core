@@ -34,6 +34,7 @@ class AudioEngine;
  * - Master channel on the right
  */
 class MixerView : public juce::Component,
+                  public juce::DragAndDropTarget,
                   public juce::Timer,
                   public TrackManagerListener,
                   public ViewModeListener {
@@ -65,6 +66,13 @@ class MixerView : public juce::Component,
 
     // ViewModeListener
     void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
+
+    // DragAndDropTarget
+    bool isInterestedInDragSource(const SourceDetails& details) override;
+    void itemDragEnter(const SourceDetails& details) override;
+    void itemDragMove(const SourceDetails& details) override;
+    void itemDragExit(const SourceDetails& details) override;
+    void itemDropped(const SourceDetails& details) override;
 
     // Selection
     void selectChannel(int index, bool isMaster = false);
@@ -314,6 +322,10 @@ class MixerView : public juce::Component,
     AudioEngine* audioEngine_ = nullptr;
 
     bool isInChannelResizeZone(const juce::Point<int>& pos) const;
+
+    // Plugin drag-and-drop state
+    bool showPluginDropOverlay_ = false;
+    int dropTargetStripIndex_ = -1;  // -1 = empty area (new track)
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixerView)
 };
