@@ -74,6 +74,8 @@ class ClipSlotButton : public juce::TextButton {
     std::function<void()> onDoubleClick;
     std::function<void()> onPlayButtonClick;
     std::function<void()> onCreateMidiClip;
+    std::function<void()> onAddScene;
+    std::function<void()> onRemoveScene;
 
     bool hasClip = false;
     bool clipIsPlaying = false;
@@ -83,14 +85,23 @@ class ClipSlotButton : public juce::TextButton {
     double sessionPlayheadPos = -1.0;  // Looped playhead position in seconds
 
     void mouseDown(const juce::MouseEvent& event) override {
-        if (event.mods.isPopupMenu() && !hasClip) {
+        if (event.mods.isPopupMenu()) {
             juce::PopupMenu menu;
-            menu.addItem(1, "Create MIDI Clip");
+            if (!hasClip)
+                menu.addItem(1, "Create MIDI Clip");
+            menu.addSeparator();
+            menu.addItem(2, "Add Scene");
+            menu.addItem(3, "Remove Scene");
             auto safeThis = juce::Component::SafePointer<ClipSlotButton>(this);
             menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis](int result) {
-                if (safeThis && result == 1 && safeThis->onCreateMidiClip) {
+                if (!safeThis)
+                    return;
+                if (result == 1 && safeThis->onCreateMidiClip)
                     safeThis->onCreateMidiClip();
-                }
+                else if (result == 2 && safeThis->onAddScene)
+                    safeThis->onAddScene();
+                else if (result == 3 && safeThis->onRemoveScene)
+                    safeThis->onRemoveScene();
             });
             return;
         }
@@ -186,7 +197,16 @@ class ClipSlotButton : public juce::TextButton {
 class SessionView::GridContent : public juce::Component {
   public:
     GridContent(int /*clipHeight*/, int separatorWidth, int /*clipMargin*/, int numScenes)
-        : separatorWidth_(separatorWidth), numScenes_(numScenes) {}
+        : separatorWidth_(separatorWidth), numScenes_(numScenes) {
+        setInterceptsMouseClicks(true, true);
+    }
+
+    void mouseDown(const juce::MouseEvent& e) override {
+        if (e.mods.isPopupMenu() && onContextMenu)
+            onContextMenu();
+    }
+
+    std::function<void()> onContextMenu;
 
     void setNumTracks(int numTracks) {
         numTracks_ = numTracks;
@@ -226,7 +246,18 @@ class SessionView::GridContent : public juce::Component {
 // Custom viewport that draws track separators in the background area
 class SessionView::GridViewport : public juce::Viewport {
   public:
-    GridViewport() = default;
+    GridViewport() {
+        setInterceptsMouseClicks(true, true);
+    }
+
+    void mouseDown(const juce::MouseEvent& e) override {
+        if (e.mods.isPopupMenu() && onContextMenu)
+            onContextMenu();
+        else
+            juce::Viewport::mouseDown(e);
+    }
+
+    std::function<void()> onContextMenu;
 
     void setTrackLayout(int numTracks, const std::vector<int>& trackWidths, int separatorWidth) {
         numTracks_ = numTracks;
@@ -1222,7 +1253,35 @@ SessionView::SessionView() {
     // Create viewport for scrollable grid with custom grid content
     gridContent = std::make_unique<GridContent>(CLIP_SLOT_HEIGHT, TRACK_SEPARATOR_WIDTH,
                                                 CLIP_SLOT_MARGIN, numScenes_);
+    gridContent->onContextMenu = [this]() {
+        juce::PopupMenu menu;
+        menu.addItem(1, "Add Scene");
+        menu.addItem(2, "Remove Scene");
+        auto safeThis = juce::Component::SafePointer<SessionView>(this);
+        menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis](int result) {
+            if (!safeThis)
+                return;
+            if (result == 1)
+                safeThis->addScene();
+            else if (result == 2)
+                safeThis->removeScene();
+        });
+    };
     gridViewport = std::make_unique<GridViewport>();
+    gridViewport->onContextMenu = [this]() {
+        juce::PopupMenu menu;
+        menu.addItem(1, "Add Scene");
+        menu.addItem(2, "Remove Scene");
+        auto safeThis = juce::Component::SafePointer<SessionView>(this);
+        menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis](int result) {
+            if (!safeThis)
+                return;
+            if (result == 1)
+                safeThis->addScene();
+            else if (result == 2)
+                safeThis->removeScene();
+        });
+    };
     gridViewport->setViewedComponent(gridContent.get(), false);
     gridViewport->setScrollBarsShown(true, true);
     gridViewport->getHorizontalScrollBar().addListener(this);
@@ -1272,25 +1331,14 @@ SessionView::SessionView() {
 
     setupSceneButtons();
 
-    // Add scene button (fixed position, top of scene column)
-    addSceneButton = std::make_unique<juce::TextButton>();
-    addSceneButton->setButtonText("+");
-    addSceneButton->setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
-    addSceneButton->setColour(juce::TextButton::textColourOffId,
-                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    addSceneButton->onClick = [this]() { addScene(); };
-    addAndMakeVisible(*addSceneButton);
-
-    // Remove scene button (next to add button)
-    removeSceneButton = std::make_unique<juce::TextButton>();
-    removeSceneButton->setButtonText("-");
-    removeSceneButton->setColour(juce::TextButton::buttonColourId,
-                                 DarkTheme::getColour(DarkTheme::SURFACE));
-    removeSceneButton->setColour(juce::TextButton::textColourOffId,
-                                 DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    removeSceneButton->onClick = [this]() { removeScene(); };
-    addAndMakeVisible(*removeSceneButton);
+    // Master label (top-right corner, above scene buttons)
+    masterLabel_ = std::make_unique<juce::Label>();
+    masterLabel_->setText("Master", juce::dontSendNotification);
+    masterLabel_->setFont(FontManager::getInstance().getUIFontBold(10.0f));
+    masterLabel_->setColour(juce::Label::textColourId,
+                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    masterLabel_->setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(*masterLabel_);
 
     // Create master strip in the fader row (scene column area)
     masterStrip_ = std::make_unique<MiniMasterStrip>();
@@ -1566,6 +1614,8 @@ void SessionView::rebuildTracks() {
             slot->onCreateMidiClip = [this, trackIndex, sceneIndex]() {
                 onCreateMidiClipClicked(trackIndex, sceneIndex);
             };
+            slot->onAddScene = [this]() { addScene(); };
+            slot->onRemoveScene = [this]() { removeScene(); };
 
             gridContent->addAndMakeVisible(*slot);
             trackSlots.push_back(std::move(slot));
@@ -1745,13 +1795,10 @@ void SessionView::resized() {
         trackStopButtons[i]->setBounds(x + 2, 2, w - 4, STOP_BUTTON_ROW_HEIGHT - 4);
     }
 
-    // Top row: "+" button in scene column corner, headers in tracks area
+    // Top row: Master label in scene column corner, headers in tracks area
     auto topRow = bounds.removeFromTop(TRACK_HEADER_HEIGHT);
     auto cornerArea = topRow.removeFromRight(SCENE_BUTTON_WIDTH);
-    auto cornerReduced = cornerArea.reduced(2);
-    auto removeBtnArea = cornerReduced.removeFromRight(cornerReduced.getWidth() / 2);
-    addSceneButton->setBounds(cornerReduced);
-    removeSceneButton->setBounds(removeBtnArea);
+    masterLabel_->setBounds(cornerArea);
     headerContainer->setBounds(topRow);
     headerContainer->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
                                     trackHeaderScrollOffset);
