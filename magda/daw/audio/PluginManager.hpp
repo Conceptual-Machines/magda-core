@@ -409,6 +409,7 @@ class PluginManager {
     mutable juce::CriticalSection pluginLock_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginManager)
+    JUCE_DECLARE_WEAK_REFERENCEABLE(PluginManager)
 };
 
 }  // namespace magda

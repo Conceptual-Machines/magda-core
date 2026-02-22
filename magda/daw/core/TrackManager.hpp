@@ -509,6 +509,9 @@ class TrackManager {
      *
      * Public so external systems (e.g. async plugin loading) can trigger
      * a UI refresh after deferred operations complete.
+     *
+     * Must be called on the message thread (fires listener callbacks that
+     * update UI components).
      */
     void notifyTrackDevicesChanged(TrackId trackId);
 

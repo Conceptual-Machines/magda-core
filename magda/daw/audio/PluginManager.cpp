@@ -211,6 +211,9 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                                 devInfo->loadState = DeviceLoadState::Loading;
                             }
 
+                            // Notify so UI rebuilds with the Loading indicator
+                            TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
+
                             // Poll for completion — TE's async callback runs on message
                             // thread, so a short timer will catch it promptly
                             auto deviceId = device.id;
@@ -560,21 +563,34 @@ void PluginManager::pollAsyncPluginLoad(TrackId trackId, DeviceId deviceId,
 
     // Use a timer to poll until TE's async instantiation completes.
     // The timer runs on the message thread, same as TE's completion callback.
-    juce::Timer::callAfterDelay(100, [this, trackId, deviceId, plugin]() {
+    // Capture a WeakReference to guard against PluginManager destruction.
+    juce::WeakReference<PluginManager> weakThis(this);
+    juce::Timer::callAfterDelay(100, [weakThis, trackId, deviceId, plugin]() {
+        if (weakThis == nullptr)
+            return;  // PluginManager was destroyed
+        auto& self = *weakThis;
+
         auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get());
         if (!ext)
             return;
 
+        // Check if device was removed while we were loading
+        if (TrackManager::getInstance().getDevice(trackId, deviceId) == nullptr) {
+            juce::ScopedLock lock(self.pluginLock_);
+            self.pendingLoads_.erase(deviceId);
+            return;
+        }
+
         if (ext->isInitialisingAsync()) {
             // Still loading — poll again
-            pollAsyncPluginLoad(trackId, deviceId, plugin);
+            self.pollAsyncPluginLoad(trackId, deviceId, plugin);
             return;
         }
 
         // Loading complete — update state
         {
-            juce::ScopedLock lock(pluginLock_);
-            pendingLoads_.erase(deviceId);
+            juce::ScopedLock lock(self.pluginLock_);
+            self.pendingLoads_.erase(deviceId);
         }
 
         bool loaded = ext->getLoadError().isEmpty();
@@ -605,8 +621,8 @@ void PluginManager::pollAsyncPluginLoad(TrackId trackId, DeviceId deviceId,
             }
 
             {
-                juce::ScopedLock lock(pluginLock_);
-                deviceProcessors_[deviceId] = std::move(extProcessor);
+                juce::ScopedLock lock(self.pluginLock_);
+                self.deviceProcessors_[deviceId] = std::move(extProcessor);
             }
 
             // Wrap instruments in a RackType (for audio passthrough + multi-out)
@@ -616,26 +632,26 @@ void PluginManager::pollAsyncPluginLoad(TrackId trackId, DeviceId deviceId,
 
                     te::Plugin::Ptr rackPlugin;
                     if (numOutputChannels > 2) {
-                        rackPlugin = instrumentRackManager_.wrapMultiOutInstrument(
+                        rackPlugin = self.instrumentRackManager_.wrapMultiOutInstrument(
                             plugin, numOutputChannels);
                     } else {
-                        rackPlugin = instrumentRackManager_.wrapInstrument(plugin);
+                        rackPlugin = self.instrumentRackManager_.wrapInstrument(plugin);
                     }
 
                     if (rackPlugin) {
                         auto* rackInstance = dynamic_cast<te::RackInstance*>(rackPlugin.get());
                         te::RackType::Ptr rackType = rackInstance ? rackInstance->type : nullptr;
-                        instrumentRackManager_.recordWrapping(deviceId, rackType, plugin,
-                                                              rackPlugin, numOutputChannels > 2,
-                                                              numOutputChannels);
+                        self.instrumentRackManager_.recordWrapping(
+                            deviceId, rackType, plugin, rackPlugin, numOutputChannels > 2,
+                            numOutputChannels);
                     }
                 }
             }
         }
 
         // Notify so AudioBridge re-syncs infrastructure and UI rebuilds
-        if (onAsyncPluginLoaded)
-            onAsyncPluginLoaded(trackId);
+        if (self.onAsyncPluginLoaded)
+            self.onAsyncPluginLoaded(trackId);
     });
 }
 
