@@ -677,14 +677,14 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
         }
     };
 
-    audioOutSelector->onSelectionChanged = [this](int selectedId) {
+    audioOutSelector->onSelectionChanged = [this, mapping = outputTrackMapping_](int selectedId) {
         if (selectedId == 1) {
             TrackManager::getInstance().setTrackAudioOutput(trackId_, "master");
         } else if (selectedId == 2) {
             TrackManager::getInstance().setTrackAudioOutput(trackId_, "");
         } else if (selectedId >= 200) {
-            auto it = outputTrackMapping_.find(selectedId);
-            if (it != outputTrackMapping_.end()) {
+            auto it = mapping.find(selectedId);
+            if (it != mapping.end()) {
                 TrackManager::getInstance().setTrackAudioOutput(
                     trackId_, "track:" + juce::String(it->second));
             }
