@@ -1377,6 +1377,11 @@ void SessionView::trackPropertyChanged(int trackId) {
     }
 }
 
+void SessionView::trackDevicesChanged(TrackId trackId) {
+    // Sends are notified via trackDevicesChanged — forward to trackPropertyChanged
+    trackPropertyChanged(trackId);
+}
+
 void SessionView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profile*/) {
     currentViewMode_ = mode;
     rebuildTracks();

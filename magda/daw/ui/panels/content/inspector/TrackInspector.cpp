@@ -730,11 +730,14 @@ void TrackInspector::rebuildSendsUI() {
         sendLevelLabels_.push_back(std::move(levelLabel));
 
         // Delete button
-        auto deleteBtn = std::make_unique<juce::TextButton>("X");
+        auto deleteBtn = std::make_unique<juce::TextButton>("x");
+        deleteBtn->setConnectedEdges(juce::Button::ConnectedOnLeft |
+                                     juce::Button::ConnectedOnRight | juce::Button::ConnectedOnTop |
+                                     juce::Button::ConnectedOnBottom);
         deleteBtn->setColour(juce::TextButton::buttonColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
+                             DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
         deleteBtn->setColour(juce::TextButton::textColourOffId,
-                             DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         deleteBtn->onClick = [srcId, busIndex]() {
             magda::TrackManager::getInstance().removeSend(srcId, busIndex);
         };

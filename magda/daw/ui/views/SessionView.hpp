@@ -46,6 +46,7 @@ class SessionView : public juce::Component,
     // TrackManagerListener
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
+    void trackDevicesChanged(TrackId trackId) override;
     void masterChannelChanged() override;
     void trackSelectionChanged(TrackId trackId) override;
 
