@@ -1989,6 +1989,8 @@ void SessionView::addScene() {
         slot->onCreateMidiClip = [this, trackIndex, sceneIndex]() {
             onCreateMidiClipClicked(trackIndex, sceneIndex);
         };
+        slot->onAddScene = [this]() { addScene(); };
+        slot->onRemoveScene = [this]() { removeScene(); };
 
         gridContent->addAndMakeVisible(*slot);
         clipSlots[track].push_back(std::move(slot));
@@ -1996,6 +1998,15 @@ void SessionView::addScene() {
 
     resized();
     updateAllClipSlots();
+
+    // Scroll to show the newly added scene
+    int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
+    int newSceneBottom = numScenes_ * sceneRowHeight;
+    int viewportHeight = gridViewport->getViewHeight();
+    if (newSceneBottom > viewportHeight) {
+        gridViewport->setViewPosition(gridViewport->getViewPositionX(),
+                                      newSceneBottom - viewportHeight);
+    }
 }
 
 void SessionView::removeScene() {
@@ -2025,9 +2036,10 @@ void SessionView::removeScene() {
                            .withButton("Delete")
                            .withButton("Cancel");
 
-        juce::AlertWindow::showAsync(options, [this](int result) {
-            if (result == 1) {
-                removeSceneAsync(numScenes_ - 1);
+        auto safeThis = juce::Component::SafePointer<SessionView>(this);
+        juce::AlertWindow::showAsync(options, [safeThis](int result) {
+            if (safeThis && result == 1) {
+                safeThis->removeSceneAsync(safeThis->numScenes_ - 1);
             }
         });
     } else {
