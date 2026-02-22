@@ -1814,7 +1814,7 @@ void SessionView::resized() {
     // Top row: Master label in scene column corner, headers in tracks area
     auto topRow = bounds.removeFromTop(TRACK_HEADER_HEIGHT);
     auto cornerArea = topRow.removeFromRight(SCENE_BUTTON_WIDTH);
-    masterLabel_->setBounds(cornerArea);
+    masterLabel_->setBounds(cornerArea.reduced(2));
     headerContainer->setBounds(topRow);
     headerContainer->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
                                     trackHeaderScrollOffset);
