@@ -2653,13 +2653,31 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
     int trackIndex = getTrackIndexAtX(gridLocalPoint.getX());
     int sceneIndex = gridLocalPoint.getY() / sceneRowHeight;
 
-    // Validate indices
-    if (trackIndex < 0 || trackIndex >= static_cast<int>(visibleTrackIds_.size()))
-        return;
+    // Validate scene index
     if (sceneIndex < 0 || sceneIndex >= numScenes_)
         return;
 
-    TrackId targetTrackId = visibleTrackIds_[trackIndex];
+    TrackId targetTrackId = INVALID_TRACK_ID;
+
+    if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
+        targetTrackId = visibleTrackIds_[trackIndex];
+    } else {
+        // Dropped past last track — create a new audio track
+        // Derive name from first audio file
+        juce::String trackName = "Audio";
+        for (const auto& f : files) {
+            if (isAudioFile(f)) {
+                trackName = juce::File(f).getFileNameWithoutExtension();
+                break;
+            }
+        }
+        auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName);
+        auto* cmdPtr = cmd.get();
+        UndoManager::getInstance().executeCommand(std::move(cmd));
+        targetTrackId = cmdPtr->getCreatedTrackId();
+        if (targetTrackId == INVALID_TRACK_ID)
+            return;
+    }
 
     // Create clips for each audio file dropped
     auto& clipManager = ClipManager::getInstance();
