@@ -339,6 +339,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
 
     sessionView = std::make_unique<SessionView>();
     sessionView->setTimelineController(&mainView->getTimelineController());
+    sessionView->setAudioEngine(externalEngine);
     addChildComponent(*sessionView);
 
     // Wire timeline controller to panels (for inspector tempo updates)

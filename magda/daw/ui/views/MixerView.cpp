@@ -12,6 +12,7 @@
 #include "../../engine/AudioEngine.hpp"
 #include "../../engine/TracktionEngineWrapper.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
+#include "../components/mixer/LevelMeter.hpp"
 #include "../components/mixer/RoutingSyncHelper.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
@@ -69,78 +70,12 @@ float meterPosToDb(float pos) {
 
 }  // namespace
 
-// Stereo level meter component (L/R bars)
-class MixerView::ChannelStrip::LevelMeter : public juce::Component {
+// Use shared LevelMeter component (extracted to components/mixer/LevelMeter.hpp)
+// MixerView::ChannelStrip::LevelMeter is declared as a forward in MixerView.hpp,
+// so we alias it here to the shared component.
+class MixerView::ChannelStrip::LevelMeter : public magda::LevelMeter {
   public:
-    LevelMeter() = default;
-
-    void setLevel(float newLevel) {
-        // Set both channels to the same level (for mono compatibility)
-        setLevels(newLevel, newLevel);
-    }
-
-    void setLevels(float left, float right) {
-        // Allow up to 2.0 gain (+6 dB)
-        leftLevel_ = juce::jlimit(0.0f, 2.0f, left);
-        rightLevel_ = juce::jlimit(0.0f, 2.0f, right);
-        repaint();
-    }
-
-    float getLevel() const {
-        return std::max(leftLevel_, rightLevel_);
-    }
-
-    void paint(juce::Graphics& g) override {
-        auto effectiveBounds = getLocalBounds().toFloat();
-
-        // Split into L/R with 1px gap
-        const float gap = 1.0f;
-        float barWidth = (effectiveBounds.getWidth() - gap) / 2.0f;
-
-        auto leftBounds = effectiveBounds.withWidth(barWidth);
-        auto rightBounds =
-            effectiveBounds.withWidth(barWidth).withX(effectiveBounds.getX() + barWidth + gap);
-
-        drawMeterBar(g, leftBounds, leftLevel_);
-        drawMeterBar(g, rightBounds, rightLevel_);
-    }
-
-  private:
-    float leftLevel_ = 0.0f;
-    float rightLevel_ = 0.0f;
-
-    void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level) {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-        g.fillRoundedRectangle(bounds, 1.0f);
-
-        // Use power curve to match fader and tick positions
-        float displayLevel = dbToMeterPos(gainToDb(level));
-        float meterHeight = bounds.getHeight() * displayLevel;
-        auto fillBounds = bounds;
-        fillBounds = fillBounds.removeFromBottom(meterHeight);
-
-        g.setColour(getMeterColour(level));
-        g.fillRoundedRectangle(fillBounds, 1.0f);
-    }
-
-    static juce::Colour getMeterColour(float level) {
-        float dbLevel = gainToDb(level);
-        juce::Colour green(0xFF55AA55);
-        juce::Colour yellow(0xFFAAAA55);
-        juce::Colour red(0xFFAA5555);
-
-        if (dbLevel < -12.0f) {
-            return green;
-        } else if (dbLevel < 0.0f) {
-            float t = (dbLevel + 12.0f) / 12.0f;
-            return green.interpolatedWith(yellow, t);
-        } else if (dbLevel < 3.0f) {
-            float t = dbLevel / 3.0f;
-            return yellow.interpolatedWith(red, t);
-        } else {
-            return red;
-        }
-    }
+    using magda::LevelMeter::LevelMeter;
 };
 
 // Send area resize handle (horizontal, between sends viewport and fader)
@@ -1167,56 +1102,10 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
 //==============================================================================
 // DrumSubChannelStrip - LevelMeter (same as ChannelStrip::LevelMeter)
 //==============================================================================
-class MixerView::DrumSubChannelStrip::LevelMeter : public juce::Component {
+// Use shared LevelMeter for DrumSubChannelStrip too
+class MixerView::DrumSubChannelStrip::LevelMeter : public magda::LevelMeter {
   public:
-    LevelMeter() = default;
-
-    void setLevels(float left, float right) {
-        leftLevel_ = juce::jlimit(0.0f, 2.0f, left);
-        rightLevel_ = juce::jlimit(0.0f, 2.0f, right);
-        repaint();
-    }
-
-    void paint(juce::Graphics& g) override {
-        auto effectiveBounds = getLocalBounds().toFloat();
-        const float gap = 1.0f;
-        float barWidth = (effectiveBounds.getWidth() - gap) / 2.0f;
-        auto leftBounds = effectiveBounds.withWidth(barWidth);
-        auto rightBounds =
-            effectiveBounds.withWidth(barWidth).withX(effectiveBounds.getX() + barWidth + gap);
-        drawMeterBar(g, leftBounds, leftLevel_);
-        drawMeterBar(g, rightBounds, rightLevel_);
-    }
-
-  private:
-    float leftLevel_ = 0.0f;
-    float rightLevel_ = 0.0f;
-
-    void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level) {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-        g.fillRoundedRectangle(bounds, 1.0f);
-        float displayLevel = dbToMeterPos(gainToDb(level));
-        float meterHeight = bounds.getHeight() * displayLevel;
-        auto fillBounds = bounds;
-        fillBounds = fillBounds.removeFromBottom(meterHeight);
-        g.setColour(getMeterColour(level));
-        g.fillRoundedRectangle(fillBounds, 1.0f);
-    }
-
-    static juce::Colour getMeterColour(float level) {
-        float dbLevel = gainToDb(level);
-        juce::Colour green(0xFF55AA55);
-        juce::Colour yellow(0xFFAAAA55);
-        juce::Colour red(0xFFAA5555);
-        if (dbLevel < -12.0f)
-            return green;
-        else if (dbLevel < 0.0f)
-            return green.interpolatedWith(yellow, (dbLevel + 12.0f) / 12.0f);
-        else if (dbLevel < 3.0f)
-            return yellow.interpolatedWith(red, dbLevel / 3.0f);
-        else
-            return red;
-    }
+    using magda::LevelMeter::LevelMeter;
 };
 
 //==============================================================================

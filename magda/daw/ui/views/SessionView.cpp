@@ -5,9 +5,16 @@
 #include <cmath>
 #include <functional>
 
+#include "../../audio/AudioBridge.hpp"
+#include "../../audio/MeteringBuffer.hpp"
+#include "../../engine/AudioEngine.hpp"
+#include "../../engine/TracktionEngineWrapper.hpp"
+#include "../components/common/TextSlider.hpp"
+#include "../components/mixer/LevelMeter.hpp"
 #include "../panels/state/PanelController.hpp"
 #include "../state/TimelineController.hpp"
 #include "../themes/DarkTheme.hpp"
+#include "../themes/FontManager.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/SelectionManager.hpp"
@@ -410,6 +417,203 @@ class SessionView::FaderContainer : public juce::Component {
     int scrollOffset_ = 0;
 };
 
+// Mini channel strip for session view fader row
+class SessionView::MiniChannelStrip : public juce::Component {
+  public:
+    MiniChannelStrip(TrackId trackId, const TrackInfo& track) : trackId_(trackId) {
+        trackColour_ = track.colour;
+
+        // Volume fader (vertical TextSlider with dB format)
+        volumeSlider_ =
+            std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decibels);
+        volumeSlider_->setOrientation(daw::ui::TextSlider::Orientation::Vertical);
+        volumeSlider_->setRange(-60.0, 6.0, 0.1);
+        volumeSlider_->setFont(FontManager::getInstance().getUIFont(9.0f));
+        float db = gainToDb(track.volume);
+        volumeSlider_->setValue(db, juce::dontSendNotification);
+        volumeSlider_->onValueChanged = [this](double newValue) {
+            float gain = dbToGain(static_cast<float>(newValue));
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackVolumeCommand>(trackId_, gain));
+        };
+        addAndMakeVisible(*volumeSlider_);
+
+        // Level meter
+        levelMeter_ = std::make_unique<LevelMeter>();
+        addAndMakeVisible(*levelMeter_);
+
+        // Mute button
+        muteButton_ = std::make_unique<juce::TextButton>("M");
+        muteButton_->setColour(juce::TextButton::buttonColourId,
+                               DarkTheme::getColour(DarkTheme::SURFACE));
+        muteButton_->setColour(juce::TextButton::textColourOffId,
+                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        muteButton_->onClick = [this]() {
+            const auto* t = TrackManager::getInstance().getTrack(trackId_);
+            if (t) {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<SetTrackMuteCommand>(trackId_, !t->muted));
+            }
+        };
+        addAndMakeVisible(*muteButton_);
+        updateMuteVisual(track.muted);
+
+        // Solo button
+        soloButton_ = std::make_unique<juce::TextButton>("S");
+        soloButton_->setColour(juce::TextButton::buttonColourId,
+                               DarkTheme::getColour(DarkTheme::SURFACE));
+        soloButton_->setColour(juce::TextButton::textColourOffId,
+                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        soloButton_->onClick = [this]() {
+            const auto* t = TrackManager::getInstance().getTrack(trackId_);
+            if (t) {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<SetTrackSoloCommand>(trackId_, !t->soloed));
+            }
+        };
+        addAndMakeVisible(*soloButton_);
+        updateSoloVisual(track.soloed);
+    }
+
+    void paint(juce::Graphics& g) override {
+        auto bounds = getLocalBounds();
+
+        // Track colour bar at top (3px)
+        g.setColour(trackColour_);
+        g.fillRect(bounds.removeFromTop(3));
+    }
+
+    void resized() override {
+        auto bounds = getLocalBounds();
+        bounds.removeFromTop(3);  // colour bar
+
+        // M/S buttons at bottom (18px row)
+        auto buttonRow = bounds.removeFromBottom(18);
+        int halfW = buttonRow.getWidth() / 2;
+        muteButton_->setBounds(buttonRow.removeFromLeft(halfW));
+        soloButton_->setBounds(buttonRow);
+
+        // Remaining area: fader (left ~55%) | meter (right ~45%)
+        int meterW = juce::jmax(8, bounds.getWidth() * 45 / 100);
+        auto meterBounds = bounds.removeFromRight(meterW);
+        levelMeter_->setBounds(meterBounds.reduced(1, 2));
+        volumeSlider_->setBounds(bounds.reduced(1, 0));
+    }
+
+    void setMeterLevels(float left, float right) {
+        levelMeter_->setLevels(left, right);
+    }
+
+    void updateFromTrack(const TrackInfo& track) {
+        float db = gainToDb(track.volume);
+        volumeSlider_->setValue(db, juce::dontSendNotification);
+        updateMuteVisual(track.muted);
+        updateSoloVisual(track.soloed);
+        trackColour_ = track.colour;
+        repaint();
+    }
+
+    TrackId getTrackId() const {
+        return trackId_;
+    }
+
+  private:
+    TrackId trackId_;
+    juce::Colour trackColour_;
+    std::unique_ptr<daw::ui::TextSlider> volumeSlider_;
+    std::unique_ptr<LevelMeter> levelMeter_;
+    std::unique_ptr<juce::TextButton> muteButton_;
+    std::unique_ptr<juce::TextButton> soloButton_;
+
+    void updateMuteVisual(bool muted) {
+        if (muted) {
+            muteButton_->setColour(juce::TextButton::buttonColourId,
+                                   DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+            muteButton_->setColour(juce::TextButton::textColourOffId,
+                                   DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        } else {
+            muteButton_->setColour(juce::TextButton::buttonColourId,
+                                   DarkTheme::getColour(DarkTheme::SURFACE));
+            muteButton_->setColour(juce::TextButton::textColourOffId,
+                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        }
+    }
+
+    void updateSoloVisual(bool soloed) {
+        if (soloed) {
+            soloButton_->setColour(juce::TextButton::buttonColourId,
+                                   DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+            soloButton_->setColour(juce::TextButton::textColourOffId,
+                                   DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        } else {
+            soloButton_->setColour(juce::TextButton::buttonColourId,
+                                   DarkTheme::getColour(DarkTheme::SURFACE));
+            soloButton_->setColour(juce::TextButton::textColourOffId,
+                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        }
+    }
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MiniChannelStrip)
+};
+
+// Mini master strip for session view (TextSlider + LevelMeter, orange accent)
+class SessionView::MiniMasterStrip : public juce::Component {
+  public:
+    MiniMasterStrip() {
+        volumeSlider_ =
+            std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decibels);
+        volumeSlider_->setOrientation(daw::ui::TextSlider::Orientation::Vertical);
+        volumeSlider_->setRange(-60.0, 6.0, 0.1);
+        volumeSlider_->setFont(FontManager::getInstance().getUIFont(9.0f));
+
+        const auto& master = TrackManager::getInstance().getMasterChannel();
+        float db = gainToDb(master.volume);
+        volumeSlider_->setValue(db, juce::dontSendNotification);
+
+        volumeSlider_->onValueChanged = [](double newValue) {
+            float gain = dbToGain(static_cast<float>(newValue));
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetMasterVolumeCommand>(gain));
+        };
+        addAndMakeVisible(*volumeSlider_);
+
+        levelMeter_ = std::make_unique<LevelMeter>();
+        addAndMakeVisible(*levelMeter_);
+    }
+
+    void paint(juce::Graphics& g) override {
+        auto bounds = getLocalBounds();
+        // Orange accent bar at top
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        g.fillRect(bounds.removeFromTop(3));
+    }
+
+    void resized() override {
+        auto bounds = getLocalBounds();
+        bounds.removeFromTop(3);
+
+        int meterW = juce::jmax(8, bounds.getWidth() * 40 / 100);
+        auto meterBounds = bounds.removeFromRight(meterW);
+        levelMeter_->setBounds(meterBounds.reduced(1, 2));
+        volumeSlider_->setBounds(bounds.reduced(1, 0));
+    }
+
+    void updateVolume(float volume) {
+        float db = gainToDb(volume);
+        volumeSlider_->setValue(db, juce::dontSendNotification);
+    }
+
+    void setMeterLevels(float left, float right) {
+        levelMeter_->setLevels(left, right);
+    }
+
+  private:
+    std::unique_ptr<daw::ui::TextSlider> volumeSlider_;
+    std::unique_ptr<LevelMeter> levelMeter_;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MiniMasterStrip)
+};
+
 SessionView::SessionView() {
     // Get current view mode
     currentViewMode_ = ViewModeController::getInstance().getViewMode();
@@ -472,30 +676,9 @@ SessionView::SessionView() {
     removeSceneButton->onClick = [this]() { removeScene(); };
     addAndMakeVisible(*removeSceneButton);
 
-    // Create master fader in the fader row (scene column area)
-    masterFader_ =
-        std::make_unique<juce::Slider>(juce::Slider::LinearVertical, juce::Slider::NoTextBox);
-    masterFader_->setRange(0.0, 1.0, 0.001);
-    masterFader_->setSliderSnapsToMousePosition(false);
-    masterFader_->setLookAndFeel(&faderLookAndFeel_);
-    masterFader_->setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    masterFader_->setColour(juce::Slider::backgroundColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
-    masterFader_->setColour(juce::Slider::thumbColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-
-    const auto& master = TrackManager::getInstance().getMasterChannel();
-    float masterDb = gainToDb(master.volume);
-    masterFader_->setValue(dbToMeterPos(masterDb), juce::dontSendNotification);
-
-    masterFader_->onValueChange = [this]() {
-        float faderPos = static_cast<float>(masterFader_->getValue());
-        float db = meterPosToDb(faderPos);
-        float gain = dbToGain(db);
-        UndoManager::getInstance().executeCommand(std::make_unique<SetMasterVolumeCommand>(gain));
-    };
-
-    addAndMakeVisible(*masterFader_);
+    // Create master strip in the fader row (scene column area)
+    masterStrip_ = std::make_unique<MiniMasterStrip>();
+    addAndMakeVisible(*masterStrip_);
 
     // Create drag ghost label for file drag preview (added to grid content)
     dragGhostLabel_ = std::make_unique<juce::Label>();
@@ -523,11 +706,7 @@ SessionView::SessionView() {
 }
 
 SessionView::~SessionView() {
-    // Clear LookAndFeel references before faders are destroyed
-    for (auto& fader : trackFaders) {
-        fader->setLookAndFeel(nullptr);
-    }
-    masterFader_->setLookAndFeel(nullptr);
+    stopTimer();
     TrackManager::getInstance().removeListener(this);
     ClipManager::getInstance().removeListener(this);
     ViewModeController::getInstance().removeListener(this);
@@ -565,10 +744,9 @@ void SessionView::trackPropertyChanged(int trackId) {
         }
         trackHeaders[index]->setButtonText(headerText);
 
-        // Sync fader value (convert linear gain to fader position)
-        if (index < static_cast<int>(trackFaders.size())) {
-            float db = gainToDb(track->volume);
-            trackFaders[index]->setValue(dbToMeterPos(db), juce::dontSendNotification);
+        // Sync strip state (volume, mute, solo, colour)
+        if (index < static_cast<int>(trackMiniStrips_.size())) {
+            trackMiniStrips_[index]->updateFromTrack(*track);
         }
     }
 }
@@ -579,10 +757,11 @@ void SessionView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*pro
 }
 
 void SessionView::masterChannelChanged() {
-    // Update master fader from master channel state
-    const auto& master = TrackManager::getInstance().getMasterChannel();
-    float masterDb = gainToDb(master.volume);
-    masterFader_->setValue(dbToMeterPos(masterDb), juce::dontSendNotification);
+    // Update master strip from master channel state
+    if (masterStrip_) {
+        const auto& master = TrackManager::getInstance().getMasterChannel();
+        masterStrip_->updateVolume(master.volume);
+    }
 }
 
 int SessionView::getTrackX(int trackIndex) const {
@@ -617,14 +796,11 @@ int SessionView::getTrackIndexAtX(int x) const {
 }
 
 void SessionView::rebuildTracks() {
-    // Clear existing track headers, clip slots, stop buttons, and faders
-    for (auto& fader : trackFaders) {
-        fader->setLookAndFeel(nullptr);
-    }
+    // Clear existing track headers, clip slots, stop buttons, and strips
     trackHeaders.clear();
     clipSlots.clear();
     trackStopButtons.clear();
-    trackFaders.clear();
+    trackMiniStrips_.clear();
     trackResizeHandles_.clear();
     visibleTrackIds_.clear();
 
@@ -762,35 +938,16 @@ void SessionView::rebuildTracks() {
         clipSlots.push_back(std::move(trackSlots));
     }
 
-    // Create track faders (same style as mixer channel strips)
+    // Create mini channel strips (TextSlider + LevelMeter + M/S buttons)
     for (int i = 0; i < numTracks; ++i) {
-        auto fader =
-            std::make_unique<juce::Slider>(juce::Slider::LinearVertical, juce::Slider::NoTextBox);
-        fader->setRange(0.0, 1.0, 0.001);
-        fader->setSliderSnapsToMousePosition(false);
-        fader->setLookAndFeel(&faderLookAndFeel_);
-        fader->setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-        fader->setColour(juce::Slider::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-        fader->setColour(juce::Slider::thumbColourId, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-
         TrackId trackId = visibleTrackIds_[i];
         const auto* track = trackManager.getTrack(trackId);
-        if (track) {
-            float db = gainToDb(track->volume);
-            fader->setValue(dbToMeterPos(db), juce::dontSendNotification);
-        }
+        if (!track)
+            continue;
 
-        fader->onValueChange = [this, trackId, i]() {
-            float faderPos = static_cast<float>(trackFaders[i]->getValue());
-            float db = meterPosToDb(faderPos);
-            float gain = dbToGain(db);
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<SetTrackVolumeCommand>(trackId, gain));
-        };
-
-        faderContainer->addAndMakeVisible(*fader);
-        trackFaders.push_back(std::move(fader));
+        auto strip = std::make_unique<MiniChannelStrip>(trackId, *track);
+        faderContainer->addAndMakeVisible(*strip);
+        trackMiniStrips_.push_back(std::move(strip));
     }
 
     // Create per-track stop buttons
@@ -853,19 +1010,20 @@ void SessionView::resized() {
     int numTracks = static_cast<int>(trackHeaders.size());
     int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
 
-    // Fader row at the bottom (tracks area + master fader in scene column)
+    // Fader row at the bottom (tracks area + master strip in scene column)
     auto faderRow = bounds.removeFromBottom(faderRowHeight_);
     auto masterFaderArea = faderRow.removeFromRight(SCENE_BUTTON_WIDTH);
-    masterFader_->setBounds(masterFaderArea.reduced(4));
+    if (masterStrip_)
+        masterStrip_->setBounds(masterFaderArea.reduced(2));
     faderContainer->setBounds(faderRow);
     faderContainer->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
                                    trackHeaderScrollOffset);
 
-    // Position faders within fader container (synced with grid horizontal scroll)
-    for (int i = 0; i < numTracks && i < static_cast<int>(trackFaders.size()); ++i) {
+    // Position mini channel strips within fader container (synced with grid horizontal scroll)
+    for (int i = 0; i < numTracks && i < static_cast<int>(trackMiniStrips_.size()); ++i) {
         int x = getTrackX(i) - trackHeaderScrollOffset;
         int w = trackColumnWidths_[i];
-        trackFaders[i]->setBounds(x + 4, 4, w - 8, faderRowHeight_ - 8);
+        trackMiniStrips_[i]->setBounds(x + 1, 1, w - 2, faderRowHeight_ - 2);
     }
 
     // Resize handle between stop button row and fader row
@@ -959,11 +1117,11 @@ void SessionView::scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStar
         headerContainer->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
                                         trackHeaderScrollOffset);
 
-        // Reposition faders to sync with horizontal scroll
-        for (int i = 0; i < numTracks && i < static_cast<int>(trackFaders.size()); ++i) {
+        // Reposition mini channel strips to sync with horizontal scroll
+        for (int i = 0; i < numTracks && i < static_cast<int>(trackMiniStrips_.size()); ++i) {
             int x = getTrackX(i) - trackHeaderScrollOffset;
             int w = trackColumnWidths_[i];
-            trackFaders[i]->setBounds(x + 4, 4, w - 8, faderRowHeight_ - 8);
+            trackMiniStrips_[i]->setBounds(x + 1, 1, w - 2, faderRowHeight_ - 2);
         }
         faderContainer->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
                                        trackHeaderScrollOffset);
@@ -1434,6 +1592,50 @@ void SessionView::setSessionPlayheadPosition(double position) {
                 slot->repaint();
             }
         }
+    }
+}
+
+// ============================================================================
+// Audio Engine & Metering
+// ============================================================================
+
+void SessionView::setAudioEngine(AudioEngine* engine) {
+    audioEngine_ = engine;
+    if (audioEngine_) {
+        startTimerHz(30);  // 30Hz meter refresh
+    } else {
+        stopTimer();
+    }
+}
+
+void SessionView::timerCallback() {
+    if (!audioEngine_)
+        return;
+
+    auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(audioEngine_);
+    if (!teWrapper)
+        return;
+
+    auto* bridge = teWrapper->getAudioBridge();
+    if (!bridge)
+        return;
+
+    auto& meteringBuffer = bridge->getMeteringBuffer();
+
+    // Update track strip meters
+    for (auto& strip : trackMiniStrips_) {
+        int trackId = strip->getTrackId();
+        MeterData data;
+        if (meteringBuffer.popLevels(trackId, data)) {
+            strip->setMeterLevels(data.peakL, data.peakR);
+        }
+    }
+
+    // Update master strip meters
+    if (masterStrip_) {
+        float masterPeakL = bridge->getMasterPeakL();
+        float masterPeakR = bridge->getMasterPeakR();
+        masterStrip_->setMeterLevels(masterPeakL, masterPeakR);
     }
 }
 

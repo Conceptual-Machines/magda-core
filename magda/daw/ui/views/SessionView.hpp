@@ -6,7 +6,6 @@
 #include <memory>
 #include <vector>
 
-#include "../themes/MixerLookAndFeel.hpp"
 #include "core/ClipManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
@@ -14,6 +13,7 @@
 namespace magda {
 
 class TimelineController;
+class AudioEngine;
 
 /**
  * @brief Session view - Ableton-style clip launcher grid
@@ -23,10 +23,12 @@ class TimelineController;
  * - Track headers at the top
  * - Scene launch buttons on the right
  * - Real-time clip status indicators
+ * - Mini mixer strip per track (fader, meter, M/S buttons)
  */
 class SessionView : public juce::Component,
                     private juce::ScrollBar::Listener,
                     public juce::FileDragAndDropTarget,
+                    public juce::Timer,
                     public TrackManagerListener,
                     public ClipManagerListener,
                     public ViewModeListener {
@@ -37,6 +39,9 @@ class SessionView : public juce::Component,
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
+
+    // Timer callback for meter updates
+    void timerCallback() override;
 
     // TrackManagerListener
     void tracksChanged() override;
@@ -68,6 +73,9 @@ class SessionView : public juce::Component,
     void setTimelineController(TimelineController* controller) {
         timelineController_ = controller;
     }
+
+    /** Set the audio engine for metering. */
+    void setAudioEngine(AudioEngine* engine);
 
   private:
     // ScrollBar::Listener
@@ -141,14 +149,15 @@ class SessionView : public juce::Component,
     // Per-track column resize handles (positioned at right edge of each header)
     std::vector<std::unique_ptr<ResizeHandle>> trackResizeHandles_;
 
-    // Fader row at bottom of each track column
+    // Fader row at bottom of each track column - MiniChannelStrip per track
     class FaderContainer;
     std::unique_ptr<FaderContainer> faderContainer;
-    std::vector<std::unique_ptr<juce::Slider>> trackFaders;
-    MixerLookAndFeel faderLookAndFeel_;
+    class MiniChannelStrip;
+    std::vector<std::unique_ptr<MiniChannelStrip>> trackMiniStrips_;
 
-    // Master fader (in scene column area of fader row)
-    std::unique_ptr<juce::Slider> masterFader_;
+    // Master strip (in scene column area of fader row)
+    class MiniMasterStrip;
+    std::unique_ptr<MiniMasterStrip> masterStrip_;
 
     void rebuildTracks();
     void setupSceneButtons();
@@ -190,6 +199,9 @@ class SessionView : public juce::Component,
 
     // Timeline controller for tempo access (not owned)
     TimelineController* timelineController_ = nullptr;
+
+    // Audio engine for metering (not owned)
+    AudioEngine* audioEngine_ = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SessionView)
 };
