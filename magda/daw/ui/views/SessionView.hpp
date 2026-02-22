@@ -149,6 +149,15 @@ class SessionView : public juce::Component,
     // Per-track column resize handles (positioned at right edge of each header)
     std::vector<std::unique_ptr<ResizeHandle>> trackResizeHandles_;
 
+    // I/O routing row (between stop buttons and fader row, toggleable)
+    class MiniIOStrip;
+    class IOContainer;
+    std::unique_ptr<IOContainer> ioContainer_;
+    std::vector<std::unique_ptr<MiniIOStrip>> trackIOStrips_;
+    bool ioRowVisible_ = false;
+    static constexpr int IO_ROW_HEIGHT = 32;
+    void showMixerContextMenu();
+
     // Fader row at bottom of each track column - MiniChannelStrip per track
     class FaderContainer;
     std::unique_ptr<FaderContainer> faderContainer;
