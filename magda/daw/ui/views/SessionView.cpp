@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <functional>
+#include <set>
 
 #include "../../audio/AudioBridge.hpp"
 #include "../../audio/MeteringBuffer.hpp"
@@ -473,6 +474,217 @@ class SessionView::IOContainer : public juce::Component {
     std::vector<int> trackWidths_;
     int separatorWidth_ = 3;
     int scrollOffset_ = 0;
+};
+
+// Container for send section (between stop buttons and IO row)
+class SessionView::SendSectionContainer : public juce::Component {
+  public:
+    SendSectionContainer() {
+        setInterceptsMouseClicks(true, true);
+    }
+
+    void mouseDown(const juce::MouseEvent& e) override {
+        if (e.mods.isPopupMenu() && onContextMenu)
+            onContextMenu();
+    }
+
+    std::function<void()> onContextMenu;
+
+    void setTrackLayout(int numTracks, const std::vector<int>& trackWidths, int separatorWidth,
+                        int scrollOffset) {
+        numTracks_ = numTracks;
+        trackWidths_ = trackWidths;
+        separatorWidth_ = separatorWidth;
+        scrollOffset_ = scrollOffset;
+        repaint();
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.fillRect(0, 0, getWidth(), 1);
+
+        int x = 0;
+        for (int i = 0; i < numTracks_ && i < static_cast<int>(trackWidths_.size()); ++i) {
+            x += trackWidths_[i];
+            g.fillRect(x - scrollOffset_, 1, separatorWidth_, getHeight() - 1);
+            x += separatorWidth_;
+        }
+    }
+
+  private:
+    int numTracks_ = 0;
+    std::vector<int> trackWidths_;
+    int separatorWidth_ = 3;
+    int scrollOffset_ = 0;
+};
+
+// Per-track send strip (shows send rows inside a viewport)
+class SessionView::MiniSendStrip : public juce::Component {
+  public:
+    MiniSendStrip(TrackId trackId) : trackId_(trackId) {
+        setInterceptsMouseClicks(true, true);
+    }
+
+    void mouseDown(const juce::MouseEvent& e) override {
+        if (e.mods.isPopupMenu()) {
+            showSendContextMenu();
+        }
+    }
+
+    void paint(juce::Graphics& /*g*/) override {}
+
+    void resized() override {
+        layoutSlots();
+    }
+
+    void updateFromTrack() {
+        const auto* track = TrackManager::getInstance().getTrack(trackId_);
+        if (!track)
+            return;
+
+        bool countChanged = slots_.size() != track->sends.size();
+        if (countChanged) {
+            rebuildSlots(track->sends);
+        } else {
+            for (size_t i = 0; i < slots_.size(); ++i) {
+                auto& slot = slots_[i];
+                const auto& send = track->sends[i];
+                if (slot.levelSlider && !slot.levelSlider->isBeingDragged())
+                    slot.levelSlider->setValue(send.level, juce::dontSendNotification);
+                if (slot.nameLabel && send.destTrackId != INVALID_TRACK_ID) {
+                    if (auto* destTrack = TrackManager::getInstance().getTrack(send.destTrackId))
+                        slot.nameLabel->setText(destTrack->name, juce::dontSendNotification);
+                }
+            }
+        }
+    }
+
+    TrackId getTrackId() const {
+        return trackId_;
+    }
+
+  private:
+    static constexpr int SEND_SLOT_HEIGHT = 18;
+
+    struct SendSlot {
+        int busIndex;
+        std::unique_ptr<juce::Label> nameLabel;
+        std::unique_ptr<daw::ui::TextSlider> levelSlider;
+        std::unique_ptr<juce::TextButton> removeButton;
+    };
+
+    TrackId trackId_;
+    std::vector<SendSlot> slots_;
+
+    void rebuildSlots(const std::vector<SendInfo>& sends) {
+        for (auto& slot : slots_) {
+            removeChildComponent(slot.nameLabel.get());
+            removeChildComponent(slot.levelSlider.get());
+            removeChildComponent(slot.removeButton.get());
+        }
+        slots_.clear();
+
+        for (const auto& send : sends) {
+            SendSlot slot;
+            slot.busIndex = send.busIndex;
+
+            // Dest name label
+            slot.nameLabel = std::make_unique<juce::Label>();
+            juce::String destName = "Bus " + juce::String(send.busIndex);
+            if (send.destTrackId != INVALID_TRACK_ID) {
+                if (auto* destTrack = TrackManager::getInstance().getTrack(send.destTrackId))
+                    destName = destTrack->name;
+            }
+            slot.nameLabel->setText(destName, juce::dontSendNotification);
+            slot.nameLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
+            slot.nameLabel->setColour(juce::Label::textColourId,
+                                      DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            slot.nameLabel->setJustificationType(juce::Justification::centredLeft);
+            addAndMakeVisible(*slot.nameLabel);
+
+            // Level slider (horizontal, 0-1)
+            slot.levelSlider =
+                std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decimal);
+            slot.levelSlider->setOrientation(daw::ui::TextSlider::Orientation::Horizontal);
+            slot.levelSlider->setRange(0.0, 1.0, 0.01);
+            slot.levelSlider->setValue(send.level, juce::dontSendNotification);
+            slot.levelSlider->setFont(FontManager::getInstance().getUIFont(9.0f));
+            int busIdx = send.busIndex;
+            slot.levelSlider->onValueChanged = [this, busIdx](double val) {
+                UndoManager::getInstance().executeCommand(std::make_unique<SetSendLevelCommand>(
+                    trackId_, busIdx, static_cast<float>(val)));
+            };
+            addAndMakeVisible(*slot.levelSlider);
+
+            // Remove button
+            slot.removeButton = std::make_unique<juce::TextButton>("x");
+            slot.removeButton->setConnectedEdges(
+                juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+                juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+            slot.removeButton->setColour(juce::TextButton::buttonColourId,
+                                         DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+            slot.removeButton->setColour(juce::TextButton::textColourOffId,
+                                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            slot.removeButton->onClick = [this, busIdx]() {
+                TrackManager::getInstance().removeSend(trackId_, busIdx);
+            };
+            addAndMakeVisible(*slot.removeButton);
+
+            slots_.push_back(std::move(slot));
+        }
+
+        layoutSlots();
+    }
+
+    void layoutSlots() {
+        int w = getWidth();
+        int y = 0;
+        for (auto& slot : slots_) {
+            auto row = juce::Rectangle<int>(0, y, w, SEND_SLOT_HEIGHT);
+            slot.nameLabel->setBounds(row.removeFromLeft(row.getWidth() * 40 / 100));
+            auto removeArea = row.removeFromRight(16);
+            slot.removeButton->setBounds(removeArea);
+            slot.levelSlider->setBounds(row);
+            y += SEND_SLOT_HEIGHT + 1;
+        }
+        int totalH = juce::jmax(1, y);
+        if (getHeight() != totalH)
+            setSize(getWidth(), totalH);
+    }
+
+    void showSendContextMenu() {
+        juce::PopupMenu menu;
+
+        // Add Send submenu
+        juce::PopupMenu sendSubMenu;
+        const auto& tracks = TrackManager::getInstance().getTracks();
+        std::set<TrackId> existingSendDests;
+        if (auto* thisTrack = TrackManager::getInstance().getTrack(trackId_)) {
+            for (const auto& send : thisTrack->sends)
+                existingSendDests.insert(send.destTrackId);
+        }
+        for (const auto& t : tracks) {
+            if (t.id != trackId_ && t.type != TrackType::Master &&
+                existingSendDests.find(t.id) == existingSendDests.end()) {
+                sendSubMenu.addItem(1000 + t.id, t.name);
+            }
+        }
+        if (sendSubMenu.getNumItems() == 0) {
+            sendSubMenu.addItem(-1, "(No tracks available)", false);
+        }
+        menu.addSubMenu("Add Send", sendSubMenu);
+
+        auto safeThis = juce::Component::SafePointer<MiniSendStrip>(this);
+        menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis](int result) {
+            if (safeThis && result >= 1000) {
+                TrackManager::getInstance().addSend(safeThis->trackId_,
+                                                    static_cast<TrackId>(result - 1000));
+            }
+        });
+    }
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MiniSendStrip)
 };
 
 // Mini I/O routing strip per track (2x2 grid: AudioIn/Out, MidiIn/Out)
@@ -1026,6 +1238,11 @@ SessionView::SessionView() {
     ioContainer_->onContextMenu = [this]() { showMixerContextMenu(); };
     addChildComponent(*ioContainer_);
 
+    // Create send section container (between stop buttons and IO row, hidden by default)
+    sendSectionContainer_ = std::make_unique<SendSectionContainer>();
+    sendSectionContainer_->onContextMenu = [this]() { showMixerContextMenu(); };
+    addChildComponent(*sendSectionContainer_);
+
     // Create fader container at the bottom
     faderContainer = std::make_unique<FaderContainer>();
     addAndMakeVisible(*faderContainer);
@@ -1141,6 +1358,11 @@ void SessionView::trackPropertyChanged(int trackId) {
         if (index < static_cast<int>(trackIOStrips_.size())) {
             trackIOStrips_[index]->updateFromTrack();
         }
+
+        // Sync send strip state
+        if (index < static_cast<int>(trackSendStrips_.size())) {
+            trackSendStrips_[index]->updateFromTrack();
+        }
     }
 }
 
@@ -1189,12 +1411,14 @@ int SessionView::getTrackIndexAtX(int x) const {
 }
 
 void SessionView::rebuildTracks() {
-    // Clear existing track headers, clip slots, stop buttons, strips, and IO strips
+    // Clear existing track headers, clip slots, stop buttons, strips, IO strips, and send strips
     trackHeaders.clear();
     clipSlots.clear();
     trackStopButtons.clear();
     trackMiniStrips_.clear();
     trackIOStrips_.clear();
+    trackSendViewports_.clear();
+    trackSendStrips_.clear();
     trackResizeHandles_.clear();
     visibleTrackIds_.clear();
 
@@ -1353,6 +1577,19 @@ void SessionView::rebuildTracks() {
         trackIOStrips_.push_back(std::move(ioStrip));
     }
 
+    // Create mini send strips per track (each in a viewport for scrolling)
+    for (int i = 0; i < numTracks; ++i) {
+        TrackId trackId = visibleTrackIds_[i];
+        auto strip = std::make_unique<MiniSendStrip>(trackId);
+        auto viewport = std::make_unique<juce::Viewport>();
+        viewport->setViewedComponent(strip.get(), false);
+        viewport->setScrollBarsShown(true, false);
+        sendSectionContainer_->addAndMakeVisible(*viewport);
+        strip->updateFromTrack();
+        trackSendViewports_.push_back(std::move(viewport));
+        trackSendStrips_.push_back(std::move(strip));
+    }
+
     // Create per-track stop buttons
     for (int i = 0; i < numTracks; ++i) {
         auto stopBtn = std::make_unique<juce::TextButton>();
@@ -1448,6 +1685,26 @@ void SessionView::resized() {
         }
     } else {
         ioContainer_->setVisible(false);
+    }
+
+    // Send section (conditional, between stop buttons and IO row)
+    if (sendRowVisible_) {
+        auto sendRow = bounds.removeFromBottom(SEND_SECTION_HEIGHT);
+        sendSectionContainer_->setBounds(sendRow);
+        sendSectionContainer_->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
+                                              trackHeaderScrollOffset);
+        sendSectionContainer_->setVisible(true);
+
+        for (int i = 0; i < numTracks && i < static_cast<int>(trackSendViewports_.size()); ++i) {
+            int x = getTrackX(i) - trackHeaderScrollOffset;
+            int w = trackColumnWidths_[i];
+            trackSendViewports_[i]->setBounds(x + 1, 1, w - 2, SEND_SECTION_HEIGHT - 2);
+            if (i < static_cast<int>(trackSendStrips_.size())) {
+                trackSendStrips_[i]->setSize(w - 2, trackSendStrips_[i]->getHeight());
+            }
+        }
+    } else {
+        sendSectionContainer_->setVisible(false);
     }
 
     // Stop button row (full width: per-track stops + Stop All in scene column)
@@ -1564,6 +1821,21 @@ void SessionView::scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStar
             }
             ioContainer_->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
                                          trackHeaderScrollOffset);
+        }
+
+        // Reposition send section viewports to sync with horizontal scroll
+        if (sendRowVisible_) {
+            for (int i = 0; i < numTracks && i < static_cast<int>(trackSendViewports_.size());
+                 ++i) {
+                int x = getTrackX(i) - trackHeaderScrollOffset;
+                int w = trackColumnWidths_[i];
+                trackSendViewports_[i]->setBounds(x + 1, 1, w - 2, SEND_SECTION_HEIGHT - 2);
+                if (i < static_cast<int>(trackSendStrips_.size())) {
+                    trackSendStrips_[i]->setSize(w - 2, trackSendStrips_[i]->getHeight());
+                }
+            }
+            sendSectionContainer_->setTrackLayout(numTracks, trackColumnWidths_,
+                                                  TRACK_SEPARATOR_WIDTH, trackHeaderScrollOffset);
         }
 
         // Update viewport background separators
@@ -1881,11 +2153,17 @@ void SessionView::updateHeaderSelectionVisuals() {
 void SessionView::showMixerContextMenu() {
     juce::PopupMenu menu;
     menu.addItem(1, "Show I/O", true, ioRowVisible_);
+    menu.addItem(2, "Show Sends", true, sendRowVisible_);
 
     auto safeThis = juce::Component::SafePointer<SessionView>(this);
     menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis](int result) {
-        if (safeThis && result == 1) {
+        if (!safeThis)
+            return;
+        if (result == 1) {
             safeThis->ioRowVisible_ = !safeThis->ioRowVisible_;
+            safeThis->resized();
+        } else if (result == 2) {
+            safeThis->sendRowVisible_ = !safeThis->sendRowVisible_;
             safeThis->resized();
         }
     });

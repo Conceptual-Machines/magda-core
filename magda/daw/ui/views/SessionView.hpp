@@ -96,7 +96,7 @@ class SessionView : public juce::Component,
     static constexpr int CLIP_SLOT_MARGIN = 2;
     static constexpr int TRACK_SEPARATOR_WIDTH = 3;
     static constexpr int MIN_FADER_ROW_HEIGHT = 60;
-    static constexpr int MAX_FADER_ROW_HEIGHT = 300;
+    static constexpr int MAX_FADER_ROW_HEIGHT = 200;
     int faderRowHeight_ = 100;
     int dragStartFaderHeight_ = 100;
     int dragStartTrackWidth_ = 80;
@@ -156,6 +156,16 @@ class SessionView : public juce::Component,
     std::vector<std::unique_ptr<MiniIOStrip>> trackIOStrips_;
     bool ioRowVisible_ = false;
     static constexpr int IO_ROW_HEIGHT = 32;
+
+    // Send section (between stop buttons and IO row, toggleable)
+    class MiniSendStrip;
+    class SendSectionContainer;
+    std::unique_ptr<SendSectionContainer> sendSectionContainer_;
+    std::vector<std::unique_ptr<juce::Viewport>> trackSendViewports_;
+    std::vector<std::unique_ptr<MiniSendStrip>> trackSendStrips_;
+    bool sendRowVisible_ = false;
+    static constexpr int SEND_SECTION_HEIGHT = 54;
+
     void showMixerContextMenu();
 
     // Fader row at bottom of each track column - MiniChannelStrip per track
