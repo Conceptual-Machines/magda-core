@@ -145,25 +145,86 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                         lq->type = toTELaunchQType(clip->launchQuantize);
                     }
 
-                    // Update clip's own loop state
-                    if (clip->loopEnabled) {
-                        if (clip->getSourceLength() > 0.0) {
-                            teClip->setLoopRange(
-                                te::TimeRange(te::TimePosition::fromSeconds(clip->getTeLoopStart()),
-                                              te::TimePosition::fromSeconds(clip->getTeLoopEnd())));
+                    // AutoTempo handling for audio clips
+                    bool isAutoTempoAudio = clip->type == ClipType::Audio && clip->autoTempo;
+
+                    if (isAutoTempoAudio) {
+                        auto* audioClip = dynamic_cast<te::WaveAudioClip*>(teClip);
+                        if (audioClip) {
+                            // Enable autoTempo if not already
+                            if (!audioClip->getAutoTempo())
+                                audioClip->setAutoTempo(true);
+
+                            // Force speedRatio to 1.0
+                            if (std::abs(audioClip->getSpeedRatio() - 1.0) > 0.001)
+                                audioClip->setSpeedRatio(1.0);
+
+                            // Ensure valid stretch mode
+                            if (audioClip->getTimeStretchMode() == te::TimeStretcher::disabled)
+                                audioClip->setTimeStretchMode(te::TimeStretcher::defaultMode);
+
+                            // Sync sourceBPM to loopInfo
+                            if (clip->sourceBPM > 0.0) {
+                                auto waveInfo = audioClip->getWaveInfo();
+                                auto& li = audioClip->getLoopInfo();
+                                li.setBpm(clip->sourceBPM, waveInfo);
+                            }
+
+                            // Use beat-based loop range
+                            if (clip->loopEnabled) {
+                                double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                                auto [loopStartBeats, loopLengthBeats] =
+                                    ClipOperations::getAutoTempoBeatRange(*clip, bpm);
+                                if (loopLengthBeats > 0.0) {
+                                    audioClip->setLoopRangeBeats(te::BeatRange(
+                                        te::BeatPosition::fromBeats(loopStartBeats),
+                                        te::BeatDuration::fromBeats(loopLengthBeats)));
+                                }
+                            } else {
+                                audioClip->disableLooping();
+                            }
                         }
                     } else {
-                        teClip->disableLooping();
+                        // Disable autoTempo if it was previously on
+                        if (clip->type == ClipType::Audio) {
+                            auto* audioClip = dynamic_cast<te::WaveAudioClip*>(teClip);
+                            if (audioClip && audioClip->getAutoTempo())
+                                audioClip->setAutoTempo(false);
+                        }
+
+                        // Time-based loop state (existing behavior)
+                        if (clip->loopEnabled) {
+                            if (clip->getSourceLength() > 0.0) {
+                                teClip->setLoopRange(te::TimeRange(
+                                    te::TimePosition::fromSeconds(clip->getTeLoopStart()),
+                                    te::TimePosition::fromSeconds(clip->getTeLoopEnd())));
+                            }
+                        } else {
+                            teClip->disableLooping();
+                        }
                     }
 
                     // Update looping on the launch handle
                     auto launchHandle = teClip->getLaunchHandle();
                     if (launchHandle) {
                         if (clip->loopEnabled) {
-                            double loopLengthSeconds = clip->getSourceLength() / clip->speedRatio;
-                            double bps = edit_.tempoSequence.getBpmAt(te::TimePosition()) / 60.0;
-                            double loopLengthBeats = loopLengthSeconds * bps;
-                            launchHandle->setLooping(te::BeatDuration::fromBeats(loopLengthBeats));
+                            if (isAutoTempoAudio) {
+                                // AutoTempo: loop beats come from beat fields
+                                double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                                auto [loopStartBeats, loopLengthBeats] =
+                                    ClipOperations::getAutoTempoBeatRange(*clip, bpm);
+                                if (loopLengthBeats > 0.0)
+                                    launchHandle->setLooping(
+                                        te::BeatDuration::fromBeats(loopLengthBeats));
+                            } else {
+                                double loopLengthSeconds =
+                                    clip->getSourceLength() / clip->speedRatio;
+                                double bps =
+                                    edit_.tempoSequence.getBpmAt(te::TimePosition()) / 60.0;
+                                double loopLengthBeats = loopLengthSeconds * bps;
+                                launchHandle->setLooping(
+                                    te::BeatDuration::fromBeats(loopLengthBeats));
+                            }
                         } else {
                             launchHandle->setLooping(std::nullopt);
                         }
@@ -400,37 +461,77 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
                                                loopInfoRef.getBpm(waveInfo));
         }
 
-        // Set timestretcher mode — keep disabled when mode is 0 and speedRatio is 1.0
-        // Warp also requires a valid stretcher
-        {
-            bool isAnalog = clip->isAnalogPitchActive();
-            auto stretchMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
-            if (!isAnalog && stretchMode == te::TimeStretcher::disabled &&
-                (std::abs(clip->speedRatio - 1.0) > 0.001 || clip->warpEnabled))
-                stretchMode = te::TimeStretcher::defaultMode;
-            if (isAnalog)
-                stretchMode = te::TimeStretcher::disabled;
-            audioClipPtr->setTimeStretchMode(stretchMode);
-        }
+        if (clip->autoTempo) {
+            // =============================================================
+            // AUTO-TEMPO MODE — mirrors the arrangement code path
+            // =============================================================
 
-        // Set speed ratio (BEFORE offset, since TE offset
-        // is in stretched time and must be set after speed ratio)
-        if (std::abs(clip->speedRatio - 1.0) > 0.001) {
-            if (audioClipPtr->getAutoTempo()) {
-                audioClipPtr->setAutoTempo(false);
+            // Sync sourceBPM to TE's loopInfo
+            if (clip->sourceBPM > 0.0) {
+                auto waveInfo = audioClipPtr->getWaveInfo();
+                auto& li = audioClipPtr->getLoopInfo();
+                li.setBpm(clip->sourceBPM, waveInfo);
             }
-            audioClipPtr->setSpeedRatio(clip->speedRatio);
-        }
 
-        // Set file offset (trim point) - relative to loop start, in stretched time
-        audioClipPtr->setOffset(
-            te::TimeDuration::fromSeconds(clip->getTeOffset(clip->loopEnabled)));
+            // Ensure valid stretch mode (autoTempo requires time-stretching)
+            if (audioClipPtr->getTimeStretchMode() == te::TimeStretcher::disabled)
+                audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
 
-        // Set looping properties
-        if (clip->loopEnabled && clip->getSourceLength() > 0.0) {
-            audioClipPtr->setLoopRange(
-                te::TimeRange(te::TimePosition::fromSeconds(clip->getTeLoopStart()),
-                              te::TimePosition::fromSeconds(clip->getTeLoopEnd())));
+            // Force speedRatio to 1.0 (TE requirement for autoTempo)
+            audioClipPtr->setSpeedRatio(1.0);
+
+            // Enable autoTempo
+            audioClipPtr->setAutoTempo(true);
+
+            // Set offset (with speedRatio=1.0, stretched time == source time)
+            audioClipPtr->setOffset(
+                te::TimeDuration::fromSeconds(clip->getTeOffset(clip->loopEnabled)));
+
+            // Set beat-based loop range using the same helper as arrangement path
+            double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+            auto [loopStartBeats, loopLengthBeats] =
+                ClipOperations::getAutoTempoBeatRange(*clip, bpm);
+            if (loopLengthBeats > 0.0) {
+                audioClipPtr->setLoopRangeBeats(
+                    te::BeatRange(te::BeatPosition::fromBeats(loopStartBeats),
+                                  te::BeatDuration::fromBeats(loopLengthBeats)));
+            }
+        } else {
+            // =============================================================
+            // TIME-BASED MODE — existing behavior
+            // =============================================================
+
+            // Set timestretcher mode — keep disabled when mode is 0 and speedRatio is 1.0
+            {
+                bool isAnalog = clip->isAnalogPitchActive();
+                auto stretchMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+                if (!isAnalog && stretchMode == te::TimeStretcher::disabled &&
+                    (std::abs(clip->speedRatio - 1.0) > 0.001 || clip->warpEnabled))
+                    stretchMode = te::TimeStretcher::defaultMode;
+                if (isAnalog)
+                    stretchMode = te::TimeStretcher::disabled;
+                audioClipPtr->setTimeStretchMode(stretchMode);
+            }
+
+            // Set speed ratio (BEFORE offset, since TE offset
+            // is in stretched time and must be set after speed ratio)
+            if (std::abs(clip->speedRatio - 1.0) > 0.001) {
+                if (audioClipPtr->getAutoTempo()) {
+                    audioClipPtr->setAutoTempo(false);
+                }
+                audioClipPtr->setSpeedRatio(clip->speedRatio);
+            }
+
+            // Set file offset (trim point) - relative to loop start, in stretched time
+            audioClipPtr->setOffset(
+                te::TimeDuration::fromSeconds(clip->getTeOffset(clip->loopEnabled)));
+
+            // Set looping properties
+            if (clip->loopEnabled && clip->getSourceLength() > 0.0) {
+                audioClipPtr->setLoopRange(
+                    te::TimeRange(te::TimePosition::fromSeconds(clip->getTeLoopStart()),
+                                  te::TimePosition::fromSeconds(clip->getTeLoopEnd())));
+            }
         }
 
         // Set per-clip launch quantization
@@ -560,7 +661,18 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId) {
     if (clip) {
         if (clip->loopEnabled) {
             double srcLength = clip->getSourceLength();
-            if (clip->type == ClipType::Audio && srcLength > 0.0) {
+            if (clip->type == ClipType::Audio && clip->autoTempo) {
+                // AutoTempo: use beat-based loop range
+                double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                auto [loopStartBeats, loopLengthBeats] =
+                    ClipOperations::getAutoTempoBeatRange(*clip, bpm);
+                if (loopLengthBeats > 0.0) {
+                    teClip->setLoopRangeBeats(
+                        te::BeatRange(te::BeatPosition::fromBeats(loopStartBeats),
+                                      te::BeatDuration::fromBeats(loopLengthBeats)));
+                    launchHandle->setLooping(te::BeatDuration::fromBeats(loopLengthBeats));
+                }
+            } else if (clip->type == ClipType::Audio && srcLength > 0.0) {
                 teClip->setLoopRange(
                     te::TimeRange(te::TimePosition::fromSeconds(clip->getTeLoopStart()),
                                   te::TimePosition::fromSeconds(clip->getTeLoopEnd())));

@@ -51,11 +51,20 @@ void SessionClipScheduler::clipPropertyChanged(ClipId clipId) {
     // which makes TE stop the clip at the end of the current pass.
     // The timer will then detect PlayState::stopped and clean up.
     launchClipLooping_ = clip->loopEnabled;
-    launchClipLength_ = clip->length;
 
-    // Source length is in seconds, convert to stretched time
-    double srcLength = clip->loopLength > 0.0 ? clip->loopLength : clip->length * clip->speedRatio;
-    launchLoopLength_ = srcLength / clip->speedRatio;
+    if (clip->type == ClipType::Audio && clip->autoTempo) {
+        // AutoTempo: wall-clock duration derived from beats and project BPM
+        double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+        launchClipLength_ = clip->lengthBeats * 60.0 / bpm;
+        launchLoopLength_ =
+            (clip->loopLengthBeats > 0.0) ? clip->loopLengthBeats * 60.0 / bpm : launchClipLength_;
+    } else {
+        launchClipLength_ = clip->length;
+        // Source length is in seconds, convert to stretched time
+        double srcLength =
+            clip->loopLength > 0.0 ? clip->loopLength : clip->length * clip->speedRatio;
+        launchLoopLength_ = srcLength / clip->speedRatio;
+    }
 }
 
 void SessionClipScheduler::clipPlaybackStateChanged(ClipId clipId) {
@@ -76,12 +85,21 @@ void SessionClipScheduler::clipPlaybackStateChanged(ClipId clipId) {
         if (launchedClips_.empty()) {
             launchTransportPos_ = transport.getPosition().inSeconds();
             launchClipLooping_ = clip->loopEnabled;
-            launchClipLength_ = clip->length;
 
-            // Source length is in seconds, convert to stretched time
-            double srcLen =
-                clip->loopLength > 0.0 ? clip->loopLength : clip->length * clip->speedRatio;
-            launchLoopLength_ = srcLen / clip->speedRatio;
+            if (clip->type == ClipType::Audio && clip->autoTempo) {
+                // AutoTempo: wall-clock duration derived from beats and project BPM
+                double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                launchClipLength_ = clip->lengthBeats * 60.0 / bpm;
+                launchLoopLength_ = (clip->loopLengthBeats > 0.0)
+                                        ? clip->loopLengthBeats * 60.0 / bpm
+                                        : launchClipLength_;
+            } else {
+                launchClipLength_ = clip->length;
+                // Source length is in seconds, convert to stretched time
+                double srcLen =
+                    clip->loopLength > 0.0 ? clip->loopLength : clip->length * clip->speedRatio;
+                launchLoopLength_ = srcLen / clip->speedRatio;
+            }
         }
 
         audioBridge_.launchSessionClip(clipId);
