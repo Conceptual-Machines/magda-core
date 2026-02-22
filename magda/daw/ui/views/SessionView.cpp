@@ -438,6 +438,10 @@ class SessionView::MiniChannelStrip : public juce::Component {
         };
         addAndMakeVisible(*volumeSlider_);
 
+        // dB scale labels (between fader and meter)
+        dbScale_ = std::make_unique<MiniDbScale>();
+        addAndMakeVisible(*dbScale_);
+
         // Level meter
         levelMeter_ = std::make_unique<LevelMeter>();
         addAndMakeVisible(*levelMeter_);
@@ -493,10 +497,21 @@ class SessionView::MiniChannelStrip : public juce::Component {
         muteButton_->setBounds(buttonRow.removeFromLeft(halfW));
         soloButton_->setBounds(buttonRow);
 
-        // Remaining area: fader (left ~55%) | meter (right ~45%)
-        int meterW = juce::jmax(8, bounds.getWidth() * 45 / 100);
+        // Layout: fader | dbScale | meter
+        int meterW = juce::jmax(8, bounds.getWidth() * 30 / 100);
         auto meterBounds = bounds.removeFromRight(meterW);
         levelMeter_->setBounds(meterBounds.reduced(1, 2));
+
+        // dB scale labels — narrow column between fader and meter
+        static constexpr int DB_SCALE_WIDTH = 16;
+        if (bounds.getWidth() > DB_SCALE_WIDTH + 20) {
+            auto scaleBounds = bounds.removeFromRight(DB_SCALE_WIDTH);
+            dbScale_->setBounds(scaleBounds.withTrimmedTop(2).withTrimmedBottom(2));
+            dbScale_->setVisible(true);
+        } else {
+            dbScale_->setVisible(false);
+        }
+
         volumeSlider_->setBounds(bounds.reduced(1, 0));
     }
 
@@ -518,9 +533,60 @@ class SessionView::MiniChannelStrip : public juce::Component {
     }
 
   private:
+    // Compact dB scale labels for mini strip.
+    // Uses linear-in-dB mapping to match the TextSlider's range (-60..+6).
+    class MiniDbScale : public juce::Component {
+      public:
+        MiniDbScale() {
+            setInterceptsMouseClicks(false, false);
+        }
+
+        void paint(juce::Graphics& g) override {
+            auto bounds = getLocalBounds();
+            if (bounds.isEmpty())
+                return;
+
+            static constexpr float dbValues[] = {6.0f, 0.0f, -6.0f, -12.0f, -24.0f, -48.0f};
+            static constexpr float DB_MIN = -60.0f;
+            static constexpr float DB_MAX = 6.0f;
+
+            float height = static_cast<float>(bounds.getHeight());
+            float width = static_cast<float>(bounds.getWidth());
+
+            g.setFont(FontManager::getInstance().getUIFont(8.0f));
+
+            constexpr float labelH = 9.0f;
+            float lastDrawnY = -1000.0f;
+
+            for (float db : dbValues) {
+                // Linear mapping matching TextSlider::getNormalizedValue()
+                float norm = (db - DB_MIN) / (DB_MAX - DB_MIN);
+                float y = height * (1.0f - norm);
+
+                if (std::abs(y - lastDrawnY) < labelH + 1.0f)
+                    continue;
+                lastDrawnY = y;
+
+                // Tick marks
+                g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+                g.fillRect(0.0f, y - 0.5f, 2.0f, 1.0f);
+                g.fillRect(width - 2.0f, y - 0.5f, 2.0f, 1.0f);
+
+                // Label
+                int dbInt = static_cast<int>(db);
+                juce::String text = juce::String(std::abs(dbInt));
+
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.drawText(text, 0, static_cast<int>(y - labelH / 2.0f), static_cast<int>(width),
+                           static_cast<int>(labelH), juce::Justification::centred, false);
+            }
+        }
+    };
+
     TrackId trackId_;
     juce::Colour trackColour_;
     std::unique_ptr<daw::ui::TextSlider> volumeSlider_;
+    std::unique_ptr<MiniDbScale> dbScale_;
     std::unique_ptr<LevelMeter> levelMeter_;
     std::unique_ptr<juce::TextButton> muteButton_;
     std::unique_ptr<juce::TextButton> soloButton_;
