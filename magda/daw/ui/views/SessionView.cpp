@@ -139,8 +139,14 @@ class ClipSlotButton : public juce::TextButton {
 
     void paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted,
                      bool shouldDrawButtonAsDown) override {
-        // Draw base button
+        // Draw base button (background, border via LookAndFeel)
+        // Temporarily clear text so base class doesn't draw it centered
+        auto savedText = getButtonText();
+        if (hasClip)
+            setButtonText("");
         juce::TextButton::paintButton(g, shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
+        if (hasClip)
+            setButtonText(savedText);
 
         // Draw selection highlight border
         if (isSelected) {
@@ -148,9 +154,8 @@ class ClipSlotButton : public juce::TextButton {
             g.drawRect(getLocalBounds(), 2);
         }
 
-        // Draw play triangle indicator on the left side (click triggers or toggles depending on
-        // launch mode)
         if (hasClip) {
+            // Draw play triangle in the left area
             auto playArea = getLocalBounds().removeFromLeft(PLAY_BUTTON_WIDTH);
             auto centre = playArea.getCentre().toFloat();
 
@@ -163,10 +168,12 @@ class ClipSlotButton : public juce::TextButton {
                                       : juce::Colours::white.withAlpha(0.7f));
             g.fillPath(triangle);
 
+            // Content area (right of play button)
+            auto contentArea = getLocalBounds();
+            contentArea.removeFromLeft(PLAY_BUTTON_WIDTH);
+
             // Draw progress bar for playing clips
             if (clipIsPlaying && clipLength > 0.0 && sessionPlayheadPos >= 0.0) {
-                auto contentArea = getLocalBounds();
-                contentArea.removeFromLeft(PLAY_BUTTON_WIDTH);
                 float progress = static_cast<float>(sessionPlayheadPos / clipLength);
                 progress = juce::jlimit(0.0f, 1.0f, progress);
 
@@ -181,6 +188,14 @@ class ClipSlotButton : public juce::TextButton {
                 g.drawVerticalLine(static_cast<int>(lineX), static_cast<float>(contentArea.getY()),
                                    static_cast<float>(contentArea.getBottom()));
             }
+
+            // Draw clip name in content area, left-justified
+            auto textArea = contentArea.reduced(2, 0);
+            if (isMidiClip)
+                textArea.removeFromRight(16);  // Reserve space for M badge
+            g.setColour(findColour(juce::TextButton::textColourOffId));
+            g.setFont(juce::Font(juce::FontOptions(9.0f)));
+            g.drawText(getButtonText(), textArea, juce::Justification::centredLeft, true);
 
             // Draw "M" badge for MIDI clips
             if (isMidiClip) {
@@ -2334,12 +2349,7 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
             slot->clipLength = clip->length;
             slot->sessionPlayheadPos = clip->isPlaying ? sessionPlayheadPos_ : -1.0;
 
-            // Show clip name with loop indicator if enabled
-            juce::String displayText = "   " + clip->name;  // Indent for play button area
-            if (clip->loopEnabled) {
-                displayText += " [L]";
-            }
-            slot->setButtonText(displayText);
+            slot->setButtonText(clip->name);
 
             // Set color based on clip state
             if (clip->isPlaying) {
