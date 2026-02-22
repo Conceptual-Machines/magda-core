@@ -5,6 +5,7 @@
 
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
+#include "magda/daw/core/ClipOperations.hpp"
 
 using namespace magda;
 
@@ -807,5 +808,195 @@ TEST_CASE("Growing loop length when NOT aligned clamps to clip end",
         auto* clip = cm.getClip(id);
         REQUIRE(clip->loopLength == Catch::Approx(8.0));
         REQUIRE(clip->length == Catch::Approx(8.0 * spb));
+    }
+}
+
+// =============================================================================
+// Session autoTempo: playhead timing calculations
+// =============================================================================
+
+namespace {
+
+/**
+ * Replicates SessionClipScheduler::updateLaunchTimings() for autoTempo clips.
+ * Returns {clipLength, loopLength} in wall-clock seconds.
+ */
+std::pair<double, double> computeAutoTempoTimings(const ClipInfo& clip, double bpm) {
+    if (bpm <= 0.0)
+        bpm = 120.0;
+    double clipLength = clip.lengthBeats * 60.0 / bpm;
+    double loopLength =
+        (clip.loopLengthBeats > 0.0) ? clip.loopLengthBeats * 60.0 / bpm : clipLength;
+    return {clipLength, loopLength};
+}
+
+/**
+ * Replicates the non-autoTempo timing path for comparison.
+ * Returns {clipLength, loopLength} in wall-clock seconds.
+ */
+std::pair<double, double> computeTimeBasedTimings(const ClipInfo& clip) {
+    double clipLength = clip.length;
+    double srcLength = clip.loopLength > 0.0 ? clip.loopLength : clip.length * clip.speedRatio;
+    double loopLength = srcLength / clip.speedRatio;
+    return {clipLength, loopLength};
+}
+
+}  // namespace
+
+TEST_CASE("AutoTempo session clip timing: 172bpm clip in 120bpm project",
+          "[session][auto-tempo][playhead]") {
+    // Scenario from the bug report: 2-bar loop at 172bpm, project at 120bpm
+    ClipInfo clip;
+    clip.type = ClipType::Audio;
+    clip.audioFilePath = "loop_172bpm.wav";
+    clip.sourceBPM = 172.0;
+    clip.sourceNumBeats = 8.0;         // 2 bars = 8 beats
+    clip.length = 8.0 * 60.0 / 172.0;  // ~2.79s original duration
+    clip.speedRatio = 1.0;
+    clip.loopEnabled = true;
+    clip.loopStart = 0.0;
+    clip.loopLength = clip.length;
+
+    constexpr double PROJECT_BPM = 120.0;
+    ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
+
+    SECTION("lengthBeats matches source beats") {
+        REQUIRE(clip.lengthBeats == Catch::Approx(8.0));
+    }
+
+    SECTION("Wall-clock duration stretched to project BPM") {
+        auto [clipLen, loopLen] = computeAutoTempoTimings(clip, PROJECT_BPM);
+        // 8 beats at 120bpm = 4 seconds (slower than original ~2.79s)
+        REQUIRE(clipLen == Catch::Approx(4.0));
+        REQUIRE(loopLen == Catch::Approx(4.0));
+    }
+
+    SECTION("Playhead wraps at stretched duration, not original") {
+        auto [clipLen, loopLen] = computeAutoTempoTimings(clip, PROJECT_BPM);
+        // At 3.5s elapsed, playhead should be at 3.5 (within 4s loop)
+        REQUIRE(computeSessionPlayhead(3.5, loopLen, clipLen, true) == Catch::Approx(3.5));
+        // At 4.0s, should wrap to 0
+        REQUIRE(computeSessionPlayhead(4.0, loopLen, clipLen, true) == Catch::Approx(0.0));
+        // At 5.0s, should be at 1.0
+        REQUIRE(computeSessionPlayhead(5.0, loopLen, clipLen, true) == Catch::Approx(1.0));
+    }
+
+    SECTION("Without autoTempo, playhead uses original duration (wrong)") {
+        // This demonstrates the bug: without autoTempo timing,
+        // the playhead wraps at the original ~2.79s instead of 4s
+        ClipInfo rawClip = clip;
+        rawClip.autoTempo = false;
+        rawClip.loopLength = rawClip.length;
+        auto [clipLen, loopLen] = computeTimeBasedTimings(rawClip);
+        // Would wrap at ~2.79s — incorrect for a 120bpm playback
+        REQUIRE(loopLen < 3.0);
+    }
+}
+
+TEST_CASE("AutoTempo session clip timing: sub-loop region",
+          "[session][auto-tempo][playhead][sub-loop]") {
+    // 8-beat source, but only looping 4 beats
+    ClipInfo clip;
+    clip.type = ClipType::Audio;
+    clip.audioFilePath = "sample.wav";
+    clip.sourceBPM = 140.0;
+    clip.sourceNumBeats = 8.0;
+    clip.length = 8.0 * 60.0 / 140.0;
+    clip.speedRatio = 1.0;
+    clip.loopEnabled = true;
+    clip.loopStart = 0.0;
+    clip.loopLength = 4.0 * 60.0 / 140.0;  // half the file
+
+    constexpr double PROJECT_BPM = 120.0;
+    ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
+
+    // loopLengthBeats should be set to source beats by setAutoTempo
+    // With a sub-loop of half the file, loopLengthBeats = sourceBeats (setAutoTempo
+    // uses full source region). Verify the timing math handles it correctly.
+    auto [clipLen, loopLen] = computeAutoTempoTimings(clip, PROJECT_BPM);
+
+    SECTION("Clip length uses full beat count") {
+        REQUIRE(clip.lengthBeats == Catch::Approx(8.0));
+        REQUIRE(clipLen == Catch::Approx(4.0));  // 8 beats at 120bpm
+    }
+
+    SECTION("Loop length uses loopLengthBeats") {
+        REQUIRE(loopLen == Catch::Approx(clip.loopLengthBeats * 60.0 / PROJECT_BPM));
+    }
+}
+
+TEST_CASE("AutoTempo session clip timing: BPM edge cases",
+          "[session][auto-tempo][playhead][edge]") {
+    ClipInfo clip;
+    clip.type = ClipType::Audio;
+    clip.audioFilePath = "sample.wav";
+    clip.sourceBPM = 120.0;
+    clip.sourceNumBeats = 4.0;
+    clip.length = 2.0;
+    clip.speedRatio = 1.0;
+    clip.loopEnabled = true;
+    clip.loopStart = 0.0;
+    clip.loopLength = 2.0;
+
+    ClipOperations::setAutoTempo(clip, true, 120.0);
+
+    SECTION("Zero BPM falls back to 120") {
+        auto [clipLen, loopLen] = computeAutoTempoTimings(clip, 0.0);
+        REQUIRE(clipLen == Catch::Approx(clip.lengthBeats * 60.0 / 120.0));
+        REQUIRE(loopLen > 0.0);
+    }
+
+    SECTION("Negative BPM falls back to 120") {
+        auto [clipLen, loopLen] = computeAutoTempoTimings(clip, -50.0);
+        REQUIRE(clipLen > 0.0);
+        REQUIRE(loopLen > 0.0);
+    }
+
+    SECTION("Very fast project BPM produces short durations") {
+        auto [clipLen, loopLen] = computeAutoTempoTimings(clip, 300.0);
+        // 4 beats at 300bpm = 0.8s
+        REQUIRE(clipLen == Catch::Approx(0.8));
+    }
+
+    SECTION("Very slow project BPM produces long durations") {
+        auto [clipLen, loopLen] = computeAutoTempoTimings(clip, 30.0);
+        // 4 beats at 30bpm = 8s
+        REQUIRE(clipLen == Catch::Approx(8.0));
+    }
+}
+
+TEST_CASE("AutoTempo session clip: getAutoTempoBeatRange for session loop",
+          "[session][auto-tempo][beat-range]") {
+    ClipInfo clip;
+    clip.type = ClipType::Audio;
+    clip.audioFilePath = "loop.wav";
+    clip.sourceBPM = 172.0;
+    clip.sourceNumBeats = 8.0;
+    clip.length = 8.0 * 60.0 / 172.0;
+    clip.speedRatio = 1.0;
+    clip.loopEnabled = true;
+    clip.loopStart = 0.0;
+    clip.loopLength = clip.length;
+
+    constexpr double PROJECT_BPM = 120.0;
+    ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
+
+    SECTION("Beat range is valid after setAutoTempo") {
+        auto [startBeats, lengthBeats] = ClipOperations::getAutoTempoBeatRange(clip, PROJECT_BPM);
+        REQUIRE(startBeats >= 0.0);
+        REQUIRE(lengthBeats > 0.0);
+        REQUIRE(startBeats + lengthBeats <= clip.sourceNumBeats + 0.001);
+    }
+
+    SECTION("Beat range matches stored loopLengthBeats") {
+        auto [startBeats, lengthBeats] = ClipOperations::getAutoTempoBeatRange(clip, PROJECT_BPM);
+        REQUIRE(lengthBeats == Catch::Approx(clip.loopLengthBeats));
+    }
+
+    SECTION("Returns {0,0} when autoTempo is off") {
+        clip.autoTempo = false;
+        auto [startBeats, lengthBeats] = ClipOperations::getAutoTempoBeatRange(clip, PROJECT_BPM);
+        REQUIRE(startBeats == 0.0);
+        REQUIRE(lengthBeats == 0.0);
     }
 }

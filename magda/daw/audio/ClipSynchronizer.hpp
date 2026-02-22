@@ -265,6 +265,17 @@ class ClipSynchronizer : public ClipManagerListener {
      */
     void syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip);
 
+    /**
+     * @brief Configure autoTempo on a session audio clip in TE
+     * @param audioClip The TE WaveAudioClip to configure
+     * @param clip The ClipInfo model data
+     *
+     * Shared by syncSessionClipToSlot() and clipPropertyChanged().
+     * Syncs sourceBPM, stretch mode, speedRatio, autoTempo flag,
+     * offset, and beat-based loop range.
+     */
+    void configureSessionAutoTempo(te::WaveAudioClip* audioClip, const ClipInfo* clip);
+
     // References to dependencies (not owned)
     te::Edit& edit_;
     TrackController& trackController_;

@@ -67,6 +67,9 @@ class SessionClipScheduler : public ClipManagerListener, private juce::Timer {
   private:
     void timerCallback() override;
 
+    /** Cache wall-clock durations for playhead tracking from clip state. */
+    void updateLaunchTimings(const ClipInfo* clip);
+
     AudioBridge& audioBridge_;
     te::Edit& edit_;
 
