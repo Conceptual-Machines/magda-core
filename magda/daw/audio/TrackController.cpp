@@ -166,6 +166,10 @@ void TrackController::setTrackAudioOutput(TrackId trackId, const juce::String& d
         TrackId targetId = destination.fromFirstOccurrenceOf("track:", false, false).getIntValue();
         auto* targetTrack = getAudioTrack(targetId);
         if (targetTrack) {
+            // Clear first to ensure TE detects the change even when the
+            // positional "track N" string happens to match the previous value
+            // (e.g., after tracks are added/removed and positions shift).
+            track->getOutput().setOutputToDeviceID({});
             track->getOutput().setOutputToTrack(targetTrack);
         } else {
             DBG("TrackController::setTrackAudioOutput - target track not found: trackId="
