@@ -15,6 +15,7 @@
 #include "core/ClipManager.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
@@ -273,6 +274,12 @@ void MainView::setupComponents() {
         }
     };
 
+    setupCornerButton(addTrackButton, "AddTrack", BinaryData::add_svg, BinaryData::add_svgSize);
+    addTrackButton->onClick = [this]() {
+        auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Audio);
+        UndoManager::getInstance().executeCommand(std::move(cmd));
+    };
+
     // S = density_small.svg (4 rows = compact), M = density_medium.svg (3 rows), L =
     // density_large.svg (2 rows = spacious)
     setupCornerButton(trackSmallButton, "TrackSmall", BinaryData::density_small_svg,
@@ -287,8 +294,8 @@ void MainView::setupComponents() {
                       BinaryData::density_large_svgSize);
     trackLargeButton->onClick = [this]() { setAllTrackHeights(140); };
 
-    setupCornerButton(ioToggleButton, "IOToggle", BinaryData::InputOutput_svg,
-                      BinaryData::InputOutput_svgSize);
+    setupCornerButton(ioToggleButton, "IOToggle", BinaryData::io_routing_svg,
+                      BinaryData::io_routing_svgSize);
     ioToggleButton->onClick = [this]() {
         trackHeadersPanel->toggleIORouting();
         // Update button appearance to reflect state
@@ -668,6 +675,8 @@ void MainView::resized() {
         zoomSelButton->setBounds(topRow.removeFromLeft(btnSize));
         topRow.removeFromLeft(gap);
         zoomLoopButton->setBounds(topRow.removeFromLeft(btnSize));
+        topRow.removeFromLeft(gap);
+        addTrackButton->setBounds(topRow.removeFromLeft(btnSize));
         hAxisIcon->setBounds(topRow.removeFromRight(btnSize));
 
         // Bottom row: action buttons left, axis label right

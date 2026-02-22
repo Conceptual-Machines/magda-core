@@ -104,6 +104,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/large.svg
     ../../assets/icons/fit_loop.svg
     ../../assets/icons/horizontal.svg
+    ../../assets/icons/io_routing.svg
     ../../assets/icons/vertical.svg
     # I/O routing icons
     ../../assets/icons/IO/Input.svg

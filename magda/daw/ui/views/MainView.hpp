@@ -254,6 +254,7 @@ class MainView : public juce::Component,
     std::unique_ptr<SvgButton> trackMediumButton;
     std::unique_ptr<SvgButton> trackLargeButton;
     std::unique_ptr<SvgButton> zoomLoopButton;
+    std::unique_ptr<SvgButton> addTrackButton;
     std::unique_ptr<SvgButton> ioToggleButton;
     std::unique_ptr<SvgButton> hAxisIcon;
     std::unique_ptr<SvgButton> vAxisIcon;
