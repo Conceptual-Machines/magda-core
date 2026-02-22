@@ -75,6 +75,7 @@ class ClipSlotButton : public juce::TextButton {
     std::function<void()> onDoubleClick;
     std::function<void()> onPlayButtonClick;
     std::function<void()> onCreateMidiClip;
+    std::function<void()> onDeleteClip;
     std::function<void()> onAddScene;
     std::function<void()> onRemoveScene;
 
@@ -119,6 +120,8 @@ class ClipSlotButton : public juce::TextButton {
             juce::PopupMenu menu;
             if (!hasClip)
                 menu.addItem(1, "Create MIDI Clip");
+            if (hasClip)
+                menu.addItem(4, "Delete Clip");
             menu.addSeparator();
             menu.addItem(2, "Add Scene");
             menu.addItem(3, "Remove Scene");
@@ -132,6 +135,8 @@ class ClipSlotButton : public juce::TextButton {
                     safeThis->onAddScene();
                 else if (result == 3 && safeThis->onRemoveScene)
                     safeThis->onRemoveScene();
+                else if (result == 4 && safeThis->onDeleteClip)
+                    safeThis->onDeleteClip();
             });
             return;
         }
@@ -1723,6 +1728,14 @@ void SessionView::rebuildTracks() {
             slot->onCreateMidiClip = [this, trackIndex, sceneIndex]() {
                 onCreateMidiClipClicked(trackIndex, sceneIndex);
             };
+            slot->onDeleteClip = [this, trackIndex, sceneIndex]() {
+                TrackId tId = visibleTrackIds_[trackIndex];
+                ClipId cId = ClipManager::getInstance().getClipInSlot(tId, sceneIndex);
+                if (cId != INVALID_CLIP_ID) {
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<DeleteClipCommand>(cId));
+                }
+            };
             slot->onAddScene = [this]() { addScene(); };
             slot->onRemoveScene = [this]() { removeScene(); };
 
@@ -2132,6 +2145,13 @@ void SessionView::addScene() {
         };
         slot->onCreateMidiClip = [this, trackIndex, sceneIndex]() {
             onCreateMidiClipClicked(trackIndex, sceneIndex);
+        };
+        slot->onDeleteClip = [this, trackIndex, sceneIndex]() {
+            TrackId tId = visibleTrackIds_[trackIndex];
+            ClipId cId = ClipManager::getInstance().getClipInSlot(tId, sceneIndex);
+            if (cId != INVALID_CLIP_ID) {
+                UndoManager::getInstance().executeCommand(std::make_unique<DeleteClipCommand>(cId));
+            }
         };
         slot->onAddScene = [this]() { addScene(); };
         slot->onRemoveScene = [this]() { removeScene(); };
