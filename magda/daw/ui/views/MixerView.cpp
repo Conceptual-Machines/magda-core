@@ -741,9 +741,12 @@ void MixerView::ChannelStrip::resized() {
         int childTop = groupHeaderHeight;
         int childHeight = getHeight() - childTop;
 
+        const int borderWidth = 2;
         for (size_t i = 0; i < groupChildren_.size(); ++i) {
-            groupChildren_[i]->setBounds(static_cast<int>(i + 1) * channelWidth, childTop,
-                                         channelWidth, childHeight);
+            bool isLast = (i == groupChildren_.size() - 1);
+            int w = isLast ? channelWidth - borderWidth : channelWidth;
+            groupChildren_[i]->setBounds(static_cast<int>(i + 1) * channelWidth, childTop, w,
+                                         childHeight);
         }
     }
 
