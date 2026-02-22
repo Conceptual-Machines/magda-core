@@ -243,6 +243,28 @@ class ClipSlotButton : public juce::TextButton {
     }
 };
 
+// Track header button with right-click context menu
+class TrackHeaderButton : public juce::TextButton {
+  public:
+    std::function<void()> onDeleteTrack;
+
+    void mouseDown(const juce::MouseEvent& event) override {
+        if (event.mods.isPopupMenu()) {
+            juce::PopupMenu menu;
+            menu.addItem(1, "Delete Track");
+            auto safeThis = juce::Component::SafePointer<TrackHeaderButton>(this);
+            menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis](int result) {
+                if (!safeThis)
+                    return;
+                if (result == 1 && safeThis->onDeleteTrack)
+                    safeThis->onDeleteTrack();
+            });
+            return;
+        }
+        juce::TextButton::mouseDown(event);
+    }
+};
+
 // Custom grid content that draws track separators and empty cells
 class SessionView::GridContent : public juce::Component {
   public:
@@ -1660,7 +1682,7 @@ void SessionView::rebuildTracks() {
         if (!track)
             continue;
 
-        auto header = std::make_unique<juce::TextButton>();
+        auto header = std::make_unique<TrackHeaderButton>();
 
         // Show collapse indicator for groups
         juce::String headerText = track->name;
@@ -1694,6 +1716,11 @@ void SessionView::rebuildTracks() {
                 TrackManager::getInstance().setTrackCollapsed(trackId, currentViewMode_,
                                                               !collapsed);
             }
+        };
+
+        header->onDeleteTrack = [trackId]() {
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<DeleteTrackCommand>(trackId));
         };
 
         headerContainer->addAndMakeVisible(*header);
