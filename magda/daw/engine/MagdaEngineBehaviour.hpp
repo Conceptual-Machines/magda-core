@@ -10,6 +10,13 @@ namespace magda {
 
 class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
   public:
+    // Prevent TE from auto-initialising the device manager during Engine construction.
+    // We do it ourselves in initializeDeviceManager() after validating saved state,
+    // to avoid CoreAudio hangs from broken Settings.xml entries.
+    bool autoInitialiseDeviceManager() override {
+        return false;
+    }
+
     // Disable JUCE driver timestamps for MIDI — works around a JUCE 8.0.10 bug
     // where CoreMIDI timestamps are incorrectly scaled (1e6 instead of 1e-6).
     // When false, TE uses getMillisecondCounterHiRes() which is accurate and correct.
