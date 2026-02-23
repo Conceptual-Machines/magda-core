@@ -318,6 +318,8 @@ set(DAW_UI_SOURCES
     ui/components/pianoroll/PianoRollGridComponent.cpp
     ui/components/pianoroll/PianoRollKeyboard.cpp
     ui/components/pianoroll/VelocityLaneComponent.cpp
+    ui/components/pianoroll/CCLaneComponent.cpp
+    ui/components/pianoroll/MidiDrawerComponent.cpp
     # Components - Waveform
     ui/components/waveform/WaveformGridComponent.cpp
     # Components - Common Curve Editor
@@ -524,6 +526,8 @@ set(DAW_HEADERS
     ui/components/pianoroll/PianoRollGridComponent.hpp
     ui/components/pianoroll/PianoRollKeyboard.hpp
     ui/components/pianoroll/VelocityLaneComponent.hpp
+    ui/components/pianoroll/CCLaneComponent.hpp
+    ui/components/pianoroll/MidiDrawerComponent.hpp
     # Components - Waveform
     ui/components/waveform/WaveformGridComponent.hpp
     # Components - Mixer

@@ -80,6 +80,9 @@ bool CurvePointComponent::hitTest(int x, int y) {
 }
 
 void CurvePointComponent::mouseDown(const juce::MouseEvent& e) {
+    if (parentEditor_)
+        parentEditor_->grabKeyboardFocus();
+
     if (e.mods.isLeftButtonDown()) {
         // Handle selection
         if (e.mods.isCommandDown() || e.mods.isShiftDown()) {
@@ -154,12 +157,16 @@ void CurvePointComponent::mouseUp(const juce::MouseEvent& e) {
 void CurvePointComponent::mouseEnter(const juce::MouseEvent& e) {
     juce::ignoreUnused(e);
     isHovered_ = true;
+    if (onPointHovered)
+        onPointHovered(pointId_, true);
     repaint();
 }
 
 void CurvePointComponent::mouseExit(const juce::MouseEvent& e) {
     juce::ignoreUnused(e);
     isHovered_ = false;
+    if (onPointHovered)
+        onPointHovered(pointId_, false);
     repaint();
 }
 

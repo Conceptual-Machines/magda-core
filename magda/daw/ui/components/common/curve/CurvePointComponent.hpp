@@ -68,6 +68,7 @@ class CurvePointComponent : public juce::Component {
     std::function<void(uint32_t, double, double)> onPointDragPreview;
     std::function<void(uint32_t)> onPointDeleted;
     std::function<void(uint32_t, const CurveHandleData&, const CurveHandleData&)> onHandlesChanged;
+    std::function<void(uint32_t, bool)> onPointHovered;  // id, isHovered
 
     // Size constants
     static constexpr int POINT_SIZE = 6;

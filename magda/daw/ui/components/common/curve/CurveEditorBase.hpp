@@ -5,6 +5,7 @@
 #include <cmath>
 #include <functional>
 #include <memory>
+#include <set>
 #include <vector>
 
 #include "CurveBezierHandle.hpp"
@@ -36,6 +37,7 @@ class CurveEditorBase : public juce::Component {
 
     // Component
     void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
 
     // Mouse interaction
@@ -90,8 +92,20 @@ class CurveEditorBase : public juce::Component {
         return false;
     }
 
+    // Format a value label for a given normalized Y (0-1). Override in subclasses.
+    virtual juce::String formatValueLabel(double y) const {
+        return juce::String(juce::roundToInt(y * 100)) + "%";
+    }
+
     // Data access - must be implemented by subclasses
     virtual const std::vector<CurvePoint>& getPoints() const = 0;
+
+    // Selection
+    void clearSelection();
+    bool isPointSelected(uint32_t pointId) const;
+    const std::set<uint32_t>& getSelectedPointIds() const {
+        return selectedPointIds_;
+    }
 
     // Snapping
     std::function<double(double)> snapXToGrid;
@@ -106,10 +120,24 @@ class CurveEditorBase : public juce::Component {
     std::vector<std::unique_ptr<CurveBezierHandle>> handleComponents_;
     std::vector<std::unique_ptr<CurveTensionHandle>> tensionHandles_;
 
+    // Selection state
+    std::set<uint32_t> selectedPointIds_;
+
+    // Effective draw mode (resolved from modifiers at mouseDown)
+    CurveDrawMode activeDrawMode_ = CurveDrawMode::Select;
+
     // Drawing state
     bool isDrawing_ = false;
     std::vector<juce::Point<int>> drawingPath_;
     juce::Point<int> lineStartPoint_;
+
+    // Lasso selection state
+    bool isLassoActive_ = false;
+    juce::Rectangle<int> lassoRect_;
+    juce::Point<int> lassoAnchor_;
+
+    // Hovered point for value tooltip
+    uint32_t hoveredPointId_ = INVALID_CURVE_POINT_ID;
 
     // Drag preview state
     uint32_t previewPointId_ = INVALID_CURVE_POINT_ID;
@@ -139,6 +167,16 @@ class CurveEditorBase : public juce::Component {
     virtual void onHandlesChanged(uint32_t pointId, const CurveHandleData& inHandle,
                                   const CurveHandleData& outHandle) = 0;
 
+    // Batch selection callback for lasso - override in subclasses
+    virtual void onPointsSelected(const std::vector<uint32_t>& pointIds) {
+        juce::ignoreUnused(pointIds);
+    }
+
+    // Batch delete callback - override in subclasses to execute delete commands
+    virtual void onDeleteSelectedPoints(const std::set<uint32_t>& pointIds) {
+        juce::ignoreUnused(pointIds);
+    }
+
     // Constrain point position during drag (override to pin edge points, etc.)
     virtual void constrainPointPosition(uint32_t pointId, double& x, double& y) {
         juce::ignoreUnused(pointId, x, y);
@@ -158,8 +196,8 @@ class CurveEditorBase : public juce::Component {
     // Pencil drawing
     void createPointsFromDrawingPath();
 
-    // Sync selection state (subclass can override)
-    virtual void syncSelectionState() {}
+    // Sync selection state — re-apply selectedPointIds_ to point components after rebuild
+    virtual void syncSelectionState();
 
   private:
     // Curve rendering helper
