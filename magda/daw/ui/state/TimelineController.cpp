@@ -284,21 +284,22 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartPlayb
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const StartRecordEvent& /*e*/) {
-    // If currently recording or punch-armed, punch out (stop recording, keep playing)
-    if (state.playhead.isRecording) {
-        DBG("StartRecordEvent: punch out (stop recording, keep playing)");
-        state.playhead.isRecording = false;
-        punchArmed_ = false;
-        for (auto* listener : audioEngineListeners) {
-            listener->onTransportStopRecording();
-        }
-        return ChangeFlags::Playhead;
-    }
-
-    // If punch-armed but not yet recording, cancel the armed state
+    // If punch-armed but not yet actually recording, cancel the armed state
+    // (isRecording is true for UI purposes but TE hasn't started recording yet)
     if (punchArmed_) {
         DBG("StartRecordEvent: cancelling punch-armed state");
         punchArmed_ = false;
+        state.playhead.isRecording = false;
+        return ChangeFlags::Playhead;
+    }
+
+    // If currently recording, punch out (stop recording, keep playing)
+    if (state.playhead.isRecording) {
+        DBG("StartRecordEvent: punch out (stop recording, keep playing)");
+        state.playhead.isRecording = false;
+        for (auto* listener : audioEngineListeners) {
+            listener->onTransportStopRecording();
+        }
         return ChangeFlags::Playhead;
     }
 
