@@ -1001,7 +1001,11 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
         headerArea.removeFromRight(4);
     }
 
-    // Tracktion Engine logo for internal (TE-wrapped) plugins
+    // Gain slider takes some space on the right
+    gainSlider_.setBounds(headerArea.removeFromRight(70));
+    headerArea.removeFromRight(4);
+
+    // Tracktion Engine logo to the left of the gain slider
     if (isTracktionDevice_ && tracktionLogo_) {
         constexpr int logoSize = 14;
         tracktionLogoBounds_ =
@@ -1010,10 +1014,6 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     } else {
         tracktionLogoBounds_ = {};
     }
-
-    // Gain slider takes some space on the right
-    gainSlider_.setBounds(headerArea.removeFromRight(70));
-    headerArea.removeFromRight(4);
 
     // Name label gets the remaining left portion (handled by NodeComponent)
     // UI button sits just to the right of the name
