@@ -479,6 +479,15 @@ void AudioSettingsDialog::onInputDeviceSelected() {
 
     enableAllChannelsOnCurrentDevice();
 
+    // Rescan TE wave devices to match new hardware
+    if (teDeviceManager_) {
+        teDeviceManager_->rescanWaveDeviceList();
+        // Enable all new wave input devices by default
+        for (auto* dev : teDeviceManager_->getWaveInputDevices())
+            if (!dev->isEnabled())
+                dev->setEnabled(true);
+    }
+
     // Update channel selectors to reflect new device
     inputChannelSelector_->updateFromDevice();
 
@@ -511,6 +520,15 @@ void AudioSettingsDialog::onOutputDeviceSelected() {
     }
 
     enableAllChannelsOnCurrentDevice();
+
+    // Rescan TE wave devices to match new hardware
+    if (teDeviceManager_) {
+        teDeviceManager_->rescanWaveDeviceList();
+        // Enable all new wave output devices by default
+        for (auto* dev : teDeviceManager_->getWaveOutputDevices())
+            if (!dev->isEnabled())
+                dev->setEnabled(true);
+    }
 
     // Update channel selectors to reflect new device
     outputChannelSelector_->updateFromDevice();
