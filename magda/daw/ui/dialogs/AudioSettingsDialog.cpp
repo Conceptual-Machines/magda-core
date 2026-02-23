@@ -478,8 +478,6 @@ void AudioSettingsDialog::onInputDeviceSelected() {
     // If it fails (e.g. CoreAudio can't aggregate different input+output devices),
     // retry with the new device as BOTH input and output.
     if (!result.isEmpty() && setup.outputDeviceName != selectedDeviceName) {
-        DBG("Failed to switch input device with current output: " << result);
-        DBG("  Retrying with " << selectedDeviceName << " as both input and output");
         setup.outputDeviceName = selectedDeviceName;
         result = deviceManager_->setAudioDeviceSetup(setup, true);
 
@@ -540,8 +538,6 @@ void AudioSettingsDialog::onOutputDeviceSelected() {
     // If it fails (e.g. CoreAudio can't aggregate different input+output devices),
     // retry with the new device as BOTH input and output.
     if (!result.isEmpty() && setup.inputDeviceName != selectedDeviceName) {
-        DBG("Failed to switch output device with current input: " << result);
-        DBG("  Retrying with " << selectedDeviceName << " as both input and output");
         setup.inputDeviceName = selectedDeviceName;
         result = deviceManager_->setAudioDeviceSetup(setup, true);
 

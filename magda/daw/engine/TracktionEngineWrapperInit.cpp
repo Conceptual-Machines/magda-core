@@ -77,14 +77,10 @@ void TracktionEngineWrapper::initializeDeviceManager() {
             if (deviceSetup != nullptr) {
                 auto savedInput = deviceSetup->getStringAttribute("audioInputDeviceName");
                 auto savedOutput = deviceSetup->getStringAttribute("audioOutputDeviceName");
-                DBG("Saved audio state: input='" << savedInput << "' output='" << savedOutput
-                                                 << "'");
-
                 // If either device name is empty while the other is set, the saved
                 // state is incomplete and will cause CoreAudio to hang on init.
                 if ((savedInput.isNotEmpty() && savedOutput.isEmpty()) ||
                     (savedInput.isEmpty() && savedOutput.isNotEmpty())) {
-                    DBG("WARNING: Incomplete saved audio state — clearing to avoid CoreAudio hang");
                     storage.removeProperty(tracktion::SettingID::audio_device_setup);
                 }
             }
@@ -101,15 +97,9 @@ void TracktionEngineWrapper::initializeDeviceManager() {
     DBG("DeviceManager initialized with " << inputChannels << " input / " << outputChannels
                                           << " output channels");
 
-    // Log what device was actually opened after initialise
-    if (auto* currentDevice = juceDeviceManager.getCurrentAudioDevice()) {
-        DBG("Current audio device after init: " << currentDevice->getName());
-        DBG("  Input channels: " << currentDevice->getInputChannelNames().size());
-        DBG("  Output channels: " << currentDevice->getOutputChannelNames().size());
-    } else {
+    if (juceDeviceManager.getCurrentAudioDevice() == nullptr)
         DBG("WARNING: No audio device opened after initialise — user can configure in Audio "
             "Settings");
-    }
 }
 
 void TracktionEngineWrapper::configureAudioDevices() {
