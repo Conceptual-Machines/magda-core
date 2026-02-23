@@ -201,6 +201,15 @@ void MidiDrawerComponent::paint(juce::Graphics& g) {
 
     auto tabBarArea = fullBounds.removeFromTop(TAB_BAR_HEIGHT);
     paintTabBar(g, tabBarArea);
+
+    // "Range" title above the PB range input
+    if (pbRangeLabel_->isVisible() && leftMargin_ > 0) {
+        auto labelBounds = pbRangeLabel_->getBounds();
+        g.setFont(juce::Font(9.0f));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        g.drawText("Range", 2, labelBounds.getY() - 14, leftMargin_ - 4, 12,
+                   juce::Justification::centred, false);
+    }
 }
 
 void MidiDrawerComponent::paintTabBar(juce::Graphics& g, juce::Rectangle<int> area) {
@@ -463,13 +472,15 @@ void MidiDrawerComponent::updatePbRangeVisibility() {
 
     pbRangeLabel_->setVisible(showPbRange);
     if (showPbRange && leftMargin_ > 0) {
-        // Position in the left column, vertically centered
+        // Position in the left column, vertically centered (with space for "Range" label above)
         int labelW = leftMargin_ - 4;
         int labelH = 18;
+        int titleH = 12;
+        int totalH = titleH + 2 + labelH;
         int topOffset = RESIZE_HANDLE_HEIGHT + TAB_BAR_HEIGHT;
         int laneHeight = getHeight() - topOffset;
-        int labelY = topOffset + (laneHeight - labelH) / 2;
-        pbRangeLabel_->setBounds(2, labelY, labelW, labelH);
+        int groupY = topOffset + (laneHeight - totalH) / 2;
+        pbRangeLabel_->setBounds(2, groupY + titleH + 2, labelW, labelH);
         pbRangeLabel_->toFront(false);
     }
 }

@@ -260,10 +260,15 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
         constexpr int labelMargin = 2;
         constexpr int labelWidth = 24;
 
+        constexpr int labelH = 12;
+        auto clampLabelY = [&](int y) {
+            return juce::jlimit(1, getHeight() - labelH - 1, y - labelH / 2);
+        };
+
         auto drawLabel = [&](int pct) {
             int value = 127 * pct / 100;
             int y = margin + usableHeight - (pct * usableHeight / 100);
-            g.drawText(juce::String(value), labelMargin, y - 6, labelWidth, 12,
+            g.drawText(juce::String(value), labelMargin, clampLabelY(y), labelWidth, labelH,
                        juce::Justification::centredLeft, false);
         };
 

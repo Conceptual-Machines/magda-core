@@ -307,6 +307,12 @@ void CCLaneComponent::paintGrid(juce::Graphics& g) {
     auto labelColour = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.6f);
     constexpr int labelMargin = 2;
     constexpr int labelWidth = 36;
+    constexpr int labelH = 12;
+
+    // Clamp label Y so it stays within visible bounds
+    auto clampLabelY = [&](int y) {
+        return juce::jlimit(1, bounds.getHeight() - labelH - 1, y - labelH / 2);
+    };
 
     if (isPitchBend_) {
         // --- Bipolar pitch bend grid ---
@@ -320,10 +326,8 @@ void CCLaneComponent::paintGrid(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
         for (int st = 1; st <= pitchBendRange_; ++st) {
             double frac = static_cast<double>(st) / pitchBendRange_;
-            // Upper half: 0.5 + frac*0.5
             int yUp = yToPixel(0.5 + frac * 0.5);
             g.drawHorizontalLine(yUp, 0.0f, static_cast<float>(bounds.getWidth()));
-            // Lower half: 0.5 - frac*0.5
             int yDown = yToPixel(0.5 - frac * 0.5);
             g.drawHorizontalLine(yDown, 0.0f, static_cast<float>(bounds.getWidth()));
         }
@@ -331,15 +335,12 @@ void CCLaneComponent::paintGrid(juce::Graphics& g) {
         // Labels
         g.setColour(labelColour);
 
-        // Center: "0"
-        g.drawText("0", labelMargin, centerY - 6, labelWidth, 12, juce::Justification::centredLeft,
-                   false);
-
-        // Top: "+N st"  Bottom: "-N st"
-        g.drawText("+" + juce::String(pitchBendRange_), labelMargin, yToPixel(1.0) - 6, labelWidth,
-                   12, juce::Justification::centredLeft, false);
-        g.drawText("-" + juce::String(pitchBendRange_), labelMargin, yToPixel(0.0) - 6, labelWidth,
-                   12, juce::Justification::centredLeft, false);
+        g.drawText("0", labelMargin, clampLabelY(centerY), labelWidth, labelH,
+                   juce::Justification::centredLeft, false);
+        g.drawText("+" + juce::String(pitchBendRange_), labelMargin, clampLabelY(yToPixel(1.0)),
+                   labelWidth, labelH, juce::Justification::centredLeft, false);
+        g.drawText("-" + juce::String(pitchBendRange_), labelMargin, clampLabelY(yToPixel(0.0)),
+                   labelWidth, labelH, juce::Justification::centredLeft, false);
 
         // Intermediate labels if enough room
         if (bounds.getHeight() > 80 && pitchBendRange_ >= 2) {
@@ -347,10 +348,10 @@ void CCLaneComponent::paintGrid(juce::Graphics& g) {
             if (halfRange > 0) {
                 double fracHalf = static_cast<double>(halfRange) / pitchBendRange_;
                 g.drawText("+" + juce::String(halfRange), labelMargin,
-                           yToPixel(0.5 + fracHalf * 0.5) - 6, labelWidth, 12,
+                           clampLabelY(yToPixel(0.5 + fracHalf * 0.5)), labelWidth, labelH,
                            juce::Justification::centredLeft, false);
                 g.drawText("-" + juce::String(halfRange), labelMargin,
-                           yToPixel(0.5 - fracHalf * 0.5) - 6, labelWidth, 12,
+                           clampLabelY(yToPixel(0.5 - fracHalf * 0.5)), labelWidth, labelH,
                            juce::Justification::centredLeft, false);
             }
         }
@@ -371,7 +372,7 @@ void CCLaneComponent::paintGrid(juce::Graphics& g) {
         auto drawLabel = [&](int pct) {
             int value = (maxVal * pct) / 100;
             int y = yToPixel(pct / 100.0);
-            g.drawText(juce::String(value), labelMargin, y - 6, labelWidth, 12,
+            g.drawText(juce::String(value), labelMargin, clampLabelY(y), labelWidth, labelH,
                        juce::Justification::centredLeft, false);
         };
 
