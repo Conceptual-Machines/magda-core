@@ -493,6 +493,14 @@ void AudioSettingsDialog::onInputDeviceSelected() {
 
     if (!result.isEmpty()) {
         DBG("Failed to switch input device: " << result);
+        // Reset combo box to match actual device state
+        auto actualSetup = deviceManager_->getAudioDeviceSetup();
+        for (int i = 0; i < inputDeviceComboBox_.getNumItems(); ++i) {
+            if (inputDeviceComboBox_.getItemText(i) == actualSetup.inputDeviceName) {
+                inputDeviceComboBox_.setSelectedId(i + 1, juce::dontSendNotification);
+                break;
+            }
+        }
         return;
     }
 
@@ -554,6 +562,14 @@ void AudioSettingsDialog::onOutputDeviceSelected() {
 
     if (!result.isEmpty()) {
         DBG("Failed to switch output device: " << result);
+        // Reset combo box to match actual device state
+        auto actualSetup = deviceManager_->getAudioDeviceSetup();
+        for (int i = 0; i < outputDeviceComboBox_.getNumItems(); ++i) {
+            if (outputDeviceComboBox_.getItemText(i) == actualSetup.outputDeviceName) {
+                outputDeviceComboBox_.setSelectedId(i + 1, juce::dontSendNotification);
+                break;
+            }
+        }
         return;
     }
 
@@ -585,7 +601,9 @@ void AudioSettingsDialog::enableAllChannelsOnCurrentDevice() {
     // Enable all channels on the current device — it may have a different channel count
     if (auto* device = deviceManager_->getCurrentAudioDevice()) {
         auto newSetup = deviceManager_->getAudioDeviceSetup();
+        newSetup.inputChannels.clear();
         newSetup.inputChannels.setRange(0, device->getInputChannelNames().size(), true);
+        newSetup.outputChannels.clear();
         newSetup.outputChannels.setRange(0, device->getOutputChannelNames().size(), true);
         deviceManager_->setAudioDeviceSetup(newSetup, true);
         juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
