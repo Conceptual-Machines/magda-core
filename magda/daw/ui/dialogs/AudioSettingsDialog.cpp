@@ -501,6 +501,12 @@ void AudioSettingsDialog::onInputDeviceSelected() {
                 break;
             }
         }
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::WarningIcon, "Audio Device Error",
+            "Could not switch to \"" + selectedDeviceName +
+                "\".\n\nThe device may be unavailable or incompatible with the "
+                "current output device.\n\nError: " +
+                result);
         return;
     }
 
@@ -570,6 +576,12 @@ void AudioSettingsDialog::onOutputDeviceSelected() {
                 break;
             }
         }
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::WarningIcon, "Audio Device Error",
+            "Could not switch to \"" + selectedDeviceName +
+                "\".\n\nThe device may be unavailable or incompatible with the "
+                "current input device.\n\nError: " +
+                result);
         return;
     }
 
