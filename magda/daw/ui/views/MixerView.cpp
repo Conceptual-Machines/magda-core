@@ -17,6 +17,7 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackCommands.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "core/ViewModeController.hpp"
@@ -1082,7 +1083,13 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
         // Show/hide I/O routing toggle
         auto& metrics = MixerMetrics::getInstance();
         const int toggleRoutingId = -100;
+        const int deleteTrackId = -101;
         menu.addItem(toggleRoutingId, "Show I/O Routing", true, metrics.showRouting);
+
+        if (!isMaster_) {
+            menu.addSeparator();
+            menu.addItem(deleteTrackId, "Delete Track");
+        }
 
         menu.showMenuAsync(juce::PopupMenu::Options(), [this](int result) {
             if (result == -100) {
@@ -1090,6 +1097,9 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
                 m.showRouting = !m.showRouting;
                 if (onSendAreaResized)
                     onSendAreaResized();  // Triggers relayout of all strips
+            } else if (result == -101) {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<DeleteTrackCommand>(trackId_));
             } else if (result > 0) {
                 TrackManager::getInstance().addSend(trackId_, static_cast<TrackId>(result));
             }
@@ -1822,6 +1832,42 @@ void MixerView::paint(juce::Graphics& g) {
     // Left border (visible when side panel is collapsed)
     g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
     g.fillRect(0, 0, 1, getHeight());
+
+    // Plugin drag overlay
+    if (showPluginDropOverlay_) {
+        const auto& metrics = MixerMetrics::getInstance();
+
+        if (dropTargetStripIndex_ >= 0 &&
+            dropTargetStripIndex_ < static_cast<int>(orderedStrips_.size())) {
+            // Highlight the specific strip being hovered
+            auto* strip = orderedStrips_[dropTargetStripIndex_];
+            auto stripBounds = getLocalArea(strip, strip->getLocalBounds());
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.25f));
+            g.fillRect(stripBounds);
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
+            g.drawRect(stripBounds, 2);
+        } else {
+            // Hovering empty area — show "new track" indicator at right edge of channel area
+            auto vpBounds = channelViewport->getBounds();
+            int indicatorWidth = metrics.channelWidth;
+            int indicatorX = vpBounds.getRight() - indicatorWidth;
+            // Clamp to viewport area
+            if (indicatorX < vpBounds.getX())
+                indicatorX = vpBounds.getX();
+            auto indicatorBounds = juce::Rectangle<int>(indicatorX, vpBounds.getY(), indicatorWidth,
+                                                        vpBounds.getHeight());
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.15f));
+            g.fillRect(indicatorBounds);
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.4f));
+            g.drawRect(indicatorBounds, 2);
+
+            // Draw "+" icon
+            auto centre = indicatorBounds.getCentre().toFloat();
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.7f));
+            g.drawLine(centre.getX() - 10, centre.getY(), centre.getX() + 10, centre.getY(), 2.0f);
+            g.drawLine(centre.getX(), centre.getY() - 10, centre.getX(), centre.getY() + 10, 2.0f);
+        }
+    }
 }
 
 void MixerView::resized() {
@@ -2172,6 +2218,104 @@ void MixerView::trackSelectionChanged(TrackId trackId) {
             auxChannelStrips[i]->setSelected(true);
             return;
         }
+    }
+}
+
+// ============================================================================
+// DragAndDropTarget implementation (plugin drops from browser)
+// ============================================================================
+
+bool MixerView::isInterestedInDragSource(const SourceDetails& details) {
+    if (auto* obj = details.description.getDynamicObject()) {
+        return obj->getProperty("type").toString() == "plugin";
+    }
+    return false;
+}
+
+void MixerView::itemDragEnter(const SourceDetails& details) {
+    showPluginDropOverlay_ = true;
+    // Determine which strip is being hovered
+    auto localPos = details.localPosition;
+    dropTargetStripIndex_ = -1;
+
+    // Hit-test against channel strips in the viewport
+    auto viewportPos = channelViewport->getLocalPoint(this, localPos);
+    int scrollX = channelViewport->getViewPositionX();
+    int hitX = viewportPos.getX() + scrollX;
+
+    const auto& metrics = MixerMetrics::getInstance();
+    int cumX = 0;
+    for (int i = 0; i < static_cast<int>(orderedStrips_.size()); ++i) {
+        int stripWidth = orderedStrips_[i]->getWidth();
+        if (stripWidth <= 0)
+            stripWidth = metrics.channelWidth;
+        if (hitX >= cumX && hitX < cumX + stripWidth) {
+            dropTargetStripIndex_ = i;
+            break;
+        }
+        cumX += stripWidth;
+    }
+
+    repaint();
+}
+
+void MixerView::itemDragMove(const SourceDetails& details) {
+    auto localPos = details.localPosition;
+    int oldIndex = dropTargetStripIndex_;
+    dropTargetStripIndex_ = -1;
+
+    // Hit-test against channel strips in the viewport
+    auto viewportPos = channelViewport->getLocalPoint(this, localPos);
+    int scrollX = channelViewport->getViewPositionX();
+    int hitX = viewportPos.getX() + scrollX;
+
+    const auto& metrics = MixerMetrics::getInstance();
+    int cumX = 0;
+    for (int i = 0; i < static_cast<int>(orderedStrips_.size()); ++i) {
+        int stripWidth = orderedStrips_[i]->getWidth();
+        if (stripWidth <= 0)
+            stripWidth = metrics.channelWidth;
+        if (hitX >= cumX && hitX < cumX + stripWidth) {
+            dropTargetStripIndex_ = i;
+            break;
+        }
+        cumX += stripWidth;
+    }
+
+    if (dropTargetStripIndex_ != oldIndex)
+        repaint();
+}
+
+void MixerView::itemDragExit(const SourceDetails& /*details*/) {
+    showPluginDropOverlay_ = false;
+    dropTargetStripIndex_ = -1;
+    repaint();
+}
+
+void MixerView::itemDropped(const SourceDetails& details) {
+    showPluginDropOverlay_ = false;
+    int targetStrip = dropTargetStripIndex_;
+    dropTargetStripIndex_ = -1;
+    repaint();
+
+    auto* obj = details.description.getDynamicObject();
+    if (!obj)
+        return;
+
+    auto device = TrackManager::deviceInfoFromPluginObject(*obj);
+
+    if (targetStrip >= 0 && targetStrip < static_cast<int>(orderedStrips_.size())) {
+        // Drop on existing strip — add plugin to that track's chain
+        if (auto* cs = dynamic_cast<ChannelStrip*>(orderedStrips_[targetStrip])) {
+            TrackId trackId = cs->getTrackId();
+            TrackManager::getInstance().addDeviceToTrack(trackId, device);
+        }
+    } else {
+        // Drop on empty area — create new track with plugin
+        TrackType trackType = device.isInstrument ? TrackType::Instrument : TrackType::Audio;
+        juce::String pluginName = obj->getProperty("name").toString();
+        auto cmd = std::make_unique<CreateTrackWithDeviceCommand>(pluginName, trackType, device);
+        UndoManager::getInstance().executeCommand(std::move(cmd));
     }
 }
 

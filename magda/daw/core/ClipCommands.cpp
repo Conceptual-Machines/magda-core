@@ -191,6 +191,52 @@ void MoveClipCommand::mergeWith(const UndoableCommand* other) {
 }
 
 // ============================================================================
+// MoveSessionClipCommand
+// ============================================================================
+
+MoveSessionClipCommand::MoveSessionClipCommand(ClipId clipId, TrackId targetTrackId,
+                                               int targetSceneIndex)
+    : clipId_(clipId), targetTrackId_(targetTrackId), targetSceneIndex_(targetSceneIndex) {}
+
+bool MoveSessionClipCommand::canExecute() const {
+    auto* clip = ClipManager::getInstance().getClip(clipId_);
+    return clip && targetTrackId_ != INVALID_TRACK_ID && targetSceneIndex_ >= 0;
+}
+
+void MoveSessionClipCommand::execute() {
+    if (!canExecute())
+        return;
+
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip)
+        return;
+
+    if (!executed_) {
+        originalTrackId_ = clip->trackId;
+        originalSceneIndex_ = clip->sceneIndex;
+    }
+
+    if (clip->trackId != targetTrackId_)
+        clipManager.moveClipToTrack(clipId_, targetTrackId_);
+
+    clipManager.setClipSceneIndex(clipId_, targetSceneIndex_);
+    executed_ = true;
+}
+
+void MoveSessionClipCommand::undo() {
+    if (!executed_)
+        return;
+
+    auto& clipManager = ClipManager::getInstance();
+
+    if (originalTrackId_ != targetTrackId_)
+        clipManager.moveClipToTrack(clipId_, originalTrackId_);
+
+    clipManager.setClipSceneIndex(clipId_, originalSceneIndex_);
+}
+
+// ============================================================================
 // MoveClipToTrackCommand
 // ============================================================================
 

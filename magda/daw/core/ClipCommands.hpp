@@ -71,6 +71,31 @@ class MoveClipCommand : public ValidatedCommand {
 };
 
 /**
+ * @brief Command for moving a session clip to a different slot (track + scene index)
+ *
+ * Used for drag-and-drop in the session view clip grid.
+ */
+class MoveSessionClipCommand : public ValidatedCommand {
+  public:
+    MoveSessionClipCommand(ClipId clipId, TrackId targetTrackId, int targetSceneIndex);
+
+    juce::String getDescription() const override {
+        return "Move Session Clip";
+    }
+
+    bool canExecute() const override;
+    void execute() override;
+    void undo() override;
+
+  private:
+    ClipId clipId_;
+    TrackId targetTrackId_;
+    int targetSceneIndex_;
+    TrackId originalTrackId_ = INVALID_TRACK_ID;
+    int originalSceneIndex_ = -1;
+};
+
+/**
  * @brief Command for moving a clip to a different track
  */
 class MoveClipToTrackCommand : public ValidatedCommand {
