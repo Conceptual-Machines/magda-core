@@ -273,16 +273,16 @@ void NodeComponent::paint(juce::Graphics& g) {
     // Let subclass paint main content
     paintContent(g, contentArea);
 
-    // Dim if bypassed or frozen (draw over everything)
+    // Dim if bypassed or frozen (main node area only)
     if (!bypassButton_->getToggleState() || frozen_) {  // Toggle OFF = bypassed
         g.setColour(juce::Colours::black.withAlpha(0.3f));
-        g.fillRoundedRectangle(getLocalBounds().toFloat(), 4.0f);
+        g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
     }
 
-    // Selection border (draw on top of everything)
+    // Selection border (main node area only, not side panels)
     if (selected_) {
         g.setColour(juce::Colour(0xff888888));  // Grey
-        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 4.0f, 2.0f);
+        g.drawRoundedRectangle(bounds.toFloat().reduced(1.0f), 4.0f, 2.0f);
     }
 }
 

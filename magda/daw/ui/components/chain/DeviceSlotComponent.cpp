@@ -1009,8 +1009,7 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     if (isTracktionDevice_ && tracktionLogo_) {
         constexpr int logoSize = 14;
         tracktionLogoBounds_ =
-            headerArea.removeFromRight(logoSize).withSizeKeepingCentre(logoSize, logoSize);
-        headerArea.removeFromRight(2);
+            headerArea.removeFromRight(logoSize + 8).withSizeKeepingCentre(logoSize, logoSize);
     } else {
         tracktionLogoBounds_ = {};
     }
