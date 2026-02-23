@@ -156,6 +156,9 @@ juce::String MidiDrawerComponent::getActiveTabName() const {
 void MidiDrawerComponent::resized() {
     auto bounds = getLocalBounds();
 
+    // Left margin (keyboard column area)
+    bounds.removeFromLeft(leftMargin_);
+
     // Resize handle + Tab bar at top (painted in paint())
     bounds.removeFromTop(RESIZE_HANDLE_HEIGHT + TAB_BAR_HEIGHT);
 
@@ -174,13 +177,29 @@ void MidiDrawerComponent::resized() {
 }
 
 void MidiDrawerComponent::paint(juce::Graphics& g) {
-    // Resize handle at top edge
-    auto handleArea = getLocalBounds().removeFromTop(RESIZE_HANDLE_HEIGHT);
+    auto fullBounds = getLocalBounds();
+
+    // Left margin background
+    if (leftMargin_ > 0) {
+        auto leftArea = fullBounds.removeFromLeft(leftMargin_);
+        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+        g.fillRect(leftArea);
+
+        // Top border across full width
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawHorizontalLine(0, 0.0f, static_cast<float>(getWidth()));
+
+        // Right edge of left column
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+        g.drawVerticalLine(leftMargin_ - 1, 0.0f, static_cast<float>(getHeight()));
+    }
+
+    // Resize handle at top edge (in the main area)
+    auto handleArea = fullBounds.removeFromTop(RESIZE_HANDLE_HEIGHT);
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.fillRect(handleArea.removeFromTop(1));
 
-    auto tabBarArea =
-        getLocalBounds().withTrimmedTop(RESIZE_HANDLE_HEIGHT).removeFromTop(TAB_BAR_HEIGHT);
+    auto tabBarArea = fullBounds.removeFromTop(TAB_BAR_HEIGHT);
     paintTabBar(g, tabBarArea);
 }
 
@@ -278,19 +297,20 @@ void MidiDrawerComponent::mouseUp(const juce::MouseEvent&) {
 }
 
 void MidiDrawerComponent::mouseDown(const juce::MouseEvent& e) {
-    // Resize handle at the top edge
+    // Resize handle at the top edge (across full width)
     if (e.y < RESIZE_HANDLE_HEIGHT) {
         isResizing_ = true;
         resizeStartHeight_ = getHeight();
         return;
     }
 
-    // Only handle clicks in the tab bar area
-    if (e.y < RESIZE_HANDLE_HEIGHT || e.y >= RESIZE_HANDLE_HEIGHT + TAB_BAR_HEIGHT)
+    // Only handle clicks in the tab bar area (right of left margin)
+    if (e.x < leftMargin_ || e.y < RESIZE_HANDLE_HEIGHT ||
+        e.y >= RESIZE_HANDLE_HEIGHT + TAB_BAR_HEIGHT)
         return;
 
     auto font = FontManager::getInstance().getUIFont(11.0f);
-    int x = 6;
+    int x = leftMargin_ + 6;
     int tabHeight = TAB_BAR_HEIGHT - 4;
 
     // Check "Vel" tab
@@ -442,13 +462,15 @@ void MidiDrawerComponent::updatePbRangeVisibility() {
     }
 
     pbRangeLabel_->setVisible(showPbRange);
-    if (showPbRange) {
-        // Position: small box at bottom-left of the lane area
-        auto laneBounds = getLocalBounds().withTrimmedTop(RESIZE_HANDLE_HEIGHT + TAB_BAR_HEIGHT);
-        int labelW = 30;
-        int labelH = 16;
-        pbRangeLabel_->setBounds(laneBounds.getX() + 2, laneBounds.getBottom() - labelH - 2, labelW,
-                                 labelH);
+    if (showPbRange && leftMargin_ > 0) {
+        // Position in the left column, vertically centered
+        int labelW = leftMargin_ - 4;
+        int labelH = 18;
+        int topOffset = RESIZE_HANDLE_HEIGHT + TAB_BAR_HEIGHT;
+        int laneHeight = getHeight() - topOffset;
+        int labelY = topOffset + (laneHeight - labelH) / 2;
+        pbRangeLabel_->setBounds(2, labelY, labelW, labelH);
+        pbRangeLabel_->toFront(false);
     }
 }
 

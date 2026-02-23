@@ -58,6 +58,11 @@ class MidiDrawerComponent : public juce::Component {
     // Get the active lane name for header display
     juce::String getActiveTabName() const;
 
+    // Left margin (for keyboard/sidebar column that's part of our bounds)
+    void setLeftMargin(int margin) {
+        leftMargin_ = margin;
+    }
+
     // Layout
     static constexpr int TAB_BAR_HEIGHT = 26;
 
@@ -83,6 +88,8 @@ class MidiDrawerComponent : public juce::Component {
         bool isVelocity = false;
         std::unique_ptr<CCLaneComponent> ccLane;
     };
+
+    int leftMargin_ = 0;
 
     ClipId clipId_ = INVALID_CLIP_ID;
     std::vector<ClipId> clipIds_;

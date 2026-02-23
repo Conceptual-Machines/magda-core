@@ -511,9 +511,9 @@ void PianoRollContent::resized() {
     if (velocityDrawerOpen_) {
         auto drawerArea = bounds.removeFromBottom(drawerHeight_);
         if (midiDrawer_) {
-            // MidiDrawerComponent has its own tab bar acting as the header,
-            // so give it the full area (header + lane). Skip keyboard width for alignment.
-            drawerArea.removeFromLeft(KEYBOARD_WIDTH);
+            // MidiDrawerComponent gets the full width including the left column,
+            // so it can place controls (e.g. PB range) in the left margin area.
+            midiDrawer_->setLeftMargin(KEYBOARD_WIDTH);
             midiDrawer_->setBounds(drawerArea);
             midiDrawer_->setVisible(true);
         } else if (velocityLane_) {
