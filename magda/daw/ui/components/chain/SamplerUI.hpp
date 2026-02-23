@@ -105,7 +105,7 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
 
     // Sample info
     juce::Label sampleNameLabel_;
-    juce::TextButton loadButton_{"Load"};
+    std::unique_ptr<magda::SvgButton> loadButton_;
 
     // Waveform thumbnail
     juce::Path waveformPath_;
