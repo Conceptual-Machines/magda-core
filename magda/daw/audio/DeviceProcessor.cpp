@@ -1381,12 +1381,20 @@ void ExternalPluginProcessor::stopParameterListening() {
 }
 
 void ExternalPluginProcessor::currentValueChanged(te::AutomatableParameter& param) {
-    // This is called asynchronously when the parameter value changes from any source.
-    // We use parameterChanged instead for synchronous notification.
+    // This fires for ALL value changes including from the plugin's native UI.
+    // parameterChanged() only fires for explicit setParameter() calls, so this
+    // is the primary path for detecting plugin UI changes.
+    propagateParameterChange(param);
+}
+
+void ExternalPluginProcessor::parameterChanged(te::AutomatableParameter& param,
+                                               float /*newValue*/) {
+    // This fires synchronously when setParameter() is called explicitly.
+    // currentValueChanged handles all cases, so nothing needed here.
     juce::ignoreUnused(param);
 }
 
-void ExternalPluginProcessor::parameterChanged(te::AutomatableParameter& param, float newValue) {
+void ExternalPluginProcessor::propagateParameterChange(te::AutomatableParameter& param) {
     // Prevent feedback loop: don't propagate if we're setting the parameter ourselves
     if (settingParameterFromUI_)
         return;
@@ -1408,8 +1416,8 @@ void ExternalPluginProcessor::parameterChanged(te::AutomatableParameter& param, 
 
     // When modifiers are active, use the base value (without modulation) to prevent
     // modulated values from overwriting the base parameter value in the data model.
-    float valueToStore =
-        param.hasActiveModifierAssignments() ? param.getCurrentBaseValue() : newValue;
+    float valueToStore = param.hasActiveModifierAssignments() ? param.getCurrentBaseValue()
+                                                              : param.getCurrentValue();
 
     // Update TrackManager on the message thread to avoid threading issues
     // Use callAsync to ensure we're on the message thread
