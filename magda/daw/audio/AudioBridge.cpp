@@ -394,6 +394,8 @@ void AudioBridge::deviceParameterChanged(DeviceId deviceId, int paramIndex, floa
         pitchProc->setParameterByIndex(paramIndex, newValue);
     } else if (auto* irProc = dynamic_cast<ImpulseResponseProcessor*>(processor)) {
         irProc->setParameterByIndex(paramIndex, newValue);
+    } else if (auto* utilityProc = dynamic_cast<UtilityProcessor*>(processor)) {
+        utilityProc->setParameterByIndex(paramIndex, newValue);
     }
 }
 

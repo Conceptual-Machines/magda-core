@@ -313,6 +313,7 @@ void PluginBrowserContent::buildInternalPluginList() {
         PluginBrowserInfo::createInternal("Pitch Shift", "pitchshift", false, "Pitch"));
     plugins_.push_back(
         PluginBrowserInfo::createInternal("IR Reverb", "impulseresponse", false, "Reverb"));
+    plugins_.push_back(PluginBrowserInfo::createInternal("Utility", "utility", false, "Utility"));
 }
 
 void PluginBrowserContent::loadExternalPlugins() {

@@ -551,6 +551,9 @@ int DeviceSlotComponent::getPreferredWidth() const {
     if (impulseResponseUI_) {
         return getTotalWidth(350);
     }
+    if (utilityUI_) {
+        return getTotalWidth(300);
+    }
     if (samplerUI_) {
         return getTotalWidth(BASE_SLOT_WIDTH * 2);
     }
@@ -619,7 +622,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Create custom UI if this is an internal device and we don't have one yet
     if (isInternalDevice() && !toneGeneratorUI_ && !samplerUI_ && !drumGridUI_ && !fourOscUI_ &&
         !eqUI_ && !compressorUI_ && !reverbUI_ && !delayUI_ && !chorusUI_ && !phaserUI_ &&
-        !filterUI_ && !pitchShiftUI_ && !impulseResponseUI_) {
+        !filterUI_ && !pitchShiftUI_ && !impulseResponseUI_ && !utilityUI_) {
         createCustomUI();
         setupCustomUILinking();
     }
@@ -627,7 +630,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Update custom UI if available
     if (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
         reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
-        impulseResponseUI_) {
+        impulseResponseUI_ || utilityUI_) {
         updateCustomUI();
     }
 
@@ -824,6 +827,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             pitchShiftUI_->setVisible(false);
         if (impulseResponseUI_)
             impulseResponseUI_->setVisible(false);
+        if (utilityUI_)
+            utilityUI_->setVisible(false);
         return;
     }
 
@@ -840,9 +845,10 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
 
     // Check if this is an internal device with custom UI
-    if (isInternalDevice() && (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ ||
-                               eqUI_ || compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ ||
-                               phaserUI_ || filterUI_ || pitchShiftUI_ || impulseResponseUI_)) {
+    if (isInternalDevice() &&
+        (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
+         reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
+         impulseResponseUI_ || utilityUI_)) {
         // Show custom minimal UI
         if (toneGeneratorUI_) {
             toneGeneratorUI_->setBounds(contentArea.reduced(4));
@@ -902,6 +908,10 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             impulseResponseUI_->setBounds(contentArea.reduced(4));
             impulseResponseUI_->setVisible(true);
         }
+        if (utilityUI_) {
+            utilityUI_->setBounds(contentArea.reduced(4));
+            utilityUI_->setVisible(true);
+        }
 
         // Hide parameter grid and pagination
         for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
@@ -938,6 +948,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             pitchShiftUI_->setVisible(false);
         if (impulseResponseUI_)
             impulseResponseUI_->setVisible(false);
+        if (utilityUI_)
+            utilityUI_->setVisible(false);
 
         // Pagination area
         auto paginationArea = contentArea.removeFromTop(PAGINATION_HEIGHT);
@@ -2167,6 +2179,16 @@ void DeviceSlotComponent::createCustomUI() {
 
         addAndMakeVisible(*impulseResponseUI_);
         updateCustomUI();
+    } else if (device_.pluginId.containsIgnoreCase("utility")) {
+        utilityUI_ = std::make_unique<UtilityUI>();
+        utilityUI_->onParameterChanged = [this](int paramIndex, float value) {
+            if (!nodePath_.isValid())
+                return;
+            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
+                                                                       value);
+        };
+        addAndMakeVisible(*utilityUI_);
+        updateCustomUI();
     }
 }
 
@@ -2370,6 +2392,10 @@ void DeviceSlotComponent::updateCustomUI() {
             }
         }
     }
+
+    if (utilityUI_ && device_.pluginId.containsIgnoreCase("utility")) {
+        utilityUI_->updateFromParameters(device_.parameters);
+    }
 }
 
 // =============================================================================
@@ -2401,6 +2427,8 @@ void DeviceSlotComponent::setupCustomUILinking() {
         sliders = pitchShiftUI_->getLinkableSliders();
     else if (impulseResponseUI_)
         sliders = impulseResponseUI_->getLinkableSliders();
+    else if (utilityUI_)
+        sliders = utilityUI_->getLinkableSliders();
     else if (samplerUI_)
         sliders = samplerUI_->getLinkableSliders();
 

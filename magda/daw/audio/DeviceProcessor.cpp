@@ -1163,6 +1163,110 @@ float ImpulseResponseProcessor::getParameterByIndex(int paramIndex) const {
 }
 
 // =============================================================================
+// UtilityProcessor
+// =============================================================================
+
+UtilityProcessor::UtilityProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
+    : DeviceProcessor(deviceId, std::move(plugin)) {}
+
+te::VolumeAndPanPlugin* UtilityProcessor::getVolPanPlugin() const {
+    return dynamic_cast<te::VolumeAndPanPlugin*>(plugin_.get());
+}
+
+int UtilityProcessor::getParameterCount() const {
+    // Volume (automatable), Pan (automatable), Polarity (virtual bool)
+    return 3;
+}
+
+ParameterInfo UtilityProcessor::getParameterInfo(int index) const {
+    ParameterInfo info;
+    auto* volPan = getVolPanPlugin();
+    if (!volPan)
+        return info;
+
+    switch (index) {
+        case 0: {
+            // Volume — slider position 0..1
+            info.name = "Volume";
+            info.minValue = 0.0f;
+            info.maxValue = 1.0f;
+            info.defaultValue = te::decibelsToVolumeFaderPosition(0.0f);
+            if (volPan->volParam)
+                info.currentValue = volPan->volParam->getCurrentValue();
+            break;
+        }
+        case 1: {
+            // Pan — -1..1
+            info.name = "Pan";
+            info.minValue = -1.0f;
+            info.maxValue = 1.0f;
+            info.defaultValue = 0.0f;
+            if (volPan->panParam)
+                info.currentValue = volPan->panParam->getCurrentValue();
+            break;
+        }
+        case 2: {
+            // Polarity — CachedValue<bool>
+            info.name = "Polarity";
+            info.minValue = 0.0f;
+            info.maxValue = 1.0f;
+            info.defaultValue = 0.0f;
+            info.currentValue = volPan->polarity.get() ? 1.0f : 0.0f;
+            break;
+        }
+        default:
+            break;
+    }
+    return info;
+}
+
+void UtilityProcessor::populateParameters(DeviceInfo& info) const {
+    info.parameters.clear();
+    for (int i = 0; i < getParameterCount(); ++i) {
+        info.parameters.push_back(getParameterInfo(i));
+    }
+}
+
+void UtilityProcessor::setParameterByIndex(int paramIndex, float value) {
+    auto* volPan = getVolPanPlugin();
+    if (!volPan)
+        return;
+
+    switch (paramIndex) {
+        case 0:
+            if (volPan->volParam)
+                volPan->volParam->setParameter(value, juce::sendNotificationSync);
+            break;
+        case 1:
+            if (volPan->panParam)
+                volPan->panParam->setParameter(value, juce::sendNotificationSync);
+            break;
+        case 2:
+            volPan->polarity = value >= 0.5f;
+            break;
+        default:
+            break;
+    }
+}
+
+float UtilityProcessor::getParameterByIndex(int paramIndex) const {
+    auto* volPan = getVolPanPlugin();
+    if (!volPan)
+        return 0.0f;
+
+    switch (paramIndex) {
+        case 0:
+            return volPan->volParam ? volPan->volParam->getCurrentValue() : 0.0f;
+        case 1:
+            return volPan->panParam ? volPan->panParam->getCurrentValue() : 0.0f;
+        case 2:
+            return volPan->polarity.get() ? 1.0f : 0.0f;
+        default:
+            return 0.0f;
+    }
+}
+
+// =============================================================================
 // DrumGridProcessor
 // =============================================================================
 

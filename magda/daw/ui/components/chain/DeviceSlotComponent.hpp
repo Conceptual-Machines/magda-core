@@ -17,6 +17,7 @@
 #include "ReverbUI.hpp"
 #include "SamplerUI.hpp"
 #include "ToneGeneratorUI.hpp"
+#include "UtilityUI.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/TrackManager.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
@@ -190,6 +191,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<FilterUI> filterUI_;
     std::unique_ptr<PitchShiftUI> pitchShiftUI_;
     std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
+    std::unique_ptr<UtilityUI> utilityUI_;
 
     void updatePageControls();
     void updateParamModulation();  // Update mod/macro pointers for params
