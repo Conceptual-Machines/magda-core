@@ -873,6 +873,8 @@ void TrackInspector::populateRoutingSelectors() {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
             return;
 
+        DBG("TrackInspector::audioInput onSelectionChanged - selectedId=" << selectedId);
+
         if (selectedId == 1) {
             magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "");
         } else if (selectedId >= 200) {
@@ -883,7 +885,15 @@ void TrackInspector::populateRoutingSelectors() {
                     selectedTrackId_, "track:" + juce::String(it->second));
             }
         } else if (selectedId >= 10) {
-            magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "default");
+            // Map to specific TE wave device name
+            auto it = inputChannelMapping_.find(selectedId);
+            if (it != inputChannelMapping_.end()) {
+                DBG("  -> mapped to device: '" << it->second << "'");
+                magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, it->second);
+            } else {
+                DBG("  -> no mapping found, using default");
+                magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "default");
+            }
         }
     };
 
@@ -1015,7 +1025,7 @@ void TrackInspector::populateAudioInputOptions() {
         enabledInputChannels = bridge->getEnabledInputChannels();
     magda::RoutingSyncHelper::populateAudioInputOptions(
         audioInputSelector_.get(), deviceManager->getCurrentAudioDevice(), selectedTrackId_,
-        &inputTrackMapping_, enabledInputChannels);
+        &inputTrackMapping_, enabledInputChannels, &inputChannelMapping_);
 }
 
 void TrackInspector::populateAudioOutputOptions() {
@@ -1067,7 +1077,8 @@ void TrackInspector::updateRoutingSelectorsFromTrack() {
     magda::RoutingSyncHelper::syncSelectorsFromTrack(
         *track, audioInputSelector_.get(), inputSelector_.get(), outputSelector_.get(),
         midiOutputSelector_.get(), audioEngine_->getMidiBridge(), device, selectedTrackId_,
-        outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_, enabledIn, enabledOut);
+        outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_, enabledIn, enabledOut,
+        &inputChannelMapping_);
 }
 
 }  // namespace magda::daw::ui

@@ -25,7 +25,8 @@ namespace RoutingSyncHelper {
 inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODevice* device,
                                       TrackId currentTrackId = INVALID_TRACK_ID,
                                       std::map<int, TrackId>* outInputTrackMapping = nullptr,
-                                      juce::BigInteger enabledInputChannels = {}) {
+                                      juce::BigInteger enabledInputChannels = {},
+                                      std::map<int, juce::String>* outChannelMapping = nullptr) {
     if (!selector)
         return;
 
@@ -50,6 +51,9 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
                 }
             }
 
+            if (outChannelMapping)
+                outChannelMapping->clear();
+
             // Stereo pairs (ID 10+)
             int id = 10;
             for (int i = 0; i < activeIndices.size(); i += 2) {
@@ -57,7 +61,11 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
                     int ch1 = activeIndices[i] + 1;
                     int ch2 = activeIndices[i + 1] + 1;
                     juce::String pairName = juce::String(ch1) + "-" + juce::String(ch2);
-                    options.push_back({id++, pairName});
+                    options.push_back({id, pairName});
+                    // Store as "stereo:In 1" to distinguish from mono "In 1"
+                    if (outChannelMapping)
+                        (*outChannelMapping)[id] = "stereo:In " + juce::String(ch1);
+                    ++id;
                 }
             }
 
@@ -69,7 +77,10 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
             id = 100;
             for (int i = 0; i < activeIndices.size(); ++i) {
                 int channelNum = activeIndices[i] + 1;
-                options.push_back({id++, juce::String(channelNum) + " (mono)"});
+                options.push_back({id, juce::String(channelNum) + " (mono)"});
+                if (outChannelMapping)
+                    (*outChannelMapping)[id] = "In " + juce::String(channelNum);
+                ++id;
             }
         }
     } else {
@@ -307,16 +318,16 @@ inline void syncSelectorsFromTrack(
     juce::AudioIODevice* device, TrackId currentTrackId, std::map<int, TrackId>& outputTrackMapping,
     std::map<int, TrackId>& midiOutputTrackMapping,
     std::map<int, TrackId>* inputTrackMapping = nullptr, juce::BigInteger enabledInputChannels = {},
-    juce::BigInteger enabledOutputChannels = {}) {
+    juce::BigInteger enabledOutputChannels = {},
+    std::map<int, juce::String>* inputChannelMapping = nullptr) {
     bool hasAudioInput = !track.audioInputDevice.isEmpty();
     bool hasMidiInput = !track.midiInputDevice.isEmpty();
 
     // Update Audio Input selector
     if (audioInSelector) {
         if (hasAudioInput) {
-            int currentId = audioInSelector->getSelectedId();
             populateAudioInputOptions(audioInSelector, device, currentTrackId, inputTrackMapping,
-                                      enabledInputChannels);
+                                      enabledInputChannels, inputChannelMapping);
 
             if (track.audioInputDevice.startsWith("track:") && inputTrackMapping) {
                 // Track-as-input: find the matching option ID
@@ -331,7 +342,23 @@ inline void syncSelectorsFromTrack(
                     }
                 }
                 audioInSelector->setSelectedId(optionId);
-            } else if (currentId < 10) {
+            } else if (inputChannelMapping) {
+                // Find the option ID matching the stored device name
+                int optionId = -1;
+                for (const auto& [oid, name] : *inputChannelMapping) {
+                    if (name == track.audioInputDevice) {
+                        optionId = oid;
+                        break;
+                    }
+                }
+                if (optionId > 0) {
+                    audioInSelector->setSelectedId(optionId);
+                } else {
+                    // Fallback to first channel option
+                    int firstChannel = audioInSelector->getFirstChannelOptionId();
+                    audioInSelector->setSelectedId(firstChannel > 0 ? firstChannel : 1);
+                }
+            } else {
                 int firstChannel = audioInSelector->getFirstChannelOptionId();
                 audioInSelector->setSelectedId(firstChannel > 0 ? firstChannel : 1);
             }
