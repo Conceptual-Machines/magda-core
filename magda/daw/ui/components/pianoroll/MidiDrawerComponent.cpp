@@ -520,6 +520,7 @@ void MidiDrawerComponent::showAddTabMenu() {
                 alert->addTextEditor("cc", "1", "CC Number:");
                 alert->addButton("OK", 1);
                 alert->addButton("Cancel", 0);
+                // enterModalState with deleteWhenDismissed=true handles cleanup
                 alert->enterModalState(
                     true, juce::ModalCallbackFunction::create([this, alert](int result) {
                         if (result == 1) {
@@ -527,7 +528,6 @@ void MidiDrawerComponent::showAddTabMenu() {
                             cc = juce::jlimit(0, 127, cc);
                             addCCTab(cc);
                         }
-                        delete alert;
                     }),
                     true);
                 break;

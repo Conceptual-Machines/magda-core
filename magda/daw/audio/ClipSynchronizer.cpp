@@ -814,6 +814,7 @@ static void interpolateCCEvents(te::MidiList& sequence, const std::vector<EventT
     // Tracktion Engine stores all controller values in 14-bit range (0-16383).
     // CC values (0-127) must be left-shifted by 7 bits; pitch bend is already 14-bit.
     const bool isPitchBend = (controllerType == te::MidiControllerEvent::pitchWheelType);
+    const int maxValue = isPitchBend ? 16383 : 127;
 
     auto addEvent = [&](double beatPos, int value) {
         double adjusted = beatPos - effectiveOffset;
@@ -871,7 +872,8 @@ static void interpolateCCEvents(te::MidiList& sequence, const std::vector<EventT
                     curvedT = 1.0 - std::pow(1.0 - t, 1.0 - tension * 2.0);
                 }
 
-                int val = static_cast<int>(std::round(v1 + curvedT * (v2 - v1)));
+                int val =
+                    std::clamp(static_cast<int>(std::round(v1 + curvedT * (v2 - v1))), 0, maxValue);
                 addEvent(beat, val);
             }
         } else if (ev.curveType == MidiCurveType::Bezier) {
@@ -901,15 +903,9 @@ static void interpolateCCEvents(te::MidiList& sequence, const std::vector<EventT
                 double val = u * u * u * p0y + 3.0 * u * u * t * p1y + 3.0 * u * t * t * p2y +
                              t * t * t * p3y;
 
-                addEvent(beat, static_cast<int>(std::round(val)));
+                addEvent(beat, std::clamp(static_cast<int>(std::round(val)), 0, maxValue));
             }
         }
-    }
-
-    // Ensure the very last event's value is emitted
-    const auto& last = sorted.back();
-    if (last.beatPosition >= visibleStart && last.beatPosition < visibleEnd) {
-        addEvent(last.beatPosition, last.value);
     }
 }
 
@@ -1080,21 +1076,13 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
         for (const auto& cc : clip->midiCCData)
             ccByController[cc.controller].push_back(cc);
 
-        DBG("  CC data: " << clip->midiCCData.size() << " total events, " << ccByController.size()
-                          << " controllers");
         for (const auto& [ccNum, ccEvents] : ccByController) {
-            DBG("    CC" << ccNum << ": " << ccEvents.size() << " events");
-            for (const auto& ev : ccEvents) {
-                DBG("      beat=" << ev.beatPosition << " val=" << ev.value
-                                  << " curveType=" << static_cast<int>(ev.curveType));
-            }
             interpolateCCEvents(sequence, ccEvents, ccNum, effectiveOffset, visibleStart,
                                 visibleEnd, contentLengthBeats);
         }
     }
 
     // Add pitch bend events with interpolation
-    DBG("  PitchBend data: " << clip->midiPitchBendData.size() << " events");
     interpolateCCEvents(sequence, clip->midiPitchBendData, te::MidiControllerEvent::pitchWheelType,
                         effectiveOffset, visibleStart, visibleEnd, contentLengthBeats);
 }
