@@ -122,6 +122,10 @@ class MidiDrawerComponent : public juce::Component {
     // Forward settings to a CC lane
     void syncSettingsToCCLane(CCLaneComponent* lane);
 
+    // Pitch bend range editor
+    std::unique_ptr<juce::Label> pbRangeLabel_;
+    void updatePbRangeVisibility();
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiDrawerComponent)
 };
 

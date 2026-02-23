@@ -14,6 +14,34 @@ MidiDrawerComponent::MidiDrawerComponent() {
     velocityLane_ = std::make_unique<VelocityLaneComponent>();
     velocityLane_->setLeftPadding(leftPadding_);
     addAndMakeVisible(velocityLane_.get());
+
+    // Pitch bend range editor (hidden by default)
+    pbRangeLabel_ = std::make_unique<juce::Label>("pbRange", "2");
+    pbRangeLabel_->setEditable(true);
+    pbRangeLabel_->setJustificationType(juce::Justification::centred);
+    pbRangeLabel_->setFont(juce::Font(10.0f));
+    pbRangeLabel_->setColour(juce::Label::textColourId,
+                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    pbRangeLabel_->setColour(juce::Label::backgroundColourId, juce::Colour(0x00000000));
+    pbRangeLabel_->setColour(juce::Label::outlineColourId, juce::Colour(0x00000000));
+    pbRangeLabel_->setColour(juce::TextEditor::backgroundColourId,
+                             DarkTheme::getColour(DarkTheme::BACKGROUND));
+    pbRangeLabel_->setColour(juce::TextEditor::textColourId,
+                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    pbRangeLabel_->setTooltip("Pitch bend range (semitones)");
+    pbRangeLabel_->onTextChange = [this]() {
+        int range = pbRangeLabel_->getText().getIntValue();
+        range = juce::jlimit(1, 96, range);
+        pbRangeLabel_->setText(juce::String(range), juce::dontSendNotification);
+
+        // Apply to active pitch bend lane
+        int ccIdx = activeTabIndex_ - 1;
+        if (ccIdx >= 0 && ccIdx < static_cast<int>(ccTabs_.size())) {
+            if (ccTabs_[ccIdx].isPitchBend && ccTabs_[ccIdx].ccLane)
+                ccTabs_[ccIdx].ccLane->setPitchBendRange(range);
+        }
+    };
+    addChildComponent(pbRangeLabel_.get());
 }
 
 MidiDrawerComponent::~MidiDrawerComponent() = default;
@@ -141,6 +169,8 @@ void MidiDrawerComponent::resized() {
             ccTabs_[i].ccLane->setVisible(static_cast<int>(i) == activeTabIndex_ - 1);
         }
     }
+
+    updatePbRangeVisibility();
 }
 
 void MidiDrawerComponent::paint(juce::Graphics& g) {
@@ -386,6 +416,7 @@ void MidiDrawerComponent::setActiveTab(int tabIndex) {
 
     activeTabIndex_ = tabIndex;
     updateLaneVisibility();
+    updatePbRangeVisibility();
     repaint();
 }
 
@@ -395,6 +426,29 @@ void MidiDrawerComponent::updateLaneVisibility() {
         if (ccTabs_[i].ccLane) {
             ccTabs_[i].ccLane->setVisible(static_cast<int>(i) == activeTabIndex_ - 1);
         }
+    }
+}
+
+void MidiDrawerComponent::updatePbRangeVisibility() {
+    bool showPbRange = false;
+    int ccIdx = activeTabIndex_ - 1;
+    if (ccIdx >= 0 && ccIdx < static_cast<int>(ccTabs_.size())) {
+        showPbRange = ccTabs_[ccIdx].isPitchBend;
+        // Sync label text from the lane's current range
+        if (showPbRange && ccTabs_[ccIdx].ccLane) {
+            pbRangeLabel_->setText(juce::String(ccTabs_[ccIdx].ccLane->getPitchBendRange()),
+                                   juce::dontSendNotification);
+        }
+    }
+
+    pbRangeLabel_->setVisible(showPbRange);
+    if (showPbRange) {
+        // Position: small box at bottom-left of the lane area
+        auto laneBounds = getLocalBounds().withTrimmedTop(RESIZE_HANDLE_HEIGHT + TAB_BAR_HEIGHT);
+        int labelW = 30;
+        int labelH = 16;
+        pbRangeLabel_->setBounds(laneBounds.getX() + 2, laneBounds.getBottom() - labelH - 2, labelW,
+                                 labelH);
     }
 }
 

@@ -40,6 +40,12 @@ class CCLaneComponent : public CurveEditorBase {
         return isPitchBend_;
     }
 
+    // Pitch bend range in semitones (default 2, common values: 2, 12, 24, 48)
+    void setPitchBendRange(int semitones);
+    int getPitchBendRange() const {
+        return pitchBendRange_;
+    }
+
     // Zoom and scroll
     void setPixelsPerBeat(double ppb);
     void setScrollOffset(int offsetX);
@@ -90,6 +96,7 @@ class CCLaneComponent : public CurveEditorBase {
     ClipId clipId_ = INVALID_CLIP_ID;
     int ccNumber_ = 1;  // Default: Mod wheel
     bool isPitchBend_ = false;
+    int pitchBendRange_ = 2;  // Semitones (±)
 
     double pixelsPerBeat_ = 50.0;
     int scrollOffsetX_ = 0;
