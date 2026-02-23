@@ -309,7 +309,8 @@ void AudioBridge::updateMidiRoutingForSelection() {
         };
         needsMidi = checkElements(track.chainElements);
 
-        if (!needsMidi)
+        // Record-armed tracks always need MIDI routing, even without an instrument
+        if (!needsMidi && !track.recordArmed)
             continue;
 
         // Check current MIDI routing state

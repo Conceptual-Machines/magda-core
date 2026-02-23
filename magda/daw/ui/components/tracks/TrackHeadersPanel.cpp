@@ -809,6 +809,7 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
         header.nameLabel->setText(track->name, juce::dontSendNotification);
         header.muteButton->setToggleState(track->muted, juce::dontSendNotification);
         header.soloButton->setToggleState(track->soloed, juce::dontSendNotification);
+        header.recordButton->setToggleState(track->recordArmed, juce::dontSendNotification);
         header.volumeLabel->setValue(gainToDb(track->volume), juce::dontSendNotification);
         header.panLabel->setValue(track->pan, juce::dontSendNotification);
 

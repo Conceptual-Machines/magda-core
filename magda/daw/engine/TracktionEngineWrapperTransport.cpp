@@ -113,8 +113,8 @@ void TracktionEngineWrapper::record() {
             DBG("TracktionEngineWrapper::record() - NO playback context!");
         }
 
-        DBG("TracktionEngineWrapper::record() - calling transport.record(false)");
-        currentEdit_->getTransport().record(false);
+        DBG("TracktionEngineWrapper::record() - calling transport.record(false, true)");
+        currentEdit_->getTransport().record(false, /*allowRecordingIfNoInputsArmed=*/true);
         DBG("TracktionEngineWrapper::record() - isRecording=" << (int)isRecording());
 
         // Verify recording state on all input instances after record() returns

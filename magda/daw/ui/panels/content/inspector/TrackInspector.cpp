@@ -99,6 +99,14 @@ TrackInspector::TrackInspector() {
     recordButton_.setColour(juce::TextButton::textColourOnId,
                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     recordButton_.setClickingTogglesState(true);
+    recordButton_.onClick = [this]() {
+        DBG("TrackInspector::recordButton clicked - trackId="
+            << selectedTrackId_ << " toggleState=" << (int)recordButton_.getToggleState());
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+            magda::TrackManager::getInstance().setTrackRecordArmed(selectedTrackId_,
+                                                                   recordButton_.getToggleState());
+        }
+    };
     addAndMakeVisible(recordButton_);
 
     // Monitor button (3-state: Off → In → Auto → Off)
