@@ -203,11 +203,11 @@ void MidiDrawerComponent::paint(juce::Graphics& g) {
     paintTabBar(g, tabBarArea);
 
     // "Range" title above the PB range input
-    if (pbRangeLabel_->isVisible() && leftMargin_ > 0) {
+    if (pbRangeLabel_->isVisible() && leftMargin_ > 4) {
         auto labelBounds = pbRangeLabel_->getBounds();
         g.setFont(juce::Font(9.0f));
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        g.drawText("Range", 2, labelBounds.getY() - 14, leftMargin_ - 4, 12,
+        g.drawText("Range", 2, juce::jmax(0, labelBounds.getY() - 14), leftMargin_ - 4, 12,
                    juce::Justification::centred, false);
     }
 }

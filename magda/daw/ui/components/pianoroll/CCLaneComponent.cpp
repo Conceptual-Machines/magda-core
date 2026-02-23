@@ -311,7 +311,8 @@ void CCLaneComponent::paintGrid(juce::Graphics& g) {
 
     // Clamp label Y so it stays within visible bounds
     auto clampLabelY = [&](int y) {
-        return juce::jlimit(1, bounds.getHeight() - labelH - 1, y - labelH / 2);
+        int maxY = juce::jmax(1, bounds.getHeight() - labelH - 1);
+        return juce::jlimit(1, maxY, y - labelH / 2);
     };
 
     if (isPitchBend_) {

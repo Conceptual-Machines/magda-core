@@ -262,7 +262,8 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
 
         constexpr int labelH = 12;
         auto clampLabelY = [&](int y) {
-            return juce::jlimit(1, getHeight() - labelH - 1, y - labelH / 2);
+            int maxY = juce::jmax(1, getHeight() - labelH - 1);
+            return juce::jlimit(1, maxY, y - labelH / 2);
         };
 
         auto drawLabel = [&](int pct) {
