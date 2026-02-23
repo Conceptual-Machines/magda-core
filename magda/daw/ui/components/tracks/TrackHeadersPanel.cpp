@@ -468,8 +468,8 @@ void TrackHeadersPanel::populateAudioInputOptions(RoutingSelector* selector, Tra
     if (auto* bridge = audioEngine_->getAudioBridge())
         enabledInputChannels = bridge->getEnabledInputChannels();
     RoutingSyncHelper::populateAudioInputOptions(selector, deviceManager->getCurrentAudioDevice(),
-                                                 trackId, &inputTrackMapping_,
-                                                 enabledInputChannels);
+                                                 trackId, &inputTrackMapping_, enabledInputChannels,
+                                                 &inputChannelMapping_);
 }
 
 void TrackHeadersPanel::populateAudioOutputOptions(RoutingSelector* selector,
@@ -552,7 +552,12 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
                                                                "track:" + juce::String(it->second));
             }
         } else if (selectedId >= 10) {
-            TrackManager::getInstance().setTrackAudioInput(trackId, "default");
+            // Map to specific TE wave device name
+            auto it = inputChannelMapping_.find(selectedId);
+            if (it != inputChannelMapping_.end())
+                TrackManager::getInstance().setTrackAudioInput(trackId, it->second);
+            else
+                TrackManager::getInstance().setTrackAudioInput(trackId, "default");
         }
     };
 
@@ -809,6 +814,7 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
         header.nameLabel->setText(track->name, juce::dontSendNotification);
         header.muteButton->setToggleState(track->muted, juce::dontSendNotification);
         header.soloButton->setToggleState(track->soloed, juce::dontSendNotification);
+        header.recordButton->setToggleState(track->recordArmed, juce::dontSendNotification);
         header.volumeLabel->setValue(gainToDb(track->volume), juce::dontSendNotification);
         header.panLabel->setValue(track->pan, juce::dontSendNotification);
 
@@ -892,7 +898,7 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
         *track, header.audioInputSelector.get(), header.inputSelector.get(),
         header.outputSelector.get(), header.midiOutputSelector.get(), audioEngine_->getMidiBridge(),
         device, header.trackId, outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_,
-        enabledIn, enabledOut);
+        enabledIn, enabledOut, &inputChannelMapping_);
 }
 
 void TrackHeadersPanel::paint(juce::Graphics& g) {

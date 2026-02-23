@@ -214,6 +214,9 @@ class TimelineController {
     void clampScrollPosition();
     double clampZoom(double zoom) const;
 
+    // Punch in armed: waiting for playhead to reach punch-in point before starting recording
+    bool punchArmed_ = false;
+
     // Static instance for global access
     static inline TimelineController* currentInstance_ = nullptr;
 

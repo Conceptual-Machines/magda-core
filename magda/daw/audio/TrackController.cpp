@@ -274,13 +274,17 @@ void TrackController::setTrackAudioInput(TrackId trackId, const juce::String& de
                     }
                 }
             } else {
+                // Strip "stereo:" prefix if present — routing resolves to same device
+                auto resolvedName = deviceId.startsWith("stereo:")
+                                        ? deviceId.fromFirstOccurrenceOf("stereo:", false, false)
+                                        : deviceId;
                 // Find specific device by name and route it
                 for (auto* inputDeviceInstance : allInputs) {
-                    if (inputDeviceInstance->owner.getName() == deviceId) {
+                    if (inputDeviceInstance->owner.getName() == resolvedName) {
                         auto result = inputDeviceInstance->setTarget(track->itemID, false, nullptr);
                         if (result.has_value()) {
                             (*result)->recordEnabled = false;
-                            DBG("  -> Routed input '" << deviceId << "' to track");
+                            DBG("  -> Routed input '" << resolvedName << "' to track");
                         }
                         break;
                     }

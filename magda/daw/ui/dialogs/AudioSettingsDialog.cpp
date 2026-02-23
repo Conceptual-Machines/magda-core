@@ -469,25 +469,66 @@ void AudioSettingsDialog::onInputDeviceSelected() {
 
     // Change input device
     setup.inputDeviceName = selectedDeviceName;
+    setup.useDefaultInputChannels = true;
+    setup.useDefaultOutputChannels = true;
 
     // Apply new device setup
     auto result = deviceManager_->setAudioDeviceSetup(setup, true);
+
+    // If it fails (e.g. CoreAudio can't aggregate different input+output devices),
+    // retry with the new device as BOTH input and output.
+    if (!result.isEmpty() && setup.outputDeviceName != selectedDeviceName) {
+        setup.outputDeviceName = selectedDeviceName;
+        result = deviceManager_->setAudioDeviceSetup(setup, true);
+
+        if (result.isEmpty()) {
+            for (int i = 0; i < outputDeviceComboBox_.getNumItems(); ++i) {
+                if (outputDeviceComboBox_.getItemText(i) == selectedDeviceName) {
+                    outputDeviceComboBox_.setSelectedId(i + 1, juce::dontSendNotification);
+                    break;
+                }
+            }
+        }
+    }
+
     if (!result.isEmpty()) {
         DBG("Failed to switch input device: " << result);
+        // Reset combo box to match actual device state
+        auto actualSetup = deviceManager_->getAudioDeviceSetup();
+        for (int i = 0; i < inputDeviceComboBox_.getNumItems(); ++i) {
+            if (inputDeviceComboBox_.getItemText(i) == actualSetup.inputDeviceName) {
+                inputDeviceComboBox_.setSelectedId(i + 1, juce::dontSendNotification);
+                break;
+            }
+        }
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::WarningIcon, "Audio Device Error",
+            "Could not switch to \"" + selectedDeviceName +
+                "\".\n\nThe device may be unavailable or incompatible with the "
+                "current output device.\n\nError: " +
+                result);
         return;
     }
 
     enableAllChannelsOnCurrentDevice();
 
+    // Rescan TE wave devices to match new hardware
+    if (teDeviceManager_) {
+        teDeviceManager_->rescanWaveDeviceList();
+        for (auto* dev : teDeviceManager_->getWaveInputDevices())
+            if (!dev->isEnabled())
+                dev->setEnabled(true);
+    }
+
     // Update channel selectors to reflect new device
     inputChannelSelector_->updateFromDevice();
+    outputChannelSelector_->updateFromDevice();
 
     // Update device name label
-    if (auto* device = deviceManager_->getCurrentAudioDevice()) {
-        juce::String labelText = "Input: " + setup.inputDeviceName;
-        labelText += " | Output: " + setup.outputDeviceName;
-        deviceNameLabel_.setText(labelText, juce::dontSendNotification);
-    }
+    auto finalSetup = deviceManager_->getAudioDeviceSetup();
+    juce::String labelText = "Input: " + finalSetup.inputDeviceName;
+    labelText += " | Output: " + finalSetup.outputDeviceName;
+    deviceNameLabel_.setText(labelText, juce::dontSendNotification);
 }
 
 void AudioSettingsDialog::onOutputDeviceSelected() {
@@ -502,25 +543,67 @@ void AudioSettingsDialog::onOutputDeviceSelected() {
 
     // Change output device
     setup.outputDeviceName = selectedDeviceName;
+    setup.useDefaultOutputChannels = true;
+    setup.useDefaultInputChannels = true;
 
     // Apply new device setup
     auto result = deviceManager_->setAudioDeviceSetup(setup, true);
+
+    // If it fails (e.g. CoreAudio can't aggregate different input+output devices),
+    // retry with the new device as BOTH input and output.
+    if (!result.isEmpty() && setup.inputDeviceName != selectedDeviceName) {
+        setup.inputDeviceName = selectedDeviceName;
+        result = deviceManager_->setAudioDeviceSetup(setup, true);
+
+        // Update the input combo box to reflect the change
+        if (result.isEmpty()) {
+            for (int i = 0; i < inputDeviceComboBox_.getNumItems(); ++i) {
+                if (inputDeviceComboBox_.getItemText(i) == selectedDeviceName) {
+                    inputDeviceComboBox_.setSelectedId(i + 1, juce::dontSendNotification);
+                    break;
+                }
+            }
+        }
+    }
+
     if (!result.isEmpty()) {
         DBG("Failed to switch output device: " << result);
+        // Reset combo box to match actual device state
+        auto actualSetup = deviceManager_->getAudioDeviceSetup();
+        for (int i = 0; i < outputDeviceComboBox_.getNumItems(); ++i) {
+            if (outputDeviceComboBox_.getItemText(i) == actualSetup.outputDeviceName) {
+                outputDeviceComboBox_.setSelectedId(i + 1, juce::dontSendNotification);
+                break;
+            }
+        }
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::WarningIcon, "Audio Device Error",
+            "Could not switch to \"" + selectedDeviceName +
+                "\".\n\nThe device may be unavailable or incompatible with the "
+                "current input device.\n\nError: " +
+                result);
         return;
     }
 
     enableAllChannelsOnCurrentDevice();
 
-    // Update channel selectors to reflect new device
+    // Rescan TE wave devices to match new hardware
+    if (teDeviceManager_) {
+        teDeviceManager_->rescanWaveDeviceList();
+        for (auto* dev : teDeviceManager_->getWaveOutputDevices())
+            if (!dev->isEnabled())
+                dev->setEnabled(true);
+    }
+
+    // Update both channel selectors to reflect new device
+    inputChannelSelector_->updateFromDevice();
     outputChannelSelector_->updateFromDevice();
 
     // Update device name label
-    if (auto* device = deviceManager_->getCurrentAudioDevice()) {
-        juce::String labelText = "Input: " + setup.inputDeviceName;
-        labelText += " | Output: " + setup.outputDeviceName;
-        deviceNameLabel_.setText(labelText, juce::dontSendNotification);
-    }
+    auto finalSetup = deviceManager_->getAudioDeviceSetup();
+    juce::String labelText = "Input: " + finalSetup.inputDeviceName;
+    labelText += " | Output: " + finalSetup.outputDeviceName;
+    deviceNameLabel_.setText(labelText, juce::dontSendNotification);
 }
 
 void AudioSettingsDialog::enableAllChannelsOnCurrentDevice() {
@@ -530,7 +613,9 @@ void AudioSettingsDialog::enableAllChannelsOnCurrentDevice() {
     // Enable all channels on the current device — it may have a different channel count
     if (auto* device = deviceManager_->getCurrentAudioDevice()) {
         auto newSetup = deviceManager_->getAudioDeviceSetup();
+        newSetup.inputChannels.clear();
         newSetup.inputChannels.setRange(0, device->getInputChannelNames().size(), true);
+        newSetup.outputChannels.clear();
         newSetup.outputChannels.setRange(0, device->getOutputChannelNames().size(), true);
         deviceManager_->setAudioDeviceSetup(newSetup, true);
         juce::MessageManager::getInstance()->runDispatchLoopUntil(0);

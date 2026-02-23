@@ -438,6 +438,7 @@ class ExternalPluginProcessor : public DeviceProcessor, public te::AutomatablePa
     bool settingParameterFromUI_ = false;
 
     void cacheParameterNames() const;
+    void propagateParameterChange(te::AutomatableParameter& param);
 };
 
 }  // namespace magda

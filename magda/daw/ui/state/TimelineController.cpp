@@ -244,6 +244,26 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybac
     }
 
     state.playhead.playbackPosition = newPos;
+
+    // === Punch In: trigger recording when playhead reaches punch-in point ===
+    if (punchArmed_ && newPos >= state.punch.startTime) {
+        punchArmed_ = false;
+        DBG("SetPlaybackPositionEvent: punch-in triggered at " << state.punch.startTime);
+        for (auto* listener : audioEngineListeners) {
+            listener->onTransportRecord(state.punch.startTime);
+        }
+    }
+
+    // === Punch Out: stop recording when playhead reaches punch-out point ===
+    if (state.playhead.isRecording && !punchArmed_ && state.punch.punchOutEnabled &&
+        state.punch.isValid() && newPos >= state.punch.endTime) {
+        DBG("SetPlaybackPositionEvent: punch-out triggered at " << state.punch.endTime);
+        state.playhead.isRecording = false;
+        for (auto* listener : audioEngineListeners) {
+            listener->onTransportStopRecording();
+        }
+    }
+
     return ChangeFlags::Playhead;
 }
 
@@ -264,6 +284,15 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartPlayb
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const StartRecordEvent& /*e*/) {
+    // If punch-armed but not yet actually recording, cancel the armed state
+    // (isRecording is true for UI purposes but TE hasn't started recording yet)
+    if (punchArmed_) {
+        DBG("StartRecordEvent: cancelling punch-armed state");
+        punchArmed_ = false;
+        state.playhead.isRecording = false;
+        return ChangeFlags::Playhead;
+    }
+
     // If currently recording, punch out (stop recording, keep playing)
     if (state.playhead.isRecording) {
         DBG("StartRecordEvent: punch out (stop recording, keep playing)");
@@ -287,6 +316,33 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartRecor
     if (!anyArmed) {
         DBG("StartRecordEvent: no armed tracks, ignoring");
         return ChangeFlags::None;
+    }
+
+    // Check if punch-in is enabled with a valid region
+    bool punchInActive = state.punch.punchInEnabled && state.punch.isValid();
+
+    if (punchInActive) {
+        // Determine the position we'll be playing from
+        double startPos = state.playhead.isPlaying ? state.playhead.playbackPosition
+                                                   : state.playhead.editPosition;
+
+        if (startPos < state.punch.startTime) {
+            // Playhead is before punch-in point — arm and start playback, defer recording
+            DBG("StartRecordEvent: punch-in armed, waiting for position "
+                << state.punch.startTime << " (current: " << startPos << ")");
+            punchArmed_ = true;
+            state.playhead.isRecording = true;  // UI shows recording state
+
+            if (!state.playhead.isPlaying) {
+                state.playhead.isPlaying = true;
+                state.playhead.playbackPosition = state.playhead.editPosition;
+                for (auto* listener : audioEngineListeners) {
+                    listener->onTransportPlay(state.playhead.editPosition);
+                }
+            }
+            return ChangeFlags::Playhead;
+        }
+        // Playhead is already past punch-in point — start recording immediately (fall through)
     }
 
     if (state.playhead.isPlaying) {
@@ -317,6 +373,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StopPlayba
 
     state.playhead.isPlaying = false;
     state.playhead.isRecording = false;
+    punchArmed_ = false;
     // Reset playbackPosition to editPosition (Bitwig behavior)
     state.playhead.playbackPosition = state.playhead.editPosition;
 
@@ -575,6 +632,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
         return ChangeFlags::None;
     }
 
+    punchArmed_ = false;
     state.punch.clear();
 
     // Notify audio engine
@@ -595,6 +653,11 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPunchIn
     }
 
     state.punch.punchInEnabled = e.enabled;
+
+    // If punch-in is disabled while armed, cancel the armed state
+    if (!e.enabled && punchArmed_) {
+        punchArmed_ = false;
+    }
 
     // Notify audio engine of punch enabled change
     for (auto* listener : audioEngineListeners) {

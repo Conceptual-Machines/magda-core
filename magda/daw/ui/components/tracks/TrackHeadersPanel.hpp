@@ -210,6 +210,7 @@ class TrackHeadersPanel : public juce::Component,
     std::map<int, TrackId> outputTrackMapping_;
     std::map<int, TrackId> midiOutputTrackMapping_;
     std::map<int, TrackId> inputTrackMapping_;
+    std::map<int, juce::String> inputChannelMapping_;
 
     // Refresh all input selectors (call after MIDI device scan completes)
     void refreshInputSelectors();

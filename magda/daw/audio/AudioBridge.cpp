@@ -200,23 +200,40 @@ void AudioBridge::trackPropertyChanged(int trackId) {
             // Sync recordArmed state to InputDeviceInstance
             auto* playbackContext = edit_.getCurrentPlaybackContext();
             if (playbackContext) {
+                bool foundAnyDest = false;
                 // Find any input device instances (MIDI or audio) routed to this track
                 for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+                    bool isMidi =
+                        dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner) != nullptr;
                     auto targets = inputDeviceInstance->getTargets();
+                    DBG("  recordArm sync: device='"
+                        << inputDeviceInstance->owner.getName()
+                        << "' type=" << (isMidi ? "MIDI" : "audio")
+                        << " enabled=" << (inputDeviceInstance->owner.isEnabled() ? "Y" : "N")
+                        << " targets=" << targets.size()
+                        << " destinations=" << (int)inputDeviceInstance->destinations.size());
                     for (auto targetID : targets) {
                         if (targetID == track->itemID) {
-                            bool isMidi = dynamic_cast<te::MidiInputDevice*>(
-                                              &inputDeviceInstance->owner) != nullptr;
                             inputDeviceInstance->setRecordingEnabled(track->itemID,
                                                                      trackInfo->recordArmed);
-                            DBG("Synced recordArmed=" << (trackInfo->recordArmed ? 1 : 0) << " to "
-                                                      << (isMidi ? "MIDI" : "audio") << " input '"
-                                                      << inputDeviceInstance->owner.getName()
-                                                      << "' for track " << trackId);
+                            DBG("  -> Synced recordArmed=" << (trackInfo->recordArmed ? 1 : 0)
+                                                           << " to " << (isMidi ? "MIDI" : "audio")
+                                                           << " input '"
+                                                           << inputDeviceInstance->owner.getName()
+                                                           << "' for track " << trackId);
+                            foundAnyDest = true;
                             break;
                         }
                     }
                 }
+                if (!foundAnyDest) {
+                    DBG("  WARNING: No input device destination found for track "
+                        << trackId << " - recordArmed=" << (trackInfo->recordArmed ? 1 : 0)
+                        << " will NOT be synced to TE!");
+                }
+            } else {
+                DBG("  WARNING: No playback context when syncing recordArmed for track "
+                    << trackId);
             }
         }
     }
@@ -292,7 +309,8 @@ void AudioBridge::updateMidiRoutingForSelection() {
         };
         needsMidi = checkElements(track.chainElements);
 
-        if (!needsMidi)
+        // Record-armed tracks always need MIDI routing, even without an instrument
+        if (!needsMidi && !track.recordArmed)
             continue;
 
         // Check current MIDI routing state
