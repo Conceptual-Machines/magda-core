@@ -133,6 +133,10 @@ void LinkableTextSlider::setRange(double min, double max, double step) {
     slider_.setRange(min, max, step);
 }
 
+void LinkableTextSlider::setSkewForCentre(double centreValue) {
+    slider_.setSkewForCentre(centreValue);
+}
+
 void LinkableTextSlider::setValueFormatter(std::function<juce::String(double)> formatter) {
     slider_.setValueFormatter(std::move(formatter));
 }

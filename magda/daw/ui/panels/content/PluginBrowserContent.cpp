@@ -307,8 +307,7 @@ void PluginBrowserContent::buildInternalPluginList() {
     plugins_.push_back(PluginBrowserInfo::createInternal("Delay", "delay", false, "Delay"));
     plugins_.push_back(PluginBrowserInfo::createInternal("Chorus", "chorus", false, "Modulation"));
     plugins_.push_back(PluginBrowserInfo::createInternal("Phaser", "phaser", false, "Modulation"));
-    plugins_.push_back(
-        PluginBrowserInfo::createInternal("Low Pass Filter", "lowpass", false, "Filter"));
+    plugins_.push_back(PluginBrowserInfo::createInternal("Filter", "lowpass", false, "Filter"));
     plugins_.push_back(
         PluginBrowserInfo::createInternal("Pitch Shift", "pitchshift", false, "Pitch"));
     plugins_.push_back(

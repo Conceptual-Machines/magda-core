@@ -709,6 +709,12 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
     // Call base class paint for standard rendering
     NodeComponent::paint(g);
 
+    // Draw Tracktion Engine logo in header (positioned by resizedHeaderExtra)
+    if (isTracktionDevice_ && tracktionLogo_ && !tracktionLogoBounds_.isEmpty()) {
+        tracktionLogo_->drawWithin(g, tracktionLogoBounds_.toFloat(),
+                                   juce::RectanglePlacement::centred, isBypassed() ? 0.3f : 0.6f);
+    }
+
     // Custom header text for drum grid (two-color text)
     if (isDrumGrid_ && !collapsed_ && getHeaderHeight() > 0) {
         auto bounds = getLocalBounds();
@@ -756,31 +762,14 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
         return;
     }
 
-    // Content header: manufacturer / device name
-    auto headerArea = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
-    auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
-                                   : DarkTheme::getSecondaryTextColour();
-    g.setColour(textColour);
-
-    if (isDrumGrid_) {
-        // Drum grid: use Microgramma font, aligned with the header row's text start
-        g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
-        auto textArea = headerArea;
-        textArea.setLeft(headerArea.getX() + BUTTON_SIZE + 4);  // Match header text offset
-        g.drawText("MAGDA Drum Grid", textArea, juce::Justification::centredLeft);
-    } else {
+    // Content header: manufacturer / device name (only for non-internal devices)
+    if (!isInternalDevice()) {
+        auto headerArea = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
+        auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
+                                       : DarkTheme::getSecondaryTextColour();
+        g.setColour(textColour);
         g.setFont(FontManager::getInstance().getUIFont(9.0f));
         auto textArea = headerArea.reduced(2, 0);
-
-        // Draw Tracktion logo for TE built-in plugins
-        if (isTracktionDevice_ && tracktionLogo_) {
-            constexpr int logoSize = 14;
-            auto logoBounds = textArea.removeFromLeft(logoSize + 4);
-            logoBounds = logoBounds.withSizeKeepingCentre(logoSize, logoSize);
-            tracktionLogo_->drawWithin(g, logoBounds.toFloat(), juce::RectanglePlacement::centred,
-                                       isBypassed() ? 0.3f : 0.6f);
-        }
-
         juce::String headerText = device_.manufacturer + " / " + device_.name;
         g.drawText(headerText, textArea, juce::Justification::centredLeft);
     }
@@ -836,8 +825,9 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     onButton_->setVisible(true);
     gainSlider_.setVisible(true);
 
-    // Content header area (manufacturer)
-    contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
+    // Content header area (manufacturer) - only for non-internal devices
+    if (!isInternalDevice())
+        contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
 
     // Check if this is an internal device with custom UI
     if (isInternalDevice() && (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ ||
@@ -1009,6 +999,16 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     if (device_.multiOut.isMultiOut && multiOutButton_) {
         multiOutButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
         headerArea.removeFromRight(4);
+    }
+
+    // Tracktion Engine logo for internal (TE-wrapped) plugins
+    if (isTracktionDevice_ && tracktionLogo_) {
+        constexpr int logoSize = 14;
+        tracktionLogoBounds_ =
+            headerArea.removeFromRight(logoSize).withSizeKeepingCentre(logoSize, logoSize);
+        headerArea.removeFromRight(2);
+    } else {
+        tracktionLogoBounds_ = {};
     }
 
     // Gain slider takes some space on the right
