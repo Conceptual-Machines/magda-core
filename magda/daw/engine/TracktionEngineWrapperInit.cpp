@@ -162,6 +162,9 @@ void TracktionEngineWrapper::configureAudioDevices() {
     // Enable ALL hardware channels on the NEW device — Tracktion expects every
     // hardware channel in the audio callback. We must read channel count from
     // the new device, not the old one.
+    // Note: setAudioDeviceSetup triggers TE's changeListenerCallback which calls
+    // saveSettings() + rescanWaveDeviceList() automatically. The flush processes
+    // the async rescan so wave devices are rebuilt before we configure them.
     if (auto* device = juceDeviceManager.getCurrentAudioDevice()) {
         auto newSetup = juceDeviceManager.getAudioDeviceSetup();
         newSetup.inputChannels.clear();
@@ -173,11 +176,6 @@ void TracktionEngineWrapper::configureAudioDevices() {
         juceDeviceManager.setAudioDeviceSetup(newSetup, true);
         juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
     }
-
-    // Rebuild TE wave device list to match the new hardware device.
-    // rescanWaveDeviceList() triggers an async update, so we must flush.
-    dm.rescanWaveDeviceList();
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
 
     // Apply saved channel preferences at the TE wave device level
     if (preferredInputs > 0) {
