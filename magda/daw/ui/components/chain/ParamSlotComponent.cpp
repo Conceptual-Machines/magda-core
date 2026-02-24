@@ -186,12 +186,7 @@ void ParamSlotComponent::modLinkModeChanged(bool active, const magda::ModSelecti
 }
 
 void ParamSlotComponent::macroLinkModeChanged(bool active, const magda::MacroSelection& selection) {
-    DBG("macroLinkModeChanged param=" << paramIndex_ << " active=" << (active ? 1 : 0)
-                                      << " macroIndex=" << selection.macroIndex);
-
     bool isInScope = isInScopeOf(devicePath_, selection.parentPath);
-    DBG("  isInScope=" << (isInScope ? 1 : 0));
-
     isInLinkMode_ = active && isInScope;
 
     if (active && isInScope) {
@@ -272,11 +267,6 @@ void ParamSlotComponent::handleLinkModeClick() {
 }
 
 void ParamSlotComponent::showLinkModeSlider(bool /*isNewLink*/, float initialAmount) {
-    const char* type = activeMod_.isValid() ? "MOD" : "MACRO";
-    int index = activeMod_.isValid() ? activeMod_.modIndex : activeMacro_.macroIndex;
-    DBG("SHOW SLIDER: " << type << " " << index << " on param " << paramIndex_
-                        << " amount=" << initialAmount);
-
     if (!linkModeSlider_) {
         linkModeSlider_ = std::make_unique<juce::Slider>(juce::Slider::LinearHorizontal,
                                                          juce::Slider::TextBoxRight);

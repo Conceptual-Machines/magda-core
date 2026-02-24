@@ -603,22 +603,13 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Apply saved parameter configuration if parameters are now available
     if (!device_.uniqueId.isEmpty() && !device_.parameters.empty()) {
         magda::DeviceInfo tempDevice = device_;
-        DBG("Attempting to load config for " << device_.name << " (uniqueId=" << device_.uniqueId
-                                             << ")");
         if (ParameterConfigDialog::applyConfigToDevice(tempDevice.uniqueId, tempDevice)) {
-            // Config was loaded successfully - update TrackManager with the visible parameters
             if (!tempDevice.visibleParameters.empty()) {
-                DBG("Config loaded - " << tempDevice.visibleParameters.size() << " visible params");
                 magda::TrackManager::getInstance().setDeviceVisibleParameters(
                     device_.id, tempDevice.visibleParameters);
-                // Update our local copy
                 device_.visibleParameters = tempDevice.visibleParameters;
                 device_.gainParameterIndex = tempDevice.gainParameterIndex;
-            } else {
-                DBG("Config loaded but visibleParameters is empty");
             }
-        } else {
-            DBG("No saved config found");
         }
     }
 
@@ -790,8 +781,6 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
 }
 
 void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
-    DBG("DeviceSlotComponent::resizedContent - width=" + juce::String(getWidth()) +
-        " contentArea.width=" + juce::String(contentArea.getWidth()));
     // When collapsed or still loading, hide all content controls
     if (collapsed_ || device_.loadState != magda::DeviceLoadState::Loaded) {
         for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
@@ -1207,10 +1196,8 @@ void DeviceSlotComponent::onMacroNewLinkCreatedInternal(int macroIndex, magda::M
     updateParamModulation();
 
     // Auto-select the linked param so user can see the link and adjust amount
-    if (target.isValid()) {
-        DBG("Auto-selecting param: " << target.paramIndex);
+    if (target.isValid())
         magda::SelectionManager::getInstance().selectParam(nodePath_, target.paramIndex);
-    }
 }
 
 void DeviceSlotComponent::onMacroLinkRemovedInternal(int macroIndex, magda::MacroTarget target) {
@@ -1299,11 +1286,6 @@ void DeviceSlotComponent::updateParameterSlots() {
     // Determine which parameters to show based on visibility list
     const bool useVisibilityFilter = !device_.visibleParameters.empty();
     const int visibleCount = getVisibleParamCount();
-
-    DBG("updateParameterSlots: device="
-        << device_.name << " useVisibilityFilter=" << (useVisibilityFilter ? 1 : 0)
-        << " visibleCount=" << visibleCount << " totalParams=" << device_.parameters.size()
-        << " visibleParameters.size=" << device_.visibleParameters.size());
 
     for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
         const int slotIndex = pageOffset + i;
@@ -2013,29 +1995,15 @@ void DeviceSlotComponent::createCustomUI() {
                                                                        value);
         };
         fourOscUI_->onPluginStateChanged = [this](const juce::String& propertyId, juce::var value) {
-            DBG("FourOsc onPluginStateChanged: propertyId=" + propertyId +
-                " value=" + value.toString());
             auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine) {
-                DBG("FourOsc onPluginStateChanged: no audioEngine");
+            if (!audioEngine)
                 return;
-            }
             auto* bridge = audioEngine->getAudioBridge();
-            if (!bridge) {
-                DBG("FourOsc onPluginStateChanged: no bridge");
+            if (!bridge)
                 return;
-            }
             auto plugin = bridge->getPlugin(device_.id);
-            if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get())) {
-                auto& state = fourOsc->state;
-                DBG("FourOsc setting state property: " + propertyId + " = " + value.toString());
-                state.setProperty(juce::Identifier(propertyId), value, nullptr);
-                // Read back to verify
-                auto readBack = state.getProperty(juce::Identifier(propertyId));
-                DBG("FourOsc readback: " + propertyId + " = " + readBack.toString());
-            } else {
-                DBG("FourOsc onPluginStateChanged: plugin cast failed");
-            }
+            if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get()))
+                fourOsc->state.setProperty(juce::Identifier(propertyId), value, nullptr);
         };
         addAndMakeVisible(*fourOscUI_);
         updateCustomUI();
