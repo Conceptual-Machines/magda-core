@@ -2195,11 +2195,6 @@ void ClipComponent::showContextMenu() {
     menu.addItem(6, "Delete", canEdit);
     menu.addSeparator();
 
-    // Loop Settings (only for single clip)
-    if (!isMultiSelection) {
-        menu.addItem(7, "Loop Settings...", !isFrozen);
-    }
-
     // Render Clip(s) - available for audio clips (single or multi-selection)
     {
         bool allAudio = true;
@@ -2368,12 +2363,6 @@ void ClipComponent::showContextMenu() {
                 selectionManager.clearSelection();
                 break;
             }
-
-            case 7:  // Loop Settings
-                // TODO: Show loop settings dialog
-                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Loop Settings",
-                                                       "Loop settings dialog not yet implemented");
-                break;
 
             case 8: {  // Join Clips
                 auto selectedClips = selectionManager.getSelectedClips();

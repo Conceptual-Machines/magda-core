@@ -867,10 +867,20 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
-    // Check for 'L' to create loop from selection
+    // Check for 'L' to create loop from time selection or selected clip
     if (key == juce::KeyPress('l') || key == juce::KeyPress('L')) {
         if (timelineController->getState().selection.isActive()) {
             timelineController->dispatch(CreateLoopFromSelectionEvent{});
+        } else {
+            // Set loop from selected clip bounds
+            ClipId selectedClipId = SelectionManager::getInstance().getSelectedClip();
+            if (selectedClipId != INVALID_CLIP_ID) {
+                const auto* clip = ClipManager::getInstance().getClip(selectedClipId);
+                if (clip) {
+                    timelineController->dispatch(
+                        SetLoopRegionEvent{clip->startTime, clip->getEndTime()});
+                }
+            }
         }
         return true;
     }

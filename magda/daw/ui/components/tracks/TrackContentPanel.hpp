@@ -214,6 +214,7 @@ class TrackContentPanel : public juce::Component,
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
+    void showEmptySpaceContextMenu(const juce::MouseEvent& event);
 
     // Mouse interaction constants and state
     static constexpr int DRAG_THRESHOLD = 3;  // Pixels of movement to distinguish click from drag
