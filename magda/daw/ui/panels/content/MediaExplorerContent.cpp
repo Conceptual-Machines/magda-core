@@ -169,8 +169,8 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         addAndMakeVisible(*diskButton_);
 
         // TODO: Library/DB button — uncomment when database feature is implemented
-        // libraryButton_ = std::make_unique<magda::SvgButton>("Library", BinaryData::library_svg,
-        //                                                     BinaryData::library_svgSize);
+        // libraryButton_ = std::make_unique<magda::SvgButton>("Library", BinaryData::database_svg,
+        //                                                     BinaryData::database_svgSize);
         // libraryButton_->setToggleable(true);
         // libraryButton_->setClickingTogglesState(true);
         // libraryButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
