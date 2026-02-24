@@ -275,6 +275,7 @@ class TrackContentPanel : public juce::Component,
     void rebuildClipComponents();
     void updateClipComponentPositions();
     void createClipFromTimeSelection();  // Called on double-click with selection
+    void createMidiClipAtPosition(TrackId trackId, double startTime);
     ClipComponent* getClipComponentAt(int x, int y) const;
 
     // Automation lane management

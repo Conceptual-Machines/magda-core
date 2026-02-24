@@ -541,19 +541,8 @@ RackId TrackManager::wrapDeviceInRack(TrackId trackId, DeviceId deviceId,
     DeviceInfo extractedDevice = magda::getDevice(*it);
     elements.erase(it);
 
-    // Create a rack with one default chain containing the device
-    RackInfo rack;
-    rack.id = nextRackId_++;
-    rack.name = rackName.isEmpty() ? ("Rack " + juce::String(rack.id)) : rackName;
-
-    ChainInfo defaultChain;
-    defaultChain.id = nextChainId_++;
-    defaultChain.name = "Chain 1";
-    defaultChain.elements.push_back(makeDeviceElement(std::move(extractedDevice)));
-    rack.chains.push_back(std::move(defaultChain));
-
-    RackId newRackId = rack.id;
-    elements.insert(elements.begin() + insertIndex, makeRackElement(std::move(rack)));
+    RackId newRackId =
+        createRackWithDevice(elements, insertIndex, std::move(extractedDevice), rackName);
 
     notifyTrackDevicesChanged(trackId);
     DBG("Wrapped device " << deviceId << " in new rack " << newRackId << " on track " << trackId);
@@ -599,7 +588,16 @@ RackId TrackManager::wrapDeviceInRackByPath(const ChainNodePath& devicePath,
     DeviceInfo extractedDevice = magda::getDevice(*it);
     elements.erase(it);
 
-    // Create a rack with one default chain containing the device
+    RackId newRackId =
+        createRackWithDevice(elements, insertIndex, std::move(extractedDevice), rackName);
+
+    notifyTrackDevicesChanged(devicePath.trackId);
+    DBG("Wrapped nested device " << deviceId << " in new rack " << newRackId);
+    return newRackId;
+}
+
+RackId TrackManager::createRackWithDevice(std::vector<ChainElement>& elements, int insertIndex,
+                                          DeviceInfo device, const juce::String& rackName) {
     RackInfo rack;
     rack.id = nextRackId_++;
     rack.name = rackName.isEmpty() ? ("Rack " + juce::String(rack.id)) : rackName;
@@ -607,14 +605,11 @@ RackId TrackManager::wrapDeviceInRackByPath(const ChainNodePath& devicePath,
     ChainInfo defaultChain;
     defaultChain.id = nextChainId_++;
     defaultChain.name = "Chain 1";
-    defaultChain.elements.push_back(makeDeviceElement(std::move(extractedDevice)));
+    defaultChain.elements.push_back(makeDeviceElement(std::move(device)));
     rack.chains.push_back(std::move(defaultChain));
 
     RackId newRackId = rack.id;
     elements.insert(elements.begin() + insertIndex, makeRackElement(std::move(rack)));
-
-    notifyTrackDevicesChanged(devicePath.trackId);
-    DBG("Wrapped nested device " << deviceId << " in new rack " << newRackId);
     return newRackId;
 }
 

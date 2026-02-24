@@ -1238,17 +1238,20 @@ void TrackContentPanel::mouseDoubleClick(const juce::MouseEvent& event) {
             TrackId trackId = visibleTrackIds_[trackIndex];
             double clickTime = pixelToTime(event.x);
             double startTime = snapTimeToGrid ? snapTimeToGrid(clickTime) : clickTime;
-            double barLength = (timeSignatureNumerator * 60.0) / tempoBPM;
-
-            auto cmd =
-                std::make_unique<CreateClipCommand>(ClipType::MIDI, trackId, startTime, barLength);
-            UndoManager::getInstance().executeCommand(std::move(cmd));
-
-            auto clipId = ClipManager::getInstance().getClipAtPosition(trackId, startTime);
-            if (clipId != INVALID_CLIP_ID) {
-                SelectionManager::getInstance().selectClip(clipId);
-            }
+            createMidiClipAtPosition(trackId, startTime);
         }
+    }
+}
+
+void TrackContentPanel::createMidiClipAtPosition(TrackId trackId, double startTime) {
+    double barLength = (timeSignatureNumerator * 60.0) / tempoBPM;
+
+    auto cmd = std::make_unique<CreateClipCommand>(ClipType::MIDI, trackId, startTime, barLength);
+    UndoManager::getInstance().executeCommand(std::move(cmd));
+
+    auto clipId = ClipManager::getInstance().getClipAtPosition(trackId, startTime);
+    if (clipId != INVALID_CLIP_ID) {
+        SelectionManager::getInstance().selectClip(clipId);
     }
 }
 
@@ -1274,28 +1277,19 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
     menu.addItem(2, "Paste", !isFrozen && hasClipboard);
     menu.addItem(3, "Select All");
 
-    menu.showMenuAsync(juce::PopupMenu::Options(), [this, trackId, startTime](int result) {
+    auto safeThis = juce::Component::SafePointer<TrackContentPanel>(this);
+
+    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, trackId, startTime](int result) {
         if (result == 0)
             return;
 
         switch (result) {
             case 1: {  // Create MIDI Clip
-                double barLength = (timeSignatureNumerator * 60.0) / tempoBPM;
-
-                auto cmd = std::make_unique<CreateClipCommand>(ClipType::MIDI, trackId, startTime,
-                                                               barLength);
-                UndoManager::getInstance().executeCommand(std::move(cmd));
-
-                auto clipId = ClipManager::getInstance().getClipAtPosition(trackId, startTime);
-                if (clipId != INVALID_CLIP_ID) {
-                    SelectionManager::getInstance().selectClip(clipId);
-                }
+                if (safeThis)
+                    safeThis->createMidiClipAtPosition(trackId, startTime);
                 break;
             }
             case 2: {  // Paste
-                if (timelineController) {
-                    timelineController->dispatch(SetEditCursorEvent{startTime});
-                }
                 auto cmd = std::make_unique<PasteClipCommand>(startTime);
                 auto* cmdPtr = cmd.get();
                 UndoManager::getInstance().executeCommand(std::move(cmd));

@@ -543,6 +543,10 @@ class TrackManager {
                     tm.listeners_.end());
         }
     };
+    // Helper: create a rack containing a single device and insert it into elements at insertIndex
+    RackId createRackWithDevice(std::vector<ChainElement>& elements, int insertIndex,
+                                DeviceInfo device, const juce::String& rackName);
+
     AudioEngine* audioEngine_ = nullptr;  // Non-owning pointer for routing operations
     int nextTrackId_ = 1;
     int nextDeviceId_ = 1;
