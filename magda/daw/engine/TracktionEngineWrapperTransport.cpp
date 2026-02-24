@@ -116,13 +116,14 @@ void TracktionEngineWrapper::record() {
             DBG("TracktionEngineWrapper::record() - NO playback context!");
         }
 
+        // Activate session recorder BEFORE transport.record() so it's ready
+        // to capture any session clips that are already playing or get triggered
+        if (sessionRecorder_)
+            sessionRecorder_->setRecordingActive(true);
+
         DBG("TracktionEngineWrapper::record() - calling transport.record(false, true)");
         currentEdit_->getTransport().record(false, /*allowRecordingIfNoInputsArmed=*/true);
         DBG("TracktionEngineWrapper::record() - isRecording=" << (int)isRecording());
-
-        // Activate session recorder so session clip triggers are captured to arrangement
-        if (sessionRecorder_)
-            sessionRecorder_->setRecordingActive(true);
 
         // Verify recording state on all input instances after record() returns
         if (auto* ctx = currentEdit_->getCurrentPlaybackContext()) {

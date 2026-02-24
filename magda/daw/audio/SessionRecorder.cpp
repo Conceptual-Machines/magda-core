@@ -30,6 +30,21 @@ void SessionRecorder::setRecordingActive(bool active) {
         activeRecordings_.clear();
         createdArrangementClipIds_.clear();
         recordingActive_ = true;
+
+        // Capture any session clips that are already playing
+        double currentTime = edit_.getTransport().position.get().inSeconds();
+        for (const auto& clip : clipManager.getSessionClips()) {
+            if (clip.isPlaying) {
+                ActiveRecording rec;
+                rec.sessionClipId = clip.id;
+                rec.trackId = clip.trackId;
+                rec.arrangementStartTime = currentTime;
+                activeRecordings_[clip.id] = rec;
+                std::cout << "SessionRecorder: capturing already-playing clip " << clip.id
+                          << " on track " << clip.trackId << std::endl;
+            }
+        }
+
         std::cout << "SessionRecorder: recording active" << std::endl;
     } else {
         // Stopping recording: finalize all active recordings and push undo command
