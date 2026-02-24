@@ -243,10 +243,14 @@ class FourOscUI : public juce::Component {
     // Members
     // =========================================================================
 
-    // Custom TabbedComponent that prevents layout-triggered tab resets
-    class StableTabbedComponent : public juce::TabbedComponent {
+    // TabbedComponent subclass that prevents layout operations (setBounds/resized)
+    // from resetting the active tab back to index 0.
+    class LayoutStableTabbedComponent : public juce::TabbedComponent {
       public:
         using juce::TabbedComponent::TabbedComponent;
+
+        // Guard against layout-triggered tab changes: only track user-initiated
+        // tab switches (when inLayout_ is false).
         void currentTabChanged(int newIndex, const juce::String& /*name*/) override {
             if (!inLayout_)
                 userTabIndex_ = newIndex;
@@ -268,7 +272,7 @@ class FourOscUI : public juce::Component {
         int userTabIndex_ = 0;
     };
 
-    std::unique_ptr<StableTabbedComponent> tabs_;
+    std::unique_ptr<LayoutStableTabbedComponent> tabs_;
     std::unique_ptr<OscTab> oscTab_;
     std::unique_ptr<FilterTab> filterTab_;
     std::unique_ptr<AmpTab> ampTab_;

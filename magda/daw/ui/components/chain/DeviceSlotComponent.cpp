@@ -2008,9 +2008,9 @@ void DeviceSlotComponent::createCustomUI() {
         addAndMakeVisible(*fourOscUI_);
         updateCustomUI();
         // Restore saved tab index after rebuild
-        if (pendingCustomUITabIndex_ >= 0) {
+        if (pendingCustomUITabIndex_ != NO_PENDING_TAB) {
             fourOscUI_->setCurrentTabIndex(pendingCustomUITabIndex_);
-            pendingCustomUITabIndex_ = -1;
+            pendingCustomUITabIndex_ = NO_PENDING_TAB;
         }
     } else if (device_.pluginId.equalsIgnoreCase("eq")) {
         eqUI_ = std::make_unique<EqualiserUI>();

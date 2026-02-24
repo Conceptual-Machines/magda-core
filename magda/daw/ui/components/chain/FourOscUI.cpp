@@ -11,7 +11,7 @@ namespace magda::daw::ui {
 // =============================================================================
 
 FourOscUI::FourOscUI() {
-    tabs_ = std::make_unique<StableTabbedComponent>(juce::TabbedButtonBar::TabsAtTop);
+    tabs_ = std::make_unique<LayoutStableTabbedComponent>(juce::TabbedButtonBar::TabsAtTop);
     tabs_->setTabBarDepth(20);
 
     auto tabBg = DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f);

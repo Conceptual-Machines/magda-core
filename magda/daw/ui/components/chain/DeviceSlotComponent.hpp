@@ -186,7 +186,8 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<SamplerUI> samplerUI_;
     std::unique_ptr<DrumGridUI> drumGridUI_;
     std::unique_ptr<FourOscUI> fourOscUI_;
-    int pendingCustomUITabIndex_ = -1;  // Saved tab index to restore after rebuild
+    static constexpr int NO_PENDING_TAB = -1;
+    int pendingCustomUITabIndex_ = NO_PENDING_TAB;
     std::unique_ptr<EqualiserUI> eqUI_;
     std::unique_ptr<CompressorUI> compressorUI_;
     std::unique_ptr<ReverbUI> reverbUI_;
