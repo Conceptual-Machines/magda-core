@@ -27,6 +27,7 @@ class LinkableTextSlider : public juce::Component,
     void setValue(double value, juce::NotificationType notification);
     double getValue() const;
     void setRange(double min, double max, double step);
+    void setSkewForCentre(double centreValue);
     void setValueFormatter(std::function<juce::String(double)> formatter);
     void setValueParser(std::function<double(const juce::String&)> parser);
     void setRightClickEditsText(bool shouldEdit);

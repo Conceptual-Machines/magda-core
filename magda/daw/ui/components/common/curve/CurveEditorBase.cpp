@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <map>
+#include <set>
 
 namespace magda {
 
@@ -10,6 +11,18 @@ CurveEditorBase::CurveEditorBase() {
 }
 
 CurveEditorBase::~CurveEditorBase() = default;
+
+void CurveEditorBase::clearSelection() {
+    selectedPointIds_.clear();
+    for (auto& pc : pointComponents_) {
+        pc->setSelected(false);
+    }
+    repaint();
+}
+
+bool CurveEditorBase::isPointSelected(uint32_t pointId) const {
+    return selectedPointIds_.count(pointId) > 0;
+}
 
 void CurveEditorBase::paint(juce::Graphics& g) {
     // Background
@@ -24,6 +37,54 @@ void CurveEditorBase::paint(juce::Graphics& g) {
     // Drawing preview
     if (isDrawing_) {
         paintDrawingPreview(g);
+    }
+
+    // Lasso selection rectangle
+    if (isLassoActive_ && !lassoRect_.isEmpty()) {
+        g.setColour(curveColour_.withAlpha(0.15f));
+        g.fillRect(lassoRect_);
+        g.setColour(curveColour_.withAlpha(0.6f));
+        g.drawRect(lassoRect_, 1);
+    }
+}
+
+void CurveEditorBase::paintOverChildren(juce::Graphics& g) {
+    // Value tooltip for hovered or dragged point
+    uint32_t tooltipId =
+        (previewPointId_ != INVALID_CURVE_POINT_ID) ? previewPointId_ : hoveredPointId_;
+    if (tooltipId == INVALID_CURVE_POINT_ID)
+        return;
+
+    // Find the point component
+    for (auto& pc : pointComponents_) {
+        if (pc->getPointId() != tooltipId)
+            continue;
+
+        auto pt = pc->getPoint();
+        double yVal = (previewPointId_ != INVALID_CURVE_POINT_ID) ? previewY_ : pt.y;
+        juce::String label = formatValueLabel(yVal);
+
+        auto font = juce::Font(10.0f);
+        g.setFont(font);
+        int textW = font.getStringWidth(label) + 6;
+        int textH = 14;
+
+        // Position above the point
+        auto pcBounds = pc->getBounds();
+        int tx = pcBounds.getCentreX() - textW / 2;
+        int ty = pcBounds.getY() - textH - 2;
+
+        // Keep within bounds
+        tx = juce::jlimit(0, getWidth() - textW, tx);
+        if (ty < 0)
+            ty = pcBounds.getBottom() + 2;
+
+        auto tooltipRect = juce::Rectangle<int>(tx, ty, textW, textH);
+        g.setColour(juce::Colour(0xDD222222));
+        g.fillRoundedRectangle(tooltipRect.toFloat(), 3.0f);
+        g.setColour(juce::Colour(0xFFEEEEEE));
+        g.drawText(label, tooltipRect, juce::Justification::centred, false);
+        break;
     }
 }
 
@@ -228,7 +289,7 @@ void CurveEditorBase::renderCurveSegment(juce::Path& path, const CurvePoint& p1,
 }
 
 void CurveEditorBase::paintDrawingPreview(juce::Graphics& g) {
-    if (drawMode_ == CurveDrawMode::Pencil && !drawingPath_.empty()) {
+    if (activeDrawMode_ == CurveDrawMode::Pencil && !drawingPath_.empty()) {
         g.setColour(juce::Colour(0xAAFFFFFF));
         for (size_t i = 1; i < drawingPath_.size(); ++i) {
             g.drawLine(static_cast<float>(drawingPath_[i - 1].x),
@@ -236,7 +297,7 @@ void CurveEditorBase::paintDrawingPreview(juce::Graphics& g) {
                        static_cast<float>(drawingPath_[i].x), static_cast<float>(drawingPath_[i].y),
                        2.0f);
         }
-    } else if (drawMode_ == CurveDrawMode::Line && isDrawing_) {
+    } else if (activeDrawMode_ == CurveDrawMode::Line && isDrawing_) {
         g.setColour(juce::Colour(0xAAFFFFFF));
         auto mousePos = getMouseXYRelative();
         g.drawLine(static_cast<float>(lineStartPoint_.x), static_cast<float>(lineStartPoint_.y),
@@ -245,10 +306,29 @@ void CurveEditorBase::paintDrawingPreview(juce::Graphics& g) {
 }
 
 void CurveEditorBase::mouseDown(const juce::MouseEvent& e) {
+    grabKeyboardFocus();
+
     if (e.mods.isLeftButtonDown()) {
-        switch (drawMode_) {
+        // Resolve effective draw mode from modifier keys:
+        //   Cmd/Ctrl → Pencil, Alt/Option → Line, otherwise use drawMode_
+        if (e.mods.isCommandDown()) {
+            activeDrawMode_ = CurveDrawMode::Pencil;
+        } else if (e.mods.isAltDown()) {
+            activeDrawMode_ = CurveDrawMode::Line;
+        } else {
+            activeDrawMode_ = drawMode_;
+        }
+
+        switch (activeDrawMode_) {
             case CurveDrawMode::Select:
-                // Click on empty area - subclass handles deselection
+                // Clear selection on empty-area click (no shift)
+                if (!e.mods.isShiftDown()) {
+                    clearSelection();
+                }
+                // Start lasso selection on empty area
+                lassoAnchor_ = e.getPosition();
+                isLassoActive_ = true;
+                lassoRect_ = {};
                 break;
 
             case CurveDrawMode::Pencil:
@@ -273,22 +353,63 @@ void CurveEditorBase::mouseDown(const juce::MouseEvent& e) {
 }
 
 void CurveEditorBase::mouseDrag(const juce::MouseEvent& e) {
+    if (isLassoActive_) {
+        auto pos = e.getPosition();
+        lassoRect_ = juce::Rectangle<int>(
+            std::min(lassoAnchor_.x, pos.x), std::min(lassoAnchor_.y, pos.y),
+            std::abs(pos.x - lassoAnchor_.x), std::abs(pos.y - lassoAnchor_.y));
+        repaint();
+        return;
+    }
+
     if (!isDrawing_)
         return;
 
-    if (drawMode_ == CurveDrawMode::Pencil || drawMode_ == CurveDrawMode::Curve) {
+    if (activeDrawMode_ == CurveDrawMode::Pencil || activeDrawMode_ == CurveDrawMode::Curve) {
         drawingPath_.push_back(e.getPosition());
         repaint();
-    } else if (drawMode_ == CurveDrawMode::Line) {
+    } else if (activeDrawMode_ == CurveDrawMode::Line) {
         repaint();  // Redraw line preview
     }
 }
 
 void CurveEditorBase::mouseUp(const juce::MouseEvent& e) {
+    if (isLassoActive_) {
+        isLassoActive_ = false;
+
+        // If shift is NOT held, clear selection before adding lasso hits
+        if (!e.mods.isShiftDown()) {
+            selectedPointIds_.clear();
+            for (auto& pc : pointComponents_) {
+                pc->setSelected(false);
+            }
+        }
+
+        // Gather points whose centres fall within the lasso rectangle
+        std::vector<uint32_t> selectedIds;
+        for (auto& pc : pointComponents_) {
+            auto centre = pc->getBounds().getCentre();
+            bool hit = lassoRect_.contains(centre);
+            if (hit) {
+                selectedPointIds_.insert(pc->getPointId());
+                pc->setSelected(true);
+                selectedIds.push_back(pc->getPointId());
+            }
+        }
+
+        if (!selectedIds.empty()) {
+            onPointsSelected(selectedIds);
+        }
+
+        lassoRect_ = {};
+        repaint();
+        return;
+    }
+
     if (isDrawing_) {
         isDrawing_ = false;
 
-        switch (drawMode_) {
+        switch (activeDrawMode_) {
             case CurveDrawMode::Pencil:
                 createPointsFromDrawingPath();
                 break;
@@ -336,7 +457,11 @@ void CurveEditorBase::mouseDoubleClick(const juce::MouseEvent& e) {
 
 bool CurveEditorBase::keyPressed(const juce::KeyPress& key) {
     if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {
-        // Subclass should handle deletion of selected points
+        if (!selectedPointIds_.empty()) {
+            auto ids = selectedPointIds_;
+            onDeleteSelectedPoints(ids);
+            selectedPointIds_.clear();
+        }
         return true;
     }
     return false;
@@ -375,8 +500,41 @@ void CurveEditorBase::rebuildPointComponents() {
         auto pc = std::make_unique<CurvePointComponent>(point.id, this);
         pc->updateFromPoint(point);
 
-        // Set callbacks
-        pc->onPointSelected = [this](uint32_t pointId) { onPointSelected(pointId); };
+        // Set callbacks — single-click selection with shift toggle
+        pc->onPointSelected = [this](uint32_t pointId) {
+            // Check if shift is held for additive selection
+            bool shiftHeld = juce::ModifierKeys::currentModifiers.isShiftDown();
+
+            if (shiftHeld) {
+                // Toggle this point in the selection
+                if (selectedPointIds_.count(pointId)) {
+                    selectedPointIds_.erase(pointId);
+                    for (auto& p : pointComponents_) {
+                        if (p->getPointId() == pointId)
+                            p->setSelected(false);
+                    }
+                } else {
+                    selectedPointIds_.insert(pointId);
+                    for (auto& p : pointComponents_) {
+                        if (p->getPointId() == pointId)
+                            p->setSelected(true);
+                    }
+                }
+            } else {
+                // Clear others, select only this one
+                selectedPointIds_.clear();
+                for (auto& p : pointComponents_) {
+                    p->setSelected(false);
+                }
+                selectedPointIds_.insert(pointId);
+                for (auto& p : pointComponents_) {
+                    if (p->getPointId() == pointId)
+                        p->setSelected(true);
+                }
+            }
+
+            onPointSelected(pointId);
+        };
 
         pc->onPointMoved = [this](uint32_t pointId, double newX, double newY) {
             // Clear preview state - drag is complete
@@ -420,6 +578,11 @@ void CurveEditorBase::rebuildPointComponents() {
         pc->onHandlesChanged = [this](uint32_t pointId, const CurveHandleData& inHandle,
                                       const CurveHandleData& outHandle) {
             onHandlesChanged(pointId, inHandle, outHandle);
+        };
+
+        pc->onPointHovered = [this](uint32_t pointId, bool hovered) {
+            hoveredPointId_ = hovered ? pointId : INVALID_CURVE_POINT_ID;
+            repaint();
         };
 
         addAndMakeVisible(pc.get());
@@ -590,6 +753,12 @@ void CurveEditorBase::updateTensionHandlePositions() {
             tensionHandles_[tensionIdx]->setSlopeGoesDown(y2 < y1);
             ++tensionIdx;
         }
+    }
+}
+
+void CurveEditorBase::syncSelectionState() {
+    for (auto& pc : pointComponents_) {
+        pc->setSelected(selectedPointIds_.count(pc->getPointId()) > 0);
     }
 }
 

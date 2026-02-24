@@ -48,6 +48,17 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
         setValue(juce::jlimit(min, max, value_), juce::dontSendNotification);
     }
 
+    /** Set a skew factor for logarithmic-feel drag behaviour.
+        A centre value (e.g. 1000.0 for a 10–22000 Hz range) will be
+        reached at the midpoint of the drag. This only affects drag
+        sensitivity, not the stored value or display. */
+    void setSkewForCentre(double centreValue) {
+        if (maxValue_ > minValue_ && centreValue > minValue_ && centreValue < maxValue_) {
+            skewFactor_ =
+                std::log(0.5) / std::log((centreValue - minValue_) / (maxValue_ - minValue_));
+        }
+    }
+
     void setValue(double newValue, juce::NotificationType notification = juce::sendNotification) {
         newValue = juce::jlimit(minValue_, maxValue_, newValue);
         if (interval_ > 0) {
@@ -283,22 +294,35 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
                 // Normal: 200 pixels = full range
                 // Shift: 2000 pixels = full range (10x finer)
                 // Ctrl/Cmd: 20000 pixels = full range (100x finer)
-                double baseSensitivity = (maxValue_ - minValue_) / 200.0;
-                double sensitivity = baseSensitivity;
+                double pixelRange = 200.0;
 
                 if (e.mods.isShiftDown()) {
-                    sensitivity = baseSensitivity / 10.0;  // Fine control
+                    pixelRange = 2000.0;  // Fine control
                 } else if (e.mods.isCommandDown() || e.mods.isCtrlDown()) {
-                    sensitivity = baseSensitivity / 100.0;  // Very fine control
+                    pixelRange = 20000.0;  // Very fine control
                 }
 
-                double delta;
+                double pixelDelta;
                 if (orientation_ == Orientation::Horizontal) {
-                    delta = (e.x - dragStartX_) * sensitivity;
+                    pixelDelta = e.x - dragStartX_;
                 } else {
-                    delta = (dragStartY_ - e.y) * sensitivity;
+                    pixelDelta = dragStartY_ - e.y;
                 }
-                setValue(dragStartValue_ + delta);
+
+                double newValue;
+                if (skewFactor_ != 1.0) {
+                    // Skewed drag: work in normalised (0-1) space with skew applied
+                    double startNorm = (dragStartValue_ - minValue_) / (maxValue_ - minValue_);
+                    double startSkewed = std::pow(startNorm, skewFactor_);
+                    double skewedNorm =
+                        juce::jlimit(0.0, 1.0, startSkewed + pixelDelta / pixelRange);
+                    double unskewed = std::pow(skewedNorm, 1.0 / skewFactor_);
+                    newValue = minValue_ + unskewed * (maxValue_ - minValue_);
+                } else {
+                    double sensitivity = (maxValue_ - minValue_) / pixelRange;
+                    newValue = dragStartValue_ + pixelDelta * sensitivity;
+                }
+                setValue(newValue);
             }
         }
     }
@@ -373,6 +397,7 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
     double minValue_ = 0.0;
     double maxValue_ = 1.0;
     double interval_ = 0.01;
+    double skewFactor_ = 1.0;
     double dragStartValue_ = 0.0;
     int dragStartX_ = 0;
     int dragStartY_ = 0;

@@ -784,4 +784,670 @@ void TransposeMidiClipCommand::mergeWith(const UndoableCommand* other) {
     }
 }
 
+// ============================================================================
+// AddMidiCCEventCommand
+// ============================================================================
+
+AddMidiCCEventCommand::AddMidiCCEventCommand(ClipId clipId, MidiCCData event)
+    : clipId_(clipId), event_(event) {}
+
+void AddMidiCCEventCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI)
+        return;
+
+    clip->midiCCData.push_back(event_);
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void AddMidiCCEventCommand::undo() {
+    if (!executed_)
+        return;
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI || clip->midiCCData.empty())
+        return;
+
+    clip->midiCCData.pop_back();
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+// ============================================================================
+// EditMidiCCEventCommand
+// ============================================================================
+
+EditMidiCCEventCommand::EditMidiCCEventCommand(ClipId clipId, size_t eventIndex, int newValue)
+    : clipId_(clipId), eventIndex_(eventIndex), newValue_(newValue) {
+    const auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (clip && eventIndex_ < clip->midiCCData.size()) {
+        oldValue_ = clip->midiCCData[eventIndex_].value;
+    }
+}
+
+void EditMidiCCEventCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiCCData.size())
+        return;
+
+    clip->midiCCData[eventIndex_].value = newValue_;
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void EditMidiCCEventCommand::undo() {
+    if (!executed_)
+        return;
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiCCData.size())
+        return;
+
+    clip->midiCCData[eventIndex_].value = oldValue_;
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+bool EditMidiCCEventCommand::canMergeWith(const UndoableCommand* other) const {
+    auto* o = dynamic_cast<const EditMidiCCEventCommand*>(other);
+    return o && o->clipId_ == clipId_ && o->eventIndex_ == eventIndex_;
+}
+
+void EditMidiCCEventCommand::mergeWith(const UndoableCommand* other) {
+    auto* o = dynamic_cast<const EditMidiCCEventCommand*>(other);
+    if (o)
+        newValue_ = o->newValue_;
+}
+
+// ============================================================================
+// DeleteMidiCCEventCommand
+// ============================================================================
+
+DeleteMidiCCEventCommand::DeleteMidiCCEventCommand(ClipId clipId, size_t eventIndex)
+    : clipId_(clipId), eventIndex_(eventIndex) {
+    const auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (clip && eventIndex_ < clip->midiCCData.size()) {
+        deletedEvent_ = clip->midiCCData[eventIndex_];
+    }
+}
+
+void DeleteMidiCCEventCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiCCData.size())
+        return;
+
+    clip->midiCCData.erase(clip->midiCCData.begin() + static_cast<std::ptrdiff_t>(eventIndex_));
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void DeleteMidiCCEventCommand::undo() {
+    if (!executed_)
+        return;
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI)
+        return;
+
+    size_t insertPos = std::min(eventIndex_, clip->midiCCData.size());
+    clip->midiCCData.insert(clip->midiCCData.begin() + static_cast<std::ptrdiff_t>(insertPos),
+                            deletedEvent_);
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+// ============================================================================
+// DrawMidiCCEventsCommand
+// ============================================================================
+
+DrawMidiCCEventsCommand::DrawMidiCCEventsCommand(ClipId clipId, std::vector<MidiCCData> events)
+    : clipId_(clipId), events_(std::move(events)) {}
+
+void DrawMidiCCEventsCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI)
+        return;
+
+    insertStartIndex_ = clip->midiCCData.size();
+    for (const auto& event : events_) {
+        clip->midiCCData.push_back(event);
+    }
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void DrawMidiCCEventsCommand::undo() {
+    if (!executed_)
+        return;
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI)
+        return;
+
+    if (insertStartIndex_ <= clip->midiCCData.size()) {
+        clip->midiCCData.erase(clip->midiCCData.begin() +
+                                   static_cast<std::ptrdiff_t>(insertStartIndex_),
+                               clip->midiCCData.end());
+    }
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+// ============================================================================
+// MoveMidiCCEventCommand
+// ============================================================================
+
+MoveMidiCCEventCommand::MoveMidiCCEventCommand(ClipId clipId, size_t eventIndex,
+                                               double newBeatPosition, int newValue)
+    : clipId_(clipId),
+      eventIndex_(eventIndex),
+      newBeatPosition_(newBeatPosition),
+      newValue_(newValue) {
+    const auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (clip && eventIndex_ < clip->midiCCData.size()) {
+        oldBeatPosition_ = clip->midiCCData[eventIndex_].beatPosition;
+        oldValue_ = clip->midiCCData[eventIndex_].value;
+    }
+}
+
+void MoveMidiCCEventCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiCCData.size())
+        return;
+
+    clip->midiCCData[eventIndex_].beatPosition = newBeatPosition_;
+    clip->midiCCData[eventIndex_].value = newValue_;
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void MoveMidiCCEventCommand::undo() {
+    if (!executed_)
+        return;
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiCCData.size())
+        return;
+
+    clip->midiCCData[eventIndex_].beatPosition = oldBeatPosition_;
+    clip->midiCCData[eventIndex_].value = oldValue_;
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+bool MoveMidiCCEventCommand::canMergeWith(const UndoableCommand* other) const {
+    auto* o = dynamic_cast<const MoveMidiCCEventCommand*>(other);
+    return o && o->clipId_ == clipId_ && o->eventIndex_ == eventIndex_;
+}
+
+void MoveMidiCCEventCommand::mergeWith(const UndoableCommand* other) {
+    auto* o = dynamic_cast<const MoveMidiCCEventCommand*>(other);
+    if (o) {
+        newBeatPosition_ = o->newBeatPosition_;
+        newValue_ = o->newValue_;
+    }
+}
+
+// ============================================================================
+// MoveMidiPitchBendEventCommand
+// ============================================================================
+
+MoveMidiPitchBendEventCommand::MoveMidiPitchBendEventCommand(ClipId clipId, size_t eventIndex,
+                                                             double newBeatPosition, int newValue)
+    : clipId_(clipId),
+      eventIndex_(eventIndex),
+      newBeatPosition_(newBeatPosition),
+      newValue_(newValue) {
+    const auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (clip && eventIndex_ < clip->midiPitchBendData.size()) {
+        oldBeatPosition_ = clip->midiPitchBendData[eventIndex_].beatPosition;
+        oldValue_ = clip->midiPitchBendData[eventIndex_].value;
+    }
+}
+
+void MoveMidiPitchBendEventCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiPitchBendData.size())
+        return;
+
+    clip->midiPitchBendData[eventIndex_].beatPosition = newBeatPosition_;
+    clip->midiPitchBendData[eventIndex_].value = newValue_;
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void MoveMidiPitchBendEventCommand::undo() {
+    if (!executed_)
+        return;
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiPitchBendData.size())
+        return;
+
+    clip->midiPitchBendData[eventIndex_].beatPosition = oldBeatPosition_;
+    clip->midiPitchBendData[eventIndex_].value = oldValue_;
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+bool MoveMidiPitchBendEventCommand::canMergeWith(const UndoableCommand* other) const {
+    auto* o = dynamic_cast<const MoveMidiPitchBendEventCommand*>(other);
+    return o && o->clipId_ == clipId_ && o->eventIndex_ == eventIndex_;
+}
+
+void MoveMidiPitchBendEventCommand::mergeWith(const UndoableCommand* other) {
+    auto* o = dynamic_cast<const MoveMidiPitchBendEventCommand*>(other);
+    if (o) {
+        newBeatPosition_ = o->newBeatPosition_;
+        newValue_ = o->newValue_;
+    }
+}
+
+// ============================================================================
+// DeleteMultipleMidiCCEventsCommand
+// ============================================================================
+
+DeleteMultipleMidiCCEventsCommand::DeleteMultipleMidiCCEventsCommand(
+    ClipId clipId, std::vector<size_t> eventIndices)
+    : clipId_(clipId), eventIndices_(std::move(eventIndices)) {
+    // Sort descending so we remove from the end first
+    std::sort(eventIndices_.begin(), eventIndices_.end(), std::greater<size_t>());
+
+    // Capture event data for undo
+    const auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (clip && clip->type == ClipType::MIDI) {
+        for (size_t idx : eventIndices_) {
+            if (idx < clip->midiCCData.size()) {
+                deleted_.emplace_back(idx, clip->midiCCData[idx]);
+            }
+        }
+    }
+}
+
+void DeleteMultipleMidiCCEventsCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI)
+        return;
+
+    for (size_t idx : eventIndices_) {
+        if (idx < clip->midiCCData.size()) {
+            clip->midiCCData.erase(clip->midiCCData.begin() + static_cast<std::ptrdiff_t>(idx));
+        }
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void DeleteMultipleMidiCCEventsCommand::undo() {
+    if (!executed_)
+        return;
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI)
+        return;
+
+    // Re-insert in reverse order (ascending index) to restore original positions
+    for (auto it = deleted_.rbegin(); it != deleted_.rend(); ++it) {
+        size_t insertPos = std::min(it->first, clip->midiCCData.size());
+        clip->midiCCData.insert(clip->midiCCData.begin() + static_cast<std::ptrdiff_t>(insertPos),
+                                it->second);
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+// ============================================================================
+// AddMidiPitchBendEventCommand
+// ============================================================================
+
+AddMidiPitchBendEventCommand::AddMidiPitchBendEventCommand(ClipId clipId, MidiPitchBendData event)
+    : clipId_(clipId), event_(event) {}
+
+void AddMidiPitchBendEventCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI)
+        return;
+
+    clip->midiPitchBendData.push_back(event_);
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void AddMidiPitchBendEventCommand::undo() {
+    if (!executed_)
+        return;
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI || clip->midiPitchBendData.empty())
+        return;
+
+    clip->midiPitchBendData.pop_back();
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+// ============================================================================
+// EditMidiPitchBendEventCommand
+// ============================================================================
+
+EditMidiPitchBendEventCommand::EditMidiPitchBendEventCommand(ClipId clipId, size_t eventIndex,
+                                                             int newValue)
+    : clipId_(clipId), eventIndex_(eventIndex), newValue_(newValue) {
+    const auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (clip && eventIndex_ < clip->midiPitchBendData.size()) {
+        oldValue_ = clip->midiPitchBendData[eventIndex_].value;
+    }
+}
+
+void EditMidiPitchBendEventCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiPitchBendData.size())
+        return;
+
+    clip->midiPitchBendData[eventIndex_].value = newValue_;
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void EditMidiPitchBendEventCommand::undo() {
+    if (!executed_)
+        return;
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiPitchBendData.size())
+        return;
+
+    clip->midiPitchBendData[eventIndex_].value = oldValue_;
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+bool EditMidiPitchBendEventCommand::canMergeWith(const UndoableCommand* other) const {
+    auto* o = dynamic_cast<const EditMidiPitchBendEventCommand*>(other);
+    return o && o->clipId_ == clipId_ && o->eventIndex_ == eventIndex_;
+}
+
+void EditMidiPitchBendEventCommand::mergeWith(const UndoableCommand* other) {
+    auto* o = dynamic_cast<const EditMidiPitchBendEventCommand*>(other);
+    if (o)
+        newValue_ = o->newValue_;
+}
+
+// ============================================================================
+// DeleteMidiPitchBendEventCommand
+// ============================================================================
+
+DeleteMidiPitchBendEventCommand::DeleteMidiPitchBendEventCommand(ClipId clipId, size_t eventIndex)
+    : clipId_(clipId), eventIndex_(eventIndex) {
+    const auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (clip && eventIndex_ < clip->midiPitchBendData.size()) {
+        deletedEvent_ = clip->midiPitchBendData[eventIndex_];
+    }
+}
+
+void DeleteMidiPitchBendEventCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiPitchBendData.size())
+        return;
+
+    clip->midiPitchBendData.erase(clip->midiPitchBendData.begin() +
+                                  static_cast<std::ptrdiff_t>(eventIndex_));
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void DeleteMidiPitchBendEventCommand::undo() {
+    if (!executed_)
+        return;
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI)
+        return;
+
+    size_t insertPos = std::min(eventIndex_, clip->midiPitchBendData.size());
+    clip->midiPitchBendData.insert(
+        clip->midiPitchBendData.begin() + static_cast<std::ptrdiff_t>(insertPos), deletedEvent_);
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+// ============================================================================
+// DrawMidiPitchBendEventsCommand
+// ============================================================================
+
+DrawMidiPitchBendEventsCommand::DrawMidiPitchBendEventsCommand(
+    ClipId clipId, std::vector<MidiPitchBendData> events)
+    : clipId_(clipId), events_(std::move(events)) {}
+
+void DrawMidiPitchBendEventsCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI)
+        return;
+
+    insertStartIndex_ = clip->midiPitchBendData.size();
+    for (const auto& event : events_) {
+        clip->midiPitchBendData.push_back(event);
+    }
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void DrawMidiPitchBendEventsCommand::undo() {
+    if (!executed_)
+        return;
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI)
+        return;
+
+    if (insertStartIndex_ <= clip->midiPitchBendData.size()) {
+        clip->midiPitchBendData.erase(clip->midiPitchBendData.begin() +
+                                          static_cast<std::ptrdiff_t>(insertStartIndex_),
+                                      clip->midiPitchBendData.end());
+    }
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+// ============================================================================
+// DeleteMultipleMidiPitchBendEventsCommand
+// ============================================================================
+
+DeleteMultipleMidiPitchBendEventsCommand::DeleteMultipleMidiPitchBendEventsCommand(
+    ClipId clipId, std::vector<size_t> eventIndices)
+    : clipId_(clipId), eventIndices_(std::move(eventIndices)) {
+    // Sort descending so we remove from the end first
+    std::sort(eventIndices_.begin(), eventIndices_.end(), std::greater<size_t>());
+
+    // Capture event data for undo
+    const auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (clip && clip->type == ClipType::MIDI) {
+        for (size_t idx : eventIndices_) {
+            if (idx < clip->midiPitchBendData.size()) {
+                deleted_.emplace_back(idx, clip->midiPitchBendData[idx]);
+            }
+        }
+    }
+}
+
+void DeleteMultipleMidiPitchBendEventsCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI)
+        return;
+
+    for (size_t idx : eventIndices_) {
+        if (idx < clip->midiPitchBendData.size()) {
+            clip->midiPitchBendData.erase(clip->midiPitchBendData.begin() +
+                                          static_cast<std::ptrdiff_t>(idx));
+        }
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void DeleteMultipleMidiPitchBendEventsCommand::undo() {
+    if (!executed_)
+        return;
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI)
+        return;
+
+    // Re-insert in reverse order (ascending index) to restore original positions
+    for (auto it = deleted_.rbegin(); it != deleted_.rend(); ++it) {
+        size_t insertPos = std::min(it->first, clip->midiPitchBendData.size());
+        clip->midiPitchBendData.insert(
+            clip->midiPitchBendData.begin() + static_cast<std::ptrdiff_t>(insertPos), it->second);
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+// ============================================================================
+// SetMidiCCEventTensionCommand
+// ============================================================================
+
+SetMidiCCEventTensionCommand::SetMidiCCEventTensionCommand(ClipId clipId, size_t eventIndex,
+                                                           double tension)
+    : clipId_(clipId), eventIndex_(eventIndex), newTension_(tension) {}
+
+void SetMidiCCEventTensionCommand::execute() {
+    auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (!clip || eventIndex_ >= clip->midiCCData.size())
+        return;
+    if (!executed_)
+        oldTension_ = clip->midiCCData[eventIndex_].tension;
+    clip->midiCCData[eventIndex_].tension = newTension_;
+    executed_ = true;
+    ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+}
+
+void SetMidiCCEventTensionCommand::undo() {
+    auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (!clip || eventIndex_ >= clip->midiCCData.size())
+        return;
+    clip->midiCCData[eventIndex_].tension = oldTension_;
+    ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+}
+
+bool SetMidiCCEventTensionCommand::canMergeWith(const UndoableCommand* other) const {
+    auto* o = dynamic_cast<const SetMidiCCEventTensionCommand*>(other);
+    return o && o->clipId_ == clipId_ && o->eventIndex_ == eventIndex_;
+}
+
+void SetMidiCCEventTensionCommand::mergeWith(const UndoableCommand* other) {
+    auto* o = dynamic_cast<const SetMidiCCEventTensionCommand*>(other);
+    if (o)
+        newTension_ = o->newTension_;
+}
+
+// ============================================================================
+// SetMidiCCEventHandlesCommand
+// ============================================================================
+
+SetMidiCCEventHandlesCommand::SetMidiCCEventHandlesCommand(ClipId clipId, size_t eventIndex,
+                                                           MidiCurveHandle inHandle,
+                                                           MidiCurveHandle outHandle)
+    : clipId_(clipId), eventIndex_(eventIndex), newInHandle_(inHandle), newOutHandle_(outHandle) {}
+
+void SetMidiCCEventHandlesCommand::execute() {
+    auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (!clip || eventIndex_ >= clip->midiCCData.size())
+        return;
+    if (!executed_) {
+        oldInHandle_ = clip->midiCCData[eventIndex_].inHandle;
+        oldOutHandle_ = clip->midiCCData[eventIndex_].outHandle;
+    }
+    clip->midiCCData[eventIndex_].inHandle = newInHandle_;
+    clip->midiCCData[eventIndex_].outHandle = newOutHandle_;
+    executed_ = true;
+    ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+}
+
+void SetMidiCCEventHandlesCommand::undo() {
+    auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (!clip || eventIndex_ >= clip->midiCCData.size())
+        return;
+    clip->midiCCData[eventIndex_].inHandle = oldInHandle_;
+    clip->midiCCData[eventIndex_].outHandle = oldOutHandle_;
+    ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+}
+
+// ============================================================================
+// SetMidiPitchBendEventTensionCommand
+// ============================================================================
+
+SetMidiPitchBendEventTensionCommand::SetMidiPitchBendEventTensionCommand(ClipId clipId,
+                                                                         size_t eventIndex,
+                                                                         double tension)
+    : clipId_(clipId), eventIndex_(eventIndex), newTension_(tension) {}
+
+void SetMidiPitchBendEventTensionCommand::execute() {
+    auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (!clip || eventIndex_ >= clip->midiPitchBendData.size())
+        return;
+    if (!executed_)
+        oldTension_ = clip->midiPitchBendData[eventIndex_].tension;
+    clip->midiPitchBendData[eventIndex_].tension = newTension_;
+    executed_ = true;
+    ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+}
+
+void SetMidiPitchBendEventTensionCommand::undo() {
+    auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (!clip || eventIndex_ >= clip->midiPitchBendData.size())
+        return;
+    clip->midiPitchBendData[eventIndex_].tension = oldTension_;
+    ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+}
+
+bool SetMidiPitchBendEventTensionCommand::canMergeWith(const UndoableCommand* other) const {
+    auto* o = dynamic_cast<const SetMidiPitchBendEventTensionCommand*>(other);
+    return o && o->clipId_ == clipId_ && o->eventIndex_ == eventIndex_;
+}
+
+void SetMidiPitchBendEventTensionCommand::mergeWith(const UndoableCommand* other) {
+    auto* o = dynamic_cast<const SetMidiPitchBendEventTensionCommand*>(other);
+    if (o)
+        newTension_ = o->newTension_;
+}
+
+// ============================================================================
+// SetMidiPitchBendEventHandlesCommand
+// ============================================================================
+
+SetMidiPitchBendEventHandlesCommand::SetMidiPitchBendEventHandlesCommand(ClipId clipId,
+                                                                         size_t eventIndex,
+                                                                         MidiCurveHandle inHandle,
+                                                                         MidiCurveHandle outHandle)
+    : clipId_(clipId), eventIndex_(eventIndex), newInHandle_(inHandle), newOutHandle_(outHandle) {}
+
+void SetMidiPitchBendEventHandlesCommand::execute() {
+    auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (!clip || eventIndex_ >= clip->midiPitchBendData.size())
+        return;
+    if (!executed_) {
+        oldInHandle_ = clip->midiPitchBendData[eventIndex_].inHandle;
+        oldOutHandle_ = clip->midiPitchBendData[eventIndex_].outHandle;
+    }
+    clip->midiPitchBendData[eventIndex_].inHandle = newInHandle_;
+    clip->midiPitchBendData[eventIndex_].outHandle = newOutHandle_;
+    executed_ = true;
+    ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+}
+
+void SetMidiPitchBendEventHandlesCommand::undo() {
+    auto* clip = ClipManager::getInstance().getClip(clipId_);
+    if (!clip || eventIndex_ >= clip->midiPitchBendData.size())
+        return;
+    clip->midiPitchBendData[eventIndex_].inHandle = oldInHandle_;
+    clip->midiPitchBendData[eventIndex_].outHandle = oldOutHandle_;
+    ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+}
+
 }  // namespace magda

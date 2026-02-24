@@ -576,12 +576,6 @@ void SelectionManager::notifyDeviceSelectionChanged(const DeviceSelection& selec
 
 void SelectionManager::selectChainNode(const ChainNodePath& path) {
     bool typeChanged = selectionType_ != SelectionType::ChainNode;
-    bool pathChanged = selectedChainNode_ != path;
-
-    // If same node is already selected, just return (collapse handled by caller)
-    if (!pathChanged && !typeChanged) {
-        return;
-    }
 
     // Clear other selection types (but keep track selection for context)
     selectedClipId_ = INVALID_CLIP_ID;
@@ -599,7 +593,7 @@ void SelectionManager::selectChainNode(const ChainNodePath& path) {
     if (typeChanged) {
         notifySelectionTypeChanged(SelectionType::ChainNode);
     }
-    // Always notify path change so all components can update their visual state
+    // Always notify so all components can update their visual state
     notifyChainNodeSelectionChanged(selectedChainNode_);
 }
 

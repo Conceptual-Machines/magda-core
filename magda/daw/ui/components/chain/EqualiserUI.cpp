@@ -63,8 +63,9 @@ void EqualiserUI::setupBandControls(int bandIndex, const juce::String& name) {
     b.nameLabel.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(b.nameLabel);
 
-    // Freq slider
+    // Freq slider (log-scaled drag for perceptual consistency)
     b.freqSlider.setRange(20.0, 20000.0, 1.0);
+    b.freqSlider.setSkewForCentre(1000.0);
     b.freqSlider.setValueFormatter([](double val) -> juce::String {
         if (val >= 1000.0)
             return juce::String(val / 1000.0, 1) + "k";

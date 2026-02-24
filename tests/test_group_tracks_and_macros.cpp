@@ -405,21 +405,21 @@ TEST_CASE("Device macro target fires trackDevicesChanged", "[macro][notification
     // Reset spy counters
     spy.devicesChangedCount = 0;
 
-    SECTION("setDeviceMacroTarget with new target fires trackDevicesChanged") {
+    SECTION("setDeviceMacroTarget with new target fires deviceModifiersChanged") {
         MacroTarget target{deviceId, 2};
         fixture.tm().setDeviceMacroTarget(devicePath, 0, target);
 
-        REQUIRE(spy.devicesChangedCount == 1);
+        REQUIRE(spy.modifiersChangedCount == 1);
     }
 
     SECTION("setDeviceMacroTarget with existing target does not fire") {
         MacroTarget target{deviceId, 2};
         fixture.tm().setDeviceMacroTarget(devicePath, 0, target);
-        spy.devicesChangedCount = 0;
+        spy.modifiersChangedCount = 0;
 
         // Same target again — link already exists, should not fire
         fixture.tm().setDeviceMacroTarget(devicePath, 0, target);
-        REQUIRE(spy.devicesChangedCount == 0);
+        REQUIRE(spy.modifiersChangedCount == 0);
     }
 
     fixture.tm().removeListener(&spy);

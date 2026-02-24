@@ -69,6 +69,10 @@ class DeviceSlotComponent : public NodeComponent,
     // Update device data
     void updateFromDevice(const magda::DeviceInfo& device);
 
+    // Custom UI tab index (for saving/restoring across rebuilds)
+    int getCustomUITabIndex() const;
+    void setCustomUITabIndex(int index);
+
     // Callbacks for owner-specific behavior
     std::function<void()> onDeviceDeleted;
     std::function<void()> onDeviceLayoutChanged;
@@ -157,6 +161,7 @@ class DeviceSlotComponent : public NodeComponent,
     bool isDrumGrid_ = false;  // Track if this is a drum grid for custom header painting
     bool isTracktionDevice_ = false;
     std::unique_ptr<juce::Drawable> tracktionLogo_;
+    juce::Rectangle<int> tracktionLogoBounds_;
 
     // Header controls
     std::unique_ptr<magda::SvgButton> modButton_;
@@ -182,6 +187,8 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<SamplerUI> samplerUI_;
     std::unique_ptr<DrumGridUI> drumGridUI_;
     std::unique_ptr<FourOscUI> fourOscUI_;
+    static constexpr int NO_PENDING_TAB = -1;
+    int pendingCustomUITabIndex_ = NO_PENDING_TAB;
     std::unique_ptr<EqualiserUI> eqUI_;
     std::unique_ptr<CompressorUI> compressorUI_;
     std::unique_ptr<ReverbUI> reverbUI_;

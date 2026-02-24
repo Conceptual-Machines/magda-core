@@ -11,7 +11,8 @@
 namespace magda {
 class TimeRuler;
 class VelocityLaneComponent;
-}
+class MidiDrawerComponent;
+}  // namespace magda
 
 namespace magda::daw::ui {
 
@@ -120,13 +121,18 @@ class MidiEditorContent : public PanelContent,
     static constexpr int GRID_LEFT_PADDING = 2;
     static constexpr double MIN_HORIZONTAL_ZOOM = 10.0;
     static constexpr double MAX_HORIZONTAL_ZOOM = 500.0;
+    static constexpr int DEFAULT_DRAWER_HEIGHT = 100;
+    static constexpr int MIN_DRAWER_HEIGHT = 60;
+    static constexpr int MAX_DRAWER_HEIGHT = 400;
     static constexpr int VELOCITY_LANE_HEIGHT = 80;
     static constexpr int VELOCITY_HEADER_HEIGHT = 20;
+    int drawerHeight_ = DEFAULT_DRAWER_HEIGHT;
 
     // --- Components (accessible to subclasses) ---
     std::unique_ptr<MidiEditorViewport> viewport_;
     std::unique_ptr<magda::TimeRuler> timeRuler_;
     std::unique_ptr<magda::VelocityLaneComponent> velocityLane_;
+    std::unique_ptr<magda::MidiDrawerComponent> midiDrawer_;
 
     // --- Velocity lane state ---
     bool velocityDrawerOpen_ = false;
@@ -151,15 +157,19 @@ class MidiEditorContent : public PanelContent,
     virtual void onScrollPositionChanged(int /*scrollX*/, int /*scrollY*/) {}
     virtual void onGridResolutionChanged() {}
 
-    // --- Velocity lane methods ---
+    // --- Velocity lane methods (legacy, used by velocity-only path) ---
     void setupVelocityLane();
     virtual void updateVelocityLane();
     virtual void onVelocityEdited();
     void setVelocityLaneSelectedNotes(const std::vector<size_t>& indices);
 
+    // --- MIDI drawer methods (tabbed: velocity + CC + pitchbend) ---
+    void setupMidiDrawer();
+    virtual void updateMidiDrawer();
+
     // Helper to get current drawer height
     int getDrawerHeight() const {
-        return velocityDrawerOpen_ ? (VELOCITY_LANE_HEIGHT + VELOCITY_HEADER_HEIGHT) : 0;
+        return velocityDrawerOpen_ ? drawerHeight_ : 0;
     }
 
     // --- Edit cursor blink state ---

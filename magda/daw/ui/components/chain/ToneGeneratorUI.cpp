@@ -19,8 +19,9 @@ ToneGeneratorUI::ToneGeneratorUI() {
     };
     addAndMakeVisible(waveformSelector_);
 
-    // Frequency slider (20 Hz - 20 kHz, logarithmic)
+    // Frequency slider (20 Hz - 20 kHz, log-scaled drag)
     frequencySlider_.setRange(20.0, 20000.0, 0.1);
+    frequencySlider_.setSkewForCentre(1000.0);
     frequencySlider_.setValue(440.0, juce::dontSendNotification);
     // Custom formatter to display Hz/kHz
     frequencySlider_.setValueFormatter(

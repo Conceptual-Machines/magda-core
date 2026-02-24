@@ -48,8 +48,9 @@ ImpulseResponseUI::ImpulseResponseUI() {
             onParameterChanged(0, static_cast<float>(value));
     };
 
-    // Low Cut (high-pass)
+    // Low Cut (high-pass, log-scaled drag)
     lowCut_.slider.setRange(10.0, 20000.0, 1.0);
+    lowCut_.slider.setSkewForCentre(1000.0);
     lowCut_.slider.setValueFormatter([](double value) -> juce::String {
         if (value >= 1000.0)
             return juce::String(value / 1000.0, 1) + " kHz";
@@ -66,8 +67,9 @@ ImpulseResponseUI::ImpulseResponseUI() {
             onParameterChanged(1, static_cast<float>(value));
     };
 
-    // High Cut (low-pass)
+    // High Cut (low-pass, log-scaled drag)
     highCut_.slider.setRange(10.0, 20000.0, 1.0);
+    highCut_.slider.setSkewForCentre(1000.0);
     highCut_.slider.setValueFormatter([](double value) -> juce::String {
         if (value >= 1000.0)
             return juce::String(value / 1000.0, 1) + " kHz";

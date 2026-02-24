@@ -253,6 +253,36 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
         g.drawHorizontalLine(y, 0.0f, static_cast<float>(bounds.getWidth()));
     }
 
+    // Value labels on the left
+    {
+        g.setFont(juce::Font(9.0f));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.6f));
+        constexpr int labelMargin = 2;
+        constexpr int labelWidth = 24;
+
+        constexpr int labelH = 12;
+        auto clampLabelY = [&](int y) {
+            int maxY = juce::jmax(1, getHeight() - labelH - 1);
+            return juce::jlimit(1, maxY, y - labelH / 2);
+        };
+
+        auto drawLabel = [&](int pct) {
+            int value = 127 * pct / 100;
+            int y = margin + usableHeight - (pct * usableHeight / 100);
+            g.drawText(juce::String(value), labelMargin, clampLabelY(y), labelWidth, labelH,
+                       juce::Justification::centredLeft, false);
+        };
+
+        drawLabel(0);
+        drawLabel(100);
+        if (usableHeight > 60)
+            drawLabel(50);
+        if (usableHeight > 120) {
+            drawLabel(25);
+            drawLabel(75);
+        }
+    }
+
     // Build list of clips to draw
     std::vector<ClipId> clipsToRender;
     if (clipIds_.size() > 1) {

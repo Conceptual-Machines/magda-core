@@ -10,6 +10,8 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "ui/components/common/SvgButton.hpp"
+#include "ui/components/pianoroll/CCLaneComponent.hpp"
+#include "ui/components/pianoroll/MidiDrawerComponent.hpp"
 #include "ui/components/pianoroll/PianoRollGridComponent.hpp"
 #include "ui/components/pianoroll/PianoRollKeyboard.hpp"
 #include "ui/components/pianoroll/VelocityLaneComponent.hpp"
@@ -116,8 +118,8 @@ PianoRollContent::PianoRollContent() {
 
     setupGridCallbacks();
 
-    // Setup velocity lane (call after grid component is created)
-    setupVelocityLane();
+    // Setup MIDI drawer (tabbed: velocity + CC + pitchbend)
+    setupMidiDrawer();
 
     // Register as SelectionManager listener (PianoRoll-specific)
     magda::SelectionManager::getInstance().addListener(this);
@@ -302,7 +304,9 @@ void PianoRollContent::setupGridCallbacks() {
         if (noteIndices.empty()) {
             // Clear note selection — preserve clip selection
             magda::SelectionManager::getInstance().clearNoteSelection();
-            if (velocityLane_) {
+            if (midiDrawer_ && midiDrawer_->getVelocityLane()) {
+                midiDrawer_->getVelocityLane()->setSelectedNoteIndices({});
+            } else if (velocityLane_) {
                 velocityLane_->setSelectedNoteIndices({});
             }
         } else {
@@ -313,7 +317,10 @@ void PianoRollContent::setupGridCallbacks() {
     // Forward note drag preview to velocity lane for position sync
     gridComponent_->onNoteDragging = [this](magda::ClipId /*clipId*/, size_t noteIndex,
                                             double previewBeat, bool isDragging) {
-        if (velocityLane_) {
+        if (midiDrawer_ && midiDrawer_->getVelocityLane()) {
+            midiDrawer_->getVelocityLane()->setNotePreviewPosition(noteIndex, previewBeat,
+                                                                   isDragging);
+        } else if (velocityLane_) {
             velocityLane_->setNotePreviewPosition(noteIndex, previewBeat, isDragging);
         }
     };
@@ -429,7 +436,9 @@ void PianoRollContent::setGridEditCursorPosition(double pos, bool visible) {
 
 void PianoRollContent::onScrollPositionChanged(int scrollX, int scrollY) {
     keyboard_->setScrollOffset(scrollY);
-    if (velocityLane_) {
+    if (midiDrawer_) {
+        midiDrawer_->setScrollOffset(scrollX);
+    } else if (velocityLane_) {
         velocityLane_->setScrollOffset(scrollX);
     }
 }
@@ -472,12 +481,11 @@ void PianoRollContent::paint(juce::Graphics& g) {
         drawChordRow(g, chordArea);
     }
 
-    // Draw velocity drawer header (if open)
-    if (velocityDrawerOpen_) {
+    // Draw velocity drawer header (if open) — only for legacy path without MidiDrawer
+    if (velocityDrawerOpen_ && !midiDrawer_) {
         auto drawerHeaderArea = getLocalBounds();
         drawerHeaderArea.removeFromLeft(SIDEBAR_WIDTH);
-        drawerHeaderArea =
-            drawerHeaderArea.removeFromBottom(VELOCITY_LANE_HEIGHT + VELOCITY_HEADER_HEIGHT);
+        drawerHeaderArea = drawerHeaderArea.removeFromBottom(drawerHeight_);
         drawerHeaderArea = drawerHeaderArea.removeFromTop(VELOCITY_HEADER_HEIGHT);
         drawVelocityHeader(g, drawerHeaderArea);
     }
@@ -499,17 +507,27 @@ void PianoRollContent::resized() {
         bounds.removeFromTop(CHORD_ROW_HEIGHT);
     }
 
-    // Velocity drawer at bottom (if open)
+    // MIDI drawer at bottom (if open)
     if (velocityDrawerOpen_) {
-        auto drawerArea = bounds.removeFromBottom(VELOCITY_LANE_HEIGHT + VELOCITY_HEADER_HEIGHT);
-        // Header area (drawn in paint)
-        drawerArea.removeFromTop(VELOCITY_HEADER_HEIGHT);
-        // Skip keyboard width for alignment
-        drawerArea.removeFromLeft(KEYBOARD_WIDTH);
-        velocityLane_->setBounds(drawerArea);
-        velocityLane_->setVisible(true);
+        auto drawerArea = bounds.removeFromBottom(drawerHeight_);
+        if (midiDrawer_) {
+            // MidiDrawerComponent gets the full width including the left column,
+            // so it can place controls (e.g. PB range) in the left margin area.
+            midiDrawer_->setLeftMargin(KEYBOARD_WIDTH);
+            midiDrawer_->setBounds(drawerArea);
+            midiDrawer_->setVisible(true);
+        } else if (velocityLane_) {
+            // Legacy path: separate header drawn in paint(), lane below
+            drawerArea.removeFromTop(VELOCITY_HEADER_HEIGHT);
+            drawerArea.removeFromLeft(KEYBOARD_WIDTH);
+            velocityLane_->setBounds(drawerArea);
+            velocityLane_->setVisible(true);
+        }
     } else {
-        velocityLane_->setVisible(false);
+        if (midiDrawer_)
+            midiDrawer_->setVisible(false);
+        if (velocityLane_)
+            velocityLane_->setVisible(false);
     }
 
     // Ruler row
@@ -827,7 +845,10 @@ void PianoRollContent::clipsChanged() {
         const auto* clip = clipManager.getClip(editingClipId_);
         if (!clip) {
             gridComponent_->setClip(magda::INVALID_CLIP_ID);
-            velocityLane_->setClip(magda::INVALID_CLIP_ID);
+            if (midiDrawer_)
+                midiDrawer_->setClip(magda::INVALID_CLIP_ID);
+            else if (velocityLane_)
+                velocityLane_->setClip(magda::INVALID_CLIP_ID);
         } else {
             // Re-fetch all clips on this track (a split/delete may have changed the list)
             magda::TrackId trackId = clip->trackId;
@@ -1190,30 +1211,70 @@ void PianoRollContent::drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int
     g.drawHorizontalLine(area.getY(), static_cast<float>(area.getX()),
                          static_cast<float>(area.getRight()));
 
-    // Draw "Velocity" label in keyboard area
+    // Draw active lane label in keyboard area
     auto labelArea = area.removeFromLeft(KEYBOARD_WIDTH);
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     g.setFont(magda::FontManager::getInstance().getUIFont(11.0f));
-    g.drawText("Velocity", labelArea.reduced(4, 0), juce::Justification::centredLeft, true);
+    juce::String label = midiDrawer_ ? midiDrawer_->getActiveTabName() : "Velocity";
+    g.drawText(label, labelArea.reduced(4, 0), juce::Justification::centredLeft, true);
 }
 
 void PianoRollContent::updateVelocityLane() {
+    // Update the MIDI drawer if available
+    if (midiDrawer_) {
+        MidiEditorContent::updateMidiDrawer();
+
+        // Pass multi-clip IDs for multi-clip velocity display
+        if (gridComponent_) {
+            midiDrawer_->setClipIds(gridComponent_->getSelectedClipIds());
+        }
+
+        // Override clip start beats for multi-clip mode
+        const auto& selectedClipIds =
+            gridComponent_ ? gridComponent_->getSelectedClipIds() : std::vector<magda::ClipId>{};
+        if (selectedClipIds.size() > 1) {
+            double tempo = 120.0;
+            if (auto* controller = magda::TimelineController::getCurrent()) {
+                tempo = controller->getState().tempo.bpm;
+            }
+            double earliestStart = std::numeric_limits<double>::max();
+            auto& clipManager = magda::ClipManager::getInstance();
+            for (magda::ClipId id : selectedClipIds) {
+                const auto* c = clipManager.getClip(id);
+                if (c) {
+                    earliestStart = juce::jmin(earliestStart, c->startTime);
+                }
+            }
+            if (earliestStart < std::numeric_limits<double>::max()) {
+                midiDrawer_->setClipStartBeats(earliestStart * (tempo / 60.0));
+            }
+        }
+
+        // Sync loop region and clip length
+        if (gridComponent_) {
+            midiDrawer_->setClipLengthBeats(gridComponent_->getClipLengthBeats());
+            midiDrawer_->setLoopRegion(gridComponent_->getLoopOffsetBeats(),
+                                       gridComponent_->getLoopLengthBeats(),
+                                       gridComponent_->isLoopEnabled());
+        }
+
+        midiDrawer_->refreshAll();
+        return;
+    }
+
+    // Fallback: legacy velocity-only path
     if (!velocityLane_)
         return;
 
-    // Call base implementation for common setup (sets clip, zoom, scroll, clipStartBeats)
     MidiEditorContent::updateVelocityLane();
 
-    // Pass multi-clip IDs for multi-clip velocity display
     if (gridComponent_) {
         velocityLane_->setClipIds(gridComponent_->getSelectedClipIds());
     }
 
-    // Override clip start beats for multi-clip mode
     const auto& selectedClipIds =
         gridComponent_ ? gridComponent_->getSelectedClipIds() : std::vector<magda::ClipId>{};
     if (selectedClipIds.size() > 1) {
-        // Multi-clip: use earliest clip start (same as grid)
         double tempo = 120.0;
         if (auto* controller = magda::TimelineController::getCurrent()) {
             tempo = controller->getState().tempo.bpm;
@@ -1231,7 +1292,6 @@ void PianoRollContent::updateVelocityLane() {
         }
     }
 
-    // Sync loop region and clip length (PianoRoll-specific)
     if (gridComponent_) {
         velocityLane_->setClipLengthBeats(gridComponent_->getClipLengthBeats());
         velocityLane_->setLoopRegion(gridComponent_->getLoopOffsetBeats(),
@@ -1243,8 +1303,10 @@ void PianoRollContent::updateVelocityLane() {
 }
 
 void PianoRollContent::onVelocityEdited() {
-    // Call base implementation to refresh velocity lane
+    // Refresh velocity lane (via base or drawer)
     MidiEditorContent::onVelocityEdited();
+    if (midiDrawer_)
+        midiDrawer_->refreshAll();
     // Also refresh grid component (PianoRoll-specific)
     if (gridComponent_) {
         gridComponent_->refreshNotes();
