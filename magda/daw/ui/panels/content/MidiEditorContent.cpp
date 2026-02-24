@@ -2,6 +2,7 @@
 
 #include "core/MidiNoteCommands.hpp"
 #include "core/UndoManager.hpp"
+#include "ui/components/pianoroll/MidiDrawerComponent.hpp"
 #include "ui/components/pianoroll/VelocityLaneComponent.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
 #include "ui/state/TimelineController.hpp"
@@ -467,6 +468,76 @@ void MidiEditorContent::onVelocityEdited() {
 void MidiEditorContent::setVelocityLaneSelectedNotes(const std::vector<size_t>& indices) {
     if (velocityLane_) {
         velocityLane_->setSelectedNoteIndices(indices);
+    }
+    if (midiDrawer_ && midiDrawer_->getVelocityLane()) {
+        midiDrawer_->getVelocityLane()->setSelectedNoteIndices(indices);
+    }
+}
+
+// ============================================================================
+// MIDI Drawer (tabbed: velocity + CC + pitchbend)
+// ============================================================================
+
+void MidiEditorContent::setupMidiDrawer() {
+    midiDrawer_ = std::make_unique<magda::MidiDrawerComponent>();
+    midiDrawer_->setLeftPadding(GRID_LEFT_PADDING);
+
+    // Wire velocity callbacks through the drawer's velocity lane
+    auto* velLane = midiDrawer_->getVelocityLane();
+    if (velLane) {
+        velLane->onVelocityChanged = [this](magda::ClipId clipId, size_t noteIndex,
+                                            int newVelocity) {
+            auto cmd =
+                std::make_unique<magda::SetMidiNoteVelocityCommand>(clipId, noteIndex, newVelocity);
+            magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+            onVelocityEdited();
+        };
+        velLane->onMultiVelocityChanged = [this](magda::ClipId clipId,
+                                                 std::vector<std::pair<size_t, int>> velocities) {
+            auto cmd = std::make_unique<magda::SetMultipleNoteVelocitiesCommand>(
+                clipId, std::move(velocities));
+            magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+            onVelocityEdited();
+        };
+    }
+
+    midiDrawer_->onResizeDrag = [this](int newHeight) {
+        int clamped = juce::jlimit(MIN_DRAWER_HEIGHT, MAX_DRAWER_HEIGHT, newHeight);
+        if (clamped != drawerHeight_) {
+            drawerHeight_ = clamped;
+            resized();
+        }
+    };
+
+    addChildComponent(midiDrawer_.get());
+}
+
+void MidiEditorContent::updateMidiDrawer() {
+    if (!midiDrawer_)
+        return;
+
+    midiDrawer_->setClip(editingClipId_);
+    midiDrawer_->setPixelsPerBeat(horizontalZoom_);
+    midiDrawer_->setRelativeMode(relativeTimeMode_);
+
+    const auto* clip = editingClipId_ != magda::INVALID_CLIP_ID
+                           ? magda::ClipManager::getInstance().getClip(editingClipId_)
+                           : nullptr;
+
+    if (clip) {
+        double tempo = 120.0;
+        if (auto* controller = magda::TimelineController::getCurrent()) {
+            tempo = controller->getState().tempo.bpm;
+        }
+        double secondsPerBeat = 60.0 / tempo;
+        double clipStartBeats = clip->startTime / secondsPerBeat;
+        midiDrawer_->setClipStartBeats(clipStartBeats);
+    } else {
+        midiDrawer_->setClipStartBeats(0.0);
+    }
+
+    if (viewport_) {
+        midiDrawer_->setScrollOffset(viewport_->getViewPositionX());
     }
 }
 

@@ -17,6 +17,7 @@
 #include "ReverbUI.hpp"
 #include "SamplerUI.hpp"
 #include "ToneGeneratorUI.hpp"
+#include "UtilityUI.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/TrackManager.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
@@ -67,6 +68,10 @@ class DeviceSlotComponent : public NodeComponent,
 
     // Update device data
     void updateFromDevice(const magda::DeviceInfo& device);
+
+    // Custom UI tab index (for saving/restoring across rebuilds)
+    int getCustomUITabIndex() const;
+    void setCustomUITabIndex(int index);
 
     // Callbacks for owner-specific behavior
     std::function<void()> onDeviceDeleted;
@@ -156,6 +161,7 @@ class DeviceSlotComponent : public NodeComponent,
     bool isDrumGrid_ = false;  // Track if this is a drum grid for custom header painting
     bool isTracktionDevice_ = false;
     std::unique_ptr<juce::Drawable> tracktionLogo_;
+    juce::Rectangle<int> tracktionLogoBounds_;
 
     // Header controls
     std::unique_ptr<magda::SvgButton> modButton_;
@@ -181,6 +187,8 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<SamplerUI> samplerUI_;
     std::unique_ptr<DrumGridUI> drumGridUI_;
     std::unique_ptr<FourOscUI> fourOscUI_;
+    static constexpr int NO_PENDING_TAB = -1;
+    int pendingCustomUITabIndex_ = NO_PENDING_TAB;
     std::unique_ptr<EqualiserUI> eqUI_;
     std::unique_ptr<CompressorUI> compressorUI_;
     std::unique_ptr<ReverbUI> reverbUI_;
@@ -190,6 +198,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<FilterUI> filterUI_;
     std::unique_ptr<PitchShiftUI> pitchShiftUI_;
     std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
+    std::unique_ptr<UtilityUI> utilityUI_;
 
     void updatePageControls();
     void updateParamModulation();  // Update mod/macro pointers for params

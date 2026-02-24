@@ -185,17 +185,7 @@ void NodeComponent::paint(juce::Graphics& g) {
         g.drawText(getNodeName(), textBounds, juce::Justification::centred);
         g.restoreState();
 
-        // Dim if bypassed or frozen
-        if (!bypassButton_->getToggleState() || frozen_) {
-            g.setColour(juce::Colours::black.withAlpha(0.3f));
-            g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
-        }
-
-        // Selection border (around main strip only)
-        if (selected_) {
-            g.setColour(juce::Colour(0xff888888));  // Grey
-            g.drawRoundedRectangle(bounds.toFloat().reduced(1.0f), 4.0f, 2.0f);
-        }
+        // Dim/selection drawn in paintOverChildren
         return;
     }
 
@@ -273,13 +263,17 @@ void NodeComponent::paint(juce::Graphics& g) {
     // Let subclass paint main content
     paintContent(g, contentArea);
 
-    // Dim if bypassed or frozen (draw over everything)
+    // Dim/selection drawn in paintOverChildren so they appear above side panels
+}
+
+void NodeComponent::paintOverChildren(juce::Graphics& g) {
+    // Dim if bypassed or frozen (over everything including side panels)
     if (!bypassButton_->getToggleState() || frozen_) {  // Toggle OFF = bypassed
         g.setColour(juce::Colours::black.withAlpha(0.3f));
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 4.0f);
     }
 
-    // Selection border (draw on top of everything)
+    // Selection border (over everything including side panels)
     if (selected_) {
         g.setColour(juce::Colour(0xff888888));  // Grey
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 4.0f, 2.0f);

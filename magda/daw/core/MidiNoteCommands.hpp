@@ -321,4 +321,371 @@ class TransposeMidiClipCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+// ============================================================================
+// MIDI CC Commands
+// ============================================================================
+
+/**
+ * @brief Command for adding a MIDI CC event to a clip
+ */
+class AddMidiCCEventCommand : public UndoableCommand {
+  public:
+    AddMidiCCEventCommand(ClipId clipId, MidiCCData event);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Add MIDI CC Event";
+    }
+
+  private:
+    ClipId clipId_;
+    MidiCCData event_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for editing a MIDI CC event value
+ */
+class EditMidiCCEventCommand : public UndoableCommand {
+  public:
+    EditMidiCCEventCommand(ClipId clipId, size_t eventIndex, int newValue);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Edit MIDI CC Event";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override;
+    void mergeWith(const UndoableCommand* other) override;
+
+  private:
+    ClipId clipId_;
+    size_t eventIndex_;
+    int oldValue_;
+    int newValue_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for deleting a MIDI CC event
+ */
+class DeleteMidiCCEventCommand : public UndoableCommand {
+  public:
+    DeleteMidiCCEventCommand(ClipId clipId, size_t eventIndex);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Delete MIDI CC Event";
+    }
+
+  private:
+    ClipId clipId_;
+    size_t eventIndex_;
+    MidiCCData deletedEvent_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for batch-adding MIDI CC events (freehand draw)
+ */
+class DrawMidiCCEventsCommand : public UndoableCommand {
+  public:
+    DrawMidiCCEventsCommand(ClipId clipId, std::vector<MidiCCData> events);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Draw MIDI CC Events";
+    }
+
+  private:
+    ClipId clipId_;
+    std::vector<MidiCCData> events_;
+    size_t insertStartIndex_ = 0;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for moving a MIDI CC event (change beat position and/or value)
+ */
+class MoveMidiCCEventCommand : public UndoableCommand {
+  public:
+    MoveMidiCCEventCommand(ClipId clipId, size_t eventIndex, double newBeatPosition, int newValue);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Move MIDI CC Event";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override;
+    void mergeWith(const UndoableCommand* other) override;
+
+  private:
+    ClipId clipId_;
+    size_t eventIndex_;
+    double oldBeatPosition_;
+    double newBeatPosition_;
+    int oldValue_;
+    int newValue_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for moving a MIDI pitch bend event (change beat position and/or value)
+ */
+class MoveMidiPitchBendEventCommand : public UndoableCommand {
+  public:
+    MoveMidiPitchBendEventCommand(ClipId clipId, size_t eventIndex, double newBeatPosition,
+                                  int newValue);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Move Pitch Bend Event";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override;
+    void mergeWith(const UndoableCommand* other) override;
+
+  private:
+    ClipId clipId_;
+    size_t eventIndex_;
+    double oldBeatPosition_;
+    double newBeatPosition_;
+    int oldValue_;
+    int newValue_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for deleting multiple MIDI CC events at once
+ */
+class DeleteMultipleMidiCCEventsCommand : public UndoableCommand {
+  public:
+    DeleteMultipleMidiCCEventsCommand(ClipId clipId, std::vector<size_t> eventIndices);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Delete MIDI CC Events";
+    }
+
+  private:
+    ClipId clipId_;
+    std::vector<size_t> eventIndices_;
+    std::vector<std::pair<size_t, MidiCCData>> deleted_;
+    bool executed_ = false;
+};
+
+// ============================================================================
+// MIDI Pitch Bend Commands
+// ============================================================================
+
+/**
+ * @brief Command for adding a MIDI pitch bend event to a clip
+ */
+class AddMidiPitchBendEventCommand : public UndoableCommand {
+  public:
+    AddMidiPitchBendEventCommand(ClipId clipId, MidiPitchBendData event);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Add Pitch Bend Event";
+    }
+
+  private:
+    ClipId clipId_;
+    MidiPitchBendData event_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for editing a MIDI pitch bend event value
+ */
+class EditMidiPitchBendEventCommand : public UndoableCommand {
+  public:
+    EditMidiPitchBendEventCommand(ClipId clipId, size_t eventIndex, int newValue);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Edit Pitch Bend Event";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override;
+    void mergeWith(const UndoableCommand* other) override;
+
+  private:
+    ClipId clipId_;
+    size_t eventIndex_;
+    int oldValue_;
+    int newValue_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for deleting a MIDI pitch bend event
+ */
+class DeleteMidiPitchBendEventCommand : public UndoableCommand {
+  public:
+    DeleteMidiPitchBendEventCommand(ClipId clipId, size_t eventIndex);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Delete Pitch Bend Event";
+    }
+
+  private:
+    ClipId clipId_;
+    size_t eventIndex_;
+    MidiPitchBendData deletedEvent_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for batch-adding MIDI pitch bend events (freehand draw)
+ */
+class DrawMidiPitchBendEventsCommand : public UndoableCommand {
+  public:
+    DrawMidiPitchBendEventsCommand(ClipId clipId, std::vector<MidiPitchBendData> events);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Draw Pitch Bend Events";
+    }
+
+  private:
+    ClipId clipId_;
+    std::vector<MidiPitchBendData> events_;
+    size_t insertStartIndex_ = 0;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for deleting multiple MIDI pitch bend events at once
+ */
+class DeleteMultipleMidiPitchBendEventsCommand : public UndoableCommand {
+  public:
+    DeleteMultipleMidiPitchBendEventsCommand(ClipId clipId, std::vector<size_t> eventIndices);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Delete Pitch Bend Events";
+    }
+
+  private:
+    ClipId clipId_;
+    std::vector<size_t> eventIndices_;
+    std::vector<std::pair<size_t, MidiPitchBendData>> deleted_;
+    bool executed_ = false;
+};
+
+// ============================================================================
+// MIDI CC/PB Curve Shape Commands
+// ============================================================================
+
+/**
+ * @brief Command for setting tension on a MIDI CC event
+ */
+class SetMidiCCEventTensionCommand : public UndoableCommand {
+  public:
+    SetMidiCCEventTensionCommand(ClipId clipId, size_t eventIndex, double tension);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Set CC Event Tension";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override;
+    void mergeWith(const UndoableCommand* other) override;
+
+  private:
+    ClipId clipId_;
+    size_t eventIndex_;
+    double oldTension_;
+    double newTension_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for setting bezier handles on a MIDI CC event
+ */
+class SetMidiCCEventHandlesCommand : public UndoableCommand {
+  public:
+    SetMidiCCEventHandlesCommand(ClipId clipId, size_t eventIndex, MidiCurveHandle inHandle,
+                                 MidiCurveHandle outHandle);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Set CC Event Handles";
+    }
+
+  private:
+    ClipId clipId_;
+    size_t eventIndex_;
+    MidiCurveHandle oldInHandle_;
+    MidiCurveHandle oldOutHandle_;
+    MidiCurveHandle newInHandle_;
+    MidiCurveHandle newOutHandle_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for setting tension on a MIDI pitch bend event
+ */
+class SetMidiPitchBendEventTensionCommand : public UndoableCommand {
+  public:
+    SetMidiPitchBendEventTensionCommand(ClipId clipId, size_t eventIndex, double tension);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Set Pitch Bend Tension";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override;
+    void mergeWith(const UndoableCommand* other) override;
+
+  private:
+    ClipId clipId_;
+    size_t eventIndex_;
+    double oldTension_;
+    double newTension_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for setting bezier handles on a MIDI pitch bend event
+ */
+class SetMidiPitchBendEventHandlesCommand : public UndoableCommand {
+  public:
+    SetMidiPitchBendEventHandlesCommand(ClipId clipId, size_t eventIndex, MidiCurveHandle inHandle,
+                                        MidiCurveHandle outHandle);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Set Pitch Bend Handles";
+    }
+
+  private:
+    ClipId clipId_;
+    size_t eventIndex_;
+    MidiCurveHandle oldInHandle_;
+    MidiCurveHandle oldOutHandle_;
+    MidiCurveHandle newInHandle_;
+    MidiCurveHandle newOutHandle_;
+    bool executed_ = false;
+};
+
 }  // namespace magda

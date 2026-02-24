@@ -17,8 +17,9 @@ static void setupLabelStatic(juce::Label& label, const juce::String& text,
 FilterUI::FilterUI() {
     setupSlider(frequency_, "FREQ");
 
-    // Frequency: 10–22000 Hz
+    // Frequency: 10–22000 Hz (log-scaled drag for perceptual consistency)
     frequency_.slider.setRange(10.0, 22000.0, 1.0);
+    frequency_.slider.setSkewForCentre(1000.0);
     frequency_.slider.setValueFormatter([](double value) -> juce::String {
         if (value >= 1000.0)
             return juce::String(value / 1000.0, 1) + " kHz";

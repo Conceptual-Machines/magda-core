@@ -1,6 +1,9 @@
 #include "ClipSynchronizer.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <iostream>
+#include <map>
 #include <unordered_set>
 
 #include "../core/ClipManager.hpp"
@@ -774,6 +777,139 @@ void ClipSynchronizer::removeWarpMarker(ClipId clipId, int index) {
 }
 
 // =============================================================================
+// CC/PitchBend Interpolation Helper
+// =============================================================================
+
+/**
+ * @brief Generate interpolated CC/PB controller events between curve points.
+ *
+ * For Step curves, only the original event is emitted. For Linear (with tension)
+ * and Bezier curves, intermediate events are generated every 1/64 beat to produce
+ * smooth MIDI controller output instead of staircase steps.
+ *
+ * @tparam EventType  MidiCCData or MidiPitchBendData
+ * @param sequence    The Tracktion MIDI sequence to add events to
+ * @param events      Sorted events to interpolate between
+ * @param controllerType  CC number or pitchWheelType
+ * @param effectiveOffset Beat offset to subtract from positions
+ * @param visibleStart    Start of visible range in beats
+ * @param visibleEnd      End of visible range in beats
+ * @param contentLengthBeats  Maximum beat position
+ */
+template <typename EventType>
+static void interpolateCCEvents(te::MidiList& sequence, const std::vector<EventType>& events,
+                                int controllerType, double effectiveOffset, double visibleStart,
+                                double visibleEnd, double contentLengthBeats) {
+    if (events.empty())
+        return;
+
+    // Make a sorted copy
+    auto sorted = events;
+    std::sort(sorted.begin(), sorted.end(), [](const EventType& a, const EventType& b) {
+        return a.beatPosition < b.beatPosition;
+    });
+
+    constexpr double kStepSize = 1.0 / 64.0;  // 1/64 beat between interpolated events
+
+    // Tracktion Engine stores all controller values in 14-bit range (0-16383).
+    // CC values (0-127) must be left-shifted by 7 bits; pitch bend is already 14-bit.
+    const bool isPitchBend = (controllerType == te::MidiControllerEvent::pitchWheelType);
+    const int maxValue = isPitchBend ? 16383 : 127;
+
+    auto addEvent = [&](double beatPos, int value) {
+        double adjusted = beatPos - effectiveOffset;
+        if (adjusted >= 0.0 && adjusted < contentLengthBeats) {
+            int teValue = isPitchBend ? value : (value << 7);
+            sequence.addControllerEvent(te::BeatPosition::fromBeats(adjusted), controllerType,
+                                        teValue, nullptr);
+        }
+    };
+
+    for (size_t i = 0; i < sorted.size(); ++i) {
+        const auto& ev = sorted[i];
+
+        // Skip events outside visible range
+        if (ev.beatPosition < visibleStart || ev.beatPosition >= visibleEnd)
+            continue;
+
+        if (ev.curveType == MidiCurveType::Step || i == sorted.size() - 1) {
+            // Step: just emit the single event value (held until next event)
+            // Also emit last event as-is since there's no next point to interpolate toward
+            addEvent(ev.beatPosition, ev.value);
+            continue;
+        }
+
+        // We have a next event to interpolate toward
+        const auto& next = sorted[i + 1];
+        double beatStart = ev.beatPosition;
+        double beatEnd = next.beatPosition;
+        double span = beatEnd - beatStart;
+
+        if (span <= 0.0) {
+            addEvent(ev.beatPosition, ev.value);
+            continue;
+        }
+
+        double v1 = static_cast<double>(ev.value);
+        double v2 = static_cast<double>(next.value);
+
+        if (ev.curveType == MidiCurveType::Linear) {
+            // Generate interpolated events every kStepSize beats
+            double tension = ev.tension;
+            for (double beat = beatStart; beat < beatEnd; beat += kStepSize) {
+                if (beat < visibleStart || beat >= visibleEnd)
+                    continue;
+
+                double t = (beat - beatStart) / span;
+
+                // Apply tension (same formula as CurveSnapshot::evaluate / CurveEditorBase)
+                double curvedT;
+                if (std::abs(tension) < 0.001) {
+                    curvedT = t;
+                } else if (tension > 0) {
+                    curvedT = std::pow(t, 1.0 + tension * 2.0);
+                } else {
+                    curvedT = 1.0 - std::pow(1.0 - t, 1.0 - tension * 2.0);
+                }
+
+                int val =
+                    std::clamp(static_cast<int>(std::round(v1 + curvedT * (v2 - v1))), 0, maxValue);
+                addEvent(beat, val);
+            }
+        } else if (ev.curveType == MidiCurveType::Bezier) {
+            // Cubic bezier interpolation using in/out handles
+            // Control points in normalized (beat, value) space:
+            //   P0 = (beatStart, v1)
+            //   P1 = (beatStart + outHandle.dx, v1 + outHandle.dy * valueRange)
+            //   P2 = (beatEnd + inHandle.dx, v2 + inHandle.dy * valueRange)
+            //   P3 = (beatEnd, v2)
+            double p0x = beatStart, p0y = v1;
+            double p1x = beatStart + ev.outHandle.dx;
+            double p1y = v1 + ev.outHandle.dy * (v2 - v1);
+            double p2x = beatEnd + next.inHandle.dx;
+            double p2y = v2 + next.inHandle.dy * (v2 - v1);
+            double p3x = beatEnd, p3y = v2;
+
+            juce::ignoreUnused(p0x, p1x, p2x, p3x);
+
+            for (double beat = beatStart; beat < beatEnd; beat += kStepSize) {
+                if (beat < visibleStart || beat >= visibleEnd)
+                    continue;
+
+                double t = (beat - beatStart) / span;
+
+                // Cubic bezier: B(t) = (1-t)^3*P0 + 3(1-t)^2*t*P1 + 3(1-t)*t^2*P2 + t^3*P3
+                double u = 1.0 - t;
+                double val = u * u * u * p0y + 3.0 * u * u * t * p1y + 3.0 * u * t * t * p2y +
+                             t * t * t * p3y;
+
+                addEvent(beat, std::clamp(static_cast<int>(std::round(val)), 0, maxValue));
+            }
+        }
+    }
+}
+
+// =============================================================================
 // Private Sync Helpers
 // =============================================================================
 
@@ -933,6 +1069,22 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     }
 
     DBG("  Added " << addedCount << " notes to Tracktion");
+
+    // Add CC events with interpolation (grouped by controller number)
+    {
+        std::map<int, std::vector<MidiCCData>> ccByController;
+        for (const auto& cc : clip->midiCCData)
+            ccByController[cc.controller].push_back(cc);
+
+        for (const auto& [ccNum, ccEvents] : ccByController) {
+            interpolateCCEvents(sequence, ccEvents, ccNum, effectiveOffset, visibleStart,
+                                visibleEnd, contentLengthBeats);
+        }
+    }
+
+    // Add pitch bend events with interpolation
+    interpolateCCEvents(sequence, clip->midiPitchBendData, te::MidiControllerEvent::pitchWheelType,
+                        effectiveOffset, visibleStart, visibleEnd, contentLengthBeats);
 }
 
 void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {

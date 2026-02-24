@@ -975,9 +975,11 @@ void TrackManager::setDeviceMacroTarget(const ChainNodePath& devicePath, int mac
         if (!device->macros[macroIndex].getLink(target)) {
             MacroLink newLink;
             newLink.target = target;
-            newLink.amount = 0.5f;  // Default amount
+            newLink.amount = 1.0f;  // Default amount (full range)
             device->macros[macroIndex].links.push_back(newLink);
-            notifyTrackDevicesChanged(devicePath.trackId);
+            // Use lighter notification — adding a macro link doesn't change device
+            // structure, and a full rebuild would destroy the active link mode UI.
+            notifyDeviceModifiersChanged(devicePath.trackId);
         }
     }
 }

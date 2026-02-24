@@ -11,7 +11,7 @@ namespace magda::daw::ui {
 // =============================================================================
 
 FourOscUI::FourOscUI() {
-    tabs_ = std::make_unique<juce::TabbedComponent>(juce::TabbedButtonBar::TabsAtTop);
+    tabs_ = std::make_unique<LayoutStableTabbedComponent>(juce::TabbedButtonBar::TabsAtTop);
     tabs_->setTabBarDepth(20);
 
     auto tabBg = DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f);
@@ -50,6 +50,15 @@ void FourOscUI::updatePluginState(const FourOscPluginState& state) {
     fxTab_->updatePluginState(state);
 }
 
+int FourOscUI::getCurrentTabIndex() const {
+    return tabs_ ? tabs_->getCurrentTabIndex() : 0;
+}
+
+void FourOscUI::setCurrentTabIndex(int index) {
+    if (tabs_ && index >= 0 && index < tabs_->getNumTabs())
+        tabs_->setCurrentTabIndex(index, false);
+}
+
 void FourOscUI::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
@@ -58,7 +67,7 @@ void FourOscUI::paint(juce::Graphics& g) {
 }
 
 void FourOscUI::resized() {
-    tabs_->setBounds(getLocalBounds());
+    tabs_->setBoundsStable(getLocalBounds());
 }
 
 std::vector<LinkableTextSlider*> FourOscUI::getLinkableSliders() {
@@ -485,10 +494,28 @@ FourOscUI::FilterTab::FilterTab(FourOscUI& owner) : owner_(owner) {
     };
     addAndMakeVisible(slopeSelector_);
 
-    // Freq
+    // Freq (internal value is MIDI note number, display as Hz)
     setupLabel(freqLabel_, "FREQ");
     freqSlider_.setRange(0.0, 135.076232, 0.01);
+    freqSlider_.setSkewForCentre(69.0);  // Log-scale drag centred at A4 (440 Hz)
     freqSlider_.setValue(69.0, juce::dontSendNotification);
+    freqSlider_.setValueFormatter([](double noteNum) -> juce::String {
+        float freq = 440.0f * std::pow(2.0f, (static_cast<float>(noteNum) - 69.0f) / 12.0f);
+        if (freq >= 1000.0f)
+            return juce::String(freq / 1000.0f, 1) + " kHz";
+        return juce::String(juce::roundToInt(freq)) + " Hz";
+    });
+    freqSlider_.setValueParser([](const juce::String& text) -> double {
+        auto t = text.trim().toLowerCase();
+        float freq;
+        if (t.contains("khz"))
+            freq = t.replace("khz", "").trim().getFloatValue() * 1000.0f;
+        else
+            freq = t.replace("hz", "").trim().getFloatValue();
+        if (freq <= 0.0f)
+            freq = 440.0f;
+        return 12.0 * std::log2(freq / 440.0) + 69.0;
+    });
     freqSlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kFilterBase + 4, static_cast<float>(v));

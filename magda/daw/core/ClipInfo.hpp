@@ -35,12 +35,30 @@ struct MidiNote {
 };
 
 /**
+ * @brief Curve interpolation type for CC/PitchBend events
+ */
+enum class MidiCurveType : int { Step = 0, Linear = 1, Bezier = 2 };
+
+/**
+ * @brief Bezier handle offset for CC/PitchBend curve shaping
+ */
+struct MidiCurveHandle {
+    double dx = 0.0;     // Beat offset from parent point
+    double dy = 0.0;     // Normalized value offset from parent point
+    bool linked = true;  // Mirror handles when one is moved
+};
+
+/**
  * @brief MIDI CC data for recorded CC events
  */
 struct MidiCCData {
     int controller = 0;         // CC number (0-127)
     int value = 0;              // CC value (0-127)
     double beatPosition = 0.0;  // Position in beats within clip
+    MidiCurveType curveType = MidiCurveType::Step;
+    double tension = 0.0;  // -3 to +3 curve shape
+    MidiCurveHandle inHandle;
+    MidiCurveHandle outHandle;
 };
 
 /**
@@ -49,6 +67,10 @@ struct MidiCCData {
 struct MidiPitchBendData {
     int value = 0;              // 0-16383, center=8192
     double beatPosition = 0.0;  // Position in beats within clip
+    MidiCurveType curveType = MidiCurveType::Step;
+    double tension = 0.0;  // -3 to +3 curve shape
+    MidiCurveHandle inHandle;
+    MidiCurveHandle outHandle;
 };
 
 /**

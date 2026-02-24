@@ -517,6 +517,20 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     updateParamModulation();
 }
 
+int DeviceSlotComponent::getCustomUITabIndex() const {
+    if (fourOscUI_)
+        return fourOscUI_->getCurrentTabIndex();
+    return 0;
+}
+
+void DeviceSlotComponent::setCustomUITabIndex(int index) {
+    if (fourOscUI_) {
+        fourOscUI_->setCurrentTabIndex(index);
+    } else {
+        pendingCustomUITabIndex_ = index;
+    }
+}
+
 int DeviceSlotComponent::getPreferredWidth() const {
     if (collapsed_) {
         return getLeftPanelsWidth() + COLLAPSED_WIDTH + getRightPanelsWidth();
@@ -550,6 +564,9 @@ int DeviceSlotComponent::getPreferredWidth() const {
     }
     if (impulseResponseUI_) {
         return getTotalWidth(350);
+    }
+    if (utilityUI_) {
+        return getTotalWidth(300);
     }
     if (samplerUI_) {
         return getTotalWidth(BASE_SLOT_WIDTH * 2);
@@ -589,22 +606,13 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Apply saved parameter configuration if parameters are now available
     if (!device_.uniqueId.isEmpty() && !device_.parameters.empty()) {
         magda::DeviceInfo tempDevice = device_;
-        DBG("Attempting to load config for " << device_.name << " (uniqueId=" << device_.uniqueId
-                                             << ")");
         if (ParameterConfigDialog::applyConfigToDevice(tempDevice.uniqueId, tempDevice)) {
-            // Config was loaded successfully - update TrackManager with the visible parameters
             if (!tempDevice.visibleParameters.empty()) {
-                DBG("Config loaded - " << tempDevice.visibleParameters.size() << " visible params");
                 magda::TrackManager::getInstance().setDeviceVisibleParameters(
                     device_.id, tempDevice.visibleParameters);
-                // Update our local copy
                 device_.visibleParameters = tempDevice.visibleParameters;
                 device_.gainParameterIndex = tempDevice.gainParameterIndex;
-            } else {
-                DBG("Config loaded but visibleParameters is empty");
             }
-        } else {
-            DBG("No saved config found");
         }
     }
 
@@ -619,7 +627,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Create custom UI if this is an internal device and we don't have one yet
     if (isInternalDevice() && !toneGeneratorUI_ && !samplerUI_ && !drumGridUI_ && !fourOscUI_ &&
         !eqUI_ && !compressorUI_ && !reverbUI_ && !delayUI_ && !chorusUI_ && !phaserUI_ &&
-        !filterUI_ && !pitchShiftUI_ && !impulseResponseUI_) {
+        !filterUI_ && !pitchShiftUI_ && !impulseResponseUI_ && !utilityUI_) {
         createCustomUI();
         setupCustomUILinking();
     }
@@ -627,7 +635,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Update custom UI if available
     if (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
         reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
-        impulseResponseUI_) {
+        impulseResponseUI_ || utilityUI_) {
         updateCustomUI();
     }
 
@@ -709,6 +717,12 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
     // Call base class paint for standard rendering
     NodeComponent::paint(g);
 
+    // Draw Tracktion Engine logo in header (positioned by resizedHeaderExtra)
+    if (isTracktionDevice_ && tracktionLogo_ && !tracktionLogoBounds_.isEmpty()) {
+        tracktionLogo_->drawWithin(g, tracktionLogoBounds_.toFloat(),
+                                   juce::RectanglePlacement::centred, isBypassed() ? 0.3f : 0.6f);
+    }
+
     // Custom header text for drum grid (two-color text)
     if (isDrumGrid_ && !collapsed_ && getHeaderHeight() > 0) {
         auto bounds = getLocalBounds();
@@ -756,39 +770,20 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
         return;
     }
 
-    // Content header: manufacturer / device name
-    auto headerArea = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
-    auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
-                                   : DarkTheme::getSecondaryTextColour();
-    g.setColour(textColour);
-
-    if (isDrumGrid_) {
-        // Drum grid: use Microgramma font, aligned with the header row's text start
-        g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
-        auto textArea = headerArea;
-        textArea.setLeft(headerArea.getX() + BUTTON_SIZE + 4);  // Match header text offset
-        g.drawText("MAGDA Drum Grid", textArea, juce::Justification::centredLeft);
-    } else {
+    // Content header: manufacturer / device name (only for non-internal devices)
+    if (!isInternalDevice()) {
+        auto headerArea = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
+        auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
+                                       : DarkTheme::getSecondaryTextColour();
+        g.setColour(textColour);
         g.setFont(FontManager::getInstance().getUIFont(9.0f));
         auto textArea = headerArea.reduced(2, 0);
-
-        // Draw Tracktion logo for TE built-in plugins
-        if (isTracktionDevice_ && tracktionLogo_) {
-            constexpr int logoSize = 14;
-            auto logoBounds = textArea.removeFromLeft(logoSize + 4);
-            logoBounds = logoBounds.withSizeKeepingCentre(logoSize, logoSize);
-            tracktionLogo_->drawWithin(g, logoBounds.toFloat(), juce::RectanglePlacement::centred,
-                                       isBypassed() ? 0.3f : 0.6f);
-        }
-
         juce::String headerText = device_.manufacturer + " / " + device_.name;
         g.drawText(headerText, textArea, juce::Justification::centredLeft);
     }
 }
 
 void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
-    DBG("DeviceSlotComponent::resizedContent - width=" + juce::String(getWidth()) +
-        " contentArea.width=" + juce::String(contentArea.getWidth()));
     // When collapsed or still loading, hide all content controls
     if (collapsed_ || device_.loadState != magda::DeviceLoadState::Loaded) {
         for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
@@ -824,6 +819,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             pitchShiftUI_->setVisible(false);
         if (impulseResponseUI_)
             impulseResponseUI_->setVisible(false);
+        if (utilityUI_)
+            utilityUI_->setVisible(false);
         return;
     }
 
@@ -836,13 +833,15 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     onButton_->setVisible(true);
     gainSlider_.setVisible(true);
 
-    // Content header area (manufacturer)
-    contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
+    // Content header area (manufacturer) - only for non-internal devices
+    if (!isInternalDevice())
+        contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
 
     // Check if this is an internal device with custom UI
-    if (isInternalDevice() && (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ ||
-                               eqUI_ || compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ ||
-                               phaserUI_ || filterUI_ || pitchShiftUI_ || impulseResponseUI_)) {
+    if (isInternalDevice() &&
+        (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
+         reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
+         impulseResponseUI_ || utilityUI_)) {
         // Show custom minimal UI
         if (toneGeneratorUI_) {
             toneGeneratorUI_->setBounds(contentArea.reduced(4));
@@ -902,6 +901,10 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             impulseResponseUI_->setBounds(contentArea.reduced(4));
             impulseResponseUI_->setVisible(true);
         }
+        if (utilityUI_) {
+            utilityUI_->setBounds(contentArea.reduced(4));
+            utilityUI_->setVisible(true);
+        }
 
         // Hide parameter grid and pagination
         for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
@@ -938,6 +941,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             pitchShiftUI_->setVisible(false);
         if (impulseResponseUI_)
             impulseResponseUI_->setVisible(false);
+        if (utilityUI_)
+            utilityUI_->setVisible(false);
 
         // Pagination area
         auto paginationArea = contentArea.removeFromTop(PAGINATION_HEIGHT);
@@ -1014,6 +1019,15 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     // Gain slider takes some space on the right
     gainSlider_.setBounds(headerArea.removeFromRight(70));
     headerArea.removeFromRight(4);
+
+    // Tracktion Engine logo to the left of the gain slider
+    if (isTracktionDevice_ && tracktionLogo_) {
+        constexpr int logoSize = 14;
+        tracktionLogoBounds_ =
+            headerArea.removeFromRight(logoSize + 8).withSizeKeepingCentre(logoSize, logoSize);
+    } else {
+        tracktionLogoBounds_ = {};
+    }
 
     // Name label gets the remaining left portion (handled by NodeComponent)
     // UI button sits just to the right of the name
@@ -1188,19 +1202,14 @@ void DeviceSlotComponent::onMacroLinkAmountChangedInternal(int macroIndex,
 
 void DeviceSlotComponent::onMacroNewLinkCreatedInternal(int macroIndex, magda::MacroTarget target,
                                                         float amount) {
-    DBG("onMacroNewLinkCreatedInternal: macroIndex=" << macroIndex
-                                                     << " target.paramIndex=" << target.paramIndex);
-
     magda::TrackManager::getInstance().setDeviceMacroTarget(nodePath_, macroIndex, target);
     magda::TrackManager::getInstance().setDeviceMacroLinkAmount(nodePath_, macroIndex, target,
                                                                 amount);
     updateParamModulation();
 
     // Auto-select the linked param so user can see the link and adjust amount
-    if (target.isValid()) {
-        DBG("Auto-selecting param: " << target.paramIndex);
+    if (target.isValid())
         magda::SelectionManager::getInstance().selectParam(nodePath_, target.paramIndex);
-    }
 }
 
 void DeviceSlotComponent::onMacroLinkRemovedInternal(int macroIndex, magda::MacroTarget target) {
@@ -1289,11 +1298,6 @@ void DeviceSlotComponent::updateParameterSlots() {
     // Determine which parameters to show based on visibility list
     const bool useVisibilityFilter = !device_.visibleParameters.empty();
     const int visibleCount = getVisibleParamCount();
-
-    DBG("updateParameterSlots: device="
-        << device_.name << " useVisibilityFilter=" << (useVisibilityFilter ? 1 : 0)
-        << " visibleCount=" << visibleCount << " totalParams=" << device_.parameters.size()
-        << " visibleParameters.size=" << device_.visibleParameters.size());
 
     for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
         const int slotIndex = pageOffset + i;
@@ -2003,32 +2007,23 @@ void DeviceSlotComponent::createCustomUI() {
                                                                        value);
         };
         fourOscUI_->onPluginStateChanged = [this](const juce::String& propertyId, juce::var value) {
-            DBG("FourOsc onPluginStateChanged: propertyId=" + propertyId +
-                " value=" + value.toString());
             auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine) {
-                DBG("FourOsc onPluginStateChanged: no audioEngine");
+            if (!audioEngine)
                 return;
-            }
             auto* bridge = audioEngine->getAudioBridge();
-            if (!bridge) {
-                DBG("FourOsc onPluginStateChanged: no bridge");
+            if (!bridge)
                 return;
-            }
             auto plugin = bridge->getPlugin(device_.id);
-            if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get())) {
-                auto& state = fourOsc->state;
-                DBG("FourOsc setting state property: " + propertyId + " = " + value.toString());
-                state.setProperty(juce::Identifier(propertyId), value, nullptr);
-                // Read back to verify
-                auto readBack = state.getProperty(juce::Identifier(propertyId));
-                DBG("FourOsc readback: " + propertyId + " = " + readBack.toString());
-            } else {
-                DBG("FourOsc onPluginStateChanged: plugin cast failed");
-            }
+            if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get()))
+                fourOsc->state.setProperty(juce::Identifier(propertyId), value, nullptr);
         };
         addAndMakeVisible(*fourOscUI_);
         updateCustomUI();
+        // Restore saved tab index after rebuild
+        if (pendingCustomUITabIndex_ != NO_PENDING_TAB) {
+            fourOscUI_->setCurrentTabIndex(pendingCustomUITabIndex_);
+            pendingCustomUITabIndex_ = NO_PENDING_TAB;
+        }
     } else if (device_.pluginId.equalsIgnoreCase("eq")) {
         eqUI_ = std::make_unique<EqualiserUI>();
 
@@ -2166,6 +2161,16 @@ void DeviceSlotComponent::createCustomUI() {
         impulseResponseUI_->onFileDropped = loadIR;
 
         addAndMakeVisible(*impulseResponseUI_);
+        updateCustomUI();
+    } else if (device_.pluginId.containsIgnoreCase("utility")) {
+        utilityUI_ = std::make_unique<UtilityUI>();
+        utilityUI_->onParameterChanged = [this](int paramIndex, float value) {
+            if (!nodePath_.isValid())
+                return;
+            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex,
+                                                                       value);
+        };
+        addAndMakeVisible(*utilityUI_);
         updateCustomUI();
     }
 }
@@ -2370,6 +2375,10 @@ void DeviceSlotComponent::updateCustomUI() {
             }
         }
     }
+
+    if (utilityUI_ && device_.pluginId.containsIgnoreCase("utility")) {
+        utilityUI_->updateFromParameters(device_.parameters);
+    }
 }
 
 // =============================================================================
@@ -2401,6 +2410,8 @@ void DeviceSlotComponent::setupCustomUILinking() {
         sliders = pitchShiftUI_->getLinkableSliders();
     else if (impulseResponseUI_)
         sliders = impulseResponseUI_->getLinkableSliders();
+    else if (utilityUI_)
+        sliders = utilityUI_->getLinkableSliders();
     else if (samplerUI_)
         sliders = samplerUI_->getLinkableSliders();
 

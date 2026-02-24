@@ -53,6 +53,10 @@ class FourOscUI : public juce::Component {
     // Get all linkable sliders for mod/macro wiring (in parameter-index order)
     std::vector<LinkableTextSlider*> getLinkableSliders();
 
+    // Tab index management (for saving/restoring across rebuilds)
+    int getCurrentTabIndex() const;
+    void setCurrentTabIndex(int index);
+
     void paint(juce::Graphics& g) override;
     void resized() override;
 
@@ -239,7 +243,36 @@ class FourOscUI : public juce::Component {
     // Members
     // =========================================================================
 
-    std::unique_ptr<juce::TabbedComponent> tabs_;
+    // TabbedComponent subclass that prevents layout operations (setBounds/resized)
+    // from resetting the active tab back to index 0.
+    class LayoutStableTabbedComponent : public juce::TabbedComponent {
+      public:
+        using juce::TabbedComponent::TabbedComponent;
+
+        // Guard against layout-triggered tab changes: only track user-initiated
+        // tab switches (when inLayout_ is false).
+        void currentTabChanged(int newIndex, const juce::String& /*name*/) override {
+            if (!inLayout_)
+                userTabIndex_ = newIndex;
+        }
+        void setBoundsStable(juce::Rectangle<int> bounds) {
+            inLayout_ = true;
+            int saved = userTabIndex_;
+            setBounds(bounds);
+            inLayout_ = false;
+            if (saved >= 0 && saved < getNumTabs() && getCurrentTabIndex() != saved)
+                setCurrentTabIndex(saved, false);
+        }
+        int getUserTabIndex() const {
+            return userTabIndex_;
+        }
+
+      private:
+        bool inLayout_ = false;
+        int userTabIndex_ = 0;
+    };
+
+    std::unique_ptr<LayoutStableTabbedComponent> tabs_;
     std::unique_ptr<OscTab> oscTab_;
     std::unique_ptr<FilterTab> filterTab_;
     std::unique_ptr<AmpTab> ampTab_;

@@ -435,6 +435,10 @@ te::Plugin::Ptr PluginManager::loadBuiltInPlugin(TrackId trackId, const juce::St
         plugin = edit_.getPluginCache().createNewPlugin(te::ImpulseResponsePlugin::xmlTypeName, {});
         if (plugin)
             track->pluginList.insertPlugin(plugin, -1, nullptr);
+    } else if (type.equalsIgnoreCase("utility")) {
+        plugin = edit_.getPluginCache().createNewPlugin(te::VolumeAndPanPlugin::xmlTypeName, {});
+        if (plugin)
+            track->pluginList.insertPlugin(plugin, -1, nullptr);
     }
 
     if (!plugin) {
@@ -661,18 +665,23 @@ void PluginManager::ensureVolumePluginPosition(te::AudioTrack* track) const {
 
     auto& plugins = track->pluginList;
 
-    // Find VolumeAndPanPlugin
-    te::Plugin::Ptr volPanPlugin;
+    // Use getVolumePlugin() which returns the *last* VolumeAndPanPlugin instance.
+    // This is critical when a Utility plugin (also a VolumeAndPanPlugin) is present
+    // on the track — we must only move the master fader, not the utility instance.
+    auto* volPanRaw = track->getVolumePlugin();
+    if (!volPanRaw)
+        return;
+
+    te::Plugin::Ptr volPanPlugin = volPanRaw;
     int volPanIndex = -1;
     for (int i = 0; i < plugins.size(); ++i) {
-        if (dynamic_cast<te::VolumeAndPanPlugin*>(plugins[i])) {
-            volPanPlugin = plugins[i];
+        if (plugins[i] == volPanRaw) {
             volPanIndex = i;
             break;
         }
     }
 
-    if (!volPanPlugin)
+    if (volPanIndex < 0)
         return;
 
     // Check if there are any non-utility plugins after VolumeAndPan.
@@ -1273,12 +1282,8 @@ void PluginManager::syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack) {
                 if (link.target.paramIndex >= 0 &&
                     link.target.paramIndex < static_cast<int>(params.size())) {
                     auto* param = params[static_cast<size_t>(link.target.paramIndex)];
-                    if (param) {
+                    if (param)
                         param->addModifier(*macroParam, link.amount);
-                        DBG("syncDeviceMacros: Linked macro "
-                            << i << " on device " << device.id << " to device "
-                            << link.target.deviceId << " param " << link.target.paramIndex);
-                    }
                 }
             }
         }
@@ -1881,6 +1886,13 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
                 processor = std::make_unique<ImpulseResponseProcessor>(device.id, plugin);
+            }
+        } else if (device.pluginId.containsIgnoreCase("utility")) {
+            plugin =
+                edit_.getPluginCache().createNewPlugin(te::VolumeAndPanPlugin::xmlTypeName, {});
+            if (plugin) {
+                track->pluginList.insertPlugin(plugin, -1, nullptr);
+                processor = std::make_unique<UtilityProcessor>(device.id, plugin);
             }
         }
     } else {

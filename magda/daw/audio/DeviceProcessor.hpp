@@ -346,6 +346,29 @@ class PitchShiftProcessor : public DeviceProcessor {
     float getParameterByIndex(int paramIndex) const;
 };
 
+/**
+ * @brief Processor for the Utility plugin (gain, pan, phase inversion)
+ *
+ * Parameters:
+ * - 0: Volume (slider position 0..1, displayed as dB)
+ * - 1: Pan (-1..1)
+ * - 2: Polarity (0/1, virtual — CachedValue<bool>, not automatable)
+ */
+class UtilityProcessor : public DeviceProcessor {
+  public:
+    UtilityProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    int getParameterCount() const override;
+    ParameterInfo getParameterInfo(int index) const override;
+    void populateParameters(DeviceInfo& info) const override;
+
+    void setParameterByIndex(int paramIndex, float value);
+    float getParameterByIndex(int paramIndex) const;
+
+  private:
+    te::VolumeAndPanPlugin* getVolPanPlugin() const;
+};
+
 class ImpulseResponseProcessor : public DeviceProcessor {
   public:
     ImpulseResponseProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);

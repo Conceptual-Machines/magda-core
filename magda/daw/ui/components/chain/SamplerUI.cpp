@@ -15,15 +15,14 @@ SamplerUI::SamplerUI() {
     sampleNameLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(sampleNameLabel_);
 
-    // Load button
-    loadButton_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-    loadButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-    loadButton_.onClick = [this]() {
+    // Load button (folder icon)
+    loadButton_ = std::make_unique<magda::SvgButton>("Load Sample", BinaryData::folderopen_svg,
+                                                     BinaryData::folderopen_svgSize);
+    loadButton_->onClick = [this]() {
         if (onLoadSampleRequested)
             onLoadSampleRequested();
     };
-    addAndMakeVisible(loadButton_);
+    addAndMakeVisible(*loadButton_);
 
     // --- Time slider setup helper ---
     auto setupTimeSlider = [this](LinkableTextSlider& slider, int paramIndex, double min,
@@ -746,7 +745,7 @@ void SamplerUI::resized() {
 
     // Row 1: Sample name + Load button
     auto sampleRow = area.removeFromTop(22);
-    loadButton_.setBounds(sampleRow.removeFromRight(50));
+    loadButton_->setBounds(sampleRow.removeFromRight(22));
     sampleRow.removeFromRight(4);
     sampleNameLabel_.setBounds(sampleRow);
     area.removeFromTop(4);

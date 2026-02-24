@@ -1179,20 +1179,14 @@ double PianoRollGridComponent::getNearestGridLineBeat(int mouseX) const {
 void PianoRollGridComponent::createNoteComponents() {
     auto& clipManager = ClipManager::getInstance();
 
-    DBG("createNoteComponents: clipIds_.size()=" << clipIds_.size() << ", selectedClipIds_.size()="
-                                                 << selectedClipIds_.size());
-
     // Iterate through all clips
     for (ClipId clipId : clipIds_) {
         const auto* clip = clipManager.getClip(clipId);
         if (!clip || clip->type != ClipType::MIDI) {
-            DBG("  Skipping clip " << clipId << " (null or not MIDI)");
             continue;
         }
 
         juce::Colour noteColour = getColourForClip(clipId);
-
-        DBG("  Creating notes for clip " << clipId << ": " << clip->midiNotes.size() << " notes");
 
         // Create note component for each note in this clip
         for (size_t i = 0; i < clip->midiNotes.size(); i++) {
