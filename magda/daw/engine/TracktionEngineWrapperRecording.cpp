@@ -1,8 +1,7 @@
-#include "TracktionEngineWrapper.hpp"
-
 #include "../audio/AudioBridge.hpp"
 #include "../core/ClipManager.hpp"
 #include "../core/TrackManager.hpp"
+#include "TracktionEngineWrapper.hpp"
 
 namespace magda {
 
@@ -288,7 +287,7 @@ void TracktionEngineWrapper::drainRecordingNoteQueue() {
 
     // Sample metering data for audio-recording tracks
     if (audioBridge_) {
-        auto& meteringBuffer = audioBridge_->getMeteringBuffer();
+        auto& meteringBuffer = audioBridge_->getRecordingMeteringBuffer();
         for (auto& [trackId, preview] : recordingPreviews_) {
             if (!preview.isAudioRecording)
                 continue;

@@ -512,9 +512,13 @@ void AudioSettingsDialog::onInputDeviceSelected() {
 
     enableAllChannelsOnCurrentDevice();
 
-    // Rescan TE wave devices to match new hardware
+    // Rescan TE wave devices to match new hardware.
+    // rescanWaveDeviceList() triggers an async update — flush the message loop
+    // so the wave device list is rebuilt before we enable devices and update UI.
     if (teDeviceManager_) {
         teDeviceManager_->rescanWaveDeviceList();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
+
         for (auto* dev : teDeviceManager_->getWaveInputDevices())
             if (!dev->isEnabled())
                 dev->setEnabled(true);
@@ -587,9 +591,13 @@ void AudioSettingsDialog::onOutputDeviceSelected() {
 
     enableAllChannelsOnCurrentDevice();
 
-    // Rescan TE wave devices to match new hardware
+    // Rescan TE wave devices to match new hardware.
+    // rescanWaveDeviceList() triggers an async update — flush the message loop
+    // so the wave device list is rebuilt before we enable devices and update UI.
     if (teDeviceManager_) {
         teDeviceManager_->rescanWaveDeviceList();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
+
         for (auto* dev : teDeviceManager_->getWaveOutputDevices())
             if (!dev->isEnabled())
                 dev->setEnabled(true);

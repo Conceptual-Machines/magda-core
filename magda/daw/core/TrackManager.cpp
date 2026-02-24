@@ -642,6 +642,11 @@ void TrackManager::setTrackMidiInput(TrackId trackId, const juce::String& device
     if (!deviceId.isEmpty() && !track->audioInputDevice.isEmpty()) {
         DBG("  -> Clearing audio input (mutually exclusive with MIDI)");
         setTrackAudioInput(trackId, "");
+        // Re-fetch: setTrackAudioInput triggers notifyTrackPropertyChanged which may
+        // cause listeners to modify the tracks_ vector, invalidating our pointer.
+        track = getTrack(trackId);
+        if (!track)
+            return;
     }
 
     // Update track state
@@ -700,6 +705,11 @@ void TrackManager::setTrackAudioInput(TrackId trackId, const juce::String& devic
     if (!deviceId.isEmpty() && !track->midiInputDevice.isEmpty()) {
         DBG("  -> Clearing MIDI input (mutually exclusive with audio)");
         setTrackMidiInput(trackId, "");
+        // Re-fetch: setTrackMidiInput triggers notifyTrackPropertyChanged which may
+        // cause listeners to modify the tracks_ vector, invalidating our pointer.
+        track = getTrack(trackId);
+        if (!track)
+            return;
     }
 
     // Update track state

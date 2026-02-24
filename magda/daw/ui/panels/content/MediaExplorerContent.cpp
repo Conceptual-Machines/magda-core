@@ -1,6 +1,7 @@
 #include "MediaExplorerContent.hpp"
 
 #include "../../../core/Config.hpp"
+#include "../../../project/ProjectManager.hpp"
 #include "../../components/common/SvgButton.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FileBrowserLookAndFeel.hpp"
@@ -129,9 +130,17 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         projectButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         projectButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         projectButton_->onClick = [this]() {
+            auto& pm = magda::ProjectManager::getInstance();
+            // Prefer the media directory (works for both saved and unsaved projects)
+            auto projectDir = pm.getMediaDirectory();
+            // Fall back to project file's parent for saved projects without media dir
+            if (!projectDir.isDirectory())
+                projectDir = pm.getCurrentProjectFile().getParentDirectory();
+            if (!projectDir.isDirectory())
+                return;
             selectButton(projectButton_.get());
             if (onLocationSelected)
-                onLocationSelected(juce::File());
+                onLocationSelected(projectDir);
         };
         addAndMakeVisible(*projectButton_);
 
@@ -159,20 +168,21 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         };
         addAndMakeVisible(*diskButton_);
 
-        libraryButton_ = std::make_unique<magda::SvgButton>("Library", BinaryData::library_svg,
-                                                            BinaryData::library_svgSize);
-        libraryButton_->setToggleable(true);
-        libraryButton_->setClickingTogglesState(true);
-        libraryButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        libraryButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        libraryButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        libraryButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        libraryButton_->onClick = [this]() {
-            selectButton(libraryButton_.get());
-            if (onLocationSelected)
-                onLocationSelected(juce::File());
-        };
-        addAndMakeVisible(*libraryButton_);
+        // TODO: Library/DB button — uncomment when database feature is implemented
+        // libraryButton_ = std::make_unique<magda::SvgButton>("Library", BinaryData::database_svg,
+        //                                                     BinaryData::database_svgSize);
+        // libraryButton_->setToggleable(true);
+        // libraryButton_->setClickingTogglesState(true);
+        // libraryButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+        // libraryButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        // libraryButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        // libraryButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        // libraryButton_->onClick = [this]() {
+        //     selectButton(libraryButton_.get());
+        //     if (onLocationSelected)
+        //         onLocationSelected(juce::File());
+        // };
+        // addAndMakeVisible(*libraryButton_);
 
         // Favorites viewport for scrolling
         favoritesContent_ = std::make_unique<juce::Component>();
@@ -216,8 +226,9 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         diskButton_->setBounds(centerX, bounds.getY(), iconSize, iconSize);
         bounds.removeFromTop(iconSize + padding);
 
-        libraryButton_->setBounds(centerX, bounds.getY(), iconSize, iconSize);
-        bounds.removeFromTop(iconSize + padding);
+        // TODO: Library/DB button layout — uncomment when database feature is implemented
+        // libraryButton_->setBounds(centerX, bounds.getY(), iconSize, iconSize);
+        // bounds.removeFromTop(iconSize + padding);
 
         // Separator
         separatorY_ = bounds.getY();
@@ -310,10 +321,11 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
             diskButton_->setToggleState(false, juce::dontSendNotification);
             diskButton_->setActive(false);
         }
-        if (libraryButton_.get() != selected) {
-            libraryButton_->setToggleState(false, juce::dontSendNotification);
-            libraryButton_->setActive(false);
-        }
+        // TODO: Library/DB button — uncomment when database feature is implemented
+        // if (libraryButton_.get() != selected) {
+        //     libraryButton_->setToggleState(false, juce::dontSendNotification);
+        //     libraryButton_->setActive(false);
+        // }
 
         selected->setToggleState(true, juce::dontSendNotification);
         selected->setActive(true);
@@ -321,7 +333,8 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
 
     std::unique_ptr<magda::SvgButton> projectButton_;
     std::unique_ptr<magda::SvgButton> diskButton_;
-    std::unique_ptr<magda::SvgButton> libraryButton_;
+    // TODO: Library/DB button — uncomment when database feature is implemented
+    // std::unique_ptr<magda::SvgButton> libraryButton_;
 
     static constexpr int kMaxFavorites = 8;
 

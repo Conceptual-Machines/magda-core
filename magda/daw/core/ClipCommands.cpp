@@ -9,6 +9,7 @@
 #include "../audio/InstrumentRackManager.hpp"
 #include "../audio/MagdaSamplerPlugin.hpp"
 #include "../engine/TracktionEngineWrapper.hpp"
+#include "../project/ProjectManager.hpp"
 #include "Config.hpp"
 #include "TrackManager.hpp"
 
@@ -735,7 +736,10 @@ void RenderClipCommand::execute() {
     if (!configFolder.empty()) {
         rendersDir = juce::File(configFolder);
     } else {
-        rendersDir = sourceFile.getParentDirectory().getChildFile("renders");
+        auto projRendersDir = ProjectManager::getInstance().getRendersDirectory();
+        rendersDir = projRendersDir != juce::File()
+                         ? projRendersDir
+                         : sourceFile.getParentDirectory().getChildFile("renders");
     }
     rendersDir.createDirectory();
 
@@ -938,7 +942,10 @@ void RenderTimeSelectionCommand::execute() {
         if (!configFolder.empty()) {
             rendersDir = juce::File(configFolder);
         } else {
-            rendersDir = sourceFile.getParentDirectory().getChildFile("renders");
+            auto projRendersDir = ProjectManager::getInstance().getRendersDirectory();
+            rendersDir = projRendersDir != juce::File()
+                             ? projRendersDir
+                             : sourceFile.getParentDirectory().getChildFile("renders");
         }
         rendersDir.createDirectory();
 
@@ -1328,19 +1335,21 @@ void BounceInPlaceCommand::execute() {
 
     // Determine output file path
     auto configFolder = Config::getInstance().getRenderFolder();
-    juce::File rendersDir;
+    juce::File bouncesDir;
     if (!configFolder.empty()) {
-        rendersDir = juce::File(configFolder);
+        bouncesDir = juce::File(configFolder);
     } else {
-        // Use project directory renders subfolder
-        rendersDir = edit->editFileRetriever().getParentDirectory().getChildFile("renders");
+        auto projBouncesDir = ProjectManager::getInstance().getBouncesDirectory();
+        bouncesDir = projBouncesDir != juce::File()
+                         ? projBouncesDir
+                         : edit->editFileRetriever().getParentDirectory().getChildFile("bounces");
     }
-    rendersDir.createDirectory();
+    bouncesDir.createDirectory();
 
     juce::String timestamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S");
     juce::String safeName = clip->name.isNotEmpty() ? clip->name : "clip";
     safeName = safeName.replaceCharacters(" /\\:", "____");
-    renderedFile_ = rendersDir.getChildFile(safeName + "_bounced_" + timestamp + ".wav");
+    renderedFile_ = bouncesDir.getChildFile(safeName + "_bounced_" + timestamp + ".wav");
 
     // Stop transport and free playback context
     auto& transport = edit->getTransport();
@@ -1516,18 +1525,21 @@ void BounceToNewTrackCommand::execute() {
 
     // Determine output file path
     auto configFolder = Config::getInstance().getRenderFolder();
-    juce::File rendersDir;
+    juce::File bouncesDir;
     if (!configFolder.empty()) {
-        rendersDir = juce::File(configFolder);
+        bouncesDir = juce::File(configFolder);
     } else {
-        rendersDir = edit->editFileRetriever().getParentDirectory().getChildFile("renders");
+        auto projBouncesDir = ProjectManager::getInstance().getBouncesDirectory();
+        bouncesDir = projBouncesDir != juce::File()
+                         ? projBouncesDir
+                         : edit->editFileRetriever().getParentDirectory().getChildFile("bounces");
     }
-    rendersDir.createDirectory();
+    bouncesDir.createDirectory();
 
     juce::String timestamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S");
     juce::String safeName = clip->name.isNotEmpty() ? clip->name : "clip";
     safeName = safeName.replaceCharacters(" /\\:", "____");
-    renderedFile_ = rendersDir.getChildFile(safeName + "_bounce_" + timestamp + ".wav");
+    renderedFile_ = bouncesDir.getChildFile(safeName + "_bounce_" + timestamp + ".wav");
 
     // Stop transport and free playback context
     auto& transport = edit->getTransport();

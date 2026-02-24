@@ -296,6 +296,17 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
         return meteringBuffer_;
     }
 
+    /**
+     * @brief Get the dedicated recording metering buffer
+     *
+     * Separate from the main metering buffer so that UI meter consumers
+     * (TrackHeadersPanel, MixerView) don't drain data before the recording
+     * preview can read it.
+     */
+    MeteringBuffer& getRecordingMeteringBuffer() {
+        return recordingMeteringBuffer_;
+    }
+
     // =========================================================================
     // Parameter Queue
     // =========================================================================
@@ -670,6 +681,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
 
     // Lock-free communication buffers
     MeteringBuffer meteringBuffer_;
+    MeteringBuffer recordingMeteringBuffer_;
 
     // Phase 1 refactoring: Pure data managers (extracted from AudioBridge)
     TransportStateManager transportState_;

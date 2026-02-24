@@ -143,18 +143,13 @@ void TracktionEngineWrapper::configureAudioDevices() {
         DBG("Found preferred output device: " << preferredOutputDevice);
     }
 
-    // Enable ALL hardware channels — Tracktion expects every hardware channel
-    // in the audio callback. Channel selection is handled at the TE level.
-    if (auto* device = juceDeviceManager.getCurrentAudioDevice()) {
-        setup.inputChannels.clear();
-        setup.inputChannels.setRange(0, device->getInputChannelNames().size(), true);
-        setup.outputChannels.clear();
-        setup.outputChannels.setRange(0, device->getOutputChannelNames().size(), true);
-    }
+    // Apply the device setup — let JUCE pick default channels for the new device,
+    // then we'll enable all channels after the device has opened.
+    setup.useDefaultInputChannels = true;
+    setup.useDefaultOutputChannels = true;
 
-    // Apply the device setup
     auto result = juceDeviceManager.setAudioDeviceSetup(setup, true);
-    // Flush pending async updates so wave device list rebuilds before audio callback fires (#719)
+    // Flush pending async updates so the new device is fully active
     juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
     if (result.isEmpty()) {
         DBG("Successfully selected preferred devices - Input: "
@@ -162,6 +157,24 @@ void TracktionEngineWrapper::configureAudioDevices() {
             << " ch), Output: " << setup.outputDeviceName << " (" << preferredOutputs << " ch)");
     } else {
         DBG("Failed to select preferred devices: " << result);
+    }
+
+    // Enable ALL hardware channels on the NEW device — Tracktion expects every
+    // hardware channel in the audio callback. We must read channel count from
+    // the new device, not the old one.
+    // Note: setAudioDeviceSetup triggers TE's changeListenerCallback which calls
+    // saveSettings() + rescanWaveDeviceList() automatically. The flush processes
+    // the async rescan so wave devices are rebuilt before we configure them.
+    if (auto* device = juceDeviceManager.getCurrentAudioDevice()) {
+        auto newSetup = juceDeviceManager.getAudioDeviceSetup();
+        newSetup.inputChannels.clear();
+        newSetup.inputChannels.setRange(0, device->getInputChannelNames().size(), true);
+        newSetup.outputChannels.clear();
+        newSetup.outputChannels.setRange(0, device->getOutputChannelNames().size(), true);
+        newSetup.useDefaultInputChannels = false;
+        newSetup.useDefaultOutputChannels = false;
+        juceDeviceManager.setAudioDeviceSetup(newSetup, true);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
     }
 
     // Apply saved channel preferences at the TE wave device level

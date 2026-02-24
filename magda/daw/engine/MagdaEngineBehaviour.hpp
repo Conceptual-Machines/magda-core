@@ -5,6 +5,7 @@
 #include "../audio/MagdaSamplerPlugin.hpp"
 #include "../audio/MidiReceivePlugin.hpp"
 #include "../audio/SidechainMonitorPlugin.hpp"
+#include "../project/ProjectManager.hpp"
 
 namespace magda {
 
@@ -29,6 +30,38 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
     // stay active. Track output is still silenced by TrackMutingNode.
     bool shouldProcessMutedTracks() override {
         return true;
+    }
+
+    juce::File getDefaultFolderForAudioRecordings(tracktion::Edit&) override {
+        auto recDir = ProjectManager::getInstance().getRecordingsDirectory();
+        if (recDir != juce::File()) {
+            recDir.createDirectory();
+            return recDir;
+        }
+        return {};
+    }
+
+    // Return a full file path for new recordings — this has higher priority than
+    // the %projectdir% pattern expansion, which can be overridden by editFileRetriever.
+    juce::File getFileForNewAudioRecording(tracktion::Track& track,
+                                           const juce::String& fileExtension) override {
+        auto recDir = ProjectManager::getInstance().getRecordingsDirectory();
+        if (recDir == juce::File())
+            return {};
+
+        recDir.createDirectory();
+        auto now = juce::Time::getCurrentTime();
+        auto date = juce::String(now.getDayOfMonth()) +
+                    juce::Time::getMonthName(now.getMonth(), true) + juce::String(now.getYear());
+        auto time = juce::String::formatted("%d%02d%02d", now.getHours(), now.getMinutes(),
+                                            now.getSeconds());
+
+        for (int take = 1;; ++take) {
+            auto name = track.getName() + "_" + date + "_" + time + "_" + juce::String(take);
+            auto file = recDir.getChildFile(name + fileExtension);
+            if (!file.exists())
+                return file;
+        }
     }
 
     tracktion::Plugin::Ptr createCustomPlugin(tracktion::PluginCreationInfo info) override {

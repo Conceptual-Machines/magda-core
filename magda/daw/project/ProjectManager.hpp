@@ -182,6 +182,38 @@ class ProjectManager {
         return lastError_;
     }
 
+    // ========================================================================
+    // Media Directories
+    // ========================================================================
+
+    /**
+     * @brief Get the project media directory root
+     */
+    juce::File getMediaDirectory() const {
+        return mediaDirectory_;
+    }
+
+    /**
+     * @brief Get the recordings subdirectory
+     */
+    juce::File getRecordingsDirectory() const;
+
+    /**
+     * @brief Get the renders subdirectory
+     */
+    juce::File getRendersDirectory() const;
+
+    /**
+     * @brief Get the bounces subdirectory
+     */
+    juce::File getBouncesDirectory() const;
+
+    /**
+     * @brief Delete temp media directories older than 7 days.
+     * Call once at app launch.
+     */
+    static void cleanupStaleTempDirectories();
+
   private:
     ProjectManager();
     ~ProjectManager();
@@ -190,6 +222,7 @@ class ProjectManager {
 
     ProjectInfo currentProject_;
     juce::File currentFile_;
+    juce::File mediaDirectory_;
     bool isDirty_ = false;
     bool isProjectOpen_ = false;
 
@@ -202,6 +235,21 @@ class ProjectManager {
     void notifyProjectSaved();
     void notifyProjectClosed();
     void notifyDirtyStateChanged();
+
+    /**
+     * @brief Create a temp media directory for unsaved projects
+     */
+    void createTempMediaDirectory();
+
+    /**
+     * @brief Ensure recordings/, renders/, bounces/ subdirectories exist
+     */
+    static void ensureMediaSubdirectories(const juce::File& mediaRoot);
+
+    /**
+     * @brief Migrate media files from old directory to new, updating clip paths
+     */
+    void migrateMediaFiles(const juce::File& oldDir, const juce::File& newDir);
 
     /**
      * @brief Show unsaved changes dialog and ask whether to proceed

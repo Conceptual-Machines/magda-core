@@ -152,16 +152,17 @@ void RoutingSelector::showPopupMenu() {
         }
     }
 
+    juce::Component::SafePointer<RoutingSelector> safeThis(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this).withMinimumWidth(100),
-                       [this](int result) {
-                           if (result == 0) {
-                               return;  // Dismissed
+                       [safeThis](int result) {
+                           if (safeThis == nullptr || result == 0) {
+                               return;  // Dismissed or component destroyed
                            }
                            if (result > 0) {
                                // Selection changed
-                               setSelectedId(result);
-                               if (onSelectionChanged) {
-                                   onSelectionChanged(result);
+                               safeThis->setSelectedId(result);
+                               if (safeThis->onSelectionChanged) {
+                                   safeThis->onSelectionChanged(result);
                                }
                            }
                        });
