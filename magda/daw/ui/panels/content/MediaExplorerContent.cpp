@@ -1,6 +1,7 @@
 #include "MediaExplorerContent.hpp"
 
 #include "../../../core/Config.hpp"
+#include "../../../project/ProjectManager.hpp"
 #include "../../components/common/SvgButton.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FileBrowserLookAndFeel.hpp"
@@ -129,9 +130,13 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         projectButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         projectButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         projectButton_->onClick = [this]() {
+            auto projectDir =
+                magda::ProjectManager::getInstance().getCurrentProjectFile().getParentDirectory();
+            if (!projectDir.isDirectory())
+                return;
             selectButton(projectButton_.get());
             if (onLocationSelected)
-                onLocationSelected(juce::File());
+                onLocationSelected(projectDir);
         };
         addAndMakeVisible(*projectButton_);
 
