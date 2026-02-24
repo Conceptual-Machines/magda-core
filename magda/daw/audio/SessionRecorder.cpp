@@ -26,6 +26,19 @@ void SessionRecorder::setArmed(bool armed) {
     std::cout << "[SessionRecorder] " << (armed ? "ARMED" : "DISARMED") << std::endl;
 }
 
+void SessionRecorder::updatePreviews() {
+    if (!armed_ || !recordingPreviews_ || activeRecordings_.empty())
+        return;
+
+    double currentTime = edit_.getTransport().position.get().inSeconds();
+    for (const auto& [clipId, rec] : activeRecordings_) {
+        auto it = recordingPreviews_->find(rec.trackId);
+        if (it != recordingPreviews_->end()) {
+            it->second.currentLength = currentTime - rec.arrangementStartTime;
+        }
+    }
+}
+
 void SessionRecorder::ensureSnapshotTaken() {
     if (!snapshotTaken_) {
         arrangementSnapshotBeforeRecord_ = ClipManager::getInstance().getArrangementClips();
@@ -67,6 +80,16 @@ void SessionRecorder::clipPlaybackStateChanged(ClipId clipId) {
         rec.arrangementStartTime = currentTime;
         activeRecordings_[clipId] = rec;
 
+        // Create recording preview for real-time UI
+        if (recordingPreviews_) {
+            RecordingPreview preview;
+            preview.trackId = clip->trackId;
+            preview.startTime = currentTime;
+            preview.currentLength = 0.0;
+            preview.isAudioRecording = (clip->type == ClipType::Audio);
+            (*recordingPreviews_)[clip->trackId] = preview;
+        }
+
         std::cout << "[SessionRecorder]   started recording clipId=" << clipId
                   << " trackId=" << clip->trackId << " arrangementStartTime=" << currentTime << "s"
                   << std::endl;
@@ -76,6 +99,8 @@ void SessionRecorder::clipPlaybackStateChanged(ClipId clipId) {
         if (it != activeRecordings_.end()) {
             std::cout << "[SessionRecorder]   clip stopped, finalizing at " << currentTime << "s"
                       << std::endl;
+            if (recordingPreviews_)
+                recordingPreviews_->erase(it->second.trackId);
             finalizeRecording(it->second, currentTime);
             activeRecordings_.erase(it);
         }
@@ -193,6 +218,10 @@ void SessionRecorder::commitIfNeeded() {
               << createdArrangementClipIds_.size() << " finalized"
               << " transportPos=" << currentTime << std::endl;
 
+    // Clear recording previews
+    if (recordingPreviews_)
+        recordingPreviews_->clear();
+
     // Finalize any still-active recordings
     for (const auto& [clipId, rec] : activeRecordings_) {
         finalizeRecording(rec, currentTime);
@@ -206,6 +235,10 @@ void SessionRecorder::commitIfNeeded() {
         UndoManager::getInstance().executeCommand(std::move(cmd));
         std::cout << "[SessionRecorder] committed " << createdArrangementClipIds_.size()
                   << " arrangement clip(s) to undo stack" << std::endl;
+
+        // Rebuild the audio graph so new arrangement clips are audible immediately
+        if (auto* ctx = edit_.getCurrentPlaybackContext())
+            ctx->reallocate();
     }
 
     arrangementSnapshotBeforeRecord_.clear();

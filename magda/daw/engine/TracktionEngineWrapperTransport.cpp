@@ -301,6 +301,10 @@ void TracktionEngineWrapper::updateTriggerState() {
     if (!recordingPreviews_.empty()) {
         drainRecordingNoteQueue();
     }
+
+    // Update session recording previews (grow length to match transport)
+    if (sessionRecorder_)
+        sessionRecorder_->updatePreviews();
 }
 
 // Metronome/click track methods

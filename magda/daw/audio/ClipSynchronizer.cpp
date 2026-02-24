@@ -602,17 +602,20 @@ void ClipSynchronizer::removeSessionClipFromSlot(ClipId clipId) {
 }
 
 void ClipSynchronizer::launchSessionClip(ClipId clipId) {
+    std::cout << "[ClipSynchronizer] launchSessionClip clipId=" << clipId << std::endl;
     auto* teClip = getSessionTeClip(clipId);
     if (!teClip) {
-        DBG("ClipSynchronizer::launchSessionClip: TE clip not found for clip " << clipId);
+        std::cout << "[ClipSynchronizer]   TE clip NOT FOUND for clip " << clipId << std::endl;
         return;
     }
 
     auto launchHandle = teClip->getLaunchHandle();
     if (!launchHandle) {
-        DBG("ClipSynchronizer::launchSessionClip: No LaunchHandle for clip " << clipId);
+        std::cout << "[ClipSynchronizer]   No LaunchHandle for clip " << clipId << std::endl;
         return;
     }
+    std::cout << "[ClipSynchronizer]   LaunchHandle status="
+              << (int)launchHandle->getPlayingStatus() << std::endl;
 
     // Set looping before play
     const auto* clip = ClipManager::getInstance().getClip(clipId);
@@ -663,22 +666,35 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId) {
     // Switch track to slot mode before launching so the arrangement is
     // already muted when the slot starts — prevents a brief audio overlap.
     if (clip) {
-        if (auto* audioTrack = trackController_.getAudioTrack(clip->trackId))
+        if (auto* audioTrack = trackController_.getAudioTrack(clip->trackId)) {
+            std::cout << "[ClipSynchronizer]   setting playSlotClips=true on track "
+                      << audioTrack->getName() << std::endl;
             audioTrack->playSlotClips = true;
+        }
     }
 
+    std::cout << "[ClipSynchronizer]   calling launchHandle->play()" << std::endl;
     launchHandle->play(std::nullopt);
+    std::cout << "[ClipSynchronizer]   after play(), status="
+              << (int)launchHandle->getPlayingStatus() << std::endl;
 }
 
 void ClipSynchronizer::stopSessionClip(ClipId clipId) {
+    std::cout << "[ClipSynchronizer] stopSessionClip clipId=" << clipId << std::endl;
     auto* teClip = getSessionTeClip(clipId);
-    if (!teClip)
+    if (!teClip) {
+        std::cout << "[ClipSynchronizer]   TE clip NOT FOUND" << std::endl;
         return;
+    }
 
     auto launchHandle = teClip->getLaunchHandle();
-    if (!launchHandle)
+    if (!launchHandle) {
+        std::cout << "[ClipSynchronizer]   No LaunchHandle" << std::endl;
         return;
+    }
 
+    std::cout << "[ClipSynchronizer]   stopping, status before="
+              << (int)launchHandle->getPlayingStatus() << std::endl;
     launchHandle->stop(std::nullopt);
 
     const auto* clip = ClipManager::getInstance().getClip(clipId);

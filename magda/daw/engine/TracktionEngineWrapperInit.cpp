@@ -299,6 +299,7 @@ void TracktionEngineWrapper::createEditAndBridges() {
     if (!isHeadless) {
         sessionScheduler_ = std::make_unique<SessionClipScheduler>(*audioBridge_, *currentEdit_);
         sessionRecorder_ = std::make_unique<SessionRecorder>(*currentEdit_);
+        sessionRecorder_->setRecordingPreviews(&recordingPreviews_);
         pluginWindowManager_ = std::make_unique<PluginWindowManager>(*engine_, *currentEdit_);
         audioBridge_->setPluginWindowManager(pluginWindowManager_.get());
     }

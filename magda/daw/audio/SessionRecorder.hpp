@@ -9,6 +9,7 @@
 #include "../core/ClipManager.hpp"
 #include "../core/ClipTypes.hpp"
 #include "../core/TrackTypes.hpp"
+#include "RecordingNoteQueue.hpp"
 
 namespace magda {
 
@@ -32,6 +33,14 @@ class SessionRecorder : public ClipManagerListener {
     bool isArmed() const {
         return armed_;
     }
+
+    /** Set the recording previews map (owned by TracktionEngineWrapper). */
+    void setRecordingPreviews(std::unordered_map<TrackId, RecordingPreview>* previews) {
+        recordingPreviews_ = previews;
+    }
+
+    /** Update preview lengths to match current transport position. Call each frame. */
+    void updatePreviews();
 
     /**
      * @brief Finalize active recordings and push undo command.
@@ -61,6 +70,7 @@ class SessionRecorder : public ClipManagerListener {
     std::unordered_map<ClipId, ActiveRecording> activeRecordings_;
     std::vector<ClipInfo> arrangementSnapshotBeforeRecord_;
     std::vector<ClipId> createdArrangementClipIds_;
+    std::unordered_map<TrackId, RecordingPreview>* recordingPreviews_ = nullptr;
 };
 
 }  // namespace magda
