@@ -524,7 +524,11 @@ int DeviceSlotComponent::getCustomUITabIndex() const {
 }
 
 void DeviceSlotComponent::setCustomUITabIndex(int index) {
-    pendingCustomUITabIndex_ = index;
+    if (fourOscUI_) {
+        fourOscUI_->setCurrentTabIndex(index);
+    } else {
+        pendingCustomUITabIndex_ = index;
+    }
 }
 
 int DeviceSlotComponent::getPreferredWidth() const {
