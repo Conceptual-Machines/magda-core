@@ -1483,8 +1483,7 @@ void DeviceSlotComponent::paramSelectionChanged(const magda::ParamSelection& sel
 void DeviceSlotComponent::mouseDown(const juce::MouseEvent& e) {
     // Right-click context menu
     if (e.mods.isPopupMenu()) {
-        // Fall through to base class for right-click handling
-        NodeComponent::mouseDown(e);
+        showContextMenu();
         return;
     }
 
@@ -1545,6 +1544,39 @@ void DeviceSlotComponent::showMultiOutMenu() {
             tm.deactivateMultiOutPair(trackId, deviceId, pairIndex);
         } else {
             tm.activateMultiOutPair(trackId, deviceId, pairIndex);
+        }
+    });
+}
+
+// =============================================================================
+// Context Menu
+// =============================================================================
+
+void DeviceSlotComponent::showContextMenu() {
+    juce::PopupMenu menu;
+    menu.addItem(1, "Add to New Rack");
+    menu.addSeparator();
+    menu.addItem(100, "Delete");
+
+    auto safeThis = juce::Component::SafePointer<DeviceSlotComponent>(this);
+    auto path = nodePath_;
+    auto callback = onDeviceDeleted;
+
+    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, path, callback](int result) {
+        if (result == 0)
+            return;
+
+        if (result == 1) {
+            // Add to New Rack
+            auto& tm = magda::TrackManager::getInstance();
+            tm.wrapDeviceInRackByPath(path);
+        } else if (result == 100) {
+            // Delete — same deferred logic as onDeleteClicked
+            juce::MessageManager::callAsync([path, callback]() {
+                magda::TrackManager::getInstance().removeDeviceFromChainByPath(path);
+                if (callback)
+                    callback();
+            });
         }
     });
 }

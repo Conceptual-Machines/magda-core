@@ -221,6 +221,12 @@ class TrackManager {
     void setDeviceBypassed(TrackId trackId, DeviceId deviceId, bool bypassed);
     DeviceInfo* getDevice(TrackId trackId, DeviceId deviceId);
 
+    // Wrap a device in a new rack (device moves into the rack's first chain)
+    RackId wrapDeviceInRack(TrackId trackId, DeviceId deviceId,
+                            const juce::String& rackName = "Rack");
+    RackId wrapDeviceInRackByPath(const ChainNodePath& devicePath,
+                                  const juce::String& rackName = "Rack");
+
     // Rack management on track
     RackId addRackToTrack(TrackId trackId, const juce::String& name = "Rack");
     void removeRackFromTrack(TrackId trackId, RackId rackId);
