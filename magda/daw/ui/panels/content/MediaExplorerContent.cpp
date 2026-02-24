@@ -130,8 +130,12 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         projectButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         projectButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         projectButton_->onClick = [this]() {
-            auto projectDir =
-                magda::ProjectManager::getInstance().getCurrentProjectFile().getParentDirectory();
+            auto& pm = magda::ProjectManager::getInstance();
+            // Prefer the media directory (works for both saved and unsaved projects)
+            auto projectDir = pm.getMediaDirectory();
+            // Fall back to project file's parent for saved projects without media dir
+            if (!projectDir.isDirectory())
+                projectDir = pm.getCurrentProjectFile().getParentDirectory();
             if (!projectDir.isDirectory())
                 return;
             selectButton(projectButton_.get());

@@ -29,6 +29,11 @@ ProjectManager::ProjectManager() {
     // Initialize with default project info
     currentProject_.name = "Untitled";
     currentProject_.version = "1.0.0";
+
+    // Create temp media directory so recordings/renders have a home even before
+    // the user explicitly creates or saves a project.
+    createTempMediaDirectory();
+    ensureMediaSubdirectories(mediaDirectory_);
 }
 
 ProjectManager::~ProjectManager() {

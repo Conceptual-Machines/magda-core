@@ -888,8 +888,11 @@ void TrackInspector::populateRoutingSelectors() {
             // Map to specific TE wave device name
             auto it = inputChannelMapping_.find(selectedId);
             if (it != inputChannelMapping_.end()) {
-                DBG("  -> mapped to device: '" << it->second << "'");
-                magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, it->second);
+                // Copy the string — the map can be repopulated during setTrackAudioInput
+                // (via notifyTrackPropertyChanged → updateRoutingSelectorsFromTrack)
+                juce::String deviceName = it->second;
+                DBG("  -> mapped to device: '" << deviceName << "'");
+                magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, deviceName);
             } else {
                 DBG("  -> no mapping found, using default");
                 magda::TrackManager::getInstance().setTrackAudioInput(selectedTrackId_, "default");
