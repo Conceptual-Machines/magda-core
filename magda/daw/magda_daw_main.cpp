@@ -11,6 +11,7 @@
 #include "core/ModulatorEngine.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
+#include "project/ProjectManager.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/windows/MainWindow.hpp"
@@ -57,6 +58,9 @@ class MagdaDAWApplication : public JUCEApplication {
         }
 
         std::cout << "✓ Audio engine initialized" << std::endl;
+
+        // 3b. Clean up stale temp media directories from previous sessions
+        magda::ProjectManager::cleanupStaleTempDirectories();
 
         // 4. Create main window with full UI (pass the audio engine)
         mainWindow_ = std::make_unique<magda::MainWindow>(daw_engine_.get());

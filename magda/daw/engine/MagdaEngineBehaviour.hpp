@@ -5,6 +5,7 @@
 #include "../audio/MagdaSamplerPlugin.hpp"
 #include "../audio/MidiReceivePlugin.hpp"
 #include "../audio/SidechainMonitorPlugin.hpp"
+#include "../project/ProjectManager.hpp"
 
 namespace magda {
 
@@ -29,6 +30,15 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
     // stay active. Track output is still silenced by TrackMutingNode.
     bool shouldProcessMutedTracks() override {
         return true;
+    }
+
+    juce::File getDefaultFolderForAudioRecordings(tracktion::Edit&) override {
+        auto recDir = ProjectManager::getInstance().getRecordingsDirectory();
+        if (recDir != juce::File()) {
+            recDir.createDirectory();
+            return recDir;
+        }
+        return {};
     }
 
     tracktion::Plugin::Ptr createCustomPlugin(tracktion::PluginCreationInfo info) override {
