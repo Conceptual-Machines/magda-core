@@ -30,7 +30,7 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
     const juce::CommandID allCommands[] = {
         // Edit menu
         undo, redo, cut, copy, paste, duplicate, deleteCmd, selectAll, splitOrTrim, joinClips,
-        renderClip, renderTimeSelection,
+        renderClip, renderTimeSelection, setLoopFromClip,
         // File menu
         newProject, openProject, saveProject, saveProjectAs, exportAudio,
         // Transport
@@ -112,6 +112,13 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             result.setInfo("Render Time Selection",
                            "Consolidate time selection to a single clip per track", "Edit", 0);
             result.addDefaultKeypress('b', juce::ModifierKeys::commandModifier |
+                                               juce::ModifierKeys::shiftModifier);
+            break;
+
+        case setLoopFromClip:
+            result.setInfo("Set Loop from Clip", "Set transport loop to selected clip bounds",
+                           "Edit", 0);
+            result.addDefaultKeypress('l', juce::ModifierKeys::commandModifier |
                                                juce::ModifierKeys::shiftModifier);
             break;
 
@@ -730,6 +737,18 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     const auto& newIds = cmdPtr->getNewClipIds();
                     std::unordered_set<ClipId> newSelection(newIds.begin(), newIds.end());
                     selectionManager.selectClips(newSelection);
+                }
+            }
+            return true;
+        }
+
+        case setLoopFromClip: {
+            ClipId selectedClipId = selectionManager.getSelectedClip();
+            if (selectedClipId != INVALID_CLIP_ID) {
+                const auto* clip = clipManager.getClip(selectedClipId);
+                if (clip && mainView) {
+                    mainView->getTimelineController().dispatch(
+                        SetLoopRegionEvent{clip->startTime, clip->getEndTime()});
                 }
             }
             return true;

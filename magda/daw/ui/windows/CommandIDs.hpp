@@ -24,6 +24,7 @@ enum {
     joinClips = 0x1009,    // Cmd+J: join two adjacent clips into one
     renderClip = 0x100A,   // Cmd+B: render selected clips
     renderTimeSelection = 0x100B,  // Cmd+Shift+B: consolidate time selection to audio
+    setLoopFromClip = 0x100C,      // Cmd+Shift+L: set loop region to selected clip bounds
 
     // Transport menu
     play = 0x2000,
