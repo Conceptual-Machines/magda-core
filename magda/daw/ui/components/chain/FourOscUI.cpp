@@ -11,7 +11,7 @@ namespace magda::daw::ui {
 // =============================================================================
 
 FourOscUI::FourOscUI() {
-    tabs_ = std::make_unique<juce::TabbedComponent>(juce::TabbedButtonBar::TabsAtTop);
+    tabs_ = std::make_unique<StableTabbedComponent>(juce::TabbedButtonBar::TabsAtTop);
     tabs_->setTabBarDepth(20);
 
     auto tabBg = DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f);
@@ -50,6 +50,15 @@ void FourOscUI::updatePluginState(const FourOscPluginState& state) {
     fxTab_->updatePluginState(state);
 }
 
+int FourOscUI::getCurrentTabIndex() const {
+    return tabs_ ? tabs_->getCurrentTabIndex() : 0;
+}
+
+void FourOscUI::setCurrentTabIndex(int index) {
+    if (tabs_ && index >= 0 && index < tabs_->getNumTabs())
+        tabs_->setCurrentTabIndex(index, false);
+}
+
 void FourOscUI::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
@@ -58,7 +67,7 @@ void FourOscUI::paint(juce::Graphics& g) {
 }
 
 void FourOscUI::resized() {
-    tabs_->setBounds(getLocalBounds());
+    tabs_->setBoundsStable(getLocalBounds());
 }
 
 std::vector<LinkableTextSlider*> FourOscUI::getLinkableSliders() {

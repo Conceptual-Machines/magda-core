@@ -165,6 +165,7 @@ class TrackChainContent : public PanelContent,
     std::map<juce::String, bool> savedCollapsedStates_;           // path -> collapsed
     std::map<juce::String, magda::ChainId> savedExpandedChains_;  // rackPath -> expanded chainId
     std::map<juce::String, bool> savedParamPanelStates_;          // path -> paramPanelVisible
+    std::map<juce::String, int> savedCustomUITabStates_;          // path -> custom UI tab index
     void saveNodeStates();
     void restoreNodeStates();
 

@@ -517,6 +517,16 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     updateParamModulation();
 }
 
+int DeviceSlotComponent::getCustomUITabIndex() const {
+    if (fourOscUI_)
+        return fourOscUI_->getCurrentTabIndex();
+    return 0;
+}
+
+void DeviceSlotComponent::setCustomUITabIndex(int index) {
+    pendingCustomUITabIndex_ = index;
+}
+
 int DeviceSlotComponent::getPreferredWidth() const {
     if (collapsed_) {
         return getLeftPanelsWidth() + COLLAPSED_WIDTH + getRightPanelsWidth();
@@ -1187,9 +1197,6 @@ void DeviceSlotComponent::onMacroLinkAmountChangedInternal(int macroIndex,
 
 void DeviceSlotComponent::onMacroNewLinkCreatedInternal(int macroIndex, magda::MacroTarget target,
                                                         float amount) {
-    DBG("onMacroNewLinkCreatedInternal: macroIndex=" << macroIndex
-                                                     << " target.paramIndex=" << target.paramIndex);
-
     magda::TrackManager::getInstance().setDeviceMacroTarget(nodePath_, macroIndex, target);
     magda::TrackManager::getInstance().setDeviceMacroLinkAmount(nodePath_, macroIndex, target,
                                                                 amount);
@@ -2028,6 +2035,11 @@ void DeviceSlotComponent::createCustomUI() {
         };
         addAndMakeVisible(*fourOscUI_);
         updateCustomUI();
+        // Restore saved tab index after rebuild
+        if (pendingCustomUITabIndex_ >= 0) {
+            fourOscUI_->setCurrentTabIndex(pendingCustomUITabIndex_);
+            pendingCustomUITabIndex_ = -1;
+        }
     } else if (device_.pluginId.equalsIgnoreCase("eq")) {
         eqUI_ = std::make_unique<EqualiserUI>();
 

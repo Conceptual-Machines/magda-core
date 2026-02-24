@@ -1273,12 +1273,8 @@ void PluginManager::syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack) {
                 if (link.target.paramIndex >= 0 &&
                     link.target.paramIndex < static_cast<int>(params.size())) {
                     auto* param = params[static_cast<size_t>(link.target.paramIndex)];
-                    if (param) {
+                    if (param)
                         param->addModifier(*macroParam, link.amount);
-                        DBG("syncDeviceMacros: Linked macro "
-                            << i << " on device " << device.id << " to device "
-                            << link.target.deviceId << " param " << link.target.paramIndex);
-                    }
                 }
             }
         }

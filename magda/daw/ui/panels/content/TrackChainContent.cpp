@@ -1329,6 +1329,7 @@ void TrackChainContent::saveNodeStates() {
     savedCollapsedStates_.clear();
     savedExpandedChains_.clear();
     savedParamPanelStates_.clear();
+    savedCustomUITabStates_.clear();
 
     for (const auto& node : nodeComponents_) {
         const auto& path = node->getNodePath();
@@ -1338,6 +1339,13 @@ void TrackChainContent::saveNodeStates() {
 
             // Save param panel (macro panel) visible state
             savedParamPanelStates_[path.toString()] = node->isParamPanelVisible();
+
+            // Save custom UI tab index (e.g., 4OSC tab selection)
+            if (auto* device = dynamic_cast<DeviceSlotComponent*>(node.get())) {
+                int tabIndex = device->getCustomUITabIndex();
+                if (tabIndex > 0)
+                    savedCustomUITabStates_[path.toString()] = tabIndex;
+            }
 
             // Save expanded chain for racks
             if (auto* rack = dynamic_cast<RackComponent*>(node.get())) {
@@ -1363,6 +1371,14 @@ void TrackChainContent::restoreNodeStates() {
             auto paramIt = savedParamPanelStates_.find(path.toString());
             if (paramIt != savedParamPanelStates_.end() && paramIt->second) {
                 node->setParamPanelVisible(true);
+            }
+
+            // Restore custom UI tab index (e.g., 4OSC tab selection)
+            if (auto* device = dynamic_cast<DeviceSlotComponent*>(node.get())) {
+                auto tabIt = savedCustomUITabStates_.find(path.toString());
+                if (tabIt != savedCustomUITabStates_.end()) {
+                    device->setCustomUITabIndex(tabIt->second);
+                }
             }
 
             // Restore expanded chain for racks
