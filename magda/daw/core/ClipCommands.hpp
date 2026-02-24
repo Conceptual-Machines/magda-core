@@ -236,7 +236,8 @@ class DuplicateClipCommand : public ValidatedCommand {
  */
 class PasteClipCommand : public ValidatedCommand {
   public:
-    PasteClipCommand(double pasteTime, TrackId targetTrackId = INVALID_TRACK_ID);
+    PasteClipCommand(double pasteTime, TrackId targetTrackId = INVALID_TRACK_ID,
+                     ClipView targetView = ClipView::Arrangement, int targetSceneIndex = -1);
 
     juce::String getDescription() const override {
         return "Paste Clip";
@@ -253,8 +254,11 @@ class PasteClipCommand : public ValidatedCommand {
   private:
     double pasteTime_;
     TrackId targetTrackId_;
+    ClipView targetView_;
+    int targetSceneIndex_;
     std::vector<ClipId> pastedClipIds_;
     std::vector<ClipInfo> arrangementSnapshot_;
+    std::vector<ClipInfo> sessionSnapshot_;
 };
 
 /**
@@ -570,6 +574,31 @@ class BounceToNewTrackCommand : public UndoableCommand {
     TrackId newTrackId_ = INVALID_TRACK_ID;
     juce::File renderedFile_;
     bool success_ = false;
+};
+
+/**
+ * @brief Post-hoc command for undoing a session-to-arrangement recording pass.
+ *
+ * The SessionRecorder creates arrangement clips during recording. When it
+ * finishes, it pushes this command so the entire recording pass can be
+ * undone/redone as a single operation.
+ */
+class RecordSessionToArrangementCommand : public UndoableCommand {
+  public:
+    explicit RecordSessionToArrangementCommand(const std::vector<ClipInfo>& preRecordSnapshot);
+
+    juce::String getDescription() const override {
+        return "Record Session to Arrangement";
+    }
+
+    void execute() override;
+    void undo() override;
+
+  private:
+    std::vector<ClipInfo> preRecordSnapshot_;  // Arrangement state before recording
+    std::vector<ClipInfo>
+        postRecordSnapshot_;  // Arrangement state after recording (captured on first execute)
+    bool snapshotCaptured_ = false;
 };
 
 // ============================================================================

@@ -194,6 +194,7 @@ set(DAW_CORE_SOURCES
     audio/DeviceProcessor.cpp
     audio/MidiBridge.cpp
     audio/SessionClipScheduler.cpp
+    audio/SessionRecorder.cpp
     # Phase 1 refactoring: Pure data managers
     audio/TransportStateManager.cpp
     audio/MidiActivityMonitor.cpp

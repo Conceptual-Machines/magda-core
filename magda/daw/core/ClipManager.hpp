@@ -358,7 +358,9 @@ class ClipManager {
      * @return IDs of the newly created clips
      */
     std::vector<ClipId> pasteFromClipboard(double pasteTime,
-                                           TrackId targetTrackId = INVALID_TRACK_ID);
+                                           TrackId targetTrackId = INVALID_TRACK_ID,
+                                           ClipView targetView = ClipView::Arrangement,
+                                           int targetSceneIndex = -1);
 
     /**
      * @brief Cut selected clips to clipboard (copy + delete)

@@ -2,6 +2,7 @@
 
 #include "../audio/AudioBridge.hpp"
 #include "../audio/SessionClipScheduler.hpp"
+#include "../audio/SessionRecorder.hpp"
 #include "../core/ClipManager.hpp"
 #include "../core/TrackManager.hpp"
 #include "TracktionEngineWrapper.hpp"
@@ -78,6 +79,8 @@ void TracktionEngineWrapper::play() {
 
 void TracktionEngineWrapper::stop() {
     if (currentEdit_) {
+        if (sessionRecorder_)
+            sessionRecorder_->setRecordingActive(false);
         currentEdit_->getTransport().stop(false, false);
         std::cout << "Playback stopped" << std::endl;
     }
@@ -116,6 +119,10 @@ void TracktionEngineWrapper::record() {
         DBG("TracktionEngineWrapper::record() - calling transport.record(false, true)");
         currentEdit_->getTransport().record(false, /*allowRecordingIfNoInputsArmed=*/true);
         DBG("TracktionEngineWrapper::record() - isRecording=" << (int)isRecording());
+
+        // Activate session recorder so session clip triggers are captured to arrangement
+        if (sessionRecorder_)
+            sessionRecorder_->setRecordingActive(true);
 
         // Verify recording state on all input instances after record() returns
         if (auto* ctx = currentEdit_->getCurrentPlaybackContext()) {

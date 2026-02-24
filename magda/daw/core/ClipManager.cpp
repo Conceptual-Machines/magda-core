@@ -1446,7 +1446,8 @@ void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
               << clipboard_.size() << " clip(s)" << std::endl;
 }
 
-std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId targetTrackId) {
+std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId targetTrackId,
+                                                    ClipView targetView, int targetSceneIndex) {
     std::vector<ClipId> newClips;
 
     if (clipboard_.empty()) {
@@ -1463,16 +1464,16 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
         // Determine target track
         TrackId newTrackId = (targetTrackId != INVALID_TRACK_ID) ? targetTrackId : clipData.trackId;
 
-        // Create new clip based on type
+        // Create new clip based on type, using targetView instead of clipData.view
         ClipId newClipId = INVALID_CLIP_ID;
         if (clipData.type == ClipType::Audio) {
             if (clipData.audioFilePath.isNotEmpty()) {
                 newClipId = createAudioClip(newTrackId, newStartTime, clipData.length,
-                                            clipData.audioFilePath, clipData.view);
+                                            clipData.audioFilePath, targetView);
             }
         } else {
             // For MIDI clips, create empty then copy notes
-            newClipId = createMidiClip(newTrackId, newStartTime, clipData.length, clipData.view);
+            newClipId = createMidiClip(newTrackId, newStartTime, clipData.length, targetView);
         }
 
         if (newClipId != INVALID_CLIP_ID) {
@@ -1482,6 +1483,12 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                 newClip->name = clipData.name + " (copy)";
                 newClip->colour = clipData.colour;
                 newClip->loopEnabled = clipData.loopEnabled;
+
+                // When pasting to session with a valid scene index, set session properties
+                if (targetView == ClipView::Session && targetSceneIndex >= 0) {
+                    newClip->sceneIndex = targetSceneIndex;
+                    newClip->loopEnabled = true;
+                }
 
                 // Copy MIDI notes if MIDI clip
                 if (clipData.type == ClipType::MIDI) {

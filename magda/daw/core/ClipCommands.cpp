@@ -459,8 +459,12 @@ void DuplicateClipCommand::undo() {
 // PasteClipCommand Implementation
 // ============================================================================
 
-PasteClipCommand::PasteClipCommand(double pasteTime, TrackId targetTrackId)
-    : pasteTime_(pasteTime), targetTrackId_(targetTrackId) {}
+PasteClipCommand::PasteClipCommand(double pasteTime, TrackId targetTrackId, ClipView targetView,
+                                   int targetSceneIndex)
+    : pasteTime_(pasteTime),
+      targetTrackId_(targetTrackId),
+      targetView_(targetView),
+      targetSceneIndex_(targetSceneIndex) {}
 
 bool PasteClipCommand::canExecute() const {
     return ClipManager::getInstance().hasClipsInClipboard();
@@ -474,9 +478,11 @@ void PasteClipCommand::execute() {
 
     if (!executed_) {
         arrangementSnapshot_ = clipManager.getArrangementClips();
+        sessionSnapshot_ = clipManager.getSessionClips();
     }
 
-    pastedClipIds_ = clipManager.pasteFromClipboard(pasteTime_, targetTrackId_);
+    pastedClipIds_ =
+        clipManager.pasteFromClipboard(pasteTime_, targetTrackId_, targetView_, targetSceneIndex_);
     executed_ = true;
 }
 
@@ -486,12 +492,21 @@ void PasteClipCommand::undo() {
 
     auto& clipManager = ClipManager::getInstance();
 
-    auto currentClips = clipManager.getArrangementClips();
-    for (const auto& clip : currentClips) {
+    // Restore arrangement clips
+    auto currentArrangement = clipManager.getArrangementClips();
+    for (const auto& clip : currentArrangement) {
         clipManager.deleteClip(clip.id);
     }
-
     for (const auto& clip : arrangementSnapshot_) {
+        clipManager.restoreClip(clip);
+    }
+
+    // Restore session clips
+    auto currentSession = clipManager.getSessionClips();
+    for (const auto& clip : currentSession) {
+        clipManager.deleteClip(clip.id);
+    }
+    for (const auto& clip : sessionSnapshot_) {
         clipManager.restoreClip(clip);
     }
 
@@ -1670,6 +1685,49 @@ void BounceToNewTrackCommand::undo() {
     }
 
     success_ = false;
+}
+
+// ============================================================================
+// RecordSessionToArrangementCommand
+// ============================================================================
+
+RecordSessionToArrangementCommand::RecordSessionToArrangementCommand(
+    const std::vector<ClipInfo>& preRecordSnapshot)
+    : preRecordSnapshot_(preRecordSnapshot) {}
+
+void RecordSessionToArrangementCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+
+    if (!snapshotCaptured_) {
+        // First execution: the arrangement already contains the recorded clips.
+        // Just capture the current state for redo.
+        postRecordSnapshot_ = clipManager.getArrangementClips();
+        snapshotCaptured_ = true;
+    } else {
+        // Redo: restore post-recording state
+        auto currentClips = clipManager.getArrangementClips();
+        for (const auto& clip : currentClips) {
+            clipManager.deleteClip(clip.id);
+        }
+        for (const auto& clip : postRecordSnapshot_) {
+            clipManager.restoreClip(clip);
+        }
+        clipManager.forceNotifyClipsChanged();
+    }
+}
+
+void RecordSessionToArrangementCommand::undo() {
+    auto& clipManager = ClipManager::getInstance();
+
+    // Restore arrangement to pre-recording state
+    auto currentClips = clipManager.getArrangementClips();
+    for (const auto& clip : currentClips) {
+        clipManager.deleteClip(clip.id);
+    }
+    for (const auto& clip : preRecordSnapshot_) {
+        clipManager.restoreClip(clip);
+    }
+    clipManager.forceNotifyClipsChanged();
 }
 
 // ============================================================================
