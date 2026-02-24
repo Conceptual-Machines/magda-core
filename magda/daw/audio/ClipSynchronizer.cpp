@@ -99,6 +99,26 @@ void ClipSynchronizer::clipsChanged() {
     // Force graph rebuild if new session clips were moved into slots,
     // so SlotControlNode instances are created in the audio graph
     if (sessionClipsSynced) {
+        // Ensure playSlotClips is false on tracks with no actively playing slots,
+        // so arrangement clips remain audible after graph rebuild
+        for (auto* track : te::getAudioTracks(edit_)) {
+            if (!track->playSlotClips.get())
+                continue;
+            bool anyPlaying = false;
+            for (auto* slot : track->getClipSlotList().getClipSlots()) {
+                if (auto* c = slot->getClip()) {
+                    if (auto lh = c->getLaunchHandle()) {
+                        if (lh->getPlayingStatus() == te::LaunchHandle::PlayState::playing) {
+                            anyPlaying = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!anyPlaying)
+                track->playSlotClips = false;
+        }
+
         if (auto* ctx = edit_.getCurrentPlaybackContext()) {
             ctx->reallocate();
         }
@@ -640,6 +660,13 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId) {
         }
     }
 
+    // Switch track to slot mode before launching so the arrangement is
+    // already muted when the slot starts — prevents a brief audio overlap.
+    if (clip) {
+        if (auto* audioTrack = trackController_.getAudioTrack(clip->trackId))
+            audioTrack->playSlotClips = true;
+    }
+
     launchHandle->play(std::nullopt);
 }
 
@@ -654,16 +681,36 @@ void ClipSynchronizer::stopSessionClip(ClipId clipId) {
 
     launchHandle->stop(std::nullopt);
 
-    // Reset synth plugins on the clip's track to prevent stuck notes
     const auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (clip && clip->type == ClipType::MIDI) {
-        auto* audioTrack = trackController_.getAudioTrack(clip->trackId);
-        if (audioTrack) {
+    if (!clip)
+        return;
+
+    auto* audioTrack = trackController_.getAudioTrack(clip->trackId);
+    if (audioTrack) {
+        // Reset synth plugins on the clip's track to prevent stuck notes
+        if (clip->type == ClipType::MIDI) {
             for (auto* plugin : audioTrack->pluginList) {
                 if (plugin->isSynth()) {
                     plugin->reset();
                 }
             }
+        }
+
+        // Return track to arrangement mode if no other slots are still playing
+        bool anyStillPlaying = false;
+        for (auto* slot : audioTrack->getClipSlotList().getClipSlots()) {
+            if (auto* slotClip = slot->getClip()) {
+                if (auto lh = slotClip->getLaunchHandle()) {
+                    if (lh.get() != launchHandle.get() &&
+                        lh->getPlayingStatus() == te::LaunchHandle::PlayState::playing) {
+                        anyStillPlaying = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!anyStillPlaying) {
+            audioTrack->playSlotClips = false;
         }
     }
 }

@@ -303,20 +303,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartRecor
         return ChangeFlags::Playhead;
     }
 
-    // Check if any track is armed
-    bool anyArmed = false;
-    auto& tracks = TrackManager::getInstance().getTracks();
-    for (const auto& track : tracks) {
-        if (track.recordArmed) {
-            anyArmed = true;
-            break;
-        }
-    }
-
-    if (!anyArmed) {
-        DBG("StartRecordEvent: no armed tracks, ignoring");
-        return ChangeFlags::None;
-    }
+    // Session recording does not require armed tracks — proceed regardless.
+    // (Track arming is only needed for MIDI/audio input recording via TE.)
 
     // Check if punch-in is enabled with a valid region
     bool punchInActive = state.punch.punchInEnabled && state.punch.isValid();

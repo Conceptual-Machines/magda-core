@@ -178,7 +178,13 @@ void SessionClipScheduler::timerCallback() {
 void SessionClipScheduler::deactivateAllSessionClips() {
     auto& cm = ClipManager::getInstance();
 
-    for (auto clipId : launchedClips_) {
+    // Copy the set — setClipPlayingState triggers clipPlaybackStateChanged
+    // which can erase from launchedClips_ while we iterate.
+    auto clipsCopy = launchedClips_;
+    launchedClips_.clear();
+    stopTimer();
+
+    for (auto clipId : clipsCopy) {
         audioBridge_.stopSessionClip(clipId);
 
         auto* clip = cm.getClip(clipId);
@@ -187,8 +193,11 @@ void SessionClipScheduler::deactivateAllSessionClips() {
         }
     }
 
-    launchedClips_.clear();
-    stopTimer();
+    // Return all tracks to arrangement mode now that no session clips are playing
+    for (auto* track : te::getAudioTracks(edit_)) {
+        if (track->playSlotClips.get())
+            track->playSlotClips = false;
+    }
 }
 
 double SessionClipScheduler::getSessionPlayheadPosition() const {

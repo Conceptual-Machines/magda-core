@@ -15,20 +15,29 @@ namespace magda {
 namespace te = tracktion;
 
 /**
- * @brief Records session clip performances into the arrangement timeline.
+ * @brief Records session clip performances into the arrangement.
  *
- * When recording is active and session clips are triggered, their content
- * is written to the arrangement at the current transport position. When a
- * clip stops (or is replaced by another on the same track), the arrangement
- * clip's length matches the played duration.
+ * Lives for the app's lifetime. When armed (user pressed Record on transport),
+ * captures session clip play/stop events and writes arrangement clips.
+ * Recording only begins when a session clip actually starts playing,
+ * so there's no gap between pressing Record and triggering a clip.
  */
 class SessionRecorder : public ClipManagerListener {
   public:
     explicit SessionRecorder(te::Edit& edit);
     ~SessionRecorder() override;
 
-    void setRecordingActive(bool active);
-    bool isRecordingActive() const;
+    /** Arm/disarm session recording. Set by transport Record button. */
+    void setArmed(bool armed);
+    bool isArmed() const {
+        return armed_;
+    }
+
+    /**
+     * @brief Finalize active recordings and push undo command.
+     * Called on transport stop.
+     */
+    void commitIfNeeded();
 
     // ClipManagerListener
     void clipsChanged() override {}
@@ -43,11 +52,12 @@ class SessionRecorder : public ClipManagerListener {
         double arrangementStartTime = 0.0;
     };
 
+    void ensureSnapshotTaken();
     void finalizeRecording(const ActiveRecording& rec, double stopTime);
-    void commitAllRecordings();
 
     te::Edit& edit_;
-    bool recordingActive_ = false;
+    bool armed_ = false;
+    bool snapshotTaken_ = false;
     std::unordered_map<ClipId, ActiveRecording> activeRecordings_;
     std::vector<ClipInfo> arrangementSnapshotBeforeRecord_;
     std::vector<ClipId> createdArrangementClipIds_;

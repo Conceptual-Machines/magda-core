@@ -5,6 +5,7 @@
 #include "../audio/SessionRecorder.hpp"
 #include "../core/ClipManager.hpp"
 #include "../core/TrackManager.hpp"
+#include "../core/ViewModeController.hpp"
 #include "TracktionEngineWrapper.hpp"
 
 namespace magda {
@@ -79,8 +80,11 @@ void TracktionEngineWrapper::play() {
 
 void TracktionEngineWrapper::stop() {
     if (currentEdit_) {
-        if (sessionRecorder_)
-            sessionRecorder_->setRecordingActive(false);
+        // Commit and disarm session recorder before stopping transport
+        if (sessionRecorder_) {
+            sessionRecorder_->commitIfNeeded();
+            sessionRecorder_->setArmed(false);
+        }
         currentEdit_->getTransport().stop(false, false);
         std::cout << "Playback stopped" << std::endl;
     }
@@ -115,11 +119,6 @@ void TracktionEngineWrapper::record() {
         } else {
             DBG("TracktionEngineWrapper::record() - NO playback context!");
         }
-
-        // Activate session recorder BEFORE transport.record() so it's ready
-        // to capture any session clips that are already playing or get triggered
-        if (sessionRecorder_)
-            sessionRecorder_->setRecordingActive(true);
 
         DBG("TracktionEngineWrapper::record() - calling transport.record(false, true)");
         currentEdit_->getTransport().record(false, /*allowRecordingIfNoInputsArmed=*/true);
@@ -185,9 +184,10 @@ bool TracktionEngineWrapper::isPlaying() const {
 }
 
 bool TracktionEngineWrapper::isRecording() const {
-    if (currentEdit_) {
+    if (sessionRecorder_ && sessionRecorder_->isArmed())
+        return true;
+    if (currentEdit_)
         return currentEdit_->getTransport().isRecording();
-    }
     return false;
 }
 
@@ -399,50 +399,65 @@ void TracktionEngineWrapper::onTransportPause() {
 }
 
 void TracktionEngineWrapper::onTransportRecord(double position) {
-    locate(position);
-    record();
+    std::cout << "[onTransportRecord] position=" << position
+              << " viewMode=" << (int)ViewModeController::getInstance().getViewMode()
+              << " transportPos=" << getCurrentPosition() << std::endl;
+
+    auto viewMode = ViewModeController::getInstance().getViewMode();
+
+    if (viewMode == ViewMode::Live) {
+        // Session mode: only arm the recorder. Transport starts when the user
+        // triggers a session clip (SessionClipScheduler handles that).
+        if (sessionRecorder_)
+            sessionRecorder_->setArmed(true);
+    } else {
+        // Arrangement mode: arm recorder AND start transport + TE recording
+        // so MIDI/audio input is captured on armed tracks.
+        if (sessionRecorder_)
+            sessionRecorder_->setArmed(true);
+        locate(position);
+        record();
+    }
 }
 
 void TracktionEngineWrapper::onTransportStopRecording() {
     if (!currentEdit_)
         return;
 
-    // Capture stop position before TE processes the stop
-    double stopPosition = getCurrentPosition();
-
-    // TE's stopRecording stops recording but keeps playback going.
-    // This triggers recordingFinished() synchronously per device.
-    currentEdit_->getTransport().stopRecording(false);
-
-    // Create clips for tracks that got 0 clips from TE (blank MIDI recording)
-    if (!recordingStartTimes_.empty()) {
-        auto& clipManager = ClipManager::getInstance();
-        for (auto& [trackId, startTime] : recordingStartTimes_) {
-            if (audioBridge_)
-                audioBridge_->resetSynthsOnTrack(trackId);
-
-            if (activeRecordingClips_.count(trackId) > 0)
-                continue;
-
-            // Only create empty MIDI clip if the track actually has MIDI input configured.
-            const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
-            if (!trackInfo || trackInfo->midiInputDevice.isEmpty())
-                continue;
-
-            double length = stopPosition - startTime;
-            if (length > 0.01) {
-                clipManager.createMidiClip(trackId, startTime, length, ClipView::Arrangement);
-            }
-        }
+    // Commit and disarm session recorder
+    if (sessionRecorder_) {
+        sessionRecorder_->commitIfNeeded();
+        sessionRecorder_->setArmed(false);
     }
 
-    // Final drain and clear recording previews
-    drainRecordingNoteQueue();
-    recordingPreviews_.clear();
-    recordingNoteQueue_.clear();
+    // If TE is actually recording (arrangement mode used transport.record()),
+    // stop it and handle the clip creation for blank MIDI tracks.
+    if (currentEdit_->getTransport().isRecording()) {
+        double stopPosition = getCurrentPosition();
+        currentEdit_->getTransport().stopRecording(false);
 
-    activeRecordingClips_.clear();
-    recordingStartTimes_.clear();
+        if (!recordingStartTimes_.empty()) {
+            auto& clipManager = ClipManager::getInstance();
+            for (auto& [trackId, startTime] : recordingStartTimes_) {
+                if (audioBridge_)
+                    audioBridge_->resetSynthsOnTrack(trackId);
+                if (activeRecordingClips_.count(trackId) > 0)
+                    continue;
+                const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+                if (!trackInfo || trackInfo->midiInputDevice.isEmpty())
+                    continue;
+                double length = stopPosition - startTime;
+                if (length > 0.01)
+                    clipManager.createMidiClip(trackId, startTime, length, ClipView::Arrangement);
+            }
+        }
+
+        drainRecordingNoteQueue();
+        recordingPreviews_.clear();
+        recordingNoteQueue_.clear();
+        activeRecordingClips_.clear();
+        recordingStartTimes_.clear();
+    }
 }
 
 void TracktionEngineWrapper::onEditPositionChanged(double position) {
