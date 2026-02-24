@@ -1219,6 +1219,25 @@ void TrackContentPanel::mouseDoubleClick(const juce::MouseEvent& event) {
         getClipComponentAt(event.x, event.y) == nullptr) {
         createClipFromTimeSelection();
     }
+    // Double-clicking empty space (no clip, no selection) creates a 1-bar MIDI clip
+    else if (getClipComponentAt(event.x, event.y) == nullptr) {
+        int trackIndex = getTrackIndexAtY(event.y);
+        if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
+            TrackId trackId = visibleTrackIds_[trackIndex];
+            double clickTime = pixelToTime(event.x);
+            double startTime = snapTimeToGrid ? snapTimeToGrid(clickTime) : clickTime;
+            double barLength = (timeSignatureNumerator * 60.0) / tempoBPM;
+
+            auto cmd =
+                std::make_unique<CreateClipCommand>(ClipType::MIDI, trackId, startTime, barLength);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+
+            auto clipId = ClipManager::getInstance().getClipAtPosition(trackId, startTime);
+            if (clipId != INVALID_CLIP_ID) {
+                SelectionManager::getInstance().selectClip(clipId);
+            }
+        }
+    }
 }
 
 void TrackContentPanel::timerCallback() {
