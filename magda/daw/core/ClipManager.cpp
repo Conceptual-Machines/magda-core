@@ -123,6 +123,9 @@ void ClipManager::deleteClip(ClipId clipId) {
             selectedClipId_ = INVALID_CLIP_ID;
             notifyClipSelectionChanged(INVALID_CLIP_ID);
         }
+        if (lastTriggeredSessionClipId_ == clipId) {
+            lastTriggeredSessionClipId_ = INVALID_CLIP_ID;
+        }
 
         sessionClips_.erase(it);
         notifyClipsChanged();
@@ -978,13 +981,17 @@ std::vector<ClipInfo> ClipManager::getClips() const {
 
 std::vector<ClipId> ClipManager::getClipsOnTrack(TrackId trackId) const {
     std::vector<ClipId> result;
-    // Only return arrangement clips (session clips use slot-based queries)
     for (const auto& clip : arrangementClips_) {
         if (clip.trackId == trackId) {
             result.push_back(clip.id);
         }
     }
-    // Sort by start time
+    for (const auto& clip : sessionClips_) {
+        if (clip.trackId == trackId) {
+            result.push_back(clip.id);
+        }
+    }
+    // Sort arrangement clips by start time (session clips don't have meaningful ordering)
     std::sort(result.begin(), result.end(), [this](ClipId a, ClipId b) {
         const auto* clipA = getClip(a);
         const auto* clipB = getClip(b);
@@ -1056,6 +1063,12 @@ void ClipManager::setClipSceneIndex(ClipId clipId, int sceneIndex) {
 
 void ClipManager::triggerClip(ClipId clipId) {
     if (auto* clip = getClip(clipId)) {
+        // Remember the last triggered session clip so transport Record can
+        // re-trigger it. Don't touch selectedClipId_ — that's for UI selection.
+        if (clip->view == ClipView::Session) {
+            lastTriggeredSessionClipId_ = clipId;
+        }
+
         // Toggle mode: if clip is already playing, stop it instead
         if (clip->launchMode == LaunchMode::Toggle && (clip->isPlaying || clip->isQueued)) {
             stopClip(clipId);

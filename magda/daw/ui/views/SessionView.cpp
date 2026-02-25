@@ -2345,6 +2345,8 @@ void SessionView::onPlayButtonClicked(int trackIndex, int sceneIndex) {
     ClipId clipId = ClipManager::getInstance().getClipInSlot(trackId, sceneIndex);
 
     if (clipId != INVALID_CLIP_ID) {
+        // Select the clip so the inspector shows it
+        SelectionManager::getInstance().selectClip(clipId);
         // Trigger or toggle the clip depending on its launch mode
         ClipManager::getInstance().triggerClip(clipId);
     }

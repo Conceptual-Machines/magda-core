@@ -332,6 +332,12 @@ class ClipManager {
     }
     void clearClipSelection();
 
+    /** The last session clip that was triggered via triggerClip(). Persists
+        across transport stop so Record can re-trigger it. */
+    ClipId getLastTriggeredSessionClip() const {
+        return lastTriggeredSessionClipId_;
+    }
+
     // ========================================================================
     // Clipboard Operations
     // ========================================================================
@@ -483,6 +489,7 @@ class ClipManager {
     std::vector<ClipManagerListener*> listeners_;
     int nextClipId_ = 1;
     ClipId selectedClipId_ = INVALID_CLIP_ID;
+    ClipId lastTriggeredSessionClipId_ = INVALID_CLIP_ID;
 
     // Notification helpers
     void notifyClipsChanged();

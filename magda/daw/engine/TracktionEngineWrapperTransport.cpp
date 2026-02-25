@@ -326,13 +326,16 @@ bool TracktionEngineWrapper::isMetronomeEnabled() const {
 // These methods are called by TimelineController when UI state changes
 
 void TracktionEngineWrapper::onTransportPlay(double position) {
-    // If a session clip is selected, trigger it via the clip launcher
+    // If a session clip is selected (or was last triggered), trigger it
     auto& cm = ClipManager::getInstance();
-    ClipId selectedClip = cm.getSelectedClip();
-    if (selectedClip != INVALID_CLIP_ID) {
-        const auto* clip = cm.getClip(selectedClip);
+    ClipId clipToTrigger = cm.getSelectedClip();
+    if (clipToTrigger == INVALID_CLIP_ID) {
+        clipToTrigger = cm.getLastTriggeredSessionClip();
+    }
+    if (clipToTrigger != INVALID_CLIP_ID) {
+        const auto* clip = cm.getClip(clipToTrigger);
         if (clip && clip->view == ClipView::Session && !clip->isPlaying && !clip->isQueued) {
-            cm.triggerClip(selectedClip);
+            cm.triggerClip(clipToTrigger);
             return;  // SessionClipScheduler will start transport
         }
     }
@@ -409,10 +412,20 @@ void TracktionEngineWrapper::onTransportRecord(double position) {
     auto viewMode = ViewModeController::getInstance().getViewMode();
 
     if (viewMode == ViewMode::Live) {
-        // Session mode: only arm the recorder. Transport starts when the user
-        // triggers a session clip (SessionClipScheduler handles that).
+        // Session mode: arm the recorder, then trigger the selected session clip.
+        // triggerClip() sets isQueued which causes SessionClipScheduler to start
+        // the transport and launch the clip via LaunchHandle.
         if (sessionRecorder_)
             sessionRecorder_->setArmed(true);
+
+        auto& cm = ClipManager::getInstance();
+        ClipId lastClip = cm.getLastTriggeredSessionClip();
+        if (lastClip != INVALID_CLIP_ID) {
+            const auto* clip = cm.getClip(lastClip);
+            if (clip && clip->view == ClipView::Session) {
+                cm.triggerClip(lastClip);
+            }
+        }
     } else {
         // Arrangement mode: arm recorder AND start transport + TE recording
         // so MIDI/audio input is captured on armed tracks.
