@@ -56,6 +56,15 @@ void ClipInspector::initClipPropertiesSection() {
     clipTypeIcon_->setTooltip("Audio clip");
     addChildComponent(*clipTypeIcon_);
 
+    // Clip view icon (Session or Arrangement)
+    clipViewIcon_ = std::make_unique<magda::SvgButton>("View", BinaryData::Arrangement_svg,
+                                                       BinaryData::Arrangement_svgSize);
+    clipViewIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    clipViewIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipViewIcon_->setInterceptsMouseClicks(false, false);
+    clipViewIcon_->setTooltip("Arrangement clip");
+    addChildComponent(*clipViewIcon_);
+
     // Source BPM (editable — shown at bottom with WARP/BEAT buttons)
     clipBpmValue_.setFont(FontManager::getInstance().getUIFont(11.0f));
     clipBpmValue_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());

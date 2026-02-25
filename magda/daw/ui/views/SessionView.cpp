@@ -19,6 +19,7 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
+#include "BinaryData.h"
 #include "core/ClipCommands.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/SelectionManager.hpp"
@@ -190,18 +191,26 @@ class ClipSlotButton : public juce::TextButton {
         }
 
         if (hasClip) {
-            // Draw play triangle in the left area
+            // Draw play/stop icon in the left area
             auto playArea = getLocalBounds().removeFromLeft(PLAY_BUTTON_WIDTH);
             auto centre = playArea.getCentre().toFloat();
 
-            juce::Path triangle;
-            float size = 6.0f;
-            triangle.addTriangle(centre.getX() - size * 0.7f, centre.getY() - size,
-                                 centre.getX() - size * 0.7f, centre.getY() + size,
-                                 centre.getX() + size, centre.getY());
-            g.setColour(clipIsPlaying ? juce::Colours::green.withAlpha(0.9f)
-                                      : juce::Colours::white.withAlpha(0.7f));
-            g.fillPath(triangle);
+            if (clipIsPlaying) {
+                // Draw stop square when playing
+                float size = 5.0f;
+                g.setColour(juce::Colours::white.withAlpha(0.9f));
+                g.fillRect(juce::Rectangle<float>(centre.getX() - size, centre.getY() - size,
+                                                  size * 2.0f, size * 2.0f));
+            } else {
+                // Draw play triangle when stopped
+                juce::Path triangle;
+                float size = 6.0f;
+                triangle.addTriangle(centre.getX() - size * 0.7f, centre.getY() - size,
+                                     centre.getX() - size * 0.7f, centre.getY() + size,
+                                     centre.getX() + size, centre.getY());
+                g.setColour(juce::Colours::white.withAlpha(0.7f));
+                g.fillPath(triangle);
+            }
 
             // Content area (right of play button)
             auto contentArea = getLocalBounds();
@@ -1834,15 +1843,17 @@ void SessionView::rebuildTracks() {
         trackStopButtons.push_back(std::move(stopBtn));
     }
 
-    // Create per-track arrangement buttons (back to arrangement mode)
+    // Create per-track arrangement buttons (back to arrangement mode) using resume icon
     for (int i = 0; i < numTracks; ++i) {
-        auto arrBtn = std::make_unique<juce::TextButton>();
-        arrBtn->setButtonText("ARR");
-        arrBtn->setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-        arrBtn->setColour(juce::TextButton::textColourOffId,
-                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        arrBtn->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
+        auto arrBtn =
+            std::make_unique<juce::DrawableButton>("arr", juce::DrawableButton::ImageFitted);
+        if (auto svg = juce::Drawable::createFromImageData(BinaryData::resume_svg,
+                                                           BinaryData::resume_svgSize)) {
+            auto svgOn = juce::Drawable::createFromImageData(BinaryData::resume_on_svg,
+                                                             BinaryData::resume_on_svgSize);
+            arrBtn->setImages(svg.get(), nullptr, nullptr, nullptr, svgOn.get());
+        }
+        arrBtn->setClickingTogglesState(false);
         TrackId trackId = visibleTrackIds_[i];
         arrBtn->onClick = [trackId]() {
             TrackManager::getInstance().setTrackPlaybackMode(trackId,
@@ -2575,7 +2586,6 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
             auto playState = audioEngine_ ? audioEngine_->getSessionClipPlayState(clipId)
                                           : SessionClipPlayState::Stopped;
             bool isPlaying = (playState == SessionClipPlayState::Playing);
-            bool isQueued = (playState == SessionClipPlayState::Queued);
 
             // Update slot state for custom painting
             slot->hasClip = true;
@@ -2588,22 +2598,10 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
 
             slot->setButtonText(clip->name);
 
-            // Set color based on clip state
-            if (isPlaying) {
-                slot->setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::STATUS_SUCCESS));
-                slot->setColour(juce::TextButton::textColourOffId,
-                                DarkTheme::getColour(DarkTheme::BACKGROUND));
-            } else if (isQueued) {
-                slot->setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-                slot->setColour(juce::TextButton::textColourOffId,
-                                DarkTheme::getColour(DarkTheme::BACKGROUND));
-            } else {
-                slot->setColour(juce::TextButton::buttonColourId, clip->colour.withAlpha(0.7f));
-                slot->setColour(juce::TextButton::textColourOffId,
-                                DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-            }
+            // Clip always shows its own colour; play state is shown via the play/stop icon
+            slot->setColour(juce::TextButton::buttonColourId, clip->colour.withAlpha(0.7f));
+            slot->setColour(juce::TextButton::textColourOffId,
+                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         }
     } else {
         // Empty slot
@@ -2619,6 +2617,8 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
         slot->setColour(juce::TextButton::textColourOffId,
                         DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     }
+
+    slot->repaint();
 }
 
 void SessionView::updateAllClipSlots() {
@@ -2638,14 +2638,7 @@ void SessionView::updateArrangementButtonStates() {
             break;
         const auto* track = trackManager.getTrack(visibleTrackIds_[i]);
         bool inSession = track && track->playbackMode == TrackPlaybackMode::Session;
-        trackArrangementButtons[i]->setColour(
-            juce::TextButton::buttonColourId,
-            inSession ? DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.8f)
-                      : DarkTheme::getColour(DarkTheme::SURFACE));
-        trackArrangementButtons[i]->setColour(
-            juce::TextButton::textColourOffId,
-            inSession ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)
-                      : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        trackArrangementButtons[i]->setToggleState(inSession, juce::dontSendNotification);
     }
 }
 

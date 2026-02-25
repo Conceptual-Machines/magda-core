@@ -151,7 +151,7 @@ class SessionView : public juce::Component,
     class StopButtonContainer;
     std::unique_ptr<StopButtonContainer> stopButtonContainer;
     std::vector<std::unique_ptr<juce::TextButton>> trackStopButtons;
-    std::vector<std::unique_ptr<juce::TextButton>> trackArrangementButtons;
+    std::vector<std::unique_ptr<juce::DrawableButton>> trackArrangementButtons;
     static constexpr int STOP_BUTTON_ROW_HEIGHT = 28;
 
     // Resize handle between stop buttons and fader row

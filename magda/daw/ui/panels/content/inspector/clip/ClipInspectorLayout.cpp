@@ -12,7 +12,7 @@ void ClipInspector::resized() {
         bounds.removeFromTop(4);
     }
 
-    // Clip name as header with type icon (outside viewport)
+    // Clip name as header with type icon and view icon (outside viewport)
     {
         const int iconSize = 18;
         const int gap = 6;
@@ -20,6 +20,11 @@ void ClipInspector::resized() {
         clipTypeIcon_->setBounds(
             headerRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
         headerRow.removeFromLeft(gap);
+        if (clipViewIcon_->isVisible()) {
+            clipViewIcon_->setBounds(
+                headerRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+            headerRow.removeFromLeft(gap);
+        }
         clipNameValue_.setBounds(headerRow);
     }
     bounds.removeFromTop(8);

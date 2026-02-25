@@ -78,6 +78,7 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     juce::Label clipNameValue_;
     juce::Label clipFilePathLabel_;
     std::unique_ptr<magda::SvgButton> clipTypeIcon_;
+    std::unique_ptr<magda::SvgButton> clipViewIcon_;
 
     // Position section
     juce::Label playbackColumnLabel_;

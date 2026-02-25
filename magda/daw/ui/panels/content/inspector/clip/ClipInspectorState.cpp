@@ -111,6 +111,16 @@ void ClipInspector::updateFromSelectedClip() {
             clipTypeIcon_->setTooltip("MIDI clip");
         }
 
+        // Update view icon based on clip view
+        if (clip->view == magda::ClipView::Session) {
+            clipViewIcon_->updateSvgData(BinaryData::Session_svg, BinaryData::Session_svgSize);
+            clipViewIcon_->setTooltip("Session clip");
+        } else {
+            clipViewIcon_->updateSvgData(BinaryData::Arrangement_svg,
+                                         BinaryData::Arrangement_svgSize);
+            clipViewIcon_->setTooltip("Arrangement clip");
+        }
+
         // Show BPM for audio clips (at bottom with WARP)
         // Prefer clip's sourceBPM (may be user-edited), fall back to detected BPM
         if (isAudioClip && !isMulti) {
@@ -465,6 +475,7 @@ void ClipInspector::showClipControls(bool show) {
     clipNameValue_.setVisible(show);
     clipFilePathLabel_.setVisible(show);
     clipTypeIcon_->setVisible(show);
+    clipViewIcon_->setVisible(show);
     clipPropsViewport_.setVisible(show);
 
     if (!show) {
