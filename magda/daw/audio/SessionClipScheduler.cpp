@@ -129,7 +129,8 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
 
         if (activeClips_.empty()) {
             stopTimer();
-            TrackManager::getInstance().setAllTracksPlaybackMode(TrackPlaybackMode::Arrangement);
+            // Keep tracks in Session mode — user must press "Back to Arrangement"
+            // to explicitly revert, matching Ableton/Bitwig behaviour.
             auto& transport = edit_.getTransport();
             if (transport.isPlaying()) {
                 std::cout << "[SessionClipScheduler]   no more clips, stopping transport"
@@ -217,7 +218,7 @@ void SessionClipScheduler::timerCallback() {
             pendingPlayheadClip_ = INVALID_CLIP_ID;
             for (auto clipId : copy)
                 cm.notifyClipPlaybackStateChanged(clipId);
-            TrackManager::getInstance().setAllTracksPlaybackMode(TrackPlaybackMode::Arrangement);
+            // Keep tracks in Session mode — user must press "Back to Arrangement"
         }
         stopTimer();
         return;

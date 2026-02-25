@@ -428,8 +428,13 @@ void TracktionEngineWrapper::onTransportRecord(double position) {
         ClipId lastClip = cm.getLastTriggeredSessionClip();
         if (lastClip != INVALID_CLIP_ID) {
             const auto* clip = cm.getClip(lastClip);
+            // Only trigger if the clip isn't already playing/queued — re-triggering
+            // an active clip restarts it from beat 0 and causes an audible click.
             if (clip && clip->view == ClipView::Session) {
-                cm.triggerClip(lastClip);
+                auto state = getSessionClipPlayState(lastClip);
+                if (state == SessionClipPlayState::Stopped) {
+                    cm.triggerClip(lastClip);
+                }
             }
         }
     } else {
