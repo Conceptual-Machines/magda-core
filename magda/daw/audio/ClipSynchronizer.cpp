@@ -752,26 +752,45 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId, bool forceImmediate) {
     auto qType =
         (clip && !forceImmediate) ? toTELaunchQType(clip->launchQuantize) : te::LaunchQType::none;
 
-    // Calculate the target beat (nullopt = immediate)
+    // Calculate the target beat (nullopt = immediate).
+    // Add a lookahead margin so the target is always safely in the future
+    // by the time the audio thread processes it. The SyncPoint is a snapshot
+    // from the audio thread; message-thread latency + 2-3 audio buffers can
+    // elapse before play() reaches the audio thread.
     std::optional<te::MonotonicBeat> targetBeat;
     if (qType != te::LaunchQType::none) {
         auto* ctx = edit_.getCurrentPlaybackContext();
         auto syncPoint = ctx ? ctx->getSyncPoint() : std::nullopt;
         if (syncPoint) {
-            auto quantizedBeat = te::getNext(qType, edit_.tempoSequence, syncPoint->beat);
+            // Lookahead: ~50ms worth of beats to cover message-thread + audio-buffer latency
+            double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+            double lookaheadBeats = (bpm > 0.0) ? (0.05 * bpm / 60.0) : 0.1;
+            auto adjustedBeat = syncPoint->beat + te::BeatDuration::fromBeats(lookaheadBeats);
+
+            auto quantizedBeat = te::getNext(qType, edit_.tempoSequence, adjustedBeat);
             double offset = syncPoint->monotonicBeat.v.inBeats() - syncPoint->beat.inBeats();
             targetBeat =
                 te::MonotonicBeat{te::BeatPosition::fromBeats(quantizedBeat.inBeats() + offset)};
             std::cout << "[ClipSynchronizer]   syncPoint: beat=" << syncPoint->beat.inBeats()
+                      << " adjusted=" << adjustedBeat.inBeats()
                       << " monotonicBeat=" << syncPoint->monotonicBeat.v.inBeats()
                       << " offset=" << offset << std::endl;
             std::cout << "[ClipSynchronizer]   quantizedBeat=" << quantizedBeat.inBeats()
                       << " targetMonotonic=" << targetBeat->v.inBeats() << std::endl;
+
+            // Store the precise quantized launch time for SessionRecorder
+            if (clip) {
+                double quantizedTime = edit_.tempoSequence.beatsToTime(quantizedBeat).inSeconds();
+                lastLaunchTimeByTrack_[clip->trackId] = quantizedTime;
+                std::cout << "[ClipSynchronizer]   stored lastLaunchTime=" << quantizedTime
+                          << "s for trackId=" << clip->trackId << std::endl;
+            }
         }
     }
 
-    // Stop other active clips on the same track at the SAME target beat,
-    // so there's no gap between the old clip stopping and the new one starting.
+    // Stop other clips on the same track:
+    // - Playing clips: stop at the SAME target beat (no gap)
+    // - Queued clips: cancel immediately (stop with nullopt)
     if (clip) {
         auto& cm = ClipManager::getInstance();
         for (const auto& otherClip : cm.getSessionClips()) {
@@ -782,11 +801,18 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId, bool forceImmediate) {
                 auto otherLH = otherTeClip->getLaunchHandle();
                 if (!otherLH)
                     continue;
-                if (otherLH->getPlayingStatus() == te::LaunchHandle::PlayState::playing) {
+                auto otherPlayState = otherLH->getPlayingStatus();
+                auto otherQueuedState = otherLH->getQueuedStatus();
+                if (otherPlayState == te::LaunchHandle::PlayState::playing) {
                     std::cout << "[ClipSynchronizer]   stopping same-track clipId=" << otherClip.id
                               << " at " << (targetBeat ? targetBeat->v.inBeats() : -1.0)
                               << std::endl;
                     otherLH->stop(targetBeat ? *targetBeat : std::optional<te::MonotonicBeat>{});
+                } else if (otherQueuedState &&
+                           *otherQueuedState == te::LaunchHandle::QueueState::playQueued) {
+                    std::cout << "[ClipSynchronizer]   cancelling queued same-track clipId="
+                              << otherClip.id << std::endl;
+                    otherLH->stop(std::nullopt);
                 }
             }
         }
@@ -794,6 +820,10 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId, bool forceImmediate) {
 
     if (!targetBeat) {
         std::cout << "[ClipSynchronizer]   calling launchHandle->play() immediate" << std::endl;
+        // For immediate launches, use transport position as fallback
+        if (clip) {
+            lastLaunchTimeByTrack_[clip->trackId] = edit_.getTransport().position.get().inSeconds();
+        }
         launchHandle->play(std::nullopt);
     } else {
         launchHandle->play(*targetBeat);
@@ -804,6 +834,11 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId, bool forceImmediate) {
               << (int)launchHandle->getPlayingStatus()
               << " queuedStatus=" << (queuedStatus ? (int)*queuedStatus : -1)
               << " queuedPos=" << (queuedPos ? queuedPos->v.inBeats() : -1.0) << std::endl;
+}
+
+double ClipSynchronizer::getLastLaunchTimeForTrack(TrackId trackId) const {
+    auto it = lastLaunchTimeByTrack_.find(trackId);
+    return (it != lastLaunchTimeByTrack_.end()) ? it->second : 0.0;
 }
 
 void ClipSynchronizer::stopSessionClip(ClipId clipId) {

@@ -5,6 +5,7 @@
 
 #include <map>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "../core/ClipManager.hpp"
@@ -242,6 +243,13 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
     }
 
     /**
+     * @brief Get the precise quantized launch time for a track's last-launched session clip.
+     * @param trackId The track to query
+     * @return Time in seconds, or 0.0 if no launch recorded
+     */
+    double getLastLaunchTimeForTrack(TrackId trackId) const;
+
+    /**
      * @brief Get clip ID mapping for external access
      * @return Const reference to clipIdToEngineId_ map
      */
@@ -303,6 +311,9 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
 
     // Reverse proxy state (for deferred reallocation)
     ClipId pendingReverseClipId_{INVALID_CLIP_ID};
+
+    // Precise quantized launch times per track (seconds), written by launchSessionClip()
+    std::unordered_map<TrackId, double> lastLaunchTimeByTrack_;
 
     // Thread safety
     mutable juce::CriticalSection clipLock_;

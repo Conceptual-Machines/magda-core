@@ -304,6 +304,9 @@ void TracktionEngineWrapper::createEditAndBridges() {
             return sessionScheduler_ ? sessionScheduler_->getClipPlayState(clipId)
                                      : SessionClipPlayState::Stopped;
         });
+        sessionRecorder_->setLaunchTimeQuery([this](TrackId trackId) {
+            return audioBridge_ ? audioBridge_->getLastLaunchTimeForTrack(trackId) : 0.0;
+        });
         pluginWindowManager_ = std::make_unique<PluginWindowManager>(*engine_, *currentEdit_);
         audioBridge_->setPluginWindowManager(pluginWindowManager_.get());
     }

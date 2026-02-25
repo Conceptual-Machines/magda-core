@@ -90,6 +90,9 @@ class SessionClipScheduler : public ClipManagerListener, private juce::Timer {
     static constexpr int kStoppedThreshold = 3;  // ~100ms at 30Hz
     std::unordered_map<ClipId, int> stoppedCounters_;
 
+    // Cache last-notified state per clip so we only fire notifications on actual transitions
+    std::unordered_map<ClipId, SessionClipPlayState> lastNotifiedState_;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SessionClipScheduler)
 };
 

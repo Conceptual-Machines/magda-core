@@ -65,10 +65,22 @@ void SessionRecorder::clipPlaybackStateChanged(ClipId clipId) {
     if (state == SessionClipPlayState::Playing) {
         ensureSnapshotTaken();
 
+        // Use precise quantized launch time when available, fall back to transport position
+        double launchTime = currentTime;
+        if (getLaunchTime_) {
+            double precise = getLaunchTime_(clip->trackId);
+            if (precise > 0.0) {
+                launchTime = precise;
+                std::cout << "[SessionRecorder]   using precise launchTime=" << launchTime
+                          << "s (transport was " << currentTime
+                          << "s, delta=" << (currentTime - launchTime) << "s)" << std::endl;
+            }
+        }
+
         // Finalize any existing recording on the same track (clip replaced)
         for (auto it = activeRecordings_.begin(); it != activeRecordings_.end();) {
             if (it->second.trackId == clip->trackId) {
-                finalizeRecording(it->second, currentTime);
+                finalizeRecording(it->second, launchTime);
                 it = activeRecordings_.erase(it);
             } else {
                 ++it;
@@ -79,21 +91,21 @@ void SessionRecorder::clipPlaybackStateChanged(ClipId clipId) {
         ActiveRecording rec;
         rec.sessionClipId = clipId;
         rec.trackId = clip->trackId;
-        rec.arrangementStartTime = currentTime;
+        rec.arrangementStartTime = launchTime;
         activeRecordings_[clipId] = rec;
 
         // Create recording preview for real-time UI
         if (recordingPreviews_) {
             RecordingPreview preview;
             preview.trackId = clip->trackId;
-            preview.startTime = currentTime;
+            preview.startTime = launchTime;
             preview.currentLength = 0.0;
             preview.isAudioRecording = (clip->type == ClipType::Audio);
             (*recordingPreviews_)[clip->trackId] = preview;
         }
 
         std::cout << "[SessionRecorder]   started recording clipId=" << clipId
-                  << " trackId=" << clip->trackId << " arrangementStartTime=" << currentTime << "s"
+                  << " trackId=" << clip->trackId << " arrangementStartTime=" << launchTime << "s"
                   << std::endl;
     } else if (state == SessionClipPlayState::Stopped) {
         // Clip stopped — finalize its recording

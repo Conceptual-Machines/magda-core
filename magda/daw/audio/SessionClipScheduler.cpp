@@ -34,10 +34,12 @@ void SessionClipScheduler::clipsChanged() {
         audioBridge_.stopSessionClip(clipId);
         activeClips_.erase(clipId);
         stoppedCounters_.erase(clipId);
+        lastNotifiedState_.erase(clipId);
     }
 
     if (activeClips_.empty()) {
         stoppedCounters_.clear();
+        lastNotifiedState_.clear();
         stopTimer();
     }
 }
@@ -211,6 +213,7 @@ void SessionClipScheduler::timerCallback() {
             auto copy = activeClips_;
             activeClips_.clear();
             stoppedCounters_.clear();
+            lastNotifiedState_.clear();
             pendingPlayheadClip_ = INVALID_CLIP_ID;
             for (auto clipId : copy)
                 cm.notifyClipPlaybackStateChanged(clipId);
@@ -272,14 +275,18 @@ void SessionClipScheduler::timerCallback() {
     for (auto clipId : toRemove) {
         activeClips_.erase(clipId);
         stoppedCounters_.erase(clipId);
+        lastNotifiedState_.erase(clipId);
         cm.notifyClipPlaybackStateChanged(clipId);
     }
 
-    // Notify UI for any state transitions (queued → playing) so the
-    // slot colour updates without waiting for the next user interaction.
-    // This is cheap — the UI only repaints if the state actually changed.
+    // Only notify when a clip's state actually changes (e.g. queued → playing)
     for (auto clipId : activeClips_) {
-        cm.notifyClipPlaybackStateChanged(clipId);
+        auto state = queryLaunchHandleState(clipId);
+        auto& prev = lastNotifiedState_[clipId];
+        if (state != prev) {
+            prev = state;
+            cm.notifyClipPlaybackStateChanged(clipId);
+        }
     }
 
     if (activeClips_.empty()) {
@@ -306,6 +313,7 @@ void SessionClipScheduler::deactivateAllSessionClips() {
     auto copy = activeClips_;
     activeClips_.clear();
     stoppedCounters_.clear();
+    lastNotifiedState_.clear();
     pendingPlayheadClip_ = INVALID_CLIP_ID;
     stopTimer();
 

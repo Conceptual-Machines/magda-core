@@ -45,6 +45,11 @@ class SessionRecorder : public ClipManagerListener {
         getPlayState_ = std::move(fn);
     }
 
+    /** Set the launch time query function (delegates to ClipSynchronizer via AudioBridge). */
+    void setLaunchTimeQuery(std::function<double(TrackId)> fn) {
+        getLaunchTime_ = std::move(fn);
+    }
+
     /** Update preview lengths to match current transport position. Call each frame. */
     void updatePreviews();
 
@@ -78,6 +83,7 @@ class SessionRecorder : public ClipManagerListener {
     std::vector<ClipId> createdArrangementClipIds_;
     std::unordered_map<TrackId, RecordingPreview>* recordingPreviews_ = nullptr;
     std::function<SessionClipPlayState(ClipId)> getPlayState_;
+    std::function<double(TrackId)> getLaunchTime_;
 };
 
 }  // namespace magda

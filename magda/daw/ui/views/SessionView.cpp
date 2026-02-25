@@ -81,6 +81,8 @@ class ClipSlotButton : public juce::TextButton {
 
     bool hasClip = false;
     bool clipIsPlaying = false;
+    bool clipIsQueued = false;
+    bool blinkOn = false;  // Toggled by SessionView timer for queued blink
     bool isSelected = false;
     bool isMidiClip = false;
     double clipLength = 0.0;           // Clip duration in seconds (for progress bar)
@@ -201,13 +203,14 @@ class ClipSlotButton : public juce::TextButton {
                 g.fillRect(juce::Rectangle<float>(centre.getX() - size, centre.getY() - size,
                                                   size * 2.0f, size * 2.0f));
             } else {
-                // Draw play triangle when stopped
+                // Draw play triangle — blink when queued
                 juce::Path triangle;
                 float size = 6.0f;
                 triangle.addTriangle(centre.getX() - size * 0.7f, centre.getY() - size,
                                      centre.getX() - size * 0.7f, centre.getY() + size,
                                      centre.getX() + size, centre.getY());
-                g.setColour(juce::Colours::white.withAlpha(0.7f));
+                float alpha = (clipIsQueued && !blinkOn) ? 0.15f : 0.7f;
+                g.setColour(juce::Colours::white.withAlpha(alpha));
                 g.fillPath(triangle);
             }
 
@@ -2553,16 +2556,16 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
             // Query play state from the scheduler (single source of truth)
             auto playState = audioEngine_ ? audioEngine_->getSessionClipPlayState(clipId)
                                           : SessionClipPlayState::Stopped;
-            bool isPlaying = (playState == SessionClipPlayState::Playing);
 
             // Update slot state for custom painting
             slot->hasClip = true;
             slot->clipId = clipId;
-            slot->clipIsPlaying = isPlaying;
+            slot->clipIsPlaying = (playState == SessionClipPlayState::Playing);
+            slot->clipIsQueued = (playState == SessionClipPlayState::Queued);
             slot->isSelected = (clipId == selectedClipId);
             slot->isMidiClip = (clip->type == ClipType::MIDI);
             slot->clipLength = clip->length;
-            slot->sessionPlayheadPos = isPlaying ? sessionPlayheadPos_ : -1.0;
+            slot->sessionPlayheadPos = slot->clipIsPlaying ? sessionPlayheadPos_ : -1.0;
 
             slot->setButtonText(clip->name);
 
@@ -2651,6 +2654,30 @@ void SessionView::timerCallback() {
         MeterData data;
         if (meteringBuffer.peekLatest(trackId, data)) {
             strip->setMeterLevels(data.peakL, data.peakR);
+        }
+    }
+
+    // Update blink state for queued clips — blink on the beat
+    {
+        bool newBlinkOn = false;
+        if (auto* edit = teWrapper->getEdit()) {
+            auto& transport = edit->getTransport();
+            if (transport.isPlaying()) {
+                double bpm = edit->tempoSequence.getBpmAt(tracktion::TimePosition());
+                double pos = transport.getPosition().inSeconds();
+                double beatDuration = 60.0 / (bpm > 0.0 ? bpm : 120.0);
+                double beatPhase = std::fmod(pos, beatDuration) / beatDuration;
+                newBlinkOn = (beatPhase < 0.5);
+            }
+        }
+        for (auto& trackSlots : clipSlots) {
+            for (auto& slotBtn : trackSlots) {
+                auto* slot = dynamic_cast<ClipSlotButton*>(slotBtn.get());
+                if (slot && slot->clipIsQueued) {
+                    slot->blinkOn = newBlinkOn;
+                    slot->repaint();
+                }
+            }
         }
     }
 
