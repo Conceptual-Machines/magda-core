@@ -150,6 +150,7 @@ class TrackHeadersPanel : public juce::Component,
         std::vector<std::unique_ptr<DraggableValueLabel>> sendLabels;  // Send level labels
         std::unique_ptr<juce::Component> meterComponent;               // Peak meter display
         std::unique_ptr<juce::Component> midiIndicator;                // MIDI activity indicator
+        std::unique_ptr<juce::Component> sessionModeButton;  // Back-to-arrangement indicator
 
         // Meter levels
         float meterLevelL = 0.0f;

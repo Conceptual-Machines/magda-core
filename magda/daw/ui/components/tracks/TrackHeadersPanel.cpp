@@ -165,6 +165,52 @@ class MidiActivityIndicator : public juce::Component {
   private:
     float activity_ = 0.0f;
 };
+
+// Session mode indicator button — shows resume icon, orange when track is in session mode
+class SessionModeButton : public juce::Component {
+  public:
+    SessionModeButton() {
+        resumeOffDrawable_ =
+            juce::Drawable::createFromImageData(BinaryData::resume_svg, BinaryData::resume_svgSize);
+        resumeOnDrawable_ = juce::Drawable::createFromImageData(BinaryData::resume_on_svg,
+                                                                BinaryData::resume_on_svgSize);
+    }
+
+    void setSessionMode(bool inSession) {
+        if (inSession_ != inSession) {
+            inSession_ = inSession;
+            repaint();
+        }
+    }
+
+    bool isInSessionMode() const {
+        return inSession_;
+    }
+
+    void paint(juce::Graphics& g) override {
+        auto bounds = getLocalBounds().toFloat();
+        float iconSize = std::min(bounds.getWidth(), std::min(bounds.getHeight(), 12.0f));
+        auto iconArea = bounds.withSizeKeepingCentre(iconSize, iconSize);
+
+        auto& drawable = inSession_ ? resumeOnDrawable_ : resumeOffDrawable_;
+        if (drawable) {
+            drawable->drawWithin(g, iconArea, juce::RectanglePlacement::centred,
+                                 inSession_ ? 1.0f : 0.25f);
+        }
+    }
+
+    std::function<void()> onClick;
+
+    void mouseDown(const juce::MouseEvent&) override {
+        if (onClick)
+            onClick();
+    }
+
+  private:
+    bool inSession_ = false;
+    std::unique_ptr<juce::Drawable> resumeOffDrawable_;
+    std::unique_ptr<juce::Drawable> resumeOnDrawable_;
+};
 }  // namespace
 
 TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : name(trackName) {
@@ -284,6 +330,9 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // MIDI activity indicator
     midiIndicator = std::make_unique<MidiActivityIndicator>();
     midiIndicator->setAlwaysOnTop(true);  // Ensure always visible on top
+
+    // Session mode button (back to arrangement)
+    sessionModeButton = std::make_unique<SessionModeButton>();
 
     // Column header labels for routing selectors
     audioColumnLabel = std::make_unique<juce::Label>("audioCol", "Audio");
@@ -746,6 +795,15 @@ void TrackHeadersPanel::tracksChanged() {
         }
         addAndMakeVisible(*header->meterComponent);
         addAndMakeVisible(*header->midiIndicator);
+        addAndMakeVisible(*header->sessionModeButton);
+
+        // Wire session mode button
+        auto* smBtn = static_cast<SessionModeButton*>(header->sessionModeButton.get());
+        smBtn->setSessionMode(track->playbackMode == TrackPlaybackMode::Session);
+        smBtn->onClick = [trackId]() {
+            TrackManager::getInstance().setTrackPlaybackMode(trackId,
+                                                             TrackPlaybackMode::Arrangement);
+        };
 
         // Add collapse button for groups and tracks with multi-out children
         if (header->isGroup || track->hasChildren()) {
@@ -833,6 +891,12 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
             }
             header.monitorButton->setToggleState(track->inputMonitor != InputMonitorMode::Off,
                                                  juce::dontSendNotification);
+        }
+
+        // Update session mode button
+        if (header.sessionModeButton) {
+            static_cast<SessionModeButton*>(header.sessionModeButton.get())
+                ->setSessionMode(track->playbackMode == TrackPlaybackMode::Session);
         }
 
         // Update routing selectors to match track state
@@ -1428,11 +1492,23 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
             header.meterComponent->setBounds(meterArea);
             header.meterComponent->setVisible(true);
 
-            // MIDI indicator spans full track height
-            header.midiIndicator->setBounds(midiArea);
+            // MIDI indicator in top portion, session mode button in bottom portion
+            const int sessionBtnSize = 14;
+            auto midiTopArea = midiArea;
+            auto sessionBtnArea = midiArea;
+
+            if (midiArea.getHeight() > sessionBtnSize + 4) {
+                sessionBtnArea = midiArea.removeFromBottom(sessionBtnSize + 2);
+                midiTopArea = midiArea;
+            }
+
+            header.midiIndicator->setBounds(midiTopArea);
             header.midiIndicator->setVisible(header.inputSelector &&
                                              header.inputSelector->isEnabled());
             header.midiIndicator->toFront(false);  // Ensure it's on top
+
+            header.sessionModeButton->setBounds(sessionBtnArea);
+            header.sessionModeButton->setVisible(true);
 
             // Apply indentation based on depth for TCP area
             int indent = header.depth * INDENT_WIDTH;
