@@ -567,6 +567,21 @@ void TrackManager::setTrackFrozen(TrackId trackId, bool frozen) {
     }
 }
 
+void TrackManager::setTrackPlaybackMode(TrackId trackId, TrackPlaybackMode mode) {
+    if (auto* track = getTrack(trackId)) {
+        if (track->playbackMode == mode)
+            return;
+        track->playbackMode = mode;
+        notifyTrackPropertyChanged(trackId);
+    }
+}
+
+void TrackManager::setAllTracksPlaybackMode(TrackPlaybackMode mode) {
+    for (const auto& track : tracks_) {
+        setTrackPlaybackMode(track.id, mode);
+    }
+}
+
 void TrackManager::setTrackType(TrackId trackId, TrackType type) {
     if (auto* track = getTrack(trackId)) {
         // Don't allow changing type if track has children (group tracks)

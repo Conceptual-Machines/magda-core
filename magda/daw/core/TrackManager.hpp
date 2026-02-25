@@ -191,6 +191,8 @@ class TrackManager {
     void setTrackRecordArmed(TrackId trackId, bool armed);
     void setTrackInputMonitor(TrackId trackId, InputMonitorMode mode);
     void setTrackFrozen(TrackId trackId, bool frozen);
+    void setTrackPlaybackMode(TrackId trackId, TrackPlaybackMode mode);
+    void setAllTracksPlaybackMode(TrackPlaybackMode mode);
     void setTrackType(TrackId trackId, TrackType type);
 
     // Track routing setters (notify listeners and forward to bridges)

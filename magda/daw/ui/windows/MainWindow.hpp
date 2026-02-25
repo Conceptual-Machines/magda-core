@@ -9,6 +9,7 @@
 #include "../layout/LayoutConfig.hpp"
 #include "CommandIDs.hpp"
 #include "MenuManager.hpp"
+#include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
 #include "core/ViewModeState.hpp"
 
@@ -60,7 +61,8 @@ class MainWindow::MainComponent : public juce::Component,
                                   public juce::DragAndDropContainer,
                                   public juce::ApplicationCommandTarget,
                                   public ViewModeListener,
-                                  public SelectionManagerListener {
+                                  public SelectionManagerListener,
+                                  public TrackManagerListener {
   public:
     MainComponent(AudioEngine* externalEngine = nullptr);
     ~MainComponent() override;
@@ -82,6 +84,10 @@ class MainWindow::MainComponent : public juce::Component,
 
     // SelectionManagerListener
     void selectionTypeChanged(SelectionType newType) override;
+
+    // TrackManagerListener
+    void tracksChanged() override {}
+    void trackPropertyChanged(int trackId) override;
 
     // Command manager access
     juce::ApplicationCommandManager& getCommandManager() {

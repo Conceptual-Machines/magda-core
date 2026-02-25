@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "../core/ClipManager.hpp"
+#include "../core/TrackManager.hpp"
 #include "../core/TypeIds.hpp"
 
 namespace magda {
@@ -38,7 +39,7 @@ struct WarpMarkerInfo;
  * - TrackController& (for track lookup and creation)
  * - WarpMarkerManager& (for transient detection and warp markers)
  */
-class ClipSynchronizer : public ClipManagerListener {
+class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener {
   public:
     /**
      * @brief Construct ClipSynchronizer with required dependencies
@@ -80,6 +81,13 @@ class ClipSynchronizer : public ClipManagerListener {
      * @param clipId The newly selected clip
      */
     void clipSelectionChanged(ClipId clipId) override;
+
+    // =========================================================================
+    // TrackManagerListener Interface
+    // =========================================================================
+
+    void tracksChanged() override {}
+    void trackPropertyChanged(int trackId) override;
 
     // =========================================================================
     // Arrangement Clip Operations
@@ -275,6 +283,14 @@ class ClipSynchronizer : public ClipManagerListener {
      * offset, and beat-based loop range.
      */
     void configureSessionAutoTempo(te::WaveAudioClip* audioClip, const ClipInfo* clip);
+
+    /**
+     * @brief Sync TrackInfo::playbackMode to TE's audioTrack->playSlotClips
+     * @param trackId The track to sync
+     *
+     * This is the SINGLE place that writes audioTrack->playSlotClips.
+     */
+    void syncPlaybackModeToEngine(TrackId trackId);
 
     // References to dependencies (not owned)
     te::Edit& edit_;

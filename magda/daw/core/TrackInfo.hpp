@@ -32,6 +32,8 @@ struct SendInfo {
 
 enum class InputMonitorMode { Off, In, Auto };
 
+enum class TrackPlaybackMode { Arrangement, Session };
+
 /**
  * @brief Track data structure containing all track properties
  */
@@ -53,6 +55,7 @@ struct TrackInfo {
     bool recordArmed = false;
     InputMonitorMode inputMonitor = InputMonitorMode::Off;
     bool frozen = false;  // Track is frozen (rendered to audio, plugins disabled)
+    TrackPlaybackMode playbackMode = TrackPlaybackMode::Arrangement;
 
     // Routing
     juce::String midiInputDevice;    // MIDI input device ID ("all", device ID, or empty for none)
@@ -97,6 +100,7 @@ struct TrackInfo {
           recordArmed(other.recordArmed),
           inputMonitor(other.inputMonitor),
           frozen(other.frozen),
+          playbackMode(other.playbackMode),
           midiInputDevice(other.midiInputDevice),
           midiOutputDevice(other.midiOutputDevice),
           audioInputDevice(other.audioInputDevice),
@@ -127,6 +131,7 @@ struct TrackInfo {
             recordArmed = other.recordArmed;
             inputMonitor = other.inputMonitor;
             frozen = other.frozen;
+            playbackMode = other.playbackMode;
             midiInputDevice = other.midiInputDevice;
             midiOutputDevice = other.midiOutputDevice;
             audioInputDevice = other.audioInputDevice;

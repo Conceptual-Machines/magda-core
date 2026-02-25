@@ -2,6 +2,7 @@
 
 #include <iostream>
 
+#include "../core/TrackManager.hpp"
 #include "AudioBridge.hpp"
 
 namespace magda {
@@ -214,13 +215,7 @@ void SessionClipScheduler::deactivateAllSessionClips() {
     }
 
     // Return all tracks to arrangement mode now that no session clips are playing
-    for (auto* track : te::getAudioTracks(edit_)) {
-        if (track->playSlotClips.get()) {
-            std::cout << "[SessionClipScheduler]   resetting playSlotClips on track "
-                      << track->getName() << std::endl;
-            track->playSlotClips = false;
-        }
-    }
+    TrackManager::getInstance().setAllTracksPlaybackMode(TrackPlaybackMode::Arrangement);
 }
 
 double SessionClipScheduler::getSessionPlayheadPosition() const {

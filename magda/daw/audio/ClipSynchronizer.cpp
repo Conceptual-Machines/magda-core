@@ -8,6 +8,7 @@
 
 #include "../core/ClipManager.hpp"
 #include "../core/ClipOperations.hpp"
+#include "../core/TrackManager.hpp"
 #include "TrackController.hpp"
 #include "WarpMarkerManager.hpp"
 
@@ -41,13 +42,28 @@ static te::LaunchQType toTELaunchQType(LaunchQuantize q) {
 ClipSynchronizer::ClipSynchronizer(te::Edit& edit, TrackController& trackController,
                                    WarpMarkerManager& warpMarkerManager)
     : edit_(edit), trackController_(trackController), warpMarkerManager_(warpMarkerManager) {
-    // Register as ClipManager listener
     ClipManager::getInstance().addListener(this);
+    TrackManager::getInstance().addListener(this);
 }
 
 ClipSynchronizer::~ClipSynchronizer() {
-    // Unregister from ClipManager
     ClipManager::getInstance().removeListener(this);
+    TrackManager::getInstance().removeListener(this);
+}
+
+// =============================================================================
+// TrackManagerListener Interface
+// =============================================================================
+
+void ClipSynchronizer::syncPlaybackModeToEngine(TrackId trackId) {
+    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    auto* audioTrack = trackController_.getAudioTrack(trackId);
+    if (trackInfo && audioTrack)
+        audioTrack->playSlotClips = (trackInfo->playbackMode == TrackPlaybackMode::Session);
+}
+
+void ClipSynchronizer::trackPropertyChanged(int trackId) {
+    syncPlaybackModeToEngine(trackId);
 }
 
 // =============================================================================
@@ -99,10 +115,13 @@ void ClipSynchronizer::clipsChanged() {
     // Force graph rebuild if new session clips were moved into slots,
     // so SlotControlNode instances are created in the audio graph
     if (sessionClipsSynced) {
-        // Ensure playSlotClips is false on tracks with no actively playing slots,
+        // Ensure playback mode is Arrangement on tracks with no actively playing slots,
         // so arrangement clips remain audible after graph rebuild
-        for (auto* track : te::getAudioTracks(edit_)) {
-            if (!track->playSlotClips.get())
+        for (const auto& trackInfo : TrackManager::getInstance().getTracks()) {
+            if (trackInfo.playbackMode != TrackPlaybackMode::Session)
+                continue;
+            auto* track = trackController_.getAudioTrack(trackInfo.id);
+            if (!track)
                 continue;
             bool anyPlaying = false;
             for (auto* slot : track->getClipSlotList().getClipSlots()) {
@@ -116,7 +135,8 @@ void ClipSynchronizer::clipsChanged() {
                 }
             }
             if (!anyPlaying)
-                track->playSlotClips = false;
+                TrackManager::getInstance().setTrackPlaybackMode(trackInfo.id,
+                                                                 TrackPlaybackMode::Arrangement);
         }
 
         if (auto* ctx = edit_.getCurrentPlaybackContext()) {
@@ -663,14 +683,12 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId) {
         }
     }
 
-    // Switch track to slot mode before launching so the arrangement is
+    // Switch track to session mode before launching so the arrangement is
     // already muted when the slot starts — prevents a brief audio overlap.
     if (clip) {
-        if (auto* audioTrack = trackController_.getAudioTrack(clip->trackId)) {
-            std::cout << "[ClipSynchronizer]   setting playSlotClips=true on track "
-                      << audioTrack->getName() << std::endl;
-            audioTrack->playSlotClips = true;
-        }
+        std::cout << "[ClipSynchronizer]   setting playbackMode=Session on track " << clip->trackId
+                  << std::endl;
+        TrackManager::getInstance().setTrackPlaybackMode(clip->trackId, TrackPlaybackMode::Session);
     }
 
     std::cout << "[ClipSynchronizer]   calling launchHandle->play()" << std::endl;
@@ -726,7 +744,8 @@ void ClipSynchronizer::stopSessionClip(ClipId clipId) {
             }
         }
         if (!anyStillPlaying) {
-            audioTrack->playSlotClips = false;
+            TrackManager::getInstance().setTrackPlaybackMode(clip->trackId,
+                                                             TrackPlaybackMode::Arrangement);
         }
     }
 }
