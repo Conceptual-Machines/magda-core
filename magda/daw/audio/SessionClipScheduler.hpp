@@ -50,14 +50,17 @@ class SessionClipScheduler : public ClipManagerListener, private juce::Timer {
     // ClipManagerListener
     void clipsChanged() override;
     void clipPropertyChanged(ClipId clipId) override;
-    void clipPlaybackStateChanged(ClipId clipId) override;
+    void clipPlaybackRequested(ClipId clipId, ClipPlaybackRequest request) override;
+
+    /** Query the actual play state of a session clip from the scheduler. */
+    SessionClipPlayState getClipPlayState(ClipId clipId) const;
 
     /** Stop all launched session clips and clear state. */
     void deactivateAllSessionClips();
 
-    /** Returns true if any session clips are currently launched. */
+    /** Returns true if any session clips are currently launched or queued. */
     bool hasLaunchedClips() const {
-        return !launchedClips_.empty();
+        return !launchedClips_.empty() || !queuedClips_.empty();
     }
 
     /** Returns the looped session playhead position (seconds), or -1.0 if no session clips active.
@@ -72,6 +75,9 @@ class SessionClipScheduler : public ClipManagerListener, private juce::Timer {
 
     AudioBridge& audioBridge_;
     te::Edit& edit_;
+
+    // Clips queued for playback (between request and actual launch)
+    std::unordered_set<ClipId> queuedClips_;
 
     // Clips we've launched via LaunchHandle (to detect natural end of one-shot clips)
     std::unordered_set<ClipId> launchedClips_;

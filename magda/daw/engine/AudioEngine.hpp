@@ -4,6 +4,7 @@
 #include <unordered_map>
 
 #include "../audio/RecordingNoteQueue.hpp"
+#include "../core/ClipTypes.hpp"
 #include "../ui/state/TransportStateListener.hpp"
 
 namespace juce {
@@ -42,6 +43,9 @@ class AudioEngine : public AudioEngineListener {
     /** Returns the looped playhead position within the active session clip (seconds).
         Returns -1.0 if no session clips are playing. */
     virtual double getSessionPlayheadPosition() const = 0;
+
+    /** Returns the play state of a session clip (Stopped/Queued/Playing). */
+    virtual SessionClipPlayState getSessionClipPlayState(ClipId clipId) const = 0;
 
     // ===== Tempo =====
     virtual void setTempo(double bpm) = 0;

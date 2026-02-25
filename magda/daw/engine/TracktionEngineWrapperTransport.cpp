@@ -334,7 +334,7 @@ void TracktionEngineWrapper::onTransportPlay(double position) {
     }
     if (clipToTrigger != INVALID_CLIP_ID) {
         const auto* clip = cm.getClip(clipToTrigger);
-        if (clip && clip->view == ClipView::Session && !clip->isPlaying && !clip->isQueued) {
+        if (clip && clip->view == ClipView::Session) {
             cm.triggerClip(clipToTrigger);
             return;  // SessionClipScheduler will start transport
         }

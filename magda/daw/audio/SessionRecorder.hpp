@@ -2,6 +2,7 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <functional>
 #include <unordered_map>
 #include <vector>
 
@@ -39,6 +40,11 @@ class SessionRecorder : public ClipManagerListener {
         recordingPreviews_ = previews;
     }
 
+    /** Set the play state query function (delegates to SessionClipScheduler). */
+    void setPlayStateQuery(std::function<SessionClipPlayState(ClipId)> fn) {
+        getPlayState_ = std::move(fn);
+    }
+
     /** Update preview lengths to match current transport position. Call each frame. */
     void updatePreviews();
 
@@ -71,6 +77,7 @@ class SessionRecorder : public ClipManagerListener {
     std::vector<ClipInfo> arrangementSnapshotBeforeRecord_;
     std::vector<ClipId> createdArrangementClipIds_;
     std::unordered_map<TrackId, RecordingPreview>* recordingPreviews_ = nullptr;
+    std::function<SessionClipPlayState(ClipId)> getPlayState_;
 };
 
 }  // namespace magda

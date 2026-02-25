@@ -55,12 +55,14 @@ void SessionRecorder::clipPlaybackStateChanged(ClipId clipId) {
     if (!clip || clip->view != ClipView::Session)
         return;
 
+    // Query the scheduler for the actual play state
+    auto state = getPlayState_ ? getPlayState_(clipId) : SessionClipPlayState::Stopped;
+
     double currentTime = edit_.getTransport().position.get().inSeconds();
     std::cout << "[SessionRecorder] clipPlaybackStateChanged clipId=" << clipId
-              << " isPlaying=" << clip->isPlaying << " isQueued=" << clip->isQueued
-              << " transportPos=" << currentTime << std::endl;
+              << " state=" << (int)state << " transportPos=" << currentTime << std::endl;
 
-    if (clip->isPlaying) {
+    if (state == SessionClipPlayState::Playing) {
         ensureSnapshotTaken();
 
         // Finalize any existing recording on the same track (clip replaced)
@@ -93,7 +95,7 @@ void SessionRecorder::clipPlaybackStateChanged(ClipId clipId) {
         std::cout << "[SessionRecorder]   started recording clipId=" << clipId
                   << " trackId=" << clip->trackId << " arrangementStartTime=" << currentTime << "s"
                   << std::endl;
-    } else if (!clip->isPlaying && !clip->isQueued) {
+    } else if (state == SessionClipPlayState::Stopped) {
         // Clip stopped — finalize its recording
         auto it = activeRecordings_.find(clipId);
         if (it != activeRecordings_.end()) {

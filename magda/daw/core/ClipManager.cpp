@@ -1069,62 +1069,21 @@ void ClipManager::triggerClip(ClipId clipId) {
             lastTriggeredSessionClipId_ = clipId;
         }
 
-        // Toggle mode: if clip is already playing, stop it instead
-        if (clip->launchMode == LaunchMode::Toggle && (clip->isPlaying || clip->isQueued)) {
-            stopClip(clipId);
-            return;
-        }
-
-        // Trigger mode: if clip is already playing, re-trigger from start
-        // The scheduler will handle deactivating the old TE clip and creating a new one
-
-        // Stop other clips on same track (only check session clips since triggers are session-only)
-        for (auto& otherClip : sessionClips_) {
-            if (otherClip.trackId == clip->trackId && otherClip.id != clipId) {
-                if (otherClip.isPlaying || otherClip.isQueued) {
-                    otherClip.isPlaying = false;
-                    otherClip.isQueued = false;
-                    notifyClipPlaybackStateChanged(otherClip.id);
-                }
-            }
-        }
-
-        // Only set isQueued - the scheduler will set isPlaying when audio actually starts
-        clip->isQueued = true;
-        clip->isPlaying = false;
-        notifyClipPlaybackStateChanged(clipId);
-    }
-}
-
-void ClipManager::setClipPlayingState(ClipId clipId, bool playing) {
-    if (auto* clip = getClip(clipId)) {
-        if (playing) {
-            clip->isPlaying = true;
-            clip->isQueued = false;  // No longer queued, now actually playing
-        } else {
-            clip->isPlaying = false;
-            clip->isQueued = false;
-        }
-        notifyClipPlaybackStateChanged(clipId);
+        // Emit a play request — the scheduler handles toggle logic,
+        // same-track exclusion, and all state management.
+        notifyClipPlaybackRequested(clipId, ClipPlaybackRequest::Play);
     }
 }
 
 void ClipManager::stopClip(ClipId clipId) {
-    if (auto* clip = getClip(clipId)) {
-        clip->isPlaying = false;
-        clip->isQueued = false;
-        notifyClipPlaybackStateChanged(clipId);
+    if (getClip(clipId)) {
+        notifyClipPlaybackRequested(clipId, ClipPlaybackRequest::Stop);
     }
 }
 
 void ClipManager::stopAllClips() {
-    // Stop all session clips (only session clips have playback state)
-    for (auto& clip : sessionClips_) {
-        if (clip.isPlaying || clip.isQueued) {
-            clip.isPlaying = false;
-            clip.isQueued = false;
-            notifyClipPlaybackStateChanged(clip.id);
-        }
+    for (const auto& clip : sessionClips_) {
+        notifyClipPlaybackRequested(clip.id, ClipPlaybackRequest::Stop);
     }
 }
 
@@ -1292,6 +1251,15 @@ void ClipManager::notifyClipPlaybackStateChanged(ClipId clipId) {
     for (auto* listener : listenersCopy) {
         if (std::find(listeners_.begin(), listeners_.end(), listener) != listeners_.end()) {
             listener->clipPlaybackStateChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::notifyClipPlaybackRequested(ClipId clipId, ClipPlaybackRequest request) {
+    auto listenersCopy = listeners_;
+    for (auto* listener : listenersCopy) {
+        if (std::find(listeners_.begin(), listeners_.end(), listener) != listeners_.end()) {
+            listener->clipPlaybackRequested(clipId, request);
         }
     }
 }

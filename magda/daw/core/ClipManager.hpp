@@ -35,6 +35,11 @@ class ClipManagerListener {
         juce::ignoreUnused(clipId);
     }
 
+    // Called when a clip playback is requested (Play or Stop)
+    virtual void clipPlaybackRequested(ClipId clipId, ClipPlaybackRequest request) {
+        juce::ignoreUnused(clipId, request);
+    }
+
     // Called during clip drag for real-time preview updates
     virtual void clipDragPreview(ClipId clipId, double previewStartTime, double previewLength) {
         juce::ignoreUnused(clipId, previewStartTime, previewLength);
@@ -430,14 +435,6 @@ class ClipManager {
     void stopClip(ClipId clipId);
     void stopAllClips();
 
-    /**
-     * @brief Set the actual playing state of a session clip
-     *
-     * Called by SessionClipScheduler when a clip actually starts or stops producing audio.
-     * This updates isPlaying/isQueued and notifies listeners.
-     */
-    void setClipPlayingState(ClipId clipId, bool playing);
-
     // ========================================================================
     // Listener Management
     // ========================================================================
@@ -491,11 +488,15 @@ class ClipManager {
     ClipId selectedClipId_ = INVALID_CLIP_ID;
     ClipId lastTriggeredSessionClipId_ = INVALID_CLIP_ID;
 
-    // Notification helpers
+    // Notification helpers (public so scheduler can emit state changes)
+  public:
+    void notifyClipPlaybackStateChanged(ClipId clipId);
+
+  private:
     void notifyClipsChanged();
     void notifyClipPropertyChanged(ClipId clipId);
     void notifyClipSelectionChanged(ClipId clipId);
-    void notifyClipPlaybackStateChanged(ClipId clipId);
+    void notifyClipPlaybackRequested(ClipId clipId, ClipPlaybackRequest request);
 
     // Clamp audio clip properties (offset, loopStart, loopLength) to file bounds
     void sanitizeAudioClip(ClipInfo& clip);

@@ -2571,24 +2571,30 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
     if (clipId != INVALID_CLIP_ID) {
         const auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip) {
+            // Query play state from the scheduler (single source of truth)
+            auto playState = audioEngine_ ? audioEngine_->getSessionClipPlayState(clipId)
+                                          : SessionClipPlayState::Stopped;
+            bool isPlaying = (playState == SessionClipPlayState::Playing);
+            bool isQueued = (playState == SessionClipPlayState::Queued);
+
             // Update slot state for custom painting
             slot->hasClip = true;
             slot->clipId = clipId;
-            slot->clipIsPlaying = clip->isPlaying;
+            slot->clipIsPlaying = isPlaying;
             slot->isSelected = (clipId == selectedClipId);
             slot->isMidiClip = (clip->type == ClipType::MIDI);
             slot->clipLength = clip->length;
-            slot->sessionPlayheadPos = clip->isPlaying ? sessionPlayheadPos_ : -1.0;
+            slot->sessionPlayheadPos = isPlaying ? sessionPlayheadPos_ : -1.0;
 
             slot->setButtonText(clip->name);
 
             // Set color based on clip state
-            if (clip->isPlaying) {
+            if (isPlaying) {
                 slot->setColour(juce::TextButton::buttonColourId,
                                 DarkTheme::getColour(DarkTheme::STATUS_SUCCESS));
                 slot->setColour(juce::TextButton::textColourOffId,
                                 DarkTheme::getColour(DarkTheme::BACKGROUND));
-            } else if (clip->isQueued) {
+            } else if (isQueued) {
                 slot->setColour(juce::TextButton::buttonColourId,
                                 DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
                 slot->setColour(juce::TextButton::textColourOffId,

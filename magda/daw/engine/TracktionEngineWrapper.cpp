@@ -52,6 +52,12 @@ double TracktionEngineWrapper::getSessionPlayheadPosition() const {
     return -1.0;
 }
 
+SessionClipPlayState TracktionEngineWrapper::getSessionClipPlayState(ClipId clipId) const {
+    if (sessionScheduler_)
+        return sessionScheduler_->getClipPlayState(clipId);
+    return SessionClipPlayState::Stopped;
+}
+
 // =============================================================================
 // Helper Methods
 // =============================================================================

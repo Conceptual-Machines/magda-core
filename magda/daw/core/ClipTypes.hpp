@@ -41,6 +41,16 @@ inline const char* getClipTypeName(ClipType type) {
 }
 
 /**
+ * @brief Play state of a session clip, derived from the scheduler/LaunchHandle
+ */
+enum class SessionClipPlayState { Stopped, Queued, Playing };
+
+/**
+ * @brief Request type for session clip playback
+ */
+enum class ClipPlaybackRequest { Play, Stop };
+
+/**
  * @brief Launch mode for session clips
  */
 enum class LaunchMode {

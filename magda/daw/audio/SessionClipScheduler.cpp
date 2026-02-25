@@ -22,7 +22,7 @@ SessionClipScheduler::~SessionClipScheduler() {
 // =============================================================================
 
 void SessionClipScheduler::clipsChanged() {
-    // Clean up launchedClips_ for deleted clips
+    // Clean up launchedClips_ and queuedClips_ for deleted clips
     auto& cm = ClipManager::getInstance();
 
     std::vector<ClipId> toRemove;
@@ -31,12 +31,18 @@ void SessionClipScheduler::clipsChanged() {
             toRemove.push_back(clipId);
         }
     }
+    for (auto clipId : queuedClips_) {
+        if (cm.getClip(clipId) == nullptr) {
+            toRemove.push_back(clipId);
+        }
+    }
     for (auto clipId : toRemove) {
         audioBridge_.stopSessionClip(clipId);
         launchedClips_.erase(clipId);
+        queuedClips_.erase(clipId);
     }
 
-    if (launchedClips_.empty()) {
+    if (launchedClips_.empty() && queuedClips_.empty()) {
         stopTimer();
     }
 }
@@ -56,36 +62,60 @@ void SessionClipScheduler::clipPropertyChanged(ClipId clipId) {
     updateLaunchTimings(clip);
 }
 
-void SessionClipScheduler::clipPlaybackStateChanged(ClipId clipId) {
+void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequest request) {
     auto& cm = ClipManager::getInstance();
     const auto* clip = cm.getClip(clipId);
     if (!clip || clip->view != ClipView::Session) {
         return;
     }
 
-    std::cout << "[SessionClipScheduler] clipPlaybackStateChanged clipId=" << clipId
-              << " isQueued=" << clip->isQueued << " isPlaying=" << clip->isPlaying
+    std::cout << "[SessionClipScheduler] clipPlaybackRequested clipId=" << clipId
+              << " request=" << (request == ClipPlaybackRequest::Play ? "Play" : "Stop")
               << " launchedClips=" << launchedClips_.size() << std::endl;
 
-    if (clip->isQueued && !clip->isPlaying) {
-        // Clip was just queued for playback — launch it via LaunchHandle
+    if (request == ClipPlaybackRequest::Play) {
+        // Toggle mode: if clip is already playing or queued, stop it instead
+        if (clip->launchMode == LaunchMode::Toggle &&
+            (launchedClips_.count(clipId) || queuedClips_.count(clipId))) {
+            // Recurse with Stop request
+            clipPlaybackRequested(clipId, ClipPlaybackRequest::Stop);
+            return;
+        }
+
+        // Same-track exclusive stop: stop other clips on the same track
+        for (const auto& otherClip : cm.getSessionClips()) {
+            if (otherClip.trackId == clip->trackId && otherClip.id != clipId) {
+                if (launchedClips_.count(otherClip.id) || queuedClips_.count(otherClip.id)) {
+                    audioBridge_.stopSessionClip(otherClip.id);
+                    launchedClips_.erase(otherClip.id);
+                    queuedClips_.erase(otherClip.id);
+                    cm.notifyClipPlaybackStateChanged(otherClip.id);
+                }
+            }
+        }
+
+        // Queue the clip
+        queuedClips_.insert(clipId);
+        cm.notifyClipPlaybackStateChanged(clipId);
+
+        // Ensure transport is playing
         auto& transport = edit_.getTransport();
-        bool wasPlaying = transport.isPlaying();
-        if (!wasPlaying) {
+        if (!transport.isPlaying()) {
             transport.play(false);
         }
-        std::cout << "[SessionClipScheduler]   queued: transportWasPlaying=" << wasPlaying
-                  << " transportNowPlaying=" << transport.isPlaying() << std::endl;
 
         // Record launch position and clip properties for playhead
-        if (launchedClips_.empty()) {
+        if (launchedClips_.empty() && queuedClips_.size() == 1) {
             launchTransportPos_ = transport.getPosition().inSeconds();
             updateLaunchTimings(clip);
         }
 
+        // Launch via LaunchHandle
         audioBridge_.launchSessionClip(clipId);
-        cm.setClipPlayingState(clipId, true);
+        queuedClips_.erase(clipId);
         launchedClips_.insert(clipId);
+        cm.notifyClipPlaybackStateChanged(clipId);
+
         std::cout << "[SessionClipScheduler]   launched clipId=" << clipId
                   << " launchedClips=" << launchedClips_.size() << std::endl;
 
@@ -94,17 +124,20 @@ void SessionClipScheduler::clipPlaybackStateChanged(ClipId clipId) {
             startTimerHz(30);
         }
 
-    } else if (!clip->isQueued && !clip->isPlaying) {
-        // Clip was stopped — stop it via LaunchHandle
-        bool wasTracked = launchedClips_.count(clipId) > 0;
+    } else {
+        // Stop request
+        bool wasTracked = launchedClips_.count(clipId) > 0 || queuedClips_.count(clipId) > 0;
         if (wasTracked) {
             audioBridge_.stopSessionClip(clipId);
             launchedClips_.erase(clipId);
+            queuedClips_.erase(clipId);
         }
+        cm.notifyClipPlaybackStateChanged(clipId);
+
         std::cout << "[SessionClipScheduler]   stopped: wasTracked=" << wasTracked
                   << " launchedClips=" << launchedClips_.size() << std::endl;
 
-        if (launchedClips_.empty()) {
+        if (launchedClips_.empty() && queuedClips_.empty()) {
             stopTimer();
             auto& transport = edit_.getTransport();
             if (transport.isPlaying()) {
@@ -114,6 +147,18 @@ void SessionClipScheduler::clipPlaybackStateChanged(ClipId clipId) {
             }
         }
     }
+}
+
+// =============================================================================
+// Play State Query
+// =============================================================================
+
+SessionClipPlayState SessionClipScheduler::getClipPlayState(ClipId clipId) const {
+    if (queuedClips_.count(clipId))
+        return SessionClipPlayState::Queued;
+    if (launchedClips_.count(clipId))
+        return SessionClipPlayState::Playing;
+    return SessionClipPlayState::Stopped;
 }
 
 // =============================================================================
@@ -170,15 +215,10 @@ void SessionClipScheduler::timerCallback() {
 
     for (auto clipId : toStop) {
         launchedClips_.erase(clipId);
-
-        // Update ClipManager state so UI reflects the stop
-        auto* clip = cm.getClip(clipId);
-        if (clip && (clip->isPlaying || clip->isQueued)) {
-            cm.setClipPlayingState(clipId, false);
-        }
+        cm.notifyClipPlaybackStateChanged(clipId);
     }
 
-    if (launchedClips_.empty()) {
+    if (launchedClips_.empty() && queuedClips_.empty()) {
         stopTimer();
         // Stop transport when all session clips have ended
         auto& transport = edit_.getTransport();
@@ -198,20 +238,20 @@ void SessionClipScheduler::deactivateAllSessionClips() {
     std::cout << "[SessionClipScheduler] deactivateAllSessionClips: " << launchedClips_.size()
               << " clips" << std::endl;
 
-    // Copy the set — setClipPlayingState triggers clipPlaybackStateChanged
-    // which can erase from launchedClips_ while we iterate.
-    auto clipsCopy = launchedClips_;
+    // Copy the sets — notifications can trigger re-entrant calls
+    auto launchedCopy = launchedClips_;
+    auto queuedCopy = queuedClips_;
     launchedClips_.clear();
+    queuedClips_.clear();
     stopTimer();
 
-    for (auto clipId : clipsCopy) {
+    for (auto clipId : launchedCopy) {
         std::cout << "[SessionClipScheduler]   stopping clipId=" << clipId << std::endl;
         audioBridge_.stopSessionClip(clipId);
-
-        auto* clip = cm.getClip(clipId);
-        if (clip && (clip->isPlaying || clip->isQueued)) {
-            cm.setClipPlayingState(clipId, false);
-        }
+        cm.notifyClipPlaybackStateChanged(clipId);
+    }
+    for (auto clipId : queuedCopy) {
+        cm.notifyClipPlaybackStateChanged(clipId);
     }
 
     // Return all tracks to arrangement mode now that no session clips are playing
