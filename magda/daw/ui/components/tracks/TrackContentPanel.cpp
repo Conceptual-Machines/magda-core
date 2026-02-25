@@ -279,6 +279,12 @@ void TrackContentPanel::trackSelectionChanged(TrackId trackId) {
     repaint();
 }
 
+void TrackContentPanel::trackPropertyChanged(int /*trackId*/) {
+    // Repaint when track properties change (e.g. playback mode switching
+    // between Arrangement and Session) to update visual overlays.
+    repaint();
+}
+
 int TrackContentPanel::getNumTracks() const {
     return static_cast<int>(trackLanes.size());
 }
@@ -372,6 +378,11 @@ void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& lane,
     if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
         auto* trackInfo = TrackManager::getInstance().getTrack(visibleTrackIds_[trackIndex]);
         if (trackInfo && trackInfo->frozen) {
+            g.setColour(juce::Colours::black.withAlpha(0.25f));
+            g.fillRect(area);
+        }
+        // Session mode overlay — dim track lane when in Session mode
+        if (trackInfo && trackInfo->playbackMode == TrackPlaybackMode::Session) {
             g.setColour(juce::Colours::black.withAlpha(0.25f));
             g.fillRect(area);
         }

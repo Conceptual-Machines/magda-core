@@ -152,6 +152,13 @@ void ClipComponent::paint(juce::Graphics& g) {
         g.setColour(juce::Colours::black.withAlpha(0.35f));
         g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
     }
+
+    // Session mode overlay — dim arrangement clips when track is in Session mode
+    if (trackInfo && trackInfo->playbackMode == TrackPlaybackMode::Session &&
+        clip->view == ClipView::Arrangement) {
+        g.setColour(juce::Colours::black.withAlpha(0.35f));
+        g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
+    }
 }
 
 void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,

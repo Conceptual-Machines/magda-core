@@ -342,10 +342,9 @@ void TracktionEngineWrapper::onTransportPlay(double position) {
 }
 
 void TracktionEngineWrapper::onTransportStop(double returnPosition) {
-    // Stop any playing session clips
-    if (sessionScheduler_) {
-        sessionScheduler_->deactivateAllSessionClips();
-    }
+    // Session clips persist across transport stop — do NOT deactivate them here.
+    // Tracks in Session mode keep playing; the user must explicitly press
+    // "back to arrangement" (per-track resume button) to return to Arrangement mode.
 
     // Capture current position before stopping (this is the recording end time)
     double stopPosition = getCurrentPosition();

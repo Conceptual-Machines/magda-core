@@ -54,6 +54,7 @@ class TrackContentPanel : public juce::Component,
     // TrackManagerListener implementation
     void tracksChanged() override;
     void trackSelectionChanged(magda::TrackId trackId) override;
+    void trackPropertyChanged(int trackId) override;
 
     // ClipManagerListener implementation
     void clipsChanged() override;
