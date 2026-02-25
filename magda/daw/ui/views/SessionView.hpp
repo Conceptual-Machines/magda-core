@@ -86,9 +86,6 @@ class SessionView : public juce::Component,
     /** Set the audio engine for metering. */
     void setAudioEngine(AudioEngine* engine);
 
-    /** Update per-track arrangement button highlight based on playback mode. */
-    void updateArrangementButtonStates();
-
   private:
     // ScrollBar::Listener
     void scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStart) override;
@@ -151,7 +148,6 @@ class SessionView : public juce::Component,
     class StopButtonContainer;
     std::unique_ptr<StopButtonContainer> stopButtonContainer;
     std::vector<std::unique_ptr<juce::TextButton>> trackStopButtons;
-    std::vector<std::unique_ptr<juce::DrawableButton>> trackArrangementButtons;
     static constexpr int STOP_BUTTON_ROW_HEIGHT = 28;
 
     // Resize handle between stop buttons and fader row

@@ -19,7 +19,6 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
-#include "BinaryData.h"
 #include "core/ClipCommands.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/SelectionManager.hpp"
@@ -1625,7 +1624,6 @@ void SessionView::rebuildTracks() {
     trackHeaders.clear();
     clipSlots.clear();
     trackStopButtons.clear();
-    trackArrangementButtons.clear();
     trackMiniStrips_.clear();
     trackIOStrips_.clear();
     trackSendViewports_.clear();
@@ -1843,26 +1841,6 @@ void SessionView::rebuildTracks() {
         trackStopButtons.push_back(std::move(stopBtn));
     }
 
-    // Create per-track arrangement buttons (back to arrangement mode) using resume icon
-    for (int i = 0; i < numTracks; ++i) {
-        auto arrBtn =
-            std::make_unique<juce::DrawableButton>("arr", juce::DrawableButton::ImageFitted);
-        if (auto svg = juce::Drawable::createFromImageData(BinaryData::resume_svg,
-                                                           BinaryData::resume_svgSize)) {
-            auto svgOn = juce::Drawable::createFromImageData(BinaryData::resume_on_svg,
-                                                             BinaryData::resume_on_svgSize);
-            arrBtn->setImages(svg.get(), nullptr, nullptr, nullptr, svgOn.get());
-        }
-        arrBtn->setClickingTogglesState(false);
-        TrackId trackId = visibleTrackIds_[i];
-        arrBtn->onClick = [trackId]() {
-            TrackManager::getInstance().setTrackPlaybackMode(trackId,
-                                                             TrackPlaybackMode::Arrangement);
-        };
-        stopButtonContainer->addAndMakeVisible(*arrBtn);
-        trackArrangementButtons.push_back(std::move(arrBtn));
-    }
-
     resized();
     updateHeaderSelectionVisuals();
 
@@ -2021,16 +1999,11 @@ void SessionView::resized() {
     stopButtonContainer->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
                                         trackHeaderScrollOffset);
 
-    // Position per-track stop + arrangement buttons (synced with grid horizontal scroll)
+    // Position per-track stop buttons (synced with grid horizontal scroll)
     for (int i = 0; i < numTracks && i < static_cast<int>(trackStopButtons.size()); ++i) {
         int x = getTrackX(i) - trackHeaderScrollOffset;
         int w = trackColumnWidths_[i];
-        int halfW = (w - 4) / 2;
-        trackStopButtons[i]->setBounds(x + 2, 2, halfW, STOP_BUTTON_ROW_HEIGHT - 4);
-        if (i < static_cast<int>(trackArrangementButtons.size())) {
-            trackArrangementButtons[i]->setBounds(x + 2 + halfW, 2, w - 4 - halfW,
-                                                  STOP_BUTTON_ROW_HEIGHT - 4);
-        }
+        trackStopButtons[i]->setBounds(x + 2, 2, w - 4, STOP_BUTTON_ROW_HEIGHT - 4);
     }
 
     // Top row: Master label in scene column corner, headers in tracks area
@@ -2115,12 +2088,7 @@ void SessionView::scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStar
         for (int i = 0; i < numTracks && i < static_cast<int>(trackStopButtons.size()); ++i) {
             int x = getTrackX(i) - trackHeaderScrollOffset;
             int w = trackColumnWidths_[i];
-            int halfW = (w - 4) / 2;
-            trackStopButtons[i]->setBounds(x + 2, 2, halfW, STOP_BUTTON_ROW_HEIGHT - 4);
-            if (i < static_cast<int>(trackArrangementButtons.size())) {
-                trackArrangementButtons[i]->setBounds(x + 2 + halfW, 2, w - 4 - halfW,
-                                                      STOP_BUTTON_ROW_HEIGHT - 4);
-            }
+            trackStopButtons[i]->setBounds(x + 2, 2, w - 4, STOP_BUTTON_ROW_HEIGHT - 4);
         }
         stopButtonContainer->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
                                             trackHeaderScrollOffset);
@@ -2628,17 +2596,6 @@ void SessionView::updateAllClipSlots() {
         for (int sceneIndex = 0; sceneIndex < numSlots; ++sceneIndex) {
             updateClipSlotAppearance(trackIndex, sceneIndex);
         }
-    }
-}
-
-void SessionView::updateArrangementButtonStates() {
-    auto& trackManager = TrackManager::getInstance();
-    for (int i = 0; i < static_cast<int>(trackArrangementButtons.size()); ++i) {
-        if (i >= static_cast<int>(visibleTrackIds_.size()))
-            break;
-        const auto* track = trackManager.getTrack(visibleTrackIds_[i]);
-        bool inSession = track && track->playbackMode == TrackPlaybackMode::Session;
-        trackArrangementButtons[i]->setToggleState(inSession, juce::dontSendNotification);
     }
 }
 

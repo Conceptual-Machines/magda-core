@@ -1008,8 +1008,6 @@ void MainWindow::MainComponent::trackPropertyChanged(int /*trackId*/) {
     }
     if (transportPanel)
         transportPanel->setAnyTrackInSessionMode(anySession);
-    if (sessionView)
-        sessionView->updateArrangementButtonStates();
 }
 
 void MainWindow::MainComponent::switchToView(ViewMode mode) {
