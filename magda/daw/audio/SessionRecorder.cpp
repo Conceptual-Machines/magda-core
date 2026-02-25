@@ -170,6 +170,16 @@ void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopT
         newClip->loopLength = sessionClip->loopLength;
         newClip->speedRatio = sessionClip->speedRatio;
 
+        // Copy beat-mode / auto-tempo properties so the arrangement clip
+        // stays in the same time-stretch mode as the session clip.
+        newClip->autoTempo = sessionClip->autoTempo;
+        newClip->sourceBPM = sessionClip->sourceBPM;
+        newClip->sourceNumBeats = sessionClip->sourceNumBeats;
+        newClip->timeStretchMode = sessionClip->timeStretchMode;
+        newClip->loopStartBeats = sessionClip->loopStartBeats;
+        newClip->loopLengthBeats = sessionClip->loopLengthBeats;
+        newClip->lengthBeats = sessionClip->lengthBeats;
+
         // For looping audio: enable loop if duration exceeds one pass
         double onePassDuration = sessionClip->length;
         if (sessionClip->loopEnabled && duration > onePassDuration) {
