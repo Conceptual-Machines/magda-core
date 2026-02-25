@@ -302,16 +302,9 @@ void BarsBeatsTicksLabel::SegmentLabel::mouseDoubleClick(const juce::MouseEvent&
 
 void BarsBeatsTicksLabel::SegmentLabel::mouseWheelMove(const juce::MouseEvent& e,
                                                        const juce::MouseWheelDetails& wheel) {
-    if (isEditing_ || !isEnabled())
-        return;
-
-    bool shift = e.mods.isShiftDown();
-    double increment = getDefaultIncrement(shift);
-    double direction = (wheel.deltaY > 0) ? 1.0 : -1.0;
-
-    double newValue =
-        juce::jlimit(owner_.minValue_, owner_.maxValue_, owner_.value_ + increment * direction);
-    owner_.setValue(newValue);
+    // Don't adjust values on scroll — too easy to accidentally change
+    // values when scrolling with a trackpad.
+    juce::Component::mouseWheelMove(e, wheel);
 }
 
 double BarsBeatsTicksLabel::SegmentLabel::getDefaultIncrement(bool shift) const {

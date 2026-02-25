@@ -141,7 +141,7 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
      *
      * Configures looping and launches via LaunchHandle
      */
-    void launchSessionClip(ClipId clipId);
+    void launchSessionClip(ClipId clipId, bool forceImmediate = false);
 
     /**
      * @brief Stop a playing session clip

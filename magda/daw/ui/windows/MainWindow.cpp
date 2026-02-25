@@ -1,5 +1,7 @@
 #include "MainWindow.hpp"
 
+#include <iostream>
+
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/SelectionManager.hpp"
@@ -616,11 +618,14 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     };
 
     transportPanel->onStop = [this]() {
+        std::cout << "[MainWindow] transportPanel->onStop dispatching StopPlaybackEvent"
+                  << std::endl;
         mainView->getTimelineController().dispatch(StopPlaybackEvent{});
     };
 
     transportPanel->onPause = [this]() {
-        // For now, treat pause like stop for playhead behavior
+        std::cout << "[MainWindow] transportPanel->onPause dispatching StopPlaybackEvent"
+                  << std::endl;
         mainView->getTimelineController().dispatch(StopPlaybackEvent{});
     };
 

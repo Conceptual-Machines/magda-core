@@ -85,8 +85,8 @@ void TracktionEngineWrapper::stop() {
             sessionRecorder_->commitIfNeeded();
             sessionRecorder_->setArmed(false);
         }
+        std::cout << "Playback stopped (TracktionEngineWrapper::stop() called)" << std::endl;
         currentEdit_->getTransport().stop(false, false);
-        std::cout << "Playback stopped" << std::endl;
     }
 }
 
@@ -326,7 +326,9 @@ bool TracktionEngineWrapper::isMetronomeEnabled() const {
 // These methods are called by TimelineController when UI state changes
 
 void TracktionEngineWrapper::onTransportPlay(double position) {
-    // If a session clip is selected (or was last triggered), trigger it
+    std::cout << "[onTransportPlay] called with position=" << position << std::endl;
+    // If a session clip is selected (or was last triggered), trigger it —
+    // but only if the clip's track is still in Session playback mode.
     auto& cm = ClipManager::getInstance();
     ClipId clipToTrigger = cm.getSelectedClip();
     if (clipToTrigger == INVALID_CLIP_ID) {
@@ -335,8 +337,11 @@ void TracktionEngineWrapper::onTransportPlay(double position) {
     if (clipToTrigger != INVALID_CLIP_ID) {
         const auto* clip = cm.getClip(clipToTrigger);
         if (clip && clip->view == ClipView::Session) {
-            cm.triggerClip(clipToTrigger);
-            return;  // SessionClipScheduler will start transport
+            const auto* track = TrackManager::getInstance().getTrack(clip->trackId);
+            if (track && track->playbackMode == TrackPlaybackMode::Session) {
+                cm.triggerClip(clipToTrigger);
+                return;  // SessionClipScheduler will start transport
+            }
         }
     }
 
@@ -345,6 +350,7 @@ void TracktionEngineWrapper::onTransportPlay(double position) {
 }
 
 void TracktionEngineWrapper::onTransportStop(double returnPosition) {
+    std::cout << "[onTransportStop] called with returnPosition=" << returnPosition << std::endl;
     // Session clips persist across transport stop — do NOT deactivate them here.
     // Tracks in Session mode keep playing; the user must explicitly press
     // "back to arrangement" (per-track resume button) to return to Arrangement mode.

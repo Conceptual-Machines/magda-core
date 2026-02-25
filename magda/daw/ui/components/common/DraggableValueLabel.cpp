@@ -355,52 +355,10 @@ void DraggableValueLabel::mouseDoubleClick(const juce::MouseEvent& /*e*/) {
 
 void DraggableValueLabel::mouseWheelMove(const juce::MouseEvent& e,
                                          const juce::MouseWheelDetails& wheel) {
-    if (isEditing_ || !isEnabled()) {
-        return;
-    }
-
-    if (format_ == Format::BarsBeats) {
-        // Determine which segment the mouse is over by measuring text
-        constexpr int TICKS_PER_BEAT = 480;
-        auto font = FontManager::getInstance().getUIFont(10.0f);
-        auto text = formatValue(value_);
-        float textWidth = font.getStringWidthFloat(text);
-        auto bounds = getLocalBounds().toFloat().reduced(2, 0);
-        float textStartX = bounds.getX() + (bounds.getWidth() - textWidth) * 0.5f;
-        float relativeX = static_cast<float>(e.x) - textStartX;
-
-        // Find dot positions in the rendered text
-        int firstDot = text.indexOfChar('.');
-        int secondDot = text.indexOfChar(firstDot + 1, '.');
-
-        float firstDotX = font.getStringWidthFloat(text.substring(0, firstDot));
-        float secondDotX =
-            (secondDot >= 0) ? font.getStringWidthFloat(text.substring(0, secondDot)) : textWidth;
-
-        // Determine increment based on segment
-        double increment = 0.0;
-        if (relativeX < firstDotX) {
-            // Bar segment
-            increment = static_cast<double>(beatsPerBar_);
-        } else if (relativeX < secondDotX) {
-            // Beat segment
-            increment = 1.0;
-        } else {
-            // Tick segment
-            increment = 1.0 / TICKS_PER_BEAT;
-        }
-
-        double direction = (wheel.deltaY > 0) ? 1.0 : -1.0;
-        setValue(value_ + increment * direction);
-    } else if (snapToInteger_) {
-        // Integer snap: scroll by 1, shift = 0.25
-        double increment = e.mods.isShiftDown() ? 0.25 : 1.0;
-        double direction = (wheel.deltaY > 0) ? 1.0 : -1.0;
-        setValue(value_ + increment * direction);
-    } else {
-        // Default: fall back to base class behavior
-        juce::Component::mouseWheelMove(e, wheel);
-    }
+    // Don't adjust values on scroll — too easy to accidentally change
+    // values when scrolling the inspector with a trackpad.
+    // Let the parent handle the scroll event for viewport scrolling.
+    juce::Component::mouseWheelMove(e, wheel);
 }
 
 void DraggableValueLabel::startEditing() {

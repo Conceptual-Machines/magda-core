@@ -355,6 +355,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartRecor
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const StopPlaybackEvent& /*e*/) {
+    std::cout << "[TimelineController] handleEvent(StopPlaybackEvent) isPlaying="
+              << state.playhead.isPlaying << std::endl;
     if (!state.playhead.isPlaying) {
         return ChangeFlags::None;  // Already stopped
     }

@@ -120,7 +120,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @brief Launch a session clip via its LaunchHandle (lock-free, no graph rebuild)
      * @param clipId The MAGDA clip ID
      */
-    void launchSessionClip(ClipId clipId);
+    void launchSessionClip(ClipId clipId, bool forceImmediate = false);
 
     /**
      * @brief Stop a session clip via its LaunchHandle (lock-free, no graph rebuild)
