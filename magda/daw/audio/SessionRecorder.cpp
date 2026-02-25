@@ -31,6 +31,19 @@ void SessionRecorder::updatePreviews() {
         return;
 
     double currentTime = edit_.getTransport().position.get().inSeconds();
+
+    // Log transport position every ~1s to verify it advances
+    static int previewLogCounter = 0;
+    if (++previewLogCounter % 30 == 0) {
+        std::cout << "[SessionRecorder] updatePreviews: transportPos=" << currentTime
+                  << " activeRecordings=" << activeRecordings_.size();
+        for (const auto& [clipId, rec] : activeRecordings_) {
+            std::cout << " [clipId=" << clipId << " start=" << rec.arrangementStartTime
+                      << " elapsed=" << (currentTime - rec.arrangementStartTime) << "]";
+        }
+        std::cout << std::endl;
+    }
+
     for (const auto& [clipId, rec] : activeRecordings_) {
         auto it = recordingPreviews_->find(rec.trackId);
         if (it != recordingPreviews_->end()) {
@@ -58,9 +71,19 @@ void SessionRecorder::clipPlaybackStateChanged(ClipId clipId) {
     // Query the scheduler for the actual play state
     auto state = getPlayState_ ? getPlayState_(clipId) : SessionClipPlayState::Stopped;
 
-    double currentTime = edit_.getTransport().position.get().inSeconds();
+    auto& transport = edit_.getTransport();
+    double currentTime = transport.position.get().inSeconds();
+    bool looping = transport.looping;
+    double loopStart = transport.getLoopRange().getStart().inSeconds();
+    double loopEnd = transport.getLoopRange().getEnd().inSeconds();
+
+    const char* stateStr = (state == SessionClipPlayState::Playing)  ? "Playing"
+                           : (state == SessionClipPlayState::Queued) ? "Queued"
+                                                                     : "Stopped";
     std::cout << "[SessionRecorder] clipPlaybackStateChanged clipId=" << clipId
-              << " state=" << (int)state << " transportPos=" << currentTime << std::endl;
+              << " state=" << stateStr << " transportPos=" << currentTime << " looping=" << looping
+              << " loopRange=[" << loopStart << "-" << loopEnd << "]"
+              << " activeRecordings=" << activeRecordings_.size() << std::endl;
 
     if (state == SessionClipPlayState::Playing) {
         ensureSnapshotTaken();
@@ -70,16 +93,21 @@ void SessionRecorder::clipPlaybackStateChanged(ClipId clipId) {
         if (getLaunchTime_) {
             double precise = getLaunchTime_(clip->trackId);
             if (precise > 0.0) {
-                launchTime = precise;
-                std::cout << "[SessionRecorder]   using precise launchTime=" << launchTime
+                std::cout << "[SessionRecorder]   using precise launchTime=" << precise
                           << "s (transport was " << currentTime
-                          << "s, delta=" << (currentTime - launchTime) << "s)" << std::endl;
+                          << "s, delta=" << (currentTime - precise) << "s)" << std::endl;
+                launchTime = precise;
             }
         }
 
         // Finalize any existing recording on the same track (clip replaced)
         for (auto it = activeRecordings_.begin(); it != activeRecordings_.end();) {
             if (it->second.trackId == clip->trackId) {
+                std::cout << "[SessionRecorder]   finalizing previous recording on same track:"
+                          << " clipId=" << it->first << " start=" << it->second.arrangementStartTime
+                          << " stopAt=" << launchTime
+                          << " duration=" << (launchTime - it->second.arrangementStartTime)
+                          << std::endl;
                 finalizeRecording(it->second, launchTime);
                 it = activeRecordings_.erase(it);
             } else {
@@ -104,19 +132,24 @@ void SessionRecorder::clipPlaybackStateChanged(ClipId clipId) {
             (*recordingPreviews_)[clip->trackId] = preview;
         }
 
-        std::cout << "[SessionRecorder]   started recording clipId=" << clipId
+        std::cout << "[SessionRecorder]   >>> STARTED recording clipId=" << clipId
                   << " trackId=" << clip->trackId << " arrangementStartTime=" << launchTime << "s"
-                  << std::endl;
+                  << " totalActiveRecordings=" << activeRecordings_.size() << std::endl;
     } else if (state == SessionClipPlayState::Stopped) {
         // Clip stopped — finalize its recording
         auto it = activeRecordings_.find(clipId);
         if (it != activeRecordings_.end()) {
-            std::cout << "[SessionRecorder]   clip stopped, finalizing at " << currentTime << "s"
+            std::cout << "[SessionRecorder]   >>> STOPPED clipId=" << clipId
+                      << " start=" << it->second.arrangementStartTime << " stopAt=" << currentTime
+                      << " duration=" << (currentTime - it->second.arrangementStartTime) << "s"
                       << std::endl;
             if (recordingPreviews_)
                 recordingPreviews_->erase(it->second.trackId);
             finalizeRecording(it->second, currentTime);
             activeRecordings_.erase(it);
+        } else {
+            std::cout << "[SessionRecorder]   Stopped but no active recording for clipId=" << clipId
+                      << std::endl;
         }
     }
 }
@@ -131,9 +164,15 @@ void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopT
     }
 
     double duration = stopTime - rec.arrangementStartTime;
+    double actualTransportPos = edit_.getTransport().position.get().inSeconds();
     std::cout << "[SessionRecorder] finalizeRecording clipId=" << rec.sessionClipId
               << " trackId=" << rec.trackId << " start=" << rec.arrangementStartTime
-              << " stop=" << stopTime << " duration=" << duration << std::endl;
+              << " stop=" << stopTime << " duration=" << duration
+              << " actualTransportPos=" << actualTransportPos
+              << " clipType=" << (sessionClip->type == ClipType::Audio ? "Audio" : "MIDI")
+              << " loopEnabled=" << sessionClip->loopEnabled
+              << " clipLength=" << sessionClip->length
+              << " clipLengthBeats=" << sessionClip->lengthBeats << std::endl;
     if (duration <= 0.001) {
         std::cout << "[SessionRecorder]   duration too short, skipping" << std::endl;
         return;
@@ -172,13 +211,31 @@ void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopT
 
         // Copy beat-mode / auto-tempo properties so the arrangement clip
         // stays in the same time-stretch mode as the session clip.
-        newClip->autoTempo = sessionClip->autoTempo;
         newClip->sourceBPM = sessionClip->sourceBPM;
         newClip->sourceNumBeats = sessionClip->sourceNumBeats;
         newClip->timeStretchMode = sessionClip->timeStretchMode;
         newClip->loopStartBeats = sessionClip->loopStartBeats;
         newClip->loopLengthBeats = sessionClip->loopLengthBeats;
-        newClip->lengthBeats = sessionClip->lengthBeats;
+
+        // For autoTempo arrangement clips, startBeats and lengthBeats must
+        // reflect the ARRANGEMENT position, not the session clip's values
+        // (session clips have startBeats=0 since they live in slots).
+        if (sessionClip->autoTempo) {
+            auto& tempoSeq = edit_.tempoSequence;
+            auto startBeatPos =
+                tempoSeq.toBeats(te::TimePosition::fromSeconds(rec.arrangementStartTime));
+            auto endBeatPos = tempoSeq.toBeats(te::TimePosition::fromSeconds(stopTime));
+            newClip->startBeats = startBeatPos.inBeats();
+            newClip->lengthBeats = endBeatPos.inBeats() - startBeatPos.inBeats();
+            newClip->autoTempo = true;
+
+            std::cout << "[SessionRecorder]   autoTempo arr clip: startBeats="
+                      << newClip->startBeats << " lengthBeats=" << newClip->lengthBeats
+                      << " (session had startBeats=" << sessionClip->startBeats
+                      << " lengthBeats=" << sessionClip->lengthBeats << ")" << std::endl;
+        } else {
+            newClip->lengthBeats = sessionClip->lengthBeats;
+        }
 
         // For looping audio: enable loop if duration exceeds one pass
         double onePassDuration = sessionClip->length;
@@ -236,11 +293,18 @@ void SessionRecorder::commitIfNeeded() {
     if (activeRecordings_.empty() && createdArrangementClipIds_.empty())
         return;
 
-    double currentTime = edit_.getTransport().position.get().inSeconds();
+    auto& transport = edit_.getTransport();
+    double currentTime = transport.position.get().inSeconds();
 
     std::cout << "[SessionRecorder] commitIfNeeded: " << activeRecordings_.size() << " active, "
               << createdArrangementClipIds_.size() << " finalized"
-              << " transportPos=" << currentTime << std::endl;
+              << " transportPos=" << currentTime << " looping=" << transport.looping
+              << " isPlaying=" << transport.isPlaying() << std::endl;
+    for (const auto& [clipId, rec] : activeRecordings_) {
+        std::cout << "[SessionRecorder]   active: clipId=" << clipId
+                  << " start=" << rec.arrangementStartTime
+                  << " elapsed=" << (currentTime - rec.arrangementStartTime) << std::endl;
+    }
 
     // Clear recording previews
     if (recordingPreviews_)

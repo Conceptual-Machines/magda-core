@@ -105,6 +105,10 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
         activeClips_.insert(clipId);
         stoppedCounters_.erase(clipId);  // Reset debounce for freshly launched clip
         audioBridge_.launchSessionClip(clipId, /*forceImmediate=*/!transportWasPlaying);
+
+        // Snapshot the current state so the timer's dedup logic doesn't
+        // re-fire a duplicate notification on its first tick.
+        lastNotifiedState_[clipId] = queryLaunchHandleState(clipId);
         cm.notifyClipPlaybackStateChanged(clipId);
 
         std::cout << "[SessionClipScheduler]   launched clipId=" << clipId
@@ -121,6 +125,7 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
         if (wasActive) {
             audioBridge_.stopSessionClip(clipId);
             activeClips_.erase(clipId);
+            lastNotifiedState_.erase(clipId);
         }
         cm.notifyClipPlaybackStateChanged(clipId);
 
@@ -285,6 +290,15 @@ void SessionClipScheduler::timerCallback() {
         auto state = queryLaunchHandleState(clipId);
         auto& prev = lastNotifiedState_[clipId];
         if (state != prev) {
+            const char* prevStr = (prev == SessionClipPlayState::Playing)  ? "Playing"
+                                  : (prev == SessionClipPlayState::Queued) ? "Queued"
+                                                                           : "Stopped";
+            const char* stateStr = (state == SessionClipPlayState::Playing)  ? "Playing"
+                                   : (state == SessionClipPlayState::Queued) ? "Queued"
+                                                                             : "Stopped";
+            std::cout << "[SessionClipScheduler] timer: state transition clipId=" << clipId << " "
+                      << prevStr << " -> " << stateStr
+                      << " transportPos=" << transport.getPosition().inSeconds() << std::endl;
             prev = state;
             cm.notifyClipPlaybackStateChanged(clipId);
         }

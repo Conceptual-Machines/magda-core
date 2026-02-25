@@ -945,44 +945,73 @@ void ClipSynchronizer::configureSessionAutoTempo(te::WaveAudioClip* audioClip,
 // Warp Marker Operations (Delegated to WarpMarkerManager)
 // =============================================================================
 
+// Helper: build a clip-ID-to-engine-ID map that works for both arrangement and
+// session clips.  For arrangement clips the entry already exists in
+// clipIdToEngineId_.  For session clips we resolve the TE clip via the slot and
+// add a temporary entry so WarpMarkerManager's findWaveAudioClip() can find it.
+std::map<ClipId, std::string> ClipSynchronizer::buildWarpClipMap(ClipId clipId) {
+    // Start with the existing arrangement map
+    auto map = clipIdToEngineId_;
+
+    // If the clip is already in the map, nothing to do
+    if (map.count(clipId))
+        return map;
+
+    // Try resolving as a session clip
+    auto* teClip = getSessionTeClip(clipId);
+    if (teClip) {
+        map[clipId] = teClip->itemID.toString().toStdString();
+    }
+
+    return map;
+}
+
 void ClipSynchronizer::setTransientSensitivity(ClipId clipId, float sensitivity) {
     juce::ScopedLock lock(clipLock_);
-    warpMarkerManager_.setTransientSensitivity(edit_, clipIdToEngineId_, clipId, sensitivity);
+    auto map = buildWarpClipMap(clipId);
+    warpMarkerManager_.setTransientSensitivity(edit_, map, clipId, sensitivity);
 }
 
 bool ClipSynchronizer::getTransientTimes(ClipId clipId) {
     juce::ScopedLock lock(clipLock_);
-    return warpMarkerManager_.getTransientTimes(edit_, clipIdToEngineId_, clipId);
+    auto map = buildWarpClipMap(clipId);
+    return warpMarkerManager_.getTransientTimes(edit_, map, clipId);
 }
 
 void ClipSynchronizer::enableWarp(ClipId clipId) {
     juce::ScopedLock lock(clipLock_);
-    warpMarkerManager_.enableWarp(edit_, clipIdToEngineId_, clipId);
+    auto map = buildWarpClipMap(clipId);
+    warpMarkerManager_.enableWarp(edit_, map, clipId);
 }
 
 void ClipSynchronizer::disableWarp(ClipId clipId) {
     juce::ScopedLock lock(clipLock_);
-    warpMarkerManager_.disableWarp(edit_, clipIdToEngineId_, clipId);
+    auto map = buildWarpClipMap(clipId);
+    warpMarkerManager_.disableWarp(edit_, map, clipId);
 }
 
 std::vector<WarpMarkerInfo> ClipSynchronizer::getWarpMarkers(ClipId clipId) {
     juce::ScopedLock lock(clipLock_);
-    return warpMarkerManager_.getWarpMarkers(edit_, clipIdToEngineId_, clipId);
+    auto map = buildWarpClipMap(clipId);
+    return warpMarkerManager_.getWarpMarkers(edit_, map, clipId);
 }
 
 int ClipSynchronizer::addWarpMarker(ClipId clipId, double sourceTime, double warpTime) {
     juce::ScopedLock lock(clipLock_);
-    return warpMarkerManager_.addWarpMarker(edit_, clipIdToEngineId_, clipId, sourceTime, warpTime);
+    auto map = buildWarpClipMap(clipId);
+    return warpMarkerManager_.addWarpMarker(edit_, map, clipId, sourceTime, warpTime);
 }
 
 double ClipSynchronizer::moveWarpMarker(ClipId clipId, int index, double newWarpTime) {
     juce::ScopedLock lock(clipLock_);
-    return warpMarkerManager_.moveWarpMarker(edit_, clipIdToEngineId_, clipId, index, newWarpTime);
+    auto map = buildWarpClipMap(clipId);
+    return warpMarkerManager_.moveWarpMarker(edit_, map, clipId, index, newWarpTime);
 }
 
 void ClipSynchronizer::removeWarpMarker(ClipId clipId, int index) {
     juce::ScopedLock lock(clipLock_);
-    warpMarkerManager_.removeWarpMarker(edit_, clipIdToEngineId_, clipId, index);
+    auto map = buildWarpClipMap(clipId);
+    warpMarkerManager_.removeWarpMarker(edit_, map, clipId, index);
 }
 
 // =============================================================================

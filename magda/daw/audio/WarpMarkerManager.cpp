@@ -6,7 +6,8 @@
 namespace magda {
 
 namespace {
-// Helper to find WaveAudioClip from MAGDA clip ID
+// Helper to find WaveAudioClip from MAGDA clip ID.
+// Searches both arrangement clips on the timeline and session clips in slots.
 te::WaveAudioClip* findWaveAudioClip(te::Edit& edit,
                                      const std::map<ClipId, std::string>& clipIdToEngineId,
                                      ClipId clipId) {
@@ -16,9 +17,18 @@ te::WaveAudioClip* findWaveAudioClip(te::Edit& edit,
 
     const auto& engineId = it->second;
     for (auto* track : te::getAudioTracks(edit)) {
+        // Search arrangement clips on the timeline
         for (auto* teClip : track->getClips()) {
             if (teClip->itemID.toString().toStdString() == engineId) {
                 return dynamic_cast<te::WaveAudioClip*>(teClip);
+            }
+        }
+        // Search session clips in clip slots
+        for (auto* slot : track->getClipSlotList().getClipSlots()) {
+            if (auto* teClip = slot->getClip()) {
+                if (teClip->itemID.toString().toStdString() == engineId) {
+                    return dynamic_cast<te::WaveAudioClip*>(teClip);
+                }
             }
         }
     }

@@ -300,6 +300,15 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
      */
     void syncPlaybackModeToEngine(TrackId trackId);
 
+    /**
+     * @brief Build a clip-ID-to-engine-ID map that includes session clips.
+     *
+     * For arrangement clips the entry already exists in clipIdToEngineId_.
+     * For session clips, resolves the TE clip via its slot and adds a
+     * temporary entry so WarpMarkerManager can find it.
+     */
+    std::map<ClipId, std::string> buildWarpClipMap(ClipId clipId);
+
     // References to dependencies (not owned)
     te::Edit& edit_;
     TrackController& trackController_;
