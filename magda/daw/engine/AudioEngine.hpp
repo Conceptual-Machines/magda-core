@@ -44,6 +44,9 @@ class AudioEngine : public AudioEngineListener {
         Returns -1.0 if no session clips are playing. */
     virtual double getSessionPlayheadPosition() const = 0;
 
+    /** Returns the clip ID the session playhead currently tracks, or INVALID_CLIP_ID. */
+    virtual ClipId getSessionPlayheadClipId() const = 0;
+
     /** Returns the play state of a session clip (Stopped/Queued/Playing). */
     virtual SessionClipPlayState getSessionClipPlayState(ClipId clipId) const = 0;
 

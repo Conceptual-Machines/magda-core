@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "../layout/LayoutConfig.hpp"
+#include "core/ClipTypes.hpp"
 
 namespace magda {
 
@@ -169,8 +170,9 @@ struct PlayheadState {
     double editPositionBeats = 0.0;         // Triangle position in beats (authoritative)
     double playbackPosition = 0.0;          // Moving cursor position
     double sessionPlaybackPosition = -1.0;  // Session clip playhead (looped), -1 = inactive
-    bool isPlaying = false;                 // Is transport playing
-    bool isRecording = false;               // Is transport recording
+    ClipId sessionPlaybackClipId = INVALID_CLIP_ID;  // Which clip the session playhead tracks
+    bool isPlaying = false;                          // Is transport playing
+    bool isRecording = false;                        // Is transport recording
 
     // Get the "current" position (playback when playing, edit otherwise)
     double getCurrentPosition() const {

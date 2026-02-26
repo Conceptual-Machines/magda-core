@@ -95,10 +95,15 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
         }
 
         // Record launch position and clip properties for playhead.
-        // Always update so that a same-track relaunch resets the visual
-        // playhead immediately instead of inheriting clip 1's origin.
-        launchTransportPos_ = transport.getPosition().inSeconds();
-        updateLaunchTimings(clip);
+        // Only update immediately if no clips are currently playing —
+        // otherwise the pendingPlayheadClip_ timer mechanism will update
+        // launchTransportPos_ when the new clip actually starts playing,
+        // avoiding a premature playhead during the queued period.
+        if (activeClips_.empty()) {
+            launchTransportPos_ = transport.getPosition().inSeconds();
+            updateLaunchTimings(clip);
+            playheadClipId_ = clipId;
+        }
         pendingPlayheadClip_ = clipId;
 
         // Activate the clip and launch via LaunchHandle.
@@ -224,6 +229,7 @@ void SessionClipScheduler::timerCallback() {
             stoppedCounters_.clear();
             lastNotifiedState_.clear();
             pendingPlayheadClip_ = INVALID_CLIP_ID;
+            playheadClipId_ = INVALID_CLIP_ID;
             for (auto clipId : copy)
                 cm.notifyClipPlaybackStateChanged(clipId);
             // Keep tracks in Session mode — user must press "Back to Arrangement"
@@ -240,6 +246,7 @@ void SessionClipScheduler::timerCallback() {
             const auto* pendingClip = cm.getClip(pendingPlayheadClip_);
             if (pendingClip)
                 updateLaunchTimings(pendingClip);
+            playheadClipId_ = pendingPlayheadClip_;
             pendingPlayheadClip_ = INVALID_CLIP_ID;
         }
     }
@@ -333,6 +340,7 @@ void SessionClipScheduler::deactivateAllSessionClips() {
     stoppedCounters_.clear();
     lastNotifiedState_.clear();
     pendingPlayheadClip_ = INVALID_CLIP_ID;
+    playheadClipId_ = INVALID_CLIP_ID;
     stopTimer();
 
     for (auto clipId : copy) {

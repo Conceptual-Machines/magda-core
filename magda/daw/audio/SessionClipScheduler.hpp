@@ -54,6 +54,11 @@ class SessionClipScheduler : public ClipManagerListener, private juce::Timer {
      */
     double getSessionPlayheadPosition() const;
 
+    /** Returns the clip ID that the session playhead currently tracks, or INVALID_CLIP_ID. */
+    ClipId getSessionPlayheadClipId() const {
+        return playheadClipId_;
+    }
+
   private:
     void timerCallback() override;
 
@@ -81,6 +86,8 @@ class SessionClipScheduler : public ClipManagerListener, private juce::Timer {
     // Clip awaiting Playing transition — used to correct launchTransportPos_
     // for quantized launches (playhead starts from actual play moment, not click)
     ClipId pendingPlayheadClip_ = INVALID_CLIP_ID;
+    // The clip that the current playhead position tracks
+    ClipId playheadClipId_ = INVALID_CLIP_ID;
 
     // Debounce counter for stopped detection.
     // LaunchHandle::getQueuedStatus() uses try_to_lock which can fail when

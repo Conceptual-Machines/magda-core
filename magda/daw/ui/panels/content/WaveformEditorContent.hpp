@@ -116,6 +116,7 @@ class WaveformEditorContent : public PanelContent,
     double cachedEditPosition_ = 0.0;
     double cachedPlaybackPosition_ = 0.0;
     double cachedSessionPlaybackPosition_ = -1.0;
+    magda::ClipId cachedSessionPlaybackClipId_ = magda::INVALID_CLIP_ID;
     bool cachedIsPlaying_ = false;
     magda::ClipDisplayInfo cachedDisplayInfo_{};  // Cached for playhead overlay positioning
 

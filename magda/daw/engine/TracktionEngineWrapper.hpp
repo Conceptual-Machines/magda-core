@@ -68,6 +68,7 @@ class TracktionEngineWrapper : public AudioEngine,
     bool isPlaying() const override;
     bool isRecording() const override;
     double getSessionPlayheadPosition() const override;
+    ClipId getSessionPlayheadClipId() const override;
     SessionClipPlayState getSessionClipPlayState(ClipId clipId) const override;
     void setTempo(double bpm) override;
     double getTempo() const override;
