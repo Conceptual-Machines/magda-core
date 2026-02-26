@@ -1,7 +1,5 @@
 #include "SessionClipScheduler.hpp"
 
-#include <iostream>
-
 #include "../core/TrackManager.hpp"
 #include "AudioBridge.hpp"
 
@@ -62,10 +60,6 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
         return;
     }
 
-    std::cout << "[SessionClipScheduler] clipPlaybackRequested clipId=" << clipId
-              << " request=" << (request == ClipPlaybackRequest::Play ? "Play" : "Stop")
-              << " activeClips=" << activeClips_.size() << std::endl;
-
     if (request == ClipPlaybackRequest::Play) {
         // Toggle mode: if clip is already active, stop it instead
         if (clip->launchMode == LaunchMode::Toggle && activeClips_.count(clipId)) {
@@ -119,9 +113,6 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
         lastNotifiedState_[clipId] = queryLaunchHandleState(clipId);
         cm.notifyClipPlaybackStateChanged(clipId);
 
-        std::cout << "[SessionClipScheduler]   launched clipId=" << clipId
-                  << " activeClips=" << activeClips_.size() << std::endl;
-
         // Start timer to monitor clip state from TE
         if (!isTimerRunning()) {
             startTimerHz(30);
@@ -137,17 +128,12 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
         }
         cm.notifyClipPlaybackStateChanged(clipId);
 
-        std::cout << "[SessionClipScheduler]   stopped: wasActive=" << wasActive
-                  << " activeClips=" << activeClips_.size() << std::endl;
-
         if (activeClips_.empty()) {
             stopTimer();
             // Keep tracks in Session mode — user must press "Back to Arrangement"
             // to explicitly revert, matching Ableton/Bitwig behaviour.
             auto& transport = edit_.getTransport();
             if (transport.isPlaying()) {
-                std::cout << "[SessionClipScheduler]   no more clips, stopping transport"
-                          << std::endl;
                 transport.stop(false, false);
             }
         }
@@ -222,8 +208,6 @@ void SessionClipScheduler::timerCallback() {
     // the audio thread has stopped processing.
     if (!transport.isPlaying()) {
         if (!activeClips_.empty()) {
-            std::cout << "[SessionClipScheduler] timer: transport not playing, cleaning up "
-                      << activeClips_.size() << " active clips" << std::endl;
             auto copy = activeClips_;
             activeClips_.clear();
             stoppedCounters_.clear();
@@ -251,20 +235,6 @@ void SessionClipScheduler::timerCallback() {
         }
     }
 
-    // Log state of all active clips every ~1 second
-    static int timerTickCount = 0;
-    ++timerTickCount;
-    if (timerTickCount % 30 == 0) {
-        for (auto clipId : activeClips_) {
-            auto state = queryLaunchHandleState(clipId);
-            const char* stateStr = (state == SessionClipPlayState::Playing)  ? "Playing"
-                                   : (state == SessionClipPlayState::Queued) ? "Queued"
-                                                                             : "Stopped";
-            std::cout << "[SessionClipScheduler] timer tick " << timerTickCount
-                      << ": clipId=" << clipId << " state=" << stateStr << std::endl;
-        }
-    }
-
     // Check for clips whose LaunchHandle has transitioned to stopped
     // (one-shot clip ended naturally, or TE finished a queued stop).
     // Debounce: require kStoppedThreshold consecutive Stopped readings
@@ -277,9 +247,6 @@ void SessionClipScheduler::timerCallback() {
             int& count = stoppedCounters_[clipId];
             ++count;
             if (count >= kStoppedThreshold) {
-                std::cout << "[SessionClipScheduler] timer: clipId=" << clipId
-                          << " confirmed Stopped after " << count << " ticks, removing"
-                          << std::endl;
                 toRemove.push_back(clipId);
             }
         } else {
@@ -300,23 +267,12 @@ void SessionClipScheduler::timerCallback() {
         auto state = queryLaunchHandleState(clipId);
         auto& prev = lastNotifiedState_[clipId];
         if (state != prev) {
-            const char* prevStr = (prev == SessionClipPlayState::Playing)  ? "Playing"
-                                  : (prev == SessionClipPlayState::Queued) ? "Queued"
-                                                                           : "Stopped";
-            const char* stateStr = (state == SessionClipPlayState::Playing)  ? "Playing"
-                                   : (state == SessionClipPlayState::Queued) ? "Queued"
-                                                                             : "Stopped";
-            std::cout << "[SessionClipScheduler] timer: state transition clipId=" << clipId << " "
-                      << prevStr << " -> " << stateStr
-                      << " transportPos=" << transport.getPosition().inSeconds() << std::endl;
             prev = state;
             cm.notifyClipPlaybackStateChanged(clipId);
         }
     }
 
     if (activeClips_.empty()) {
-        std::cout << "[SessionClipScheduler] timer: all clips gone, stopping transport"
-                  << std::endl;
         stopTimer();
         stoppedCounters_.clear();
         if (transport.isPlaying()) {
@@ -332,9 +288,6 @@ void SessionClipScheduler::timerCallback() {
 void SessionClipScheduler::deactivateAllSessionClips() {
     auto& cm = ClipManager::getInstance();
 
-    std::cout << "[SessionClipScheduler] deactivateAllSessionClips: " << activeClips_.size()
-              << " clips" << std::endl;
-
     auto copy = activeClips_;
     activeClips_.clear();
     stoppedCounters_.clear();
@@ -344,7 +297,6 @@ void SessionClipScheduler::deactivateAllSessionClips() {
     stopTimer();
 
     for (auto clipId : copy) {
-        std::cout << "[SessionClipScheduler]   stopping clipId=" << clipId << std::endl;
         audioBridge_.stopSessionClip(clipId);
         cm.notifyClipPlaybackStateChanged(clipId);
     }

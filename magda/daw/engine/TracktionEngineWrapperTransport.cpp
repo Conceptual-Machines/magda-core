@@ -1,5 +1,3 @@
-#include <iostream>
-
 #include "../audio/AudioBridge.hpp"
 #include "../audio/SessionClipScheduler.hpp"
 #include "../audio/SessionRecorder.hpp"
@@ -44,7 +42,6 @@ CommandResponse TracktionEngineWrapper::processCommand(const Command& command) {
 void TracktionEngineWrapper::play() {
     // Block playback while devices are loading to prevent audio glitches
     if (devicesLoading_) {
-        std::cout << "Playback blocked - devices still loading" << std::endl;
         return;
     }
 
@@ -74,7 +71,6 @@ void TracktionEngineWrapper::play() {
         }
 
         transport.play(false);
-        std::cout << "Playback started" << std::endl;
     }
 }
 
@@ -85,7 +81,6 @@ void TracktionEngineWrapper::stop() {
             sessionRecorder_->commitIfNeeded();
             sessionRecorder_->setArmed(false);
         }
-        std::cout << "Playback stopped (TracktionEngineWrapper::stop() called)" << std::endl;
         currentEdit_->getTransport().stop(false, false);
     }
 }
@@ -198,7 +193,6 @@ void TracktionEngineWrapper::setTempo(double bpm) {
             auto tempo = tempoSeq.getTempo(0);
             if (tempo) {
                 tempo->setBpm(bpm);
-                std::cout << "Set tempo: " << bpm << " BPM" << std::endl;
             }
         }
     }
@@ -215,7 +209,6 @@ double TracktionEngineWrapper::getTempo() const {
 void TracktionEngineWrapper::setTimeSignature(int numerator, int denominator) {
     if (currentEdit_) {
         // Time signature handling in Tracktion Engine - simplified for now
-        std::cout << "Set time signature: " << numerator << "/" << denominator << std::endl;
     }
 }
 
@@ -311,7 +304,6 @@ void TracktionEngineWrapper::updateTriggerState() {
 void TracktionEngineWrapper::setMetronomeEnabled(bool enabled) {
     if (currentEdit_) {
         currentEdit_->clickTrackEnabled = enabled;
-        std::cout << "Metronome " << (enabled ? "enabled" : "disabled") << std::endl;
     }
 }
 
@@ -326,8 +318,6 @@ bool TracktionEngineWrapper::isMetronomeEnabled() const {
 // These methods are called by TimelineController when UI state changes
 
 void TracktionEngineWrapper::onTransportPlay(double position) {
-    std::cout << "[onTransportPlay] called with position=" << position << std::endl;
-
     auto viewMode = ViewModeController::getInstance().getViewMode();
 
     if (viewMode == ViewMode::Live) {
@@ -352,7 +342,6 @@ void TracktionEngineWrapper::onTransportPlay(double position) {
 }
 
 void TracktionEngineWrapper::onTransportStop(double returnPosition) {
-    std::cout << "[onTransportStop] called with returnPosition=" << returnPosition << std::endl;
     // Session clips persist across transport stop — do NOT deactivate them here.
     // Tracks in Session mode keep playing; the user must explicitly press
     // "back to arrangement" (per-track resume button) to return to Arrangement mode.
@@ -413,10 +402,6 @@ void TracktionEngineWrapper::onTransportPause() {
 }
 
 void TracktionEngineWrapper::onTransportRecord(double position) {
-    std::cout << "[onTransportRecord] position=" << position
-              << " viewMode=" << (int)ViewModeController::getInstance().getViewMode()
-              << " transportPos=" << getCurrentPosition() << std::endl;
-
     auto viewMode = ViewModeController::getInstance().getViewMode();
 
     if (viewMode == ViewMode::Live) {
