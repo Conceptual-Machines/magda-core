@@ -1,6 +1,9 @@
 #include "AIChatConsoleContent.hpp"
 
 #include "../../../../agents/daw_agent.hpp"
+#include "../../../core/ClipManager.hpp"
+#include "../../../core/SelectionManager.hpp"
+#include "../../../core/TrackManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 
@@ -88,6 +91,8 @@ AIChatConsoleContent::AIChatConsoleContent() {
     addAndMakeVisible(chatHistory_);
 
     // Input box
+    inputBox_.setMultiLine(true);
+    inputBox_.setReturnKeyStartsNewLine(false);
     inputBox_.setTextToShowWhenEmpty("Type a message...", DarkTheme::getSecondaryTextColour());
     inputBox_.setColour(juce::TextEditor::backgroundColourId,
                         DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
@@ -100,12 +105,27 @@ AIChatConsoleContent::AIChatConsoleContent() {
     };
     addAndMakeVisible(inputBox_);
 
+    // Context bar (initially hidden) — styled to match input box
+    contextLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    contextLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    contextLabel_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    contextLabel_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
+    contextLabel_.setBorderSize(juce::BorderSize<int>(0, 4, 0, 4));
+    contextLabel_.setInterceptsMouseClicks(true, false);
+    contextLabel_.addMouseListener(this, false);
+    contextLabel_.setVisible(false);
+    addAndMakeVisible(contextLabel_);
+
+    // Register for selection changes
+    magda::SelectionManager::getInstance().addListener(this);
+
     // Create and start the DAW agent
     agent_ = std::make_unique<magda::DAWAgent>();
     agent_->start();
 }
 
 AIChatConsoleContent::~AIChatConsoleContent() {
+    magda::SelectionManager::getInstance().removeListener(this);
     stopTimer();
 
     // Signal cancellation
@@ -142,7 +162,12 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
     // Reset cancel state and start new request
     shouldStop_ = false;
     agent_->resetCancel();
-    pendingMessage_ = text;
+
+    // Prepend selection context if available and enabled
+    if (contextEnabled_ && contextText_.isNotEmpty())
+        pendingMessage_ = "[Context: " + contextText_ + "] " + text;
+    else
+        pendingMessage_ = text;
 
     dotCount_ = 0;
     startTimer(400);  // Animate dots every 400ms
@@ -182,6 +207,17 @@ void AIChatConsoleContent::appendToChat(const juce::String& text) {
 
 void AIChatConsoleContent::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getPanelBackgroundColour());
+
+    // Draw context bar background, border, and separator
+    if (contextLabel_.isVisible()) {
+        auto ctxBounds = contextLabel_.getBounds();
+        // Fill background to match input box
+        g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        g.fillRect(ctxBounds);
+        // Border
+        g.setColour(DarkTheme::getBorderColour());
+        g.drawRect(ctxBounds.toFloat(), 1.0f);
+    }
 }
 
 void AIChatConsoleContent::resized() {
@@ -190,9 +226,20 @@ void AIChatConsoleContent::resized() {
     titleLabel_.setBounds(bounds.removeFromTop(24));
     bounds.removeFromTop(8);  // Spacing
 
-    inputBox_.setBounds(bounds.removeFromBottom(28));
-    bounds.removeFromBottom(8);  // Spacing
+    bool showContextRow = contextLabel_.isVisible();
 
+    // Input area at the bottom: input box + context bar below
+    int inputHeight = 60 + (showContextRow ? 20 : 0);
+    auto inputArea = bounds.removeFromBottom(inputHeight);
+
+    if (showContextRow) {
+        auto contextRow = inputArea.removeFromBottom(20);
+        contextLabel_.setBounds(contextRow);
+    }
+
+    inputBox_.setBounds(inputArea);
+
+    bounds.removeFromBottom(8);  // Spacing
     chatHistory_.setBounds(bounds);
 }
 
@@ -202,6 +249,75 @@ void AIChatConsoleContent::onActivated() {
 
 void AIChatConsoleContent::onDeactivated() {
     // Could save chat history here
+}
+
+// ============================================================================
+// SelectionManagerListener
+// ============================================================================
+
+void AIChatConsoleContent::selectionTypeChanged(magda::SelectionType newType) {
+    if (newType == magda::SelectionType::None) {
+        contextText_.clear();
+        updateContextBar();
+    }
+}
+
+void AIChatConsoleContent::trackSelectionChanged(magda::TrackId trackId) {
+    auto* track = magda::TrackManager::getInstance().getTrack(trackId);
+    if (track != nullptr)
+        contextText_ = "Track \"" + track->name + "\"";
+    else
+        contextText_ = "Track " + juce::String(trackId);
+    updateContextBar();
+}
+
+void AIChatConsoleContent::clipSelectionChanged(magda::ClipId clipId) {
+    auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+    if (clip != nullptr) {
+        auto* track = magda::TrackManager::getInstance().getTrack(clip->trackId);
+        juce::String trackPart = track != nullptr ? "Track \"" + track->name + "\""
+                                                  : "Track " + juce::String(clip->trackId);
+        contextText_ = trackPart + " > Clip \"" + clip->name + "\"";
+    } else {
+        contextText_ = "Clip " + juce::String(clipId);
+    }
+    updateContextBar();
+}
+
+void AIChatConsoleContent::chainNodeSelectionChanged(const magda::ChainNodePath& path) {
+    auto* track = magda::TrackManager::getInstance().getTrack(path.trackId);
+    juce::String trackPart =
+        track != nullptr ? "Track \"" + track->name + "\"" : "Track " + juce::String(path.trackId);
+
+    auto deviceId = path.getDeviceId();
+    if (deviceId != magda::INVALID_DEVICE_ID) {
+        auto* device = magda::TrackManager::getInstance().getDevice(path.trackId, deviceId);
+        if (device != nullptr)
+            contextText_ = trackPart + " > " + device->name;
+        else
+            contextText_ = trackPart + " > Device " + juce::String(deviceId);
+    } else {
+        contextText_ = trackPart;
+    }
+    updateContextBar();
+}
+
+void AIChatConsoleContent::updateContextBar() {
+    bool visible = contextText_.isNotEmpty();
+    contextLabel_.setText(contextText_, juce::dontSendNotification);
+    contextLabel_.setVisible(visible);
+    contextLabel_.setColour(juce::Label::textColourId,
+                            contextEnabled_ ? DarkTheme::getAccentColour()
+                                            : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
+    resized();
+    repaint();
+}
+
+void AIChatConsoleContent::mouseUp(const juce::MouseEvent& event) {
+    if (event.originalComponent == &contextLabel_) {
+        contextEnabled_ = !contextEnabled_;
+        updateContextBar();
+    }
 }
 
 }  // namespace magda::daw::ui

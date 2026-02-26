@@ -3,6 +3,7 @@
 #include <atomic>
 #include <memory>
 
+#include "../../../core/SelectionManager.hpp"
 #include "PanelContent.hpp"
 
 namespace magda {
@@ -17,7 +18,9 @@ namespace magda::daw::ui {
  * Chat interface for interacting with AI assistant.
  * Sends user messages to DAWAgent on a background thread.
  */
-class AIChatConsoleContent : public PanelContent, private juce::Timer {
+class AIChatConsoleContent : public PanelContent,
+                             private juce::Timer,
+                             public magda::SelectionManagerListener {
   public:
     AIChatConsoleContent();
     ~AIChatConsoleContent() override;
@@ -36,6 +39,12 @@ class AIChatConsoleContent : public PanelContent, private juce::Timer {
     void onActivated() override;
     void onDeactivated() override;
 
+    // SelectionManagerListener
+    void selectionTypeChanged(magda::SelectionType newType) override;
+    void trackSelectionChanged(magda::TrackId trackId) override;
+    void clipSelectionChanged(magda::ClipId clipId) override;
+    void chainNodeSelectionChanged(const magda::ChainNodePath& path) override;
+
   private:
     // Background thread for AI requests
     class RequestThread : public juce::Thread {
@@ -49,6 +58,7 @@ class AIChatConsoleContent : public PanelContent, private juce::Timer {
 
     void sendMessage(const juce::String& text);
     void appendToChat(const juce::String& text);
+    void updateContextBar();
 
     // Timer callback for "Thinking..." animation
     void timerCallback() override;
@@ -56,6 +66,13 @@ class AIChatConsoleContent : public PanelContent, private juce::Timer {
     juce::Label titleLabel_;
     juce::TextEditor chatHistory_;
     juce::TextEditor inputBox_;
+
+    // Context bar showing current selection
+    juce::Label contextLabel_;
+    juce::String contextText_;
+    bool contextEnabled_ = true;
+
+    void mouseUp(const juce::MouseEvent& event) override;
 
     std::unique_ptr<magda::DAWAgent> agent_;
     std::unique_ptr<RequestThread> requestThread_;
