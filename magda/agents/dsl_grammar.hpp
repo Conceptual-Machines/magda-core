@@ -53,6 +53,8 @@ method_call: "new_clip" "(" params? ")"
            | "add_automation" "(" params? ")"
            | "delete" "(" ")"
            | "delete_clip" "(" params? ")"
+           | "select" "(" ")"
+           | "select_clips" "(" params? ")"
            | "map" "(" func_ref ")"
            | "for_each" "(" func_ref ")"
 
@@ -104,11 +106,17 @@ TRACK OPERATIONS:
 METHOD CHAINING:
 - .new_clip(bar=3, length_bars=4) - Create MIDI clip at bar
 - .set_track(name="X", volume_db=-3, pan=0.5, mute=true, solo=true)
+- .add_fx(name="eq") - Add internal FX (eq, compressor, reverb, delay, chorus, phaser, filter, utility, pitch shift, ir reverb)
+- .add_fx(name="Pro-Q 3") - Add scanned third-party plugin by name
+- .add_fx(name="Pro-Q 3", format="VST3") - Add plugin with format hint (VST3, AU, VST)
 - .delete() - Delete track
+- .select() - Select track in the UI
+- .select_clips(min_length_bars=2) - Select clips on track matching criteria (min_length_bars, max_length_bars, min_bar, max_bar)
 
 FILTER OPERATIONS (bulk):
 - filter(tracks, track.name == "X").delete() - Delete all tracks named X
 - filter(tracks, track.name == "X").set_track(mute=true) - Mute all tracks named X
+- filter(tracks, track.name == "X").select() - Select all matching tracks
 
 EXAMPLES:
 - "create a bass track" -> track(name="Bass", type="audio")
@@ -118,6 +126,14 @@ EXAMPLES:
 - "create a midi track called Lead and add a 4 bar clip at bar 1" ->
   track(name="Lead", type="midi").new_clip(bar=1, length_bars=4)
 - "set volume of track 2 to -6 dB" -> track(id=2).set_track(volume_db=-6)
+- "add an EQ to the Bass track" -> track(name="Bass").add_fx(name="eq")
+- "add Pro-Q 3 to track 1" -> track(id=1).add_fx(name="Pro-Q 3")
+- "add reverb and delay to the Vocals track" ->
+  track(name="Vocals").add_fx(name="reverb")
+  track(name="Vocals").add_fx(name="delay")
+- "select track 1" -> track(id=1).select()
+- "select all clips longer than 2 bars on track 1" -> track(id=1).select_clips(min_length_bars=2)
+- "select clips between bar 1 and bar 8" -> track(id=1).select_clips(min_bar=1, max_bar=8)
 
 **CRITICAL: Always generate DSL code. Never generate plain text responses.**
 )DESC";

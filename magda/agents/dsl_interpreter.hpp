@@ -164,6 +164,9 @@ class Interpreter {
     bool executeSetTrack(const Params& params);
     bool executeDelete();
     bool executeDeleteClip(const Params& params);
+    bool executeAddFx(const Params& params);
+    bool executeSelect();
+    bool executeSelectClips(const Params& params);
 
     // Parameter parsing
     bool parseParams(Tokenizer& tok, Params& outParams);

@@ -5,8 +5,11 @@
 #include <cstdlib>
 
 #include "../daw/core/ClipManager.hpp"
+#include "../daw/core/DeviceInfo.hpp"
+#include "../daw/core/SelectionManager.hpp"
 #include "../daw/core/TrackManager.hpp"
 #include "../daw/engine/AudioEngine.hpp"
+#include "../daw/engine/TracktionEngineWrapper.hpp"
 
 namespace magda::dsl {
 
@@ -500,8 +503,13 @@ bool Interpreter::parseMethodChain(Tokenizer& tok) {
             success = executeDelete();
         else if (method.value == "delete_clip")
             success = executeDeleteClip(params);
-        else if (method.value == "add_fx" || method.value == "addAutomation" ||
-                 method.value == "add_automation") {
+        else if (method.value == "add_fx")
+            success = executeAddFx(params);
+        else if (method.value == "select")
+            success = executeSelect();
+        else if (method.value == "select_clips")
+            success = executeSelectClips(params);
+        else if (method.value == "addAutomation" || method.value == "add_automation") {
             ctx_.addResult("'" + juce::String(method.value) + "' not yet supported in MVP");
             success = true;  // Don't fail, just skip
         } else if (method.value == "map" || method.value == "for_each") {
@@ -693,6 +701,211 @@ bool Interpreter::executeDeleteClip(const Params& params) {
     } else {
         ctx_.setError("Clip index " + juce::String(index) + " out of range");
         return false;
+    }
+
+    return true;
+}
+
+bool Interpreter::executeAddFx(const Params& params) {
+    if (ctx_.currentTrackId < 0) {
+        ctx_.setError("No track context for add_fx");
+        return false;
+    }
+
+    if (!params.has("name")) {
+        ctx_.setError("add_fx requires 'name' parameter");
+        return false;
+    }
+
+    juce::String fxName(params.get("name"));
+    juce::String formatHint(params.get("format"));
+
+    // --- Internal plugin lookup (case-insensitive alias map) ---
+    static const std::map<juce::String, juce::String> internalAliases = {
+        {"eq", "eq"},
+        {"equaliser", "eq"},
+        {"equalizer", "eq"},
+        {"compressor", "compressor"},
+        {"reverb", "reverb"},
+        {"delay", "delay"},
+        {"chorus", "chorus"},
+        {"phaser", "phaser"},
+        {"filter", "lowpass"},
+        {"lowpass", "lowpass"},
+        {"utility", "utility"},
+        {"pitch shift", "pitchshift"},
+        {"pitchshift", "pitchshift"},
+        {"ir reverb", "impulseresponse"},
+        {"impulse response", "impulseresponse"},
+    };
+
+    auto lowerName = fxName.toLowerCase();
+    auto aliasIt = internalAliases.find(lowerName);
+    if (aliasIt != internalAliases.end()) {
+        DeviceInfo device;
+        device.name = fxName;
+        device.pluginId = aliasIt->second;
+        device.format = PluginFormat::Internal;
+        device.isInstrument = false;
+
+        auto deviceId = TrackManager::getInstance().addDeviceToTrack(ctx_.currentTrackId, device);
+        if (deviceId == INVALID_DEVICE_ID) {
+            ctx_.setError("Failed to add internal FX '" + fxName + "' to track");
+            return false;
+        }
+        ctx_.addResult("Added internal FX '" + fxName + "'");
+        return true;
+    }
+
+    // --- External plugin lookup via KnownPluginList ---
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    if (!engine) {
+        ctx_.setError("Audio engine not available");
+        return false;
+    }
+
+    auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(engine);
+    if (!teWrapper) {
+        ctx_.setError("Engine does not support plugin scanning");
+        return false;
+    }
+
+    const auto& knownPlugins = teWrapper->getKnownPluginList();
+    const juce::PluginDescription* bestMatch = nullptr;
+
+    for (const auto& desc : knownPlugins.getTypes()) {
+        if (desc.name.equalsIgnoreCase(fxName)) {
+            // Filter by format hint if provided
+            if (formatHint.isNotEmpty()) {
+                auto descFormat = desc.pluginFormatName.toLowerCase();
+                if (!descFormat.contains(formatHint.toLowerCase()))
+                    continue;
+            }
+            bestMatch = &desc;
+            break;
+        }
+    }
+
+    if (!bestMatch) {
+        ctx_.setError("FX plugin '" + fxName + "' not found (not internal or in scanned plugins)");
+        return false;
+    }
+
+    // Build DeviceInfo from PluginDescription
+    DeviceInfo device;
+    device.name = bestMatch->name;
+    device.pluginId = bestMatch->createIdentifierString();
+    device.manufacturer = bestMatch->manufacturerName;
+    device.uniqueId = bestMatch->createIdentifierString();
+    device.fileOrIdentifier = bestMatch->fileOrIdentifier;
+    device.isInstrument = bestMatch->isInstrument;
+
+    if (bestMatch->pluginFormatName == "VST3")
+        device.format = PluginFormat::VST3;
+    else if (bestMatch->pluginFormatName == "AudioUnit" || bestMatch->pluginFormatName == "AU")
+        device.format = PluginFormat::AU;
+    else if (bestMatch->pluginFormatName == "VST")
+        device.format = PluginFormat::VST;
+    else
+        device.format = PluginFormat::VST3;
+
+    auto deviceId = TrackManager::getInstance().addDeviceToTrack(ctx_.currentTrackId, device);
+    if (deviceId == INVALID_DEVICE_ID) {
+        ctx_.setError("Failed to add FX '" + fxName + "' to track");
+        return false;
+    }
+
+    ctx_.addResult("Added " + bestMatch->pluginFormatName + " FX '" + bestMatch->name + "' by " +
+                   bestMatch->manufacturerName);
+    return true;
+}
+
+bool Interpreter::executeSelect() {
+    if (ctx_.inFilterContext) {
+        // Select first matching track
+        if (!ctx_.filteredTrackIds.empty()) {
+            SelectionManager::getInstance().selectTrack(ctx_.filteredTrackIds.front());
+            ctx_.addResult("Selected track");
+        } else {
+            ctx_.addResult("No tracks matched filter");
+        }
+    } else if (ctx_.currentTrackId >= 0) {
+        SelectionManager::getInstance().selectTrack(ctx_.currentTrackId);
+        ctx_.addResult("Selected track");
+    } else {
+        ctx_.setError("No track context for select");
+        return false;
+    }
+    return true;
+}
+
+bool Interpreter::executeSelectClips(const Params& params) {
+    auto& cm = ClipManager::getInstance();
+
+    auto selectOnTrack = [&](int trackId) {
+        auto clipIds = cm.getClipsOnTrack(trackId);
+        std::unordered_set<ClipId> matched;
+
+        double minLenBars = params.getFloat("min_length_bars", -1.0);
+        double maxLenBars = params.getFloat("max_length_bars", -1.0);
+        int minBar = params.getInt("min_bar", -1);
+        int maxBar = params.getInt("max_bar", -1);
+
+        for (auto clipId : clipIds) {
+            auto* clip = cm.getClip(clipId);
+            if (!clip)
+                continue;
+
+            // Convert clip length to bars
+            double bpm = 120.0;
+            auto* engine = TrackManager::getInstance().getAudioEngine();
+            if (engine)
+                bpm = engine->getTempo();
+            double secondsPerBar = 4.0 * 60.0 / bpm;
+            double clipLenBars = clip->length / secondsPerBar;
+            double clipStartBar = (clip->startTime / secondsPerBar) + 1.0;
+
+            if (minLenBars >= 0 && clipLenBars < minLenBars)
+                continue;
+            if (maxLenBars >= 0 && clipLenBars > maxLenBars)
+                continue;
+            if (minBar >= 0 && clipStartBar < minBar)
+                continue;
+            if (maxBar >= 0 && clipStartBar > maxBar)
+                continue;
+
+            matched.insert(clipId);
+        }
+
+        return matched;
+    };
+
+    std::unordered_set<ClipId> allMatched;
+
+    if (ctx_.inFilterContext) {
+        for (int trackId : ctx_.filteredTrackIds) {
+            auto m = selectOnTrack(trackId);
+            allMatched.insert(m.begin(), m.end());
+        }
+    } else if (ctx_.currentTrackId >= 0) {
+        allMatched = selectOnTrack(ctx_.currentTrackId);
+    } else {
+        // No track context — search all tracks
+        auto& tm = TrackManager::getInstance();
+        for (const auto& track : tm.getTracks()) {
+            auto m = selectOnTrack(track.id);
+            allMatched.insert(m.begin(), m.end());
+        }
+    }
+
+    if (allMatched.empty()) {
+        ctx_.addResult("No clips matched the criteria");
+    } else if (allMatched.size() == 1) {
+        SelectionManager::getInstance().selectClip(*allMatched.begin());
+        ctx_.addResult("Selected 1 clip");
+    } else {
+        SelectionManager::getInstance().selectClips(allMatched);
+        ctx_.addResult("Selected " + juce::String(static_cast<int>(allMatched.size())) + " clips");
     }
 
     return true;
