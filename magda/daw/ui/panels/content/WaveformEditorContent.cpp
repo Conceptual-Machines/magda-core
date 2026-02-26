@@ -865,8 +865,9 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
             if (warpEnabled) {
                 auto* bridge = getBridge();
                 if (bridge) {
-                    // Always populate markers when opening a clip with warp enabled
-                    bridge->enableWarp(editingClipId_);
+                    // Read existing markers from TE — don't call enableWarp()
+                    // which would destroy user-placed markers and re-populate
+                    // from transients.
                     auto markers = bridge->getWarpMarkers(editingClipId_);
                     gridComponent_->setWarpMarkers(markers);
                 }
