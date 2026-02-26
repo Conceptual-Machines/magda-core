@@ -2,8 +2,6 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
-#include <iostream>
-
 #include "../core/ClipCommands.hpp"
 #include "../core/UndoManager.hpp"
 
@@ -23,7 +21,6 @@ void SessionRecorder::setArmed(bool armed) {
     if (armed == armed_)
         return;
     armed_ = armed;
-    std::cout << "[SessionRecorder] " << (armed ? "ARMED" : "DISARMED") << std::endl;
 }
 
 void SessionRecorder::updatePreviews() {
@@ -31,18 +28,6 @@ void SessionRecorder::updatePreviews() {
         return;
 
     double currentTime = edit_.getTransport().position.get().inSeconds();
-
-    // Log transport position every ~1s to verify it advances
-    static int previewLogCounter = 0;
-    if (++previewLogCounter % 30 == 0) {
-        std::cout << "[SessionRecorder] updatePreviews: transportPos=" << currentTime
-                  << " activeRecordings=" << activeRecordings_.size();
-        for (const auto& [clipId, rec] : activeRecordings_) {
-            std::cout << " [clipId=" << clipId << " start=" << rec.arrangementStartTime
-                      << " elapsed=" << (currentTime - rec.arrangementStartTime) << "]";
-        }
-        std::cout << std::endl;
-    }
 
     for (const auto& [clipId, rec] : activeRecordings_) {
         auto it = recordingPreviews_->find(rec.trackId);
@@ -73,17 +58,6 @@ void SessionRecorder::clipPlaybackStateChanged(ClipId clipId) {
 
     auto& transport = edit_.getTransport();
     double currentTime = transport.position.get().inSeconds();
-    bool looping = transport.looping;
-    double loopStart = transport.getLoopRange().getStart().inSeconds();
-    double loopEnd = transport.getLoopRange().getEnd().inSeconds();
-
-    const char* stateStr = (state == SessionClipPlayState::Playing)  ? "Playing"
-                           : (state == SessionClipPlayState::Queued) ? "Queued"
-                                                                     : "Stopped";
-    std::cout << "[SessionRecorder] clipPlaybackStateChanged clipId=" << clipId
-              << " state=" << stateStr << " transportPos=" << currentTime << " looping=" << looping
-              << " loopRange=[" << loopStart << "-" << loopEnd << "]"
-              << " activeRecordings=" << activeRecordings_.size() << std::endl;
 
     if (state == SessionClipPlayState::Playing) {
         ensureSnapshotTaken();
@@ -93,9 +67,6 @@ void SessionRecorder::clipPlaybackStateChanged(ClipId clipId) {
         if (getLaunchTime_) {
             double precise = getLaunchTime_(clip->trackId);
             if (precise > 0.0) {
-                std::cout << "[SessionRecorder]   using precise launchTime=" << precise
-                          << "s (transport was " << currentTime
-                          << "s, delta=" << (currentTime - precise) << "s)" << std::endl;
                 launchTime = precise;
             }
         }
@@ -103,11 +74,6 @@ void SessionRecorder::clipPlaybackStateChanged(ClipId clipId) {
         // Finalize any existing recording on the same track (clip replaced)
         for (auto it = activeRecordings_.begin(); it != activeRecordings_.end();) {
             if (it->second.trackId == clip->trackId) {
-                std::cout << "[SessionRecorder]   finalizing previous recording on same track:"
-                          << " clipId=" << it->first << " start=" << it->second.arrangementStartTime
-                          << " stopAt=" << launchTime
-                          << " duration=" << (launchTime - it->second.arrangementStartTime)
-                          << std::endl;
                 finalizeRecording(it->second, launchTime);
                 it = activeRecordings_.erase(it);
             } else {
@@ -131,25 +97,14 @@ void SessionRecorder::clipPlaybackStateChanged(ClipId clipId) {
             preview.isAudioRecording = (clip->type == ClipType::Audio);
             (*recordingPreviews_)[clip->trackId] = preview;
         }
-
-        std::cout << "[SessionRecorder]   >>> STARTED recording clipId=" << clipId
-                  << " trackId=" << clip->trackId << " arrangementStartTime=" << launchTime << "s"
-                  << " totalActiveRecordings=" << activeRecordings_.size() << std::endl;
     } else if (state == SessionClipPlayState::Stopped) {
         // Clip stopped — finalize its recording
         auto it = activeRecordings_.find(clipId);
         if (it != activeRecordings_.end()) {
-            std::cout << "[SessionRecorder]   >>> STOPPED clipId=" << clipId
-                      << " start=" << it->second.arrangementStartTime << " stopAt=" << currentTime
-                      << " duration=" << (currentTime - it->second.arrangementStartTime) << "s"
-                      << std::endl;
             if (recordingPreviews_)
                 recordingPreviews_->erase(it->second.trackId);
             finalizeRecording(it->second, currentTime);
             activeRecordings_.erase(it);
-        } else {
-            std::cout << "[SessionRecorder]   Stopped but no active recording for clipId=" << clipId
-                      << std::endl;
         }
     }
 }
@@ -157,26 +112,12 @@ void SessionRecorder::clipPlaybackStateChanged(ClipId clipId) {
 void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopTime) {
     auto& clipManager = ClipManager::getInstance();
     const auto* sessionClip = clipManager.getClip(rec.sessionClipId);
-    if (!sessionClip) {
-        std::cout << "[SessionRecorder] finalizeRecording: clip " << rec.sessionClipId
-                  << " not found!" << std::endl;
+    if (!sessionClip)
         return;
-    }
 
     double duration = stopTime - rec.arrangementStartTime;
-    double actualTransportPos = edit_.getTransport().position.get().inSeconds();
-    std::cout << "[SessionRecorder] finalizeRecording clipId=" << rec.sessionClipId
-              << " trackId=" << rec.trackId << " start=" << rec.arrangementStartTime
-              << " stop=" << stopTime << " duration=" << duration
-              << " actualTransportPos=" << actualTransportPos
-              << " clipType=" << (sessionClip->type == ClipType::Audio ? "Audio" : "MIDI")
-              << " loopEnabled=" << sessionClip->loopEnabled
-              << " clipLength=" << sessionClip->length
-              << " clipLengthBeats=" << sessionClip->lengthBeats << std::endl;
-    if (duration <= 0.001) {
-        std::cout << "[SessionRecorder]   duration too short, skipping" << std::endl;
+    if (duration <= 0.001)
         return;
-    }
 
     // Create arrangement clip with the session clip's content
     ClipId newClipId = INVALID_CLIP_ID;
@@ -228,11 +169,6 @@ void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopT
             newClip->startBeats = startBeatPos.inBeats();
             newClip->lengthBeats = endBeatPos.inBeats() - startBeatPos.inBeats();
             newClip->autoTempo = true;
-
-            std::cout << "[SessionRecorder]   autoTempo arr clip: startBeats="
-                      << newClip->startBeats << " lengthBeats=" << newClip->lengthBeats
-                      << " (session had startBeats=" << sessionClip->startBeats
-                      << " lengthBeats=" << sessionClip->lengthBeats << ")" << std::endl;
         } else {
             newClip->lengthBeats = sessionClip->lengthBeats;
         }
@@ -284,9 +220,6 @@ void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopT
 
     clipManager.forceNotifyClipPropertyChanged(newClipId);
     createdArrangementClipIds_.push_back(newClipId);
-
-    std::cout << "[SessionRecorder] created arrangement clip " << newClipId << " ["
-              << rec.arrangementStartTime << "s - " << stopTime << "s]" << std::endl;
 }
 
 void SessionRecorder::commitIfNeeded() {
@@ -295,16 +228,6 @@ void SessionRecorder::commitIfNeeded() {
 
     auto& transport = edit_.getTransport();
     double currentTime = transport.position.get().inSeconds();
-
-    std::cout << "[SessionRecorder] commitIfNeeded: " << activeRecordings_.size() << " active, "
-              << createdArrangementClipIds_.size() << " finalized"
-              << " transportPos=" << currentTime << " looping=" << transport.looping
-              << " isPlaying=" << transport.isPlaying() << std::endl;
-    for (const auto& [clipId, rec] : activeRecordings_) {
-        std::cout << "[SessionRecorder]   active: clipId=" << clipId
-                  << " start=" << rec.arrangementStartTime
-                  << " elapsed=" << (currentTime - rec.arrangementStartTime) << std::endl;
-    }
 
     // Clear recording previews
     if (recordingPreviews_)
@@ -321,8 +244,6 @@ void SessionRecorder::commitIfNeeded() {
         auto cmd =
             std::make_unique<RecordSessionToArrangementCommand>(arrangementSnapshotBeforeRecord_);
         UndoManager::getInstance().executeCommand(std::move(cmd));
-        std::cout << "[SessionRecorder] committed " << createdArrangementClipIds_.size()
-                  << " arrangement clip(s) to undo stack" << std::endl;
 
         // Rebuild the audio graph so new arrangement clips are audible immediately
         if (auto* ctx = edit_.getCurrentPlaybackContext())
