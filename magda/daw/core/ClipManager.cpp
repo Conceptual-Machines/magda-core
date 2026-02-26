@@ -1058,7 +1058,7 @@ ClipId ClipManager::getClipInSlot(TrackId trackId, int sceneIndex) const {
 void ClipManager::setClipSceneIndex(ClipId clipId, int sceneIndex) {
     if (auto* clip = getClip(clipId)) {
         clip->sceneIndex = sceneIndex;
-        notifyClipPropertyChanged(clipId);
+        notifyClipsChanged();  // Structural change: old slot must also refresh
     }
 }
 
