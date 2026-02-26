@@ -16,10 +16,6 @@ namespace magda::daw::ui {
 //==============================================================================
 class MediaExplorerContent::PreviewAudioCallback : public juce::AudioIODeviceCallback {
   public:
-    void setOutputChannelOffset(int offset) {
-        channelOffset_ = offset;
-    }
-
     void setSource(juce::AudioIODeviceCallback* source) {
         source_ = source;
     }
@@ -36,7 +32,11 @@ class MediaExplorerContent::PreviewAudioCallback : public juce::AudioIODeviceCal
             return;
         }
 
-        int offset = channelOffset_;
+        // Read offset from Config so changes in AudioSettingsDialog take effect immediately.
+        // Config::getPreviewOutputChannel() is a plain member read — no locks or allocations.
+        int offset = magda::Config::getInstance().getPreviewOutputChannel();
+        if (offset < 0)
+            offset = 0;
 
         // Check that the requested stereo pair fits within the available output channels
         if (offset + 1 < numOutputChannels) {
@@ -79,7 +79,6 @@ class MediaExplorerContent::PreviewAudioCallback : public juce::AudioIODeviceCal
 
   private:
     juce::AudioIODeviceCallback* source_ = nullptr;
-    int channelOffset_ = 0;
 };
 
 //==============================================================================
@@ -775,8 +774,6 @@ void MediaExplorerContent::setAudioEngine(magda::AudioEngine* engine) {
     if (audioEngine_ != nullptr) {
         if (auto* deviceManager = audioEngine_->getDeviceManager()) {
             // Register the preview callback wrapper (routes audio to configured stereo pair)
-            previewCallback_->setOutputChannelOffset(
-                magda::Config::getInstance().getPreviewOutputChannel());
             deviceManager->addAudioCallback(previewCallback_.get());
         }
     }
@@ -799,11 +796,11 @@ void MediaExplorerContent::setupAudioPreview() {
     // Give thumbnail component access to transport for playhead tracking
     thumbnailComponent_->setTransportSource(transportSource_.get());
 
-    // Create preview callback wrapper that routes audio to the configured stereo pair
+    // Create preview callback wrapper that routes audio to the configured stereo pair.
+    // The offset is read live from Config on each audio callback so changes take effect
+    // immediately.
     previewCallback_ = std::make_unique<PreviewAudioCallback>();
     previewCallback_->setSource(&audioSourcePlayer_);
-    previewCallback_->setOutputChannelOffset(
-        magda::Config::getInstance().getPreviewOutputChannel());
 
     // Note: Audio callback will be added when setAudioEngine() is called
     // This avoids creating a separate AudioDeviceManager that conflicts with main audio

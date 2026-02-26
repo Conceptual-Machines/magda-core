@@ -93,7 +93,14 @@ void CustomChannelSelector::updateFromDevice() {
                 toggle.previewButton->setToggleState(i == previewOffset,
                                                      juce::dontSendNotification);
                 toggle.previewButton->setRadioGroupId(9999);  // Mutual exclusion
-                toggle.previewButton->onClick = [this, i]() { onPreviewToggled(i); };
+                toggle.previewButton->onClick = [this, button = toggle.previewButton.get(), i]() {
+                    // Prevent unchecking — always keep one preview destination selected
+                    if (!button->getToggleState()) {
+                        button->setToggleState(true, juce::dontSendNotification);
+                        return;
+                    }
+                    onPreviewToggled(i);
+                };
                 addAndMakeVisible(*toggle.previewButton);
             }
 
