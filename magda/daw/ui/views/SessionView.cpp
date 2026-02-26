@@ -76,6 +76,9 @@ class ClipSlotButton : public juce::TextButton {
     std::function<void()> onPlayButtonClick;
     std::function<void()> onCreateMidiClip;
     std::function<void()> onDeleteClip;
+    std::function<void()> onCopyClip;
+    std::function<void()> onCutClip;
+    std::function<void()> onPasteClip;
     std::function<void()> onAddScene;
     std::function<void()> onRemoveScene;
 
@@ -122,6 +125,13 @@ class ClipSlotButton : public juce::TextButton {
             juce::PopupMenu menu;
             if (!hasClip)
                 menu.addItem(1, "Create MIDI Clip");
+            if (hasClip) {
+                menu.addItem(5, "Copy");
+                menu.addItem(6, "Cut");
+            }
+            bool hasClipboard = ClipManager::getInstance().hasClipsInClipboard();
+            menu.addItem(7, "Paste", hasClipboard);
+            menu.addSeparator();
             if (hasClip)
                 menu.addItem(4, "Delete Clip");
             menu.addSeparator();
@@ -139,6 +149,12 @@ class ClipSlotButton : public juce::TextButton {
                     safeThis->onRemoveScene();
                 else if (result == 4 && safeThis->onDeleteClip)
                     safeThis->onDeleteClip();
+                else if (result == 5 && safeThis->onCopyClip)
+                    safeThis->onCopyClip();
+                else if (result == 6 && safeThis->onCutClip)
+                    safeThis->onCutClip();
+                else if (result == 7 && safeThis->onPasteClip)
+                    safeThis->onPasteClip();
             });
             return;
         }
@@ -1774,6 +1790,30 @@ void SessionView::rebuildTracks() {
                         std::make_unique<DeleteClipCommand>(cId));
                 }
             };
+            slot->onCopyClip = [this, trackIndex, sceneIndex]() {
+                TrackId tId = visibleTrackIds_[trackIndex];
+                ClipId cId = ClipManager::getInstance().getClipInSlot(tId, sceneIndex);
+                if (cId != INVALID_CLIP_ID) {
+                    ClipManager::getInstance().copyToClipboard({cId});
+                }
+            };
+            slot->onCutClip = [this, trackIndex, sceneIndex]() {
+                TrackId tId = visibleTrackIds_[trackIndex];
+                ClipId cId = ClipManager::getInstance().getClipInSlot(tId, sceneIndex);
+                if (cId != INVALID_CLIP_ID) {
+                    ClipManager::getInstance().copyToClipboard({cId});
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<DeleteClipCommand>(cId));
+                }
+            };
+            slot->onPasteClip = [this, trackIndex, sceneIndex]() {
+                if (!ClipManager::getInstance().hasClipsInClipboard())
+                    return;
+                TrackId tId = visibleTrackIds_[trackIndex];
+                auto cmd =
+                    std::make_unique<PasteClipCommand>(0.0, tId, ClipView::Session, sceneIndex);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+            };
             slot->onAddScene = [this]() { addScene(); };
             slot->onRemoveScene = [this]() { removeScene(); };
 
@@ -2209,6 +2249,28 @@ void SessionView::addScene() {
             if (cId != INVALID_CLIP_ID) {
                 UndoManager::getInstance().executeCommand(std::make_unique<DeleteClipCommand>(cId));
             }
+        };
+        slot->onCopyClip = [this, trackIndex, sceneIndex]() {
+            TrackId tId = visibleTrackIds_[trackIndex];
+            ClipId cId = ClipManager::getInstance().getClipInSlot(tId, sceneIndex);
+            if (cId != INVALID_CLIP_ID) {
+                ClipManager::getInstance().copyToClipboard({cId});
+            }
+        };
+        slot->onCutClip = [this, trackIndex, sceneIndex]() {
+            TrackId tId = visibleTrackIds_[trackIndex];
+            ClipId cId = ClipManager::getInstance().getClipInSlot(tId, sceneIndex);
+            if (cId != INVALID_CLIP_ID) {
+                ClipManager::getInstance().copyToClipboard({cId});
+                UndoManager::getInstance().executeCommand(std::make_unique<DeleteClipCommand>(cId));
+            }
+        };
+        slot->onPasteClip = [this, trackIndex, sceneIndex]() {
+            if (!ClipManager::getInstance().hasClipsInClipboard())
+                return;
+            TrackId tId = visibleTrackIds_[trackIndex];
+            auto cmd = std::make_unique<PasteClipCommand>(0.0, tId, ClipView::Session, sceneIndex);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
         };
         slot->onAddScene = [this]() { addScene(); };
         slot->onRemoveScene = [this]() { removeScene(); };

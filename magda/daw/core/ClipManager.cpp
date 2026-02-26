@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_map>
 
 #include "../project/ProjectManager.hpp"
 #include "ClipOperations.hpp"
@@ -1422,9 +1423,6 @@ void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
 
         clipboard_.push_back(trimmed);
     }
-
-    std::cout << "CLIPBOARD: Copied time range [" << startTime << " - " << endTime << "] -> "
-              << clipboard_.size() << " clip(s)" << std::endl;
 }
 
 std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId targetTrackId,
@@ -1437,6 +1435,9 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
 
     // Calculate offset from reference time to paste time
     double timeOffset = pasteTime - clipboardReferenceTime_;
+
+    // Track which scene slots have been used during this paste (for multi-clip session paste)
+    std::unordered_map<TrackId, int> trackSceneMap;
 
     for (const auto& clipData : clipboard_) {
         // Calculate new start time maintaining relative position
@@ -1465,16 +1466,12 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                 newClip->colour = clipData.colour;
                 newClip->loopEnabled = clipData.loopEnabled;
 
-                // When pasting to session with a valid scene index, set session properties
-                if (targetView == ClipView::Session && targetSceneIndex >= 0) {
-                    newClip->sceneIndex = targetSceneIndex;
-                    newClip->loopEnabled = true;
-                }
-
-                // Copy MIDI notes if MIDI clip
+                // Copy MIDI data
                 if (clipData.type == ClipType::MIDI) {
                     newClip->midiNotes = clipData.midiNotes;
-                    newClip->midiOffset = clipData.midiOffset;  // Preserve offset for split clips
+                    newClip->midiOffset = clipData.midiOffset;
+                    newClip->midiCCData = clipData.midiCCData;
+                    newClip->midiPitchBendData = clipData.midiPitchBendData;
                 }
 
                 // Copy audio properties (TE-aligned)
@@ -1482,7 +1479,57 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                     newClip->offset = clipData.offset;
                     newClip->loopStart = clipData.loopStart;
                     newClip->loopLength = clipData.loopLength;
-                    newClip->speedRatio = clipData.speedRatio;
+                }
+
+                // Audio playback
+                newClip->autoTempo = clipData.autoTempo;
+                newClip->loopStartBeats = clipData.loopStartBeats;
+                newClip->loopLengthBeats = clipData.loopLengthBeats;
+                newClip->lengthBeats = clipData.lengthBeats;
+                newClip->startBeats = clipData.startBeats;
+                newClip->warpEnabled = clipData.warpEnabled;
+                newClip->timeStretchMode = clipData.timeStretchMode;
+
+                // Pitch
+                newClip->autoPitch = clipData.autoPitch;
+                newClip->analogPitch = clipData.analogPitch;
+                newClip->pitchChange = clipData.pitchChange;
+                newClip->transpose = clipData.transpose;
+
+                // Mix
+                newClip->volumeDB = clipData.volumeDB;
+                newClip->gainDB = clipData.gainDB;
+                newClip->pan = clipData.pan;
+
+                // Playback
+                newClip->isReversed = clipData.isReversed;
+                newClip->speedRatio = clipData.speedRatio;
+
+                // Channels
+                newClip->leftChannelActive = clipData.leftChannelActive;
+                newClip->rightChannelActive = clipData.rightChannelActive;
+
+                // Grid settings
+                newClip->gridAutoGrid = clipData.gridAutoGrid;
+                newClip->gridNumerator = clipData.gridNumerator;
+                newClip->gridDenominator = clipData.gridDenominator;
+                newClip->gridSnapEnabled = clipData.gridSnapEnabled;
+
+                // Cross-view translation: pasting into session view
+                if (targetView == ClipView::Session && targetSceneIndex >= 0) {
+                    // Find next empty slot for this track
+                    if (trackSceneMap.find(newTrackId) == trackSceneMap.end()) {
+                        trackSceneMap[newTrackId] = targetSceneIndex;
+                    }
+                    int sceneForThisClip = trackSceneMap[newTrackId];
+                    while (getClipInSlot(newTrackId, sceneForThisClip) != INVALID_CLIP_ID) {
+                        sceneForThisClip++;
+                    }
+                    newClip->sceneIndex = sceneForThisClip;
+                    trackSceneMap[newTrackId] = sceneForThisClip + 1;
+                    newClip->loopEnabled = true;
+                    newClip->launchMode = clipData.launchMode;
+                    newClip->launchQuantize = clipData.launchQuantize;
                 }
 
                 forceNotifyClipPropertyChanged(newClipId);
@@ -1492,9 +1539,6 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
             newClips.push_back(newClipId);
         }
     }
-
-    std::cout << "CLIPBOARD: Pasted " << newClips.size() << " clip(s) at " << pasteTime << "s"
-              << std::endl;
 
     return newClips;
 }
@@ -1507,8 +1551,6 @@ void ClipManager::cutToClipboard(const std::unordered_set<ClipId>& clipIds) {
     for (auto clipId : clipIds) {
         deleteClip(clipId);
     }
-
-    std::cout << "CLIPBOARD: Cut " << clipIds.size() << " clip(s)" << std::endl;
 }
 
 bool ClipManager::hasClipsInClipboard() const {
