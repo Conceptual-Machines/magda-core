@@ -2329,8 +2329,16 @@ void SessionView::onPlayButtonClicked(int trackIndex, int sceneIndex) {
     if (clipId != INVALID_CLIP_ID) {
         // Select the clip so the inspector shows it
         SelectionManager::getInstance().selectClip(clipId);
-        // Trigger or toggle the clip depending on its launch mode
-        ClipManager::getInstance().triggerClip(clipId);
+
+        // Check current play state — stop if playing/queued, play if stopped
+        auto playState = audioEngine_ ? audioEngine_->getSessionClipPlayState(clipId)
+                                      : SessionClipPlayState::Stopped;
+        if (playState == SessionClipPlayState::Playing ||
+            playState == SessionClipPlayState::Queued) {
+            ClipManager::getInstance().stopClip(clipId);
+        } else {
+            ClipManager::getInstance().triggerClip(clipId);
+        }
     }
 }
 
@@ -2482,6 +2490,12 @@ void SessionView::showMixerContextMenu() {
 // ============================================================================
 
 void SessionView::clipsChanged() {
+    // Clear any stale drag overlay state — structural changes (add/remove clip)
+    // can interrupt drag operations without proper exit callbacks.
+    showPluginDropOverlay_ = false;
+    pluginDropTrackIndex_ = -1;
+    clearDragHighlight();
+
     updateAllClipSlots();
 }
 
@@ -2885,14 +2899,18 @@ void SessionView::updateDragHighlight(int x, int y) {
 }
 
 void SessionView::clearDragHighlight() {
-    bool needsRepaint = (dragHoverTrackIndex_ == -1 && dragHoverSceneIndex_ >= 0);
     if (dragHoverTrackIndex_ >= 0 && dragHoverSceneIndex_ >= 0) {
         updateClipSlotAppearance(dragHoverTrackIndex_, dragHoverSceneIndex_);
     }
     dragHoverTrackIndex_ = -1;
     dragHoverSceneIndex_ = -1;
-    if (needsRepaint)
-        repaint();
+
+    // Always repaint — the "new track" overlay may have been painted in a
+    // previous frame even if the current drag state doesn't show it (the mouse
+    // can move from past-last-track to on-a-track between paint frames).
+    repaint();
+    if (gridViewport)
+        gridViewport->repaint();
 }
 
 void SessionView::updateDragGhost(const juce::StringArray& files, int trackIndex, int sceneIndex) {

@@ -327,23 +327,6 @@ bool TracktionEngineWrapper::isMetronomeEnabled() const {
 
 void TracktionEngineWrapper::onTransportPlay(double position) {
     std::cout << "[onTransportPlay] called with position=" << position << std::endl;
-    // If a session clip is selected (or was last triggered), trigger it —
-    // but only if the clip's track is still in Session playback mode.
-    auto& cm = ClipManager::getInstance();
-    ClipId clipToTrigger = cm.getSelectedClip();
-    if (clipToTrigger == INVALID_CLIP_ID) {
-        clipToTrigger = cm.getLastTriggeredSessionClip();
-    }
-    if (clipToTrigger != INVALID_CLIP_ID) {
-        const auto* clip = cm.getClip(clipToTrigger);
-        if (clip && clip->view == ClipView::Session) {
-            const auto* track = TrackManager::getInstance().getTrack(clip->trackId);
-            if (track && track->playbackMode == TrackPlaybackMode::Session) {
-                cm.triggerClip(clipToTrigger);
-                return;  // SessionClipScheduler will start transport
-            }
-        }
-    }
 
     locate(position);
     play();

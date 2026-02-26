@@ -1,6 +1,5 @@
 #include "PlaybackPositionTimer.hpp"
 
-#include "../core/ViewModeController.hpp"
 #include "AudioEngine.hpp"
 #include "ui/state/TimelineController.hpp"
 #include "ui/state/TimelineEvents.hpp"
@@ -47,13 +46,10 @@ void PlaybackPositionTimer::timerCallback() {
         double sessionPos = engine_.getSessionPlayheadPosition();
         double transportPos = engine_.getCurrentPosition();
 
-        // In session view, show the wrapped session clip playhead.
-        // In arrangement view, always show the real transport position
-        // so the playhead advances linearly (important during recording).
-        auto viewMode = ViewModeController::getInstance().getViewMode();
-        bool useSessionPlayhead = sessionPos >= 0.0 && viewMode == ViewMode::Live;
-        double position = useSessionPlayhead ? sessionPos : transportPos;
-        timeline_.dispatch(SetPlaybackPositionEvent{position});
+        // Always use the real transport position for the main timeline playhead.
+        // The session clip's loop position is shown via per-clip progress bars
+        // (onSessionPlayheadUpdate callback below), not the main playhead.
+        timeline_.dispatch(SetPlaybackPositionEvent{transportPos});
 
         // Session clip playhead callback (for per-clip progress bars)
         if (onSessionPlayheadUpdate) {

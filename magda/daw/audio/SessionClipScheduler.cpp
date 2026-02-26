@@ -79,6 +79,12 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
         // playhead keeps rendering — the timer's stopped-detection will
         // clean it up naturally when it actually stops.
 
+        // Switch the track to session mode BEFORE starting the transport.
+        // This ensures playSlotClips is already true when the audio thread
+        // starts processing, preventing a click from arrangement audio being
+        // output for a few blocks then abruptly stopping.
+        TrackManager::getInstance().setTrackPlaybackMode(clip->trackId, TrackPlaybackMode::Session);
+
         // Ensure transport is playing — track whether it was already running
         // so we know if quantized launch is safe (sync point is only valid
         // once the audio thread has been processing for at least one buffer).

@@ -581,6 +581,39 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         if (std::abs(clip->pan) > 0.001f)
             audioClipPtr->setPan(clip->pan);
 
+        // Set a small fade-in/out to prevent clicks on launch/stop transitions.
+        // Session clips don't have user-configurable fades, so apply a minimal
+        // ~2ms fade that's inaudible but prevents discontinuities.
+        {
+            double fadeInVal = (clip->fadeIn <= 0.0) ? 0.002 : clip->fadeIn;
+            double fadeOutVal = (clip->fadeOut <= 0.0) ? 0.002 : clip->fadeOut;
+            audioClipPtr->setFadeIn(te::TimeDuration::fromSeconds(fadeInVal));
+            audioClipPtr->setFadeOut(te::TimeDuration::fromSeconds(fadeOutVal));
+        }
+
+        // Set LaunchHandle looping state at creation time so it's ready before first launch
+        if (auto lh = audioClipPtr->getLaunchHandle()) {
+            if (clip->loopEnabled) {
+                if (clip->autoTempo) {
+                    double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                    auto [loopStartBeats, loopLengthBeats] =
+                        ClipOperations::getAutoTempoBeatRange(*clip, bpm);
+                    if (loopLengthBeats > 0.0)
+                        lh->setLooping(te::BeatDuration::fromBeats(loopLengthBeats));
+                } else if (clip->getSourceLength() > 0.0) {
+                    double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                    double loopDurationBeats =
+                        (clip->getSourceLength() / clip->speedRatio) * (bpm / 60.0);
+                    lh->setLooping(te::BeatDuration::fromBeats(loopDurationBeats));
+                }
+            }
+        }
+
+        // Force WarpTimeManager creation now so its constructor's warp marker
+        // insertions (which trigger TreeWatcher → restartPlayback) happen during
+        // initial sync rather than lazily during playback (which causes a click).
+        audioClipPtr->getWarpTimeManager();
+
         return true;
 
     } else if (clip->type == ClipType::MIDI) {
@@ -649,6 +682,12 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
             lq->type = toTELaunchQType(clip->launchQuantize);
         }
 
+        // Set LaunchHandle looping state at creation time
+        if (auto lh = midiClipPtr->getLaunchHandle()) {
+            if (clip->loopEnabled && loopLengthBeats > 0.0)
+                lh->setLooping(te::BeatDuration::fromBeats(loopLengthBeats));
+        }
+
         return true;
     }
 
@@ -677,49 +716,35 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId, bool forceImmediate) {
     std::cout << "[ClipSynchronizer]   LaunchHandle status="
               << (int)launchHandle->getPlayingStatus() << std::endl;
 
-    // Set looping before play
+    // Update LaunchHandle looping state before play.
+    // NOTE: Do NOT call teClip->setLoopRange() / setLoopRangeBeats() here!
+    // Those modify clip ValueTree properties (loopStartBeats, loopLengthBeats,
+    // autoTempo) which TE's TreeWatcher detects and calls restartPlayback(),
+    // triggering a graph rebuild mid-playback that causes an audible click.
+    // The clip's loop range is already set during syncSessionClipToSlot() and
+    // kept up-to-date by clipPropertyChanged().
     const auto* clip = ClipManager::getInstance().getClip(clipId);
     if (clip) {
         if (clip->loopEnabled) {
             double srcLength = clip->getSourceLength();
             if (clip->type == ClipType::Audio && clip->autoTempo) {
-                // AutoTempo: use beat-based loop range
                 double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
                 auto [loopStartBeats, loopLengthBeats] =
                     ClipOperations::getAutoTempoBeatRange(*clip, bpm);
                 if (loopLengthBeats > 0.0) {
-                    teClip->setLoopRangeBeats(
-                        te::BeatRange(te::BeatPosition::fromBeats(loopStartBeats),
-                                      te::BeatDuration::fromBeats(loopLengthBeats)));
                     launchHandle->setLooping(te::BeatDuration::fromBeats(loopLengthBeats));
                 }
             } else if (clip->type == ClipType::Audio && srcLength > 0.0) {
-                teClip->setLoopRange(
-                    te::TimeRange(te::TimePosition::fromSeconds(clip->getTeLoopStart()),
-                                  te::TimePosition::fromSeconds(clip->getTeLoopEnd())));
                 double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
                 double loopDurationBeats = (srcLength / clip->speedRatio) * (bpm / 60.0);
                 launchHandle->setLooping(te::BeatDuration::fromBeats(loopDurationBeats));
             } else {
-                // MIDI: convert source region to beats
+                // MIDI
                 double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
-                double loopStartBeat = clip->loopStart * (bpm / 60.0);
                 double loopLengthBeats = srcLength * (bpm / 60.0);
-                double loopEndBeat = loopStartBeat + loopLengthBeats;
-
-                auto& tempoSeq = edit_.tempoSequence;
-                auto loopStartTime =
-                    tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopStartBeat));
-                auto loopEndTime = tempoSeq.beatsToTime(te::BeatPosition::fromBeats(loopEndBeat));
-                teClip->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
-                teClip->setLoopRangeBeats({te::BeatPosition::fromBeats(loopStartBeat),
-                                           te::BeatPosition::fromBeats(loopEndBeat)});
-
                 launchHandle->setLooping(te::BeatDuration::fromBeats(loopLengthBeats));
             }
         } else {
-            if (teClip->isLooping())
-                teClip->disableLooping();
             launchHandle->setLooping(std::nullopt);
         }
     }
