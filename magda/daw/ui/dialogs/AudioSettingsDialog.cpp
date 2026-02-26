@@ -68,6 +68,9 @@ void CustomChannelSelector::updateFromDevice() {
     // The user can then select which ones to enable/disable
     int numChannels = channelNames.size();
 
+    // Read current preview output channel from Config (only relevant for output)
+    int previewOffset = magda::Config::getInstance().getPreviewOutputChannel();
+
     // Create stereo pair toggles first
     for (int i = 0; i < numChannels; i += 2) {
         if (i + 1 < numChannels) {
@@ -83,6 +86,24 @@ void CustomChannelSelector::updateFromDevice() {
 
             toggle.button->onClick = [this, i]() { onChannelToggled(i, true); };
             addAndMakeVisible(*toggle.button);
+
+            // For output channels, add a "Preview" toggle next to each stereo pair
+            if (!isInput_) {
+                toggle.previewButton = std::make_unique<juce::ToggleButton>("Preview");
+                toggle.previewButton->setToggleState(i == previewOffset,
+                                                     juce::dontSendNotification);
+                toggle.previewButton->setRadioGroupId(9999);  // Mutual exclusion
+                toggle.previewButton->onClick = [this, button = toggle.previewButton.get(), i]() {
+                    // Prevent unchecking — always keep one preview destination selected
+                    if (!button->getToggleState()) {
+                        button->setToggleState(true, juce::dontSendNotification);
+                        return;
+                    }
+                    onPreviewToggled(i);
+                };
+                addAndMakeVisible(*toggle.previewButton);
+            }
+
             channelToggles_.push_back(std::move(toggle));
         }
     }
@@ -200,6 +221,12 @@ void CustomChannelSelector::refreshChannelStates() {
     }
 }
 
+void CustomChannelSelector::onPreviewToggled(int startChannel) {
+    magda::Config::getInstance().setPreviewOutputChannel(startChannel);
+    magda::Config::getInstance().save();
+    DBG("Preview output changed to channels " << (startChannel + 1) << "-" << (startChannel + 2));
+}
+
 void CustomChannelSelector::applyToDevice() {
     auto* device = deviceManager_->getCurrentAudioDevice();
     if (!device)
@@ -273,7 +300,12 @@ void CustomChannelSelector::resized() {
     const int spacing = 4;
 
     for (auto& toggle : channelToggles_) {
-        toggle.button->setBounds(bounds.removeFromTop(toggleHeight));
+        auto row = bounds.removeFromTop(toggleHeight);
+        if (toggle.previewButton != nullptr) {
+            toggle.previewButton->setBounds(row.removeFromRight(70));
+            row.removeFromRight(4);  // spacing
+        }
+        toggle.button->setBounds(row);
         bounds.removeFromTop(spacing);
     }
 }

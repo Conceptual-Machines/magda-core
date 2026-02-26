@@ -29,10 +29,13 @@ class CustomChannelSelector : public juce::Component {
     tracktion::DeviceManager* teDeviceManager_;
     bool isInput_;
 
+    void onPreviewToggled(int startChannel);
+
     struct ChannelToggle {
         std::unique_ptr<juce::ToggleButton> button;
-        int startChannel;  // 0-indexed
-        bool isStereo;     // true = pair (e.g., 0-1), false = mono (e.g., 0)
+        std::unique_ptr<juce::ToggleButton> previewButton;  // Only for output stereo pairs
+        int startChannel;                                   // 0-indexed
+        bool isStereo;  // true = pair (e.g., 0-1), false = mono (e.g., 0)
     };
 
     std::vector<ChannelToggle> channelToggles_;

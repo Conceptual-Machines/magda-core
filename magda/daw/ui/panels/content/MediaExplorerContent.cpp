@@ -12,15 +12,86 @@
 namespace magda::daw::ui {
 
 //==============================================================================
+// PreviewAudioCallback - Routes preview audio to a specific stereo pair
+//==============================================================================
+class MediaExplorerContent::PreviewAudioCallback : public juce::AudioIODeviceCallback {
+  public:
+    void setSource(juce::AudioIODeviceCallback* source) {
+        source_ = source;
+    }
+
+    void audioDeviceIOCallbackWithContext(
+        const float* const* inputChannelData, int numInputChannels, float* const* outputChannelData,
+        int numOutputChannels, int numSamples,
+        const juce::AudioIODeviceCallbackContext& context) override {
+        if (source_ == nullptr) {
+            // Zero all output channels
+            for (int i = 0; i < numOutputChannels; ++i)
+                if (outputChannelData[i] != nullptr)
+                    juce::FloatVectorOperations::clear(outputChannelData[i], numSamples);
+            return;
+        }
+
+        // Read offset from Config so changes in AudioSettingsDialog take effect immediately.
+        // Config::getPreviewOutputChannel() is a plain member read — no locks or allocations.
+        int offset = magda::Config::getInstance().getPreviewOutputChannel();
+        if (offset < 0)
+            offset = 0;
+
+        // Check that the requested stereo pair fits within the available output channels
+        if (offset + 1 < numOutputChannels) {
+            // Build a 2-channel pointer array pointing at the target stereo pair
+            float* stereoOut[2] = {outputChannelData[offset], outputChannelData[offset + 1]};
+
+            // Let the source write into just these 2 channels
+            source_->audioDeviceIOCallbackWithContext(inputChannelData, numInputChannels, stereoOut,
+                                                      2, numSamples, context);
+
+            // Zero every other output channel
+            for (int i = 0; i < numOutputChannels; ++i) {
+                if (i != offset && i != offset + 1 && outputChannelData[i] != nullptr)
+                    juce::FloatVectorOperations::clear(outputChannelData[i], numSamples);
+            }
+        } else {
+            // Offset out of range — write to first stereo pair as fallback
+            float* stereoOut[2] = {outputChannelData[0],
+                                   numOutputChannels > 1 ? outputChannelData[1] : nullptr};
+            int chCount = numOutputChannels > 1 ? 2 : 1;
+            source_->audioDeviceIOCallbackWithContext(inputChannelData, numInputChannels, stereoOut,
+                                                      chCount, numSamples, context);
+
+            // Zero remaining channels
+            for (int i = chCount; i < numOutputChannels; ++i)
+                if (outputChannelData[i] != nullptr)
+                    juce::FloatVectorOperations::clear(outputChannelData[i], numSamples);
+        }
+    }
+
+    void audioDeviceAboutToStart(juce::AudioIODevice* device) override {
+        if (source_ != nullptr)
+            source_->audioDeviceAboutToStart(device);
+    }
+
+    void audioDeviceStopped() override {
+        if (source_ != nullptr)
+            source_->audioDeviceStopped();
+    }
+
+  private:
+    juce::AudioIODeviceCallback* source_ = nullptr;
+};
+
+//==============================================================================
 // ThumbnailComponent - Displays waveform thumbnail for selected file
 //==============================================================================
 class MediaExplorerContent::ThumbnailComponent : public juce::Component,
-                                                 public juce::ChangeListener {
+                                                 public juce::ChangeListener,
+                                                 public juce::Timer {
   public:
     ThumbnailComponent() = default;
 
     ~ThumbnailComponent() override {
-        // Remove ourselves as listener from any thumbnail
+        stopTimer();
         if (currentThumbnail_ != nullptr) {
             currentThumbnail_->removeChangeListener(this);
         }
@@ -34,6 +105,7 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         }
 
         currentFile_ = file;
+        playbackPosition_ = 0.0;
 
         // Get and listen to new thumbnail
         if (file.existsAsFile()) {
@@ -47,9 +119,33 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         repaint();
     }
 
+    void setTransportSource(juce::AudioTransportSource* source) {
+        transportSource_ = source;
+    }
+
+    void setPlaying(bool playing) {
+        if (playing) {
+            startTimerHz(30);  // ~30fps playhead updates
+        } else {
+            stopTimer();
+            playbackPosition_ = 0.0;
+            repaint();
+        }
+    }
+
     // ChangeListener - called when thumbnail finishes loading
     void changeListenerCallback(juce::ChangeBroadcaster*) override {
-        repaint();  // Redraw when thumbnail is ready
+        repaint();
+    }
+
+    void timerCallback() override {
+        if (transportSource_ != nullptr && transportSource_->isPlaying()) {
+            playbackPosition_ = transportSource_->getCurrentPosition();
+        } else {
+            playbackPosition_ = 0.0;
+            stopTimer();
+        }
+        repaint();
     }
 
     void paint(juce::Graphics& g) override {
@@ -64,28 +160,33 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         g.drawRect(bounds, 1);
 
         if (currentFile_.existsAsFile()) {
-            // Get thumbnail (may be null if not loaded yet)
             auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
                 currentFile_.getFullPathName());
 
             if (thumbnail != nullptr && thumbnail->getTotalLength() > 0.0) {
-                // Draw waveform
                 auto waveformBounds = bounds.reduced(4);
                 magda::AudioThumbnailManager::getInstance().drawWaveform(
-                    g, waveformBounds, currentFile_.getFullPathName(),
-                    0.0,                          // Start time
-                    thumbnail->getTotalLength(),  // End time
-                    DarkTheme::getColour(DarkTheme::ACCENT_BLUE),
-                    1.0f  // Vertical zoom
-                );
+                    g, waveformBounds, currentFile_.getFullPathName(), 0.0,
+                    thumbnail->getTotalLength(), DarkTheme::getColour(DarkTheme::ACCENT_BLUE),
+                    1.0f);
+
+                // Draw playhead
+                if (playbackPosition_ > 0.0) {
+                    double totalLength = thumbnail->getTotalLength();
+                    float xPos = waveformBounds.getX() +
+                                 static_cast<float>(playbackPosition_ / totalLength) *
+                                     waveformBounds.getWidth();
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                    g.drawVerticalLine(static_cast<int>(xPos),
+                                       static_cast<float>(waveformBounds.getY()),
+                                       static_cast<float>(waveformBounds.getBottom()));
+                }
             } else {
-                // Thumbnail loading or not available
                 g.setColour(DarkTheme::getSecondaryTextColour());
                 g.setFont(FontManager::getInstance().getUIFont(11.0f));
                 g.drawText("Loading waveform...", bounds, juce::Justification::centred);
             }
         } else {
-            // No file selected
             g.setColour(DarkTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(11.0f));
             g.drawText("No file selected", bounds, juce::Justification::centred);
@@ -95,6 +196,8 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
   private:
     juce::File currentFile_;
     juce::AudioThumbnail* currentThumbnail_ = nullptr;
+    juce::AudioTransportSource* transportSource_ = nullptr;
+    double playbackPosition_ = 0.0;
 };
 
 //==============================================================================
@@ -637,13 +740,14 @@ MediaExplorerContent::~MediaExplorerContent() {
     // to prevent use-after-free from audio thread
     if (audioEngine_ != nullptr) {
         if (auto* deviceManager = audioEngine_->getDeviceManager()) {
-            deviceManager->removeAudioCallback(&audioSourcePlayer_);
+            deviceManager->removeAudioCallback(previewCallback_.get());
         }
     }
 
     audioSourcePlayer_.setSource(nullptr);
     transportSource_.reset();
     readerSource_.reset();
+    previewCallback_.reset();
 }
 
 void MediaExplorerContent::setAudioEngine(magda::AudioEngine* engine) {
@@ -660,7 +764,7 @@ void MediaExplorerContent::setAudioEngine(magda::AudioEngine* engine) {
     // Remove callback from old device manager if it exists
     if (audioEngine_ != nullptr) {
         if (auto* oldDeviceManager = audioEngine_->getDeviceManager()) {
-            oldDeviceManager->removeAudioCallback(&audioSourcePlayer_);
+            oldDeviceManager->removeAudioCallback(previewCallback_.get());
         }
     }
 
@@ -669,9 +773,8 @@ void MediaExplorerContent::setAudioEngine(magda::AudioEngine* engine) {
     // Add callback to new device manager if it exists
     if (audioEngine_ != nullptr) {
         if (auto* deviceManager = audioEngine_->getDeviceManager()) {
-            // Note: Source is already set in setupAudioPreview() during construction
-            // Just register the audio callback with the shared device manager
-            deviceManager->addAudioCallback(&audioSourcePlayer_);
+            // Register the preview callback wrapper (routes audio to configured stereo pair)
+            deviceManager->addAudioCallback(previewCallback_.get());
         }
     }
 }
@@ -690,11 +793,17 @@ void MediaExplorerContent::setupAudioPreview() {
     // Once set, the audio callback will be registered with the shared device manager
     audioSourcePlayer_.setSource(transportSource_.get());
 
+    // Give thumbnail component access to transport for playhead tracking
+    thumbnailComponent_->setTransportSource(transportSource_.get());
+
+    // Create preview callback wrapper that routes audio to the configured stereo pair.
+    // The offset is read live from Config on each audio callback so changes take effect
+    // immediately.
+    previewCallback_ = std::make_unique<PreviewAudioCallback>();
+    previewCallback_->setSource(&audioSourcePlayer_);
+
     // Note: Audio callback will be added when setAudioEngine() is called
     // This avoids creating a separate AudioDeviceManager that conflicts with main audio
-
-    // Don't call prepareToPlay() here - AudioSourcePlayer will call it
-    // when a source is set and playback starts
 }
 
 void MediaExplorerContent::loadFileForPreview(const juce::File& file) {
@@ -746,6 +855,7 @@ void MediaExplorerContent::playPreview() {
         isPlaying_ = true;
         playButton_->setEnabled(false);
         stopButton_->setEnabled(true);
+        thumbnailComponent_->setPlaying(true);
     }
 }
 
@@ -755,6 +865,7 @@ void MediaExplorerContent::stopPreview() {
         isPlaying_ = false;
         playButton_->setEnabled(currentPreviewFile_.existsAsFile());
         stopButton_->setEnabled(false);
+        thumbnailComponent_->setPlaying(false);
     }
 }
 
