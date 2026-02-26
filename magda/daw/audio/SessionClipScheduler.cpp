@@ -95,13 +95,10 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
         }
 
         // Record launch position and clip properties for playhead.
-        // Only update immediately if no clips are currently playing —
-        // otherwise defer to the timer so the playing clip's playhead
-        // isn't disrupted during the quantized transition.
-        if (activeClips_.empty()) {
-            launchTransportPos_ = transport.getPosition().inSeconds();
-            updateLaunchTimings(clip);
-        }
+        // Always update so that a same-track relaunch resets the visual
+        // playhead immediately instead of inheriting clip 1's origin.
+        launchTransportPos_ = transport.getPosition().inSeconds();
+        updateLaunchTimings(clip);
         pendingPlayheadClip_ = clipId;
 
         // Activate the clip and launch via LaunchHandle.

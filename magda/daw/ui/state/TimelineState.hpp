@@ -165,11 +165,12 @@ struct ZoomState {
  * When playback stops, playbackPosition resets to editPosition.
  */
 struct PlayheadState {
-    double editPosition = 0.0;       // Triangle position in seconds (derived from beats)
-    double editPositionBeats = 0.0;  // Triangle position in beats (authoritative)
-    double playbackPosition = 0.0;   // Moving cursor position
-    bool isPlaying = false;          // Is transport playing
-    bool isRecording = false;        // Is transport recording
+    double editPosition = 0.0;              // Triangle position in seconds (derived from beats)
+    double editPositionBeats = 0.0;         // Triangle position in beats (authoritative)
+    double playbackPosition = 0.0;          // Moving cursor position
+    double sessionPlaybackPosition = -1.0;  // Session clip playhead (looped), -1 = inactive
+    bool isPlaying = false;                 // Is transport playing
+    bool isRecording = false;               // Is transport recording
 
     // Get the "current" position (playback when playing, edit otherwise)
     double getCurrentPosition() const {

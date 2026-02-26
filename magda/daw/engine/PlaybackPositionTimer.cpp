@@ -47,9 +47,9 @@ void PlaybackPositionTimer::timerCallback() {
         double transportPos = engine_.getCurrentPosition();
 
         // Always use the real transport position for the main timeline playhead.
-        // The session clip's loop position is shown via per-clip progress bars
-        // (onSessionPlayheadUpdate callback below), not the main playhead.
-        timeline_.dispatch(SetPlaybackPositionEvent{transportPos});
+        // The session position is passed through so clip editors (waveform,
+        // piano roll) can show a looped playhead independent of the arrangement.
+        timeline_.dispatch(SetPlaybackPositionEvent{transportPos, sessionPos});
 
         // Session clip playhead callback (for per-clip progress bars)
         if (onSessionPlayheadUpdate) {
