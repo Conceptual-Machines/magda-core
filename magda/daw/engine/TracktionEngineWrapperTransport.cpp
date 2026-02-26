@@ -328,6 +328,25 @@ bool TracktionEngineWrapper::isMetronomeEnabled() const {
 void TracktionEngineWrapper::onTransportPlay(double position) {
     std::cout << "[onTransportPlay] called with position=" << position << std::endl;
 
+    auto viewMode = ViewModeController::getInstance().getViewMode();
+
+    if (viewMode == ViewMode::Live) {
+        // Session mode: relaunch the last triggered session clip.
+        // The SessionClipScheduler will start the transport automatically.
+        auto& cm = ClipManager::getInstance();
+        ClipId lastClip = cm.getLastTriggeredSessionClip();
+        if (lastClip != INVALID_CLIP_ID) {
+            const auto* clip = cm.getClip(lastClip);
+            if (clip && clip->view == ClipView::Session) {
+                auto state = getSessionClipPlayState(lastClip);
+                if (state == SessionClipPlayState::Stopped) {
+                    cm.triggerClip(lastClip);
+                    return;
+                }
+            }
+        }
+    }
+
     locate(position);
     play();
 }
