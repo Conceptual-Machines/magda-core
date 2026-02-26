@@ -54,6 +54,19 @@ class DAWAgent : public AgentInterface {
     void setMessageCallback(
         std::function<void(const std::string&, const std::string&)> callback) override;
 
+    /** Result of the LLM call (HTTP), before DSL execution */
+    struct DSLResult {
+        std::string dsl;
+        std::string error;
+        bool hasError = false;
+    };
+
+    /** Step 1: Call OpenAI to generate DSL (safe to call from background thread) */
+    DSLResult generateDSL(const std::string& message);
+
+    /** Step 2: Execute DSL code (MUST be called on the message thread) */
+    std::string executeDSL(const DSLResult& result);
+
   private:
     OpenAIClient openai_;
     dsl::Interpreter interpreter_;

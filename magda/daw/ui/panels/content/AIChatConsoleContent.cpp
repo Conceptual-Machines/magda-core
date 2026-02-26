@@ -14,16 +14,25 @@ AIChatConsoleContent::RequestThread::RequestThread(AIChatConsoleContent& owner)
     : juce::Thread("AI Chat Request"), owner_(owner) {}
 
 void AIChatConsoleContent::RequestThread::run() {
-    auto response = owner_.agent_->processMessage(owner_.pendingMessage_.toStdString());
+    // Step 1: Generate DSL on background thread (HTTP call)
+    auto dslResult = owner_.agent_->generateDSL(owner_.pendingMessage_.toStdString());
 
     if (threadShouldExit())
         return;
 
     auto safeThis = juce::Component::SafePointer<AIChatConsoleContent>(&owner_);
 
-    juce::MessageManager::callAsync([safeThis, response = std::move(response)]() {
+    // Step 2: Execute DSL on message thread (modifies tracks/clips)
+    juce::MessageManager::callAsync([safeThis, dslResult = std::move(dslResult)]() {
         if (!safeThis)
             return;
+
+        std::string response;
+        if (dslResult.hasError) {
+            response = dslResult.error;
+        } else {
+            response = safeThis->agent_->executeDSL(dslResult);
+        }
 
         safeThis->stopTimer();
 
@@ -31,7 +40,6 @@ void AIChatConsoleContent::RequestThread::run() {
         auto currentText = safeThis->chatHistory_.getText();
         auto thinkingPos = currentText.lastIndexOf("AI: Thinking");
         if (thinkingPos >= 0) {
-            // Find the end of the "Thinking..." line
             auto lineEnd = currentText.indexOf(thinkingPos, "\n");
             if (lineEnd < 0)
                 lineEnd = currentText.length();
@@ -39,7 +47,7 @@ void AIChatConsoleContent::RequestThread::run() {
                 currentText.substring(0, thinkingPos) + currentText.substring(lineEnd + 1);
         }
 
-        // Format response — prefix errors distinctly
+        // Format response - prefix errors distinctly
         juce::String formattedResponse(response);
         if (formattedResponse.startsWith("Error:") ||
             formattedResponse.startsWith("DSL execution error:")) {

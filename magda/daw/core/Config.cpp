@@ -14,6 +14,13 @@ juce::File getConfigFile() {
 }
 }  // namespace
 
+namespace {
+// Use fromUTF8 to avoid juce_String.cpp:327 assertion when std::string contains non-ASCII bytes
+juce::String toJuceString(const std::string& s) {
+    return juce::String::fromUTF8(s.c_str(), static_cast<int>(s.size()));
+}
+}  // namespace
+
 namespace magda {
 
 Config& Config::getInstance() {
@@ -69,31 +76,31 @@ void Config::save() {
     root->setProperty("previewOutputChannel", previewOutputChannel);
 
     // Render
-    root->setProperty("renderFolder", juce::String(renderFolder));
+    root->setProperty("renderFolder", toJuceString(renderFolder));
 
     // Audio devices
-    root->setProperty("preferredAudioDevice", juce::String(preferredAudioDevice));
-    root->setProperty("preferredInputDevice", juce::String(preferredInputDevice));
-    root->setProperty("preferredOutputDevice", juce::String(preferredOutputDevice));
+    root->setProperty("preferredAudioDevice", toJuceString(preferredAudioDevice));
+    root->setProperty("preferredInputDevice", toJuceString(preferredInputDevice));
+    root->setProperty("preferredOutputDevice", toJuceString(preferredOutputDevice));
     root->setProperty("preferredInputChannels", preferredInputChannels);
     root->setProperty("preferredOutputChannels", preferredOutputChannels);
 
     // AI
-    root->setProperty("openaiApiKey", juce::String(openaiApiKey));
-    root->setProperty("openaiModel", juce::String(openaiModel));
+    root->setProperty("openaiApiKey", toJuceString(openaiApiKey));
+    root->setProperty("openaiModel", toJuceString(openaiModel));
 
     // Browser
-    root->setProperty("browserDefaultDirectory", juce::String(browserDefaultDirectory));
+    root->setProperty("browserDefaultDirectory", toJuceString(browserDefaultDirectory));
 
     juce::Array<juce::var> favArray;
     for (const auto& f : browserFavorites)
-        favArray.add(juce::String(f));
+        favArray.add(toJuceString(f));
     root->setProperty("browserFavorites", favArray);
 
     // Custom plugin paths
     juce::Array<juce::var> pluginPathArray;
     for (const auto& p : customPluginPaths)
-        pluginPathArray.add(juce::String(p));
+        pluginPathArray.add(toJuceString(p));
     root->setProperty("customPluginPaths", pluginPathArray);
 
     // Write to disk
@@ -102,9 +109,9 @@ void Config::save() {
 
     auto json = juce::JSON::toString(juce::var(root.get()));
     if (!configFile.replaceWithText(json))
-        DBG("Config::save — failed to write " + configFile.getFullPathName());
+        DBG("Config::save - failed to write " + configFile.getFullPathName());
     else
-        DBG("Config::save — " + configFile.getFullPathName());
+        DBG("Config::save - " + configFile.getFullPathName());
 }
 
 // ---------------------------------------------------------------------------
@@ -114,20 +121,20 @@ void Config::save() {
 void Config::load() {
     auto configFile = getConfigFile();
     if (!configFile.existsAsFile()) {
-        DBG("Config::load — file not found, using defaults: " + configFile.getFullPathName());
+        DBG("Config::load - file not found, using defaults: " + configFile.getFullPathName());
         return;
     }
 
     juce::var parsed;
     auto result = juce::JSON::parse(configFile.loadFileAsString(), parsed);
     if (result.failed()) {
-        DBG("Config::load — JSON parse error: " + result.getErrorMessage());
+        DBG("Config::load - JSON parse error: " + result.getErrorMessage());
         return;
     }
 
     auto* obj = parsed.getDynamicObject();
     if (obj == nullptr) {
-        DBG("Config::load — unexpected JSON root type");
+        DBG("Config::load - unexpected JSON root type");
         return;
     }
 
@@ -209,7 +216,7 @@ void Config::load() {
     browserFavorites = getStringArray("browserFavorites");
     customPluginPaths = getStringArray("customPluginPaths");
 
-    DBG("Config::load — " + configFile.getFullPathName());
+    DBG("Config::load - " + configFile.getFullPathName());
 }
 
 }  // namespace magda
