@@ -110,6 +110,11 @@ class MediaExplorerContent : public PanelContent,
     std::unique_ptr<juce::AudioTransportSource> transportSource_;
     std::unique_ptr<juce::AudioFormatReaderSource> readerSource_;
 
+    // Preview output channel routing wrapper
+    class PreviewAudioCallback;
+    friend class PreviewAudioCallback;
+    std::unique_ptr<PreviewAudioCallback> previewCallback_;
+
     juce::File currentPreviewFile_;
     bool isPlaying_ = false;
 

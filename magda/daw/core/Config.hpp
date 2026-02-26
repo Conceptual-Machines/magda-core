@@ -269,6 +269,14 @@ class Config {
         autoMonitorSelectedTrack = enabled;
     }
 
+    // Preview output channel (stereo pair offset: 0 = outputs 1-2, 2 = outputs 3-4, etc.)
+    int getPreviewOutputChannel() const {
+        return previewOutputChannel;
+    }
+    void setPreviewOutputChannel(int channel) {
+        previewOutputChannel = channel;
+    }
+
     // Save/load to platform-appropriate location:
     //   macOS  ~/Library/Application Support/MAGDA/config.json
     //   Windows  %APPDATA%\MAGDA\config.json
@@ -320,6 +328,9 @@ class Config {
 
     // Auto-monitor settings
     bool autoMonitorSelectedTrack = false;  // Auto-enable input monitor on selected track
+
+    // Preview output channel (stereo pair offset: 0 = outputs 1-2, 2 = outputs 3-4, etc.)
+    int previewOutputChannel = 0;
 
     // Layout settings
     bool scrollbarOnLeft = false;  // Scrollbar on right by default

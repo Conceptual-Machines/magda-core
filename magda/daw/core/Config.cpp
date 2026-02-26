@@ -66,6 +66,7 @@ void Config::save() {
     root->setProperty("confirmTrackDelete", confirmTrackDelete);
     root->setProperty("showTooltips", showTooltips);
     root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
+    root->setProperty("previewOutputChannel", previewOutputChannel);
 
     // Render
     root->setProperty("renderFolder", juce::String(renderFolder));
@@ -191,6 +192,7 @@ void Config::load() {
     confirmTrackDelete = getBool("confirmTrackDelete", confirmTrackDelete);
     showTooltips = getBool("showTooltips", showTooltips);
     autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
+    previewOutputChannel = getInt("previewOutputChannel", previewOutputChannel);
 
     renderFolder = getString("renderFolder", renderFolder);
 

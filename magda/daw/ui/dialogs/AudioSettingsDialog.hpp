@@ -60,8 +60,10 @@ class AudioSettingsDialog : public juce::Component {
 
   private:
     void populateDeviceLists();
+    void populatePreviewOutputList();
     void onInputDeviceSelected();
     void onOutputDeviceSelected();
+    void onPreviewOutputSelected();
     void enableAllChannelsOnCurrentDevice();
     void savePreferencesIfNeeded();
 
@@ -74,6 +76,9 @@ class AudioSettingsDialog : public juce::Component {
     juce::Label outputDeviceLabel_;
     juce::ComboBox outputDeviceComboBox_;
     juce::ToggleButton setAsPreferredCheckbox_;
+
+    juce::Label previewOutputLabel_;
+    juce::ComboBox previewOutputComboBox_;
 
     juce::TextButton closeButton_;
     juce::Label deviceNameLabel_;
