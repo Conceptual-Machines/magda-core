@@ -86,12 +86,13 @@ class MediaExplorerContent::PreviewAudioCallback : public juce::AudioIODeviceCal
 // ThumbnailComponent - Displays waveform thumbnail for selected file
 //==============================================================================
 class MediaExplorerContent::ThumbnailComponent : public juce::Component,
-                                                 public juce::ChangeListener {
+                                                 public juce::ChangeListener,
+                                                 public juce::Timer {
   public:
     ThumbnailComponent() = default;
 
     ~ThumbnailComponent() override {
-        // Remove ourselves as listener from any thumbnail
+        stopTimer();
         if (currentThumbnail_ != nullptr) {
             currentThumbnail_->removeChangeListener(this);
         }
@@ -105,6 +106,7 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         }
 
         currentFile_ = file;
+        playbackPosition_ = 0.0;
 
         // Get and listen to new thumbnail
         if (file.existsAsFile()) {
@@ -118,9 +120,33 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         repaint();
     }
 
+    void setTransportSource(juce::AudioTransportSource* source) {
+        transportSource_ = source;
+    }
+
+    void setPlaying(bool playing) {
+        if (playing) {
+            startTimerHz(30);  // ~30fps playhead updates
+        } else {
+            stopTimer();
+            playbackPosition_ = 0.0;
+            repaint();
+        }
+    }
+
     // ChangeListener - called when thumbnail finishes loading
     void changeListenerCallback(juce::ChangeBroadcaster*) override {
-        repaint();  // Redraw when thumbnail is ready
+        repaint();
+    }
+
+    void timerCallback() override {
+        if (transportSource_ != nullptr && transportSource_->isPlaying()) {
+            playbackPosition_ = transportSource_->getCurrentPosition();
+        } else {
+            playbackPosition_ = 0.0;
+            stopTimer();
+        }
+        repaint();
     }
 
     void paint(juce::Graphics& g) override {
@@ -135,28 +161,33 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         g.drawRect(bounds, 1);
 
         if (currentFile_.existsAsFile()) {
-            // Get thumbnail (may be null if not loaded yet)
             auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
                 currentFile_.getFullPathName());
 
             if (thumbnail != nullptr && thumbnail->getTotalLength() > 0.0) {
-                // Draw waveform
                 auto waveformBounds = bounds.reduced(4);
                 magda::AudioThumbnailManager::getInstance().drawWaveform(
-                    g, waveformBounds, currentFile_.getFullPathName(),
-                    0.0,                          // Start time
-                    thumbnail->getTotalLength(),  // End time
-                    DarkTheme::getColour(DarkTheme::ACCENT_BLUE),
-                    1.0f  // Vertical zoom
-                );
+                    g, waveformBounds, currentFile_.getFullPathName(), 0.0,
+                    thumbnail->getTotalLength(), DarkTheme::getColour(DarkTheme::ACCENT_BLUE),
+                    1.0f);
+
+                // Draw playhead
+                if (playbackPosition_ > 0.0) {
+                    double totalLength = thumbnail->getTotalLength();
+                    float xPos = waveformBounds.getX() +
+                                 static_cast<float>(playbackPosition_ / totalLength) *
+                                     waveformBounds.getWidth();
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                    g.drawVerticalLine(static_cast<int>(xPos),
+                                       static_cast<float>(waveformBounds.getY()),
+                                       static_cast<float>(waveformBounds.getBottom()));
+                }
             } else {
-                // Thumbnail loading or not available
                 g.setColour(DarkTheme::getSecondaryTextColour());
                 g.setFont(FontManager::getInstance().getUIFont(11.0f));
                 g.drawText("Loading waveform...", bounds, juce::Justification::centred);
             }
         } else {
-            // No file selected
             g.setColour(DarkTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(11.0f));
             g.drawText("No file selected", bounds, juce::Justification::centred);
@@ -166,6 +197,8 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
   private:
     juce::File currentFile_;
     juce::AudioThumbnail* currentThumbnail_ = nullptr;
+    juce::AudioTransportSource* transportSource_ = nullptr;
+    double playbackPosition_ = 0.0;
 };
 
 //==============================================================================
@@ -763,6 +796,9 @@ void MediaExplorerContent::setupAudioPreview() {
     // Once set, the audio callback will be registered with the shared device manager
     audioSourcePlayer_.setSource(transportSource_.get());
 
+    // Give thumbnail component access to transport for playhead tracking
+    thumbnailComponent_->setTransportSource(transportSource_.get());
+
     // Create preview callback wrapper that routes audio to the configured stereo pair
     previewCallback_ = std::make_unique<PreviewAudioCallback>();
     previewCallback_->setSource(&audioSourcePlayer_);
@@ -822,6 +858,7 @@ void MediaExplorerContent::playPreview() {
         isPlaying_ = true;
         playButton_->setEnabled(false);
         stopButton_->setEnabled(true);
+        thumbnailComponent_->setPlaying(true);
     }
 }
 
@@ -831,6 +868,7 @@ void MediaExplorerContent::stopPreview() {
         isPlaying_ = false;
         playButton_->setEnabled(currentPreviewFile_.existsAsFile());
         stopButton_->setEnabled(false);
+        thumbnailComponent_->setPlaying(false);
     }
 }
 
