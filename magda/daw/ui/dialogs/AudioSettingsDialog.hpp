@@ -29,10 +29,13 @@ class CustomChannelSelector : public juce::Component {
     tracktion::DeviceManager* teDeviceManager_;
     bool isInput_;
 
+    void onPreviewToggled(int startChannel);
+
     struct ChannelToggle {
         std::unique_ptr<juce::ToggleButton> button;
-        int startChannel;  // 0-indexed
-        bool isStereo;     // true = pair (e.g., 0-1), false = mono (e.g., 0)
+        std::unique_ptr<juce::ToggleButton> previewButton;  // Only for output stereo pairs
+        int startChannel;                                   // 0-indexed
+        bool isStereo;  // true = pair (e.g., 0-1), false = mono (e.g., 0)
     };
 
     std::vector<ChannelToggle> channelToggles_;
@@ -60,10 +63,8 @@ class AudioSettingsDialog : public juce::Component {
 
   private:
     void populateDeviceLists();
-    void populatePreviewOutputList();
     void onInputDeviceSelected();
     void onOutputDeviceSelected();
-    void onPreviewOutputSelected();
     void enableAllChannelsOnCurrentDevice();
     void savePreferencesIfNeeded();
 
@@ -76,9 +77,6 @@ class AudioSettingsDialog : public juce::Component {
     juce::Label outputDeviceLabel_;
     juce::ComboBox outputDeviceComboBox_;
     juce::ToggleButton setAsPreferredCheckbox_;
-
-    juce::Label previewOutputLabel_;
-    juce::ComboBox previewOutputComboBox_;
 
     juce::TextButton closeButton_;
     juce::Label deviceNameLabel_;

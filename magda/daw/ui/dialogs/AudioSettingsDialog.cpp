@@ -68,6 +68,9 @@ void CustomChannelSelector::updateFromDevice() {
     // The user can then select which ones to enable/disable
     int numChannels = channelNames.size();
 
+    // Read current preview output channel from Config (only relevant for output)
+    int previewOffset = magda::Config::getInstance().getPreviewOutputChannel();
+
     // Create stereo pair toggles first
     for (int i = 0; i < numChannels; i += 2) {
         if (i + 1 < numChannels) {
@@ -83,6 +86,17 @@ void CustomChannelSelector::updateFromDevice() {
 
             toggle.button->onClick = [this, i]() { onChannelToggled(i, true); };
             addAndMakeVisible(*toggle.button);
+
+            // For output channels, add a "Preview" toggle next to each stereo pair
+            if (!isInput_) {
+                toggle.previewButton = std::make_unique<juce::ToggleButton>("Preview");
+                toggle.previewButton->setToggleState(i == previewOffset,
+                                                     juce::dontSendNotification);
+                toggle.previewButton->setRadioGroupId(9999);  // Mutual exclusion
+                toggle.previewButton->onClick = [this, i]() { onPreviewToggled(i); };
+                addAndMakeVisible(*toggle.previewButton);
+            }
+
             channelToggles_.push_back(std::move(toggle));
         }
     }
@@ -200,6 +214,12 @@ void CustomChannelSelector::refreshChannelStates() {
     }
 }
 
+void CustomChannelSelector::onPreviewToggled(int startChannel) {
+    magda::Config::getInstance().setPreviewOutputChannel(startChannel);
+    magda::Config::getInstance().save();
+    DBG("Preview output changed to channels " << (startChannel + 1) << "-" << (startChannel + 2));
+}
+
 void CustomChannelSelector::applyToDevice() {
     auto* device = deviceManager_->getCurrentAudioDevice();
     if (!device)
@@ -273,7 +293,12 @@ void CustomChannelSelector::resized() {
     const int spacing = 4;
 
     for (auto& toggle : channelToggles_) {
-        toggle.button->setBounds(bounds.removeFromTop(toggleHeight));
+        auto row = bounds.removeFromTop(toggleHeight);
+        if (toggle.previewButton != nullptr) {
+            toggle.previewButton->setBounds(row.removeFromRight(70));
+            row.removeFromRight(4);  // spacing
+        }
+        toggle.button->setBounds(row);
         bounds.removeFromTop(spacing);
     }
 }
@@ -302,15 +327,6 @@ AudioSettingsDialog::AudioSettingsDialog(juce::AudioDeviceManager* deviceManager
     addAndMakeVisible(outputDeviceComboBox_);
 
     populateDeviceLists();
-
-    // Preview output channel dropdown
-    previewOutputLabel_.setText("Preview Output:", juce::dontSendNotification);
-    previewOutputLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
-    addAndMakeVisible(previewOutputLabel_);
-
-    previewOutputComboBox_.onChange = [this]() { onPreviewOutputSelected(); };
-    addAndMakeVisible(previewOutputComboBox_);
-    populatePreviewOutputList();
 
     // "Set as preferred devices" checkbox
     setAsPreferredCheckbox_.setButtonText("Set as preferred devices (auto-select on startup)");
@@ -371,7 +387,7 @@ AudioSettingsDialog::AudioSettingsDialog(juce::AudioDeviceManager* deviceManager
     addAndMakeVisible(closeButton_);
 
     // Set preferred size
-    setSize(700, 740);
+    setSize(700, 700);
 }
 
 AudioSettingsDialog::~AudioSettingsDialog() = default;
@@ -399,13 +415,6 @@ void AudioSettingsDialog::resized() {
     outputDeviceLabel_.setBounds(outputDeviceArea.removeFromLeft(120));
     outputDeviceArea.removeFromLeft(10);  // spacing
     outputDeviceComboBox_.setBounds(outputDeviceArea);
-    bounds.removeFromTop(5);  // spacing
-
-    // Preview output dropdown
-    auto previewOutputArea = bounds.removeFromTop(28);
-    previewOutputLabel_.setBounds(previewOutputArea.removeFromLeft(120));
-    previewOutputArea.removeFromLeft(10);  // spacing
-    previewOutputComboBox_.setBounds(previewOutputArea);
     bounds.removeFromTop(5);  // spacing
 
     // "Set as preferred" checkbox
@@ -549,9 +558,6 @@ void AudioSettingsDialog::onInputDeviceSelected() {
     juce::String labelText = "Input: " + finalSetup.inputDeviceName;
     labelText += " | Output: " + finalSetup.outputDeviceName;
     deviceNameLabel_.setText(labelText, juce::dontSendNotification);
-
-    // Refresh preview output list in case channel count changed
-    populatePreviewOutputList();
 }
 
 void AudioSettingsDialog::onOutputDeviceSelected() {
@@ -631,9 +637,6 @@ void AudioSettingsDialog::onOutputDeviceSelected() {
     juce::String labelText = "Input: " + finalSetup.inputDeviceName;
     labelText += " | Output: " + finalSetup.outputDeviceName;
     deviceNameLabel_.setText(labelText, juce::dontSendNotification);
-
-    // Refresh preview output list in case channel count changed
-    populatePreviewOutputList();
 }
 
 void AudioSettingsDialog::enableAllChannelsOnCurrentDevice() {
@@ -696,42 +699,6 @@ void AudioSettingsDialog::savePreferencesIfNeeded() {
     DBG("Saved preferred devices: Input=" << setup.inputDeviceName << " (" << inputChannelCount
                                           << " ch), Output=" << setup.outputDeviceName << " ("
                                           << outputChannelCount << " ch)");
-}
-
-void AudioSettingsDialog::populatePreviewOutputList() {
-    previewOutputComboBox_.clear();
-
-    auto* device = deviceManager_->getCurrentAudioDevice();
-    int numOutputChannels = device ? device->getOutputChannelNames().size() : 2;
-
-    // List stereo pairs: "1-2", "3-4", "5-6", etc.
-    int pairIndex = 1;
-    for (int ch = 0; ch + 1 < numOutputChannels; ch += 2) {
-        previewOutputComboBox_.addItem(juce::String(ch + 1) + "-" + juce::String(ch + 2),
-                                       pairIndex);
-        ++pairIndex;
-    }
-
-    // Select current preference
-    int currentOffset = magda::Config::getInstance().getPreviewOutputChannel();
-    int selectedPair = (currentOffset / 2) + 1;
-    if (selectedPair >= 1 && selectedPair < pairIndex)
-        previewOutputComboBox_.setSelectedId(selectedPair, juce::dontSendNotification);
-    else
-        previewOutputComboBox_.setSelectedId(1, juce::dontSendNotification);
-}
-
-void AudioSettingsDialog::onPreviewOutputSelected() {
-    int selectedId = previewOutputComboBox_.getSelectedId();
-    if (selectedId == 0)
-        return;
-
-    // Convert 1-based pair ID to 0-based channel offset: pair 1 → offset 0, pair 2 → offset 2, etc.
-    int channelOffset = (selectedId - 1) * 2;
-    magda::Config::getInstance().setPreviewOutputChannel(channelOffset);
-    magda::Config::getInstance().save();
-
-    DBG("Preview output changed to channels " << (channelOffset + 1) << "-" << (channelOffset + 2));
 }
 
 void AudioSettingsDialog::showDialog(juce::Component* parent,
