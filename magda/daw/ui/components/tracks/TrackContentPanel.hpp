@@ -215,6 +215,7 @@ class TrackContentPanel : public juce::Component,
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
+    void showEmptySpaceContextMenu(const juce::MouseEvent& event);
 
     // Mouse interaction constants and state
     static constexpr int DRAG_THRESHOLD = 3;  // Pixels of movement to distinguish click from drag
@@ -275,6 +276,7 @@ class TrackContentPanel : public juce::Component,
     void rebuildClipComponents();
     void updateClipComponentPositions();
     void createClipFromTimeSelection();  // Called on double-click with selection
+    void createMidiClipAtPosition(TrackId trackId, double startTime);
     ClipComponent* getClipComponentAt(int x, int y) const;
 
     // Automation lane management
