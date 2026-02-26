@@ -35,6 +35,11 @@ class ClipManagerListener {
         juce::ignoreUnused(clipId);
     }
 
+    // Called when a clip playback is requested (Play or Stop)
+    virtual void clipPlaybackRequested(ClipId clipId, ClipPlaybackRequest request) {
+        juce::ignoreUnused(clipId, request);
+    }
+
     // Called during clip drag for real-time preview updates
     virtual void clipDragPreview(ClipId clipId, double previewStartTime, double previewLength) {
         juce::ignoreUnused(clipId, previewStartTime, previewLength);
@@ -332,6 +337,12 @@ class ClipManager {
     }
     void clearClipSelection();
 
+    /** The last session clip that was triggered via triggerClip(). Persists
+        across transport stop so Record can re-trigger it. */
+    ClipId getLastTriggeredSessionClip() const {
+        return lastTriggeredSessionClipId_;
+    }
+
     // ========================================================================
     // Clipboard Operations
     // ========================================================================
@@ -358,7 +369,9 @@ class ClipManager {
      * @return IDs of the newly created clips
      */
     std::vector<ClipId> pasteFromClipboard(double pasteTime,
-                                           TrackId targetTrackId = INVALID_TRACK_ID);
+                                           TrackId targetTrackId = INVALID_TRACK_ID,
+                                           ClipView targetView = ClipView::Arrangement,
+                                           int targetSceneIndex = -1);
 
     /**
      * @brief Cut selected clips to clipboard (copy + delete)
@@ -422,14 +435,6 @@ class ClipManager {
     void stopClip(ClipId clipId);
     void stopAllClips();
 
-    /**
-     * @brief Set the actual playing state of a session clip
-     *
-     * Called by SessionClipScheduler when a clip actually starts or stops producing audio.
-     * This updates isPlaying/isQueued and notifies listeners.
-     */
-    void setClipPlayingState(ClipId clipId, bool playing);
-
     // ========================================================================
     // Listener Management
     // ========================================================================
@@ -481,12 +486,17 @@ class ClipManager {
     std::vector<ClipManagerListener*> listeners_;
     int nextClipId_ = 1;
     ClipId selectedClipId_ = INVALID_CLIP_ID;
+    ClipId lastTriggeredSessionClipId_ = INVALID_CLIP_ID;
 
-    // Notification helpers
+    // Notification helpers (public so scheduler can emit state changes)
+  public:
+    void notifyClipPlaybackStateChanged(ClipId clipId);
+
+  private:
     void notifyClipsChanged();
     void notifyClipPropertyChanged(ClipId clipId);
     void notifyClipSelectionChanged(ClipId clipId);
-    void notifyClipPlaybackStateChanged(ClipId clipId);
+    void notifyClipPlaybackRequested(ClipId clipId, ClipPlaybackRequest request);
 
     // Clamp audio clip properties (offset, loopStart, loopLength) to file bounds
     void sanitizeAudioClip(ClipInfo& clip);

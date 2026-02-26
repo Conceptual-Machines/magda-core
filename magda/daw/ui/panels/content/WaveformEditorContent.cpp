@@ -140,8 +140,47 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
             }
         }
 
-        // Draw playback cursor (vertical line) — only during playback and inside clip
+        // Draw playback cursor (vertical line) — only during playback
         if (owner_.cachedIsPlaying_) {
+            double sessionPos = owner_.cachedSessionPlaybackPosition_;
+
+            // Session mode: the session playhead is already loop-wrapped elapsed
+            // time — map it directly to source-file position, independent of the
+            // arrangement transport. Only show if this clip is the one playing.
+            if (sessionPos >= 0.0) {
+                // Session playback active — only draw if this is the playing clip
+                if (owner_.cachedSessionPlaybackClipId_ == owner_.editingClipId_) {
+                    double relPos = sessionPos;
+                    if (clip->loopEnabled && di.loopLengthSeconds > 0.0) {
+                        double phaseShift = di.offsetPositionSeconds - di.loopStartPositionSeconds;
+                        double wrapped = std::fmod(phaseShift + relPos, di.loopLengthSeconds);
+                        if (wrapped < 0.0)
+                            wrapped += di.loopLengthSeconds;
+                        double displayPos = di.loopStartPositionSeconds + wrapped;
+                        int playX = static_cast<int>(displayPos * owner_.horizontalZoom_) +
+                                    GRID_LEFT_PADDING - scrollX;
+                        if (playX >= 0 && playX < getWidth()) {
+                            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                            g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
+                                       static_cast<float>(getHeight()), 1.5f);
+                        }
+                    } else {
+                        // Non-looping session clip
+                        double sourcePos = di.offsetPositionSeconds + relPos;
+                        int playX = static_cast<int>(sourcePos * owner_.horizontalZoom_) +
+                                    GRID_LEFT_PADDING - scrollX;
+                        if (playX >= 0 && playX < getWidth()) {
+                            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                            g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
+                                       static_cast<float>(getHeight()), 1.5f);
+                        }
+                    }
+                }
+                // Either way, don't fall through to arrangement mode
+                return;
+            }
+
+            // Arrangement mode: use the arrangement transport position
             double playPos = owner_.cachedPlaybackPosition_;
 
             // Only show when playhead is within clip's arrangement range
@@ -358,6 +397,8 @@ WaveformEditorContent::WaveformEditorContent() {
         const auto& state = controller->getState();
         cachedEditPosition_ = state.playhead.editPosition;
         cachedPlaybackPosition_ = state.playhead.playbackPosition;
+        cachedSessionPlaybackPosition_ = state.playhead.sessionPlaybackPosition;
+        cachedSessionPlaybackClipId_ = state.playhead.sessionPlaybackClipId;
         cachedIsPlaying_ = state.playhead.isPlaying;
     }
 
@@ -738,6 +779,8 @@ void WaveformEditorContent::timelineStateChanged(const TimelineState& state, Cha
     if (hasFlag(changes, ChangeFlags::Playhead)) {
         cachedEditPosition_ = state.playhead.editPosition;
         cachedPlaybackPosition_ = state.playhead.playbackPosition;
+        cachedSessionPlaybackPosition_ = state.playhead.sessionPlaybackPosition;
+        cachedSessionPlaybackClipId_ = state.playhead.sessionPlaybackClipId;
         cachedIsPlaying_ = state.playhead.isPlaying;
 
         if (playheadOverlay_) {
@@ -822,8 +865,9 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
             if (warpEnabled) {
                 auto* bridge = getBridge();
                 if (bridge) {
-                    // Always populate markers when opening a clip with warp enabled
-                    bridge->enableWarp(editingClipId_);
+                    // Read existing markers from TE — don't call enableWarp()
+                    // which would destroy user-placed markers and re-populate
+                    // from transients.
                     auto markers = bridge->getWarpMarkers(editingClipId_);
                     gridComponent_->setWarpMarkers(markers);
                 }

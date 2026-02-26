@@ -1,5 +1,7 @@
 #include "TransportPanel.hpp"
 
+#include <iostream>
+
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
@@ -107,6 +109,9 @@ void TransportPanel::resized() {
     loopButton->setBounds(x, buttonY, buttonSize, buttonSize);
     x += buttonSize + buttonSpacing;
 
+    backToArrangementButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + buttonSpacing;
+
     nextButton->setBounds(x, buttonY, buttonSize, buttonSize);
     x += buttonSize + buttonSpacing + 3;  // extra gap before punch group
 
@@ -192,11 +197,11 @@ void TransportPanel::resized() {
 }
 
 juce::Rectangle<int> TransportPanel::getTransportControlsArea() const {
-    // 7 square buttons + punch stacked box (boxWidth=130)
+    // 8 square buttons + punch stacked box (boxWidth=130)
     int buttonSize = getHeight() - 6;
     int boxWidth = 130;
-    // 6px left pad + 7 buttons + 6*1px spacing + 3px gap + punch box + 6px right pad
-    int width = 6 + 7 * buttonSize + 6 + 3 + boxWidth + 6;
+    // 6px left pad + 8 buttons + 7*1px spacing + 3px gap + punch box + 6px right pad
+    int width = 6 + 8 * buttonSize + 7 + 3 + boxWidth + 6;
     return getLocalBounds().removeFromLeft(width);
 }
 
@@ -224,6 +229,8 @@ void TransportPanel::setupTransportButtons() {
         std::make_unique<SvgButton>("Play", BinaryData::play_off_svg, BinaryData::play_off_svgSize,
                                     BinaryData::play_on_svg, BinaryData::play_on_svgSize);
     playButton->onClick = [this]() {
+        std::cout << "[TransportPanel] playButton->onClick: isPlaying was " << isPlaying
+                  << ", toggling to " << !isPlaying << std::endl;
         isPlaying = !isPlaying;
         if (isPlaying) {
             isPaused = false;
@@ -243,6 +250,13 @@ void TransportPanel::setupTransportButtons() {
         std::make_unique<SvgButton>("Stop", BinaryData::stop_off_svg, BinaryData::stop_off_svgSize,
                                     BinaryData::stop_on_svg, BinaryData::stop_on_svgSize);
     stopButton->onClick = [this]() {
+        auto mousePos = juce::Desktop::getMousePosition();
+        auto localPos = stopButton->getScreenBounds();
+        bool mouseIsOver = stopButton->isMouseOver();
+        std::cout << "[TransportPanel] stopButton->onClick mouseOver=" << mouseIsOver
+                  << " mouseScreen=(" << mousePos.x << "," << mousePos.y << ")"
+                  << " btnScreen=(" << localPos.getX() << "," << localPos.getY() << ","
+                  << localPos.getWidth() << "x" << localPos.getHeight() << ")" << std::endl;
         isPlaying = false;
         isPaused = false;
         isRecording = false;
@@ -324,6 +338,16 @@ void TransportPanel::setupTransportButtons() {
             onLoop(isLooping);
     };
     addAndMakeVisible(*loopButton);
+
+    // Back to Arrangement button
+    backToArrangementButton = std::make_unique<SvgButton>(
+        "BackToArrangement", BinaryData::resume_svg, BinaryData::resume_svgSize,
+        BinaryData::resume_on_svg, BinaryData::resume_on_svgSize);
+    backToArrangementButton->onClick = [this]() {
+        if (onBackToArrangement)
+            onBackToArrangement();
+    };
+    addAndMakeVisible(*backToArrangementButton);
 
     // Punch In button (dual-icon: off/on)
     punchInButton =
@@ -630,6 +654,7 @@ void TransportPanel::setTransportEnabled(bool enabled) {
     homeButton->setEnabled(enabled);
     prevButton->setEnabled(enabled);
     nextButton->setEnabled(enabled);
+    backToArrangementButton->setEnabled(enabled);
     punchInButton->setEnabled(enabled);
     punchOutButton->setEnabled(enabled);
 
@@ -642,6 +667,7 @@ void TransportPanel::setTransportEnabled(bool enabled) {
     homeButton->setAlpha(alpha);
     prevButton->setAlpha(alpha);
     nextButton->setAlpha(alpha);
+    backToArrangementButton->setAlpha(alpha);
     punchInButton->setAlpha(alpha);
     punchOutButton->setAlpha(alpha);
 }
@@ -791,6 +817,8 @@ void TransportPanel::setTempo(double bpm) {
 
 void TransportPanel::setPlaybackState(bool playing) {
     if (isPlaying != playing) {
+        std::cout << "[TransportPanel] setPlaybackState: " << isPlaying << " -> " << playing
+                  << std::endl;
         isPlaying = playing;
         playButton->setActive(isPlaying);
     }
@@ -830,6 +858,10 @@ void TransportPanel::setSnapEnabled(bool enabled) {
         isSnapEnabled = enabled;
         snapButton->setToggleState(enabled, juce::dontSendNotification);
     }
+}
+
+void TransportPanel::setAnyTrackInSessionMode(bool anyInSession) {
+    backToArrangementButton->setActive(anyInSession);
 }
 
 void TransportPanel::updatePunchLabelColors() {

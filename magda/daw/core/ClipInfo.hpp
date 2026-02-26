@@ -198,9 +198,7 @@ struct ClipInfo {
     double midiOffset = 0.0;  // Start offset in beats (for non-destructive trim)
 
     // Session view properties
-    int sceneIndex = -1;     // -1 = not in session view (arrangement only)
-    bool isPlaying = false;  // Currently playing in session
-    bool isQueued = false;   // Queued to start
+    int sceneIndex = -1;  // -1 = not in session view (arrangement only)
 
     // Per-clip grid settings (MIDI editor)
     bool gridAutoGrid = true;

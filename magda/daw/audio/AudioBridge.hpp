@@ -120,13 +120,22 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @brief Launch a session clip via its LaunchHandle (lock-free, no graph rebuild)
      * @param clipId The MAGDA clip ID
      */
-    void launchSessionClip(ClipId clipId);
+    void launchSessionClip(ClipId clipId, bool forceImmediate = false);
 
     /**
      * @brief Stop a session clip via its LaunchHandle (lock-free, no graph rebuild)
      * @param clipId The MAGDA clip ID
      */
     void stopSessionClip(ClipId clipId);
+
+    /**
+     * @brief Get the precise quantized launch time for a track's last-launched session clip.
+     * @param trackId The track to query
+     * @return Time in seconds, or 0.0 if no launch recorded
+     */
+    double getLastLaunchTimeForTrack(TrackId trackId) const {
+        return clipSynchronizer_.getLastLaunchTimeForTrack(trackId);
+    }
 
     /**
      * @brief Reset all synth plugins on a track to prevent stuck notes

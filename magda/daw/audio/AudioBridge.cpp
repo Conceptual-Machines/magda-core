@@ -496,8 +496,8 @@ void AudioBridge::removeSessionClipFromSlot(ClipId clipId) {
     return clipSynchronizer_.removeSessionClipFromSlot(clipId);
 }
 
-void AudioBridge::launchSessionClip(ClipId clipId) {
-    return clipSynchronizer_.launchSessionClip(clipId);
+void AudioBridge::launchSessionClip(ClipId clipId, bool forceImmediate) {
+    return clipSynchronizer_.launchSessionClip(clipId, forceImmediate);
 }
 
 void AudioBridge::stopSessionClip(ClipId clipId) {

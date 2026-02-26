@@ -529,7 +529,8 @@ TrackChainContent::TrackChainContent()
         resized();
         repaint();
     };
-    addChildComponent(*globalModsButton_);
+    // TODO (#801): global mod/macro icons not yet implemented — hidden for now
+    // addChildComponent(*globalModsButton_);
 
     // Macro button (global macros toggle)
     macroButton_ =
@@ -544,7 +545,7 @@ TrackChainContent::TrackChainContent()
         // TODO: Toggle parameter linking mode
         DBG("Link mode: " << (macroButton_->getToggleState() ? "ON" : "OFF"));
     };
-    addChildComponent(*macroButton_);
+    // addChildComponent(*macroButton_);
 
     // Add rack button (rack icon with blue fill, grey border)
     addRackButton_ =
@@ -802,11 +803,12 @@ void TrackChainContent::resized() {
         // Layout: MOD RACK+ RACK-MB+ ... Name | gain | ON
         auto headerArea = bounds.removeFromTop(HEADER_HEIGHT).reduced(8, 4);
 
-        // LEFT SIDE - Action buttons (Macros first, then Mods)
-        macroButton_->setBounds(headerArea.removeFromLeft(20));
-        headerArea.removeFromLeft(2);
-        globalModsButton_->setBounds(headerArea.removeFromLeft(20));
-        headerArea.removeFromLeft(8);
+        // LEFT SIDE - Action buttons
+        // TODO (#801): global mod/macro icons hidden for now
+        // macroButton_->setBounds(headerArea.removeFromLeft(20));
+        // headerArea.removeFromLeft(2);
+        // globalModsButton_->setBounds(headerArea.removeFromLeft(20));
+        // headerArea.removeFromLeft(8);
         addRackButton_->setBounds(headerArea.removeFromLeft(20));
         headerArea.removeFromLeft(4);
         treeViewButton_->setBounds(headerArea.removeFromLeft(20));
@@ -1007,8 +1009,9 @@ void TrackChainContent::updateFromSelectedTrack() {
 
 void TrackChainContent::showHeader(bool show) {
     // Left side - action buttons
-    globalModsButton_->setVisible(show);
-    macroButton_->setVisible(show);
+    // TODO (#801): global mod/macro icons hidden for now
+    // globalModsButton_->setVisible(show);
+    // macroButton_->setVisible(show);
     addRackButton_->setVisible(show);
     treeViewButton_->setVisible(show);
     // Right side - track info

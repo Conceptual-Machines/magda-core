@@ -15,7 +15,7 @@ namespace magda {
 /**
  * @brief Footer bar with view mode buttons
  *
- * Displays four icon buttons (Live/Arrange/Mix/Master) to switch between
+ * Displays three icon buttons (Live/Arrange/Mix) to switch between
  * different view modes. The active mode is highlighted.
  */
 class FooterBar : public juce::Component, public ViewModeListener {
@@ -34,7 +34,7 @@ class FooterBar : public juce::Component, public ViewModeListener {
     std::function<void()> onBottomPanelCollapseToggle;
 
   private:
-    static constexpr int NUM_MODES = 4;
+    static constexpr int NUM_MODES = 3;
     static constexpr int BUTTON_SIZE = 28;
     static constexpr int BUTTON_SPACING = 16;
 

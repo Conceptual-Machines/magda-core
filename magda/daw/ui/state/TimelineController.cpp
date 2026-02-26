@@ -244,6 +244,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybac
     }
 
     state.playhead.playbackPosition = newPos;
+    state.playhead.sessionPlaybackPosition = e.sessionPosition;
+    state.playhead.sessionPlaybackClipId = e.sessionClipId;
 
     // === Punch In: trigger recording when playhead reaches punch-in point ===
     if (punchArmed_ && newPos >= state.punch.startTime) {
@@ -303,20 +305,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartRecor
         return ChangeFlags::Playhead;
     }
 
-    // Check if any track is armed
-    bool anyArmed = false;
-    auto& tracks = TrackManager::getInstance().getTracks();
-    for (const auto& track : tracks) {
-        if (track.recordArmed) {
-            anyArmed = true;
-            break;
-        }
-    }
-
-    if (!anyArmed) {
-        DBG("StartRecordEvent: no armed tracks, ignoring");
-        return ChangeFlags::None;
-    }
+    // Session recording does not require armed tracks — proceed regardless.
+    // (Track arming is only needed for MIDI/audio input recording via TE.)
 
     // Check if punch-in is enabled with a valid region
     bool punchInActive = state.punch.punchInEnabled && state.punch.isValid();
@@ -367,12 +357,16 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartRecor
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const StopPlaybackEvent& /*e*/) {
+    std::cout << "[TimelineController] handleEvent(StopPlaybackEvent) isPlaying="
+              << state.playhead.isPlaying << std::endl;
     if (!state.playhead.isPlaying) {
         return ChangeFlags::None;  // Already stopped
     }
 
     state.playhead.isPlaying = false;
     state.playhead.isRecording = false;
+    state.playhead.sessionPlaybackPosition = -1.0;
+    state.playhead.sessionPlaybackClipId = INVALID_CLIP_ID;
     punchArmed_ = false;
     // Reset playbackPosition to editPosition (Bitwig behavior)
     state.playhead.playbackPosition = state.playhead.editPosition;

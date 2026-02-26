@@ -29,6 +29,9 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/prev_on.svg
     ../../assets/icons/next_off.svg
     ../../assets/icons/next_on.svg
+    # Resume/arrangement icons
+    ../../assets/icons/resume/resume.svg
+    ../../assets/icons/resume/resume_on.svg
     # Audio icons
     ../../assets/icons/volume_up.svg
     ../../assets/icons/volume_down.svg
@@ -194,6 +197,7 @@ set(DAW_CORE_SOURCES
     audio/DeviceProcessor.cpp
     audio/MidiBridge.cpp
     audio/SessionClipScheduler.cpp
+    audio/SessionRecorder.cpp
     # Phase 1 refactoring: Pure data managers
     audio/TransportStateManager.cpp
     audio/MidiActivityMonitor.cpp

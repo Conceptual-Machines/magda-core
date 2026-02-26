@@ -279,6 +279,12 @@ void TrackContentPanel::trackSelectionChanged(TrackId trackId) {
     repaint();
 }
 
+void TrackContentPanel::trackPropertyChanged(int /*trackId*/) {
+    // Repaint when track properties change (e.g. playback mode switching
+    // between Arrangement and Session) to update visual overlays.
+    repaint();
+}
+
 int TrackContentPanel::getNumTracks() const {
     return static_cast<int>(trackLanes.size());
 }
@@ -372,6 +378,11 @@ void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& lane,
     if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
         auto* trackInfo = TrackManager::getInstance().getTrack(visibleTrackIds_[trackIndex]);
         if (trackInfo && trackInfo->frozen) {
+            g.setColour(juce::Colours::black.withAlpha(0.25f));
+            g.fillRect(area);
+        }
+        // Session mode overlay — dim track lane when in Session mode
+        if (trackInfo && trackInfo->playbackMode == TrackPlaybackMode::Session) {
             g.setColour(juce::Colours::black.withAlpha(0.25f));
             g.fillRect(area);
         }
@@ -679,6 +690,10 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
     // Grab keyboard focus so we can receive key events (like 'B' for blade)
     grabKeyboardFocus();
 
+    // Right-click is handled in mouseUp (context menu); don't start drag/selection
+    if (event.mods.isPopupMenu())
+        return;
+
     // Store initial mouse position for click vs drag detection
     mouseDownX = event.x;
     mouseDownY = event.y;
@@ -954,6 +969,14 @@ void TrackContentPanel::mouseDrag(const juce::MouseEvent& event) {
 }
 
 void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
+    // Right-click on empty space shows context menu
+    if (event.mods.isPopupMenu()) {
+        if (getClipComponentAt(event.x, event.y) == nullptr) {
+            showEmptySpaceContextMenu(event);
+        }
+        return;
+    }
+
     if (currentDragType_ == DragType::ResizeSelectionLeft ||
         currentDragType_ == DragType::ResizeSelectionRight) {
         // Finalize time selection resize and trim clips
@@ -1219,6 +1242,87 @@ void TrackContentPanel::mouseDoubleClick(const juce::MouseEvent& event) {
         getClipComponentAt(event.x, event.y) == nullptr) {
         createClipFromTimeSelection();
     }
+    // Double-clicking empty space (no clip, no selection) creates a 1-bar MIDI clip
+    else if (getClipComponentAt(event.x, event.y) == nullptr) {
+        int trackIndex = getTrackIndexAtY(event.y);
+        if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
+            TrackId trackId = visibleTrackIds_[trackIndex];
+            double clickTime = pixelToTime(event.x);
+            double startTime = snapTimeToGrid ? snapTimeToGrid(clickTime) : clickTime;
+            createMidiClipAtPosition(trackId, startTime);
+        }
+    }
+}
+
+void TrackContentPanel::createMidiClipAtPosition(TrackId trackId, double startTime) {
+    double barLength = (timeSignatureNumerator * 60.0) / tempoBPM;
+
+    auto cmd = std::make_unique<CreateClipCommand>(ClipType::MIDI, trackId, startTime, barLength);
+    UndoManager::getInstance().executeCommand(std::move(cmd));
+
+    auto clipId = ClipManager::getInstance().getClipAtPosition(trackId, startTime);
+    if (clipId != INVALID_CLIP_ID) {
+        SelectionManager::getInstance().selectClip(clipId);
+    }
+}
+
+void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event) {
+    int trackIndex = getTrackIndexAtY(event.y);
+    if (trackIndex < 0 || trackIndex >= static_cast<int>(visibleTrackIds_.size()))
+        return;
+
+    TrackId trackId = visibleTrackIds_[trackIndex];
+    double clickTime = pixelToTime(event.x);
+    double startTime = snapTimeToGrid ? snapTimeToGrid(clickTime) : clickTime;
+
+    // Check frozen state
+    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    bool isFrozen = trackInfo && trackInfo->frozen;
+
+    auto& clipManager = ClipManager::getInstance();
+    bool hasClipboard = clipManager.hasClipsInClipboard();
+
+    juce::PopupMenu menu;
+    menu.addItem(1, "Create MIDI Clip", !isFrozen);
+    menu.addSeparator();
+    menu.addItem(2, "Paste", !isFrozen && hasClipboard);
+    menu.addItem(3, "Select All");
+
+    auto safeThis = juce::Component::SafePointer<TrackContentPanel>(this);
+
+    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, trackId, startTime](int result) {
+        if (result == 0)
+            return;
+
+        switch (result) {
+            case 1: {  // Create MIDI Clip
+                if (safeThis)
+                    safeThis->createMidiClipAtPosition(trackId, startTime);
+                break;
+            }
+            case 2: {  // Paste
+                auto cmd = std::make_unique<PasteClipCommand>(startTime);
+                auto* cmdPtr = cmd.get();
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                const auto& pastedClips = cmdPtr->getPastedClipIds();
+                if (!pastedClips.empty()) {
+                    std::unordered_set<ClipId> newSelection(pastedClips.begin(), pastedClips.end());
+                    SelectionManager::getInstance().selectClips(newSelection);
+                }
+                break;
+            }
+            case 3: {  // Select All
+                const auto& allClips = ClipManager::getInstance().getArrangementClips();
+                std::unordered_set<ClipId> allClipIds;
+                for (const auto& clip : allClips) {
+                    allClipIds.insert(clip.id);
+                }
+                SelectionManager::getInstance().selectClips(allClipIds);
+                break;
+            }
+        }
+    });
 }
 
 void TrackContentPanel::timerCallback() {

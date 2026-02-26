@@ -1,5 +1,7 @@
 #include "MainWindow.hpp"
 
+#include <iostream>
+
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/SelectionManager.hpp"
@@ -581,6 +583,9 @@ void MainWindow::MainComponent::setupViewModeListener() {
 
     // Also listen to selection changes to update menu state
     SelectionManager::getInstance().addListener(this);
+
+    // Listen to track property changes for playback mode updates
+    TrackManager::getInstance().addListener(this);
 }
 
 void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
@@ -613,11 +618,14 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     };
 
     transportPanel->onStop = [this]() {
+        std::cout << "[MainWindow] transportPanel->onStop dispatching StopPlaybackEvent"
+                  << std::endl;
         mainView->getTimelineController().dispatch(StopPlaybackEvent{});
     };
 
     transportPanel->onPause = [this]() {
-        // For now, treat pause like stop for playhead behavior
+        std::cout << "[MainWindow] transportPanel->onPause dispatching StopPlaybackEvent"
+                  << std::endl;
         mainView->getTimelineController().dispatch(StopPlaybackEvent{});
     };
 
@@ -628,6 +636,10 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     transportPanel->onLoop = [this](bool enabled) {
         mainView->getTimelineController().dispatch(SetLoopEnabledEvent{enabled});
         mainView->setLoopEnabled(enabled);
+    };
+
+    transportPanel->onBackToArrangement = []() {
+        TrackManager::getInstance().setAllTracksPlaybackMode(TrackPlaybackMode::Arrangement);
     };
 
     transportPanel->onTempoChange = [this](double bpm) {
@@ -780,6 +792,10 @@ MainWindow::MainComponent::~MainComponent() {
     std::cout << "    [5g.1] Removing SelectionManager listener..." << std::endl;
     std::cout.flush();
     SelectionManager::getInstance().removeListener(this);
+
+    std::cout << "    [5g.2] Removing TrackManager listener..." << std::endl;
+    std::cout.flush();
+    TrackManager::getInstance().removeListener(this);
 
     // Explicitly reset unique_ptrs in order to see which one crashes
     std::cout << "    [5h] Destroying loadingOverlay_..." << std::endl;
@@ -985,6 +1001,18 @@ void MainWindow::MainComponent::selectionTypeChanged(SelectionType newType) {
     MenuManager::getInstance().updateMenuStates(
         false, false, hasSelection, hasEditCursor, leftPanelVisible, rightPanelVisible,
         bottomPanelVisible, isPlaying, isRecording, isLooping);
+}
+
+void MainWindow::MainComponent::trackPropertyChanged(int /*trackId*/) {
+    bool anySession = false;
+    for (const auto& track : TrackManager::getInstance().getTracks()) {
+        if (track.playbackMode == TrackPlaybackMode::Session) {
+            anySession = true;
+            break;
+        }
+    }
+    if (transportPanel)
+        transportPanel->setAnyTrackInSessionMode(anySession);
 }
 
 void MainWindow::MainComponent::switchToView(ViewMode mode) {

@@ -157,9 +157,13 @@ void TrackController::setTrackAudioOutput(TrackId trackId, const juce::String& d
 
     if (destination.isEmpty()) {
         // Disable output by routing to nothing
+        if (!track->getOutput().getOutputDevice(false))
+            return;  // Already has no output
         track->getOutput().setOutputToDeviceID({});
     } else if (destination == "master") {
-        // Route to default/master output
+        // Skip if already routed to default — avoids unnecessary graph rebuild
+        if (track->getOutput().usesDefaultAudioOut())
+            return;
         track->getOutput().setOutputToDefaultDevice(false);  // false = audio (not MIDI)
     } else if (destination.startsWith("track:")) {
         // Route to another track (group or aux)

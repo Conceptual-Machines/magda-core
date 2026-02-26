@@ -103,7 +103,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         modButton_->setActive(modButton_->getToggleState());
         setModPanelVisible(modButton_->getToggleState());
     };
-    addAndMakeVisible(*modButton_);
+    // TODO (#801): global mod/macro icons not yet implemented — hidden for now
+    // addAndMakeVisible(*modButton_);
 
     // Macro button (toggle macro panel) - knob icon
     macroButton_ =
@@ -118,7 +119,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         macroButton_->setActive(macroButton_->getToggleState());
         setParamPanelVisible(macroButton_->getToggleState());
     };
-    addAndMakeVisible(*macroButton_);
+    // addAndMakeVisible(*macroButton_);
 
     // Initialize mods/macros panels from base class
     initializeModsMacrosPanels();
@@ -825,10 +826,10 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     }
 
     // Show header controls when expanded
-    // Hide mod/macro buttons for drum grid (no modulation for pad-level plugins)
-    bool isDrumGrid = drumGridUI_ != nullptr;
-    modButton_->setVisible(!isDrumGrid);
-    macroButton_->setVisible(!isDrumGrid);
+    // Mod/macro buttons hidden — TODO (#801): global mod/macro icons
+    // bool isDrumGrid = drumGridUI_ != nullptr;
+    // modButton_->setVisible(!isDrumGrid);
+    // macroButton_->setVisible(!isDrumGrid);
     uiButton_->setVisible(!isInternalDevice());
     onButton_->setVisible(true);
     gainSlider_.setVisible(true);
@@ -989,13 +990,11 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     // Header layout: [Macro] [M] [Name] [UI] [...] [gain slider] [SC] [MO] [on] [X]
     // Note: delete (X) is handled by NodeComponent on the right
 
-    // Macro button on the left
-    macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
-    headerArea.removeFromLeft(4);
-
-    // Mod button
-    modButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
-    headerArea.removeFromLeft(4);
+    // Macro and Mod buttons hidden — TODO (#801): global mod/macro icons
+    // macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
+    // headerArea.removeFromLeft(4);
+    // modButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
+    // headerArea.removeFromLeft(4);
 
     // Power button on the right (before delete which is handled by parent)
     onButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
@@ -1056,16 +1055,14 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
     uiButton_->setVisible(!isInternalDevice());
     area.removeFromTop(4);
 
-    // Macro button
-    macroButton_->setBounds(
-        area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-    macroButton_->setVisible(true);
-    area.removeFromTop(4);
-
-    // Mod button
-    modButton_->setBounds(
-        area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-    modButton_->setVisible(true);
+    // Macro and Mod buttons hidden — TODO (#801): global mod/macro icons
+    // macroButton_->setBounds(
+    //     area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+    // macroButton_->setVisible(true);
+    // area.removeFromTop(4);
+    // modButton_->setBounds(
+    //     area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+    // modButton_->setVisible(true);
 
     // Multi-out button (only if plugin is multi-out)
     if (device_.multiOut.isMultiOut && multiOutButton_) {
@@ -1483,8 +1480,7 @@ void DeviceSlotComponent::paramSelectionChanged(const magda::ParamSelection& sel
 void DeviceSlotComponent::mouseDown(const juce::MouseEvent& e) {
     // Right-click context menu
     if (e.mods.isPopupMenu()) {
-        // Fall through to base class for right-click handling
-        NodeComponent::mouseDown(e);
+        showContextMenu();
         return;
     }
 
@@ -1545,6 +1541,39 @@ void DeviceSlotComponent::showMultiOutMenu() {
             tm.deactivateMultiOutPair(trackId, deviceId, pairIndex);
         } else {
             tm.activateMultiOutPair(trackId, deviceId, pairIndex);
+        }
+    });
+}
+
+// =============================================================================
+// Context Menu
+// =============================================================================
+
+void DeviceSlotComponent::showContextMenu() {
+    juce::PopupMenu menu;
+    menu.addItem(1, "Add to New Rack");
+    menu.addSeparator();
+    menu.addItem(100, "Delete");
+
+    auto safeThis = juce::Component::SafePointer<DeviceSlotComponent>(this);
+    auto path = nodePath_;
+    auto callback = onDeviceDeleted;
+
+    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, path, callback](int result) {
+        if (result == 0)
+            return;
+
+        if (result == 1) {
+            // Add to New Rack
+            auto& tm = magda::TrackManager::getInstance();
+            tm.wrapDeviceInRackByPath(path);
+        } else if (result == 100) {
+            // Delete — same deferred logic as onDeleteClicked
+            juce::MessageManager::callAsync([path, callback]() {
+                magda::TrackManager::getInstance().removeDeviceFromChainByPath(path);
+                if (callback)
+                    callback();
+            });
         }
     });
 }
@@ -1652,11 +1681,11 @@ void DeviceSlotComponent::createCustomUI() {
     } else if (device_.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName)) {
         drumGridUI_ = std::make_unique<DrumGridUI>();
 
-        // Hide mod/macro buttons for drum grid (no modulation system for pad-level plugins)
-        if (modButton_)
-            modButton_->setVisible(false);
-        if (macroButton_)
-            macroButton_->setVisible(false);
+        // Mod/macro buttons already hidden — TODO (#801): global mod/macro icons
+        // if (modButton_)
+        //     modButton_->setVisible(false);
+        // if (macroButton_)
+        //     macroButton_->setVisible(false);
 
         // Helper to get DrumGridPlugin pointer
         auto getDrumGrid = [this]() -> daw::audio::DrumGridPlugin* {

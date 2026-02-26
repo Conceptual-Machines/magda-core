@@ -40,6 +40,7 @@ class TransportPanel : public juce::Component {
     std::function<void(double, double)> onPunchRegionEdit;    // startSeconds, endSeconds
     std::function<void(double, double)> onTimeSelectionEdit;  // startSeconds, endSeconds
     std::function<void(double)> onEditCursorEdit;             // positionInSeconds
+    std::function<void()> onBackToArrangement;
 
     // Update displays - simplified API
     void setPlayheadPosition(double positionInSeconds);
@@ -59,6 +60,9 @@ class TransportPanel : public juce::Component {
     // Sync play state from external sources (e.g., SessionClipScheduler starting transport)
     void setPlaybackState(bool playing);
 
+    // Update arrangement button state based on whether any track is in session mode
+    void setAnyTrackInSessionMode(bool anyInSession);
+
   private:
     // Transport controls (left section)
     std::unique_ptr<SvgButton> playButton;
@@ -73,6 +77,9 @@ class TransportPanel : public juce::Component {
 
     // Loop button
     std::unique_ptr<SvgButton> loopButton;
+
+    // Back to arrangement button
+    std::unique_ptr<SvgButton> backToArrangementButton;
 
     // Punch in/out button
     std::unique_ptr<SvgButton> punchInButton;

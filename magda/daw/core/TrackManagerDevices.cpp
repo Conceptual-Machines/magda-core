@@ -517,6 +517,103 @@ void TrackManager::setDeviceParameterValueFromPlugin(const ChainNodePath& device
 }
 
 // ============================================================================
+// Wrap Device in Rack
+// ============================================================================
+
+RackId TrackManager::wrapDeviceInRack(TrackId trackId, DeviceId deviceId,
+                                      const juce::String& rackName) {
+    auto* track = getTrack(trackId);
+    if (!track)
+        return INVALID_RACK_ID;
+
+    auto& elements = track->chainElements;
+
+    // Find the device in the top-level chain
+    auto it = std::find_if(elements.begin(), elements.end(), [deviceId](const ChainElement& e) {
+        return magda::isDevice(e) && magda::getDevice(e).id == deviceId;
+    });
+    if (it == elements.end())
+        return INVALID_RACK_ID;
+
+    int insertIndex = static_cast<int>(std::distance(elements.begin(), it));
+
+    // Extract the device
+    DeviceInfo extractedDevice = magda::getDevice(*it);
+    elements.erase(it);
+
+    RackId newRackId =
+        createRackWithDevice(elements, insertIndex, std::move(extractedDevice), rackName);
+
+    notifyTrackDevicesChanged(trackId);
+    DBG("Wrapped device " << deviceId << " in new rack " << newRackId << " on track " << trackId);
+    return newRackId;
+}
+
+RackId TrackManager::wrapDeviceInRackByPath(const ChainNodePath& devicePath,
+                                            const juce::String& rackName) {
+    // Handle top-level device
+    if (devicePath.topLevelDeviceId != INVALID_DEVICE_ID) {
+        return wrapDeviceInRack(devicePath.trackId, devicePath.topLevelDeviceId, rackName);
+    }
+
+    // Handle nested device (path ends with Device step)
+    if (devicePath.steps.empty() || devicePath.steps.back().type != ChainStepType::Device)
+        return INVALID_RACK_ID;
+
+    DeviceId deviceId = devicePath.steps.back().id;
+
+    // Build chain path (everything except last Device step)
+    ChainNodePath chainPath;
+    chainPath.trackId = devicePath.trackId;
+    for (size_t i = 0; i < devicePath.steps.size() - 1; ++i) {
+        chainPath.steps.push_back(devicePath.steps[i]);
+    }
+
+    auto* chain = getChainFromPath(*this, chainPath);
+    if (!chain)
+        return INVALID_RACK_ID;
+
+    auto& elements = chain->elements;
+
+    // Find the device in the chain
+    auto it = std::find_if(elements.begin(), elements.end(), [deviceId](const ChainElement& e) {
+        return magda::isDevice(e) && magda::getDevice(e).id == deviceId;
+    });
+    if (it == elements.end())
+        return INVALID_RACK_ID;
+
+    int insertIndex = static_cast<int>(std::distance(elements.begin(), it));
+
+    // Extract the device
+    DeviceInfo extractedDevice = magda::getDevice(*it);
+    elements.erase(it);
+
+    RackId newRackId =
+        createRackWithDevice(elements, insertIndex, std::move(extractedDevice), rackName);
+
+    notifyTrackDevicesChanged(devicePath.trackId);
+    DBG("Wrapped nested device " << deviceId << " in new rack " << newRackId);
+    return newRackId;
+}
+
+RackId TrackManager::createRackWithDevice(std::vector<ChainElement>& elements, int insertIndex,
+                                          DeviceInfo device, const juce::String& rackName) {
+    RackInfo rack;
+    rack.id = nextRackId_++;
+    rack.name = rackName.isEmpty() ? ("Rack " + juce::String(rack.id)) : rackName;
+
+    ChainInfo defaultChain;
+    defaultChain.id = nextChainId_++;
+    defaultChain.name = "Chain 1";
+    defaultChain.elements.push_back(makeDeviceElement(std::move(device)));
+    rack.chains.push_back(std::move(defaultChain));
+
+    RackId newRackId = rack.id;
+    elements.insert(elements.begin() + insertIndex, makeRackElement(std::move(rack)));
+    return newRackId;
+}
+
+// ============================================================================
 // Nested Rack Management
 // ============================================================================
 

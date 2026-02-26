@@ -54,7 +54,7 @@ void FooterBar::viewModeChanged(ViewMode /*mode*/, const AudioEngineProfile& /*p
 }
 
 void FooterBar::setupButtons() {
-    // Icon data for each mode: Session=Live, Arrangement=Arrange, Mix, Master
+    // Icon data for each mode: Session=Live, Arrangement=Arrange, Mix
     struct IconData {
         const char* data;
         int size;
@@ -67,7 +67,6 @@ void FooterBar::setupButtons() {
         {BinaryData::Arrangement_svg, BinaryData::Arrangement_svgSize, ViewMode::Arrange,
          "Arrange"},
         {BinaryData::Mix_svg, BinaryData::Mix_svgSize, ViewMode::Mix, "Mix"},
-        {BinaryData::Master_svg, BinaryData::Master_svgSize, ViewMode::Master, "Master"},
     }};
 
     for (size_t i = 0; i < NUM_MODES; ++i) {
@@ -92,8 +91,8 @@ void FooterBar::setupButtons() {
 void FooterBar::updateButtonStates() {
     auto currentMode = ViewModeController::getInstance().getViewMode();
 
-    const std::array<ViewMode, NUM_MODES> modes = {ViewMode::Live, ViewMode::Arrange, ViewMode::Mix,
-                                                   ViewMode::Master};
+    const std::array<ViewMode, NUM_MODES> modes = {ViewMode::Live, ViewMode::Arrange,
+                                                   ViewMode::Mix};
 
     for (size_t i = 0; i < NUM_MODES; ++i) {
         bool isActive = (modes[i] == currentMode);

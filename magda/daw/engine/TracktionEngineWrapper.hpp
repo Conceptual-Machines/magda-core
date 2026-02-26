@@ -21,6 +21,7 @@ class MidiBridge;
 class PluginScanCoordinator;
 class PluginWindowManager;
 class SessionClipScheduler;
+class SessionRecorder;
 
 /**
  * @brief Tracktion Engine implementation of AudioEngine
@@ -67,6 +68,8 @@ class TracktionEngineWrapper : public AudioEngine,
     bool isPlaying() const override;
     bool isRecording() const override;
     double getSessionPlayheadPosition() const override;
+    ClipId getSessionPlayheadClipId() const override;
+    SessionClipPlayState getSessionClipPlayState(ClipId clipId) const override;
     void setTempo(double bpm) override;
     double getTempo() const override;
     void setTimeSignature(int numerator, int denominator) override;
@@ -376,6 +379,9 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // Session clip scheduler for session view clip playback
     std::unique_ptr<SessionClipScheduler> sessionScheduler_;
+
+    // Session recorder for recording session performances to arrangement
+    std::unique_ptr<SessionRecorder> sessionRecorder_;
 
     // MIDI bridge for MIDI device management and routing
     std::unique_ptr<MidiBridge> midiBridge_;

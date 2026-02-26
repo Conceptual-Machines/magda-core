@@ -191,6 +191,8 @@ class TrackManager {
     void setTrackRecordArmed(TrackId trackId, bool armed);
     void setTrackInputMonitor(TrackId trackId, InputMonitorMode mode);
     void setTrackFrozen(TrackId trackId, bool frozen);
+    void setTrackPlaybackMode(TrackId trackId, TrackPlaybackMode mode);
+    void setAllTracksPlaybackMode(TrackPlaybackMode mode);
     void setTrackType(TrackId trackId, TrackType type);
 
     // Track routing setters (notify listeners and forward to bridges)
@@ -220,6 +222,12 @@ class TrackManager {
     void removeDeviceFromTrack(TrackId trackId, DeviceId deviceId);
     void setDeviceBypassed(TrackId trackId, DeviceId deviceId, bool bypassed);
     DeviceInfo* getDevice(TrackId trackId, DeviceId deviceId);
+
+    // Wrap a device in a new rack (device moves into the rack's first chain)
+    RackId wrapDeviceInRack(TrackId trackId, DeviceId deviceId,
+                            const juce::String& rackName = "Rack");
+    RackId wrapDeviceInRackByPath(const ChainNodePath& devicePath,
+                                  const juce::String& rackName = "Rack");
 
     // Rack management on track
     RackId addRackToTrack(TrackId trackId, const juce::String& name = "Rack");
@@ -537,6 +545,10 @@ class TrackManager {
                     tm.listeners_.end());
         }
     };
+    // Helper: create a rack containing a single device and insert it into elements at insertIndex
+    RackId createRackWithDevice(std::vector<ChainElement>& elements, int insertIndex,
+                                DeviceInfo device, const juce::String& rackName);
+
     AudioEngine* audioEngine_ = nullptr;  // Non-owning pointer for routing operations
     int nextTrackId_ = 1;
     int nextDeviceId_ = 1;

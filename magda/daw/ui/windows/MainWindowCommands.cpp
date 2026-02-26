@@ -30,7 +30,7 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
     const juce::CommandID allCommands[] = {
         // Edit menu
         undo, redo, cut, copy, paste, duplicate, deleteCmd, selectAll, splitOrTrim, joinClips,
-        renderClip, renderTimeSelection,
+        renderClip, renderTimeSelection, setLoopFromClip,
         // File menu
         newProject, openProject, saveProject, saveProjectAs, exportAudio,
         // Transport
@@ -112,6 +112,13 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             result.setInfo("Render Time Selection",
                            "Consolidate time selection to a single clip per track", "Edit", 0);
             result.addDefaultKeypress('b', juce::ModifierKeys::commandModifier |
+                                               juce::ModifierKeys::shiftModifier);
+            break;
+
+        case setLoopFromClip:
+            result.setInfo("Set Loop from Clip", "Set transport loop to selected clip bounds",
+                           "Edit", 0);
+            result.addDefaultKeypress('l', juce::ModifierKeys::commandModifier |
                                                juce::ModifierKeys::shiftModifier);
             break;
 
@@ -326,28 +333,62 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 }
             }
             if (clipManager.hasClipsInClipboard()) {
-                double pasteTime = 0.0;
-                if (mainView) {
-                    const auto& state = mainView->getTimelineController().getState();
-                    pasteTime = state.editCursorPosition;
-                    if (pasteTime < 0) {
-                        pasteTime = state.playhead.editPosition;
-                    }
-                    if (pasteTime < 0) {
-                        pasteTime = 0.0;
-                    }
-                }
+                auto viewMode = ViewModeController::getInstance().getViewMode();
 
-                // Use command pattern for undoable paste
-                auto cmd = std::make_unique<PasteClipCommand>(pasteTime);
-                auto* cmdPtr = cmd.get();
-                UndoManager::getInstance().executeCommand(std::move(cmd));
+                if (viewMode == ViewMode::Live) {
+                    // Session view: paste into first empty slot on selected track
+                    TrackId targetTrack = selectionManager.getSelectedTrack();
+                    if (targetTrack == INVALID_TRACK_ID) {
+                        auto visibleTracks = TrackManager::getInstance().getVisibleTracks(viewMode);
+                        if (!visibleTracks.empty())
+                            targetTrack = visibleTracks.front();
+                    }
 
-                // Select the pasted clips
-                const auto& pastedClips = cmdPtr->getPastedClipIds();
-                if (!pastedClips.empty()) {
-                    std::unordered_set<ClipId> newSelection(pastedClips.begin(), pastedClips.end());
-                    selectionManager.selectClips(newSelection);
+                    // Find first empty scene slot on the target track
+                    int targetScene = 0;
+                    for (int s = 0; s < 128; ++s) {
+                        if (clipManager.getClipInSlot(targetTrack, s) == INVALID_CLIP_ID) {
+                            targetScene = s;
+                            break;
+                        }
+                    }
+
+                    auto cmd = std::make_unique<PasteClipCommand>(0.0, targetTrack,
+                                                                  ClipView::Session, targetScene);
+                    auto* cmdPtr = cmd.get();
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                    const auto& pastedClips = cmdPtr->getPastedClipIds();
+                    if (!pastedClips.empty()) {
+                        std::unordered_set<ClipId> newSelection(pastedClips.begin(),
+                                                                pastedClips.end());
+                        selectionManager.selectClips(newSelection);
+                    }
+                } else {
+                    // Arrangement view: paste at edit cursor position
+                    double pasteTime = 0.0;
+                    if (mainView) {
+                        const auto& state = mainView->getTimelineController().getState();
+                        pasteTime = state.editCursorPosition;
+                        if (pasteTime < 0) {
+                            pasteTime = state.playhead.editPosition;
+                        }
+                        if (pasteTime < 0) {
+                            pasteTime = 0.0;
+                        }
+                    }
+
+                    auto cmd = std::make_unique<PasteClipCommand>(pasteTime, INVALID_TRACK_ID,
+                                                                  ClipView::Arrangement);
+                    auto* cmdPtr = cmd.get();
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                    const auto& pastedClips = cmdPtr->getPastedClipIds();
+                    if (!pastedClips.empty()) {
+                        std::unordered_set<ClipId> newSelection(pastedClips.begin(),
+                                                                pastedClips.end());
+                        selectionManager.selectClips(newSelection);
+                    }
                 }
             }
             return true;
@@ -730,6 +771,18 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     const auto& newIds = cmdPtr->getNewClipIds();
                     std::unordered_set<ClipId> newSelection(newIds.begin(), newIds.end());
                     selectionManager.selectClips(newSelection);
+                }
+            }
+            return true;
+        }
+
+        case setLoopFromClip: {
+            ClipId selectedClipId = selectionManager.getSelectedClip();
+            if (selectedClipId != INVALID_CLIP_ID) {
+                const auto* clip = clipManager.getClip(selectedClipId);
+                if (clip && mainView) {
+                    mainView->getTimelineController().dispatch(
+                        SetLoopRegionEvent{clip->startTime, clip->getEndTime()});
                 }
             }
             return true;

@@ -5,9 +5,11 @@
 
 #include <map>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "../core/ClipManager.hpp"
+#include "../core/TrackManager.hpp"
 #include "../core/TypeIds.hpp"
 
 namespace magda {
@@ -38,7 +40,7 @@ struct WarpMarkerInfo;
  * - TrackController& (for track lookup and creation)
  * - WarpMarkerManager& (for transient detection and warp markers)
  */
-class ClipSynchronizer : public ClipManagerListener {
+class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener {
   public:
     /**
      * @brief Construct ClipSynchronizer with required dependencies
@@ -80,6 +82,13 @@ class ClipSynchronizer : public ClipManagerListener {
      * @param clipId The newly selected clip
      */
     void clipSelectionChanged(ClipId clipId) override;
+
+    // =========================================================================
+    // TrackManagerListener Interface
+    // =========================================================================
+
+    void tracksChanged() override {}
+    void trackPropertyChanged(int trackId) override;
 
     // =========================================================================
     // Arrangement Clip Operations
@@ -133,7 +142,7 @@ class ClipSynchronizer : public ClipManagerListener {
      *
      * Configures looping and launches via LaunchHandle
      */
-    void launchSessionClip(ClipId clipId);
+    void launchSessionClip(ClipId clipId, bool forceImmediate = false);
 
     /**
      * @brief Stop a playing session clip
@@ -234,6 +243,13 @@ class ClipSynchronizer : public ClipManagerListener {
     }
 
     /**
+     * @brief Get the precise quantized launch time for a track's last-launched session clip.
+     * @param trackId The track to query
+     * @return Time in seconds, or 0.0 if no launch recorded
+     */
+    double getLastLaunchTimeForTrack(TrackId trackId) const;
+
+    /**
      * @brief Get clip ID mapping for external access
      * @return Const reference to clipIdToEngineId_ map
      */
@@ -276,6 +292,23 @@ class ClipSynchronizer : public ClipManagerListener {
      */
     void configureSessionAutoTempo(te::WaveAudioClip* audioClip, const ClipInfo* clip);
 
+    /**
+     * @brief Sync TrackInfo::playbackMode to TE's audioTrack->playSlotClips
+     * @param trackId The track to sync
+     *
+     * This is the SINGLE place that writes audioTrack->playSlotClips.
+     */
+    void syncPlaybackModeToEngine(TrackId trackId);
+
+    /**
+     * @brief Build a clip-ID-to-engine-ID map that includes session clips.
+     *
+     * For arrangement clips the entry already exists in clipIdToEngineId_.
+     * For session clips, resolves the TE clip via its slot and adds a
+     * temporary entry so WarpMarkerManager can find it.
+     */
+    std::map<ClipId, std::string> buildWarpClipMap(ClipId clipId);
+
     // References to dependencies (not owned)
     te::Edit& edit_;
     TrackController& trackController_;
@@ -287,6 +320,9 @@ class ClipSynchronizer : public ClipManagerListener {
 
     // Reverse proxy state (for deferred reallocation)
     ClipId pendingReverseClipId_{INVALID_CLIP_ID};
+
+    // Precise quantized launch times per track (seconds), written by launchSessionClip()
+    std::unordered_map<TrackId, double> lastLaunchTimeByTrack_;
 
     // Thread safety
     mutable juce::CriticalSection clipLock_;

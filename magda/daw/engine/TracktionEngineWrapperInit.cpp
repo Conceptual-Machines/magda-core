@@ -3,6 +3,7 @@
 #include "../audio/AudioBridge.hpp"
 #include "../audio/MidiBridge.hpp"
 #include "../audio/SessionClipScheduler.hpp"
+#include "../audio/SessionRecorder.hpp"
 #include "../core/Config.hpp"
 #include "MagdaEngineBehaviour.hpp"
 #include "MagdaUIBehaviour.hpp"
@@ -297,6 +298,15 @@ void TracktionEngineWrapper::createEditAndBridges() {
 
     if (!isHeadless) {
         sessionScheduler_ = std::make_unique<SessionClipScheduler>(*audioBridge_, *currentEdit_);
+        sessionRecorder_ = std::make_unique<SessionRecorder>(*currentEdit_);
+        sessionRecorder_->setRecordingPreviews(&recordingPreviews_);
+        sessionRecorder_->setPlayStateQuery([this](ClipId clipId) {
+            return sessionScheduler_ ? sessionScheduler_->getClipPlayState(clipId)
+                                     : SessionClipPlayState::Stopped;
+        });
+        sessionRecorder_->setLaunchTimeQuery([this](TrackId trackId) {
+            return audioBridge_ ? audioBridge_->getLastLaunchTimeForTrack(trackId) : 0.0;
+        });
         pluginWindowManager_ = std::make_unique<PluginWindowManager>(*engine_, *currentEdit_);
         audioBridge_->setPluginWindowManager(pluginWindowManager_.get());
     }

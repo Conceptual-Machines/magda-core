@@ -274,31 +274,26 @@ TEST_CASE("Session clip trigger/stop state transitions", "[session][clip][state]
     clip->view = ClipView::Session;
     clip->sceneIndex = 0;
 
-    SECTION("Initial state is stopped") {
-        REQUIRE(clip->isPlaying == false);
-        REQUIRE(clip->isQueued == false);
-    }
-
-    SECTION("triggerClip queues the clip") {
+    SECTION("triggerClip emits request without crash") {
+        // Play state is now owned by SessionClipScheduler, not ClipInfo.
+        // Without a scheduler, triggerClip just emits clipPlaybackRequested.
         ClipManager::getInstance().triggerClip(clipId);
         clip = ClipManager::getInstance().getClip(clipId);
-        REQUIRE(clip->isQueued == true);
+        REQUIRE(clip != nullptr);
     }
 
-    SECTION("setClipPlayingState marks as playing") {
+    SECTION("stopClip emits request without crash") {
         ClipManager::getInstance().triggerClip(clipId);
-        ClipManager::getInstance().setClipPlayingState(clipId, true);
-        clip = ClipManager::getInstance().getClip(clipId);
-        REQUIRE(clip->isPlaying == true);
-    }
-
-    SECTION("stopClip resets both flags") {
-        ClipManager::getInstance().triggerClip(clipId);
-        ClipManager::getInstance().setClipPlayingState(clipId, true);
         ClipManager::getInstance().stopClip(clipId);
         clip = ClipManager::getInstance().getClip(clipId);
-        REQUIRE(clip->isPlaying == false);
-        REQUIRE(clip->isQueued == false);
+        REQUIRE(clip != nullptr);
+    }
+
+    SECTION("stopAllClips emits requests without crash") {
+        ClipManager::getInstance().triggerClip(clipId);
+        ClipManager::getInstance().stopAllClips();
+        clip = ClipManager::getInstance().getClip(clipId);
+        REQUIRE(clip != nullptr);
     }
 }
 
@@ -397,31 +392,18 @@ TEST_CASE("LaunchMidiClip — verify launch/stop cycle via ClipManager state",
     REQUIRE(clip != nullptr);
     clip->view = ClipView::Session;
 
-    SECTION("Initial state is stopped") {
-        REQUIRE(clip->isPlaying == false);
-        REQUIRE(clip->isQueued == false);
-    }
-
-    SECTION("triggerClip queues the MIDI clip") {
+    SECTION("triggerClip emits request without crash (MIDI)") {
+        // Play state is now owned by SessionClipScheduler, not ClipInfo.
         ClipManager::getInstance().triggerClip(clipId);
         clip = ClipManager::getInstance().getClip(clipId);
-        REQUIRE(clip->isQueued == true);
+        REQUIRE(clip != nullptr);
     }
 
-    SECTION("setClipPlayingState marks MIDI clip as playing") {
+    SECTION("stopClip emits request without crash (MIDI)") {
         ClipManager::getInstance().triggerClip(clipId);
-        ClipManager::getInstance().setClipPlayingState(clipId, true);
-        clip = ClipManager::getInstance().getClip(clipId);
-        REQUIRE(clip->isPlaying == true);
-    }
-
-    SECTION("stopClip resets MIDI clip state") {
-        ClipManager::getInstance().triggerClip(clipId);
-        ClipManager::getInstance().setClipPlayingState(clipId, true);
         ClipManager::getInstance().stopClip(clipId);
         clip = ClipManager::getInstance().getClip(clipId);
-        REQUIRE(clip->isPlaying == false);
-        REQUIRE(clip->isQueued == false);
+        REQUIRE(clip != nullptr);
     }
 }
 
