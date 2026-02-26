@@ -218,7 +218,7 @@ class StartRecordEventTest final : public juce::UnitTest {
     StartRecordEventTest() : juce::UnitTest("StartRecordEvent Tests", "magda") {}
 
     void runTest() override {
-        testStartRecordNoArmedTracksDoesNothing();
+        testStartRecordNoArmedTracksStartsRecording();
         testStartRecordWithArmedTrackStartsRecording();
         testPlayWithArmedTrackStartsRecording();
         testPlayWithNoArmedTrackStartsPlayback();
@@ -226,8 +226,9 @@ class StartRecordEventTest final : public juce::UnitTest {
     }
 
   private:
-    void testStartRecordNoArmedTracksDoesNothing() {
-        beginTest("StartRecordEvent does nothing when no tracks are armed");
+    void testStartRecordNoArmedTracksStartsRecording() {
+        beginTest(
+            "StartRecordEvent starts recording even without armed tracks (session recording)");
 
         TimelineController controller;
 
@@ -238,9 +239,11 @@ class StartRecordEventTest final : public juce::UnitTest {
         controller.dispatch(StartRecordEvent{});
 
         auto& state = controller.getState();
-        expect(!state.playhead.isPlaying, "Should not be playing");
-        expect(!state.playhead.isRecording, "Should not be recording");
+        // Session recording does not require armed tracks
+        expect(state.playhead.isPlaying, "Should be playing");
+        expect(state.playhead.isRecording, "Should be recording");
 
+        controller.dispatch(StopPlaybackEvent{});
         tm.deleteTrack(trackId);
     }
 
