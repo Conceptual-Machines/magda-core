@@ -21,6 +21,7 @@ bool DAWAgent::start() {
 }
 
 void DAWAgent::stop() {
+    shouldStop_ = true;
     running_ = false;
 }
 
@@ -45,7 +46,7 @@ std::string DAWAgent::processMessage(const std::string& message) {
     // 2. Call OpenAI with CFG grammar
     auto dslResult =
         openai_.generateDSL(juce::String(message), stateJson, juce::String(dsl::getGrammar()),
-                            juce::String(dsl::getToolDescription()));
+                            juce::String(dsl::getToolDescription()), &shouldStop_);
 
     if (dslResult.isEmpty()) {
         return "Error: " + openai_.getLastError().toStdString();

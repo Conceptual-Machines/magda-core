@@ -42,6 +42,14 @@ class DAWAgent : public AgentInterface {
         return running_.load();
     }
 
+    /** Signal any in-flight HTTP request to cancel */
+    void requestCancel() {
+        shouldStop_ = true;
+    }
+    void resetCancel() {
+        shouldStop_ = false;
+    }
+
     std::string processMessage(const std::string& message) override;
     void setMessageCallback(
         std::function<void(const std::string&, const std::string&)> callback) override;
@@ -50,6 +58,7 @@ class DAWAgent : public AgentInterface {
     OpenAIClient openai_;
     dsl::Interpreter interpreter_;
     std::atomic<bool> running_{false};
+    std::atomic<bool> shouldStop_{false};
     std::function<void(const std::string&, const std::string&)> messageCallback_;
 };
 

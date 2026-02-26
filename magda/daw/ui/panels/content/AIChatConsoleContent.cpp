@@ -6,6 +6,58 @@
 
 namespace magda::daw::ui {
 
+// ============================================================================
+// RequestThread
+// ============================================================================
+
+AIChatConsoleContent::RequestThread::RequestThread(AIChatConsoleContent& owner)
+    : juce::Thread("AI Chat Request"), owner_(owner) {}
+
+void AIChatConsoleContent::RequestThread::run() {
+    auto response = owner_.agent_->processMessage(owner_.pendingMessage_.toStdString());
+
+    if (threadShouldExit())
+        return;
+
+    auto safeThis = juce::Component::SafePointer<AIChatConsoleContent>(&owner_);
+
+    juce::MessageManager::callAsync([safeThis, response = std::move(response)]() {
+        if (!safeThis)
+            return;
+
+        safeThis->stopTimer();
+
+        // Remove "Thinking..." line and show response
+        auto currentText = safeThis->chatHistory_.getText();
+        auto thinkingPos = currentText.lastIndexOf("AI: Thinking");
+        if (thinkingPos >= 0) {
+            // Find the end of the "Thinking..." line
+            auto lineEnd = currentText.indexOf(thinkingPos, "\n");
+            if (lineEnd < 0)
+                lineEnd = currentText.length();
+            currentText =
+                currentText.substring(0, thinkingPos) + currentText.substring(lineEnd + 1);
+        }
+
+        // Format response — prefix errors distinctly
+        juce::String formattedResponse(response);
+        if (formattedResponse.startsWith("Error:") ||
+            formattedResponse.startsWith("DSL execution error:")) {
+            formattedResponse = "[!] " + formattedResponse;
+        }
+
+        safeThis->chatHistory_.setText(currentText + "AI: " + formattedResponse + "\n\n");
+        safeThis->chatHistory_.moveCaretToEnd();
+        safeThis->inputBox_.setEnabled(true);
+        safeThis->inputBox_.grabKeyboardFocus();
+        safeThis->processing_ = false;
+    });
+}
+
+// ============================================================================
+// AIChatConsoleContent
+// ============================================================================
+
 AIChatConsoleContent::AIChatConsoleContent() {
     setName("AI Chat");
 
@@ -46,52 +98,73 @@ AIChatConsoleContent::AIChatConsoleContent() {
 }
 
 AIChatConsoleContent::~AIChatConsoleContent() {
-    // Wait for any in-flight background processing to finish
-    while (processing_)
-        juce::Thread::sleep(10);
+    stopTimer();
+
+    // Signal cancellation
+    shouldStop_ = true;
+    if (agent_)
+        agent_->requestCancel();
+
+    // Stop the background thread with a timeout
+    if (requestThread_) {
+        requestThread_->signalThreadShouldExit();
+        requestThread_->stopThread(5000);
+        requestThread_.reset();
+    }
 
     if (agent_)
         agent_->stop();
 }
 
 void AIChatConsoleContent::sendMessage(const juce::String& text) {
+    // If a previous request thread is still around, wait briefly
+    if (requestThread_ && requestThread_->isThreadRunning()) {
+        agent_->requestCancel();
+        requestThread_->signalThreadShouldExit();
+        requestThread_->stopThread(2000);
+    }
+
     processing_ = true;
     inputBox_.clear();
     inputBox_.setEnabled(false);
 
     appendToChat("You: " + text);
-    appendToChat("AI: Thinking...");
+    appendToChat("AI: Thinking");
 
-    // Run agent on background thread
-    auto safeThis = juce::Component::SafePointer<AIChatConsoleContent>(this);
-    auto messageText = text.toStdString();
+    // Reset cancel state and start new request
+    shouldStop_ = false;
+    agent_->resetCancel();
+    pendingMessage_ = text;
 
-    juce::Thread::launch([safeThis, messageText]() {
-        if (!safeThis)
-            return;
+    dotCount_ = 0;
+    startTimer(400);  // Animate dots every 400ms
 
-        auto response = safeThis->agent_->processMessage(messageText);
+    requestThread_ = std::make_unique<RequestThread>(*this);
+    requestThread_->startThread();
+}
 
-        juce::MessageManager::callAsync([safeThis, response = std::move(response)]() {
-            if (!safeThis)
-                return;
+void AIChatConsoleContent::timerCallback() {
+    if (!processing_) {
+        stopTimer();
+        return;
+    }
 
-            // Remove "Thinking..." and show response
-            auto currentText = safeThis->chatHistory_.getText();
-            auto thinkingPos = currentText.lastIndexOf("AI: Thinking...");
-            if (thinkingPos >= 0) {
-                safeThis->chatHistory_.setText(currentText.substring(0, thinkingPos) +
-                                               "AI: " + juce::String(response) + "\n\n");
-            } else {
-                safeThis->appendToChat("AI: " + juce::String(response));
-            }
+    dotCount_ = (dotCount_ % 3) + 1;
+    juce::String dots;
+    for (int i = 0; i < dotCount_; ++i)
+        dots += ".";
 
-            safeThis->chatHistory_.moveCaretToEnd();
-            safeThis->inputBox_.setEnabled(true);
-            safeThis->inputBox_.grabKeyboardFocus();
-            safeThis->processing_ = false;
-        });
-    });
+    // Update the "Thinking" line in the chat history
+    auto currentText = chatHistory_.getText();
+    auto thinkingPos = currentText.lastIndexOf("AI: Thinking");
+    if (thinkingPos >= 0) {
+        auto lineEnd = currentText.indexOf(thinkingPos, "\n");
+        if (lineEnd < 0)
+            lineEnd = currentText.length();
+        chatHistory_.setText(currentText.substring(0, thinkingPos) + "AI: Thinking" + dots +
+                             currentText.substring(lineEnd));
+        chatHistory_.moveCaretToEnd();
+    }
 }
 
 void AIChatConsoleContent::appendToChat(const juce::String& text) {

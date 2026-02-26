@@ -6,6 +6,7 @@
 
 #include "../daw/core/ClipManager.hpp"
 #include "../daw/core/TrackManager.hpp"
+#include "../daw/engine/AudioEngine.hpp"
 
 namespace magda::dsl {
 
@@ -43,7 +44,8 @@ Token Tokenizer::readIdentifier() {
     int startCol = col_;
     const char* start = pos_;
 
-    while (*pos_ && (std::isalnum(static_cast<unsigned char>(*pos_)) || *pos_ == '_')) {
+    while (*pos_ &&
+           (std::isalnum(static_cast<unsigned char>(*pos_)) || *pos_ == '_' || *pos_ == '#')) {
         pos_++;
         col_++;
     }
@@ -193,7 +195,7 @@ Token Tokenizer::next() {
         (c == '-' && std::isdigit(static_cast<unsigned char>(*(pos_ + 1)))))
         return readNumber();
 
-    if (std::isalpha(static_cast<unsigned char>(c)) || c == '_')
+    if (std::isalpha(static_cast<unsigned char>(c)) || c == '_' || c == '#')
         return readIdentifier();
 
     // Unknown character - skip it
@@ -502,6 +504,9 @@ bool Interpreter::parseMethodChain(Tokenizer& tok) {
                  method.value == "add_automation") {
             ctx_.addResult("'" + juce::String(method.value) + "' not yet supported in MVP");
             success = true;  // Don't fail, just skip
+        } else if (method.value == "map" || method.value == "for_each") {
+            ctx_.addResult("'" + juce::String(method.value) + "' not yet supported in MVP");
+            success = true;
         } else {
             ctx_.setError("Unknown method: " + juce::String(method.value));
             return false;
@@ -720,8 +725,11 @@ int Interpreter::findTrackByName(const juce::String& name) const {
 
 double Interpreter::barsToTime(int bar) const {
     // Convert 1-based bar number to seconds
-    // For MVP, use 120 BPM and 4/4 time
-    constexpr double bpm = 120.0;
+    double bpm = 120.0;  // fallback
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    if (engine)
+        bpm = engine->getTempo();
+
     constexpr double beatsPerBar = 4.0;
     return (bar - 1) * beatsPerBar * 60.0 / bpm;
 }
