@@ -8,6 +8,7 @@
 #include "../engine/AudioEngine.hpp"
 #include "ModulatorEngine.hpp"
 #include "RackInfo.hpp"
+#include "SelectionManager.hpp"
 
 namespace magda {
 
@@ -128,6 +129,11 @@ void TrackManager::deleteTrack(TrackId trackId) {
     auto* track = getTrack(trackId);
     if (!track)
         return;
+
+    // Clear selection if this track (or something on it) is selected
+    auto& sm = magda::SelectionManager::getInstance();
+    if (sm.getSelectedTrack() == trackId)
+        sm.clearSelection();
 
     // If this track has a parent, remove it from parent's children
     if (track->hasParent()) {
