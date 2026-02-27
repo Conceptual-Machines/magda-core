@@ -339,15 +339,46 @@ bool Interpreter::execute(const char* dslCode) {
 
     Tokenizer tok(dslCode);
 
+    int succeeded = 0;
+    int failed = 0;
+
     while (tok.hasMore()) {
-        if (!parseStatement(tok))
-            return false;
+        auto savedPos = tok.savePosition();
+
+        if (!parseStatement(tok)) {
+            // Log the error as a warning and skip to the next statement
+            ctx_.addResult("[!] " + ctx_.error);
+            ctx_.error.clear();
+            ctx_.hasError = false;
+            failed++;
+
+            // Advance past the failed statement to the next one.
+            // Statements start with 'track' or 'filter' at the beginning of a line.
+            // Skip tokens until we find a statement-starting keyword or EOF.
+            tok.restorePosition(savedPos);
+            tok.next();  // skip past the keyword that started this failed statement
+            while (tok.hasMore()) {
+                auto next = tok.peek();
+                if (next.is("track") || next.is("filter") || next.type == TokenType::END_OF_INPUT)
+                    break;
+                tok.next();
+            }
+            continue;
+        }
+
+        succeeded++;
 
         if (tok.peek().is(TokenType::SEMICOLON))
             tok.next();
     }
 
     DBG("MAGDA DSL: Execution complete");
+
+    if (succeeded == 0 && failed > 0) {
+        ctx_.setError("All " + juce::String(failed) + " statement(s) failed");
+        return false;
+    }
+
     return true;
 }
 
@@ -1368,6 +1399,11 @@ int Interpreter::parseNoteName(const std::string& name) {
 // ============================================================================
 
 ClipId Interpreter::getSelectedClipId() const {
+    // Prefer clip set during current DSL execution (e.g. by clip.new or clips.select)
+    if (ctx_.currentClipId >= 0)
+        return ctx_.currentClipId;
+
+    // Fall back to UI selection
     auto& sm = SelectionManager::getInstance();
     auto clipId = sm.getSelectedClip();
     if (clipId != INVALID_CLIP_ID)
@@ -1377,10 +1413,6 @@ ClipId Interpreter::getSelectedClipId() const {
     const auto& selected = sm.getSelectedClips();
     if (selected.size() == 1)
         return *selected.begin();
-
-    // Fall back to clip created/referenced in the current chain
-    if (ctx_.currentClipId >= 0)
-        return ctx_.currentClipId;
 
     // Fall back to the first clip on the current track
     if (ctx_.currentTrackId >= 0) {
