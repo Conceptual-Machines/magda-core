@@ -123,7 +123,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     contextLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     contextLabel_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     contextLabel_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
-    contextLabel_.setBorderSize(juce::BorderSize<int>(0, 8, 0, 4));
+    contextLabel_.setBorderSize(juce::BorderSize<int>(0, 2, 0, 4));
     contextLabel_.setInterceptsMouseClicks(true, false);
     contextLabel_.addMouseListener(this, false);
     addAndMakeVisible(contextLabel_);
@@ -258,9 +258,16 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
             icon = clipIconDrawable_.get();
 
         if (icon) {
-            auto iconBounds = contextIconBounds_.toFloat().reduced(5.0f);
-            float opacity = contextEnabled_ ? 1.0f : 0.3f;
-            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, opacity);
+            auto iconBounds = contextIconBounds_.toFloat().reduced(6.0f);
+            auto colour = contextEnabled_ ? DarkTheme::getAccentColour()
+                                          : DarkTheme::getSecondaryTextColour().withAlpha(0.3f);
+            // Tint SVG: replace source colours with target
+            static const auto svgGrey = juce::Colour(0xFFB3B3B3);
+            static const auto svgWhite = juce::Colours::white;
+            icon->replaceColour(svgGrey, colour);
+            icon->replaceColour(svgWhite, colour);
+            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
+            icon->replaceColour(colour, svgGrey);
         }
     }
 }
@@ -275,7 +282,7 @@ void AIChatConsoleContent::resized() {
     auto bottomBar = bounds.removeFromBottom(26);
     bottomBarBounds_ = bottomBar;
     sendButton_.setBounds(bottomBar.removeFromRight(22));
-    contextIconBounds_ = bottomBar.removeFromLeft(26);
+    contextIconBounds_ = bottomBar.removeFromLeft(22);
     contextLabel_.setBounds(bottomBar);
 
     // Input box directly above bottom bar (no gap — unified shape)
