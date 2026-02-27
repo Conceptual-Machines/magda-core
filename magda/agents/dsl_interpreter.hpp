@@ -107,6 +107,7 @@ class Params {
 // ============================================================================
 struct InterpreterContext {
     int currentTrackId = -1;
+    int currentClipId = -1;
 
     // For filter operations
     std::vector<int> filteredTrackIds;

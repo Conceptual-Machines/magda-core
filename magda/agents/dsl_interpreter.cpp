@@ -658,6 +658,7 @@ bool Interpreter::executeNewClip(const Params& params) {
         return false;
     }
 
+    ctx_.currentClipId = clipId;
     ctx_.addResult("Created MIDI clip at bar " + juce::String(bar, 2) + ", length " +
                    juce::String(lengthBars, 2) + " bars");
     return true;
@@ -1251,6 +1252,10 @@ ClipId Interpreter::getSelectedClipId() const {
     const auto& selected = sm.getSelectedClips();
     if (selected.size() == 1)
         return *selected.begin();
+
+    // Fall back to clip created/referenced in the current chain
+    if (ctx_.currentClipId >= 0)
+        return ctx_.currentClipId;
 
     return INVALID_CLIP_ID;
 }
