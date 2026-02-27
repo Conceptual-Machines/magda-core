@@ -1376,6 +1376,34 @@ ClipId Interpreter::getSelectedClipId() const {
 }
 
 // ============================================================================
+// Helper: Ensure Note Selection
+// ============================================================================
+
+bool Interpreter::ensureNoteSelection() {
+    auto& sm = SelectionManager::getInstance();
+    if (sm.getNoteSelection().isValid())
+        return true;
+
+    // No notes selected — try to auto-select all notes in the current clip
+    auto clipId = getSelectedClipId();
+    if (clipId == INVALID_CLIP_ID)
+        return false;
+
+    auto& cm = ClipManager::getInstance();
+    auto* clip = cm.getClip(clipId);
+    if (!clip || clip->midiNotes.empty())
+        return false;
+
+    std::vector<size_t> allIndices;
+    allIndices.reserve(clip->midiNotes.size());
+    for (size_t i = 0; i < clip->midiNotes.size(); i++)
+        allIndices.push_back(i);
+
+    sm.selectNotes(clipId, allIndices);
+    return sm.getNoteSelection().isValid();
+}
+
+// ============================================================================
 // Note Operation Methods
 // ============================================================================
 
@@ -1533,12 +1561,13 @@ bool Interpreter::executeAddNote(const Params& params) {
 }
 
 bool Interpreter::executeDeleteNotes() {
-    auto& sm = SelectionManager::getInstance();
-    const auto& noteSel = sm.getNoteSelection();
-    if (!noteSel.isValid()) {
+    if (!ensureNoteSelection()) {
         ctx_.setError("No notes selected for notes.delete");
         return false;
     }
+
+    auto& sm = SelectionManager::getInstance();
+    const auto& noteSel = sm.getNoteSelection();
 
     UndoManager::getInstance().executeCommand(
         std::make_unique<DeleteMultipleMidiNotesCommand>(noteSel.clipId, noteSel.noteIndices));
@@ -1556,12 +1585,13 @@ bool Interpreter::executeTranspose(const Params& params) {
         return true;
     }
 
-    auto& sm = SelectionManager::getInstance();
-    const auto& noteSel = sm.getNoteSelection();
-    if (!noteSel.isValid()) {
+    if (!ensureNoteSelection()) {
         ctx_.setError("No notes selected for notes.transpose");
         return false;
     }
+
+    auto& sm = SelectionManager::getInstance();
+    const auto& noteSel = sm.getNoteSelection();
 
     auto& cm = ClipManager::getInstance();
     auto* clip = cm.getClip(noteSel.clipId);
@@ -1593,12 +1623,13 @@ bool Interpreter::executeSetVelocity(const Params& params) {
     int velocity = params.getInt("value", 100);
     velocity = juce::jlimit(0, 127, velocity);
 
-    auto& sm = SelectionManager::getInstance();
-    const auto& noteSel = sm.getNoteSelection();
-    if (!noteSel.isValid()) {
+    if (!ensureNoteSelection()) {
         ctx_.setError("No notes selected for notes.set_velocity");
         return false;
     }
+
+    auto& sm = SelectionManager::getInstance();
+    const auto& noteSel = sm.getNoteSelection();
 
     std::vector<std::pair<size_t, int>> noteVelocities;
     for (auto idx : noteSel.noteIndices)
@@ -1615,12 +1646,13 @@ bool Interpreter::executeSetVelocity(const Params& params) {
 bool Interpreter::executeQuantize(const Params& params) {
     double grid = params.getFloat("grid", 0.25);
 
-    auto& sm = SelectionManager::getInstance();
-    const auto& noteSel = sm.getNoteSelection();
-    if (!noteSel.isValid()) {
+    if (!ensureNoteSelection()) {
         ctx_.setError("No notes selected for notes.quantize");
         return false;
     }
+
+    auto& sm = SelectionManager::getInstance();
+    const auto& noteSel = sm.getNoteSelection();
 
     UndoManager::getInstance().executeCommand(std::make_unique<QuantizeMidiNotesCommand>(
         noteSel.clipId, noteSel.noteIndices, grid, QuantizeMode::StartOnly));
@@ -1647,12 +1679,13 @@ bool Interpreter::executeResizeNotes(const Params& params) {
         return false;
     }
 
-    auto& sm = SelectionManager::getInstance();
-    const auto& noteSel = sm.getNoteSelection();
-    if (!noteSel.isValid()) {
+    if (!ensureNoteSelection()) {
         ctx_.setError("No notes selected for notes.resize");
         return false;
     }
+
+    auto& sm = SelectionManager::getInstance();
+    const auto& noteSel = sm.getNoteSelection();
 
     std::vector<std::pair<size_t, double>> noteLengths;
     for (auto idx : noteSel.noteIndices)

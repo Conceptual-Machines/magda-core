@@ -194,6 +194,7 @@ class Interpreter {
     bool executeResizeNotes(const Params& params);
     static int parseNoteName(const std::string& name);
     ClipId getSelectedClipId() const;
+    bool ensureNoteSelection();
 
     // Parameter parsing
     bool parseParams(Tokenizer& tok, Params& outParams);
