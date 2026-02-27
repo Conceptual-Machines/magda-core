@@ -6,8 +6,10 @@
 
 #include "../daw/core/ClipManager.hpp"
 #include "../daw/core/DeviceInfo.hpp"
+#include "../daw/core/MidiNoteCommands.hpp"
 #include "../daw/core/SelectionManager.hpp"
 #include "../daw/core/TrackManager.hpp"
+#include "../daw/core/UndoManager.hpp"
 #include "../daw/engine/AudioEngine.hpp"
 #include "../daw/engine/TracktionEngineWrapper.hpp"
 
@@ -187,6 +189,33 @@ Token Tokenizer::next() {
                 return Token(TokenType::EQUALS_EQUALS, "==", line_, startCol);
             }
             return Token(TokenType::EQUALS, "=", line_, startCol);
+        case '!':
+            pos_++;
+            col_++;
+            if (*pos_ == '=') {
+                pos_++;
+                col_++;
+                return Token(TokenType::NOT_EQUALS, "!=", line_, startCol);
+            }
+            return Token(TokenType::ERROR, "!", line_, startCol);
+        case '>':
+            pos_++;
+            col_++;
+            if (*pos_ == '=') {
+                pos_++;
+                col_++;
+                return Token(TokenType::GREATER_EQUALS, ">=", line_, startCol);
+            }
+            return Token(TokenType::GREATER, ">", line_, startCol);
+        case '<':
+            pos_++;
+            col_++;
+            if (*pos_ == '=') {
+                pos_++;
+                col_++;
+                return Token(TokenType::LESS_EQUALS, "<=", line_, startCol);
+            }
+            return Token(TokenType::LESS, "<", line_, startCol);
         default:
             break;
     }
@@ -480,6 +509,18 @@ bool Interpreter::parseMethodChain(Tokenizer& tok) {
             return false;
         }
 
+        // select_clips and select_notes parse their own predicate syntax
+        if (method.value == "select_clips") {
+            if (!executeSelectClips(tok))
+                return false;
+            continue;
+        }
+        if (method.value == "select_notes") {
+            if (!executeSelectNotes(tok))
+                return false;
+            continue;
+        }
+
         if (!tok.expect(TokenType::LPAREN)) {
             ctx_.setError("Expected '(' after method '" + juce::String(method.value) + "'");
             return false;
@@ -503,12 +544,24 @@ bool Interpreter::parseMethodChain(Tokenizer& tok) {
             success = executeDelete();
         else if (method.value == "delete_clip")
             success = executeDeleteClip(params);
+        else if (method.value == "rename_clip")
+            success = executeRenameClip(params);
         else if (method.value == "add_fx")
             success = executeAddFx(params);
         else if (method.value == "select")
             success = executeSelect();
-        else if (method.value == "select_clips")
-            success = executeSelectClips(params);
+        else if (method.value == "add_note")
+            success = executeAddNote(params);
+        else if (method.value == "delete_notes")
+            success = executeDeleteNotes();
+        else if (method.value == "transpose")
+            success = executeTranspose(params);
+        else if (method.value == "set_velocity")
+            success = executeSetVelocity(params);
+        else if (method.value == "quantize")
+            success = executeQuantize(params);
+        else if (method.value == "resize_notes")
+            success = executeResizeNotes(params);
         else if (method.value == "addAutomation" || method.value == "add_automation") {
             ctx_.addResult("'" + juce::String(method.value) + "' not yet supported in MVP");
             success = true;  // Don't fail, just skip
@@ -583,14 +636,14 @@ bool Interpreter::executeNewClip(const Params& params) {
         return false;
     }
 
-    int bar = params.getInt("bar", 1);
-    int lengthBars = params.getInt("length_bars", 4);
+    double bar = params.getFloat("bar", 1.0);
+    double lengthBars = params.getFloat("length_bars", 4.0);
 
-    if (bar < 1) {
+    if (bar < 1.0) {
         ctx_.setError("Bar number must be positive, got " + juce::String(bar));
         return false;
     }
-    if (lengthBars < 1) {
+    if (lengthBars <= 0.0) {
         ctx_.setError("Clip length must be positive, got " + juce::String(lengthBars));
         return false;
     }
@@ -606,8 +659,8 @@ bool Interpreter::executeNewClip(const Params& params) {
         return false;
     }
 
-    ctx_.addResult("Created MIDI clip at bar " + juce::String(bar) + ", length " +
-                   juce::String(lengthBars) + " bars");
+    ctx_.addResult("Created MIDI clip at bar " + juce::String(bar, 2) + ", length " +
+                   juce::String(lengthBars, 2) + " bars");
     return true;
 }
 
@@ -701,6 +754,52 @@ bool Interpreter::executeDeleteClip(const Params& params) {
     } else {
         ctx_.setError("Clip index " + juce::String(index) + " out of range");
         return false;
+    }
+
+    return true;
+}
+
+bool Interpreter::executeRenameClip(const Params& params) {
+    if (!params.has("name")) {
+        ctx_.setError("rename_clip requires 'name' parameter");
+        return false;
+    }
+
+    juce::String newName(params.get("name"));
+    auto& cm = ClipManager::getInstance();
+
+    if (params.has("index")) {
+        // Rename a specific clip by index on the current track
+        if (ctx_.currentTrackId < 0) {
+            ctx_.setError("No track context for rename_clip with index");
+            return false;
+        }
+        auto clipIds = cm.getClipsOnTrack(ctx_.currentTrackId);
+        int index = params.getInt("index");
+        if (index < 0 || index >= static_cast<int>(clipIds.size())) {
+            ctx_.setError("Clip index " + juce::String(index) + " out of range");
+            return false;
+        }
+        cm.setClipName(clipIds[static_cast<size_t>(index)], newName);
+        ctx_.addResult("Renamed clip at index " + juce::String(index) + " to '" + newName + "'");
+    } else {
+        // Rename all currently selected clips
+        auto& sm = SelectionManager::getInstance();
+        const auto& selected = sm.getSelectedClips();
+        auto singleClip = sm.getSelectedClip();
+
+        if (!selected.empty()) {
+            for (auto clipId : selected)
+                cm.setClipName(clipId, newName);
+            ctx_.addResult("Renamed " + juce::String(static_cast<int>(selected.size())) +
+                           " selected clip(s) to '" + newName + "'");
+        } else if (singleClip != INVALID_CLIP_ID) {
+            cm.setClipName(singleClip, newName);
+            ctx_.addResult("Renamed selected clip to '" + newName + "'");
+        } else {
+            ctx_.setError("No clip index provided and no clips selected");
+            return false;
+        }
     }
 
     return true;
@@ -839,44 +938,101 @@ bool Interpreter::executeSelect() {
     return true;
 }
 
-bool Interpreter::executeSelectClips(const Params& params) {
+bool Interpreter::executeSelectClips(Tokenizer& tok) {
+    // Parse: (clip.field op value)
+    if (!tok.expect(TokenType::LPAREN)) {
+        ctx_.setError("Expected '(' after 'select_clips'");
+        return false;
+    }
+
+    if (!tok.expect("clip")) {
+        ctx_.setError("Expected 'clip' in select_clips condition");
+        return false;
+    }
+    if (!tok.expect(TokenType::DOT)) {
+        ctx_.setError("Expected '.' after 'clip'");
+        return false;
+    }
+
+    Token field = tok.next();
+    if (field.type != TokenType::IDENTIFIER) {
+        ctx_.setError("Expected field name after 'clip.'");
+        return false;
+    }
+
+    Token op = tok.next();
+    if (op.type != TokenType::EQUALS_EQUALS && op.type != TokenType::NOT_EQUALS &&
+        op.type != TokenType::GREATER && op.type != TokenType::GREATER_EQUALS &&
+        op.type != TokenType::LESS && op.type != TokenType::LESS_EQUALS) {
+        ctx_.setError("Expected comparison operator in select_clips condition");
+        return false;
+    }
+
+    Token value = tok.next();
+    if (value.type != TokenType::NUMBER && value.type != TokenType::STRING) {
+        ctx_.setError("Expected value in select_clips condition");
+        return false;
+    }
+
+    if (!tok.expect(TokenType::RPAREN)) {
+        ctx_.setError("Expected ')' after select_clips condition");
+        return false;
+    }
+
+    double numValue = std::atof(value.value.c_str());
+
+    // Get tempo for bar/time conversions
+    double bpm = 120.0;
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    if (engine)
+        bpm = engine->getTempo();
+    double secondsPerBar = 4.0 * 60.0 / bpm;
+
+    // Comparator lambda
+    auto compare = [&](double clipVal) -> bool {
+        if (op.type == TokenType::EQUALS_EQUALS)
+            return std::abs(clipVal - numValue) < 0.001;
+        if (op.type == TokenType::NOT_EQUALS)
+            return std::abs(clipVal - numValue) >= 0.001;
+        if (op.type == TokenType::GREATER)
+            return clipVal > numValue;
+        if (op.type == TokenType::GREATER_EQUALS)
+            return clipVal >= numValue;
+        if (op.type == TokenType::LESS)
+            return clipVal < numValue;
+        if (op.type == TokenType::LESS_EQUALS)
+            return clipVal <= numValue;
+        return false;
+    };
+
     auto& cm = ClipManager::getInstance();
 
-    auto selectOnTrack = [&](int trackId) {
+    auto matchOnTrack = [&](int trackId) {
         auto clipIds = cm.getClipsOnTrack(trackId);
         std::unordered_set<ClipId> matched;
-
-        double minLenBars = params.getFloat("min_length_bars", -1.0);
-        double maxLenBars = params.getFloat("max_length_bars", -1.0);
-        int minBar = params.getInt("min_bar", -1);
-        int maxBar = params.getInt("max_bar", -1);
 
         for (auto clipId : clipIds) {
             auto* clip = cm.getClip(clipId);
             if (!clip)
                 continue;
 
-            // Convert clip length to bars
-            double bpm = 120.0;
-            auto* engine = TrackManager::getInstance().getAudioEngine();
-            if (engine)
-                bpm = engine->getTempo();
-            double secondsPerBar = 4.0 * 60.0 / bpm;
-            double clipLenBars = clip->length / secondsPerBar;
-            double clipStartBar = (clip->startTime / secondsPerBar) + 1.0;
+            double clipVal = 0.0;
+            if (field.value == "length_bars")
+                clipVal = clip->length / secondsPerBar;
+            else if (field.value == "start_bar")
+                clipVal = (clip->startTime / secondsPerBar) + 1.0;
+            else if (field.value == "length")
+                clipVal = clip->length;
+            else if (field.value == "start")
+                clipVal = clip->startTime;
+            else {
+                ctx_.setError("Unknown clip field: " + juce::String(field.value));
+                return matched;  // empty
+            }
 
-            if (minLenBars >= 0 && clipLenBars < minLenBars)
-                continue;
-            if (maxLenBars >= 0 && clipLenBars > maxLenBars)
-                continue;
-            if (minBar >= 0 && clipStartBar < minBar)
-                continue;
-            if (maxBar >= 0 && clipStartBar > maxBar)
-                continue;
-
-            matched.insert(clipId);
+            if (compare(clipVal))
+                matched.insert(clipId);
         }
-
         return matched;
     };
 
@@ -884,19 +1040,21 @@ bool Interpreter::executeSelectClips(const Params& params) {
 
     if (ctx_.inFilterContext) {
         for (int trackId : ctx_.filteredTrackIds) {
-            auto m = selectOnTrack(trackId);
+            auto m = matchOnTrack(trackId);
             allMatched.insert(m.begin(), m.end());
         }
     } else if (ctx_.currentTrackId >= 0) {
-        allMatched = selectOnTrack(ctx_.currentTrackId);
+        allMatched = matchOnTrack(ctx_.currentTrackId);
     } else {
-        // No track context — search all tracks
         auto& tm = TrackManager::getInstance();
         for (const auto& track : tm.getTracks()) {
-            auto m = selectOnTrack(track.id);
+            auto m = matchOnTrack(track.id);
             allMatched.insert(m.begin(), m.end());
         }
     }
+
+    if (ctx_.hasError)
+        return false;
 
     if (allMatched.empty()) {
         ctx_.addResult("No clips matched the criteria");
@@ -936,7 +1094,7 @@ int Interpreter::findTrackByName(const juce::String& name) const {
     return -1;
 }
 
-double Interpreter::barsToTime(int bar) const {
+double Interpreter::barsToTime(double bar) const {
     // Convert 1-based bar number to seconds
     double bpm = 120.0;  // fallback
     auto* engine = TrackManager::getInstance().getAudioEngine();
@@ -944,7 +1102,7 @@ double Interpreter::barsToTime(int bar) const {
         bpm = engine->getTempo();
 
     constexpr double beatsPerBar = 4.0;
-    return (bar - 1) * beatsPerBar * 60.0 / bpm;
+    return (bar - 1.0) * beatsPerBar * 60.0 / bpm;
 }
 
 // ============================================================================
@@ -953,11 +1111,10 @@ double Interpreter::barsToTime(int bar) const {
 
 juce::String Interpreter::buildStateSnapshot() {
     auto& tm = TrackManager::getInstance();
-    auto& cm = ClipManager::getInstance();
 
     auto* root = new juce::DynamicObject();
 
-    // Tracks
+    // Tracks — lightweight: just id, name, type
     juce::Array<juce::var> tracksArray;
     int index = 1;
     for (const auto& track : tm.getTracks()) {
@@ -965,36 +1122,429 @@ juce::String Interpreter::buildStateSnapshot() {
         trackObj->setProperty("id", index);
         trackObj->setProperty("name", track.name);
         trackObj->setProperty("type", juce::String(getTrackTypeName(track.type)));
-        trackObj->setProperty("volume", track.volume);
-        trackObj->setProperty("pan", track.pan);
-        trackObj->setProperty("muted", track.muted);
-        trackObj->setProperty("soloed", track.soloed);
-
-        // Clips on this track
-        auto clipIds = cm.getClipsOnTrack(track.id);
-        if (!clipIds.empty()) {
-            juce::Array<juce::var> clipsArray;
-            for (auto clipId : clipIds) {
-                auto* clip = cm.getClip(clipId);
-                if (clip) {
-                    auto* clipObj = new juce::DynamicObject();
-                    clipObj->setProperty("name", clip->name);
-                    clipObj->setProperty("type", clip->type == ClipType::Audio ? "audio" : "midi");
-                    clipObj->setProperty("start", clip->startTime);
-                    clipObj->setProperty("length", clip->length);
-                    clipsArray.add(juce::var(clipObj));
-                }
-            }
-            trackObj->setProperty("clips", clipsArray);
-        }
-
         tracksArray.add(juce::var(trackObj));
         index++;
     }
     root->setProperty("tracks", tracksArray);
     root->setProperty("track_count", tm.getNumTracks());
 
+    // Current selection context
+    auto& sm = SelectionManager::getInstance();
+    auto selTrack = sm.getSelectedTrack();
+    if (selTrack != INVALID_TRACK_ID) {
+        // Find 1-based index for the selected track
+        int selIndex = 1;
+        for (const auto& track : tm.getTracks()) {
+            if (track.id == selTrack)
+                break;
+            selIndex++;
+        }
+        root->setProperty("selected_track_id", selIndex);
+    }
+
+    // Selected clip context
+    auto& cm = ClipManager::getInstance();
+    auto selClip = sm.getSelectedClip();
+    if (selClip != INVALID_CLIP_ID) {
+        auto* clip = cm.getClip(selClip);
+        if (clip) {
+            auto clipIds = cm.getClipsOnTrack(clip->trackId);
+            int clipIdx = 1;
+            for (auto cid : clipIds) {
+                if (cid == selClip)
+                    break;
+                clipIdx++;
+            }
+            root->setProperty("selected_clip_index", clipIdx);
+            int ownerIdx = 1;
+            for (const auto& t : tm.getTracks()) {
+                if (t.id == clip->trackId)
+                    break;
+                ownerIdx++;
+            }
+            root->setProperty("selected_clip_track_id", ownerIdx);
+        }
+    }
+
     return juce::JSON::toString(juce::var(root), true);
+}
+
+// ============================================================================
+// Note Name Parsing
+// ============================================================================
+
+int Interpreter::parseNoteName(const std::string& name) {
+    // Parse note names like C4, C#4, Db3, Bb3 → MIDI number
+    // C4 = 60
+    if (name.empty())
+        return -1;
+
+    // If it's a plain number, return it directly
+    bool allDigits = true;
+    size_t start = (name[0] == '-') ? 1 : 0;
+    for (size_t i = start; i < name.size(); i++) {
+        if (!std::isdigit(static_cast<unsigned char>(name[i]))) {
+            allDigits = false;
+            break;
+        }
+    }
+    if (allDigits && !name.empty())
+        return std::atoi(name.c_str());
+
+    // Parse note letter
+    static const int noteOffsets[] = {
+        9, 11, 0, 2, 4, 5, 7  // A=9, B=11, C=0, D=2, E=4, F=5, G=7
+    };
+
+    char letter = static_cast<char>(std::toupper(static_cast<unsigned char>(name[0])));
+    if (letter < 'A' || letter > 'G')
+        return -1;
+
+    int semitone = noteOffsets[letter - 'A'];
+    size_t pos = 1;
+
+    // Check for sharp/flat
+    if (pos < name.size() && name[pos] == '#') {
+        semitone++;
+        pos++;
+    } else if (pos < name.size() && (name[pos] == 'b' || name[pos] == 'B')) {
+        // Distinguish 'b' (flat) from 'B' at start — here pos>0 so it's a modifier
+        // But watch for "Bb3" — first B is note, second b is flat
+        semitone--;
+        pos++;
+    }
+
+    // Parse octave number
+    if (pos >= name.size())
+        return -1;
+
+    bool negative = false;
+    if (name[pos] == '-') {
+        negative = true;
+        pos++;
+    }
+    if (pos >= name.size())
+        return -1;
+
+    int octave = 0;
+    while (pos < name.size() && std::isdigit(static_cast<unsigned char>(name[pos]))) {
+        octave = octave * 10 + (name[pos] - '0');
+        pos++;
+    }
+    if (negative)
+        octave = -octave;
+
+    // MIDI: C4 = 60, so octave 4 base = (4+1)*12 = 60, C offset = 0 → 60
+    return (octave + 1) * 12 + semitone;
+}
+
+// ============================================================================
+// Helper: Get Selected Clip
+// ============================================================================
+
+ClipId Interpreter::getSelectedClipId() const {
+    auto& sm = SelectionManager::getInstance();
+    auto clipId = sm.getSelectedClip();
+    if (clipId != INVALID_CLIP_ID)
+        return clipId;
+
+    // Also check multi-selection — if exactly one clip selected, use it
+    const auto& selected = sm.getSelectedClips();
+    if (selected.size() == 1)
+        return *selected.begin();
+
+    return INVALID_CLIP_ID;
+}
+
+// ============================================================================
+// Note Operation Methods
+// ============================================================================
+
+bool Interpreter::executeSelectNotes(Tokenizer& tok) {
+    // Parse: (note.field op value)
+    if (!tok.expect(TokenType::LPAREN)) {
+        ctx_.setError("Expected '(' after 'select_notes'");
+        return false;
+    }
+
+    if (!tok.expect("note")) {
+        ctx_.setError("Expected 'note' in select_notes condition");
+        return false;
+    }
+    if (!tok.expect(TokenType::DOT)) {
+        ctx_.setError("Expected '.' after 'note'");
+        return false;
+    }
+
+    Token field = tok.next();
+    if (field.type != TokenType::IDENTIFIER) {
+        ctx_.setError("Expected field name after 'note.'");
+        return false;
+    }
+
+    Token op = tok.next();
+    if (op.type != TokenType::EQUALS_EQUALS && op.type != TokenType::NOT_EQUALS &&
+        op.type != TokenType::GREATER && op.type != TokenType::GREATER_EQUALS &&
+        op.type != TokenType::LESS && op.type != TokenType::LESS_EQUALS) {
+        ctx_.setError("Expected comparison operator in select_notes condition");
+        return false;
+    }
+
+    Token value = tok.next();
+    if (value.type != TokenType::NUMBER && value.type != TokenType::IDENTIFIER &&
+        value.type != TokenType::STRING) {
+        ctx_.setError("Expected value in select_notes condition");
+        return false;
+    }
+
+    if (!tok.expect(TokenType::RPAREN)) {
+        ctx_.setError("Expected ')' after select_notes condition");
+        return false;
+    }
+
+    // Get the selected clip
+    auto clipId = getSelectedClipId();
+    if (clipId == INVALID_CLIP_ID) {
+        ctx_.setError("No clip selected for select_notes");
+        return false;
+    }
+
+    auto& cm = ClipManager::getInstance();
+    auto* clip = cm.getClip(clipId);
+    if (!clip) {
+        ctx_.setError("Selected clip not found");
+        return false;
+    }
+
+    // Resolve value — for pitch field, try note name parsing
+    double numValue = 0.0;
+    if (field.value == "pitch") {
+        int midiNote = parseNoteName(value.value);
+        if (midiNote < 0) {
+            ctx_.setError("Invalid note name or MIDI number: " + juce::String(value.value));
+            return false;
+        }
+        numValue = static_cast<double>(midiNote);
+    } else {
+        numValue = std::atof(value.value.c_str());
+    }
+
+    // Comparator
+    auto compare = [&](double noteVal) -> bool {
+        if (op.type == TokenType::EQUALS_EQUALS)
+            return std::abs(noteVal - numValue) < 0.001;
+        if (op.type == TokenType::NOT_EQUALS)
+            return std::abs(noteVal - numValue) >= 0.001;
+        if (op.type == TokenType::GREATER)
+            return noteVal > numValue;
+        if (op.type == TokenType::GREATER_EQUALS)
+            return noteVal >= numValue;
+        if (op.type == TokenType::LESS)
+            return noteVal < numValue;
+        if (op.type == TokenType::LESS_EQUALS)
+            return noteVal <= numValue;
+        return false;
+    };
+
+    // Match notes
+    std::vector<size_t> matched;
+    for (size_t i = 0; i < clip->midiNotes.size(); i++) {
+        const auto& note = clip->midiNotes[i];
+        double noteVal = 0.0;
+
+        if (field.value == "pitch")
+            noteVal = static_cast<double>(note.noteNumber);
+        else if (field.value == "velocity")
+            noteVal = static_cast<double>(note.velocity);
+        else if (field.value == "start_beat")
+            noteVal = note.startBeat;
+        else if (field.value == "length_beats")
+            noteVal = note.lengthBeats;
+        else {
+            ctx_.setError("Unknown note field: " + juce::String(field.value));
+            return false;
+        }
+
+        if (compare(noteVal))
+            matched.push_back(i);
+    }
+
+    auto& sm = SelectionManager::getInstance();
+    if (matched.empty()) {
+        sm.clearNoteSelection();
+        ctx_.addResult("No notes matched the criteria");
+    } else {
+        sm.selectNotes(clipId, matched);
+        ctx_.addResult("Selected " + juce::String(static_cast<int>(matched.size())) + " note(s)");
+    }
+
+    return true;
+}
+
+bool Interpreter::executeAddNote(const Params& params) {
+    auto clipId = getSelectedClipId();
+    if (clipId == INVALID_CLIP_ID) {
+        ctx_.setError("No clip selected for add_note");
+        return false;
+    }
+
+    // Parse pitch (required)
+    if (!params.has("pitch")) {
+        ctx_.setError("add_note requires 'pitch' parameter");
+        return false;
+    }
+
+    int noteNumber = parseNoteName(params.get("pitch"));
+    if (noteNumber < 0 || noteNumber > 127) {
+        ctx_.setError("Invalid pitch: " + juce::String(params.get("pitch")));
+        return false;
+    }
+
+    double beat = params.getFloat("beat", 0.0);
+    double length = params.getFloat("length", 1.0);
+    int velocity = params.getInt("velocity", 100);
+
+    UndoManager::getInstance().executeCommand(
+        std::make_unique<AddMidiNoteCommand>(clipId, beat, noteNumber, length, velocity));
+
+    ctx_.addResult("Added note (pitch=" + juce::String(noteNumber) +
+                   ", beat=" + juce::String(beat, 2) + ", length=" + juce::String(length, 2) +
+                   ", velocity=" + juce::String(velocity) + ")");
+    return true;
+}
+
+bool Interpreter::executeDeleteNotes() {
+    auto& sm = SelectionManager::getInstance();
+    const auto& noteSel = sm.getNoteSelection();
+    if (!noteSel.isValid()) {
+        ctx_.setError("No notes selected for delete_notes");
+        return false;
+    }
+
+    UndoManager::getInstance().executeCommand(
+        std::make_unique<DeleteMultipleMidiNotesCommand>(noteSel.clipId, noteSel.noteIndices));
+
+    int count = static_cast<int>(noteSel.noteIndices.size());
+    sm.clearNoteSelection();
+    ctx_.addResult("Deleted " + juce::String(count) + " note(s)");
+    return true;
+}
+
+bool Interpreter::executeTranspose(const Params& params) {
+    int semitones = params.getInt("semitones", 0);
+    if (semitones == 0) {
+        ctx_.addResult("Transpose by 0 semitones (no change)");
+        return true;
+    }
+
+    auto& sm = SelectionManager::getInstance();
+    const auto& noteSel = sm.getNoteSelection();
+    if (!noteSel.isValid()) {
+        ctx_.setError("No notes selected for transpose");
+        return false;
+    }
+
+    auto& cm = ClipManager::getInstance();
+    auto* clip = cm.getClip(noteSel.clipId);
+    if (!clip) {
+        ctx_.setError("Clip not found for transpose");
+        return false;
+    }
+
+    std::vector<MoveMultipleMidiNotesCommand::NoteMove> moves;
+    for (auto idx : noteSel.noteIndices) {
+        if (idx < clip->midiNotes.size()) {
+            const auto& note = clip->midiNotes[idx];
+            int newNote = juce::jlimit(0, 127, note.noteNumber + semitones);
+            moves.push_back({idx, note.startBeat, newNote});
+        }
+    }
+
+    if (!moves.empty()) {
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<MoveMultipleMidiNotesCommand>(noteSel.clipId, std::move(moves)));
+    }
+
+    ctx_.addResult("Transposed " + juce::String(static_cast<int>(noteSel.noteIndices.size())) +
+                   " note(s) by " + juce::String(semitones) + " semitones");
+    return true;
+}
+
+bool Interpreter::executeSetVelocity(const Params& params) {
+    int velocity = params.getInt("value", 100);
+    velocity = juce::jlimit(0, 127, velocity);
+
+    auto& sm = SelectionManager::getInstance();
+    const auto& noteSel = sm.getNoteSelection();
+    if (!noteSel.isValid()) {
+        ctx_.setError("No notes selected for set_velocity");
+        return false;
+    }
+
+    std::vector<std::pair<size_t, int>> noteVelocities;
+    for (auto idx : noteSel.noteIndices)
+        noteVelocities.emplace_back(idx, velocity);
+
+    UndoManager::getInstance().executeCommand(std::make_unique<SetMultipleNoteVelocitiesCommand>(
+        noteSel.clipId, std::move(noteVelocities)));
+
+    ctx_.addResult("Set velocity to " + juce::String(velocity) + " on " +
+                   juce::String(static_cast<int>(noteSel.noteIndices.size())) + " note(s)");
+    return true;
+}
+
+bool Interpreter::executeQuantize(const Params& params) {
+    double grid = params.getFloat("grid", 0.25);
+
+    auto& sm = SelectionManager::getInstance();
+    const auto& noteSel = sm.getNoteSelection();
+    if (!noteSel.isValid()) {
+        ctx_.setError("No notes selected for quantize");
+        return false;
+    }
+
+    UndoManager::getInstance().executeCommand(std::make_unique<QuantizeMidiNotesCommand>(
+        noteSel.clipId, noteSel.noteIndices, grid, QuantizeMode::StartOnly));
+
+    juce::String gridName;
+    if (std::abs(grid - 0.25) < 0.001)
+        gridName = "16th notes";
+    else if (std::abs(grid - 0.5) < 0.001)
+        gridName = "8th notes";
+    else if (std::abs(grid - 1.0) < 0.001)
+        gridName = "quarter notes";
+    else
+        gridName = juce::String(grid, 2) + " beats";
+
+    ctx_.addResult("Quantized " + juce::String(static_cast<int>(noteSel.noteIndices.size())) +
+                   " note(s) to " + gridName);
+    return true;
+}
+
+bool Interpreter::executeResizeNotes(const Params& params) {
+    double length = params.getFloat("length", 1.0);
+    if (length <= 0.0) {
+        ctx_.setError("Note length must be positive");
+        return false;
+    }
+
+    auto& sm = SelectionManager::getInstance();
+    const auto& noteSel = sm.getNoteSelection();
+    if (!noteSel.isValid()) {
+        ctx_.setError("No notes selected for resize_notes");
+        return false;
+    }
+
+    std::vector<std::pair<size_t, double>> noteLengths;
+    for (auto idx : noteSel.noteIndices)
+        noteLengths.emplace_back(idx, length);
+
+    UndoManager::getInstance().executeCommand(
+        std::make_unique<ResizeMultipleMidiNotesCommand>(noteSel.clipId, std::move(noteLengths)));
+
+    ctx_.addResult("Resized " + juce::String(static_cast<int>(noteSel.noteIndices.size())) +
+                   " note(s) to " + juce::String(length, 2) + " beats");
+    return true;
 }
 
 }  // namespace magda::dsl

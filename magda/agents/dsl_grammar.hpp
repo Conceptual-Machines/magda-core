@@ -41,6 +41,12 @@ pattern_statement: "pattern" "(" params ")"
 
 condition: "track" "." IDENTIFIER "==" value
 
+clip_condition: "clip" "." IDENTIFIER compare_op value
+
+note_condition: "note" "." IDENTIFIER compare_op value
+
+compare_op: "==" | "!=" | ">=" | "<=" | ">" | "<"
+
 // Method chain
 chain: method+
 
@@ -53,8 +59,16 @@ method_call: "new_clip" "(" params? ")"
            | "add_automation" "(" params? ")"
            | "delete" "(" ")"
            | "delete_clip" "(" params? ")"
+           | "rename_clip" "(" params? ")"
            | "select" "(" ")"
-           | "select_clips" "(" params? ")"
+           | "select_clips" "(" clip_condition ")"
+           | "select_notes" "(" note_condition ")"
+           | "add_note" "(" params? ")"
+           | "delete_notes" "(" ")"
+           | "transpose" "(" params? ")"
+           | "set_velocity" "(" params? ")"
+           | "quantize" "(" params? ")"
+           | "resize_notes" "(" params? ")"
            | "map" "(" func_ref ")"
            | "for_each" "(" func_ref ")"
 
@@ -110,8 +124,10 @@ METHOD CHAINING:
 - .add_fx(name="Pro-Q 3") - Add scanned third-party plugin by name
 - .add_fx(name="Pro-Q 3", format="VST3") - Add plugin with format hint (VST3, AU, VST)
 - .delete() - Delete track
+- .rename_clip(index=0, name="Intro") - Rename clip at index on track
+- .rename_clip(name="Intro") - Rename all currently selected clips (omit index)
 - .select() - Select track in the UI
-- .select_clips(min_length_bars=2) - Select clips on track matching criteria (min_length_bars, max_length_bars, min_bar, max_bar)
+- .select_clips(clip.length_bars >= 2) - Select clips matching predicate (fields: length_bars, start_bar; ops: ==, !=, >, >=, <, <=)
 
 FILTER OPERATIONS (bulk):
 - filter(tracks, track.name == "X").delete() - Delete all tracks named X
@@ -131,9 +147,34 @@ EXAMPLES:
 - "add reverb and delay to the Vocals track" ->
   track(name="Vocals").add_fx(name="reverb")
   track(name="Vocals").add_fx(name="delay")
+- "rename the first clip on track 1 to Intro" -> track(id=1).rename_clip(index=0, name="Intro")
+- "rename selected clips to FOO" -> track(id=1).rename_clip(name="FOO")   // omit index to rename selected clips
 - "select track 1" -> track(id=1).select()
-- "select all clips longer than 2 bars on track 1" -> track(id=1).select_clips(min_length_bars=2)
-- "select clips between bar 1 and bar 8" -> track(id=1).select_clips(min_bar=1, max_bar=8)
+- "select all clips longer than 2 bars on track 1" -> track(id=1).select_clips(clip.length_bars > 2)
+- "select all clips shorter than or equal to 1 bar on track 2" -> track(id=2).select_clips(clip.length_bars <= 1)
+
+NOTE OPERATIONS (require a selected clip):
+- .select_notes(note.pitch == C4) - Select notes matching predicate (fields: pitch, velocity, start_beat, length_beats; pitch accepts MIDI numbers or note names like C4, C#4, Bb3; C4=60)
+- .add_note(pitch=C4, beat=0, length=1, velocity=100) - Add a note (pitch can be note name or MIDI number)
+- .delete_notes() - Delete currently selected notes
+- .transpose(semitones=5) - Transpose selected notes (positive=up, negative=down)
+- .set_velocity(value=80) - Set velocity of selected notes
+- .quantize(grid=0.25) - Quantize selected notes (0.25=16th, 0.5=8th, 1.0=quarter)
+- .resize_notes(length=0.5) - Set note length in beats
+
+EXAMPLES (note operations):
+- "select all C4 notes on track 1" -> track(id=1).select_notes(note.pitch == C4)
+- "select notes with velocity above 100" -> track(id=1).select_notes(note.velocity > 100)
+- "transpose selected notes up 5 semitones" -> track(id=1).transpose(semitones=5)
+- "set velocity to 60" -> track(id=1).set_velocity(value=60)
+- "delete selected notes" -> track(id=1).delete_notes()
+- "add a D4 note at beat 2" -> track(id=1).add_note(pitch=D4, beat=2, length=1, velocity=100)
+- "quantize selected notes to 16th notes" -> track(id=1).quantize(grid=0.25)
+- "set note length to half a beat" -> track(id=1).resize_notes(length=0.5)
+
+NOTE: The DAW state JSON includes "selected_track_id" when a track is selected, and "selected_clip_index" / "selected_clip_track_id" when a clip is selected.
+Use track(id=N) to reference any track. When the user says "this track" or implies the current selection, use the selected_track_id from the state.
+For note operations, use the selected_clip_track_id to reference the track owning the selected clip.
 
 **CRITICAL: Always generate DSL code. Never generate plain text responses.**
 )DESC";

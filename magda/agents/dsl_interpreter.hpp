@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "../daw/core/ClipTypes.hpp"
 #include "../daw/core/TrackTypes.hpp"
 
 namespace magda::dsl {
@@ -14,19 +15,24 @@ namespace magda::dsl {
 // Token Types
 // ============================================================================
 enum class TokenType {
-    IDENTIFIER,     // track, filter, new_clip, etc.
-    STRING,         // "Serum", "Bass"
-    NUMBER,         // 3, 4.5, -6.0
-    LPAREN,         // (
-    RPAREN,         // )
-    LBRACKET,       // [
-    RBRACKET,       // ]
-    DOT,            // .
-    COMMA,          // ,
-    EQUALS,         // =
-    EQUALS_EQUALS,  // ==
-    SEMICOLON,      // ;
-    AT,             // @
+    IDENTIFIER,      // track, filter, new_clip, etc.
+    STRING,          // "Serum", "Bass"
+    NUMBER,          // 3, 4.5, -6.0
+    LPAREN,          // (
+    RPAREN,          // )
+    LBRACKET,        // [
+    RBRACKET,        // ]
+    DOT,             // .
+    COMMA,           // ,
+    EQUALS,          // =
+    EQUALS_EQUALS,   // ==
+    NOT_EQUALS,      // !=
+    GREATER,         // >
+    GREATER_EQUALS,  // >=
+    LESS,            // <
+    LESS_EQUALS,     // <=
+    SEMICOLON,       // ;
+    AT,              // @
     END_OF_INPUT,
     ERROR
 };
@@ -165,8 +171,18 @@ class Interpreter {
     bool executeDelete();
     bool executeDeleteClip(const Params& params);
     bool executeAddFx(const Params& params);
+    bool executeRenameClip(const Params& params);
     bool executeSelect();
-    bool executeSelectClips(const Params& params);
+    bool executeSelectClips(Tokenizer& tok);
+    bool executeSelectNotes(Tokenizer& tok);
+    bool executeAddNote(const Params& params);
+    bool executeDeleteNotes();
+    bool executeTranspose(const Params& params);
+    bool executeSetVelocity(const Params& params);
+    bool executeQuantize(const Params& params);
+    bool executeResizeNotes(const Params& params);
+    static int parseNoteName(const std::string& name);
+    ClipId getSelectedClipId() const;
 
     // Parameter parsing
     bool parseParams(Tokenizer& tok, Params& outParams);
@@ -177,7 +193,7 @@ class Interpreter {
     int findTrackByName(const juce::String& name) const;
 
     // Time conversion
-    double barsToTime(int bar) const;
+    double barsToTime(double bar) const;
 
     InterpreterContext ctx_;
 };
