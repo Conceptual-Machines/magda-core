@@ -48,6 +48,7 @@ method_call: "clip" "." "new" "(" params? ")"
            | "fx" "." "add" "(" params? ")"
            | "notes" "." "add" "(" params? ")"
            | "notes" "." "add_chord" "(" params? ")"
+           | "notes" "." "add_arpeggio" "(" params? ")"
            | "notes" "." "select" "(" note_condition ")"
            | "notes" "." "delete" "(" ")"
            | "notes" "." "transpose" "(" params? ")"
@@ -146,6 +147,7 @@ NOTE OPERATIONS (require a selected clip):
 - .notes.select(note.pitch == C4) - Select notes matching predicate (fields: pitch, velocity, start_beat, length_beats; pitch accepts MIDI numbers or note names like C4, C#4, Bb3; C4=60)
 - .notes.add(pitch=C4, beat=0, length=1, velocity=100) - Add a note (pitch can be note name or MIDI number)
 - .notes.add_chord(root=C4, quality=major, beat=0, length=1, velocity=100, inversion=0) - Add a chord (qualities: major/maj, minor/min, dim, aug, sus2, sus4, dom7/7, maj7, min7, dim7, power/5; inversion: 0=root, 1=first, 2=second)
+- .notes.add_arpeggio(root=C4, quality=major, beat=0, step=0.5, note_length=0.5, velocity=100, inversion=0, pattern=up) - Add an arpeggio (same qualities as add_chord; step=beat interval between notes; note_length defaults to step; pattern: up, down, updown)
 - .notes.delete() - Delete currently selected notes
 - .notes.transpose(semitones=5) - Transpose selected notes (positive=up, negative=down)
 - .notes.set_pitch(pitch=F1) - Set pitch of selected notes (accepts note names like C4, F#3 or MIDI numbers)
@@ -166,6 +168,8 @@ EXAMPLES (note operations):
 - "add a C major chord at beat 0" -> track(id=1).notes.add_chord(root=C4, quality=major, beat=0, length=1)
 - "add an A minor 7th chord for 2 beats" -> track(id=1).notes.add_chord(root=A3, quality=min7, beat=0, length=2)
 - "add a C major chord first inversion" -> track(id=1).notes.add_chord(root=C4, quality=major, inversion=1)
+- "add an arpeggio of C major" -> track(id=1).notes.add_arpeggio(root=C4, quality=major, beat=0, step=0.5)
+- "add a descending A minor arpeggio" -> track(id=1).notes.add_arpeggio(root=A3, quality=min, beat=0, step=0.25, pattern=down)
 
 NOTE: The DAW state JSON includes "selected_track_id" when a track is selected, and "selected_clip_index" / "selected_clip_track_id" when a clip is selected.
 Use track(id=N) to reference any track. When the user says "this track" or implies the current selection, use the selected_track_id from the state.

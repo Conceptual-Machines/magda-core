@@ -514,3 +514,163 @@ TEST_CASE("notes.add_chord - undo removes all chord notes", "[dsl][chord][undo]"
     UndoManager::getInstance().redo();
     REQUIRE(clip->midiNotes.size() == 3);
 }
+
+// ============================================================================
+// notes.add_arpeggio
+// ============================================================================
+
+// Helper: get notes sorted by start beat
+static std::vector<std::pair<int, double>> getNotesByBeat(const ClipInfo* clip) {
+    std::vector<std::pair<int, double>> result;
+    for (const auto& note : clip->midiNotes)
+        result.push_back({note.noteNumber, note.startBeat});
+    std::sort(result.begin(), result.end(),
+              [](const auto& a, const auto& b) { return a.second < b.second; });
+    return result;
+}
+
+TEST_CASE("notes.add_arpeggio - up pattern (default)", "[dsl][arpeggio]") {
+    resetState();
+    dsl::Interpreter interp;
+
+    REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
+                           ".clip.new(bar=1, length_bars=4)"
+                           ".notes.add_arpeggio(root=C4, quality=major, beat=0, step=0.5)"));
+
+    auto tracks = TrackManager::getInstance().getTracks();
+    const auto* clip = getFirstClip(tracks[0].id);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->midiNotes.size() == 3);
+
+    auto notesByBeat = getNotesByBeat(clip);
+    // C4@0, E4@0.5, G4@1.0
+    REQUIRE(notesByBeat[0].first == 60);
+    REQUIRE(notesByBeat[0].second == Catch::Approx(0.0));
+    REQUIRE(notesByBeat[1].first == 64);
+    REQUIRE(notesByBeat[1].second == Catch::Approx(0.5));
+    REQUIRE(notesByBeat[2].first == 67);
+    REQUIRE(notesByBeat[2].second == Catch::Approx(1.0));
+
+    // Default note_length should equal step
+    for (const auto& note : clip->midiNotes)
+        REQUIRE(note.lengthBeats == Catch::Approx(0.5));
+}
+
+TEST_CASE("notes.add_arpeggio - down pattern", "[dsl][arpeggio]") {
+    resetState();
+    dsl::Interpreter interp;
+
+    REQUIRE(interp.execute(
+        "track(name=\"Test\", type=\"midi\")"
+        ".clip.new(bar=1, length_bars=4)"
+        ".notes.add_arpeggio(root=C4, quality=major, beat=0, step=0.25, pattern=down)"));
+
+    auto tracks = TrackManager::getInstance().getTracks();
+    const auto* clip = getFirstClip(tracks[0].id);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->midiNotes.size() == 3);
+
+    auto notesByBeat = getNotesByBeat(clip);
+    // G4@0, E4@0.25, C4@0.5
+    REQUIRE(notesByBeat[0].first == 67);
+    REQUIRE(notesByBeat[0].second == Catch::Approx(0.0));
+    REQUIRE(notesByBeat[1].first == 64);
+    REQUIRE(notesByBeat[1].second == Catch::Approx(0.25));
+    REQUIRE(notesByBeat[2].first == 60);
+    REQUIRE(notesByBeat[2].second == Catch::Approx(0.5));
+}
+
+TEST_CASE("notes.add_arpeggio - updown pattern", "[dsl][arpeggio]") {
+    resetState();
+    dsl::Interpreter interp;
+
+    // C min7 = C4(60), Eb4(63), G4(67), Bb4(70)
+    REQUIRE(interp.execute(
+        "track(name=\"Test\", type=\"midi\")"
+        ".clip.new(bar=1, length_bars=4)"
+        ".notes.add_arpeggio(root=C4, quality=min7, beat=0, step=0.5, pattern=updown)"));
+
+    auto tracks = TrackManager::getInstance().getTracks();
+    const auto* clip = getFirstClip(tracks[0].id);
+    REQUIRE(clip != nullptr);
+    // up: C4, Eb4, G4, Bb4; down (skip endpoints): G4, Eb4 → total 6
+    REQUIRE(clip->midiNotes.size() == 6);
+
+    auto notesByBeat = getNotesByBeat(clip);
+    REQUIRE(notesByBeat[0].first == 60);  // C4@0
+    REQUIRE(notesByBeat[0].second == Catch::Approx(0.0));
+    REQUIRE(notesByBeat[1].first == 63);  // Eb4@0.5
+    REQUIRE(notesByBeat[1].second == Catch::Approx(0.5));
+    REQUIRE(notesByBeat[2].first == 67);  // G4@1.0
+    REQUIRE(notesByBeat[2].second == Catch::Approx(1.0));
+    REQUIRE(notesByBeat[3].first == 70);  // Bb4@1.5
+    REQUIRE(notesByBeat[3].second == Catch::Approx(1.5));
+    REQUIRE(notesByBeat[4].first == 67);  // G4@2.0
+    REQUIRE(notesByBeat[4].second == Catch::Approx(2.0));
+    REQUIRE(notesByBeat[5].first == 63);  // Eb4@2.5
+    REQUIRE(notesByBeat[5].second == Catch::Approx(2.5));
+}
+
+TEST_CASE("notes.add_arpeggio - with inversion", "[dsl][arpeggio]") {
+    resetState();
+    dsl::Interpreter interp;
+
+    // C major first inversion: E4(64), G4(67), C5(72)
+    REQUIRE(interp.execute(
+        "track(name=\"Test\", type=\"midi\")"
+        ".clip.new(bar=1, length_bars=4)"
+        ".notes.add_arpeggio(root=C4, quality=major, beat=0, step=0.5, inversion=1)"));
+
+    auto tracks = TrackManager::getInstance().getTracks();
+    const auto* clip = getFirstClip(tracks[0].id);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->midiNotes.size() == 3);
+
+    auto notesByBeat = getNotesByBeat(clip);
+    // Sorted ascending: E4@0, G4@0.5, C5@1.0
+    REQUIRE(notesByBeat[0].first == 64);
+    REQUIRE(notesByBeat[0].second == Catch::Approx(0.0));
+    REQUIRE(notesByBeat[1].first == 67);
+    REQUIRE(notesByBeat[1].second == Catch::Approx(0.5));
+    REQUIRE(notesByBeat[2].first == 72);
+    REQUIRE(notesByBeat[2].second == Catch::Approx(1.0));
+}
+
+TEST_CASE("notes.add_arpeggio - custom note_length", "[dsl][arpeggio]") {
+    resetState();
+    dsl::Interpreter interp;
+
+    REQUIRE(interp.execute(
+        "track(name=\"Test\", type=\"midi\")"
+        ".clip.new(bar=1, length_bars=4)"
+        ".notes.add_arpeggio(root=C4, quality=major, beat=0, step=0.5, note_length=1.0)"));
+
+    auto tracks = TrackManager::getInstance().getTracks();
+    const auto* clip = getFirstClip(tracks[0].id);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->midiNotes.size() == 3);
+
+    // note_length=1.0 while step=0.5 → overlapping notes
+    for (const auto& note : clip->midiNotes)
+        REQUIRE(note.lengthBeats == Catch::Approx(1.0));
+}
+
+TEST_CASE("notes.add_arpeggio - missing root", "[dsl][arpeggio][error]") {
+    resetState();
+    dsl::Interpreter interp;
+
+    bool result = interp.execute("track(name=\"Test\", type=\"midi\")"
+                                 ".clip.new(bar=1, length_bars=4)"
+                                 ".notes.add_arpeggio(quality=major, beat=0, step=0.5)");
+    REQUIRE_FALSE(result);
+}
+
+TEST_CASE("notes.add_arpeggio - missing quality", "[dsl][arpeggio][error]") {
+    resetState();
+    dsl::Interpreter interp;
+
+    bool result = interp.execute("track(name=\"Test\", type=\"midi\")"
+                                 ".clip.new(bar=1, length_bars=4)"
+                                 ".notes.add_arpeggio(root=C4, beat=0, step=0.5)");
+    REQUIRE_FALSE(result);
+}

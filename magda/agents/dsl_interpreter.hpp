@@ -188,12 +188,14 @@ class Interpreter {
     bool executeSelectNotes(Tokenizer& tok);
     bool executeAddNote(const Params& params);
     bool executeAddChord(const Params& params);
+    bool executeAddArpeggio(const Params& params);
     bool executeDeleteNotes();
     bool executeTranspose(const Params& params);
     bool executeSetPitch(const Params& params);
     bool executeSetVelocity(const Params& params);
     bool executeQuantize(const Params& params);
     bool executeResizeNotes(const Params& params);
+    bool resolveChordNotes(const Params& params, std::vector<int>& outNotes);
     static int parseNoteName(const std::string& name);
     ClipId getSelectedClipId() const;
     bool ensureNoteSelection();

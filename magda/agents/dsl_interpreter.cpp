@@ -602,6 +602,8 @@ bool Interpreter::parseMethodChain(Tokenizer& tok) {
             success = executeAddNote(params);
         else if (methodKey == "notes.add_chord")
             success = executeAddChord(params);
+        else if (methodKey == "notes.add_arpeggio")
+            success = executeAddArpeggio(params);
         else if (methodKey == "notes.delete")
             success = executeDeleteNotes();
         else if (methodKey == "notes.transpose")
@@ -1614,13 +1616,7 @@ bool Interpreter::executeAddNote(const Params& params) {
     return true;
 }
 
-bool Interpreter::executeAddChord(const Params& params) {
-    auto clipId = getSelectedClipId();
-    if (clipId == INVALID_CLIP_ID) {
-        ctx_.setError("No clip selected for notes.add_chord");
-        return false;
-    }
-
+bool Interpreter::resolveChordNotes(const Params& params, std::vector<int>& outNotes) {
     // Parse root (required)
     if (!params.has("root")) {
         ctx_.setError("notes.add_chord requires 'root' parameter");
@@ -1656,22 +1652,38 @@ bool Interpreter::executeAddChord(const Params& params) {
 
     const auto& intervals = it->second;
     int inversion = params.getInt("inversion", 0);
+
+    // Build MIDI note numbers from root + intervals
+    outNotes.clear();
+    for (int interval : intervals)
+        outNotes.push_back(rootNote + interval);
+
+    // Apply inversions: rotate the lowest N notes up an octave
+    for (int i = 0; i < inversion && i < static_cast<int>(outNotes.size()); i++)
+        outNotes[static_cast<size_t>(i)] += 12;
+
+    // Clamp to valid MIDI range
+    for (auto& n : outNotes)
+        n = juce::jlimit(0, 127, n);
+
+    return true;
+}
+
+bool Interpreter::executeAddChord(const Params& params) {
+    auto clipId = getSelectedClipId();
+    if (clipId == INVALID_CLIP_ID) {
+        ctx_.setError("No clip selected for notes.add_chord");
+        return false;
+    }
+
+    std::vector<int> midiNotes;
+    if (!resolveChordNotes(params, midiNotes))
+        return false;
+
     double beat = params.getFloat("beat", 0.0);
     double length = params.getFloat("length", 1.0);
     int velocity = params.getInt("velocity", 100);
-
-    // Build MIDI note numbers from root + intervals
-    std::vector<int> midiNotes;
-    for (int interval : intervals)
-        midiNotes.push_back(rootNote + interval);
-
-    // Apply inversions: rotate the lowest N notes up an octave
-    for (int i = 0; i < inversion && i < static_cast<int>(midiNotes.size()); i++)
-        midiNotes[static_cast<size_t>(i)] += 12;
-
-    // Clamp to valid MIDI range
-    for (auto& n : midiNotes)
-        n = juce::jlimit(0, 127, n);
+    std::string quality = params.get("quality");
 
     // Build MidiNote objects
     std::vector<MidiNote> notes;
@@ -1692,6 +1704,67 @@ bool Interpreter::executeAddChord(const Params& params) {
 
     ctx_.addResult("Added " + juce::String(quality) + " chord [" + noteNames.joinIntoString(", ") +
                    "] at beat " + juce::String(beat, 2));
+    return true;
+}
+
+bool Interpreter::executeAddArpeggio(const Params& params) {
+    auto clipId = getSelectedClipId();
+    if (clipId == INVALID_CLIP_ID) {
+        ctx_.setError("No clip selected for notes.add_arpeggio");
+        return false;
+    }
+
+    std::vector<int> midiNotes;
+    if (!resolveChordNotes(params, midiNotes))
+        return false;
+
+    double beat = params.getFloat("beat", 0.0);
+    double step = params.getFloat("step", 0.5);
+    double noteLength = params.has("note_length") ? params.getFloat("note_length") : step;
+    int velocity = params.getInt("velocity", 100);
+    std::string pattern = params.get("pattern");
+    if (pattern.empty())
+        pattern = "up";
+    std::string quality = params.get("quality");
+
+    // Sort pitches ascending for pattern application
+    std::sort(midiNotes.begin(), midiNotes.end());
+
+    // Apply pattern ordering
+    std::vector<int> ordered;
+    if (pattern == "down") {
+        ordered.assign(midiNotes.rbegin(), midiNotes.rend());
+    } else if (pattern == "updown") {
+        ordered = midiNotes;
+        // Add descending without repeating top and bottom
+        for (int i = static_cast<int>(midiNotes.size()) - 2; i > 0; --i)
+            ordered.push_back(midiNotes[static_cast<size_t>(i)]);
+    } else {
+        // "up" (default)
+        ordered = midiNotes;
+    }
+
+    // Build MidiNote objects with sequential beat offsets
+    std::vector<MidiNote> notes;
+    juce::StringArray noteNames;
+    double currentBeat = beat;
+    for (int n : ordered) {
+        MidiNote mn;
+        mn.noteNumber = n;
+        mn.startBeat = currentBeat;
+        mn.lengthBeats = noteLength;
+        mn.velocity = velocity;
+        notes.push_back(mn);
+        noteNames.add(juce::MidiMessage::getMidiNoteName(n, true, true, 4));
+        currentBeat += step;
+    }
+
+    UndoManager::getInstance().executeCommand(std::make_unique<AddMultipleMidiNotesCommand>(
+        clipId, std::move(notes),
+        "Add " + juce::String(quality) + " arpeggio at beat " + juce::String(beat, 2)));
+
+    ctx_.addResult("Added " + juce::String(quality) + " arpeggio (" + juce::String(pattern) +
+                   ") [" + noteNames.joinIntoString(", ") + "] at beat " + juce::String(beat, 2));
     return true;
 }
 
