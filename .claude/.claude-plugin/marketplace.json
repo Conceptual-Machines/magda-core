@@ -1,0 +1,29 @@
+{
+  "name": "factory",
+  "owner": {
+    "name": "ark"
+  },
+  "metadata": {
+    "description": "Agents and skills for factory workflows",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "flow",
+      "description": "SDLC agents and skills for composer",
+      "source": "./",
+      "strict": false,
+      "agents": [
+        "./agents/developer.md",
+        "./agents/story-generator.md",
+        "./agents/task-decomposer.md",
+        "./agents/tester.md"
+      ],
+      "skills": [
+        "./skills/code-review",
+        "./skills/documentation",
+        "./skills/testing"
+      ]
+    }
+  ]
+}
