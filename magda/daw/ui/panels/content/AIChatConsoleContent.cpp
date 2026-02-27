@@ -100,10 +100,10 @@ AIChatConsoleContent::AIChatConsoleContent() {
     inputBox_.setMultiLine(true);
     inputBox_.setReturnKeyStartsNewLine(false);
     inputBox_.setTextToShowWhenEmpty("Type a message...", DarkTheme::getSecondaryTextColour());
-    inputBox_.setColour(juce::TextEditor::backgroundColourId,
-                        DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+    inputBox_.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     inputBox_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
-    inputBox_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+    inputBox_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+    inputBox_.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
     inputBox_.onReturnKey = [this]() {
         auto text = inputBox_.getText().trim();
         if (text.isNotEmpty() && !processing_)
@@ -124,7 +124,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     // Send button (embedded in bottom bar)
     sendButtonLnF_.buttonFont = monoFont;
     sendButton_.setLookAndFeel(&sendButtonLnF_);
-    sendButton_.setButtonText("Send");
+    sendButton_.setButtonText("\xe2\x8f\x8e");
     sendButton_.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     sendButton_.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
     sendButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
@@ -227,17 +227,20 @@ void AIChatConsoleContent::appendToChat(const juce::String& text) {
 void AIChatConsoleContent::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getPanelBackgroundColour());
 
-    // Draw bottom bar background (spans context label + send button)
-    auto barBounds = bottomBarBounds_.toFloat();
-    g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    g.fillRoundedRectangle(barBounds, 4.0f);
-    g.setColour(DarkTheme::getBorderColour());
-    g.drawRoundedRectangle(barBounds, 4.0f, 1.0f);
+    // Draw input box + bottom bar as one unified rounded rectangle
+    auto inputBounds = inputBox_.getBounds();
+    auto barBounds = bottomBarBounds_;
+    auto combined = inputBounds.getUnion(barBounds).toFloat();
 
-    // Draw separator line before Send button
-    auto sendBounds = sendButton_.getBounds();
+    g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+    g.fillRoundedRectangle(combined, 4.0f);
     g.setColour(DarkTheme::getBorderColour());
-    g.drawVerticalLine(sendBounds.getX(), barBounds.getY() + 4.0f, barBounds.getBottom() - 4.0f);
+    g.drawRoundedRectangle(combined, 4.0f, 1.0f);
+
+    // Thin horizontal border between input and bottom bar
+    float separatorY = static_cast<float>(inputBounds.getBottom());
+    g.drawHorizontalLine(static_cast<int>(separatorY), combined.getX() + 1.0f,
+                         combined.getRight() - 1.0f);
 }
 
 void AIChatConsoleContent::resized() {
@@ -249,11 +252,10 @@ void AIChatConsoleContent::resized() {
     // Bottom bar (always visible): context label left, send button right
     auto bottomBar = bounds.removeFromBottom(26);
     bottomBarBounds_ = bottomBar;
-    sendButton_.setBounds(bottomBar.removeFromRight(60));
+    sendButton_.setBounds(bottomBar.removeFromRight(36));
     contextLabel_.setBounds(bottomBar);
 
-    // Input box above the bottom bar
-    bounds.removeFromBottom(4);  // Spacing
+    // Input box directly above bottom bar (no gap — unified shape)
     auto inputArea = bounds.removeFromBottom(60);
     inputBox_.setBounds(inputArea);
 
