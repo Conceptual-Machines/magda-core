@@ -132,6 +132,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     auto enterSvg =
         juce::Drawable::createFromImageData(BinaryData::enter_svg, BinaryData::enter_svgSize);
     sendButton_.setImages(enterSvg.get());
+    sendButton_.setEdgeIndent(5);
     sendButton_.setColour(juce::DrawableButton::backgroundColourId,
                           juce::Colours::transparentBlack);
     sendButton_.setColour(juce::DrawableButton::backgroundOnColourId,
@@ -276,7 +277,7 @@ void AIChatConsoleContent::resized() {
     // Bottom bar (always visible): icon + context label left, send button right
     auto bottomBar = bounds.removeFromBottom(26);
     bottomBarBounds_ = bottomBar;
-    sendButton_.setBounds(bottomBar.removeFromRight(26));
+    sendButton_.setBounds(bottomBar.removeFromRight(22));
     contextIconBounds_ = bottomBar.removeFromLeft(26);
     contextLabel_.setBounds(bottomBar);
 
