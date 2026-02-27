@@ -217,6 +217,31 @@ class PluginManager {
     }
 
     // =========================================================================
+    // Plugin State Capture/Restore
+    // =========================================================================
+
+    /**
+     * @brief Capture native state from all loaded external plugins into DeviceInfo
+     *
+     * Iterates deviceToPlugin_, calls flushPluginStateToValueTree() on each
+     * ExternalPlugin, reads the base64 state property, and writes it to the
+     * corresponding DeviceInfo::pluginState in TrackManager.
+     */
+    void captureAllPluginStates();
+
+    /**
+     * @brief Restore plugin native state from DeviceInfo onto a TE plugin
+     *
+     * Reads DeviceInfo::pluginState and, if non-empty, sets it on the TE
+     * plugin's ValueTree state property so the plugin reads it during init.
+     *
+     * @param trackId The track containing the device
+     * @param deviceId The device whose state to restore
+     * @param plugin The TE plugin to apply state to
+     */
+    void restorePluginState(TrackId trackId, DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    // =========================================================================
     // Utilities
     // =========================================================================
 

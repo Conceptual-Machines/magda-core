@@ -380,3 +380,120 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         // Cleanup
     }
 }
+
+TEST_CASE("Project metadata fields roundtrip", "[project][serialization][metadata]") {
+    ProjectTestFixture fixture;
+
+    SECTION("sampleRate, keyRoot, keyQuality serialize and deserialize") {
+        ProjectInfo info;
+        info.name = "Metadata Test";
+        info.tempo = 140.0;
+        info.sampleRate = 96000.0;
+        info.keyRoot = 7;     // G
+        info.keyQuality = 1;  // minor
+
+        auto json = ProjectSerializer::serializeProject(info);
+        REQUIRE(json.isObject() == true);
+
+        ProjectInfo loaded;
+        bool success = ProjectSerializer::deserializeProject(json, loaded);
+        REQUIRE(success == true);
+
+        REQUIRE(loaded.sampleRate == 96000.0);
+        REQUIRE(loaded.keyRoot == 7);
+        REQUIRE(loaded.keyQuality == 1);
+    }
+
+    SECTION("Missing metadata fields use defaults (backward compat)") {
+        // Simulate an old project JSON without the new fields
+        ProjectInfo info;
+        info.name = "Old Project";
+        info.tempo = 120.0;
+        // Don't set sampleRate, keyRoot, keyQuality — use defaults
+
+        auto json = ProjectSerializer::serializeProject(info);
+
+        // Manually strip the new fields from the project object
+        auto* rootObj = json.getDynamicObject();
+        auto projectVar = rootObj->getProperty("project");
+        auto* projectObj = projectVar.getDynamicObject();
+        projectObj->removeProperty("sampleRate");
+        projectObj->removeProperty("keyRoot");
+        projectObj->removeProperty("keyQuality");
+
+        ProjectInfo loaded;
+        bool success = ProjectSerializer::deserializeProject(json, loaded);
+        REQUIRE(success == true);
+
+        // Should fall back to defaults
+        REQUIRE(loaded.sampleRate == 44100.0);
+        REQUIRE(loaded.keyRoot == -1);
+        REQUIRE(loaded.keyQuality == 0);
+    }
+}
+
+TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginState]") {
+    ProjectTestFixture fixture;
+
+    SECTION("pluginState is serialized and deserialized") {
+        auto& trackManager = TrackManager::getInstance();
+
+        auto trackId = trackManager.createTrack("Plugin State Track", TrackType::MIDI);
+
+        DeviceInfo device;
+        device.id = 1;
+        device.name = "Test Plugin";
+        device.pluginId = "TestPlugin";
+        device.manufacturer = "TestCo";
+        device.format = PluginFormat::VST3;
+        device.isInstrument = true;
+        device.pluginState = "SGVsbG8gV29ybGQ=";  // base64 for "Hello World"
+        trackManager.addDeviceToTrack(trackId, device);
+
+        auto& projectManager = ProjectManager::getInstance();
+        auto tempFile = fixture.createTempFile(".mgd");
+        bool saved = projectManager.saveProjectAs(tempFile);
+        REQUIRE(saved == true);
+
+        trackManager.clearAllTracks();
+
+        bool loaded = projectManager.loadProject(tempFile);
+        REQUIRE(loaded == true);
+
+        const auto& tracks = trackManager.getTracks();
+        REQUIRE(tracks.size() == 1);
+        REQUIRE(tracks[0].chainElements.size() == 1);
+        REQUIRE(isDevice(tracks[0].chainElements[0]) == true);
+
+        const auto& restoredDevice = getDevice(tracks[0].chainElements[0]);
+        REQUIRE(restoredDevice.pluginState == juce::String("SGVsbG8gV29ybGQ="));
+    }
+
+    SECTION("Device without pluginState roundtrips with empty state") {
+        auto& trackManager = TrackManager::getInstance();
+        auto& projectManager = ProjectManager::getInstance();
+
+        auto trackId = trackManager.createTrack("No State Track", TrackType::MIDI);
+
+        DeviceInfo device;
+        device.id = 1;
+        device.name = "No State Plugin";
+        device.pluginId = "NoState";
+        device.format = PluginFormat::Internal;
+        // pluginState is empty by default
+        trackManager.addDeviceToTrack(trackId, device);
+
+        auto tempFile = fixture.createTempFile(".mgd");
+        REQUIRE(projectManager.saveProjectAs(tempFile) == true);
+
+        trackManager.clearAllTracks();
+        REQUIRE(projectManager.loadProject(tempFile) == true);
+
+        const auto& tracks = trackManager.getTracks();
+        REQUIRE(tracks.size() == 1);
+        REQUIRE(tracks[0].chainElements.size() == 1);
+        REQUIRE(isDevice(tracks[0].chainElements[0]) == true);
+        const auto& restoredDevice = getDevice(tracks[0].chainElements[0]);
+        REQUIRE(restoredDevice.pluginState.isEmpty());
+    }
+}

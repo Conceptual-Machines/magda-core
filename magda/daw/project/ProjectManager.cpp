@@ -88,6 +88,10 @@ bool ProjectManager::saveProject() {
 }
 
 bool ProjectManager::saveProjectAs(const juce::File& file) {
+    // Capture live plugin state before serializing
+    if (onBeforeSave)
+        onBeforeSave();
+
     // Prepare updated project info without mutating currentProject_ yet
     ProjectInfo newProject = currentProject_;
     newProject.filePath = file.getFullPathName();

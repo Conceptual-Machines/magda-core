@@ -19,6 +19,11 @@ struct ProjectInfo {
     int timeSignatureNumerator = 4;
     int timeSignatureDenominator = 4;
     double projectLength = 240.0;  // seconds
+    double sampleRate = 44100.0;
+
+    // Key signature
+    int keyRoot = -1;    // 0=C, 1=C#, ..., 11=B; -1=none
+    int keyQuality = 0;  // 0=major, 1=minor
 
     // Loop settings (beats are authoritative, seconds derived from tempo)
     bool loopEnabled = false;

@@ -176,6 +176,12 @@ class ProjectManager {
     void removeListener(ProjectManagerListener* listener);
 
     /**
+     * @brief Callback invoked before saving to capture live state (e.g., plugin native state)
+     * Set by AudioBridge or TracktionEngineWrapper at initialization.
+     */
+    std::function<void()> onBeforeSave;
+
+    /**
      * @brief Get last error message from failed operation
      */
     const juce::String& getLastError() const {

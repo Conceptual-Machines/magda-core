@@ -1617,6 +1617,47 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
 // Utilities
 // =============================================================================
 
+// =============================================================================
+// Plugin State Capture/Restore
+// =============================================================================
+
+void PluginManager::captureAllPluginStates() {
+    juce::ScopedLock lock(pluginLock_);
+
+    for (const auto& [deviceId, plugin] : deviceToPlugin_) {
+        auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get());
+        if (!ext)
+            continue;
+
+        ext->flushPluginStateToValueTree();
+        auto stateStr = ext->state.getProperty(te::IDs::state).toString();
+
+        // Always overwrite pluginState (even if empty) to avoid stale state
+        auto& trackManager = TrackManager::getInstance();
+        for (auto& track : trackManager.getTracks()) {
+            if (auto* devInfo = trackManager.getDevice(track.id, deviceId)) {
+                devInfo->pluginState = stateStr;
+                break;
+            }
+        }
+    }
+
+    // Also capture state from plugins inside racks
+    rackSyncManager_.captureAllPluginStates();
+}
+
+void PluginManager::restorePluginState(TrackId trackId, DeviceId deviceId, te::Plugin::Ptr plugin) {
+    auto* devInfo = TrackManager::getInstance().getDevice(trackId, deviceId);
+    if (!devInfo || devInfo->pluginState.isEmpty())
+        return;
+
+    auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get());
+    if (!ext)
+        return;
+
+    ext->state.setProperty(te::IDs::state, devInfo->pluginState, nullptr);
+}
+
 void PluginManager::clearAllMappings() {
     juce::ScopedLock lock(pluginLock_);
     instrumentRackManager_.clear();
@@ -1743,6 +1784,16 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
 
             plugin =
                 edit_.getPluginCache().createNewPlugin(te::ExternalPlugin::xmlTypeName, descCopy);
+
+            // Restore plugin native state for rack plugins
+            if (plugin && device.pluginState.isNotEmpty()) {
+                if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+                    ext->state.setProperty(te::IDs::state, device.pluginState, nullptr);
+                    if (!ext->isInitialisingAsync()) {
+                        ext->restorePluginStateFromValueTree(ext->state);
+                    }
+                }
+            }
         }
     }
 
@@ -1989,12 +2040,21 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             if (result.success && result.plugin) {
                 plugin = result.plugin;
 
+                // Restore plugin native state (base64 blob) from DeviceInfo
+                // For async plugins, TE reads the state property during init.
+                // For sync plugins, we also call restorePluginStateFromValueTree().
+                restorePluginState(trackId, device.id, plugin);
+
                 // If the plugin is loading asynchronously (TE background thread),
                 // skip processor creation — it will be done in pollAsyncPluginLoad
                 // when the VST instance is ready.
                 if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
                     if (ext->isInitialisingAsync()) {
                         return plugin;  // Return bare wrapper; async poll handles the rest
+                    }
+                    // Sync plugin already created — re-apply state now
+                    if (device.pluginState.isNotEmpty()) {
+                        ext->restorePluginStateFromValueTree(ext->state);
                     }
                 }
 

@@ -185,6 +185,26 @@ RackId RackSyncManager::getRackIdForInstance(te::Plugin* plugin) const {
     return INVALID_RACK_ID;
 }
 
+void RackSyncManager::captureAllPluginStates() {
+    auto& trackManager = TrackManager::getInstance();
+
+    for (auto& [rackId, synced] : syncedRacks_) {
+        for (auto& [deviceId, plugin] : synced.innerPlugins) {
+            auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get());
+            if (!ext)
+                continue;
+
+            ext->flushPluginStateToValueTree();
+            auto stateStr = ext->state.getProperty(te::IDs::state).toString();
+
+            // Always overwrite pluginState (even if empty) to avoid stale state
+            if (auto* devInfo = trackManager.getDevice(synced.trackId, deviceId)) {
+                devInfo->pluginState = stateStr;
+            }
+        }
+    }
+}
+
 void RackSyncManager::clear() {
     for (auto& [rackId, synced] : syncedRacks_) {
         if (!synced.rackType)
