@@ -36,6 +36,7 @@ set(TEST_SOURCES
     test_multi_out_tracks.cpp
     test_freeze_track.cpp
     test_dsl_add_chord.cpp
+    test_dsl_add_arpeggio.cpp
 )
 
 # Create test executable
