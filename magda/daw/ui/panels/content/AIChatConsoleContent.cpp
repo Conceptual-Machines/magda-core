@@ -258,12 +258,9 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
             icon = clipIconDrawable_.get();
 
         if (icon) {
-            auto iconBounds = contextIconBounds_.toFloat().reduced(4.0f);
-            auto colour = contextEnabled_ ? DarkTheme::getAccentColour()
-                                          : DarkTheme::getSecondaryTextColour().withAlpha(0.3f);
-            icon->replaceColour(juce::Colours::white, colour);
-            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
-            icon->replaceColour(colour, juce::Colours::white);
+            auto iconBounds = contextIconBounds_.toFloat().reduced(5.0f);
+            float opacity = contextEnabled_ ? 1.0f : 0.3f;
+            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, opacity);
         }
     }
 }
