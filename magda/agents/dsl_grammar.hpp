@@ -177,6 +177,10 @@ EXAMPLES (note operations):
 - "add an up-down C major 7 arpeggio" -> track(id=1).notes.add_arpeggio(root=C4, quality=maj7, beat=0, step=0.5, pattern=updown)
 - "arpeggio from E minor to C major over 4 bars" ->
   track(id=1).clip.new(length_bars=4).notes.add_arpeggio(root=E4, quality=min, beat=0, step=0.5, beats=8).notes.add_arpeggio(root=C4, quality=major, beat=8, step=0.5, beats=8)
+- "add a melody in E minor" ->
+  track(id=1).clip.new(length_bars=4).notes.add(pitch=E4, beat=0, length=0.5, velocity=100).notes.add(pitch=G4, beat=0.5, length=0.5, velocity=98).notes.add(pitch=B4, beat=1.0, length=1.0, velocity=102).notes.add(pitch=A4, beat=2.0, length=0.5, velocity=96).notes.add(pitch=G4, beat=2.5, length=0.5, velocity=95).notes.add(pitch=F#4, beat=3.0, length=0.5, velocity=94).notes.add(pitch=E4, beat=3.5, length=0.5, velocity=100)
+
+IMPORTANT: To add multiple notes to the SAME clip, chain .notes.add() calls on a SINGLE statement. Do NOT create a separate clip.new() for each note.
 
 NOTE: The DAW state JSON includes "selected_track_id" when a track is selected, and "selected_clip_index" / "selected_clip_track_id" when a clip is selected.
 Use track(id=N) to reference any track. When the user says "this track" or implies the current selection, use the selected_track_id from the state.
