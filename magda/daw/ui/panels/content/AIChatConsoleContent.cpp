@@ -159,7 +159,8 @@ AIChatConsoleContent::~AIChatConsoleContent() {
     // Stop the background thread with a timeout
     if (requestThread_) {
         requestThread_->signalThreadShouldExit();
-        requestThread_->stopThread(5000);
+        if (!requestThread_->stopThread(5000))
+            DBG("AIChatConsole: Warning - request thread did not stop within timeout");
         requestThread_.reset();
     }
 
@@ -168,11 +169,13 @@ AIChatConsoleContent::~AIChatConsoleContent() {
 }
 
 void AIChatConsoleContent::sendMessage(const juce::String& text) {
-    // If a previous request thread is still around, wait briefly
+    // If a previous request thread is still around, stop it before starting a new one
     if (requestThread_ && requestThread_->isThreadRunning()) {
         agent_->requestCancel();
         requestThread_->signalThreadShouldExit();
-        requestThread_->stopThread(2000);
+        if (!requestThread_->stopThread(2000))
+            DBG("AIChatConsole: Warning - previous request thread did not stop within timeout");
+        requestThread_.reset();
     }
 
     processing_ = true;
@@ -263,13 +266,13 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
             auto iconBounds = contextIconBounds_.toFloat().reduced(6.0f);
             auto colour = contextEnabled_ ? DarkTheme::getAccentColour()
                                           : DarkTheme::getSecondaryTextColour().withAlpha(0.3f);
-            // Tint SVG: replace source colours with target
+            // Tint a copy to avoid mutating the stored drawable
             static const auto svgGrey = juce::Colour(0xFFB3B3B3);
             static const auto svgWhite = juce::Colours::white;
-            icon->replaceColour(svgGrey, colour);
-            icon->replaceColour(svgWhite, colour);
-            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
-            icon->replaceColour(colour, svgGrey);
+            auto iconCopy = icon->createCopy();
+            iconCopy->replaceColour(svgGrey, colour);
+            iconCopy->replaceColour(svgWhite, colour);
+            iconCopy->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
         }
     }
 }

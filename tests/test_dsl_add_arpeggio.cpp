@@ -20,6 +20,7 @@ static void resetState() {
     ClipManager::getInstance().clearAllClips();
     TrackManager::getInstance().clearAllTracks();
     UndoManager::getInstance().clearHistory();
+    SelectionManager::getInstance().clearSelection();
 }
 
 static const ClipInfo* getFirstClip(TrackId trackId) {
@@ -553,6 +554,48 @@ TEST_CASE("add_arpeggio - unknown quality", "[dsl][arpeggio][error]") {
     bool result = interp.execute("track(name=\"Test\", type=\"midi\")"
                                  ".clip.new(bar=1, length_bars=4)"
                                  ".notes.add_arpeggio(root=C4, quality=bogus, beat=0, step=0.5)");
+    REQUIRE_FALSE(result);
+}
+
+TEST_CASE("add_arpeggio - zero step rejected", "[dsl][arpeggio][error]") {
+    resetState();
+    dsl::Interpreter interp;
+
+    bool result = interp.execute("track(name=\"Test\", type=\"midi\")"
+                                 ".clip.new(bar=1, length_bars=4)"
+                                 ".notes.add_arpeggio(root=C4, quality=major, beat=0, step=0)");
+    REQUIRE_FALSE(result);
+}
+
+TEST_CASE("add_arpeggio - negative step rejected", "[dsl][arpeggio][error]") {
+    resetState();
+    dsl::Interpreter interp;
+
+    bool result = interp.execute("track(name=\"Test\", type=\"midi\")"
+                                 ".clip.new(bar=1, length_bars=4)"
+                                 ".notes.add_arpeggio(root=C4, quality=major, beat=0, step=-0.5)");
+    REQUIRE_FALSE(result);
+}
+
+TEST_CASE("add_arpeggio - negative note_length rejected", "[dsl][arpeggio][error]") {
+    resetState();
+    dsl::Interpreter interp;
+
+    bool result = interp.execute(
+        "track(name=\"Test\", type=\"midi\")"
+        ".clip.new(bar=1, length_bars=4)"
+        ".notes.add_arpeggio(root=C4, quality=major, beat=0, step=0.5, note_length=-1)");
+    REQUIRE_FALSE(result);
+}
+
+TEST_CASE("add_arpeggio - negative beats rejected", "[dsl][arpeggio][error]") {
+    resetState();
+    dsl::Interpreter interp;
+
+    bool result =
+        interp.execute("track(name=\"Test\", type=\"midi\")"
+                       ".clip.new(bar=1, length_bars=4)"
+                       ".notes.add_arpeggio(root=C4, quality=major, beat=0, step=0.5, beats=-4)");
     REQUIRE_FALSE(result);
 }
 

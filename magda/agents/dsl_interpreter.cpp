@@ -1771,6 +1771,20 @@ bool Interpreter::executeAddArpeggio(const Params& params) {
         pattern = "up";
     std::string quality = params.get("quality");
 
+    // Validate timing parameters to avoid infinite loops
+    if (step <= 0.0) {
+        ctx_.setError("notes.add_arpeggio: step must be > 0");
+        return false;
+    }
+    if (noteLength <= 0.0) {
+        ctx_.setError("notes.add_arpeggio: note_length must be > 0");
+        return false;
+    }
+    if (params.has("beats") && params.getFloat("beats") <= 0.0) {
+        ctx_.setError("notes.add_arpeggio: beats must be > 0");
+        return false;
+    }
+
     // Sort pitches ascending for pattern application
     std::sort(midiNotes.begin(), midiNotes.end());
 

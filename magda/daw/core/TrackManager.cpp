@@ -130,10 +130,10 @@ void TrackManager::deleteTrack(TrackId trackId) {
     if (!track)
         return;
 
-    // Clear selection if this track (or something on it) is selected
+    // Clear selection because anything selected on this track (track, clips, devices, etc.)
+    // will become invalid after deletion.
     auto& sm = magda::SelectionManager::getInstance();
-    if (sm.getSelectedTrack() == trackId)
-        sm.clearSelection();
+    sm.clearSelection();
 
     // If this track has a parent, remove it from parent's children
     if (track->hasParent()) {
