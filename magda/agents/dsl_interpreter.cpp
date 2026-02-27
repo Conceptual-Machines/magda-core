@@ -329,6 +329,12 @@ bool Interpreter::execute(const char* dslCode) {
 
     ctx_ = InterpreterContext();
 
+    // Inject selected clip from UI so note operations work without explicit selection
+    auto& sm = SelectionManager::getInstance();
+    auto selectedClip = sm.getSelectedClip();
+    if (selectedClip != INVALID_CLIP_ID)
+        ctx_.currentClipId = selectedClip;
+
     DBG("MAGDA DSL: Executing: " + juce::String(dslCode).substring(0, 200));
 
     Tokenizer tok(dslCode);
@@ -1371,6 +1377,14 @@ ClipId Interpreter::getSelectedClipId() const {
     // Fall back to clip created/referenced in the current chain
     if (ctx_.currentClipId >= 0)
         return ctx_.currentClipId;
+
+    // Fall back to the first clip on the current track
+    if (ctx_.currentTrackId >= 0) {
+        auto& cm = ClipManager::getInstance();
+        auto clips = cm.getClipsOnTrack(ctx_.currentTrackId);
+        if (!clips.empty())
+            return clips.front();
+    }
 
     return INVALID_CLIP_ID;
 }
