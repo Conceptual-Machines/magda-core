@@ -21,6 +21,7 @@ bool DAWAgent::start() {
 }
 
 void DAWAgent::stop() {
+    shouldStop_ = true;
     running_ = false;
 }
 
@@ -30,36 +31,58 @@ void DAWAgent::setMessageCallback(
 }
 
 std::string DAWAgent::processMessage(const std::string& message) {
-    if (!running_)
-        return "Agent is not running.";
+    auto dsl = generateDSL(message);
+    if (dsl.hasError)
+        return dsl.error;
+    return executeDSL(dsl);
+}
+
+DAWAgent::DSLResult DAWAgent::generateDSL(const std::string& message) {
+    DSLResult result;
+
+    if (!running_) {
+        result.error = "Agent is not running.";
+        result.hasError = true;
+        return result;
+    }
 
     // Reload config in case the user changed settings
     openai_.loadFromConfig();
 
-    if (!openai_.hasApiKey())
-        return "OpenAI API key not configured. Set it in Preferences > AI Assistant.";
+    if (!openai_.hasApiKey()) {
+        result.error = "OpenAI API key not configured. Set it in Preferences > AI Assistant.";
+        result.hasError = true;
+        return result;
+    }
 
     // 1. Build state snapshot
     auto stateJson = dsl::Interpreter::buildStateSnapshot();
 
     // 2. Call OpenAI with CFG grammar
-    auto dslResult =
+    auto dslString =
         openai_.generateDSL(juce::String(message), stateJson, juce::String(dsl::getGrammar()),
-                            juce::String(dsl::getToolDescription()));
+                            juce::String(dsl::getToolDescription()), &shouldStop_);
 
-    if (dslResult.isEmpty()) {
-        return "Error: " + openai_.getLastError().toStdString();
+    if (dslString.isEmpty()) {
+        result.error = "Error: " + openai_.getLastError().toStdString();
+        result.hasError = true;
+        return result;
     }
 
-    DBG("MAGDA DAWAgent: DSL received: " + dslResult);
+    DBG("MAGDA DAWAgent: DSL received: " + dslString);
+    result.dsl = dslString.toStdString();
+    return result;
+}
 
-    // 3. Execute DSL
-    if (!interpreter_.execute(dslResult.toRawUTF8())) {
+std::string DAWAgent::executeDSL(const DSLResult& result) {
+    if (result.hasError)
+        return result.error;
+
+    if (!interpreter_.execute(result.dsl.c_str())) {
         return "DSL execution error: " + std::string(interpreter_.getError()) +
-               "\nDSL was: " + dslResult.toStdString();
+               "\nDSL was: " + result.dsl;
     }
 
-    // 4. Build result
     auto results = interpreter_.getResults();
     if (results.isEmpty())
         return "Done.";

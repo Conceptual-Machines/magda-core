@@ -77,7 +77,7 @@ struct LayoutConfig {
     int collapsedPanelSize = 24;
     int panelCollapseThreshold = 50;
 
-    int defaultBottomPanelHeight = 200;
+    int defaultBottomPanelHeight = 300;
     int minBottomPanelHeight = 100;
 
     // Max panel size constraints (fraction of window dimension)

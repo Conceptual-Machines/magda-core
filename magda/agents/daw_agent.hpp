@@ -42,14 +42,36 @@ class DAWAgent : public AgentInterface {
         return running_.load();
     }
 
+    /** Signal any in-flight HTTP request to cancel */
+    void requestCancel() {
+        shouldStop_ = true;
+    }
+    void resetCancel() {
+        shouldStop_ = false;
+    }
+
     std::string processMessage(const std::string& message) override;
     void setMessageCallback(
         std::function<void(const std::string&, const std::string&)> callback) override;
+
+    /** Result of the LLM call (HTTP), before DSL execution */
+    struct DSLResult {
+        std::string dsl;
+        std::string error;
+        bool hasError = false;
+    };
+
+    /** Step 1: Call OpenAI to generate DSL (safe to call from background thread) */
+    DSLResult generateDSL(const std::string& message);
+
+    /** Step 2: Execute DSL code (MUST be called on the message thread) */
+    std::string executeDSL(const DSLResult& result);
 
   private:
     OpenAIClient openai_;
     dsl::Interpreter interpreter_;
     std::atomic<bool> running_{false};
+    std::atomic<bool> shouldStop_{false};
     std::function<void(const std::string&, const std::string&)> messageCallback_;
 };
 

@@ -387,31 +387,32 @@ class AIPage : public juce::Component {
                 juce::URL url("https://api.openai.com/v1/models");
                 juce::String headers = "Authorization: Bearer " + key;
 
+                int statusCode = 0;
                 auto options =
                     juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
                         .withExtraHeaders(headers)
-                        .withConnectionTimeoutMs(10000);
+                        .withConnectionTimeoutMs(10000)
+                        .withStatusCode(&statusCode);
 
                 auto stream = url.createInputStream(options);
+
+                // Consume the response body so macOS NSURLSession doesn't
+                // cancel the task when the stream is destroyed (avoids -999)
+                if (stream)
+                    stream->readEntireStreamAsString();
 
                 bool valid = false;
                 juce::String statusMsg;
 
-                if (stream) {
-                    auto* webStream = dynamic_cast<juce::WebInputStream*>(stream.get());
-                    if (webStream) {
-                        int code = webStream->getStatusCode();
-                        if (code == 200) {
-                            valid = true;
-                            statusMsg = "Valid";
-                        } else if (code == 401) {
-                            statusMsg = "Invalid API key";
-                        } else {
-                            statusMsg = "HTTP " + juce::String(code);
-                        }
-                    }
+                if (statusCode == 200) {
+                    valid = true;
+                    statusMsg = "Valid";
+                } else if (statusCode == 401) {
+                    statusMsg = "Invalid API key";
+                } else if (statusCode > 0) {
+                    statusMsg = "HTTP " + juce::String(statusCode);
                 } else {
-                    statusMsg = "Connection failed";
+                    statusMsg = "Connection failed - check your network";
                 }
 
                 juce::MessageManager::callAsync([safeThis, valid, statusMsg]() {

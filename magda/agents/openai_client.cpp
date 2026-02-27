@@ -134,29 +134,30 @@ juce::String OpenAIClient::extractDSLFromResponse(const juce::String& responseJs
         }
     }
 
-    // Fallback: check for text output containing DSL
+    // No custom_tool_call with magda_dsl found — report clear error
+    DBG("MAGDA OpenAI: No magda_dsl tool call found in response. Output items:");
     for (const auto& item : *outputArray) {
         auto type = item.getProperty("type", "").toString();
-
+        DBG("  - type: " + type);
         if (type == "message") {
             auto content = item.getProperty("content", {});
             if (content.isArray()) {
                 for (const auto& contentItem : *content.getArray()) {
                     auto text = contentItem.getProperty("text", "").toString();
-                    if (text.contains("track(") || text.contains("filter("))
-                        return text;
+                    DBG("    text: " + text.substring(0, 200));
                 }
             }
         }
     }
 
-    lastError_ = "No DSL output found in API response";
+    lastError_ = "The AI did not generate DSL output. Please try rephrasing your request.";
     return {};
 }
 
 juce::String OpenAIClient::generateDSL(const juce::String& userPrompt,
                                        const juce::String& stateJson, const juce::String& grammar,
-                                       const juce::String& toolDescription) {
+                                       const juce::String& toolDescription,
+                                       std::atomic<bool>* cancelFlag) {
     lastError_ = {};
 
     if (!hasApiKey()) {
@@ -182,12 +183,16 @@ juce::String OpenAIClient::generateDSL(const juce::String& userPrompt,
                            apiKey_;
 
     // Perform the HTTP request
-    auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inPostData)
-                       .withExtraHeaders(headers)
-                       .withConnectionTimeoutMs(30000)
-                       .withNumRedirectsToFollow(5);
+    auto baseOptions = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inPostData)
+                           .withExtraHeaders(headers)
+                           .withConnectionTimeoutMs(30000)
+                           .withNumRedirectsToFollow(5);
 
-    auto stream = url.createInputStream(options);
+    auto stream = cancelFlag ? url.createInputStream(baseOptions.withProgressCallback(
+                                   [cancelFlag](int /*bytesSent*/, int /*totalBytes*/) -> bool {
+                                       return !cancelFlag->load();  // return false to abort
+                                   }))
+                             : url.createInputStream(baseOptions);
 
     if (!stream) {
         lastError_ = "Failed to connect to OpenAI API";

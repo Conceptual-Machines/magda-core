@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "../daw/core/ClipTypes.hpp"
 #include "../daw/core/TrackTypes.hpp"
 
 namespace magda::dsl {
@@ -14,19 +15,24 @@ namespace magda::dsl {
 // Token Types
 // ============================================================================
 enum class TokenType {
-    IDENTIFIER,     // track, filter, new_clip, etc.
-    STRING,         // "Serum", "Bass"
-    NUMBER,         // 3, 4.5, -6.0
-    LPAREN,         // (
-    RPAREN,         // )
-    LBRACKET,       // [
-    RBRACKET,       // ]
-    DOT,            // .
-    COMMA,          // ,
-    EQUALS,         // =
-    EQUALS_EQUALS,  // ==
-    SEMICOLON,      // ;
-    AT,             // @
+    IDENTIFIER,      // track, filter, clip, notes, etc.
+    STRING,          // "Serum", "Bass"
+    NUMBER,          // 3, 4.5, -6.0
+    LPAREN,          // (
+    RPAREN,          // )
+    LBRACKET,        // [
+    RBRACKET,        // ]
+    DOT,             // .
+    COMMA,           // ,
+    EQUALS,          // =
+    EQUALS_EQUALS,   // ==
+    NOT_EQUALS,      // !=
+    GREATER,         // >
+    GREATER_EQUALS,  // >=
+    LESS,            // <
+    LESS_EQUALS,     // <=
+    SEMICOLON,       // ;
+    AT,              // @
     END_OF_INPUT,
     ERROR
 };
@@ -56,11 +62,20 @@ class Tokenizer {
   public:
     explicit Tokenizer(const char* input);
 
+    struct Position {
+        const char* pos;
+        int line, col;
+        Token peeked;
+        bool hasPeeked;
+    };
+
     Token next();
     Token peek();
     bool hasMore() const;
     bool expect(TokenType type);
     bool expect(const char* identifier);
+    Position savePosition() const;
+    void restorePosition(const Position& p);
 
   private:
     void skipWhitespace();
@@ -101,6 +116,7 @@ class Params {
 // ============================================================================
 struct InterpreterContext {
     int currentTrackId = -1;
+    int currentClipId = -1;
 
     // For filter operations
     std::vector<int> filteredTrackIds;
@@ -164,6 +180,25 @@ class Interpreter {
     bool executeSetTrack(const Params& params);
     bool executeDelete();
     bool executeDeleteClip(const Params& params);
+    bool executeAddFx(const Params& params);
+    bool executeRenameClip(const Params& params);
+    bool executeSelect();
+    bool executeForEach(Tokenizer& tok);
+    bool executeSelectClips(Tokenizer& tok);
+    bool executeSelectNotes(Tokenizer& tok);
+    bool executeAddNote(const Params& params);
+    bool executeAddChord(const Params& params);
+    bool executeAddArpeggio(const Params& params);
+    bool executeDeleteNotes();
+    bool executeTranspose(const Params& params);
+    bool executeSetPitch(const Params& params);
+    bool executeSetVelocity(const Params& params);
+    bool executeQuantize(const Params& params);
+    bool executeResizeNotes(const Params& params);
+    bool resolveChordNotes(const Params& params, std::vector<int>& outNotes);
+    static int parseNoteName(const std::string& name);
+    ClipId getSelectedClipId() const;
+    bool ensureNoteSelection();
 
     // Parameter parsing
     bool parseParams(Tokenizer& tok, Params& outParams);
@@ -174,7 +209,7 @@ class Interpreter {
     int findTrackByName(const juce::String& name) const;
 
     // Time conversion
-    double barsToTime(int bar) const;
+    double barsToTime(double bar) const;
 
     InterpreterContext ctx_;
 };

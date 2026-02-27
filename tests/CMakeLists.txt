@@ -35,6 +35,8 @@ set(TEST_SOURCES
     test_grid_constants.cpp
     test_multi_out_tracks.cpp
     test_freeze_track.cpp
+    test_dsl_add_chord.cpp
+    test_dsl_add_arpeggio.cpp
 )
 
 # Create test executable
@@ -44,6 +46,7 @@ add_executable(magda_tests ${TEST_SOURCES})
 target_link_libraries(magda_tests
     PRIVATE
     magda_daw
+    magda_agents
     Catch2::Catch2WithMain
     juce::juce_core
     juce::juce_gui_basics

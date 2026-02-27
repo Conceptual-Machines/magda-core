@@ -2,6 +2,8 @@
 
 #include <juce_core/juce_core.h>
 
+#include <atomic>
+
 namespace magda {
 
 /**
@@ -37,7 +39,8 @@ class OpenAIClient {
      * @return Generated DSL string, or empty on error (check getLastError())
      */
     juce::String generateDSL(const juce::String& userPrompt, const juce::String& stateJson,
-                             const juce::String& grammar, const juce::String& toolDescription);
+                             const juce::String& grammar, const juce::String& toolDescription,
+                             std::atomic<bool>* cancelFlag = nullptr);
 
     juce::String getLastError() const {
         return lastError_;
