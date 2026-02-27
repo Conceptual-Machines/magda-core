@@ -307,6 +307,11 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
         obj->setProperty("multiOut", juce::var(multiOutObj));
     }
 
+    // Plugin state blob (compressed binary)
+    if (device.pluginStateData.isNotEmpty()) {
+        obj->setProperty("pluginStateData", device.pluginStateData);
+    }
+
     // Sidechain / MIDI receive capabilities
     if (device.canSidechain) {
         obj->setProperty("canSidechain", true);
@@ -433,6 +438,12 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
                 }
             }
         }
+    }
+
+    // Plugin state blob (backward compatible — missing in older project files)
+    auto pluginStateVar = obj->getProperty("pluginStateData");
+    if (!pluginStateVar.isVoid()) {
+        outDevice.pluginStateData = pluginStateVar.toString();
     }
 
     // Sidechain / MIDI receive capabilities

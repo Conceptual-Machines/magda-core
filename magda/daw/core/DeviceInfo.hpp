@@ -106,6 +106,11 @@ struct DeviceInfo {
     // Multi-output configuration (for instruments with >2 output channels)
     MultiOutConfig multiOut;
 
+    // Compressed plugin state blob (base64-encoded gzip'd ValueTree XML)
+    // Captured on save from te::Plugin::state, restored on load via
+    // restorePluginStateFromValueTree(). Empty when no state has been captured.
+    juce::String pluginStateData;
+
     // Plugin loading state (Loading while async load is in-flight)
     DeviceLoadState loadState = DeviceLoadState::Loaded;
 

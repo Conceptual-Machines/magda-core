@@ -35,6 +35,7 @@ set(TEST_SOURCES
     test_grid_constants.cpp
     test_multi_out_tracks.cpp
     test_freeze_track.cpp
+    test_plugin_state_serialization.cpp
 )
 
 # Create test executable
