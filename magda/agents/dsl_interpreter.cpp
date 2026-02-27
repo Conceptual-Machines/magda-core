@@ -408,15 +408,14 @@ bool Interpreter::parseTrackStatement(Tokenizer& tok) {
             auto trackType = parseTrackType(params);
             auto trackId = tm.createTrack(name, trackType);
             ctx_.currentTrackId = trackId;
-            ctx_.addResult("Created " + juce::String(getTrackTypeName(trackType)) + " track '" +
-                           name + "'");
+            ctx_.addResult("Created track '" + name + "'");
         }
     } else {
         // track() with no params — create unnamed track
         auto trackType = parseTrackType(params);
         auto trackId = tm.createTrack("", trackType);
         ctx_.currentTrackId = trackId;
-        ctx_.addResult("Created " + juce::String(getTrackTypeName(trackType)) + " track");
+        ctx_.addResult("Created track");
     }
 
     return parseMethodChain(tok);
