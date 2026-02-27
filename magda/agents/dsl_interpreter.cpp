@@ -682,8 +682,32 @@ bool Interpreter::executeNewClip(const Params& params) {
         return false;
     }
 
-    double bar = params.getFloat("bar", 1.0);
     double lengthBars = params.getFloat("length_bars", 4.0);
+    double bar;
+
+    if (params.has("bar")) {
+        bar = params.getFloat("bar", 1.0);
+    } else {
+        // No position specified — place after the last clip on this track
+        bar = 1.0;
+        double bpm = 120.0;
+        auto* engine = TrackManager::getInstance().getAudioEngine();
+        if (engine)
+            bpm = engine->getTempo();
+        double secondsPerBar = 4.0 * 60.0 / bpm;
+
+        auto& cm = ClipManager::getInstance();
+        for (auto cid : cm.getClipsOnTrack(ctx_.currentTrackId)) {
+            auto* clip = cm.getClip(cid);
+            if (!clip)
+                continue;
+            // Convert clip end time to 1-based bar, round up to next full bar
+            double clipEndBar = (clip->startTime + clip->length) / secondsPerBar + 1.0;
+            double nextBar = std::ceil(clipEndBar - 0.001);  // tolerance for floating point
+            if (nextBar > bar)
+                bar = nextBar;
+        }
+    }
 
     if (bar < 1.0) {
         ctx_.setError("Bar number must be positive, got " + juce::String(bar));

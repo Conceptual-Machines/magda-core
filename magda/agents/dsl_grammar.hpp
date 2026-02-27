@@ -103,6 +103,7 @@ TRACK OPERATIONS:
 
 METHOD CHAINING:
 - .clip.new(bar=3, length_bars=4) - Create MIDI clip at bar
+- .clip.new(length_bars=4) - Create MIDI clip after the last clip on the track (omit bar to auto-place)
 - .track.set(name="X", volume_db=-3, pan=0.5, mute=true, solo=true)
 - .fx.add(name="eq") - Add internal FX (eq, compressor, reverb, delay, chorus, phaser, filter, utility, pitch shift, ir reverb)
 - .fx.add(name="Pro-Q 3") - Add scanned third-party plugin by name

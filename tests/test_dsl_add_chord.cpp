@@ -385,6 +385,54 @@ TEST_CASE("notes.add_chord - multiple chords (progression)", "[dsl][chord][progr
 }
 
 // ============================================================================
+// Auto-placement (bar omitted)
+// ============================================================================
+
+TEST_CASE("clip.new without bar places after last clip", "[dsl][chord][autoplace]") {
+    resetState();
+    dsl::Interpreter interp;
+
+    // Create first clip at bar 1, 4 bars long (ends at bar 5)
+    REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\").clip.new(bar=1, length_bars=4)"));
+
+    // Create second clip without specifying bar — should auto-place at bar 5
+    REQUIRE(interp.execute("track(name=\"Test\").clip.new(length_bars=2)"
+                           ".notes.add_chord(root=C4, quality=major, beat=0, length=1)"));
+
+    auto tracks = TrackManager::getInstance().getTracks();
+    auto& cm = ClipManager::getInstance();
+    auto clipIds = cm.getClipsOnTrack(tracks[0].id);
+    REQUIRE(clipIds.size() == 2);
+
+    // Second clip should start at bar 5 (= 8 seconds at 120 BPM)
+    auto* clip2 = cm.getClip(clipIds[1]);
+    REQUIRE(clip2 != nullptr);
+    REQUIRE(clip2->startTime == Catch::Approx(8.0));
+
+    // Chords should be on the second clip, not the first
+    REQUIRE(clip2->midiNotes.size() == 3);
+    auto* clip1 = cm.getClip(clipIds[0]);
+    REQUIRE(clip1->midiNotes.empty());
+}
+
+TEST_CASE("clip.new without bar on empty track places at bar 1", "[dsl][chord][autoplace]") {
+    resetState();
+    dsl::Interpreter interp;
+
+    REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\").clip.new(length_bars=4)"));
+
+    auto tracks = TrackManager::getInstance().getTracks();
+    auto& cm = ClipManager::getInstance();
+    auto clipIds = cm.getClipsOnTrack(tracks[0].id);
+    REQUIRE(clipIds.size() == 1);
+
+    // Should start at bar 1 (= 0 seconds)
+    auto* clip = cm.getClip(clipIds[0]);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->startTime == Catch::Approx(0.0));
+}
+
+// ============================================================================
 // Error cases
 // ============================================================================
 
