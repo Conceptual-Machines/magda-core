@@ -106,6 +106,9 @@ struct DeviceInfo {
     // Multi-output configuration (for instruments with >2 output channels)
     MultiOutConfig multiOut;
 
+    // Plugin native state (base64-encoded binary blob from TE ExternalPlugin)
+    juce::String pluginState;
+
     // Plugin loading state (Loading while async load is in-flight)
     DeviceLoadState loadState = DeviceLoadState::Loaded;
 

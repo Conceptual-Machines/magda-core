@@ -141,6 +141,13 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
 
         outData.info.projectLength = projectObj->getProperty("projectLength");
 
+        if (projectObj->hasProperty("sampleRate"))
+            outData.info.sampleRate = projectObj->getProperty("sampleRate");
+        if (projectObj->hasProperty("keyRoot"))
+            outData.info.keyRoot = projectObj->getProperty("keyRoot");
+        if (projectObj->hasProperty("keyQuality"))
+            outData.info.keyQuality = projectObj->getProperty("keyQuality");
+
         // Loop settings
         auto loopVar = projectObj->getProperty("loop");
         if (loopVar.isObject()) {
@@ -202,6 +209,9 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     projectObj->setProperty("timeSignature", juce::var(timeSigArray));
 
     projectObj->setProperty("projectLength", info.projectLength);
+    projectObj->setProperty("sampleRate", info.sampleRate);
+    projectObj->setProperty("keyRoot", info.keyRoot);
+    projectObj->setProperty("keyQuality", info.keyQuality);
 
     // Loop settings
     auto* loopObj = new juce::DynamicObject();
@@ -267,6 +277,13 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
     }
 
     outInfo.projectLength = projectObj->getProperty("projectLength");
+
+    if (projectObj->hasProperty("sampleRate"))
+        outInfo.sampleRate = projectObj->getProperty("sampleRate");
+    if (projectObj->hasProperty("keyRoot"))
+        outInfo.keyRoot = projectObj->getProperty("keyRoot");
+    if (projectObj->hasProperty("keyQuality"))
+        outInfo.keyQuality = projectObj->getProperty("keyQuality");
 
     // Loop settings
     auto loopVar = projectObj->getProperty("loop");

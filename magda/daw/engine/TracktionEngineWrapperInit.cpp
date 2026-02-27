@@ -5,6 +5,7 @@
 #include "../audio/SessionClipScheduler.hpp"
 #include "../audio/SessionRecorder.hpp"
 #include "../core/Config.hpp"
+#include "../project/ProjectManager.hpp"
 #include "MagdaEngineBehaviour.hpp"
 #include "MagdaUIBehaviour.hpp"
 #include "PluginScanCoordinator.hpp"
@@ -315,6 +316,13 @@ void TracktionEngineWrapper::createEditAndBridges() {
     audioBridge_->setEngineWrapper(this);
     audioBridge_->enableAllMidiInputDevices();
 
+    // Wire up plugin state capture before project save
+    auto* bridge = audioBridge_.get();
+    ProjectManager::getInstance().onBeforeSave = [bridge]() {
+        if (bridge)
+            bridge->captureAllPluginStates();
+    };
+
     // Create MidiBridge for MIDI device management
     midiBridge_ = std::make_unique<MidiBridge>(*engine_);
     midiBridge_->setAudioBridge(audioBridge_.get());
@@ -391,6 +399,9 @@ void TracktionEngineWrapper::shutdown() {
     if (sessionScheduler_) {
         sessionScheduler_.reset();
     }
+
+    // Clear the pre-save callback before destroying AudioBridge
+    ProjectManager::getInstance().onBeforeSave = nullptr;
 
     // Destroy AudioBridge first (it references Edit and Engine)
     if (audioBridge_) {

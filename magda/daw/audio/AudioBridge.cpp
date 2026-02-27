@@ -512,6 +512,10 @@ te::Clip* AudioBridge::getSessionTeClip(ClipId clipId) {
 // Plugin Loading
 // =============================================================================
 
+void AudioBridge::captureAllPluginStates() {
+    pluginManager_.captureAllPluginStates();
+}
+
 te::Plugin::Ptr AudioBridge::loadBuiltInPlugin(const TrackId trackId, const juce::String& type) {
     return pluginManager_.loadBuiltInPlugin(trackId, type);
 }

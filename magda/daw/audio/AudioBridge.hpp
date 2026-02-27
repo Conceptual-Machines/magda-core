@@ -206,6 +206,16 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     void removeWarpMarker(ClipId clipId, int index);
 
     // =========================================================================
+    // Plugin State Capture
+    // =========================================================================
+
+    /**
+     * @brief Capture native state from all loaded external plugins into DeviceInfo
+     * Call before saving a project to snapshot live plugin states.
+     */
+    void captureAllPluginStates();
+
+    // =========================================================================
     // Plugin Loading
     // =========================================================================
 

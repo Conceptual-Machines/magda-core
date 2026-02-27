@@ -79,6 +79,11 @@ class RackSyncManager {
     RackId getRackIdForInstance(te::Plugin* plugin) const;
 
     /**
+     * @brief Capture native state from all external plugins inside racks into DeviceInfo
+     */
+    void captureAllPluginStates();
+
+    /**
      * @brief Clear all synced rack state (for shutdown)
      */
     void clear();
