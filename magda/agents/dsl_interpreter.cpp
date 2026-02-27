@@ -1787,11 +1787,30 @@ bool Interpreter::executeAddArpeggio(const Params& params) {
         ordered = midiNotes;
     }
 
+    // Determine fill boundary (clip length in beats) if fill=true
+    bool fill = params.getBool("fill", false);
+    double fillBeats = 0.0;
+    if (fill) {
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip) {
+            double bpm = 120.0;
+            auto* engine = TrackManager::getInstance().getAudioEngine();
+            if (engine)
+                bpm = engine->getTempo();
+            fillBeats = clip->length * bpm / 60.0;
+        }
+    }
+
     // Build MidiNote objects with sequential beat offsets
     std::vector<MidiNote> notes;
     juce::StringArray noteNames;
     double currentBeat = beat;
-    for (int n : ordered) {
+    size_t idx = 0;
+    size_t count = fill ? std::numeric_limits<size_t>::max() : ordered.size();
+    while (idx < count) {
+        if (fill && currentBeat >= fillBeats)
+            break;
+        int n = ordered[idx % ordered.size()];
         MidiNote mn;
         mn.noteNumber = n;
         mn.startBeat = currentBeat;
@@ -1800,6 +1819,7 @@ bool Interpreter::executeAddArpeggio(const Params& params) {
         notes.push_back(mn);
         noteNames.add(juce::MidiMessage::getMidiNoteName(n, true, true, 4));
         currentBeat += step;
+        idx++;
     }
 
     UndoManager::getInstance().executeCommand(std::make_unique<AddMultipleMidiNotesCommand>(

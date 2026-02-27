@@ -655,6 +655,72 @@ TEST_CASE("notes.add_arpeggio - custom note_length", "[dsl][arpeggio]") {
         REQUIRE(note.lengthBeats == Catch::Approx(1.0));
 }
 
+TEST_CASE("notes.add_arpeggio - fill clips entire bar", "[dsl][arpeggio][fill]") {
+    resetState();
+    dsl::Interpreter interp;
+
+    // 2-bar clip at 120 BPM = 8 beats. C major triad (3 notes), step=0.5, fill=true
+    // Pattern cycles: C E G C E G C E G C E G C E G C → until beat >= 8.0
+    // 8.0 / 0.5 = 16 notes
+    REQUIRE(
+        interp.execute("track(name=\"Test\", type=\"midi\")"
+                       ".clip.new(bar=1, length_bars=2)"
+                       ".notes.add_arpeggio(root=C4, quality=major, beat=0, step=0.5, fill=true)"));
+
+    auto tracks = TrackManager::getInstance().getTracks();
+    const auto* clip = getFirstClip(tracks[0].id);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->midiNotes.size() == 16);
+
+    auto notesByBeat = getNotesByBeat(clip);
+    // First cycle
+    REQUIRE(notesByBeat[0].first == 60);  // C4@0
+    REQUIRE(notesByBeat[1].first == 64);  // E4@0.5
+    REQUIRE(notesByBeat[2].first == 67);  // G4@1.0
+    // Second cycle
+    REQUIRE(notesByBeat[3].first == 60);  // C4@1.5
+    // Last note should be at beat 7.5
+    REQUIRE(notesByBeat[15].second == Catch::Approx(7.5));
+}
+
+TEST_CASE("notes.add_arpeggio - fill with down pattern", "[dsl][arpeggio][fill]") {
+    resetState();
+    dsl::Interpreter interp;
+
+    // 1-bar clip = 4 beats. C major down, step=0.5 → 8 notes
+    REQUIRE(interp.execute(
+        "track(name=\"Test\", type=\"midi\")"
+        ".clip.new(bar=1, length_bars=1)"
+        ".notes.add_arpeggio(root=C4, quality=major, beat=0, step=0.5, pattern=down, fill=true)"));
+
+    auto tracks = TrackManager::getInstance().getTracks();
+    const auto* clip = getFirstClip(tracks[0].id);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->midiNotes.size() == 8);
+
+    auto notesByBeat = getNotesByBeat(clip);
+    // Down pattern: G E C G E C G E
+    REQUIRE(notesByBeat[0].first == 67);  // G4@0
+    REQUIRE(notesByBeat[1].first == 64);  // E4@0.5
+    REQUIRE(notesByBeat[2].first == 60);  // C4@1.0
+    REQUIRE(notesByBeat[3].first == 67);  // G4@1.5 (cycle)
+}
+
+TEST_CASE("notes.add_arpeggio - no fill by default", "[dsl][arpeggio][fill]") {
+    resetState();
+    dsl::Interpreter interp;
+
+    // Without fill, a 4-bar clip should only get 3 notes (one per chord tone)
+    REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
+                           ".clip.new(bar=1, length_bars=4)"
+                           ".notes.add_arpeggio(root=C4, quality=major, beat=0, step=0.5)"));
+
+    auto tracks = TrackManager::getInstance().getTracks();
+    const auto* clip = getFirstClip(tracks[0].id);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->midiNotes.size() == 3);
+}
+
 TEST_CASE("notes.add_arpeggio - missing root", "[dsl][arpeggio][error]") {
     resetState();
     dsl::Interpreter interp;
