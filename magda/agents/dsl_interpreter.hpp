@@ -15,7 +15,7 @@ namespace magda::dsl {
 // Token Types
 // ============================================================================
 enum class TokenType {
-    IDENTIFIER,      // track, filter, new_clip, etc.
+    IDENTIFIER,      // track, filter, clip, notes, etc.
     STRING,          // "Serum", "Bass"
     NUMBER,          // 3, 4.5, -6.0
     LPAREN,          // (

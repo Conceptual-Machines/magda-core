@@ -52,23 +52,21 @@ chain: method+
 
 method: "." method_call
 
-method_call: "new_clip" "(" params? ")"
-           | "set_track" "(" params? ")"
-           | "add_fx" "(" params? ")"
-           | "addAutomation" "(" params? ")"
-           | "add_automation" "(" params? ")"
+method_call: "clip" "." "new" "(" params? ")"
+           | "clip" "." "rename" "(" params? ")"
+           | "clip" "." "delete" "(" params? ")"
+           | "clips" "." "select" "(" clip_condition ")"
+           | "track" "." "set" "(" params? ")"
+           | "fx" "." "add" "(" params? ")"
+           | "notes" "." "add" "(" params? ")"
+           | "notes" "." "select" "(" note_condition ")"
+           | "notes" "." "delete" "(" ")"
+           | "notes" "." "transpose" "(" params? ")"
+           | "notes" "." "set_velocity" "(" params? ")"
+           | "notes" "." "quantize" "(" params? ")"
+           | "notes" "." "resize" "(" params? ")"
            | "delete" "(" ")"
-           | "delete_clip" "(" params? ")"
-           | "rename_clip" "(" params? ")"
            | "select" "(" ")"
-           | "select_clips" "(" clip_condition ")"
-           | "select_notes" "(" note_condition ")"
-           | "add_note" "(" params? ")"
-           | "delete_notes" "(" ")"
-           | "transpose" "(" params? ")"
-           | "set_velocity" "(" params? ")"
-           | "quantize" "(" params? ")"
-           | "resize_notes" "(" params? ")"
            | "for_each" "(" chain ")"
 
 // Parameters
@@ -114,61 +112,63 @@ TRACK OPERATIONS:
 - track(id=1) - Reference existing track (1-based index)
 
 METHOD CHAINING:
-- .new_clip(bar=3, length_bars=4) - Create MIDI clip at bar
-- .set_track(name="X", volume_db=-3, pan=0.5, mute=true, solo=true)
-- .add_fx(name="eq") - Add internal FX (eq, compressor, reverb, delay, chorus, phaser, filter, utility, pitch shift, ir reverb)
-- .add_fx(name="Pro-Q 3") - Add scanned third-party plugin by name
-- .add_fx(name="Pro-Q 3", format="VST3") - Add plugin with format hint (VST3, AU, VST)
+- .clip.new(bar=3, length_bars=4) - Create MIDI clip at bar
+- .track.set(name="X", volume_db=-3, pan=0.5, mute=true, solo=true)
+- .fx.add(name="eq") - Add internal FX (eq, compressor, reverb, delay, chorus, phaser, filter, utility, pitch shift, ir reverb)
+- .fx.add(name="Pro-Q 3") - Add scanned third-party plugin by name
+- .fx.add(name="Pro-Q 3", format="VST3") - Add plugin with format hint (VST3, AU, VST)
 - .delete() - Delete track
-- .rename_clip(index=0, name="Intro") - Rename clip at index on track
-- .rename_clip(name="Intro") - Rename all currently selected clips (omit index)
+- .clip.rename(index=0, name="Intro") - Rename clip at index on track
+- .clip.rename(name="Intro") - Rename all currently selected clips (omit index)
+- .clip.rename(name="Clip {i}") - Rename selected clips with auto-numbering: Clip 1, Clip 2, etc.
+- .clip.delete(index=0) - Delete clip at index on track
 - .select() - Select track in the UI
-- .select_clips(clip.length_bars >= 2) - Select clips matching predicate (fields: length_bars, start_bar; ops: ==, !=, >, >=, <, <=)
+- .clips.select(clip.length_bars >= 2) - Select clips matching predicate (fields: length_bars, start_bar; ops: ==, !=, >, >=, <, <=)
 
 FILTER OPERATIONS (bulk):
 - filter(tracks, track.name == "X").delete() - Delete all tracks named X
-- filter(tracks, track.name == "X").set_track(mute=true) - Mute all tracks named X
+- filter(tracks, track.name == "X").track.set(mute=true) - Mute all tracks named X
 - filter(tracks, track.name == "X").select() - Select all matching tracks
-- filter(tracks, track.name == "X").for_each(.new_clip(bar=1, length_bars=4)) - Apply operations to each matched track
-- filter(tracks, track.name == "X").for_each(.add_fx(name="reverb").set_track(mute=true)) - Chain multiple operations per track
+- filter(tracks, track.name == "X").for_each(.clip.new(bar=1, length_bars=4)) - Apply operations to each matched track
+- filter(tracks, track.name == "X").for_each(.fx.add(name="reverb").track.set(mute=true)) - Chain multiple operations per track
 
 EXAMPLES:
 - "create a bass track" -> track(name="Bass", type="audio")
-- "create a drums track and mute it" -> track(name="Drums", type="audio").set_track(mute=true)
+- "create a drums track and mute it" -> track(name="Drums", type="audio").track.set(mute=true)
 - "delete track 1" -> track(id=1).delete()
-- "mute all tracks named Drums" -> filter(tracks, track.name == "Drums").set_track(mute=true)
+- "mute all tracks named Drums" -> filter(tracks, track.name == "Drums").track.set(mute=true)
 - "create a midi track called Lead and add a 4 bar clip at bar 1" ->
-  track(name="Lead", type="midi").new_clip(bar=1, length_bars=4)
-- "set volume of track 2 to -6 dB" -> track(id=2).set_track(volume_db=-6)
-- "add an EQ to the Bass track" -> track(name="Bass").add_fx(name="eq")
-- "add Pro-Q 3 to track 1" -> track(id=1).add_fx(name="Pro-Q 3")
+  track(name="Lead", type="midi").clip.new(bar=1, length_bars=4)
+- "set volume of track 2 to -6 dB" -> track(id=2).track.set(volume_db=-6)
+- "add an EQ to the Bass track" -> track(name="Bass").fx.add(name="eq")
+- "add Pro-Q 3 to track 1" -> track(id=1).fx.add(name="Pro-Q 3")
 - "add reverb and delay to the Vocals track" ->
-  track(name="Vocals").add_fx(name="reverb")
-  track(name="Vocals").add_fx(name="delay")
-- "rename the first clip on track 1 to Intro" -> track(id=1).rename_clip(index=0, name="Intro")
-- "rename selected clips to FOO" -> track(id=1).rename_clip(name="FOO")   // omit index to rename selected clips
+  track(name="Vocals").fx.add(name="reverb")
+  track(name="Vocals").fx.add(name="delay")
+- "rename the first clip on track 1 to Intro" -> track(id=1).clip.rename(index=0, name="Intro")
+- "rename selected clips to FOO" -> track(id=1).clip.rename(name="FOO")   // omit index to rename selected clips
 - "select track 1" -> track(id=1).select()
-- "select all clips longer than 2 bars on track 1" -> track(id=1).select_clips(clip.length_bars > 2)
-- "select all clips shorter than or equal to 1 bar on track 2" -> track(id=2).select_clips(clip.length_bars <= 1)
+- "select all clips longer than 2 bars on track 1" -> track(id=1).clips.select(clip.length_bars > 2)
+- "select all clips shorter than or equal to 1 bar on track 2" -> track(id=2).clips.select(clip.length_bars <= 1)
 
 NOTE OPERATIONS (require a selected clip):
-- .select_notes(note.pitch == C4) - Select notes matching predicate (fields: pitch, velocity, start_beat, length_beats; pitch accepts MIDI numbers or note names like C4, C#4, Bb3; C4=60)
-- .add_note(pitch=C4, beat=0, length=1, velocity=100) - Add a note (pitch can be note name or MIDI number)
-- .delete_notes() - Delete currently selected notes
-- .transpose(semitones=5) - Transpose selected notes (positive=up, negative=down)
-- .set_velocity(value=80) - Set velocity of selected notes
-- .quantize(grid=0.25) - Quantize selected notes (0.25=16th, 0.5=8th, 1.0=quarter)
-- .resize_notes(length=0.5) - Set note length in beats
+- .notes.select(note.pitch == C4) - Select notes matching predicate (fields: pitch, velocity, start_beat, length_beats; pitch accepts MIDI numbers or note names like C4, C#4, Bb3; C4=60)
+- .notes.add(pitch=C4, beat=0, length=1, velocity=100) - Add a note (pitch can be note name or MIDI number)
+- .notes.delete() - Delete currently selected notes
+- .notes.transpose(semitones=5) - Transpose selected notes (positive=up, negative=down)
+- .notes.set_velocity(value=80) - Set velocity of selected notes
+- .notes.quantize(grid=0.25) - Quantize selected notes (0.25=16th, 0.5=8th, 1.0=quarter)
+- .notes.resize(length=0.5) - Set note length in beats
 
 EXAMPLES (note operations):
-- "select all C4 notes on track 1" -> track(id=1).select_notes(note.pitch == C4)
-- "select notes with velocity above 100" -> track(id=1).select_notes(note.velocity > 100)
-- "transpose selected notes up 5 semitones" -> track(id=1).transpose(semitones=5)
-- "set velocity to 60" -> track(id=1).set_velocity(value=60)
-- "delete selected notes" -> track(id=1).delete_notes()
-- "add a D4 note at beat 2" -> track(id=1).add_note(pitch=D4, beat=2, length=1, velocity=100)
-- "quantize selected notes to 16th notes" -> track(id=1).quantize(grid=0.25)
-- "set note length to half a beat" -> track(id=1).resize_notes(length=0.5)
+- "select all C4 notes on track 1" -> track(id=1).notes.select(note.pitch == C4)
+- "select notes with velocity above 100" -> track(id=1).notes.select(note.velocity > 100)
+- "transpose selected notes up 5 semitones" -> track(id=1).notes.transpose(semitones=5)
+- "set velocity to 60" -> track(id=1).notes.set_velocity(value=60)
+- "delete selected notes" -> track(id=1).notes.delete()
+- "add a D4 note at beat 2" -> track(id=1).notes.add(pitch=D4, beat=2, length=1, velocity=100)
+- "quantize selected notes to 16th notes" -> track(id=1).notes.quantize(grid=0.25)
+- "set note length to half a beat" -> track(id=1).notes.resize(length=0.5)
 
 NOTE: The DAW state JSON includes "selected_track_id" when a track is selected, and "selected_clip_index" / "selected_clip_track_id" when a clip is selected.
 Use track(id=N) to reference any track. When the user says "this track" or implies the current selection, use the selected_track_id from the state.

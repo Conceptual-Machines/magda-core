@@ -514,31 +514,45 @@ bool Interpreter::parseMethodChain(Tokenizer& tok) {
     while (tok.peek().is(TokenType::DOT)) {
         tok.next();  // consume '.'
 
-        Token method = tok.next();
-        if (method.type != TokenType::IDENTIFIER) {
+        Token first = tok.next();
+        if (first.type != TokenType::IDENTIFIER) {
             ctx_.setError("Expected method name after '.'");
             return false;
         }
 
-        // for_each, select_clips, and select_notes parse their own syntax
-        if (method.value == "for_each") {
+        // Check for dot-namespace syntax: namespace.method
+        std::string methodKey;
+        if (tok.peek().is(TokenType::DOT)) {
+            tok.next();  // consume second '.'
+            Token second = tok.next();
+            if (second.type != TokenType::IDENTIFIER) {
+                ctx_.setError("Expected method name after '" + juce::String(first.value) + ".'");
+                return false;
+            }
+            methodKey = first.value + "." + second.value;
+        } else {
+            methodKey = first.value;
+        }
+
+        // Methods that parse their own syntax (no standard params)
+        if (methodKey == "for_each") {
             if (!executeForEach(tok))
                 return false;
             continue;
         }
-        if (method.value == "select_clips") {
+        if (methodKey == "clips.select") {
             if (!executeSelectClips(tok))
                 return false;
             continue;
         }
-        if (method.value == "select_notes") {
+        if (methodKey == "notes.select") {
             if (!executeSelectNotes(tok))
                 return false;
             continue;
         }
 
         if (!tok.expect(TokenType::LPAREN)) {
-            ctx_.setError("Expected '(' after method '" + juce::String(method.value) + "'");
+            ctx_.setError("Expected '(' after method '" + juce::String(methodKey) + "'");
             return false;
         }
 
@@ -552,37 +566,34 @@ bool Interpreter::parseMethodChain(Tokenizer& tok) {
         }
 
         bool success = false;
-        if (method.value == "new_clip")
+        if (methodKey == "clip.new")
             success = executeNewClip(params);
-        else if (method.value == "set_track")
+        else if (methodKey == "track.set")
             success = executeSetTrack(params);
-        else if (method.value == "delete")
+        else if (methodKey == "delete")
             success = executeDelete();
-        else if (method.value == "delete_clip")
+        else if (methodKey == "clip.delete")
             success = executeDeleteClip(params);
-        else if (method.value == "rename_clip")
+        else if (methodKey == "clip.rename")
             success = executeRenameClip(params);
-        else if (method.value == "add_fx")
+        else if (methodKey == "fx.add")
             success = executeAddFx(params);
-        else if (method.value == "select")
+        else if (methodKey == "select")
             success = executeSelect();
-        else if (method.value == "add_note")
+        else if (methodKey == "notes.add")
             success = executeAddNote(params);
-        else if (method.value == "delete_notes")
+        else if (methodKey == "notes.delete")
             success = executeDeleteNotes();
-        else if (method.value == "transpose")
+        else if (methodKey == "notes.transpose")
             success = executeTranspose(params);
-        else if (method.value == "set_velocity")
+        else if (methodKey == "notes.set_velocity")
             success = executeSetVelocity(params);
-        else if (method.value == "quantize")
+        else if (methodKey == "notes.quantize")
             success = executeQuantize(params);
-        else if (method.value == "resize_notes")
+        else if (methodKey == "notes.resize")
             success = executeResizeNotes(params);
-        else if (method.value == "addAutomation" || method.value == "add_automation") {
-            ctx_.addResult("'" + juce::String(method.value) + "' not yet supported in MVP");
-            success = true;  // Don't fail, just skip
-        } else {
-            ctx_.setError("Unknown method: " + juce::String(method.value));
+        else {
+            ctx_.setError("Unknown method: " + juce::String(methodKey));
             return false;
         }
 
@@ -645,7 +656,7 @@ bool Interpreter::parseValue(Tokenizer& tok, std::string& outValue) {
 
 bool Interpreter::executeNewClip(const Params& params) {
     if (ctx_.currentTrackId < 0) {
-        ctx_.setError("No track context for new_clip");
+        ctx_.setError("No track context for clip.new");
         return false;
     }
 
@@ -723,7 +734,7 @@ bool Interpreter::executeSetTrack(const Params& params) {
             changes.add("solo=" + juce::String(params.get("solo")));
         ctx_.addResult("Set track: " + changes.joinIntoString(", "));
     } else {
-        ctx_.setError("No track context for set_track");
+        ctx_.setError("No track context for track.set");
         return false;
     }
 
@@ -754,7 +765,7 @@ bool Interpreter::executeDelete() {
 
 bool Interpreter::executeDeleteClip(const Params& params) {
     if (ctx_.currentTrackId < 0) {
-        ctx_.setError("No track context for delete_clip");
+        ctx_.setError("No track context for clip.delete");
         return false;
     }
 
@@ -775,7 +786,7 @@ bool Interpreter::executeDeleteClip(const Params& params) {
 
 bool Interpreter::executeRenameClip(const Params& params) {
     if (!params.has("name")) {
-        ctx_.setError("rename_clip requires 'name' parameter");
+        ctx_.setError("clip.rename requires 'name' parameter");
         return false;
     }
 
@@ -785,7 +796,7 @@ bool Interpreter::executeRenameClip(const Params& params) {
     if (params.has("index")) {
         // Rename a specific clip by index on the current track
         if (ctx_.currentTrackId < 0) {
-            ctx_.setError("No track context for rename_clip with index");
+            ctx_.setError("No track context for clip.rename with index");
             return false;
         }
         auto clipIds = cm.getClipsOnTrack(ctx_.currentTrackId);
@@ -803,10 +814,14 @@ bool Interpreter::executeRenameClip(const Params& params) {
         auto singleClip = sm.getSelectedClip();
 
         if (!selected.empty()) {
-            for (auto clipId : selected)
-                cm.setClipName(clipId, newName);
+            int idx = 1;
+            for (auto clipId : selected) {
+                juce::String name = newName.replace("{i}", juce::String(idx));
+                cm.setClipName(clipId, name);
+                idx++;
+            }
             ctx_.addResult("Renamed " + juce::String(static_cast<int>(selected.size())) +
-                           " selected clip(s) to '" + newName + "'");
+                           " selected clip(s)");
         } else if (singleClip != INVALID_CLIP_ID) {
             cm.setClipName(singleClip, newName);
             ctx_.addResult("Renamed selected clip to '" + newName + "'");
@@ -821,12 +836,12 @@ bool Interpreter::executeRenameClip(const Params& params) {
 
 bool Interpreter::executeAddFx(const Params& params) {
     if (ctx_.currentTrackId < 0) {
-        ctx_.setError("No track context for add_fx");
+        ctx_.setError("No track context for fx.add");
         return false;
     }
 
     if (!params.has("name")) {
-        ctx_.setError("add_fx requires 'name' parameter");
+        ctx_.setError("fx.add requires 'name' parameter");
         return false;
     }
 
@@ -1023,12 +1038,12 @@ bool Interpreter::executeSelect() {
 bool Interpreter::executeSelectClips(Tokenizer& tok) {
     // Parse: (clip.field op value)
     if (!tok.expect(TokenType::LPAREN)) {
-        ctx_.setError("Expected '(' after 'select_clips'");
+        ctx_.setError("Expected '(' after 'clips.select'");
         return false;
     }
 
     if (!tok.expect("clip")) {
-        ctx_.setError("Expected 'clip' in select_clips condition");
+        ctx_.setError("Expected 'clip' in clips.select condition");
         return false;
     }
     if (!tok.expect(TokenType::DOT)) {
@@ -1046,18 +1061,18 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
     if (op.type != TokenType::EQUALS_EQUALS && op.type != TokenType::NOT_EQUALS &&
         op.type != TokenType::GREATER && op.type != TokenType::GREATER_EQUALS &&
         op.type != TokenType::LESS && op.type != TokenType::LESS_EQUALS) {
-        ctx_.setError("Expected comparison operator in select_clips condition");
+        ctx_.setError("Expected comparison operator in clips.select condition");
         return false;
     }
 
     Token value = tok.next();
     if (value.type != TokenType::NUMBER && value.type != TokenType::STRING) {
-        ctx_.setError("Expected value in select_clips condition");
+        ctx_.setError("Expected value in clips.select condition");
         return false;
     }
 
     if (!tok.expect(TokenType::RPAREN)) {
-        ctx_.setError("Expected ')' after select_clips condition");
+        ctx_.setError("Expected ')' after clips.select condition");
         return false;
     }
 
@@ -1349,12 +1364,12 @@ ClipId Interpreter::getSelectedClipId() const {
 bool Interpreter::executeSelectNotes(Tokenizer& tok) {
     // Parse: (note.field op value)
     if (!tok.expect(TokenType::LPAREN)) {
-        ctx_.setError("Expected '(' after 'select_notes'");
+        ctx_.setError("Expected '(' after 'notes.select'");
         return false;
     }
 
     if (!tok.expect("note")) {
-        ctx_.setError("Expected 'note' in select_notes condition");
+        ctx_.setError("Expected 'note' in notes.select condition");
         return false;
     }
     if (!tok.expect(TokenType::DOT)) {
@@ -1372,26 +1387,26 @@ bool Interpreter::executeSelectNotes(Tokenizer& tok) {
     if (op.type != TokenType::EQUALS_EQUALS && op.type != TokenType::NOT_EQUALS &&
         op.type != TokenType::GREATER && op.type != TokenType::GREATER_EQUALS &&
         op.type != TokenType::LESS && op.type != TokenType::LESS_EQUALS) {
-        ctx_.setError("Expected comparison operator in select_notes condition");
+        ctx_.setError("Expected comparison operator in notes.select condition");
         return false;
     }
 
     Token value = tok.next();
     if (value.type != TokenType::NUMBER && value.type != TokenType::IDENTIFIER &&
         value.type != TokenType::STRING) {
-        ctx_.setError("Expected value in select_notes condition");
+        ctx_.setError("Expected value in notes.select condition");
         return false;
     }
 
     if (!tok.expect(TokenType::RPAREN)) {
-        ctx_.setError("Expected ')' after select_notes condition");
+        ctx_.setError("Expected ')' after notes.select condition");
         return false;
     }
 
     // Get the selected clip
     auto clipId = getSelectedClipId();
     if (clipId == INVALID_CLIP_ID) {
-        ctx_.setError("No clip selected for select_notes");
+        ctx_.setError("No clip selected for notes.select");
         return false;
     }
 
@@ -1470,13 +1485,13 @@ bool Interpreter::executeSelectNotes(Tokenizer& tok) {
 bool Interpreter::executeAddNote(const Params& params) {
     auto clipId = getSelectedClipId();
     if (clipId == INVALID_CLIP_ID) {
-        ctx_.setError("No clip selected for add_note");
+        ctx_.setError("No clip selected for notes.add");
         return false;
     }
 
     // Parse pitch (required)
     if (!params.has("pitch")) {
-        ctx_.setError("add_note requires 'pitch' parameter");
+        ctx_.setError("notes.add requires 'pitch' parameter");
         return false;
     }
 
@@ -1503,7 +1518,7 @@ bool Interpreter::executeDeleteNotes() {
     auto& sm = SelectionManager::getInstance();
     const auto& noteSel = sm.getNoteSelection();
     if (!noteSel.isValid()) {
-        ctx_.setError("No notes selected for delete_notes");
+        ctx_.setError("No notes selected for notes.delete");
         return false;
     }
 
@@ -1526,14 +1541,14 @@ bool Interpreter::executeTranspose(const Params& params) {
     auto& sm = SelectionManager::getInstance();
     const auto& noteSel = sm.getNoteSelection();
     if (!noteSel.isValid()) {
-        ctx_.setError("No notes selected for transpose");
+        ctx_.setError("No notes selected for notes.transpose");
         return false;
     }
 
     auto& cm = ClipManager::getInstance();
     auto* clip = cm.getClip(noteSel.clipId);
     if (!clip) {
-        ctx_.setError("Clip not found for transpose");
+        ctx_.setError("Clip not found for notes.transpose");
         return false;
     }
 
@@ -1563,7 +1578,7 @@ bool Interpreter::executeSetVelocity(const Params& params) {
     auto& sm = SelectionManager::getInstance();
     const auto& noteSel = sm.getNoteSelection();
     if (!noteSel.isValid()) {
-        ctx_.setError("No notes selected for set_velocity");
+        ctx_.setError("No notes selected for notes.set_velocity");
         return false;
     }
 
@@ -1585,7 +1600,7 @@ bool Interpreter::executeQuantize(const Params& params) {
     auto& sm = SelectionManager::getInstance();
     const auto& noteSel = sm.getNoteSelection();
     if (!noteSel.isValid()) {
-        ctx_.setError("No notes selected for quantize");
+        ctx_.setError("No notes selected for notes.quantize");
         return false;
     }
 
@@ -1617,7 +1632,7 @@ bool Interpreter::executeResizeNotes(const Params& params) {
     auto& sm = SelectionManager::getInstance();
     const auto& noteSel = sm.getNoteSelection();
     if (!noteSel.isValid()) {
-        ctx_.setError("No notes selected for resize_notes");
+        ctx_.setError("No notes selected for notes.resize");
         return false;
     }
 
