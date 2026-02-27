@@ -42,7 +42,8 @@ void AIChatConsoleContent::RequestThread::run() {
 
         // Remove "Thinking..." line and show response
         auto currentText = safeThis->chatHistory_.getText();
-        auto thinkingPos = currentText.lastIndexOf("< Thinking");
+        auto thinkingPos =
+            currentText.lastIndexOf(juce::String::charToString(0x25C6) + " Thinking");
         if (thinkingPos >= 0) {
             auto lineEnd = currentText.indexOf(thinkingPos, "\n");
             if (lineEnd < 0)
@@ -58,7 +59,8 @@ void AIChatConsoleContent::RequestThread::run() {
             formattedResponse = "[!] " + formattedResponse;
         }
 
-        safeThis->chatHistory_.setText(currentText + "< " + formattedResponse + "\n\n");
+        safeThis->chatHistory_.setText(currentText + juce::String::charToString(0x25C6) + " " +
+                                       formattedResponse + "\n\n");
         safeThis->chatHistory_.moveCaretToEnd();
         safeThis->inputBox_.setEnabled(true);
         safeThis->sendButton_.setEnabled(true);
@@ -74,26 +76,18 @@ void AIChatConsoleContent::RequestThread::run() {
 AIChatConsoleContent::AIChatConsoleContent() {
     setName("AI Chat");
 
-    // Setup title
-    titleLabel_.setText("AI Assistant", juce::dontSendNotification);
-    titleLabel_.setFont(FontManager::getInstance().getUIFont(14.0f));
-    titleLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-    addAndMakeVisible(titleLabel_);
-
     // Chat history area
     auto monoFont = FontManager::getInstance().getMonoFont(13.0f);
     chatHistory_.setMultiLine(true);
     chatHistory_.setReadOnly(true);
     chatHistory_.setFont(monoFont);
-    chatHistory_.setColour(juce::TextEditor::backgroundColourId,
-                           DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    chatHistory_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
-    chatHistory_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
-    chatHistory_.setColour(juce::TextEditor::focusedOutlineColourId, DarkTheme::getBorderColour());
+    chatHistory_.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    chatHistory_.setColour(juce::TextEditor::textColourId, DarkTheme::getSecondaryTextColour());
+    chatHistory_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+    chatHistory_.setColour(juce::TextEditor::focusedOutlineColourId,
+                           juce::Colours::transparentBlack);
     chatHistory_.setColour(juce::TextEditor::highlightColourId, juce::Colours::transparentBlack);
-    chatHistory_.setText(
-        "Welcome! Ask me anything about your project...\n"
-        "Try: \"create a bass track\" or \"create a drums track and mute it\"\n\n");
+    chatHistory_.setText(juce::String::charToString(0x25C6) + " MAGDA\n\n");
     addAndMakeVisible(chatHistory_);
 
     // Input box
@@ -186,8 +180,8 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
     inputBox_.setEnabled(false);
     sendButton_.setEnabled(false);
 
-    appendToChat("> " + text);
-    appendToChat("< Thinking");
+    appendToChat(juce::String::charToString(0x25CF) + " " + text);
+    appendToChat(juce::String::charToString(0x25C6) + " Thinking");
 
     // Reset cancel state and start new request
     shouldStop_ = false;
@@ -215,12 +209,13 @@ void AIChatConsoleContent::timerCallback() {
 
     // Update the "Thinking" line in the chat history
     auto currentText = chatHistory_.getText();
-    auto thinkingPos = currentText.lastIndexOf("< Thinking");
+    auto thinkingPos = currentText.lastIndexOf(juce::String::charToString(0x25C6) + " Thinking");
     if (thinkingPos >= 0) {
         auto lineEnd = currentText.indexOf(thinkingPos, "\n");
         if (lineEnd < 0)
             lineEnd = currentText.length();
-        chatHistory_.setText(currentText.substring(0, thinkingPos) + "< Thinking" + dots +
+        chatHistory_.setText(currentText.substring(0, thinkingPos) +
+                             juce::String::charToString(0x25C6) + " Thinking" + dots +
                              currentText.substring(lineEnd));
         chatHistory_.moveCaretToEnd();
     }
@@ -233,6 +228,13 @@ void AIChatConsoleContent::appendToChat(const juce::String& text) {
 
 void AIChatConsoleContent::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getPanelBackgroundColour());
+
+    // Draw chat history background with rounded corners
+    auto chatBounds = chatHistory_.getBounds().toFloat();
+    g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+    g.fillRoundedRectangle(chatBounds, 4.0f);
+    g.setColour(DarkTheme::getBorderColour());
+    g.drawRoundedRectangle(chatBounds, 4.0f, 1.0f);
 
     // Draw input box + bottom bar as one unified rounded rectangle
     auto inputBounds = inputBox_.getBounds();
@@ -274,9 +276,6 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
 
 void AIChatConsoleContent::resized() {
     auto bounds = getLocalBounds().reduced(10);
-
-    titleLabel_.setBounds(bounds.removeFromTop(24));
-    bounds.removeFromTop(8);  // Spacing
 
     // Bottom bar (always visible): icon + context label left, send button right
     auto bottomBar = bounds.removeFromBottom(26);

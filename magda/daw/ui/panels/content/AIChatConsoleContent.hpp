@@ -63,7 +63,6 @@ class AIChatConsoleContent : public PanelContent,
     // Timer callback for "Thinking..." animation
     void timerCallback() override;
 
-    juce::Label titleLabel_;
     juce::TextEditor chatHistory_;
     juce::TextEditor inputBox_;
 
