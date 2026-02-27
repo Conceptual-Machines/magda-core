@@ -264,6 +264,18 @@ bool Tokenizer::expect(const char* identifier) {
     return t.type == TokenType::IDENTIFIER && t.value == identifier;
 }
 
+Tokenizer::Position Tokenizer::savePosition() const {
+    return {pos_, line_, col_, peeked_, hasPeeked_};
+}
+
+void Tokenizer::restorePosition(const Position& p) {
+    pos_ = p.pos;
+    line_ = p.line;
+    col_ = p.col;
+    peeked_ = p.peeked;
+    hasPeeked_ = p.hasPeeked;
+}
+
 // ============================================================================
 // Params Implementation
 // ============================================================================
@@ -508,7 +520,12 @@ bool Interpreter::parseMethodChain(Tokenizer& tok) {
             return false;
         }
 
-        // select_clips and select_notes parse their own predicate syntax
+        // for_each, select_clips, and select_notes parse their own syntax
+        if (method.value == "for_each") {
+            if (!executeForEach(tok))
+                return false;
+            continue;
+        }
         if (method.value == "select_clips") {
             if (!executeSelectClips(tok))
                 return false;
@@ -564,9 +581,6 @@ bool Interpreter::parseMethodChain(Tokenizer& tok) {
         else if (method.value == "addAutomation" || method.value == "add_automation") {
             ctx_.addResult("'" + juce::String(method.value) + "' not yet supported in MVP");
             success = true;  // Don't fail, just skip
-        } else if (method.value == "map" || method.value == "for_each") {
-            ctx_.addResult("'" + juce::String(method.value) + "' not yet supported in MVP");
-            success = true;
         } else {
             ctx_.setError("Unknown method: " + juce::String(method.value));
             return false;
@@ -916,6 +930,74 @@ bool Interpreter::executeAddFx(const Params& params) {
 
     ctx_.addResult("Added " + bestMatch->pluginFormatName + " FX '" + bestMatch->name + "' by " +
                    bestMatch->manufacturerName);
+    return true;
+}
+
+bool Interpreter::executeForEach(Tokenizer& tok) {
+    if (!ctx_.inFilterContext) {
+        ctx_.setError("for_each can only be used in a filter context");
+        return false;
+    }
+
+    if (ctx_.filteredTrackIds.empty()) {
+        // Skip the body — consume until matching closing paren
+        if (!tok.expect(TokenType::LPAREN)) {
+            ctx_.setError("Expected '(' after 'for_each'");
+            return false;
+        }
+        int depth = 1;
+        while (depth > 0 && tok.hasMore()) {
+            Token t = tok.next();
+            if (t.is(TokenType::LPAREN))
+                depth++;
+            else if (t.is(TokenType::RPAREN))
+                depth--;
+        }
+        ctx_.addResult("for_each: no tracks matched filter");
+        return true;
+    }
+
+    if (!tok.expect(TokenType::LPAREN)) {
+        ctx_.setError("Expected '(' after 'for_each'");
+        return false;
+    }
+
+    // Save tokenizer position at the start of the chain inside for_each(...)
+    auto savedPos = tok.savePosition();
+    int savedTrackId = ctx_.currentTrackId;
+    bool wasInFilterContext = ctx_.inFilterContext;
+
+    // Exit filter context so inner methods operate on single currentTrackId
+    ctx_.inFilterContext = false;
+
+    int successCount = 0;
+
+    for (size_t i = 0; i < ctx_.filteredTrackIds.size(); ++i) {
+        ctx_.currentTrackId = ctx_.filteredTrackIds[i];
+
+        if (i > 0)
+            tok.restorePosition(savedPos);
+
+        if (!parseMethodChain(tok)) {
+            ctx_.currentTrackId = savedTrackId;
+            ctx_.inFilterContext = wasInFilterContext;
+            return false;
+        }
+
+        successCount++;
+    }
+
+    // After the loop, tokenizer is positioned after the chain — consume the closing ')'
+    if (!tok.expect(TokenType::RPAREN)) {
+        ctx_.setError("Expected ')' after for_each body");
+        ctx_.currentTrackId = savedTrackId;
+        ctx_.inFilterContext = wasInFilterContext;
+        return false;
+    }
+
+    ctx_.currentTrackId = savedTrackId;
+    ctx_.inFilterContext = wasInFilterContext;
+    ctx_.addResult("for_each: applied to " + juce::String(successCount) + " track(s)");
     return true;
 }
 

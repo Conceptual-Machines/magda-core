@@ -69,11 +69,7 @@ method_call: "new_clip" "(" params? ")"
            | "set_velocity" "(" params? ")"
            | "quantize" "(" params? ")"
            | "resize_notes" "(" params? ")"
-           | "map" "(" func_ref ")"
-           | "for_each" "(" func_ref ")"
-
-// Function reference for map/for_each
-func_ref: "@" IDENTIFIER
+           | "for_each" "(" chain ")"
 
 // Parameters
 params: param ("," param)*
@@ -133,6 +129,8 @@ FILTER OPERATIONS (bulk):
 - filter(tracks, track.name == "X").delete() - Delete all tracks named X
 - filter(tracks, track.name == "X").set_track(mute=true) - Mute all tracks named X
 - filter(tracks, track.name == "X").select() - Select all matching tracks
+- filter(tracks, track.name == "X").for_each(.new_clip(bar=1, length_bars=4)) - Apply operations to each matched track
+- filter(tracks, track.name == "X").for_each(.add_fx(name="reverb").set_track(mute=true)) - Chain multiple operations per track
 
 EXAMPLES:
 - "create a bass track" -> track(name="Bass", type="audio")
