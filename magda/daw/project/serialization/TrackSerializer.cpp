@@ -1,4 +1,5 @@
 #include "../../core/ViewModeState.hpp"
+#include "PluginStateUtils.hpp"
 #include "ProjectSerializer.hpp"
 #include "SerializationHelpers.hpp"
 
@@ -323,6 +324,12 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
         obj->setProperty("sidechain", juce::var(scObj));
     }
 
+    // Plugin state blob (compressed + base64-encoded)
+    if (!device.pluginStateData.empty()) {
+        obj->setProperty("pluginStateData",
+                         PluginStateUtils::compressAndEncode(device.pluginStateData));
+    }
+
     return juce::var(obj);
 }
 
@@ -452,6 +459,13 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
         outDevice.sidechain.type =
             static_cast<SidechainConfig::Type>(static_cast<int>(scObj->getProperty("type")));
         outDevice.sidechain.sourceTrackId = scObj->getProperty("sourceTrackId");
+    }
+
+    // Plugin state blob (backward compatible — missing key means no saved state)
+    auto pluginStateVar = obj->getProperty("pluginStateData");
+    if (pluginStateVar.isString()) {
+        outDevice.pluginStateData =
+            PluginStateUtils::decodeAndDecompress(pluginStateVar.toString());
     }
 
     return true;

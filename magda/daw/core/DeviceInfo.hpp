@@ -106,6 +106,12 @@ struct DeviceInfo {
     // Multi-output configuration (for instruments with >2 output channels)
     MultiOutConfig multiOut;
 
+    // Plugin state blob — opaque binary data captured from the plugin, stored as
+    // gzip-compressed bytes.  Populated by DeviceProcessor/PluginManager when the
+    // project is saved (or on demand) and restored when the plugin is re-loaded.
+    // Empty vector means "no saved state".
+    std::vector<uint8_t> pluginStateData;
+
     // Plugin loading state (Loading while async load is in-flight)
     DeviceLoadState loadState = DeviceLoadState::Loaded;
 

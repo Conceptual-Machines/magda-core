@@ -6,6 +6,7 @@
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
+#include "magda/daw/project/serialization/PluginStateUtils.hpp"
 #include "magda/daw/project/serialization/ProjectSerializer.hpp"
 
 using namespace magda;
@@ -378,5 +379,233 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         REQUIRE(restoredRack.name == "Test Rack");
 
         // Cleanup
+    }
+}
+
+// ============================================================================
+// Plugin State Serialization Tests
+// ============================================================================
+
+TEST_CASE("PluginStateUtils compress/decompress roundtrip", "[project][serialization][pluginstate]") {
+    SECTION("Empty data") {
+        std::vector<uint8_t> empty;
+        auto compressed = PluginStateUtils::compress(empty);
+        REQUIRE(compressed.empty());
+
+        auto decompressed = PluginStateUtils::decompress(compressed);
+        REQUIRE(decompressed.empty());
+    }
+
+    SECTION("Small payload roundtrip") {
+        std::vector<uint8_t> original = {0x00, 0x01, 0x02, 0xFF, 0xFE, 0x80, 0x7F};
+        auto compressed = PluginStateUtils::compress(original);
+        REQUIRE(!compressed.empty());
+
+        auto decompressed = PluginStateUtils::decompress(compressed);
+        REQUIRE(decompressed == original);
+    }
+
+    SECTION("Larger payload roundtrip (simulated plugin state)") {
+        // Simulate a realistic plugin state (~4 KB of structured data)
+        std::vector<uint8_t> original(4096);
+        juce::Random rng(42);
+        for (auto& byte : original) {
+            byte = static_cast<uint8_t>(rng.nextInt(256));
+        }
+
+        auto compressed = PluginStateUtils::compress(original);
+        REQUIRE(!compressed.empty());
+
+        auto decompressed = PluginStateUtils::decompress(compressed);
+        REQUIRE(decompressed.size() == original.size());
+        REQUIRE(decompressed == original);
+    }
+
+    SECTION("Compression actually reduces size for repetitive data") {
+        // Repetitive data should compress well
+        std::vector<uint8_t> repetitive(8192, 0xAB);
+        auto compressed = PluginStateUtils::compress(repetitive);
+        REQUIRE(!compressed.empty());
+        REQUIRE(compressed.size() < repetitive.size());
+
+        auto decompressed = PluginStateUtils::decompress(compressed);
+        REQUIRE(decompressed == repetitive);
+    }
+}
+
+TEST_CASE("PluginStateUtils base64 encode/decode roundtrip", "[project][serialization][pluginstate]") {
+    SECTION("Empty data") {
+        std::vector<uint8_t> empty;
+        auto encoded = PluginStateUtils::toBase64(empty);
+        REQUIRE(encoded.isEmpty());
+
+        auto decoded = PluginStateUtils::fromBase64(encoded);
+        REQUIRE(decoded.empty());
+    }
+
+    SECTION("Binary data roundtrip") {
+        std::vector<uint8_t> original = {0x00, 0x01, 0xFF, 0x80, 0x7F, 0xDE, 0xAD, 0xBE, 0xEF};
+        auto encoded = PluginStateUtils::toBase64(original);
+        REQUIRE(!encoded.isEmpty());
+
+        auto decoded = PluginStateUtils::fromBase64(encoded);
+        REQUIRE(decoded == original);
+    }
+}
+
+TEST_CASE("PluginStateUtils compressAndEncode / decodeAndDecompress roundtrip",
+          "[project][serialization][pluginstate]") {
+    SECTION("Full pipeline roundtrip") {
+        // Simulate a plugin state blob
+        std::vector<uint8_t> original(2048);
+        juce::Random rng(123);
+        for (auto& byte : original) {
+            byte = static_cast<uint8_t>(rng.nextInt(256));
+        }
+
+        auto encoded = PluginStateUtils::compressAndEncode(original);
+        REQUIRE(!encoded.isEmpty());
+
+        auto restored = PluginStateUtils::decodeAndDecompress(encoded);
+        REQUIRE(restored.size() == original.size());
+        REQUIRE(restored == original);
+    }
+
+    SECTION("Empty input produces empty output") {
+        std::vector<uint8_t> empty;
+        auto encoded = PluginStateUtils::compressAndEncode(empty);
+        REQUIRE(encoded.isEmpty());
+
+        auto restored = PluginStateUtils::decodeAndDecompress(encoded);
+        REQUIRE(restored.empty());
+    }
+}
+
+TEST_CASE("Device pluginStateData serialization roundtrip",
+          "[project][serialization][pluginstate]") {
+    ProjectTestFixture fixture;
+
+    SECTION("Device with plugin state blob is saved and restored") {
+        auto& trackManager = TrackManager::getInstance();
+        auto& projectManager = ProjectManager::getInstance();
+
+        // Create a track with a device that has plugin state data
+        auto trackId = trackManager.createTrack("Synth Track", TrackType::MIDI);
+
+        DeviceInfo device;
+        device.id = 1;
+        device.name = "My VST3 Synth";
+        device.pluginId = "com.vendor.synth";
+        device.manufacturer = "Vendor";
+        device.format = PluginFormat::VST3;
+        device.isInstrument = true;
+        device.bypassed = false;
+
+        // Populate plugin state with test data (simulating an opaque binary blob)
+        device.pluginStateData.resize(1024);
+        juce::Random rng(999);
+        for (auto& byte : device.pluginStateData) {
+            byte = static_cast<uint8_t>(rng.nextInt(256));
+        }
+        auto originalState = device.pluginStateData;  // Copy for later comparison
+
+        trackManager.addDeviceToTrack(trackId, device);
+
+        // Save the project
+        auto tempFile = fixture.createTempFile(".mgd");
+        bool saved = projectManager.saveProjectAs(tempFile);
+        REQUIRE(saved == true);
+
+        // Clear
+        trackManager.clearAllTracks();
+        REQUIRE(trackManager.getTracks().empty());
+
+        // Load back
+        bool loaded = projectManager.loadProject(tempFile);
+        REQUIRE(loaded == true);
+
+        // Verify the plugin state was restored exactly
+        const auto& tracks = trackManager.getTracks();
+        REQUIRE(tracks.size() == 1);
+        REQUIRE(tracks[0].chainElements.size() == 1);
+        REQUIRE(isDevice(tracks[0].chainElements[0]));
+
+        const auto& restoredDevice = getDevice(tracks[0].chainElements[0]);
+        REQUIRE(restoredDevice.name == "My VST3 Synth");
+        REQUIRE(restoredDevice.pluginStateData.size() == originalState.size());
+        REQUIRE(restoredDevice.pluginStateData == originalState);
+    }
+
+    SECTION("Device without plugin state has empty pluginStateData after load") {
+        auto& trackManager = TrackManager::getInstance();
+        auto& projectManager = ProjectManager::getInstance();
+
+        auto trackId = trackManager.createTrack("FX Track", TrackType::Audio);
+
+        DeviceInfo device;
+        device.id = 1;
+        device.name = "Delay";
+        device.pluginId = "delay";
+        device.format = PluginFormat::Internal;
+        // No pluginStateData set — should remain empty after roundtrip
+
+        trackManager.addDeviceToTrack(trackId, device);
+
+        auto tempFile = fixture.createTempFile(".mgd");
+        bool saved = projectManager.saveProjectAs(tempFile);
+        REQUIRE(saved == true);
+
+        trackManager.clearAllTracks();
+
+        bool loaded = projectManager.loadProject(tempFile);
+        REQUIRE(loaded == true);
+
+        const auto& tracks = trackManager.getTracks();
+        REQUIRE(tracks.size() == 1);
+        REQUIRE(isDevice(tracks[0].chainElements[0]));
+
+        const auto& restoredDevice = getDevice(tracks[0].chainElements[0]);
+        REQUIRE(restoredDevice.pluginStateData.empty());
+    }
+
+    SECTION("Large plugin state blob roundtrip") {
+        auto& trackManager = TrackManager::getInstance();
+        auto& projectManager = ProjectManager::getInstance();
+
+        auto trackId = trackManager.createTrack("Big State Track", TrackType::MIDI);
+
+        DeviceInfo device;
+        device.id = 1;
+        device.name = "Complex Plugin";
+        device.pluginId = "com.vendor.complex";
+        device.manufacturer = "Vendor";
+        device.format = PluginFormat::VST3;
+        device.isInstrument = true;
+
+        // A large state blob (256 KB — realistic for sample-based instruments)
+        device.pluginStateData.resize(256 * 1024);
+        juce::Random rng(777);
+        for (auto& byte : device.pluginStateData) {
+            byte = static_cast<uint8_t>(rng.nextInt(256));
+        }
+        auto originalState = device.pluginStateData;
+
+        trackManager.addDeviceToTrack(trackId, device);
+
+        auto tempFile = fixture.createTempFile(".mgd");
+        bool saved = projectManager.saveProjectAs(tempFile);
+        REQUIRE(saved == true);
+
+        trackManager.clearAllTracks();
+
+        bool loaded = projectManager.loadProject(tempFile);
+        REQUIRE(loaded == true);
+
+        const auto& tracks = trackManager.getTracks();
+        REQUIRE(isDevice(tracks[0].chainElements[0]));
+
+        const auto& restoredDevice = getDevice(tracks[0].chainElements[0]);
+        REQUIRE(restoredDevice.pluginStateData.size() == originalState.size());
+        REQUIRE(restoredDevice.pluginStateData == originalState);
     }
 }
