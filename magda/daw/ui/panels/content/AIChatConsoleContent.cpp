@@ -360,7 +360,8 @@ void AIChatConsoleContent::updateContextBar() {
 }
 
 void AIChatConsoleContent::mouseUp(const juce::MouseEvent& event) {
-    if (event.originalComponent == &contextLabel_) {
+    if (event.originalComponent == &contextLabel_ ||
+        (event.originalComponent == this && contextIconBounds_.contains(event.getPosition()))) {
         contextEnabled_ = !contextEnabled_;
         updateContextBar();
     }
