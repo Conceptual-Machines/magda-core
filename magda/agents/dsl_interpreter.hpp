@@ -187,6 +187,7 @@ class Interpreter {
     bool executeSelectClips(Tokenizer& tok);
     bool executeSelectNotes(Tokenizer& tok);
     bool executeAddNote(const Params& params);
+    bool executeAddChord(const Params& params);
     bool executeDeleteNotes();
     bool executeTranspose(const Params& params);
     bool executeSetPitch(const Params& params);

@@ -589,6 +589,8 @@ bool Interpreter::parseMethodChain(Tokenizer& tok) {
             success = executeSelect();
         else if (methodKey == "notes.add")
             success = executeAddNote(params);
+        else if (methodKey == "notes.add_chord")
+            success = executeAddChord(params);
         else if (methodKey == "notes.delete")
             success = executeDeleteNotes();
         else if (methodKey == "notes.transpose")
@@ -1573,6 +1575,87 @@ bool Interpreter::executeAddNote(const Params& params) {
     ctx_.addResult("Added note (pitch=" + juce::String(noteNumber) +
                    ", beat=" + juce::String(beat, 2) + ", length=" + juce::String(length, 2) +
                    ", velocity=" + juce::String(velocity) + ")");
+    return true;
+}
+
+bool Interpreter::executeAddChord(const Params& params) {
+    auto clipId = getSelectedClipId();
+    if (clipId == INVALID_CLIP_ID) {
+        ctx_.setError("No clip selected for notes.add_chord");
+        return false;
+    }
+
+    // Parse root (required)
+    if (!params.has("root")) {
+        ctx_.setError("notes.add_chord requires 'root' parameter");
+        return false;
+    }
+    int rootNote = parseNoteName(params.get("root"));
+    if (rootNote < 0 || rootNote > 127) {
+        ctx_.setError("Invalid root note: " + juce::String(params.get("root")));
+        return false;
+    }
+
+    // Parse quality (required)
+    if (!params.has("quality")) {
+        ctx_.setError("notes.add_chord requires 'quality' parameter");
+        return false;
+    }
+
+    // Chord quality → semitone intervals
+    static const std::map<std::string, std::vector<int>> chordQualities = {
+        {"major", {0, 4, 7}},   {"maj", {0, 4, 7}},      {"minor", {0, 3, 7}},
+        {"min", {0, 3, 7}},     {"dim", {0, 3, 6}},      {"aug", {0, 4, 8}},
+        {"sus2", {0, 2, 7}},    {"sus4", {0, 5, 7}},     {"dom7", {0, 4, 7, 10}},
+        {"7", {0, 4, 7, 10}},   {"maj7", {0, 4, 7, 11}}, {"min7", {0, 3, 7, 10}},
+        {"dim7", {0, 3, 6, 9}}, {"power", {0, 7}},       {"5", {0, 7}},
+    };
+
+    std::string quality = params.get("quality");
+    auto it = chordQualities.find(quality);
+    if (it == chordQualities.end()) {
+        ctx_.setError("Unknown chord quality: " + juce::String(quality));
+        return false;
+    }
+
+    const auto& intervals = it->second;
+    int inversion = params.getInt("inversion", 0);
+    double beat = params.getFloat("beat", 0.0);
+    double length = params.getFloat("length", 1.0);
+    int velocity = params.getInt("velocity", 100);
+
+    // Build MIDI note numbers from root + intervals
+    std::vector<int> midiNotes;
+    for (int interval : intervals)
+        midiNotes.push_back(rootNote + interval);
+
+    // Apply inversions: rotate the lowest N notes up an octave
+    for (int i = 0; i < inversion && i < static_cast<int>(midiNotes.size()); i++)
+        midiNotes[static_cast<size_t>(i)] += 12;
+
+    // Clamp to valid MIDI range
+    for (auto& n : midiNotes)
+        n = juce::jlimit(0, 127, n);
+
+    // Build MidiNote objects
+    std::vector<MidiNote> notes;
+    juce::StringArray noteNames;
+    for (int n : midiNotes) {
+        MidiNote mn;
+        mn.noteNumber = n;
+        mn.startBeat = beat;
+        mn.lengthBeats = length;
+        mn.velocity = velocity;
+        notes.push_back(mn);
+        noteNames.add(juce::MidiMessage::getMidiNoteName(n, true, true, 4));
+    }
+
+    UndoManager::getInstance().executeCommand(std::make_unique<AddMultipleMidiNotesCommand>(
+        clipId, std::move(notes),
+        "Add " + juce::String(quality) + " chord at beat " + juce::String(beat, 2)));
+
+    ctx_.addResult("Added " + juce::String(quality) + " chord [" + noteNames.joinIntoString(", ") +
+                   "] at beat " + juce::String(beat, 2));
     return true;
 }
 
