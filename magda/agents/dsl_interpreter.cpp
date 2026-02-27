@@ -1,5 +1,6 @@
 #include "dsl_interpreter.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -814,8 +815,18 @@ bool Interpreter::executeRenameClip(const Params& params) {
         auto singleClip = sm.getSelectedClip();
 
         if (!selected.empty()) {
+            // Sort clips by start time so {i} numbering follows timeline order
+            std::vector<ClipId> sorted(selected.begin(), selected.end());
+            std::sort(sorted.begin(), sorted.end(), [&](ClipId a, ClipId b) {
+                auto* ca = cm.getClip(a);
+                auto* cb = cm.getClip(b);
+                if (!ca || !cb)
+                    return a < b;
+                return ca->startTime < cb->startTime;
+            });
+
             int idx = 1;
-            for (auto clipId : selected) {
+            for (auto clipId : sorted) {
                 juce::String name = newName.replace("{i}", juce::String(idx));
                 cm.setClipName(clipId, name);
                 idx++;
@@ -919,7 +930,8 @@ bool Interpreter::executeAddFx(const Params& params) {
         return false;
     }
 
-    // Build DeviceInfo from PluginDescription
+    // Copy fields before addDeviceToTrack — loading the plugin can mutate the
+    // KnownPluginList, invalidating the bestMatch pointer.
     DeviceInfo device;
     device.name = bestMatch->name;
     device.pluginId = bestMatch->createIdentifierString();
@@ -928,14 +940,20 @@ bool Interpreter::executeAddFx(const Params& params) {
     device.fileOrIdentifier = bestMatch->fileOrIdentifier;
     device.isInstrument = bestMatch->isInstrument;
 
-    if (bestMatch->pluginFormatName == "VST3")
+    juce::String matchedFormat = bestMatch->pluginFormatName;
+    juce::String matchedName = bestMatch->name;
+    juce::String matchedManufacturer = bestMatch->manufacturerName;
+
+    if (matchedFormat == "VST3")
         device.format = PluginFormat::VST3;
-    else if (bestMatch->pluginFormatName == "AudioUnit" || bestMatch->pluginFormatName == "AU")
+    else if (matchedFormat == "AudioUnit" || matchedFormat == "AU")
         device.format = PluginFormat::AU;
-    else if (bestMatch->pluginFormatName == "VST")
+    else if (matchedFormat == "VST")
         device.format = PluginFormat::VST;
     else
         device.format = PluginFormat::VST3;
+
+    bestMatch = nullptr;  // no longer safe to dereference
 
     auto deviceId = TrackManager::getInstance().addDeviceToTrack(ctx_.currentTrackId, device);
     if (deviceId == INVALID_DEVICE_ID) {
@@ -943,8 +961,8 @@ bool Interpreter::executeAddFx(const Params& params) {
         return false;
     }
 
-    ctx_.addResult("Added " + bestMatch->pluginFormatName + " FX '" + bestMatch->name + "' by " +
-                   bestMatch->manufacturerName);
+    ctx_.addResult("Added " + matchedFormat + " FX '" + matchedName + "' by " +
+                   matchedManufacturer);
     return true;
 }
 
