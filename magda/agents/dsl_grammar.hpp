@@ -168,8 +168,10 @@ EXAMPLES (note operations):
 - "add a C major chord at beat 0" -> track(id=1).notes.add_chord(root=C4, quality=major, beat=0, length=1)
 - "add an A minor 7th chord for 2 beats" -> track(id=1).notes.add_chord(root=A3, quality=min7, beat=0, length=2)
 - "add a C major chord first inversion" -> track(id=1).notes.add_chord(root=C4, quality=major, inversion=1)
-- "add an arpeggio of C major" -> track(id=1).notes.add_arpeggio(root=C4, quality=major, beat=0, step=0.5)
+- "add a C major arpeggio" -> track(id=1).notes.add_arpeggio(root=C4, quality=major, beat=0, step=0.5)
 - "add a descending A minor arpeggio" -> track(id=1).notes.add_arpeggio(root=A3, quality=min, beat=0, step=0.25, pattern=down)
+- "add a clip with an E minor arpeggio over 2 bars" -> track(id=1).clip.new(length_bars=2).notes.add_arpeggio(root=E4, quality=min, beat=0, step=1.0)
+- "add an up-down C major 7 arpeggio" -> track(id=1).notes.add_arpeggio(root=C4, quality=maj7, beat=0, step=0.5, pattern=updown)
 
 NOTE: The DAW state JSON includes "selected_track_id" when a track is selected, and "selected_clip_index" / "selected_clip_track_id" when a clip is selected.
 Use track(id=N) to reference any track. When the user says "this track" or implies the current selection, use the selected_track_id from the state.
