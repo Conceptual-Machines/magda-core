@@ -189,6 +189,7 @@ class Interpreter {
     bool executeAddNote(const Params& params);
     bool executeDeleteNotes();
     bool executeTranspose(const Params& params);
+    bool executeSetPitch(const Params& params);
     bool executeSetVelocity(const Params& params);
     bool executeQuantize(const Params& params);
     bool executeResizeNotes(const Params& params);

@@ -593,6 +593,8 @@ bool Interpreter::parseMethodChain(Tokenizer& tok) {
             success = executeDeleteNotes();
         else if (methodKey == "notes.transpose")
             success = executeTranspose(params);
+        else if (methodKey == "notes.set_pitch")
+            success = executeSetPitch(params);
         else if (methodKey == "notes.set_velocity")
             success = executeSetVelocity(params);
         else if (methodKey == "notes.quantize")
@@ -1630,6 +1632,51 @@ bool Interpreter::executeTranspose(const Params& params) {
 
     ctx_.addResult("Transposed " + juce::String(static_cast<int>(noteSel.noteIndices.size())) +
                    " note(s) by " + juce::String(semitones) + " semitones");
+    return true;
+}
+
+bool Interpreter::executeSetPitch(const Params& params) {
+    if (!params.has("pitch")) {
+        ctx_.setError("notes.set_pitch requires 'pitch' parameter");
+        return false;
+    }
+
+    int targetPitch = parseNoteName(params.get("pitch"));
+    if (targetPitch < 0 || targetPitch > 127) {
+        ctx_.setError("Invalid pitch: " + juce::String(params.get("pitch")));
+        return false;
+    }
+
+    if (!ensureNoteSelection()) {
+        ctx_.setError("No notes selected for notes.set_pitch");
+        return false;
+    }
+
+    auto& sm = SelectionManager::getInstance();
+    const auto& noteSel = sm.getNoteSelection();
+
+    auto& cm = ClipManager::getInstance();
+    auto* clip = cm.getClip(noteSel.clipId);
+    if (!clip) {
+        ctx_.setError("Clip not found for notes.set_pitch");
+        return false;
+    }
+
+    std::vector<MoveMultipleMidiNotesCommand::NoteMove> moves;
+    for (auto idx : noteSel.noteIndices) {
+        if (idx < clip->midiNotes.size()) {
+            const auto& note = clip->midiNotes[idx];
+            moves.push_back({idx, note.startBeat, targetPitch});
+        }
+    }
+
+    if (!moves.empty()) {
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<MoveMultipleMidiNotesCommand>(noteSel.clipId, std::move(moves)));
+    }
+
+    ctx_.addResult("Set pitch to " + juce::String(params.get("pitch")) + " on " +
+                   juce::String(static_cast<int>(noteSel.noteIndices.size())) + " note(s)");
     return true;
 }
 

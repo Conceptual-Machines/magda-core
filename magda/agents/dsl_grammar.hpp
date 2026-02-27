@@ -62,6 +62,7 @@ method_call: "clip" "." "new" "(" params? ")"
            | "notes" "." "select" "(" note_condition ")"
            | "notes" "." "delete" "(" ")"
            | "notes" "." "transpose" "(" params? ")"
+           | "notes" "." "set_pitch" "(" params? ")"
            | "notes" "." "set_velocity" "(" params? ")"
            | "notes" "." "quantize" "(" params? ")"
            | "notes" "." "resize" "(" params? ")"
@@ -156,6 +157,7 @@ NOTE OPERATIONS (require a selected clip):
 - .notes.add(pitch=C4, beat=0, length=1, velocity=100) - Add a note (pitch can be note name or MIDI number)
 - .notes.delete() - Delete currently selected notes
 - .notes.transpose(semitones=5) - Transpose selected notes (positive=up, negative=down)
+- .notes.set_pitch(pitch=F1) - Set pitch of selected notes (accepts note names like C4, F#3 or MIDI numbers)
 - .notes.set_velocity(value=80) - Set velocity of selected notes
 - .notes.quantize(grid=0.25) - Quantize selected notes (0.25=16th, 0.5=8th, 1.0=quarter)
 - .notes.resize(length=0.5) - Set note length in beats
@@ -164,6 +166,7 @@ EXAMPLES (note operations):
 - "select all C4 notes on track 1" -> track(id=1).notes.select(note.pitch == C4)
 - "select notes with velocity above 100" -> track(id=1).notes.select(note.velocity > 100)
 - "transpose selected notes up 5 semitones" -> track(id=1).notes.transpose(semitones=5)
+- "set the note to F1" -> track(id=1).notes.set_pitch(pitch=F1)
 - "set velocity to 60" -> track(id=1).notes.set_velocity(value=60)
 - "delete selected notes" -> track(id=1).notes.delete()
 - "add a D4 note at beat 2" -> track(id=1).notes.add(pitch=D4, beat=2, length=1, velocity=100)
