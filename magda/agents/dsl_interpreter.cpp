@@ -389,27 +389,7 @@ bool Interpreter::parseStatement(Tokenizer& tok) {
         return parseTrackStatement(tok);
     else if (t.is("filter"))
         return parseFilterStatement(tok);
-    else if (t.is("note") || t.is("chord") || t.is("arpeggio") || t.is("progression") ||
-             t.is("pattern")) {
-        // Musical content — not yet supported in MVP
-        // Skip the entire statement: consume identifier + parenthesized args
-        tok.next();  // consume keyword
-        if (!tok.expect(TokenType::LPAREN)) {
-            ctx_.setError("Expected '(' after musical statement");
-            return false;
-        }
-        // Skip everything until matching RPAREN
-        int depth = 1;
-        while (depth > 0 && tok.hasMore()) {
-            Token inner = tok.next();
-            if (inner.is(TokenType::LPAREN))
-                depth++;
-            else if (inner.is(TokenType::RPAREN))
-                depth--;
-        }
-        ctx_.addResult("(Musical content not yet supported in MVP)");
-        return true;
-    } else if (t.type == TokenType::END_OF_INPUT) {
+    else if (t.type == TokenType::END_OF_INPUT) {
         return true;
     } else {
         ctx_.setError("Unexpected token '" + juce::String(t.value) + "' at line " +

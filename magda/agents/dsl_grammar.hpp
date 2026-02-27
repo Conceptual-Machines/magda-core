@@ -20,24 +20,12 @@ start: statement+
 
 statement: track_statement
          | filter_statement
-         | note_statement
-         | chord_statement
-         | arpeggio_statement
-         | progression_statement
-         | pattern_statement
 
 // Track statements
 track_statement: "track" "(" params? ")" chain?
 
 // Filter statements (for bulk operations)
 filter_statement: "filter" "(" "tracks" "," condition ")" chain?
-
-// Musical content statements (added to most recently created track)
-note_statement: "note" "(" params ")"
-chord_statement: "chord" "(" params ")"
-arpeggio_statement: "arpeggio" "(" params ")"
-progression_statement: "progression" "(" params ")"
-pattern_statement: "pattern" "(" params ")"
 
 condition: "track" "." IDENTIFIER "==" value
 
