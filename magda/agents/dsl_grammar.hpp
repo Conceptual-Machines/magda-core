@@ -146,7 +146,7 @@ EXAMPLES:
 NOTE OPERATIONS (require a selected clip):
 - .notes.select(note.pitch == C4) - Select notes matching predicate (fields: pitch, velocity, start_beat, length_beats; pitch accepts MIDI numbers or note names like C4, C#4, Bb3; C4=60)
 - .notes.add(pitch=C4, beat=0, length=1, velocity=100) - Add a note (pitch can be note name or MIDI number)
-- .notes.add_chord(root=C4, quality=major, beat=0, length=1, velocity=100, inversion=0) - Add a chord (qualities: major/maj, minor/min, dim, aug, sus2, sus4, dom7/7, maj7, min7, dim7, power/5; inversion: 0=root, 1=first, 2=second)
+- .notes.add_chord(root=C4, quality=major, beat=0, length=1, velocity=100, inversion=0) - Add a chord (qualities: major/maj, minor/min, dim, aug, sus2, sus4, dom7/7, maj7, min7, dim7, dom9/9, maj9, min9, dom11/11, min11, maj11, dom13/13, min13, maj13, add9, add11, add13, madd9, 6/maj6, min6, 7b5, 7sharp5, 7b9, 7sharp9, min7b5/half_dim, power/5; inversion: 0=root, 1=first, 2=second)
 - .notes.add_arpeggio(root=C4, quality=major, beat=0, step=0.5, note_length=0.5, velocity=100, inversion=0, pattern=up) - Add an arpeggio (same qualities as add_chord; step=beat interval between notes; note_length defaults to step; pattern: up, down, updown)
 - .notes.delete() - Delete currently selected notes
 - .notes.transpose(semitones=5) - Transpose selected notes (positive=up, negative=down)
