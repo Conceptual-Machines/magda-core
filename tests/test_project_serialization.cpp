@@ -491,6 +491,7 @@ TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginSt
 
         const auto& tracks = trackManager.getTracks();
         REQUIRE(tracks.size() == 1);
+        REQUIRE(tracks[0].chainElements.size() == 1);
         REQUIRE(isDevice(tracks[0].chainElements[0]) == true);
         const auto& restoredDevice = getDevice(tracks[0].chainElements[0]);
         REQUIRE(restoredDevice.pluginState.isEmpty());

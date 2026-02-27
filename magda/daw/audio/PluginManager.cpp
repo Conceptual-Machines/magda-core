@@ -1631,14 +1631,13 @@ void PluginManager::captureAllPluginStates() {
 
         ext->flushPluginStateToValueTree();
         auto stateStr = ext->state.getProperty(te::IDs::state).toString();
-        if (stateStr.isNotEmpty()) {
-            // Find the DeviceInfo across all tracks
-            auto& trackManager = TrackManager::getInstance();
-            for (auto& track : trackManager.getTracks()) {
-                if (auto* devInfo = trackManager.getDevice(track.id, deviceId)) {
-                    devInfo->pluginState = stateStr;
-                    break;
-                }
+
+        // Always overwrite pluginState (even if empty) to avoid stale state
+        auto& trackManager = TrackManager::getInstance();
+        for (auto& track : trackManager.getTracks()) {
+            if (auto* devInfo = trackManager.getDevice(track.id, deviceId)) {
+                devInfo->pluginState = stateStr;
+                break;
             }
         }
     }

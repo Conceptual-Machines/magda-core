@@ -196,10 +196,10 @@ void RackSyncManager::captureAllPluginStates() {
 
             ext->flushPluginStateToValueTree();
             auto stateStr = ext->state.getProperty(te::IDs::state).toString();
-            if (stateStr.isNotEmpty()) {
-                if (auto* devInfo = trackManager.getDevice(synced.trackId, deviceId)) {
-                    devInfo->pluginState = stateStr;
-                }
+
+            // Always overwrite pluginState (even if empty) to avoid stale state
+            if (auto* devInfo = trackManager.getDevice(synced.trackId, deviceId)) {
+                devInfo->pluginState = stateStr;
             }
         }
     }
