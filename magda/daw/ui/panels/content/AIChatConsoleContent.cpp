@@ -6,6 +6,7 @@
 #include "../../../core/TrackManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "BinaryData.h"
 
 namespace magda::daw::ui {
 
@@ -121,14 +122,14 @@ AIChatConsoleContent::AIChatConsoleContent() {
     contextLabel_.addMouseListener(this, false);
     addAndMakeVisible(contextLabel_);
 
-    // Send button (embedded in bottom bar)
-    sendButtonLnF_.buttonFont = monoFont;
-    sendButton_.setLookAndFeel(&sendButtonLnF_);
-    sendButton_.setButtonText("\xe2\x8f\x8e");
-    sendButton_.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    sendButton_.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
-    sendButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-    sendButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    // Send button (embedded in bottom bar) — SVG icon
+    auto enterSvg =
+        juce::Drawable::createFromImageData(BinaryData::enter_svg, BinaryData::enter_svgSize);
+    sendButton_.setImages(enterSvg.get());
+    sendButton_.setColour(juce::DrawableButton::backgroundColourId,
+                          juce::Colours::transparentBlack);
+    sendButton_.setColour(juce::DrawableButton::backgroundOnColourId,
+                          juce::Colours::transparentBlack);
     sendButton_.setMouseCursor(juce::MouseCursor::PointingHandCursor);
     sendButton_.onClick = [this]() {
         auto text = inputBox_.getText().trim();
@@ -146,7 +147,6 @@ AIChatConsoleContent::AIChatConsoleContent() {
 }
 
 AIChatConsoleContent::~AIChatConsoleContent() {
-    sendButton_.setLookAndFeel(nullptr);
     magda::SelectionManager::getInstance().removeListener(this);
     stopTimer();
 
@@ -252,7 +252,7 @@ void AIChatConsoleContent::resized() {
     // Bottom bar (always visible): context label left, send button right
     auto bottomBar = bounds.removeFromBottom(26);
     bottomBarBounds_ = bottomBar;
-    sendButton_.setBounds(bottomBar.removeFromRight(36));
+    sendButton_.setBounds(bottomBar.removeFromRight(26));
     contextLabel_.setBounds(bottomBar);
 
     // Input box directly above bottom bar (no gap — unified shape)

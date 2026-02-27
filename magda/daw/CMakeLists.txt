@@ -11,6 +11,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/fonts/Inter-Bold.ttf
     "../../assets/fonts/Microgramma D Extended Bold.otf"
     ../../assets/fonts/JetBrainsMono-Regular.ttf
+    # UI icons
+    ../../assets/icons/enter.svg
     # Transport icons (off/on states)
     ../../assets/icons/play_off.svg
     ../../assets/icons/play_on.svg

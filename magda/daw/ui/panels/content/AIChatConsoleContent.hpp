@@ -67,18 +67,9 @@ class AIChatConsoleContent : public PanelContent,
     juce::TextEditor chatHistory_;
     juce::TextEditor inputBox_;
 
-    // Custom LookAndFeel for the send button font
-    struct SendButtonLookAndFeel : public juce::LookAndFeel_V4 {
-        juce::Font buttonFont;
-        juce::Font getTextButtonFont(juce::TextButton&, int) override {
-            return buttonFont;
-        }
-    };
-    SendButtonLookAndFeel sendButtonLnF_;
-
     // Bottom bar: context label + send button
     juce::Label contextLabel_;
-    juce::TextButton sendButton_;
+    juce::DrawableButton sendButton_{"send", juce::DrawableButton::ImageFitted};
     juce::Rectangle<int> bottomBarBounds_;
     juce::String contextText_;
     bool contextEnabled_ = true;
