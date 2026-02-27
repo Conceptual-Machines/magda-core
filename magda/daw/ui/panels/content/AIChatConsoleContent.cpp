@@ -42,7 +42,7 @@ void AIChatConsoleContent::RequestThread::run() {
 
         // Remove "Thinking..." line and show response
         auto currentText = safeThis->chatHistory_.getText();
-        auto thinkingPos = currentText.lastIndexOf("\xe2\x97\x86 Thinking");
+        auto thinkingPos = currentText.lastIndexOf("< Thinking");
         if (thinkingPos >= 0) {
             auto lineEnd = currentText.indexOf(thinkingPos, "\n");
             if (lineEnd < 0)
@@ -58,7 +58,7 @@ void AIChatConsoleContent::RequestThread::run() {
             formattedResponse = "[!] " + formattedResponse;
         }
 
-        safeThis->chatHistory_.setText(currentText + "\xe2\x97\x86 " + formattedResponse + "\n\n");
+        safeThis->chatHistory_.setText(currentText + "< " + formattedResponse + "\n\n");
         safeThis->chatHistory_.moveCaretToEnd();
         safeThis->inputBox_.setEnabled(true);
         safeThis->sendButton_.setEnabled(true);
@@ -186,8 +186,8 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
     inputBox_.setEnabled(false);
     sendButton_.setEnabled(false);
 
-    appendToChat("\xe2\x97\x8f " + text);
-    appendToChat("\xe2\x97\x86 Thinking");
+    appendToChat("> " + text);
+    appendToChat("< Thinking");
 
     // Reset cancel state and start new request
     shouldStop_ = false;
@@ -215,13 +215,13 @@ void AIChatConsoleContent::timerCallback() {
 
     // Update the "Thinking" line in the chat history
     auto currentText = chatHistory_.getText();
-    auto thinkingPos = currentText.lastIndexOf("\xe2\x97\x86 Thinking");
+    auto thinkingPos = currentText.lastIndexOf("< Thinking");
     if (thinkingPos >= 0) {
         auto lineEnd = currentText.indexOf(thinkingPos, "\n");
         if (lineEnd < 0)
             lineEnd = currentText.length();
-        chatHistory_.setText(currentText.substring(0, thinkingPos) + "\xe2\x97\x86 Thinking" +
-                             dots + currentText.substring(lineEnd));
+        chatHistory_.setText(currentText.substring(0, thinkingPos) + "< Thinking" + dots +
+                             currentText.substring(lineEnd));
         chatHistory_.moveCaretToEnd();
     }
 }
