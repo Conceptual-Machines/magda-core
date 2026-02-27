@@ -1788,10 +1788,13 @@ bool Interpreter::executeAddArpeggio(const Params& params) {
         ordered = midiNotes;
     }
 
-    // Determine fill boundary (clip length in beats) if fill=true
-    bool fill = params.getBool("fill", false);
+    // Determine fill boundary
+    // beats=N fills exactly N beats; fill=true fills the entire clip
+    bool fill = params.has("beats") || params.getBool("fill", false);
     double fillBeats = 0.0;
-    if (fill) {
+    if (params.has("beats")) {
+        fillBeats = beat + params.getFloat("beats");
+    } else if (fill) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip) {
             double bpm = 120.0;

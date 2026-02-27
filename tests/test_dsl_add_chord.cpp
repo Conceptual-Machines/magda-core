@@ -721,6 +721,35 @@ TEST_CASE("notes.add_arpeggio - no fill by default", "[dsl][arpeggio][fill]") {
     REQUIRE(clip->midiNotes.size() == 3);
 }
 
+TEST_CASE("notes.add_arpeggio - beats parameter fills exact duration", "[dsl][arpeggio][fill]") {
+    resetState();
+    dsl::Interpreter interp;
+
+    // 4-bar clip, but only fill 4 beats (half of 2 bars) with E minor, then 4 beats with C major
+    REQUIRE(
+        interp.execute("track(name=\"Test\", type=\"midi\")"
+                       ".clip.new(bar=1, length_bars=2)"
+                       ".notes.add_arpeggio(root=E4, quality=min, beat=0, step=0.5, beats=4)"
+                       ".notes.add_arpeggio(root=C4, quality=major, beat=4, step=0.5, beats=4)"));
+
+    auto tracks = TrackManager::getInstance().getTracks();
+    const auto* clip = getFirstClip(tracks[0].id);
+    REQUIRE(clip != nullptr);
+
+    // 4 beats / 0.5 step = 8 notes per arpeggio, 16 total
+    REQUIRE(clip->midiNotes.size() == 16);
+
+    auto notesByBeat = getNotesByBeat(clip);
+    // First arpeggio: E minor (E4=64, G4=67, B4=71) cycling for 4 beats
+    REQUIRE(notesByBeat[0].first == 64);  // E4@0
+    REQUIRE(notesByBeat[0].second == Catch::Approx(0.0));
+    REQUIRE(notesByBeat[7].second == Catch::Approx(3.5));  // last of first arpeggio
+    // Second arpeggio: C major (C4=60, E4=64, G4=67) starting at beat 4
+    REQUIRE(notesByBeat[8].first == 60);  // C4@4.0
+    REQUIRE(notesByBeat[8].second == Catch::Approx(4.0));
+    REQUIRE(notesByBeat[15].second == Catch::Approx(7.5));  // last note
+}
+
 TEST_CASE("notes.add_arpeggio - missing root", "[dsl][arpeggio][error]") {
     resetState();
     dsl::Interpreter interp;
