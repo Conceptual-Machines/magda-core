@@ -98,9 +98,12 @@ Each command goes on a separate line. Track operations execute FIRST, then music
 
 TRACK OPERATIONS:
 - track() - Create new track
-- track(name="Bass") - Create track with name
+- track(name="Bass") - Create or reference track by name (creates if no track with that name exists, otherwise references the existing one)
+- track(name="Bass", new=true) - Always create a new track, even if one with the same name exists
 - track(name="Bass", type="audio") - Create track with type (audio, midi)
 - track(id=1) - Reference existing track (1-based index)
+
+IMPORTANT: When the user says "create a track", always use new=true to ensure a fresh track is created.
 
 METHOD CHAINING:
 - .clip.new(bar=3, length_bars=4) - Create MIDI clip at bar

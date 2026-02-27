@@ -427,9 +427,10 @@ bool Interpreter::parseTrackStatement(Tokenizer& tok) {
         }
         ctx_.currentTrackId = tm.getTracks()[static_cast<size_t>(index)].id;
     } else if (params.has("name")) {
-        // Try to find existing track by name, create if not found
         juce::String name(params.get("name"));
-        int existingId = findTrackByName(name);
+        bool forceNew = params.getBool("new", false);
+
+        int existingId = forceNew ? -1 : findTrackByName(name);
 
         if (existingId >= 0) {
             ctx_.currentTrackId = existingId;
