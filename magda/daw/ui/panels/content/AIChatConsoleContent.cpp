@@ -112,6 +112,12 @@ AIChatConsoleContent::AIChatConsoleContent() {
     };
     addAndMakeVisible(inputBox_);
 
+    // Load context icons
+    trackIconDrawable_ =
+        juce::Drawable::createFromImageData(BinaryData::track_svg, BinaryData::track_svgSize);
+    clipIconDrawable_ =
+        juce::Drawable::createFromImageData(BinaryData::clip_svg, BinaryData::clip_svgSize);
+
     // Context label (always visible, inside bottom bar)
     contextLabel_.setFont(FontManager::getInstance().getMonoFont(11.0f));
     contextLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
@@ -241,6 +247,24 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
     float separatorY = static_cast<float>(inputBounds.getBottom());
     g.drawHorizontalLine(static_cast<int>(separatorY), combined.getX() + 1.0f,
                          combined.getRight() - 1.0f);
+
+    // Draw context icon
+    if (contextIcon_ != ContextIcon::None) {
+        juce::Drawable* icon = nullptr;
+        if (contextIcon_ == ContextIcon::Track || contextIcon_ == ContextIcon::Device)
+            icon = trackIconDrawable_.get();
+        else if (contextIcon_ == ContextIcon::Clip)
+            icon = clipIconDrawable_.get();
+
+        if (icon) {
+            auto iconBounds = contextIconBounds_.toFloat().reduced(4.0f);
+            auto colour = contextEnabled_ ? DarkTheme::getAccentColour()
+                                          : DarkTheme::getSecondaryTextColour().withAlpha(0.3f);
+            icon->replaceColour(juce::Colours::white, colour);
+            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
+            icon->replaceColour(colour, juce::Colours::white);
+        }
+    }
 }
 
 void AIChatConsoleContent::resized() {
@@ -249,10 +273,11 @@ void AIChatConsoleContent::resized() {
     titleLabel_.setBounds(bounds.removeFromTop(24));
     bounds.removeFromTop(8);  // Spacing
 
-    // Bottom bar (always visible): context label left, send button right
+    // Bottom bar (always visible): icon + context label left, send button right
     auto bottomBar = bounds.removeFromBottom(26);
     bottomBarBounds_ = bottomBar;
     sendButton_.setBounds(bottomBar.removeFromRight(26));
+    contextIconBounds_ = bottomBar.removeFromLeft(26);
     contextLabel_.setBounds(bottomBar);
 
     // Input box directly above bottom bar (no gap — unified shape)
@@ -278,16 +303,15 @@ void AIChatConsoleContent::onDeactivated() {
 void AIChatConsoleContent::selectionTypeChanged(magda::SelectionType newType) {
     if (newType == magda::SelectionType::None) {
         contextText_.clear();
+        contextIcon_ = ContextIcon::None;
         updateContextBar();
     }
 }
 
 void AIChatConsoleContent::trackSelectionChanged(magda::TrackId trackId) {
     auto* track = magda::TrackManager::getInstance().getTrack(trackId);
-    if (track != nullptr)
-        contextText_ = "Track \"" + track->name + "\"";
-    else
-        contextText_ = "Track " + juce::String(trackId);
+    contextText_ = track != nullptr ? track->name : juce::String(trackId);
+    contextIcon_ = ContextIcon::Track;
     updateContextBar();
 }
 
@@ -295,30 +319,30 @@ void AIChatConsoleContent::clipSelectionChanged(magda::ClipId clipId) {
     auto* clip = magda::ClipManager::getInstance().getClip(clipId);
     if (clip != nullptr) {
         auto* track = magda::TrackManager::getInstance().getTrack(clip->trackId);
-        juce::String trackPart = track != nullptr ? "Track \"" + track->name + "\""
-                                                  : "Track " + juce::String(clip->trackId);
-        contextText_ = trackPart + " > Clip \"" + clip->name + "\"";
+        juce::String trackName = track != nullptr ? track->name : juce::String(clip->trackId);
+        contextText_ = trackName + " > " + clip->name;
     } else {
-        contextText_ = "Clip " + juce::String(clipId);
+        contextText_ = juce::String(clipId);
     }
+    contextIcon_ = ContextIcon::Clip;
     updateContextBar();
 }
 
 void AIChatConsoleContent::chainNodeSelectionChanged(const magda::ChainNodePath& path) {
     auto* track = magda::TrackManager::getInstance().getTrack(path.trackId);
-    juce::String trackPart =
-        track != nullptr ? "Track \"" + track->name + "\"" : "Track " + juce::String(path.trackId);
+    juce::String trackName = track != nullptr ? track->name : juce::String(path.trackId);
 
     auto deviceId = path.getDeviceId();
     if (deviceId != magda::INVALID_DEVICE_ID) {
         auto* device = magda::TrackManager::getInstance().getDevice(path.trackId, deviceId);
         if (device != nullptr)
-            contextText_ = trackPart + " > " + device->name;
+            contextText_ = trackName + " > " + device->name;
         else
-            contextText_ = trackPart + " > Device " + juce::String(deviceId);
+            contextText_ = trackName + " > " + juce::String(deviceId);
     } else {
-        contextText_ = trackPart;
+        contextText_ = trackName;
     }
+    contextIcon_ = ContextIcon::Device;
     updateContextBar();
 }
 

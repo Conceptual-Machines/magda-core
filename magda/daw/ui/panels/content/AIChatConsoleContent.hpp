@@ -67,10 +67,15 @@ class AIChatConsoleContent : public PanelContent,
     juce::TextEditor chatHistory_;
     juce::TextEditor inputBox_;
 
-    // Bottom bar: context label + send button
+    // Bottom bar: context icon + label + send button
+    enum class ContextIcon { None, Track, Clip, Device };
+    ContextIcon contextIcon_ = ContextIcon::None;
+    std::unique_ptr<juce::Drawable> trackIconDrawable_;
+    std::unique_ptr<juce::Drawable> clipIconDrawable_;
     juce::Label contextLabel_;
     juce::DrawableButton sendButton_{"send", juce::DrawableButton::ImageFitted};
     juce::Rectangle<int> bottomBarBounds_;
+    juce::Rectangle<int> contextIconBounds_;
     juce::String contextText_;
     bool contextEnabled_ = true;
 
