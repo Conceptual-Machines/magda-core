@@ -41,7 +41,7 @@ void AIChatConsoleContent::RequestThread::run() {
 
         // Remove "Thinking..." line and show response
         auto currentText = safeThis->chatHistory_.getText();
-        auto thinkingPos = currentText.lastIndexOf("AI: Thinking");
+        auto thinkingPos = currentText.lastIndexOf("\xe2\x97\x86 Thinking");
         if (thinkingPos >= 0) {
             auto lineEnd = currentText.indexOf(thinkingPos, "\n");
             if (lineEnd < 0)
@@ -57,9 +57,10 @@ void AIChatConsoleContent::RequestThread::run() {
             formattedResponse = "[!] " + formattedResponse;
         }
 
-        safeThis->chatHistory_.setText(currentText + "AI: " + formattedResponse + "\n\n");
+        safeThis->chatHistory_.setText(currentText + "\xe2\x97\x86 " + formattedResponse + "\n\n");
         safeThis->chatHistory_.moveCaretToEnd();
         safeThis->inputBox_.setEnabled(true);
+        safeThis->sendButton_.setEnabled(true);
         safeThis->inputBox_.grabKeyboardFocus();
         safeThis->processing_ = false;
     });
@@ -79,18 +80,23 @@ AIChatConsoleContent::AIChatConsoleContent() {
     addAndMakeVisible(titleLabel_);
 
     // Chat history area
+    auto monoFont = FontManager::getInstance().getMonoFont(13.0f);
     chatHistory_.setMultiLine(true);
     chatHistory_.setReadOnly(true);
+    chatHistory_.setFont(monoFont);
     chatHistory_.setColour(juce::TextEditor::backgroundColourId,
                            DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
     chatHistory_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
     chatHistory_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+    chatHistory_.setColour(juce::TextEditor::focusedOutlineColourId, DarkTheme::getBorderColour());
+    chatHistory_.setColour(juce::TextEditor::highlightColourId, juce::Colours::transparentBlack);
     chatHistory_.setText(
         "Welcome! Ask me anything about your project...\n"
         "Try: \"create a bass track\" or \"create a drums track and mute it\"\n\n");
     addAndMakeVisible(chatHistory_);
 
     // Input box
+    inputBox_.setFont(monoFont);
     inputBox_.setMultiLine(true);
     inputBox_.setReturnKeyStartsNewLine(false);
     inputBox_.setTextToShowWhenEmpty("Type a message...", DarkTheme::getSecondaryTextColour());
@@ -105,16 +111,31 @@ AIChatConsoleContent::AIChatConsoleContent() {
     };
     addAndMakeVisible(inputBox_);
 
-    // Context bar (initially hidden) — styled to match input box
-    contextLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    // Context label (always visible, inside bottom bar)
+    contextLabel_.setFont(FontManager::getInstance().getMonoFont(11.0f));
     contextLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     contextLabel_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     contextLabel_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
-    contextLabel_.setBorderSize(juce::BorderSize<int>(0, 4, 0, 4));
+    contextLabel_.setBorderSize(juce::BorderSize<int>(0, 8, 0, 4));
     contextLabel_.setInterceptsMouseClicks(true, false);
     contextLabel_.addMouseListener(this, false);
-    contextLabel_.setVisible(false);
     addAndMakeVisible(contextLabel_);
+
+    // Send button (embedded in bottom bar)
+    sendButtonLnF_.buttonFont = monoFont;
+    sendButton_.setLookAndFeel(&sendButtonLnF_);
+    sendButton_.setButtonText("Send");
+    sendButton_.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    sendButton_.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
+    sendButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    sendButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    sendButton_.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    sendButton_.onClick = [this]() {
+        auto text = inputBox_.getText().trim();
+        if (text.isNotEmpty() && !processing_)
+            sendMessage(text);
+    };
+    addAndMakeVisible(sendButton_);
 
     // Register for selection changes
     magda::SelectionManager::getInstance().addListener(this);
@@ -125,6 +146,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
 }
 
 AIChatConsoleContent::~AIChatConsoleContent() {
+    sendButton_.setLookAndFeel(nullptr);
     magda::SelectionManager::getInstance().removeListener(this);
     stopTimer();
 
@@ -155,19 +177,16 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
     processing_ = true;
     inputBox_.clear();
     inputBox_.setEnabled(false);
+    sendButton_.setEnabled(false);
 
-    appendToChat("You: " + text);
-    appendToChat("AI: Thinking");
+    appendToChat("\xe2\x97\x8f " + text);
+    appendToChat("\xe2\x97\x86 Thinking");
 
     // Reset cancel state and start new request
     shouldStop_ = false;
     agent_->resetCancel();
 
-    // Prepend selection context if available and enabled
-    if (contextEnabled_ && contextText_.isNotEmpty())
-        pendingMessage_ = "[Context: " + contextText_ + "] " + text;
-    else
-        pendingMessage_ = text;
+    pendingMessage_ = text;
 
     dotCount_ = 0;
     startTimer(400);  // Animate dots every 400ms
@@ -189,13 +208,13 @@ void AIChatConsoleContent::timerCallback() {
 
     // Update the "Thinking" line in the chat history
     auto currentText = chatHistory_.getText();
-    auto thinkingPos = currentText.lastIndexOf("AI: Thinking");
+    auto thinkingPos = currentText.lastIndexOf("\xe2\x97\x86 Thinking");
     if (thinkingPos >= 0) {
         auto lineEnd = currentText.indexOf(thinkingPos, "\n");
         if (lineEnd < 0)
             lineEnd = currentText.length();
-        chatHistory_.setText(currentText.substring(0, thinkingPos) + "AI: Thinking" + dots +
-                             currentText.substring(lineEnd));
+        chatHistory_.setText(currentText.substring(0, thinkingPos) + "\xe2\x97\x86 Thinking" +
+                             dots + currentText.substring(lineEnd));
         chatHistory_.moveCaretToEnd();
     }
 }
@@ -208,16 +227,17 @@ void AIChatConsoleContent::appendToChat(const juce::String& text) {
 void AIChatConsoleContent::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getPanelBackgroundColour());
 
-    // Draw context bar background, border, and separator
-    if (contextLabel_.isVisible()) {
-        auto ctxBounds = contextLabel_.getBounds();
-        // Fill background to match input box
-        g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-        g.fillRect(ctxBounds);
-        // Border
-        g.setColour(DarkTheme::getBorderColour());
-        g.drawRect(ctxBounds.toFloat(), 1.0f);
-    }
+    // Draw bottom bar background (spans context label + send button)
+    auto barBounds = bottomBarBounds_.toFloat();
+    g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+    g.fillRoundedRectangle(barBounds, 4.0f);
+    g.setColour(DarkTheme::getBorderColour());
+    g.drawRoundedRectangle(barBounds, 4.0f, 1.0f);
+
+    // Draw separator line before Send button
+    auto sendBounds = sendButton_.getBounds();
+    g.setColour(DarkTheme::getBorderColour());
+    g.drawVerticalLine(sendBounds.getX(), barBounds.getY() + 4.0f, barBounds.getBottom() - 4.0f);
 }
 
 void AIChatConsoleContent::resized() {
@@ -226,17 +246,15 @@ void AIChatConsoleContent::resized() {
     titleLabel_.setBounds(bounds.removeFromTop(24));
     bounds.removeFromTop(8);  // Spacing
 
-    bool showContextRow = contextLabel_.isVisible();
+    // Bottom bar (always visible): context label left, send button right
+    auto bottomBar = bounds.removeFromBottom(26);
+    bottomBarBounds_ = bottomBar;
+    sendButton_.setBounds(bottomBar.removeFromRight(60));
+    contextLabel_.setBounds(bottomBar);
 
-    // Input area at the bottom: input box + context bar below
-    int inputHeight = 60 + (showContextRow ? 20 : 0);
-    auto inputArea = bounds.removeFromBottom(inputHeight);
-
-    if (showContextRow) {
-        auto contextRow = inputArea.removeFromBottom(20);
-        contextLabel_.setBounds(contextRow);
-    }
-
+    // Input box above the bottom bar
+    bounds.removeFromBottom(4);  // Spacing
+    auto inputArea = bounds.removeFromBottom(60);
     inputBox_.setBounds(inputArea);
 
     bounds.removeFromBottom(8);  // Spacing
@@ -303,13 +321,10 @@ void AIChatConsoleContent::chainNodeSelectionChanged(const magda::ChainNodePath&
 }
 
 void AIChatConsoleContent::updateContextBar() {
-    bool visible = contextText_.isNotEmpty();
     contextLabel_.setText(contextText_, juce::dontSendNotification);
-    contextLabel_.setVisible(visible);
     contextLabel_.setColour(juce::Label::textColourId,
                             contextEnabled_ ? DarkTheme::getAccentColour()
                                             : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
-    resized();
     repaint();
 }
 

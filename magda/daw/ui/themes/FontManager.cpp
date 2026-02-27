@@ -57,6 +57,14 @@ bool FontManager::initialize() {
         success = false;
     }
 
+    // Load JetBrains Mono Regular
+    jetBrainsMonoRegular = juce::Typeface::createSystemTypefaceFor(
+        BinaryData::JetBrainsMonoRegular_ttf, BinaryData::JetBrainsMonoRegular_ttfSize);
+    if (!jetBrainsMonoRegular) {
+        std::cerr << "Failed to load JetBrains Mono Regular" << std::endl;
+        success = false;
+    }
+
     initialized = success;
 
     if (initialized) {
@@ -75,6 +83,7 @@ void FontManager::shutdown() {
     interSemiBold = nullptr;
     interBold = nullptr;
     microgrammaBold = nullptr;
+    jetBrainsMonoRegular = nullptr;
     initialized = false;
 }
 
@@ -145,6 +154,14 @@ juce::Font FontManager::getMicrogrammaFont(float size) const {
 
     // Fallback to monospace font if Microgramma isn't loaded
     return juce::Font(juce::Font::getDefaultMonospacedFontName(), size, juce::Font::bold);
+}
+
+juce::Font FontManager::getMonoFont(float size) const {
+    if (jetBrainsMonoRegular) {
+        return juce::Font(jetBrainsMonoRegular).withHeight(size);
+    }
+
+    return juce::Font(juce::Font::getDefaultMonospacedFontName(), size, juce::Font::plain);
 }
 
 }  // namespace magda

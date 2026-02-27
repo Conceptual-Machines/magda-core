@@ -34,6 +34,9 @@ class FontManager {
     // Get Microgramma D Extended Bold font (for MPC-style displays)
     juce::Font getMicrogrammaFont(float size = 11.0f) const;
 
+    // Get JetBrains Mono font (for console/code displays)
+    juce::Font getMonoFont(float size = 13.0f) const;
+
     // Check if Inter fonts are loaded
     bool isInitialized() const {
         return initialized;
@@ -55,6 +58,7 @@ class FontManager {
     juce::Typeface::Ptr interSemiBold;
     juce::Typeface::Ptr interBold;
     juce::Typeface::Ptr microgrammaBold;
+    juce::Typeface::Ptr jetBrainsMonoRegular;
 
     // Fallback system font name
     static constexpr const char* FALLBACK_FONT = "Helvetica";
