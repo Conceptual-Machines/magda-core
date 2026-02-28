@@ -87,7 +87,7 @@ bool PianoRollKeyboard::isBlackKey(int noteNumber) const {
 juce::String PianoRollKeyboard::getNoteName(int noteNumber) const {
     static const char* noteNames[] = {"C",  "C#", "D",  "D#", "E",  "F",
                                       "F#", "G",  "G#", "A",  "A#", "B"};
-    int octave = (noteNumber / 12) - 1;
+    int octave = (noteNumber / 12) - 2;  // C-2 convention (note 0 = C-2, note 60 = C3)
     int note = noteNumber % 12;
     return juce::String(noteNames[note]) + juce::String(octave);
 }

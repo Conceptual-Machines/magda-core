@@ -1558,7 +1558,50 @@ void DrumGridClipContent::setClip(magda::ClipId clipId) {
     updateGridSize();
     updateTimeRuler();
     updateVelocityLane();
+
+    // Center on notes (or C-2 if empty)
+    centerOnNotes();
+
     repaint();
+}
+
+void DrumGridClipContent::centerOnNotes() {
+    if (!viewport_)
+        return;
+
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+
+    int targetRow = -1;
+    if (clip && !clip->midiNotes.empty()) {
+        // Find note range and center on midpoint
+        int minNote = 127;
+        int maxNote = 0;
+        for (const auto& note : clip->midiNotes) {
+            minNote = juce::jmin(minNote, note.noteNumber);
+            maxNote = juce::jmax(maxNote, note.noteNumber);
+        }
+        int midNote = (minNote + maxNote) / 2;
+
+        // Find the row index for this note (rows are reversed: high notes at top)
+        for (int i = 0; i < static_cast<int>(padRows_.size()); ++i) {
+            if (padRows_[static_cast<size_t>(i)].noteNumber == midNote) {
+                targetRow = i;
+                break;
+            }
+        }
+    }
+
+    if (targetRow < 0) {
+        // No notes or note not found — scroll to bottom (C-2)
+        int totalHeight = static_cast<int>(padRows_.size()) * ROW_HEIGHT;
+        int scrollY = juce::jmax(0, totalHeight - viewport_->getHeight());
+        viewport_->setViewPosition(viewport_->getViewPositionX(), scrollY);
+    } else {
+        // Center on the target row
+        int rowY = targetRow * ROW_HEIGHT;
+        int scrollY = juce::jmax(0, rowY - (viewport_->getHeight() / 2) + (ROW_HEIGHT / 2));
+        viewport_->setViewPosition(viewport_->getViewPositionX(), scrollY);
+    }
 }
 
 // ============================================================================
