@@ -889,7 +889,7 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
         if (shiftHeld && isInsideWaveform(x, *clip)) {
             dragMode_ = DragMode::Zoom;
             zoomDragStartY_ = event.y;
-            zoomDragAnchorX_ = x - scrollOffsetX_;  // viewport-relative
+            zoomDragAnchorX_ = x;  // already viewport-relative (component is viewport-sized)
             if (onZoomDrag)
                 onZoomDrag(0, zoomDragAnchorX_);  // Signal drag start
             return;
@@ -971,7 +971,7 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
         // Inside waveform but not near edges — zoom drag
         dragMode_ = DragMode::Zoom;
         zoomDragStartY_ = event.y;
-        zoomDragAnchorX_ = x - scrollOffsetX_;  // viewport-relative
+        zoomDragAnchorX_ = x;  // already viewport-relative (component is viewport-sized)
         if (onZoomDrag)
             onZoomDrag(0, zoomDragAnchorX_);  // Signal drag start
         return;
