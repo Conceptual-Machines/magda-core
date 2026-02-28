@@ -10,6 +10,7 @@
 #include "../views/MainView.hpp"
 #include "../views/MixerView.hpp"
 #include "MainWindow.hpp"
+#include "MenuManager.hpp"
 #include "core/Config.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
@@ -487,7 +488,13 @@ void MainWindow::setupMenuCallbacks() {
 
     callbacks.onToggleScrollbarPosition = [this]() {
         auto& config = Config::getInstance();
-        config.setScrollbarOnLeft(!config.getScrollbarOnLeft());
+        bool oldVal = config.getScrollbarOnLeft();
+        config.setScrollbarOnLeft(!oldVal);
+        bool newVal = config.getScrollbarOnLeft();
+        DBG("ToggleScrollbar: old=" + juce::String(oldVal ? "true" : "false") +
+            " new=" + juce::String(newVal ? "true" : "false"));
+        config.save();
+        MenuManager::getInstance().menuItemsChanged();
         if (mainComponent && mainComponent->mainView) {
             mainComponent->mainView->resized();
         }

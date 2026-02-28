@@ -156,6 +156,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addItem(ShowTrackManager, "Track Manager...", true, false);
         menu.addSeparator();
         bool headersOnRight = Config::getInstance().getScrollbarOnLeft();
+        DBG("Menu build: headersOnRight=" + juce::String(headersOnRight ? "true" : "false"));
         menu.addItem(ToggleScrollbarPosition, "Headers on Right", true, headersOnRight);
         menu.addSeparator();
         menu.addItem(ZoomIn, "Zoom In", true, false);
