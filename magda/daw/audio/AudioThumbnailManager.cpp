@@ -43,7 +43,7 @@ juce::AudioThumbnail* AudioThumbnailManager::createThumbnail(const juce::String&
     // Create new AudioThumbnail
     // 512 samples per thumbnail point is a good balance for performance and quality
     auto thumbnail =
-        std::make_unique<juce::AudioThumbnail>(128,              // samples per thumbnail point
+        std::make_unique<juce::AudioThumbnail>(512,              // samples per thumbnail point
                                                formatManager_,   // format manager for reading files
                                                *thumbnailCache_  // cache for storing thumbnail data
         );
@@ -90,62 +90,11 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
     startTime = juce::jlimit(0.0, totalLength, startTime);
     endTime = juce::jlimit(startTime, totalLength, endTime);
 
-    // Draw the waveform using a path-based renderer for smooth anti-aliased curves
+    // Draw the waveform
     g.setColour(colour);
 
-    const int numChannels = thumbnail->getNumChannels();
-    if (numChannels <= 0)
-        return;
-
-    const float channelHeight = static_cast<float>(bounds.getHeight()) / numChannels;
-    const int width = bounds.getWidth();
-
-    for (int ch = 0; ch < numChannels; ++ch) {
-        const float channelTop = bounds.getY() + ch * channelHeight;
-        const float channelCentre = channelTop + channelHeight * 0.5f;
-        const float halfHeight = channelHeight * 0.5f;
-
-        juce::Path waveformPath;
-        bool pathStarted = false;
-
-        // Trace top edge (max values) left-to-right
-        for (int x = 0; x < width; ++x) {
-            const double columnStart = startTime + (endTime - startTime) * x / width;
-            const double columnEnd = startTime + (endTime - startTime) * (x + 1) / width;
-
-            float minVal = 0.0f, maxVal = 0.0f;
-            thumbnail->getApproximateMinMax(columnStart, columnEnd, ch, minVal, maxVal);
-
-            minVal *= verticalZoom;
-            maxVal *= verticalZoom;
-
-            const float topY = channelCentre - maxVal * halfHeight;
-
-            if (!pathStarted) {
-                waveformPath.startNewSubPath(bounds.getX() + x, topY);
-                pathStarted = true;
-            } else {
-                waveformPath.lineTo(bounds.getX() + x, topY);
-            }
-        }
-
-        // Trace bottom edge (min values) right-to-left to close the shape
-        for (int x = width - 1; x >= 0; --x) {
-            const double columnStart = startTime + (endTime - startTime) * x / width;
-            const double columnEnd = startTime + (endTime - startTime) * (x + 1) / width;
-
-            float minVal = 0.0f, maxVal = 0.0f;
-            thumbnail->getApproximateMinMax(columnStart, columnEnd, ch, minVal, maxVal);
-
-            minVal *= verticalZoom;
-
-            const float bottomY = channelCentre - minVal * halfHeight;
-            waveformPath.lineTo(bounds.getX() + x, bottomY);
-        }
-
-        waveformPath.closeSubPath();
-        g.fillPath(waveformPath);
-    }
+    // Draw all channels (stereo files will show both channels mixed)
+    thumbnail->drawChannels(g, bounds, startTime, endTime, verticalZoom);
 }
 
 double AudioThumbnailManager::detectBPM(const juce::String& filePath) {
