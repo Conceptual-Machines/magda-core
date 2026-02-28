@@ -38,7 +38,8 @@ class AudioThumbnailManager {
      */
     void drawWaveform(juce::Graphics& g, const juce::Rectangle<int>& bounds,
                       const juce::String& audioFilePath, double startTime, double endTime,
-                      const juce::Colour& colour, float verticalZoom = 1.0f);
+                      const juce::Colour& colour, float verticalZoom = 1.0f,
+                      bool useHighRes = false);
 
     /**
      * @brief Detect BPM of an audio file using Tracktion's TempoDetect
@@ -99,6 +100,15 @@ class AudioThumbnailManager {
 
     // Transient detection cache (file path -> transient times in source-file seconds)
     std::map<juce::String, juce::Array<double>> transientCache_;
+
+    // Cached AudioFormatReaders for raw-sample waveform rendering
+    std::map<juce::String, std::unique_ptr<juce::AudioFormatReader>> readerCache_;
+    juce::AudioFormatReader* getOrCreateReader(const juce::String& audioFilePath);
+
+    // Draw waveform directly from raw samples (used when zoomed in)
+    void drawWaveformFromSamples(juce::Graphics& g, const juce::Rectangle<int>& bounds,
+                                 juce::AudioFormatReader* reader, double startTime, double endTime,
+                                 const juce::Colour& colour, float verticalZoom);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioThumbnailManager)
 };

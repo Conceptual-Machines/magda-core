@@ -73,7 +73,7 @@ juce::AudioThumbnail* AudioThumbnailManager::createThumbnail(const juce::String&
 void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangle<int>& bounds,
                                          const juce::String& audioFilePath, double startTime,
                                          double endTime, const juce::Colour& colour,
-                                         float verticalZoom) {
+                                         float verticalZoom, bool useHighRes) {
     if (bounds.getWidth() <= 0 || bounds.getHeight() <= 0)
         return;
 
@@ -90,10 +90,24 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
     startTime = juce::jlimit(0.0, totalLength, startTime);
     endTime = juce::jlimit(startTime, totalLength, endTime);
 
-    // Draw the waveform
-    g.setColour(colour);
+    // When useHighRes is enabled (waveform editor), switch to raw samples once
+    // zoomed in past the thumbnail's 512-samples-per-point resolution.
+    if (useHighRes) {
+        auto* reader = getOrCreateReader(audioFilePath);
+        if (reader != nullptr && reader->sampleRate > 0.0) {
+            double samplesPerPixel =
+                (endTime - startTime) * reader->sampleRate / static_cast<double>(bounds.getWidth());
 
-    // Draw all channels (stereo files will show both channels mixed)
+            if (samplesPerPixel < 512.0) {
+                drawWaveformFromSamples(g, bounds, reader, startTime, endTime, colour,
+                                        verticalZoom);
+                return;
+            }
+        }
+    }
+
+    // Draw the waveform from thumbnail (zoomed out)
+    g.setColour(colour);
     thumbnail->drawChannels(g, bounds, startTime, endTime, verticalZoom);
 }
 
@@ -153,11 +167,130 @@ void AudioThumbnailManager::clearCachedTransients(const juce::String& filePath) 
     transientCache_.erase(filePath);
 }
 
+juce::AudioFormatReader* AudioThumbnailManager::getOrCreateReader(
+    const juce::String& audioFilePath) {
+    auto it = readerCache_.find(audioFilePath);
+    if (it != readerCache_.end()) {
+        return it->second.get();
+    }
+
+    juce::File audioFile(audioFilePath);
+    if (!audioFile.existsAsFile()) {
+        return nullptr;
+    }
+
+    std::unique_ptr<juce::AudioFormatReader> reader(formatManager_.createReaderFor(audioFile));
+    if (!reader) {
+        return nullptr;
+    }
+
+    auto* ptr = reader.get();
+    readerCache_[audioFilePath] = std::move(reader);
+    return ptr;
+}
+
+void AudioThumbnailManager::drawWaveformFromSamples(
+    juce::Graphics& g, const juce::Rectangle<int>& bounds, juce::AudioFormatReader* reader,
+    double startTime, double endTime, const juce::Colour& colour, float verticalZoom) {
+    const int width = bounds.getWidth();
+    const int height = bounds.getHeight();
+    const int numChannels = static_cast<int>(reader->numChannels);
+    if (numChannels == 0)
+        return;
+
+    const double sampleRate = reader->sampleRate;
+    const juce::int64 startSample = static_cast<juce::int64>(startTime * sampleRate);
+    const juce::int64 endSample = static_cast<juce::int64>(endTime * sampleRate);
+    const juce::int64 totalSamples = endSample - startSample;
+
+    if (totalSamples <= 0)
+        return;
+
+    // Read the relevant sample range
+    juce::AudioBuffer<float> buffer(numChannels, static_cast<int>(totalSamples));
+    reader->read(&buffer, 0, static_cast<int>(totalSamples), startSample, true, true);
+
+    const float midY = bounds.getCentreY();
+    const float halfHeight = static_cast<float>(height) * 0.5f * verticalZoom;
+
+    juce::Path path;
+    bool pathStarted = false;
+
+    // For each pixel column, find min/max across all channels
+    for (int x = 0; x < width; ++x) {
+        const juce::int64 sampleStart =
+            static_cast<juce::int64>(static_cast<double>(x) * totalSamples / width);
+        const juce::int64 sampleEnd =
+            static_cast<juce::int64>(static_cast<double>(x + 1) * totalSamples / width);
+
+        float minVal = 1.0f;
+        float maxVal = -1.0f;
+
+        for (int ch = 0; ch < numChannels; ++ch) {
+            const float* samples = buffer.getReadPointer(ch);
+            for (juce::int64 s = sampleStart; s < sampleEnd && s < totalSamples; ++s) {
+                const float sample = samples[s];
+                if (sample < minVal)
+                    minVal = sample;
+                if (sample > maxVal)
+                    maxVal = sample;
+            }
+        }
+
+        if (minVal > maxVal) {
+            minVal = maxVal = 0.0f;
+        }
+
+        const float topY = midY - maxVal * halfHeight;
+        const float bottomY = midY - minVal * halfHeight;
+        const float pixelX = static_cast<float>(bounds.getX() + x);
+
+        if (!pathStarted) {
+            path.startNewSubPath(pixelX, topY);
+            pathStarted = true;
+        } else {
+            path.lineTo(pixelX, topY);
+        }
+
+        // Store bottom values — we'll trace them in reverse after
+        // For now just continue with top; we'll build the full outline below
+    }
+
+    // Trace min values right-to-left to close the shape
+    for (int x = width - 1; x >= 0; --x) {
+        const juce::int64 sampleStart =
+            static_cast<juce::int64>(static_cast<double>(x) * totalSamples / width);
+        const juce::int64 sampleEnd =
+            static_cast<juce::int64>(static_cast<double>(x + 1) * totalSamples / width);
+
+        float minVal = 1.0f;
+
+        for (int ch = 0; ch < numChannels; ++ch) {
+            const float* samples = buffer.getReadPointer(ch);
+            for (juce::int64 s = sampleStart; s < sampleEnd && s < totalSamples; ++s) {
+                const float sample = samples[s];
+                if (sample < minVal)
+                    minVal = sample;
+            }
+        }
+
+        const float bottomY = midY - minVal * halfHeight;
+        const float pixelX = static_cast<float>(bounds.getX() + x);
+        path.lineTo(pixelX, bottomY);
+    }
+
+    path.closeSubPath();
+
+    g.setColour(colour);
+    g.fillPath(path);
+}
+
 void AudioThumbnailManager::clearCache() {
     thumbnails_.clear();
     thumbnailCache_->clear();
     bpmCache_.clear();
     transientCache_.clear();
+    readerCache_.clear();
     DBG("AudioThumbnailManager: Cache cleared");
 }
 
@@ -166,6 +299,7 @@ void AudioThumbnailManager::shutdown() {
     thumbnailCache_.reset();
     bpmCache_.clear();
     transientCache_.clear();
+    readerCache_.clear();
 }
 
 }  // namespace magda

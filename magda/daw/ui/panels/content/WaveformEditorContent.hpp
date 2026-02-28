@@ -85,7 +85,7 @@ class WaveformEditorContent : public PanelContent,
     double verticalZoom_ = 1.0;      // amplitude multiplier
     double cachedBpm_ = 120.0;       // last known BPM for zoom scaling on tempo change
     static constexpr double MIN_ZOOM = 5.0;
-    static constexpr double MAX_ZOOM = 100000.0;  // ~2px per sample at 44.1kHz
+    static constexpr double MAX_ZOOM = 1000000.0;  // allows zooming to individual samples
     static constexpr double MIN_VERTICAL_ZOOM = 0.25;
     static constexpr double MAX_VERTICAL_ZOOM = 4.0;
 

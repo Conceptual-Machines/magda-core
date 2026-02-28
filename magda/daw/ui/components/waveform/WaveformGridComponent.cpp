@@ -149,7 +149,7 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
             auto drawRect = audioRect.reduced(0, 4);
             if (drawRect.getWidth() > 0 && drawRect.getHeight() > 0) {
                 thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, displayStart,
-                                              displayEnd, waveColour, vertZoom);
+                                              displayEnd, waveColour, vertZoom, true);
             }
         }
     }
@@ -183,7 +183,7 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
             // Draw dimmer to indicate it's outside the loop
             auto dimColour = waveColour.withAlpha(0.4f);
             thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, remainingFileStart,
-                                          remainingFileEnd, dimColour, vertZoom);
+                                          remainingFileEnd, dimColour, vertZoom, true);
             if (clip.isReversed)
                 g.restoreState();
         }
@@ -469,7 +469,7 @@ void WaveformGridComponent::paintWarpedWaveform(juce::Graphics& g, const magda::
                 fileDuration > 0.0 ? juce::jmin(clippedSrcEnd, fileDuration) : clippedSrcEnd;
             if (finalSrcEnd > finalSrcStart) {
                 thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, finalSrcStart,
-                                              finalSrcEnd, waveColour, vertZoom);
+                                              finalSrcEnd, waveColour, vertZoom, true);
             }
         }
     }
