@@ -104,7 +104,7 @@ void FooterBar::updateButtonStates() {
 
 void FooterBar::setupBottomCollapseButton() {
     bottomCollapseButton_ = std::make_unique<SvgButton>(
-        "BottomCollapse", BinaryData::collapse_down_svg, BinaryData::collapse_down_svgSize);
+        "BottomCollapse", BinaryData::bottom_open_svg, BinaryData::bottom_open_svgSize);
     bottomCollapseButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
     bottomCollapseButton_->onClick = [this]() {
         if (onBottomPanelCollapseToggle)
@@ -123,11 +123,11 @@ void FooterBar::updateBottomCollapseIcon() {
         return;
 
     if (bottomCollapsed_) {
-        bottomCollapseButton_->updateSvgData(BinaryData::collapse_up_svg,
-                                             BinaryData::collapse_up_svgSize);
+        bottomCollapseButton_->updateSvgData(BinaryData::bottom_open_svg,
+                                             BinaryData::bottom_open_svgSize);
     } else {
-        bottomCollapseButton_->updateSvgData(BinaryData::collapse_down_svg,
-                                             BinaryData::collapse_down_svgSize);
+        bottomCollapseButton_->updateSvgData(BinaryData::bottom_close_svg,
+                                             BinaryData::bottom_close_svgSize);
     }
 }
 
