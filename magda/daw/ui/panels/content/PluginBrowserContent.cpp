@@ -332,7 +332,31 @@ void PluginBrowserContent::loadExternalPlugins() {
 }
 
 void PluginBrowserContent::setEngine(magda::TracktionEngineWrapper* engine) {
+    // Unregister from old engine's KnownPluginList
+    if (engine_) {
+        engine_->getKnownPluginList().removeChangeListener(this);
+    }
+
     engine_ = engine;
+
+    // Register as change listener so we auto-refresh after plugin scans
+    if (engine_) {
+        engine_->getKnownPluginList().addChangeListener(this);
+    }
+
+    refreshPluginList();
+}
+
+PluginBrowserContent::~PluginBrowserContent() {
+    if (engine_) {
+        engine_->getKnownPluginList().removeChangeListener(this);
+    }
+    // Clear root item before TreeView destructor runs
+    pluginTree_.setRootItem(nullptr);
+}
+
+void PluginBrowserContent::changeListenerCallback(juce::ChangeBroadcaster* /*source*/) {
+    // KnownPluginList changed (e.g. scan completed) — refresh the browser
     refreshPluginList();
 }
 

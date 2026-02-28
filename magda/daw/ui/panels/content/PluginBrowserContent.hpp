@@ -43,15 +43,15 @@ struct PluginBrowserInfo {
  * Displays a tree view of available plugins organized by category,
  * with search functionality and right-click parameter configuration.
  */
-class PluginBrowserContent : public PanelContent, public juce::TreeViewItem {
+class PluginBrowserContent : public PanelContent,
+                             public juce::TreeViewItem,
+                             public juce::ChangeListener {
   public:
     PluginBrowserContent();
-    ~PluginBrowserContent() override {
-        // Clear root item before TreeView destructor runs, since TreeView::~TreeView()
-        // calls setOwnerView(nullptr) on items — rootItem_ would be freed first
-        // (reverse declaration order) causing use-after-free.
-        pluginTree_.setRootItem(nullptr);
-    }
+    ~PluginBrowserContent() override;
+
+    // ChangeListener — auto-refresh when KnownPluginList changes (e.g. after scan)
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
 
     PanelContentType getContentType() const override {
         return PanelContentType::PluginBrowser;
