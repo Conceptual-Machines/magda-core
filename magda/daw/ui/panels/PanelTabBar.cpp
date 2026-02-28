@@ -97,12 +97,11 @@ void PanelTabBar::setupCollapseButton() {
     if (location_ == PanelLocation::Bottom)
         return;
 
-    // PanelLocation::Right = LeftPanel (arrow points left to collapse)
-    // PanelLocation::Left = RightPanel (arrow points right to collapse)
-    const char* svgData = (location_ == PanelLocation::Right) ? BinaryData::collapse_left_svg
-                                                              : BinaryData::collapse_right_svg;
-    size_t svgSize = (location_ == PanelLocation::Right) ? BinaryData::collapse_left_svgSize
-                                                         : BinaryData::collapse_right_svgSize;
+    // Initial state is expanded, so show "close" icon
+    const char* svgData = (location_ == PanelLocation::Right) ? BinaryData::left_close_svg
+                                                              : BinaryData::right_close_svg;
+    size_t svgSize = (location_ == PanelLocation::Right) ? BinaryData::left_close_svgSize
+                                                         : BinaryData::right_close_svgSize;
 
     collapseButton_ = std::make_unique<magda::SvgButton>("Collapse", svgData, svgSize);
     collapseButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
@@ -126,15 +125,13 @@ void PanelTabBar::updateCollapseIcon() {
     size_t svgSize = 0;
 
     if (location_ == PanelLocation::Right) {
-        // PanelLocation::Right = LeftPanel. Expanded: arrow left. Collapsed: arrow right.
-        svgData = collapsed_ ? BinaryData::collapse_right_svg : BinaryData::collapse_left_svg;
-        svgSize =
-            collapsed_ ? BinaryData::collapse_right_svgSize : BinaryData::collapse_left_svgSize;
+        // LeftPanel: collapsed → "open", expanded → "close"
+        svgData = collapsed_ ? BinaryData::left_open_svg : BinaryData::left_close_svg;
+        svgSize = collapsed_ ? BinaryData::left_open_svgSize : BinaryData::left_close_svgSize;
     } else if (location_ == PanelLocation::Left) {
-        // PanelLocation::Left = RightPanel. Expanded: arrow right. Collapsed: arrow left.
-        svgData = collapsed_ ? BinaryData::collapse_left_svg : BinaryData::collapse_right_svg;
-        svgSize =
-            collapsed_ ? BinaryData::collapse_left_svgSize : BinaryData::collapse_right_svgSize;
+        // RightPanel: collapsed → "open", expanded → "close"
+        svgData = collapsed_ ? BinaryData::right_open_svg : BinaryData::right_close_svg;
+        svgSize = collapsed_ ? BinaryData::right_open_svgSize : BinaryData::right_close_svgSize;
     }
 
     if (svgData)

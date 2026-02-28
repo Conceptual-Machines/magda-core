@@ -141,6 +141,12 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/panel/collapse_right.svg
     ../../assets/icons/panel/collapse_up.svg
     ../../assets/icons/panel/collapse_down.svg
+    ../../assets/icons/panels/left_open.svg
+    ../../assets/icons/panels/left_close.svg
+    ../../assets/icons/panels/right_open.svg
+    ../../assets/icons/panels/right_close.svg
+    ../../assets/icons/panels/bottom_open.svg
+    ../../assets/icons/panels/bottom_close.svg
     # Fontaudio waveform icons
     ../../assets/icons/fontaudio/fad-modsine.svg
     ../../assets/icons/fontaudio/fad-modtri.svg

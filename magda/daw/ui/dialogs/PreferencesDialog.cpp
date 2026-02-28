@@ -170,6 +170,9 @@ class UIPage : public juce::Component {
         setupToggle(*this, showRightPanelToggle, "Expand Right Panel (Inspector)");
         setupToggle(*this, showBottomPanelToggle, "Expand Bottom Panel (Mixer)");
 
+        setupSectionHeader(*this, layoutHeader, "Layout");
+        setupToggle(*this, headersOnRightToggle, "Headers on the Right");
+
         setupSectionHeader(*this, behaviorHeader, "Behavior");
         setupToggle(*this, confirmTrackDeleteToggle, "Confirm before deleting tracks");
         setupToggle(*this, autoMonitorToggle, "Auto-monitor selected track");
@@ -192,6 +195,12 @@ class UIPage : public juce::Component {
         showBottomPanelToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
         bounds.removeFromTop(secGap);
 
+        // Layout
+        layoutHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        headersOnRightToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
+        bounds.removeFromTop(secGap);
+
         // Behavior
         behaviorHeader.setBounds(bounds.removeFromTop(headerH));
         bounds.removeFromTop(4);
@@ -210,6 +219,8 @@ class UIPage : public juce::Component {
                                             juce::dontSendNotification);
         showBottomPanelToggle.setToggleState(!config.getBottomPanelCollapsed(),
                                              juce::dontSendNotification);
+        headersOnRightToggle.setToggleState(config.getScrollbarOnLeft(),
+                                            juce::dontSendNotification);
         confirmTrackDeleteToggle.setToggleState(config.getConfirmTrackDelete(),
                                                 juce::dontSendNotification);
         autoMonitorToggle.setToggleState(config.getAutoMonitorSelectedTrack(),
@@ -221,14 +232,16 @@ class UIPage : public juce::Component {
         config.setLeftPanelCollapsed(!showLeftPanelToggle.getToggleState());
         config.setRightPanelCollapsed(!showRightPanelToggle.getToggleState());
         config.setBottomPanelCollapsed(!showBottomPanelToggle.getToggleState());
+        config.setScrollbarOnLeft(headersOnRightToggle.getToggleState());
         config.setConfirmTrackDelete(confirmTrackDeleteToggle.getToggleState());
         config.setAutoMonitorSelectedTrack(autoMonitorToggle.getToggleState());
         config.setShowTooltips(showTooltipsToggle.getToggleState());
     }
 
   private:
-    juce::Label panelsHeader, behaviorHeader;
+    juce::Label panelsHeader, layoutHeader, behaviorHeader;
     juce::ToggleButton showLeftPanelToggle, showRightPanelToggle, showBottomPanelToggle;
+    juce::ToggleButton headersOnRightToggle;
     juce::ToggleButton confirmTrackDeleteToggle, autoMonitorToggle, showTooltipsToggle;
 };
 
@@ -599,10 +612,11 @@ void PreferencesDialog::applySettings() {
         tc->dispatch(SetTimelineLengthEvent{newLength});
     }
 
-    // Apply panel visibility to live session
+    // Apply panel visibility and layout to live session
     for (int i = juce::TopLevelWindow::getNumTopLevelWindows(); --i >= 0;) {
         if (auto* mw = dynamic_cast<MainWindow*>(juce::TopLevelWindow::getTopLevelWindow(i))) {
             mw->applyPanelVisibilityFromConfig();
+            mw->applyLayoutFromConfig();
             break;
         }
     }

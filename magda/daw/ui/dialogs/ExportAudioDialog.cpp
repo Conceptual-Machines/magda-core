@@ -19,7 +19,19 @@ ExportAudioDialog::ExportAudioDialog() {
     formatComboBox_.addItem("WAV 24-bit", 2);
     formatComboBox_.addItem("WAV 32-bit Float", 3);
     formatComboBox_.addItem("FLAC", 4);
-    formatComboBox_.setSelectedId(2, juce::dontSendNotification);  // Default to WAV 24-bit
+    // Restore saved format preference
+    auto& config = Config::getInstance();
+    auto savedFormat = config.getExportFormat();
+    int formatId = 2;  // Default WAV 24-bit
+    if (savedFormat == "WAV16")
+        formatId = 1;
+    else if (savedFormat == "WAV24")
+        formatId = 2;
+    else if (savedFormat == "WAV32")
+        formatId = 3;
+    else if (savedFormat == "FLAC")
+        formatId = 4;
+    formatComboBox_.setSelectedId(formatId, juce::dontSendNotification);
     formatComboBox_.onChange = [this]() { onFormatChanged(); };
     addAndMakeVisible(formatComboBox_);
 
@@ -32,7 +44,18 @@ ExportAudioDialog::ExportAudioDialog() {
     sampleRateComboBox_.addItem("48 kHz", 2);
     sampleRateComboBox_.addItem("96 kHz", 3);
     sampleRateComboBox_.addItem("192 kHz", 4);
-    sampleRateComboBox_.setSelectedId(2, juce::dontSendNotification);  // Default to 48kHz
+    // Restore saved sample rate preference
+    double savedRate = config.getExportSampleRate();
+    int rateId = 2;  // Default 48kHz
+    if (savedRate == 44100.0)
+        rateId = 1;
+    else if (savedRate == 48000.0)
+        rateId = 2;
+    else if (savedRate == 96000.0)
+        rateId = 3;
+    else if (savedRate == 192000.0)
+        rateId = 4;
+    sampleRateComboBox_.setSelectedId(rateId, juce::dontSendNotification);
     addAndMakeVisible(sampleRateComboBox_);
 
     // Bit depth (read-only, updates based on format)
@@ -40,9 +63,9 @@ ExportAudioDialog::ExportAudioDialog() {
     bitDepthLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(bitDepthLabel_);
 
-    bitDepthValueLabel_.setText("24-bit", juce::dontSendNotification);
     bitDepthValueLabel_.setFont(FontManager::getInstance().getUIFont(14.0f));
     addAndMakeVisible(bitDepthValueLabel_);
+    updateBitDepthOptions();  // Set label based on restored format
 
     // Normalization option
     normalizeCheckbox_.setButtonText("Normalize to 0 dB (peak)");
@@ -73,7 +96,13 @@ ExportAudioDialog::ExportAudioDialog() {
     exportButton_.setButtonText("Export");
     exportButton_.onClick = [this]() {
         if (onExport) {
-            onExport(getSettings());
+            auto settings = getSettings();
+            // Persist format and sample rate preferences
+            auto& cfg = Config::getInstance();
+            cfg.setExportFormat(settings.format.toStdString());
+            cfg.setExportSampleRate(settings.sampleRate);
+            cfg.save();
+            onExport(settings);
         }
         if (auto* dw = findParentComponentOfClass<juce::DialogWindow>()) {
             dw->exitModalState(0);

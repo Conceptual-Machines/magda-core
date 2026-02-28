@@ -229,6 +229,14 @@ void MainWindow::applyPanelVisibilityFromConfig() {
     mainComponent->resized();
 }
 
+void MainWindow::applyLayoutFromConfig() {
+    if (!mainComponent)
+        return;
+    MenuManager::getInstance().menuItemsChanged();
+    if (mainComponent->mainView)
+        mainComponent->mainView->resized();
+}
+
 // MainComponent implementation
 MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     setWantsKeyboardFocus(true);

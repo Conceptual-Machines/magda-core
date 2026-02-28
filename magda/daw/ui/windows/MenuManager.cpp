@@ -173,7 +173,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addItem(ShowTrackManager, "Track Manager...", true, false);
         menu.addSeparator();
         bool headersOnRight = Config::getInstance().getScrollbarOnLeft();
-        menu.addItem(ToggleScrollbarPosition, "Headers on Right", true, headersOnRight);
+        menu.addItem(ToggleScrollbarPosition, "Headers on the Right", true, headersOnRight);
         menu.addSeparator();
         menu.addItem(ZoomIn, "Zoom In", true, false);
         menu.addItem(ZoomOut, "Zoom Out", true, false);
