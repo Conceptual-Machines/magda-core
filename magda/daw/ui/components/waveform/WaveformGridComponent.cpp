@@ -829,13 +829,13 @@ void WaveformGridComponent::updateGridSize() {
     }
 
     virtualContentWidth_ =
-        static_cast<int>(totalTime * horizontalZoom_ + LEFT_PADDING + RIGHT_PADDING);
+        static_cast<juce::int64>(totalTime * horizontalZoom_ + LEFT_PADDING + RIGHT_PADDING);
 
     // Component is always viewport-sized — scrolling is virtual
     setSize(parentWidth_, minimumHeight_);
 }
 
-int WaveformGridComponent::getVirtualContentWidth() const {
+juce::int64 WaveformGridComponent::getVirtualContentWidth() const {
     return virtualContentWidth_;
 }
 

@@ -1,6 +1,7 @@
 #include "WaveformEditorContent.hpp"
 
 #include <cmath>
+#include <limits>
 
 #include "../../state/TimelineController.hpp"
 #include "../../themes/CursorManager.hpp"
@@ -922,7 +923,13 @@ void WaveformEditorContent::setRelativeTimeMode(bool relative) {
 int WaveformEditorContent::getMaxVirtualScrollX() const {
     if (!gridComponent_ || !viewport_)
         return 0;
-    return juce::jmax(0, gridComponent_->getVirtualContentWidth() - viewport_->getWidth());
+    juce::int64 maxScroll =
+        gridComponent_->getVirtualContentWidth() - static_cast<juce::int64>(viewport_->getWidth());
+    if (maxScroll <= 0)
+        return 0;
+    // Cap to INT_MAX so downstream int math stays safe
+    return static_cast<int>(
+        juce::jmin(maxScroll, static_cast<juce::int64>(std::numeric_limits<int>::max())));
 }
 
 void WaveformEditorContent::setVirtualScrollX(int x) {

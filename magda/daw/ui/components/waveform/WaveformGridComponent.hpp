@@ -77,7 +77,7 @@ class WaveformGridComponent : public juce::Component {
     /**
      * @brief Get the total virtual content width at current zoom
      */
-    int getVirtualContentWidth() const;
+    juce::int64 getVirtualContentWidth() const;
 
     /**
      * @brief Set the parent viewport width (component will be sized to this)
@@ -207,7 +207,7 @@ class WaveformGridComponent : public juce::Component {
     double verticalZoom_ = 1.0;      // amplitude multiplier
     int scrollOffsetX_ = 0;
     int scrollOffsetY_ = 0;
-    int virtualContentWidth_ = 0;
+    juce::int64 virtualContentWidth_ = 0;
     int parentWidth_ = 800;
 
     // Layout constants
