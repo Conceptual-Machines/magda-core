@@ -61,12 +61,20 @@ WaveformGridComponent::WaveformLayout WaveformGridComponent::computeWaveformLayo
 
     double displayLength = displayInfo_.effectiveSourceExtentSeconds;
 
-    int widthPixels = static_cast<int>(displayLength * horizontalZoom_);
-    if (widthPixels <= 0)
+    // Use int64 for width to avoid overflow at deep zoom, then clamp to visible range
+    auto widthPixels64 = static_cast<juce::int64>(displayLength * horizontalZoom_);
+    if (widthPixels64 <= 0)
         return {};
 
-    auto rect =
-        juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
+    // Build the full logical rect in int64, then clip to visible bounds with margin
+    juce::int64 rightEdge64 = static_cast<juce::int64>(positionPixels) + widthPixels64;
+    int clampedLeft = static_cast<int>(
+        juce::jmax(static_cast<juce::int64>(-10000), static_cast<juce::int64>(positionPixels)));
+    int clampedRight =
+        static_cast<int>(juce::jmin(static_cast<juce::int64>(getWidth() + 10000), rightEdge64));
+    int clampedWidth = juce::jmax(0, clampedRight - clampedLeft);
+
+    auto rect = juce::Rectangle<int>(clampedLeft, bounds.getY(), clampedWidth, bounds.getHeight());
 
     int clipEndPixel = timeToPixel(displayStartTime + displayLength);
 
@@ -141,11 +149,8 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
             if (fileDuration > 0.0 && displayEnd > fileDuration)
                 displayEnd = fileDuration;
 
-            int audioWidthPixels =
-                static_cast<int>(displayInfo_.effectiveSourceExtentSeconds * horizontalZoom_);
-            auto audioRect = juce::Rectangle<int>(
-                waveformRect.getX(), waveformRect.getY(),
-                juce::jmin(audioWidthPixels, waveformRect.getWidth()), waveformRect.getHeight());
+            // waveformRect is already clamped to visible range, use it directly
+            auto audioRect = waveformRect;
             auto drawRect = audioRect.reduced(0, 4);
             if (drawRect.getWidth() > 0 && drawRect.getHeight() > 0) {
                 thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, displayStart,
@@ -169,8 +174,13 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
         if (fileDuration > 0.0 && remainingFileEnd > fileDuration)
             remainingFileEnd = fileDuration;
 
-        int startX = waveformRect.getX() + static_cast<int>(remainingStart * horizontalZoom_);
-        int endX = waveformRect.getX() + static_cast<int>(remainingEnd * horizontalZoom_);
+        double displayStart = remainingStart + getDisplayStartTime();
+        double displayEnd = remainingEnd + getDisplayStartTime();
+        int startX = timeToPixel(displayStart);
+        int endX = timeToPixel(displayEnd);
+        // Clamp to visible range to avoid huge rects at deep zoom
+        startX = juce::jmax(startX, -10000);
+        endX = juce::jmin(endX, getWidth() + 10000);
         auto remainingRect = juce::Rectangle<int>(startX, waveformRect.getY(), endX - startX,
                                                   waveformRect.getHeight());
         auto drawRect = remainingRect.reduced(0, 4);
@@ -244,12 +254,20 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
     double displayStartTime = getDisplayStartTime();
     double fileExtent = displayInfo_.fullSourceExtentSeconds;
     int positionPixels = timeToPixel(displayStartTime);
-    int widthPixels = static_cast<int>(fileExtent * horizontalZoom_);
-    if (widthPixels <= 0)
+    auto widthPixels64 = static_cast<juce::int64>(fileExtent * horizontalZoom_);
+    if (widthPixels64 <= 0)
         return;
 
+    // Clamp to visible range to avoid huge rects at deep zoom
+    juce::int64 rightEdge64 = static_cast<juce::int64>(positionPixels) + widthPixels64;
+    int clampedLeft = static_cast<int>(
+        juce::jmax(static_cast<juce::int64>(-10000), static_cast<juce::int64>(positionPixels)));
+    int clampedRight =
+        static_cast<int>(juce::jmin(static_cast<juce::int64>(getWidth() + 10000), rightEdge64));
+    int clampedWidth = juce::jmax(0, clampedRight - clampedLeft);
+
     auto waveformRect =
-        juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
+        juce::Rectangle<int>(clampedLeft, bounds.getY(), clampedWidth, bounds.getHeight());
 
     double gridBeats = getGridResolutionBeats();
     if (gridBeats <= 0.0)
@@ -593,13 +611,18 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
         return;
 
     double displayStartTime = getDisplayStartTime();
-    int positionPixels = timeToPixel(displayStartTime);
-    int widthPixels = static_cast<int>(displayInfo_.fullSourceExtentSeconds * horizontalZoom_);
-    if (widthPixels <= 0)
+    double fileExtent = displayInfo_.fullSourceExtentSeconds;
+    if (fileExtent <= 0.0)
         return;
 
-    auto waveformRect =
-        juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
+    int positionPixels = timeToPixel(displayStartTime);
+    int endPixels = timeToPixel(displayStartTime + fileExtent);
+    // Clamp to visible range
+    int clampedLeft = juce::jmax(positionPixels, -10000);
+    int clampedRight = juce::jmin(endPixels, getWidth() + 10000);
+
+    auto waveformRect = juce::Rectangle<int>(
+        clampedLeft, bounds.getY(), juce::jmax(0, clampedRight - clampedLeft), bounds.getHeight());
 
     g.setColour(juce::Colours::white.withAlpha(0.25f));
 
@@ -1293,13 +1316,17 @@ void WaveformGridComponent::paintWarpMarkers(juce::Graphics& g, const magda::Cli
         return;
 
     double displayStartTime = getDisplayStartTime();
-    int positionPixels = timeToPixel(displayStartTime);
-    int widthPixels = static_cast<int>(displayInfo_.fullSourceExtentSeconds * horizontalZoom_);
-    if (widthPixels <= 0)
+    double fileExtent = displayInfo_.fullSourceExtentSeconds;
+    if (fileExtent <= 0.0)
         return;
 
-    auto waveformRect =
-        juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
+    int positionPixels = timeToPixel(displayStartTime);
+    int endPixels = timeToPixel(displayStartTime + fileExtent);
+    int clampedLeft = juce::jmax(positionPixels, -10000);
+    int clampedRight = juce::jmin(endPixels, getWidth() + 10000);
+
+    auto waveformRect = juce::Rectangle<int>(
+        clampedLeft, bounds.getY(), juce::jmax(0, clampedRight - clampedLeft), bounds.getHeight());
 
     int visibleLeft = 0;
     int visibleRight = getWidth();
