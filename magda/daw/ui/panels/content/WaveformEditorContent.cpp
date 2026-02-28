@@ -464,8 +464,8 @@ WaveformEditorContent::WaveformEditorContent() {
         double zoomRange = std::log(MAX_ZOOM) - std::log(MIN_ZOOM);
         double zoomPosition = (std::log(startZoom) - std::log(MIN_ZOOM)) / zoomRange;
 
-        double minSensitivity = 25.0;
-        double maxSensitivity = 40.0;
+        double minSensitivity = 20.0;
+        double maxSensitivity = 30.0;
         double baseSensitivity = minSensitivity + zoomPosition * (maxSensitivity - minSensitivity);
 
         double sensitivity = baseSensitivity;
@@ -622,8 +622,8 @@ void WaveformEditorContent::mouseDrag(const juce::MouseEvent& event) {
         double zoomRange = std::log(MAX_ZOOM) - std::log(MIN_ZOOM);
         double zoomPosition = (std::log(headerDragStartZoom_) - std::log(MIN_ZOOM)) / zoomRange;
 
-        double minSensitivity = 25.0;  // Fast when zoomed out
-        double maxSensitivity = 40.0;  // Finer when zoomed in
+        double minSensitivity = 20.0;  // Fast when zoomed out
+        double maxSensitivity = 30.0;  // Finer when zoomed in
         double baseSensitivity = minSensitivity + zoomPosition * (maxSensitivity - minSensitivity);
 
         double sensitivity = baseSensitivity;

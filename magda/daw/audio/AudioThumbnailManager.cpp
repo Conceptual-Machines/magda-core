@@ -90,19 +90,12 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
     startTime = juce::jlimit(0.0, totalLength, startTime);
     endTime = juce::jlimit(startTime, totalLength, endTime);
 
-    // When useHighRes is enabled (waveform editor), switch to raw samples once
-    // zoomed in past the thumbnail's 512-samples-per-point resolution.
+    // When useHighRes is enabled (waveform editor), always use raw samples.
     if (useHighRes) {
         auto* reader = getOrCreateReader(audioFilePath);
         if (reader != nullptr && reader->sampleRate > 0.0) {
-            double samplesPerPixel =
-                (endTime - startTime) * reader->sampleRate / static_cast<double>(bounds.getWidth());
-
-            if (samplesPerPixel < 512.0) {
-                drawWaveformFromSamples(g, bounds, reader, startTime, endTime, colour,
-                                        verticalZoom);
-                return;
-            }
+            drawWaveformFromSamples(g, bounds, reader, startTime, endTime, colour, verticalZoom);
+            return;
         }
     }
 
@@ -199,90 +192,165 @@ void AudioThumbnailManager::drawWaveformFromSamples(
         return;
 
     const double sampleRate = reader->sampleRate;
-    const juce::int64 startSample = static_cast<juce::int64>(startTime * sampleRate);
-    const juce::int64 endSample = static_cast<juce::int64>(endTime * sampleRate);
+    const juce::int64 totalFileLength = reader->lengthInSamples;
+    const juce::int64 startSample = juce::jlimit<juce::int64>(
+        0, totalFileLength, static_cast<juce::int64>(startTime * sampleRate));
+    const juce::int64 endSample = juce::jlimit<juce::int64>(
+        startSample, totalFileLength, static_cast<juce::int64>(endTime * sampleRate));
     const juce::int64 totalSamples = endSample - startSample;
 
     if (totalSamples <= 0)
         return;
 
-    // Read the relevant sample range
-    juce::AudioBuffer<float> buffer(numChannels, static_cast<int>(totalSamples));
-    reader->read(&buffer, 0, static_cast<int>(totalSamples), startSample, true, true);
-
-    const float midY = bounds.getCentreY();
+    const float midY = static_cast<float>(bounds.getCentreY());
     const float halfHeight = static_cast<float>(height) * 0.5f * verticalZoom;
-
-    juce::Path path;
-    bool pathStarted = false;
-
-    // For each pixel column, find min/max across all channels
-    for (int x = 0; x < width; ++x) {
-        const juce::int64 sampleStart =
-            static_cast<juce::int64>(static_cast<double>(x) * totalSamples / width);
-        const juce::int64 sampleEnd =
-            static_cast<juce::int64>(static_cast<double>(x + 1) * totalSamples / width);
-
-        float minVal = 1.0f;
-        float maxVal = -1.0f;
-
-        for (int ch = 0; ch < numChannels; ++ch) {
-            const float* samples = buffer.getReadPointer(ch);
-            for (juce::int64 s = sampleStart; s < sampleEnd && s < totalSamples; ++s) {
-                const float sample = samples[s];
-                if (sample < minVal)
-                    minVal = sample;
-                if (sample > maxVal)
-                    maxVal = sample;
-            }
-        }
-
-        if (minVal > maxVal) {
-            minVal = maxVal = 0.0f;
-        }
-
-        const float topY = midY - maxVal * halfHeight;
-        const float bottomY = midY - minVal * halfHeight;
-        const float pixelX = static_cast<float>(bounds.getX() + x);
-
-        if (!pathStarted) {
-            path.startNewSubPath(pixelX, topY);
-            pathStarted = true;
-        } else {
-            path.lineTo(pixelX, topY);
-        }
-
-        // Store bottom values — we'll trace them in reverse after
-        // For now just continue with top; we'll build the full outline below
-    }
-
-    // Trace min values right-to-left to close the shape
-    for (int x = width - 1; x >= 0; --x) {
-        const juce::int64 sampleStart =
-            static_cast<juce::int64>(static_cast<double>(x) * totalSamples / width);
-        const juce::int64 sampleEnd =
-            static_cast<juce::int64>(static_cast<double>(x + 1) * totalSamples / width);
-
-        float minVal = 1.0f;
-
-        for (int ch = 0; ch < numChannels; ++ch) {
-            const float* samples = buffer.getReadPointer(ch);
-            for (juce::int64 s = sampleStart; s < sampleEnd && s < totalSamples; ++s) {
-                const float sample = samples[s];
-                if (sample < minVal)
-                    minVal = sample;
-            }
-        }
-
-        const float bottomY = midY - minVal * halfHeight;
-        const float pixelX = static_cast<float>(bounds.getX() + x);
-        path.lineTo(pixelX, bottomY);
-    }
-
-    path.closeSubPath();
+    const double samplesPerPixel = static_cast<double>(totalSamples) / width;
 
     g.setColour(colour);
-    g.fillPath(path);
+
+    // Two modes: line mode when zoomed in enough that individual samples matter,
+    // min/max envelope mode when there are many samples per pixel.
+    // Threshold of 8: below this the envelope looks jagged; line interpolation is smoother.
+    if (samplesPerPixel <= 8.0) {
+        // LINE MODE: more pixels than samples — draw a smooth interpolated line per channel.
+        // Read samples with 1 extra on each side for interpolation at edges.
+        const juce::int64 readStart = juce::jmax<juce::int64>(0, startSample - 1);
+        const juce::int64 readEnd = juce::jmin(endSample + 1, totalFileLength);
+        const int readCount = static_cast<int>(readEnd - readStart);
+
+        juce::AudioBuffer<float> buffer(numChannels, readCount);
+        reader->read(&buffer, 0, readCount, readStart, true, true);
+
+        // Offset into buffer where our startSample begins
+        const int bufferOffset = static_cast<int>(startSample - readStart);
+
+        for (int ch = 0; ch < numChannels; ++ch) {
+            const float* samples = buffer.getReadPointer(ch);
+
+            // Split vertically: each channel gets its own lane
+            float chMidY = midY;
+            float chHalfHeight = halfHeight;
+            if (numChannels > 1) {
+                float laneHeight = static_cast<float>(height) / numChannels;
+                chMidY = static_cast<float>(bounds.getY()) + laneHeight * (ch + 0.5f);
+                chHalfHeight = laneHeight * 0.5f * verticalZoom;
+            }
+
+            juce::Path path;
+
+            for (int x = 0; x < width; ++x) {
+                double samplePos = static_cast<double>(x) * totalSamples / width;
+                int idx = static_cast<int>(samplePos);
+                double frac = samplePos - idx;
+
+                int bufIdx = bufferOffset + idx;
+                float s0 = samples[juce::jlimit(0, readCount - 1, bufIdx)];
+                float s1 = samples[juce::jlimit(0, readCount - 1, bufIdx + 1)];
+                float val = s0 + static_cast<float>(frac) * (s1 - s0);
+
+                float y = chMidY - val * chHalfHeight;
+                float px = static_cast<float>(bounds.getX() + x);
+
+                if (x == 0)
+                    path.startNewSubPath(px, y);
+                else
+                    path.lineTo(px, y);
+            }
+
+            g.strokePath(path, juce::PathStrokeType(1.5f));
+        }
+    } else {
+        // ENVELOPE MODE: multiple samples per pixel — draw filled min/max envelope.
+        // Cap buffer size to avoid huge allocations.
+        const juce::int64 maxBufferSamples = 2 * 1024 * 1024;  // 2M samples max
+        const bool useFullBuffer = (totalSamples <= maxBufferSamples);
+
+        juce::AudioBuffer<float> buffer;
+        if (useFullBuffer) {
+            buffer.setSize(numChannels, static_cast<int>(totalSamples));
+            reader->read(&buffer, 0, static_cast<int>(totalSamples), startSample, true, true);
+        }
+
+        juce::AudioBuffer<float> chunkBuffer;
+        if (!useFullBuffer) {
+            int maxChunk =
+                static_cast<int>(juce::jmin<juce::int64>(totalSamples / width + 2, 65536));
+            chunkBuffer.setSize(numChannels, maxChunk);
+        }
+
+        const size_t w = static_cast<size_t>(width);
+
+        for (int ch = 0; ch < numChannels; ++ch) {
+            float chMidY = midY;
+            float chHalfHeight = halfHeight;
+            if (numChannels > 1) {
+                float laneHeight = static_cast<float>(height) / numChannels;
+                chMidY = static_cast<float>(bounds.getY()) + laneHeight * (ch + 0.5f);
+                chHalfHeight = laneHeight * 0.5f * verticalZoom;
+            }
+
+            std::vector<float> minValues(w);
+            std::vector<float> maxValues(w);
+
+            for (int x = 0; x < width; ++x) {
+                const juce::int64 colStart =
+                    static_cast<juce::int64>(static_cast<double>(x) * totalSamples / width);
+                const juce::int64 colEnd = juce::jmin(
+                    static_cast<juce::int64>(static_cast<double>(x + 1) * totalSamples / width),
+                    totalSamples);
+
+                float minVal = 1.0f;
+                float maxVal = -1.0f;
+
+                if (useFullBuffer) {
+                    const float* samples = buffer.getReadPointer(ch);
+                    for (juce::int64 s = colStart; s < colEnd; ++s) {
+                        const float v = samples[s];
+                        if (v < minVal)
+                            minVal = v;
+                        if (v > maxVal)
+                            maxVal = v;
+                    }
+                } else {
+                    int count = static_cast<int>(colEnd - colStart);
+                    int readCount = juce::jmin(count, chunkBuffer.getNumSamples());
+                    reader->read(&chunkBuffer, 0, readCount, startSample + colStart, true, true);
+                    const float* samples = chunkBuffer.getReadPointer(ch);
+                    for (int s = 0; s < readCount; ++s) {
+                        const float v = samples[s];
+                        if (v < minVal)
+                            minVal = v;
+                        if (v > maxVal)
+                            maxVal = v;
+                    }
+                }
+
+                if (minVal > maxVal)
+                    minVal = maxVal = 0.0f;
+
+                minValues[static_cast<size_t>(x)] = minVal;
+                maxValues[static_cast<size_t>(x)] = maxVal;
+            }
+
+            // Build filled path: max L→R, min R→L
+            juce::Path path;
+            path.startNewSubPath(static_cast<float>(bounds.getX()),
+                                 chMidY - maxValues[0] * chHalfHeight);
+
+            for (int x = 1; x < width; ++x) {
+                path.lineTo(static_cast<float>(bounds.getX() + x),
+                            chMidY - maxValues[static_cast<size_t>(x)] * chHalfHeight);
+            }
+
+            for (int x = width - 1; x >= 0; --x) {
+                path.lineTo(static_cast<float>(bounds.getX() + x),
+                            chMidY - minValues[static_cast<size_t>(x)] * chHalfHeight);
+            }
+
+            path.closeSubPath();
+            g.fillPath(path);
+        }
+    }
 }
 
 void AudioThumbnailManager::clearCache() {
