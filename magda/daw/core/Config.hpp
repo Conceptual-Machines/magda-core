@@ -14,19 +14,19 @@ class Config {
   public:
     static Config& getInstance();
 
-    // Timeline Configuration
-    double getDefaultTimelineLength() const {
-        return defaultTimelineLength;
+    // Timeline Configuration (stored in bars)
+    int getDefaultTimelineLengthBars() const {
+        return defaultTimelineLengthBars;
     }
-    void setDefaultTimelineLength(double length) {
-        defaultTimelineLength = length;
+    void setDefaultTimelineLengthBars(int bars) {
+        defaultTimelineLengthBars = bars;
     }
 
-    double getDefaultZoomViewDuration() const {
-        return defaultZoomViewDuration;
+    int getDefaultZoomViewBars() const {
+        return defaultZoomViewBars;
     }
-    void setDefaultZoomViewDuration(double duration) {
-        defaultZoomViewDuration = duration;
+    void setDefaultZoomViewBars(int bars) {
+        defaultZoomViewBars = bars;
     }
 
     // Zoom Configuration
@@ -291,9 +291,9 @@ class Config {
   private:
     Config() = default;
 
-    // Timeline settings
-    double defaultTimelineLength = 300.0;   // 5 minutes in seconds
-    double defaultZoomViewDuration = 60.0;  // Show 1 minute by default
+    // Timeline settings (in bars)
+    int defaultTimelineLengthBars = 256;  // ~512 seconds at 120 BPM
+    int defaultZoomViewBars = 32;         // ~64 seconds at 120 BPM
 
     // Zoom limits
     double minZoomLevel = 0.01;     // Minimum zoom level (allows extreme zoom out)

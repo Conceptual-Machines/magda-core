@@ -66,11 +66,12 @@ MainView::MainView(AudioEngine* audioEngine)
     // Load configuration
     auto& config = magda::Config::getInstance();
     config.load();
-    timelineLength = config.getDefaultTimelineLength();
+    timelineLength = config.getDefaultTimelineLengthBars() * 2.0;  // bars → seconds at 120 BPM
 
-    std::cout << "🎯 CONFIG: Timeline length=" << timelineLength << " seconds" << std::endl;
-    std::cout << "🎯 CONFIG: Default zoom view=" << config.getDefaultZoomViewDuration()
-              << " seconds" << std::endl;
+    std::cout << "🎯 CONFIG: Timeline length=" << config.getDefaultTimelineLengthBars() << " bars ("
+              << timelineLength << " seconds at 120 BPM)" << std::endl;
+    std::cout << "🎯 CONFIG: Default zoom view=" << config.getDefaultZoomViewBars() << " bars"
+              << std::endl;
 
     // Make this component focusable to receive keyboard events
     setWantsKeyboardFocus(true);
@@ -341,8 +342,8 @@ void MainView::setupComponents() {
     // Set up track synchronization between headers and content
     setupTrackSynchronization();
 
-    // Set initial timeline length and zoom
-    setTimelineLength(300.0);
+    // Set initial timeline length from config (bars → seconds at default 120 BPM)
+    setTimelineLength(magda::Config::getInstance().getDefaultTimelineLengthBars() * 2.0);
 }
 
 void MainView::setupCallbacks() {
@@ -750,10 +751,10 @@ void MainView::resized() {
 
             if (availableWidth > 0) {
                 auto& config = magda::Config::getInstance();
-                double zoomViewDuration = config.getDefaultZoomViewDuration();
-                // horizontalZoom is ppb: convert duration to beats
+                int zoomViewBars = config.getDefaultZoomViewBars();
+                // horizontalZoom is ppb: convert bars to beats
                 const auto& st = timelineController->getState();
-                double viewBeats = st.secondsToBeats(zoomViewDuration);
+                double viewBeats = zoomViewBars * st.tempo.timeSignatureNumerator;
                 double zoomForDefaultView =
                     (viewBeats > 0) ? static_cast<double>(availableWidth) / viewBeats : 10.0;
 
@@ -763,8 +764,8 @@ void MainView::resized() {
                 // Dispatch initial zoom via controller
                 timelineController->dispatch(SetZoomCenteredEvent{zoomForDefaultView, 0.0});
 
-                std::cout << "🎯 INITIAL ZOOM: showing " << zoomViewDuration
-                          << " seconds, availableWidth=" << availableWidth
+                std::cout << "🎯 INITIAL ZOOM: showing " << zoomViewBars
+                          << " bars, availableWidth=" << availableWidth
                           << ", zoomForDefaultView=" << zoomForDefaultView << std::endl;
 
                 initialZoomSet = true;

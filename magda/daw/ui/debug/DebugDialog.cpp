@@ -122,8 +122,7 @@ class DebugDialog::Content : public juce::Component, private juce::Timer {
         midiLog_.setReadOnly(true);
         midiLog_.setScrollbarsShown(true);
         midiLog_.setCaretVisible(false);
-        midiLog_.setFont(
-            juce::Font(juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain));
+        midiLog_.setFont(FontManager::getInstance().getMonoFont(11.0f));
         midiLog_.setColour(juce::TextEditor::backgroundColourId,
                            DarkTheme::getColour(DarkTheme::BACKGROUND));
         midiLog_.setColour(juce::TextEditor::textColourId,

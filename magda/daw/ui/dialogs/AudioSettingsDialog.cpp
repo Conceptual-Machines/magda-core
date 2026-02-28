@@ -2,6 +2,8 @@
 
 #include "../../core/Config.hpp"
 #include "../themes/DarkTheme.hpp"
+#include "../themes/DialogLookAndFeel.hpp"
+#include "../themes/FontManager.hpp"
 
 namespace magda {
 
@@ -12,14 +14,17 @@ namespace magda {
 CustomChannelSelector::CustomChannelSelector(juce::AudioDeviceManager* deviceManager, bool isInput,
                                              tracktion::DeviceManager* teDeviceManager)
     : deviceManager_(deviceManager), teDeviceManager_(teDeviceManager), isInput_(isInput) {
+    setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
     titleLabel_.setText(isInput ? "Audio Inputs:" : "Audio Outputs:", juce::dontSendNotification);
-    titleLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+    titleLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(titleLabel_);
 
     updateFromDevice();
 }
 
-CustomChannelSelector::~CustomChannelSelector() = default;
+CustomChannelSelector::~CustomChannelSelector() {
+    setLookAndFeel(nullptr);
+}
 
 void CustomChannelSelector::updateFromDevice() {
     // Clear existing toggles
@@ -317,9 +322,11 @@ void CustomChannelSelector::resized() {
 AudioSettingsDialog::AudioSettingsDialog(juce::AudioDeviceManager* deviceManager,
                                          tracktion::DeviceManager* teDeviceManager)
     : deviceManager_(deviceManager), teDeviceManager_(teDeviceManager) {
+    setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
+
     // Input device selection dropdown
     inputDeviceLabel_.setText("Input Device:", juce::dontSendNotification);
-    inputDeviceLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+    inputDeviceLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(inputDeviceLabel_);
 
     inputDeviceComboBox_.onChange = [this]() { onInputDeviceSelected(); };
@@ -327,7 +334,7 @@ AudioSettingsDialog::AudioSettingsDialog(juce::AudioDeviceManager* deviceManager
 
     // Output device selection dropdown
     outputDeviceLabel_.setText("Output Device:", juce::dontSendNotification);
-    outputDeviceLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+    outputDeviceLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(outputDeviceLabel_);
 
     outputDeviceComboBox_.onChange = [this]() { onOutputDeviceSelected(); };
@@ -371,7 +378,7 @@ AudioSettingsDialog::AudioSettingsDialog(juce::AudioDeviceManager* deviceManager
     addAndMakeVisible(*outputChannelSelector_);
 
     // Setup device name label
-    deviceNameLabel_.setFont(juce::Font(16.0f, juce::Font::bold));
+    deviceNameLabel_.setFont(FontManager::getInstance().getUIFontBold(16.0f));
     deviceNameLabel_.setJustificationType(juce::Justification::centred);
     if (auto* device = deviceManager->getCurrentAudioDevice()) {
         juce::String labelText = "Current Device: " + device->getName();
@@ -397,7 +404,9 @@ AudioSettingsDialog::AudioSettingsDialog(juce::AudioDeviceManager* deviceManager
     setSize(700, 700);
 }
 
-AudioSettingsDialog::~AudioSettingsDialog() = default;
+AudioSettingsDialog::~AudioSettingsDialog() {
+    setLookAndFeel(nullptr);
+}
 
 void AudioSettingsDialog::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));

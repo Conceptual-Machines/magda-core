@@ -12,9 +12,9 @@
 namespace magda {
 
 TimelineComponent::TimelineComponent() {
-    // Load configuration
+    // Load configuration (bars → seconds at default 120 BPM, 4/4)
     auto& config = magda::Config::getInstance();
-    timelineLength = config.getDefaultTimelineLength();
+    timelineLength = config.getDefaultTimelineLengthBars() * 2.0;
 
     setMouseCursor(juce::MouseCursor::NormalCursor);
     setWantsKeyboardFocus(false);

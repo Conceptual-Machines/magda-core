@@ -15,12 +15,12 @@ TimelineController::TimelineController() {
     // Set as current instance for global access
     currentInstance_ = this;
 
-    // Load configuration values
+    // Load configuration values (bars → seconds using default 120 BPM)
     auto& config = magda::Config::getInstance();
-    state.timelineLength = config.getDefaultTimelineLength();
+    state.timelineLength = state.tempo.barsToTime(config.getDefaultTimelineLengthBars());
 
     // Set default zoom (ppb) to show a reasonable view duration
-    double defaultViewDuration = config.getDefaultZoomViewDuration();
+    double defaultViewDuration = state.tempo.barsToTime(config.getDefaultZoomViewBars());
     if (defaultViewDuration > 0 && state.zoom.viewportWidth > 0) {
         double beats = state.secondsToBeats(defaultViewDuration);
         if (beats > 0)
@@ -1066,6 +1066,10 @@ void TimelineController::restoreProjectState(double tempo, int timeSigNum, int t
     state.tempo.bpm = juce::jlimit(20.0, 999.0, tempo);
     state.tempo.timeSignatureNumerator = juce::jlimit(1, 16, timeSigNum);
     state.tempo.timeSignatureDenominator = juce::jlimit(1, 16, timeSigDen);
+
+    // Recalculate timeline length from configured bars using actual project tempo
+    auto& config = magda::Config::getInstance();
+    state.timelineLength = state.tempo.barsToTime(config.getDefaultTimelineLengthBars());
 
     // Loop: beats are authoritative, derive seconds from BPM
     state.loop.startBeats = loopStartBeats;

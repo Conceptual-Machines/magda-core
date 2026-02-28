@@ -35,9 +35,9 @@ Config& Config::getInstance() {
 void Config::save() {
     auto root = juce::DynamicObject::Ptr(new juce::DynamicObject());
 
-    // Timeline
-    root->setProperty("defaultTimelineLength", defaultTimelineLength);
-    root->setProperty("defaultZoomViewDuration", defaultZoomViewDuration);
+    // Timeline (bars)
+    root->setProperty("defaultTimelineLengthBars", defaultTimelineLengthBars);
+    root->setProperty("defaultZoomViewBars", defaultZoomViewBars);
 
     // Zoom limits
     root->setProperty("minZoomLevel", minZoomLevel);
@@ -170,8 +170,19 @@ void Config::load() {
         return out;
     };
 
-    defaultTimelineLength = getDouble("defaultTimelineLength", defaultTimelineLength);
-    defaultZoomViewDuration = getDouble("defaultZoomViewDuration", defaultZoomViewDuration);
+    // Migrate from old seconds-based keys if new bars keys don't exist yet
+    if (obj->hasProperty("defaultTimelineLengthBars")) {
+        defaultTimelineLengthBars = getInt("defaultTimelineLengthBars", defaultTimelineLengthBars);
+    } else if (obj->hasProperty("defaultTimelineLength")) {
+        // Old config: convert seconds to bars (at 120 BPM, 4/4: 1 bar = 2 sec)
+        defaultTimelineLengthBars =
+            static_cast<int>(getDouble("defaultTimelineLength", 256.0) / 2.0);
+    }
+    if (obj->hasProperty("defaultZoomViewBars")) {
+        defaultZoomViewBars = getInt("defaultZoomViewBars", defaultZoomViewBars);
+    } else if (obj->hasProperty("defaultZoomViewDuration")) {
+        defaultZoomViewBars = static_cast<int>(getDouble("defaultZoomViewDuration", 64.0) / 2.0);
+    }
     minZoomLevel = getDouble("minZoomLevel", minZoomLevel);
     maxZoomLevel = getDouble("maxZoomLevel", maxZoomLevel);
 

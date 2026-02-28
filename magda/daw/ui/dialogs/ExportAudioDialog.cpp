@@ -2,13 +2,17 @@
 
 #include "../../core/Config.hpp"
 #include "../themes/DarkTheme.hpp"
+#include "../themes/DialogLookAndFeel.hpp"
+#include "../themes/FontManager.hpp"
 
 namespace magda {
 
 ExportAudioDialog::ExportAudioDialog() {
+    setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
+
     // Format selection
     formatLabel_.setText("Format:", juce::dontSendNotification);
-    formatLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+    formatLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(formatLabel_);
 
     formatComboBox_.addItem("WAV 16-bit", 1);
@@ -21,7 +25,7 @@ ExportAudioDialog::ExportAudioDialog() {
 
     // Sample rate selection
     sampleRateLabel_.setText("Sample Rate:", juce::dontSendNotification);
-    sampleRateLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+    sampleRateLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(sampleRateLabel_);
 
     sampleRateComboBox_.addItem("44.1 kHz", 1);
@@ -33,11 +37,11 @@ ExportAudioDialog::ExportAudioDialog() {
 
     // Bit depth (read-only, updates based on format)
     bitDepthLabel_.setText("Bit Depth:", juce::dontSendNotification);
-    bitDepthLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+    bitDepthLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(bitDepthLabel_);
 
     bitDepthValueLabel_.setText("24-bit", juce::dontSendNotification);
-    bitDepthValueLabel_.setFont(juce::Font(14.0f));
+    bitDepthValueLabel_.setFont(FontManager::getInstance().getUIFont(14.0f));
     addAndMakeVisible(bitDepthValueLabel_);
 
     // Normalization option
@@ -47,7 +51,7 @@ ExportAudioDialog::ExportAudioDialog() {
 
     // Time range selection
     timeRangeLabel_.setText("Export Range:", juce::dontSendNotification);
-    timeRangeLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+    timeRangeLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(timeRangeLabel_);
 
     exportEntireSongButton_.setButtonText("Entire Song");
@@ -90,7 +94,9 @@ ExportAudioDialog::ExportAudioDialog() {
     setSize(500, 380);
 }
 
-ExportAudioDialog::~ExportAudioDialog() = default;
+ExportAudioDialog::~ExportAudioDialog() {
+    setLookAndFeel(nullptr);
+}
 
 void ExportAudioDialog::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));

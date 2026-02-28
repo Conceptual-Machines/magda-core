@@ -219,6 +219,16 @@ void MainWindow::closeButtonPressed() {
     juce::JUCEApplication::getInstance()->systemRequestedQuit();
 }
 
+void MainWindow::applyPanelVisibilityFromConfig() {
+    if (!mainComponent)
+        return;
+    auto& config = Config::getInstance();
+    mainComponent->leftPanelCollapsed = config.getLeftPanelCollapsed();
+    mainComponent->rightPanelCollapsed = config.getRightPanelCollapsed();
+    mainComponent->bottomPanelCollapsed = config.getBottomPanelCollapsed();
+    mainComponent->resized();
+}
+
 // MainComponent implementation
 MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     setWantsKeyboardFocus(true);

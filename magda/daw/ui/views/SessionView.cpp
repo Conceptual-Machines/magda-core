@@ -256,14 +256,14 @@ class ClipSlotButton : public juce::TextButton {
             if (isMidiClip)
                 textArea.removeFromRight(16);  // Reserve space for M badge
             g.setColour(findColour(juce::TextButton::textColourOffId));
-            g.setFont(juce::Font(juce::FontOptions(9.0f)));
+            g.setFont(FontManager::getInstance().getUIFont(9.0f));
             g.drawText(getButtonText(), textArea, juce::Justification::centredLeft, true);
 
             // Draw "M" badge for MIDI clips
             if (isMidiClip) {
                 auto badgeArea = getLocalBounds().removeFromRight(16).removeFromTop(14);
                 g.setColour(juce::Colours::white.withAlpha(0.8f));
-                g.setFont(juce::Font(10.0f, juce::Font::bold));
+                g.setFont(FontManager::getInstance().getUIFontBold(10.0f));
                 g.drawText("M", badgeArea, juce::Justification::centred, false);
             }
         }
@@ -1510,7 +1510,7 @@ SessionView::SessionView() {
 
     // Create drag ghost label for file drag preview (added to grid content)
     dragGhostLabel_ = std::make_unique<juce::Label>();
-    dragGhostLabel_->setFont(juce::Font(11.0f, juce::Font::bold));
+    dragGhostLabel_->setFont(FontManager::getInstance().getUIFontBold(11.0f));
     dragGhostLabel_->setJustificationType(juce::Justification::centred);
     dragGhostLabel_->setColour(juce::Label::backgroundColourId,
                                DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));

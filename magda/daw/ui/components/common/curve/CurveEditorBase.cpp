@@ -4,6 +4,8 @@
 #include <map>
 #include <set>
 
+#include "magda/daw/ui/themes/FontManager.hpp"
+
 namespace magda {
 
 CurveEditorBase::CurveEditorBase() {
@@ -64,7 +66,7 @@ void CurveEditorBase::paintOverChildren(juce::Graphics& g) {
         double yVal = (previewPointId_ != INVALID_CURVE_POINT_ID) ? previewY_ : pt.y;
         juce::String label = formatValueLabel(yVal);
 
-        auto font = juce::Font(10.0f);
+        auto font = FontManager::getInstance().getUIFont(10.0f);
         g.setFont(font);
         int textW = font.getStringWidth(label) + 6;
         int textH = 14;

@@ -2,6 +2,7 @@
 
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
+#include "../../themes/FontManager.hpp"
 #include "VelocityLaneUtils.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
@@ -255,7 +256,7 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
 
     // Value labels on the left
     {
-        g.setFont(juce::Font(9.0f));
+        g.setFont(FontManager::getInstance().getUIFont(9.0f));
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.6f));
         constexpr int labelMargin = 2;
         constexpr int labelWidth = 24;
