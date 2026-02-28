@@ -2,6 +2,8 @@
 
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
+
 // ---------------------------------------------------------------------------
 // Path helper
 // ---------------------------------------------------------------------------
@@ -26,6 +28,17 @@ namespace magda {
 Config& Config::getInstance() {
     static Config instance;
     return instance;
+}
+
+void Config::addRecentProject(const std::string& path) {
+    // Remove existing entry if present (dedup)
+    recentProjects.erase(std::remove(recentProjects.begin(), recentProjects.end(), path),
+                         recentProjects.end());
+    // Prepend
+    recentProjects.insert(recentProjects.begin(), path);
+    // Cap at 10
+    if (recentProjects.size() > 10)
+        recentProjects.resize(10);
 }
 
 // ---------------------------------------------------------------------------
@@ -75,6 +88,10 @@ void Config::save() {
     root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     root->setProperty("previewOutputChannel", previewOutputChannel);
 
+    // Export audio
+    root->setProperty("exportFormat", toJuceString(exportFormat));
+    root->setProperty("exportSampleRate", exportSampleRate);
+
     // Render
     root->setProperty("renderFolder", toJuceString(renderFolder));
 
@@ -96,6 +113,12 @@ void Config::save() {
     for (const auto& f : browserFavorites)
         favArray.add(toJuceString(f));
     root->setProperty("browserFavorites", favArray);
+
+    // Recent projects
+    juce::Array<juce::var> recentArray;
+    for (const auto& r : recentProjects)
+        recentArray.add(toJuceString(r));
+    root->setProperty("recentProjects", recentArray);
 
     // Custom plugin paths
     juce::Array<juce::var> pluginPathArray;
@@ -212,6 +235,9 @@ void Config::load() {
     autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     previewOutputChannel = getInt("previewOutputChannel", previewOutputChannel);
 
+    exportFormat = getString("exportFormat", exportFormat);
+    exportSampleRate = getDouble("exportSampleRate", exportSampleRate);
+
     renderFolder = getString("renderFolder", renderFolder);
 
     preferredAudioDevice = getString("preferredAudioDevice", preferredAudioDevice);
@@ -225,6 +251,7 @@ void Config::load() {
 
     browserDefaultDirectory = getString("browserDefaultDirectory", browserDefaultDirectory);
     browserFavorites = getStringArray("browserFavorites");
+    recentProjects = getStringArray("recentProjects");
     customPluginPaths = getStringArray("customPluginPaths");
 
     DBG("Config::load - " + configFile.getFullPathName());

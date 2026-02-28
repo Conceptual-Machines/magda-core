@@ -21,6 +21,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         std::function<void()> onImportAudio;
         std::function<void()> onExportAudio;
         std::function<void()> onQuit;
+        std::function<void(const juce::String&)> onOpenRecentProject;
 
         // Edit menu
         std::function<void()> onUndo;
@@ -48,6 +49,8 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         std::function<void()> onZoomIn;
         std::function<void()> onZoomOut;
         std::function<void()> onZoomToFit;
+        std::function<void()> onZoomLoopToFit;
+        std::function<void()> onZoomSelectionToFit;
         std::function<void()> onToggleFullscreen;
         std::function<void()> onToggleScrollbarPosition;
 
@@ -126,6 +129,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         SaveProjectAs,
         ImportAudio = 110,
         ExportAudio,
+        RecentProjectBase = 150,  // 150-159 reserved for recent projects
         Quit = 199,
 
         // Edit menu (200-299)
@@ -155,6 +159,8 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         ZoomIn = 310,
         ZoomOut,
         ZoomToFit,
+        ZoomLoopToFit,
+        ZoomSelectionToFit,
         ToggleFullscreen = 320,
         ToggleScrollbarPosition = 325,
 

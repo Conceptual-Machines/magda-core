@@ -206,6 +206,15 @@ class Config {
         customPluginPaths = paths;
     }
 
+    // Recent Projects
+    std::vector<std::string> getRecentProjects() const {
+        return recentProjects;
+    }
+    void addRecentProject(const std::string& path);
+    void clearRecentProjects() {
+        recentProjects.clear();
+    }
+
     // Browser Favorites
     std::vector<std::string> getBrowserFavorites() const {
         return browserFavorites;
@@ -220,6 +229,21 @@ class Config {
     }
     void setBrowserDefaultDirectory(const std::string& dir) {
         browserDefaultDirectory = dir;
+    }
+
+    // Export Audio Configuration
+    std::string getExportFormat() const {
+        return exportFormat;
+    }
+    void setExportFormat(const std::string& format) {
+        exportFormat = format;
+    }
+
+    double getExportSampleRate() const {
+        return exportSampleRate;
+    }
+    void setExportSampleRate(double rate) {
+        exportSampleRate = rate;
     }
 
     // Render Configuration
@@ -339,12 +363,19 @@ class Config {
     // Layout settings
     bool scrollbarOnLeft = false;  // Scrollbar on right by default
 
+    // Recent projects (most recent first, max 10)
+    std::vector<std::string> recentProjects;
+
     // Custom plugin paths
     std::vector<std::string> customPluginPaths;
 
     // Browser favorites and default directory
     std::vector<std::string> browserFavorites;
     std::string browserDefaultDirectory = "";  // empty = user home
+
+    // Export audio settings
+    std::string exportFormat = "WAV24";  // WAV16, WAV24, WAV32, FLAC
+    double exportSampleRate = 48000.0;   // 44100, 48000, 96000, 192000
 
     // Render settings
     std::string renderFolder = "";  // Custom render output folder (empty = renders/ beside source)
