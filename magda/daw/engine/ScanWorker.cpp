@@ -99,11 +99,13 @@ void ScanWorker::handleMessageFromWorker(const juce::MemoryBlock& message) {
     } else if (msgType == ScannerIPC::MSG_SCAN_COMPLETE) {
         receivedDone_ = true;
         sendQuit();
+        // Success only if we found at least one plugin
+        bool scanOk = currentResult_.foundPlugins.size() > 0;
         // Defer the result callback so we fully exit the ChildProcessCoordinator's
         // IPC callback before the coordinator tries to launch a new subprocess on
         // this same worker. Without this, launchWorkerProcess is called re-entrantly
         // from within handleMessageFromWorker, causing thread assertion failures.
-        reportResultAsync(true);
+        reportResultAsync(scanOk);
     }
 }
 
