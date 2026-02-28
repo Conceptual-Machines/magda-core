@@ -124,6 +124,12 @@ class WaveformEditorContent : public PanelContent,
     class ButtonLookAndFeel;
     std::unique_ptr<ButtonLookAndFeel> buttonLookAndFeel_;
 
+    // Virtual scroll position (replaces viewport-based horizontal scrolling)
+    int virtualScrollX_ = 0;
+
+    int getMaxVirtualScrollX() const;
+    void setVirtualScrollX(int x);
+
     // Update grid size when clip or zoom changes
     void updateGridSize();
 

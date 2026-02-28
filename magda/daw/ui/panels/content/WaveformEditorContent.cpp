@@ -109,7 +109,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
         if (!clip)
             return;
 
-        int scrollX = owner_.viewport_->getViewPositionX();
+        int scrollX = owner_.virtualScrollX_;
 
         const auto& di = owner_.cachedDisplayInfo_;
 
@@ -253,10 +253,7 @@ WaveformEditorContent::WaveformEditorContent() {
 
     // Wire up ruler scroll callback
     timeRuler_->onScrollRequested = [this](int deltaX) {
-        if (viewport_) {
-            viewport_->setViewPosition(viewport_->getViewPositionX() + deltaX,
-                                       viewport_->getViewPositionY());
-        }
+        setVirtualScrollX(virtualScrollX_ + deltaX);
     };
 
     addAndMakeVisible(timeRuler_.get());
@@ -374,14 +371,13 @@ WaveformEditorContent::WaveformEditorContent() {
     // Create viewport and add grid
     viewport_ = std::make_unique<ScrollNotifyingViewport>();
     viewport_->setViewedComponent(gridComponent_.get(), false);
-    viewport_->setScrollBarsShown(true, true);
+    viewport_->setScrollBarsShown(true, false);  // vertical only; horizontal is virtual
     viewport_->timeRulerToRepaint = timeRuler_.get();
     addAndMakeVisible(viewport_.get());
 
-    // Setup scroll callback
-    viewport_->onScrolled = [this](int x, int y) {
-        timeRuler_->setScrollOffset(x);
-        gridComponent_->setScrollOffset(x, y);
+    // Viewport scroll callback — vertical only (horizontal is virtual)
+    viewport_->onScrolled = [this](int /*x*/, int /*y*/) {
+        // Vertical scroll may still fire; repaint overlays
         if (playheadOverlay_)
             playheadOverlay_->repaint();
     };
@@ -572,6 +568,7 @@ void WaveformEditorContent::resized() {
     // Set grid minimum height to match viewport's visible height so waveform fills the space
     if (gridComponent_) {
         gridComponent_->setMinimumHeight(viewport_->getMaximumVisibleHeight());
+        gridComponent_->setParentWidth(viewport_->getWidth());
     }
 
     // Update grid size
@@ -689,8 +686,9 @@ void WaveformEditorContent::mouseWheelMove(const juce::MouseEvent& event,
             gridComponent_->setVerticalZoom(verticalZoom_);
         }
     } else {
-        // Normal scroll over waveform area - let viewport handle it
-        Component::mouseWheelMove(event, wheel);
+        // Normal scroll over waveform area — virtual horizontal scroll
+        int scrollDelta = static_cast<int>(-wheel.deltaY * 800.0);
+        setVirtualScrollX(virtualScrollX_ + scrollDelta);
     }
 }
 
@@ -921,6 +919,23 @@ void WaveformEditorContent::setRelativeTimeMode(bool relative) {
 // Private Helpers
 // ============================================================================
 
+int WaveformEditorContent::getMaxVirtualScrollX() const {
+    if (!gridComponent_ || !viewport_)
+        return 0;
+    return juce::jmax(0, gridComponent_->getVirtualContentWidth() - viewport_->getWidth());
+}
+
+void WaveformEditorContent::setVirtualScrollX(int x) {
+    x = juce::jlimit(0, getMaxVirtualScrollX(), x);
+    virtualScrollX_ = x;
+    if (gridComponent_)
+        gridComponent_->setScrollOffset(x, 0);
+    if (timeRuler_)
+        timeRuler_->setScrollOffset(x);
+    if (playheadOverlay_)
+        playheadOverlay_->repaint();
+}
+
 void WaveformEditorContent::updateGridSize() {
     if (gridComponent_) {
         gridComponent_->updateGridSize();
@@ -952,9 +967,8 @@ void WaveformEditorContent::updateGridSize() {
             double barSeconds = 4.0 * 60.0 / bpmForPad;  // one 4/4 bar in seconds
             double viewportEndTime = 0.0;
             if (viewport_ && gridComponent_ && horizontalZoom_ > 0.0) {
-                int scrollX = viewport_->getViewPositionX();
                 int viewW = viewport_->getWidth();
-                viewportEndTime = static_cast<double>(scrollX + viewW) / horizontalZoom_;
+                viewportEndTime = static_cast<double>(virtualScrollX_ + viewW) / horizontalZoom_;
             }
             double rulerLength =
                 juce::jmax(totalTime + barSeconds * 4.0, viewportEndTime + barSeconds);
@@ -978,20 +992,21 @@ void WaveformEditorContent::scrollToClipStart() {
                 }
             }
             auto info = magda::ClipDisplayInfo::from(*clip, bpm, fileDuration);
-            int offsetX = gridComponent_->timeToPixel(info.offsetPositionSeconds);
-            // Center the offset in the viewport
+            // timeToPixel now incorporates scrollOffsetX_, so compute raw pixel position
+            int offsetPixel =
+                static_cast<int>(info.offsetPositionSeconds * horizontalZoom_) + GRID_LEFT_PADDING;
             int viewportWidth = viewport_->getWidth();
-            int scrollX = juce::jmax(0, offsetX - viewportWidth / 4);
-            viewport_->setViewPosition(scrollX, viewport_->getViewPositionY());
+            setVirtualScrollX(juce::jmax(0, offsetPixel - viewportWidth / 4));
         } else {
-            viewport_->setViewPosition(0, viewport_->getViewPositionY());
+            setVirtualScrollX(0);
         }
     } else {
         // In absolute mode, scroll to clip start position
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
         if (clip && gridComponent_) {
-            int clipStartX = gridComponent_->timeToPixel(clip->startTime);
-            viewport_->setViewPosition(clipStartX, viewport_->getViewPositionY());
+            int clipStartPixel =
+                static_cast<int>(clip->startTime * horizontalZoom_) + GRID_LEFT_PADDING;
+            setVirtualScrollX(clipStartPixel);
         }
     }
 }
@@ -1035,11 +1050,10 @@ void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
 }
 
 void WaveformEditorContent::performAnchorPointZoom(double zoomFactor, int anchorX) {
-    // Calculate anchor point in content space
-    int mouseXInContent = anchorX + viewport_->getViewPositionX();
+    // anchorX is in viewport-local coordinates. Convert to time using current virtual scroll.
     double anchorTime = 0.0;
     if (gridComponent_) {
-        anchorTime = gridComponent_->pixelToTime(mouseXInContent);
+        anchorTime = gridComponent_->pixelToTime(anchorX);
     }
 
     // Apply zoom
@@ -1066,12 +1080,10 @@ void WaveformEditorContent::performAnchorPointZoom(double zoomFactor, int anchor
 
         updateGridSize();
 
-        // Adjust scroll to keep anchor point under mouse
-        if (gridComponent_) {
-            int newAnchorX = gridComponent_->timeToPixel(anchorTime);
-            int newScrollX = newAnchorX - anchorX;
-            viewport_->setViewPosition(newScrollX, viewport_->getViewPositionY());
-        }
+        // Recompute scroll so anchorTime stays at anchorX
+        int newScrollX =
+            static_cast<int>(anchorTime * horizontalZoom_) + GRID_LEFT_PADDING - anchorX;
+        setVirtualScrollX(newScrollX);
     }
 }
 
