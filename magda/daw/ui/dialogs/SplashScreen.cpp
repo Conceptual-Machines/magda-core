@@ -14,7 +14,7 @@ namespace magda {
 class SplashScreen::ContentComponent : public juce::Component {
   public:
     ContentComponent() {
-        setSize(450, 350);
+        setSize(450, 390);
 
         // Load the SVG logo
         if (auto xml = juce::XmlDocument::parse(
@@ -23,6 +23,15 @@ class SplashScreen::ContentComponent : public juce::Component {
             if (logo_) {
                 logo_->replaceColour(juce::Colour(0xFF000000),
                                      juce::Colour(DarkTheme::TEXT_SECONDARY));
+            }
+        }
+
+        // Load Tracktion Engine logo
+        if (auto xml = juce::XmlDocument::parse(juce::String::fromUTF8(
+                BinaryData::fadlogotracktion_svg, BinaryData::fadlogotracktion_svgSize))) {
+            teLogo_ = juce::Drawable::createFromSVG(*xml);
+            if (teLogo_) {
+                teLogo_->replaceColour(juce::Colour(0xFF000000), juce::Colour(DarkTheme::TEXT_DIM));
             }
         }
     }
@@ -62,10 +71,30 @@ class SplashScreen::ContentComponent : public juce::Component {
         g.setColour(juce::Colour(DarkTheme::TEXT_DIM));
         g.drawText(juce::String("Version ") + MAGDA_VERSION, bounds.removeFromTop(20),
                    juce::Justification::centred);
+
+        // "powered by" + Tracktion Engine logo
+        bounds.removeFromTop(10);
+        auto poweredRow = bounds.removeFromTop(24);
+        g.setFont(fm.getUIFont(10.0f));
+        g.setColour(juce::Colour(DarkTheme::TEXT_DIM));
+
+        int textWidth = 62;
+        int logoWidth = 24;
+        int totalWidth = textWidth + logoWidth + 4;
+        auto centred = poweredRow.withSizeKeepingCentre(totalWidth, 24);
+
+        g.drawText("powered by", centred.removeFromLeft(textWidth),
+                   juce::Justification::centredRight);
+        if (teLogo_) {
+            centred.removeFromLeft(4);
+            teLogo_->drawWithin(g, centred.removeFromLeft(logoWidth).toFloat(),
+                                juce::RectanglePlacement::centred, 1.0f);
+        }
     }
 
   private:
     std::unique_ptr<juce::Drawable> logo_;
+    std::unique_ptr<juce::Drawable> teLogo_;
 };
 
 // =============================================================================
@@ -78,7 +107,7 @@ SplashScreen::SplashScreen() : DocumentWindow("", juce::Colour(DarkTheme::PANEL_
     setTitleBarHeight(0);
     setResizable(false, false);
     setDropShadowEnabled(true);
-    centreWithSize(450, 350);
+    centreWithSize(450, 390);
     setAlwaysOnTop(true);
 }
 

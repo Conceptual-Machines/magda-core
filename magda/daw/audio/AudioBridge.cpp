@@ -356,10 +356,14 @@ void AudioBridge::macroValueChanged(TrackId trackId, bool isRack, int id, int ma
 void AudioBridge::masterChannelChanged() {
     // Master channel property changed - sync to Tracktion Engine
     const auto& master = TrackManager::getInstance().getMasterChannel();
-    setMasterVolume(master.volume);
     setMasterPan(master.pan);
 
-    // TODO: Handle master mute (may need different approach than track mute)
+    // When muted, set volume to silence; otherwise use the actual volume
+    if (master.muted) {
+        setMasterVolume(0.0f);
+    } else {
+        setMasterVolume(master.volume);
+    }
 }
 
 void AudioBridge::deviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue) {

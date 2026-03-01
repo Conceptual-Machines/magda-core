@@ -14,8 +14,6 @@ namespace magda {
 class AboutDialog::ContentComponent : public juce::Component {
   public:
     ContentComponent() {
-        setSize(400, 370);
-
         // Load the SVG logo
         if (auto xml = juce::XmlDocument::parse(
                 juce::String::fromUTF8(BinaryData::magdalisa_svg, BinaryData::magdalisa_svgSize))) {
@@ -26,6 +24,25 @@ class AboutDialog::ContentComponent : public juce::Component {
                                      juce::Colour(DarkTheme::TEXT_SECONDARY));
             }
         }
+
+        // Load Tracktion Engine logo
+        if (auto xml = juce::XmlDocument::parse(juce::String::fromUTF8(
+                BinaryData::fadlogotracktion_svg, BinaryData::fadlogotracktion_svgSize))) {
+            teLogo_ = juce::Drawable::createFromSVG(*xml);
+            if (teLogo_) {
+                teLogo_->replaceColour(juce::Colour(0xFF000000), juce::Colour(DarkTheme::TEXT_DIM));
+            }
+        }
+
+        // Title as clickable link to website
+        titleLink_ =
+            std::make_unique<juce::HyperlinkButton>("MAGDA", juce::URL("https://magda.land"));
+        titleLink_->setFont(FontManager::getInstance().getMicrogrammaFont(28.0f), false);
+        titleLink_->setColour(juce::HyperlinkButton::textColourId,
+                              juce::Colour(DarkTheme::TEXT_PRIMARY));
+        addAndMakeVisible(*titleLink_);
+
+        setSize(400, 410);
     }
 
     void paint(juce::Graphics& g) override {
@@ -41,11 +58,9 @@ class AboutDialog::ContentComponent : public juce::Component {
             bounds.removeFromTop(200);
         }
 
-        // Title
+        // Title (drawn by titleLink_ button)
         auto& fm = FontManager::getInstance();
-        g.setFont(fm.getMicrogrammaFont(28.0f));
-        g.setColour(juce::Colour(DarkTheme::TEXT_PRIMARY));
-        g.drawText("MAGDA", bounds.removeFromTop(40), juce::Justification::centred);
+        bounds.removeFromTop(40);
 
         // Subtitle
         g.setFont(fm.getUIFont(14.0f));
@@ -58,6 +73,33 @@ class AboutDialog::ContentComponent : public juce::Component {
         g.setColour(juce::Colour(DarkTheme::TEXT_DIM));
         g.drawText(juce::String("Version ") + MAGDA_VERSION, bounds.removeFromTop(20),
                    juce::Justification::centred);
+
+        // "powered by" + Tracktion Engine logo
+        bounds.removeFromTop(10);
+        auto poweredRow = bounds.removeFromTop(24);
+        g.setFont(fm.getUIFont(10.0f));
+        g.setColour(juce::Colour(DarkTheme::TEXT_DIM));
+
+        int textWidth = 62;
+        int logoWidth = 24;
+        int totalWidth = textWidth + logoWidth + 4;
+        auto centred = poweredRow.withSizeKeepingCentre(totalWidth, 24);
+
+        g.drawText("powered by", centred.removeFromLeft(textWidth),
+                   juce::Justification::centredRight);
+        if (teLogo_) {
+            centred.removeFromLeft(4);
+            teLogo_->drawWithin(g, centred.removeFromLeft(logoWidth).toFloat(),
+                                juce::RectanglePlacement::centred, 1.0f);
+        }
+    }
+
+    void resized() override {
+        if (titleLink_) {
+            auto bounds = getLocalBounds();
+            bounds.removeFromTop(200);  // skip logo area
+            titleLink_->setBounds(bounds.removeFromTop(40));
+        }
     }
 
     void mouseDown(const juce::MouseEvent&) override {
@@ -76,6 +118,8 @@ class AboutDialog::ContentComponent : public juce::Component {
 
   private:
     std::unique_ptr<juce::Drawable> logo_;
+    std::unique_ptr<juce::Drawable> teLogo_;
+    std::unique_ptr<juce::HyperlinkButton> titleLink_;
 };
 
 // =============================================================================
