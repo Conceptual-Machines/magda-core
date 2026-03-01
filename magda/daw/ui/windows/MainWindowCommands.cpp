@@ -144,7 +144,8 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
 
         // Transport
         case play:
-            result.setInfo("Play", "Start playback", "Transport", 0);
+            result.setInfo("Play / Stop", "Toggle playback", "Transport", 0);
+            result.addDefaultKeypress(juce::KeyPress::spaceKey, 0);
             break;
         case stop:
             result.setInfo("Stop", "Stop playback", "Transport", 0);
@@ -787,6 +788,20 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             }
             return true;
         }
+
+        case play:
+            if (mainView) {
+                if (mainView->getTimelineController().getState().playhead.isPlaying)
+                    mainView->getTimelineController().dispatch(StopPlaybackEvent{});
+                else
+                    mainView->getTimelineController().dispatch(StartPlaybackEvent{});
+            }
+            return true;
+
+        case stop:
+            if (mainView)
+                mainView->getTimelineController().dispatch(StopPlaybackEvent{});
+            return true;
 
         default:
             return false;
