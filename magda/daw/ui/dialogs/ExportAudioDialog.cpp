@@ -77,6 +77,17 @@ ExportAudioDialog::ExportAudioDialog() {
     realTimeRenderCheckbox_.setToggleState(false, juce::dontSendNotification);
     addAndMakeVisible(realTimeRenderCheckbox_);
 
+    // Lead-in silence
+    leadInSilenceLabel_.setText("Lead-in Silence:", juce::dontSendNotification);
+    leadInSilenceLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
+    addAndMakeVisible(leadInSilenceLabel_);
+
+    leadInSilenceSlider_.setSliderStyle(juce::Slider::LinearBar);
+    leadInSilenceSlider_.setRange(0.0, 2.0, 0.1);
+    leadInSilenceSlider_.setValue(0.0, juce::dontSendNotification);
+    leadInSilenceSlider_.setTextValueSuffix(" s");
+    addAndMakeVisible(leadInSilenceSlider_);
+
     // Time range selection
     timeRangeLabel_.setText("Export Range:", juce::dontSendNotification);
     timeRangeLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
@@ -125,7 +136,7 @@ ExportAudioDialog::ExportAudioDialog() {
     addAndMakeVisible(cancelButton_);
 
     // Set preferred size
-    setSize(500, 410);
+    setSize(500, 450);
 }
 
 ExportAudioDialog::~ExportAudioDialog() {
@@ -166,6 +177,13 @@ void ExportAudioDialog::resized() {
 
     // Real-time render checkbox
     realTimeRenderCheckbox_.setBounds(bounds.removeFromTop(24));
+    bounds.removeFromTop(10);
+
+    // Lead-in silence
+    auto leadInArea = bounds.removeFromTop(28);
+    leadInSilenceLabel_.setBounds(leadInArea.removeFromLeft(120));
+    leadInArea.removeFromLeft(10);
+    leadInSilenceSlider_.setBounds(leadInArea.removeFromLeft(80));
     bounds.removeFromTop(20);
 
     // Time range label
@@ -236,6 +254,8 @@ ExportAudioDialog::Settings ExportAudioDialog::getSettings() const {
 
     settings.normalize = normalizeCheckbox_.getToggleState();
     settings.realTimeRender = realTimeRenderCheckbox_.getToggleState();
+
+    settings.leadInSilence = leadInSilenceSlider_.getValue();
 
     // Determine export range
     if (exportTimeSelectionButton_.getToggleState()) {
