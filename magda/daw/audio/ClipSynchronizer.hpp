@@ -301,6 +301,12 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
     void syncPlaybackModeToEngine(TrackId trackId);
 
     /**
+     * @brief Remove a TE clip by its engine ID from any track
+     * @param engineId The TE EditItemID string
+     */
+    void removeTeClipByEngineId(const std::string& engineId);
+
+    /**
      * @brief Build a clip-ID-to-engine-ID map that includes session clips.
      *
      * For arrangement clips the entry already exists in clipIdToEngineId_.

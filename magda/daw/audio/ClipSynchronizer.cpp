@@ -351,6 +351,17 @@ void ClipSynchronizer::syncClipToEngine(ClipId clipId) {
     }
 }
 
+void ClipSynchronizer::removeTeClipByEngineId(const std::string& engineId) {
+    for (auto* track : tracktion::getAudioTracks(edit_)) {
+        for (auto* clip : track->getClips()) {
+            if (clip->itemID.toString().toStdString() == engineId) {
+                clip->removeFromParent();
+                return;
+            }
+        }
+    }
+}
+
 void ClipSynchronizer::removeClipFromEngine(ClipId clipId) {
     juce::ScopedLock lock(clipLock_);
 
@@ -1121,8 +1132,11 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
                 }
             }
 
+            // Clip not found on expected track — it may have moved.
+            // Remove the old TE clip from whichever track still holds it.
             if (!midiClipPtr) {
-                // Clear stale mapping and recreate
+                DBG("ClipSynchronizer: MIDI clip moved or stale, removing old TE clip " << clipId);
+                removeTeClipByEngineId(engineId);
                 clipIdToEngineId_.erase(it);
                 engineIdToClipId_.erase(engineId);
             }
@@ -1296,9 +1310,11 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
                 }
             }
 
-            // If mapping is stale, clear it
+            // Clip not found on expected track — it may have moved.
+            // Remove the old TE clip from whichever track still holds it.
             if (!audioClipPtr) {
-                DBG("ClipSynchronizer: Clip mapping stale, recreating for clip " << clipId);
+                DBG("ClipSynchronizer: Clip moved or stale, removing old TE clip " << clipId);
+                removeTeClipByEngineId(engineId);
                 clipIdToEngineId_.erase(it);
                 engineIdToClipId_.erase(engineId);
             }
