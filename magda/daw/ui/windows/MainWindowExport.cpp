@@ -166,14 +166,8 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
             }
 
             // Inhibit playback context reallocation for the entire export setup phase.
-            // Plugin enabling (below) can trigger edit.restartPlayback() via
-            // notifyGraphRebuildNeeded(), which would recreate the playback context
-            // and cause a race with the render graph, leading to SIGSEGV.
             te::TransportControl::ReallocationInhibitor setupInhibitor(transport);
 
-            // Free the playback context if not recording
-            // This is essential - the assertion checks isPlayContextActive() which
-            // returns (playbackContext != nullptr), so we must free it
             te::freePlaybackContextIfNotRecording(transport);
 
             // Enable all plugins for offline rendering
@@ -211,9 +205,10 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
             // Allow export even when there are no clips (generator devices can still produce audio)
             params.checkNodesForAudio = false;
 
-            // Optimize for faster-than-realtime offline rendering
-            params.blockSizeForAudio = 8192;  // Much larger than default 512 for faster rendering
-            params.realTimeRender = false;  // Disable real-time simulation (default, but explicit)
+            // Use standard block size for maximum plugin compatibility.
+            // Some plugins produce glitches with non-standard block sizes.
+            params.blockSizeForAudio = 512;
+            params.realTimeRender = false;
 
             // Set time range based on export range setting
             using ExportRange = ExportAudioDialog::ExportRange;

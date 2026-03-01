@@ -592,8 +592,12 @@ void AudioBridge::syncAll() {
         ensureTrackMapping(track.id);
         syncTrackPlugins(track.id);
 
-        // Sync frozen state from TE → MAGDA (e.g. on edit load)
         if (auto* teTrack = getAudioTrack(track.id)) {
+            // Sync mute/solo state to TE (essential on project load)
+            teTrack->setMute(track.muted);
+            teTrack->setSolo(track.soloed);
+
+            // Sync frozen state from TE → MAGDA (e.g. on edit load)
             bool teFrozen = teTrack->isFrozen(te::AudioTrack::individualFreeze);
             if (track.frozen != teFrozen) {
                 tm.getTrack(track.id)->frozen = teFrozen;
