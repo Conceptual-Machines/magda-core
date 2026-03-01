@@ -712,6 +712,10 @@ void MainWindow::setupMenuCallbacks() {
                                                "Help functionality not yet implemented.");
     };
 
+    callbacks.onOpenManual = []() {
+        juce::URL("https://lucaromagnoli.github.io/magda-core/").launchInDefaultBrowser();
+    };
+
     callbacks.onAbout = [this]() { AboutDialog::show(); };
 
     // Settings menu callbacks

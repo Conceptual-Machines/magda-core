@@ -229,6 +229,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addItem(BringAllToFront, "Bring All to Front", true, false);
     } else if (menuName == "Help") {
         menu.addItem(ShowHelp, "MAGDA Help", true, false);
+        menu.addItem(OpenManual, "Online Manual", true, false);
         menu.addSeparator();
         menu.addItem(About, "About MAGDA", true, false);
     }
@@ -459,6 +460,10 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case ShowHelp:
             if (callbacks_.onShowHelp)
                 callbacks_.onShowHelp();
+            break;
+        case OpenManual:
+            if (callbacks_.onOpenManual)
+                callbacks_.onOpenManual();
             break;
         case About:
             if (callbacks_.onAbout)
