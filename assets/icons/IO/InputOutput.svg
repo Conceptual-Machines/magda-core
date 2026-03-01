@@ -1,8 +1,0 @@
-<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-<!-- Monitor frame with gaps on both sides -->
-<path d="M7 40C6.2 40 5.5 39.7 4.9 39.1C4.3 38.5 4 37.8 4 37V29H7V37H41V29H44V37C44 37.8 43.7 38.5 43.1 39.1C42.5 39.7 41.8 40 41 40H7ZM7 19H4V11C4 10.2 4.3 9.5 4.9 8.9C5.5 8.3 6.2 8 7 8H41C41.8 8 42.5 8.3 43.1 8.9C43.7 9.5 44 10.2 44 11V19H41V11H7V19Z" fill="#B3B3B3"/>
-<!-- Input arrow (entering from left, upper position, short) -->
-<path d="M16.45 26.35L14.3 24.2L16.95 21.55H4V18.55H16.95L14.3 15.9L16.45 13.75L23.25 20.55L16.45 26.35Z" fill="#B3B3B3"/>
-<!-- Output arrow (exiting to right, lower position, touching right border) -->
-<path d="M35.05 34.25L32.9 32.1L35.55 29.45H24V26.45H35.55L32.9 23.8L35.05 21.65L44 28.45L35.05 34.25Z" fill="#B3B3B3"/>
-</svg>
