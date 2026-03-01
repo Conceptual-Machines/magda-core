@@ -815,6 +815,17 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
         return commandManager.invokeDirectly(commandID, false);
     }
 
+    // Space: Toggle play/stop
+    if (key == juce::KeyPress::spaceKey) {
+        if (mainView) {
+            if (mainView->getTimelineController().getState().playhead.isPlaying)
+                mainView->getTimelineController().dispatch(StopPlaybackEvent{});
+            else
+                mainView->getTimelineController().dispatch(StartPlaybackEvent{});
+        }
+        return true;
+    }
+
     // ESC: Exit link mode and clear edit cursor
     if (key == juce::KeyPress::escapeKey) {
         LinkModeManager::getInstance().exitAllLinkModes();
