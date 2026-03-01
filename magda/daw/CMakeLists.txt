@@ -157,6 +157,7 @@ set(DAW_CORE_SOURCES
     core/UndoManager.cpp
     core/ClipCommands.cpp
     core/ClipPropertyCommands.cpp
+    core/WarpMarkerCommands.cpp
     core/TrackCommands.cpp
     core/TrackPropertyCommands.cpp
     core/AutomationCommands.cpp
@@ -395,6 +396,7 @@ set(DAW_HEADERS
     core/UndoManager.hpp
     core/ClipCommands.hpp
     core/ClipPropertyCommands.hpp
+    core/WarpMarkerCommands.hpp
     core/TrackCommands.hpp
     core/TrackPropertyCommands.hpp
     core/AutomationCommands.hpp

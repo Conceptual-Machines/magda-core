@@ -12,6 +12,7 @@
 #include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/TrackManager.hpp"
+#include "core/WarpMarkerCommands.hpp"
 #include "engine/AudioEngine.hpp"
 
 namespace magda::daw::ui {
@@ -404,11 +405,12 @@ WaveformEditorContent::WaveformEditorContent() {
         // Could add logic here if needed
     };
 
-    // Warp marker callbacks
+    // Warp marker callbacks — route through UndoManager for undo support
     gridComponent_->onWarpMarkerAdd = [this](double sourceTime, double warpTime) {
         auto* bridge = getBridge();
         if (bridge) {
-            bridge->addWarpMarker(editingClipId_, sourceTime, warpTime);
+            UndoManager::getInstance().executeCommand(std::make_unique<AddWarpMarkerCommand>(
+                bridge, editingClipId_, sourceTime, warpTime));
             refreshWarpMarkers();
         }
     };
@@ -416,7 +418,8 @@ WaveformEditorContent::WaveformEditorContent() {
     gridComponent_->onWarpMarkerMove = [this](int index, double newWarpTime) {
         auto* bridge = getBridge();
         if (bridge) {
-            bridge->moveWarpMarker(editingClipId_, index, newWarpTime);
+            UndoManager::getInstance().executeCommand(std::make_unique<MoveWarpMarkerCommand>(
+                bridge, editingClipId_, index, newWarpTime));
             refreshWarpMarkers();
         }
     };
@@ -424,7 +427,8 @@ WaveformEditorContent::WaveformEditorContent() {
     gridComponent_->onWarpMarkerRemove = [this](int index) {
         auto* bridge = getBridge();
         if (bridge) {
-            bridge->removeWarpMarker(editingClipId_, index);
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<RemoveWarpMarkerCommand>(bridge, editingClipId_, index));
             refreshWarpMarkers();
         }
     };
@@ -434,8 +438,10 @@ WaveformEditorContent::WaveformEditorContent() {
                                                     double newWarpTime) {
         auto* bridge = getBridge();
         if (bridge) {
-            bridge->removeWarpMarker(editingClipId_, index);
-            bridge->addWarpMarker(editingClipId_, newSourceTime, newWarpTime);
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<RemoveWarpMarkerCommand>(bridge, editingClipId_, index));
+            UndoManager::getInstance().executeCommand(std::make_unique<AddWarpMarkerCommand>(
+                bridge, editingClipId_, newSourceTime, newWarpTime));
             refreshWarpMarkers();
         }
     };
