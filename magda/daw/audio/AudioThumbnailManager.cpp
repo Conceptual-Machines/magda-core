@@ -214,8 +214,8 @@ void AudioThumbnailManager::drawWaveformFromSamples(
     if (samplesPerPixel <= 8.0) {
         // LINE MODE: more pixels than samples — draw a smooth interpolated line per channel.
         // Read samples with 1 extra on each side for interpolation at edges.
-        const juce::int64 readStart = juce::jmax<juce::int64>(0, startSample - 1);
-        const juce::int64 readEnd = juce::jmin(endSample + 1, totalFileLength);
+        const juce::int64 readStart = std::max<juce::int64>(0, startSample - 1);
+        const juce::int64 readEnd = std::min(endSample + 1, totalFileLength);
         const int readCount = static_cast<int>(readEnd - readStart);
 
         juce::AudioBuffer<float> buffer(numChannels, readCount);
@@ -273,8 +273,7 @@ void AudioThumbnailManager::drawWaveformFromSamples(
 
         juce::AudioBuffer<float> chunkBuffer;
         if (!useFullBuffer) {
-            int maxChunk =
-                static_cast<int>(juce::jmin<juce::int64>(totalSamples / width + 2, 65536));
+            int maxChunk = static_cast<int>(std::min<juce::int64>(totalSamples / width + 2, 65536));
             chunkBuffer.setSize(numChannels, maxChunk);
         }
 
@@ -295,7 +294,7 @@ void AudioThumbnailManager::drawWaveformFromSamples(
             for (int x = 0; x < width; ++x) {
                 const juce::int64 colStart =
                     static_cast<juce::int64>(static_cast<double>(x) * totalSamples / width);
-                const juce::int64 colEnd = juce::jmin(
+                const juce::int64 colEnd = std::min(
                     static_cast<juce::int64>(static_cast<double>(x + 1) * totalSamples / width),
                     totalSamples);
 
