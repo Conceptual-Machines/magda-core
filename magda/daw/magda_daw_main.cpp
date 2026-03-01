@@ -25,6 +25,7 @@ class MagdaDAWApplication : public JUCEApplication {
     std::unique_ptr<magda::MainWindow> mainWindow_;
     std::unique_ptr<juce::LookAndFeel> lookAndFeel_;
     std::unique_ptr<magda::SplashScreen> splashScreen_;
+    bool shuttingDown_ = false;
 
   public:
     MagdaDAWApplication() = default;
@@ -56,7 +57,10 @@ class MagdaDAWApplication : public JUCEApplication {
 
         // Defer heavy initialization so the message loop can paint the splash.
         // A short timer delay gives macOS time to composite the window.
-        juce::Timer::callAfterDelay(100, [this] { finishInitialisation(); });
+        juce::Timer::callAfterDelay(100, [this] {
+            if (!shuttingDown_)
+                finishInitialisation();
+        });
     }
 
     void finishInitialisation() {
@@ -83,6 +87,7 @@ class MagdaDAWApplication : public JUCEApplication {
     }
 
     void shutdown() override {
+        shuttingDown_ = true;
         std::cout << "=== SHUTDOWN START ===" << std::endl;
         std::cout.flush();
 

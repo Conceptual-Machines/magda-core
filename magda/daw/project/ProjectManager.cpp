@@ -101,7 +101,10 @@ bool ProjectManager::saveProjectAs(const juce::File& file) {
 
     if (parentDir.getFileName() != projectName) {
         auto wrapperDir = parentDir.getChildFile(projectName);
-        wrapperDir.createDirectory();
+        if (!wrapperDir.createDirectory()) {
+            lastError_ = "Failed to create project directory: " + wrapperDir.getFullPathName();
+            return false;
+        }
         actualFile = wrapperDir.getChildFile(file.getFileName());
     }
 

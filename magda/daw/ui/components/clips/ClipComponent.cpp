@@ -1179,6 +1179,9 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                         // Back on source track — clear ghost
                         parentPanel_->clearClipGhost(clipId_);
                     }
+                } else {
+                    // Outside any track — clear ghost
+                    parentPanel_->clearClipGhost(clipId_);
                 }
             }
             break;

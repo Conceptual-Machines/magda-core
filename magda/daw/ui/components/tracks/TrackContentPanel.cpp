@@ -19,9 +19,10 @@
 namespace magda {
 
 TrackContentPanel::TrackContentPanel() {
-    // Load configuration values (bars → seconds at default 120 BPM, 4/4)
+    // Load configuration values, converting bars → seconds at default tempo
     auto& config = magda::Config::getInstance();
-    timelineLength = config.getDefaultTimelineLengthBars() * 2.0;
+    TempoState defaultTempo;
+    timelineLength = defaultTempo.barsToTime(config.getDefaultTimelineLengthBars());
 
     // Set up the component
     setSize(1000, 200);
