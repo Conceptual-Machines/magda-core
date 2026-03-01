@@ -16,7 +16,7 @@ magda::MidiBridge* DebugDialog::midiBridge_ = nullptr;
 static juce::String midiNoteToName(int noteNumber) {
     static const char* noteNames[] = {"C",  "C#", "D",  "D#", "E",  "F",
                                       "F#", "G",  "G#", "A",  "A#", "B"};
-    int octave = (noteNumber / 12) - 1;
+    int octave = (noteNumber / 12) - 2;
     return juce::String(noteNames[noteNumber % 12]) + juce::String(octave);
 }
 

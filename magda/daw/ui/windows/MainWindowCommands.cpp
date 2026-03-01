@@ -144,8 +144,7 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
 
         // Transport
         case play:
-            result.setInfo("Play / Stop", "Toggle playback", "Transport", 0);
-            result.addDefaultKeypress(juce::KeyPress::spaceKey, 0);
+            result.setInfo("Play", "Start playback", "Transport", 0);
             break;
         case stop:
             result.setInfo("Stop", "Stop playback", "Transport", 0);

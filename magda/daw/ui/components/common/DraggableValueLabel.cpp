@@ -78,7 +78,7 @@ juce::String DraggableValueLabel::formatValue(double val) const {
             noteNumber = juce::jlimit(0, 127, noteNumber);
             static const char* noteNames[] = {"C",  "C#", "D",  "D#", "E",  "F",
                                               "F#", "G",  "G#", "A",  "A#", "B"};
-            int octave = (noteNumber / 12) - 1;
+            int octave = (noteNumber / 12) - 2;
             int noteIndex = noteNumber % 12;
             return juce::String(noteNames[noteIndex]) + juce::String(octave);
         }
