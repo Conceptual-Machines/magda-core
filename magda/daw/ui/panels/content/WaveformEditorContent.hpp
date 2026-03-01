@@ -5,6 +5,7 @@
 #include "PanelContent.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipManager.hpp"
+#include "core/UndoManager.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
 #include "ui/components/waveform/WaveformGridComponent.hpp"
@@ -26,6 +27,7 @@ namespace magda::daw::ui {
  */
 class WaveformEditorContent : public PanelContent,
                               public magda::ClipManagerListener,
+                              public magda::UndoManagerListener,
                               public TimelineStateListener,
                               public juce::Timer {
   public:
@@ -58,6 +60,9 @@ class WaveformEditorContent : public PanelContent,
     void clipsChanged() override;
     void clipPropertyChanged(magda::ClipId clipId) override;
     void clipSelectionChanged(magda::ClipId clipId) override;
+
+    // UndoManagerListener
+    void undoStateChanged() override;
 
     // TimelineStateListener
     void timelineStateChanged(const TimelineState& state, ChangeFlags changes) override;

@@ -231,6 +231,9 @@ WaveformEditorContent::WaveformEditorContent() {
     // Register as ClipManager listener
     magda::ClipManager::getInstance().addListener(this);
 
+    // Register as UndoManager listener (for warp marker refresh on undo/redo)
+    magda::UndoManager::getInstance().addListener(this);
+
     // Create time ruler
     timeRuler_ = std::make_unique<magda::TimeRuler>();
     timeRuler_->setDisplayMode(magda::TimeRuler::DisplayMode::BarsBeats);
@@ -438,6 +441,7 @@ WaveformEditorContent::WaveformEditorContent() {
                                                     double newWarpTime) {
         auto* bridge = getBridge();
         if (bridge) {
+            CompoundOperationScope scope("Reposition Warp Marker");
             UndoManager::getInstance().executeCommand(
                 std::make_unique<RemoveWarpMarkerCommand>(bridge, editingClipId_, index));
             UndoManager::getInstance().executeCommand(std::make_unique<AddWarpMarkerCommand>(
@@ -508,6 +512,7 @@ WaveformEditorContent::~WaveformEditorContent() {
     }
 
     magda::ClipManager::getInstance().removeListener(this);
+    magda::UndoManager::getInstance().removeListener(this);
 
     // Clear look and feel before destruction
     if (timeModeButton_)
@@ -772,6 +777,16 @@ void WaveformEditorContent::clipSelectionChanged(magda::ClipId clipId) {
         if (clip && clip->type == magda::ClipType::Audio) {
             setClip(clipId);
         }
+    }
+}
+
+// ============================================================================
+// UndoManagerListener
+// ============================================================================
+
+void WaveformEditorContent::undoStateChanged() {
+    if (editingClipId_ != magda::INVALID_CLIP_ID) {
+        refreshWarpMarkers();
     }
 }
 
