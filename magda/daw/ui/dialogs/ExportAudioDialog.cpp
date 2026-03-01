@@ -72,6 +72,11 @@ ExportAudioDialog::ExportAudioDialog() {
     normalizeCheckbox_.setToggleState(false, juce::dontSendNotification);
     addAndMakeVisible(normalizeCheckbox_);
 
+    // Real-time render option
+    realTimeRenderCheckbox_.setButtonText("Real-time render (slower, avoids plugin glitches)");
+    realTimeRenderCheckbox_.setToggleState(false, juce::dontSendNotification);
+    addAndMakeVisible(realTimeRenderCheckbox_);
+
     // Time range selection
     timeRangeLabel_.setText("Export Range:", juce::dontSendNotification);
     timeRangeLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
@@ -120,7 +125,7 @@ ExportAudioDialog::ExportAudioDialog() {
     addAndMakeVisible(cancelButton_);
 
     // Set preferred size
-    setSize(500, 380);
+    setSize(500, 410);
 }
 
 ExportAudioDialog::~ExportAudioDialog() {
@@ -157,6 +162,10 @@ void ExportAudioDialog::resized() {
 
     // Normalization checkbox
     normalizeCheckbox_.setBounds(bounds.removeFromTop(24));
+    bounds.removeFromTop(5);
+
+    // Real-time render checkbox
+    realTimeRenderCheckbox_.setBounds(bounds.removeFromTop(24));
     bounds.removeFromTop(20);
 
     // Time range label
@@ -226,6 +235,7 @@ ExportAudioDialog::Settings ExportAudioDialog::getSettings() const {
     }
 
     settings.normalize = normalizeCheckbox_.getToggleState();
+    settings.realTimeRender = realTimeRenderCheckbox_.getToggleState();
 
     // Determine export range
     if (exportTimeSelectionButton_.getToggleState()) {

@@ -24,6 +24,7 @@ class ExportAudioDialog : public juce::Component {
         juce::String format;  // "WAV16", "WAV24", "WAV32", "FLAC"
         double sampleRate = 48000.0;
         bool normalize = false;
+        bool realTimeRender = false;
         ExportRange exportRange = ExportRange::EntireSong;
     };
 
@@ -66,6 +67,9 @@ class ExportAudioDialog : public juce::Component {
 
     // Normalization option
     juce::ToggleButton normalizeCheckbox_;
+
+    // Real-time render option
+    juce::ToggleButton realTimeRenderCheckbox_;
 
     // Time range options
     juce::Label timeRangeLabel_;
