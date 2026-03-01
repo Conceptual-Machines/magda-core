@@ -12,6 +12,7 @@
 #include "core/TrackManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
+#include "ui/dialogs/SplashScreen.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/windows/MainWindow.hpp"
@@ -23,6 +24,7 @@ class MagdaDAWApplication : public JUCEApplication {
     std::unique_ptr<magda::TracktionEngineWrapper> daw_engine_;
     std::unique_ptr<magda::MainWindow> mainWindow_;
     std::unique_ptr<juce::LookAndFeel> lookAndFeel_;
+    std::unique_ptr<magda::SplashScreen> splashScreen_;
 
   public:
     MagdaDAWApplication() = default;
@@ -49,6 +51,15 @@ class MagdaDAWApplication : public JUCEApplication {
         magda::DarkTheme::applyToLookAndFeel(*lookAndFeel_);
         juce::LookAndFeel::setDefaultLookAndFeel(lookAndFeel_.get());
 
+        // 2b. Show splash screen
+        splashScreen_ = magda::SplashScreen::create();
+
+        // Defer heavy initialization so the message loop can paint the splash.
+        // A short timer delay gives macOS time to composite the window.
+        juce::Timer::callAfterDelay(100, [this] { finishInitialisation(); });
+    }
+
+    void finishInitialisation() {
         // 3. Initialize audio engine
         daw_engine_ = std::make_unique<magda::TracktionEngineWrapper>();
         if (!daw_engine_->initialize()) {
@@ -64,6 +75,9 @@ class MagdaDAWApplication : public JUCEApplication {
 
         // 4. Create main window with full UI (pass the audio engine)
         mainWindow_ = std::make_unique<magda::MainWindow>(daw_engine_.get());
+
+        // 5. Dismiss splash screen
+        splashScreen_.reset();
 
         std::cout << "🎵 MAGDA is ready!" << std::endl;
     }

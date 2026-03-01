@@ -136,6 +136,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/fontaudio/fad-filter-notch.svg
     # Fontaudio logo icons
     ../../assets/icons/fontaudio/fad-logo-tracktion.svg
+    # App logo
+    ../../assets/magda-lisa.svg
 )
 
 # DAW Core sources
@@ -237,6 +239,8 @@ set(DAW_UI_SOURCES
     ui/dialogs/PluginSettingsDialog.cpp
     ui/dialogs/PreferencesDialog.cpp
     ui/dialogs/TrackManagerDialog.cpp
+    ui/dialogs/AboutDialog.cpp
+    ui/dialogs/SplashScreen.cpp
     # Debug
     ui/debug/DebugDialog.cpp
     # Panels
@@ -421,6 +425,8 @@ set(DAW_HEADERS
     ui/dialogs/PluginSettingsDialog.hpp
     ui/dialogs/PreferencesDialog.hpp
     ui/dialogs/TrackManagerDialog.hpp
+    ui/dialogs/AboutDialog.hpp
+    ui/dialogs/SplashScreen.hpp
     # Panels
     ui/panels/TransportPanel.hpp
     ui/panels/TimelineHeaderPanel.hpp

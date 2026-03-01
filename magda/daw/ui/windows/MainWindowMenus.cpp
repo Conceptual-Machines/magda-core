@@ -1,5 +1,6 @@
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
+#include "../dialogs/AboutDialog.hpp"
 #include "../dialogs/AudioSettingsDialog.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
 #include "../dialogs/PluginSettingsDialog.hpp"
@@ -711,11 +712,7 @@ void MainWindow::setupMenuCallbacks() {
                                                "Help functionality not yet implemented.");
     };
 
-    callbacks.onAbout = [this]() {
-        juce::AlertWindow::showMessageBoxAsync(
-            juce::AlertWindow::InfoIcon, "About MAGDA",
-            "MAGDA\nVersion 1.0\n\nA professional digital audio workstation.");
-    };
+    callbacks.onAbout = [this]() { AboutDialog::show(); };
 
     // Settings menu callbacks
     callbacks.onPluginSettings = [this]() {
