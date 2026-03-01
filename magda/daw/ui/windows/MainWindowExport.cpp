@@ -207,7 +207,7 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
 
             // Use standard block size for maximum plugin compatibility.
             // Some plugins produce glitches with non-standard block sizes.
-            params.blockSizeForAudio = 512;
+            params.blockSizeForAudio = 4096;
             params.realTimeRender = false;
 
             // Set time range based on export range setting
