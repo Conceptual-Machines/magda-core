@@ -1,6 +1,6 @@
 site_name: MAGDA Manual
 site_description: User manual for MAGDA — a free, open-source digital audio workstation
-site_url: https://lucaromagnoli.github.io/magda-core/
+site_url: https://Conceptual-Machines.github.io/magda-core/
 
 theme:
   name: material
@@ -31,7 +31,7 @@ theme:
   icon:
     repo: fontawesome/brands/github
 
-repo_url: https://github.com/lucaromagnoli/magda-core
+repo_url: https://github.com/Conceptual-Machines/magda-core
 repo_name: magda-core
 
 nav:

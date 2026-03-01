@@ -17,7 +17,7 @@
 ## Crashes on Startup
 
 1. Try deleting the configuration file (`magda_config.txt`) to reset settings
-2. Check the [GitHub Issues](https://github.com/lucaromagnoli/magda-core/issues) for known problems
+2. Check the [GitHub Issues](https://github.com/Conceptual-Machines/magda-core/issues) for known problems
 3. File a bug report with your system details and crash log
 
 ## Plugin Issues
@@ -27,4 +27,4 @@
 3. Try loading the plugin in a fresh project
 
 !!! tip
-    If your issue isn't listed here, check the [GitHub Issues](https://github.com/lucaromagnoli/magda-core/issues) page or open a new issue.
+    If your issue isn't listed here, check the [GitHub Issues](https://github.com/Conceptual-Machines/magda-core/issues) page or open a new issue.

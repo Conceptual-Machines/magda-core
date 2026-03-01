@@ -11,11 +11,11 @@
 
 ## Download
 
-Download the latest release from the [GitHub Releases](https://github.com/lucaromagnoli/magda-core/releases) page.
+Download the latest release from the [GitHub Releases](https://github.com/Conceptual-Machines/magda-core/releases) page.
 
 ## Building from Source
 
-MAGDA is built with CMake and requires a C++17 compiler. See the [README](https://github.com/lucaromagnoli/magda-core#building) for full build instructions.
+MAGDA is built with CMake and requires a C++17 compiler. See the [README](https://github.com/Conceptual-Machines/magda-core#building) for full build instructions.
 
 ## Audio Setup
 

@@ -713,7 +713,7 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onOpenManual = []() {
-        juce::URL("https://lucaromagnoli.github.io/magda-core/").launchInDefaultBrowser();
+        juce::URL("https://Conceptual-Machines.github.io/magda-core/").launchInDefaultBrowser();
     };
 
     callbacks.onAbout = [this]() { AboutDialog::show(); };
