@@ -2,23 +2,11 @@
 
 MAGDA's window is divided into fixed regions that stay consistent across all three views (Live, Arrange, Mix).
 
+![Arrangement View](../assets/images/arrangement/arrangement-view.png)
+
 ## Window Layout
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                     Transport Bar                       │
-├───────────┬─────────────────────────────┬───────────────┤
-│           │                             │               │
-│   Left    │       Central View          │    Right      │
-│   Panel   │  (Session / Arrangement /   │    Panel      │
-│           │       Mixer)                │               │
-│           │                             │               │
-├───────────┴─────────────────────────────┴───────────────┤
-│                     Bottom Panel                        │
-├─────────────────────────────────────────────────────────┤
-│                       Footer                            │
-└─────────────────────────────────────────────────────────┘
-```
+![Window Layout](../assets/images/interface/window-layout.png)
 
 ## Transport Bar
 
@@ -35,9 +23,9 @@ The left panel contains:
 
 The central area displays one of three views depending on the active mode:
 
-- **Session View** — Clip launcher grid for live performance. See [Session View](../session-view.md).
-- **Arrangement View** — Traditional timeline for composing and editing. See [Arrangement View](../arrangement-view.md).
-- **Mixer View** — Channel-strip mixer for balancing and routing. See [Mixer View](../mixer-view.md).
+- ![Session](../assets/images/icons/Session.svg){ width="18" } **Session View** — Grid-based clip launcher for real-time performance. See [Session View](../session-view.md).
+- ![Arrangement](../assets/images/icons/Arrangement.svg){ width="18" } **Arrangement View** — Traditional timeline for composing and editing. See [Arrangement View](../arrangement-view.md).
+- ![Mix](../assets/images/icons/Mix.svg){ width="18" } **Mixer View** — Channel-strip mixer for balancing and routing. See [Mixer View](../mixer-view.md).
 
 Switch between views using the mode buttons in the footer.
 

@@ -2,6 +2,8 @@
 
 Open audio settings from **Settings > Audio Settings**.
 
+![Audio/MIDI Settings](../assets/images/interface/audio-settings.png)
+
 ## Audio Device
 
 - **Output device** — Select your audio interface or built-in output

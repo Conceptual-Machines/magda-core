@@ -2,6 +2,8 @@
 
 The transport bar sits at the top of the window and is available in all views.
 
+![Transport Bar](assets/images/transport/transport-bar.png)
+
 ## Playback Controls
 
 | Button | Action | Shortcut |

@@ -7,15 +7,15 @@ theme:
   palette:
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: deep purple
-      accent: amber
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-7
         name: Switch to light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: deep purple
-      accent: amber
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-4
         name: Switch to dark mode
@@ -28,6 +28,8 @@ theme:
     - search.highlight
     - content.code.copy
     - content.tabs.link
+  logo: assets/images/magda-lisa.svg
+  favicon: assets/images/magda-lisa.svg
   icon:
     repo: fontawesome/brands/github
 
@@ -44,7 +46,10 @@ nav:
       - Menus: interface/menus.md
       - Preferences: interface/preferences.md
       - Audio Settings: interface/audio-settings.md
+      - Plugin Settings: interface/plugin-settings.md
   - Tracks: tracks.md
+  - Clips: clips.md
+  - FX Chain & Racks: fx-chain.md
   - Arrangement View: arrangement-view.md
   - Session View: session-view.md
   - Mixer View: mixer-view.md
@@ -67,6 +72,9 @@ nav:
       - Keyboard Shortcuts: reference/keyboard-shortcuts.md
       - File Formats: reference/file-formats.md
       - Troubleshooting: reference/troubleshooting.md
+
+extra_css:
+  - stylesheets/extra.css
 
 markdown_extensions:
   - admonition

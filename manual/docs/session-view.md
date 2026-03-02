@@ -1,6 +1,8 @@
 # Session View
 
-The Session View is a clip launcher for real-time performance and idea sketching, similar to Ableton Live's Session View. Switch to it by clicking **Live** in the footer bar.
+The Session View is a grid-based clip launcher for real-time performance and idea sketching. Switch to it by clicking **Live** in the footer bar.
+
+![Session View](assets/images/session/session-view.png)
 
 ## Layout
 

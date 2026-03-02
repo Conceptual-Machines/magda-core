@@ -7,7 +7,6 @@ MAGDA includes its own custom devices as well as processors from the Tracktion E
 | Device | Description |
 |--------|-------------|
 | **Drum Grid** | Chain-based drum machine with per-pad FX. See [Drum Grid](drum-grid.md). |
-| **Sampler** | 8-voice sample player with ADSR and pitch controls. See [Sampler](sampler.md). |
 
 ## Tracktion Engine Devices
 
@@ -15,6 +14,7 @@ These processors are provided by the Tracktion Engine and are available in every
 
 | Device | Description |
 |--------|-------------|
+| **Sampler** | 8-voice sample player with ADSR and pitch controls. See [Sampler](sampler.md). |
 | **4OSC Synth** | Four-oscillator subtractive synthesizer |
 | **EQ** | Parametric equalizer |
 | **Compressor** | Dynamics compressor |

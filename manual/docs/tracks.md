@@ -2,6 +2,8 @@
 
 Tracks are the fundamental building blocks in MAGDA. They appear in all three views — as columns in Session View, rows in Arrangement View, and channel strips in Mixer View.
 
+![Track Header](assets/images/tracks/track-header.png)
+
 ## Hybrid Track System
 
 MAGDA uses a **hybrid track system**: there is no strict distinction between audio and MIDI tracks. Any track can contain any combination of audio clips, MIDI clips, and other clip types. The track's behavior adapts based on the clips and devices it contains.
@@ -27,6 +29,7 @@ Every track provides the following controls (visible in track headers and channe
 - **Solo** (S) — Solo the track. Shortcut: select the track and press ++shift+s++
 - **Record arm** (R) — Arm the track for recording
 - **Input monitor** — Monitor the live input signal through the track
+- **Automation** — Toggle automation read/write for the track
 
 ## Adding and Managing Tracks
 
@@ -36,21 +39,8 @@ Every track provides the following controls (visible in track headers and channe
 
 ## FX Chain
 
-Each track has an **FX chain** — an ordered list of audio processors applied to the track's signal. The chain can contain:
+Each track has an FX chain — an ordered list of audio processors applied to the track's signal. See [FX Chain & Racks](fx-chain.md) for full details.
 
-- **Plugins** — VST3, AU, or VST effect and instrument plugins
-- **Built-in devices** — MAGDA's own processors (see [Built-in Devices](devices/built-in.md))
-- **Racks** — Container devices with nested chains and parallel routing
+## Clips
 
-### Racks
-
-A rack is a container that holds one or more parallel chains. Signal flows into the rack, splits across chains, and mixes back together at the output. Use racks for:
-
-- Parallel processing (e.g., dry/wet blends)
-- Complex multi-band setups
-- Organized device grouping
-
-## Freeze and Bounce
-
-- **Freeze** — Render the track's output to a temporary audio file to free up CPU. The track becomes read-only until unfrozen. Use **Track > Freeze Track**.
-- **Bounce in Place** — Render the track to a new audio clip that replaces the original content. Use **Track > Bounce in Place**.
+Tracks contain clips — audio and MIDI data blocks arranged on the timeline. See [Clips](clips.md) for details on editing, splitting, duplicating, and rendering clips.

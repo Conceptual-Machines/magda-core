@@ -4,6 +4,8 @@ The left panel contains two browser tools for finding and adding content to your
 
 ## Plugin Browser
 
+![Plugin Browser](../assets/images/panels/plugin-browser.png)
+
 The Plugin Browser shows all available audio plugins organized in a tree view.
 
 ### Navigation
@@ -28,6 +30,8 @@ The Plugin Browser shows all available audio plugins organized in a tree view.
 If a newly installed plugin doesn't appear, use **Settings > Plugin Scan** to re-scan your plugin directories.
 
 ## Media Explorer
+
+![Sample Browser](../assets/images/panels/sample-browser.png)
 
 The Media Explorer lets you browse files on your system and preview audio before importing.
 

@@ -2,6 +2,8 @@
 
 Macros are user-defined control knobs that provide quick, unified access to multiple device parameters.
 
+![Macro Panel](../assets/images/modulation/macro-panel.png)
+
 ## Layout
 
 Each track has **16 macro knobs** organized across **2 pages** (8 knobs per page). Macros are visible in the track's device chain and in the Inspector when the track is selected.

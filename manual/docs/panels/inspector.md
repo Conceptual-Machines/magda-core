@@ -2,6 +2,8 @@
 
 The Inspector panel is on the right side of the window. It displays context-sensitive properties for the currently selected item.
 
+![Inspector — Audio Clip](../assets/images/panels/inspector-audio.png)
+
 ## Track Inspector
 
 Displayed when a track is selected. Shows:

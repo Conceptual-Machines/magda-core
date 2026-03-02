@@ -9,10 +9,11 @@ MAGDA has eight top-level menus.
 | New Project | Create a new empty project |
 | Open Project | Open an existing project file |
 | Open Recent | List of recently opened projects |
-| Save | Save the current project |
-| Save As | Save the current project to a new file |
-| Render | Render/export the project to an audio file |
-| Quit | Exit MAGDA |
+| Close Project | Close the current project |
+| Save Project | Save the current project |
+| Save Project As | Save the current project to a new file |
+| Export Audio | Export/render the project to an audio file |
+| Quit | Exit MAGDA (Windows/Linux only — use Cmd+Q on macOS) |
 
 ## Edit
 
@@ -23,65 +24,76 @@ MAGDA has eight top-level menus.
 | Cut | Cut selected clips or notes |
 | Copy | Copy selected clips or notes |
 | Paste | Paste from clipboard |
-| Delete | Delete selected clips or notes |
-| Select All | Select all clips or notes in the current context |
 | Duplicate | Duplicate selected clips or tracks |
+| Delete | Delete selected clips or notes |
+| Split / Trim | Split clip at the playhead or trim to time selection |
+| Join Clips | Join adjacent selected clips into one |
+| Render Selected Clip(s) | Render selected clips to audio |
+| Render Time Selection | Render the current time selection to audio |
+| Select All | Select all clips or notes in the current context |
 
 ## View
 
 | Item | Description |
 |------|-------------|
+| Track Manager | Open the Track Manager dialog (see below) |
+| Headers on the Right | Toggle track headers to the right side of the arrangement |
 | Zoom In | Increase horizontal zoom |
 | Zoom Out | Decrease horizontal zoom |
 | Zoom to Fit | Fit all content in the visible area |
-| Zoom to Selection | Zoom to the current time selection |
-| Zoom to Loop | Zoom to the loop region |
-| Track Size | Presets for track height (small, medium, large) |
-| Show/Hide Left Panel | Toggle the left panel |
-| Show/Hide Right Panel | Toggle the right panel |
-| Show/Hide Bottom Panel | Toggle the bottom panel |
+| Zoom Loop to Fit | Zoom to show the loop region |
+| Zoom Selection to Fit | Zoom to show the current selection |
+| Enter Full Screen | Toggle full-screen mode |
+
+### Track Manager
+
+The Track Manager lets you control which tracks are visible in each view. Open it from **View > Track Manager**.
+
+Each track has a checkbox for each view mode: **Live**, **Arrange**, **Mix**, and **Master**. Toggle the checkboxes to show or hide individual tracks (including the master channel) per view. This is useful for keeping the mixer focused on relevant tracks or hiding utility tracks from the arrangement.
 
 ## Transport
 
 | Item | Description |
 |------|-------------|
-| Play / Stop | Toggle playback |
+| Play / Pause | Toggle playback |
+| Stop | Stop playback and return to last start position |
 | Record | Start/stop recording |
-| Return to Start | Move playhead to the beginning |
-| Loop On/Off | Toggle loop playback |
-| Punch In/Out | Toggle punch recording mode |
+| Loop | Toggle loop playback |
+| Go to Start | Move playhead to the beginning |
+| Go to End | Move playhead to the end |
 
 ## Track
 
 | Item | Description |
 |------|-------------|
 | Add Track | Add a new track |
+| Add Group Track | Add a new group track |
+| Add Aux Track | Add a new aux/return track |
 | Delete Track | Delete the selected track |
 | Duplicate Track | Duplicate the selected track with content |
-| Duplicate Track (Empty) | Duplicate track structure without content |
-| Freeze Track | Freeze the selected track to reduce CPU |
-| Unfreeze Track | Unfreeze a frozen track |
-| Bounce in Place | Render the track to audio in place |
+| Duplicate Track Without Content | Duplicate track structure without content |
+| Mute Track | Toggle mute on the selected track |
+| Solo Track | Toggle solo on the selected track |
 
 ## Settings
 
 | Item | Description |
 |------|-------------|
-| Audio Settings | Open audio device configuration |
 | Preferences | Open the preferences dialog |
-| Plugin Scan | Re-scan for installed plugins |
+| Audio/MIDI Settings | Open audio and MIDI device configuration |
+| Plugin Settings | Open plugin settings (see [Plugin Settings](plugin-settings.md)) |
 
 ## Window
 
 | Item | Description |
 |------|-------------|
-| Full Screen | Toggle full-screen mode |
 | Minimize | Minimize the window |
+| Zoom | Zoom the window to fill the screen |
+| Bring All to Front | Bring all MAGDA windows to front |
 
 ## Help
 
 | Item | Description |
 |------|-------------|
-| Manual | Open this manual in the browser |
-| About | Show version and credits |
-| Report a Bug | Open the GitHub Issues page |
+| Online Manual | Open this manual in the browser |
+| About MAGDA | Show version and credits |

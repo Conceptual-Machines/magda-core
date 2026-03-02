@@ -1,0 +1,74 @@
+/* MAGDA dark theme — matches the DAW's DarkTheme palette */
+
+/* Dark mode (default) */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #252530;
+  --md-primary-bg-color: #dddddd;
+  --md-accent-fg-color: #5588aa;
+  --md-accent-bg-color: #5588aa1a;
+
+  /* Background */
+  --md-default-bg-color: #1a1a1a;
+  --md-default-fg-color: #dddddd;
+
+  /* Code blocks */
+  --md-code-bg-color: #1e1e22;
+  --md-code-fg-color: #aabbcc;
+
+  /* Footer */
+  --md-footer-bg-color: #1e1e22;
+  --md-footer-fg-color: #aabbcc;
+
+  /* Typeset */
+  --md-typeset-color: #dddddd;
+  --md-typeset-a-color: #5588aa;
+}
+
+/* Header bar */
+[data-md-color-scheme="slate"] .md-header {
+  background-color: #1e1e22;
+}
+
+/* Navigation sidebar */
+[data-md-color-scheme="slate"] .md-sidebar {
+  background-color: #1a1a1a;
+}
+
+/* Nav links - active */
+[data-md-color-scheme="slate"] .md-nav__link--active {
+  color: #5588aa;
+}
+
+/* Admonition note — use MAGDA purple */
+[data-md-color-scheme="slate"] .md-typeset .admonition.note,
+[data-md-color-scheme="slate"] .md-typeset details.note {
+  border-color: #7777dd;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .note > .admonition-title,
+[data-md-color-scheme="slate"] .md-typeset .note > summary {
+  background-color: #7777dd1a;
+  border-color: #7777dd;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .note > .admonition-title::before,
+[data-md-color-scheme="slate"] .md-typeset .note > summary::before {
+  background-color: #7777dd;
+}
+
+/* Tables */
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) th {
+  background-color: #252530;
+  color: #aabbcc;
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) tr:hover td {
+  background-color: #2a2a35;
+}
+
+/* Light mode */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #2a2a35;
+  --md-primary-bg-color: #ffffff;
+  --md-accent-fg-color: #5588aa;
+}

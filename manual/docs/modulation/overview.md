@@ -2,14 +2,14 @@
 
 MAGDA provides two complementary modulation systems: **Modulators** and **Macros**. Both allow you to dynamically control device parameters without manual automation.
 
+![Modulation — Curve Editor](../assets/images/modulation/curve-editor.png)
+
 ## Modulators
 
 Modulators are signal generators that continuously vary a target parameter over time. MAGDA includes:
 
-- **LFO** — Low-frequency oscillator with multiple waveforms
-- **Envelope** — Triggered amplitude shape
-- **Random** — Randomized modulation source
-- **Follower** — Follows the amplitude of an audio signal
+- **LFO** — Low-frequency oscillator with multiple waveforms (sine, triangle, sawtooth, square, random)
+- **Bezier Curve Shape** — Freely editable modulation shape drawn with bezier curves for complex custom patterns
 
 See [Modulators](modulators.md) for details.
 

@@ -15,7 +15,7 @@ Download the latest release from the [GitHub Releases](https://github.com/Concep
 
 ## Building from Source
 
-MAGDA is built with CMake and requires a C++17 compiler. See the [README](https://github.com/Conceptual-Machines/magda-core#building) for full build instructions.
+MAGDA is built with CMake and requires a C++20 compiler. See the [README](https://github.com/Conceptual-Machines/magda-core#building) for full build instructions.
 
 ## Audio Setup
 
@@ -24,6 +24,3 @@ On first launch, go to **Settings > Audio** to configure:
 - **Audio device** — Select your audio interface or built-in output
 - **Sample rate** — 44100 Hz or 48000 Hz are common choices
 - **Buffer size** — Lower values reduce latency but increase CPU load
-
-!!! tip
-    MAGDA automatically optimizes buffer sizes when switching views: Live mode uses the lowest latency, while Mix and Master modes use larger buffers for stability.

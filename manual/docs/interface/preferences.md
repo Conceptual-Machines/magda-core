@@ -2,6 +2,8 @@
 
 Open the Preferences dialog from **Settings > Preferences**. The dialog has five tabs.
 
+![Preferences](../assets/images/interface/preferences.png)
+
 ## General
 
 - **Default zoom level** — Initial horizontal zoom when opening a project
@@ -21,7 +23,6 @@ Open the Preferences dialog from **Settings > Preferences**. The dialog has five
 ## AI
 
 - **API key** — Enter your API key to enable the AI Assistant
-- **Model selection** — Choose which model the assistant uses
 
 See [AI Assistant](../panels/ai-assistant.md) for more on setting up and using the AI chat.
 

@@ -2,6 +2,8 @@
 
 The Mixer View provides a channel-strip interface for balancing levels, panning, routing, and applying effects. Switch to it by clicking **Mix** in the footer bar.
 
+![Mixer View](assets/images/mixer/mixer-view.png)
+
 ## Layout
 
 ```

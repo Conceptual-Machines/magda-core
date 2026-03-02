@@ -1,6 +1,6 @@
 # Modulators
 
-Modulators are signal generators that modulate device parameters over time.
+Modulators are signal generators that modulate device parameters over time. Each device and rack can have its own set of modulators.
 
 ## LFO
 
@@ -12,8 +12,7 @@ A low-frequency oscillator that cycles through a waveform shape.
 - Triangle
 - Sawtooth
 - Square
-- Sample & Hold
-- Custom curve (draw your own shape)
+- Random (Sample & Hold)
 
 ### Parameters
 
@@ -22,38 +21,22 @@ A low-frequency oscillator that cycles through a waveform shape.
 - **Phase offset** — Starting point in the waveform cycle (0°–360°)
 - **Tempo sync** — Lock the rate to musical divisions (1/4, 1/8, 1/16, etc.)
 - **One-shot** — Play the waveform once instead of looping
-- **Trigger mode** — Free-running, note-retrigger, or transport-retrigger
 
-## Envelope
+## Bezier Curve Shape
 
-A triggered shape that modulates a parameter over time, typically following ADSR curves.
+A freely editable modulation shape drawn with bezier curves. Use this to create complex, custom modulation patterns that go beyond standard waveforms.
 
-### Parameters
+![Curve Editor](../assets/images/modulation/curve-editor.png)
 
-- **Attack** — Rise time
-- **Decay** — Fall time to sustain level
-- **Sustain** — Held level
-- **Release** — Fade-out time after trigger ends
-- **Trigger mode** — MIDI note-on, transport start, or manual
+### Editing
 
-## Random
-
-Generates randomized modulation values.
+- **Add a point** — Double-click on the curve
+- **Move a point** — Drag it to a new position
+- **Adjust curvature** — Drag the bezier handles to shape the curve between points
+- **Delete a point** — Double-click an existing point
 
 ### Parameters
 
-- **Rate** — How often a new random value is generated
-- **Smoothing** — Interpolation between random values (0 = stepped, 100 = smooth)
-- **Range** — Min/max bounds for the random output
+- **Rate** — Speed of the curve cycle (Hz or synced to tempo)
+- **Depth** — Modulation amount
 - **Tempo sync** — Lock the rate to musical divisions
-
-## Follower
-
-Tracks the amplitude of an audio signal and outputs a modulation value that mirrors the signal's loudness.
-
-### Parameters
-
-- **Input source** — Which audio signal to follow (track input, sidechain, etc.)
-- **Attack** — How quickly the follower responds to rising levels
-- **Release** — How quickly the follower responds to falling levels
-- **Gain** — Sensitivity adjustment

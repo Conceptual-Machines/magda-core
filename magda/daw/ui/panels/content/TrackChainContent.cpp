@@ -1202,8 +1202,10 @@ void TrackChainContent::rebuildNodeComponents() {
                 break;
             }
         }
-    } else if (sm.getSelectionType() == magda::SelectionType::Device) {
-        // Also restore from Device selection (may be set via selectDevice path)
+    } else if (sm.getDeviceSelection().isValid()) {
+        // Also restore from Device selection — check validity rather than
+        // SelectionType, since selectTrack() changes type to Track before
+        // rebuildNodeComponents runs.
         const auto& deviceSel = sm.getDeviceSelection();
         if (deviceSel.trackId == selectedTrackId_ &&
             deviceSel.deviceId != magda::INVALID_DEVICE_ID) {

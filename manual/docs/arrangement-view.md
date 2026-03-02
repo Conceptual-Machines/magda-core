@@ -2,6 +2,8 @@
 
 The Arrangement View is a traditional DAW timeline for composing, recording, and editing. Switch to it by clicking **Arrange** in the footer bar.
 
+![Arrangement View](assets/images/arrangement/arrangement-view.png)
+
 ## Layout
 
 ```
@@ -73,6 +75,29 @@ Drag audio files from the [Media Explorer](panels/browsers.md) directly onto a t
 ### Playhead
 
 The playhead shows the current playback position. Click on the timeline ruler to reposition it. Press ++home++ to return to the start.
+
+## Editing Modes
+
+MAGDA supports two editing modes depending on context:
+
+### Clip-Based Editing
+
+When no time selection is active, editing operations apply to **selected clips**:
+
+- **Split** (++cmd+e++) — Splits selected clips at the edit cursor position
+- **Render** (++cmd+b++) — Renders selected clips to audio in place
+- **Cut / Copy / Paste / Duplicate / Delete** — Operate on the selected clips
+
+### Time Selection Editing
+
+When a time selection is active (drag on the timeline ruler), operations apply to the **time range**:
+
+- **Split / Trim** (++cmd+e++) — Splits clips at the selection boundaries and isolates the selected region. If clips extend beyond the selection, they are trimmed.
+- **Render Time Selection** (++cmd+shift+b++) — Consolidates everything within the time selection to a single audio clip per track
+- **Cut / Copy / Paste** — Operate on the content within the time range
+
+!!! note
+    When a time selection exists, Split/Trim affects all clips that overlap the selection — not just selected clips. Clear the time selection to return to clip-based editing.
 
 ## Editing
 

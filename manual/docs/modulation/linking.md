@@ -2,6 +2,8 @@
 
 Linking connects modulation sources (modulators or macros) to target parameters on devices.
 
+![Link Mode](../assets/images/modulation/link-mode.png)
+
 ## Link Mode
 
 Link mode is the workflow for creating modulation connections:
