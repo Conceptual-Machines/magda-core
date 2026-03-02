@@ -53,6 +53,7 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     } else {
         // Session clips loop by default
         clip.loopEnabled = true;
+        clip.autoTempo = true;
         clip.length = length;
         sessionClips_.push_back(clip);
     }
@@ -89,6 +90,8 @@ ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double len
     } else {
         // Session clips loop by default
         clip.loopEnabled = true;
+        clip.loopLengthBeats = clip.lengthBeats;
+        clip.loopLength = length;
         sessionClips_.push_back(clip);
     }
 

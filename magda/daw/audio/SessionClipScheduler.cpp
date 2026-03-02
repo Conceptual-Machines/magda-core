@@ -244,6 +244,13 @@ void SessionClipScheduler::timerCallback() {
     for (auto clipId : activeClips_) {
         auto state = queryLaunchHandleState(clipId);
         if (state == SessionClipPlayState::Stopped) {
+            // Don't remove looping clips — TE may briefly report Stopped
+            // between loop cycles
+            const auto* clip = cm.getClip(clipId);
+            if (clip && clip->loopEnabled) {
+                stoppedCounters_.erase(clipId);
+                continue;
+            }
             int& count = stoppedCounters_[clipId];
             ++count;
             if (count >= kStoppedThreshold) {
@@ -308,10 +315,18 @@ double SessionClipScheduler::getSessionPlayheadPosition() const {
     if (activeClips_.empty() || launchClipLength_ <= 0.0)
         return -1.0;
 
-    // Only return a position if at least one clip is actually playing
+    // Only return a position if at least one clip is actually playing.
+    // Looping clips that are still in activeClips_ count as playing even if
+    // the LaunchHandle briefly reports Stopped between loop cycles.
     bool anyPlaying = false;
+    auto& cm = ClipManager::getInstance();
     for (auto clipId : activeClips_) {
         if (queryLaunchHandleState(clipId) == SessionClipPlayState::Playing) {
+            anyPlaying = true;
+            break;
+        }
+        const auto* clip = cm.getClip(clipId);
+        if (clip && clip->loopEnabled) {
             anyPlaying = true;
             break;
         }
