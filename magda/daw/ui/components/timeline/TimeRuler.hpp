@@ -5,6 +5,7 @@
 #include <functional>
 
 #include "../../layout/LayoutConfig.hpp"
+#include "LoopMarkerInteraction.hpp"
 
 namespace magda {
 
@@ -115,9 +116,10 @@ class TimeRuler : public juce::Component, private juce::Timer {
                         const juce::MouseWheelDetails& wheel) override;
 
     // Callbacks
-    std::function<void(double)> onPositionClicked;           // Time position clicked
-    std::function<void(double, double, int)> onZoomChanged;  // newZoom, anchorTime, anchorScreenX
-    std::function<void(int)> onScrollRequested;              // deltaX scroll amount
+    std::function<void(double)> onPositionClicked;            // Time position clicked
+    std::function<void(double, double, int)> onZoomChanged;   // newZoom, anchorTime, anchorScreenX
+    std::function<void(int)> onScrollRequested;               // deltaX scroll amount
+    std::function<void(double, double)> onLoopRegionChanged;  // Loop start/end changed via drag
 
   private:
     // Display state
@@ -176,6 +178,10 @@ class TimeRuler : public juce::Component, private juce::Timer {
     // Timer callback for real-time scroll sync
     void timerCallback() override;
     int lastViewportX = 0;  // Track last position to detect changes
+
+    // Loop marker interaction
+    LoopMarkerInteraction loopInteraction_;
+    void initLoopInteraction();
 
     // Drag state (zoom or scroll)
     enum class DragMode { None, Zooming, Scrolling };

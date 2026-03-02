@@ -261,6 +261,34 @@ WaveformEditorContent::WaveformEditorContent() {
         setVirtualScrollX(virtualScrollX_ + deltaX);
     };
 
+    // Wire up ruler loop region drag callback
+    timeRuler_->onLoopRegionChanged = [this](double displayStart, double displayEnd) {
+        if (editingClipId_ == magda::INVALID_CLIP_ID)
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (!clip || !clip->loopEnabled)
+            return;
+
+        auto* controller = magda::TimelineController::getCurrent();
+        double bpm = controller ? controller->getState().tempo.bpm : 120.0;
+
+        // displayStart/displayEnd are in timeline seconds (from srcToTimeline in ClipDisplayInfo).
+        // Reverse the transform to get source seconds.
+        auto timelineToSrc = [&](double t) -> double {
+            if (clip->autoTempo && clip->loopLength > 0.0 && clip->loopLengthBeats > 0.0 &&
+                bpm > 0.0) {
+                return t * clip->loopLength / (clip->loopLengthBeats * 60.0 / bpm);
+            }
+            return (clip->speedRatio > 0.0) ? t * clip->speedRatio : 0.0;
+        };
+
+        double newLoopStart = timelineToSrc(displayStart);
+        double newLoopLength = timelineToSrc(displayEnd - displayStart);
+
+        magda::ClipManager::getInstance().setLoopStart(editingClipId_, newLoopStart, bpm);
+        magda::ClipManager::getInstance().setLoopLength(editingClipId_, newLoopLength, bpm);
+    };
+
     addAndMakeVisible(timeRuler_.get());
 
     // Create look and feel for buttons

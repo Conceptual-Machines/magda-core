@@ -51,6 +51,28 @@ MidiEditorContent::MidiEditorContent() {
         }
     };
 
+    // TimeRuler loop region drag callback
+    timeRuler_->onLoopRegionChanged = [this](double displayStart, double displayEnd) {
+        if (editingClipId_ == magda::INVALID_CLIP_ID)
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (!clip || !clip->loopEnabled)
+            return;
+
+        double newLoopLength = displayEnd - displayStart;
+        // Reverse the display transform: displayOffset = clip->offset - clip->loopStart
+        // In relative mode: displayStart = loopOffset
+        // In absolute mode: displayStart = timeOffset + loopOffset
+        double loopOffset = relativeTimeMode_ ? displayStart : (displayStart - clip->startTime);
+        double newLoopStart = clip->offset - loopOffset;
+
+        auto* controller = magda::TimelineController::getCurrent();
+        double bpm = controller ? controller->getState().tempo.bpm : 120.0;
+
+        magda::ClipManager::getInstance().setLoopStart(editingClipId_, newLoopStart, bpm);
+        magda::ClipManager::getInstance().setLoopLength(editingClipId_, newLoopLength, bpm);
+    };
+
     // Edit cursor blink timer
     blinkTimer_.callback = [this]() {
         editCursorBlinkVisible_ = !editCursorBlinkVisible_;

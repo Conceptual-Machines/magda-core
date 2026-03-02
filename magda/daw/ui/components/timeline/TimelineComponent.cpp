@@ -46,10 +46,12 @@ void TimelineComponent::setController(TimelineController* controller) {
 
         // Sync loop region
         if (state.loop.isValid()) {
-            loopStartTime = state.loop.startTime;
-            loopEndTime = state.loop.endTime;
-            loopEnabled = state.loop.enabled;
+            loopInteraction_.setLoopRegion(state.loop.startTime, state.loop.endTime,
+                                           state.loop.enabled);
         }
+
+        // Initialize loop interaction helper
+        initLoopInteraction();
 
         // Sync time selection (only if visually active)
         if (state.selection.isVisuallyActive()) {
@@ -78,13 +80,10 @@ void TimelineComponent::timelineStateChanged(const TimelineState& state, ChangeF
     // Loop changes
     if (hasFlag(changes, ChangeFlags::Loop)) {
         if (state.loop.isValid()) {
-            loopStartTime = state.loop.startTime;
-            loopEndTime = state.loop.endTime;
-            loopEnabled = state.loop.enabled;
+            loopInteraction_.setLoopRegion(state.loop.startTime, state.loop.endTime,
+                                           state.loop.enabled);
         } else {
-            loopStartTime = -1.0;
-            loopEndTime = -1.0;
-            loopEnabled = false;
+            loopInteraction_.setLoopRegion(-1.0, -1.0, false);
         }
         needsRepaint = true;
     }
@@ -289,8 +288,6 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
     zoomStartValue = zoom;
     isZooming = false;
     isPendingPlayheadClick = false;
-    isDraggingLoopStart = false;
-    isDraggingLoopEnd = false;
     isDraggingTimeSelection = false;
 
     // Get layout configuration for zone calculations
@@ -309,23 +306,8 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
     bool inTimeSelectionZone = event.y >= rulerMidpoint && event.y <= timeRulerEnd;
 
     // Check for loop marker dragging first - works in both arrangement and ruler areas
-    bool isStartMarker;
-    if (isOnLoopMarker(event.x, event.y, isStartMarker)) {
-        if (isStartMarker) {
-            isDraggingLoopStart = true;
-        } else {
-            isDraggingLoopEnd = true;
-        }
+    if (loopInteraction_.mouseDown(event.x, event.y))
         return;
-    }
-
-    // Check for loop top border (drag entire loop region)
-    if (isOnLoopTopBorder(event.x, event.y)) {
-        isDraggingLoopRegion = true;
-        double clickTime = pixelToTime(event.x);
-        loopDragOffset = clickTime - loopStartTime;
-        return;
-    }
 
     // Zone 1a: Lower ruler area (near tick labels) - start time selection
     if (inTimeSelectionZone) {
@@ -383,15 +365,9 @@ void TimelineComponent::mouseMove(const juce::MouseEvent& event) {
     int arrangementBottom = chordHeight + arrangementHeight;
 
     // Check for loop markers first - they span both arrangement and ruler areas
-    bool isStartMarker;
-    if (isOnLoopMarker(event.x, event.y, isStartMarker)) {
-        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-        return;
-    }
-
-    // Check for loop top border (for dragging entire region)
-    if (isOnLoopTopBorder(event.x, event.y)) {
-        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+    auto loopCursor = loopInteraction_.getCursor(event.x, event.y);
+    if (loopCursor != juce::MouseCursor::NormalCursor) {
+        setMouseCursor(loopCursor);
         return;
     }
 
@@ -448,60 +424,9 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
         return;
     }
 
-    // Handle loop marker dragging (edges)
-    if (isDraggingLoopStart || isDraggingLoopEnd) {
-        double newTime = juce::jmax(0.0, juce::jmin(timelineLength, pixelToTime(event.x)));
-
-        // Apply snap to grid if enabled
-        if (snapEnabled) {
-            newTime = snapTimeToGrid(newTime);
-        }
-
-        if (isDraggingLoopStart) {
-            // Don't let start go past end (leave at least 0.01s)
-            loopStartTime = juce::jmin(newTime, loopEndTime - 0.01);
-        } else {
-            // Don't let end go before start
-            loopEndTime = juce::jmax(newTime, loopStartTime + 0.01);
-        }
-
-        if (onLoopRegionChanged) {
-            onLoopRegionChanged(loopStartTime, loopEndTime);
-        }
-        repaint();
+    // Handle loop marker dragging
+    if (loopInteraction_.mouseDrag(event.x, event.y))
         return;
-    }
-
-    // Handle loop region dragging (entire loop)
-    if (isDraggingLoopRegion) {
-        double loopDuration = loopEndTime - loopStartTime;
-        double clickTime = pixelToTime(event.x);
-        double newStartTime = clickTime - loopDragOffset;
-
-        // Apply snap to grid if enabled
-        if (snapEnabled) {
-            newStartTime = snapTimeToGrid(newStartTime);
-        }
-
-        // Clamp to valid range
-        newStartTime = juce::jmax(0.0, newStartTime);
-        double newEndTime = newStartTime + loopDuration;
-
-        // Don't let end go past timeline length
-        if (newEndTime > timelineLength) {
-            newEndTime = timelineLength;
-            newStartTime = newEndTime - loopDuration;
-        }
-
-        loopStartTime = newStartTime;
-        loopEndTime = newEndTime;
-
-        if (onLoopRegionChanged) {
-            onLoopRegionChanged(loopStartTime, loopEndTime);
-        }
-        repaint();
-        return;
-    }
 
     // Handle section dragging
     if (!arrangementLocked && isDraggingSection && selectedSectionIndex >= 0) {
@@ -643,9 +568,11 @@ void TimelineComponent::mouseDoubleClick(const juce::MouseEvent& event) {
     // Check if double-click is in the ruler area (below chord and arrangement)
     if (event.y >= rulerTop) {
         // Double-click in ruler area - zoom to fit loop if enabled
-        if (loopEnabled && loopStartTime >= 0 && loopEndTime > loopStartTime) {
+        if (loopInteraction_.isEnabled() && loopInteraction_.getStartTime() >= 0 &&
+            loopInteraction_.getEndTime() > loopInteraction_.getStartTime()) {
             if (onZoomToFitRequested) {
-                onZoomToFitRequested(loopStartTime, loopEndTime);
+                onZoomToFitRequested(loopInteraction_.getStartTime(),
+                                     loopInteraction_.getEndTime());
             }
             return;
         }
@@ -699,9 +626,7 @@ void TimelineComponent::mouseUp(const juce::MouseEvent& event) {
     isDraggingSection = false;
     isDraggingEdge = false;
     isDraggingStart = false;
-    isDraggingLoopStart = false;
-    isDraggingLoopEnd = false;
-    isDraggingLoopRegion = false;
+    loopInteraction_.mouseUp(event.x, event.y);
 
     // End zoom operation
     if (isZooming && onZoomEnd) {
@@ -793,6 +718,10 @@ int TimelineComponent::timeDurationToPixels(double duration) const {
 }
 
 void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
+    // Cache loop state for tick-skipping checks
+    double loopStartTime = loopInteraction_.getStartTime();
+    double loopEndTime = loopInteraction_.getEndTime();
+
     // Get layout configuration
     auto& layout = LayoutConfig::getInstance();
     int chordHeight = layout.chordRowHeight;
@@ -1184,21 +1113,20 @@ juce::String TimelineComponent::getDefaultSectionName() const {
 }
 
 void TimelineComponent::setLoopRegion(double startTime, double endTime) {
-    loopStartTime = juce::jmax(0.0, startTime);
-    loopEndTime = juce::jmin(timelineLength, endTime);
-    loopEnabled = (loopStartTime >= 0 && loopEndTime > loopStartTime);
+    double s = juce::jmax(0.0, startTime);
+    double e = juce::jmin(timelineLength, endTime);
+    bool valid = (s >= 0 && e > s);
+    loopInteraction_.setLoopRegion(s, e, valid);
 
     if (onLoopRegionChanged) {
-        onLoopRegionChanged(loopStartTime, loopEndTime);
+        onLoopRegionChanged(s, e);
     }
 
     repaint();
 }
 
 void TimelineComponent::clearLoopRegion() {
-    loopStartTime = -1.0;
-    loopEndTime = -1.0;
-    loopEnabled = false;
+    loopInteraction_.setLoopRegion(-1.0, -1.0, false);
 
     if (onLoopRegionChanged) {
         onLoopRegionChanged(-1.0, -1.0);
@@ -1208,8 +1136,10 @@ void TimelineComponent::clearLoopRegion() {
 }
 
 void TimelineComponent::setLoopEnabled(bool enabled) {
-    if (loopStartTime >= 0 && loopEndTime > loopStartTime) {
-        loopEnabled = enabled;
+    double s = loopInteraction_.getStartTime();
+    double e = loopInteraction_.getEndTime();
+    if (s >= 0 && e > s) {
+        loopInteraction_.setLoopRegion(s, e, enabled);
         repaint();
     }
 }
@@ -1217,6 +1147,10 @@ void TimelineComponent::setLoopEnabled(bool enabled) {
 void TimelineComponent::drawLoopMarkers(juce::Graphics& g) {
     // Draw background elements: shaded region and vertical lines
     // Time markers will be drawn on top of this
+    double loopStartTime = loopInteraction_.getStartTime();
+    double loopEndTime = loopInteraction_.getEndTime();
+    bool loopEnabled = loopInteraction_.isEnabled();
+
     if (loopStartTime < 0 || loopEndTime <= loopStartTime) {
         return;
     }
@@ -1257,6 +1191,10 @@ void TimelineComponent::drawLoopMarkers(juce::Graphics& g) {
 void TimelineComponent::drawLoopMarkerFlags(juce::Graphics& g) {
     // Draw foreground elements: triangular flags, connecting line, and tick-like vertical lines
     // These replace the regular ticks at loop boundary positions
+    double loopStartTime = loopInteraction_.getStartTime();
+    double loopEndTime = loopInteraction_.getEndTime();
+    bool loopEnabled = loopInteraction_.isEnabled();
+
     if (loopStartTime < 0 || loopEndTime <= loopStartTime) {
         return;
     }
@@ -1311,53 +1249,28 @@ void TimelineComponent::drawLoopMarkerFlags(juce::Graphics& g) {
     g.fillPath(endFlag);
 }
 
-bool TimelineComponent::isOnLoopMarker(int x, int y, bool& isStartMarker) const {
-    // Allow detecting loop markers even when disabled (they're still visible in grey)
-    if (loopStartTime < 0 || loopEndTime <= loopStartTime) {
-        return false;
-    }
-
-    // Loop markers are visible in both arrangement bar and ruler area
-    // No Y restriction - allow detection anywhere vertically
-
-    int startX = timeToPixel(loopStartTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
-    int endX = timeToPixel(loopEndTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
-
-    const int markerThreshold = 8;  // Pixels from marker to trigger drag
-
-    if (std::abs(x - startX) <= markerThreshold) {
-        isStartMarker = true;
-        return true;
-    } else if (std::abs(x - endX) <= markerThreshold) {
-        isStartMarker = false;
-        return true;
-    }
-
-    return false;
-}
-
-bool TimelineComponent::isOnLoopTopBorder(int x, int y) const {
-    // Check if mouse is on the top connecting line of the loop region
-    if (loopStartTime < 0 || loopEndTime <= loopStartTime) {
-        return false;
-    }
-
+void TimelineComponent::initLoopInteraction() {
     auto& layout = LayoutConfig::getInstance();
-    // Top border is at the bottom of arrangement row (below chord row)
-    int lineY = layout.chordRowHeight + layout.arrangementBarHeight;
-    const int verticalThreshold = 6;  // Pixels above/below line to trigger
 
-    // Check Y is near the top border line
-    if (std::abs(y - lineY) > verticalThreshold) {
-        return false;
-    }
-
-    // Check X is between the loop markers
-    int startX = timeToPixel(loopStartTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
-    int endX = timeToPixel(loopEndTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
-    const int horizontalMargin = 10;  // Don't trigger too close to the edges (those are resize)
-
-    return x > (startX + horizontalMargin) && x < (endX - horizontalMargin);
+    LoopMarkerInteraction::Host host;
+    host.pixelToTime = [this](int pixel) { return pixelToTime(pixel); };
+    host.timeToPixel = [this](double time) {
+        return timeToPixel(time) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    };
+    host.snapToGrid = [this](double time) -> double {
+        if (snapEnabled)
+            return snapTimeToGrid(time);
+        return time;
+    };
+    host.onLoopChanged = [this](double start, double end) {
+        if (onLoopRegionChanged)
+            onLoopRegionChanged(start, end);
+    };
+    host.onRepaint = [this]() { repaint(); };
+    host.maxTime = timelineLength;
+    host.topBorderY = layout.chordRowHeight + layout.arrangementBarHeight;
+    host.topBorderThreshold = 6;
+    loopInteraction_.setHost(std::move(host));
 }
 
 double TimelineComponent::getSnapInterval() const {

@@ -131,6 +131,17 @@ void TimeRuler::setLoopRegion(double offsetSeconds, double lengthSeconds, bool e
     loopLength = lengthSeconds;
     loopEnabled = enabled;
     loopActive = active;
+
+    // Sync loop interaction helper with absolute pixel coordinates
+    if (enabled && lengthSeconds > 0.0) {
+        double loopStartTime = relativeMode ? loopOffset : (timeOffset + loopOffset);
+        double loopEndTime = loopStartTime + loopLength;
+        loopInteraction_.setLoopRegion(loopStartTime, loopEndTime, true);
+        initLoopInteraction();
+    } else {
+        loopInteraction_.setLoopRegion(-1.0, -1.0, false);
+    }
+
     repaint();
 }
 
@@ -166,6 +177,10 @@ int TimeRuler::getPreferredHeight() const {
 }
 
 void TimeRuler::mouseDown(const juce::MouseEvent& event) {
+    // Try loop marker interaction first
+    if (loopInteraction_.mouseDown(event.x, event.y))
+        return;
+
     mouseDownX = event.x;
     mouseDownY = event.y;
     lastDragX = event.x;
@@ -178,6 +193,10 @@ void TimeRuler::mouseDown(const juce::MouseEvent& event) {
 }
 
 void TimeRuler::mouseDrag(const juce::MouseEvent& event) {
+    // Try loop marker interaction first
+    if (loopInteraction_.mouseDrag(event.x, event.y))
+        return;
+
     int deltaX = std::abs(event.x - mouseDownX);
     int deltaY = std::abs(event.y - mouseDownY);
 
@@ -222,6 +241,10 @@ void TimeRuler::mouseDrag(const juce::MouseEvent& event) {
 }
 
 void TimeRuler::mouseUp(const juce::MouseEvent& event) {
+    // Complete loop marker interaction
+    if (loopInteraction_.mouseUp(event.x, event.y))
+        return;
+
     // If it was a click (not a drag), handle playhead positioning
     if (dragMode == DragMode::None) {
         int deltaX = std::abs(event.x - mouseDownX);
@@ -241,7 +264,12 @@ void TimeRuler::mouseUp(const juce::MouseEvent& event) {
     setMouseCursor(CursorManager::getInstance().getZoomCursor());
 }
 
-void TimeRuler::mouseMove(const juce::MouseEvent& /*event*/) {
+void TimeRuler::mouseMove(const juce::MouseEvent& event) {
+    auto loopCursor = loopInteraction_.getCursor(event.x, event.y);
+    if (loopCursor != juce::MouseCursor::NormalCursor) {
+        setMouseCursor(loopCursor);
+        return;
+    }
     setMouseCursor(CursorManager::getInstance().getZoomCursor());
 }
 
@@ -724,6 +752,22 @@ int TimeRuler::timeToPixel(double time) const {
     int currentScrollOffset = linkedViewport ? linkedViewport->getViewPositionX() : scrollOffset;
     double beats = time * tempo / 60.0;
     return static_cast<int>(beats * zoom) - currentScrollOffset + leftPadding;
+}
+
+void TimeRuler::initLoopInteraction() {
+    LoopMarkerInteraction::Host host;
+    host.pixelToTime = [this](int pixel) { return pixelToTime(pixel); };
+    host.timeToPixel = [this](double time) { return timeToPixel(time); };
+    host.snapToGrid = nullptr;  // No grid snap in TimeRuler for now
+    host.onLoopChanged = [this](double start, double end) {
+        if (onLoopRegionChanged)
+            onLoopRegionChanged(start, end);
+    };
+    host.onRepaint = [this]() { repaint(); };
+    host.maxTime = timelineLength;
+    host.topBorderY = 0;           // Flags are at the top of the ruler
+    host.topBorderThreshold = 12;  // Match the flag strip height
+    loopInteraction_.setHost(std::move(host));
 }
 
 }  // namespace magda
