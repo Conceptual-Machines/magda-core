@@ -545,24 +545,40 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
         auto markerColour = loopActive ? DarkTheme::getColour(DarkTheme::LOOP_MARKER)
                                        : DarkTheme::getColour(DarkTheme::TEXT_DISABLED);
-        float stripeAlpha = loopActive ? 0.2f : 0.1f;
 
         if (loopEndX >= 0 && loopStartX <= width) {
-            // Semi-transparent stripe across ruler height
-            g.setColour(markerColour.withAlpha(stripeAlpha));
-            g.fillRect(loopStartX, 0, loopEndX - loopStartX, height);
+            int tickAreaTop = height - TICK_HEIGHT_MAJOR;
 
-            // 2px vertical lines at boundaries
+            // Nearly transparent region fill in tick area only (matches arrangement view)
+            auto regionColour = loopActive ? DarkTheme::getColour(DarkTheme::LOOP_REGION)
+                                           : juce::Colour(0x08808080);
+            g.setColour(regionColour);
+            g.fillRect(loopStartX, tickAreaTop, loopEndX - loopStartX, TICK_HEIGHT_MAJOR);
+
+            // 2px vertical lines in tick area only (not covering labels)
             g.setColour(markerColour.withAlpha(loopActive ? 1.0f : 0.5f));
             if (loopStartX >= 0 && loopStartX <= width) {
-                g.fillRect(loopStartX - 1, 0, 2, height);
+                g.fillRect(loopStartX - 1, tickAreaTop, 2, TICK_HEIGHT_MAJOR);
             }
             if (loopEndX >= 0 && loopEndX <= width) {
-                g.fillRect(loopEndX - 1, 0, 2, height);
+                g.fillRect(loopEndX - 1, tickAreaTop, 2, TICK_HEIGHT_MAJOR);
             }
 
             // Small triangular flags at top
             int flagTop = 2;
+            g.setColour(markerColour.withAlpha(loopActive ? 1.0f : 0.5f));
+
+            // Connecting line between flags
+            g.drawLine(static_cast<float>(loopStartX), static_cast<float>(0),
+                       static_cast<float>(loopEndX), static_cast<float>(0), 2.0f);
+
+            // Fill the flag strip area
+            auto flagFill = loopActive ? DarkTheme::getColour(DarkTheme::LOOP_MARKER)
+                                       : juce::Colour(0xFF808080);
+            g.setColour(flagFill.withAlpha(0.3f));
+            g.fillRect(loopStartX, 0, loopEndX - loopStartX, flagTop + 10);
+
+            g.setColour(markerColour.withAlpha(loopActive ? 1.0f : 0.5f));
             if (loopStartX >= 0 && loopStartX <= width) {
                 juce::Path startFlag;
                 startFlag.addTriangle(

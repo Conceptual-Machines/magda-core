@@ -117,7 +117,7 @@ class MidiEditorContent : public PanelContent,
     void updateGridResolution();
 
     // --- Layout constants ---
-    static constexpr int RULER_HEIGHT = 36;
+    static constexpr int RULER_HEIGHT = 48;
     static constexpr int GRID_LEFT_PADDING = 2;
     static constexpr double MIN_HORIZONTAL_ZOOM = 10.0;
     static constexpr double MAX_HORIZONTAL_ZOOM = 500.0;
